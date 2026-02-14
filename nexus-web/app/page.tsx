@@ -32,7 +32,7 @@ const mapStyle: StyleSpecification = {
       id: "background",
       type: "background",
       paint: {
-        "background-color": "#eaf1f7",
+        "background-color": "#d9e7f2",
       },
     },
   ],
@@ -267,8 +267,8 @@ export default function Home() {
             source-layer="departamentos"
             filter={departamentosFilter}
             paint={{
-              "fill-color": "#3b82f6",
-              "fill-opacity": 0.12,
+              "fill-color": "#22c55e",
+              "fill-opacity": 0.35,
             }}
           />
           <Layer
@@ -278,8 +278,21 @@ export default function Home() {
             source-layer="departamentos"
             filter={departamentosFilter}
             paint={{
-              "line-color": ["case", ["==", ["get", "coddep"], hoverDep ?? ""], "#dc2626", "#1e3a8a"],
-              "line-width": 1.2,
+              "line-color": ["case", ["==", ["get", "coddep"], hoverDep ?? ""], "#dc2626", "#0f172a"],
+              "line-width": 2,
+            }}
+          />
+
+          <Layer
+            id="provincias-fill"
+            type="fill"
+            source="peru-admin"
+            source-layer="provincias"
+            filter={provinciasFilter}
+            minzoom={5}
+            paint={{
+              "fill-color": "#60a5fa",
+              "fill-opacity": 0.18,
             }}
           />
           <Layer
@@ -291,7 +304,7 @@ export default function Home() {
             minzoom={5}
             paint={{
               "line-color": ["case", ["==", ["get", "codprov_full"], hoverProvFull ?? ""], "#dc2626", "#334155"],
-              "line-width": 0.8,
+              "line-width": 1.4,
             }}
           />
           <Layer
@@ -303,7 +316,7 @@ export default function Home() {
             minzoom={8}
             paint={{
               "line-color": ["case", ["==", ["get", "ubigeo"], hoverDist ?? ""], "#dc2626", "#0f172a"],
-              "line-width": 0.55,
+              "line-width": 1.1,
             }}
           />
 
