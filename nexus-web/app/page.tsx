@@ -18,6 +18,13 @@ type ConfigResponse = {
   layers?: Array<{ id: string; sourceLayer: string; minZoom: number; maxZoom: number }>;
 };
 
+function toAbsoluteTileUrl(urlTemplate: string): string {
+  if (/^https?:\/\//i.test(urlTemplate)) return urlTemplate;
+  if (typeof window === "undefined") return urlTemplate;
+  if (urlTemplate.startsWith("/")) return `${window.location.origin}${urlTemplate}`;
+  return `${window.location.origin}/${urlTemplate}`;
+}
+
 const peruView = {
   longitude: -75.0152,
   latitude: -9.1899,
@@ -43,7 +50,7 @@ export default function Home() {
   const apiBase = useMemo(() => process.env.NEXT_PUBLIC_MAP_API_BASE ?? "", []);
   const [status, setStatus] = useState("checking");
   const [message, setMessage] = useState("Conectando con backend y Tegola...");
-  const [tileUrl, setTileUrl] = useState("/api/tiles/{z}/{x}/{y}.vector.pbf");
+  const [tileUrl, setTileUrl] = useState<string | null>(null);
   const [mapName, setMapName] = useState("peru");
   const [selectedDep, setSelectedDep] = useState<string | null>(null);
   const [selectedProvFull, setSelectedProvFull] = useState<string | null>(null);
@@ -205,6 +212,8 @@ export default function Home() {
 
     const bootstrap = async () => {
       try {
+        setTileUrl(toAbsoluteTileUrl("/api/tiles/{z}/{x}/{y}.vector.pbf"));
+
         const [healthResponse, configResponse] = await Promise.all([
           fetch(healthUrl, { cache: "no-store" }),
           fetch(configUrl, { cache: "no-store" }),
@@ -216,7 +225,7 @@ export default function Home() {
         if (!cancelled && healthResponse.ok && healthData.ok) {
           setStatus("ok");
           setMessage(`health ok (${healthData.service ?? "backend"}) | map: ${configData.mapName ?? "peru"}`);
-          setTileUrl(configData.tileUrlTemplate ?? "/api/tiles/{z}/{x}/{y}.vector.pbf");
+          setTileUrl(toAbsoluteTileUrl(configData.tileUrlTemplate ?? "/api/tiles/{z}/{x}/{y}.vector.pbf"));
           setMapName(configData.mapName ?? "peru");
           return;
         }
@@ -259,7 +268,7 @@ export default function Home() {
         onMouseLeave={resetHover}
         onClick={handleMapClick}
       >
-        <Source id="peru-admin" type="vector" tiles={[tileUrl]} minzoom={3} maxzoom={20}>
+        {tileUrl ? <Source id="peru-admin" type="vector" tiles={[tileUrl]} minzoom={3} maxzoom={20}>
           <Layer
             id="departamentos-fill"
             type="fill"
@@ -359,7 +368,7 @@ export default function Home() {
               "fill-opacity": 0,
             }}
           />
-        </Source>
+        </Source> : null}
       </MapLibre>
 
       <section
@@ -381,7 +390,7 @@ export default function Home() {
         </p>
         <p style={{ marginTop: "6px", marginBottom: 0 }}>{message}</p>
         <p style={{ marginTop: "6px", marginBottom: 0, color: "#475569" }}>Map: {mapName}</p>
-        <p style={{ marginTop: "6px", marginBottom: 0, color: "#475569" }}>Tiles: {tileUrl}</p>
+        <p style={{ marginTop: "6px", marginBottom: 0, color: "#475569" }}>Tiles: {tileUrl ?? "cargando..."}</p>
       </section>
     </main>
   );

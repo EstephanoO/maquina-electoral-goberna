@@ -42,12 +42,19 @@ Esperado: mensaje `restore smoke test OK`.
 
 ## 5) SSL y renovacion
 
+Si usas Certbot:
+
 ```bash
 sudo certbot certificates
 sudo systemctl list-timers | grep certbot
 ```
 
 Esperado: certificado activo para `API_DOMAIN` y timer de renovacion.
+
+Si usas Cloudflare Origin Certificate:
+
+- Cloudflare en `Full (strict)`.
+- `docker compose logs nginx` sin errores de certificado.
 
 ## 6) Firewall minimo
 

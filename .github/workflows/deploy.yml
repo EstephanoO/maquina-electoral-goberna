@@ -1,12 +1,70 @@
-name: Deploy VPS
+name: CI CD VPS
 
 on:
   push:
     branches:
       - main
+  pull_request:
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install backend dependencies
+        run: bun install --frozen-lockfile
+        working-directory: backend
+
+      - name: Typecheck backend
+        run: bunx tsc --noEmit
+        working-directory: backend
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+        working-directory: nexus-web
+
+      - name: Typecheck and build frontend
+        run: |
+          bunx tsc --noEmit
+          bun run build
+        working-directory: nexus-web
+
+      - name: Run backend smoke contract
+        run: bash scripts/ci/smoke_backend_contract.sh
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Vulnerability scan (Trivy fs)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
   deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - quality
+      - security
     runs-on: ubuntu-latest
     steps:
       - name: Deploy over SSH
@@ -19,20 +77,43 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            export PROJECT_DIR=/srv/app
+            PROJECT_DIR=/srv/app
             cd "$PROJECT_DIR"
 
             PREVIOUS_COMMIT=$(git rev-parse HEAD)
 
-            git fetch origin main
-            git checkout main
-            git pull --ff-only origin main
+            deploy_and_smoke() {
+              git fetch origin main
+              git checkout main
+              git pull --ff-only origin main
+              docker compose up -d --build --remove-orphans
 
-            if ! docker compose up -d --build --remove-orphans; then
-              echo "[deploy] fallo, iniciando rollback"
+              for attempt in $(seq 1 30); do
+                if curl -fsS "http://127.0.0.1/api/ready" >/dev/null; then
+                  break
+                fi
+                if [ "$attempt" -eq 30 ]; then
+                  echo "[deploy] readiness timeout"
+                  return 1
+                fi
+                sleep 2
+              done
+
+              curl -fsS "http://127.0.0.1/api/health" >/dev/null
+              curl -fsS "http://127.0.0.1/api/config" >/dev/null
+
+              payload='{"nombre":"Deploy Smoke","telefono":"999000001","fecha":"2026-02-14T20:10:00.000Z","x":279854,"y":8661420,"zona":"18S","candidate":"Deploy","encuestador":"CI","encuestador_id":"ci-deploy","candidato_preferido":"Deploy","client_id":"deploy-smoke-'"$(date +%s)"'"}'
+              curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/forms" --data "$payload" >/dev/null
+
+              test -x scripts/backup.sh
+              docker compose ps
+            }
+
+            if ! deploy_and_smoke; then
+              echo "[deploy] fallo smoke checks, iniciando rollback"
               git reset --hard "$PREVIOUS_COMMIT"
               docker compose up -d --build --remove-orphans
               exit 1
             fi
 
-            docker compose ps
+            echo "[deploy] deploy ok"

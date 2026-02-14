@@ -2,6 +2,12 @@
 
 Este plan ejecuta el objetivo de `AGENTS.md` en tres bloques: repo, VPS, validacion.
 
+Arquitectura objetivo recomendada para este repo:
+
+- Frontend: `dashboard.grupogoberna.com` en Vercel.
+- API: `api.grupogoberna.com` en VPS (Cloudflare proxy ON).
+- Trafico: `Cliente -> Cloudflare -> Nginx (VPS) -> backend`.
+
 ## 1) Preparar repo (infra como codigo)
 
 1. Copiar `.env.example` a `.env` y completar parametros reales.
@@ -24,6 +30,17 @@ docker compose -f docker-compose.dev.yml up -d --build
 ```bash
 docker compose up -d --build
 ```
+
+6. Frontend (Vercel) debe usar API por variable de entorno:
+
+```bash
+cd nexus-web
+cp .env.example .env.local
+```
+
+En Vercel Project Settings:
+
+- `NEXT_PUBLIC_MAP_API_BASE=https://api.grupogoberna.com`
 
 ## 2) Bootstrap VPS (hardening + runtime)
 
@@ -76,6 +93,8 @@ curl -I http://API_DOMAIN/health
 
 Con DNS ya apuntando al VPS:
 
+### Opcion A (recomendada por `AGENTS.md`): Certbot
+
 ```bash
 sudo certbot certonly --webroot -w /srv/app/certbot/www -d API_DOMAIN
 ```
@@ -91,6 +110,31 @@ cd /srv/app
 docker compose up -d --build nginx
 curl -I https://API_DOMAIN/health
 ```
+
+### Opcion B (Cloudflare Origin Certificate)
+
+1. En Cloudflare: `SSL/TLS -> Origin Server -> Create Certificate`.
+2. Guardar archivos en VPS:
+
+```bash
+mkdir -p /srv/app/nginx/certs
+nano /srv/app/nginx/certs/origin.crt
+nano /srv/app/nginx/certs/origin.key
+chmod 600 /srv/app/nginx/certs/origin.key
+```
+
+3. En `/srv/app/.env`:
+
+- `NGINX_TEMPLATE=default.cloudflare-origin.conf.template`
+
+4. Reiniciar Nginx:
+
+```bash
+cd /srv/app
+docker compose up -d --build nginx
+```
+
+5. En Cloudflare: `SSL/TLS Mode = Full (strict)`.
 
 ## 6) CI/CD
 
@@ -140,3 +184,11 @@ Linea:
 ```cron
 0 3 * * * cd /srv/app && ./scripts/backup.sh >> /var/log/app-backup.log 2>&1
 ```
+
+## 8) Cloudflare hardening minimo
+
+1. DNS record `api` con proxy `ON` (nube naranja).
+2. SSL mode `Full (strict)`.
+3. Habilitar `Always Use HTTPS`.
+4. Activar Rate Limiting para `/api/*`.
+5. Activar Bot protection base.

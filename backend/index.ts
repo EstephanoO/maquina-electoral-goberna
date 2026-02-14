@@ -126,6 +126,17 @@ async function fetchWithRetry(url: string): Promise<Response> {
   throw lastError ?? new Error("Error desconocido consultando upstream");
 }
 
+async function checkDatabase(): Promise<boolean> {
+  if (!dbPool) return false;
+  const result = await dbPool.query("SELECT 1 AS ok");
+  return result.rowCount === 1;
+}
+
+async function checkTegola(): Promise<boolean> {
+  const response = await fetchWithRetry(`${TEGOLA_BASE_URL}/capabilities`);
+  return response.ok;
+}
+
 app.get("/health", (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.json({ ok: true, service: "tegola-backend", map: TEGOLA_MAP, ts: new Date().toISOString() });
@@ -134,6 +145,24 @@ app.get("/health", (_req, res) => {
 app.get("/api/health", (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.json({ ok: true, service: "tegola-backend", map: TEGOLA_MAP, ts: new Date().toISOString() });
+});
+
+app.get("/api/ready", async (_req, res) => {
+  try {
+    const [databaseOk, tegolaOk] = await Promise.all([checkDatabase(), checkTegola()]);
+    const ok = databaseOk && tegolaOk;
+    res.status(ok ? 200 : 503).json({
+      ok,
+      checks: {
+        database: databaseOk,
+        tegola: tegolaOk,
+      },
+      ts: new Date().toISOString(),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "error desconocido";
+    res.status(503).json({ ok: false, checks: { database: false, tegola: false }, error: message, ts: new Date().toISOString() });
+  }
 });
 
 type FormInput = {

@@ -1,5 +1,11 @@
 # Root secrets
 .env
+**/.env.local
+**/.env.*.local
+
+# Allow sample env files
+!.env.example
+!**/.env.example
 
 # Runtime folders on VPS
 certbot/conf/
@@ -7,3 +13,4 @@ certbot/www/
 
 # macOS
 .DS_Store
+.vercel
