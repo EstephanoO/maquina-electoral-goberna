@@ -2,10 +2,11 @@
 
 import { useMemo, useRef, useState } from "react";
 import { Layer, Map as MapLibre, MapLayerMouseEvent, MapRef, Source } from "@vis.gl/react-maplibre";
+import type { FilterSpecification, StyleSpecification } from "maplibre-gl";
 
 const PERU_CENTER = { lng: -75.0152, lat: -9.1899, zoom: 5 };
 
-const mapStyle = {
+const mapStyle: StyleSpecification = {
   version: 8,
   sources: {},
   layers: [
@@ -15,7 +16,7 @@ const mapStyle = {
       paint: { "background-color": "#eef3f8" },
     },
   ],
-} as const;
+};
 
 function getBoundsFromFeatureGeometry(geometry: unknown): [[number, number], [number, number]] | null {
   if (!geometry || typeof geometry !== "object") return null;
@@ -71,24 +72,25 @@ export default function Home() {
   const tiles = `${apiBase}/api/tiles/{z}/{x}/{y}.vector.pbf`;
 
   const departamentosFilter = useMemo(
-    () => (selectedDep ? (["==", ["get", "coddep"], selectedDep] as unknown[]) : (["has", "coddep"] as unknown[])),
+    () =>
+      (selectedDep ? ["==", ["get", "coddep"], selectedDep] : ["has", "coddep"]) as FilterSpecification,
     [selectedDep],
   );
 
   const provinciasFilter = useMemo(
     () => {
-      if (!selectedDep) return ["==", ["get", "coddep"], "__none__"] as unknown[];
-      if (selectedProvFull) return ["==", ["get", "codprov_full"], selectedProvFull] as unknown[];
-      return ["==", ["get", "coddep"], selectedDep] as unknown[];
+      if (!selectedDep) return ["==", ["get", "coddep"], "__none__"] as FilterSpecification;
+      if (selectedProvFull) return ["==", ["get", "codprov_full"], selectedProvFull] as FilterSpecification;
+      return ["==", ["get", "coddep"], selectedDep] as FilterSpecification;
     },
     [selectedDep, selectedProvFull],
   );
 
   const distritosFilter = useMemo(
     () => {
-      if (!selectedProvFull) return ["==", ["get", "ubigeo"], "__none__"] as unknown[];
-      if (selectedDist) return ["==", ["get", "ubigeo"], selectedDist] as unknown[];
-      return ["==", ["get", "codprov_full"], selectedProvFull] as unknown[];
+      if (!selectedProvFull) return ["==", ["get", "ubigeo"], "__none__"] as FilterSpecification;
+      if (selectedDist) return ["==", ["get", "ubigeo"], selectedDist] as FilterSpecification;
+      return ["==", ["get", "codprov_full"], selectedProvFull] as FilterSpecification;
     },
     [selectedProvFull, selectedDist],
   );
@@ -294,7 +296,9 @@ export default function Home() {
             type="fill"
             source="peru-admin"
             source-layer="provincias"
-            filter={selectedDep ? (["==", ["get", "coddep"], selectedDep] as unknown[]) : (["==", ["get", "coddep"], "__none__"] as unknown[])}
+            filter={
+              (selectedDep ? ["==", ["get", "coddep"], selectedDep] : ["==", ["get", "coddep"], "__none__"]) as FilterSpecification
+            }
             paint={{
               "fill-color": "#000000",
               "fill-opacity": 0,
@@ -306,7 +310,11 @@ export default function Home() {
             type="fill"
             source="peru-admin"
             source-layer="distritos"
-            filter={selectedProvFull ? (["==", ["get", "codprov_full"], selectedProvFull] as unknown[]) : (["==", ["get", "ubigeo"], "__none__"] as unknown[])}
+            filter={
+              (selectedProvFull
+                ? ["==", ["get", "codprov_full"], selectedProvFull]
+                : ["==", ["get", "ubigeo"], "__none__"]) as FilterSpecification
+            }
             paint={{
               "fill-color": "#000000",
               "fill-opacity": 0,
