@@ -55,8 +55,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: ${BACKEND_CONTEXT:-./backend}
+      dockerfile: ${BACKEND_DOCKERFILE:-Dockerfile}
     container_name: ${APP_NAME:-nexus}_backend
     restart: always
     depends_on:
@@ -68,10 +68,12 @@ services:
       TEGOLA_BASE_URL: http://tegola:8080
       TEGOLA_MAP: ${TEGOLA_MAP:-peru}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS}
       REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-5000}
       UPSTREAM_RETRIES: ${UPSTREAM_RETRIES:-2}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TZ: ${TZ}
+      DATABASE_URL: ${DATABASE_URL}
     networks:
       - app_network
 
@@ -93,6 +95,8 @@ services:
       && nginx -g 'daemon off;'"
     volumes:
       - ./nginx:/etc/nginx/templates:ro
+      - ./nginx/cloudflare-realip.conf:/etc/nginx/conf.d/cloudflare-realip.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
       - ./certbot/www:/var/www/certbot:ro
       - ./certbot/conf:/etc/letsencrypt:ro
     networks:

@@ -9,7 +9,7 @@ type HealthResponse = {
 };
 
 export default function Home() {
-  const apiBase = useMemo(() => process.env.NEXT_PUBLIC_MAP_API_BASE ?? "http://161.132.39.165", []);
+  const apiBase = useMemo(() => process.env.NEXT_PUBLIC_MAP_API_BASE ?? "/api", []);
   const [status, setStatus] = useState("checking");
   const [message, setMessage] = useState("Conectando con backend...");
 
@@ -18,7 +18,8 @@ export default function Home() {
 
     const checkHealth = async () => {
       try {
-        const response = await fetch(`${apiBase}/api/health`, { cache: "no-store" });
+        const healthUrl = apiBase.endsWith("/api") ? `${apiBase}/health` : `${apiBase}/api/health`;
+        const response = await fetch(healthUrl, { cache: "no-store" });
         const data = (await response.json()) as HealthResponse;
 
         if (!cancelled && response.ok && data.ok) {

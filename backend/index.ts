@@ -5,6 +5,7 @@ import express from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import morgan from "morgan";
+import { Pool } from "pg";
 import winston from "winston";
 
 dotenv.config({ path: ".env.local", override: false });
@@ -15,10 +16,14 @@ const app = express();
 const PORT = Number(process.env.PORT ?? 3001);
 const TEGOLA_BASE_URL = (process.env.TEGOLA_BASE_URL ?? "http://localhost:8080").replace(/\/$/, "");
 const TEGOLA_MAP = process.env.TEGOLA_MAP ?? "peru";
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN ?? "http://localhost:3000";
+const FRONTEND_ORIGINS = (process.env.FRONTEND_ORIGINS ?? process.env.FRONTEND_ORIGIN ?? "http://localhost:3000")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 const REQUEST_TIMEOUT_MS = Number(process.env.REQUEST_TIMEOUT_MS ?? 5000);
 const UPSTREAM_RETRIES = Number(process.env.UPSTREAM_RETRIES ?? 2);
 const LOG_LEVEL = process.env.LOG_LEVEL ?? "info";
+const DATABASE_URL = process.env.DATABASE_URL;
 
 const logger = winston.createLogger({
   level: LOG_LEVEL,
@@ -26,6 +31,16 @@ const logger = winston.createLogger({
   defaultMeta: { service: "tegola-backend" },
   transports: [new winston.transports.Console()],
 });
+
+const dbPool = DATABASE_URL
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      max: 10,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 5_000,
+      ssl: false,
+    })
+  : null;
 
 const LAYERS_CONTRACT = [
   { id: "departamentos", sourceLayer: "departamentos", minZoom: 3, maxZoom: 20 },
@@ -44,8 +59,20 @@ app.use(
 
 app.use(
   cors({
-    origin: FRONTEND_ORIGIN,
-    methods: ["GET", "OPTIONS"],
+    origin: (origin, callback) => {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (FRONTEND_ORIGINS.includes("*") || FRONTEND_ORIGINS.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error("Not allowed by CORS"));
+    },
+    methods: ["GET", "POST", "OPTIONS"],
   }),
 );
 app.use(compression({ threshold: 1024 }));
@@ -102,6 +129,194 @@ async function fetchWithRetry(url: string): Promise<Response> {
 app.get("/health", (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.json({ ok: true, service: "tegola-backend", map: TEGOLA_MAP, ts: new Date().toISOString() });
+});
+
+app.get("/api/health", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ ok: true, service: "tegola-backend", map: TEGOLA_MAP, ts: new Date().toISOString() });
+});
+
+type FormInput = {
+  nombre: string;
+  telefono: string;
+  fecha: string;
+  x: number;
+  y: number;
+  zona: string;
+  candidate?: string;
+  encuestador: string;
+  encuestador_id: string;
+  candidato_preferido: string;
+  client_id?: string;
+  home_maps_url?: string;
+  polling_place_url?: string;
+  comentarios?: string;
+};
+
+function toNonEmptyString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`campo invalido: ${field}`);
+  }
+  return value.trim();
+}
+
+function toNumber(value: unknown, field: string): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) {
+    throw new Error(`campo invalido: ${field}`);
+  }
+  return n;
+}
+
+function normalizeForm(raw: unknown): FormInput {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("payload invalido");
+  }
+
+  const data = raw as Record<string, unknown>;
+  const dateValue = new Date(toNonEmptyString(data.fecha, "fecha"));
+  if (Number.isNaN(dateValue.getTime())) {
+    throw new Error("campo invalido: fecha");
+  }
+
+  const clientId = typeof data.client_id === "string" && data.client_id.trim() ? data.client_id.trim() : undefined;
+
+  return {
+    nombre: toNonEmptyString(data.nombre, "nombre"),
+    telefono: toNonEmptyString(data.telefono, "telefono"),
+    fecha: dateValue.toISOString(),
+    x: toNumber(data.x, "x"),
+    y: toNumber(data.y, "y"),
+    zona: toNonEmptyString(data.zona, "zona"),
+    candidate: typeof data.candidate === "string" ? data.candidate.trim() : undefined,
+    encuestador: toNonEmptyString(data.encuestador, "encuestador"),
+    encuestador_id: toNonEmptyString(data.encuestador_id, "encuestador_id"),
+    candidato_preferido: toNonEmptyString(data.candidato_preferido, "candidato_preferido"),
+    client_id: clientId,
+    home_maps_url: typeof data.home_maps_url === "string" ? data.home_maps_url.trim() : undefined,
+    polling_place_url: typeof data.polling_place_url === "string" ? data.polling_place_url.trim() : undefined,
+    comentarios: typeof data.comentarios === "string" ? data.comentarios.trim() : undefined,
+  };
+}
+
+async function insertForm(form: FormInput) {
+  if (!dbPool) {
+    throw new Error("DATABASE_URL no configurada");
+  }
+
+  if (form.client_id) {
+    const existing = await dbPool.query("SELECT id FROM public.forms WHERE client_id = $1 LIMIT 1", [form.client_id]);
+    if (existing.rowCount && existing.rowCount > 0) {
+      return { deduped: true };
+    }
+
+    await dbPool.query(
+      `INSERT INTO public.forms (
+        nombre, telefono, fecha, x, y, zona, candidate, encuestador, encuestador_id,
+        candidato_preferido, client_id, home_maps_url, polling_place_url, comentarios
+      ) VALUES (
+        $1, $2, $3::timestamptz, $4, $5, $6, $7, $8, $9,
+        $10, $11, $12, $13, $14
+      )`,
+      [
+        form.nombre,
+        form.telefono,
+        form.fecha,
+        form.x,
+        form.y,
+        form.zona,
+        form.candidate ?? "",
+        form.encuestador,
+        form.encuestador_id,
+        form.candidato_preferido,
+        form.client_id,
+        form.home_maps_url ?? null,
+        form.polling_place_url ?? null,
+        form.comentarios ?? null,
+      ],
+    );
+
+    return { deduped: false };
+  }
+
+  await dbPool.query(
+    `INSERT INTO public.forms (
+      nombre, telefono, fecha, x, y, zona, candidate, encuestador, encuestador_id,
+      candidato_preferido, home_maps_url, polling_place_url, comentarios
+    ) VALUES (
+      $1, $2, $3::timestamptz, $4, $5, $6, $7, $8, $9,
+      $10, $11, $12, $13
+    )`,
+    [
+      form.nombre,
+      form.telefono,
+      form.fecha,
+      form.x,
+      form.y,
+      form.zona,
+      form.candidate ?? "",
+      form.encuestador,
+      form.encuestador_id,
+      form.candidato_preferido,
+      form.home_maps_url ?? null,
+      form.polling_place_url ?? null,
+      form.comentarios ?? null,
+    ],
+  );
+
+  return { deduped: false };
+}
+
+async function ensureFormsTable() {
+  if (!dbPool) return;
+
+  await dbPool.query("CREATE EXTENSION IF NOT EXISTS pgcrypto");
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS public.forms (
+      nombre text NOT NULL,
+      telefono text NOT NULL,
+      fecha timestamptz NOT NULL,
+      x double precision NOT NULL,
+      y double precision NOT NULL,
+      zona text NOT NULL,
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      candidate text NOT NULL DEFAULT '',
+      encuestador text NOT NULL,
+      encuestador_id text NOT NULL,
+      candidato_preferido text NOT NULL,
+      client_id text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      home_maps_url text,
+      polling_place_url text,
+      comentarios text
+    )
+  `);
+  await dbPool.query("CREATE UNIQUE INDEX IF NOT EXISTS forms_client_id_key ON public.forms (client_id) WHERE client_id IS NOT NULL");
+  await dbPool.query("CREATE INDEX IF NOT EXISTS forms_client_id_idx ON public.forms (client_id)");
+}
+
+app.post("/api/forms", async (req, res) => {
+  try {
+    const payload = Array.isArray(req.body) ? req.body : [req.body];
+    if (payload.length === 0) {
+      res.status(400).json({ ok: false, error: "payload vacio" });
+      return;
+    }
+
+    let deduped = 0;
+    for (const item of payload) {
+      const normalized = normalizeForm(item);
+      const result = await insertForm(normalized);
+      if (result.deduped) deduped += 1;
+    }
+
+    res.status(200).json({ ok: true, accepted: payload.length, deduped });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "error desconocido";
+    const status = message.startsWith("campo invalido") || message === "payload invalido" ? 400 : 500;
+    logger.error("error insertando forms", { message, status });
+    res.status(status).json({ ok: false, error: message });
+  }
 });
 
 app.get("/health/upstream", async (_req, res, next) => {
@@ -180,6 +395,10 @@ const server = app.listen(PORT, () => {
   logger.info("backend listo", { port: PORT, tegolaBaseUrl: TEGOLA_BASE_URL, map: TEGOLA_MAP });
 });
 
+void ensureFormsTable().catch((error) => {
+  logger.error("error inicializando forms", { message: error instanceof Error ? error.message : String(error) });
+});
+
 server.keepAliveTimeout = 65_000;
 server.headersTimeout = 66_000;
 
@@ -194,6 +413,12 @@ const shutdown = (signal: string) => {
     process.exit(0);
   });
 };
+
+process.on("beforeExit", async () => {
+  if (dbPool) {
+    await dbPool.end();
+  }
+});
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
