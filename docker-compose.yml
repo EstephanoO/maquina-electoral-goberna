@@ -24,7 +24,7 @@ services:
     image: redis:7.4-alpine
     container_name: ${APP_NAME:-nexus}_redis
     restart: always
-    command: ["redis-server", "--appendonly", "yes", "--save", "900", "1", "--save", "300", "10", "--save", "60", "10000", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--loglevel", "warning"]
+    command: ["redis-server", "--appendonly", "yes", "--save", "900", "1", "--save", "300", "10", "--save", "60", "10000", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction", "--loglevel", "warning"]
     volumes:
       - redis-data:/data
     healthcheck:
@@ -55,7 +55,7 @@ services:
 
   backend:
     build:
-      context: ${BACKEND_CONTEXT:-./backend}
+      context: ${BACKEND_CONTEXT:-./apps/backend}
       dockerfile: ${BACKEND_DOCKERFILE:-Dockerfile}
     container_name: ${APP_NAME:-nexus}_backend
     restart: always
@@ -72,8 +72,43 @@ services:
       REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-5000}
       UPSTREAM_RETRIES: ${UPSTREAM_RETRIES:-2}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      RATE_LIMIT_MAX_PER_MINUTE: ${RATE_LIMIT_MAX_PER_MINUTE:-500000}
+      RATE_LIMIT_FORMS_PER_MINUTE: ${RATE_LIMIT_FORMS_PER_MINUTE:-1200}
+      RATE_LIMIT_AGENTS_LOCATION_PER_MINUTE: ${RATE_LIMIT_AGENTS_LOCATION_PER_MINUTE:-12000}
+      RATE_LIMIT_AGENTS_LIVE_PER_MINUTE: ${RATE_LIMIT_AGENTS_LIVE_PER_MINUTE:-3000}
+      RATE_LIMIT_AGENTS_STREAM_PER_MINUTE: ${RATE_LIMIT_AGENTS_STREAM_PER_MINUTE:-500}
+      FORMS_BATCH_REQUEST_LIMIT: ${FORMS_BATCH_REQUEST_LIMIT:-200}
+      FORMS_WB_BATCH_SIZE: ${FORMS_WB_BATCH_SIZE:-200}
+      FORMS_WB_FLUSH_MS: ${FORMS_WB_FLUSH_MS:-300}
+      FORMS_WB_MAX_QUEUE: ${FORMS_WB_MAX_QUEUE:-10000}
       TZ: ${TZ}
       DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      AGENT_INGEST_TOKEN: ${AGENT_INGEST_TOKEN}
+      AGENT_STALE_AFTER_MS: ${AGENT_STALE_AFTER_MS:-120000}
+      AGENT_STREAM_HEARTBEAT_MS: ${AGENT_STREAM_HEARTBEAT_MS:-25000}
+      TRACKING_WB_BATCH_SIZE: ${TRACKING_WB_BATCH_SIZE:-300}
+      TRACKING_WB_FLUSH_MS: ${TRACKING_WB_FLUSH_MS:-250}
+      TRACKING_WB_MAX_QUEUE: ${TRACKING_WB_MAX_QUEUE:-10000}
+      DB_POOL_MAX: ${DB_POOL_MAX:-30}
+      DB_IDLE_TIMEOUT_MS: ${DB_IDLE_TIMEOUT_MS:-30000}
+      DB_CONNECTION_TIMEOUT_MS: ${DB_CONNECTION_TIMEOUT_MS:-5000}
+      DB_SSL_MODE: ${DB_SSL_MODE:-auto}
+      TRACKING_STREAM_KEY: ${TRACKING_STREAM_KEY:-tracking:events}
+      TRACKING_STREAM_GROUP: ${TRACKING_STREAM_GROUP:-tracking-workers}
+      TRACKING_SEQ_HASH_KEY: ${TRACKING_SEQ_HASH_KEY:-tracking:last-seq}
+      TRACKING_STREAM_MAX_LEN: ${TRACKING_STREAM_MAX_LEN:-200000}
+      FORMS_STREAM_KEY: ${FORMS_STREAM_KEY:-forms:events}
+      FORMS_STREAM_GROUP: ${FORMS_STREAM_GROUP:-forms-workers}
+      FORMS_STREAM_MAX_LEN: ${FORMS_STREAM_MAX_LEN:-200000}
+      FORMS_DEDUPE_PREFIX: ${FORMS_DEDUPE_PREFIX:-forms:dedupe:}
+      FORMS_DEDUPE_TTL_SEC: ${FORMS_DEDUPE_TTL_SEC:-604800}
+      STREAM_CONSUMER_BLOCK_MS: ${STREAM_CONSUMER_BLOCK_MS:-500}
+      STREAM_CLAIM_IDLE_MS: ${STREAM_CLAIM_IDLE_MS:-30000}
+      STREAM_CLAIM_BATCH_SIZE: ${STREAM_CLAIM_BATCH_SIZE:-200}
+      STREAM_DLQ_MAX_ATTEMPTS: ${STREAM_DLQ_MAX_ATTEMPTS:-5}
+      TRACKING_DLQ_STREAM_KEY: ${TRACKING_DLQ_STREAM_KEY:-tracking:dlq}
+      FORMS_DLQ_STREAM_KEY: ${FORMS_DLQ_STREAM_KEY:-forms:dlq}
     networks:
       - app_network
 

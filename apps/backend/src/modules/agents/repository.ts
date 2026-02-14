@@ -1,0 +1,140 @@
+import { sql } from "drizzle-orm";
+
+import { db, pool } from "../../db";
+import type { AgentLiveState } from "./types";
+
+type PersistedLiveRow = {
+  agent_id: string;
+  seq: number;
+  ts: string;
+  lat: number;
+  lng: number;
+  accuracy: number | null;
+  speed: number | null;
+  heading: number | null;
+  battery: number | null;
+  updated_at: string;
+};
+
+type BatchResult = {
+  attempted: number;
+  accepted: number;
+};
+
+export async function ensureAgentLocationsLiveTable() {
+  await db.execute(sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS public.agent_locations_live (
+      agent_id text PRIMARY KEY,
+      seq bigint NOT NULL,
+      ts timestamptz NOT NULL,
+      lat double precision NOT NULL,
+      lng double precision NOT NULL,
+      accuracy double precision,
+      speed double precision,
+      heading double precision,
+      battery double precision,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_locations_live_seq ON public.agent_locations_live (seq DESC)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_locations_live_updated_at ON public.agent_locations_live (updated_at DESC)`);
+}
+
+export async function loadAllLiveAgentLocations(): Promise<AgentLiveState[]> {
+  const result = (await pool.query(`
+    SELECT agent_id, seq, ts, lat, lng, accuracy, speed, heading, battery, updated_at
+    FROM public.agent_locations_live
+  `)) as { rows: PersistedLiveRow[] };
+
+  return result.rows.map((row) => ({
+    agentId: row.agent_id,
+    seq: Number(row.seq),
+    ts: new Date(row.ts).toISOString(),
+    lat: row.lat,
+    lng: row.lng,
+    accuracy: row.accuracy,
+    speed: row.speed,
+    heading: row.heading,
+    battery: row.battery,
+    receivedAt: new Date(row.updated_at).toISOString(),
+    lastSeenAtMs: new Date(row.updated_at).getTime(),
+  }));
+}
+
+export async function upsertLatestAgentLocationsBatch(states: AgentLiveState[]): Promise<BatchResult> {
+  if (states.length === 0) {
+    return { attempted: 0, accepted: 0 };
+  }
+
+  const payload = JSON.stringify(
+    states.map((state) => ({
+      agent_id: state.agentId,
+      seq: state.seq,
+      ts: state.ts,
+      lat: state.lat,
+      lng: state.lng,
+      accuracy: state.accuracy,
+      speed: state.speed,
+      heading: state.heading,
+      battery: state.battery,
+    })),
+  );
+
+  const result = (await pool.query(
+    `
+      WITH incoming AS (
+        SELECT *
+        FROM jsonb_to_recordset($1::jsonb) AS x(
+          agent_id text,
+          seq bigint,
+          ts timestamptz,
+          lat double precision,
+          lng double precision,
+          accuracy double precision,
+          speed double precision,
+          heading double precision,
+          battery double precision
+        )
+      ),
+      collapsed AS (
+        SELECT DISTINCT ON (agent_id)
+          agent_id, seq, ts, lat, lng, accuracy, speed, heading, battery
+        FROM incoming
+        ORDER BY agent_id, seq DESC, ts DESC
+      ),
+      upserted AS (
+        INSERT INTO public.agent_locations_live AS t (
+          agent_id, seq, ts, lat, lng, accuracy, speed, heading, battery
+        )
+        SELECT
+          c.agent_id, c.seq, c.ts, c.lat, c.lng, c.accuracy, c.speed, c.heading, c.battery
+        FROM collapsed c
+        ON CONFLICT (agent_id) DO UPDATE
+          SET
+            seq = EXCLUDED.seq,
+            ts = EXCLUDED.ts,
+            lat = EXCLUDED.lat,
+            lng = EXCLUDED.lng,
+            accuracy = EXCLUDED.accuracy,
+            speed = EXCLUDED.speed,
+            heading = EXCLUDED.heading,
+            battery = EXCLUDED.battery,
+            updated_at = now()
+          WHERE EXCLUDED.seq > t.seq
+        RETURNING agent_id
+      )
+      SELECT
+        (SELECT count(*)::bigint FROM collapsed) AS attempted,
+        (SELECT count(*)::bigint FROM upserted) AS accepted
+    `,
+    [payload],
+  )) as { rows: Array<{ attempted: string | number; accepted: string | number }> };
+
+  const row = result.rows[0] ?? { attempted: 0, accepted: 0 };
+  return {
+    attempted: Number(row.attempted ?? 0),
+    accepted: Number(row.accepted ?? 0),
+  };
+}

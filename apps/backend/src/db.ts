@@ -1,18 +1,34 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
-const connectionString = process.env.DATABASE_URL;
+import { getEnv } from "./config/env";
 
-if (!connectionString) {
-  throw new Error("DATABASE_URL no configurada");
+const env = getEnv();
+
+function resolveSslOption() {
+  const mode = env.dbSslMode;
+  if (mode === "disable" || mode === "false" || mode === "off") {
+    return false;
+  }
+
+  if (mode === "require" || mode === "verify" || mode === "verify-full") {
+    return { rejectUnauthorized: false };
+  }
+
+  if (/sslmode=(require|verify|verify-full)/i.test(env.databaseUrl)) {
+    return { rejectUnauthorized: false };
+  }
+
+  return false;
 }
 
 export const pool = new Pool({
-  connectionString,
-  max: 10,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 5_000,
-  ssl: false,
+  connectionString: env.databaseUrl,
+  max: env.dbPoolMax,
+  idleTimeoutMillis: env.dbIdleTimeoutMs,
+  connectionTimeoutMillis: env.dbConnectionTimeoutMs,
+  ssl: resolveSslOption(),
+  keepAlive: true,
 });
 
 export const db = drizzle(pool);
