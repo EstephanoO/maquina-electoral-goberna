@@ -1,0 +1,38 @@
+name: Deploy VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: deploy
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            export PROJECT_DIR=/srv/app
+            cd "$PROJECT_DIR"
+
+            PREVIOUS_COMMIT=$(git rev-parse HEAD)
+
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            if ! docker compose up -d --build --remove-orphans; then
+              echo "[deploy] fallo, iniciando rollback"
+              git reset --hard "$PREVIOUS_COMMIT"
+              docker compose up -d --build --remove-orphans
+              exit 1
+            fi
+
+            docker compose ps

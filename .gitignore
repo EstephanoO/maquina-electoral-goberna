@@ -1,0 +1,9 @@
+# Root secrets
+.env
+
+# Runtime folders on VPS
+certbot/conf/
+certbot/www/
+
+# macOS
+.DS_Store

@@ -1,0 +1,54 @@
+[webserver]
+port = ":8080"
+
+  [webserver.headers]
+  Access-Control-Allow-Origin = "*"
+  Access-Control-Allow-Methods = "GET, OPTIONS"
+  Cache-Control = "public, max-age=86400, stale-while-revalidate=300"
+
+[cache]
+type = "redis"
+uri = "redis://:${REDIS_PASSWORD}@redis:6379/0"
+max_zoom = 20
+
+[[providers]]
+name = "neon"
+type = "mvt_postgis"
+uri = "${DATABASE_URL}"
+
+  [[providers.layers]]
+  name = "departamentos"
+  geometry_type = "MultiPolygon"
+  id_fieldname = "id"
+  sql = "SELECT id, coddep, departamento, capital, ST_AsMVTGeom(geom, !BBOX!) AS geom FROM public.departamentos WHERE geom && !BBOX!"
+
+  [[providers.layers]]
+  name = "provincias"
+  geometry_type = "MultiPolygon"
+  id_fieldname = "id"
+  sql = "SELECT id, coddep, codprov, codprov_full, provincia, capital, ST_AsMVTGeom(geom, !BBOX!) AS geom FROM public.provincias WHERE geom && !BBOX!"
+
+  [[providers.layers]]
+  name = "distritos"
+  geometry_type = "MultiPolygon"
+  id_fieldname = "id"
+  sql = "SELECT id, ubigeo, coddep, codprov, codprov_full, coddist, distrito, capital, ST_AsMVTGeom(geom, !BBOX!) AS geom FROM public.distritos WHERE geom && !BBOX!"
+
+[[maps]]
+name = "peru"
+center = [-75.0152, -9.1899, 5.0]
+
+  [[maps.layers]]
+  provider_layer = "neon.departamentos"
+  min_zoom = 3
+  max_zoom = 20
+
+  [[maps.layers]]
+  provider_layer = "neon.provincias"
+  min_zoom = 5
+  max_zoom = 20
+
+  [[maps.layers]]
+  provider_layer = "neon.distritos"
+  min_zoom = 8
+  max_zoom = 20

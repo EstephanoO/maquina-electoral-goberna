@@ -1,0 +1,55 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: tegola-redis
+    env_file:
+      - ./backend/.env.local
+    command:
+      [
+        "sh",
+        "-c",
+        "redis-server --appendonly yes --appendfsync everysec --save 900 1 --save 300 10 --save 60 10000 --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass \"$$REDIS_PASSWORD\" --tcp-keepalive 60 --timeout 0 --databases 1 --loglevel warning",
+      ]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  tegola:
+    image: gospatial/tegola:latest
+    container_name: tegola
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["serve", "--config", "/etc/tegola/config.toml"]
+    env_file:
+      - ./backend/.env.local
+    volumes:
+      - ./tegola/config.toml:/etc/tegola/config.toml:ro
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tegola-backend
+    depends_on:
+      - tegola
+    env_file:
+      - ./backend/.env.local
+    environment:
+      PORT: "3001"
+      TEGOLA_BASE_URL: "http://tegola:8080"
+      TEGOLA_MAP: "peru"
+    ports:
+      - "3002:3001"
+    restart: unless-stopped
+
+volumes:
+  redis-data:

@@ -1,0 +1,107 @@
+name: ${APP_NAME:-nexus}
+
+services:
+  postgres:
+    image: postgis/postgis:15-3.4
+    container_name: ${APP_NAME:-nexus}_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - app_network
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: ${APP_NAME:-nexus}_redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--save", "900", "1", "--save", "300", "10", "--save", "60", "10000", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--loglevel", "warning"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - app_network
+
+  tegola:
+    image: gospatial/tegola:latest
+    container_name: ${APP_NAME:-nexus}_tegola
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["serve", "--config", "/etc/tegola/config.toml"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - ./tegola/config.toml:/etc/tegola/config.toml:ro
+    networks:
+      - app_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ${APP_NAME:-nexus}_backend
+    restart: always
+    depends_on:
+      tegola:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: ${BACKEND_PORT}
+      TEGOLA_BASE_URL: http://tegola:8080
+      TEGOLA_MAP: ${TEGOLA_MAP:-peru}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
+      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-5000}
+      UPSTREAM_RETRIES: ${UPSTREAM_RETRIES:-2}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TZ: ${TZ}
+    networks:
+      - app_network
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: ${APP_NAME:-nexus}_nginx
+    restart: always
+    depends_on:
+      - backend
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      BACKEND_PORT: ${BACKEND_PORT}
+      NGINX_TEMPLATE: ${NGINX_TEMPLATE:-default.http.conf.template}
+    ports:
+      - "80:80"
+      - "443:443"
+    command: >
+      /bin/sh -c "envsubst '$$API_DOMAIN $$BACKEND_PORT' < /etc/nginx/templates/$$NGINX_TEMPLATE > /etc/nginx/conf.d/default.conf
+      && nginx -g 'daemon off;'"
+    volumes:
+      - ./nginx:/etc/nginx/templates:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+    networks:
+      - app_network
+
+volumes:
+  pgdata:
+  redis-data:
+
+networks:
+  app_network:
+    driver: bridge
