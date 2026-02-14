@@ -19,20 +19,20 @@ uri = "${DATABASE_URL}"
   [[providers.layers]]
   name = "departamentos"
   geometry_type = "MultiPolygon"
-  id_fieldname = "id"
-  sql = "SELECT id, coddep, departamento, capital, ST_AsMVTGeom(geom, !BBOX!) AS geom FROM public.departamentos WHERE geom && !BBOX!"
+  id_fieldname = "gid"
+  sql = "SELECT gid, coddep, nomdep AS departamento, NULL::text AS capital, ST_AsMVTGeom(geom3857, !BBOX!) AS geom FROM public.peru_departamentos WHERE geom3857 && !BBOX!"
 
   [[providers.layers]]
   name = "provincias"
   geometry_type = "MultiPolygon"
-  id_fieldname = "id"
-  sql = "SELECT id, coddep, codprov, codprov_full, provincia, capital, ST_AsMVTGeom(geom, !BBOX!) AS geom FROM public.provincias WHERE geom && !BBOX!"
+  id_fieldname = "gid"
+  sql = "SELECT gid, coddep, codprov, (coddep || codprov) AS codprov_full, nomprov AS provincia, NULL::text AS capital, ST_AsMVTGeom(geom3857, !BBOX!) AS geom FROM public.peru_provincias WHERE geom3857 && !BBOX!"
 
   [[providers.layers]]
   name = "distritos"
   geometry_type = "MultiPolygon"
-  id_fieldname = "id"
-  sql = "SELECT id, ubigeo, coddep, codprov, codprov_full, coddist, distrito, capital, ST_AsMVTGeom(geom, !BBOX!) AS geom FROM public.distritos WHERE geom && !BBOX!"
+  id_fieldname = "gid"
+  sql = "SELECT gid, ubigeo, coddep, codprov, (coddep || codprov) AS codprov_full, right(ubigeo, 2) AS coddist, nomdist AS distrito, NULL::text AS capital, ST_AsMVTGeom(geom3857, !BBOX!) AS geom FROM public.peru_distritos WHERE geom3857 && !BBOX!"
 
 [[maps]]
 name = "peru"
