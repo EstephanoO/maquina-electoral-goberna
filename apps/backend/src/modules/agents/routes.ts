@@ -3,6 +3,7 @@ import type { ServerResponse } from "node:http";
 
 import type { AppEnv } from "../../config/env";
 import { errorPayload } from "../../infra/http";
+import type { IngestOutcome } from "../../infra/metrics";
 import { metricsRegistry } from "../../infra/metrics";
 import { loadAllLiveAgentLocations } from "./repository";
 import { agentLocationSchema } from "./schema";
@@ -191,11 +192,25 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       },
       async (request, reply) => {
         const requestId = String(request.id);
+        const markOutcome = (outcome: IngestOutcome) => {
+          (request as unknown as { __ingestOutcome?: IngestOutcome }).__ingestOutcome = outcome;
+        };
 
         if (env.agentIngestToken) {
           const provided = String(request.headers["x-agent-token"] ?? "").trim();
           if (!provided || provided !== env.agentIngestToken) {
+            markOutcome("auth_failed");
             metricsRegistry.incCounter("tracking_ingest_total", "401");
+            metricsRegistry.incCounter("tracking_invalid_token_total", "invalid");
+            app.log.warn(
+              {
+                request_id: requestId,
+                ip: request.ip,
+                agent_id_header: String(request.headers["x-agent-id"] ?? ""),
+                has_token: provided.length > 0,
+              },
+              "tracking invalid token",
+            );
             return reply.code(401).send(errorPayload(requestId, "INVALID_TOKEN", "token invalido"));
           }
         }
@@ -204,6 +219,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
           const next = toState(request.body);
           const current = store.get(next.agentId);
           if (current && next.seq <= current.seq) {
+            markOutcome("deduped");
             metricsRegistry.incCounter("tracking_dedupe_total", "live_seq");
             metricsRegistry.incCounter("tracking_ingest_total", "200");
             app.log.info({ request_id: requestId, agent_id: next.agentId, seq: next.seq }, "tracking dedupe");
@@ -217,11 +233,13 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
 
           const queueResult = await queue.enqueue(next);
           if (queueResult.queueFull) {
+            markOutcome("backpressure");
             metricsRegistry.incCounter("tracking_ingest_total", "503");
             return reply.code(503).send(errorPayload(requestId, "TRACKING_BACKPRESSURE", "tracking temporalmente saturado"));
           }
 
           if (queueResult.deduped) {
+            markOutcome("deduped");
             metricsRegistry.incCounter("tracking_dedupe_total", "pending_seq");
             metricsRegistry.incCounter("tracking_ingest_total", "200");
             return reply.code(200).send({
@@ -241,6 +259,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
 
           lastIngestAtMs = Date.now();
           broadcast("location.update", payload);
+          markOutcome("accepted");
           metricsRegistry.incCounter("tracking_ingest_total", "202");
           app.log.info({ request_id: requestId, agent_id: next.agentId, seq: next.seq }, "tracking accepted");
 
@@ -254,6 +273,9 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
           const message = error instanceof Error ? error.message : "error desconocido";
           const status = message.includes("payload") ? 400 : 500;
           const code = status === 400 ? "INVALID_PAYLOAD" : "TRACKING_INGEST_ERROR";
+          if (status === 400) {
+            markOutcome("invalid_payload");
+          }
           metricsRegistry.incCounter("tracking_ingest_total", String(status));
           app.log.error({ err: error, request_id: requestId }, "error recibiendo location agent");
           return reply.code(status).send(errorPayload(requestId, code, status === 400 ? "payload invalido" : "error ingestando tracking"));

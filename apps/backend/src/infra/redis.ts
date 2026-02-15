@@ -93,6 +93,40 @@ end
 return redis.call('INCRBY', key, cost)
 `;
 
+const dualWeightedRateLimitScript = `
+local actorKey = KEYS[1]
+local ipKey = KEYS[2]
+local actorLimit = tonumber(ARGV[1])
+local ipLimit = tonumber(ARGV[2])
+local cost = tonumber(ARGV[3])
+local ttlSec = tonumber(ARGV[4])
+
+local actorCurrent = tonumber(redis.call('GET', actorKey) or '0')
+local ipCurrent = tonumber(redis.call('GET', ipKey) or '0')
+
+if (actorCurrent + cost) > actorLimit then
+  return 0
+end
+
+if (ipCurrent + cost) > ipLimit then
+  return -1
+end
+
+if actorCurrent == 0 then
+  redis.call('SET', actorKey, cost, 'EX', ttlSec)
+else
+  redis.call('INCRBY', actorKey, cost)
+end
+
+if ipCurrent == 0 then
+  redis.call('SET', ipKey, cost, 'EX', ttlSec)
+else
+  redis.call('INCRBY', ipKey, cost)
+end
+
+return 1
+`;
+
 export async function enqueueTrackingEvent(params: {
   seqHashKey: string;
   streamKey: string;
@@ -133,6 +167,22 @@ export async function consumeWeightedRateLimit(params: {
   const result = await redisClient.eval(weightedRateLimitScript, {
     keys: [params.key],
     arguments: [String(params.limit), String(params.cost), String(params.ttlSec)],
+  });
+
+  return Number(result ?? -1) >= 0;
+}
+
+export async function consumeDualWeightedRateLimit(params: {
+  actorKey: string;
+  ipKey: string;
+  actorLimit: number;
+  ipLimit: number;
+  cost: number;
+  ttlSec: number;
+}): Promise<boolean> {
+  const result = await redisClient.eval(dualWeightedRateLimitScript, {
+    keys: [params.actorKey, params.ipKey],
+    arguments: [String(params.actorLimit), String(params.ipLimit), String(params.cost), String(params.ttlSec)],
   });
 
   return Number(result ?? -1) >= 0;

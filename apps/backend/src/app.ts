@@ -6,6 +6,7 @@ import rateLimit from "@fastify/rate-limit";
 
 import type { AppEnv } from "./config/env";
 import { errorPayload } from "./infra/http";
+import type { IngestDomain, IngestOutcome } from "./infra/metrics";
 import { metricsRegistry } from "./infra/metrics";
 import { buildAgentsRoutes } from "./modules/agents/routes";
 import { buildFormsRoutes } from "./modules/forms/routes";
@@ -60,7 +61,39 @@ export function buildApp(env: AppEnv) {
     const start = (request as unknown as { __startAtMs?: number }).__startAtMs;
     if (start && request.url.startsWith("/api/")) {
       const route = request.routeOptions.url ?? request.url;
-      metricsRegistry.observeLatency(route, Date.now() - start);
+      const elapsed = Date.now() - start;
+      metricsRegistry.observeLatency(route, elapsed);
+
+      const ingestRouteDomain: Record<string, IngestDomain> = {
+        "/api/forms": "forms",
+        "/api/forms/batch": "forms",
+        "/api/agents/location": "tracking",
+      };
+
+      const domain = ingestRouteDomain[route];
+      if (domain) {
+        const contextualOutcome = (request as unknown as { __ingestOutcome?: IngestOutcome }).__ingestOutcome;
+        const status = _reply.statusCode;
+        const inferredOutcome: IngestOutcome | null =
+          status === 429
+            ? "rate_limited"
+            : domain === "tracking" && status === 401
+              ? "auth_failed"
+              : status === 400 || status === 413
+                ? "invalid_payload"
+                : status === 503
+                  ? "backpressure"
+                  : status === 200
+                    ? "deduped"
+                    : status === 202
+                      ? "accepted"
+                      : null;
+
+        const outcome = contextualOutcome ?? inferredOutcome;
+        if (outcome) {
+          metricsRegistry.observeIngestOutcomeLatency(domain, outcome, elapsed);
+        }
+      }
     }
     done();
   });

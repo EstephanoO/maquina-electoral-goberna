@@ -2,8 +2,9 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 
 import type { AppEnv } from "../../config/env";
 import { errorPayload } from "../../infra/http";
+import type { IngestOutcome } from "../../infra/metrics";
 import { metricsRegistry } from "../../infra/metrics";
-import { consumeWeightedRateLimit } from "../../infra/redis";
+import { consumeDualWeightedRateLimit } from "../../infra/redis";
 import { formSchema, type FormInput } from "./schema";
 import { FormsWriteBehindQueue } from "./write-behind-queue";
 
@@ -23,6 +24,20 @@ function parseFormsPayload(body: unknown): FormInput[] {
   }
 
   return parsed;
+}
+
+function resolveFormsLimiterActor(request: FastifyRequest, forms: FormInput[]): string {
+  const headerAgentId = String(request.headers["x-agent-id"] ?? "").trim();
+  if (headerAgentId) {
+    return `agent:${headerAgentId}`;
+  }
+
+  const firstEncuestadorId = forms[0]?.encuestador_id?.trim() ?? "";
+  if (firstEncuestadorId && forms.every((form) => form.encuestador_id.trim() === firstEncuestadorId)) {
+    return `enc:${firstEncuestadorId}`;
+  }
+
+  return `ip:${request.ip}`;
 }
 
 export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
@@ -52,24 +67,31 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
 
     const enqueueForms = async (request: FastifyRequest, reply: FastifyReply) => {
       const requestId = String(request.id);
+      const markOutcome = (outcome: IngestOutcome) => {
+        (request as unknown as { __ingestOutcome?: IngestOutcome }).__ingestOutcome = outcome;
+      };
 
       try {
         const forms = parseFormsPayload(request.body);
 
         if (forms.length > env.formsBatchRequestLimit) {
+          markOutcome("invalid_payload");
           metricsRegistry.incCounter("forms_ingest_total", "413");
           return reply.code(413).send(errorPayload(requestId, "PAYLOAD_TOO_LARGE", "batch demasiado grande"));
         }
 
-        const limiterKey = `forms:rl:${String(request.headers["x-agent-id"] ?? request.ip)}`;
-        const allowed = await consumeWeightedRateLimit({
-          key: limiterKey,
-          limit: env.rateLimitFormsPerMinute,
+        const actorId = resolveFormsLimiterActor(request, forms);
+        const allowed = await consumeDualWeightedRateLimit({
+          actorKey: `forms:rl:actor:${actorId}`,
+          ipKey: `forms:rl:ip:${request.ip}`,
+          actorLimit: env.rateLimitFormsPerMinute,
+          ipLimit: env.rateLimitFormsIpPerMinute,
           cost: forms.length,
-          ttlSec: 60,
+          ttlSec: env.rateLimitFormsWindowSec,
         });
 
         if (!allowed) {
+          markOutcome("rate_limited");
           metricsRegistry.incCounter("forms_ingest_total", "429");
           return reply.code(429).send(errorPayload(requestId, "RATE_LIMITED", "demasiadas forms por minuto"));
         }
@@ -81,6 +103,7 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
           const result = await queue.enqueue(form);
 
           if (result.queueFull) {
+            markOutcome("backpressure");
             metricsRegistry.incCounter("forms_ingest_total", "503");
             return reply.code(503).send(errorPayload(requestId, "FORMS_BACKPRESSURE", "forms temporalmente saturado"));
           }
@@ -98,6 +121,7 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
         metricsRegistry.incCounter("forms_ingest_total", "202");
         const stats = queue.getStats();
         metricsRegistry.setGauge("forms_queue_depth", stats.depth);
+        markOutcome(queued > 0 ? "accepted" : "deduped");
 
         return reply.code(202).send({
           ok: true,
@@ -109,6 +133,9 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
       } catch (error) {
         const message = error instanceof Error ? error.message : "error desconocido";
         const status = message.includes("payload") ? 400 : 500;
+        if (status === 400) {
+          markOutcome("invalid_payload");
+        }
         metricsRegistry.incCounter("forms_ingest_total", String(status));
         app.log.error({ err: error, request_id: requestId }, "forms ingest failed");
         return reply.code(status).send(errorPayload(requestId, status === 400 ? "INVALID_PAYLOAD" : "INGEST_ERROR", status === 400 ? "payload invalido" : "error procesando formulario"));

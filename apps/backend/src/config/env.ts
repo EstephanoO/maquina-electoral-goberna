@@ -11,6 +11,8 @@ export type AppEnv = {
   logLevel: string;
   rateLimitMaxPerMinute: number;
   rateLimitFormsPerMinute: number;
+  rateLimitFormsIpPerMinute: number;
+  rateLimitFormsWindowSec: number;
   rateLimitAgentsLocationPerMinute: number;
   rateLimitAgentsLivePerMinute: number;
   rateLimitAgentsStreamPerMinute: number;
@@ -79,6 +81,8 @@ export function getEnv(): AppEnv {
     logLevel: process.env.LOG_LEVEL ?? "info",
     rateLimitMaxPerMinute: toNumber(process.env.RATE_LIMIT_MAX_PER_MINUTE, 500000),
     rateLimitFormsPerMinute: toNumber(process.env.RATE_LIMIT_FORMS_PER_MINUTE, 1200),
+    rateLimitFormsIpPerMinute: toNumber(process.env.RATE_LIMIT_FORMS_IP_PER_MINUTE, 12000),
+    rateLimitFormsWindowSec: toNumber(process.env.RATE_LIMIT_FORMS_WINDOW_SEC, 60),
     rateLimitAgentsLocationPerMinute: toNumber(process.env.RATE_LIMIT_AGENTS_LOCATION_PER_MINUTE, 12000),
     rateLimitAgentsLivePerMinute: toNumber(process.env.RATE_LIMIT_AGENTS_LIVE_PER_MINUTE, 3000),
     rateLimitAgentsStreamPerMinute: toNumber(process.env.RATE_LIMIT_AGENTS_STREAM_PER_MINUTE, 500),
