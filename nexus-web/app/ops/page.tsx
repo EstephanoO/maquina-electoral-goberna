@@ -67,6 +67,7 @@ type MetricsResponse = {
     {
       count: number;
       p50_ms: number;
+      p90_ms: number;
       p95_ms: number;
       p99_ms: number;
     }
@@ -261,6 +262,7 @@ export default function OpsDashboardPage() {
       route,
       count: value.count,
       p50: value.p50_ms,
+      p90: value.p90_ms,
       p95: value.p95_ms,
       p99: value.p99_ms,
     }));
@@ -444,6 +446,7 @@ export default function OpsDashboardPage() {
                   <th style={thStyle}>Ruta</th>
                   <th style={thStyle}>Count</th>
                   <th style={thStyle}>P50 ms</th>
+                  <th style={thStyle}>P90 ms</th>
                   <th style={thStyle}>P95 ms</th>
                   <th style={thStyle}>P99 ms</th>
                 </tr>
@@ -451,7 +454,7 @@ export default function OpsDashboardPage() {
               <tbody>
                 {latencyRows.length === 0 ? (
                   <tr>
-                    <td style={tdStyle} colSpan={5}>
+                    <td style={tdStyle} colSpan={6}>
                       Sin datos de latencia.
                     </td>
                   </tr>
@@ -461,6 +464,7 @@ export default function OpsDashboardPage() {
                       <td style={tdStyle}>{row.route}</td>
                       <td style={tdStyle}>{row.count}</td>
                       <td style={tdStyle}>{row.p50}</td>
+                      <td style={tdStyle}>{row.p90}</td>
                       <td style={tdStyle}>{row.p95}</td>
                       <td style={tdStyle}>{row.p99}</td>
                     </tr>
