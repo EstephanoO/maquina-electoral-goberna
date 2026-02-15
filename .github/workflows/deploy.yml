@@ -20,11 +20,11 @@ jobs:
 
       - name: Install backend dependencies
         run: bun install --frozen-lockfile
-        working-directory: backend
+        working-directory: apps/backend
 
       - name: Typecheck backend
         run: bunx tsc --noEmit
-        working-directory: backend
+        working-directory: apps/backend
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
@@ -82,7 +82,22 @@ jobs:
 
             PREVIOUS_COMMIT=$(git rev-parse HEAD)
 
+            assert_clean_repo() {
+              if ! git diff --quiet || ! git diff --cached --quiet; then
+                echo "[deploy] drift detectado: cambios tracked locales en VPS"
+                git status --short
+                return 1
+              fi
+
+              if [ -n "$(git ls-files --others --exclude-standard)" ]; then
+                echo "[deploy] drift detectado: archivos untracked en VPS"
+                git status --short
+                return 1
+              fi
+            }
+
             deploy_and_smoke() {
+              assert_clean_repo
               git fetch origin main
               git checkout main
               git pull --ff-only origin main
@@ -101,9 +116,14 @@ jobs:
 
               curl -fsS "http://127.0.0.1/api/health" >/dev/null
               curl -fsS "http://127.0.0.1/api/config" >/dev/null
+              curl -fsS "http://127.0.0.1/api/agents/health" >/dev/null
 
               payload='{"nombre":"Deploy Smoke","telefono":"999000001","fecha":"2026-02-14T20:10:00.000Z","x":279854,"y":8661420,"zona":"18S","candidate":"Deploy","encuestador":"CI","encuestador_id":"ci-deploy","candidato_preferido":"Deploy","client_id":"deploy-smoke-'"$(date +%s)"'"}'
               curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/forms" --data "$payload" >/dev/null
+
+              agent_payload='{"agent_id":"deploy-smoke-agent","ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","lat":-12.0464,"lng":-77.0428,"accuracy":8,"seq":1}'
+              curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload" >/dev/null
+              curl -fsS "http://127.0.0.1/api/agents/live" >/dev/null
 
               test -x scripts/backup.sh
               docker compose ps

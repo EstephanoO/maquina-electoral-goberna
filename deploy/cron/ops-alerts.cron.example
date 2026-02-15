@@ -1,0 +1,1 @@
+* * * * * cd /srv/app && /usr/bin/python3 scripts/ops/check_ops_alerts.py --api-base http://127.0.0.1 --state-file /var/lib/nexus/ops-alert-state.json >> /var/log/nexus/ops-alerts.log 2>&1

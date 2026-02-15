@@ -36,8 +36,11 @@ FRONTEND_ORIGINS=http://localhost:3000,https://maquina-electoral-goberna-web.ver
 REQUEST_TIMEOUT_MS=5000
 UPSTREAM_RETRIES=2
 LOG_LEVEL=info
-BACKEND_CONTEXT=./backend
+BACKEND_CONTEXT=./apps/backend
 BACKEND_DOCKERFILE=Dockerfile
+AGENT_STALE_AFTER_MS=120000
+AGENT_STREAM_HEARTBEAT_MS=25000
+AGENT_STREAM_BATCH_FLUSH_MS=200
 EOF
 
 docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" up -d --build --remove-orphans
@@ -51,19 +54,22 @@ done
 
 curl -fsS "http://127.0.0.1/api/health" >/dev/null
 curl -fsS "http://127.0.0.1/api/config" >/dev/null
+curl -fsS "http://127.0.0.1/api/agents/health" >/dev/null
 
 client_id="ci-$(date +%s)"
 payload="{\"nombre\":\"CI Test\",\"telefono\":\"999000000\",\"fecha\":\"2026-02-14T20:10:00.000Z\",\"x\":279854,\"y\":8661420,\"zona\":\"18S\",\"candidate\":\"Test\",\"encuestador\":\"CI\",\"encuestador_id\":\"ci-device\",\"candidato_preferido\":\"Test\",\"client_id\":\"${client_id}\"}"
 
 first_response="$(curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
 second_response="$(curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
+third_response="$(curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
 
-python3 - "$first_response" "$second_response" <<'PY'
+python3 - "$first_response" "$second_response" "$third_response" <<'PY'
 import json
 import sys
 
 first = json.loads(sys.argv[1])
 second = json.loads(sys.argv[2])
+third = json.loads(sys.argv[3])
 
 if not first.get("ok"):
     raise SystemExit("first forms post failed")
@@ -73,6 +79,109 @@ if not second.get("ok"):
 
 if second.get("deduped", 0) < 1:
     raise SystemExit("dedupe not working")
+
+if third.get("deduped", 0) < 1:
+    raise SystemExit("dedupe not working on third retry")
+PY
+
+agent_payload='{"agent_id":"ci-agent-001","ts":"2026-02-14T20:10:01.000Z","lat":-12.0464,"lng":-77.0428,"accuracy":9,"seq":1}'
+tracking_first="$(curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload")"
+tracking_second="$(curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload")"
+tracking_third="$(curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload")"
+
+agents_live="$(curl -fsS "http://127.0.0.1/api/agents/live")"
+agents_health="$(curl -fsS "http://127.0.0.1/api/agents/health")"
+
+python3 - "$tracking_first" "$tracking_second" "$tracking_third" "$agents_live" "$agents_health" <<'PY'
+import json
+import sys
+
+tracking_first = json.loads(sys.argv[1])
+tracking_second = json.loads(sys.argv[2])
+tracking_third = json.loads(sys.argv[3])
+live = json.loads(sys.argv[4])
+health = json.loads(sys.argv[5])
+
+if not tracking_first.get("accepted"):
+    raise SystemExit("tracking first insert failed")
+
+if not tracking_second.get("deduped"):
+    raise SystemExit("tracking second dedupe failed")
+
+if not tracking_third.get("deduped"):
+    raise SystemExit("tracking third dedupe failed")
+
+if not live.get("ok"):
+    raise SystemExit("agents live endpoint failed")
+
+if not isinstance(live.get("agents"), list):
+    raise SystemExit("agents live contract invalid")
+
+if not any(a.get("agent_id") == "ci-agent-001" for a in live["agents"]):
+    raise SystemExit("agent location not visible in live snapshot")
+
+if not health.get("ok"):
+    raise SystemExit("agents health endpoint failed")
+
+if health.get("service") != "agents-tracking":
+    raise SystemExit("agents health service invalid")
+
+if health.get("online_agents", 0) < 1:
+    raise SystemExit("agents health online count invalid")
+PY
+
+python3 <<'PY'
+import json
+import threading
+import time
+import urllib.request
+
+events = []
+stop = False
+
+def reader():
+    global stop
+    req = urllib.request.Request("http://127.0.0.1/api/agents/stream")
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        while not stop:
+            line = resp.readline().decode("utf-8", errors="ignore").strip()
+            if not line:
+                continue
+            if line.startswith("event:"):
+                events.append(line)
+            if len(events) >= 20:
+                break
+
+t = threading.Thread(target=reader, daemon=True)
+t.start()
+time.sleep(1)
+
+payload = {
+    "agent_id": "ci-agent-002",
+    "ts": "2026-02-14T20:10:05.000Z",
+    "lat": -12.0465,
+    "lng": -77.0429,
+    "accuracy": 8,
+    "seq": 2,
+}
+req = urllib.request.Request(
+    "http://127.0.0.1/api/agents/location",
+    data=json.dumps(payload).encode(),
+    headers={"Content-Type": "application/json"},
+    method="POST",
+)
+with urllib.request.urlopen(req, timeout=10) as resp:
+    if resp.status != 202:
+        raise SystemExit("tracking ingest failed for batch SSE test")
+
+time.sleep(2)
+stop = True
+
+if "event: location.batch" not in events:
+    raise SystemExit("location.batch not emitted")
+
+if "event: location.update" in events:
+    raise SystemExit("legacy location.update still emitted")
 PY
 
 echo "[smoke] backend contract ok"

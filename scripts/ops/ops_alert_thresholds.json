@@ -1,0 +1,28 @@
+{
+  "window_minutes": 10,
+  "persist_seconds": 300,
+  "min_requests": 200,
+  "forms_accepted": {
+    "warn": { "p95_ms": 320, "p99_ms": 380 },
+    "crit": { "p95_ms": 380, "p99_ms": 450 }
+  },
+  "tracking_accepted": {
+    "warn": { "p95_ms": 320, "p99_ms": 390 },
+    "crit": { "p95_ms": 380, "p99_ms": 450 }
+  },
+  "forms_rate_limited_ratio": {
+    "warn": 0.02,
+    "crit": 0.08,
+    "p1": 0.2
+  },
+  "queue": {
+    "forms": {
+      "warn": { "depth": 100, "flush_age_ms": 3000 },
+      "crit": { "depth": 300, "flush_age_ms": 10000 }
+    },
+    "tracking": {
+      "warn": { "depth": 150, "flush_age_ms": 3000 },
+      "crit": { "depth": 500, "flush_age_ms": 10000 }
+    }
+  }
+}

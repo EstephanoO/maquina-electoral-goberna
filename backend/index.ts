@@ -97,7 +97,7 @@ app.use(
   }),
 );
 
-async function fetchWithRetry(url: string): Promise<Response> {
+async function fetchWithRetry(url: string, init?: RequestInit): Promise<Response> {
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= UPSTREAM_RETRIES; attempt += 1) {
@@ -105,7 +105,7 @@ async function fetchWithRetry(url: string): Promise<Response> {
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const response = await fetch(url, { signal: controller.signal });
+      const response = await fetch(url, { ...init, signal: controller.signal });
       clearTimeout(timeoutId);
 
       if (response.status >= 500 && attempt < UPSTREAM_RETRIES) {
@@ -124,6 +124,13 @@ async function fetchWithRetry(url: string): Promise<Response> {
   }
 
   throw lastError ?? new Error("Error desconocido consultando upstream");
+}
+
+function parseTileParam(value: string, min: number, max: number): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < min || n > max) return null;
+  return n;
 }
 
 async function checkDatabase(): Promise<boolean> {
@@ -181,6 +188,147 @@ type FormInput = {
   polling_place_url?: string;
   comentarios?: string;
 };
+
+type AgentLocationInput = {
+  agent_id: string;
+  ts: string;
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  speed?: number;
+  heading?: number;
+  battery?: number;
+  seq?: number;
+};
+
+type AgentLiveState = {
+  agentId: string;
+  ts: string;
+  lat: number;
+  lng: number;
+  accuracy: number | null;
+  speed: number | null;
+  heading: number | null;
+  battery: number | null;
+  seq: number | null;
+  receivedAt: string;
+  lastSeenAtMs: number;
+};
+
+const AGENT_STALE_AFTER_MS = Number(process.env.AGENT_STALE_AFTER_MS ?? 120_000);
+const AGENT_STREAM_HEARTBEAT_MS = Number(process.env.AGENT_STREAM_HEARTBEAT_MS ?? 25_000);
+const AGENT_INGEST_TOKEN = (process.env.AGENT_INGEST_TOKEN ?? "").trim();
+
+const liveAgents = new Map<string, AgentLiveState>();
+const sseClients = new Map<number, express.Response>();
+let sseClientSeq = 0;
+
+function toOptionalFiniteNumber(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    throw new Error("campo invalido numerico");
+  }
+  return n;
+}
+
+function normalizeAgentLocation(raw: unknown): AgentLiveState {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("payload invalido");
+  }
+
+  const data = raw as Record<string, unknown>;
+  const agentId = toNonEmptyString(data.agent_id, "agent_id");
+  const ts = new Date(toNonEmptyString(data.ts, "ts"));
+  if (Number.isNaN(ts.getTime())) {
+    throw new Error("campo invalido: ts");
+  }
+
+  const lat = toNumber(data.lat, "lat");
+  const lng = toNumber(data.lng, "lng");
+  if (lat < -90 || lat > 90) throw new Error("campo invalido: lat");
+  if (lng < -180 || lng > 180) throw new Error("campo invalido: lng");
+
+  const accuracy = toOptionalFiniteNumber(data.accuracy);
+  const speed = toOptionalFiniteNumber(data.speed);
+  const heading = toOptionalFiniteNumber(data.heading);
+  const battery = toOptionalFiniteNumber(data.battery);
+  const seq = toOptionalFiniteNumber(data.seq);
+
+  if (accuracy !== null && accuracy < 0) throw new Error("campo invalido: accuracy");
+  if (speed !== null && speed < 0) throw new Error("campo invalido: speed");
+  if (heading !== null && (heading < 0 || heading >= 360)) throw new Error("campo invalido: heading");
+  if (battery !== null && (battery < 0 || battery > 100)) throw new Error("campo invalido: battery");
+  if (seq !== null && (!Number.isInteger(seq) || seq < 0)) throw new Error("campo invalido: seq");
+
+  return {
+    agentId,
+    ts: ts.toISOString(),
+    lat,
+    lng,
+    accuracy,
+    speed,
+    heading,
+    battery,
+    seq,
+    receivedAt: new Date().toISOString(),
+    lastSeenAtMs: Date.now(),
+  };
+}
+
+function serializeAgent(state: AgentLiveState): AgentLocationInput {
+  return {
+    agent_id: state.agentId,
+    ts: state.ts,
+    lat: state.lat,
+    lng: state.lng,
+    accuracy: state.accuracy ?? undefined,
+    speed: state.speed ?? undefined,
+    heading: state.heading ?? undefined,
+    battery: state.battery ?? undefined,
+    seq: state.seq ?? undefined,
+  };
+}
+
+function getLiveAgentsList(): AgentLocationInput[] {
+  const now = Date.now();
+  const output: AgentLocationInput[] = [];
+  for (const state of liveAgents.values()) {
+    if (now - state.lastSeenAtMs <= AGENT_STALE_AFTER_MS) {
+      output.push(serializeAgent(state));
+    }
+  }
+  return output;
+}
+
+function writeSseEvent(res: express.Response, event: string, payload: unknown) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function broadcastSse(event: string, payload: unknown) {
+  for (const res of sseClients.values()) {
+    writeSseEvent(res, event, payload);
+  }
+}
+
+const staleSweepTimer = setInterval(() => {
+  const now = Date.now();
+  const removed: string[] = [];
+
+  for (const [agentId, state] of liveAgents.entries()) {
+    if (now - state.lastSeenAtMs > AGENT_STALE_AFTER_MS) {
+      liveAgents.delete(agentId);
+      removed.push(agentId);
+    }
+  }
+
+  for (const agentId of removed) {
+    broadcastSse("agent.offline", { agent_id: agentId, ts: new Date().toISOString() });
+  }
+}, Math.max(5_000, Math.floor(AGENT_STALE_AFTER_MS / 2)));
+
+staleSweepTimer.unref();
 
 function toNonEmptyString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
@@ -348,6 +496,75 @@ app.post("/api/forms", async (req, res) => {
   }
 });
 
+app.get("/api/agents/live", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ ok: true, ts: new Date().toISOString(), agents: getLiveAgentsList() });
+});
+
+app.get("/api/agents/stream", (req, res) => {
+  res.status(200);
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  if (typeof res.flushHeaders === "function") {
+    res.flushHeaders();
+  }
+
+  const clientId = ++sseClientSeq;
+  sseClients.set(clientId, res);
+
+  res.write("retry: 5000\n\n");
+  writeSseEvent(res, "snapshot", { ts: new Date().toISOString(), agents: getLiveAgentsList() });
+
+  const heartbeatTimer = setInterval(() => {
+    res.write(`event: heartbeat\ndata: ${JSON.stringify({ ts: new Date().toISOString() })}\n\n`);
+  }, AGENT_STREAM_HEARTBEAT_MS);
+
+  const cleanup = () => {
+    clearInterval(heartbeatTimer);
+    sseClients.delete(clientId);
+  };
+
+  req.on("close", cleanup);
+  req.on("end", cleanup);
+  req.on("error", cleanup);
+});
+
+app.post("/api/agents/location", (req, res) => {
+  try {
+    if (AGENT_INGEST_TOKEN) {
+      const provided = (req.header("x-agent-token") ?? "").trim();
+      if (!provided || provided !== AGENT_INGEST_TOKEN) {
+        res.status(401).json({ ok: false, error: "token invalido" });
+        return;
+      }
+    }
+
+    const normalized = normalizeAgentLocation(req.body);
+    const previous = liveAgents.get(normalized.agentId);
+    if (previous && previous.seq !== null && normalized.seq !== null && normalized.seq <= previous.seq) {
+      res.status(200).json({ ok: true, deduped: true, accepted: false });
+      return;
+    }
+
+    liveAgents.set(normalized.agentId, normalized);
+
+    const payload = {
+      ts: normalized.receivedAt,
+      agents: [serializeAgent(normalized)],
+    };
+
+    broadcastSse("location.batch", payload);
+    res.status(202).json({ ok: true, accepted: true, server_ts: normalized.receivedAt });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "error desconocido";
+    const status = message.startsWith("campo invalido") || message === "payload invalido" ? 400 : 500;
+    logger.error("error recibiendo location agent", { message, status });
+    res.status(status).json({ ok: false, error: message });
+  }
+});
+
 app.get("/health/upstream", async (_req, res, next) => {
   try {
     const response = await fetchWithRetry(`${TEGOLA_BASE_URL}/capabilities`);
@@ -391,9 +608,43 @@ app.get("/api/capabilities", async (_req, res, next) => {
 app.get("/api/tiles/:z/:x/:y.vector.pbf", async (req, res, next) => {
   try {
     const { z, x, y } = req.params;
-    const targetUrl = `${TEGOLA_BASE_URL}/maps/${TEGOLA_MAP}/${z}/${x}/${y}.vector.pbf`;
+    const zNum = parseTileParam(z, 0, 22);
+    if (zNum === null) {
+      res.status(400).json({ ok: false, error: "z invalido" });
+      return;
+    }
 
-    const response = await fetchWithRetry(targetUrl);
+    const maxXY = 2 ** zNum - 1;
+    const xNum = parseTileParam(x, 0, maxXY);
+    const yNum = parseTileParam(y, 0, maxXY);
+    if (xNum === null || yNum === null) {
+      res.status(400).json({ ok: false, error: "x o y invalido" });
+      return;
+    }
+
+    const targetUrl = `${TEGOLA_BASE_URL}/maps/${TEGOLA_MAP}/${zNum}/${xNum}/${yNum}.vector.pbf`;
+
+    const upstreamHeaders: Record<string, string> = {};
+    const ifNoneMatch = req.header("if-none-match");
+    const ifModifiedSince = req.header("if-modified-since");
+    if (ifNoneMatch) upstreamHeaders["if-none-match"] = ifNoneMatch;
+    if (ifModifiedSince) upstreamHeaders["if-modified-since"] = ifModifiedSince;
+
+    const response = await fetchWithRetry(targetUrl, {
+      headers: upstreamHeaders,
+    });
+
+    if (response.status === 304) {
+      const upstreamEtag = response.headers.get("etag");
+      const upstreamLastModified = response.headers.get("last-modified");
+      const cacheControl = response.headers.get("cache-control") ?? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=600";
+
+      if (upstreamEtag) res.setHeader("ETag", upstreamEtag);
+      if (upstreamLastModified) res.setHeader("Last-Modified", upstreamLastModified);
+      res.setHeader("Cache-Control", cacheControl);
+      res.status(304).end();
+      return;
+    }
 
     if (!response.ok) {
       res.status(response.status).json({ error: "No se pudo obtener el tile de Tegola" });
@@ -402,10 +653,16 @@ app.get("/api/tiles/:z/:x/:y.vector.pbf", async (req, res, next) => {
 
     const arrayBuffer = await response.arrayBuffer();
     const contentType = response.headers.get("content-type") ?? "application/x-protobuf";
-    const cacheControl = response.headers.get("cache-control") ?? "public, max-age=86400, stale-while-revalidate=300";
+    const cacheControl = response.headers.get("cache-control") ?? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=600";
+    const etag = response.headers.get("etag");
+    const lastModified = response.headers.get("last-modified");
+    const contentLength = response.headers.get("content-length");
 
     res.setHeader("Content-Type", contentType);
     res.setHeader("Cache-Control", cacheControl);
+    if (etag) res.setHeader("ETag", etag);
+    if (lastModified) res.setHeader("Last-Modified", lastModified);
+    if (contentLength) res.setHeader("Content-Length", contentLength);
     res.send(Buffer.from(arrayBuffer));
   } catch (error) {
     next(error);
@@ -433,6 +690,7 @@ server.headersTimeout = 66_000;
 
 const shutdown = (signal: string) => {
   logger.warn("shutdown signal recibido", { signal });
+  clearInterval(staleSweepTimer);
   server.close((error) => {
     if (error) {
       logger.error("error cerrando servidor", { error: error.message });

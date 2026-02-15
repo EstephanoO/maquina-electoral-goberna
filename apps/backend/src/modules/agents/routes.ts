@@ -8,7 +8,7 @@ import { metricsRegistry } from "../../infra/metrics";
 import { loadAllLiveAgentLocations } from "./repository";
 import { agentLocationSchema } from "./schema";
 import { AgentsStore } from "./store";
-import type { AgentLiveState } from "./types";
+import type { AgentLiveState, AgentLocationInput } from "./types";
 import { AgentsWriteBehindQueue } from "./write-behind-queue";
 
 function toState(value: unknown): AgentLiveState {
@@ -32,9 +32,14 @@ function toState(value: unknown): AgentLiveState {
   };
 }
 
-function writeSseEvent(res: ServerResponse, event: string, payload: unknown) {
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+function writeSseEvent(res: ServerResponse, event: string, payload: unknown): boolean {
+  try {
+    const okEvent = res.write(`event: ${event}\n`);
+    const okData = res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    return okEvent && okData;
+  } catch {
+    return false;
+  }
 }
 
 export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
@@ -62,12 +67,45 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
     const clients = new Map<number, ServerResponse>();
     let clientSeq = 0;
     let lastIngestAtMs: number | null = null;
+    const pendingBatchByAgent = new Map<string, AgentLocationInput>();
 
-    const broadcast = (event: string, payload: unknown) => {
-      for (const client of clients.values()) {
-        writeSseEvent(client, event, payload);
+    const pruneSlowClients = (entries: Array<[number, ServerResponse]>) => {
+      for (const [clientId, client] of entries) {
+        try {
+          client.end();
+        } catch {
+          // ignore close errors
+        }
+        clients.delete(clientId);
       }
     };
+
+    const broadcast = (event: string, payload: unknown) => {
+      const toPrune: Array<[number, ServerResponse]> = [];
+      for (const entry of clients.entries()) {
+        const [clientId, client] = entry;
+        const writable = writeSseEvent(client, event, payload);
+        if (!writable) {
+          toPrune.push([clientId, client]);
+        }
+      }
+      if (toPrune.length > 0) {
+        pruneSlowClients(toPrune);
+      }
+    };
+
+    const batchFlushTimer = setInterval(() => {
+      if (pendingBatchByAgent.size === 0) return;
+      const agents = Array.from(pendingBatchByAgent.values());
+      pendingBatchByAgent.clear();
+      broadcast("location.batch", { ts: new Date().toISOString(), agents });
+    }, env.agentStreamBatchFlushMs);
+    batchFlushTimer.unref();
+
+    const heartbeatTimer = setInterval(() => {
+      broadcast("heartbeat", { ts: new Date().toISOString() });
+    }, env.agentStreamHeartbeatMs);
+    heartbeatTimer.unref();
 
     const staleSweepTimer = setInterval(() => {
       const removed = store.removeStale();
@@ -86,6 +124,8 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
     staleSweepTimer.unref();
 
     app.addHook("onClose", async () => {
+      clearInterval(batchFlushTimer);
+      clearInterval(heartbeatTimer);
       clearInterval(staleSweepTimer);
       queue.stop();
       await queue.drain();
@@ -161,12 +201,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
         reply.raw.write("retry: 5000\n\n");
         writeSseEvent(reply.raw, "snapshot", { ts: new Date().toISOString(), agents: store.listLive() });
 
-        const heartbeatTimer = setInterval(() => {
-          writeSseEvent(reply.raw, "heartbeat", { ts: new Date().toISOString() });
-        }, env.agentStreamHeartbeatMs);
-
         const cleanup = () => {
-          clearInterval(heartbeatTimer);
           clients.delete(clientId);
         };
 
@@ -252,13 +287,10 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
 
           store.upsert(next);
 
-          const payload = {
-            agent: store.serialize(next),
-            server_ts: next.receivedAt,
-          };
+          const agent = store.serialize(next);
 
           lastIngestAtMs = Date.now();
-          broadcast("location.update", payload);
+          pendingBatchByAgent.set(agent.agent_id, agent);
           markOutcome("accepted");
           metricsRegistry.incCounter("tracking_ingest_total", "202");
           app.log.info({ request_id: requestId, agent_id: next.agentId, seq: next.seq }, "tracking accepted");

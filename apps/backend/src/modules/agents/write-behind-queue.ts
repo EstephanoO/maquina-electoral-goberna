@@ -66,6 +66,7 @@ export class AgentsWriteBehindQueue {
   private lastFlushDurationMs: number | null = null;
   private lastFlushAttempted = 0;
   private lastFlushAccepted = 0;
+  private lastDepthSampleAtMs = 0;
 
   constructor(options: QueueOptions) {
     this.maxQueue = options.maxQueue;
@@ -86,7 +87,7 @@ export class AgentsWriteBehindQueue {
   async start() {
     if (this.running) return;
     await ensureConsumerGroup(this.streamKey, this.streamGroup);
-    this.depth = await getStreamLag(this.streamKey, this.streamGroup);
+    await this.refreshDepth(true);
     this.running = true;
     void this.consumeLoop();
   }
@@ -107,11 +108,10 @@ export class AgentsWriteBehindQueue {
   }
 
   async enqueue(state: AgentLiveState): Promise<EnqueueResult> {
-    const currentDepth = await getStreamLag(this.streamKey, this.streamGroup);
-    this.depth = currentDepth;
+    await this.refreshDepth(false);
     metricsRegistry.setGauge("tracking_queue_depth", this.depth);
 
-    if (currentDepth >= this.maxQueue) {
+    if (this.depth >= this.maxQueue) {
       metricsRegistry.incCounter("tracking_queue_enqueue_total", "queue_full");
       return { queued: false, deduped: false, queueFull: true };
     }
@@ -185,7 +185,7 @@ export class AgentsWriteBehindQueue {
     }
 
     if (streamMessages.length === 0) {
-      this.depth = await getStreamLag(this.streamKey, this.streamGroup);
+      await this.refreshDepth(false);
       metricsRegistry.setGauge("tracking_queue_depth", this.depth);
       return;
     }
@@ -228,7 +228,7 @@ export class AgentsWriteBehindQueue {
       this.lastFlushAccepted = result.accepted;
       this.lastFlushAtMs = Date.now();
       this.lastFlushDurationMs = this.lastFlushAtMs - startedAt;
-      this.depth = await getStreamLag(this.streamKey, this.streamGroup);
+      await this.refreshDepth(true);
 
       metricsRegistry.incCounter("tracking_queue_flush_total", "ok");
       metricsRegistry.incCounter("tracking_queue_rows_total", "attempted", result.attempted);
@@ -272,5 +272,14 @@ export class AgentsWriteBehindQueue {
     } finally {
       this.flushing = false;
     }
+  }
+
+  private async refreshDepth(force: boolean) {
+    const now = Date.now();
+    if (!force && now - this.lastDepthSampleAtMs < 2000) {
+      return;
+    }
+    this.depth = await getStreamLag(this.streamKey, this.streamGroup);
+    this.lastDepthSampleAtMs = now;
   }
 }

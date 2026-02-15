@@ -23,6 +23,7 @@ export type AppEnv = {
   agentIngestToken: string;
   agentStaleAfterMs: number;
   agentStreamHeartbeatMs: number;
+  agentStreamBatchFlushMs: number;
   trackingWriteBehindBatchSize: number;
   trackingWriteBehindFlushMs: number;
   trackingWriteBehindMaxQueue: number;
@@ -93,6 +94,7 @@ export function getEnv(): AppEnv {
     agentIngestToken: (process.env.AGENT_INGEST_TOKEN ?? "").trim(),
     agentStaleAfterMs: toNumber(process.env.AGENT_STALE_AFTER_MS, 120000),
     agentStreamHeartbeatMs: toNumber(process.env.AGENT_STREAM_HEARTBEAT_MS, 25000),
+    agentStreamBatchFlushMs: toNumber(process.env.AGENT_STREAM_BATCH_FLUSH_MS, 200),
     trackingWriteBehindBatchSize: toNumber(process.env.TRACKING_WB_BATCH_SIZE, 300),
     trackingWriteBehindFlushMs: toNumber(process.env.TRACKING_WB_FLUSH_MS, 250),
     trackingWriteBehindMaxQueue: toNumber(process.env.TRACKING_WB_MAX_QUEUE, 10000),

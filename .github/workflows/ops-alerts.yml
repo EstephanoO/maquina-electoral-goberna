@@ -1,0 +1,24 @@
+name: Ops Alerts Check
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ops-alerts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run alert checks on VPS
+        uses: appleboy/ssh-action@v1.2.1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: deploy
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script_stop: false
+          script: |
+            set -euo pipefail
+            cd /srv/app
+            export OPS_ALERT_WEBHOOK_URL="${{ secrets.OPS_ALERT_WEBHOOK_URL }}"
+            python3 scripts/ops/check_ops_alerts.py --api-base http://127.0.0.1 --state-file /var/lib/nexus/ops-alert-state.json

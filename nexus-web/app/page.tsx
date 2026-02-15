@@ -42,9 +42,9 @@ type AgentSnapshotResponse = {
   agents?: AgentLocation[];
 };
 
-type AgentEventPayload = {
-  agent?: AgentLocation;
-  server_ts?: string;
+type AgentBatchEventPayload = {
+  ts?: string;
+  agents?: AgentLocation[];
 };
 
 type AgentHealthResponse = {
@@ -198,6 +198,7 @@ const DEFAULT_TILE_TEMPLATE = "/api/tiles/{z}/{x}/{y}.vector.pbf";
 export default function Home() {
   const mapRef = useRef<MapRef | null>(null);
   const hoveredFeatureRef = useRef<HoveredFeature | null>(null);
+  const pulseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const apiBase = sanitizeApiBase(process.env.NEXT_PUBLIC_MAP_API_BASE ?? "");
   const [status, setStatus] = useState("checking");
@@ -211,13 +212,15 @@ export default function Home() {
   const [selectedDepBounds, setSelectedDepBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [selectedProvBounds, setSelectedProvBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [agentLocations, setAgentLocations] = useState<Record<string, AgentLocation>>({});
+  const [agentTrails, setAgentTrails] = useState<Record<string, Array<[number, number]>>>({});
+  const [movementPulse, setMovementPulse] = useState<Record<string, boolean>>({});
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentFeedState, setAgentFeedState] = useState<"connecting" | "live" | "error">("connecting");
   const [agentsHealth, setAgentsHealth] = useState<AgentHealthResponse | null>(null);
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
 
   const healthUrl = apiBase ? `${apiBase}/api/health` : "/api/health";
   const configUrl = apiBase ? `${apiBase}/api/config` : "/api/config";
-  const agentsSnapshotUrl = apiBase ? `${apiBase}/api/agents/live` : "/api/agents/live";
   const agentsStreamUrl = apiBase ? `${apiBase}/api/agents/stream` : "/api/agents/stream";
   const agentsHealthUrl = apiBase ? `${apiBase}/api/agents/health` : "/api/agents/health";
   const metricsUrl = apiBase ? `${apiBase}/api/metrics` : "/api/metrics";
@@ -247,6 +250,8 @@ export default function Home() {
         properties: {
           agent_id: agent.agent_id,
           ts: agent.ts,
+          is_recent: movementPulse[agent.agent_id] ? 1 : 0,
+          is_selected: selectedAgentId === agent.agent_id ? 1 : 0,
         },
         geometry: {
           type: "Point" as const,
@@ -254,7 +259,47 @@ export default function Home() {
         },
       })),
     }),
-    [agentLocations],
+    [agentLocations, movementPulse, selectedAgentId],
+  );
+
+  const connectedAgents = useMemo(() => {
+    return Object.values(agentLocations)
+      .sort((a, b) => a.agent_id.localeCompare(b.agent_id))
+      .map((agent) => ({
+        id: agent.agent_id,
+        lat: agent.lat,
+        lng: agent.lng,
+        ts: agent.ts,
+      }));
+  }, [agentLocations]);
+
+  const focusAgent = useCallback((agentId: string) => {
+    const agent = agentLocations[agentId];
+    if (!agent) return;
+    setSelectedAgentId(agentId);
+    mapRef.current?.flyTo({
+      center: [agent.lng, agent.lat],
+      zoom: 14,
+      duration: 700,
+    });
+  }, [agentLocations]);
+
+  const agentTrailsGeoJson = useMemo(
+    () => ({
+      type: "FeatureCollection" as const,
+      features: Object.entries(agentTrails)
+        .filter(([, points]) => points.length > 1)
+        .map(([agentId, points]) => ({
+          type: "Feature" as const,
+          id: agentId,
+          properties: { agent_id: agentId },
+          geometry: {
+            type: "LineString" as const,
+            coordinates: points,
+          },
+        })),
+    }),
+    [agentTrails],
   );
 
   const clearHoverState = useCallback(() => {
@@ -455,38 +500,98 @@ export default function Home() {
   }, [configUrl, healthUrl]);
 
   useEffect(() => {
-    const controller = new AbortController();
     let eventSource: EventSource | null = null;
-    let disposed = false;
 
     const applySnapshot = (items: AgentLocation[]) => {
       const nextState: Record<string, AgentLocation> = {};
+      const nextTrails: Record<string, Array<[number, number]>> = {};
       for (const item of items) {
         if (!isValidAgentLocation(item)) continue;
         nextState[item.agent_id] = item;
+        nextTrails[item.agent_id] = [[item.lng, item.lat]];
       }
       setAgentLocations(nextState);
+      setAgentTrails(nextTrails);
+      setMovementPulse({});
+    };
+
+    const schedulePulse = (agentId: string) => {
+      const existing = pulseTimersRef.current[agentId];
+      if (existing) {
+        clearTimeout(existing);
+      }
+      setMovementPulse((prev) => ({ ...prev, [agentId]: true }));
+      pulseTimersRef.current[agentId] = setTimeout(() => {
+        setMovementPulse((prev) => {
+          if (!prev[agentId]) return prev;
+          const next = { ...prev };
+          delete next[agentId];
+          return next;
+        });
+        delete pulseTimersRef.current[agentId];
+      }, 8000);
+    };
+
+    const applyLocationBatch = (items: AgentLocation[]) => {
+      if (items.length === 0) return;
+
+      setAgentLocations((prev) => {
+        const nextLocations = { ...prev };
+        const movedAgentIds: string[] = [];
+
+        for (const item of items) {
+          const current = nextLocations[item.agent_id];
+          if (current && typeof current.seq === "number" && typeof item.seq === "number" && item.seq <= current.seq) {
+            continue;
+          }
+
+          const moved = !current || current.lat !== item.lat || current.lng !== item.lng;
+          if (moved) {
+            movedAgentIds.push(item.agent_id);
+          }
+
+          nextLocations[item.agent_id] = item;
+        }
+
+        if (movedAgentIds.length > 0) {
+          setMovementPulse((prevPulse) => {
+            const nextPulse = { ...prevPulse };
+            for (const agentId of movedAgentIds) {
+              const existing = pulseTimersRef.current[agentId];
+              if (existing) clearTimeout(existing);
+              nextPulse[agentId] = true;
+              pulseTimersRef.current[agentId] = setTimeout(() => {
+                setMovementPulse((prevValue) => {
+                  if (!prevValue[agentId]) return prevValue;
+                  const out = { ...prevValue };
+                  delete out[agentId];
+                  return out;
+                });
+                delete pulseTimersRef.current[agentId];
+              }, 8000);
+            }
+            return nextPulse;
+          });
+
+          setAgentTrails((prevTrails) => {
+            const nextTrails = { ...prevTrails };
+            for (const agentId of movedAgentIds) {
+              const latest = nextLocations[agentId];
+              if (!latest) continue;
+              const prevPoints = nextTrails[agentId] ?? [];
+              nextTrails[agentId] = [...prevPoints, [latest.lng, latest.lat] as [number, number]].slice(-8);
+            }
+            return nextTrails;
+          });
+        }
+
+        return nextLocations;
+      });
     };
 
     const connect = async () => {
       try {
         setAgentFeedState("connecting");
-
-        const response = await fetch(agentsSnapshotUrl, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error("snapshot no disponible");
-        }
-
-        const snapshot = (await response.json()) as AgentSnapshotResponse;
-        if (Array.isArray(snapshot.agents)) {
-          applySnapshot(snapshot.agents);
-        }
-
-        if (disposed) return;
 
         eventSource = new EventSource(agentsStreamUrl);
 
@@ -505,15 +610,12 @@ export default function Home() {
           }
         });
 
-        eventSource.addEventListener("location.update", (event) => {
+        eventSource.addEventListener("location.batch", (event) => {
           try {
-            const payload = JSON.parse((event as MessageEvent).data) as AgentEventPayload;
-            const next = payload.agent;
-            if (!isValidAgentLocation(next)) return;
-            setAgentLocations((prev) => ({
-              ...prev,
-              [next.agent_id]: next,
-            }));
+            const payload = JSON.parse((event as MessageEvent).data) as AgentBatchEventPayload;
+            if (!Array.isArray(payload.agents)) return;
+            const validItems = payload.agents.filter(isValidAgentLocation);
+            applyLocationBatch(validItems);
           } catch {
             setAgentFeedState("error");
           }
@@ -528,6 +630,21 @@ export default function Home() {
               delete next[payload.agent_id as string];
               return next;
             });
+            setAgentTrails((prev) => {
+              const next = { ...prev };
+              delete next[payload.agent_id as string];
+              return next;
+            });
+            setMovementPulse((prev) => {
+              const next = { ...prev };
+              delete next[payload.agent_id as string];
+              return next;
+            });
+            const timer = pulseTimersRef.current[payload.agent_id as string];
+            if (timer) {
+              clearTimeout(timer);
+              delete pulseTimersRef.current[payload.agent_id as string];
+            }
           } catch {
             setAgentFeedState("error");
           }
@@ -547,11 +664,13 @@ export default function Home() {
     void connect();
 
     return () => {
-      disposed = true;
-      controller.abort();
       eventSource?.close();
+      for (const timer of Object.values(pulseTimersRef.current)) {
+        clearTimeout(timer);
+      }
+      pulseTimersRef.current = {};
     };
-  }, [agentsSnapshotUrl, agentsStreamUrl]);
+  }, [agentsStreamUrl]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -579,8 +698,9 @@ export default function Home() {
 
     void pollOps();
     const timer = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
       void pollOps();
-    }, 10000);
+    }, 30000);
 
     return () => {
       clearInterval(timer);
@@ -724,13 +844,42 @@ export default function Home() {
           </Source>
         ) : null}
 
+        <Source id="agents-trails" type="geojson" data={agentTrailsGeoJson}>
+          <Layer
+            id="agents-trails-line"
+            type="line"
+            paint={{
+              "line-color": "#f97316",
+              "line-opacity": 0.7,
+              "line-width": 2,
+            }}
+          />
+        </Source>
+
         <Source id="agents-live" type="geojson" data={agentsGeoJson}>
+          <Layer
+            id="agents-live-pulse"
+            type="circle"
+            paint={{
+              "circle-color": "#fb923c",
+              "circle-radius": ["case", ["==", ["get", "is_recent"], 1], 12, 0],
+              "circle-opacity": ["case", ["==", ["get", "is_recent"], 1], 0.25, 0],
+              "circle-stroke-width": 0,
+            }}
+          />
           <Layer
             id="agents-live-circle"
             type="circle"
             paint={{
-              "circle-color": "#ef4444",
-              "circle-radius": 6,
+              "circle-color": [
+                "case",
+                ["==", ["get", "is_selected"], 1],
+                "#0ea5e9",
+                ["==", ["get", "is_recent"], 1],
+                "#f97316",
+                "#ef4444",
+              ],
+              "circle-radius": ["case", ["==", ["get", "is_selected"], 1], 9, ["==", ["get", "is_recent"], 1], 7, 6],
               "circle-stroke-color": "#ffffff",
               "circle-stroke-width": 2,
               "circle-opacity": 0.92,
@@ -794,6 +943,54 @@ export default function Home() {
             Ir al dashboard de observabilidad
           </a>
         </p>
+      </section>
+
+      <section
+        style={{
+          width: "min(320px, 86vw)",
+          maxHeight: "min(65vh, 540px)",
+          overflowY: "auto",
+          padding: "12px",
+          borderRadius: "12px",
+          background: "#ffffff",
+          border: "1px solid #cbd5e1",
+          position: "absolute",
+          top: "14px",
+          right: "14px",
+          boxShadow: "0 8px 20px rgba(15, 23, 42, 0.08)",
+        }}
+      >
+        <h2 style={{ margin: 0, fontSize: "14px" }}>Agentes conectados ({connectedAgents.length})</h2>
+        <p style={{ margin: "6px 0 10px", fontSize: "12px", color: "#475569" }}>Click para centrar y hacer zoom al punto.</p>
+        {connectedAgents.length === 0 ? (
+          <p style={{ margin: 0, color: "#64748b", fontSize: "13px" }}>Sin agentes online.</p>
+        ) : (
+          <div style={{ display: "grid", gap: "6px" }}>
+            {connectedAgents.map((agent) => {
+              const selected = agent.id === selectedAgentId;
+              return (
+                <button
+                  key={agent.id}
+                  type="button"
+                  onClick={() => focusAgent(agent.id)}
+                  style={{
+                    textAlign: "left",
+                    borderRadius: "8px",
+                    border: selected ? "1px solid #0284c7" : "1px solid #e2e8f0",
+                    background: selected ? "#e0f2fe" : "#f8fafc",
+                    padding: "8px 10px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>{agent.id}</div>
+                  <div style={{ fontSize: "12px", color: "#475569" }}>
+                    {agent.lat.toFixed(5)}, {agent.lng.toFixed(5)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </section>
     </main>
   );
