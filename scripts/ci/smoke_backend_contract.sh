@@ -22,11 +22,12 @@ NGINX_TEMPLATE=default.http.conf.template
 TZ=UTC
 POSTGRES_DB=appdb
 POSTGRES_USER=appuser
-POSTGRES_PASSWORD=appsecret_ci_123456789
-DATABASE_URL=postgresql://appuser:appsecret_ci_123456789@postgres:5432/appdb
-REDIS_PASSWORD=redissecret_ci_123456789
-REDIS_URL=redis://:redissecret_ci_123456789@redis:6379
-JWT_SECRET=jwtsecret_ci_123456789
+POSTGRES_PASSWORD=ci_pass_local
+DATABASE_URL=postgresql://appuser:ci_pass_local@postgres:5432/appdb
+REDIS_PASSWORD=ci_redis_local
+REDIS_URL=redis://:ci_redis_local@redis:6379
+JWT_SECRET=ci_jwt_local
+AGENT_INGEST_TOKEN=ci_agent_token_local
 BACKUP_DIR=/tmp/backups
 BACKUP_RETENTION_DAYS=7
 BACKEND_PORT=3000
@@ -85,9 +86,9 @@ if third.get("deduped", 0) < 1:
 PY
 
 agent_payload='{"agent_id":"ci-agent-001","ts":"2026-02-14T20:10:01.000Z","lat":-12.0464,"lng":-77.0428,"accuracy":9,"seq":1}'
-tracking_first="$(curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload")"
-tracking_second="$(curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload")"
-tracking_third="$(curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload")"
+tracking_first="$(curl -fsS -H "Content-Type: application/json" -H "x-agent-token: ci_agent_token_local" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload")"
+tracking_second="$(curl -fsS -H "Content-Type: application/json" -H "x-agent-token: ci_agent_token_local" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload")"
+tracking_third="$(curl -fsS -H "Content-Type: application/json" -H "x-agent-token: ci_agent_token_local" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload")"
 
 agents_live="$(curl -fsS "http://127.0.0.1/api/agents/live")"
 agents_health="$(curl -fsS "http://127.0.0.1/api/agents/health")"
@@ -167,7 +168,7 @@ payload = {
 req = urllib.request.Request(
     "http://127.0.0.1/api/agents/location",
     data=json.dumps(payload).encode(),
-    headers={"Content-Type": "application/json"},
+    headers={"Content-Type": "application/json", "x-agent-token": "ci_agent_token_local"},
     method="POST",
 )
 with urllib.request.urlopen(req, timeout=10) as resp:
