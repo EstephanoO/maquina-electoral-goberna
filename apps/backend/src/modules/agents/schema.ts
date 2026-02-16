@@ -10,4 +10,5 @@ export const agentLocationSchema = z.object({
   heading: z.number().finite().min(0).max(359.999).optional(),
   battery: z.number().finite().min(0).max(100).optional(),
   seq: z.number().int().nonnegative(),
+  campaign_id: z.string().uuid().optional(),
 });

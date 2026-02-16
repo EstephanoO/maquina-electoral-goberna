@@ -1,5 +1,7 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 
+import type { AuthenticatedRequest } from "../../infra/auth";
+import { authorize } from "../../infra/authorize";
 import type { AppEnv } from "../../config/env";
 import { errorPayload } from "../../infra/http";
 import type { IngestOutcome } from "../../infra/metrics";
@@ -74,6 +76,16 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
       try {
         const forms = parseFormsPayload(request.body);
 
+        // Inject campaign_id from auth context when available
+        const campaignId = (request as AuthenticatedRequest).userId
+          ? request.activeCampaignId
+          : undefined;
+        if (campaignId) {
+          for (const form of forms) {
+            form.campaign_id = campaignId;
+          }
+        }
+
         if (forms.length > env.formsBatchRequestLimit) {
           markOutcome("invalid_payload");
           metricsRegistry.incCounter("forms_ingest_total", "413");
@@ -144,13 +156,13 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
 
     app.post(
       "/api/forms",
-      {},
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
       async (request, reply) => enqueueForms(request, reply),
     );
 
     app.post(
       "/api/forms/batch",
-      {},
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
       async (request, reply) => enqueueForms(request, reply),
     );
   };

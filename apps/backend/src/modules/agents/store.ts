@@ -68,6 +68,7 @@ export class AgentsStore {
       heading: state.heading ?? undefined,
       battery: state.battery ?? undefined,
       seq: state.seq,
+      campaign_id: state.campaignId ?? undefined,
     };
   }
 }

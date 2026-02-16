@@ -5,12 +5,16 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 
 import type { AppEnv } from "./config/env";
+import { registerAuthDecorator } from "./infra/auth";
 import { errorPayload } from "./infra/http";
 import type { IngestDomain, IngestOutcome } from "./infra/metrics";
 import { metricsRegistry } from "./infra/metrics";
 import { buildAgentsRoutes } from "./modules/agents/routes";
+import { buildAuthRoutes } from "./modules/auth/routes";
 import { buildFormsRoutes } from "./modules/forms/routes";
 import { buildHealthRoutes } from "./modules/health/routes";
+import { buildCampaignsRoutes } from "./modules/campaigns/routes";
+import { buildAccessRequestsRoutes } from "./modules/access-requests/routes";
 import { buildMapRoutes } from "./modules/map/routes";
 
 export function buildApp(env: AppEnv) {
@@ -98,12 +102,18 @@ export function buildApp(env: AppEnv) {
     done();
   });
 
+  // Auth decorator (must be before routes that use app.authenticate)
+  registerAuthDecorator(app, env.jwtSecret);
+
   app.register(buildHealthRoutes(env));
+  app.register(buildAuthRoutes(env));
   app.register(buildFormsRoutes(env));
   app.register(buildMapRoutes(env));
   app.register(buildAgentsRoutes(env));
+  app.register(buildCampaignsRoutes(env));
+  app.register(buildAccessRequestsRoutes(env));
 
-  app.get("/api/metrics", async (_request, reply) => {
+  app.get("/api/metrics", { preHandler: [app.authenticate] }, async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
     return {
       ok: true,

@@ -8,6 +8,7 @@ export type AgentLocationInput = {
   heading?: number;
   battery?: number;
   seq: number;
+  campaign_id?: string;
 };
 
 export type AgentLiveState = {
@@ -20,6 +21,7 @@ export type AgentLiveState = {
   heading: number | null;
   battery: number | null;
   seq: number;
+  campaignId: string | null;
   receivedAt: string;
   lastSeenAtMs: number;
 };

@@ -1,0 +1,101 @@
+import type { Pool } from "pg";
+
+import type { RefreshTokenRow, UserCampaignRow, UserRow } from "./types";
+
+export class AuthRepository {
+  constructor(private pool: Pool) {}
+
+  async findUserByEmail(email: string): Promise<UserRow | null> {
+    const { rows } = await this.pool.query<UserRow>(
+      `SELECT id, email, password_hash, full_name, role, status, created_at, updated_at
+       FROM users WHERE lower(email) = lower($1)`,
+      [email.trim()],
+    );
+    return rows[0] ?? null;
+  }
+
+  async findUserById(userId: string): Promise<UserRow | null> {
+    const { rows } = await this.pool.query<UserRow>(
+      `SELECT id, email, password_hash, full_name, role, status, created_at, updated_at
+       FROM users WHERE id = $1`,
+      [userId],
+    );
+    return rows[0] ?? null;
+  }
+
+  async createUser(email: string, passwordHash: string, fullName: string, role = "agent", status = "active"): Promise<UserRow> {
+    const { rows } = await this.pool.query<UserRow>(
+      `INSERT INTO users (email, password_hash, full_name, role, status)
+       VALUES (lower($1), $2, $3, $4, $5)
+       RETURNING id, email, password_hash, full_name, role, status, created_at, updated_at`,
+      [email.trim(), passwordHash, fullName, role, status],
+    );
+    return rows[0]!;
+  }
+
+  async getUserCampaigns(userId: string): Promise<UserCampaignRow[]> {
+    const { rows } = await this.pool.query(
+      `SELECT c.id AS campaign_id, c.name AS campaign_name, c.slug AS campaign_slug,
+              c.config AS campaign_config, uc.role
+       FROM user_campaigns uc
+       JOIN campaigns c ON c.id = uc.campaign_id
+       WHERE uc.user_id = $1 AND uc.status = 'active' AND c.status = 'active'`,
+      [userId],
+    );
+    return rows as UserCampaignRow[];
+  }
+
+  async saveRefreshToken(userId: string, tokenHash: string, familyId: string, expiresAt: Date): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO refresh_tokens (user_id, token_hash, family_id, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [userId, tokenHash, familyId, expiresAt],
+    );
+  }
+
+  async findRefreshTokenByHash(tokenHash: string): Promise<RefreshTokenRow | null> {
+    const { rows } = await this.pool.query<RefreshTokenRow>(
+      `SELECT id, user_id, token_hash, family_id, expires_at, revoked_at, created_at
+       FROM refresh_tokens WHERE token_hash = $1`,
+      [tokenHash],
+    );
+    return rows[0] ?? null;
+  }
+
+  async revokeRefreshToken(tokenId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1`,
+      [tokenId],
+    );
+  }
+
+  async revokeTokenFamily(familyId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE refresh_tokens SET revoked_at = now()
+       WHERE family_id = $1 AND revoked_at IS NULL`,
+      [familyId],
+    );
+  }
+
+  async updatePasswordHash(userId: string, passwordHash: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2`,
+      [passwordHash, userId],
+    );
+  }
+
+  async revokeAllUserRefreshTokens(userId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE refresh_tokens SET revoked_at = now()
+       WHERE user_id = $1 AND revoked_at IS NULL`,
+      [userId],
+    );
+  }
+
+  async cleanExpiredTokens(): Promise<number> {
+    const result = await this.pool.query(
+      `DELETE FROM refresh_tokens WHERE expires_at < now()`,
+    );
+    return result.rowCount ?? 0;
+  }
+}

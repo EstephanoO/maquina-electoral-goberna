@@ -15,6 +15,7 @@ export const formSchema = z.object({
   home_maps_url: z.string().trim().optional(),
   polling_place_url: z.string().trim().optional(),
   comentarios: z.string().trim().optional(),
+  campaign_id: z.string().uuid().optional(),
 });
 
 export type FormInput = z.infer<typeof formSchema>;

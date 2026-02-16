@@ -1,0 +1,138 @@
+/**
+ * RBAC authorization middleware for Fastify.
+ * Builds on the auth decorator (userId, userEmail, userRole, campaignIds).
+ * Provides role-based access control and campaign-scoped authorization.
+ */
+import type { FastifyReply, FastifyRequest } from "fastify";
+
+import type { AuthenticatedRequest } from "./auth";
+import { errorPayload } from "./http";
+
+// ── Type augmentation ───────────────────────────────────────────────
+declare module "fastify" {
+  interface FastifyRequest {
+    activeCampaignId?: string;
+  }
+}
+
+// ── Role hierarchy ──────────────────────────────────────────────────
+type Role = "admin" | "supervisor" | "agent";
+
+const ROLE_HIERARCHY: Record<Role, number> = {
+  admin: 30,
+  supervisor: 20,
+  agent: 10,
+};
+
+// ── Options ─────────────────────────────────────────────────────────
+export type AuthorizeOptions = {
+  /** Minimum roles allowed. Roles hierarchy: admin > supervisor > agent */
+  roles?: Role[];
+  /** If true, checks that the request includes a campaign_id and user has access */
+  requireCampaign?: boolean;
+};
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+function isValidRole(role: string): role is Role {
+  return role in ROLE_HIERARCHY;
+}
+
+/**
+ * Resolve the minimum required level from the allowed roles array.
+ * e.g. roles: ['supervisor', 'agent'] → min level is agent (10),
+ * meaning supervisor and admin also pass.
+ */
+function minLevelFromRoles(roles: Role[]): number {
+  return Math.min(...roles.map((r) => ROLE_HIERARCHY[r]));
+}
+
+function extractCampaignId(request: FastifyRequest): string | undefined {
+  // 1. Header
+  const fromHeader = request.headers["x-campaign-id"];
+  if (typeof fromHeader === "string" && fromHeader.length > 0) return fromHeader;
+
+  // 2. Route param
+  const fromParam = (request.params as Record<string, string>)?.campaignId;
+  if (typeof fromParam === "string" && fromParam.length > 0) return fromParam;
+
+  // 3. Body
+  const fromBody = (request.body as Record<string, unknown>)?.campaign_id;
+  if (typeof fromBody === "string" && fromBody.length > 0) return fromBody;
+
+  return undefined;
+}
+
+// ── Factory ─────────────────────────────────────────────────────────
+
+/**
+ * Creates a Fastify preHandler that enforces role-based access control
+ * and optional campaign-scoped authorization.
+ *
+ * @example
+ * // Only admins
+ * app.get("/admin/stats", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, handler);
+ *
+ * // Supervisors and above, scoped to a campaign
+ * app.post("/campaigns/:campaignId/export", {
+ *   preHandler: [app.authenticate, authorize({ roles: ["supervisor"], requireCampaign: true })],
+ * }, handler);
+ */
+export function authorize(options: AuthorizeOptions = {}) {
+  const { roles, requireCampaign = false } = options;
+
+  // Pre-compute the minimum level once at registration time
+  const minLevel = roles && roles.length > 0 ? minLevelFromRoles(roles) : undefined;
+
+  return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
+    const req = request as AuthenticatedRequest;
+    const requestId = String(request.id);
+
+    // ── Role check ────────────────────────────────────────────────
+    if (minLevel !== undefined) {
+      const userRole = req.userRole;
+
+      if (!isValidRole(userRole)) {
+        return reply
+          .code(403)
+          .send(errorPayload(requestId, "AUTHZ_ROLE_INVALID", "rol de usuario no reconocido"));
+      }
+
+      const userLevel = ROLE_HIERARCHY[userRole];
+
+      if (userLevel < minLevel) {
+        return reply
+          .code(403)
+          .send(errorPayload(requestId, "AUTHZ_ROLE_INSUFFICIENT", "permisos insuficientes para esta accion"));
+      }
+    }
+
+    // ── Campaign check ────────────────────────────────────────────
+    if (requireCampaign) {
+      // Admins bypass campaign scope — they have access to everything
+      if (req.userRole === "admin") {
+        const campaignId = extractCampaignId(request);
+        if (campaignId) {
+          request.activeCampaignId = campaignId;
+        }
+        return;
+      }
+
+      const campaignId = extractCampaignId(request);
+
+      if (!campaignId) {
+        return reply
+          .code(403)
+          .send(errorPayload(requestId, "AUTHZ_CAMPAIGN_MISSING", "campaign_id requerido"));
+      }
+
+      if (!req.campaignIds.includes(campaignId)) {
+        return reply
+          .code(403)
+          .send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campaña"));
+      }
+
+      request.activeCampaignId = campaignId;
+    }
+  };
+}

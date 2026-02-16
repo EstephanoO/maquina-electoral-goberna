@@ -1,5 +1,6 @@
 # Root secrets
 .env
+CREDENCIALES.md
 **/.env.local
 **/.env.*.local
 

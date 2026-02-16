@@ -13,6 +13,7 @@ type PersistedLiveRow = {
   speed: number | null;
   heading: number | null;
   battery: number | null;
+  campaign_id: string | null;
   updated_at: string;
 };
 
@@ -34,17 +35,19 @@ export async function ensureAgentLocationsLiveTable() {
       speed double precision,
       heading double precision,
       battery double precision,
+      campaign_id uuid REFERENCES campaigns(id),
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )
   `);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_locations_live_seq ON public.agent_locations_live (seq DESC)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_locations_live_updated_at ON public.agent_locations_live (updated_at DESC)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_locations_live_campaign ON public.agent_locations_live (campaign_id)`);
 }
 
 export async function loadAllLiveAgentLocations(): Promise<AgentLiveState[]> {
   const result = (await pool.query(`
-    SELECT agent_id, seq, ts, lat, lng, accuracy, speed, heading, battery, updated_at
+    SELECT agent_id, seq, ts, lat, lng, accuracy, speed, heading, battery, campaign_id, updated_at
     FROM public.agent_locations_live
   `)) as { rows: PersistedLiveRow[] };
 
@@ -58,6 +61,7 @@ export async function loadAllLiveAgentLocations(): Promise<AgentLiveState[]> {
     speed: row.speed,
     heading: row.heading,
     battery: row.battery,
+    campaignId: row.campaign_id,
     receivedAt: new Date(row.updated_at).toISOString(),
     lastSeenAtMs: new Date(row.updated_at).getTime(),
   }));
@@ -79,6 +83,7 @@ export async function upsertLatestAgentLocationsBatch(states: AgentLiveState[]):
       speed: state.speed,
       heading: state.heading,
       battery: state.battery,
+      campaign_id: state.campaignId,
     })),
   );
 
@@ -95,21 +100,22 @@ export async function upsertLatestAgentLocationsBatch(states: AgentLiveState[]):
           accuracy double precision,
           speed double precision,
           heading double precision,
-          battery double precision
+          battery double precision,
+          campaign_id uuid
         )
       ),
       collapsed AS (
         SELECT DISTINCT ON (agent_id)
-          agent_id, seq, ts, lat, lng, accuracy, speed, heading, battery
+          agent_id, seq, ts, lat, lng, accuracy, speed, heading, battery, campaign_id
         FROM incoming
         ORDER BY agent_id, seq DESC, ts DESC
       ),
       upserted AS (
         INSERT INTO public.agent_locations_live AS t (
-          agent_id, seq, ts, lat, lng, accuracy, speed, heading, battery
+          agent_id, seq, ts, lat, lng, accuracy, speed, heading, battery, campaign_id
         )
         SELECT
-          c.agent_id, c.seq, c.ts, c.lat, c.lng, c.accuracy, c.speed, c.heading, c.battery
+          c.agent_id, c.seq, c.ts, c.lat, c.lng, c.accuracy, c.speed, c.heading, c.battery, c.campaign_id
         FROM collapsed c
         ON CONFLICT (agent_id) DO UPDATE
           SET
@@ -121,6 +127,7 @@ export async function upsertLatestAgentLocationsBatch(states: AgentLiveState[]):
             speed = EXCLUDED.speed,
             heading = EXCLUDED.heading,
             battery = EXCLUDED.battery,
+            campaign_id = COALESCE(EXCLUDED.campaign_id, t.campaign_id),
             updated_at = now()
           WHERE EXCLUDED.seq > t.seq
         RETURNING agent_id

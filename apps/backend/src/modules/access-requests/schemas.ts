@@ -1,0 +1,15 @@
+import { z } from "zod";
+
+export const createAccessRequestSchema = z.object({
+  campaign_id: z.string().uuid("campaign_id invalido"),
+});
+
+export const resolveAccessRequestSchema = z.object({
+  status: z.enum(["approved", "rejected"]),
+  note: z.string().trim().max(500).optional(),
+  perm_tierra: z.boolean().optional().default(true),
+  perm_digital: z.boolean().optional().default(true),
+});
+
+export type CreateAccessRequestInput = z.infer<typeof createAccessRequestSchema>;
+export type ResolveAccessRequestInput = z.infer<typeof resolveAccessRequestSchema>;

@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import type { ServerResponse } from "node:http";
 
 import type { AppEnv } from "../../config/env";
+import type { AuthenticatedRequest } from "../../infra/auth";
 import { errorPayload } from "../../infra/http";
 import type { IngestOutcome } from "../../infra/metrics";
 import { metricsRegistry } from "../../infra/metrics";
@@ -27,6 +28,7 @@ function toState(value: unknown): AgentLiveState {
     heading: parsed.data.heading ?? null,
     battery: parsed.data.battery ?? null,
     seq: parsed.data.seq,
+    campaignId: parsed.data.campaign_id ?? null,
     receivedAt: new Date().toISOString(),
     lastSeenAtMs: Date.now(),
   };
@@ -138,6 +140,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
     app.get(
       "/api/agents/live",
       {
+        preHandler: [app.authenticate],
         config: {
           rateLimit: {
             max: env.rateLimitAgentsLivePerMinute,
@@ -145,8 +148,11 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
           },
         },
       },
-      async (_request, reply) => {
+      async (request, reply) => {
         reply.header("Cache-Control", "no-store");
+        // TODO: filter by campaignIds from JWT in a future iteration
+        // const authed = request as AuthenticatedRequest;
+        // const campaignIds = authed.campaignIds;
         return { ok: true, ts: new Date().toISOString(), agents: store.listLive() };
       },
     );
@@ -180,6 +186,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
     app.get(
       "/api/agents/stream",
       {
+        preHandler: [app.authenticate],
         config: {
           rateLimit: {
             max: env.rateLimitAgentsStreamPerMinute,

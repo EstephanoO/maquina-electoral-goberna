@@ -4,6 +4,10 @@ export type AppEnv = {
   frontendOrigins: string[];
   databaseUrl: string;
   redisUrl: string;
+  jwtSecret: string;
+  jwtAccessExpiresIn: string;
+  jwtRefreshExpiresIn: string;
+  bcryptRounds: number;
   tegolaBaseUrl: string;
   tegolaMap: string;
   requestTimeoutMs: number;
@@ -69,12 +73,21 @@ export function getEnv(): AppEnv {
 
   const frontendRaw = process.env.FRONTEND_ORIGINS ?? process.env.FRONTEND_ORIGIN ?? "http://localhost:3000";
 
+  const jwtSecret = (process.env.JWT_SECRET ?? "").trim();
+  if (!jwtSecret || jwtSecret.length < 32) {
+    throw new Error("JWT_SECRET no configurada o demasiado corta (minimo 32 chars)");
+  }
+
   return {
     nodeEnv: process.env.NODE_ENV ?? "development",
     port: toNumber(process.env.BACKEND_PORT ?? process.env.PORT, 3001),
     frontendOrigins: parseOrigins(frontendRaw),
     databaseUrl,
     redisUrl,
+    jwtSecret,
+    jwtAccessExpiresIn: (process.env.JWT_ACCESS_EXPIRES_IN ?? "15m").trim(),
+    jwtRefreshExpiresIn: (process.env.JWT_REFRESH_EXPIRES_IN ?? "7d").trim(),
+    bcryptRounds: toNumber(process.env.BCRYPT_ROUNDS, 10),
     tegolaBaseUrl: (process.env.TEGOLA_BASE_URL ?? "http://localhost:8080").replace(/\/$/, ""),
     tegolaMap: process.env.TEGOLA_MAP ?? "peru",
     requestTimeoutMs: toNumber(process.env.REQUEST_TIMEOUT_MS, 5000),
