@@ -40,7 +40,7 @@ BACKEND_CONTEXT=./apps/backend
 BACKEND_DOCKERFILE=Dockerfile
 AGENT_STALE_AFTER_MS=120000
 AGENT_STREAM_HEARTBEAT_MS=25000
-AGENT_STREAM_BATCH_FLUSH_MS=200
+AGENT_STREAM_BATCH_FLUSH_MS=120
 EOF
 
 docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" up -d --build --remove-orphans

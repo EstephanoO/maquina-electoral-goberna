@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   Bar,
   BarChart,
@@ -59,6 +59,8 @@ type MetricsResponse = {
   gauges?: {
     tracking_queue_depth?: number;
     forms_queue_depth?: number;
+    tracking_last_flush_age_ms?: number;
+    forms_last_flush_age_ms?: number;
     tracking_online_agents?: number;
     tracking_sse_clients?: number;
   };
@@ -72,7 +74,46 @@ type MetricsResponse = {
       p99_ms: number;
     }
   >;
+  ingest_outcome_latencies?: {
+    forms?: Record<
+      string,
+      {
+        count: number;
+        p50_ms: number;
+        p90_ms: number;
+        p95_ms: number;
+        p99_ms: number;
+      }
+    >;
+    tracking?: Record<
+      string,
+      {
+        count: number;
+        p50_ms: number;
+        p90_ms: number;
+        p95_ms: number;
+        p99_ms: number;
+      }
+    >;
+  };
   ts?: string;
+};
+
+type OutcomeLatencyRow = {
+  stream: "tracking" | "forms";
+  outcome: string;
+  count: number;
+  p50: number;
+  p90: number;
+  p95: number;
+  p99: number;
+};
+
+type AlertState = {
+  label: string;
+  value: string;
+  detail: string;
+  tone: "good" | "warn" | "bad";
 };
 
 type SystemResponse = {
@@ -159,6 +200,7 @@ export default function OpsDashboardPage() {
   const [lastError, setLastError] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [chartsReady, setChartsReady] = useState(false);
+  const pollCycleRef = useRef(0);
 
   const healthUrl = apiBase ? `${apiBase}/api/health` : "/api/health";
   const readyUrl = apiBase ? `${apiBase}/api/ready` : "/api/ready";
@@ -182,26 +224,27 @@ export default function OpsDashboardPage() {
   useEffect(() => {
     let cancelled = false;
 
-    const poll = async () => {
+    const poll = async (deepProbe: boolean) => {
       try {
-        const [healthRes, readyRes, metricsRes, agentsHealthRes, liveRes, systemRes] = await Promise.all([
+        const [healthRes, metricsRes, agentsHealthRes, liveRes, readyRes, systemRes] = await Promise.all([
           fetch(healthUrl, { cache: "no-store" }),
-          fetch(readyUrl, { cache: "no-store" }),
           fetch(metricsUrl, { cache: "no-store" }),
           fetch(agentsHealthUrl, { cache: "no-store" }),
           fetch(agentsLiveUrl, { cache: "no-store" }),
-          fetch(systemUrl, { cache: "no-store" }),
+          deepProbe ? fetch(readyUrl, { cache: "no-store" }) : Promise.resolve(null),
+          deepProbe ? fetch(systemUrl, { cache: "no-store" }) : Promise.resolve(null),
         ]);
 
         if (cancelled) return;
 
         const healthPayload = healthRes.ok ? ((await healthRes.json()) as HealthResponse) : null;
-        const readyPayload = readyRes.ok ? ((await readyRes.json()) as ReadyResponse) : null;
         const metricsPayload = metricsRes.ok ? ((await metricsRes.json()) as MetricsResponse) : null;
         const agentsHealthPayload = agentsHealthRes.ok ? ((await agentsHealthRes.json()) as AgentsHealthResponse) : null;
 
         if (healthPayload) setHealth(healthPayload);
-        if (readyPayload) setReady(readyPayload);
+        if (readyRes && readyRes.ok) {
+          setReady((await readyRes.json()) as ReadyResponse);
+        }
         if (metricsPayload) setMetrics(metricsPayload);
         if (agentsHealthPayload) setAgentsHealth(agentsHealthPayload);
 
@@ -210,12 +253,14 @@ export default function OpsDashboardPage() {
           setLiveAgents(Array.isArray(payload.agents) ? payload.agents.length : 0);
         }
 
-        if (systemRes.ok) {
-          setSystem((await systemRes.json()) as SystemResponse);
-          setSystemAvailable(true);
-        } else if (systemRes.status === 404) {
-          setSystemAvailable(false);
-          setSystem(null);
+        if (systemRes) {
+          if (systemRes.ok) {
+            setSystem((await systemRes.json()) as SystemResponse);
+            setSystemAvailable(true);
+          } else if (systemRes.status === 404) {
+            setSystemAvailable(false);
+            setSystem(null);
+          }
         }
 
         setLastError(null);
@@ -246,10 +291,13 @@ export default function OpsDashboardPage() {
       }
     };
 
-    void poll();
+    void poll(true);
     const timer = setInterval(() => {
-      void poll();
-    }, 5000);
+      if (typeof document !== "undefined" && document.hidden) return;
+      pollCycleRef.current += 1;
+      const deepProbe = pollCycleRef.current % 4 === 0;
+      void poll(deepProbe);
+    }, 15000);
 
     return () => {
       cancelled = true;
@@ -284,6 +332,103 @@ export default function OpsDashboardPage() {
         ok2xx: statusClassSum(forms, "2"),
         err4xx: statusClassSum(forms, "4"),
         err5xx: statusClassSum(forms, "5"),
+      },
+    ];
+  }, [metrics]);
+
+  const outcomeLatencyRows = useMemo<OutcomeLatencyRow[]>(() => {
+    const source = metrics?.ingest_outcome_latencies;
+    if (!source) return [];
+
+    const outcomes = ["accepted", "deduped", "rate_limited", "auth_failed", "invalid_payload", "backpressure"];
+    const rows: OutcomeLatencyRow[] = [];
+
+    for (const stream of ["tracking", "forms"] as const) {
+      const streamData = source[stream] ?? {};
+      for (const outcome of outcomes) {
+        const value = streamData[outcome];
+        if (!value) continue;
+        rows.push({
+          stream,
+          outcome,
+          count: value.count,
+          p50: value.p50_ms,
+          p90: value.p90_ms,
+          p95: value.p95_ms,
+          p99: value.p99_ms,
+        });
+      }
+    }
+
+    return rows;
+  }, [metrics]);
+
+  const opsAlerts = useMemo<AlertState[]>(() => {
+    const formsAccepted = metrics?.ingest_outcome_latencies?.forms?.accepted;
+    const trackingAccepted = metrics?.ingest_outcome_latencies?.tracking?.accepted;
+    const formsRateLimited = metrics?.ingest_outcome_latencies?.forms?.rate_limited;
+
+    const formsAcceptedCount = formsAccepted?.count ?? 0;
+    const formsRateLimitedCount = formsRateLimited?.count ?? 0;
+    const formsTotal = formsAcceptedCount + formsRateLimitedCount;
+    const forms429Ratio = formsTotal > 0 ? (formsRateLimitedCount / formsTotal) * 100 : 0;
+
+    const formsQueueDepth = metrics?.gauges?.forms_queue_depth ?? 0;
+    const formsFlushAgeMs = metrics?.gauges?.forms_last_flush_age_ms ?? 0;
+    const trackingQueueDepth = metrics?.gauges?.tracking_queue_depth ?? 0;
+    const trackingFlushAgeMs = metrics?.gauges?.tracking_last_flush_age_ms ?? 0;
+
+    const formsLatencyTone: AlertState["tone"] = !formsAccepted
+      ? "warn"
+      : formsAccepted.p95_ms > 380 || formsAccepted.p99_ms > 450
+        ? "bad"
+        : formsAccepted.p95_ms > 320 || formsAccepted.p99_ms > 380
+          ? "warn"
+          : "good";
+
+    const trackingLatencyTone: AlertState["tone"] = !trackingAccepted
+      ? "warn"
+      : trackingAccepted.p95_ms > 380 || trackingAccepted.p99_ms > 450
+        ? "bad"
+        : trackingAccepted.p95_ms > 320 || trackingAccepted.p99_ms > 390
+          ? "warn"
+          : "good";
+
+    const forms429Tone: AlertState["tone"] = forms429Ratio > 8 ? "bad" : forms429Ratio > 2 ? "warn" : "good";
+    const formsQueueTone: AlertState["tone"] = formsQueueDepth > 300 || formsFlushAgeMs > 10000 ? "bad" : formsQueueDepth > 100 || formsFlushAgeMs > 3000 ? "warn" : "good";
+    const trackingQueueTone: AlertState["tone"] =
+      trackingQueueDepth > 500 || trackingFlushAgeMs > 10000 ? "bad" : trackingQueueDepth > 150 || trackingFlushAgeMs > 3000 ? "warn" : "good";
+
+    return [
+      {
+        label: "SLO forms accepted",
+        value: formsAccepted ? `p95=${formsAccepted.p95_ms} | p99=${formsAccepted.p99_ms}` : "sin muestra",
+        detail: formsAccepted ? `count=${formsAccepted.count}` : "necesita trafico aceptado",
+        tone: formsLatencyTone,
+      },
+      {
+        label: "SLO tracking accepted",
+        value: trackingAccepted ? `p95=${trackingAccepted.p95_ms} | p99=${trackingAccepted.p99_ms}` : "sin muestra",
+        detail: trackingAccepted ? `count=${trackingAccepted.count}` : "necesita trafico aceptado",
+        tone: trackingLatencyTone,
+      },
+      {
+        label: "Forms rate-limited",
+        value: `${forms429Ratio.toFixed(2)}%`,
+        detail: `accepted=${formsAcceptedCount} | rate_limited=${formsRateLimitedCount}`,
+        tone: forms429Tone,
+      },
+      {
+        label: "Queue forms",
+        value: `depth=${formsQueueDepth}`,
+        detail: `flush_age_ms=${formsFlushAgeMs}`,
+        tone: formsQueueTone,
+      },
+      {
+        label: "Queue tracking",
+        value: `depth=${trackingQueueDepth}`,
+        detail: `flush_age_ms=${trackingFlushAgeMs}`,
+        tone: trackingQueueTone,
       },
     ];
   }, [metrics]);
@@ -388,6 +533,12 @@ export default function OpsDashboardPage() {
           />
         </section>
 
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "12px", marginBottom: "16px" }}>
+          {opsAlerts.map((alert) => (
+            <StatCard key={alert.label} title={alert.label} value={alert.value} tone={alert.tone} detail={alert.detail} />
+          ))}
+        </section>
+
         <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "12px", marginBottom: "16px" }}>
           <Panel title="Trafico ingesta (acumulado)">
             {chartsReady ? (
@@ -462,6 +613,45 @@ export default function OpsDashboardPage() {
                   latencyRows.map((row) => (
                     <tr key={row.route}>
                       <td style={tdStyle}>{row.route}</td>
+                      <td style={tdStyle}>{row.count}</td>
+                      <td style={tdStyle}>{row.p50}</td>
+                      <td style={tdStyle}>{row.p90}</td>
+                      <td style={tdStyle}>{row.p95}</td>
+                      <td style={tdStyle}>{row.p99}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+
+        <Panel title="Latencias por outcome (tracking/forms)">
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#e2e8f0" }}>
+                  <th style={thStyle}>Stream</th>
+                  <th style={thStyle}>Outcome</th>
+                  <th style={thStyle}>Count</th>
+                  <th style={thStyle}>P50 ms</th>
+                  <th style={thStyle}>P90 ms</th>
+                  <th style={thStyle}>P95 ms</th>
+                  <th style={thStyle}>P99 ms</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outcomeLatencyRows.length === 0 ? (
+                  <tr>
+                    <td style={tdStyle} colSpan={7}>
+                      Sin datos de latencia por outcome.
+                    </td>
+                  </tr>
+                ) : (
+                  outcomeLatencyRows.map((row) => (
+                    <tr key={`${row.stream}-${row.outcome}`}>
+                      <td style={tdStyle}>{row.stream}</td>
+                      <td style={tdStyle}>{row.outcome}</td>
                       <td style={tdStyle}>{row.count}</td>
                       <td style={tdStyle}>{row.p50}</td>
                       <td style={tdStyle}>{row.p90}</td>

@@ -14,3 +14,16 @@ certbot/www/
 # macOS
 .DS_Store
 .vercel
+
+# Python build/runtime noise
+**/__pycache__/
+*.pyc
+
+# Local perf outputs
+scripts/perf/*-latest.json
+scripts/perf/matrix-*.json
+scripts/perf/matrix-*.md
+
+# Local runtime/log folders
+.runtime/
+logs/
