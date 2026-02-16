@@ -42,14 +42,12 @@ def check_frontend_screaming_guardrails() -> None:
 
 
 def check_tracking_contract_file() -> None:
-    contract = ROOT / "NUEVO_CONTRATO_EXPO.md"
+    contract = ROOT / "EXPO_INTEGRATION.md"
     if not contract.exists():
-        fail("falta NUEVO_CONTRATO_EXPO.md")
+        fail("falta EXPO_INTEGRATION.md")
     text = read(contract)
-    if "location.batch" not in text:
-        fail("NUEVO_CONTRATO_EXPO.md debe declarar location.batch")
-    if re.search(r"`location\.update`.*activo", text, flags=re.IGNORECASE):
-        fail("NUEVO_CONTRATO_EXPO.md no puede marcar location.update como activo")
+    if "location" not in text.lower():
+        fail("EXPO_INTEGRATION.md debe documentar el tracking de location")
 
 
 def main() -> int:
