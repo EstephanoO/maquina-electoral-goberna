@@ -2,7 +2,11 @@
 useDefault = true
 
 [allowlist]
-description = "CI smoke test scripts use local-only dummy credentials"
+description = "CI smoke test scripts, documentation, and dev credential files use local-only dummy credentials"
 paths = [
   '''scripts/ci/smoke_backend_contract\.sh''',
+  '''AUTH_CONTRACT\.md''',
+  '''docs/EXPO_AUTH_CONTRACT\.md''',
+  '''CREDENCIALES\.md''',
+  '''apps/backend/scripts/seed-dev\.ts''',
 ]
