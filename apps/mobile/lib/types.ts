@@ -169,6 +169,9 @@ export type UtmData = {
   easting: number;
   northing: number;
   datum_epsg: number;
+  // Original lat/lng for backend sync
+  latitude?: number;
+  longitude?: number;
 };
 
 // ─── Access Requests ────────────────────────────────────────

@@ -55,9 +55,125 @@ Offline-first, captura GPS y formularios, sync cuando hay conectividad.
 | Main screens | `app/(main)/` |
 | API Client | `lib/api.ts` |
 | Auth Store | `lib/auth-store.ts` |
-| Tracking | `lib/tracking/` |
-| Offline Queue | `lib/offline-queue.ts` |
+| Tracking | `lib/tracking/index.ts` |
+| Offline Queue | `lib/offline-queue/` |
 | Config | `app.json` |
+
+---
+
+## Offline Queue (lib/offline-queue/)
+
+Sistema de persistencia offline-first usando SQLite.
+
+### Estructura
+```
+lib/offline-queue/
+  index.ts           # Re-exports publicos
+  db.ts              # Inicializacion SQLite
+  locations.ts       # Queue de ubicaciones GPS
+  forms.ts           # Queue de formularios
+  sync-service.ts    # Servicio de sincronizacion
+```
+
+### Tablas SQLite
+| Tabla | Proposito |
+|-------|-----------|
+| `pending_locations` | GPS points esperando sync |
+| `pending_forms` | Formularios esperando sync |
+| `sync_meta` | Metadata (seq numbers, etc) |
+
+### Flujo de Datos
+```
+1. Usuario captura GPS/Form
+       │
+       ▼
+2. queueLocation() / queueForm()
+   Guarda en SQLite inmediatamente
+       │
+       ▼
+3. Sync Service (cada 30s)
+   Detecta conexion → POST al backend
+       │
+       ▼
+4. Backend procesa
+   Valida + deduplicar + persiste
+       │
+       ▼
+5. Marca como synced en SQLite
+   Limpia registros viejos
+```
+
+### Uso
+```typescript
+import { 
+  queueLocation, 
+  queueForm, 
+  startAutoSync,
+  getQueueStats 
+} from '@/lib/offline-queue';
+
+// Queue location (non-blocking)
+await queueLocation({
+  agent_id: 'user-123',
+  ts: new Date().toISOString(),
+  lat: -12.0464,
+  lng: -77.0428,
+});
+
+// Queue form (non-blocking)
+await queueForm({
+  client_id: crypto.randomUUID(),
+  campaign_id: 'campaign-123',
+  form_definition_id: 'form-456',
+  data: { nombre: 'Juan', telefono: '999888777' },
+});
+
+// Start auto-sync (call once on app start)
+startAutoSync();
+
+// Get queue stats
+const stats = await getQueueStats();
+// { locations: { pending: 5, synced: 100 }, forms: { pending: 2 } }
+```
+
+---
+
+## Background Tracking (lib/tracking/)
+
+Sistema de tracking GPS con soporte foreground y background.
+
+### Modos
+| Modo | Intervalo | Precision | Bateria |
+|------|-----------|-----------|---------|
+| Foreground | 30s | Alta | Media |
+| Background | 60s | Balanceada | Baja |
+
+### Permisos Requeridos
+- `expo-location` foreground permission (obligatorio)
+- `expo-location` background permission (opcional, mejor tracking)
+- Notificacion de servicio en Android
+
+### Uso
+```typescript
+import { 
+  startForegroundTracking,
+  startBackgroundTracking,
+  stopTracking,
+  getTrackingState 
+} from '@/lib/tracking';
+
+// Start foreground (basic)
+await startForegroundTracking(userId);
+
+// Upgrade to background (better but needs permission)
+await startBackgroundTracking(userId);
+
+// Stop all tracking
+await stopTracking();
+
+// Check state
+const state = getTrackingState(); // 'stopped' | 'foreground' | 'background'
+```
 
 ---
 

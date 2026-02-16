@@ -133,7 +133,7 @@ export default function DashboardScreen() {
                   styles.trackingDot,
                   {
                     backgroundColor:
-                      trackingState === 'tracking'
+                      trackingState === 'foreground' || trackingState === 'background'
                         ? '#22C55E'
                         : trackingState === 'starting'
                           ? secondary
@@ -144,13 +144,15 @@ export default function DashboardScreen() {
                 ]}
               />
               <Text style={[styles.trackingLabel, { color: 'rgba(255,255,255,0.6)' }]}>
-                {trackingState === 'tracking'
+                {trackingState === 'foreground'
                   ? 'GPS activo'
-                  : trackingState === 'starting'
-                    ? 'Iniciando...'
-                    : trackingState === 'error'
-                      ? 'GPS error'
-                      : 'GPS off'}
+                  : trackingState === 'background'
+                    ? 'GPS background'
+                    : trackingState === 'starting'
+                      ? 'Iniciando...'
+                      : trackingState === 'error'
+                        ? 'GPS error'
+                        : 'GPS off'}
               </Text>
             </View>
           </View>

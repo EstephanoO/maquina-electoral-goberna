@@ -3,12 +3,15 @@
  *
  * Maps dynamic form field values to the flat backend schema expected by POST /api/forms:
  * - nombre, telefono, fecha, x, y, zona
- * - encuestadosor (agent.full_name), encuestasdor_id (agent.id)
+ * - encuestador (agent.full_name), encuestador_id (agent.id)
  * - candidato_preferido (candidate.name)
  * - client_id (device UUID)
  * - campaign_id, form_definition_id
  *
  * Special field type "location" → GPS capture with UTM conversion.
+ * 
+ * OFFLINE-FIRST: Forms are saved to SQLite queue immediately,
+ * then synced to backend when online.
  */
 
 import { useState, useCallback } from 'react';
@@ -28,10 +31,17 @@ import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 
 import { useCandidate, useFormConfig, useAgent, useActiveCampaign } from '@/lib/app-context';
-import * as api from '@/lib/api';
+import { queueForm, forceSyncNow } from '@/lib/offline-queue';
 import { latLonToUtm } from '@/lib/utm';
-import { getDeviceUUID } from '@/lib/auth-store';
 import type { FormField, UtmData } from '@/lib/types';
+
+// Simple UUID generator (crypto.randomUUID may not be available in RN)
+function generateClientId(): string {
+  const timestamp = Date.now().toString(36);
+  const random = Math.random().toString(36).substring(2, 15);
+  const random2 = Math.random().toString(36).substring(2, 15);
+  return `${timestamp}-${random}-${random2}`;
+}
 
 const FONT = 'Montserrat-Bold';
 const BORDER = '#E1E6F0';
@@ -254,6 +264,7 @@ export default function NewFormScreen() {
 
     const fields = formConfig.schema.fields;
     
+    // Validate required fields
     for (const field of fields) {
       if (field.required && !formData[field.id]?.trim()) {
         Alert.alert('Campo requerido', `"${field.label}" es obligatorio.`);
@@ -282,6 +293,7 @@ export default function NewFormScreen() {
     setEnviando(true);
 
     try {
+      // Build payload
       const backendPayload: Record<string, unknown> = {
         nombre: '',
         telefono: '',
@@ -300,9 +312,11 @@ export default function NewFormScreen() {
       backendPayload.telefono = backendPayload.telefono || formData['telefono'] || formData['celular'] || '000000000';
       backendPayload.zona = backendPayload.zona || 'Sin zona';
 
-      const deviceUUID = await getDeviceUUID();
+      // Generate unique client_id
+      const clientId = generateClientId();
 
-      const payload = {
+      // Build the full payload data
+      const payloadData = {
         nombre: String(backendPayload.nombre),
         telefono: String(backendPayload.telefono),
         fecha: new Date().toISOString(),
@@ -312,23 +326,34 @@ export default function NewFormScreen() {
         candidato_preferido: candidate.name,
         encuestador: agent.full_name,
         encuestador_id: agent.id,
-        client_id: deviceUUID,
-        campaign_id: campaign.id,
-        form_definition_id: formConfig.id,
         comentarios: String(backendPayload.comentarios || ''),
+        // Include GPS coordinates for mapping
+        lat: ubicacionUtm.latitude,
+        lng: ubicacionUtm.longitude,
       };
 
-      const result = await api.submitForm(payload);
+      // OFFLINE-FIRST: Queue the form locally first
+      await queueForm({
+        client_id: clientId,
+        campaign_id: campaign.id,
+        form_definition_id: formConfig.id,
+        data: payloadData,
+      });
 
-      if (result.ok) {
-        Alert.alert('Enviado', 'Registro guardado correctamente.', [
-          { text: 'OK', onPress: () => router.back() },
-        ]);
-      } else {
-        Alert.alert('Error al enviar', result.error);
-      }
-    } catch {
-      Alert.alert('Error', 'Ocurrio un error al enviar el formulario.');
+      // Try to sync immediately in background (non-blocking)
+      forceSyncNow().catch(() => {
+        // Ignore sync errors - data is safe in SQLite
+      });
+
+      // Success - form is saved locally and will sync when online
+      Alert.alert(
+        'Guardado',
+        'Registro guardado. Se sincronizara automaticamente cuando haya conexion.',
+        [{ text: 'OK', onPress: () => router.back() }]
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error desconocido';
+      Alert.alert('Error', `No se pudo guardar el formulario: ${message}`);
     } finally {
       setEnviando(false);
     }

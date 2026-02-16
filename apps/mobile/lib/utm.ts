@@ -42,5 +42,5 @@ export function latLonToUtm(lat: number, lon: number): UtmData {
 
   const datum_epsg = (hemisphere === 'N' ? 32600 : 32700) + zone;
 
-  return { zone, hemisphere, easting, northing, datum_epsg };
+  return { zone, hemisphere, easting, northing, datum_epsg, latitude: lat, longitude: lon };
 }
