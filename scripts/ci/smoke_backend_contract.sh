@@ -62,6 +62,20 @@ EOF
 
 docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" up -d --build --remove-orphans
 
+# Wait for postgres to be ready
+echo "[smoke] waiting for postgres..."
+for attempt in $(seq 1 30); do
+	if docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" exec -T postgres pg_isready -U appuser -d appdb >/dev/null 2>&1; then
+		echo "[smoke] postgres ready"
+		break
+	fi
+	sleep 1
+done
+
+# Run migrations
+echo "[smoke] running migrations..."
+docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" exec -T backend bun run migrate || true
+
 echo "[smoke] waiting for backend readiness..."
 READY=false
 for attempt in $(seq 1 45); do

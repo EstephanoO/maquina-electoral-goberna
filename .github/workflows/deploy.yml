@@ -102,6 +102,9 @@ jobs:
               git pull --ff-only origin main
               docker compose up -d --build --remove-orphans
 
+              echo "[deploy] running migrations..."
+              docker compose exec -T backend bun run migrate || true
+
               echo "[deploy] waiting for readiness..."
               for attempt in $(seq 1 40); do
                 if curl -fsS "http://127.0.0.1/api/ready" >/dev/null 2>&1; then
