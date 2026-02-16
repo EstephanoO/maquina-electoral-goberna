@@ -116,6 +116,9 @@ services:
       RATE_LIMIT_FORMS_IP_PER_MINUTE: ${RATE_LIMIT_FORMS_IP_PER_MINUTE:-12000}
       RATE_LIMIT_FORMS_WINDOW_SEC: ${RATE_LIMIT_FORMS_WINDOW_SEC:-60}
       AGENT_STREAM_BATCH_FLUSH_MS: ${AGENT_STREAM_BATCH_FLUSH_MS:-120}
+      UPLOADS_DIR: /srv/uploads
+    volumes:
+      - uploads:/srv/uploads
     networks:
       - app_network
 
@@ -141,12 +144,14 @@ services:
       - ./nginx/certs:/etc/nginx/certs:ro
       - ./certbot/www:/var/www/certbot:ro
       - ./certbot/conf:/etc/letsencrypt:ro
+      - uploads:/srv/uploads:ro
     networks:
       - app_network
 
 volumes:
   pgdata:
   redis-data:
+  uploads:
 
 networks:
   app_network:

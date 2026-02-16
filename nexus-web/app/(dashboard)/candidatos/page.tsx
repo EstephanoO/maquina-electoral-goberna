@@ -2,6 +2,7 @@
 
 import { useAuth } from "../../../lib/auth-context";
 import { api } from "../../../lib/api-client";
+import { MOCK_CANDIDATES, CARGO_OPTIONS, type MockCandidate } from "../../../lib/mock-data";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useState, useEffect, useCallback } from "react";
@@ -46,6 +47,10 @@ const INJECTED_STYLES = `
 }
 @keyframes goberna-spin {
   to { transform: rotate(360deg); }
+}
+@keyframes goberna-slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
 }
 `;
 
@@ -318,6 +323,15 @@ export default function CandidatosPage() {
   const [requests, setRequests] = useState<AccessRequestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
+  const [showCreatePanel, setShowCreatePanel] = useState(false);
+  const [localCandidates, setLocalCandidates] = useState<MockCandidate[]>(MOCK_CANDIDATES);
+  const [newCandidate, setNewCandidate] = useState({
+    name: "",
+    cargo: "",
+    numero: "",
+    partido: "",
+    color_primario: "#163960",
+  });
 
   const isAdmin = user?.role === "admin";
 
@@ -382,16 +396,36 @@ export default function CandidatosPage() {
     <div style={{ fontFamily: fontStack, animation: "goberna-fade-in .4s ease-out" }}>
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
-        <h1
-          style={{
-            fontSize: 24,
-            fontWeight: 800,
-            color: "var(--color-text-primary)",
-            margin: "0 0 4px",
-          }}
-        >
-          Candidatos & Solicitudes
-        </h1>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          <h1
+            style={{
+              fontSize: 24,
+              fontWeight: 800,
+              color: "var(--color-text-primary)",
+              margin: "0 0 4px",
+            }}
+          >
+            Candidatos & Solicitudes
+          </h1>
+          <button
+            type="button"
+            onClick={() => setShowCreatePanel(true)}
+            style={{
+              padding: "8px 20px",
+              fontSize: 13,
+              fontWeight: 700,
+              fontFamily: fontStack,
+              color: "#fff",
+              background: "var(--goberna-gold)",
+              border: "none",
+              borderRadius: "var(--radius-sm)",
+              cursor: "pointer",
+              transition: "opacity .15s ease",
+            }}
+          >
+            + Nuevo Candidato
+          </button>
+        </div>
         <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>
           Gestione candidatos y apruebe solicitudes de acceso de usuarios.
         </p>
@@ -555,13 +589,13 @@ export default function CandidatosPage() {
       {/* ── Tab: Candidatos ─────────────────────────────────────── */}
       {!loading && tab === "candidatos" && (
         <div>
-          {campaigns.length === 0 ? (
+          {localCandidates.length === 0 ? (
             <div style={{ textAlign: "center", padding: "48px 24px", color: "var(--color-text-tertiary)" }}>
               <p style={{ fontSize: 15, fontWeight: 600 }}>No hay candidatos registrados.</p>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {campaigns.map((c) => (
+              {localCandidates.map((c) => (
                 <div
                   key={c.id}
                   style={{
@@ -582,7 +616,7 @@ export default function CandidatosPage() {
                       height: 48,
                       borderRadius: "50%",
                       overflow: "hidden",
-                      border: "2px solid var(--color-border)",
+                      border: `2px solid ${c.color_primario}`,
                       flexShrink: 0,
                       background: "var(--goberna-blue-100)",
                     }}
@@ -605,7 +639,7 @@ export default function CandidatosPage() {
                           justifyContent: "center",
                           fontSize: 18,
                           fontWeight: 800,
-                          color: "var(--goberna-blue-400)",
+                          color: c.color_primario,
                         }}
                       >
                         {c.name.charAt(0)}
@@ -637,28 +671,476 @@ export default function CandidatosPage() {
                     </div>
                     <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 2 }}>
                       {c.cargo ?? ""}{c.cargo && c.partido ? " — " : ""}{c.partido ?? ""}
-                      {c.user_count !== undefined && (
-                        <span> &middot; {c.user_count} usuario{c.user_count !== 1 ? "s" : ""}</span>
-                      )}
+                      <span> &middot; {c.agentes_count} agente{c.agentes_count !== 1 ? "s" : ""}</span>
                     </div>
                   </div>
 
-                  {/* Slug */}
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 500,
-                      color: "var(--color-text-tertiary)",
-                      fontFamily: "monospace",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {c.slug}
+                  {/* Actions */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 500,
+                        color: "var(--color-text-tertiary)",
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      {c.slug}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => router.push("/")}
+                      style={{
+                        padding: "5px 14px",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        fontFamily: fontStack,
+                        color: "var(--goberna-blue-700)",
+                        background: "var(--goberna-blue-50)",
+                        border: "1px solid var(--goberna-blue-200)",
+                        borderRadius: "var(--radius-sm)",
+                        cursor: "pointer",
+                        transition: "all .15s ease",
+                      }}
+                    >
+                      Entrar
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Slide-over: Crear Candidato ─────────────────────────── */}
+      {showCreatePanel && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            display: "flex",
+            justifyContent: "flex-end",
+          }}
+        >
+          {/* Overlay */}
+          <button
+            type="button"
+            aria-label="Cerrar panel"
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(0,0,0,.45)",
+              border: "none",
+              cursor: "default",
+              padding: 0,
+            }}
+            onClick={() => setShowCreatePanel(false)}
+          />
+
+          {/* Panel */}
+          <div
+            style={{
+              position: "relative",
+              width: 480,
+              maxWidth: "92vw",
+              height: "100%",
+              background: "#fff",
+              boxShadow: "-8px 0 32px rgba(0,0,0,.18)",
+              display: "flex",
+              flexDirection: "column",
+              animation: "goberna-slide-in .3s ease-out",
+            }}
+          >
+            {/* Panel header */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "20px 24px",
+                borderBottom: "1px solid var(--color-border)",
+                flexShrink: 0,
+              }}
+            >
+              <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--color-text-primary)", margin: 0, fontFamily: fontStack }}>
+                Nuevo Candidato
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowCreatePanel(false)}
+                style={{
+                  width: 32,
+                  height: 32,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  borderRadius: "var(--radius-sm)",
+                  color: "var(--color-text-tertiary)",
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <title>Cerrar panel</title>
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Panel body — scrollable */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "24px" }}>
+              {/* Foto del Candidato */}
+              <div style={{ marginBottom: 20 }}>
+                <label htmlFor="nc-foto" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6, fontFamily: fontStack }}>
+                  Foto del Candidato
+                </label>
+                <button
+                  id="nc-foto"
+                  type="button"
+                  onClick={() => alert("Subida de foto no disponible en modo mock.")}
+                  style={{
+                    width: 120,
+                    height: 120,
+                    borderRadius: "50%",
+                    border: "2px dashed var(--color-border-strong)",
+                    background: "var(--goberna-blue-50)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    fontFamily: fontStack,
+                    color: "var(--color-text-tertiary)",
+                    fontSize: 11,
+                    gap: 4,
+                    padding: 0,
+                    overflow: "hidden",
+                  }}
+                >
+                  {newCandidate.name ? (
+                    <span style={{ fontSize: 36, fontWeight: 800, color: newCandidate.color_primario }}>
+                      {newCandidate.name.charAt(0).toUpperCase()}
+                    </span>
+                  ) : (
+                    <>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <title>Subir foto</title>
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                      <span>Click para subir foto</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Foto/Logo del Partido */}
+              <div style={{ marginBottom: 20 }}>
+                <label htmlFor="nc-logo" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6, fontFamily: fontStack }}>
+                  Foto/Logo del Partido
+                </label>
+                <button
+                  id="nc-logo"
+                  type="button"
+                  onClick={() => alert("Subida de logo no disponible en modo mock.")}
+                  style={{
+                    width: 80,
+                    height: 80,
+                    borderRadius: 12,
+                    border: "2px dashed var(--color-border-strong)",
+                    background: "var(--goberna-blue-50)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    fontFamily: fontStack,
+                    color: "var(--color-text-tertiary)",
+                    fontSize: 10,
+                    gap: 2,
+                    padding: 0,
+                  }}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <title>Subir logo del partido</title>
+                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                    <line x1="4" y1="22" x2="4" y2="15" />
+                  </svg>
+                  <span>Logo partido</span>
+                </button>
+              </div>
+
+              {/* Nombre completo */}
+              <div style={{ marginBottom: 16 }}>
+                <label htmlFor="nc-name" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6, fontFamily: fontStack }}>
+                  Nombre completo
+                </label>
+                <input
+                  id="nc-name"
+                  type="text"
+                  value={newCandidate.name}
+                  onChange={(e) => setNewCandidate((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="Ej: Juan Carlos Ramirez"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    fontSize: 14,
+                    fontFamily: fontStack,
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius-sm)",
+                    background: "var(--color-surface)",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              {/* Cargo */}
+              <div style={{ marginBottom: 16 }}>
+                <label htmlFor="nc-cargo" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6, fontFamily: fontStack }}>
+                  Cargo
+                </label>
+                <select
+                  id="nc-cargo"
+                  value={newCandidate.cargo}
+                  onChange={(e) => setNewCandidate((prev) => ({ ...prev, cargo: e.target.value }))}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    fontSize: 14,
+                    fontFamily: fontStack,
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius-sm)",
+                    background: "var(--color-surface)",
+                    outline: "none",
+                    boxSizing: "border-box",
+                    color: newCandidate.cargo ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                  }}
+                >
+                  <option value="">Seleccionar cargo...</option>
+                  {CARGO_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Numero de candidatura */}
+              <div style={{ marginBottom: 16 }}>
+                <label htmlFor="nc-numero" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6, fontFamily: fontStack }}>
+                  Numero de candidatura
+                </label>
+                <input
+                  id="nc-numero"
+                  type="number"
+                  value={newCandidate.numero}
+                  onChange={(e) => setNewCandidate((prev) => ({ ...prev, numero: e.target.value }))}
+                  placeholder="Ej: 7"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    fontSize: 14,
+                    fontFamily: fontStack,
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius-sm)",
+                    background: "var(--color-surface)",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              {/* Nombre del partido */}
+              <div style={{ marginBottom: 16 }}>
+                <label htmlFor="nc-partido" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6, fontFamily: fontStack }}>
+                  Nombre del partido
+                </label>
+                <input
+                  id="nc-partido"
+                  type="text"
+                  value={newCandidate.partido}
+                  onChange={(e) => setNewCandidate((prev) => ({ ...prev, partido: e.target.value }))}
+                  placeholder="Ej: Partido Nacional"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    fontSize: 14,
+                    fontFamily: fontStack,
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius-sm)",
+                    background: "var(--color-surface)",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              {/* Color del partido */}
+              <div style={{ marginBottom: 24 }}>
+                <label htmlFor="nc-color" style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6, fontFamily: fontStack }}>
+                  Color del partido
+                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <input
+                    id="nc-color"
+                    type="color"
+                    value={newCandidate.color_primario}
+                    onChange={(e) => setNewCandidate((prev) => ({ ...prev, color_primario: e.target.value }))}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      padding: 0,
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-sm)",
+                      cursor: "pointer",
+                      background: "none",
+                    }}
+                  />
+                  <span style={{ fontSize: 13, color: "var(--color-text-tertiary)", fontFamily: "monospace" }}>
+                    {newCandidate.color_primario}
+                  </span>
+                </div>
+              </div>
+
+              {/* ── Preview Card ────────────────────────────────────── */}
+              <div style={{ marginBottom: 24 }}>
+                <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 10, fontFamily: fontStack }}>
+                  Vista previa
+                </span>
+                <div
+                  style={{
+                    background: "var(--color-surface)",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius-md)",
+                    padding: "16px 20px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 14,
+                  }}
+                >
+                  {/* Circular photo placeholder */}
+                  <div
+                    style={{
+                      width: 52,
+                      height: 52,
+                      borderRadius: "50%",
+                      border: `2.5px solid ${newCandidate.color_primario}`,
+                      background: `${newCandidate.color_primario}15`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 22,
+                      fontWeight: 800,
+                      color: newCandidate.color_primario,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {newCandidate.name ? newCandidate.name.charAt(0).toUpperCase() : "?"}
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--color-text-primary)" }}>
+                        {newCandidate.name || "Nombre del candidato"}
+                      </span>
+                      {newCandidate.numero && (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: "1px 8px",
+                            borderRadius: 10,
+                            background: "var(--goberna-gold-100)",
+                            color: "var(--goberna-gold-600)",
+                          }}
+                        >
+                          #{newCandidate.numero}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 2 }}>
+                      {newCandidate.cargo || "Cargo"} — {newCandidate.partido || "Partido"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Panel footer — actions */}
+            <div
+              style={{
+                padding: "16px 24px",
+                borderTop: "1px solid var(--color-border)",
+                flexShrink: 0,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (!newCandidate.name.trim()) return;
+                  const slug = newCandidate.name.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+                  const created: MockCandidate = {
+                    id: `cand-${Date.now()}`,
+                    name: newCandidate.name.trim(),
+                    slug,
+                    cargo: newCandidate.cargo || "Alcalde",
+                    numero: newCandidate.numero ? parseInt(newCandidate.numero, 10) : 0,
+                    partido: newCandidate.partido.trim() || "Sin partido",
+                    foto_url: null,
+                    logo_partido_url: null,
+                    color_primario: newCandidate.color_primario,
+                    color_secundario: "#FFFFFF",
+                    status: "active",
+                    agentes_count: 0,
+                    operadoras_count: 0,
+                    forms_count: 0,
+                  };
+                  setLocalCandidates((prev) => [created, ...prev]);
+                  setNewCandidate({ name: "", cargo: "", numero: "", partido: "", color_primario: "#163960" });
+                  setShowCreatePanel(false);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "12px 0",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  fontFamily: fontStack,
+                  color: "#fff",
+                  background: newCandidate.name.trim() ? "var(--goberna-gold)" : "var(--color-border-strong)",
+                  border: "none",
+                  borderRadius: "var(--radius-sm)",
+                  cursor: newCandidate.name.trim() ? "pointer" : "not-allowed",
+                  transition: "background .15s ease",
+                }}
+              >
+                Crear Candidato
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreatePanel(false)}
+                style={{
+                  width: "100%",
+                  padding: "10px 0",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  fontFamily: fontStack,
+                  color: "var(--color-text-tertiary)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

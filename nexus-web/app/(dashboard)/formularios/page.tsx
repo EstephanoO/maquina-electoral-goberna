@@ -93,7 +93,7 @@ export default function FormulariosPage() {
   const [formSlug, setFormSlug] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formFields, setFormFields] = useState<FormField[]>([]);
-  const [formStatus, setFormStatus] = useState<"draft" | "active">("draft");
+  const [formStatus, setFormStatus] = useState<"draft" | "active" | "archived">("draft");
 
   // Field editor state
   const [editingField, setEditingField] = useState<FormField | null>(null);
@@ -101,11 +101,11 @@ export default function FormulariosPage() {
 
   const loadCampaigns = useCallback(async () => {
     try {
-      const data = await api.get<{ campaigns: Campaign[] }>("/api/campaigns");
-      if (data?.campaigns) {
-        setCampaigns(data.campaigns);
-        if (data.campaigns.length > 0) {
-          setSelectedCampaign(data.campaigns[0].id);
+      const res = await api.get<{ campaigns: Campaign[] }>("/api/campaigns");
+      if (res.ok && res.data?.campaigns) {
+        setCampaigns(res.data.campaigns);
+        if (res.data.campaigns.length > 0) {
+          setSelectedCampaign(res.data.campaigns[0].id);
         }
       }
     } catch (err) {
@@ -116,9 +116,9 @@ export default function FormulariosPage() {
   const loadForms = useCallback(async () => {
     try {
       const params = selectedCampaign ? `?campaign_id=${selectedCampaign}` : "";
-      const data = await api.get<{ form_definitions: FormDefinition[] }>(`/api/form-definitions${params}`);
-      if (data?.form_definitions) {
-        setForms(data.form_definitions);
+      const res = await api.get<{ form_definitions: FormDefinition[] }>(`/api/form-definitions${params}`);
+      if (res.ok && res.data?.form_definitions) {
+        setForms(res.data.form_definitions);
       }
     } catch (err) {
       console.error("Error loading forms:", err);

@@ -50,6 +50,7 @@ export type AppEnv = {
   streamDlqMaxAttempts: number;
   trackingDlqStreamKey: string;
   formsDlqStreamKey: string;
+  uploadsDir: string;
 };
 
 function toNumber(value: string | undefined, fallback: number): number {
@@ -130,5 +131,6 @@ export function getEnv(): AppEnv {
     streamDlqMaxAttempts: toNumber(process.env.STREAM_DLQ_MAX_ATTEMPTS, 5),
     trackingDlqStreamKey: (process.env.TRACKING_DLQ_STREAM_KEY ?? "tracking:dlq").trim(),
     formsDlqStreamKey: (process.env.FORMS_DLQ_STREAM_KEY ?? "forms:dlq").trim(),
+    uploadsDir: (process.env.UPLOADS_DIR ?? "/srv/uploads").trim(),
   };
 }

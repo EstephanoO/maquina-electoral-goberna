@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "../../lib/auth-context";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { useEffect, useRef, useState, useCallback } from "react";
+import type { MockRole } from "../../lib/mock-data";
 
 // ── Nav items ───────────────────────────────────────────────────────
 
@@ -11,18 +12,19 @@ type NavItem = {
   icon: React.ReactNode;
   label: string;
   href: string;
-  adminOnly?: boolean;
+  roles: MockRole[];
+  section?: "main" | "admin";
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { icon: <MapIcon />, label: "Mapa", href: "/map" },
-  { icon: <DashboardIcon />, label: "Dashboard", href: "/" },
-  { icon: <AgentsIcon />, label: "Agentes", href: "/agents" },
-  { icon: <SurveysIcon />, label: "Encuestas", href: "/surveys" },
-  { icon: <OpsIcon />, label: "Operaciones", href: "/ops" },
-  { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", adminOnly: true },
-  { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", adminOnly: true },
-  { icon: <SettingsIcon />, label: "Configuracion", href: "/settings" },
+  { icon: <DashboardIcon />, label: "Dashboard", href: "/", roles: ["admin", "candidato", "operadora"], section: "main" },
+  { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin" },
+  { icon: <MapIcon />, label: "Mapa", href: "/map", roles: ["admin", "candidato"], section: "main" },
+  { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["candidato"], section: "main" },
+  { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin", "candidato"], section: "main" },
+  { icon: <CMSIcon />, label: "CMS", href: "/cms", roles: ["candidato", "operadora"], section: "main" },
+  { icon: <OpsIcon />, label: "Operaciones", href: "/ops", roles: ["admin"], section: "admin" },
+  { icon: <SettingsIcon />, label: "Configuracion", href: "/settings", roles: ["admin", "candidato"], section: "admin" },
 ];
 
 // ── Simple SVG icons ────────────────────────────────────────────────
@@ -106,6 +108,17 @@ function FormulariosIcon() {
       <line x1="16" y1="13" x2="8" y2="13" />
       <line x1="16" y1="17" x2="8" y2="17" />
       <line x1="10" y1="9" x2="8" y2="9" />
+    </svg>
+  );
+}
+
+function CMSIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <title>CMS</title>
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <line x1="9" y1="9" x2="15" y2="9" />
+      <line x1="9" y1="13" x2="13" y2="13" />
     </svg>
   );
 }
@@ -260,6 +273,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const [isMobile, setIsMobile] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false);
+  const [mockRole, setMockRole] = useState<MockRole>("admin");
 
   // Track viewport width for mobile detection (avoids SSR window access)
   useEffect(() => {
@@ -293,7 +307,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const activeCampaign = campaigns.find((c) => c.id === activeCampaignId);
   const isAdmin = user?.role === "admin";
 
-  const filteredNav = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
+  const filteredNav = NAV_ITEMS.filter((item) => item.roles.includes(mockRole));
+  const mainNav = filteredNav.filter((item) => item.section === "main");
+  const adminNav = filteredNav.filter((item) => item.section === "admin");
 
   if (isLoading) return <LoadingScreen />;
   if (!isAuthenticated) return <LoadingScreen />;
@@ -408,7 +424,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             padding: "12px 0",
           }}
         >
-          {filteredNav.map((item) => {
+          {mainNav.map((item) => {
             const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
             const isHovered = hoveredItem === item.href;
             const showLabel = !collapsed || mobileOpen;
@@ -451,6 +467,109 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
               </button>
             );
           })}
+
+          {/* Section separator */}
+          {adminNav.length > 0 && (
+            <div
+              style={{
+                margin: "8px 0",
+                borderTop: "1px solid rgba(255,255,255,0.08)",
+                padding: (!collapsed || mobileOpen) ? "8px 20px 0" : "8px 0 0",
+              }}
+            >
+              {(!collapsed || mobileOpen) && (
+                <span style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1.5px", color: "rgba(255,255,255,0.35)" }}>
+                  Administracion
+                </span>
+              )}
+            </div>
+          )}
+
+          {adminNav.map((item) => {
+            const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+            const isHovered = hoveredItem === item.href;
+            const showLabel = !collapsed || mobileOpen;
+
+            return (
+              <button
+                type="button"
+                key={item.href}
+                onClick={() => router.push(item.href)}
+                onMouseEnter={() => setHoveredItem(item.href)}
+                onMouseLeave={() => setHoveredItem(null)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "12px",
+                  width: "100%",
+                  padding: showLabel ? "12px 20px" : "12px 0",
+                  justifyContent: showLabel ? "flex-start" : "center",
+                  background: isActive
+                    ? "rgba(255,255,255,0.1)"
+                    : isHovered
+                      ? "rgba(255,255,255,0.05)"
+                      : "transparent",
+                  border: "none",
+                  borderLeft: isActive ? "3px solid var(--goberna-gold)" : "3px solid transparent",
+                  color: isActive ? "var(--goberna-gold)" : isHovered ? "#ffffff" : "rgba(255,255,255,0.7)",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: isActive ? 600 : 500,
+                  fontFamily: "inherit",
+                  transition: "all 0.15s ease",
+                  whiteSpace: "nowrap",
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
+                  {item.icon}
+                </span>
+                {showLabel && <span>{item.label}</span>}
+              </button>
+            );
+          })}
+
+          {/* Role switcher (dev tool) */}
+          {(!collapsed || mobileOpen) && (
+            <div
+              style={{
+                margin: "12px 12px 0",
+                padding: "8px 10px",
+                background: "rgba(255,200,0,0.08)",
+                borderRadius: "8px",
+                border: "1px solid rgba(255,200,0,0.15)",
+              }}
+            >
+              <span style={{ fontSize: "9px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px", color: "var(--goberna-gold-300)", display: "block", marginBottom: "6px" }}>
+                Dev: Cambiar rol
+              </span>
+              <div style={{ display: "flex", gap: "4px" }}>
+                {(["admin", "candidato", "operadora"] as const).map((role) => (
+                  <button
+                    type="button"
+                    key={role}
+                    onClick={() => setMockRole(role)}
+                    style={{
+                      flex: 1,
+                      padding: "4px 0",
+                      fontSize: "10px",
+                      fontWeight: mockRole === role ? 700 : 500,
+                      fontFamily: "inherit",
+                      background: mockRole === role ? "var(--goberna-gold)" : "rgba(255,255,255,0.08)",
+                      color: mockRole === role ? "var(--goberna-blue-950)" : "rgba(255,255,255,0.6)",
+                      border: "none",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      transition: "all 0.15s ease",
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {role}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </nav>
 
         {/* Collapse toggle (desktop only) */}
