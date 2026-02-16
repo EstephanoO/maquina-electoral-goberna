@@ -59,6 +59,7 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
       polling_place_url: form.polling_place_url ?? null,
       comentarios: form.comentarios ?? null,
       campaign_id: form.campaign_id ?? null,
+      form_definition_id: form.form_definition_id ?? null,
     })),
   );
 
@@ -81,19 +82,20 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
           home_maps_url text,
           polling_place_url text,
           comentarios text,
-          campaign_id uuid
+          campaign_id uuid,
+          form_definition_id uuid
         )
       ),
       inserted AS (
         INSERT INTO public.forms (
           nombre, telefono, fecha, x, y, zona, candidate, encuestador, encuestador_id,
           candidato_preferido, client_id, home_maps_url, polling_place_url, comentarios,
-          campaign_id
+          campaign_id, form_definition_id
         )
         SELECT
           i.nombre, i.telefono, i.fecha, i.x, i.y, i.zona, i.candidate, i.encuestador,
           i.encuestador_id, i.candidato_preferido, i.client_id, i.home_maps_url,
-          i.polling_place_url, i.comentarios, i.campaign_id
+          i.polling_place_url, i.comentarios, i.campaign_id, i.form_definition_id
         FROM incoming i
         ON CONFLICT (client_id) DO NOTHING
         RETURNING client_id

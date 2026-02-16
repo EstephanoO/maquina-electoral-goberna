@@ -15,6 +15,7 @@ import { buildFormsRoutes } from "./modules/forms/routes";
 import { buildHealthRoutes } from "./modules/health/routes";
 import { buildCampaignsRoutes } from "./modules/campaigns/routes";
 import { buildAccessRequestsRoutes } from "./modules/access-requests/routes";
+import { buildFormDefinitionsRoutes } from "./modules/form-definitions/routes";
 import { buildMapRoutes } from "./modules/map/routes";
 
 export function buildApp(env: AppEnv) {
@@ -112,6 +113,7 @@ export function buildApp(env: AppEnv) {
   app.register(buildAgentsRoutes(env));
   app.register(buildCampaignsRoutes(env));
   app.register(buildAccessRequestsRoutes(env));
+  app.register(buildFormDefinitionsRoutes(env));
 
   app.get("/api/metrics", { preHandler: [app.authenticate] }, async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
