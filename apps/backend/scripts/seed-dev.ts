@@ -112,7 +112,7 @@ async function seed() {
     const { rows: adminRows } = await pool.query(
       `INSERT INTO users (email, password_hash, full_name, role, status)
        VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT ON CONSTRAINT uq_users_email
+       ON CONFLICT ((lower(email)))
          DO UPDATE SET password_hash = EXCLUDED.password_hash,
                        full_name     = EXCLUDED.full_name,
                        role          = EXCLUDED.role,
@@ -144,7 +144,7 @@ async function seed() {
       const { rows } = await pool.query(
         `INSERT INTO users (email, password_hash, full_name, role, status)
          VALUES ($1, $2, $3, $4, 'active')
-         ON CONFLICT ON CONSTRAINT uq_users_email
+         ON CONFLICT ((lower(email)))
            DO UPDATE SET password_hash = EXCLUDED.password_hash,
                          full_name     = EXCLUDED.full_name,
                          role          = EXCLUDED.role,
