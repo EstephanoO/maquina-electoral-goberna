@@ -1,5 +1,9 @@
 # AGENTS.md - Modulo map
 
+## Herencia obligatoria
+
+Este archivo hereda de `AGENTS.md` root y guias backend/modulos.
+
 ## Objetivo
 
 Servir contrato de mapa y proxy de tiles Tegola con cache/revalidacion correctas.
@@ -25,6 +29,7 @@ Servir contrato de mapa y proxy de tiles Tegola con cache/revalidacion correctas
 - Propagar `ETag`, `Last-Modified`, `Cache-Control`.
 - Soportar `304` con conditional request.
 - No filtrar error upstream como 200.
+- Mantener timeouts y retries por env para no romper `/api/ready`.
 
 ## Performance
 

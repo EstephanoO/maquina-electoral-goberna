@@ -38,3 +38,4 @@ Si hay contradiccion, manda el root.
 - Al sumar feature nueva, primero mapear skill existente; si no existe, documentar gap.
 - Cada PR con cambio estructural debe actualizar este archivo si cambia ownership o skill.
 - Para cambios de contrato backend, sincronizar tambien docs de contrato Expo/backend.
+- Runbook de operabilidad actual de Expo/backend: `docs/EXPO_BACKEND_SLO_RUNBOOK.md`.

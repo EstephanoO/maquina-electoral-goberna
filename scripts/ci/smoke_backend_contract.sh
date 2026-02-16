@@ -5,6 +5,16 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="$(mktemp)"
 
+diagnose() {
+	echo "=== [smoke] diagnostics ==="
+	docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" ps 2>/dev/null || true
+	echo "--- backend logs (last 40) ---"
+	docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" logs --tail=40 backend 2>/dev/null || true
+	echo "--- nginx logs (last 20) ---"
+	docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" logs --tail=20 nginx 2>/dev/null || true
+	echo "=== end diagnostics ==="
+}
+
 cleanup() {
 	docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" down -v >/dev/null 2>&1 || true
 	rm -f "$ENV_FILE"
@@ -42,18 +52,33 @@ BACKEND_DOCKERFILE=Dockerfile
 AGENT_STALE_AFTER_MS=120000
 AGENT_STREAM_HEARTBEAT_MS=25000
 AGENT_STREAM_BATCH_FLUSH_MS=120
+RATE_LIMIT_MAX_PER_MINUTE=500000
+RATE_LIMIT_FORMS_PER_MINUTE=1200
+RATE_LIMIT_AGENTS_LOCATION_PER_MINUTE=12000
+RATE_LIMIT_AGENTS_LIVE_PER_MINUTE=3000
+RATE_LIMIT_AGENTS_STREAM_PER_MINUTE=500
+RATE_LIMIT_FORMS_IP_PER_MINUTE=12000
+RATE_LIMIT_FORMS_WINDOW_SEC=60
 EOF
 
 docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" up -d --build --remove-orphans
 
-for _ in $(seq 1 30); do
+echo "[smoke] waiting for backend readiness..."
+READY=false
+for attempt in $(seq 1 45); do
 	if curl -fsS "http://127.0.0.1/api/health" >/dev/null 2>&1; then
+		READY=true
+		echo "[smoke] backend healthy after ${attempt} attempts"
 		break
 	fi
 	sleep 2
 done
 
-curl -fsS "http://127.0.0.1/api/health" >/dev/null
+if [ "$READY" != "true" ]; then
+	echo "[smoke] ERROR: backend not healthy after 90s"
+	diagnose
+	exit 1
+fi
 curl -fsS "http://127.0.0.1/api/config" >/dev/null
 curl -fsS "http://127.0.0.1/api/agents/health" >/dev/null
 

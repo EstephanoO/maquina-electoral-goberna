@@ -11,6 +11,13 @@
 certbot/conf/
 certbot/www/
 
+# Agent/IDE tooling
+.agents/
+.claude/
+
+# Node
+**/node_modules/
+
 # macOS
 .DS_Store
 .vercel

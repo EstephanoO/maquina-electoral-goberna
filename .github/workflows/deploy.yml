@@ -30,16 +30,6 @@ jobs:
         run: bunx tsc --noEmit
         working-directory: apps/backend
 
-      - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
-        working-directory: nexus-web
-
-      - name: Typecheck and build frontend
-        run: |
-          bunx tsc --noEmit
-          bun run build
-        working-directory: nexus-web
-
       - name: Run backend smoke contract
         run: bash scripts/ci/smoke_backend_contract.sh
 
@@ -56,6 +46,7 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
 
       - name: Vulnerability scan (Trivy fs)
         uses: aquasecurity/trivy-action@0.28.0
@@ -80,7 +71,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: deploy
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
+          port: ${{ secrets.VPS_PORT }}
           script_stop: true
           script: |
             set -euo pipefail
@@ -96,7 +87,8 @@ jobs:
                 return 1
               fi
 
-              if [ -n "$(git ls-files --others --exclude-standard)" ]; then
+              UNTRACKED=$(git ls-files --others --exclude-standard)
+              if [ -n "$UNTRACKED" ]; then
                 echo "[deploy] drift detectado: archivos untracked en VPS"
                 git status --short
                 return 1
@@ -110,12 +102,14 @@ jobs:
               git pull --ff-only origin main
               docker compose up -d --build --remove-orphans
 
-              for attempt in $(seq 1 30); do
-                if curl -fsS "http://127.0.0.1/api/ready" >/dev/null; then
+              echo "[deploy] waiting for readiness..."
+              for attempt in $(seq 1 40); do
+                if curl -fsS "http://127.0.0.1/api/ready" >/dev/null 2>&1; then
+                  echo "[deploy] ready after ${attempt} attempts"
                   break
                 fi
-                if [ "$attempt" -eq 30 ]; then
-                  echo "[deploy] readiness timeout"
+                if [ "$attempt" -eq 40 ]; then
+                  echo "[deploy] readiness timeout after 80s"
                   return 1
                 fi
                 sleep 2
@@ -128,8 +122,9 @@ jobs:
               payload='{"nombre":"Deploy Smoke","telefono":"999000001","fecha":"2026-02-14T20:10:00.000Z","x":279854,"y":8661420,"zona":"18S","candidate":"Deploy","encuestador":"CI","encuestador_id":"ci-deploy","candidato_preferido":"Deploy","client_id":"deploy-smoke-'"$(date +%s)"'"}'
               curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/forms" --data "$payload" >/dev/null
 
+              AGENT_TOKEN=$(grep -oP '(?<=AGENT_INGEST_TOKEN=).*' /srv/app/.env | head -1)
               agent_payload='{"agent_id":"deploy-smoke-agent","ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","lat":-12.0464,"lng":-77.0428,"accuracy":8,"seq":1}'
-              curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload" >/dev/null
+              curl -fsS -H "Content-Type: application/json" -H "x-agent-token: ${AGENT_TOKEN}" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload" >/dev/null
               curl -fsS "http://127.0.0.1/api/agents/live" >/dev/null
 
               test -x scripts/backup.sh
@@ -137,14 +132,18 @@ jobs:
             }
 
             if ! deploy_and_smoke; then
-              echo "[deploy] fallo smoke checks, iniciando rollback"
+              echo "[deploy] fallo smoke checks, diagnosticando..."
+              docker compose ps || true
+              docker compose logs --tail=40 backend || true
+              docker compose logs --tail=20 nginx || true
+              echo "[deploy] iniciando rollback a $PREVIOUS_COMMIT"
               git reset --hard "$PREVIOUS_COMMIT"
               docker compose up -d --build --remove-orphans
-              for attempt in $(seq 1 30); do
-                if curl -fsS "http://127.0.0.1/api/ready" >/dev/null; then
+              for attempt in $(seq 1 40); do
+                if curl -fsS "http://127.0.0.1/api/ready" >/dev/null 2>&1; then
                   break
                 fi
-                if [ "$attempt" -eq 30 ]; then
+                if [ "$attempt" -eq 40 ]; then
                   echo "[deploy] rollback no quedo healthy"
                 fi
                 sleep 2

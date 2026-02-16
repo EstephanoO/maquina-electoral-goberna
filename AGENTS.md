@@ -49,6 +49,8 @@ Reemplazar estos valores en scripts y configs:
 - `BACKUP_DIR=/srv/backups`
 - `BACKUP_RETENTION_DAYS=7`
 - `BACKEND_PORT=3000`
+- `RATE_LIMIT_FORMS_IP_PER_MINUTE=12000`
+- `RATE_LIMIT_FORMS_WINDOW_SEC=60`
 
 GitHub Secrets requeridos:
 
@@ -67,7 +69,7 @@ Opcional recomendado:
 
 - `postgres:15` con volumen persistente
 - `redis:7`
-- `backend` (build local desde `./backend`)
+- `backend` (build local desde `./apps/backend`)
 - `nginx` como reverse proxy publico
 
 ### Flujo de trafico
@@ -110,7 +112,7 @@ Contenido minimo:
 
 - `docker-compose.yml`
 - `.env`
-- `backend/`
+- `apps/backend/`
 - `nginx/`
 
 ## 6.3 Docker Compose de produccion
@@ -268,3 +270,40 @@ Cuando haya conflicto, decidir en este orden:
 3. Recuperacion ante fallos
 4. Simplicidad operativa para 2 devs
 5. Optimizacion/performance fina
+
+---
+
+## 12) Estado actual consolidado (obligatorio para todos los sub-agentes)
+
+Este estado manda sobre supuestos viejos en cualquier `AGENTS.md` local:
+
+1. Backend productivo activo en `apps/backend` (no `backend/` legacy).
+2. Ingesta de tracking y forms con write-behind en Redis Streams + batch a Postgres.
+3. Tracking separa estado vivo de historico (`agent_locations_live` como fuente de live).
+4. Endpoints operativos esperados:
+   - `GET /api/health`
+   - `GET /api/ready` (DB + Tegola + Redis)
+   - `GET /api/metrics`
+   - `GET /api/agents/health`
+   - `POST /api/agents/location`
+   - `GET /api/agents/live`
+   - `GET /api/agents/stream`
+   - `POST /api/forms`
+   - `POST /api/forms/batch`
+5. Redis en produccion debe quedar en politica `noeviction` para no perder estado de cola.
+6. `AGENT_INGEST_TOKEN` es obligatorio en produccion para `/api/agents/location`.
+7. `/api/metrics` expone latencias por ruta y por outcome (`ingest_outcome_latencies`) con `p50/p90/p95/p99`.
+8. Forms usa rate limit dual en Redis (actor + IP guardrail) para evitar 429 espurios bajo NAT.
+9. `nexus-web/app/ops/page.tsx` debe mostrar tabla por ruta, tabla por outcome y cards de SLO operativos.
+10. Runbook vigente Expo/backend: `docs/EXPO_BACKEND_SLO_RUNBOOK.md`.
+
+---
+
+## 13) Regla de ramificacion de contexto (obligatoria)
+
+Todo `AGENTS.md` de subcarpeta debe:
+
+1. Declarar explicitamente que hereda este archivo root como fuente de verdad.
+2. Limitar su alcance al modulo y no redefinir arquitectura global.
+3. Mantener contrato/DoD local alineado al objetivo de operabilidad de hoy.
+4. Si hay conflicto entre archivos, prevalece este root `AGENTS.md`.

@@ -30,6 +30,7 @@ Frontend del geovisor en `nexus-web`, deploy en Vercel, consumo de backend propi
 - Evitar hydration mismatch (sin branch no determinista SSR/CSR).
 - Estado de hover/transitorio con `ref`/`feature-state`, no con renders masivos.
 - Contratos de API centralizados: `/api/health`, `/api/ready`, `/api/config`, `/api/metrics`, `/api/agents/live`, `/api/agents/stream`, `/api/ops/system`.
+- `/ops` debe consumir `ingest_outcome_latencies` y reflejar SLO operativos (latencia accepted, ratio 429, colas).
 - Si se toca contrato backend, actualizar `EXPO-CONTRATO-TRACKING-FORMS.md` y smoke.
 
 ## Performance

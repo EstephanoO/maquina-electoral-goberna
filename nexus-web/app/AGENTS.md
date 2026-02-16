@@ -35,6 +35,7 @@ Visualizar Peru administrativo + tracking de agentes en tiempo real con UX fluid
 - Feature hover por `feature-state` + `promoteId`.
 - Reconexion SSE robusta sin loops de reconexion agresivos.
 - Tolerar estado offline/online de agentes sin bloquear render.
+- En `/ops`, mostrar outcome latencies y cards de alerta SLO sin romper tabla por ruta.
 
 ## Performance
 
