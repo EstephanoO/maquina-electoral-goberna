@@ -1,8 +1,8 @@
 [extend]
 useDefault = true
 
-[[allowlist.paths]]
-description = "CI smoke test script uses local-only dummy credentials"
+[allowlist]
+description = "CI smoke test scripts use local-only dummy credentials"
 paths = [
   '''scripts/ci/smoke_backend_contract\.sh''',
 ]
