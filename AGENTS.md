@@ -1,267 +1,302 @@
-# AGENTS.md - Source of Truth (Infra de Produccion)
+# AGENTS.md - Goberna Platform (Root Source of Truth)
 
-## 1) Objetivo de hoy (mandatory)
-
-Dejar una base de infraestructura **estable y operable** para produccion en VPS de 32GB con:
-
-- Frontend en Vercel
-- Cloudflare delante
-- Backend monolito en contenedores
-- CI/CD basico de deploy
-- Backups de DB automaticos
-- Logging basico
-
-Resultado esperado hoy:
-
-- Docker en produccion funcionando
-- Deploy automatico a `main`
-- Backup diario de PostgreSQL con retencion
-- Reverse proxy con Nginx + SSL
-- Infra simple para mantener por 2 devs
+> **Regla #1:** Este archivo es la fuente de verdad absoluta del monorepo. Los AGENTS.md de cada app heredan de este. Si hay conflicto, este archivo prevalece.
 
 ---
 
-## 2) Contexto del proyecto
+## 1. Identidad del Producto
 
-- Equipo: `2 devs`
-- Infra target: `1 VPS (32GB)`
-- Frontend hosting: `Vercel`
-- DNS/Edge: `Cloudflare (proxy ON)`
-- Backend: `Monolito`
-- Prioridad actual: `operabilidad > sofisticacion`
+**Goberna** es una plataforma SaaS de operacion territorial para campanas politicas en Peru.
 
----
-
-## 3) Parametros obligatorios (rellenar antes de ejecutar)
-
-Reemplazar estos valores en scripts y configs:
-
-- `APP_NAME=<app_name>`
-- `VPS_HOST=<ip_o_hostname_vps>`
-- `DEPLOY_USER=deploy`
-- `PROJECT_DIR=/srv/app`
-- `API_DOMAIN=api.<dominio>`
-- `TZ=<timezone>`
-- `POSTGRES_DB=<db_name>`
-- `POSTGRES_USER=<db_user>`
-- `POSTGRES_PASSWORD=<db_password_largo>`
-- `JWT_SECRET=<jwt_secret_largo>`
-- `BACKUP_DIR=/srv/backups`
-- `BACKUP_RETENTION_DAYS=7`
-- `BACKEND_PORT=3000`
-- `RATE_LIMIT_FORMS_IP_PER_MINUTE=12000`
-- `RATE_LIMIT_FORMS_WINDOW_SEC=60`
-
-GitHub Secrets requeridos:
-
-- `VPS_HOST`
-- `SSH_PRIVATE_KEY`
-
-Opcional recomendado:
-
-- `VPS_PORT` (si SSH no usa 22)
+| Aspecto | Detalle |
+|---------|---------|
+| Organizacion | Grupo Goberna |
+| Mercado | Peru (conectividad intermitente, campo operativo real) |
+| Diferenciador | Offline-first, mapas vectoriales, CRM integrado, multi-campana |
+| Equipo | 2 devs |
+| Prioridad | Operabilidad > Sofisticacion |
 
 ---
 
-## 4) Arquitectura objetivo (actual)
+## 2. Estructura del Monorepo
 
-### Runtime
-
-- `postgres:15` con volumen persistente
-- `redis:7`
-- `backend` (build local desde `./apps/backend`)
-- `nginx` como reverse proxy publico
-
-### Flujo de trafico
-
-`Cliente -> Cloudflare -> Nginx (VPS) -> Backend`
-
-### Flujo de deploy
-
-`push main -> GitHub Actions -> SSH VPS -> docker compose up -d --build`
-
----
-
-## 5) Reglas operativas
-
-1. Nunca subir `.env` a git.
-2. No exponer PostgreSQL ni Redis a internet.
-3. Toda app se levanta por `docker compose` en `PROJECT_DIR`.
-4. Cualquier cambio de infra debe mantener deploy reproducible por script.
-5. Si falla deploy, rollback inmediato al ultimo estado estable.
+```
+nexus6.0/
+  AGENTS.md                    <- Este archivo (root, fuente de verdad)
+  apps/
+    backend/                   <- Fastify API (VPS produccion)
+      AGENTS.md                <- Hereda de root
+    web/                       <- Next.js Admin Dashboard (Vercel)
+      AGENTS.md                <- Hereda de root
+    mobile/                    <- Expo App (agentes de campo)
+      AGENTS.md                <- Hereda de root
+  docs/                        <- Documentacion compartida
+  scripts/                     <- Scripts de desarrollo
+  deploy/                      <- Configs de deploy
+  docker-compose.yml           <- Produccion
+  docker-compose.dev.yml       <- Desarrollo local
+```
 
 ---
 
-## 6) Runbook de implementacion
+## 3. Arquitectura de Produccion
 
-## 6.1 Hardening base del VPS
-
-1. Crear usuario seguro y permisos sudo.
-2. Deshabilitar `root` por SSH y autenticacion por password.
-3. Configurar firewall (`OpenSSH`, `80`, `443`).
-4. Instalar dependencias base: Docker, Compose, Git, Nginx, Certbot.
-5. Habilitar Docker al boot.
-
-## 6.2 Estructura de carpetas
-
-Ruta base:
-
-`/srv/app`
-
-Contenido minimo:
-
-- `docker-compose.yml`
-- `.env`
-- `apps/backend/`
-- `nginx/`
-
-## 6.3 Docker Compose de produccion
-
-Servicios minimos:
-
-- `postgres`
-- `redis`
-- `backend`
-- `nginx`
-
-Notas:
-
-- Corregir typo en Redis: usar `container_name` (no `containe r_name`).
-- Mantener `restart: always`.
-- Definir red interna dedicada (`app_network`).
-- Persistir datos de PostgreSQL con volumen (`pgdata`).
-
-## 6.4 Variables de entorno
-
-Definir en `.env`:
-
-- credenciales DB
-- `DATABASE_URL`
-- `REDIS_URL`
-- `JWT_SECRET`
-
-Politica:
-
-- secretos largos
-- rotacion trimestral recomendada
-
-## 6.5 Deploy inicial manual
-
-Desde `PROJECT_DIR`:
-
-- build + up en detached
-- validar estado de contenedores
-
-## 6.6 CI/CD basico
-
-Archivo:
-
-- `.github/workflows/deploy.yml`
-
-Evento:
-
-- push a `main`
-
-Flujo remoto:
-
-1. `git pull`
-2. `docker compose down`
-3. `docker compose up -d --build`
-
-## 6.7 Backups automaticos DB
-
-Script:
-
-- `/srv/backup.sh`
-
-Frecuencia:
-
-- diario 03:00
-
-Retencion:
-
-- `BACKUP_RETENTION_DAYS` (default 7)
-
-Validacion minima:
-
-- generar al menos un backup de prueba
-- verificar restauracion en entorno de prueba
-
-## 6.8 Logging basico
-
-Minimo hoy:
-
-- logs por contenedor (`docker logs`)
-- backend con logs estructurados (ej. winston)
-- request logs HTTP (ej. morgan)
-
-Objetivo proximo:
-
-- centralizacion con Loki + Grafana
-
-## 6.9 Nginx + SSL
-
-Config base de `server_name` en `API_DOMAIN`.
-
-Proxy al backend interno (`backend:BACKEND_PORT`).
-
-Emitir certificado con Certbot para `API_DOMAIN`.
-
-## 6.10 Cloudflare
-
-Config minima:
-
-- SSL mode: `Full (strict)`
-- Proxy: `ON`
-- Rate limiting: habilitado
-- Bot protection: habilitado
+```
+                    +------------------+
+                    |   Cloudflare     |
+                    |   (DNS + Proxy)  |
+                    +--------+---------+
+                             |
+              +--------------+--------------+
+              |                             |
+     +--------v--------+          +---------v---------+
+     |    Vercel       |          |   VPS (32GB)      |
+     |   (apps/web)    |          |   161.132.39.165  |
+     +-----------------+          |                   |
+                                  |  +-------------+  |
+                                  |  |   Nginx     |  |
+                                  |  +------+------+  |
+                                  |         |         |
+                                  |  +------v------+  |
+                                  |  |   Backend   |  |
+                                  |  |  (Fastify)  |  |
+                                  |  +------+------+  |
+                                  |         |         |
+                                  +----+----+----+----+
+                                       |    |    |
+                             +---------+    |    +---------+
+                             |              |              |
+                      +------v-----+ +------v-----+ +------v------+
+                      | PostgreSQL | |   Redis    | |   Tegola    |
+                      |  + PostGIS | |  (Streams) | | (MVT tiles) |
+                      +------------+ +------------+ +-------------+
+```
 
 ---
 
-## 7) Definition of Done (DoD)
+## 4. Stack Tecnologico (Estado Actual)
 
-Se considera terminado cuando:
-
-1. `https://API_DOMAIN/health` responde 200.
-2. Deploy automatico funciona con push real a `main`.
-3. Existe backup del dia y se puede listar en `BACKUP_DIR`.
-4. Renovacion SSL activa sin errores.
-5. Firewall activo y puertos minimos expuestos.
-
----
-
-## 8) Checklist de verificacion rapida
-
-- [ ] Cloudflare proxy activo
-- [ ] Cert SSL valido
-- [ ] `docker ps` sin reinicios anormales
-- [ ] DB con volumen persistente
-- [ ] Restore de backup probado
-- [ ] Workflow de GitHub Actions en verde
+| Capa | Tecnologia | Ubicacion | Estado |
+|------|-----------|-----------|--------|
+| Backend API | Fastify + TypeScript + Bun | `apps/backend/` | **Produccion** |
+| Base de Datos | PostgreSQL 15 + PostGIS | Docker VPS | **Produccion** |
+| Cache/Queues | Redis 7.4 (Streams) | Docker VPS | **Produccion** |
+| Vector Tiles | Tegola | Docker VPS | **Produccion** |
+| Web Admin | Next.js 16 + React 19 | `apps/web/` | **Produccion** (Vercel) |
+| Mobile App | Expo SDK 54 + RN 0.81 | `apps/mobile/` | **Desarrollo** |
+| CI/CD | GitHub Actions | `.github/workflows/` | **Produccion** |
 
 ---
 
-## 9) Siguientes pasos (no bloqueantes de hoy)
+## 5. Infraestructura de Produccion
 
-1. Estructura multi-tenant en backend.
-2. Integracion de WhatsApp.
-3. UI profesional.
-4. Endurecimiento avanzado (fail2ban, auditd, SSH hardening extra, IDS).
-5. Postgres tuning para 32GB (memoria, autovacuum, checkpoints, pool).
-
----
-
-## 10) Anti-patterns a evitar
-
-- Meter Kubernetes ahora (overkill para este estadio).
-- Exponer DB/Redis publicamente.
-- Deploy manual permanente sin CI/CD.
-- Backups sin prueba de restore.
-- Mezclar secretos en repositorio.
+| Recurso | Valor |
+|---------|-------|
+| VPS Host | `161.132.39.165` |
+| VPS RAM | 32GB |
+| SSH User | `deploy` |
+| Project Dir | `/srv/app` |
+| Timezone | `America/Lima` |
+| Frontend | Vercel (maquina-electoral-goberna-web) |
+| DNS/Edge | Cloudflare (proxy ON) |
 
 ---
 
-## 11) Prioridad de decision
+## 6. Contratos API (Vigentes)
+
+### Endpoints Publicos (sin auth)
+| Endpoint | Descripcion |
+|----------|-------------|
+| `GET /api/health` | Liveness check |
+| `GET /api/ready` | Readiness (DB + Redis + Tegola) |
+| `POST /api/auth/login` | Login email/password |
+| `POST /api/auth/register` | Registro de usuario |
+| `GET /api/candidates` | Lista de candidatos/campanas |
+
+### Endpoints Autenticados (JWT Bearer)
+| Endpoint | Descripcion |
+|----------|-------------|
+| `GET /api/auth/me` | Perfil + campanas del usuario |
+| `POST /api/auth/refresh` | Renovar tokens |
+| `POST /api/auth/logout` | Cerrar sesion |
+| `GET /api/campaigns/:id` | Config de campana |
+| `GET /api/form-definitions/active` | Formularios activos |
+| `POST /api/forms` | Submit formulario |
+| `POST /api/forms/batch` | Submit batch de formularios |
+| `GET /api/metrics` | Metricas operativas (admin) |
+
+### Endpoints de Tracking (x-agent-token)
+| Endpoint | Descripcion |
+|----------|-------------|
+| `POST /api/agents/location` | Enviar ubicacion |
+| `GET /api/agents/live` | Posiciones actuales |
+| `GET /api/agents/stream` | SSE de posiciones |
+| `GET /api/agents/health` | Health del tracking |
+
+---
+
+## 7. Variables de Entorno por App
+
+### Backend (`apps/backend/.env`)
+```bash
+# === OBLIGATORIAS ===
+DATABASE_URL=postgresql://user:pass@localhost:5432/db
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=<minimo-32-caracteres>
+AGENT_INGEST_TOKEN=<token-para-tracking>
+
+# === OPCIONALES (con defaults) ===
+PORT=3001
+LOG_LEVEL=info
+TEGOLA_BASE_URL=http://localhost:8080
+```
+
+### Web (`apps/web/.env.local`)
+```bash
+# Desarrollo local
+BACKEND_PROXY_TARGET=http://localhost:3001
+
+# Produccion (en Vercel env vars)
+# BACKEND_PROXY_TARGET=http://161.132.39.165
+```
+
+### Mobile (`apps/mobile/app.json` > extra)
+```json
+{
+  "EXPO_PUBLIC_BACKEND_API_URL": "http://161.132.39.165/api",
+  "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "<token>"
+}
+```
+
+---
+
+## 8. Comandos de Desarrollo
+
+### Setup inicial
+```bash
+# Instalar dependencias
+cd apps/backend && bun install
+cd ../web && bun install
+cd ../mobile && bun install
+
+# Levantar infra local
+docker compose -f docker-compose.dev.yml up -d
+
+# Correr migraciones
+cd apps/backend && bun run migrate
+
+# Crear usuario de prueba
+bun run seed
+```
+
+### Desarrollo diario
+```bash
+# Terminal 1: Backend (puerto 3001)
+cd apps/backend && bun run dev
+
+# Terminal 2: Web (puerto 3000)
+cd apps/web && bun run dev
+
+# Terminal 3: Mobile
+cd apps/mobile && bun start
+```
+
+### Verificacion
+```bash
+# Health check local
+curl http://localhost:3001/api/health
+curl http://localhost:3001/api/ready
+
+# Health check produccion
+curl http://161.132.39.165/api/health
+```
+
+---
+
+## 9. Principios de Arquitectura (No Negociables)
+
+1. **Offline-first siempre.** Peru tiene conectividad intermitente.
+2. **Multi-tenant por campaign_id.** Todo aislado por campana.
+3. **JSONB para formularios.** Estructura dinamica, no columnas fijas.
+4. **Write-behind en Redis.** Ingesta rapida, persistencia eventual.
+5. **Contratos explicitos.** Web/Mobile/Backend comparten semantica.
+6. **Seguridad server-side.** Las apps son untrusted.
+
+---
+
+## 10. Reglas de Herencia de AGENTS.md
+
+Cada app tiene su propio `AGENTS.md` que:
+
+1. **DEBE** declarar `Hereda de: /AGENTS.md` al inicio
+2. **DEBE** limitarse a su modulo (no redefinir arquitectura global)
+3. **DEBE** mantener DoD alineado al root
+4. **NO DEBE** contradecir el root (si hay conflicto, prevalece root)
+5. **PUEDE** agregar reglas especificas de su dominio
+
+### Jerarquia
+```
+/AGENTS.md (root - este archivo)
+    |
+    +-- /apps/backend/AGENTS.md
+    |
+    +-- /apps/web/AGENTS.md
+    |
+    +-- /apps/mobile/AGENTS.md
+```
+
+---
+
+## 11. Definition of Done (Global)
+
+Cualquier cambio debe cumplir:
+
+| App | Comando | Resultado |
+|-----|---------|-----------|
+| Backend | `bunx tsc --noEmit` | Sin errores |
+| Web | `bun run build` | Build exitoso |
+| Mobile | `bunx tsc --noEmit` | Sin errores |
+| Produccion | `curl /api/health` | 200 OK |
+| Produccion | `curl /api/ready` | 200 OK |
+
+---
+
+## 12. Estado Actual Consolidado
+
+> **IMPORTANTE:** Este estado manda sobre cualquier supuesto viejo en AGENTS.md locales.
+
+1. Backend productivo activo en `apps/backend/` (no `backend/` legacy)
+2. Web productivo activo en `apps/web/` (antes `nexus-web/`)
+3. Mobile en desarrollo en `apps/mobile/` (antes `goberna-territory0.2/`)
+4. Ingesta de tracking y forms con write-behind en Redis Streams
+5. Redis en produccion con politica `noeviction`
+6. `AGENT_INGEST_TOKEN` obligatorio en produccion para tracking
+7. `/api/metrics` expone latencias por ruta con p50/p90/p95/p99
+
+---
+
+## 13. Reglas Operativas de Produccion
+
+1. **Nunca** subir `.env` a git
+2. **Nunca** exponer PostgreSQL ni Redis a internet
+3. **Siempre** deploy via `docker compose` en `/srv/app`
+4. **Siempre** deploy reproducible por script
+5. **Siempre** rollback inmediato si falla deploy
+
+---
+
+## 14. Anti-patterns a Evitar
+
+- Kubernetes (overkill para 2 devs)
+- Exponer DB/Redis publicamente
+- Deploy manual sin CI/CD
+- Backups sin test de restore
+- Secretos en repositorio
+- Documentacion desactualizada
+
+---
+
+## 15. Prioridad de Decision
 
 Cuando haya conflicto, decidir en este orden:
 
@@ -269,41 +304,4 @@ Cuando haya conflicto, decidir en este orden:
 2. Seguridad basica
 3. Recuperacion ante fallos
 4. Simplicidad operativa para 2 devs
-5. Optimizacion/performance fina
-
----
-
-## 12) Estado actual consolidado (obligatorio para todos los sub-agentes)
-
-Este estado manda sobre supuestos viejos en cualquier `AGENTS.md` local:
-
-1. Backend productivo activo en `apps/backend` (no `backend/` legacy).
-2. Ingesta de tracking y forms con write-behind en Redis Streams + batch a Postgres.
-3. Tracking separa estado vivo de historico (`agent_locations_live` como fuente de live).
-4. Endpoints operativos esperados:
-   - `GET /api/health`
-   - `GET /api/ready` (DB + Tegola + Redis)
-   - `GET /api/metrics`
-   - `GET /api/agents/health`
-   - `POST /api/agents/location`
-   - `GET /api/agents/live`
-   - `GET /api/agents/stream`
-   - `POST /api/forms`
-   - `POST /api/forms/batch`
-5. Redis en produccion debe quedar en politica `noeviction` para no perder estado de cola.
-6. `AGENT_INGEST_TOKEN` es obligatorio en produccion para `/api/agents/location`.
-7. `/api/metrics` expone latencias por ruta y por outcome (`ingest_outcome_latencies`) con `p50/p90/p95/p99`.
-8. Forms usa rate limit dual en Redis (actor + IP guardrail) para evitar 429 espurios bajo NAT.
-9. `nexus-web/app/ops/page.tsx` debe mostrar tabla por ruta, tabla por outcome y cards de SLO operativos.
-10. Runbook vigente Expo/backend: `docs/EXPO_BACKEND_SLO_RUNBOOK.md`.
-
----
-
-## 13) Regla de ramificacion de contexto (obligatoria)
-
-Todo `AGENTS.md` de subcarpeta debe:
-
-1. Declarar explicitamente que hereda este archivo root como fuente de verdad.
-2. Limitar su alcance al modulo y no redefinir arquitectura global.
-3. Mantener contrato/DoD local alineado al objetivo de operabilidad de hoy.
-4. Si hay conflicto entre archivos, prevalece este root `AGENTS.md`.
+5. Optimizacion/performance

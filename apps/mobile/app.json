@@ -1,0 +1,98 @@
+{
+  "expo": {
+    "name": "goberna-territory0.2",
+    "slug": "goberna-territory-02",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+
+    "icon": "./assets/letter-g.png",
+    "scheme": "com.estephano.gobernaterritory02",
+
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.estephano.gobernaterritory02",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Necesitamos tu ubicacion para registrar entrevistas en campo.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Necesitamos tu ubicacion para seguimiento operativo incluso en segundo plano.",
+        "UIBackgroundModes": ["location"],
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSExceptionDomains": {
+            "161.132.39.165": {
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        }
+      }
+    },
+
+    "android": {
+      "package": "com.estephano.gobernaterritory02",
+      "softwareKeyboardLayoutMode": "resize",
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE"],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/letter-g.png",
+        "backgroundColor": "#163960"
+      }
+    },
+
+    "web": {
+      "output": "static",
+      "favicon": "./assets/letter-g.png"
+    },
+
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "isAndroidBackgroundLocationEnabled": true,
+          "isIosBackgroundLocationEnabled": true,
+          "locationAlwaysAndWhenInUsePermission": "Necesitamos tu ubicacion para seguimiento operativo incluso en segundo plano."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "extraGradleProperties": {
+              "org.gradle.jvmargs": "-Xmx4g -XX:MaxMetaspaceSize=1g -Dkotlin.daemon.jvm.options=-Xmx2g"
+            }
+          }
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/letter-g.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#163960",
+          "dark": {
+            "backgroundColor": "#163960"
+          }
+        }
+      ]
+    ],
+
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+
+    "extra": {
+      "EXPO_PUBLIC_BACKEND_API_URL": "http://161.132.39.165/api",
+      "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "JPVK6a0xrV-FYVFWRgn_1ruofUhPcxkY5proTSBEmULYrActHJaU_8a99p2pf8Bq",
+
+      "eas": {
+        "projectId": "17429ec1-1da2-430f-9f52-efc82919c219"
+      }
+    }
+  }
+}

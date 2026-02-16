@@ -1,0 +1,291 @@
+/**
+ * API client centralizado.
+ * Todas las llamadas al backend pasan por aca.
+ *
+ * Responsabilidades:
+ * - Adjuntar Authorization header automaticamente
+ * - Refresh automatico cuando access token expira
+ * - Adjuntar x-campaign-id header cuando hay campana activa
+ * - Wrapper Result<T> para manejo de errores consistente
+ *
+ * Backend: http://161.132.39.165/api (VPS directo, HTTP)
+ */
+
+import Constants from 'expo-constants';
+
+import {
+  getAccessToken,
+  getRefreshToken,
+  setAccessToken,
+  setRefreshToken,
+  clearAuthData,
+  getActiveCampaignId,
+} from './auth-store';
+
+import type {
+  ApiResult,
+  LoginRequest,
+  LoginResponse,
+  RegisterRequest,
+  RegisterResponse,
+  RefreshResponse,
+  CandidateInfo,
+  CampaignConfig,
+  FormDefinition,
+  FormSubmissionPayload,
+  AccessRequestRow,
+  CreateAccessRequestPayload,
+  ResolveAccessRequestPayload,
+  AuthUser,
+  CampaignMembership,
+} from './types';
+
+// ─── Config ─────────────────────────────────────────────────
+// Read from app.json extras, fallback to VPS IP direct
+const API_BASE =
+  Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_API_URL ??
+  'http://161.132.39.165/api';
+
+const AGENT_INGEST_TOKEN =
+  Constants.expoConfig?.extra?.EXPO_PUBLIC_AGENT_INGEST_TOKEN ?? '';
+
+export { API_BASE, AGENT_INGEST_TOKEN };
+
+// ─── HTTP helpers ───────────────────────────────────────────
+
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+
+async function request<T>(
+  method: HttpMethod,
+  path: string,
+  body?: unknown,
+  auth = true,
+): Promise<ApiResult<T>> {
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (auth) {
+      const token = await getAccessToken();
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      // Attach active campaign_id for scoped endpoints
+      const campaignId = await getActiveCampaignId();
+      if (campaignId) {
+        headers['x-campaign-id'] = campaignId;
+      }
+    }
+
+    const response = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    // Token expired → try refresh
+    if (response.status === 401 && auth) {
+      const refreshed = await tryRefresh();
+      if (refreshed) {
+        // Retry original request with new token
+        return request<T>(method, path, body, auth);
+      }
+      // Refresh failed → force logout
+      await clearAuthData();
+      return {
+        ok: false,
+        error: 'Sesion expirada. Inicia sesion nuevamente.',
+        code: 'AUTH_TOKEN_EXPIRED',
+        status: 401,
+      };
+    }
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({
+        code: 'UNKNOWN',
+        message: 'Error desconocido',
+      }));
+      return {
+        ok: false,
+        error: errorBody.message ?? 'Error del servidor',
+        code: errorBody.code,
+        status: response.status,
+      };
+    }
+
+    // 204 No Content
+    if (response.status === 204) {
+      return { ok: true, data: undefined as T };
+    }
+
+    const data = await response.json();
+    return { ok: true, data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error de red';
+    return { ok: false, error: message };
+  }
+}
+
+// Track if we're already refreshing to avoid concurrent refresh calls
+let refreshPromise: Promise<boolean> | null = null;
+
+async function tryRefresh(): Promise<boolean> {
+  // Dedupe concurrent refresh attempts
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    try {
+      const refreshToken = await getRefreshToken();
+      if (!refreshToken) return false;
+
+      const response = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (!response.ok) return false;
+
+      const data: RefreshResponse = await response.json();
+      await setAccessToken(data.access_token);
+      await setRefreshToken(data.refresh_token);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+// ─── Auth endpoints (no auth header needed) ─────────────────
+
+export async function login(body: LoginRequest): Promise<ApiResult<LoginResponse>> {
+  return request<LoginResponse>('POST', '/auth/login', body, false);
+}
+
+export async function register(body: RegisterRequest): Promise<ApiResult<RegisterResponse>> {
+  return request<RegisterResponse>('POST', '/auth/register', body, false);
+}
+
+/** GET /api/auth/me — returns { user, campaigns } */
+export async function getMe(): Promise<
+  ApiResult<{ user: AuthUser; campaigns: CampaignMembership[] }>
+> {
+  return request<{ user: AuthUser; campaigns: CampaignMembership[] }>('GET', '/auth/me');
+}
+
+// ─── Candidates (public) ────────────────────────────────────
+
+/** GET /api/candidates — public list of active candidates/campaigns */
+export async function getCandidates(): Promise<ApiResult<{ candidates: CandidateInfo[] }>> {
+  return request<{ candidates: CandidateInfo[] }>('GET', '/candidates', undefined, false);
+}
+
+// ─── Campaigns ──────────────────────────────────────────────
+
+/** GET /api/campaigns/:id — requires auth + campaign membership */
+export async function getCampaign(campaignId: string): Promise<ApiResult<{ campaign: CampaignConfig }>> {
+  return request<{ campaign: CampaignConfig }>('GET', `/campaigns/${campaignId}`);
+}
+
+// ─── Form Definitions ───────────────────────────────────────
+
+/** GET /api/form-definitions/active?campaign_id=X — requires auth */
+export async function getActiveFormDefinitions(
+  campaignId: string,
+): Promise<ApiResult<{ form_definitions: FormDefinition[] }>> {
+  return request<{ form_definitions: FormDefinition[] }>(
+    'GET',
+    `/form-definitions/active?campaign_id=${campaignId}`,
+  );
+}
+
+// ─── Form Submission ────────────────────────────────────────
+
+/** POST /api/forms — requires auth + campaign. Returns { accepted, deduped, queue_depth } */
+export async function submitForm(
+  payload: FormSubmissionPayload,
+): Promise<ApiResult<{ accepted: number; deduped: number; queue_depth: number }>> {
+  return request<{ accepted: number; deduped: number; queue_depth: number }>(
+    'POST',
+    '/forms',
+    payload,
+  );
+}
+
+// ─── Access Requests ────────────────────────────────────────
+
+/** POST /api/access-requests — authenticated user requests access to a campaign */
+export async function createAccessRequest(
+  body: CreateAccessRequestPayload,
+): Promise<ApiResult<{ access_request: AccessRequestRow }>> {
+  return request<{ access_request: AccessRequestRow }>('POST', '/access-requests', body);
+}
+
+/** GET /api/access-requests/mine — user sees own requests */
+export async function getMyAccessRequests(): Promise<
+  ApiResult<{ access_requests: AccessRequestRow[] }>
+> {
+  return request<{ access_requests: AccessRequestRow[] }>('GET', '/access-requests/mine');
+}
+
+/** GET /api/access-requests/pending — admin sees pending requests */
+export async function getPendingAccessRequests(): Promise<
+  ApiResult<{ pending_requests: AccessRequestRow[] }>
+> {
+  return request<{ pending_requests: AccessRequestRow[] }>('GET', '/access-requests/pending');
+}
+
+/** PUT /api/access-requests/:id — admin resolves request with { status, note? } */
+export async function resolveAccessRequest(
+  id: string,
+  body: ResolveAccessRequestPayload,
+): Promise<ApiResult<{ access_request: AccessRequestRow }>> {
+  return request<{ access_request: AccessRequestRow }>('PUT', `/access-requests/${id}`, body);
+}
+
+// ─── GPS Tracking ───────────────────────────────────────────
+
+/** POST /api/agents/location — uses x-agent-token header (NOT JWT) */
+export async function sendLocation(payload: {
+  agent_id: string;
+  ts: string;
+  lat: number;
+  lng: number;
+  seq: number;
+  accuracy?: number;
+  speed?: number;
+  heading?: number;
+  battery?: number;
+  campaign_id?: string;
+}): Promise<ApiResult<{ accepted: boolean }>> {
+  try {
+    const response = await fetch(`${API_BASE}/agents/location`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-agent-token': AGENT_INGEST_TOKEN,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({
+        code: 'UNKNOWN',
+        message: 'Error de tracking',
+      }));
+      return { ok: false, error: errorBody.message ?? 'Error de tracking', status: response.status };
+    }
+
+    const data = await response.json();
+    return { ok: true, data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Error de red';
+    return { ok: false, error: message };
+  }
+}

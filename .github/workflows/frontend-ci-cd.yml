@@ -3,14 +3,14 @@ name: Frontend CI CD
 on:
   pull_request:
     paths:
-      - "nexus-web/**"
+      - "apps/web/**"
       - "scripts/ci/check_architecture_contracts.py"
       - ".github/workflows/frontend-ci-cd.yml"
   push:
     branches:
       - main
     paths:
-      - "nexus-web/**"
+      - "apps/web/**"
       - "scripts/ci/check_architecture_contracts.py"
       - ".github/workflows/frontend-ci-cd.yml"
 
@@ -32,13 +32,13 @@ jobs:
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
-        working-directory: nexus-web
+        working-directory: apps/web
 
       - name: Typecheck and build frontend
         run: |
           bunx tsc --noEmit
           bun run build
-        working-directory: nexus-web
+        working-directory: apps/web
 
       - name: Enforce architecture contracts
         run: python3 scripts/ci/check_architecture_contracts.py
