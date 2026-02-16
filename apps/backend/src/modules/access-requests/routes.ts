@@ -34,7 +34,12 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
               .send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campana no encontrada"));
           }
 
-          const created = await repo.create(authed.userId, parsed.data.campaign_id);
+          const created = await repo.create(
+            authed.userId,
+            parsed.data.campaign_id,
+            parsed.data.perm_tierra,
+            parsed.data.perm_digital,
+          );
           if (!created) {
             return reply
               .code(409)
@@ -68,6 +73,26 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
           return reply
             .code(500)
             .send(errorPayload(requestId, "ACCESS_REQUEST_LIST_ERROR", "error listando solicitudes"));
+        }
+      },
+    );
+
+    // ── GET /api/access-requests/pending ────────────────────────────
+    // Admin lists pending access requests (mobile-friendly endpoint).
+    app.get(
+      "/api/access-requests/pending",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+
+        try {
+          const requests = await repo.listPending();
+          return reply.code(200).send({ ok: true, request_id: requestId, pending_requests: requests });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "access requests pending list failed");
+          return reply
+            .code(500)
+            .send(errorPayload(requestId, "ACCESS_REQUEST_LIST_ERROR", "error listando solicitudes pendientes"));
         }
       },
     );
@@ -122,8 +147,6 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
             parsed.data.status,
             authed.userId,
             parsed.data.note,
-            parsed.data.perm_tierra,
-            parsed.data.perm_digital,
           );
 
           if (!resolved) {
