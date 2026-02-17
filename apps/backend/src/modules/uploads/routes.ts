@@ -31,6 +31,14 @@ export function buildUploadsRoutes(env: AppEnv): FastifyPluginAsync {
     // Ensure uploads directory exists
     await mkdir(uploadsDir, { recursive: true });
 
+    // Register content type parsers for image uploads
+    // This tells Fastify to NOT parse these content types and let us handle the raw stream
+    for (const mime of ALLOWED_MIME) {
+      app.addContentTypeParser(mime, { parseAs: "buffer" }, (_request, payload, done) => {
+        done(null, payload);
+      });
+    }
+
     // ── POST /api/uploads ──────────────────────────────────────────
     // Admin uploads a file (candidate photo, etc.)
     app.post(
@@ -49,24 +57,18 @@ export function buildUploadsRoutes(env: AppEnv): FastifyPluginAsync {
             );
           }
 
-          const chunks: Buffer[] = [];
-          let totalSize = 0;
+          // Body is already parsed as buffer by our content type parser
+          const buffer = request.body as Buffer;
 
-          for await (const chunk of request.raw) {
-            totalSize += chunk.length;
-            if (totalSize > MAX_FILE_SIZE) {
-              return reply.code(413).send(
-                errorPayload(requestId, "FILE_TOO_LARGE", `archivo excede ${MAX_FILE_SIZE / 1024 / 1024}MB`),
-              );
-            }
-            chunks.push(chunk as Buffer);
-          }
-
-          const buffer = Buffer.concat(chunks);
-
-          if (buffer.length === 0) {
+          if (!buffer || buffer.length === 0) {
             return reply.code(400).send(
               errorPayload(requestId, "EMPTY_FILE", "archivo vacio"),
+            );
+          }
+
+          if (buffer.length > MAX_FILE_SIZE) {
+            return reply.code(413).send(
+              errorPayload(requestId, "FILE_TOO_LARGE", `archivo excede ${MAX_FILE_SIZE / 1024 / 1024}MB`),
             );
           }
 
