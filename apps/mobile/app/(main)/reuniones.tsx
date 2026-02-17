@@ -12,9 +12,12 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -258,7 +261,11 @@ function CreateMeetModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <Pressable style={styles.modalDismiss} onPress={onClose} />
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={[styles.modalTitle, { color: primary }]}>Nueva reunion</Text>
@@ -267,42 +274,44 @@ function CreateMeetModal({
             </Pressable>
           </View>
 
-          <View style={styles.modalBody}>
-            <Text style={styles.inputLabel}>Titulo *</Text>
-            <TextInput
-              style={styles.input}
-              value={title}
-              onChangeText={setTitle}
-              placeholder="Ej: Recorrido Zona Sur"
-              placeholderTextColor="rgba(22,57,96,0.3)"
-              maxLength={255}
-            />
+          <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+            <View style={{ gap: 12 }}>
+              <Text style={styles.inputLabel}>Titulo *</Text>
+              <TextInput
+                style={styles.input}
+                value={title}
+                onChangeText={setTitle}
+                placeholder="Ej: Recorrido Zona Sur"
+                placeholderTextColor="rgba(22,57,96,0.3)"
+                maxLength={255}
+              />
 
-            <Text style={styles.inputLabel}>Descripcion</Text>
-            <TextInput
-              style={[styles.input, styles.inputMultiline]}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Detalles de la actividad..."
-              placeholderTextColor="rgba(22,57,96,0.3)"
-              multiline
-              maxLength={500}
-            />
+              <Text style={styles.inputLabel}>Descripcion</Text>
+              <TextInput
+                style={[styles.input, styles.inputMultiline]}
+                value={description}
+                onChangeText={setDescription}
+                placeholder="Detalles de la actividad..."
+                placeholderTextColor="rgba(22,57,96,0.3)"
+                multiline
+                maxLength={500}
+              />
 
-            <Text style={styles.inputLabel}>Lugar</Text>
-            <TextInput
-              style={styles.input}
-              value={locationName}
-              onChangeText={setLocationName}
-              placeholder="Ej: Parque Central"
-              placeholderTextColor="rgba(22,57,96,0.3)"
-              maxLength={255}
-            />
+              <Text style={styles.inputLabel}>Lugar</Text>
+              <TextInput
+                style={styles.input}
+                value={locationName}
+                onChangeText={setLocationName}
+                placeholder="Ej: Parque Central"
+                placeholderTextColor="rgba(22,57,96,0.3)"
+                maxLength={255}
+              />
 
-            <Text style={styles.inputHint}>
-              La ubicacion en el mapa se asignara desde el panel web.
-            </Text>
-          </View>
+              <Text style={styles.inputHint}>
+                La ubicacion en el mapa se asignara desde el panel web.
+              </Text>
+            </View>
+          </ScrollView>
 
           <Pressable
             style={[styles.saveBtn, { backgroundColor: primary }, saving && { opacity: 0.6 }]}
@@ -316,7 +325,7 @@ function CreateMeetModal({
             )}
           </Pressable>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
