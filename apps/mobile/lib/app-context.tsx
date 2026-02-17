@@ -257,6 +257,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [auth]);
 
   // ── Check approval (polling from pending screen) ──────────
+  // Called when user is waiting for access request approval.
+  // User may be status='active' but with no campaigns (waiting for approval).
   const checkApproval = useCallback(async () => {
     if (auth.status !== 'pending') return;
 
@@ -266,19 +268,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const freshUser = meResult.data.user;
     const freshCampaigns = meResult.data.campaigns;
 
-    if (freshUser.status === 'active') {
-      await authStore.setStoredUser(freshUser);
-      await authStore.setStoredCampaigns(freshCampaigns);
+    // Update stored data
+    await authStore.setStoredUser(freshUser);
+    await authStore.setStoredCampaigns(freshCampaigns);
 
+    // Check if user was suspended
+    if (freshUser.status === 'suspended') {
+      setAuth({ status: 'suspended', user: freshUser });
+      return;
+    }
+
+    // Check if user now has campaigns (access request was approved)
+    if (freshUser.status === 'active' && freshCampaigns.length > 0) {
       const config = await buildAppConfig(freshUser, freshCampaigns);
       if (config) {
         setAuth({ status: 'active', user: freshUser, campaigns: freshCampaigns, config });
       }
-    } else if (freshUser.status === 'suspended') {
-      const updatedUser: AuthUser = { ...auth.user, status: 'suspended' };
-      await authStore.setStoredUser(updatedUser);
-      setAuth({ status: 'suspended', user: updatedUser });
     }
+    // Otherwise stay in pending state
   }, [auth]);
 
   // ── Switch campaign (for users with multiple campaigns or admin) ──
