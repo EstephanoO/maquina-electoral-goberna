@@ -1,0 +1,105 @@
+"use client";
+
+import type { AgentStatus } from "./tierra-map";
+
+/* ========== Types ========== */
+
+type Props = {
+  showTracking: boolean;
+  showDatos: boolean;
+  showHeatmap: boolean;
+  showTable: boolean;
+  onToggleTracking: () => void;
+  onToggleDatos: () => void;
+  onToggleHeatmap: () => void;
+  onToggleTable: () => void;
+  agentCount: number;
+  formCount: number;
+  primaryColor: string;
+};
+
+type LegendProps = {
+  showTracking: boolean;
+  showDatos: boolean;
+  showHeatmap: boolean;
+};
+
+/* ========== Professional colors ========== */
+const C = {
+  datos: "#2563eb",
+  agents: "#0d9488",
+  heat: "#b45309",
+};
+
+/* ========== Layer Controls ========== */
+
+export function MapControls({ showTracking, showDatos, showHeatmap, showTable, onToggleTracking, onToggleDatos, onToggleHeatmap, onToggleTable, agentCount, formCount, primaryColor }: Props) {
+  return (
+    <div style={S.root}>
+      <div style={S.title}>CAPAS</div>
+      <LayerBtn active={showDatos} onClick={onToggleDatos} label="Datos" count={formCount} activeColor={C.datos} />
+      <LayerBtn active={showTracking} onClick={onToggleTracking} label="Agentes" count={agentCount} activeColor={C.agents} />
+      <LayerBtn active={showHeatmap} onClick={onToggleHeatmap} label="Densidad" activeColor={C.heat} />
+      <div style={S.divider} />
+      <LayerBtn active={showTable} onClick={onToggleTable} label="Tabla" activeColor={primaryColor} />
+    </div>
+  );
+}
+
+function LayerBtn({ active, onClick, label, count, activeColor }: { active: boolean; onClick: () => void; label: string; count?: number; activeColor: string }) {
+  return (
+    <button type="button" onClick={onClick} style={{ ...S.btn, backgroundColor: active ? activeColor : "#f8fafc", color: active ? "#fff" : "#475569", borderColor: active ? activeColor : "#e2e8f0" }}>
+      <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: active ? "#fff" : activeColor, opacity: active ? 0.9 : 0.4, flexShrink: 0 }} />
+      <span>{label}</span>
+      {count != null && <span style={{ ...S.count, opacity: active ? 1 : 0.5 }}>{count}</span>}
+    </button>
+  );
+}
+
+/* ========== Legend ========== */
+
+const STATUS_LEGEND: { status: AgentStatus; label: string; color: string }[] = [
+  { status: "connected", label: "Conectado", color: "#0d9488" },
+  { status: "idle", label: "Inactivo", color: "#d97706" },
+  { status: "inactive", label: "Sin senal", color: "#64748b" },
+];
+
+export function MapLegend({ showTracking, showDatos, showHeatmap }: LegendProps) {
+  return (
+    <div style={S.legend}>
+      {showDatos && (
+        <div style={S.legendItem}>
+          <span style={{ ...S.legendDot, backgroundColor: C.datos }} />
+          <span style={S.legendLabel}>Dato</span>
+        </div>
+      )}
+      {showTracking && STATUS_LEGEND.map((s) => (
+        <div key={s.status} style={S.legendItem}>
+          <span style={{ ...S.legendDot, backgroundColor: s.color }} />
+          <span style={S.legendLabel}>{s.label}</span>
+        </div>
+      ))}
+      {showHeatmap && (
+        <div style={S.legendItem}>
+          <div style={S.heatGradient} />
+          <span style={S.legendLabel}>Densidad</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ========== Styles ========== */
+
+const S: Record<string, React.CSSProperties> = {
+  root: { backgroundColor: "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)", borderRadius: 10, padding: 8, display: "flex", flexDirection: "column", gap: 3, border: "1px solid #e2e8f0", boxShadow: "0 1px 8px rgba(0,0,0,0.06)" },
+  title: { fontSize: 9, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.1em", marginBottom: 1, paddingLeft: 4 },
+  btn: { display: "flex", alignItems: "center", gap: 7, padding: "6px 10px", borderRadius: 6, border: "1px solid", fontSize: 11, fontWeight: 600, cursor: "pointer", transition: "all 0.15s ease", minWidth: 110 },
+  count: { marginLeft: "auto", fontSize: 10, fontWeight: 700 },
+  divider: { height: 1, backgroundColor: "#e2e8f0", margin: "1px 0" },
+  legend: { backgroundColor: "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)", borderRadius: 6, padding: "5px 12px", display: "flex", gap: 12, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" },
+  legendItem: { display: "flex", alignItems: "center", gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: "50%" },
+  legendLabel: { fontSize: 10, color: "#475569", fontWeight: 500 },
+  heatGradient: { width: 28, height: 8, borderRadius: 4, background: "linear-gradient(to right, rgba(30,58,95,0.5), rgba(13,148,136,0.6), rgba(217,119,6,0.7), rgba(127,29,29,0.8))" },
+};

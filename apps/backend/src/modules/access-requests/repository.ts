@@ -124,6 +124,7 @@ export async function resolve(
   status: "approved" | "rejected",
   resolvedBy: string,
   note?: string,
+  role = "agent",
 ): Promise<AccessRequestRow | null> {
   const client = await pool.connect();
   try {
@@ -158,14 +159,14 @@ export async function resolve(
       return null;
     }
 
-    // 3) If approved, grant campaign access with requested permissions
+    // 3) If approved, grant campaign access with requested permissions and role
     if (status === "approved") {
       await client.query(
         `INSERT INTO user_campaigns (user_id, campaign_id, role, status, perm_tierra, perm_digital)
-         VALUES ($1, $2, 'agent', 'active', $3, $4)
+         VALUES ($1, $2, $3, 'active', $4, $5)
          ON CONFLICT (user_id, campaign_id)
-         DO UPDATE SET status = 'active', perm_tierra = $3, perm_digital = $4, assigned_at = now()`,
-        [row.user_id, row.campaign_id, request.perm_tierra, request.perm_digital],
+         DO UPDATE SET role = $3, status = 'active', perm_tierra = $4, perm_digital = $5, assigned_at = now()`,
+        [row.user_id, row.campaign_id, role, request.perm_tierra, request.perm_digital],
       );
     }
 

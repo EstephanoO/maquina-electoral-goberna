@@ -4,26 +4,46 @@ import { AuthProvider, useAuth } from "../../lib/auth-context";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { MockRole } from "../../lib/mock-data";
 
 // ── Nav items ───────────────────────────────────────────────────────
+
+/**
+ * UI role derived from backend role.
+ * Backend roles: admin | supervisor | agent
+ * UI mapping:
+ *   admin      → "admin"      (platform-wide control)
+ *   supervisor → "candidato"  (campaign owner/candidate — sees their own data)
+ *   agent      → "agente"     (field agent — minimal web access)
+ */
+type UIRole = "admin" | "candidato" | "agente";
+
+function mapBackendRoleToUI(backendRole: string): UIRole {
+  switch (backendRole) {
+    case "admin":
+      return "admin";
+    case "supervisor":
+      return "candidato";
+    default:
+      return "agente";
+  }
+}
 
 type NavItem = {
   icon: React.ReactNode;
   label: string;
   href: string;
-  roles: MockRole[];
+  roles: UIRole[];
   section?: "main" | "admin";
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { icon: <DashboardIcon />, label: "Dashboard", href: "/", roles: ["admin", "candidato", "operadora"], section: "main" },
+  { icon: <DashboardIcon />, label: "Dashboard", href: "/", roles: ["admin", "candidato"], section: "main" },
   { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin" },
-  { icon: <MapIcon />, label: "Mapa", href: "/map", roles: ["admin", "candidato"], section: "main" },
-  { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["candidato"], section: "main" },
+  { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["admin", "candidato"], section: "main" },
   { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin", "candidato"], section: "main" },
-  { icon: <CMSIcon />, label: "CMS", href: "/cms", roles: ["candidato", "operadora"], section: "main" },
-  { icon: <OpsIcon />, label: "Operaciones", href: "/ops", roles: ["admin"], section: "admin" },
+  { icon: <CMSIcon />, label: "CMS", href: "/cms", roles: ["admin", "candidato"], section: "main" },
+  // /ops exists but is hidden from nav — access via direct URL only
+  // { icon: <OpsIcon />, label: "Operaciones", href: "/ops", roles: ["admin"], section: "admin" },
   { icon: <SettingsIcon />, label: "Configuracion", href: "/settings", roles: ["admin", "candidato"], section: "admin" },
 ];
 
@@ -268,12 +288,20 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  // Auto-collapse sidebar on /tierra routes (immersive map mode)
+  const isTierraRoute = pathname.includes("/tierra");
+
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false);
-  const [mockRole, setMockRole] = useState<MockRole>("admin");
+
+  // Derive UI role from the authenticated user's backend role
+  const uiRole: UIRole = mapBackendRoleToUI(user?.role ?? "agent");
+
+  // Force collapsed on tierra
+  const effectiveCollapsed = isTierraRoute || collapsed;
 
   // Track viewport width for mobile detection (avoids SSR window access)
   useEffect(() => {
@@ -307,14 +335,14 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const activeCampaign = campaigns.find((c) => c.id === activeCampaignId);
   const isAdmin = user?.role === "admin";
 
-  const filteredNav = NAV_ITEMS.filter((item) => item.roles.includes(mockRole));
+  const filteredNav = NAV_ITEMS.filter((item) => item.roles.includes(uiRole));
   const mainNav = filteredNav.filter((item) => item.section === "main");
   const adminNav = filteredNav.filter((item) => item.section === "admin");
 
   if (isLoading) return <LoadingScreen />;
   if (!isAuthenticated) return <LoadingScreen />;
 
-  const sidebarWidth = collapsed ? "72px" : "260px";
+  const sidebarWidth = isTierraRoute ? "52px" : effectiveCollapsed ? "72px" : "260px";
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--color-background)" }}>
@@ -345,7 +373,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           top: 0,
           left: 0,
           bottom: 0,
-          width: mobileOpen ? "260px" : sidebarWidth,
+          width: mobileOpen ? "260px" : isTierraRoute ? "52px" : sidebarWidth,
           background: "var(--goberna-blue-900)",
           color: "#ffffff",
           display: "flex",
@@ -362,9 +390,9 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: collapsed && !mobileOpen ? "0px" : "12px",
-            padding: collapsed && !mobileOpen ? "20px 0" : "20px 20px",
-            justifyContent: collapsed && !mobileOpen ? "center" : "flex-start",
+            gap: effectiveCollapsed && !mobileOpen ? "0px" : "12px",
+            padding: effectiveCollapsed && !mobileOpen ? "20px 0" : "20px 20px",
+            justifyContent: effectiveCollapsed && !mobileOpen ? "center" : "flex-start",
             borderBottom: "1px solid rgba(255,255,255,0.08)",
             minHeight: "72px",
             flexShrink: 0,
@@ -377,7 +405,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             height={36}
             style={{ borderRadius: "6px", flexShrink: 0 }}
           />
-          {(!collapsed || mobileOpen) && (
+          {(!effectiveCollapsed || mobileOpen) && (
             <span
               style={{
                 fontWeight: 800,
@@ -427,7 +455,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           {mainNav.map((item) => {
             const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
             const isHovered = hoveredItem === item.href;
-            const showLabel = !collapsed || mobileOpen;
+            const showLabel = !effectiveCollapsed || mobileOpen;
 
             return (
               <button
@@ -474,10 +502,10 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
               style={{
                 margin: "8px 0",
                 borderTop: "1px solid rgba(255,255,255,0.08)",
-                padding: (!collapsed || mobileOpen) ? "8px 20px 0" : "8px 0 0",
+                padding: (!effectiveCollapsed || mobileOpen) ? "8px 20px 0" : "8px 0 0",
               }}
             >
-              {(!collapsed || mobileOpen) && (
+              {(!effectiveCollapsed || mobileOpen) && (
                 <span style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1.5px", color: "rgba(255,255,255,0.35)" }}>
                   Administracion
                 </span>
@@ -488,7 +516,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           {adminNav.map((item) => {
             const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
             const isHovered = hoveredItem === item.href;
-            const showLabel = !collapsed || mobileOpen;
+            const showLabel = !effectiveCollapsed || mobileOpen;
 
             return (
               <button
@@ -529,47 +557,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             );
           })}
 
-          {/* Role switcher (dev tool) */}
-          {(!collapsed || mobileOpen) && (
-            <div
-              style={{
-                margin: "12px 12px 0",
-                padding: "8px 10px",
-                background: "rgba(255,200,0,0.08)",
-                borderRadius: "8px",
-                border: "1px solid rgba(255,200,0,0.15)",
-              }}
-            >
-              <span style={{ fontSize: "9px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px", color: "var(--goberna-gold-300)", display: "block", marginBottom: "6px" }}>
-                Dev: Cambiar rol
-              </span>
-              <div style={{ display: "flex", gap: "4px" }}>
-                {(["admin", "candidato", "operadora"] as const).map((role) => (
-                  <button
-                    type="button"
-                    key={role}
-                    onClick={() => setMockRole(role)}
-                    style={{
-                      flex: 1,
-                      padding: "4px 0",
-                      fontSize: "10px",
-                      fontWeight: mockRole === role ? 700 : 500,
-                      fontFamily: "inherit",
-                      background: mockRole === role ? "var(--goberna-gold)" : "rgba(255,255,255,0.08)",
-                      color: mockRole === role ? "var(--goberna-blue-950)" : "rgba(255,255,255,0.6)",
-                      border: "none",
-                      borderRadius: "4px",
-                      cursor: "pointer",
-                      transition: "all 0.15s ease",
-                      textTransform: "capitalize",
-                    }}
-                  >
-                    {role}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+
         </nav>
 
         {/* Collapse toggle (desktop only) */}
@@ -593,15 +581,15 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
               transition: "color 0.15s ease",
               flexShrink: 0,
             }}
-            aria-label={collapsed ? "Expandir menu" : "Colapsar menu"}
+            aria-label={effectiveCollapsed ? "Expandir menu" : "Colapsar menu"}
           >
-            <CollapseIcon collapsed={collapsed} />
-            {!collapsed && <span>Colapsar</span>}
+            <CollapseIcon collapsed={effectiveCollapsed} />
+            {!effectiveCollapsed && <span>Colapsar</span>}
           </button>
         )}
 
         {/* Campaign selector */}
-        {(!collapsed || mobileOpen) && campaigns.length > 1 && (
+        {(!effectiveCollapsed || mobileOpen) && campaigns.length > 1 && (
           <div
             style={{
               padding: "12px 16px",
@@ -685,14 +673,14 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         {/* User info */}
         <div
           style={{
-            padding: collapsed && !mobileOpen ? "16px 0" : "16px 20px",
+            padding: effectiveCollapsed && !mobileOpen ? "16px 0" : "16px 20px",
             borderTop: "1px solid rgba(255,255,255,0.08)",
             display: "flex",
-            alignItems: collapsed && !mobileOpen ? "center" : "flex-start",
-            flexDirection: collapsed && !mobileOpen ? "column" : "row",
+            alignItems: effectiveCollapsed && !mobileOpen ? "center" : "flex-start",
+            flexDirection: effectiveCollapsed && !mobileOpen ? "column" : "row",
             gap: "12px",
             flexShrink: 0,
-            justifyContent: collapsed && !mobileOpen ? "center" : "flex-start",
+            justifyContent: effectiveCollapsed && !mobileOpen ? "center" : "flex-start",
           }}
         >
           {/* Avatar circle */}
@@ -714,7 +702,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             {user?.full_name?.charAt(0)?.toUpperCase() ?? "?"}
           </div>
 
-          {(!collapsed || mobileOpen) && (
+          {(!effectiveCollapsed || mobileOpen) && (
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
@@ -741,7 +729,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
                     color: isAdmin ? "var(--goberna-blue-950)" : "rgba(255,255,255,0.7)",
                   }}
                 >
-                  {user?.role ?? "user"}
+                  {uiRole}
                 </span>
                 <button
                   type="button"
@@ -801,9 +789,10 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         style={{
           flex: 1,
           marginLeft: sidebarWidth,
-          padding: "24px",
+          padding: isTierraRoute ? "0" : "24px",
           transition: "margin-left 0.25s cubic-bezier(0.4,0,0.2,1)",
           minHeight: "100vh",
+          overflow: isTierraRoute ? "hidden" : undefined,
         }}
         className="dashboard-main"
       >

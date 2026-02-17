@@ -36,7 +36,7 @@ export default function CandidatosPage() {
   const router = useRouter();
 
   // State
-  const [activeTab, setActiveTab] = useState<"solicitudes" | "candidatos">("solicitudes");
+  const [activeTab, setActiveTab] = useState<"candidatos" | "solicitudes">("candidatos");
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,8 +89,8 @@ export default function CandidatosPage() {
   const pendingCount = requests.length;
 
   const tabs = [
-    { id: "solicitudes", label: "Solicitudes", badge: pendingCount },
     { id: "candidatos", label: "Candidatos" },
+    { id: "solicitudes", label: "Solicitudes", badge: pendingCount },
   ];
 
   return (

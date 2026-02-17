@@ -6,6 +6,7 @@ import rateLimit from "@fastify/rate-limit";
 
 import type { AppEnv } from "./config/env";
 import { registerAuthDecorator } from "./infra/auth";
+import { authorize } from "./infra/authorize";
 import { errorPayload } from "./infra/http";
 import type { IngestDomain, IngestOutcome } from "./infra/metrics";
 import { metricsRegistry } from "./infra/metrics";
@@ -119,7 +120,7 @@ export function buildApp(env: AppEnv) {
   app.register(buildMeetsRoutes(env));
   app.register(buildUploadsRoutes(env));
 
-  app.get("/api/metrics", { preHandler: [app.authenticate] }, async (_request, reply) => {
+  app.get("/api/metrics", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
     return {
       ok: true,

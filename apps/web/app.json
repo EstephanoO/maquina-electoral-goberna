@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "9e57f1b4-d22a-4194-ae6d-b2cc025d816d"
+      }
+    },
+    "android": {
+      "package": "com.estephano.nexusweb"
+    }
+  }
+}

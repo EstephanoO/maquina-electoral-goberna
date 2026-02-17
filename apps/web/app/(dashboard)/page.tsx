@@ -484,7 +484,6 @@ function CandidatoView() {
 
       {/* Quick actions */}
       <div style={{ display: "flex", gap: 12, marginBottom: 28 }}>
-        <ActionButton label="Ver Mapa" onClick={() => router.push("/map")} />
         <ActionButton label="Ir al CMS" onClick={() => router.push("/cms")} variant="gold" />
       </div>
 

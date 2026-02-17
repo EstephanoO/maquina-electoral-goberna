@@ -411,7 +411,7 @@ export default function NewFormScreen() {
         fecha: new Date().toISOString(),
         x: ubicacionUtm.easting,
         y: ubicacionUtm.northing,
-        zona: resolved.zona || 'Sin zona',
+        zona: `${ubicacionUtm.zone}${ubicacionUtm.hemisphere}`,
         candidato_preferido: resolved.candidato_preferido || candidate.name,
         encuestador: agent.full_name,
         encuestador_id: agent.id,

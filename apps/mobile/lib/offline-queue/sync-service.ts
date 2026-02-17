@@ -15,7 +15,15 @@
 import * as Network from 'expo-network';
 
 import { API_BASE, AGENT_INGEST_TOKEN } from '../api';
-import { getAccessToken, getActiveCampaignId } from '../auth-store';
+import {
+  getAccessToken,
+  getRefreshToken,
+  setAccessToken,
+  setRefreshToken,
+  getActiveCampaignId,
+} from '../auth-store';
+
+import type { RefreshResponse } from '../types';
 
 import {
   getPendingLocations,
@@ -133,6 +141,37 @@ async function syncLocations(): Promise<{ synced: number; failed: number }> {
   }
 }
 
+// ─── Token Refresh (for sync service) ─────────────────────────
+
+/**
+ * Attempt to refresh the access token.
+ * Returns the new access token on success, null on failure.
+ * This mirrors the tryRefresh logic in api.ts but is self-contained
+ * so the sync service can recover from 401 without going through
+ * the api.ts request wrapper.
+ */
+async function tryRefreshToken(): Promise<string | null> {
+  try {
+    const refreshToken = await getRefreshToken();
+    if (!refreshToken) return null;
+
+    const response = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    if (!response.ok) return null;
+
+    const data: RefreshResponse = await response.json();
+    await setAccessToken(data.access_token);
+    await setRefreshToken(data.refresh_token);
+    return data.access_token;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Form Sync ────────────────────────────────────────────────
 
 async function syncForms(): Promise<{ synced: number; failed: number }> {
@@ -153,6 +192,7 @@ async function syncForms(): Promise<{ synced: number; failed: number }> {
 
   const campaignId = await getActiveCampaignId();
 
+  let currentToken = token;
   let synced = 0;
   let failed = 0;
 
@@ -171,18 +211,39 @@ async function syncForms(): Promise<{ synced: number; failed: number }> {
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        'Authorization': `Bearer ${currentToken}`,
       };
 
       if (campaignId) {
         headers['x-campaign-id'] = campaignId;
       }
 
-      const response = await fetch(`${API_BASE}/forms`, {
+      let response = await fetch(`${API_BASE}/forms`, {
         method: 'POST',
         headers,
         body: JSON.stringify(fullPayload),
       });
+
+      // Token expired → try refresh once and retry this form
+      if (response.status === 401) {
+        console.log('[SyncService] Got 401 on form sync, attempting token refresh...');
+        const newToken = await tryRefreshToken();
+        if (newToken) {
+          currentToken = newToken;
+          headers['Authorization'] = `Bearer ${currentToken}`;
+          response = await fetch(`${API_BASE}/forms`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(fullPayload),
+          });
+          console.log(`[SyncService] Retry after refresh: ${response.status}`);
+        } else {
+          console.log('[SyncService] Token refresh failed, marking forms as failed');
+          await markFormsAsFailed([form.id], 'Auth token expired and refresh failed');
+          failed++;
+          continue;
+        }
+      }
 
       if (response.ok || response.status === 202) {
         await markFormsAsSynced([form.id]);

@@ -32,6 +32,8 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
 
         try {
           const meet = await repo.create(parsed.data, authed.userId);
+          // Auto-join creator as participant
+          await repo.join(meet.id, authed.userId);
           return reply.code(201).send({ ok: true, request_id: requestId, meet });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "meet create failed");
@@ -94,12 +96,18 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
       { preHandler: [app.authenticate] },
       async (request, reply) => {
         const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
         const { id } = request.params as { id: string };
 
         try {
           const meet = await repo.findById(id);
           if (!meet) {
             return reply.code(404).send(errorPayload(requestId, "MEET_NOT_FOUND", "meet no encontrado"));
+          }
+
+          // Non-admin users can only see meets for their campaigns
+          if (authed.userRole !== "admin" && !authed.campaignIds.includes(meet.campaign_id)) {
+            return reply.code(403).send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
           }
 
           return reply.code(200).send({ ok: true, request_id: requestId, meet });
@@ -117,12 +125,18 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
       { preHandler: [app.authenticate] },
       async (request, reply) => {
         const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
         const { id } = request.params as { id: string };
 
         try {
           const summary = await repo.getSummary(id);
           if (!summary) {
             return reply.code(404).send(errorPayload(requestId, "MEET_NOT_FOUND", "meet no encontrado"));
+          }
+
+          // Non-admin users can only see meets for their campaigns
+          if (authed.userRole !== "admin" && !authed.campaignIds.includes(summary.campaign_id)) {
+            return reply.code(403).send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
           }
 
           const participants = await repo.listParticipants(id);
@@ -297,6 +311,11 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
             return reply.code(404).send(errorPayload(requestId, "MEET_NOT_FOUND", "meet no encontrado"));
           }
 
+          // Non-admin users can only leave meets from their campaigns
+          if (authed.userRole !== "admin" && !authed.campaignIds.includes(meet.campaign_id)) {
+            return reply.code(403).send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
+          }
+
           await repo.leave(id, authed.userId);
           return reply.code(200).send({ ok: true, request_id: requestId });
         } catch (error) {
@@ -312,12 +331,18 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
       { preHandler: [app.authenticate] },
       async (request, reply) => {
         const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
         const { id } = request.params as { id: string };
 
         try {
           const meet = await repo.findById(id);
           if (!meet) {
             return reply.code(404).send(errorPayload(requestId, "MEET_NOT_FOUND", "meet no encontrado"));
+          }
+
+          // Non-admin users can only see participants of meets from their campaigns
+          if (authed.userRole !== "admin" && !authed.campaignIds.includes(meet.campaign_id)) {
+            return reply.code(403).send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
           }
 
           const participants = await repo.listParticipants(id);

@@ -34,6 +34,34 @@ uri = "${DATABASE_URL}"
   id_fieldname = "gid"
   sql = "SELECT gid, ubigeo, coddep, codprov, (coddep || codprov) AS codprov_full, right(ubigeo, 2) AS coddist, nomdist AS distrito, NULL::text AS capital, ST_AsMVTGeom(geom3857, !BBOX!) AS geom FROM public.peru_distritos WHERE geom3857 && !BBOX!"
 
+  # --- Priority zones: base map JOINed with campaign_priority_zones ---
+
+  [[providers.layers]]
+  name = "priority_departamentos"
+  geometry_type = "MultiPolygon"
+  id_fieldname = "gid"
+  sql = "SELECT d.gid, d.coddep, d.nomdep AS departamento, cpz.campaign_id::text, cpz.priority, ST_AsMVTGeom(d.geom3857, !BBOX!) AS geom FROM public.peru_departamentos d INNER JOIN public.campaign_priority_zones cpz ON cpz.zone_code = d.coddep AND cpz.zone_level = 'departamento' WHERE d.geom3857 && !BBOX!"
+
+  [[providers.layers]]
+  name = "priority_provincias"
+  geometry_type = "MultiPolygon"
+  id_fieldname = "gid"
+  sql = "SELECT p.gid, p.coddep, p.codprov, (p.coddep || p.codprov) AS codprov_full, p.nomprov AS provincia, cpz.campaign_id::text, cpz.priority, ST_AsMVTGeom(p.geom3857, !BBOX!) AS geom FROM public.peru_provincias p INNER JOIN public.campaign_priority_zones cpz ON cpz.zone_code = (p.coddep || p.codprov) AND cpz.zone_level = 'provincia' WHERE p.geom3857 && !BBOX!"
+
+  [[providers.layers]]
+  name = "priority_distritos"
+  geometry_type = "MultiPolygon"
+  id_fieldname = "gid"
+  sql = "SELECT d.gid, d.ubigeo, d.coddep, d.codprov, (d.coddep || d.codprov) AS codprov_full, right(d.ubigeo, 2) AS coddist, d.nomdist AS distrito, cpz.campaign_id::text, cpz.priority, ST_AsMVTGeom(d.geom3857, !BBOX!) AS geom FROM public.peru_distritos d INNER JOIN public.campaign_priority_zones cpz ON cpz.zone_code = d.ubigeo AND cpz.zone_level = 'distrito' WHERE d.geom3857 && !BBOX!"
+
+  # --- Campaign custom zones: sectors/subsectors with own geometry ---
+
+  [[providers.layers]]
+  name = "campaign_sectors"
+  geometry_type = "MultiPolygon"
+  id_fieldname = "id"
+  sql = "SELECT id, campaign_id::text, zone_level, zone_code, zone_name, sector, subsector, parent_code, population, ST_AsMVTGeom(geom, !BBOX!) AS geom FROM public.campaign_custom_zones WHERE geom && !BBOX!"
+
 [[maps]]
 name = "peru"
 center = [-75.0152, -9.1899, 5.0]
@@ -51,4 +79,26 @@ center = [-75.0152, -9.1899, 5.0]
   [[maps.layers]]
   provider_layer = "neon.distritos"
   min_zoom = 8
+  max_zoom = 20
+
+  # Priority zones overlays
+  [[maps.layers]]
+  provider_layer = "neon.priority_departamentos"
+  min_zoom = 3
+  max_zoom = 20
+
+  [[maps.layers]]
+  provider_layer = "neon.priority_provincias"
+  min_zoom = 5
+  max_zoom = 20
+
+  [[maps.layers]]
+  provider_layer = "neon.priority_distritos"
+  min_zoom = 8
+  max_zoom = 20
+
+  # Campaign custom zones (sectors/subsectors)
+  [[maps.layers]]
+  provider_layer = "neon.campaign_sectors"
+  min_zoom = 10
   max_zoom = 20

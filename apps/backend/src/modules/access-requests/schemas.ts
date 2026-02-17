@@ -9,6 +9,8 @@ export const createAccessRequestSchema = z.object({
 export const resolveAccessRequestSchema = z.object({
   status: z.enum(["approved", "rejected"]),
   note: z.string().trim().max(500).optional(),
+  /** Role to assign on approval. Defaults to 'agent' if not specified. */
+  role: z.enum(["supervisor", "agent"]).optional().default("agent"),
 });
 
 export type CreateAccessRequestInput = z.infer<typeof createAccessRequestSchema>;

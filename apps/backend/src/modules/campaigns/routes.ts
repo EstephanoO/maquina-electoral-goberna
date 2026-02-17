@@ -52,6 +52,10 @@ const addMemberSchema = z.object({
   role: z.enum(["admin", "supervisor", "agent"]),
 });
 
+const updateMemberRoleSchema = z.object({
+  role: z.enum(["supervisor", "agent"]),
+});
+
 export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
   return async (app) => {
     // ── GET /api/candidates ──────────────────────────────────────────
@@ -265,6 +269,41 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── PUT /api/campaigns/:campaignId/members/:userId/role ─────────────
+    // Change a member's role within a campaign. Admin or campaign supervisor.
+    app.put(
+      "/api/campaigns/:campaignId/members/:userId/role",
+      { preHandler: [app.authenticate, authorize({ roles: ["supervisor"], requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
+        const { campaignId, userId } = request.params as { campaignId: string; userId: string };
+
+        const parsed = updateMemberRoleSchema.safeParse(request.body);
+        if (!parsed.success) {
+          const message = parsed.error.issues.map((i) => i.message).join(", ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
+        }
+
+        // Only admins can promote to supervisor (candidato/jefe de campana)
+        if (parsed.data.role === "supervisor" && authed.userRole !== "admin") {
+          return reply.code(403).send(errorPayload(requestId, "AUTHZ_ROLE_INSUFFICIENT", "solo admin puede asignar rol de candidato/jefe de campana"));
+        }
+
+        try {
+          const updated = await repo.updateMemberRole(userId, campaignId, parsed.data.role);
+          if (!updated) {
+            return reply.code(404).send(errorPayload(requestId, "MEMBER_NOT_FOUND", "miembro no encontrado en esta campana"));
+          }
+
+          return reply.code(200).send({ ok: true, request_id: requestId, member: updated });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "campaign member role update failed");
+          return reply.code(500).send(errorPayload(requestId, "CAMPAIGN_MEMBER_ERROR", "error actualizando rol de miembro"));
+        }
+      },
+    );
+
     // ── GET /api/campaigns/:slug/stats ────────────────────────────────
     // Dashboard stats for a campaign by slug
     app.get(
@@ -272,6 +311,7 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
       { preHandler: [app.authenticate] },
       async (request, reply) => {
         const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
         const { slug } = request.params as { slug: string };
         const period = (request.query as { period?: string }).period === "week" ? "week" : "day";
 
@@ -279,6 +319,11 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
           const campaign = await repo.findBySlug(slug);
           if (!campaign) {
             return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campana no encontrada"));
+          }
+
+          // Non-admin users can only see stats for campaigns they belong to
+          if (authed.userRole !== "admin" && !authed.campaignIds.includes(campaign.id)) {
+            return reply.code(403).send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
           }
 
           const config = (campaign.config ?? {}) as CampaignConfig;

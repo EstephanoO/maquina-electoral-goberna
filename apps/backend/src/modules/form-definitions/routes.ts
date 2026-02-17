@@ -49,7 +49,7 @@ export function buildFormDefinitionsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── GET /api/form-definitions/active ─────────────────────────────
-    // Get active form definitions for a campaign (public for agents)
+    // Get active form definitions for a campaign (agents + supervisors)
     app.get(
       "/api/form-definitions/active",
       { preHandler: [app.authenticate] },
@@ -62,6 +62,13 @@ export function buildFormDefinitionsRoutes(_env: AppEnv): FastifyPluginAsync {
           return reply
             .code(400)
             .send(errorPayload(requestId, "VALIDATION_ERROR", "campaign_id requerido"));
+        }
+
+        // Non-admin users can only see form definitions for their campaigns
+        if (authed.userRole !== "admin" && !authed.campaignIds.includes(campaign_id)) {
+          return reply
+            .code(403)
+            .send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
         }
 
         try {
@@ -87,6 +94,7 @@ export function buildFormDefinitionsRoutes(_env: AppEnv): FastifyPluginAsync {
       { preHandler: [app.authenticate] },
       async (request, reply) => {
         const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
         const { id } = request.params as { id: string };
 
         try {
@@ -96,6 +104,13 @@ export function buildFormDefinitionsRoutes(_env: AppEnv): FastifyPluginAsync {
             return reply
               .code(404)
               .send(errorPayload(requestId, "FORM_DEFINITION_NOT_FOUND", "definicion de formulario no encontrada"));
+          }
+
+          // Non-admin users can only see form definitions for their campaigns
+          if (authed.userRole !== "admin" && !authed.campaignIds.includes(definition.campaign_id)) {
+            return reply
+              .code(403)
+              .send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
           }
 
           return reply.code(200).send({

@@ -6,5 +6,5 @@ import { redirect } from "next/navigation";
  * If not authenticated, dashboard layout redirects to /login.
  */
 export default function RootPage() {
-  redirect("/map");
+  redirect("/candidatos");
 }

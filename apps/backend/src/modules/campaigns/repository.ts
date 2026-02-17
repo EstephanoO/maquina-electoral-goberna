@@ -256,6 +256,22 @@ export type CampaignMember = {
   user_status: string;
 };
 
+export async function updateMemberRole(
+  userId: string,
+  campaignId: string,
+  role: string,
+): Promise<CampaignMember | null> {
+  const { rows } = await pool.query<CampaignMember>(
+    `UPDATE user_campaigns uc
+     SET role = $3, assigned_at = now()
+     FROM users u
+     WHERE uc.user_id = $1 AND uc.campaign_id = $2 AND uc.status = 'active' AND u.id = uc.user_id
+     RETURNING uc.user_id, u.full_name, u.email, uc.role, u.status AS user_status`,
+    [userId, campaignId, role],
+  );
+  return rows[0] ?? null;
+}
+
 export async function getCampaignMembers(campaignId: string): Promise<CampaignMember[]> {
   const { rows } = await pool.query<CampaignMember>(
     `SELECT uc.user_id, u.full_name, u.email, uc.role, u.status AS user_status

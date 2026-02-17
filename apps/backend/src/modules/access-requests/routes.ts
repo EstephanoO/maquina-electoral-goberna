@@ -209,6 +209,7 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
             parsed.data.status,
             authed.userId,
             parsed.data.note,
+            parsed.data.role,
           );
 
           if (!resolved) {
