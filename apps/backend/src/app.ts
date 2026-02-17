@@ -17,6 +17,7 @@ import { buildCampaignsRoutes } from "./modules/campaigns/routes";
 import { buildAccessRequestsRoutes } from "./modules/access-requests/routes";
 import { buildFormDefinitionsRoutes } from "./modules/form-definitions/routes";
 import { buildMapRoutes } from "./modules/map/routes";
+import { buildMeetsRoutes } from "./modules/meets/routes";
 import { buildUploadsRoutes } from "./modules/uploads/routes";
 
 export function buildApp(env: AppEnv) {
@@ -115,6 +116,7 @@ export function buildApp(env: AppEnv) {
   app.register(buildCampaignsRoutes(env));
   app.register(buildAccessRequestsRoutes(env));
   app.register(buildFormDefinitionsRoutes(env));
+  app.register(buildMeetsRoutes(env));
   app.register(buildUploadsRoutes(env));
 
   app.get("/api/metrics", { preHandler: [app.authenticate] }, async (_request, reply) => {
