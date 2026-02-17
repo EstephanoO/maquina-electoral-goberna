@@ -69,6 +69,14 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# ── Uploads (user-generated, not in repo) ──────────────────────────
+**/uploads/
+
+# ── Mobile build artifacts ─────────────────────────────────────────
+*.aab
+*.ipa
+*.apk
+
 # ── Misc ────────────────────────────────────────────────────────────
 *.bak
 *.tmp

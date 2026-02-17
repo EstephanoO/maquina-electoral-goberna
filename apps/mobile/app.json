@@ -14,9 +14,6 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.estephano.gobernaterritory02",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Necesitamos tu ubicacion para registrar entrevistas en campo.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Necesitamos tu ubicacion para seguimiento operativo incluso en segundo plano.",
-        "UIBackgroundModes": ["location"],
         "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
           "NSExceptionDomains": {
@@ -33,7 +30,7 @@
       "softwareKeyboardLayoutMode": "resize",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE"],
+      "permissions": [],
       "adaptiveIcon": {
         "foregroundImage": "./assets/letter-g.png",
         "backgroundColor": "#163960"
@@ -49,14 +46,6 @@
       "expo-router",
       "expo-sqlite",
       "expo-secure-store",
-      [
-        "expo-location",
-        {
-          "isAndroidBackgroundLocationEnabled": true,
-          "isIosBackgroundLocationEnabled": true,
-          "locationAlwaysAndWhenInUsePermission": "Necesitamos tu ubicacion para seguimiento operativo incluso en segundo plano."
-        }
-      ],
       [
         "expo-build-properties",
         {

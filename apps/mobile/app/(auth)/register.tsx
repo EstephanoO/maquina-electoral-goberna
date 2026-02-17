@@ -43,6 +43,9 @@ const BORDER = '#E1E6F0';
 const FONT = 'Montserrat-Bold';
 const PHOTO_BASE_URL = 'https://maquina-electoral-goberna-web.vercel.app';
 
+// Email validation regex - basic but effective
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function RegisterScreen() {
   const router = useRouter();
   const { register, login } = useApp();
@@ -69,17 +72,23 @@ export default function RegisterScreen() {
     })();
   }, []);
 
-  // Match candidate by first name (case insensitive)
+  // Match candidate by first name (case + accent insensitive)
+  // "cesar", "César", "CESAR", "cesár" all match "César Acuña"
   useEffect(() => {
     if (!candidateName.trim()) {
       setMatchedCandidate(null);
       return;
     }
 
-    const searchTerm = candidateName.trim().toLowerCase();
+    // Normalize: lowercase + strip accents ("César" → "cesar", "Rocío" → "rocio")
+    const strip = (t: string) =>
+      t.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    const searchTerm = strip(candidateName);
     const match = candidates.find((c) => {
-      const firstName = c.name.split(' ')[0].toLowerCase();
-      return firstName.startsWith(searchTerm) || c.name.toLowerCase().includes(searchTerm);
+      const normalizedName = strip(c.name);
+      const normalizedFirst = strip(c.name.split(' ')[0]);
+      return normalizedFirst.startsWith(searchTerm) || normalizedName.includes(searchTerm);
     });
 
     setMatchedCandidate(match ?? null);
@@ -93,6 +102,10 @@ export default function RegisterScreen() {
     }
     if (!email.trim()) {
       Alert.alert('Campo requerido', 'Ingresa tu email.');
+      return;
+    }
+    if (!EMAIL_REGEX.test(email.trim())) {
+      Alert.alert('Email invalido', 'Ingresa un email valido (ej: usuario@correo.com).');
       return;
     }
     if (!password.trim() || password.trim().length < 8) {
@@ -225,7 +238,7 @@ export default function RegisterScreen() {
               <Text style={styles.label}>Nombre de tu candidato</Text>
               <TextInput
                 style={[styles.input, matchedCandidate && styles.inputSuccess]}
-                placeholder="Ej: César, Guillermo, Rocío..."
+                placeholder="Ingresa el nombre de tu candidato"
                 placeholderTextColor={TEXT_MUTED}
                 value={candidateName}
                 onChangeText={setCandidateName}

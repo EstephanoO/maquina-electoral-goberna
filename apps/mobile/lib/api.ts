@@ -49,6 +49,9 @@ const API_BASE =
 const AGENT_INGEST_TOKEN =
   Constants.expoConfig?.extra?.EXPO_PUBLIC_AGENT_INGEST_TOKEN ?? '';
 
+// Timeout for API calls (Peru has intermittent connectivity)
+const API_TIMEOUT_MS = 30_000; // 30 seconds
+
 export { API_BASE, AGENT_INGEST_TOKEN };
 
 // ─── HTTP helpers ───────────────────────────────────────────
@@ -61,6 +64,10 @@ async function request<T>(
   body?: unknown,
   auth = true,
 ): Promise<ApiResult<T>> {
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
   try {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -83,6 +90,7 @@ async function request<T>(
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
     });
 
     // Token expired → try refresh
@@ -123,8 +131,14 @@ async function request<T>(
     const data = await response.json();
     return { ok: true, data };
   } catch (error) {
+    // Handle timeout specifically
+    if (error instanceof Error && error.name === 'AbortError') {
+      return { ok: false, error: 'Tiempo de espera agotado. Verifica tu conexion.' };
+    }
     const message = error instanceof Error ? error.message : 'Error de red';
     return { ok: false, error: message };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -264,6 +278,9 @@ export async function sendLocation(payload: {
   battery?: number;
   campaign_id?: string;
 }): Promise<ApiResult<{ accepted: boolean }>> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
   try {
     const response = await fetch(`${API_BASE}/agents/location`, {
       method: 'POST',
@@ -272,6 +289,7 @@ export async function sendLocation(payload: {
         'x-agent-token': AGENT_INGEST_TOKEN,
       },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -285,7 +303,12 @@ export async function sendLocation(payload: {
     const data = await response.json();
     return { ok: true, data };
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      return { ok: false, error: 'Tiempo de espera agotado' };
+    }
     const message = error instanceof Error ? error.message : 'Error de red';
     return { ok: false, error: message };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }

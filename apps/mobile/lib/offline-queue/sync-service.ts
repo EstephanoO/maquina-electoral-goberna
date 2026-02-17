@@ -77,7 +77,7 @@ async function isOnline(): Promise<boolean> {
 // ─── Location Sync ────────────────────────────────────────────
 
 async function syncLocations(): Promise<{ synced: number; failed: number }> {
-  const pending = await getPendingLocations(50);
+  const pending = await getPendingLocations(100); // Batch up to 100
   if (pending.length === 0) {
     return { synced: 0, failed: 0 };
   }
@@ -85,50 +85,52 @@ async function syncLocations(): Promise<{ synced: number; failed: number }> {
   const ids = pending.map((l) => l.id);
   await markAsSyncing(ids);
 
-  let synced = 0;
-  let failed = 0;
+  // Build batch payload
+  const locations = pending.map((location) => ({
+    agent_id: location.agent_id,
+    ts: location.ts,
+    lat: location.lat,
+    lng: location.lng,
+    seq: location.seq,
+    ...(location.accuracy != null ? { accuracy: location.accuracy } : {}),
+    ...(location.speed != null ? { speed: location.speed } : {}),
+    ...(location.heading != null ? { heading: location.heading } : {}),
+    ...(location.battery != null ? { battery: location.battery } : {}),
+    ...(location.campaign_id ? { campaign_id: location.campaign_id } : {}),
+  }));
 
-  // Sync one by one (backend expects individual POSTs)
-  for (const location of pending) {
-    try {
-      const payload = {
-        agent_id: location.agent_id,
-        ts: location.ts,
-        lat: location.lat,
-        lng: location.lng,
-        seq: location.seq,
-        ...(location.accuracy != null ? { accuracy: location.accuracy } : {}),
-        ...(location.speed != null ? { speed: location.speed } : {}),
-        ...(location.heading != null ? { heading: location.heading } : {}),
-        ...(location.battery != null ? { battery: location.battery } : {}),
-        ...(location.campaign_id ? { campaign_id: location.campaign_id } : {}),
-      };
+  try {
+    const response = await fetch(`${API_BASE}/agents/locations/batch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-agent-token': AGENT_INGEST_TOKEN,
+      },
+      body: JSON.stringify({ locations }),
+    });
 
-      const response = await fetch(`${API_BASE}/agents/location`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-agent-token': AGENT_INGEST_TOKEN,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (response.ok) {
-        await markAsSynced([location.id]);
-        synced++;
-      } else {
-        const errorText = await response.text().catch(() => 'Unknown error');
-        await markAsFailed([location.id], `HTTP ${response.status}: ${errorText}`);
-        failed++;
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Network error';
-      await markAsFailed([location.id], message);
-      failed++;
+    if (response.ok) {
+      // Batch accepted - mark all as synced
+      const result = await response.json() as { accepted: number; deduped: number; failed: number };
+      await markAsSynced(ids);
+      console.log(`[SyncService] Batch sync: ${result.accepted} accepted, ${result.deduped} deduped, ${result.failed} failed`);
+      return { synced: pending.length, failed: 0 };
+    } else if (response.status === 401) {
+      // Token invalid - mark as failed, don't retry
+      await markAsFailed(ids, 'Invalid token (401)');
+      return { synced: 0, failed: pending.length };
+    } else {
+      // Server error - will retry later
+      const errorText = await response.text().catch(() => 'Unknown error');
+      await markAsFailed(ids, `HTTP ${response.status}: ${errorText}`);
+      return { synced: 0, failed: pending.length };
     }
+  } catch (err) {
+    // Network error - will retry later
+    const message = err instanceof Error ? err.message : 'Network error';
+    await markAsFailed(ids, message);
+    return { synced: 0, failed: pending.length };
   }
-
-  return { synced, failed };
 }
 
 // ─── Form Sync ────────────────────────────────────────────────

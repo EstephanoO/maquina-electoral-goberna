@@ -23,10 +23,18 @@ export default function SolicitudesScreen() {
 
   const [requests, setRequests] = useState<AccessRequestRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const loadRequests = useCallback(async () => {
+    setError(null);
     const result = await api.getPendingAccessRequests();
-    if (result.ok) setRequests(result.data.pending_requests);
+    if (result.ok) {
+      setRequests(result.data.pending_requests);
+    } else {
+      setError(result.error ?? 'Error al cargar solicitudes');
+    }
+    setLoading(false);
   }, []);
 
   const onRefresh = useCallback(async () => {
@@ -112,7 +120,18 @@ export default function SolicitudesScreen() {
         )}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No hay solicitudes pendientes</Text>
+            {loading ? (
+              <Text style={styles.emptyText}>Cargando...</Text>
+            ) : error ? (
+              <>
+                <Text style={styles.errorText}>{error}</Text>
+                <Pressable style={[styles.retryBtn, { backgroundColor: primary }]} onPress={loadRequests}>
+                  <Text style={styles.retryText}>Reintentar</Text>
+                </Pressable>
+              </>
+            ) : (
+              <Text style={styles.emptyText}>No hay solicitudes pendientes</Text>
+            )}
           </View>
         }
       />
@@ -152,6 +171,9 @@ const styles = StyleSheet.create({
   rejectBtn: { backgroundColor: '#FEE2E2' },
   approveText: { fontSize: 18, color: '#16A34A' },
   rejectText: { fontSize: 18, color: '#DC2626' },
-  emptyState: { padding: 32, alignItems: 'center' },
+  emptyState: { padding: 32, alignItems: 'center', gap: 16 },
   emptyText: { fontSize: 16, color: '#163960', fontFamily: FONT },
+  errorText: { fontSize: 14, color: '#DC2626', fontFamily: FONT, textAlign: 'center' },
+  retryBtn: { borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 },
+  retryText: { fontSize: 13, color: '#FFFFFF', fontFamily: FONT },
 });

@@ -12,3 +12,7 @@ export const agentLocationSchema = z.object({
   seq: z.number().int().nonnegative(),
   campaign_id: z.string().uuid().optional(),
 });
+
+export const agentLocationBatchSchema = z.object({
+  locations: z.array(agentLocationSchema).min(1).max(100),
+});

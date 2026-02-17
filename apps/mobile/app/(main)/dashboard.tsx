@@ -14,6 +14,7 @@ import { memo, useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, Modal, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import { useCandidate, useAgent, useApp, useActiveCampaign } from '@/lib/app-context';
 import { useAgentTracking } from '@/hooks/useAgentTracking';
@@ -60,7 +61,7 @@ const DashboardHeader = memo(function DashboardHeader({
     <View style={[styles.header, { backgroundColor: primaryColor }]}>
       {/* Menu button */}
       <Pressable style={styles.menuButton} onPress={onMenuPress} hitSlop={12}>
-        <Text style={styles.menuIcon}>⚙️</Text>
+        <MaterialIcons name="settings" size={22} color="rgba(255,255,255,0.8)" />
       </Pressable>
 
       {/* Candidate card */}
@@ -164,7 +165,7 @@ const OptionsMenu = memo(function OptionsMenu({
           <View style={styles.menuHeader}>
             <Text style={[styles.menuTitle, { color: primaryColor }]}>Opciones</Text>
             <Pressable onPress={onClose} hitSlop={12}>
-              <Text style={styles.closeIcon}>✕</Text>
+              <MaterialIcons name="close" size={20} color="#94a3b8" />
             </Pressable>
           </View>
 
@@ -201,7 +202,7 @@ const OptionsMenu = memo(function OptionsMenu({
           )}
 
           <Pressable style={styles.logoutButton} onPress={handleLogout}>
-            <Text style={styles.logoutIcon}>🚪</Text>
+            <MaterialIcons name="logout" size={18} color="#dc2626" style={styles.logoutIcon} />
             <Text style={styles.logoutText}>Cerrar Sesión</Text>
           </Pressable>
         </View>
@@ -659,9 +660,7 @@ const styles = StyleSheet.create({
     padding: 8,
     zIndex: 10,
   },
-  menuIcon: {
-    fontSize: 20,
-  },
+
 
   // Options modal
   modalOverlay: {
@@ -693,11 +692,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontFamily: FONT,
   },
-  closeIcon: {
-    fontSize: 18,
-    color: '#94a3b8',
-    fontFamily: FONT,
-  },
+
   sectionLabel: {
     fontSize: 11,
     fontFamily: FONT,
@@ -748,7 +743,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#fef2f2',
   },
   logoutIcon: {
-    fontSize: 16,
     marginRight: 10,
   },
   logoutText: {

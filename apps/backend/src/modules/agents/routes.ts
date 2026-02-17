@@ -8,7 +8,7 @@ import type { IngestOutcome } from "../../infra/metrics";
 import { metricsRegistry } from "../../infra/metrics";
 import { emitCampaignEvent } from "../campaigns/routes";
 import { loadAllLiveAgentLocations } from "./repository";
-import { agentLocationSchema } from "./schema";
+import { agentLocationBatchSchema, agentLocationSchema } from "./schema";
 import { AgentsStore } from "./store";
 import type { AgentLiveState, AgentLocationInput } from "./types";
 import { AgentsWriteBehindQueue } from "./write-behind-queue";
@@ -362,6 +362,131 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
           metricsRegistry.incCounter("tracking_ingest_total", String(status));
           app.log.error({ err: error, request_id: requestId }, "error recibiendo location agent");
           return reply.code(status).send(errorPayload(requestId, code, status === 400 ? "payload invalido" : "error ingestando tracking"));
+        }
+      },
+    );
+
+    // ─── Batch Location Ingest ────────────────────────────────────
+    // More efficient for mobile sync: send up to 100 locations in one request
+    app.post(
+      "/api/agents/locations/batch",
+      {
+        config: {
+          rateLimit: {
+            max: env.rateLimitAgentsLocationPerMinute,
+            timeWindow: "1 minute",
+            keyGenerator: (request: { headers: Record<string, unknown>; ip: string }) =>
+              String(request.headers["x-agent-id"] ?? request.headers["x-agent-token"] ?? request.ip),
+          },
+        },
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+
+        // Validate token
+        if (env.agentIngestToken) {
+          const provided = String(request.headers["x-agent-token"] ?? "").trim();
+          if (!provided || provided !== env.agentIngestToken) {
+            metricsRegistry.incCounter("tracking_ingest_total", "401");
+            metricsRegistry.incCounter("tracking_invalid_token_total", "invalid");
+            app.log.warn(
+              { request_id: requestId, ip: request.ip, has_token: provided.length > 0 },
+              "tracking batch invalid token",
+            );
+            return reply.code(401).send(errorPayload(requestId, "INVALID_TOKEN", "token invalido"));
+          }
+        }
+
+        try {
+          const parsed = agentLocationBatchSchema.safeParse(request.body);
+          if (!parsed.success) {
+            metricsRegistry.incCounter("tracking_ingest_total", "400");
+            return reply.code(400).send(errorPayload(requestId, "INVALID_PAYLOAD", "payload invalido"));
+          }
+
+          const { locations } = parsed.data;
+          let accepted = 0;
+          let deduped = 0;
+          let failed = 0;
+
+          for (const loc of locations) {
+            try {
+              const next = toState(loc);
+              const current = store.get(next.agentId);
+
+              // Dedupe check
+              if (current && next.seq <= current.seq) {
+                metricsRegistry.incCounter("tracking_dedupe_total", "live_seq");
+                deduped++;
+                continue;
+              }
+
+              // Enqueue
+              const queueResult = await queue.enqueue(next);
+              if (queueResult.queueFull) {
+                failed++;
+                continue;
+              }
+
+              if (queueResult.deduped) {
+                metricsRegistry.incCounter("tracking_dedupe_total", "pending_seq");
+                deduped++;
+                continue;
+              }
+
+              // Update store and broadcast
+              const wasOnline = previouslyOnlineAgents.has(next.agentId);
+              store.upsert(next);
+              const agent = store.serialize(next);
+
+              // Track for disconnect events
+              if (!wasOnline && next.campaignId) {
+                const agentName = `Agente ${next.agentId.slice(0, 8)}`;
+                previouslyOnlineAgents.set(next.agentId, {
+                  campaignId: next.campaignId,
+                  agentName,
+                });
+                emitCampaignEvent(next.campaignId, {
+                  type: "agent_connected",
+                  agent_id: next.agentId,
+                  agent_name: agentName,
+                  message: `${agentName} se conecto`,
+                });
+              } else if (next.campaignId) {
+                const existing = previouslyOnlineAgents.get(next.agentId);
+                if (existing) {
+                  existing.campaignId = next.campaignId;
+                }
+              }
+
+              lastIngestAtMs = Date.now();
+              pendingBatchByAgent.set(agent.agent_id, agent);
+              accepted++;
+            } catch {
+              failed++;
+            }
+          }
+
+          metricsRegistry.incCounter("tracking_ingest_total", "202");
+          app.log.info(
+            { request_id: requestId, total: locations.length, accepted, deduped, failed },
+            "tracking batch processed",
+          );
+
+          return reply.code(202).send({
+            ok: true,
+            request_id: requestId,
+            total: locations.length,
+            accepted,
+            deduped,
+            failed,
+            server_ts: new Date().toISOString(),
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "error desconocido";
+          metricsRegistry.incCounter("tracking_ingest_total", "500");
+          app.log.error({ err: error, request_id: requestId }, "error procesando batch de locations");
+          return reply.code(500).send(errorPayload(requestId, "TRACKING_BATCH_ERROR", message));
         }
       },
     );

@@ -17,39 +17,47 @@ export default function PendingScreen() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [checking, setChecking] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
+  const initialCheckDone = useRef(false);
 
   const isSuspended = auth.status === 'suspended';
 
-  // Manual check with loading state
+  // Core check function - stable reference
+  const doCheck = useCallback(async () => {
+    await checkApproval();
+    setLastChecked(new Date());
+  }, [checkApproval]);
+
+  // Manual check with loading state - for button press
   const handleManualCheck = useCallback(async () => {
     if (checking) return;
     setChecking(true);
     try {
-      await checkApproval();
-      setLastChecked(new Date());
+      await doCheck();
     } finally {
       setChecking(false);
     }
-  }, [checkApproval, checking]);
+  }, [doCheck, checking]);
 
-  // Initial check on mount
+  // Initial check on mount - runs only once
   useEffect(() => {
-    if (isSuspended) return;
-    void handleManualCheck();
-  }, [isSuspended, handleManualCheck]);
+    if (isSuspended || initialCheckDone.current) return;
+    initialCheckDone.current = true;
+    setChecking(true);
+    doCheck().finally(() => setChecking(false));
+  }, [isSuspended, doCheck]);
 
   // Poll for approval every 30s
   useEffect(() => {
     if (isSuspended) return;
 
     intervalRef.current = setInterval(() => {
-      void checkApproval().then(() => setLastChecked(new Date()));
+      void doCheck();
     }, POLL_INTERVAL_MS);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isSuspended, checkApproval]);
+  }, [isSuspended, doCheck]);
 
   const handleLogout = () => {
     Alert.alert(

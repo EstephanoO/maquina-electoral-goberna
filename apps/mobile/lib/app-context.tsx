@@ -259,7 +259,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ── Check approval (polling from pending screen) ──────────
   // Called when user is waiting for access request approval.
   // User may be status='active' but with no campaigns (waiting for approval).
+  // The "pending" state in the app means: user has no approved campaigns yet.
   const checkApproval = useCallback(async () => {
+    // Only run if we're in a waiting state (pending or active with no campaigns)
     if (auth.status !== 'pending') return;
 
     const meResult = await api.getMe();
@@ -278,14 +280,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Check if user was set to pending by admin
+    if (freshUser.status === 'pending') {
+      setAuth({ status: 'pending', user: freshUser, campaigns: freshCampaigns });
+      return;
+    }
+
     // Check if user now has campaigns (access request was approved)
-    if (freshUser.status === 'active' && freshCampaigns.length > 0) {
+    // This is the key check: campaigns.length > 0 means approval happened
+    if (freshCampaigns.length > 0) {
       const config = await buildAppConfig(freshUser, freshCampaigns);
       if (config) {
         setAuth({ status: 'active', user: freshUser, campaigns: freshCampaigns, config });
       }
     }
-    // Otherwise stay in pending state
+    // Otherwise stay in pending state (user active but no campaigns approved yet)
   }, [auth]);
 
   // ── Switch campaign (for users with multiple campaigns or admin) ──

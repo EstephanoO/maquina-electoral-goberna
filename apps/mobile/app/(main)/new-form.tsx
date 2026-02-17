@@ -28,7 +28,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import * as Location from 'expo-location';
+// expo-location removed temporarily for Google Play review
+// import * as Location from 'expo-location';
 
 import { useCandidate, useFormConfig, useAgent, useActiveCampaign } from '@/lib/app-context';
 import { queueForm, forceSyncNow } from '@/lib/offline-queue';
@@ -46,6 +47,13 @@ function generateClientId(): string {
 const FONT = 'Montserrat-Bold';
 const BORDER = '#E1E6F0';
 const TEXT_MUTED = 'rgba(22, 57, 96, 0.7)';
+const ERROR_RED = '#DC2626';
+
+// Peru phone validation: 9 digits starting with 9
+const PERU_PHONE_REGEX = /^9\d{8}$/;
+
+// Fields that are explicitly optional (no asterisk, no validation)
+const OPTIONAL_FIELDS = ['comentarios', 'observaciones', 'notas'];
 
 // ─── Field ID mapping to backend flat schema ──────────────────
 
@@ -77,6 +85,17 @@ function resolveBackendField(fieldId: string): string {
 
 // ─── Dynamic Field Renderer ─────────────────────────────────
 
+// Check if a field is optional based on its ID
+function isOptionalField(fieldId: string): boolean {
+  const normalized = fieldId.toLowerCase().replace(/[^a-z]/g, '');
+  return OPTIONAL_FIELDS.some((opt) => normalized.includes(opt));
+}
+
+// Render the required asterisk in red
+function RequiredAsterisk() {
+  return <Text style={styles.requiredAsterisk}>*</Text>;
+}
+
 function DynamicField({
   field,
   value,
@@ -89,46 +108,73 @@ function DynamicField({
   primaryColor: string;
 }) {
   const [capturandoGps, setCapturandoGps] = useState(false);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+
+  // Determine if this field should show required asterisk
+  const isOptional = isOptionalField(field.id);
+  const showRequired = field.required && !isOptional;
+
+  // Handle phone input with validation
+  const handlePhoneChange = (text: string) => {
+    // Only allow digits
+    const cleaned = text.replace(/\D/g, '');
+    // Limit to 9 digits
+    const limited = cleaned.slice(0, 9);
+    onChange(limited);
+
+    // Validate
+    if (limited.length > 0 && limited.length < 9) {
+      setPhoneError('Debe tener 9 digitos');
+    } else if (limited.length === 9 && !limited.startsWith('9')) {
+      setPhoneError('Debe empezar con 9');
+    } else {
+      setPhoneError(null);
+    }
+  };
 
   if (field.type === 'location') {
     const hasLocation = value !== '';
 
+    // GPS permissions removed temporarily – manual coordinate entry as fallback
     const captureLocation = async () => {
-      setCapturandoGps(true);
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert('Permiso denegado', 'Se necesita acceso a ubicacion para capturar GPS.');
-          return;
-        }
-        const position = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
-        });
-        const utm = latLonToUtm(position.coords.latitude, position.coords.longitude);
-        onChange(JSON.stringify(utm));
-      } catch {
-        Alert.alert('Error', 'No se pudo obtener la ubicacion.');
-      } finally {
-        setCapturandoGps(false);
-      }
+      Alert.prompt
+        ? // iOS supports Alert.prompt
+          Alert.prompt(
+            'Coordenadas manuales',
+            'Ingresa latitud,longitud (ej: -12.0464,-77.0428)',
+            (input) => {
+              if (!input) return;
+              const parts = input.split(',').map((s) => parseFloat(s.trim()));
+              if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                const utm = latLonToUtm(parts[0], parts[1]);
+                onChange(JSON.stringify(utm));
+              } else {
+                Alert.alert('Error', 'Formato invalido. Usa: latitud,longitud');
+              }
+            },
+          )
+        : // Android fallback – skip location or use a default placeholder
+          Alert.alert(
+            'GPS no disponible',
+            'Funcion de ubicacion desactivada temporalmente. El formulario se enviara sin coordenadas.',
+            [{ text: 'Entendido' }],
+          );
     };
 
-    let displayText = 'Capturar ubicacion';
-    if (capturandoGps) {
-      displayText = 'Capturando...';
-    } else if (hasLocation) {
+    let displayText = 'Ingresar ubicacion';
+    if (hasLocation) {
       try {
         const utm: UtmData = JSON.parse(value);
         displayText = `UTM ${utm.zone}${utm.hemisphere} ${Math.round(utm.easting)}E ${Math.round(utm.northing)}N`;
       } catch {
-        displayText = 'Ubicacion capturada';
+        displayText = 'Ubicacion registrada';
       }
     }
 
     return (
       <View style={styles.field}>
         <Text style={styles.label}>
-          {field.label} {field.required && '*'}
+          {field.label} {showRequired && <RequiredAsterisk />}
         </Text>
         <Pressable
           style={[
@@ -137,7 +183,6 @@ function DynamicField({
             hasLocation && styles.gpsBtnCaptured,
           ]}
           onPress={captureLocation}
-          disabled={capturandoGps}
         >
           <Text style={[styles.gpsBtnText, { color: primaryColor }, hasLocation && styles.gpsBtnTextCaptured]}>
             {displayText}
@@ -151,7 +196,7 @@ function DynamicField({
     return (
       <View style={styles.field}>
         <Text style={styles.label}>
-          {field.label} {field.required && '*'}
+          {field.label} {showRequired && <RequiredAsterisk />}
         </Text>
         <View style={styles.optionsContainer}>
           {(field.options ?? []).map((opt) => (
@@ -195,8 +240,11 @@ function DynamicField({
     );
   }
 
+  // Handle phone fields specially
+  const isPhoneField = field.type === 'phone' || field.id.toLowerCase().includes('telefono') || field.id.toLowerCase().includes('celular');
+
   const keyboardType =
-    field.type === 'phone'
+    field.type === 'phone' || isPhoneField
       ? 'phone-pad' as const
       : field.type === 'number'
       ? 'numeric' as const
@@ -209,21 +257,29 @@ function DynamicField({
   return (
     <View style={styles.field}>
       <Text style={styles.label}>
-        {field.label} {field.required && '*'}
+        {field.label} {showRequired && <RequiredAsterisk />}
+        {isOptional && <Text style={styles.optionalLabel}> (opcional)</Text>}
       </Text>
       <TextInput
-        style={[styles.input, multiline && styles.inputMultiline]}
-        placeholder={field.placeholder ?? ''}
+        style={[
+          styles.input,
+          multiline && styles.inputMultiline,
+          isPhoneField && phoneError && styles.inputError,
+        ]}
+        placeholder={isPhoneField ? '987654321' : (field.placeholder ?? '')}
         placeholderTextColor={TEXT_MUTED}
         value={value}
-        onChangeText={onChange}
+        onChangeText={isPhoneField ? handlePhoneChange : onChange}
         keyboardType={keyboardType}
         multiline={multiline}
         numberOfLines={multiline ? 3 : 1}
         textAlignVertical={multiline ? 'top' : 'auto'}
-        maxLength={field.validation?.maxLength}
+        maxLength={isPhoneField ? 9 : field.validation?.maxLength}
         autoCapitalize={field.type === 'email' ? 'none' : 'sentences'}
       />
+      {isPhoneField && phoneError && (
+        <Text style={styles.fieldError}>{phoneError}</Text>
+      )}
     </View>
   );
 }
@@ -264,12 +320,28 @@ export default function NewFormScreen() {
 
     const fields = formConfig.schema.fields;
     
-    // Validate required fields
+    // Validate required fields (skip optional ones like comentarios)
     for (const field of fields) {
+      const isOptional = isOptionalField(field.id);
+      
+      // Skip validation for optional fields
+      if (isOptional) continue;
+      
       if (field.required && !formData[field.id]?.trim()) {
         Alert.alert('Campo requerido', `"${field.label}" es obligatorio.`);
         return;
       }
+      
+      // Phone validation for Peru (9 digits starting with 9)
+      const isPhoneField = field.type === 'phone' || field.id.toLowerCase().includes('telefono') || field.id.toLowerCase().includes('celular');
+      if (isPhoneField && formData[field.id]) {
+        const phoneValue = formData[field.id].trim();
+        if (!PERU_PHONE_REGEX.test(phoneValue)) {
+          Alert.alert('Telefono invalido', 'El telefono debe tener 9 digitos y empezar con 9.');
+          return;
+        }
+      }
+      
       if (field.validation?.pattern && formData[field.id]) {
         const regex = new RegExp(field.validation.pattern);
         if (!regex.test(formData[field.id])) {
@@ -449,6 +521,17 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  requiredAsterisk: {
+    color: ERROR_RED,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  optionalLabel: {
+    fontSize: 10,
+    color: TEXT_MUTED,
+    textTransform: 'lowercase',
+    fontFamily: FONT,
+  },
   input: {
     borderWidth: 1,
     borderColor: BORDER,
@@ -460,6 +543,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   inputMultiline: { minHeight: 80, paddingTop: 14 },
+  inputError: { borderColor: ERROR_RED, backgroundColor: '#FEF2F2' },
+  fieldError: {
+    fontSize: 11,
+    color: ERROR_RED,
+    fontFamily: FONT,
+    marginTop: 4,
+  },
   gpsBtn: {
     borderWidth: 1,
     borderRadius: 12,
