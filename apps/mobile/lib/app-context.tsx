@@ -51,6 +51,8 @@ type AppContextValue = {
   logout: () => Promise<void>;
   refreshConfig: () => Promise<void>;
   checkApproval: () => Promise<void>;
+  switchCampaign: (campaignId: string) => Promise<void>;
+  availableCampaigns: CampaignMembership[];
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -279,10 +281,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [auth]);
 
+  // ── Switch campaign (for users with multiple campaigns or admin) ──
+  const switchCampaign = useCallback(async (campaignId: string) => {
+    if (auth.status !== 'active') return;
+
+    // Save new active campaign
+    await authStore.setActiveCampaignId(campaignId);
+
+    // Rebuild config with new campaign
+    const config = await buildAppConfig(auth.user, auth.campaigns);
+    if (config) {
+      setAuth({ status: 'active', user: auth.user, campaigns: auth.campaigns, config });
+    }
+  }, [auth]);
+
+  // ── Get available campaigns for switching ────────────────
+  const availableCampaigns = useMemo<CampaignMembership[]>(() => {
+    if (auth.status === 'active' || auth.status === 'pending') {
+      return auth.campaigns;
+    }
+    return [];
+  }, [auth]);
+
   // ── Memoize context value ─────────────────────────────────
   const value = useMemo<AppContextValue>(
-    () => ({ auth, login, register, logout, refreshConfig, checkApproval }),
-    [auth, login, register, logout, refreshConfig, checkApproval],
+    () => ({ auth, login, register, logout, refreshConfig, checkApproval, switchCampaign, availableCampaigns }),
+    [auth, login, register, logout, refreshConfig, checkApproval, switchCampaign, availableCampaigns],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -6,17 +6,19 @@
  * - Stats de registros
  * - Lista de registros recientes
  * - FAB para nuevo formulario
+ * - Menu de opciones (logout, cambiar candidato)
  */
 
 import { Image } from 'expo-image';
 import { memo, useCallback, useEffect, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Modal, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { useCandidate, useAgent, useApp, useActiveCampaign } from '@/lib/app-context';
 import { useAgentTracking } from '@/hooks/useAgentTracking';
 import { getQueueStats, getLocalFormsByCampaign, type PendingForm } from '@/lib/offline-queue';
+import type { CampaignMembership } from '@/lib/types';
 
 const FONT = 'Montserrat-Bold';
 
@@ -34,8 +36,10 @@ interface HeaderProps {
   primaryColor: string;
   secondaryColor: string;
   agentName: string;
+  agentRole: string;
   trackingActive: boolean;
   stats: { total: number; synced: number; pending: number };
+  onMenuPress: () => void;
 }
 
 const DashboardHeader = memo(function DashboardHeader({
@@ -47,11 +51,18 @@ const DashboardHeader = memo(function DashboardHeader({
   primaryColor,
   secondaryColor,
   agentName,
+  agentRole,
   trackingActive,
   stats,
+  onMenuPress,
 }: HeaderProps) {
   return (
     <View style={[styles.header, { backgroundColor: primaryColor }]}>
+      {/* Menu button */}
+      <Pressable style={styles.menuButton} onPress={onMenuPress} hitSlop={12}>
+        <Text style={styles.menuIcon}>⚙️</Text>
+      </Pressable>
+
       {/* Candidate card */}
       <View style={styles.candidateCard}>
         {photoUrl ? (
@@ -98,7 +109,7 @@ const DashboardHeader = memo(function DashboardHeader({
       {/* Agent info bar */}
       <View style={styles.agentBar}>
         <View style={styles.agentInfo}>
-          <Text style={styles.agentLabel}>Agente:</Text>
+          <Text style={styles.agentLabel}>{agentRole === 'admin' ? 'Admin:' : 'Agente:'}</Text>
           <Text style={styles.agentName}>{agentName}</Text>
         </View>
         <View style={styles.gpsStatus}>
@@ -107,6 +118,95 @@ const DashboardHeader = memo(function DashboardHeader({
         </View>
       </View>
     </View>
+  );
+});
+
+// ─── Options Menu Modal ─────────────────────────────────────
+
+interface OptionsMenuProps {
+  visible: boolean;
+  onClose: () => void;
+  onLogout: () => void;
+  onSwitchCampaign: (campaignId: string) => void;
+  campaigns: CampaignMembership[];
+  activeCampaignId: string;
+  isAdmin: boolean;
+  primaryColor: string;
+}
+
+const OptionsMenu = memo(function OptionsMenu({
+  visible,
+  onClose,
+  onLogout,
+  onSwitchCampaign,
+  campaigns,
+  activeCampaignId,
+  isAdmin,
+  primaryColor,
+}: OptionsMenuProps) {
+  const showCampaignSwitcher = isAdmin || campaigns.length > 1;
+
+  const handleLogout = () => {
+    Alert.alert(
+      'Cerrar Sesión',
+      '¿Estás seguro que deseas cerrar sesión?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Cerrar Sesión', style: 'destructive', onPress: onLogout },
+      ],
+    );
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <View style={styles.menuContainer}>
+          <View style={styles.menuHeader}>
+            <Text style={[styles.menuTitle, { color: primaryColor }]}>Opciones</Text>
+            <Pressable onPress={onClose} hitSlop={12}>
+              <Text style={styles.closeIcon}>✕</Text>
+            </Pressable>
+          </View>
+
+          {showCampaignSwitcher && (
+            <>
+              <Text style={styles.sectionLabel}>
+                {isAdmin ? 'Cambiar Candidato (Admin)' : 'Cambiar Candidato'}
+              </Text>
+              <View style={styles.campaignList}>
+                {campaigns.map((c) => (
+                  <Pressable
+                    key={c.id}
+                    style={[
+                      styles.campaignItem,
+                      c.id === activeCampaignId && { backgroundColor: `${primaryColor}15` },
+                    ]}
+                    onPress={() => {
+                      if (c.id !== activeCampaignId) {
+                        onSwitchCampaign(c.id);
+                        onClose();
+                      }
+                    }}
+                  >
+                    <View style={[styles.campaignIndicator, { backgroundColor: c.id === activeCampaignId ? primaryColor : '#e2e8f0' }]} />
+                    <Text style={[styles.campaignName, c.id === activeCampaignId && { color: primaryColor, fontWeight: '700' }]}>
+                      {c.name}
+                    </Text>
+                    {c.id === activeCampaignId && <Text style={styles.checkmark}>✓</Text>}
+                  </Pressable>
+                ))}
+              </View>
+              <View style={styles.menuDivider} />
+            </>
+          )}
+
+          <Pressable style={styles.logoutButton} onPress={handleLogout}>
+            <Text style={styles.logoutIcon}>🚪</Text>
+            <Text style={styles.logoutText}>Cerrar Sesión</Text>
+          </Pressable>
+        </View>
+      </Pressable>
+    </Modal>
   );
 });
 
@@ -180,7 +280,7 @@ export default function DashboardScreen() {
   const candidate = useCandidate();
   const agent = useAgent();
   const campaign = useActiveCampaign();
-  const { refreshConfig } = useApp();
+  const { refreshConfig, logout, switchCampaign, availableCampaigns } = useApp();
 
   // Tracking state (with error handling)
   const { trackingState } = useAgentTracking();
@@ -192,6 +292,7 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState({ total: 0, synced: 0, pending: 0 });
   const [localForms, setLocalForms] = useState<PendingForm[]>([]);
+  const [showMenu, setShowMenu] = useState(false);
 
   // Build photo URL once
   const photoUrl = candidate.foto_url
@@ -238,6 +339,10 @@ export default function DashboardScreen() {
     <FormItem form={item} primaryColor={primary} />
   ), [primary]);
 
+  const handleSwitchCampaign = useCallback(async (campaignId: string) => {
+    await switchCampaign(campaignId);
+  }, [switchCampaign]);
+
   const renderHeader = useCallback(() => (
     <>
       <DashboardHeader
@@ -249,8 +354,10 @@ export default function DashboardScreen() {
         primaryColor={primary}
         secondaryColor={secondary}
         agentName={agent.full_name}
+        agentRole={agent.role}
         trackingActive={trackingActive}
         stats={stats}
+        onMenuPress={() => setShowMenu(true)}
       />
       {localForms.length > 0 && (
         <View style={styles.sectionHeader}>
@@ -258,7 +365,7 @@ export default function DashboardScreen() {
         </View>
       )}
     </>
-  ), [candidate, photoUrl, primary, secondary, agent.full_name, trackingActive, stats, localForms.length]);
+  ), [candidate, photoUrl, primary, secondary, agent.full_name, agent.role, trackingActive, stats, localForms.length]);
 
   const renderEmpty = useCallback(() => (
     <EmptyState primaryColor={primary} />
@@ -286,6 +393,18 @@ export default function DashboardScreen() {
       >
         <Text style={styles.fabIcon}>+</Text>
       </Pressable>
+
+      {/* Options Menu */}
+      <OptionsMenu
+        visible={showMenu}
+        onClose={() => setShowMenu(false)}
+        onLogout={logout}
+        onSwitchCampaign={handleSwitchCampaign}
+        campaigns={availableCampaigns}
+        activeCampaignId={campaign.id}
+        isAdmin={agent.role === 'admin'}
+        primaryColor={primary}
+      />
     </SafeAreaView>
   );
 }
@@ -530,5 +649,111 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontFamily: FONT,
     marginTop: -2,
+  },
+
+  // Menu button
+  menuButton: {
+    position: 'absolute',
+    top: 8,
+    right: 12,
+    padding: 8,
+    zIndex: 10,
+  },
+  menuIcon: {
+    fontSize: 20,
+  },
+
+  // Options modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  menuContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: 340,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  menuHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  menuTitle: {
+    fontSize: 18,
+    fontFamily: FONT,
+  },
+  closeIcon: {
+    fontSize: 18,
+    color: '#94a3b8',
+    fontFamily: FONT,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontFamily: FONT,
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  campaignList: {
+    marginBottom: 12,
+  },
+  campaignItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  campaignIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 12,
+  },
+  campaignName: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1e293b',
+    fontFamily: FONT,
+  },
+  checkmark: {
+    fontSize: 14,
+    color: '#4ade80',
+    fontFamily: FONT,
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: '#e2e8f0',
+    marginVertical: 12,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#fef2f2',
+  },
+  logoutIcon: {
+    fontSize: 16,
+    marginRight: 10,
+  },
+  logoutText: {
+    fontSize: 15,
+    color: '#dc2626',
+    fontFamily: FONT,
   },
 });
