@@ -1,15 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Layer, Map as MapLibre, Marker, Source } from "@vis.gl/react-maplibre";
-import type { MapRef } from "@vis.gl/react-maplibre";
-import type { FilterSpecification, StyleSpecification } from "maplibre-gl";
+import { Layer, Map as MapLibre, Popup, Source } from "@vis.gl/react-maplibre";
+import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
+import type { StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import { api } from "@/lib/services";
 
-type AgentLocation = {
+/* ========== Types ========== */
+
+export type AgentLocation = {
   agent_id: string;
+  agent_name?: string;
   ts: string;
   lat: number;
   lng: number;
@@ -17,10 +20,39 @@ type AgentLocation = {
   speed?: number;
 };
 
+export type AgentStatus = "connected" | "idle" | "inactive";
+
+export type EnrichedAgent = {
+  id: string;
+  name: string;
+  status: AgentStatus;
+  lastSeen: Date;
+  forms_count: number;
+  lat: number;
+  lng: number;
+};
+
+export type FormPoint = {
+  id: string;
+  lat: number;
+  lng: number;
+  nombre: string;
+  created_at: string;
+  agent_id?: string;
+};
+
 type Props = {
   campaignId: string;
   primaryColor: string;
+  agents: EnrichedAgent[];
+  forms: FormPoint[];
+  selectedAgentId: string | null;
+  onSelectAgent: (agentId: string | null) => void;
+  showTracking?: boolean;
+  showDatos?: boolean;
 };
+
+/* ========== Constants ========== */
 
 const peruView = {
   longitude: -75.0152,
@@ -35,18 +67,27 @@ const mapStyle: StyleSpecification = {
     {
       id: "background",
       type: "background",
-      paint: { "background-color": "#d9e7f2" },
+      paint: { "background-color": "#e8f4f8" },
     },
   ],
 };
 
 const DEFAULT_TILE_TEMPLATE = "/api/tiles/{z}/{x}/{y}.vector.pbf";
 
-export function TierraMap({ campaignId, primaryColor }: Props) {
+const STATUS_COLORS: Record<AgentStatus, string> = {
+  connected: "#22c55e",
+  idle: "#eab308",
+  inactive: "#94a3b8",
+};
+
+/* ========== Component ========== */
+
+export function TierraMap({ campaignId, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking = true, showDatos = true }: Props) {
   const mapRef = useRef<MapRef | null>(null);
   const [tileUrl, setTileUrl] = useState<string | null>(null);
-  const [agentLocations, setAgentLocations] = useState<Record<string, AgentLocation>>({});
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
+  const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
+  const [popupAgent, setPopupAgent] = useState<EnrichedAgent | null>(null);
 
   // Initialize tile URL
   useEffect(() => {
@@ -59,42 +100,19 @@ export function TierraMap({ campaignId, primaryColor }: Props) {
     setStatus("ok");
   }, []);
 
-  // Fetch agent locations
-  useEffect(() => {
-    const fetchAgents = async () => {
-      try {
-        const res = await api.get<{ agents: AgentLocation[] }>("/api/agents/live", {
-          campaignId,
-        });
-        if (res.ok && res.data?.agents) {
-          const map: Record<string, AgentLocation> = {};
-          for (const a of res.data.agents) {
-            if (a.agent_id && typeof a.lat === "number" && typeof a.lng === "number") {
-              map[a.agent_id] = a;
-            }
-          }
-          setAgentLocations(map);
-        }
-      } catch {
-        // ignore
-      }
-    };
-
-    fetchAgents();
-    const interval = setInterval(fetchAgents, 10000);
-    return () => clearInterval(interval);
-  }, [campaignId]);
-
   // Agent markers as GeoJSON
   const agentsGeoJson = useMemo(
     () => ({
       type: "FeatureCollection" as const,
-      features: Object.values(agentLocations).map((agent) => ({
+      features: agents.map((agent) => ({
         type: "Feature" as const,
-        id: agent.agent_id,
+        id: agent.id,
         properties: {
-          agent_id: agent.agent_id,
-          ts: agent.ts,
+          agent_id: agent.id,
+          name: agent.name,
+          status: agent.status,
+          forms_count: agent.forms_count,
+          is_selected: agent.id === selectedAgentId ? 1 : 0,
         },
         geometry: {
           type: "Point" as const,
@@ -102,132 +120,345 @@ export function TierraMap({ campaignId, primaryColor }: Props) {
         },
       })),
     }),
-    [agentLocations],
+    [agents, selectedAgentId],
+  );
+
+  // Form points as GeoJSON
+  const formsGeoJson = useMemo(
+    () => ({
+      type: "FeatureCollection" as const,
+      features: forms
+        .filter((f) => f.lat && f.lng && !isNaN(f.lat) && !isNaN(f.lng))
+        .map((form) => ({
+          type: "Feature" as const,
+          id: form.id,
+          properties: {
+            id: form.id,
+            nombre: form.nombre,
+            agent_id: form.agent_id,
+            is_filtered: selectedAgentId ? (form.agent_id === selectedAgentId ? 1 : 0) : 1,
+          },
+          geometry: {
+            type: "Point" as const,
+            coordinates: [form.lng, form.lat],
+          },
+        })),
+    }),
+    [forms, selectedAgentId],
   );
 
   const handleMapLoad = useCallback(() => {
-    // Fit to Peru bounds on load
     mapRef.current?.fitBounds(
       [
-        [-81.4, -18.4], // SW
-        [-68.7, -0.1], // NE
+        [-81.4, -18.4],
+        [-68.7, -0.1],
       ],
       { padding: 20, duration: 0 },
     );
   }, []);
 
+  // Handle click on agent marker
+  const handleMapClick = useCallback(
+    (event: MapLayerMouseEvent) => {
+      const features = event.features;
+      if (features && features.length > 0) {
+        const feature = features[0];
+        const agentId = feature.properties?.agent_id;
+        if (agentId) {
+          if (selectedAgentId === agentId) {
+            onSelectAgent(null);
+            setPopupAgent(null);
+          } else {
+            onSelectAgent(agentId);
+            const agent = agents.find((a) => a.id === agentId);
+            if (agent) setPopupAgent(agent);
+          }
+        }
+      }
+    },
+    [agents, selectedAgentId, onSelectAgent],
+  );
+
+  // Handle hover
+  const handleMouseEnter = useCallback(
+    (event: MapLayerMouseEvent) => {
+      const features = event.features;
+      if (features && features.length > 0) {
+        const agentId = features[0].properties?.agent_id;
+        setHoveredAgentId(agentId);
+        if (mapRef.current) {
+          mapRef.current.getCanvas().style.cursor = "pointer";
+        }
+      }
+    },
+    [],
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    setHoveredAgentId(null);
+    if (mapRef.current) {
+      mapRef.current.getCanvas().style.cursor = "";
+    }
+  }, []);
+
+  // Fly to selected agent
+  useEffect(() => {
+    if (selectedAgentId && mapRef.current) {
+      const agent = agents.find((a) => a.id === selectedAgentId);
+      if (agent) {
+        mapRef.current.flyTo({
+          center: [agent.lng, agent.lat],
+          zoom: 12,
+          duration: 1000,
+        });
+        setPopupAgent(agent);
+      }
+    }
+  }, [selectedAgentId, agents]);
+
   if (status === "loading" || !tileUrl) {
     return (
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "#e2e8f0",
-        }}
-      >
-        <span style={{ color: "#64748b" }}>Cargando mapa...</span>
+      <div style={styles.loadingContainer}>
+        <span style={styles.loadingText}>Cargando mapa...</span>
       </div>
     );
   }
 
   return (
-    <div style={{ position: "absolute", inset: 0 }}>
+    <div style={styles.mapWrapper}>
       <MapLibre
         ref={mapRef}
         initialViewState={peruView}
         style={{ width: "100%", height: "100%" }}
         mapStyle={mapStyle}
         onLoad={handleMapLoad}
+        onClick={handleMapClick}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        interactiveLayerIds={["agents-circles", "agents-circles-selected"]}
       >
         {/* Vector tiles source */}
         <Source id="peru" type="vector" tiles={[tileUrl]} minzoom={0} maxzoom={14}>
-          {/* Departamentos fill */}
           <Layer
             id="departamentos-fill"
             type="fill"
             source-layer="departamentos"
             paint={{
-              "fill-color": [
-                "case",
-                ["boolean", ["feature-state", "hover"], false],
-                "#c7d2fe",
-                "#f1e4f0",
-              ],
-              "fill-opacity": 0.6,
+              "fill-color": "#f8fafc",
+              "fill-opacity": 0.8,
             }}
           />
-
-          {/* Departamentos outline */}
           <Layer
             id="departamentos-line"
             type="line"
             source-layer="departamentos"
             paint={{
-              "line-color": "#334155",
-              "line-width": 1,
+              "line-color": "#cbd5e1",
+              "line-width": 1.5,
             }}
           />
-
-          {/* Provincias outline (visible at higher zoom) */}
           <Layer
             id="provincias-line"
             type="line"
             source-layer="provincias"
             minzoom={6}
             paint={{
-              "line-color": "#64748b",
-              "line-width": 0.5,
+              "line-color": "#e2e8f0",
+              "line-width": 0.8,
             }}
           />
-
-          {/* Distritos outline (visible at highest zoom) */}
           <Layer
             id="distritos-line"
             type="line"
             source-layer="distritos"
             minzoom={9}
             paint={{
-              "line-color": "#94a3b8",
-              "line-width": 0.3,
+              "line-color": "#f1f5f9",
+              "line-width": 0.5,
             }}
           />
         </Source>
 
-        {/* Agent markers */}
-        <Source id="agents" type="geojson" data={agentsGeoJson}>
-          <Layer
-            id="agents-circles"
-            type="circle"
-            paint={{
-              "circle-radius": 8,
-              "circle-color": primaryColor,
-              "circle-stroke-width": 2,
-              "circle-stroke-color": "#ffffff",
-            }}
-          />
-        </Source>
+        {/* Form data points - small colored dots */}
+        {showDatos && (
+          <Source id="forms" type="geojson" data={formsGeoJson}>
+            <Layer
+              id="forms-circles"
+              type="circle"
+              paint={{
+                "circle-radius": [
+                  "interpolate",
+                  ["linear"],
+                  ["zoom"],
+                  5, 4,
+                  10, 6,
+                  15, 10,
+                ],
+                "circle-color": "#6366f1", // Indigo for data points
+                "circle-opacity": [
+                  "case",
+                  ["==", ["get", "is_filtered"], 1],
+                  0.8,
+                  0.3,
+                ],
+                "circle-stroke-width": 2,
+                "circle-stroke-color": "#ffffff",
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Agent markers - larger circles on top */}
+        {showTracking && (
+          <Source id="agents" type="geojson" data={agentsGeoJson}>
+            {/* Outer ring for selected */}
+            <Layer
+              id="agents-circles-selected"
+              type="circle"
+              filter={["==", ["get", "is_selected"], 1]}
+              paint={{
+                "circle-radius": 24,
+                "circle-color": primaryColor,
+                "circle-opacity": 0.2,
+              }}
+            />
+            {/* Pulse ring for connected agents */}
+            <Layer
+              id="agents-pulse"
+              type="circle"
+              filter={["==", ["get", "status"], "connected"]}
+              paint={{
+                "circle-radius": 18,
+                "circle-color": STATUS_COLORS.connected,
+                "circle-opacity": 0.15,
+              }}
+            />
+            {/* Main circle */}
+            <Layer
+              id="agents-circles"
+              type="circle"
+              paint={{
+                "circle-radius": [
+                  "case",
+                  ["==", ["get", "is_selected"], 1],
+                  16,
+                  12,
+                ],
+                "circle-color": [
+                  "match",
+                  ["get", "status"],
+                  "connected", STATUS_COLORS.connected,
+                  "idle", STATUS_COLORS.idle,
+                  "inactive", STATUS_COLORS.inactive,
+                  primaryColor,
+                ],
+                  "circle-stroke-width": 3,
+                "circle-stroke-color": "#ffffff",
+              }}
+            />
+            {/* Forms count label */}
+            <Layer
+              id="agents-labels"
+              type="symbol"
+              minzoom={7}
+              layout={{
+                "text-field": ["to-string", ["get", "forms_count"]],
+                "text-size": 11,
+                "text-allow-overlap": true,
+              }}
+              paint={{
+                "text-color": "#ffffff",
+                "text-halo-color": "rgba(0,0,0,0.3)",
+                "text-halo-width": 1,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Popup for selected agent */}
+        {popupAgent && (
+          <Popup
+            longitude={popupAgent.lng}
+            latitude={popupAgent.lat}
+            anchor="bottom"
+            offset={20}
+            closeButton={false}
+            closeOnClick={false}
+          >
+            <div style={styles.popup}>
+              <div style={styles.popupHeader}>
+                <span
+                  style={{
+                    ...styles.popupDot,
+                    backgroundColor: STATUS_COLORS[popupAgent.status],
+                  }}
+                />
+                <span style={styles.popupName}>{popupAgent.name}</span>
+              </div>
+              <div style={styles.popupStats}>
+                <span style={{ ...styles.popupCount, color: primaryColor }}>
+                  {popupAgent.forms_count}
+                </span>
+                <span style={styles.popupLabel}>datos</span>
+              </div>
+            </div>
+          </Popup>
+        )}
       </MapLibre>
-
-      {/* Agent count badge */}
-      <div
-        style={{
-          position: "absolute",
-          top: 12,
-          right: 12,
-          backgroundColor: "#ffffff",
-          padding: "8px 12px",
-          borderRadius: 8,
-          boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-          fontSize: 12,
-          fontWeight: 600,
-          color: "#334155",
-        }}
-      >
-        {Object.keys(agentLocations).length} agentes en mapa
-      </div>
     </div>
   );
 }
+
+/* ========== Styles ========== */
+
+const styles: Record<string, React.CSSProperties> = {
+  mapWrapper: {
+    position: "absolute",
+    inset: 0,
+  },
+  loadingContainer: {
+    position: "absolute",
+    inset: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f1f5f9",
+  },
+  loadingText: {
+    color: "#64748b",
+    fontSize: 14,
+  },
+  popup: {
+    padding: "8px 12px",
+    minWidth: 100,
+  },
+  popupHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 4,
+  },
+  popupDot: {
+    width: 8,
+    height: 8,
+    borderRadius: "50%",
+  },
+  popupName: {
+    fontSize: 13,
+    fontWeight: 600,
+    color: "#334155",
+  },
+  popupStats: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: 4,
+  },
+  popupCount: {
+    fontSize: 18,
+    fontWeight: 700,
+  },
+  popupLabel: {
+    fontSize: 11,
+    color: "#94a3b8",
+  },
+};

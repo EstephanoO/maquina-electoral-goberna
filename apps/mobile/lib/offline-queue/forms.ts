@@ -203,3 +203,37 @@ export async function getFormByClientId(clientId: string): Promise<PendingForm |
   
   return row ?? null;
 }
+
+/**
+ * Get all local forms (for display in dashboard)
+ * Returns most recent first, includes both pending and synced
+ */
+export async function getAllLocalForms(limit = 50): Promise<PendingForm[]> {
+  const db = await getDatabase();
+  
+  const rows = await db.getAllAsync<PendingForm>(
+    `SELECT * FROM pending_forms 
+     ORDER BY created_at DESC 
+     LIMIT ?`,
+    [limit]
+  );
+  
+  return rows;
+}
+
+/**
+ * Get local forms for a specific campaign
+ */
+export async function getLocalFormsByCampaign(campaignId: string, limit = 50): Promise<PendingForm[]> {
+  const db = await getDatabase();
+  
+  const rows = await db.getAllAsync<PendingForm>(
+    `SELECT * FROM pending_forms 
+     WHERE campaign_id = ?
+     ORDER BY created_at DESC 
+     LIMIT ?`,
+    [campaignId, limit]
+  );
+  
+  return rows;
+}

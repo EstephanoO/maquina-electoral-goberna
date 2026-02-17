@@ -110,3 +110,19 @@ body {
   outline: 2px solid var(--goberna-blue-500);
   outline-offset: 2px;
 }
+
+/* Animations */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

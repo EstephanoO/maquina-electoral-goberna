@@ -29,6 +29,15 @@ server {
 
     client_max_body_size 10m;
 
+    # Static files from uploads volume
+    location /uploads/ {
+        alias /srv/uploads/;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800, immutable";
+        add_header X-Content-Type-Options nosniff always;
+        try_files $uri =404;
+    }
+
     location / {
         proxy_http_version 1.1;
         proxy_set_header Host $host;

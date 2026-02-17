@@ -75,28 +75,45 @@ export function useAgentTracking() {
     mountedRef.current = true;
 
     (async () => {
-      // Start foreground tracking by default
-      const result = await startForegroundTracking(agent.id);
-      
-      if (!mountedRef.current) return;
+      try {
+        // Start foreground tracking by default
+        const result = await startForegroundTracking(agent.id);
+        
+        if (!mountedRef.current) return;
 
-      setState((prev) => ({
-        ...prev,
-        trackingState: getTrackingState(),
-        trackingError: result.success ? null : (result.error ?? 'Error desconocido'),
-      }));
+        setState((prev) => ({
+          ...prev,
+          trackingState: getTrackingState(),
+          trackingError: result.success ? null : (result.error ?? 'Error desconocido'),
+        }));
+      } catch (err) {
+        // Gracefully handle tracking errors (e.g., keep awake not supported)
+        console.warn('[useAgentTracking] Failed to start tracking:', err);
+        if (!mountedRef.current) return;
+        setState((prev) => ({
+          ...prev,
+          trackingState: 'error',
+          trackingError: 'GPS no disponible',
+        }));
+      }
 
       // Initial stats update
-      await updateStats();
+      try {
+        await updateStats();
+      } catch {
+        // Ignore stats errors
+      }
     })();
 
     // Update stats every 10 seconds
-    const statsInterval = setInterval(updateStats, 10_000);
+    const statsInterval = setInterval(() => {
+      updateStats().catch(() => {});
+    }, 10_000);
 
     return () => {
       mountedRef.current = false;
       clearInterval(statsInterval);
-      void stopTracking();
+      stopTracking().catch(() => {});
     };
   }, [agent.id, updateStats]);
 

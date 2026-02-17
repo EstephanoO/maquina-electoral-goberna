@@ -10,6 +10,7 @@ import { consumeDualWeightedRateLimit } from "../../infra/redis";
 import { emitCampaignEvent } from "../campaigns/routes";
 import { formSchema, type FormInput } from "./schema";
 import { FormsWriteBehindQueue } from "./write-behind-queue";
+import { getFormsByCampaign, getRecentForms } from "./repository";
 
 function parseFormsPayload(body: unknown): FormInput[] {
   const items = Array.isArray(body) ? body : [body];
@@ -178,6 +179,70 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
       "/api/forms/batch",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
       async (request, reply) => enqueueForms(request, reply),
+    );
+
+    // GET /api/forms - List forms for a campaign
+    app.get(
+      "/api/forms",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        try {
+          const query = request.query as { limit?: string; offset?: string };
+          const limit = Math.min(Number(query.limit) || 50, 200);
+          const offset = Number(query.offset) || 0;
+
+          const { forms, total } = await getFormsByCampaign(campaignId, limit, offset);
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            forms,
+            total,
+            limit,
+            offset,
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "forms list failed");
+          return reply.code(500).send(errorPayload(requestId, "FORMS_LIST_ERROR", "error listando formularios"));
+        }
+      },
+    );
+
+    // GET /api/forms/recent - Get recent forms for dashboard
+    app.get(
+      "/api/forms/recent",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        try {
+          const query = request.query as { limit?: string };
+          const limit = Math.min(Number(query.limit) || 20, 100);
+
+          const forms = await getRecentForms(campaignId, limit);
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            forms,
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "forms recent failed");
+          return reply.code(500).send(errorPayload(requestId, "FORMS_RECENT_ERROR", "error obteniendo formularios recientes"));
+        }
+      },
     );
   };
 }

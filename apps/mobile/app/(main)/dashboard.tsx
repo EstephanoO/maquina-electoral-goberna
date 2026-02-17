@@ -1,309 +1,534 @@
 /**
- * Dashboard — 100% data-driven desde AppConfig.
+ * Dashboard — Minimalista y adaptado a móvil.
  *
- * Nada es hardcodeado:
- * - Nombre candidato → config.candidate.name
- * - Colores → config.candidate.color_primario/color_secundario
- * - Imagen → config.candidate.logo_url / foto_url
- * - Agent info → config.agent.full_name
- *
- * Note: Form submissions are queued via write-behind and don't have a list endpoint yet.
- * This screen shows candidate info and placeholder for records.
+ * Muestra:
+ * - Header con foto del candidato (memo para evitar re-renders)
+ * - Stats de registros
+ * - Lista de registros recientes
+ * - FAB para nuevo formulario
  */
 
 import { Image } from 'expo-image';
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
-import { useCandidate, useAgent, useApp } from '@/lib/app-context';
+import { useCandidate, useAgent, useApp, useActiveCampaign } from '@/lib/app-context';
 import { useAgentTracking } from '@/hooks/useAgentTracking';
+import { getQueueStats, getLocalFormsByCampaign, type PendingForm } from '@/lib/offline-queue';
 
 const FONT = 'Montserrat-Bold';
-const BORDER = '#E1E6F0';
 
-// Placeholder for records - would need backend endpoint to list submissions
-type PlaceholderRecord = {
-  id: string;
-  message: string;
-};
+// Base URL for candidate photos (served from Vercel web app)
+const PHOTO_BASE_URL = 'https://maquina-electoral-goberna-web.vercel.app';
 
-const PlaceholderItem = memo(function PlaceholderItem({
-  item,
-  color,
-}: {
-  item: PlaceholderRecord;
-  color: string;
-}) {
+// ─── Memoized Header Component ─────────────────────────────────
+
+interface HeaderProps {
+  candidateName: string;
+  candidateCargo: string;
+  candidatePartido: string;
+  candidateNumero: number;
+  photoUrl: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+  agentName: string;
+  trackingActive: boolean;
+  stats: { total: number; synced: number; pending: number };
+}
+
+const DashboardHeader = memo(function DashboardHeader({
+  candidateName,
+  candidateCargo,
+  candidatePartido,
+  candidateNumero,
+  photoUrl,
+  primaryColor,
+  secondaryColor,
+  agentName,
+  trackingActive,
+  stats,
+}: HeaderProps) {
   return (
-    <View style={[styles.tableRow, { borderLeftColor: color, borderLeftWidth: 3 }]}>
-      <View style={styles.rowContent}>
-        <Text style={styles.rowField}>{item.message}</Text>
+    <View style={[styles.header, { backgroundColor: primaryColor }]}>
+      {/* Candidate card */}
+      <View style={styles.candidateCard}>
+        {photoUrl ? (
+          <Image
+            source={{ uri: photoUrl }}
+            style={styles.candidatePhoto}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
+        ) : (
+          <View style={[styles.candidatePhotoPlaceholder, { backgroundColor: secondaryColor }]}>
+            <Text style={[styles.placeholderInitial, { color: primaryColor }]}>
+              {candidateName.charAt(0)}
+            </Text>
+          </View>
+        )}
+        <View style={styles.candidateInfo}>
+          <Text style={styles.candidateName}>{candidateName}</Text>
+          <Text style={styles.candidateCargo}>{candidateCargo}</Text>
+          <Text style={[styles.candidatePartido, { color: secondaryColor }]}>
+            {candidatePartido} · #{candidateNumero}
+          </Text>
+        </View>
+      </View>
+
+      {/* Stats row */}
+      <View style={styles.statsRow}>
+        <View style={styles.statItem}>
+          <Text style={styles.statNumber}>{stats.total}</Text>
+          <Text style={styles.statLabel}>Registros</Text>
+        </View>
+        <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.2)' }]} />
+        <View style={styles.statItem}>
+          <Text style={[styles.statNumber, { color: '#4ade80' }]}>{stats.synced}</Text>
+          <Text style={styles.statLabel}>Sincronizados</Text>
+        </View>
+        <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.2)' }]} />
+        <View style={styles.statItem}>
+          <Text style={[styles.statNumber, { color: secondaryColor }]}>{stats.pending}</Text>
+          <Text style={styles.statLabel}>Pendientes</Text>
+        </View>
+      </View>
+
+      {/* Agent info bar */}
+      <View style={styles.agentBar}>
+        <View style={styles.agentInfo}>
+          <Text style={styles.agentLabel}>Agente:</Text>
+          <Text style={styles.agentName}>{agentName}</Text>
+        </View>
+        <View style={styles.gpsStatus}>
+          <View style={[styles.gpsDot, { backgroundColor: trackingActive ? '#4ade80' : '#94a3b8' }]} />
+          <Text style={styles.gpsLabel}>{trackingActive ? 'GPS' : 'GPS off'}</Text>
+        </View>
       </View>
     </View>
   );
 });
 
-// ─── Screen ─────────────────────────────────────────────────
+// ─── Form Item Component ────────────────────────────────────────
+
+interface LocalFormData {
+  nombre?: string;
+  telefono?: string;
+  fecha?: string;
+}
+
+const FormItem = memo(function FormItem({
+  form,
+  primaryColor,
+}: {
+  form: PendingForm;
+  primaryColor: string;
+}) {
+  let data: LocalFormData = {};
+  try {
+    data = JSON.parse(form.payload);
+  } catch {
+    // ignore
+  }
+
+  const isSynced = form.sync_status === 'synced';
+  const isFailed = form.sync_status === 'failed';
+
+  // Format time
+  const formDate = data.fecha ? new Date(data.fecha) : new Date(form.created_at);
+  const timeStr = formDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <View style={styles.formItem}>
+      <View style={[styles.formItemIndicator, { backgroundColor: primaryColor }]} />
+      <View style={styles.formItemContent}>
+        <View style={styles.formItemRow}>
+          <Text style={styles.formItemName} numberOfLines={1}>
+            {data.nombre || 'Sin nombre'}
+          </Text>
+          <Text style={styles.formItemTime}>{timeStr}</Text>
+        </View>
+        <View style={styles.formItemRow}>
+          <Text style={styles.formItemPhone}>{data.telefono || '---'}</Text>
+          <View style={[
+            styles.statusDot,
+            { backgroundColor: isSynced ? '#4ade80' : isFailed ? '#f87171' : '#fbbf24' }
+          ]} />
+        </View>
+      </View>
+    </View>
+  );
+});
+
+// ─── Empty State ────────────────────────────────────────────────
+
+const EmptyState = memo(function EmptyState({ primaryColor }: { primaryColor: string }) {
+  return (
+    <View style={styles.emptyState}>
+      <Text style={styles.emptyIcon}>📋</Text>
+      <Text style={[styles.emptyTitle, { color: primaryColor }]}>Sin registros</Text>
+      <Text style={styles.emptySubtitle}>Toca + para agregar</Text>
+    </View>
+  );
+});
+
+// ─── Screen ─────────────────────────────────────────────────────
 
 export default function DashboardScreen() {
   const router = useRouter();
   const candidate = useCandidate();
   const agent = useAgent();
+  const campaign = useActiveCampaign();
   const { refreshConfig } = useApp();
 
-  // Auto-start GPS tracking when dashboard mounts
+  // Tracking state (with error handling)
   const { trackingState } = useAgentTracking();
+  const trackingActive = trackingState === 'foreground' || trackingState === 'background';
 
   const primary = candidate.color_primario;
   const secondary = candidate.color_secundario;
-  const textOnPrimary = '#FFFFFF';
 
   const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState({ total: 0, synced: 0, pending: 0 });
+  const [localForms, setLocalForms] = useState<PendingForm[]>([]);
+
+  // Build photo URL once
+  const photoUrl = candidate.foto_url
+    ? candidate.foto_url.startsWith('http')
+      ? candidate.foto_url
+      : `${PHOTO_BASE_URL}${candidate.foto_url}`
+    : null;
+
+  // Load data
+  const loadData = useCallback(async () => {
+    try {
+      const [queueStats, forms] = await Promise.all([
+        getQueueStats(),
+        getLocalFormsByCampaign(campaign.id, 50),
+      ]);
+
+      const formsPending = queueStats.forms?.pending ?? 0;
+      const formsSynced = queueStats.forms?.synced ?? 0;
+      setStats({
+        total: formsPending + formsSynced,
+        synced: formsSynced,
+        pending: formsPending,
+      });
+
+      setLocalForms(forms);
+    } catch (err) {
+      console.warn('Failed to load data:', err);
+    }
+  }, [campaign.id]);
+
+  useEffect(() => {
+    loadData();
+    const interval = setInterval(loadData, 5000);
+    return () => clearInterval(interval);
+  }, [loadData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await refreshConfig();
+    await Promise.all([refreshConfig(), loadData()]);
     setRefreshing(false);
-  }, [refreshConfig]);
+  }, [refreshConfig, loadData]);
 
-  // Placeholder data - would come from API when available
-  const placeholderRecords: PlaceholderRecord[] = [];
+  const renderItem = useCallback(({ item }: { item: PendingForm }) => (
+    <FormItem form={item} primaryColor={primary} />
+  ), [primary]);
 
-  const renderItem = useCallback(
-    ({ item }: { item: PlaceholderRecord }) => <PlaceholderItem item={item} color={primary} />,
-    [primary],
-  );
+  const renderHeader = useCallback(() => (
+    <>
+      <DashboardHeader
+        candidateName={candidate.name}
+        candidateCargo={candidate.cargo}
+        candidatePartido={candidate.partido}
+        candidateNumero={candidate.numero}
+        photoUrl={photoUrl}
+        primaryColor={primary}
+        secondaryColor={secondary}
+        agentName={agent.full_name}
+        trackingActive={trackingActive}
+        stats={stats}
+      />
+      {localForms.length > 0 && (
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: primary }]}>Recientes</Text>
+        </View>
+      )}
+    </>
+  ), [candidate, photoUrl, primary, secondary, agent.full_name, trackingActive, stats, localForms.length]);
+
+  const renderEmpty = useCallback(() => (
+    <EmptyState primaryColor={primary} />
+  ), [primary]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Hero header — colors from config */}
-      <View style={[styles.header, { backgroundColor: primary }]}>
-        <View style={styles.heroCard}>
-          {candidate.logo_url ? (
-            <Image source={{ uri: candidate.logo_url }} style={styles.candidateImage} contentFit="contain" />
-          ) : candidate.foto_url ? (
-            <Image source={{ uri: candidate.foto_url }} style={styles.candidateImage} contentFit="cover" />
-          ) : (
-            <View style={[styles.candidateImagePlaceholder, { backgroundColor: secondary }]}>
-              <Text style={[styles.placeholderText, { color: primary }]}>
-                {candidate.name.charAt(0)}
-              </Text>
-            </View>
-          )}
-          <View style={styles.headerTextBlock}>
-            <Text style={[styles.headerOverline, { color: 'rgba(255,255,255,0.6)' }]}>
-              Candidato
-            </Text>
-            <Text style={[styles.headerName, { color: textOnPrimary }]}>
-              {candidate.name}
-            </Text>
-            <Text style={[styles.headerRole, { color: 'rgba(255,255,255,0.8)' }]}>
-              {candidate.cargo}
-            </Text>
-            <View style={[styles.badge, { borderColor: secondary, backgroundColor: 'rgba(255,255,255,0.15)' }]}>
-              <Text style={[styles.badgeText, { color: secondary }]}>
-                {candidate.partido} · {candidate.numero}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Stats */}
-        <View style={styles.statsRow}>
-          <View style={[styles.statCard, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
-            <Text style={[styles.statLabel, { color: 'rgba(255,255,255,0.7)' }]}>
-              Campana
-            </Text>
-            <Text style={[styles.statValue, { color: textOnPrimary }]} numberOfLines={1}>
-              {candidate.slug}
-            </Text>
-          </View>
-          <View style={[styles.statCard, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
-            <Text style={[styles.statLabel, { color: 'rgba(255,255,255,0.7)' }]}>
-              Agente
-            </Text>
-            <Text style={[styles.statValue, { color: textOnPrimary }]} numberOfLines={1}>
-              {agent.full_name}
-            </Text>
-            <View style={styles.trackingRow}>
-              <View
-                style={[
-                  styles.trackingDot,
-                  {
-                    backgroundColor:
-                      trackingState === 'foreground' || trackingState === 'background'
-                        ? '#22C55E'
-                        : trackingState === 'starting'
-                          ? secondary
-                          : trackingState === 'error'
-                            ? '#EF4444'
-                            : '#94A3B8',
-                  },
-                ]}
-              />
-              <Text style={[styles.trackingLabel, { color: 'rgba(255,255,255,0.6)' }]}>
-                {trackingState === 'foreground'
-                  ? 'GPS activo'
-                  : trackingState === 'background'
-                    ? 'GPS background'
-                    : trackingState === 'starting'
-                      ? 'Iniciando...'
-                      : trackingState === 'error'
-                        ? 'GPS error'
-                        : 'GPS off'}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Accent stripe */}
-        <View style={styles.accentStripe}>
-          <View style={[styles.accentLeft, { backgroundColor: secondary }]} />
-          <View style={[styles.accentRight, { backgroundColor: 'rgba(255,255,255,0.3)' }]} />
-        </View>
-      </View>
-
-      {/* Records list - placeholder */}
       <FlatList
-        data={placeholderRecords}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
+        data={localForms}
+        keyExtractor={(item) => item.client_id}
         renderItem={renderItem}
+        ListHeaderComponent={renderHeader}
+        ListEmptyComponent={renderEmpty}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primary} />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No hay registros aun.</Text>
-            <Text style={styles.emptySubtext}>Presiona + para agregar el primero.</Text>
-          </View>
         }
       />
 
       {/* FAB */}
       <Pressable
-        style={[styles.fab, { backgroundColor: primary, borderColor: secondary }]}
+        style={[styles.fab, { backgroundColor: primary }]}
         onPress={() => router.push('/(main)/new-form')}
       >
-        <Text style={styles.fabText}>+</Text>
+        <Text style={styles.fabIcon}>+</Text>
       </Pressable>
     </SafeAreaView>
   );
 }
 
+// ─── Styles ─────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  header: { padding: 16, gap: 14 },
-  heroCard: {
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  listContent: {
+    flexGrow: 1,
+    paddingBottom: 100,
+  },
+
+  // Header
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 20,
+  },
+  candidateCard: {
     flexDirection: 'row',
-    gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 20,
-    padding: 14,
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 20,
   },
-  candidateImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 16,
+  candidatePhoto: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#e2e8f0',
   },
-  candidateImagePlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 16,
+  candidatePhotoPlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  placeholderText: { fontSize: 32, fontFamily: FONT },
-  headerTextBlock: { flex: 1, gap: 2 },
-  headerOverline: {
-    fontSize: 11,
-    letterSpacing: 1.4,
-    textTransform: 'uppercase',
+  placeholderInitial: {
+    fontSize: 28,
     fontFamily: FONT,
   },
-  headerName: { fontSize: 20, fontFamily: FONT },
-  headerRole: { fontSize: 13, fontFamily: FONT },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 999,
-    borderWidth: 1,
-    alignSelf: 'flex-start',
+  candidateInfo: {
+    flex: 1,
+  },
+  candidateName: {
+    fontSize: 20,
+    fontFamily: FONT,
+    color: '#ffffff',
+  },
+  candidateCargo: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.8)',
+    fontFamily: FONT,
+    marginTop: 2,
+  },
+  candidatePartido: {
+    fontSize: 12,
+    fontFamily: FONT,
     marginTop: 4,
   },
-  badgeText: { fontSize: 12, fontFamily: FONT },
-  statsRow: { flexDirection: 'row', gap: 12 },
-  statCard: {
+
+  // Stats
+  statsRow: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    marginBottom: 12,
+  },
+  statItem: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 16,
+    alignItems: 'center',
+  },
+  statDivider: {
+    width: 1,
+    height: '100%',
+  },
+  statNumber: {
+    fontSize: 24,
+    fontFamily: FONT,
+    color: '#ffffff',
+    fontVariant: ['tabular-nums'],
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.7)',
+    fontFamily: FONT,
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    fontFamily: FONT,
+    marginTop: 2,
   },
-  statValue: {
-    fontSize: 18,
-    marginTop: 4,
-    fontVariant: ['tabular-nums'],
-    fontFamily: FONT,
+
+  // Agent bar
+  agentBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.15)',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
-  accentStripe: { flexDirection: 'row', height: 4, borderRadius: 2 },
-  accentLeft: { flex: 0.6 },
-  accentRight: { flex: 0.4 },
-  content: { padding: 16, paddingBottom: 120 },
-  tableRow: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: BORDER,
-    marginBottom: 10,
-    padding: 12,
-  },
-  rowContent: { gap: 2 },
-  rowAgent: { fontSize: 14, color: '#163960', fontFamily: FONT },
-  rowField: { fontSize: 12, color: 'rgba(22, 57, 96, 0.7)', fontFamily: FONT },
-  rowDate: { fontSize: 11, color: 'rgba(22, 57, 96, 0.5)', fontFamily: FONT, marginTop: 4 },
-  emptyState: { padding: 32, alignItems: 'center', gap: 8 },
-  emptyText: { fontSize: 16, color: '#163960', fontFamily: FONT },
-  emptySubtext: { fontSize: 13, color: 'rgba(22, 57, 96, 0.7)', fontFamily: FONT },
-  trackingRow: {
+  agentInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 4,
   },
-  trackingDot: {
+  agentLabel: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.6)',
+    fontFamily: FONT,
+  },
+  agentName: {
+    fontSize: 12,
+    color: '#ffffff',
+    fontFamily: FONT,
+  },
+  gpsStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  gpsDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  gpsLabel: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.7)',
+    fontFamily: FONT,
+  },
+
+  // Section
+  sectionHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontFamily: FONT,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  // Form items
+  formItem: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  formItemIndicator: {
+    width: 4,
+  },
+  formItemContent: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  formItemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  formItemName: {
+    fontSize: 15,
+    fontFamily: FONT,
+    color: '#1e293b',
+    flex: 1,
+    marginRight: 8,
+  },
+  formItemTime: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontFamily: FONT,
+  },
+  formItemPhone: {
+    fontSize: 13,
+    color: '#64748b',
+    fontFamily: FONT,
+    marginTop: 2,
+  },
+  statusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
   },
-  trackingLabel: {
-    fontSize: 10,
-    fontFamily: FONT,
-    letterSpacing: 0.3,
-  },
-  fab: {
-    position: 'absolute',
-    right: 22,
-    bottom: 28,
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+
+  // Empty state
+  emptyState: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#06121F',
-    shadowOpacity: 0.25,
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 16,
-    elevation: 6,
-    borderWidth: 2,
+    paddingVertical: 80,
   },
-  fabText: { color: '#FFFFFF', fontSize: 28, marginTop: -2, fontFamily: FONT },
+  emptyIcon: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontFamily: FONT,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#94a3b8',
+    fontFamily: FONT,
+    marginTop: 4,
+  },
+
+  // FAB
+  fab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  fabIcon: {
+    fontSize: 32,
+    color: '#ffffff',
+    fontFamily: FONT,
+    marginTop: -2,
+  },
 });

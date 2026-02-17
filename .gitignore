@@ -1,37 +1,75 @@
-# Root secrets
+# ══════════════════════════════════════════════════════════════════════
+# GOBERNA — Root .gitignore
+# ══════════════════════════════════════════════════════════════════════
+
+# ── Secrets & Environment ───────────────────────────────────────────
 .env
-CREDENCIALES.md
+.env.local
 **/.env.local
 **/.env.*.local
-
-# Allow sample env files
+CREDENCIALES.md
+**/credentials/
 !.env.example
 !**/.env.example
 
-# Runtime folders on VPS
+# ── Runtime folders (VPS) ───────────────────────────────────────────
 certbot/conf/
 certbot/www/
+.runtime/
+logs/
 
-# Agent/IDE tooling
+# ── Agent/IDE tooling ───────────────────────────────────────────────
 .agents/
 .claude/
+.cursor/
+.idea/
+*.swp
+*.swo
+*~
 
-# Node
+# ── Node ────────────────────────────────────────────────────────────
 **/node_modules/
+**/.turbo/
+**/bun.lockb
+*.tsbuildinfo
 
-# macOS
+# ── Build outputs ───────────────────────────────────────────────────
+**/.next/
+**/dist/
+**/build/
+**/.expo/
+**/android/.gradle/
+**/android/app/build/
+**/ios/build/
+**/ios/Pods/
+
+# ── macOS ───────────────────────────────────────────────────────────
 .DS_Store
-.vercel
+**/.DS_Store
 
-# Python build/runtime noise
+# ── Vercel ──────────────────────────────────────────────────────────
+.vercel/
+**/.vercel/
+
+# ── Python ──────────────────────────────────────────────────────────
 **/__pycache__/
 *.pyc
 
-# Local perf outputs
+# ── Local perf/test outputs ─────────────────────────────────────────
 scripts/perf/*-latest.json
 scripts/perf/matrix-*.json
 scripts/perf/matrix-*.md
+coverage/
+**/.coverage/
+*.lcov
 
-# Local runtime/log folders
-.runtime/
-logs/
+# ── Logs ────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Misc ────────────────────────────────────────────────────────────
+*.bak
+*.tmp
+*.temp

@@ -10,13 +10,27 @@
 import * as SQLite from 'expo-sqlite';
 
 let db: SQLite.SQLiteDatabase | null = null;
+let initPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
+  // Return existing instance
   if (db) return db;
   
-  db = await SQLite.openDatabaseAsync('goberna_offline.db');
-  await initTables(db);
-  return db;
+  // Dedupe concurrent init calls
+  if (initPromise) return initPromise;
+  
+  initPromise = (async () => {
+    const database = await SQLite.openDatabaseAsync('goberna_offline.db');
+    await initTables(database);
+    db = database;
+    return database;
+  })();
+  
+  try {
+    return await initPromise;
+  } finally {
+    initPromise = null;
+  }
 }
 
 async function initTables(database: SQLite.SQLiteDatabase): Promise<void> {
@@ -80,15 +94,10 @@ async function initTables(database: SQLite.SQLiteDatabase): Promise<void> {
     );
   `);
   
-  // Initialize sequence number if not exists
-  const seqRow = await database.getFirstAsync<{ value: string }>(
-    "SELECT value FROM sync_meta WHERE key = 'location_seq'"
+  // Initialize sequence number if not exists (INSERT OR IGNORE for idempotency)
+  await database.runAsync(
+    "INSERT OR IGNORE INTO sync_meta (key, value) VALUES ('location_seq', '0')"
   );
-  if (!seqRow) {
-    await database.runAsync(
-      "INSERT INTO sync_meta (key, value) VALUES ('location_seq', '0')"
-    );
-  }
 }
 
 export async function closeDatabase(): Promise<void> {

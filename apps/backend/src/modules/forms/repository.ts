@@ -3,6 +3,23 @@ import { sql } from "drizzle-orm";
 import { db, pool } from "../../db";
 import type { FormInput } from "./schema";
 
+export interface FormRecord {
+  id: string;
+  client_id: string;
+  nombre: string;
+  telefono: string;
+  fecha: string;
+  x: number;
+  y: number;
+  zona: string;
+  encuestador: string;
+  encuestador_id: string;
+  candidato_preferido: string;
+  comentarios: string | null;
+  campaign_id: string | null;
+  created_at: string;
+}
+
 export async function ensureFormsTable() {
   await db.execute(sql`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
   await db.execute(sql`
@@ -112,4 +129,55 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
     attempted: Number(row.attempted ?? 0),
     accepted: Number(row.accepted ?? 0),
   };
+}
+
+/**
+ * Get forms by campaign_id with pagination
+ */
+export async function getFormsByCampaign(
+  campaignId: string,
+  limit = 50,
+  offset = 0,
+): Promise<{ forms: FormRecord[]; total: number }> {
+  const [formsResult, countResult] = await Promise.all([
+    pool.query<FormRecord>(
+      `SELECT 
+        id, client_id, nombre, telefono, fecha, x, y, zona,
+        encuestador, encuestador_id, candidato_preferido, 
+        comentarios, campaign_id, created_at
+       FROM public.forms 
+       WHERE campaign_id = $1
+       ORDER BY created_at DESC 
+       LIMIT $2 OFFSET $3`,
+      [campaignId, limit, offset],
+    ),
+    pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text as count FROM public.forms WHERE campaign_id = $1`,
+      [campaignId],
+    ),
+  ]);
+
+  return {
+    forms: formsResult.rows,
+    total: Number(countResult.rows[0]?.count ?? 0),
+  };
+}
+
+/**
+ * Get recent forms for a campaign (for dashboard)
+ */
+export async function getRecentForms(campaignId: string, limit = 20): Promise<FormRecord[]> {
+  const result = await pool.query<FormRecord>(
+    `SELECT 
+      id, client_id, nombre, telefono, fecha, x, y, zona,
+      encuestador, encuestador_id, candidato_preferido, 
+      comentarios, campaign_id, created_at
+     FROM public.forms 
+     WHERE campaign_id = $1
+     ORDER BY created_at DESC 
+     LIMIT $2`,
+    [campaignId, limit],
+  );
+
+  return result.rows;
 }

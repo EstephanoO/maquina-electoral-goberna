@@ -54,11 +54,15 @@ export default function RegisterScreen() {
     setLoading(false);
 
     if (result.ok) {
-      Alert.alert(
-        'Cuenta creada',
-        'Tu cuenta fue creada. Ya puedes iniciar sesion.',
-        [{ text: 'Ir a login', onPress: () => router.replace('/(auth)/login') }],
-      );
+      // Navigate to candidate selection with credentials for auto-login after selection
+      router.replace({
+        pathname: '/(auth)/select-candidate',
+        params: {
+          email: email.trim(),
+          password: password.trim(),
+          full_name: fullName.trim(),
+        },
+      });
     } else {
       Alert.alert('Error', result.error);
     }

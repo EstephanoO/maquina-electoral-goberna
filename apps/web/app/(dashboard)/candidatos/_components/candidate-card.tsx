@@ -12,9 +12,10 @@ import type { Campaign } from "../../../../lib/types";
 
 type CandidateCardProps = {
   candidate: Campaign;
+  onEdit?: (candidate: Campaign) => void;
 };
 
-export function CandidateCard({ candidate }: CandidateCardProps) {
+export function CandidateCard({ candidate, onEdit }: CandidateCardProps) {
   const router = useRouter();
   const colorPrimario = candidate.config?.color_primario ?? "#163960";
 
@@ -86,6 +87,15 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
         >
           {candidate.slug}
         </span>
+        {onEdit && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => onEdit(candidate)}
+          >
+            Editar
+          </Button>
+        )}
         <Button
           variant="primary"
           size="sm"

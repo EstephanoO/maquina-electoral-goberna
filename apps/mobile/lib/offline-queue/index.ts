@@ -57,6 +57,8 @@ export {
   getPendingForms,
   getFormQueueStats,
   getFormByClientId,
+  getAllLocalForms,
+  getLocalFormsByCampaign,
   type FormPayload,
   type PendingForm,
 } from './forms';
