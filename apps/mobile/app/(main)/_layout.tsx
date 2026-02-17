@@ -1,6 +1,11 @@
 /**
  * Main Layout — Tabs with dynamic colors from AppConfig.
- * Solicitudes tab is hidden for non-admin roles.
+ * 
+ * Tab visibility:
+ * - Dashboard: Always visible
+ * - Reuniones (Metas): Always visible  
+ * - Solicitudes: Only for admin/supervisor roles
+ * - new-form: Hidden (accessed via FAB)
  */
 
 import { Tabs } from 'expo-router';
@@ -15,8 +20,8 @@ export default function MainLayout() {
   const primary = candidate.color_primario;
   const secondary = candidate.color_secundario;
 
-  // Solicitudes tab only visible for admin role
-  const showSolicitudes = agent.role === 'admin';
+  // Solicitudes tab visible for admin and supervisor roles
+  const showSolicitudes = agent.role === 'admin' || agent.role === 'supervisor';
 
   return (
     <Tabs
