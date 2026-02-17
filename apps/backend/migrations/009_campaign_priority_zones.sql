@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS public.campaign_custom_zones (
   parent_code   TEXT NOT NULL,
   population    INT,
   metadata      JSONB DEFAULT '{}',
-  geom          GEOMETRY(MultiPolygon, 3857) NOT NULL,
+  geom          GEOMETRY(MultiPolygon, 4326) NOT NULL,
   source        TEXT NOT NULL DEFAULT 'import' CHECK (source IN ('import', 'arcgis', 'qgis', 'manual')),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -77,6 +77,6 @@ COMMENT ON COLUMN public.campaign_custom_zones.zone_code IS
 COMMENT ON COLUMN public.campaign_custom_zones.parent_code IS
   'UBIGEO of the containing distrito';
 COMMENT ON COLUMN public.campaign_custom_zones.geom IS
-  'MultiPolygon geometry in EPSG:3857 (Web Mercator)';
+  'MultiPolygon geometry in EPSG:4326 (WGS84)';
 COMMENT ON COLUMN public.campaign_custom_zones.source IS
   'Data origin: import (script), arcgis (sync), qgis (direct edit), manual';

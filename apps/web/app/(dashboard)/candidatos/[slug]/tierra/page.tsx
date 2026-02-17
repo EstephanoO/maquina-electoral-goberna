@@ -371,6 +371,7 @@ export default function TierraPage() {
           primaryColor={campaign.color_primario}
           open={showTable}
           onClose={() => setShowTable(false)}
+          onFlyTo={(lng, lat) => mapHandleRef.current?.flyToPoint(lng, lat, 17)}
         />
       </div>
     </div>
