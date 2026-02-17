@@ -65,7 +65,7 @@ export default function PendingScreen() {
       'Estas seguro que quieres salir?',
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Salir', style: 'destructive', onPress: logout },
+        { text: 'Salir', style: 'destructive', onPress: () => { void logout(); } },
       ],
     );
   };

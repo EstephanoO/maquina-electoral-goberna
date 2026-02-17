@@ -45,6 +45,16 @@ export class AuthRepository {
     return rows as UserCampaignRow[];
   }
 
+  /** Admin users get ALL active campaigns regardless of user_campaigns entries */
+  async getAllActiveCampaigns(): Promise<UserCampaignRow[]> {
+    const { rows } = await this.pool.query(
+      `SELECT id AS campaign_id, name AS campaign_name, slug AS campaign_slug,
+              config AS campaign_config, 'admin' AS role
+       FROM campaigns WHERE status = 'active' ORDER BY name`,
+    );
+    return rows as UserCampaignRow[];
+  }
+
   async saveRefreshToken(userId: string, tokenHash: string, familyId: string, expiresAt: Date): Promise<void> {
     await this.pool.query(
       `INSERT INTO refresh_tokens (user_id, token_hash, family_id, expires_at)

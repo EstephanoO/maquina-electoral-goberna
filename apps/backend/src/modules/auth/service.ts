@@ -47,7 +47,10 @@ export class AuthService {
       throw new AppError("AUTH_INVALID_CREDENTIALS", "email o password incorrectos", 401);
     }
 
-    const campaigns = await this.repo.getUserCampaigns(user.id);
+    // Admin users see ALL campaigns; others only their assigned ones
+    const campaigns = user.role === "admin"
+      ? await this.repo.getAllActiveCampaigns()
+      : await this.repo.getUserCampaigns(user.id);
     const campaignIds = campaigns.map((c) => c.campaign_id);
 
     const accessToken = await this.generateAccessToken({
@@ -109,7 +112,10 @@ export class AuthService {
       throw new AppError("AUTH_USER_INACTIVE", "usuario no activo", 403);
     }
 
-    const campaigns = await this.repo.getUserCampaigns(user.id);
+    // Admin users see ALL campaigns; others only their assigned ones
+    const campaigns = user.role === "admin"
+      ? await this.repo.getAllActiveCampaigns()
+      : await this.repo.getUserCampaigns(user.id);
     const campaignIds = campaigns.map((c) => c.campaign_id);
 
     const accessToken = await this.generateAccessToken({

@@ -11,11 +11,15 @@
 import { Tabs } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
-import { useCandidate, useAgent } from '@/lib/app-context';
+import { useApp } from '@/lib/app-context';
 
 export default function MainLayout() {
-  const candidate = useCandidate();
-  const agent = useAgent();
+  const { auth } = useApp();
+
+  // During logout the router hasn't navigated away yet — render nothing
+  if (auth.status !== 'active') return null;
+
+  const { candidate, agent } = auth.config;
 
   const primary = candidate.color_primario;
   const secondary = candidate.color_secundario;

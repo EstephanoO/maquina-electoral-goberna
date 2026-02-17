@@ -146,7 +146,17 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
           return reply.code(404).send(errorPayload(requestId, "USER_NOT_FOUND", "usuario no encontrado"));
         }
 
-        const campaigns = await repo.getUserCampaigns(user.id);
+        // Admin users see ALL active campaigns; others only their assigned ones
+        const campaigns = user.role === "admin"
+          ? await repo.getAllActiveCampaigns()
+          : await repo.getUserCampaigns(user.id);
+
+        const campaignsList = campaigns.map((c) => ({
+          id: c.campaign_id,
+          name: c.campaign_name,
+          slug: c.campaign_slug,
+          role: c.role,
+        }));
 
         return reply.code(200).send({
           ok: true,
@@ -158,12 +168,7 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
             role: user.role,
             status: user.status,
           },
-          campaigns: campaigns.map((c) => ({
-            id: c.campaign_id,
-            name: c.campaign_name,
-            slug: c.campaign_slug,
-            role: c.role,
-          })),
+          campaigns: campaignsList,
         });
       },
     );
