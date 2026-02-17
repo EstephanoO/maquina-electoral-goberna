@@ -938,11 +938,7 @@ export default function Home() {
         <p style={{ marginTop: "6px", marginBottom: 0, color: "#334155" }}>
           Latencia tracking p50/p95/p99: {metrics?.latencies?.["/api/agents/location"]?.p50_ms ?? "-"}/{metrics?.latencies?.["/api/agents/location"]?.p95_ms ?? "-"}/{metrics?.latencies?.["/api/agents/location"]?.p99_ms ?? "-"} ms
         </p>
-        <p style={{ marginTop: "10px", marginBottom: 0 }}>
-          <a href="/ops" style={{ color: "#0f172a", fontWeight: 700 }}>
-            Ir al dashboard de observabilidad
-          </a>
-        </p>
+
       </section>
 
       <section

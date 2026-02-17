@@ -6,11 +6,15 @@ import type { AuthenticatedRequest } from "../../infra/auth";
 import { errorPayload } from "../../infra/http";
 import type { IngestOutcome } from "../../infra/metrics";
 import { metricsRegistry } from "../../infra/metrics";
+import { emitCampaignEvent } from "../campaigns/routes";
 import { loadAllLiveAgentLocations } from "./repository";
 import { agentLocationSchema } from "./schema";
 import { AgentsStore } from "./store";
 import type { AgentLiveState, AgentLocationInput } from "./types";
 import { AgentsWriteBehindQueue } from "./write-behind-queue";
+
+// Track which agents were previously online (for disconnect events)
+const previouslyOnlineAgents = new Map<string, { campaignId: string | null; agentName: string }>();
 
 function toState(value: unknown): AgentLiveState {
   const parsed = agentLocationSchema.safeParse(value);
@@ -113,6 +117,18 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       const removed = store.removeStale();
       for (const agentId of removed) {
         broadcast("agent.offline", { agent_id: agentId, ts: new Date().toISOString() });
+        
+        // Emit disconnect event for campaign dashboard
+        const agentInfo = previouslyOnlineAgents.get(agentId);
+        if (agentInfo?.campaignId) {
+          emitCampaignEvent(agentInfo.campaignId, {
+            type: "agent_disconnected",
+            agent_id: agentId,
+            agent_name: agentInfo.agentName,
+            message: `${agentInfo.agentName} se desconecto`,
+          });
+        }
+        previouslyOnlineAgents.delete(agentId);
       }
 
       const queueStats = queue.getStats();
@@ -292,9 +308,37 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
             });
           }
 
+          // Check if this is a new connection (agent wasn't previously online)
+          const wasOnline = previouslyOnlineAgents.has(next.agentId);
+          
           store.upsert(next);
 
           const agent = store.serialize(next);
+
+          // Track agent for disconnect events and emit connect event if new
+          if (!wasOnline && next.campaignId) {
+            // Get agent name from request body if available
+            const body = request.body as { agent_name?: string } | undefined;
+            const agentName = body?.agent_name ?? `Agente ${next.agentId.slice(0, 8)}`;
+            
+            previouslyOnlineAgents.set(next.agentId, {
+              campaignId: next.campaignId,
+              agentName,
+            });
+            
+            emitCampaignEvent(next.campaignId, {
+              type: "agent_connected",
+              agent_id: next.agentId,
+              agent_name: agentName,
+              message: `${agentName} se conecto`,
+            });
+          } else if (next.campaignId) {
+            // Update campaign info in case it changed
+            const existing = previouslyOnlineAgents.get(next.agentId);
+            if (existing) {
+              existing.campaignId = next.campaignId;
+            }
+          }
 
           lastIngestAtMs = Date.now();
           pendingBatchByAgent.set(agent.agent_id, agent);

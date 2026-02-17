@@ -3,6 +3,14 @@ import type { CreateCampaignInput, UpdateCampaignInput } from "./schemas";
 
 // ── Row types ───────────────────────────────────────────────────────
 
+export type CampaignConfig = {
+  meta_datos?: number;
+  meta_votos?: number;
+  color_primario?: string;
+  color_secundario?: string;
+  [key: string]: unknown;
+};
+
 export type CampaignRow = {
   id: string;
   name: string;
@@ -152,4 +160,101 @@ export async function removeUserFromCampaign(userId: string, campaignId: string)
      WHERE user_id = $1 AND campaign_id = $2`,
     [userId, campaignId],
   );
+}
+
+// ── Stats queries ───────────────────────────────────────────────────
+
+export type TopAgent = {
+  id: string;
+  name: string;
+  forms_count: number;
+  forms_today: number;
+};
+
+export type FormsTotals = {
+  forms_count: number;
+  forms_today: number;
+  forms_week: number;
+};
+
+export type AgentFormsData = {
+  id: string;
+  name: string;
+  count: number;
+};
+
+export async function getFormsTotals(campaignId: string): Promise<FormsTotals> {
+  const { rows } = await pool.query<{ forms_count: string; forms_today: string; forms_week: string }>(
+    `SELECT
+       COUNT(*)::text AS forms_count,
+       COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE)::text AS forms_today,
+       COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::text AS forms_week
+     FROM forms
+     WHERE campaign_id = $1`,
+    [campaignId],
+  );
+  const row = rows[0];
+  return {
+    forms_count: parseInt(row?.forms_count ?? "0", 10),
+    forms_today: parseInt(row?.forms_today ?? "0", 10),
+    forms_week: parseInt(row?.forms_week ?? "0", 10),
+  };
+}
+
+export async function getTopAgents(campaignId: string, limit = 10): Promise<TopAgent[]> {
+  const { rows } = await pool.query<{ id: string; name: string; forms_count: string; forms_today: string }>(
+    `SELECT
+       encuestador_id AS id,
+       encuestador AS name,
+       COUNT(*)::text AS forms_count,
+       COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE)::text AS forms_today
+     FROM forms
+     WHERE campaign_id = $1 AND encuestador_id IS NOT NULL
+     GROUP BY encuestador_id, encuestador
+     ORDER BY COUNT(*) DESC
+     LIMIT $2`,
+    [campaignId, limit],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    forms_count: parseInt(r.forms_count, 10),
+    forms_today: parseInt(r.forms_today, 10),
+  }));
+}
+
+export async function getAgentFormsForPeriod(
+  campaignId: string,
+  period: "day" | "week",
+): Promise<AgentFormsData[]> {
+  const interval = period === "day" ? "24 hours" : "7 days";
+  const { rows } = await pool.query<{ id: string; name: string; count: string }>(
+    `SELECT
+       encuestador_id AS id,
+       encuestador AS name,
+       COUNT(*)::text AS count
+     FROM forms
+     WHERE campaign_id = $1 
+       AND created_at >= NOW() - INTERVAL '${interval}'
+       AND encuestador_id IS NOT NULL
+     GROUP BY encuestador_id, encuestador
+     ORDER BY COUNT(*) DESC`,
+    [campaignId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    count: parseInt(r.count, 10),
+  }));
+}
+
+export async function getCampaignMembers(campaignId: string): Promise<Array<{ user_id: string; full_name: string; role: string }>> {
+  const { rows } = await pool.query<{ user_id: string; full_name: string; role: string }>(
+    `SELECT uc.user_id, u.full_name, uc.role
+     FROM user_campaigns uc
+     JOIN users u ON u.id = uc.user_id
+     WHERE uc.campaign_id = $1 AND uc.status = 'active'`,
+    [campaignId],
+  );
+  return rows;
 }

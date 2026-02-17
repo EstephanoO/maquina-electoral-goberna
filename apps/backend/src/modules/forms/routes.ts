@@ -7,6 +7,7 @@ import { errorPayload } from "../../infra/http";
 import type { IngestOutcome } from "../../infra/metrics";
 import { metricsRegistry } from "../../infra/metrics";
 import { consumeDualWeightedRateLimit } from "../../infra/redis";
+import { emitCampaignEvent } from "../campaigns/routes";
 import { formSchema, type FormInput } from "./schema";
 import { FormsWriteBehindQueue } from "./write-behind-queue";
 
@@ -134,6 +135,19 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
         const stats = queue.getStats();
         metricsRegistry.setGauge("forms_queue_depth", stats.depth);
         markOutcome(queued > 0 ? "accepted" : "deduped");
+
+        // Emit event for dashboard log
+        if (queued > 0) {
+          const firstForm = forms[0];
+          if (firstForm?.campaign_id) {
+            emitCampaignEvent(firstForm.campaign_id, {
+              type: "form_submitted",
+              agent_id: firstForm.encuestador_id ?? "unknown",
+              agent_name: firstForm.encuestador ?? "Agente",
+              message: `${firstForm.encuestador ?? "Agente"} envio ${queued} registro${queued > 1 ? "s" : ""}`,
+            });
+          }
+        }
 
         return reply.code(202).send({
           ok: true,
