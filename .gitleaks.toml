@@ -2,11 +2,18 @@
 useDefault = true
 
 [allowlist]
-description = "CI smoke test scripts, documentation, and dev credential files use local-only dummy credentials"
+description = "Allow known safe paths and patterns"
 paths = [
+  # CI smoke test scripts use dummy credentials
   '''scripts/ci/smoke_backend_contract\.sh''',
+  # Documentation files with example credentials
   '''AUTH_CONTRACT\.md''',
   '''docs/EXPO_AUTH_CONTRACT\.md''',
   '''CREDENCIALES\.md''',
+  # Dev seed script with test data
   '''apps/backend/scripts/seed-dev\.ts''',
+  # Mobile config files with EXPO_PUBLIC_* vars (intentionally public, embedded in app bundle)
+  # The AGENT_INGEST_TOKEN is a low-privilege token for GPS tracking only
+  '''apps/mobile/app\.json''',
+  '''apps/mobile/eas\.json''',
 ]
