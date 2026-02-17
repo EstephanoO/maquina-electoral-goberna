@@ -240,6 +240,47 @@ export type AgentStreamEvent =
   | { type: 'agent.offline'; agent_id: string; ts: string }
   | { type: 'heartbeat'; ts: string };
 
+// ─── Meets (GET /api/meets/active, POST /api/meets, etc.) ───
+
+export type MeetStatus = 'pending_location' | 'scheduled' | 'active' | 'completed' | 'cancelled';
+
+export type Meet = {
+  id: string;
+  campaign_id: string;
+  title: string;
+  description: string | null;
+  location_name: string | null;
+  lat: number | null;
+  lng: number | null;
+  status: MeetStatus;
+  starts_at: string;
+  ends_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  participant_count?: number;
+};
+
+export type MeetParticipant = {
+  meet_id: string;
+  user_id: string;
+  full_name: string;
+  role: string;
+  joined_at: string;
+  left_at: string | null;
+};
+
+export type CreateMeetPayload = {
+  campaign_id: string;
+  title: string;
+  description?: string;
+  location_name?: string;
+  lat?: number;
+  lng?: number;
+  starts_at: string;
+  ends_at?: string;
+};
+
 // ─── API Response wrapper ───────────────────────────────────
 
 export type ApiOk<T> = { ok: true; data: T };

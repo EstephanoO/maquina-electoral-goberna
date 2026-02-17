@@ -1,427 +1,394 @@
 /**
- * Reuniones + Mapa de Agentes en tiempo real.
+ * Reuniones — Lista de meets de la campana activa.
  *
- * Tab "Mapa" shows live agent positions via SSE from GET /api/agents/stream.
- * Tab "Reuniones" shows upcoming meetings (placeholder data for now).
- *
- * Colors driven by AppConfig.
+ * - Carga meets reales desde GET /api/meets/active
+ * - Admin/supervisor pueden crear meets con FAB (+)
+ * - Agentes pueden unirse/salir de meets
+ * - Pull to refresh
  */
 
-import { useState } from 'react';
-import { StyleSheet, Text, View, Pressable, ScrollView } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
 
-import { useCandidate, useAgent } from '@/lib/app-context';
-import { useAgentsStream } from '@/hooks/useAgentsStream';
+import { useApp } from '@/lib/app-context';
+import * as api from '@/lib/api';
+import type { Meet } from '@/lib/types';
 
 const FONT = 'Montserrat-Bold';
 const BORDER = '#E1E6F0';
 
-type TabType = 'reuniones' | 'mapa';
+const STATUS_LABELS: Record<string, string> = {
+  pending_location: 'Sin ubicacion',
+  scheduled: 'Programado',
+  active: 'Activo',
+  completed: 'Completado',
+  cancelled: 'Cancelado',
+};
 
-function formatTimeSince(isoString: string): string {
-  const diff = Date.now() - new Date(isoString).getTime();
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h`;
+const STATUS_COLORS: Record<string, string> = {
+  pending_location: '#F59E0B',
+  scheduled: '#3B82F6',
+  active: '#22C55E',
+  completed: '#6B7280',
+  cancelled: '#EF4444',
+};
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  const day = d.getDate();
+  const months = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+  const month = months[d.getMonth()]!;
+  const hours = d.getHours().toString().padStart(2, '0');
+  const mins = d.getMinutes().toString().padStart(2, '0');
+  return `${day} ${month} · ${hours}:${mins}`;
 }
 
 export default function ReunionesScreen() {
-  const candidate = useCandidate();
-  const agent = useAgent();
-  const [activeTab, setActiveTab] = useState<TabType>('mapa');
+  const { auth } = useApp();
 
+  const [meets, setMeets] = useState<Meet[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const fetchMeets = useCallback(async () => {
+    const result = await api.getActiveMeets();
+    if (result.ok) {
+      setMeets(result.data.meets);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (auth.status !== 'active') return;
+    fetchMeets().finally(() => setLoading(false));
+  }, [fetchMeets, auth.status]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchMeets();
+    setRefreshing(false);
+  }, [fetchMeets]);
+
+  const handleJoin = useCallback(async (meetId: string) => {
+    const result = await api.joinMeet(meetId);
+    if (result.ok) {
+      Alert.alert('Listo', 'Te uniste a la reunion');
+      await fetchMeets();
+    } else {
+      Alert.alert('Error', result.error);
+    }
+  }, [fetchMeets]);
+
+  const handleCreated = useCallback(async () => {
+    setShowCreate(false);
+    await fetchMeets();
+  }, [fetchMeets]);
+
+  if (auth.status !== 'active') return null;
+
+  const { candidate, agent, campaign } = auth.config;
   const primary = candidate.color_primario;
   const secondary = candidate.color_secundario;
+  const canCreate = agent.role === 'admin' || agent.role === 'supervisor';
+
+  const renderMeet = ({ item }: { item: Meet }) => (
+    <View style={styles.meetCard}>
+      <View style={styles.meetHeader}>
+        <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[item.status] ?? '#6B7280' }]} />
+        <Text style={[styles.meetTitle, { color: primary }]} numberOfLines={1}>
+          {item.title}
+        </Text>
+        <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[item.status] ?? '#6B7280' }]}>
+          <Text style={styles.statusBadgeText}>{STATUS_LABELS[item.status] ?? item.status}</Text>
+        </View>
+      </View>
+
+      {item.description ? (
+        <Text style={styles.meetDescription} numberOfLines={2}>{item.description}</Text>
+      ) : null}
+
+      <View style={styles.meetMeta}>
+        <View style={styles.metaRow}>
+          <MaterialIcons name="schedule" size={14} color="rgba(22,57,96,0.5)" />
+          <Text style={styles.metaText}>{formatDate(item.starts_at)}</Text>
+        </View>
+        {item.location_name ? (
+          <View style={styles.metaRow}>
+            <MaterialIcons name="place" size={14} color="rgba(22,57,96,0.5)" />
+            <Text style={styles.metaText}>{item.location_name}</Text>
+          </View>
+        ) : null}
+        {item.participant_count != null && (
+          <View style={styles.metaRow}>
+            <MaterialIcons name="people" size={14} color="rgba(22,57,96,0.5)" />
+            <Text style={styles.metaText}>{item.participant_count} participante{item.participant_count !== 1 ? 's' : ''}</Text>
+          </View>
+        )}
+      </View>
+
+      {(item.status === 'scheduled' || item.status === 'active') && (
+        <Pressable
+          style={[styles.joinBtn, { backgroundColor: primary }]}
+          onPress={() => handleJoin(item.id)}
+        >
+          <MaterialIcons name="login" size={16} color="#FFF" />
+          <Text style={styles.joinBtnText}>Unirme</Text>
+        </Pressable>
+      )}
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={[styles.header, { backgroundColor: primary }]}>
-        <Text style={styles.title}>Operaciones</Text>
-        <Text style={styles.subtitle}>Mapa de campo y reuniones</Text>
+        <Text style={styles.title}>Reuniones</Text>
+        <Text style={styles.subtitle}>{candidate.name}</Text>
       </View>
 
-      {/* Sub-tabs */}
-      <View style={styles.tabBar}>
-        <Pressable
-          style={[styles.tab, activeTab === 'mapa' && [styles.tabActive, { backgroundColor: primary }]]}
-          onPress={() => setActiveTab('mapa')}
-        >
-          <Text style={[styles.tabText, activeTab === 'mapa' && styles.tabTextActive]}>
-            Mapa
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.tab, activeTab === 'reuniones' && [styles.tabActive, { backgroundColor: primary }]]}
-          onPress={() => setActiveTab('reuniones')}
-        >
-          <Text style={[styles.tabText, activeTab === 'reuniones' && styles.tabTextActive]}>
-            Reuniones
-          </Text>
-        </Pressable>
-      </View>
+      {loading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color={primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={meets}
+          keyExtractor={(m) => m.id}
+          renderItem={renderMeet}
+          contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={primary} />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <MaterialIcons name="event-busy" size={48} color="rgba(22,57,96,0.2)" />
+              <Text style={[styles.emptyTitle, { color: primary }]}>Sin reuniones activas</Text>
+              <Text style={styles.emptyText}>
+                {canCreate
+                  ? 'Crea una reunion con el boton + de abajo.'
+                  : 'Tu coordinador aun no ha programado reuniones.'}
+              </Text>
+            </View>
+          }
+        />
+      )}
 
-      <View style={styles.content}>
-        {activeTab === 'mapa' ? (
-          <AgentsMapView primary={primary} secondary={secondary} currentAgentId={agent.id} />
-        ) : (
-          <ReunionesView primary={primary} secondary={secondary} />
-        )}
-      </View>
+      {/* FAB — only for admin/supervisor */}
+      {canCreate && (
+        <Pressable
+          style={[styles.fab, { backgroundColor: secondary }]}
+          onPress={() => setShowCreate(true)}
+        >
+          <MaterialIcons name="add" size={28} color={primary} />
+        </Pressable>
+      )}
+
+      {/* Create meet modal */}
+      <CreateMeetModal
+        visible={showCreate}
+        onClose={() => setShowCreate(false)}
+        onCreated={handleCreated}
+        campaignId={campaign.id}
+        primary={primary}
+        secondary={secondary}
+      />
     </SafeAreaView>
   );
 }
 
-// ─── Agents Map View ────────────────────────────────────────────
+// ─── Create Meet Modal ──────────────────────────────────────
 
-function AgentsMapView({
+function CreateMeetModal({
+  visible,
+  onClose,
+  onCreated,
+  campaignId,
   primary,
   secondary,
-  currentAgentId,
 }: {
+  visible: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+  campaignId: string;
   primary: string;
   secondary: string;
-  currentAgentId: string;
 }) {
-  const { agents, connected, error } = useAgentsStream();
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [locationName, setLocationName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!title.trim()) {
+      Alert.alert('Error', 'El titulo es obligatorio');
+      return;
+    }
+
+    setSaving(true);
+    const result = await api.createMeet({
+      campaign_id: campaignId,
+      title: title.trim(),
+      description: description.trim() || undefined,
+      location_name: locationName.trim() || undefined,
+      starts_at: new Date().toISOString(),
+    });
+    setSaving(false);
+
+    if (result.ok) {
+      setTitle('');
+      setDescription('');
+      setLocationName('');
+      onCreated();
+    } else {
+      Alert.alert('Error', result.error);
+    }
+  };
 
   return (
-    <View style={styles.mapContainer}>
-      {/* Connection status bar */}
-      <View style={[styles.statusBar, { backgroundColor: connected ? '#22C55E' : '#EF4444' }]}>
-        <View style={styles.statusDot} />
-        <Text style={styles.statusText}>
-          {connected
-            ? `${agents.length} agente${agents.length !== 1 ? 's' : ''} en linea`
-            : error ?? 'Conectando...'}
-        </Text>
-      </View>
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: primary }]}>Nueva reunion</Text>
+            <Pressable onPress={onClose} hitSlop={12}>
+              <MaterialIcons name="close" size={24} color="rgba(22,57,96,0.5)" />
+            </Pressable>
+          </View>
 
-      {/* Agent cards list */}
-      <ScrollView style={styles.agentsList} contentContainerStyle={styles.agentsListContent}>
-        {agents.length === 0 && connected ? (
-          <View style={styles.emptyMapState}>
-            <Text style={[styles.emptyMapTitle, { color: primary }]}>Sin agentes en linea</Text>
-            <Text style={styles.emptyMapText}>
-              Los agentes apareceran aqui cuando inicien su jornada de campo.
+          <View style={styles.modalBody}>
+            <Text style={styles.inputLabel}>Titulo *</Text>
+            <TextInput
+              style={styles.input}
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Ej: Recorrido Zona Sur"
+              placeholderTextColor="rgba(22,57,96,0.3)"
+              maxLength={255}
+            />
+
+            <Text style={styles.inputLabel}>Descripcion</Text>
+            <TextInput
+              style={[styles.input, styles.inputMultiline]}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Detalles de la actividad..."
+              placeholderTextColor="rgba(22,57,96,0.3)"
+              multiline
+              maxLength={500}
+            />
+
+            <Text style={styles.inputLabel}>Lugar</Text>
+            <TextInput
+              style={styles.input}
+              value={locationName}
+              onChangeText={setLocationName}
+              placeholder="Ej: Parque Central"
+              placeholderTextColor="rgba(22,57,96,0.3)"
+              maxLength={255}
+            />
+
+            <Text style={styles.inputHint}>
+              La ubicacion en el mapa se asignara desde el panel web.
             </Text>
           </View>
-        ) : (
-          agents.map((a) => {
-            const isMe = a.agent_id === currentAgentId;
-            return (
-              <View
-                key={a.agent_id}
-                style={[
-                  styles.agentCard,
-                  isMe && { borderColor: secondary, borderWidth: 2 },
-                ]}
-              >
-                <View style={styles.agentCardHeader}>
-                  <View style={[styles.agentAvatar, { backgroundColor: isMe ? secondary : primary }]}>
-                    <Text style={[styles.agentAvatarText, { color: isMe ? primary : '#FFFFFF' }]}>
-                      {a.agent_id.slice(0, 2).toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.agentCardInfo}>
-                    <Text style={[styles.agentName, { color: primary }]} numberOfLines={1}>
-                      {isMe ? 'Tu (yo)' : a.agent_id.slice(0, 8)}
-                    </Text>
-                    <Text style={styles.agentUpdated}>
-                      Hace {formatTimeSince(a.ts)} · seq {a.seq}
-                    </Text>
-                  </View>
-                  <View style={styles.agentOnlineDot} />
-                </View>
 
-                <View style={styles.agentCardBody}>
-                  <View style={styles.coordRow}>
-                    <Text style={styles.coordLabel}>Lat</Text>
-                    <Text style={styles.coordValue}>{a.lat.toFixed(6)}</Text>
-                  </View>
-                  <View style={styles.coordRow}>
-                    <Text style={styles.coordLabel}>Lng</Text>
-                    <Text style={styles.coordValue}>{a.lng.toFixed(6)}</Text>
-                  </View>
-                  {a.accuracy != null && (
-                    <View style={styles.coordRow}>
-                      <Text style={styles.coordLabel}>Precision</Text>
-                      <Text style={styles.coordValue}>{a.accuracy.toFixed(0)}m</Text>
-                    </View>
-                  )}
-                  {a.speed != null && (
-                    <View style={styles.coordRow}>
-                      <Text style={styles.coordLabel}>Velocidad</Text>
-                      <Text style={styles.coordValue}>{(a.speed * 3.6).toFixed(1)} km/h</Text>
-                    </View>
-                  )}
-                  {a.battery != null && (
-                    <View style={styles.coordRow}>
-                      <Text style={styles.coordLabel}>Bateria</Text>
-                      <Text style={styles.coordValue}>{a.battery.toFixed(0)}%</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            );
-          })
-        )}
-      </ScrollView>
-    </View>
+          <Pressable
+            style={[styles.saveBtn, { backgroundColor: primary }, saving && { opacity: 0.6 }]}
+            onPress={handleSave}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator color="#FFF" size="small" />
+            ) : (
+              <Text style={styles.saveBtnText}>Crear reunion</Text>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
-// ─── Reuniones View ─────────────────────────────────────────────
-
-function ReunionesView({ primary, secondary }: { primary: string; secondary: string }) {
-  return (
-    <View style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: 'rgba(22, 57, 96, 0.7)' }]}>
-        Proximas reuniones
-      </Text>
-
-      <View style={styles.meetingCard}>
-        <View style={[styles.meetingDate, { backgroundColor: secondary }]}>
-          <Text style={[styles.meetingDay, { color: primary }]}>15</Text>
-          <Text style={[styles.meetingMonth, { color: primary }]}>FEB</Text>
-        </View>
-        <View style={styles.meetingInfo}>
-          <Text style={[styles.meetingTitle, { color: primary }]}>Reunion de coordinacion</Text>
-          <Text style={styles.meetingLocation}>Plaza de Armas - 10:00 AM</Text>
-        </View>
-      </View>
-
-      <View style={styles.meetingCard}>
-        <View style={[styles.meetingDate, { backgroundColor: secondary }]}>
-          <Text style={[styles.meetingDay, { color: primary }]}>18</Text>
-          <Text style={[styles.meetingMonth, { color: primary }]}>FEB</Text>
-        </View>
-        <View style={styles.meetingInfo}>
-          <Text style={[styles.meetingTitle, { color: primary }]}>Capacitacion agentes</Text>
-          <Text style={styles.meetingLocation}>Local partidario - 3:00 PM</Text>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-// ─── Styles ─────────────────────────────────────────────────────
+// ─── Styles ─────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  header: {
-    padding: 20,
-    paddingBottom: 16,
-  },
-  title: {
-    fontSize: 24,
-    color: '#FFFFFF',
-    fontFamily: FONT,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontFamily: FONT,
-    marginTop: 4,
+  safeArea: { flex: 1, backgroundColor: '#F8FAFC' },
+  header: { padding: 20, paddingBottom: 16 },
+  title: { fontSize: 24, color: '#FFFFFF', fontFamily: FONT },
+  subtitle: { fontSize: 14, color: 'rgba(255,255,255,0.7)', fontFamily: FONT, marginTop: 4 },
+
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  list: { padding: 16, gap: 12, paddingBottom: 100 },
+
+  // Empty
+  emptyState: { padding: 40, alignItems: 'center', gap: 12 },
+  emptyTitle: { fontSize: 16, fontFamily: FONT },
+  emptyText: {
+    fontSize: 13, color: 'rgba(22,57,96,0.6)', fontFamily: FONT, textAlign: 'center', lineHeight: 20,
   },
 
-  /* Sub-tabs */
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
+  // Meet card
+  meetCard: {
+    backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: BORDER, gap: 10,
   },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
+  meetHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  meetTitle: { flex: 1, fontSize: 15, fontFamily: FONT },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  statusBadgeText: { fontSize: 10, color: '#FFF', fontFamily: FONT, textTransform: 'uppercase' },
+  meetDescription: { fontSize: 13, color: 'rgba(22,57,96,0.6)', fontFamily: FONT, lineHeight: 18 },
+  meetMeta: { gap: 4 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  metaText: { fontSize: 12, color: 'rgba(22,57,96,0.5)', fontFamily: FONT },
+
+  joinBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10, borderRadius: 10, marginTop: 4,
   },
-  tabActive: {},
-  tabText: {
-    fontSize: 14,
-    fontFamily: FONT,
-    color: 'rgba(22, 57, 96, 0.7)',
-  },
-  tabTextActive: {
-    color: '#FFFFFF',
+  joinBtnText: { fontSize: 13, color: '#FFF', fontFamily: FONT },
+
+  // FAB
+  fab: {
+    position: 'absolute', bottom: 24, right: 24,
+    width: 56, height: 56, borderRadius: 28,
+    alignItems: 'center', justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 4,
   },
 
-  content: {
-    flex: 1,
-    padding: 16,
-    gap: 20,
+  // Modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end',
   },
-
-  /* Agents map */
-  mapContainer: {
-    flex: 1,
-    gap: 12,
+  modalContent: {
+    backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: 24, paddingBottom: 40, gap: 20,
   },
-  statusBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    gap: 8,
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  modalTitle: { fontSize: 18, fontFamily: FONT },
+  modalBody: { gap: 12 },
+  inputLabel: { fontSize: 12, fontFamily: FONT, color: 'rgba(22,57,96,0.7)', textTransform: 'uppercase', letterSpacing: 0.5 },
+  input: {
+    borderWidth: 1, borderColor: BORDER, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 15, fontFamily: FONT, color: '#163960',
   },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.8)',
+  inputMultiline: { minHeight: 80, textAlignVertical: 'top' },
+  inputHint: { fontSize: 11, color: 'rgba(22,57,96,0.4)', fontFamily: FONT, fontStyle: 'italic' },
+  saveBtn: {
+    paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
   },
-  statusText: {
-    fontSize: 13,
-    color: '#FFFFFF',
-    fontFamily: FONT,
-  },
-  agentsList: {
-    flex: 1,
-  },
-  agentsListContent: {
-    gap: 10,
-    paddingBottom: 20,
-  },
-  emptyMapState: {
-    padding: 32,
-    alignItems: 'center',
-    gap: 8,
-  },
-  emptyMapTitle: {
-    fontSize: 16,
-    fontFamily: FONT,
-  },
-  emptyMapText: {
-    fontSize: 13,
-    color: 'rgba(22, 57, 96, 0.6)',
-    fontFamily: FONT,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-
-  /* Agent card */
-  agentCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  agentCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 10,
-  },
-  agentAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  agentAvatarText: {
-    fontSize: 12,
-    fontFamily: FONT,
-  },
-  agentCardInfo: {
-    flex: 1,
-  },
-  agentName: {
-    fontSize: 14,
-    fontFamily: FONT,
-  },
-  agentUpdated: {
-    fontSize: 11,
-    color: 'rgba(22, 57, 96, 0.5)',
-    fontFamily: FONT,
-    marginTop: 1,
-  },
-  agentOnlineDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#22C55E',
-  },
-  agentCardBody: {
-    gap: 4,
-    paddingLeft: 46,
-  },
-  coordRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 2,
-  },
-  coordLabel: {
-    fontSize: 12,
-    color: 'rgba(22, 57, 96, 0.5)',
-    fontFamily: FONT,
-  },
-  coordValue: {
-    fontSize: 12,
-    color: 'rgba(22, 57, 96, 0.8)',
-    fontFamily: FONT,
-    fontVariant: ['tabular-nums'],
-  },
-
-  /* Reuniones */
-  section: {
-    gap: 12,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontFamily: FONT,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  meetingCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    borderWidth: 1,
-    borderColor: BORDER,
-  },
-  meetingDate: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  meetingDay: {
-    fontSize: 20,
-    fontFamily: FONT,
-  },
-  meetingMonth: {
-    fontSize: 10,
-    fontFamily: FONT,
-    textTransform: 'uppercase',
-  },
-  meetingInfo: {
-    flex: 1,
-  },
-  meetingTitle: {
-    fontSize: 15,
-    fontFamily: FONT,
-  },
-  meetingLocation: {
-    fontSize: 13,
-    color: 'rgba(22, 57, 96, 0.7)',
-    fontFamily: FONT,
-    marginTop: 2,
-  },
+  saveBtnText: { fontSize: 15, color: '#FFF', fontFamily: FONT },
 });

@@ -55,7 +55,7 @@ export default function MainLayout() {
         name="reuniones"
         options={{
           tabBarIcon: ({ color }) => (
-            <MaterialIcons name="map" size={28} color={color} />
+            <MaterialIcons name="groups" size={28} color={color} />
           ),
         }}
       />

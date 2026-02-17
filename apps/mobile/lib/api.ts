@@ -38,6 +38,8 @@ import type {
   ResolveAccessRequestPayload,
   AuthUser,
   CampaignMembership,
+  Meet,
+  CreateMeetPayload,
 } from './types';
 
 // ─── Config ─────────────────────────────────────────────────
@@ -261,6 +263,28 @@ export async function resolveAccessRequest(
   body: ResolveAccessRequestPayload,
 ): Promise<ApiResult<{ access_request: AccessRequestRow }>> {
   return request<{ access_request: AccessRequestRow }>('PUT', `/access-requests/${id}`, body);
+}
+
+// ─── Meets ──────────────────────────────────────────────────
+
+/** GET /api/meets/active — requires auth + x-campaign-id */
+export async function getActiveMeets(): Promise<ApiResult<{ meets: Meet[] }>> {
+  return request<{ meets: Meet[] }>('GET', '/meets/active');
+}
+
+/** POST /api/meets — create a new meet */
+export async function createMeet(body: CreateMeetPayload): Promise<ApiResult<{ meet: Meet }>> {
+  return request<{ meet: Meet }>('POST', '/meets', body);
+}
+
+/** POST /api/meets/:id/join — join a meet */
+export async function joinMeet(meetId: string): Promise<ApiResult<{ ok: boolean }>> {
+  return request<{ ok: boolean }>('POST', `/meets/${meetId}/join`);
+}
+
+/** POST /api/meets/:id/leave — leave a meet */
+export async function leaveMeet(meetId: string): Promise<ApiResult<{ ok: boolean }>> {
+  return request<{ ok: boolean }>('POST', `/meets/${meetId}/leave`);
 }
 
 // ─── GPS Tracking ───────────────────────────────────────────
