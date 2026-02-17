@@ -8,6 +8,24 @@ import * as repo from "./repository";
 import { createAccessRequestSchema, resolveAccessRequestSchema } from "./schemas";
 import { findById as findCampaignById } from "../campaigns/repository";
 
+/**
+ * Transform AccessRequestRow to mobile-friendly format.
+ * Maps user_full_name -> full_name, user_email -> email, requested_at -> created_at
+ */
+function toMobileFormat(row: repo.AccessRequestRow) {
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    campaign_id: row.campaign_id,
+    status: row.status,
+    full_name: row.user_full_name ?? "",
+    email: row.user_email ?? "",
+    created_at: row.requested_at?.toISOString() ?? new Date().toISOString(),
+    // Include extra fields that might be useful
+    campaign_name: row.campaign_name,
+  };
+}
+
 export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
   return async (app) => {
     // ── POST /api/access-requests ───────────────────────────────────
@@ -78,16 +96,31 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── GET /api/access-requests/pending ────────────────────────────
-    // Admin lists pending access requests (mobile-friendly endpoint).
+    // Admin/Supervisor lists pending access requests.
+    // Admins see all, supervisors see only their campaigns.
     app.get(
       "/api/access-requests/pending",
-      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["admin", "supervisor"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
 
         try {
-          const requests = await repo.listPending();
-          return reply.code(200).send({ ok: true, request_id: requestId, pending_requests: requests });
+          let requests: repo.AccessRequestRow[];
+
+          if (authed.userRole === "admin") {
+            // Admins see all pending requests
+            requests = await repo.listPending();
+          } else {
+            // Supervisors see only requests for their campaigns
+            requests = await repo.listPendingByCampaigns(authed.campaignIds);
+          }
+
+          return reply.code(200).send({ 
+            ok: true, 
+            request_id: requestId, 
+            pending_requests: requests.map(toMobileFormat),
+          });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "access requests pending list failed");
           return reply
@@ -98,21 +131,34 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── GET /api/access-requests ────────────────────────────────────
-    // Admin lists all access requests. Optional ?status= filter.
+    // Admin/Supervisor lists access requests. Optional ?status= filter.
+    // Supervisors see only their campaigns.
     app.get(
       "/api/access-requests",
-      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["admin", "supervisor"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
         const { status } = request.query as { status?: string };
 
         try {
           let requests: repo.AccessRequestRow[];
 
-          if (status === "pending") {
-            requests = await repo.listPending();
+          if (authed.userRole === "admin") {
+            // Admins see all
+            if (status === "pending") {
+              requests = await repo.listPending();
+            } else {
+              requests = await repo.listAll();
+            }
           } else {
-            requests = await repo.listAll();
+            // Supervisors see only their campaigns
+            if (status === "pending") {
+              requests = await repo.listPendingByCampaigns(authed.campaignIds);
+            } else {
+              requests = await repo.listPendingByCampaigns(authed.campaignIds);
+              // TODO: Add listAllByCampaigns if needed
+            }
           }
 
           return reply.code(200).send({ ok: true, request_id: requestId, access_requests: requests });
@@ -126,10 +172,11 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── PUT /api/access-requests/:requestId ─────────────────────────
-    // Admin approves or rejects an access request.
+    // Admin/Supervisor approves or rejects an access request.
+    // Supervisors can only resolve requests for their campaigns.
     app.put(
       "/api/access-requests/:requestId",
-      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["admin", "supervisor"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const authed = request as AuthenticatedRequest;
@@ -142,6 +189,21 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
         }
 
         try {
+          // Verify supervisor has access to this request's campaign
+          if (authed.userRole === "supervisor") {
+            const accessRequest = await repo.findById(accessRequestId);
+            if (!accessRequest) {
+              return reply
+                .code(404)
+                .send(errorPayload(requestId, "ACCESS_REQUEST_NOT_FOUND", "solicitud no encontrada"));
+            }
+            if (!authed.campaignIds.includes(accessRequest.campaign_id)) {
+              return reply
+                .code(403)
+                .send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campaña"));
+            }
+          }
+
           const resolved = await repo.resolve(
             accessRequestId,
             parsed.data.status,

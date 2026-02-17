@@ -67,6 +67,22 @@ export async function listPending(): Promise<AccessRequestRow[]> {
   return rows;
 }
 
+/**
+ * List pending access requests for specific campaigns.
+ * Used by supervisors who only have access to certain campaigns.
+ */
+export async function listPendingByCampaigns(campaignIds: string[]): Promise<AccessRequestRow[]> {
+  if (campaignIds.length === 0) return [];
+  
+  const { rows } = await pool.query<AccessRequestRow>(
+    `${SELECT_WITH_JOINS}
+     WHERE ar.status = 'pending' AND ar.campaign_id = ANY($1)
+     ORDER BY ar.requested_at ASC`,
+    [campaignIds],
+  );
+  return rows;
+}
+
 export async function listAll(): Promise<AccessRequestRow[]> {
   const { rows } = await pool.query<AccessRequestRow>(
     `${SELECT_WITH_JOINS}
