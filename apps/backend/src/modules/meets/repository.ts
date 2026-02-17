@@ -209,7 +209,9 @@ export async function leave(meetId: string, userId: string): Promise<void> {
 
 export async function listParticipants(meetId: string): Promise<ParticipantRow[]> {
   const { rows } = await pool.query<ParticipantRow>(
-    `SELECT mp.meet_id, mp.user_id, u.full_name, uc.role, mp.joined_at, mp.left_at
+    `SELECT mp.meet_id, mp.user_id, u.full_name,
+            COALESCE(uc.role, u.role) AS role,
+            mp.joined_at, mp.left_at
      FROM meet_participants mp
      JOIN users u ON u.id = mp.user_id
      LEFT JOIN user_campaigns uc ON uc.user_id = mp.user_id
