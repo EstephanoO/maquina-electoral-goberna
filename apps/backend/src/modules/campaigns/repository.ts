@@ -248,12 +248,23 @@ export async function getAgentFormsForPeriod(
   }));
 }
 
-export async function getCampaignMembers(campaignId: string): Promise<Array<{ user_id: string; full_name: string; role: string }>> {
-  const { rows } = await pool.query<{ user_id: string; full_name: string; role: string }>(
-    `SELECT uc.user_id, u.full_name, uc.role
+export type CampaignMember = {
+  user_id: string;
+  full_name: string;
+  email: string;
+  role: string;
+  user_status: string;
+};
+
+export async function getCampaignMembers(campaignId: string): Promise<CampaignMember[]> {
+  const { rows } = await pool.query<CampaignMember>(
+    `SELECT uc.user_id, u.full_name, u.email, uc.role, u.status AS user_status
      FROM user_campaigns uc
      JOIN users u ON u.id = uc.user_id
-     WHERE uc.campaign_id = $1 AND uc.status = 'active'`,
+     WHERE uc.campaign_id = $1 AND uc.status = 'active'
+     ORDER BY
+       CASE uc.role WHEN 'admin' THEN 1 WHEN 'supervisor' THEN 2 ELSE 3 END,
+       u.full_name`,
     [campaignId],
   );
   return rows;

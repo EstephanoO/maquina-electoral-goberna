@@ -110,6 +110,36 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── GET /api/meets/:id/summary ──────────────────────────────────
+    // Full meet detail with participant list + form submission count
+    app.get(
+      "/api/meets/:id/summary",
+      { preHandler: [app.authenticate] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { id } = request.params as { id: string };
+
+        try {
+          const summary = await repo.getSummary(id);
+          if (!summary) {
+            return reply.code(404).send(errorPayload(requestId, "MEET_NOT_FOUND", "meet no encontrado"));
+          }
+
+          const participants = await repo.listParticipants(id);
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            meet: summary,
+            participants,
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "meet summary failed");
+          return reply.code(500).send(errorPayload(requestId, "MEET_SUMMARY_ERROR", "error obteniendo resumen"));
+        }
+      },
+    );
+
     // ── PUT /api/meets/:id ──────────────────────────────────────────
     // Update meet details. Admin/supervisor only.
     app.put(

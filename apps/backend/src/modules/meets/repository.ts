@@ -161,6 +161,32 @@ export async function updateStatus(id: string, status: MeetStatus): Promise<Meet
   return rows[0] ?? null;
 }
 
+// ── Summary (meet detail with form count) ──────────────────────
+
+export type MeetSummary = MeetRow & {
+  participant_count: number;
+  active_participants: number;
+  forms_count: number;
+};
+
+export async function getSummary(meetId: string): Promise<MeetSummary | null> {
+  const { rows } = await pool.query<MeetSummary>(
+    `SELECT m.id, m.campaign_id, m.title, m.description, m.location_name,
+            m.lat, m.lng, m.status, m.starts_at, m.ends_at,
+            m.created_by, m.created_at, m.updated_at,
+            COUNT(DISTINCT mp.user_id)::int AS participant_count,
+            COUNT(DISTINCT mp.user_id) FILTER (WHERE mp.left_at IS NULL)::int AS active_participants,
+            COUNT(f.id)::int AS forms_count
+     FROM meets m
+     LEFT JOIN meet_participants mp ON mp.meet_id = m.id
+     LEFT JOIN forms f ON f.meet_id = m.id
+     WHERE m.id = $1
+     GROUP BY m.id`,
+    [meetId],
+  );
+  return rows[0] ?? null;
+}
+
 // ── Participants ────────────────────────────────────────────────────
 
 export async function join(meetId: string, userId: string): Promise<void> {

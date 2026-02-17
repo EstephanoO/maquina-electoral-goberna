@@ -213,6 +213,25 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── GET /api/campaigns/:campaignId/members ────────────────────────
+    // List team members of a campaign. Admin/supervisor only.
+    app.get(
+      "/api/campaigns/:campaignId/members",
+      { preHandler: [app.authenticate, authorize({ roles: ["supervisor"], requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { campaignId } = request.params as { campaignId: string };
+
+        try {
+          const members = await repo.getCampaignMembers(campaignId);
+          return reply.code(200).send({ ok: true, request_id: requestId, members });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "campaign members list failed");
+          return reply.code(500).send(errorPayload(requestId, "CAMPAIGN_MEMBERS_ERROR", "error listando miembros"));
+        }
+      },
+    );
+
     // ── DELETE /api/campaigns/:campaignId/members/:userId ─────────────
     app.delete(
       "/api/campaigns/:campaignId/members/:userId",

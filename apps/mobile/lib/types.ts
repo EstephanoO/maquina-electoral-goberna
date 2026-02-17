@@ -281,6 +281,23 @@ export type CreateMeetPayload = {
   ends_at?: string;
 };
 
+// ─── Campaign Members (GET /api/campaigns/:id/members) ──────
+
+export type CampaignMember = {
+  user_id: string;
+  full_name: string;
+  email: string;
+  role: UserRole;
+  user_status: string;
+};
+
+// ─── Meet Summary (GET /api/meets/:id/summary) ─────────────
+
+export type MeetSummary = Meet & {
+  active_participants: number;
+  forms_count: number;
+};
+
 // ─── API Response wrapper ───────────────────────────────────
 
 export type ApiOk<T> = { ok: true; data: T };

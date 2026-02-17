@@ -39,6 +39,9 @@ import type {
   AuthUser,
   CampaignMembership,
   Meet,
+  MeetSummary,
+  MeetParticipant,
+  CampaignMember,
   CreateMeetPayload,
 } from './types';
 
@@ -285,6 +288,32 @@ export async function joinMeet(meetId: string): Promise<ApiResult<{ ok: boolean 
 /** POST /api/meets/:id/leave — leave a meet */
 export async function leaveMeet(meetId: string): Promise<ApiResult<{ ok: boolean }>> {
   return request<{ ok: boolean }>('POST', `/meets/${meetId}/leave`);
+}
+
+/** GET /api/meets/:id/summary — meet detail with participants + form count */
+export async function getMeetSummary(
+  meetId: string,
+): Promise<ApiResult<{ meet: MeetSummary; participants: MeetParticipant[] }>> {
+  return request<{ meet: MeetSummary; participants: MeetParticipant[] }>(
+    'GET',
+    `/meets/${meetId}/summary`,
+  );
+}
+
+/** GET /api/meets/:id/participants — list participants of a meet */
+export async function getMeetParticipants(
+  meetId: string,
+): Promise<ApiResult<{ participants: MeetParticipant[] }>> {
+  return request<{ participants: MeetParticipant[] }>('GET', `/meets/${meetId}/participants`);
+}
+
+// ─── Campaign Members ───────────────────────────────────────
+
+/** GET /api/campaigns/:id/members — list team members (admin/supervisor only) */
+export async function getCampaignMembers(
+  campaignId: string,
+): Promise<ApiResult<{ members: CampaignMember[] }>> {
+  return request<{ members: CampaignMember[] }>('GET', `/campaigns/${campaignId}/members`);
 }
 
 // ─── GPS Tracking ───────────────────────────────────────────
