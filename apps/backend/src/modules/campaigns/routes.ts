@@ -8,6 +8,7 @@ import { errorPayload } from "../../infra/http";
 import * as repo from "./repository";
 import type { CampaignConfig } from "./repository";
 import { createCampaignSchema, updateCampaignSchema } from "./schemas";
+import { createDefaultForCampaign } from "../form-definitions/repository";
 
 // ── Event log (in-memory circular buffer) ─────────────────────────────
 type CampaignEvent = {
@@ -125,7 +126,16 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
             return reply.code(409).send(errorPayload(requestId, "CAMPAIGN_SLUG_EXISTS", "slug ya existe"));
           }
 
+          const authed = request as AuthenticatedRequest;
           const campaign = await repo.create(parsed.data);
+
+          // Auto-create default "Formulario Principal" for the new campaign
+          try {
+            await createDefaultForCampaign(campaign.id, authed.userId);
+          } catch (err) {
+            app.log.warn({ err, campaign_id: campaign.id }, "default form creation failed (non-fatal)");
+          }
+
           return reply.code(201).send({ ok: true, request_id: requestId, campaign });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "campaign create failed");

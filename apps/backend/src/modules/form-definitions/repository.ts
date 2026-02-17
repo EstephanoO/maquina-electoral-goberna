@@ -147,6 +147,55 @@ export async function remove(id: string): Promise<boolean> {
   return (rowCount ?? 0) > 0;
 }
 
+// ── Default form creation ───────────────────────────────────────────
+
+const DEFAULT_FORM_SCHEMA = {
+  version: "1.0",
+  fields: [
+    {
+      id: "nombre",
+      type: "text",
+      label: "Nombre completo",
+      placeholder: "Ingresa nombre y apellidos",
+      required: true,
+      validation: { min: 3, maxLength: 100 },
+    },
+    {
+      id: "telefono",
+      type: "phone",
+      label: "Telefono",
+      placeholder: "999 888 777",
+      required: true,
+      validation: { pattern: "^[0-9]{9}$" },
+    },
+    {
+      id: "ubicacion",
+      type: "location",
+      label: "Ubicacion GPS",
+      required: true,
+    },
+  ],
+};
+
+/**
+ * Creates a default "Formulario Principal" for a campaign if one doesn't already exist.
+ * Called automatically when a campaign is created.
+ */
+export async function createDefaultForCampaign(
+  campaignId: string,
+  createdBy: string,
+): Promise<FormDefinitionRow | null> {
+  // Use ON CONFLICT to avoid duplicates
+  const { rows } = await pool.query<FormDefinitionRow>(
+    `INSERT INTO form_definitions (campaign_id, name, slug, description, schema, status, created_by)
+     VALUES ($1, 'Formulario Principal', 'formulario-principal', 'Formulario basico de captura de datos', $2, 'active', $3)
+     ON CONFLICT (campaign_id, slug) DO NOTHING
+     RETURNING id, campaign_id, name, slug, description, schema, status, created_by, created_at, updated_at`,
+    [campaignId, JSON.stringify(DEFAULT_FORM_SCHEMA), createdBy],
+  );
+  return rows[0] ?? null;
+}
+
 export async function findByCampaignIdWithStatus(
   campaignId: string,
   status?: "draft" | "active" | "archived",

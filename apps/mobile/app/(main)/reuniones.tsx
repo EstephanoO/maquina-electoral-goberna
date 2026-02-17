@@ -567,6 +567,42 @@ function MeetDetailModal({
                 </>
               )}
 
+              {/* Delete button — admin/supervisor only */}
+              {(userRole === 'admin' || userRole === 'supervisor') && (
+                <Pressable
+                  style={[styles.deleteBtn, actionLoading && { opacity: 0.6 }]}
+                  disabled={actionLoading}
+                  onPress={() => {
+                    Alert.alert(
+                      'Eliminar reunion',
+                      `¿Seguro que deseas eliminar "${summary.title}"? Esta accion no se puede deshacer.`,
+                      [
+                        { text: 'Cancelar', style: 'cancel' },
+                        {
+                          text: 'Eliminar',
+                          style: 'destructive',
+                          onPress: async () => {
+                            if (!meetId) return;
+                            setActionLoading(true);
+                            const r = await api.deleteMeet(meetId);
+                            setActionLoading(false);
+                            if (r.ok) {
+                              onClose();
+                              onRefreshList();
+                            } else {
+                              Alert.alert('Error', r.error);
+                            }
+                          },
+                        },
+                      ],
+                    );
+                  }}
+                >
+                  <MaterialIcons name="delete-outline" size={18} color="#EF4444" />
+                  <Text style={styles.deleteBtnText}>Eliminar reunion</Text>
+                </Pressable>
+              )}
+
               <View style={{ height: 24 }} />
             </ScrollView>
           ) : null}
@@ -838,4 +874,12 @@ const styles = StyleSheet.create({
   participantMeta: { fontSize: 11, color: 'rgba(22,57,96,0.45)', fontFamily: FONT },
   youBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   youBadgeText: { fontSize: 10, fontFamily: FONT },
+
+  // Delete button
+  deleteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 14, borderRadius: 12, marginTop: 24,
+    borderWidth: 1, borderColor: '#FCA5A5', backgroundColor: '#FEF2F2',
+  },
+  deleteBtnText: { fontSize: 14, color: '#EF4444', fontFamily: FONT },
 });

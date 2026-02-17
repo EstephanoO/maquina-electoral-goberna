@@ -74,9 +74,13 @@ async function request<T>(
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
+    const headers: Record<string, string> = {};
+
+    // Only set Content-Type when there IS a body — Fastify rejects
+    // Content-Type: application/json with an empty/undefined body.
+    if (body !== undefined) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     if (auth) {
       const token = await getAccessToken();
@@ -288,6 +292,11 @@ export async function joinMeet(meetId: string): Promise<ApiResult<{ ok: boolean 
 /** POST /api/meets/:id/leave — leave a meet */
 export async function leaveMeet(meetId: string): Promise<ApiResult<{ ok: boolean }>> {
   return request<{ ok: boolean }>('POST', `/meets/${meetId}/leave`);
+}
+
+/** DELETE /api/meets/:id — delete a meet (admin/supervisor only) */
+export async function deleteMeet(meetId: string): Promise<ApiResult<{ ok: boolean }>> {
+  return request<{ ok: boolean }>('DELETE', `/meets/${meetId}`);
 }
 
 /** GET /api/meets/:id/summary — meet detail with participants + form count */

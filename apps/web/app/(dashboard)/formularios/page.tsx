@@ -67,6 +67,32 @@ const FIELD_TYPES = [
   { value: "photo", label: "Foto" },
 ];
 
+// Default fields that every form starts with
+const DEFAULT_FIELDS: FormField[] = [
+  {
+    id: "nombre",
+    type: "text",
+    label: "Nombre completo",
+    placeholder: "Ingresa nombre y apellidos",
+    required: true,
+    validation: { min: 3 },
+  },
+  {
+    id: "telefono",
+    type: "phone",
+    label: "Telefono",
+    placeholder: "999 888 777",
+    required: true,
+    validation: { pattern: "^[0-9]{9}$" },
+  },
+  {
+    id: "ubicacion",
+    type: "location",
+    label: "Ubicacion GPS",
+    required: true,
+  },
+];
+
 const INJECTED_STYLES = `
 @keyframes goberna-fade-in {
   from { opacity: 0; transform: translateY(8px); }
@@ -401,7 +427,7 @@ export default function FormulariosPage() {
               setFormName("");
               setFormSlug("");
               setFormDescription("");
-              setFormFields([]);
+              setFormFields([...DEFAULT_FIELDS]);
               setFormStatus("draft");
             }}
             style={{
@@ -985,6 +1011,27 @@ export default function FormulariosPage() {
                                   <span style={{ fontSize: 14 }}>{opt.label}</span>
                                 </label>
                               ))}
+                            </div>
+                          ) : field.type === "location" ? (
+                            <div style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              padding: "12px 16px",
+                              borderRadius: 10,
+                              border: "2px dashed #3B82F6",
+                              background: "#EFF6FF",
+                              cursor: "not-allowed",
+                            }}>
+                              <span style={{ fontSize: 20 }}>📍</span>
+                              <div>
+                                <div style={{ fontSize: 14, fontWeight: 600, color: "#1E40AF" }}>
+                                  Captura de ubicacion GPS
+                                </div>
+                                <div style={{ fontSize: 12, color: "#3B82F6", marginTop: 2 }}>
+                                  El agente presionara este boton para capturar coordenadas UTM
+                                </div>
+                              </div>
                             </div>
                           ) : (
                             <input

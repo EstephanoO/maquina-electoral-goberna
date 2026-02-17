@@ -216,6 +216,34 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── DELETE /api/meets/:id ───────────────────────────────────────
+    // Delete a meet. Admin/supervisor only.
+    app.delete(
+      "/api/meets/:id",
+      { preHandler: [app.authenticate, authorize({ roles: ["supervisor"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { id } = request.params as { id: string };
+
+        try {
+          const meet = await repo.findById(id);
+          if (!meet) {
+            return reply.code(404).send(errorPayload(requestId, "MEET_NOT_FOUND", "meet no encontrado"));
+          }
+
+          const deleted = await repo.remove(id);
+          if (!deleted) {
+            return reply.code(500).send(errorPayload(requestId, "MEET_DELETE_ERROR", "error eliminando meet"));
+          }
+
+          return reply.code(200).send({ ok: true, request_id: requestId });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "meet delete failed");
+          return reply.code(500).send(errorPayload(requestId, "MEET_DELETE_ERROR", "error eliminando meet"));
+        }
+      },
+    );
+
     // ── POST /api/meets/:id/join ────────────────────────────────────
     // Join a meet as participant
     app.post(

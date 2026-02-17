@@ -187,6 +187,14 @@ export async function getSummary(meetId: string): Promise<MeetSummary | null> {
   return rows[0] ?? null;
 }
 
+// ── DELETE ──────────────────────────────────────────────────────────
+
+export async function remove(id: string): Promise<boolean> {
+  // Participants are deleted via ON DELETE CASCADE on meet_participants.meet_id
+  const { rowCount } = await pool.query(`DELETE FROM meets WHERE id = $1`, [id]);
+  return (rowCount ?? 0) > 0;
+}
+
 // ── Participants ────────────────────────────────────────────────────
 
 export async function join(meetId: string, userId: string): Promise<void> {
