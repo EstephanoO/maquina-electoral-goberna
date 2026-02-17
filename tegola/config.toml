@@ -4,7 +4,7 @@ port = ":8080"
   [webserver.headers]
   Access-Control-Allow-Origin = "*"
   Access-Control-Allow-Methods = "GET, OPTIONS"
-  Cache-Control = "public, max-age=86400, stale-while-revalidate=300"
+  Cache-Control = "public, max-age=5, stale-while-revalidate=1"
 
 [cache]
 type = "redis"
