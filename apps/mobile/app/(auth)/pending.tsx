@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useApp } from '@/lib/app-context';
@@ -15,23 +15,41 @@ const POLL_INTERVAL_MS = 30_000; // 30 seconds
 export default function PendingScreen() {
   const { auth, checkApproval, logout } = useApp();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
   const isSuspended = auth.status === 'suspended';
+
+  // Manual check with loading state
+  const handleManualCheck = useCallback(async () => {
+    if (checking) return;
+    setChecking(true);
+    try {
+      await checkApproval();
+      setLastChecked(new Date());
+    } finally {
+      setChecking(false);
+    }
+  }, [checkApproval, checking]);
+
+  // Initial check on mount
+  useEffect(() => {
+    if (isSuspended) return;
+    void handleManualCheck();
+  }, [isSuspended, handleManualCheck]);
 
   // Poll for approval every 30s
   useEffect(() => {
     if (isSuspended) return;
 
-    void checkApproval();
-
     intervalRef.current = setInterval(() => {
-      void checkApproval();
+      void checkApproval().then(() => setLastChecked(new Date()));
     }, POLL_INTERVAL_MS);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [checkApproval, isSuspended]);
+  }, [isSuspended, checkApproval]);
 
   const handleLogout = () => {
     Alert.alert(
@@ -70,11 +88,31 @@ export default function PendingScreen() {
         )}
 
         {!isSuspended && (
-          <View style={styles.pollingNote}>
-            <Text style={styles.pollingText}>
-              Verificando automaticamente cada 30 segundos...
-            </Text>
-          </View>
+          <>
+            {/* Manual refresh button */}
+            <Pressable
+              style={[styles.refreshBtn, checking && styles.refreshBtnDisabled]}
+              onPress={handleManualCheck}
+              disabled={checking}
+            >
+              {checking ? (
+                <ActivityIndicator color={BRAND_BLUE} size="small" />
+              ) : (
+                <Text style={styles.refreshText}>Verificar ahora</Text>
+              )}
+            </Pressable>
+
+            <View style={styles.pollingNote}>
+              <Text style={styles.pollingText}>
+                {lastChecked
+                  ? `Última verificación: ${lastChecked.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}`
+                  : 'Verificando...'}
+              </Text>
+              <Text style={styles.pollingSubtext}>
+                Se verifica automáticamente cada 30 segundos
+              </Text>
+            </View>
+          </>
         )}
 
         <Pressable style={styles.logoutBtn} onPress={handleLogout}>
@@ -117,14 +155,41 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 22,
   },
+  refreshBtn: {
+    backgroundColor: BRAND_BLUE,
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 40,
+    marginTop: 16,
+    minWidth: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  refreshBtnDisabled: {
+    opacity: 0.7,
+  },
+  refreshText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontFamily: FONT,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
   pollingNote: {
     backgroundColor: 'rgba(22, 57, 96, 0.06)',
     borderRadius: 12,
     padding: 12,
-    marginTop: 8,
+    marginTop: 12,
+    gap: 4,
   },
   pollingText: {
     fontSize: 12,
+    color: TEXT_DARK,
+    fontFamily: FONT,
+    textAlign: 'center',
+  },
+  pollingSubtext: {
+    fontSize: 11,
     color: TEXT_MUTED,
     fontFamily: FONT,
     textAlign: 'center',
