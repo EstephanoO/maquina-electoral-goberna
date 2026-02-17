@@ -15,6 +15,7 @@
       "bundleIdentifier": "com.estephano.gobernaterritory02",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "Necesitamos tu ubicacion para registrar las coordenadas GPS del formulario.",
         "NSAppTransportSecurity": {
           "NSExceptionDomains": {
             "161.132.39.165": {
@@ -30,7 +31,10 @@
       "softwareKeyboardLayoutMode": "resize",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": [],
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/letter-g.png",
         "backgroundColor": "#163960"
@@ -46,6 +50,12 @@
       "expo-router",
       "expo-sqlite",
       "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Necesitamos tu ubicacion para registrar las coordenadas GPS del formulario."
+        }
+      ],
       [
         "expo-build-properties",
         {

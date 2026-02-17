@@ -10,15 +10,17 @@
  */
 
 import { Image } from 'expo-image';
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Modal, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { useCandidate, useAgent, useApp, useActiveCampaign } from '@/lib/app-context';
 import { useAgentTracking } from '@/hooks/useAgentTracking';
 import { getQueueStats, getLocalFormsByCampaign, type PendingForm } from '@/lib/offline-queue';
+import { appEvents } from '@/lib/events';
 import type { CampaignMembership } from '@/lib/types';
 
 const FONT = 'Montserrat-Bold';
@@ -302,7 +304,11 @@ export default function DashboardScreen() {
       : `${PHOTO_BASE_URL}${candidate.foto_url}`
     : null;
 
-  // Load data
+  // Refs to avoid re-renders when data hasn't changed
+  const prevStatsRef = useRef(stats);
+  const prevFormsRef = useRef<PendingForm[]>(localForms);
+
+  // Load data with shallow equality check — only sets state when data actually changed
   const loadData = useCallback(async () => {
     try {
       const [queueStats, forms] = await Promise.all([
@@ -312,22 +318,43 @@ export default function DashboardScreen() {
 
       const formsPending = queueStats.forms?.pending ?? 0;
       const formsSynced = queueStats.forms?.synced ?? 0;
-      setStats({
+      const newStats = {
         total: formsPending + formsSynced,
         synced: formsSynced,
         pending: formsPending,
-      });
+      };
 
-      setLocalForms(forms);
+      // Only update stats if values changed
+      const prev = prevStatsRef.current;
+      if (prev.total !== newStats.total || prev.synced !== newStats.synced || prev.pending !== newStats.pending) {
+        prevStatsRef.current = newStats;
+        setStats(newStats);
+      }
+
+      // Only update forms list if contents changed (compare by ids + sync_status)
+      const prevForms = prevFormsRef.current;
+      const changed =
+        forms.length !== prevForms.length ||
+        forms.some((f, i) => f.client_id !== prevForms[i]?.client_id || f.sync_status !== prevForms[i]?.sync_status);
+      if (changed) {
+        prevFormsRef.current = forms;
+        setLocalForms(forms);
+      }
     } catch (err) {
       console.warn('Failed to load data:', err);
     }
   }, [campaign.id]);
 
+  // Reload when tab gains focus (coming back from new-form, other tabs, etc.)
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData]),
+  );
+
+  // Reload instantly when a form is queued (event from new-form screen)
   useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 5000);
-    return () => clearInterval(interval);
+    return appEvents.on('forms:changed', loadData);
   }, [loadData]);
 
   const onRefresh = useCallback(async () => {

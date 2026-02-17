@@ -40,8 +40,8 @@ const MEET_COLS = `id, campaign_id, title, description, location_name, lat, lng,
 // ── CRUD ────────────────────────────────────────────────────────────
 
 export async function create(input: CreateMeetInput, userId: string): Promise<MeetRow> {
-  // If created without lat/lng → pending_location, otherwise → scheduled
-  const status: MeetStatus = input.lat != null && input.lng != null ? "scheduled" : "pending_location";
+  // Meets start as active immediately; location can be assigned later from web
+  const status: MeetStatus = "active";
 
   const { rows } = await pool.query<MeetRow>(
     `INSERT INTO meets (campaign_id, title, description, location_name, lat, lng, status, starts_at, ends_at, created_by)
@@ -97,7 +97,7 @@ export async function listByCampaign(
 }
 
 export async function listActiveByCampaign(campaignId: string): Promise<MeetWithParticipantCount[]> {
-  return listByCampaign(campaignId, ["scheduled", "active"]);
+  return listByCampaign(campaignId, ["pending_location", "scheduled", "active"]);
 }
 
 export async function update(id: string, input: UpdateMeetInput): Promise<MeetRow | null> {

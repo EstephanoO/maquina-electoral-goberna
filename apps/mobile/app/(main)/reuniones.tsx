@@ -25,9 +25,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { useApp } from '@/lib/app-context';
+import { appEvents } from '@/lib/events';
 import * as api from '@/lib/api';
 import type { Meet, MeetSummary, MeetParticipant, CampaignMember } from '@/lib/types';
 
@@ -117,10 +119,23 @@ export default function ReunionesScreen() {
     await Promise.all([fetchMeets(), fetchMembers()]);
   }, [fetchMeets, fetchMembers]);
 
+  // Load on mount
   useEffect(() => {
     if (auth.status !== 'active') return;
     fetchAll().finally(() => setLoading(false));
   }, [fetchAll, auth.status]);
+
+  // Reload when tab gains focus (coming back from other tabs)
+  useFocusEffect(
+    useCallback(() => {
+      if (auth.status === 'active') fetchMeets();
+    }, [auth.status, fetchMeets]),
+  );
+
+  // Reload when a meet is created/updated from any screen
+  useEffect(() => {
+    return appEvents.on('meets:changed', fetchMeets);
+  }, [fetchMeets]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -141,6 +156,7 @@ export default function ReunionesScreen() {
   const handleCreated = useCallback(async () => {
     setShowCreate(false);
     await fetchMeets();
+    appEvents.emit('meets:changed');
   }, [fetchMeets]);
 
   // Early return AFTER all hooks
