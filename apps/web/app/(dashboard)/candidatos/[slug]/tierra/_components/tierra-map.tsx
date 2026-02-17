@@ -94,8 +94,8 @@ const CLUSTER_SIZES = [12, 16, 20, 26, 32];
 const DATA_POINT = "#2563eb";
 
 // Priority zone colors — red transparent fill, thin black borders
-const PRIORITY_FILL = "rgba(220, 38, 38, 0.15)";
-const PRIORITY_LINE = "#0a0a0a";
+const PRIORITY_FILL = "rgba(239, 68, 68, 0.35)";
+const PRIORITY_LINE = "#991b1b";
 const SECTOR_FILL = "rgba(220, 38, 38, 0.13)";
 const SECTOR_LINE = "#0a0a0a";
 const BORDER_COLOR = "#0a0a0a";
