@@ -6,6 +6,8 @@ import type { MapRef } from "@vis.gl/react-maplibre";
 import type { FilterSpecification, StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
+import { api } from "@/lib/services";
+
 type AgentLocation = {
   agent_id: string;
   ts: string;
@@ -61,14 +63,12 @@ export function TierraMap({ campaignId, primaryColor }: Props) {
   useEffect(() => {
     const fetchAgents = async () => {
       try {
-        const res = await fetch("/api/agents/live", {
-          headers: { "x-campaign-id": campaignId },
+        const res = await api.get<{ agents: AgentLocation[] }>("/api/agents/live", {
+          campaignId,
         });
-        if (res.ok) {
-          const data = await res.json();
-          const agents = data.agents ?? [];
+        if (res.ok && res.data?.agents) {
           const map: Record<string, AgentLocation> = {};
-          for (const a of agents) {
+          for (const a of res.data.agents) {
             if (a.agent_id && typeof a.lat === "number" && typeof a.lng === "number") {
               map[a.agent_id] = a;
             }

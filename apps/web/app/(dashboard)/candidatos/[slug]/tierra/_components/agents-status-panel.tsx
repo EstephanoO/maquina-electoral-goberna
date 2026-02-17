@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { api } from "@/lib/services";
+
 type AgentLocation = {
   agent_id: string;
   ts: string;
@@ -33,14 +35,11 @@ export function AgentsStatusPanel({ campaignId, primaryColor }: Props) {
   useEffect(() => {
     const fetchAgents = async () => {
       try {
-        const res = await fetch("/api/agents/live", {
-          headers: {
-            "x-campaign-id": campaignId,
-          },
+        const res = await api.get<{ agents: AgentLocation[] }>("/api/agents/live", {
+          campaignId,
         });
-        if (res.ok) {
-          const data = await res.json();
-          setAgents(data.agents ?? []);
+        if (res.ok && res.data?.agents) {
+          setAgents(res.data.agents);
         }
       } catch {
         // ignore
