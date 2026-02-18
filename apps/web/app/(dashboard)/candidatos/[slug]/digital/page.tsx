@@ -10,7 +10,8 @@ import {
   KpiCards,
   PagesTable,
   TrafficSources,
-  CitiesChart,
+  CitiesHeatmap,
+  CitiesRanking,
   DailyChart,
   type GA4Data,
 } from "./_components";
@@ -47,6 +48,7 @@ export default function DigitalPage() {
   const [ga4Data, setGA4Data] = useState<GA4Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hoveredCity, setHoveredCity] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchAnalytics() {
@@ -58,8 +60,6 @@ export default function DigitalPage() {
           setGA4Data(res.data.analytics);
           setError(null);
         } else {
-          // Si no hay analytics, tratamos de obtener solo la info de la campana
-          // para mostrar el empty state con el nombre correcto
           const statsRes = await api.get<{ ok: boolean; campaign: CampaignInfo }>(`/api/campaigns/${slug}/stats`);
           if (statsRes.ok && statsRes.data?.campaign) {
             setCampaign(statsRes.data.campaign);
@@ -75,6 +75,7 @@ export default function DigitalPage() {
     fetchAnalytics();
   }, [slug]);
 
+  /* ── Loading ─────────────────────────────────────────────────── */
   if (loading) {
     return (
       <div style={FULL_SCREEN}>
@@ -87,15 +88,14 @@ export default function DigitalPage() {
     );
   }
 
+  /* ── Fatal error ─────────────────────────────────────────────── */
   if (error && !campaign) {
     return (
       <div style={FULL_SCREEN}>
         <div style={S.errorContainer}>
           <div style={S.errorTitle}>No se pudo cargar</div>
           <div style={S.errorMessage}>{error ?? "Candidato no encontrado"}</div>
-          <button type="button" onClick={() => router.back()} style={S.backButton}>
-            Volver
-          </button>
+          <button type="button" onClick={() => router.back()} style={S.backButton}>Volver</button>
         </div>
       </div>
     );
@@ -104,63 +104,59 @@ export default function DigitalPage() {
   const pc = campaign?.color_primario ?? "#1e40af";
   const sc = campaign?.color_secundario ?? "#fbbf24";
 
-  // Si no hay datos de GA4 para este candidato
+  /* ── No GA4 data ─────────────────────────────────────────────── */
   if (!ga4Data) {
-    // Placeholder campaign info when campaign is null
     const placeholderCampaign: CampaignInfo = campaign ?? {
-      id: "",
-      name: slug,
-      slug,
-      cargo: null,
-      numero: null,
-      partido: null,
-      foto_url: null,
-      color_primario: pc,
-      color_secundario: sc,
+      id: "", name: slug, slug, cargo: null, numero: null,
+      partido: null, foto_url: null, color_primario: pc, color_secundario: sc,
     };
-
     return (
       <div style={FULL_SCREEN}>
         <NoDataHeader campaign={placeholderCampaign} onBack={() => router.back()} />
         <div style={S.emptyContainer}>
           <div style={S.emptyIcon}>
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 20V10" />
-              <path d="M18 20V4" />
-              <path d="M6 20v-4" />
+              <path d="M12 20V10" /><path d="M18 20V4" /><path d="M6 20v-4" />
             </svg>
           </div>
           <div style={S.emptyTitle}>Sin datos de Google Analytics</div>
-          <div style={S.emptyMessage}>
-            Este candidato aun no tiene datos de GA4 configurados.
-          </div>
-          <div style={S.emptyHint}>
-            Sube el informe panoramico de GA4 para visualizar metricas digitales.
-          </div>
+          <div style={S.emptyMessage}>Este candidato aun no tiene datos de GA4 configurados.</div>
+          <div style={S.emptyHint}>Sube el informe panoramico de GA4 para visualizar metricas digitales.</div>
         </div>
       </div>
     );
   }
 
-  // At this point, ga4Data is guaranteed to exist
-  // Campaign should also exist if we got analytics
   if (!campaign) {
     return (
       <div style={FULL_SCREEN}>
         <div style={S.errorContainer}>
           <div style={S.errorTitle}>Error de datos</div>
           <div style={S.errorMessage}>Datos de campana incompletos</div>
-          <button type="button" onClick={() => router.back()} style={S.backButton}>
-            Volver
-          </button>
+          <button type="button" onClick={() => router.back()} style={S.backButton}>Volver</button>
         </div>
       </div>
     );
   }
 
+  /* ═══════════════════════════════════════════════════════════════
+     MAIN LAYOUT
+     ─────────────────────────────────────────────────────────────
+     Header
+     KPIs (4 cards row)
+     ┌──────────────────┐  ┌──────────────────────────────────┐
+     │  Cities Ranking  │  │        HEATMAP (hero, tall)      │
+     │  (table, 42%)    │  │        Peru map (58%)            │
+     └──────────────────┘  └──────────────────────────────────┘
+     ┌──────────────────┐  ┌──────────────────┐
+     │   Traffic Sources│  │   Pages Table    │
+     ├──────────────────┤  └──────────────────┘
+     │   Daily Chart    │
+     └──────────────────┘
+     ═══════════════════════════════════════════════════════════ */
+
   return (
     <div style={FULL_SCREEN}>
-      {/* Header */}
       <DigitalHeader
         campaign={campaign}
         overview={ga4Data.overview}
@@ -168,33 +164,33 @@ export default function DigitalPage() {
         secondaryColor={sc}
       />
 
-      {/* Content */}
       <div style={S.content}>
-        {/* KPIs row */}
+        {/* KPIs */}
         <section style={S.section}>
-          <KpiCards
-            overview={ga4Data.overview}
-            primaryColor={pc}
-            secondaryColor={sc}
-          />
+          <KpiCards overview={ga4Data.overview} primaryColor={pc} secondaryColor={sc} />
         </section>
 
-        {/* Main grid: 2 columns */}
-        <div style={S.grid}>
-          {/* Left column: Pages + Daily chart */}
-          <div style={S.column}>
-            <PagesTable pages={ga4Data.pages} primaryColor={pc} />
-            <DailyChart
-              dailyUsers={ga4Data.dailyUsers}
-              primaryColor={pc}
-              secondaryColor={sc}
-            />
+        {/* HERO: Cities Ranking (left) + Heatmap (right) */}
+        <section style={S.heroGrid}>
+          <div style={S.heroLeft}>
+            <CitiesRanking cities={ga4Data.cities} primaryColor={pc} onCityHover={setHoveredCity} />
           </div>
+          <div style={S.heroRight}>
+            <CitiesHeatmap cities={ga4Data.cities} primaryColor={pc} highlightCity={hoveredCity} />
+          </div>
+        </section>
 
-          {/* Right column: Sources + Cities */}
+        {/* Bottom grid: 2 columns */}
+        <div style={S.grid}>
+          {/* Left: Sources + Daily */}
           <div style={S.column}>
             <TrafficSources sources={ga4Data.sources} primaryColor={pc} />
-            <CitiesChart cities={ga4Data.cities} primaryColor={pc} />
+            <DailyChart dailyUsers={ga4Data.dailyUsers} primaryColor={pc} secondaryColor={sc} />
+          </div>
+
+          {/* Right: Pages */}
+          <div style={S.column}>
+            <PagesTable pages={ga4Data.pages} primaryColor={pc} />
           </div>
         </div>
       </div>
@@ -204,10 +200,7 @@ export default function DigitalPage() {
 
 /* ========== No Data Header ========== */
 
-type NoDataHeaderProps = {
-  campaign: CampaignInfo;
-  onBack: () => void;
-};
+type NoDataHeaderProps = { campaign: CampaignInfo; onBack: () => void };
 
 function NoDataHeader({ campaign, onBack }: NoDataHeaderProps) {
   return (
@@ -228,7 +221,7 @@ function NoDataHeader({ campaign, onBack }: NoDataHeaderProps) {
   );
 }
 
-/* ========== Full screen container ========== */
+/* ========== Styles ========== */
 
 const FULL_SCREEN: React.CSSProperties = {
   display: "flex",
@@ -245,12 +238,25 @@ const S: Record<string, React.CSSProperties> = {
     padding: 24,
     backgroundColor: "#f8fafc",
   },
-  section: {
+  section: { marginBottom: 24 },
+  heroGrid: {
+    display: "grid",
+    gridTemplateColumns: "42% 1fr",
+    gap: 24,
+    height: 560,
     marginBottom: 24,
+  },
+  heroLeft: {
+    minHeight: 0,
+    overflow: "hidden",
+  },
+  heroRight: {
+    minHeight: 0,
+    overflow: "hidden",
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "1.1fr 0.9fr",
+    gridTemplateColumns: "1fr 1fr",
     gap: 24,
   },
   column: {
@@ -274,10 +280,7 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: "50%",
     animation: "spin 1s linear infinite",
   },
-  loadingText: {
-    fontSize: 14,
-    color: "#64748b",
-  },
+  loadingText: { fontSize: 14, color: "#64748b" },
   errorContainer: {
     display: "flex",
     flexDirection: "column" as const,
@@ -286,15 +289,8 @@ const S: Record<string, React.CSSProperties> = {
     flex: 1,
     gap: 12,
   },
-  errorTitle: {
-    fontSize: 18,
-    fontWeight: 600,
-    color: "#1e293b",
-  },
-  errorMessage: {
-    fontSize: 14,
-    color: "#64748b",
-  },
+  errorTitle: { fontSize: 18, fontWeight: 600, color: "#1e293b" },
+  errorMessage: { fontSize: 14, color: "#64748b" },
   backButton: {
     marginTop: 12,
     padding: "8px 20px",
@@ -324,22 +320,9 @@ const S: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     marginBottom: 8,
   },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: 700,
-    color: "#1e293b",
-  },
-  emptyMessage: {
-    fontSize: 14,
-    color: "#64748b",
-    textAlign: "center" as const,
-  },
-  emptyHint: {
-    fontSize: 12,
-    color: "#94a3b8",
-    textAlign: "center" as const,
-    maxWidth: 300,
-  },
+  emptyTitle: { fontSize: 18, fontWeight: 700, color: "#1e293b" },
+  emptyMessage: { fontSize: 14, color: "#64748b", textAlign: "center" as const },
+  emptyHint: { fontSize: 12, color: "#94a3b8", textAlign: "center" as const, maxWidth: 300 },
   header: {
     display: "flex",
     alignItems: "center",
@@ -350,11 +333,7 @@ const S: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid #e2e8f0",
     flexShrink: 0,
   },
-  headerLeft: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-  },
+  headerLeft: { display: "flex", alignItems: "center", gap: 10 },
   headerBackBtn: {
     width: 30,
     height: 30,
@@ -368,18 +347,8 @@ const S: Record<string, React.CSSProperties> = {
     justifyContent: "center",
   },
   headerIdentity: {},
-  headerName: {
-    fontSize: 14,
-    fontWeight: 700,
-    color: "#0f172a",
-  },
-  headerMeta: {
-    display: "flex",
-    gap: 8,
-    fontSize: 11,
-    color: "#64748b",
-    alignItems: "center",
-  },
+  headerName: { fontSize: 14, fontWeight: 700, color: "#0f172a" },
+  headerMeta: { display: "flex", gap: 8, fontSize: 11, color: "#64748b", alignItems: "center" },
   headerBadge: {
     display: "inline-flex",
     alignItems: "center",
