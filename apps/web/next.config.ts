@@ -4,6 +4,11 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       {
+        protocol: "https",
+        hostname: "dashboard.grupogoberna.com",
+        pathname: "/uploads/**",
+      },
+      {
         protocol: "http",
         hostname: "161.132.39.165",
         pathname: "/uploads/**",
