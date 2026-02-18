@@ -1,6 +1,5 @@
 import type { NextConfig } from "next";
 
-/** Proxy /api/* and /uploads/* to backend VPS via beforeFiles rewrites. */
 const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
