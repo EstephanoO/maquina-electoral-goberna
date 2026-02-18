@@ -6,25 +6,27 @@ BEGIN;
 -- ── 1. Expand role values in users table ──────────────────────────────
 -- Old: 'agent', 'supervisor', 'admin'
 -- New: 'admin', 'consultor', 'jefe_campana', 'brigadista_zonal', 'agente_campo'
+-- IMPORTANT: Migrate data BEFORE changing the constraint to avoid check violation
 
--- Drop old check constraint and add new one
-ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-ALTER TABLE users ADD CONSTRAINT users_role_check
-  CHECK (role IN ('admin', 'consultor', 'jefe_campana', 'brigadista_zonal', 'agente_campo'));
-
--- Migrate existing roles
+-- Migrate existing roles first (while old constraint still allows them)
 UPDATE users SET role = 'agente_campo' WHERE role = 'agent';
 UPDATE users SET role = 'jefe_campana' WHERE role = 'supervisor';
 -- 'admin' stays as 'admin'
 
+-- Now safe to replace the constraint
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check
+  CHECK (role IN ('admin', 'consultor', 'jefe_campana', 'brigadista_zonal', 'agente_campo'));
+
 -- ── 2. Expand role values in user_campaigns ────────────────────────────
+-- Migrate data first
+UPDATE user_campaigns SET role = 'agente_campo' WHERE role = 'agent';
+UPDATE user_campaigns SET role = 'jefe_campana' WHERE role = 'supervisor';
+
+-- Then replace constraint
 ALTER TABLE user_campaigns DROP CONSTRAINT IF EXISTS user_campaigns_role_check;
 ALTER TABLE user_campaigns ADD CONSTRAINT user_campaigns_role_check
   CHECK (role IN ('admin', 'consultor', 'jefe_campana', 'brigadista_zonal', 'agente_campo'));
-
--- Migrate existing roles in user_campaigns
-UPDATE user_campaigns SET role = 'agente_campo' WHERE role = 'agent';
-UPDATE user_campaigns SET role = 'jefe_campana' WHERE role = 'supervisor';
 
 -- ── 3. Zones table ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS zones (
