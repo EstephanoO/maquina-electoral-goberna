@@ -25,6 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_form_submissions_submitted_by ON form_submissions
 CREATE INDEX IF NOT EXISTS idx_form_submissions_definition ON form_submissions(form_definition_id);
 
 -- ── 2. Migrate legacy forms data to form_submissions ──────────────────
+-- Some legacy rows have NULL client_id — generate one using the row's UUID.
 INSERT INTO form_submissions (
   id, form_definition_id, campaign_id, meet_id, submitted_by, data, lat, lng, client_id, created_at
 )
@@ -48,7 +49,7 @@ SELECT
   ),
   f.x,
   f.y,
-  f.client_id,
+  COALESCE(f.client_id, 'legacy-' || f.id::text),
   f.created_at
 FROM forms f
 WHERE f.campaign_id IS NOT NULL
