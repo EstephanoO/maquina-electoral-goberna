@@ -158,14 +158,14 @@ Manejar autenticacion JWT con refresh tokens, soportando multi-tenant por campai
     id: string,
     email: string,
     full_name: string,
-    role: "admin" | "user",
+    role: "admin" | "consultor" | "jefe_campana" | "brigadista_zonal" | "agente_campo",
     status: "active" | "pending" | "suspended"
   },
   campaigns: [{
     id: string,
     name: string,
     slug: string,
-    role: "admin" | "candidato" | "operador" | "encuestador"
+    role: "admin" | "consultor" | "jefe_campana" | "brigadista_zonal" | "agente_campo"
   }]
 }
 
@@ -267,7 +267,7 @@ CREATE TABLE users (
   email VARCHAR(255) UNIQUE NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   full_name VARCHAR(255) NOT NULL,
-  role VARCHAR(50) DEFAULT 'user',
+  role TEXT NOT NULL CHECK (role IN ('admin', 'consultor', 'jefe_campana', 'brigadista_zonal', 'agente_campo')) DEFAULT 'agente_campo',
   status VARCHAR(50) DEFAULT 'pending',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );

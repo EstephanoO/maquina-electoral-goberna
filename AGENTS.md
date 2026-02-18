@@ -141,16 +141,19 @@ nexus6.0/
 | `POST /api/meets` | Crear meet |
 | `PUT /api/meets/:id` | Actualizar meet |
 | `PUT /api/meets/:id/status` | Cambiar estado de meet |
-| `GET /api/zones` | Listar zonas de campana |
-| `POST /api/zones` | Crear zona (brigadista_zonal+) |
+| `GET /api/zones/campaign/:campaignId` | Listar zonas de campana |
+| `GET /api/zones/campaign/:campaignId/geojson` | Zonas como GeoJSON FeatureCollection |
+| `GET /api/zones/:id` | Detalle de zona |
+| `POST /api/zones` | Crear zona (jefe_campana+) |
 | `PUT /api/zones/:id` | Actualizar zona |
 | `DELETE /api/zones/:id` | Eliminar zona |
-| `GET /api/zones/geojson` | Zonas como GeoJSON |
-| `GET /api/org-hierarchy` | Arbol organizacional |
+| `GET /api/org-hierarchy/campaign/:campaignId` | Arbol organizacional |
+| `GET /api/org-hierarchy/campaign/:campaignId/subordinates/:userId` | Subordinados de un usuario |
 | `POST /api/org-hierarchy` | Asignar relacion supervisor |
+| `PUT /api/org-hierarchy/:id` | Actualizar nodo |
 | `DELETE /api/org-hierarchy/:id` | Remover relacion |
 | `POST /api/invitations` | Crear invitacion (jefe_campana+) |
-| `GET /api/invitations` | Listar invitaciones |
+| `GET /api/invitations/campaign/:campaignId` | Listar invitaciones de campana |
 | `GET /api/invitations/validate/:code` | Validar codigo (publico, sin auth) |
 | `DELETE /api/invitations/:id` | Revocar invitacion |
 | `GET /api/access-requests` | Listar solicitudes (jefe_campana+) |
