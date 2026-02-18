@@ -6,11 +6,19 @@ export const createAccessRequestSchema = z.object({
   perm_digital: z.boolean().optional().default(true),
 });
 
+/** Map frontend aliases to canonical role names */
+const ROLE_ALIASES: Record<string, string> = {
+  agent: "agente_campo",
+  supervisor: "jefe_campana",
+};
+
 export const resolveAccessRequestSchema = z.object({
   status: z.enum(["approved", "rejected"]),
   note: z.string().trim().max(500).optional(),
-  /** Role to assign on approval. Defaults to 'agente_campo' if not specified. */
-  role: z.enum(["consultor", "jefe_campana", "brigadista_zonal", "agente_campo"]).optional().default("agente_campo"),
+  /** Role to assign on approval. Accepts aliases: agent, supervisor */
+  role: z.string().optional().default("agente_campo").transform((v) => ROLE_ALIASES[v] ?? v).pipe(
+    z.enum(["consultor", "jefe_campana", "brigadista_zonal", "agente_campo"]),
+  ),
 });
 
 export type CreateAccessRequestInput = z.infer<typeof createAccessRequestSchema>;
