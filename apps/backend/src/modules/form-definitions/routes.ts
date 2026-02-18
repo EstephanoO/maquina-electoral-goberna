@@ -49,26 +49,17 @@ export function buildFormDefinitionsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── GET /api/form-definitions/active ─────────────────────────────
-    // Get active form definitions for a campaign (any authenticated user)
+    // Get active form definitions for a campaign (public, no auth required)
     app.get(
       "/api/form-definitions/active",
-      { preHandler: [app.authenticate] },
       async (request, reply) => {
         const requestId = String(request.id);
-        const authed = request as AuthenticatedRequest;
         const { campaign_id } = request.query as { campaign_id: string };
 
         if (!campaign_id) {
           return reply
             .code(400)
             .send(errorPayload(requestId, "VALIDATION_ERROR", "campaign_id requerido"));
-        }
-
-        // Non-admin users can only see form definitions for their campaigns
-        if (authed.userRole !== "admin" && !authed.campaignIds.includes(campaign_id)) {
-          return reply
-            .code(403)
-            .send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
         }
 
         try {
