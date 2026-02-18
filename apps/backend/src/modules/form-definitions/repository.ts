@@ -44,8 +44,8 @@ export async function findById(id: string): Promise<FormDefinitionRow | null> {
 export async function findByCampaignId(campaignId: string): Promise<FormDefinitionRow[]> {
   const { rows } = await pool.query<FormDefinitionRow>(
     `${SELECT_WITH_JOINS}
-     WHERE fd.campaign_id = $1 AND fd.status = 'active'
-     ORDER BY fd.name ASC`,
+     WHERE fd.campaign_id = $1
+     ORDER BY fd.status ASC, fd.name ASC`,
     [campaignId],
   );
   return rows;
