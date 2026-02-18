@@ -68,12 +68,37 @@ function parseOrigins(raw: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * If REDIS_URL has no auth but REDIS_PASSWORD is set, inject the password.
+ * Handles the common misconfiguration where docker-compose sets --requirepass
+ * but the REDIS_URL doesn't include the password.
+ *
+ * redis://redis:6379 + REDIS_PASSWORD=secret → redis://:secret@redis:6379
+ */
+function resolveRedisUrl(): string {
+  const raw = (process.env.REDIS_URL ?? "redis://127.0.0.1:6379").trim();
+  const redisPassword = (process.env.REDIS_PASSWORD ?? "").trim();
+
+  if (!redisPassword) return raw;
+
+  try {
+    const parsed = new URL(raw);
+    // If URL already has a password, leave it as-is
+    if (parsed.password) return raw;
+    parsed.password = redisPassword;
+    return parsed.toString();
+  } catch {
+    // If URL parsing fails, return as-is
+    return raw;
+  }
+}
+
 export function getEnv(): AppEnv {
   const databaseUrl = (process.env.DATABASE_URL ?? "").trim();
   if (!databaseUrl) {
     throw new Error("DATABASE_URL no configurada");
   }
-  const redisUrl = (process.env.REDIS_URL ?? "redis://127.0.0.1:6379").trim();
+  const redisUrl = resolveRedisUrl();
 
   const frontendRaw = process.env.FRONTEND_ORIGINS ?? process.env.FRONTEND_ORIGIN ?? "http://localhost:3000";
 
