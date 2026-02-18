@@ -228,17 +228,48 @@ export async function getFormsByCampaign(
 
 /**
  * Get recent forms for a campaign (for dashboard)
+ * Reads from both legacy forms table AND new form_submissions table
  */
 export async function getRecentForms(campaignId: string, limit = 20): Promise<FormRecord[]> {
   const result = await pool.query<FormRecord>(
-    `SELECT 
-      id, client_id, nombre, telefono, fecha, x, y, zona,
-      encuestador, encuestador_id, candidato_preferido, 
-      comentarios, campaign_id, created_at
-     FROM public.forms 
-     WHERE campaign_id = $1
-     ORDER BY created_at DESC 
-     LIMIT $2`,
+    `WITH combined AS (
+      -- Legacy forms table
+      SELECT 
+        id, client_id, nombre, telefono, fecha, x, y, zona,
+        encuestador, encuestador_id, candidato_preferido, 
+        comentarios, campaign_id, created_at,
+        NULL::uuid as agent_id
+      FROM public.forms 
+      WHERE campaign_id = $1
+      
+      UNION ALL
+      
+      -- New form_submissions table (extract fields from JSONB data)
+      SELECT 
+        fs.id,
+        fs.client_id,
+        COALESCE(fs.data->>'nombre', fs.data->>'Nombre Completo', '') as nombre,
+        COALESCE(fs.data->>'telefono', fs.data->>'Numero de Telefono', '') as telefono,
+        fs.created_at as fecha,
+        fs.lng as x,
+        fs.lat as y,
+        COALESCE(fs.data->>'zona', 'Sin zona') as zona,
+        COALESCE(fs.data->>'encuestador', u.full_name, 'Agente') as encuestador,
+        COALESCE(fs.submitted_by::text, '') as encuestador_id,
+        COALESCE(fs.data->>'candidato_preferido', '') as candidato_preferido,
+        fs.data->>'comentarios' as comentarios,
+        fs.campaign_id,
+        fs.created_at,
+        fs.submitted_by as agent_id
+      FROM form_submissions fs
+      LEFT JOIN users u ON u.id = fs.submitted_by
+      WHERE fs.campaign_id = $1
+        AND fs.synced_at IS NULL  -- Only non-synced (direct submissions, not dual-writes)
+    )
+    SELECT DISTINCT ON (client_id) *
+    FROM combined
+    ORDER BY client_id, created_at DESC
+    LIMIT $2`,
     [campaignId, limit],
   );
 
