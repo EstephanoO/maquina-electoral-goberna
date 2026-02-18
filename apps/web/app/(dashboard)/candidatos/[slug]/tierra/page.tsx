@@ -110,6 +110,7 @@ export default function TierraPage() {
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [showTable, setShowTable] = useState(false);
   const [logCollapsed, setLogCollapsed] = useState(false);
+  const [logClearedAt, setLogClearedAt] = useState<number>(0);
 
   // Drill-down state for geographic navigation
   const [drillState, setDrillState] = useState<DrillState>(INITIAL_DRILL);
@@ -141,11 +142,11 @@ export default function TierraPage() {
   // Initial load
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
-  // Forms polling (15s) + initial
+  // Forms polling (5s) + initial
   useEffect(() => {
     if (!stats) return;
     fetchForms();
-    const id = setInterval(fetchForms, 15000);
+    const id = setInterval(fetchForms, 5000);
     return () => clearInterval(id);
   }, [stats, fetchForms]);
 
@@ -254,10 +255,18 @@ export default function TierraPage() {
       }
     }
 
-    // Sort newest first
+    // Sort newest first and filter by logClearedAt
     entries.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-    return entries.slice(0, 60);
-  }, [forms, stats]);
+    const filtered = logClearedAt > 0
+      ? entries.filter((e) => e.timestamp.getTime() > logClearedAt)
+      : entries;
+    return filtered.slice(0, 60);
+  }, [forms, stats, logClearedAt]);
+
+  // Clear log handler
+  const handleClearLog = useCallback(() => {
+    setLogClearedAt(Date.now());
+  }, []);
 
   // Handle log entry click → fly to point
   const handleLogEntryClick = useCallback((entry: LogEntry) => {
@@ -353,6 +362,7 @@ export default function TierraPage() {
           <ActivityLog
             entries={logEntries}
             onEntryClick={handleLogEntryClick}
+            onClearLog={handleClearLog}
             primaryColor={campaign.color_primario}
             collapsed={logCollapsed}
             onToggleCollapse={() => setLogCollapsed(!logCollapsed)}

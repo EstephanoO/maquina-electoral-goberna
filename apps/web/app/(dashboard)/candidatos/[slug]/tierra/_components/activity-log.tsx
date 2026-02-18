@@ -18,6 +18,7 @@ export type LogEntry = {
 type Props = {
   entries: LogEntry[];
   onEntryClick: (entry: LogEntry) => void;
+  onClearLog?: () => void;
   primaryColor: string;
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -54,7 +55,7 @@ function timeAgo(date: Date): string {
 
 /* ========== Component ========== */
 
-export function ActivityLog({ entries, onEntryClick, primaryColor, collapsed, onToggleCollapse }: Props) {
+export function ActivityLog({ entries, onEntryClick, onClearLog, primaryColor, collapsed, onToggleCollapse }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(entries.length);
 
@@ -87,9 +88,16 @@ export function ActivityLog({ entries, onEntryClick, primaryColor, collapsed, on
           <span style={S.title}>Log Operativo</span>
           <span style={{ ...S.countBadge, color: primaryColor }}>{entries.length}</span>
         </div>
-        <button type="button" onClick={onToggleCollapse} style={S.collapseBtn} aria-label="Minimizar log">
-          &#9660;
-        </button>
+        <div style={{ display: "flex", gap: 4 }}>
+          {onClearLog && entries.length > 0 && (
+            <button type="button" onClick={onClearLog} style={S.clearBtn} aria-label="Limpiar log" title="Limpiar log">
+              &#10005;
+            </button>
+          )}
+          <button type="button" onClick={onToggleCollapse} style={S.collapseBtn} aria-label="Minimizar log">
+            &#9660;
+          </button>
+        </div>
       </div>
 
       {/* Entry list */}
@@ -218,6 +226,19 @@ const S: Record<string, React.CSSProperties> = {
     border: "1px solid #e2e8f0",
     backgroundColor: "#f8fafc",
     color: "#94a3b8",
+    fontSize: 10,
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  clearBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    border: "1px solid #fecaca",
+    backgroundColor: "#fef2f2",
+    color: "#ef4444",
     fontSize: 10,
     cursor: "pointer",
     display: "flex",

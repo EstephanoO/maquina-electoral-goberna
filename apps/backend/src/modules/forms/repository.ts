@@ -276,3 +276,34 @@ export async function getRecentForms(campaignId: string, limit = 20): Promise<Fo
 
   return result.rows;
 }
+
+/**
+ * Delete a form by ID (admin only)
+ * Deletes from both legacy forms table and form_submissions table
+ */
+export async function deleteFormById(
+  formId: string,
+  campaignId: string,
+): Promise<{ deleted: boolean; source: "forms" | "form_submissions" | null }> {
+  // Try to delete from legacy forms table first
+  const legacyResult = await pool.query(
+    `DELETE FROM public.forms WHERE id = $1 AND campaign_id = $2 RETURNING id`,
+    [formId, campaignId],
+  );
+
+  if (legacyResult.rowCount && legacyResult.rowCount > 0) {
+    return { deleted: true, source: "forms" };
+  }
+
+  // Try to delete from form_submissions table
+  const submissionsResult = await pool.query(
+    `DELETE FROM form_submissions WHERE id = $1 AND campaign_id = $2 RETURNING id`,
+    [formId, campaignId],
+  );
+
+  if (submissionsResult.rowCount && submissionsResult.rowCount > 0) {
+    return { deleted: true, source: "form_submissions" };
+  }
+
+  return { deleted: false, source: null };
+}
