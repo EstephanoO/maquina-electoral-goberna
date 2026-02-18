@@ -95,7 +95,7 @@ fi
 curl -fsS "http://127.0.0.1/api/config" >/dev/null
 curl -fsS "http://127.0.0.1/api/agents/health" >/dev/null
 
-# ── Auth setup: register + login to get a JWT for authenticated endpoints ──
+# ── Auth setup: register + activate via DB + create campaign + login ──
 CI_EMAIL="ci-smoke-$(date +%s)@test.goberna.pe"
 CI_PASS="CiSmoke1234!"
 
@@ -104,6 +104,20 @@ register_response="$(curl -s -X POST "http://127.0.0.1/api/auth/register" \
   -H "Content-Type: application/json" \
   -d "{\"email\":\"$CI_EMAIL\",\"password\":\"$CI_PASS\",\"full_name\":\"CI Smoke User\"}")"
 
+# Activate user + promote to admin + create a CI campaign + assign membership directly in DB
+# (Registration without invitation creates user as 'pending' which blocks login)
+echo "[smoke] activating CI user and creating test campaign via DB..."
+docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" exec -T postgres psql -U appuser -d appdb -c "
+  UPDATE users SET status = 'active', role = 'admin' WHERE email = lower('$CI_EMAIL');
+  INSERT INTO campaigns (id, name, slug, status) VALUES
+    ('00000000-0000-0000-0000-000000000001', 'CI Test Campaign', 'ci-test', 'active')
+    ON CONFLICT (slug) DO NOTHING;
+  INSERT INTO user_campaigns (user_id, campaign_id, role, status)
+    SELECT u.id, '00000000-0000-0000-0000-000000000001', 'admin', 'active'
+    FROM users u WHERE u.email = lower('$CI_EMAIL')
+    ON CONFLICT (user_id, campaign_id) DO NOTHING;
+" 2>/dev/null || true
+
 echo "[smoke] logging in CI user..."
 login_response="$(curl -s -X POST "http://127.0.0.1/api/auth/login" \
   -H "Content-Type: application/json" \
@@ -111,6 +125,10 @@ login_response="$(curl -s -X POST "http://127.0.0.1/api/auth/login" \
 
 CI_TOKEN="$(echo "$login_response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)"
 CI_CAMPAIGN="$(echo "$login_response" | python3 -c "import sys,json; cs=json.load(sys.stdin).get('campaigns',[]); print(cs[0]['id'] if cs else '')" 2>/dev/null || true)"
+
+if [ -z "$CI_TOKEN" ]; then
+  echo "[smoke] WARNING: login failed, response: $login_response"
+fi
 
 # Forms test: if user has a campaign, test with auth; otherwise test form-submissions directly
 if [ -n "$CI_TOKEN" ] && [ -n "$CI_CAMPAIGN" ]; then
