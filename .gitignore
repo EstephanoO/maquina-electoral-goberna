@@ -77,6 +77,12 @@ yarn-error.log*
 *.ipa
 *.apk
 
+# ── Large GeoJSON (data already in PostGIS) ────────────────────────
+geojsons/
+apps/web/public/geo/departamentos*.geojson
+apps/web/public/geo/provincias*.geojson
+apps/web/public/geo/distritos*.geojson
+
 # ── Misc ────────────────────────────────────────────────────────────
 *.bak
 *.tmp
