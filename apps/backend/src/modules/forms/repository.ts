@@ -67,7 +67,8 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
       x: form.x,
       y: form.y,
       zona: form.zona,
-      candidate: form.candidate,
+      // Use candidato_preferido as fallback for candidate (legacy field)
+      candidate: form.candidate ?? form.candidato_preferido ?? "",
       encuestador: form.encuestador,
       encuestador_id: form.encuestador_id,
       candidato_preferido: form.candidato_preferido,
