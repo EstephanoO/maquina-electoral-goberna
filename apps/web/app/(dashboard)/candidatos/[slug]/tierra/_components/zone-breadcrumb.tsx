@@ -48,6 +48,20 @@ export function ZoneBreadcrumb({ state, onNavigate, primaryColor }: Props) {
 
   return (
     <div style={S.root}>
+      {/* Back button */}
+      <button
+        type="button"
+        onClick={() => onNavigate((state.level - 1) as DrillLevel)}
+        style={S.backBtn}
+        title="Volver al nivel anterior"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M19 12H5M12 19l-7-7 7-7" />
+        </svg>
+      </button>
+      
+      <span style={S.divider} />
+      
       {crumbs.map((crumb, i) => {
         const isLast = i === crumbs.length - 1;
         return (
@@ -63,6 +77,9 @@ export function ZoneBreadcrumb({ state, onNavigate, primaryColor }: Props) {
           </span>
         );
       })}
+      
+      {/* Hint */}
+      <span style={S.hint}>Click en zona para explorar</span>
     </div>
   );
 }
@@ -77,11 +94,31 @@ const S: Record<string, React.CSSProperties> = {
     padding: "6px 12px",
     display: "inline-flex",
     alignItems: "center",
-    gap: 2,
+    gap: 4,
     border: "1px solid #e2e8f0",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
     fontSize: 12,
     fontWeight: 500,
+  },
+  backBtn: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    border: "none",
+    background: "#f1f5f9",
+    color: "#475569",
+    cursor: "pointer",
+    transition: "background 0.15s, color 0.15s",
+  },
+  divider: {
+    width: 1,
+    height: 16,
+    backgroundColor: "#e2e8f0",
+    marginLeft: 4,
+    marginRight: 4,
   },
   crumb: {
     color: "#475569",
@@ -102,5 +139,12 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: 14,
     fontWeight: 400,
     margin: "0 2px",
+  },
+  hint: {
+    fontSize: 10,
+    color: "#94a3b8",
+    marginLeft: 12,
+    fontWeight: 400,
+    fontStyle: "italic",
   },
 };

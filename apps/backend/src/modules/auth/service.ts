@@ -53,6 +53,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      region: user.region,
       campaign_ids: campaignIds,
       campaign_perms: this.buildCampaignPerms(campaigns),
     });
@@ -119,6 +120,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      region: user.region,
       campaign_ids: campaignIds,
       campaign_perms: this.buildCampaignPerms(campaigns),
     });

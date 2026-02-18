@@ -3,7 +3,7 @@
  * API operations for form submissions.
  */
 
-import { api } from "./api";
+import { api, apiRequest } from "./api";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -63,5 +63,25 @@ export async function listForms(
 export async function getRecentForms(campaignId: string, limit = 20) {
   return api.get<FormsRecentResponse>(`/api/forms/recent?limit=${limit}`, {
     headers: { "x-campaign-id": campaignId },
+  });
+}
+
+/**
+ * Delete a single form by ID (admin only).
+ */
+export async function deleteForm(formId: string, campaignId: string) {
+  return api.delete<{ deleted: boolean; source: string }>(`/api/forms/${formId}`, {
+    headers: { "x-campaign-id": campaignId },
+  });
+}
+
+/**
+ * Delete multiple forms by IDs (admin only).
+ */
+export async function deleteFormsBatch(ids: string[], campaignId: string) {
+  return apiRequest<{ deleted: number; total: number }>("/api/forms/batch", {
+    method: "DELETE",
+    headers: { "x-campaign-id": campaignId, "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
   });
 }

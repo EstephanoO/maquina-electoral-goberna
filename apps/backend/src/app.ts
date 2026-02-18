@@ -24,6 +24,7 @@ import { buildZonesRoutes } from "./modules/zones/routes";
 import { buildOrgHierarchyRoutes } from "./modules/org-hierarchy/routes";
 import { buildInvitationsRoutes } from "./modules/invitations/routes";
 import { buildFormSubmissionsRoutes } from "./modules/form-submissions/routes";
+import { buildAnalyticsRoutes } from "./modules/analytics/routes";
 
 export function buildApp(env: AppEnv) {
   const app = Fastify({
@@ -127,6 +128,7 @@ export function buildApp(env: AppEnv) {
   app.register(buildOrgHierarchyRoutes(env));
   app.register(buildInvitationsRoutes(env));
   app.register(buildFormSubmissionsRoutes(env));
+  app.register(buildAnalyticsRoutes(env));
 
   app.get("/api/metrics", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, async (_request, reply) => {
     reply.header("Cache-Control", "no-store");

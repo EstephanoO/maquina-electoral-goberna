@@ -13,7 +13,9 @@ export const registerSchema = z.object({
   email: z.string().email("email invalido").transform((e) => e.toLowerCase().trim()),
   password: z.string().min(8, "password debe tener al menos 8 caracteres"),
   full_name: z.string().trim().min(1, "nombre requerido").max(200, "nombre demasiado largo"),
-  campaign_id: z.string().uuid().optional(),
+  phone: z.string().trim().min(9, "telefono requerido").max(20, "telefono demasiado largo"),
+  region: z.string().trim().min(1, "region requerida").max(50, "region invalida"),
+  campaign_id: z.string().uuid("candidato requerido"),
 });
 
 export const changePasswordSchema = z.object({

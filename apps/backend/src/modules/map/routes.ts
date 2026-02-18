@@ -3,6 +3,15 @@ import type { FastifyPluginAsync } from "fastify";
 import type { AppEnv } from "../../config/env";
 import { fetchWithRetry } from "../../infra/upstream";
 import { parseTileParam } from "./tiles";
+import {
+  getDepartamentos,
+  getProvincias,
+  getDistritos,
+  getPeruBounds,
+  getCachedTile,
+  setCachedTile,
+  reverseGeocode,
+} from "./geo-cache";
 
 const layersContract = [
   { id: "departamentos", sourceLayer: "departamentos", minZoom: 3, maxZoom: 20 },
@@ -33,6 +42,82 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
       return payload;
     });
 
+    /* ========== Geographic Hierarchy Endpoints (Redis cached) ========== */
+
+    // Get all departamentos with bounds - cached 24h
+    app.get("/api/geo/departamentos", async (_request, reply) => {
+      const data = await getDepartamentos();
+      reply.header("Cache-Control", "public, max-age=86400, stale-while-revalidate=3600");
+      reply.header("X-Cache-Time", data.cached_at);
+      return { ok: true, ...data };
+    });
+
+    // Get provincias of a departamento with bounds - cached 24h
+    app.get<{ Params: { coddep: string } }>("/api/geo/departamentos/:coddep/provincias", async (request, reply) => {
+      const { coddep } = request.params;
+      if (!coddep || coddep.length !== 2) {
+        return reply.code(400).send({ ok: false, error: "coddep debe ser de 2 caracteres" });
+      }
+      const data = await getProvincias(coddep);
+      if (data.provincias.length === 0) {
+        return reply.code(404).send({ ok: false, error: "Departamento no encontrado" });
+      }
+      reply.header("Cache-Control", "public, max-age=86400, stale-while-revalidate=3600");
+      reply.header("X-Cache-Time", data.cached_at);
+      return { ok: true, ...data };
+    });
+
+    // Get distritos of a provincia with bounds - cached 24h
+    app.get<{ Params: { codprov_full: string } }>("/api/geo/provincias/:codprov_full/distritos", async (request, reply) => {
+      const { codprov_full } = request.params;
+      if (!codprov_full || codprov_full.length !== 4) {
+        return reply.code(400).send({ ok: false, error: "codprov_full debe ser de 4 caracteres (coddep + codprov)" });
+      }
+      const data = await getDistritos(codprov_full);
+      if (data.distritos.length === 0) {
+        return reply.code(404).send({ ok: false, error: "Provincia no encontrada" });
+      }
+      reply.header("Cache-Control", "public, max-age=86400, stale-while-revalidate=3600");
+      reply.header("X-Cache-Time", data.cached_at);
+      return { ok: true, ...data };
+    });
+
+    // Get Peru bounds - cached 24h
+    app.get("/api/geo/bounds", async (_request, reply) => {
+      const bounds = await getPeruBounds();
+      reply.header("Cache-Control", "public, max-age=86400, stale-while-revalidate=3600");
+      return { ok: true, bounds };
+    });
+
+    // Reverse geocode a point to find distrito/provincia/departamento
+    app.get<{ Querystring: { lng: string; lat: string } }>("/api/geo/reverse", async (request, reply) => {
+      const { lng, lat } = request.query;
+      
+      const lngNum = parseFloat(lng);
+      const latNum = parseFloat(lat);
+      
+      if (isNaN(lngNum) || isNaN(latNum)) {
+        return reply.code(400).send({ ok: false, error: "lng y lat deben ser numeros validos" });
+      }
+      
+      // Validate bounds (Peru approximate bounds)
+      if (lngNum < -82 || lngNum > -68 || latNum < -19 || latNum > 1) {
+        return reply.code(400).send({ ok: false, error: "Coordenadas fuera de Peru" });
+      }
+      
+      const result = await reverseGeocode(lngNum, latNum);
+      
+      if (!result) {
+        return reply.code(404).send({ ok: false, error: "Punto no encontrado en ningun distrito" });
+      }
+      
+      // Short cache - reverse geocode results don't change often but are point-specific
+      reply.header("Cache-Control", "public, max-age=3600");
+      return { ok: true, ...result };
+    });
+
+    /* ========== Tile Proxy with Redis Cache ========== */
+
     app.get("/api/tiles/:z/:x/:y.vector.pbf", async (request, reply) => {
       const params = request.params as { z: string; x: string; y: string };
 
@@ -46,6 +131,17 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
       const yNum = parseTileParam(params.y, 0, maxXY);
       if (xNum === null || yNum === null) {
         return reply.code(400).send({ ok: false, error: "x o y invalido" });
+      }
+
+      // Check Redis cache first (only for lower zoom levels which are more commonly requested)
+      if (zNum <= 12) {
+        const cachedTile = await getCachedTile(zNum, xNum, yNum);
+        if (cachedTile) {
+          reply.header("Content-Type", "application/x-protobuf");
+          reply.header("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=600");
+          reply.header("X-Cache", "HIT");
+          return reply.send(cachedTile);
+        }
       }
 
       const upstreamHeaders: Record<string, string> = {};
@@ -65,6 +161,7 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
       reply.header("Cache-Control", cacheControl);
       if (etag) reply.header("ETag", etag);
       if (lastModified) reply.header("Last-Modified", lastModified);
+      reply.header("X-Cache", "MISS");
 
       if (response.status === 304) {
         return reply.code(304).send();
@@ -75,6 +172,14 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
       }
 
       const body = Buffer.from(await response.arrayBuffer());
+
+      // Cache the tile in Redis (only for lower zoom levels)
+      if (zNum <= 12) {
+        setCachedTile(zNum, xNum, yNum, body).catch(() => {
+          // Ignore cache write errors
+        });
+      }
+
       reply.header("Content-Type", contentType);
       return reply.send(body);
     });

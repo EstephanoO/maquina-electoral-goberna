@@ -20,6 +20,7 @@ export type CampaignConfig = {
   modules?: string[];
   tracking_enabled?: boolean;
   forms_enabled?: boolean;
+  has_ga4_data?: boolean;
 };
 
 export type Campaign = {

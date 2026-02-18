@@ -127,6 +127,6 @@ export const api = {
   put: <T = unknown>(path: string, body?: unknown, opts?: RequestInit & { campaignId?: string }) =>
     apiRequest<T>(path, { ...opts, method: "PUT", body: body ? JSON.stringify(body) : undefined }),
 
-  delete: <T = unknown>(path: string, opts?: RequestInit & { campaignId?: string }) =>
-    apiRequest<T>(path, { ...opts, method: "DELETE" }),
+  delete: <T = unknown>(path: string, opts?: RequestInit & { campaignId?: string; body?: unknown }) =>
+    apiRequest<T>(path, { ...opts, method: "DELETE", body: opts?.body ? JSON.stringify(opts.body) : undefined }),
 };

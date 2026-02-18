@@ -3,6 +3,8 @@ export type UserRow = {
   email: string;
   password_hash: string;
   full_name: string;
+  phone: string | null;
+  region: string | null;
   role: string;
   status: string;
   created_at: Date;
@@ -39,6 +41,7 @@ export type JwtPayload = {
   sub: string;
   email: string;
   role: string;
+  region?: string | null;
   campaign_ids: string[];
   /** Map of campaign_id -> permission flags */
   campaign_perms?: Record<string, CampaignPerms>;

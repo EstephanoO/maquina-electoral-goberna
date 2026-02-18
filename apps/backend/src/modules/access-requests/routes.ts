@@ -20,6 +20,8 @@ function toMobileFormat(row: repo.AccessRequestRow) {
     status: row.status,
     full_name: row.user_full_name ?? "",
     email: row.user_email ?? "",
+    phone: row.user_phone ?? "",
+    region: row.region ?? "",
     created_at: row.requested_at?.toISOString() ?? new Date().toISOString(),
     // Include extra fields that might be useful
     campaign_name: row.campaign_name,
@@ -96,11 +98,11 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── GET /api/access-requests/pending ────────────────────────────
-    // Consultor+ lists pending access requests.
-    // Admins see all, others see only their campaigns.
+    // brigadista_zonal+ lists pending access requests.
+    // Admins see all, consultor/jefe_campana see their campaigns, brigadista_zonal sees their region only.
     app.get(
       "/api/access-requests/pending",
-      { preHandler: [app.authenticate, authorize({ roles: ["consultor"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["brigadista_zonal"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const authed = request as AuthenticatedRequest;
@@ -111,8 +113,11 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
           if (authed.userRole === "admin") {
             // Admins see all pending requests
             requests = await repo.listPending();
+          } else if (authed.userRole === "brigadista_zonal" && authed.userRegion) {
+            // Brigadistas zonales only see requests from their region
+            requests = await repo.listPendingByCampaignsAndRegion(authed.campaignIds, authed.userRegion);
           } else {
-            // Consultors/jefes see only requests for their campaigns
+            // Consultors/jefes see all requests for their campaigns
             requests = await repo.listPendingByCampaigns(authed.campaignIds);
           }
 
@@ -210,6 +215,8 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
             authed.userId,
             parsed.data.note,
             parsed.data.role,
+            parsed.data.perm_tierra,
+            parsed.data.perm_digital,
           );
 
           if (!resolved) {

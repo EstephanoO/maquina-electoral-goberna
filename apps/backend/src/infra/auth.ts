@@ -13,6 +13,7 @@ export type AuthenticatedRequest = FastifyRequest & {
   userId: string;
   userEmail: string;
   userRole: string;
+  userRegion: string | null;
   campaignIds: string[];
   campaignPerms: CampaignPermsMap;
 };
@@ -21,6 +22,7 @@ type JwtPayloadClaims = {
   sub: string;
   email?: string;
   role?: string;
+  region?: string | null;
   campaign_ids?: string[];
   campaign_perms?: CampaignPermsMap;
 };
@@ -50,6 +52,7 @@ export function registerAuthDecorator(app: FastifyInstance, jwtSecret: string) {
       (request as AuthenticatedRequest).userId = claims.sub;
       (request as AuthenticatedRequest).userEmail = claims.email ?? "";
       (request as AuthenticatedRequest).userRole = claims.role ?? "agente_campo";
+      (request as AuthenticatedRequest).userRegion = claims.region ?? null;
       (request as AuthenticatedRequest).campaignIds = claims.campaign_ids ?? [];
       (request as AuthenticatedRequest).campaignPerms = claims.campaign_perms ?? {};
     } catch (error) {

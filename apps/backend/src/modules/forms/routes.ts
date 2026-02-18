@@ -10,7 +10,7 @@ import { consumeDualWeightedRateLimit } from "../../infra/redis";
 import { emitCampaignEvent } from "../campaigns/routes";
 import { formSchema, type FormInput } from "./schema";
 import { FormsWriteBehindQueue } from "./write-behind-queue";
-import { getFormsByCampaign, getRecentForms } from "./repository";
+import { getFormsByCampaign, getRecentForms, deleteFormById } from "./repository";
 
 function parseFormsPayload(body: unknown): FormInput[] {
   const items = Array.isArray(body) ? body : [body];
@@ -239,6 +239,80 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "forms recent failed");
           return reply.code(500).send(errorPayload(requestId, "FORMS_RECENT_ERROR", "error obteniendo formularios recientes"));
+        }
+      },
+    );
+
+    // DELETE /api/forms/:id - Delete a form (admin only)
+    app.delete(
+      "/api/forms/:id",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"], requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+        const { id } = request.params as { id: string };
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        try {
+          const result = await deleteFormById(id, campaignId);
+
+          if (!result.deleted) {
+            return reply.code(404).send(errorPayload(requestId, "FORM_NOT_FOUND", "formulario no encontrado"));
+          }
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            deleted: true,
+            source: result.source,
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "form delete failed");
+          return reply.code(500).send(errorPayload(requestId, "FORM_DELETE_ERROR", "error eliminando formulario"));
+        }
+      },
+    );
+
+    // DELETE /api/forms/batch - Delete multiple forms (admin only)
+    app.delete(
+      "/api/forms/batch",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"], requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+        const { ids } = request.body as { ids: string[] };
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        if (!Array.isArray(ids) || ids.length === 0) {
+          return reply.code(400).send(errorPayload(requestId, "INVALID_PAYLOAD", "ids array requerido"));
+        }
+
+        if (ids.length > 100) {
+          return reply.code(400).send(errorPayload(requestId, "PAYLOAD_TOO_LARGE", "maximo 100 ids por request"));
+        }
+
+        try {
+          let deleted = 0;
+          for (const id of ids) {
+            const result = await deleteFormById(id, campaignId);
+            if (result.deleted) deleted++;
+          }
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            deleted,
+            total: ids.length,
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "forms batch delete failed");
+          return reply.code(500).send(errorPayload(requestId, "FORMS_DELETE_ERROR", "error eliminando formularios"));
         }
       },
     );

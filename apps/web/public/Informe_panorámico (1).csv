@@ -1,0 +1,182 @@
+# ----------------------------------------
+# Informe panorámico
+# Cuenta: Cesar Vasquez
+# Propiedad: Web Cesar Vasquez
+# ----------------------------------------
+#  
+# Fecha de inicio: 20260121
+# Fecha de finalización: 20260217
+Usuarios activos,Usuarios nuevos,Tiempo de interacción medio por usuario activo,Número de eventos
+2675,2665,3.000747663551402,8985
+
+#  
+# Fecha de inicio: 20260121
+# Fecha de finalización: 20260217
+Título de página y clase de pantalla,Vistas,Usuarios activos,Número de eventos,Porcentaje de rebote
+Senador Nacional - Cesar Vasquez 2026,1450,1311,4248,0.9992721979621543
+Senador Nacional - Cesar Vasquez,1442,1313,4243,0.9992548435171386
+Brigadistas - Voluntariado - Cesar Vasquez,46,41,172,0.9574468085106383
+Reactivar obras paralizadas en salud: ¿Cómo logré que vuelvan a servir?,40,30,116,1
+Reactivar obras paralizadas en salud: lo que hice para que vuelvan a servir,27,5,63,1
+Archivo Blog - Cesar Vasquez,22,4,49,1
+Modelo Fast Track: Cómo aceleré hospitales de alta complejidad con cooperación G2G,13,2,29,1
+Hospitales centenarios: cómo impulsé su modernización sin perder la historia,10,2,26,0.5
+Obras por Impuestos en salud: cómo aceleré hospitales sin esperar años,9,2,18,1
+Hospitales centenarios: Cómo impulsé su modernización sin perder la historia,3,1,7,1
+Reconstrucción con Cambios en salud: Cómo devolvimos atención donde el desastre la rompió,2,3,5,1
+Encabezado - Cesar Vasquez,1,1,2,1
+Entrada Prueba 1 - Cesar Vasquez,1,1,2,1
+Entrada de prueba 2 - Cesar Vasquez,1,1,2,1
+Tarjeta blog - Cesar Vasquez,1,1,3,1
+
+#  
+# Fecha de inicio: 20260121
+# Fecha de finalización: 20260217
+Primera fuente/medio del usuario,Usuarios activos
+fb / paid,2475
+(direct) / (none),127
+ig / paid,33
+m.facebook.com / referral,11
+(data not available),5
+l.facebook.com / referral,4
+google / organic,3
+facebook.com / referral,2
+
+#  
+# Fecha de inicio: 20260121
+# Fecha de finalización: 20260217
+Fuente/medio de la sesión,Sesiones
+fb / paid,2546
+(direct) / (none),157
+ig / paid,33
+m.facebook.com / referral,12
+l.facebook.com / referral,10
+(data not available),5
+google / organic,5
+facebook.com / referral,2
+
+#  
+# Fecha de inicio: 20260121
+# Fecha de finalización: 20260217
+Día N,new,returning
+0000,0,0
+0001,0,0
+0002,0,0
+0003,0,0
+0004,0,0
+0005,0,0
+0006,0,0
+0007,0,0
+0008,0,0
+0009,0,0
+0010,0,0
+0011,0,0
+0012,0,0
+0013,0,0
+0014,0,0
+0015,0,0
+0016,0,0
+0017,0,0
+0018,0,0
+0019,0,0
+0020,0,0
+0021,0,0
+0022,0,0
+0023,0,0
+0024,0,0
+0025,0,0
+0026,9,1
+0027,2652,0
+
+# Datos sobre la actividad en sus plataformas
+# Fecha de inicio: 20260121
+# Fecha de finalización: 20260217
+Plataforma,Eventos clave
+
+
+#  
+# Fecha de inicio: 20260121
+# Fecha de finalización: 20260217
+Ciudad,Usuarios activos
+Trujillo,1134
+Cajamarca,217
+Chiclayo,60
+Cusco,48
+Arequipa,41
+Piura,39
+La Esperanza,25
+El Porvenir,24
+Chimbote,21
+Iquitos,19
+Ica,18
+Cerro Colorado,17
+Victor Larco Herrera,16
+Jaen,13
+Huaraz,11
+Tacna,7
+Lambayeque,6
+Tarapoto,6
+Jose Luis Bustamante,5
+Paucarpata,5
+Pucallpa,5
+Sullana,5
+Huancayo,4
+Ilo,4
+North Carolina's 3rd Congressional District 2022 redistricting,4
+Pisco,4
+Ayacucho,3
+Cayma,3
+Chepen,3
+Fort Worth,3
+Lulea,3
+Miraflores,3
+Parcona District,3
+Puerto Maldonado,3
+Talara,3
+39279,2
+Aspen,2
+Barranca,2
+Council Bluffs,2
+Huacho,2
+Jose Leonardo Ortiz,2
+Juliaca,2
+La Victoria,2
+Lurin,2
+Mariano Melgar,2
+Puno,2
+34698,1
+40384,1
+77066,1
+Alto Selva Alegre,1
+Cerro de Pasco,1
+Collegno,1
+Duluth,1
+Frankfurt am Main,1
+Gwalior,1
+Huaral,1
+Huaura,1
+Jacobo Hunter,1
+L'Hospitalet de Llobregat,1
+Miami,1
+Mollendo,1
+Moquegua,1
+Paita,1
+Paris,1
+Prineville,1
+Sachaca,1
+Salaverry,1
+San Ignacio,1
+San Martin de Pangoa,1
+San Pedro de Lloc,1
+Siberut Tengah,1
+Socabaya,1
+Springfield,1
+Srumbung,1
+Turin,1
+Yanahuara,1
+
+#  
+# Fecha de inicio: 20260121
+# Fecha de finalización: 20260217
+Nombre de la audiencia,Usuarios activos
+All Users,2675

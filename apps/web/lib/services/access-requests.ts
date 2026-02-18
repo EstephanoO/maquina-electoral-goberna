@@ -13,6 +13,8 @@ export type ResolveAccessRequestInput = {
   note?: string;
   perm_tierra?: boolean;
   perm_digital?: boolean;
+  /** Role to assign: "agente_campo" (default), "supervisor" (alias for jefe_campana), "brigadista_zonal" */
+  role?: "agente_campo" | "supervisor" | "brigadista_zonal";
 };
 
 // ── API Responses ──────────────────────────────────────────────────

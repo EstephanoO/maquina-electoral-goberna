@@ -126,3 +126,48 @@ body {
     opacity: 0.5;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   MapLibre Popup Overrides — Clean tooltips for tierra map
+   ═══════════════════════════════════════════════════════════════ */
+
+.maplibregl-popup {
+  z-index: 100;
+}
+
+.maplibregl-popup-content {
+  padding: 0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+  background: #ffffff !important;
+  min-width: auto !important;
+  max-width: 240px !important;
+  font-family: var(--font-montserrat), system-ui, sans-serif !important;
+}
+
+.maplibregl-popup-tip {
+  border-top-color: #ffffff !important;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.06));
+}
+
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: #ffffff !important;
+}
+
+.maplibregl-popup-anchor-top .maplibregl-popup-tip {
+  border-bottom-color: #ffffff !important;
+}
+
+.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: #ffffff !important;
+}
+
+.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: #ffffff !important;
+}
+
+/* Remove default close button styles (we use closeButton={false}) */
+.maplibregl-popup-close-button {
+  display: none !important;
+}

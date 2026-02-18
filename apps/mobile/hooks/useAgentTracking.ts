@@ -1,22 +1,20 @@
 /**
  * Hook that manages GPS tracking with offline queue support.
- * 
+ *
  * Features:
  * - Auto-starts foreground tracking on mount
- * - Can upgrade to background tracking if permissions granted
  * - Shows sync status and queue stats
  * - Stops tracking on unmount
+ * - Optimized to avoid unnecessary re-renders
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 
 import { useAgent } from '@/lib/app-context';
 import {
   startForegroundTracking,
-  startBackgroundTracking,
   stopTracking,
   getTrackingState,
-  isBackgroundTrackingAvailable,
   type TrackingState,
 } from '@/lib/tracking';
 import {
@@ -32,107 +30,101 @@ export interface TrackingHookState {
   syncStatus: SyncStatus;
   pendingLocations: number;
   pendingForms: number;
-  canUseBackground: boolean;
 }
 
 export function useAgentTracking() {
   const agent = useAgent();
   const mountedRef = useRef(true);
-  
-  const [state, setState] = useState<TrackingHookState>({
-    trackingState: getTrackingState(),
-    trackingError: null,
-    syncStatus: getSyncStatus(),
-    pendingLocations: 0,
-    pendingForms: 0,
-    canUseBackground: false,
-  });
+  const agentIdRef = useRef(agent.id);
 
-  // Update stats periodically
+  // Keep agent ID ref updated without causing re-renders
+  agentIdRef.current = agent.id;
+
+  const [trackingState, setTrackingState] = useState<TrackingState>(getTrackingState);
+  const [trackingError, setTrackingError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus);
+  const [pendingLocations, setPendingLocations] = useState(0);
+  const [pendingForms, setPendingForms] = useState(0);
+
+  // Update stats - stable reference using ref
   const updateStats = useCallback(async () => {
     if (!mountedRef.current) return;
-    
+
     try {
       const stats = await getQueueStats();
-      const canBackground = await isBackgroundTrackingAvailable();
-      
       if (!mountedRef.current) return;
-      
-      setState((prev) => ({
-        ...prev,
-        syncStatus: getSyncStatus(),
-        pendingLocations: stats.locations.pending + stats.locations.failed,
-        pendingForms: stats.forms.pending + stats.forms.failed,
-        canUseBackground: canBackground,
-      }));
+
+      const newSyncStatus = getSyncStatus();
+      const newPendingLoc = stats.locations.pending + stats.locations.failed;
+      const newPendingForms = stats.forms.pending + stats.forms.failed;
+
+      // Only update state if values changed
+      setSyncStatus((prev) => (prev !== newSyncStatus ? newSyncStatus : prev));
+      setPendingLocations((prev) => (prev !== newPendingLoc ? newPendingLoc : prev));
+      setPendingForms((prev) => (prev !== newPendingForms ? newPendingForms : prev));
     } catch {
       // Ignore errors in stats update
     }
   }, []);
 
-  // Start tracking
+  // Start tracking - runs once on mount
   useEffect(() => {
     mountedRef.current = true;
+    let statsInterval: ReturnType<typeof setInterval> | null = null;
 
-    (async () => {
+    const init = async () => {
       try {
-        // Start foreground tracking by default
-        const result = await startForegroundTracking(agent.id);
-        
+        const result = await startForegroundTracking(agentIdRef.current);
         if (!mountedRef.current) return;
 
-        setState((prev) => ({
-          ...prev,
-          trackingState: getTrackingState(),
-          trackingError: result.success ? null : (result.error ?? 'Error desconocido'),
-        }));
+        const newState = getTrackingState();
+        setTrackingState((prev) => (prev !== newState ? newState : prev));
+        setTrackingError(result.success ? null : (result.error ?? 'Error desconocido'));
       } catch (err) {
-        // Gracefully handle tracking errors (e.g., keep awake not supported)
         console.warn('[useAgentTracking] Failed to start tracking:', err);
         if (!mountedRef.current) return;
-        setState((prev) => ({
-          ...prev,
-          trackingState: 'error',
-          trackingError: 'GPS no disponible',
-        }));
+        setTrackingState('error');
+        setTrackingError('GPS no disponible');
       }
 
       // Initial stats update
-      try {
-        await updateStats();
-      } catch {
-        // Ignore stats errors
-      }
-    })();
+      await updateStats();
 
-    // Update stats every 10 seconds
-    const statsInterval = setInterval(() => {
-      updateStats().catch(() => {});
-    }, 10_000);
+      // Update stats every 10 seconds
+      statsInterval = setInterval(() => {
+        updateStats();
+      }, 10_000);
+    };
+
+    init();
 
     return () => {
       mountedRef.current = false;
-      clearInterval(statsInterval);
+      if (statsInterval) clearInterval(statsInterval);
       stopTracking().catch(() => {});
     };
-  }, [agent.id, updateStats]);
+  }, []); // Empty deps - only run on mount/unmount
 
-  // Enable background tracking
-  const enableBackgroundTracking = useCallback(async (): Promise<{
-    success: boolean;
-    error?: string;
-  }> => {
-    const result = await startBackgroundTracking(agent.id);
-    
-    if (mountedRef.current) {
-      setState((prev) => ({
-        ...prev,
-        trackingState: getTrackingState(),
-        trackingError: result.success ? null : (result.error ?? 'Error desconocido'),
-      }));
-    }
-    
-    return result;
+  // Re-init tracking if agent ID changes (rare - campaign switch)
+  useEffect(() => {
+    if (!mountedRef.current) return;
+
+    // Skip first render
+    const currentState = getTrackingState();
+    if (currentState === 'stopped' || currentState === 'error') return;
+
+    // Agent changed while tracking - restart with new ID
+    const reinit = async () => {
+      await stopTracking();
+      const result = await startForegroundTracking(agent.id);
+      if (!mountedRef.current) return;
+
+      const newState = getTrackingState();
+      setTrackingState((prev) => (prev !== newState ? newState : prev));
+      setTrackingError(result.success ? null : (result.error ?? 'Error desconocido'));
+    };
+
+    reinit();
   }, [agent.id]);
 
   // Force sync now
@@ -141,9 +133,22 @@ export function useAgentTracking() {
     await updateStats();
   }, [updateStats]);
 
+  // Memoize return object to prevent unnecessary re-renders in consumers
+  const state = useMemo(
+    () => ({
+      trackingState,
+      trackingError,
+      syncStatus,
+      pendingLocations,
+      pendingForms,
+      canUseBackground: false, // Background disabled
+    }),
+    [trackingState, trackingError, syncStatus, pendingLocations, pendingForms]
+  );
+
   return {
     ...state,
-    enableBackgroundTracking,
+    enableBackgroundTracking: useCallback(async () => ({ success: false, error: 'Background deshabilitado' }), []),
     syncNow,
     refreshStats: updateStats,
   };

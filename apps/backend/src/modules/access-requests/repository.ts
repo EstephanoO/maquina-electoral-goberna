@@ -11,11 +11,13 @@ export type AccessRequestRow = {
   resolved_at: Date | null;
   resolved_by: string | null;
   note: string | null;
+  region?: string | null;
   perm_tierra?: boolean;
   perm_digital?: boolean;
   // Joined fields
   user_email?: string;
   user_full_name?: string;
+  user_phone?: string;
   campaign_name?: string;
   campaign_cargo?: string;
   campaign_numero?: number;
@@ -27,9 +29,10 @@ const SELECT_WITH_JOINS = `
   SELECT
     ar.id, ar.user_id, ar.campaign_id, ar.status,
     ar.requested_at, ar.resolved_at, ar.resolved_by, ar.note,
-    ar.perm_tierra, ar.perm_digital,
+    ar.region, ar.perm_tierra, ar.perm_digital,
     u.email     AS user_email,
     u.full_name AS user_full_name,
+    u.phone     AS user_phone,
     c.name      AS campaign_name,
     c.cargo     AS campaign_cargo,
     c.numero    AS campaign_numero
@@ -83,6 +86,27 @@ export async function listPendingByCampaigns(campaignIds: string[]): Promise<Acc
   return rows;
 }
 
+/**
+ * List pending access requests for specific campaigns AND region.
+ * Used by brigadistas zonales who only see requests from their region.
+ */
+export async function listPendingByCampaignsAndRegion(
+  campaignIds: string[],
+  region: string,
+): Promise<AccessRequestRow[]> {
+  if (campaignIds.length === 0) return [];
+  
+  const { rows } = await pool.query<AccessRequestRow>(
+    `${SELECT_WITH_JOINS}
+     WHERE ar.status = 'pending' 
+       AND ar.campaign_id = ANY($1)
+       AND ar.region = $2
+     ORDER BY ar.requested_at ASC`,
+    [campaignIds, region],
+  );
+  return rows;
+}
+
 export async function listAll(): Promise<AccessRequestRow[]> {
   const { rows } = await pool.query<AccessRequestRow>(
     `${SELECT_WITH_JOINS}
@@ -125,14 +149,16 @@ export async function resolve(
   resolvedBy: string,
   note?: string,
   role = "agente_campo",
+  permTierra = true,
+  permDigital = true,
 ): Promise<AccessRequestRow | null> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // 1) Get the access request with permissions
+    // 1) Get the access request
     const { rows: selectRows } = await client.query<AccessRequestRow>(
-      `SELECT id, user_id, campaign_id, status, perm_tierra, perm_digital
+      `SELECT id, user_id, campaign_id, status
        FROM access_requests
        WHERE id = $1 AND status = 'pending'`,
       [id],
@@ -144,13 +170,13 @@ export async function resolve(
       return null;
     }
 
-    // 2) Update the access request
+    // 2) Update the access request with the resolved permissions
     const { rows } = await client.query<AccessRequestRow>(
       `UPDATE access_requests
-       SET status = $1, resolved_at = now(), resolved_by = $2, note = $3
-       WHERE id = $4
+       SET status = $1, resolved_at = now(), resolved_by = $2, note = $3, perm_tierra = $4, perm_digital = $5
+       WHERE id = $6
        RETURNING id, user_id, campaign_id, status, requested_at, resolved_at, resolved_by, note, perm_tierra, perm_digital`,
-      [status, resolvedBy, note ?? null, id],
+      [status, resolvedBy, note ?? null, permTierra, permDigital, id],
     );
 
     const row = rows[0];
@@ -159,14 +185,14 @@ export async function resolve(
       return null;
     }
 
-    // 3) If approved, grant campaign access with requested permissions and role
+    // 3) If approved, grant campaign access with admin-specified permissions and role
     if (status === "approved") {
       await client.query(
         `INSERT INTO user_campaigns (user_id, campaign_id, role, status, perm_tierra, perm_digital)
          VALUES ($1, $2, $3, 'active', $4, $5)
          ON CONFLICT (user_id, campaign_id)
          DO UPDATE SET role = $3, status = 'active', perm_tierra = $4, perm_digital = $5, assigned_at = now()`,
-        [row.user_id, row.campaign_id, role, request.perm_tierra, request.perm_digital],
+        [row.user_id, row.campaign_id, role, permTierra, permDigital],
       );
     }
 

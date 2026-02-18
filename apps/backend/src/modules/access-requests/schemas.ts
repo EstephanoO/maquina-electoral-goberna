@@ -19,6 +19,10 @@ export const resolveAccessRequestSchema = z.object({
   role: z.string().optional().default("agente_campo").transform((v) => ROLE_ALIASES[v] ?? v).pipe(
     z.enum(["consultor", "jefe_campana", "brigadista_zonal", "agente_campo"]),
   ),
+  /** Permission for Tierra module (field operations) */
+  perm_tierra: z.boolean().optional().default(true),
+  /** Permission for Digital module (web/social) */
+  perm_digital: z.boolean().optional().default(true),
 });
 
 export type CreateAccessRequestInput = z.infer<typeof createAccessRequestSchema>;

@@ -65,7 +65,7 @@ SELECT id, name, slug FROM campaigns;
 
 | Candidato           | campaign_id                            | slug                |
 | ------------------- | -------------------------------------- | ------------------- |
-| Cesar Vasquez       | `eece49d5-a315-4764-83f9-681cabae5c51` | cesar-vasques       |
+| Cesar Vasquez       | `eece49d5-a315-4764-83f9-681cabae5c51` | cesar-vasquez       |
 | Giovanna Castagnino | `27b0f27f-23fc-4382-b9f2-53db1bb83a5d` | giovanna-castagnino |
 | Guillermo Aliaga    | `c72e7b14-a796-4853-86f8-e97de2c3cc24` | guillermo-aliaga    |
 | Rocio Porras        | `00f81464-350d-4a01-9d63-98461613a894` | rocio-porras        |
@@ -127,7 +127,7 @@ Cada vista tiene un campo `is_priority` (true/false) y `priority` (1-5) que pued
 #### 5. Verificar en web
 
 1. Esperar ~5 segundos (cache de tiles)
-2. Ir a: `https://maquina-electoral-goberna-web.vercel.app/candidatos/cesar-vasques/tierra`
+2. Ir a: `https://maquina-electoral-goberna-web.vercel.app/candidatos/cesar-vasquez/tierra`
 3. El departamento aparece en rojo en el mapa
 
 #### 6. Desmarcar un departamento

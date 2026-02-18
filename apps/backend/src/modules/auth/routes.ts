@@ -103,6 +103,7 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
     );
 
     // ── POST /api/auth/register ────────────────────────────────────────
+    // Creates user and automatically creates access request for the campaign
     app.post("/api/auth/register", {
       config: {
         rateLimit: {
@@ -126,8 +127,38 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
           return reply.code(409).send(errorPayload(requestId, "AUTH_EMAIL_EXISTS", "email ya registrado"));
         }
 
+        // Verify campaign exists
+        const { rows: campaignRows } = await pool.query(
+          "SELECT id FROM campaigns WHERE id = $1",
+          [parsed.data.campaign_id],
+        );
+        if (campaignRows.length === 0) {
+          return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "candidato no encontrado"));
+        }
+
         const passwordHash = await service.hashPassword(parsed.data.password);
-        const user = await repo.createUser(parsed.data.email, passwordHash, parsed.data.full_name);
+        const user = await repo.createUser(
+          parsed.data.email,
+          passwordHash,
+          parsed.data.full_name,
+          parsed.data.phone,
+          parsed.data.region,
+        );
+
+        // Create access request automatically with region
+        await pool.query(
+          `INSERT INTO access_requests (user_id, campaign_id, region, perm_tierra, perm_digital)
+           VALUES ($1, $2, $3, true, true)
+           ON CONFLICT (user_id, campaign_id) WHERE status = 'pending' DO NOTHING`,
+          [user.id, parsed.data.campaign_id, parsed.data.region],
+        );
+
+        app.log.info({
+          user_id: user.id,
+          campaign_id: parsed.data.campaign_id,
+          region: parsed.data.region,
+          request_id: requestId,
+        }, "user registered with access request");
 
         return reply.code(201).send({
           ok: true,
@@ -136,6 +167,8 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
             id: user.id,
             email: user.email,
             full_name: user.full_name,
+            phone: user.phone,
+            region: user.region,
             role: user.role,
             status: user.status,
           },

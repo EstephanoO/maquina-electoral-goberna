@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { getCampaignStats, getRecentForms, api, type FormRecord } from "@/lib/services";
 import type { CampaignStats } from "@/lib/types";
 import { formCoordsToLatLng } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 
 import {
   TierraMap,
@@ -16,6 +17,7 @@ import {
   DataPanel,
   KpiPanel,
   ZoneBreadcrumb,
+  ActivityCharts,
   INITIAL_DRILL,
   type TierraMapHandle,
   type EnrichedAgent,
@@ -95,6 +97,7 @@ export default function TierraPage() {
   const params = useParams();
   const slug = params.slug as string;
   const mapHandleRef = useRef<TierraMapHandle | null>(null);
+  const { user, campaigns } = useAuth();
 
   // Data
   const [stats, setStats] = useState<CampaignStats | null>(null);
@@ -109,6 +112,7 @@ export default function TierraPage() {
   const [showDatos, setShowDatos] = useState(true);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [showTable, setShowTable] = useState(false);
+  const [showMetrics, setShowMetrics] = useState(false);
   const [logCollapsed, setLogCollapsed] = useState(false);
   const [logClearedAt, setLogClearedAt] = useState<number>(0);
 
@@ -305,6 +309,10 @@ export default function TierraPage() {
 
   const { campaign } = stats;
 
+  // Check if user is admin for this campaign
+  const campaignMembership = campaigns.find((c) => c.id === campaign.id || c.slug === slug);
+  const isAdmin = user?.role === "admin" || campaignMembership?.role === "admin" || campaignMembership?.role === "jefe_campana";
+
   return (
     <div style={FULL_SCREEN}>
       {/* ── Header ── */}
@@ -334,11 +342,32 @@ export default function TierraPage() {
         />
 
         {/* Zone breadcrumb — top center */}
-        {drillState.level > 0 && (
-          <div style={{ position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 10 }}>
+        <div style={{ position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 10 }}>
+          {drillState.level > 0 ? (
             <ZoneBreadcrumb state={drillState} onNavigate={handleBreadcrumbNavigate} primaryColor={campaign.color_primario} />
-          </div>
-        )}
+          ) : (
+            <div style={{
+              backgroundColor: "rgba(255,255,255,0.9)",
+              backdropFilter: "blur(8px)",
+              borderRadius: 8,
+              padding: "8px 14px",
+              border: "1px solid #e2e8f0",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+              fontSize: 12,
+              color: "#64748b",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                <polyline points="2 17 12 22 22 17" />
+                <polyline points="2 12 12 17 22 12" />
+              </svg>
+              <span>Click en una zona para explorar</span>
+            </div>
+          )}
+        </div>
 
         {/* Controls — top left */}
         <div style={{ position: "absolute", top: 16, left: 16, zIndex: 10 }}>
@@ -370,8 +399,64 @@ export default function TierraPage() {
         </div>
 
         {/* Legend — bottom right (shift left when data panel is open) */}
-        <div style={{ position: "absolute", bottom: 24, right: showTable ? 396 : 16, zIndex: 10, transition: "right 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
+        <div style={{ position: "absolute", bottom: showMetrics ? 320 : 24, right: showTable ? 396 : 16, zIndex: 10, transition: "all 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
           <MapLegend showTracking={showTracking} showDatos={showDatos} showHeatmap={showHeatmap} />
+        </div>
+
+        {/* Metrics toggle button — bottom left */}
+        <div style={{ position: "absolute", bottom: showMetrics ? 320 : 24, left: 16, zIndex: 10, transition: "bottom 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
+          <button
+            type="button"
+            onClick={() => setShowMetrics(!showMetrics)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "10px 16px",
+              backgroundColor: showMetrics ? campaign.color_primario : "#ffffff",
+              color: showMetrics ? "#ffffff" : "#334155",
+              border: "1px solid #e2e8f0",
+              borderRadius: 8,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+              transition: "all 0.2s ease",
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 3v18h18" />
+              <path d="M18 17V9" />
+              <path d="M13 17V5" />
+              <path d="M8 17v-3" />
+            </svg>
+            {showMetrics ? "Ocultar métricas" : "Ver métricas"}
+          </button>
+        </div>
+
+        {/* Metrics panel — bottom slide-up */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: showTable ? 380 : 0,
+            height: showMetrics ? 300 : 0,
+            backgroundColor: "#ffffff",
+            borderTop: showMetrics ? "1px solid #e2e8f0" : "none",
+            overflow: "hidden",
+            transition: "all 0.3s cubic-bezier(0.4,0,0.2,1)",
+            zIndex: 11,
+          }}
+        >
+          {showMetrics && (
+            <ActivityCharts
+              forms={forms}
+              agents={enrichedAgents}
+              primaryColor={campaign.color_primario}
+              secondaryColor={campaign.color_secundario}
+            />
+          )}
         </div>
 
         {/* Data sidebar — right side */}
@@ -382,6 +467,9 @@ export default function TierraPage() {
           open={showTable}
           onClose={() => setShowTable(false)}
           onFlyTo={(lng, lat) => mapHandleRef.current?.flyToPoint(lng, lat, 17)}
+          campaignId={campaign.id}
+          isAdmin={isAdmin}
+          onFormsDeleted={fetchForms}
         />
       </div>
     </div>

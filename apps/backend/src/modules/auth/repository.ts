@@ -23,12 +23,20 @@ export class AuthRepository {
     return rows[0] ?? null;
   }
 
-  async createUser(email: string, passwordHash: string, fullName: string, role = "agente_campo", status = "active"): Promise<UserRow> {
+  async createUser(
+    email: string,
+    passwordHash: string,
+    fullName: string,
+    phone?: string,
+    region?: string,
+    role = "agente_campo",
+    status = "active",
+  ): Promise<UserRow> {
     const { rows } = await this.pool.query<UserRow>(
-      `INSERT INTO users (email, password_hash, full_name, role, status)
-       VALUES (lower($1), $2, $3, $4, $5)
-       RETURNING id, email, password_hash, full_name, role, status, created_at, updated_at`,
-      [email.trim(), passwordHash, fullName, role, status],
+      `INSERT INTO users (email, password_hash, full_name, phone, region, role, status)
+       VALUES (lower($1), $2, $3, $4, $5, $6, $7)
+       RETURNING id, email, password_hash, full_name, phone, region, role, status, created_at, updated_at`,
+      [email.trim(), passwordHash, fullName, phone ?? null, region ?? null, role, status],
     );
     return rows[0]!;
   }

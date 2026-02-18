@@ -6,6 +6,7 @@ export { TierraHeader } from "./tierra-header";
 export { ActivityLog } from "./activity-log";
 export { KpiPanel } from "./kpi-panel";
 export { ZoneBreadcrumb, INITIAL_DRILL } from "./zone-breadcrumb";
+export { ActivityCharts } from "./activity-charts";
 
 export type { EnrichedAgent, AgentStatus, FormPoint, TierraMapHandle } from "./tierra-map";
 export type { LogEntry } from "./activity-log";
