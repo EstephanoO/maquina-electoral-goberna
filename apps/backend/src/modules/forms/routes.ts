@@ -37,7 +37,7 @@ function resolveFormsLimiterActor(request: FastifyRequest, forms: FormInput[]): 
   }
 
   const firstEncuestadorId = forms[0]?.encuestador_id?.trim() ?? "";
-  if (firstEncuestadorId && forms.every((form) => form.encuestador_id.trim() === firstEncuestadorId)) {
+  if (firstEncuestadorId && forms.every((form) => form.encuestador_id?.trim() === firstEncuestadorId)) {
     return `enc:${firstEncuestadorId}`;
   }
 
@@ -171,13 +171,11 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
 
     app.post(
       "/api/forms",
-      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
       async (request, reply) => enqueueForms(request, reply),
     );
 
     app.post(
       "/api/forms/batch",
-      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
       async (request, reply) => enqueueForms(request, reply),
     );
 
