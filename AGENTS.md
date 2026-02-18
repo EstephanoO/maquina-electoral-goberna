@@ -119,16 +119,48 @@ nexus6.0/
 | `GET /api/auth/me` | Perfil + campanas del usuario |
 | `POST /api/auth/refresh` | Renovar tokens |
 | `POST /api/auth/logout` | Cerrar sesion |
+| `GET /api/campaigns` | Listar campanas del usuario (admin ve todas) |
 | `GET /api/campaigns/:id` | Config de campana |
+| `POST /api/campaigns` | Crear campana (admin) |
+| `PUT /api/campaigns/:id` | Actualizar campana (jefe_campana+) |
+| `GET /api/campaigns/:slug/stats` | Stats del dashboard |
+| `GET /api/campaigns/:id/members` | Listar miembros (jefe_campana+) |
+| `POST /api/campaigns/:id/members` | Agregar miembro (admin) |
+| `DELETE /api/campaigns/:id/members/:userId` | Remover miembro (admin) |
+| `PUT /api/campaigns/:id/members/:userId/role` | Cambiar rol (jefe_campana+) |
 | `GET /api/form-definitions/active` | Formularios activos |
-| `POST /api/forms` | Submit formulario |
-| `POST /api/forms/batch` | Submit batch de formularios |
+| `POST /api/forms` | Submit formulario (legacy write-behind) |
+| `POST /api/forms/batch` | Submit batch (legacy write-behind) |
+| `POST /api/form-submissions` | Submit formulario (nuevo, directo) |
+| `POST /api/form-submissions/batch` | Submit batch (nuevo, directo) |
+| `GET /api/form-submissions` | Listar submissions por campana |
+| `GET /api/form-submissions/recent` | Submissions recientes |
+| `GET /api/form-submissions/meet/:meetId` | Submissions de un meet |
+| `GET /api/form-submissions/stats` | Stats de submissions |
+| `GET /api/meets` | Listar meets de campana |
+| `POST /api/meets` | Crear meet |
+| `PUT /api/meets/:id` | Actualizar meet |
+| `PUT /api/meets/:id/status` | Cambiar estado de meet |
+| `GET /api/zones` | Listar zonas de campana |
+| `POST /api/zones` | Crear zona (brigadista_zonal+) |
+| `PUT /api/zones/:id` | Actualizar zona |
+| `DELETE /api/zones/:id` | Eliminar zona |
+| `GET /api/zones/geojson` | Zonas como GeoJSON |
+| `GET /api/org-hierarchy` | Arbol organizacional |
+| `POST /api/org-hierarchy` | Asignar relacion supervisor |
+| `DELETE /api/org-hierarchy/:id` | Remover relacion |
+| `POST /api/invitations` | Crear invitacion (jefe_campana+) |
+| `GET /api/invitations` | Listar invitaciones |
+| `GET /api/invitations/validate/:code` | Validar codigo (publico, sin auth) |
+| `DELETE /api/invitations/:id` | Revocar invitacion |
+| `GET /api/access-requests` | Listar solicitudes (jefe_campana+) |
+| `POST /api/access-requests/:id/resolve` | Aprobar/rechazar solicitud |
 | `GET /api/metrics` | Metricas operativas (admin) |
 
 ### Endpoints de Tracking (x-agent-token)
 | Endpoint | Descripcion |
 |----------|-------------|
-| `POST /api/agents/location` | Enviar ubicacion |
+| `POST /api/agents/location` | Enviar ubicacion (+ history append) |
 | `GET /api/agents/live` | Posiciones actuales |
 | `GET /api/agents/stream` | SSE de posiciones |
 | `GET /api/agents/health` | Health del tracking |
@@ -149,6 +181,9 @@ AGENT_INGEST_TOKEN=<token-para-tracking>
 PORT=3001
 LOG_LEVEL=info
 TEGOLA_BASE_URL=http://localhost:8080
+RATE_LIMIT_AUTH_PER_MINUTE=10
+REFRESH_TOKEN_CLEANUP_INTERVAL_MS=3600000
+LOCATION_HISTORY_RETENTION_DAYS=7
 ```
 
 ### Web (`apps/web/.env.local`)

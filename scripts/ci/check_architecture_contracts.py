@@ -31,7 +31,7 @@ def check_backend_hexagonal_guardrails() -> None:
 
 
 def check_frontend_screaming_guardrails() -> None:
-    frontend_files = list((ROOT / "nexus-web/app").rglob("*.tsx")) + list((ROOT / "nexus-web/app").rglob("*.ts"))
+    frontend_files = list((ROOT / "apps/web/app").rglob("*.tsx")) + list((ROOT / "apps/web/app").rglob("*.ts"))
     bad: list[str] = []
     for file_path in frontend_files:
         text = read(file_path)

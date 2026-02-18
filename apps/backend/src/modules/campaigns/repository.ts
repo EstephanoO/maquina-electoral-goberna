@@ -26,8 +26,10 @@ export type CampaignRow = {
 };
 
 export type CampaignStats = CampaignRow & {
-  agent_count: number;
-  supervisor_count: number;
+  agente_campo_count: number;
+  brigadista_zonal_count: number;
+  jefe_campana_count: number;
+  consultor_count: number;
   admin_count: number;
 };
 
@@ -67,9 +69,11 @@ export async function listAll(): Promise<CampaignStats[]> {
   const { rows } = await pool.query<CampaignStats>(
     `SELECT
        c.id, c.name, c.slug, c.config, c.status, c.cargo, c.numero, c.partido, c.foto_url, c.created_at, c.updated_at,
-       COUNT(CASE WHEN uc.role = 'agent'      AND uc.status = 'active' THEN 1 END)::int AS agent_count,
-       COUNT(CASE WHEN uc.role = 'supervisor'  AND uc.status = 'active' THEN 1 END)::int AS supervisor_count,
-       COUNT(CASE WHEN uc.role = 'admin'       AND uc.status = 'active' THEN 1 END)::int AS admin_count
+       COUNT(CASE WHEN uc.role = 'agente_campo'     AND uc.status = 'active' THEN 1 END)::int AS agente_campo_count,
+       COUNT(CASE WHEN uc.role = 'brigadista_zonal'  AND uc.status = 'active' THEN 1 END)::int AS brigadista_zonal_count,
+       COUNT(CASE WHEN uc.role = 'jefe_campana'      AND uc.status = 'active' THEN 1 END)::int AS jefe_campana_count,
+       COUNT(CASE WHEN uc.role = 'consultor'         AND uc.status = 'active' THEN 1 END)::int AS consultor_count,
+       COUNT(CASE WHEN uc.role = 'admin'             AND uc.status = 'active' THEN 1 END)::int AS admin_count
      FROM campaigns c
      LEFT JOIN user_campaigns uc ON uc.campaign_id = c.id
      GROUP BY c.id
@@ -189,7 +193,7 @@ export async function getFormsTotals(campaignId: string): Promise<FormsTotals> {
        COUNT(*)::text AS forms_count,
        COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE)::text AS forms_today,
        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::text AS forms_week
-     FROM forms
+     FROM form_submissions
      WHERE campaign_id = $1`,
     [campaignId],
   );
@@ -202,15 +206,19 @@ export async function getFormsTotals(campaignId: string): Promise<FormsTotals> {
 }
 
 export async function getTopAgents(campaignId: string, limit = 10): Promise<TopAgent[]> {
+  // Uses submitted_by for new submissions; falls back to data->>'encuestador_id' for legacy migrated rows
   const { rows } = await pool.query<{ id: string; name: string; forms_count: string; forms_today: string }>(
     `SELECT
-       encuestador_id AS id,
-       encuestador AS name,
+       COALESCE(fs.submitted_by::text, fs.data->>'encuestador_id') AS id,
+       COALESCE(u.full_name, fs.data->>'encuestador', 'Agente') AS name,
        COUNT(*)::text AS forms_count,
-       COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE)::text AS forms_today
-     FROM forms
-     WHERE campaign_id = $1 AND encuestador_id IS NOT NULL
-     GROUP BY encuestador_id, encuestador
+       COUNT(*) FILTER (WHERE fs.created_at >= CURRENT_DATE)::text AS forms_today
+     FROM form_submissions fs
+     LEFT JOIN users u ON u.id = fs.submitted_by
+     WHERE fs.campaign_id = $1
+       AND (fs.submitted_by IS NOT NULL OR fs.data->>'encuestador_id' IS NOT NULL)
+     GROUP BY COALESCE(fs.submitted_by::text, fs.data->>'encuestador_id'),
+              COALESCE(u.full_name, fs.data->>'encuestador', 'Agente')
      ORDER BY COUNT(*) DESC
      LIMIT $2`,
     [campaignId, limit],
@@ -228,18 +236,21 @@ export async function getAgentFormsForPeriod(
   period: "day" | "week",
 ): Promise<AgentFormsData[]> {
   const interval = period === "day" ? "24 hours" : "7 days";
+  // Uses submitted_by for new submissions; falls back to data->>'encuestador_id' for legacy migrated rows
   const { rows } = await pool.query<{ id: string; name: string; count: string }>(
     `SELECT
-       encuestador_id AS id,
-       encuestador AS name,
+       COALESCE(fs.submitted_by::text, fs.data->>'encuestador_id') AS id,
+       COALESCE(u.full_name, fs.data->>'encuestador', 'Agente') AS name,
        COUNT(*)::text AS count
-     FROM forms
-     WHERE campaign_id = $1 
-       AND created_at >= NOW() - INTERVAL '${interval}'
-       AND encuestador_id IS NOT NULL
-     GROUP BY encuestador_id, encuestador
+     FROM form_submissions fs
+     LEFT JOIN users u ON u.id = fs.submitted_by
+     WHERE fs.campaign_id = $1 
+       AND fs.created_at >= NOW() - $2::interval
+       AND (fs.submitted_by IS NOT NULL OR fs.data->>'encuestador_id' IS NOT NULL)
+     GROUP BY COALESCE(fs.submitted_by::text, fs.data->>'encuestador_id'),
+              COALESCE(u.full_name, fs.data->>'encuestador', 'Agente')
      ORDER BY COUNT(*) DESC`,
-    [campaignId],
+    [campaignId, interval],
   );
   return rows.map((r) => ({
     id: r.id,
@@ -279,7 +290,7 @@ export async function getCampaignMembers(campaignId: string): Promise<CampaignMe
      JOIN users u ON u.id = uc.user_id
      WHERE uc.campaign_id = $1 AND uc.status = 'active'
      ORDER BY
-       CASE uc.role WHEN 'admin' THEN 1 WHEN 'supervisor' THEN 2 ELSE 3 END,
+       CASE uc.role WHEN 'admin' THEN 1 WHEN 'consultor' THEN 2 WHEN 'jefe_campana' THEN 3 WHEN 'brigadista_zonal' THEN 4 WHEN 'agente_campo' THEN 5 ELSE 6 END,
        u.full_name`,
     [campaignId],
   );

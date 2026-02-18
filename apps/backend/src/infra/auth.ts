@@ -7,11 +7,14 @@ import { jwtVerify } from "jose";
 
 import { errorPayload } from "./http";
 
+export type CampaignPermsMap = Record<string, { tierra: boolean; digital: boolean }>;
+
 export type AuthenticatedRequest = FastifyRequest & {
   userId: string;
   userEmail: string;
   userRole: string;
   campaignIds: string[];
+  campaignPerms: CampaignPermsMap;
 };
 
 type JwtPayloadClaims = {
@@ -19,6 +22,7 @@ type JwtPayloadClaims = {
   email?: string;
   role?: string;
   campaign_ids?: string[];
+  campaign_perms?: CampaignPermsMap;
 };
 
 export function registerAuthDecorator(app: FastifyInstance, jwtSecret: string) {
@@ -45,8 +49,9 @@ export function registerAuthDecorator(app: FastifyInstance, jwtSecret: string) {
       // Decorate request with auth context
       (request as AuthenticatedRequest).userId = claims.sub;
       (request as AuthenticatedRequest).userEmail = claims.email ?? "";
-      (request as AuthenticatedRequest).userRole = claims.role ?? "agent";
+      (request as AuthenticatedRequest).userRole = claims.role ?? "agente_campo";
       (request as AuthenticatedRequest).campaignIds = claims.campaign_ids ?? [];
+      (request as AuthenticatedRequest).campaignPerms = claims.campaign_perms ?? {};
     } catch (error) {
       const message = error instanceof Error ? error.message : "token invalido";
       const isExpired = message.includes("expired") || message.includes('"exp" claim');

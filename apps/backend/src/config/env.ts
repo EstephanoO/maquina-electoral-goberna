@@ -51,6 +51,9 @@ export type AppEnv = {
   trackingDlqStreamKey: string;
   formsDlqStreamKey: string;
   uploadsDir: string;
+  rateLimitAuthPerMinute: number;
+  refreshTokenCleanupIntervalMs: number;
+  locationHistoryRetentionDays: number;
 };
 
 function toNumber(value: string | undefined, fallback: number): number {
@@ -132,5 +135,8 @@ export function getEnv(): AppEnv {
     trackingDlqStreamKey: (process.env.TRACKING_DLQ_STREAM_KEY ?? "tracking:dlq").trim(),
     formsDlqStreamKey: (process.env.FORMS_DLQ_STREAM_KEY ?? "forms:dlq").trim(),
     uploadsDir: (process.env.UPLOADS_DIR ?? "/srv/uploads").trim(),
+    rateLimitAuthPerMinute: toNumber(process.env.RATE_LIMIT_AUTH_PER_MINUTE, 10),
+    refreshTokenCleanupIntervalMs: toNumber(process.env.REFRESH_TOKEN_CLEANUP_INTERVAL_MS, 3600000),
+    locationHistoryRetentionDays: toNumber(process.env.LOCATION_HISTORY_RETENTION_DAYS, 7),
   };
 }

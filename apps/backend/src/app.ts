@@ -20,6 +20,10 @@ import { buildFormDefinitionsRoutes } from "./modules/form-definitions/routes";
 import { buildMapRoutes } from "./modules/map/routes";
 import { buildMeetsRoutes } from "./modules/meets/routes";
 import { buildUploadsRoutes } from "./modules/uploads/routes";
+import { buildZonesRoutes } from "./modules/zones/routes";
+import { buildOrgHierarchyRoutes } from "./modules/org-hierarchy/routes";
+import { buildInvitationsRoutes } from "./modules/invitations/routes";
+import { buildFormSubmissionsRoutes } from "./modules/form-submissions/routes";
 
 export function buildApp(env: AppEnv) {
   const app = Fastify({
@@ -119,6 +123,10 @@ export function buildApp(env: AppEnv) {
   app.register(buildFormDefinitionsRoutes(env));
   app.register(buildMeetsRoutes(env));
   app.register(buildUploadsRoutes(env));
+  app.register(buildZonesRoutes(env));
+  app.register(buildOrgHierarchyRoutes(env));
+  app.register(buildInvitationsRoutes(env));
+  app.register(buildFormSubmissionsRoutes(env));
 
   app.get("/api/metrics", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, async (_request, reply) => {
     reply.header("Cache-Control", "no-store");

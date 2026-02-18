@@ -37,7 +37,7 @@ const CANDIDATES = [
       email: "guillermo@goberna.pe",
       password: "Gx7kM2nP",
       full_name: "Guillermo Aliaga",
-      role: "supervisor" as const,
+      role: "jefe_campana" as const,
     },
   },
   {
@@ -56,7 +56,7 @@ const CANDIDATES = [
       email: "rocio@goberna.pe",
       password: "Rp3vL8wQ",
       full_name: "Rocio Porras",
-      role: "supervisor" as const,
+      role: "jefe_campana" as const,
     },
   },
   {
@@ -75,7 +75,7 @@ const CANDIDATES = [
       email: "giovanna@goberna.pe",
       password: "Gn5tK9xJ",
       full_name: "Giovanna Castagnino",
-      role: "supervisor" as const,
+      role: "jefe_campana" as const,
     },
   },
 ] as const;
@@ -234,7 +234,7 @@ async function seed() {
 
       await pool.query(
         `INSERT INTO user_campaigns (user_id, campaign_id, role, status, perm_tierra, perm_digital)
-         VALUES ($1, $2, 'supervisor', 'active', true, true)
+         VALUES ($1, $2, 'jefe_campana', 'active', true, true)
          ON CONFLICT (user_id, campaign_id)
            DO UPDATE SET role         = EXCLUDED.role,
                          status       = EXCLUDED.status,

@@ -1,10 +1,6 @@
 -- 005_form_definitions.sql
 -- Dynamic forms system for candidate-specific data collection.
 
--- 0) Add form_definition_id to forms table (if not already added by migration)
-ALTER TABLE public.forms
-  ADD COLUMN IF NOT EXISTS form_definition_id UUID REFERENCES form_definitions(id);
-
 -- 1) Create form_definitions table
 CREATE TABLE IF NOT EXISTS public.form_definitions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

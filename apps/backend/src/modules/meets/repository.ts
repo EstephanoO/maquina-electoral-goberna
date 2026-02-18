@@ -1,5 +1,5 @@
 import { pool } from "../../db";
-import type { CreateMeetInput, MeetStatus, UpdateMeetInput } from "./schema";
+import type { CreateMeetInput, MeetStatus, MeetType, UpdateMeetInput } from "./schema";
 
 // ── Row types ───────────────────────────────────────────────────────
 
@@ -15,6 +15,15 @@ export type MeetRow = {
   starts_at: Date;
   ends_at: Date | null;
   created_by: string | null;
+  leader_id: string | null;
+  zone_id: string | null;
+  meet_type: MeetType;
+  directions_text: string | null;
+  directions_url: string | null;
+  collection_center_lat: number | null;
+  collection_center_lng: number | null;
+  collection_radius_meters: number | null;
+  target_forms: number | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -35,17 +44,20 @@ export type ParticipantRow = {
 // ── SELECT columns ──────────────────────────────────────────────────
 
 const MEET_COLS = `id, campaign_id, title, description, location_name, lat, lng,
-  status, starts_at, ends_at, created_by, created_at, updated_at`;
+  status, starts_at, ends_at, created_by, leader_id, zone_id, meet_type,
+  directions_text, directions_url, collection_center_lat, collection_center_lng,
+  collection_radius_meters, target_forms, created_at, updated_at`;
 
 // ── CRUD ────────────────────────────────────────────────────────────
 
 export async function create(input: CreateMeetInput, userId: string): Promise<MeetRow> {
-  // Meets start as active immediately; location can be assigned later from web
   const status: MeetStatus = "active";
 
   const { rows } = await pool.query<MeetRow>(
-    `INSERT INTO meets (campaign_id, title, description, location_name, lat, lng, status, starts_at, ends_at, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `INSERT INTO meets (campaign_id, title, description, location_name, lat, lng, status, starts_at, ends_at,
+       created_by, leader_id, zone_id, meet_type, directions_text, directions_url,
+       collection_center_lat, collection_center_lng, collection_radius_meters, target_forms)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
      RETURNING ${MEET_COLS}`,
     [
       input.campaign_id,
@@ -58,6 +70,15 @@ export async function create(input: CreateMeetInput, userId: string): Promise<Me
       input.starts_at,
       input.ends_at ?? null,
       userId,
+      input.leader_id ?? userId,
+      input.zone_id ?? null,
+      input.meet_type ?? "recoleccion",
+      input.directions_text ?? null,
+      input.directions_url ?? null,
+      input.collection_center_lat ?? null,
+      input.collection_center_lng ?? null,
+      input.collection_radius_meters ?? null,
+      input.target_forms ?? null,
     ],
   );
   return rows[0]!;
@@ -78,7 +99,11 @@ export async function listByCampaign(
   let query = `
     SELECT m.id, m.campaign_id, m.title, m.description, m.location_name,
            m.lat, m.lng, m.status, m.starts_at, m.ends_at,
-           m.created_by, m.created_at, m.updated_at,
+           m.created_by, m.leader_id, m.zone_id, m.meet_type,
+           m.directions_text, m.directions_url,
+           m.collection_center_lat, m.collection_center_lng,
+           m.collection_radius_meters, m.target_forms,
+           m.created_at, m.updated_at,
            COUNT(mp.user_id)::int AS participant_count
     FROM meets m
     LEFT JOIN meet_participants mp ON mp.meet_id = m.id AND mp.left_at IS NULL
@@ -105,34 +130,23 @@ export async function update(id: string, input: UpdateMeetInput): Promise<MeetRo
   const values: unknown[] = [];
   let paramIndex = 1;
 
-  if (input.title !== undefined) {
-    setClauses.push(`title = $${paramIndex++}`);
-    values.push(input.title);
-  }
-  if (input.description !== undefined) {
-    setClauses.push(`description = $${paramIndex++}`);
-    values.push(input.description);
-  }
-  if (input.location_name !== undefined) {
-    setClauses.push(`location_name = $${paramIndex++}`);
-    values.push(input.location_name);
-  }
-  if (input.lat !== undefined) {
-    setClauses.push(`lat = $${paramIndex++}`);
-    values.push(input.lat);
-  }
-  if (input.lng !== undefined) {
-    setClauses.push(`lng = $${paramIndex++}`);
-    values.push(input.lng);
-  }
-  if (input.starts_at !== undefined) {
-    setClauses.push(`starts_at = $${paramIndex++}`);
-    values.push(input.starts_at);
-  }
-  if (input.ends_at !== undefined) {
-    setClauses.push(`ends_at = $${paramIndex++}`);
-    values.push(input.ends_at);
-  }
+  if (input.title !== undefined) { setClauses.push(`title = $${paramIndex++}`); values.push(input.title); }
+  if (input.description !== undefined) { setClauses.push(`description = $${paramIndex++}`); values.push(input.description); }
+  if (input.location_name !== undefined) { setClauses.push(`location_name = $${paramIndex++}`); values.push(input.location_name); }
+  if (input.lat !== undefined) { setClauses.push(`lat = $${paramIndex++}`); values.push(input.lat); }
+  if (input.lng !== undefined) { setClauses.push(`lng = $${paramIndex++}`); values.push(input.lng); }
+  if (input.starts_at !== undefined) { setClauses.push(`starts_at = $${paramIndex++}`); values.push(input.starts_at); }
+  if (input.ends_at !== undefined) { setClauses.push(`ends_at = $${paramIndex++}`); values.push(input.ends_at); }
+  // New fields
+  if (input.leader_id !== undefined) { setClauses.push(`leader_id = $${paramIndex++}`); values.push(input.leader_id); }
+  if (input.zone_id !== undefined) { setClauses.push(`zone_id = $${paramIndex++}`); values.push(input.zone_id); }
+  if (input.meet_type !== undefined) { setClauses.push(`meet_type = $${paramIndex++}`); values.push(input.meet_type); }
+  if (input.directions_text !== undefined) { setClauses.push(`directions_text = $${paramIndex++}`); values.push(input.directions_text); }
+  if (input.directions_url !== undefined) { setClauses.push(`directions_url = $${paramIndex++}`); values.push(input.directions_url); }
+  if (input.collection_center_lat !== undefined) { setClauses.push(`collection_center_lat = $${paramIndex++}`); values.push(input.collection_center_lat); }
+  if (input.collection_center_lng !== undefined) { setClauses.push(`collection_center_lng = $${paramIndex++}`); values.push(input.collection_center_lng); }
+  if (input.collection_radius_meters !== undefined) { setClauses.push(`collection_radius_meters = $${paramIndex++}`); values.push(input.collection_radius_meters); }
+  if (input.target_forms !== undefined) { setClauses.push(`target_forms = $${paramIndex++}`); values.push(input.target_forms); }
 
   // If lat/lng are being set and meet was pending_location, transition to scheduled
   if (input.lat !== undefined && input.lng !== undefined) {
@@ -173,13 +187,17 @@ export async function getSummary(meetId: string): Promise<MeetSummary | null> {
   const { rows } = await pool.query<MeetSummary>(
     `SELECT m.id, m.campaign_id, m.title, m.description, m.location_name,
             m.lat, m.lng, m.status, m.starts_at, m.ends_at,
-            m.created_by, m.created_at, m.updated_at,
+            m.created_by, m.leader_id, m.zone_id, m.meet_type,
+            m.directions_text, m.directions_url,
+            m.collection_center_lat, m.collection_center_lng,
+            m.collection_radius_meters, m.target_forms,
+            m.created_at, m.updated_at,
             COUNT(DISTINCT mp.user_id)::int AS participant_count,
             COUNT(DISTINCT mp.user_id) FILTER (WHERE mp.left_at IS NULL)::int AS active_participants,
-            COUNT(f.id)::int AS forms_count
+            COUNT(fs.id)::int AS forms_count
      FROM meets m
      LEFT JOIN meet_participants mp ON mp.meet_id = m.id
-     LEFT JOIN forms f ON f.meet_id = m.id
+     LEFT JOIN form_submissions fs ON fs.meet_id = m.id
      WHERE m.id = $1
      GROUP BY m.id`,
     [meetId],
@@ -190,7 +208,6 @@ export async function getSummary(meetId: string): Promise<MeetSummary | null> {
 // ── DELETE ──────────────────────────────────────────────────────────
 
 export async function remove(id: string): Promise<boolean> {
-  // Participants are deleted via ON DELETE CASCADE on meet_participants.meet_id
   const { rowCount } = await pool.query(`DELETE FROM meets WHERE id = $1`, [id]);
   return (rowCount ?? 0) > 0;
 }

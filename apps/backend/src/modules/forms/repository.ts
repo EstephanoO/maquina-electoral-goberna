@@ -125,10 +125,73 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
   )) as { rows: Array<{ attempted: string | number; accepted: string | number }> };
 
   const row = result.rows[0] ?? { attempted: 0, accepted: 0 };
-  return {
+  const batchResult = {
     attempted: Number(row.attempted ?? 0),
     accepted: Number(row.accepted ?? 0),
   };
+
+  // ── Dual-write to form_submissions (best-effort) ──────────────────
+  // Bridge legacy forms to the new JSONB form_submissions table
+  if (batchResult.accepted > 0) {
+    try {
+      const submissionsPayload = JSON.stringify(
+        forms.map((f) => ({
+          form_definition_id: f.form_definition_id ?? null,
+          campaign_id: f.campaign_id ?? null,
+          meet_id: null,
+          meet_group_id: null,
+          submitted_by: f.encuestador_id ?? null,
+          data: JSON.stringify({
+            nombre: f.nombre,
+            telefono: f.telefono,
+            zona: f.zona,
+            candidato_preferido: f.candidato_preferido,
+            comentarios: f.comentarios ?? null,
+            encuestador: f.encuestador,
+            home_maps_url: f.home_maps_url ?? null,
+            polling_place_url: f.polling_place_url ?? null,
+          }),
+          lat: f.y ?? null,
+          lng: f.x ?? null,
+          client_id: f.client_id,
+        })),
+      );
+
+      await pool.query(
+        `
+          WITH incoming AS (
+            SELECT *
+            FROM jsonb_to_recordset($1::jsonb) AS x(
+              form_definition_id uuid,
+              campaign_id uuid,
+              meet_id uuid,
+              meet_group_id uuid,
+              submitted_by text,
+              data text,
+              lat double precision,
+              lng double precision,
+              client_id text
+            )
+          )
+          INSERT INTO form_submissions (
+            form_definition_id, campaign_id, meet_id, meet_group_id, submitted_by,
+            data, lat, lng, client_id, synced_at
+          )
+          SELECT
+            i.form_definition_id, i.campaign_id, i.meet_id, i.meet_group_id,
+            CASE WHEN i.submitted_by ~ '^[0-9a-f-]{36}$' THEN i.submitted_by::uuid ELSE NULL END,
+            i.data::jsonb, i.lat, i.lng, i.client_id, now()
+          FROM incoming i
+          ON CONFLICT (client_id) DO NOTHING
+        `,
+        [submissionsPayload],
+      );
+    } catch {
+      // Best-effort: don't fail the main write if dual-write fails
+    }
+  }
+
+  return batchResult;
 }
 
 /**

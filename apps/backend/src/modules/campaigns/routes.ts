@@ -49,11 +49,11 @@ export function getRecentEvents(campaignId: string, limit = 20): CampaignEvent[]
 
 const addMemberSchema = z.object({
   user_id: z.string().uuid(),
-  role: z.enum(["admin", "supervisor", "agent"]),
+  role: z.enum(["admin", "consultor", "jefe_campana", "brigadista_zonal", "agente_campo"]),
 });
 
 const updateMemberRoleSchema = z.object({
-  role: z.enum(["supervisor", "agent"]),
+  role: z.enum(["consultor", "jefe_campana", "brigadista_zonal", "agente_campo"]),
 });
 
 export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
@@ -173,7 +173,7 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
     // ── PUT /api/campaigns/:campaignId ────────────────────────────────
     app.put(
       "/api/campaigns/:campaignId",
-      { preHandler: [app.authenticate, authorize({ roles: ["admin", "supervisor"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { campaignId } = request.params as { campaignId: string };
@@ -228,10 +228,10 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── GET /api/campaigns/:campaignId/members ────────────────────────
-    // List team members of a campaign. Admin/supervisor only.
+    // List team members of a campaign. Jefe de campana and above.
     app.get(
       "/api/campaigns/:campaignId/members",
-      { preHandler: [app.authenticate, authorize({ roles: ["supervisor"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { campaignId } = request.params as { campaignId: string };
@@ -270,10 +270,10 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── PUT /api/campaigns/:campaignId/members/:userId/role ─────────────
-    // Change a member's role within a campaign. Admin or campaign supervisor.
+    // Change a member's role within a campaign. Jefe de campana and above.
     app.put(
       "/api/campaigns/:campaignId/members/:userId/role",
-      { preHandler: [app.authenticate, authorize({ roles: ["supervisor"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const authed = request as AuthenticatedRequest;
@@ -285,9 +285,9 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
           return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
         }
 
-        // Only admins can promote to supervisor (candidato/jefe de campana)
-        if (parsed.data.role === "supervisor" && authed.userRole !== "admin") {
-          return reply.code(403).send(errorPayload(requestId, "AUTHZ_ROLE_INSUFFICIENT", "solo admin puede asignar rol de candidato/jefe de campana"));
+        // Only admins/consultors can promote to jefe_campana
+        if (parsed.data.role === "jefe_campana" && authed.userRole !== "admin" && authed.userRole !== "consultor") {
+          return reply.code(403).send(errorPayload(requestId, "AUTHZ_ROLE_INSUFFICIENT", "solo admin o consultor puede asignar rol de jefe de campana"));
         }
 
         try {

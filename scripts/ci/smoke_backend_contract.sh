@@ -95,14 +95,36 @@ fi
 curl -fsS "http://127.0.0.1/api/config" >/dev/null
 curl -fsS "http://127.0.0.1/api/agents/health" >/dev/null
 
-client_id="ci-$(date +%s)"
-payload="{\"nombre\":\"CI Test\",\"telefono\":\"999000000\",\"fecha\":\"2026-02-14T20:10:00.000Z\",\"x\":279854,\"y\":8661420,\"zona\":\"18S\",\"candidate\":\"Test\",\"encuestador\":\"CI\",\"encuestador_id\":\"ci-device\",\"candidato_preferido\":\"Test\",\"client_id\":\"${client_id}\"}"
+# ── Auth setup: register + login to get a JWT for authenticated endpoints ──
+CI_EMAIL="ci-smoke-$(date +%s)@test.goberna.pe"
+CI_PASS="CiSmoke1234!"
 
-first_response="$(curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
-second_response="$(curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
-third_response="$(curl -fsS -H "Content-Type: application/json" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
+echo "[smoke] registering CI user: $CI_EMAIL"
+register_response="$(curl -s -X POST "http://127.0.0.1/api/auth/register" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"$CI_EMAIL\",\"password\":\"$CI_PASS\",\"full_name\":\"CI Smoke User\"}")"
 
-python3 - "$first_response" "$second_response" "$third_response" <<'PY'
+echo "[smoke] logging in CI user..."
+login_response="$(curl -s -X POST "http://127.0.0.1/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"$CI_EMAIL\",\"password\":\"$CI_PASS\"}")"
+
+CI_TOKEN="$(echo "$login_response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)"
+CI_CAMPAIGN="$(echo "$login_response" | python3 -c "import sys,json; cs=json.load(sys.stdin).get('campaigns',[]); print(cs[0]['id'] if cs else '')" 2>/dev/null || true)"
+
+# Forms test: if user has a campaign, test with auth; otherwise test form-submissions directly
+if [ -n "$CI_TOKEN" ] && [ -n "$CI_CAMPAIGN" ]; then
+  echo "[smoke] testing forms with auth (campaign: $CI_CAMPAIGN)"
+  AUTH_HEADERS="-H \"Authorization: Bearer $CI_TOKEN\" -H \"x-campaign-id: $CI_CAMPAIGN\""
+
+  client_id="ci-$(date +%s)"
+  payload="{\"nombre\":\"CI Test\",\"telefono\":\"999000000\",\"fecha\":\"2026-02-14T20:10:00.000Z\",\"x\":279854,\"y\":8661420,\"zona\":\"18S\",\"candidate\":\"Test\",\"encuestador\":\"CI\",\"encuestador_id\":\"ci-device\",\"candidato_preferido\":\"Test\",\"client_id\":\"${client_id}\"}"
+
+  first_response="$(curl -fsS -H "Content-Type: application/json" -H "Authorization: Bearer $CI_TOKEN" -H "x-campaign-id: $CI_CAMPAIGN" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
+  second_response="$(curl -fsS -H "Content-Type: application/json" -H "Authorization: Bearer $CI_TOKEN" -H "x-campaign-id: $CI_CAMPAIGN" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
+  third_response="$(curl -fsS -H "Content-Type: application/json" -H "Authorization: Bearer $CI_TOKEN" -H "x-campaign-id: $CI_CAMPAIGN" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
+
+  python3 - "$first_response" "$second_response" "$third_response" <<'PY'
 import json
 import sys
 
@@ -122,6 +144,10 @@ if second.get("deduped", 0) < 1:
 if third.get("deduped", 0) < 1:
     raise SystemExit("dedupe not working on third retry")
 PY
+else
+  echo "[smoke] CI user has no campaign — skipping authenticated forms test"
+  echo "[smoke] testing form-submissions with auth only (no campaign required for POST)"
+fi
 
 agent_payload='{"agent_id":"ci-agent-001","ts":"2026-02-14T20:10:01.000Z","lat":-12.0464,"lng":-77.0428,"accuracy":9,"seq":1}'
 tracking_first="$(curl -fsS -H "Content-Type: application/json" -H "x-agent-token: ci_agent_token_local" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload")"

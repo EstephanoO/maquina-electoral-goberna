@@ -4,7 +4,7 @@ import { SignJWT } from "jose";
 
 import type { AppEnv } from "../../config/env";
 import type { AuthRepository } from "./repository";
-import type { JwtPayload, LoginResult, RefreshResult } from "./types";
+import type { CampaignPerms, JwtPayload, LoginResult, RefreshResult, UserCampaignRow } from "./types";
 
 export class AppError extends Error {
   constructor(
@@ -58,6 +58,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       campaign_ids: campaignIds,
+      campaign_perms: this.buildCampaignPerms(campaigns),
     });
 
     const familyId = crypto.randomUUID();
@@ -123,6 +124,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       campaign_ids: campaignIds,
+      campaign_perms: this.buildCampaignPerms(campaigns),
     });
 
     const newRefreshToken = this.generateRefreshToken();
@@ -177,6 +179,14 @@ export class AuthService {
 
   private hashToken(token: string): string {
     return createHash("sha256").update(token).digest("hex");
+  }
+
+  private buildCampaignPerms(campaigns: UserCampaignRow[]): Record<string, CampaignPerms> {
+    const perms: Record<string, CampaignPerms> = {};
+    for (const c of campaigns) {
+      perms[c.campaign_id] = { tierra: c.perm_tierra, digital: c.perm_digital };
+    }
+    return perms;
   }
 
   private parseExpiry(expiry: string): Date {

@@ -23,7 +23,7 @@ export class AuthRepository {
     return rows[0] ?? null;
   }
 
-  async createUser(email: string, passwordHash: string, fullName: string, role = "agent", status = "active"): Promise<UserRow> {
+  async createUser(email: string, passwordHash: string, fullName: string, role = "agente_campo", status = "active"): Promise<UserRow> {
     const { rows } = await this.pool.query<UserRow>(
       `INSERT INTO users (email, password_hash, full_name, role, status)
        VALUES (lower($1), $2, $3, $4, $5)
@@ -36,7 +36,9 @@ export class AuthRepository {
   async getUserCampaigns(userId: string): Promise<UserCampaignRow[]> {
     const { rows } = await this.pool.query(
       `SELECT c.id AS campaign_id, c.name AS campaign_name, c.slug AS campaign_slug,
-              c.config AS campaign_config, uc.role
+              c.config AS campaign_config, uc.role,
+              COALESCE(uc.perm_tierra, true) AS perm_tierra,
+              COALESCE(uc.perm_digital, true) AS perm_digital
        FROM user_campaigns uc
        JOIN campaigns c ON c.id = uc.campaign_id
        WHERE uc.user_id = $1 AND uc.status = 'active' AND c.status = 'active'`,
@@ -49,7 +51,8 @@ export class AuthRepository {
   async getAllActiveCampaigns(): Promise<UserCampaignRow[]> {
     const { rows } = await this.pool.query(
       `SELECT id AS campaign_id, name AS campaign_name, slug AS campaign_slug,
-              config AS campaign_config, 'admin' AS role
+              config AS campaign_config, 'admin' AS role,
+              true AS perm_tierra, true AS perm_digital
        FROM campaigns WHERE status = 'active' ORDER BY name`,
     );
     return rows as UserCampaignRow[];

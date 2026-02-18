@@ -166,10 +166,15 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       },
       async (request, reply) => {
         reply.header("Cache-Control", "no-store");
-        // TODO: filter by campaignIds from JWT in a future iteration
-        // const authed = request as AuthenticatedRequest;
-        // const campaignIds = authed.campaignIds;
-        return { ok: true, ts: new Date().toISOString(), agents: store.listLive() };
+        const authed = request as AuthenticatedRequest;
+        const campaignIds = authed.campaignIds;
+        const allAgents = store.listLive();
+        // Admins see everything; others are scoped to their campaigns
+        const agents =
+          authed.userRole === "admin"
+            ? allAgents
+            : allAgents.filter((a) => a.campaign_id && campaignIds.includes(a.campaign_id));
+        return { ok: true, ts: new Date().toISOString(), agents };
       },
     );
 
@@ -221,8 +226,15 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
         const clientId = ++clientSeq;
         clients.set(clientId, reply.raw);
 
+        const authed = request as AuthenticatedRequest;
+        const campaignIds = authed.campaignIds;
+        const filterAgents = (list: AgentLocationInput[]) =>
+          authed.userRole === "admin"
+            ? list
+            : list.filter((a) => a.campaign_id && campaignIds.includes(a.campaign_id));
+
         reply.raw.write("retry: 5000\n\n");
-        writeSseEvent(reply.raw, "snapshot", { ts: new Date().toISOString(), agents: store.listLive() });
+        writeSseEvent(reply.raw, "snapshot", { ts: new Date().toISOString(), agents: filterAgents(store.listLive()) });
 
         const cleanup = () => {
           clients.delete(clientId);

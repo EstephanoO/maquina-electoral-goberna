@@ -155,10 +155,10 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── PUT /api/meets/:id ──────────────────────────────────────────
-    // Update meet details. Admin/supervisor only.
+    // Update meet details. Brigadista zonal and above.
     app.put(
       "/api/meets/:id",
-      { preHandler: [app.authenticate, authorize({ roles: ["supervisor"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["brigadista_zonal"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { id } = request.params as { id: string };
@@ -184,10 +184,10 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── PUT /api/meets/:id/status ───────────────────────────────────
-    // Change meet status (activate, complete, cancel). Admin/supervisor only.
+    // Change meet status (activate, complete, cancel). Brigadista zonal and above.
     app.put(
       "/api/meets/:id/status",
-      { preHandler: [app.authenticate, authorize({ roles: ["supervisor"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["brigadista_zonal"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { id } = request.params as { id: string };
@@ -231,10 +231,10 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── DELETE /api/meets/:id ───────────────────────────────────────
-    // Delete a meet. Admin/supervisor only.
+    // Delete a meet. Brigadista zonal and above.
     app.delete(
       "/api/meets/:id",
-      { preHandler: [app.authenticate, authorize({ roles: ["supervisor"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["brigadista_zonal"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { id } = request.params as { id: string };

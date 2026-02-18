@@ -4,6 +4,7 @@ import os from "node:os";
 
 import type { AppEnv } from "../../config/env";
 import { db } from "../../db";
+import { authorize } from "../../infra/authorize";
 import { redisClient } from "../../infra/redis";
 import { fetchWithRetry } from "../../infra/upstream";
 
@@ -58,7 +59,7 @@ export function buildHealthRoutes(env: AppEnv): FastifyPluginAsync {
       }
     });
 
-    app.get("/api/ops/system", async (_request, reply) => {
+    app.get("/api/ops/system", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, async (_request, reply) => {
       reply.header("Cache-Control", "no-store");
 
       const totalMem = os.totalmem();

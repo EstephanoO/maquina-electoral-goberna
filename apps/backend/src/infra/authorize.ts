@@ -16,20 +16,26 @@ declare module "fastify" {
 }
 
 // ── Role hierarchy ──────────────────────────────────────────────────
-type Role = "admin" | "supervisor" | "agent";
+export type Role = "admin" | "consultor" | "jefe_campana" | "brigadista_zonal" | "agente_campo";
 
-const ROLE_HIERARCHY: Record<Role, number> = {
-  admin: 30,
-  supervisor: 20,
-  agent: 10,
+export const ROLE_HIERARCHY: Record<Role, number> = {
+  admin: 50,
+  consultor: 40,
+  jefe_campana: 30,
+  brigadista_zonal: 20,
+  agente_campo: 10,
 };
+
+export const ALL_ROLES: Role[] = ["admin", "consultor", "jefe_campana", "brigadista_zonal", "agente_campo"];
 
 // ── Options ─────────────────────────────────────────────────────────
 export type AuthorizeOptions = {
-  /** Minimum roles allowed. Roles hierarchy: admin > supervisor > agent */
+  /** Minimum roles allowed. Role hierarchy: admin > consultor > jefe_campana > brigadista_zonal > agente_campo */
   roles?: Role[];
   /** If true, checks that the request includes a campaign_id and user has access */
   requireCampaign?: boolean;
+  /** If set, validates the user has this permission for the active campaign. Implies requireCampaign. */
+  requirePermission?: "tierra" | "digital";
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -40,8 +46,8 @@ function isValidRole(role: string): role is Role {
 
 /**
  * Resolve the minimum required level from the allowed roles array.
- * e.g. roles: ['supervisor', 'agent'] → min level is agent (10),
- * meaning supervisor and admin also pass.
+ * e.g. roles: ['brigadista_zonal'] → min level is 20,
+ * meaning jefe_campana, consultor and admin also pass.
  */
 function minLevelFromRoles(roles: Role[]): number {
   return Math.min(...roles.map((r) => ROLE_HIERARCHY[r]));
@@ -73,13 +79,15 @@ function extractCampaignId(request: FastifyRequest): string | undefined {
  * // Only admins
  * app.get("/admin/stats", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, handler);
  *
- * // Supervisors and above, scoped to a campaign
+ * // Jefes de campana and above, scoped to a campaign
  * app.post("/campaigns/:campaignId/export", {
- *   preHandler: [app.authenticate, authorize({ roles: ["supervisor"], requireCampaign: true })],
+ *   preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })],
  * }, handler);
  */
 export function authorize(options: AuthorizeOptions = {}) {
-  const { roles, requireCampaign = false } = options;
+  const { roles, requirePermission } = options;
+  // requirePermission implies requireCampaign
+  const requireCampaign = options.requireCampaign ?? !!requirePermission;
 
   // Pre-compute the minimum level once at registration time
   const minLevel = roles && roles.length > 0 ? minLevelFromRoles(roles) : undefined;
@@ -133,6 +141,20 @@ export function authorize(options: AuthorizeOptions = {}) {
       }
 
       request.activeCampaignId = campaignId;
+
+      // ── Permission check ──────────────────────────────────────
+      if (requirePermission) {
+        const perms = req.campaignPerms?.[campaignId];
+        const allowed = perms
+          ? (requirePermission === "tierra" ? perms.tierra : perms.digital)
+          : false;
+
+        if (!allowed) {
+          return reply
+            .code(403)
+            .send(errorPayload(requestId, "AUTHZ_PERMISSION_DENIED", `sin permiso '${requirePermission}' para esta campaña`));
+        }
+      }
     }
   };
 }

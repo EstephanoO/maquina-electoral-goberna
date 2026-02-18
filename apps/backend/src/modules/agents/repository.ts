@@ -140,8 +140,67 @@ export async function upsertLatestAgentLocationsBatch(states: AgentLiveState[]):
   )) as { rows: Array<{ attempted: string | number; accepted: string | number }> };
 
   const row = result.rows[0] ?? { attempted: 0, accepted: 0 };
+
+  // Also insert into agent_location_history for GPS track retention
+  if (states.length > 0) {
+    try {
+      await insertLocationHistory(states);
+    } catch {
+      // Non-fatal: history is best-effort, don't break live tracking
+    }
+  }
+
   return {
     attempted: Number(row.attempted ?? 0),
     accepted: Number(row.accepted ?? 0),
   };
+}
+
+/**
+ * Insert location data into the history table (append-only, 7-day rolling).
+ * This is best-effort and should not block the live tracking pipeline.
+ */
+async function insertLocationHistory(states: AgentLiveState[]): Promise<void> {
+  const payload = JSON.stringify(
+    states.map((s) => ({
+      agent_id: s.agentId,
+      campaign_id: s.campaignId ?? null,
+      ts: s.ts,
+      lat: s.lat,
+      lng: s.lng,
+      accuracy: s.accuracy,
+      speed: s.speed,
+      heading: s.heading,
+      battery: s.battery,
+    })),
+  );
+
+  await pool.query(
+    `INSERT INTO agent_location_history (agent_id, campaign_id, ts, lat, lng, accuracy, speed, heading, battery)
+     SELECT x.agent_id, x.campaign_id, x.ts, x.lat, x.lng, x.accuracy, x.speed, x.heading, x.battery
+     FROM jsonb_to_recordset($1::jsonb) AS x(
+       agent_id text,
+       campaign_id uuid,
+       ts timestamptz,
+       lat double precision,
+       lng double precision,
+       accuracy double precision,
+       speed double precision,
+       heading double precision,
+       battery double precision
+     )`,
+    [payload],
+  );
+}
+
+/**
+ * Cleanup location history older than retention period (7 days by default).
+ * Call from a periodic timer/cron.
+ */
+export async function cleanupLocationHistory(retentionDays = 7): Promise<number> {
+  const result = await pool.query(
+    `DELETE FROM agent_location_history WHERE created_at < now() - ($1 || ' days')::interval`,
+    [retentionDays.toString()],
+  );
+  return result.rowCount ?? 0;
 }

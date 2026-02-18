@@ -5,8 +5,11 @@
 Conectar QGIS directamente a la base de datos PostgreSQL/PostGIS del VPS para:
 
 1. **Visualizar** capas geograficas del Peru (departamentos, provincias, distritos)
-2. **Editar** zonas personalizadas de candidatos (sectors, subsectores)
-3. **Analizar** datos de formularios en contexto geografico
+2. **Editar** zonas prioritarias de candidatos (marcar/desmarcar departamentos, provincias, distritos)
+3. **Dibujar** zonas personalizadas (sectores, subsectores) con poligonos
+4. **Analizar** datos de formularios en contexto geografico
+
+Los cambios en QGIS se reflejan automaticamente en el mapa web (~5 segundos).
 
 ---
 
@@ -28,7 +31,7 @@ Conectar QGIS directamente a la base de datos PostgreSQL/PostGIS del VPS para:
 | Puerto        | `5432`                                             |
 | Base de datos | `appdb`                                            |
 | Usuario       | `appuser`                                          |
-| Contraseña    | `c0d656d332708d03053cc9fe4f3b868a01b44f361856ddb8` |
+| Contrasena    | `c0d656d332708d03053cc9fe4f3b868a01b44f361856ddb8` |
 | SSL           | Desactivado                                        |
 
 ### Pasos en QGIS
@@ -44,188 +47,203 @@ Host: 161.132.39.165
 Puerto: 5432
 Base de datos: appdb
 Usuario: appuser
-Contraseña: c0c656d332708d03053cc9fe4f3b868a01b44f361856ddb8
+Contrasena: c0d656d332708d03053cc9fe4f3b868a01b44f361856ddb8
 ```
 
-1. Click en **Probar conexion** — debe decir "Conexion exitosa"
-2. Click en **Aceptar**
-3. En la lista de tablas, seleccionar las capas a cargar:
-   - `peru_departamentos`
-   - `peru_provincias`
-   - `peru_distritos`
-   - `campaign_custom_zones` (para editar zonas)
-   - `campaign_priority_zones` (para editar prioridades)
-   - `forms` (datos de formularios)
-4. Click en **Agregar**
+5. Marcar **"Tambien listar tablas sin geometria"** y **"Tambien listar vistas"**
+6. Click en **Probar conexion** — debe decir "Conexion exitosa"
+7. Click en **Aceptar**
 
 ---
 
-## 2. Tablas Disponibles
-
-### Tablas de Referencia (solo lectura)
-
-| Tabla                | Descripcion               | CRS       |
-| -------------------- | ------------------------- | --------- |
-| `peru_departamentos` | 24 departamentos del Peru | EPSG:4326 |
-| `peru_provincias`    | 196 provincias del Peru   | EPSG:4326 |
-| `peru_distritos`     | 1,874 distritos del Peru  | EPSG:4326 |
-
-### Tablas Editables
-
-| Tabla                     | Descripcion                                                    | CRS       |
-| ------------------------- | -------------------------------------------------------------- | --------- |
-| `campaign_priority_zones` | Referencias a zonas del Peru (departamento/provincia/distrito) | -         |
-| `campaign_custom_zones`   | Zonas personalizadas con geometria propia (poligonos)          | EPSG:4326 |
-| `forms`                   | Datos de formularios capturados                                | -         |
-
----
-
-## 3. Estructura de Tablas Editables
-
-### campaign_priority_zones
-
-Referencias ligeras a la base cartografica del Peru.
-
-| Campo         | Tipo        | Descripcion                                                   |
-| ------------- | ----------- | ------------------------------------------------------------- |
-| `id`          | SERIAL      | ID interno                                                    |
-| `campaign_id` | UUID        | ID de la campana (obligatorio)                                |
-| `zone_level`  | TEXT        | Nivel: `departamento`, `provincia`, `distrito`                |
-| `zone_code`   | TEXT        | Codigo geografico: CODDEP (2), CODDEP+CODPROV (4), UBIGEO (6) |
-| `priority`    | INT         | Prioridad (1=muy alta, 5=baja)                                |
-| `metadata`    | JSONB       | Metadatos extra                                               |
-| `created_at`  | TIMESTAMPTZ | Fecha de creacion                                             |
-
-**Ejemplo de insercion manual:**
+## 2. IDs de Candidatos
 
 ```sql
--- Agregar Lima como zona prioritaria para Cesar Vasquez
-INSERT INTO campaign_priority_zones (campaign_id, zone_level, zone_code, priority)
-VALUES ('eece49d5-a315-4764-83f9-681cabae5c51', 'departamento', '15', 1);
-```
-
-### campaign_custom_zones
-
-Zonas personalizadas con geometria propia (poligonos que dibujas en QGIS).
-
-| Campo         | Tipo        | Descripcion                                  |
-| ------------- | ----------- | -------------------------------------------- |
-| `id`          | SERIAL      | ID interno                                   |
-| `campaign_id` | UUID        | ID de la campana (obligatorio)               |
-| `zone_level`  | TEXT        | Nivel: `sector` o `subsector`                |
-| `zone_code`   | TEXT        | UBIGEO del distrito padre (6 digitos)        |
-| `zone_name`   | TEXT        | Nombre de la zona (opcional)                 |
-| `sector`      | INT         | Numero de sector (1, 2, 3...)                |
-| `subsector`   | INT         | Numero de subsector (si aplica)              |
-| `parent_code` | TEXT        | UBIGEO del distrito containing               |
-| `population`  | INT         | Poblacion estimada (opcional)                |
-| `metadata`    | JSONB       | Metadatos extra                              |
-| `geom`        | GEOMETRY    | Poligono en EPSG:4326                        |
-| `source`      | TEXT        | Origen: `import`, `arcgis`, `qgis`, `manual` |
-| `created_at`  | TIMESTAMPTZ | Fecha de creacion                            |
-
----
-
-## 4. Flujo de Trabajo: Dibujar Zonas
-
-### Paso 1: Obtener el campaign_id
-
-```sql
--- Listar candidatos y sus IDs
+-- Consultar en DB Manager > SQL Window
 SELECT id, name, slug FROM campaigns;
 ```
 
-Ejemplo para **Cesar Vasquez**:
+| Candidato           | campaign_id                            | slug                |
+| ------------------- | -------------------------------------- | ------------------- |
+| Cesar Vasquez       | `eece49d5-a315-4764-83f9-681cabae5c51` | cesar-vasques       |
+| Giovanna Castagnino | `27b0f27f-23fc-4382-b9f2-53db1bb83a5d` | giovanna-castagnino |
+| Guillermo Aliaga    | `c72e7b14-a796-4853-86f8-e97de2c3cc24` | guillermo-aliaga    |
+| Rocio Porras        | `00f81464-350d-4a01-9d63-98461613a894` | rocio-porras        |
 
-- `campaign_id`: `eece49d5-a315-4764-83f9-681cabae5c51`
+---
 
-### Paso 2: Habilitar edicion en QGIS
+## 3. Zonas Prioritarias (departamentos/provincias/distritos)
 
-1. Click derecho sobre `campaign_custom_zones` > **Alternar modo de edicion**
-2. O click derecho > **Abrir tabla de atributos**
+### Como funciona
 
-### Paso 3: Dibujar un sector
+Las zonas prioritarias son **referencias** a la cartografia base del Peru. No tienen geometria propia — usan los poligonos de `peru_departamentos`, `peru_provincias` y `peru_distritos`.
+
+Hay **vistas editables** que permiten marcar/desmarcar zonas directamente en QGIS:
+
+| Vista                    | Descripcion                  | Uso                                   |
+| ------------------------ | ---------------------------- | ------------------------------------- |
+| `v_qgis_dep_priority`   | Departamentos x campana      | Marcar departamentos prioritarios     |
+| `v_qgis_prov_priority`  | Provincias x campana         | Marcar provincias prioritarias        |
+| `v_qgis_dist_priority`  | Distritos x campana          | Marcar distritos prioritarios         |
+
+Cada vista tiene un campo `is_priority` (true/false) y `priority` (1-5) que puedes editar.
+
+### Paso a paso: Marcar zonas prioritarias para Cesar Vasquez
+
+#### 1. Cargar la vista de departamentos
+
+1. **Capa > Administrador de fuentes de datos > PostgreSQL**
+2. Seleccionar conexion "Goberna VPS" > **Conectar**
+3. Buscar vista `v_qgis_dep_priority` en `public`
+4. Seleccionarla > **Agregar**
+5. La capa aparece con todos los departamentos del Peru (por cada campana)
+
+#### 2. Filtrar por candidato
+
+1. Click derecho en la capa > **Filtrar...**
+2. Escribir: `"campaign_name" = 'Cesar Vásquez'`
+3. Click **Aceptar**
+4. Ahora ves solo los 25 departamentos de Cesar
+
+#### 3. Estilizar para ver que esta marcado
+
+1. Click derecho > **Propiedades > Simbologia**
+2. Seleccionar **Basado en reglas** o **Categorizado**
+3. Campo: `is_priority`
+4. Colores:
+   - `true` → Rojo semi-transparente (rgba 239,68,68,0.35)
+   - `false` → Gris claro (rgba 200,200,200,0.1)
+
+#### 4. Marcar un departamento como prioritario
+
+1. Click derecho en la capa > **Alternar modo de edicion** (lapiz)
+2. Seleccionar el departamento que quieres marcar (click en mapa o tabla de atributos)
+3. Abrir **Tabla de atributos** (F6)
+4. Cambiar `is_priority` de `false` a `true`
+5. Cambiar `priority` al valor deseado (1=muy alta, 5=baja)
+6. Click en **Guardar cambios** (boton disquete)
+7. Desactivar edicion
+
+#### 5. Verificar en web
+
+1. Esperar ~5 segundos (cache de tiles)
+2. Ir a: `https://maquina-electoral-goberna-web.vercel.app/candidatos/cesar-vasques/tierra`
+3. El departamento aparece en rojo en el mapa
+
+#### 6. Desmarcar un departamento
+
+1. Activar edicion
+2. Cambiar `is_priority` de `true` a `false`
+3. Guardar
+4. La zona desaparece del mapa web automaticamente
+
+### Lo mismo funciona para provincias y distritos
+
+- Provincias: cargar `v_qgis_prov_priority`, filtrar por `campaign_name`
+- Distritos: cargar `v_qgis_dist_priority`, filtrar por `campaign_name`
+
+---
+
+## 4. Zonas Personalizadas (sectores/subsectores)
+
+Para zonas mas granulares que un distrito, puedes **dibujar poligonos** directamente.
+
+### Tabla: campaign_custom_zones
+
+| Campo         | Tipo        | Descripcion                                   |
+| ------------- | ----------- | --------------------------------------------- |
+| `campaign_id` | UUID        | ID de la campana (obligatorio)                |
+| `zone_level`  | TEXT        | `sector` o `subsector`                        |
+| `zone_code`   | TEXT        | Codigo unico (ej: `S-LIMA-01`)                |
+| `zone_name`   | TEXT        | Nombre descriptivo                            |
+| `sector`      | INT         | Numero de sector (1, 2, 3...)                 |
+| `subsector`   | INT         | Numero de subsector (si aplica)               |
+| `parent_code` | TEXT        | UBIGEO del distrito padre (6 digitos)         |
+| `population`  | INT         | Poblacion estimada (opcional)                 |
+| `geom`        | GEOMETRY    | MultiPolygon en EPSG:4326                     |
+| `source`      | TEXT        | Origen: `qgis`, `import`, `arcgis`, `manual`  |
+
+### Paso a paso: Dibujar un sector
+
+#### 1. Cargar la capa
+
+1. **Capa > Administrador de fuentes de datos > PostgreSQL**
+2. Seleccionar `campaign_custom_zones` > **Agregar**
+
+#### 2. Habilitar edicion
+
+1. Click derecho > **Alternar modo de edicion**
+
+#### 3. Dibujar el poligono
 
 1. Click en boton **Agregar poligono** (toolbar de edicion)
-2. Dibujar el poligono en el mapa
-3. Llenar los atributos:
+2. Dibujar el poligono en el mapa (clicks en vertices, doble-click para terminar)
+3. Llenar los atributos en el formulario emergente:
 
 | Campo       | Valor ejemplo                          |
 | ----------- | -------------------------------------- |
 | campaign_id | `eece49d5-a315-4764-83f9-681cabae5c51` |
 | zone_level  | `sector`                               |
-| zone_code   | `150101` (UBIGEO de Lima)              |
-| zone_name   | `Sector Centro`                        |
+| zone_code   | `S-150101-01`                          |
+| zone_name   | `Sector Lima Centro`                   |
 | sector      | `1`                                    |
 | subsector   | (vacio)                                |
 | parent_code | `150101`                               |
 | population  | `5000`                                 |
 | source      | `qgis`                                 |
 
-1. Click en **Guardar** (boton guardar cambios)
+4. Click **OK**
+5. Click en **Guardar cambios** (disquete)
 
-### Paso 4: Verificar en Web
+#### 4. Verificar en web
 
-1. Ir a `https://goberna.pe/candidatos/[slug]/tierra`
-2. Las zonas dibujadas aparecen automaticamente en el mapa
-3. Click en una zona para ver sus datos
+En el mapa web, los sectores aparecen cuando haces zoom hasta nivel de distrito (drill-down: Dep > Prov > Dist > Sectores).
 
----
-
-## 5. IDs de Candidatos (Ejemplos)
-
-| Candidato     | campaign_id                            | slug          |
-| ------------- | -------------------------------------- | ------------- |
-| Cesar Vasquez | `eece49d5-a315-4764-83f9-681cabae5c51` | cesar-vasques |
-| Giovanna      | (ver en DB)                            | (ver en DB)   |
-| Rocio         | (ver en DB)                            | (ver en DB)   |
-
-Para obtener todos los candidatos:
-
-```sql
-SELECT id, name, slug FROM campaigns;
-```
-
----
-
-## 6. Tips y Trucos
-
-### Ver formas en el mapa
-
-Los formularios capturados tienen coordenadas UTM. QGIS no los muestra directamente, pero puedes crear una vista:
-
-```sql
--- Crear vista con formas en lat/lng
-CREATE OR REPLACE VIEW forms_geo AS
-SELECT
-  id,
-  nombre,
-  telefono,
-  ST_X(ST_Transform(ST_SetSRID(ST_MakePoint(x, y), 32718), 4326)) AS lng,
-  ST_Y(ST_Transform(ST_SetSRID(ST_MakePoint(x, y), 32718), 4326)) AS lat,
-  zona,
-  campaign_id,
-  created_at
-FROM forms
-WHERE x IS NOT NULL AND y IS NOT NULL;
-```
-
-Luego agregar esta vista en QGIS como capa.
-
-### Copiar geometria de otra capa
+### Copiar geometria de un distrito existente
 
 1. Seleccionar poligono en `peru_distritos`
-2. Edit > Copiar
-3. Edit > Pegar en `campaign_custom_zones`
-4. Ajustar atributos
+2. **Edit > Copiar**
+3. Seleccionar capa `campaign_custom_zones`
+4. **Edit > Pegar como > Nueva geometria**
+5. Ajustar los atributos (campaign_id, zone_level, etc.)
+6. Guardar
 
-### Respaldar antes de editar
+---
 
-```sql
--- Respaldar tablas de zonas
-CREATE TABLE campaign_custom_zones_backup AS SELECT * FROM campaign_custom_zones;
-CREATE TABLE campaign_priority_zones_backup AS SELECT * FROM campaign_priority_zones;
+## 5. Capas de Visualizacion (solo lectura)
+
+### Tablas base del Peru
+
+| Tabla                | Descripcion               | CRS       |
+| -------------------- | ------------------------- | --------- |
+| `peru_departamentos` | 25 departamentos del Peru | EPSG:4326 |
+| `peru_provincias`    | 196 provincias del Peru   | EPSG:4326 |
+| `peru_distritos`     | 1,874 distritos del Peru  | EPSG:4326 |
+
+### Vistas de datos
+
+| Vista                  | Descripcion                                         |
+| ---------------------- | --------------------------------------------------- |
+| `v_forms_geo`          | Formularios con geometria (puntos lat/lng)          |
+| `v_agents_live_geo`    | Posiciones actuales de agentes de campo             |
+| `v_meets_geo`          | Reuniones con ubicacion                             |
+| `v_cobertura_distritos`| Cobertura de formularios por distrito/campana       |
+
+---
+
+## 6. Arquitectura del Flujo
+
 ```
+QGIS                          PostgreSQL                      Tegola                    Web Map
+────────                       ──────────                      ──────                    ───────
+UPDATE v_qgis_dep_priority  →  INSTEAD OF trigger           →  (cache 5s)            →  tiles
+SET is_priority = true          INSERT campaign_priority_zones   genera nuevo MVT tile     renderiza zona roja
+
+Dibujar poligono            →  INSERT campaign_custom_zones  →  (cache 5s)            →  tiles
+en campaign_custom_zones        (geometria propia)              genera nuevo MVT tile     renderiza sector
+```
+
+Tiempo de propagacion: **~5 segundos** desde que guardas en QGIS hasta que aparece en el mapa web.
 
 ---
 
@@ -234,32 +252,45 @@ CREATE TABLE campaign_priority_zones_backup AS SELECT * FROM campaign_priority_z
 ### "Connection refused" o timeout
 
 - Verificar que el puerto 5432 este expuesto: `docker ps | grep postgres`
-- Ver firewall: `iptables -L -n | grep 5432`
+- Probar: `psql -h 161.132.39.165 -U appuser -d appdb -c "SELECT 1"`
 
-### No aparecen las tablas
+### No aparecen las vistas
 
-- Verificar que tienes acceso: `psql -h 161.132.39.165 -U appuser -d appdb -c "SELECT 1"`
-- Refrescar conexion en QGIS (boton actualizar)
+- En la conexion QGIS, marcar **"Tambien listar vistas"**
+- Refrescar conexion (boton actualizar)
 
-### Error al guardar poligono
+### Error al editar is_priority
+
+- Asegurar que `campaign_id` sea un UUID valido (no el nombre)
+- Filtrar la vista por campaign_name antes de editar
+
+### Error al guardar poligono custom
 
 - Verificar que `campaign_id` sea un UUID valido
 - Verificar que `zone_level` sea `sector` o `subsector`
-- Verificar que `geom` no sea NULL
+- Verificar que `source` sea `qgis`, `import`, `arcgis` o `manual`
+- La geometria debe ser MultiPolygon en EPSG:4326
 
 ### El mapa web no muestra las zonas
 
-- Verificar que la zona tenga `campaign_id` correcto
-- Verificar que `zone_level` y `zone_code` coincidan con ubigeos validos
-- Refrescar la pagina web (Crtl+Shift+R)
+- Zonas prioritarias aparecen al zoom apropiado (dep=zoom 3+, prov=zoom 5+, dist=zoom 8+)
+- Sectores custom aparecen al drill-down (zoom 10+, dentro de un distrito)
+- Refrescar la pagina web (Ctrl+Shift+R) si han pasado mas de 5 segundos
+
+### Los nombres de departamentos estan vacios
+
+- Conocido: el campo `nomdep` de `peru_departamentos` esta vacio. Usa `coddep` como referencia.
+- Los codigos son: 01=Amazonas, 02=Ancash, 03=Apurimac, 04=Arequipa, 05=Ayacucho, 06=Cajamarca,
+  07=Callao, 08=Cusco, 09=Huancavelica, 10=Huanuco, 11=Ica, 12=Junin, 13=La Libertad,
+  14=Lambayeque, 15=Lima, 16=Loreto, 17=Madre de Dios, 18=Moquegua, 19=Pasco, 20=Piura,
+  21=Puno, 22=San Martin, 23=Tacna, 24=Tumbes, 25=Ucayali
 
 ---
 
-## Contacto
+## 8. Respaldar antes de editar
 
-Para soporte, revisar los logs del backend:
-
-```bash
-ssh deploy@161.132.39.165
-docker compose logs -f backend
+```sql
+-- Respaldar tablas de zonas
+CREATE TABLE campaign_custom_zones_backup AS SELECT * FROM campaign_custom_zones;
+CREATE TABLE campaign_priority_zones_backup AS SELECT * FROM campaign_priority_zones;
 ```

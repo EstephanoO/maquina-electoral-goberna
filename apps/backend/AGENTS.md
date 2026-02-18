@@ -28,15 +28,20 @@ Ingesta critica por Redis Streams con write-behind y batch a PostgreSQL.
 ### Modulos por dominio
 ```
 src/modules/
-  health/         <- /api/health, /api/ready
-  auth/           <- login, register, refresh, me
-  agents/         <- tracking GPS
-  forms/          <- formularios dinamicos
-  campaigns/      <- configuracion de campanas
+  health/           <- /api/health, /api/ready, /api/system
+  auth/             <- login, register, refresh, me, logout
+  agents/           <- tracking GPS + location history
+  forms/            <- formularios legacy (write-behind queue)
+  form-submissions/ <- formularios nuevos (JSONB directo)
   form-definitions/ <- definiciones de formularios
-  access-requests/ <- solicitudes de acceso
-  map/            <- proxy a Tegola
-  uploads/        <- archivos
+  campaigns/        <- configuracion de campanas + stats
+  meets/            <- reuniones de campo (enhanced)
+  zones/            <- zonas geograficas (centro + radio)
+  org-hierarchy/    <- jerarquia organizacional
+  invitations/      <- invitaciones por codigo
+  access-requests/  <- solicitudes de acceso
+  map/              <- proxy a Tegola
+  uploads/          <- archivos
 ```
 
 ---
@@ -56,11 +61,27 @@ src/modules/
 | Regla | Detalle |
 |-------|---------|
 | Auth tracking | `AGENT_INGEST_TOKEN` obligatorio en prod para `/api/agents/location` |
+| Rate limit auth | Per-IP rate limit en login/register (`RATE_LIMIT_AUTH_PER_MINUTE`, default 10) |
 | Rate limit forms | Dual actor + IP guardrail, configurable por env |
 | Readiness | `/api/ready` valida DB + Tegola + Redis |
 | Redis policy | Produccion en `noeviction` |
 | Drift | Lo que corre en VPS sale de `main` + compose reproducible |
 | Metricas | `/api/metrics` con `latencies` por ruta y `ingest_outcome_latencies` |
+| Token cleanup | Cron periodico limpia `refresh_tokens` expirados (`REFRESH_TOKEN_CLEANUP_INTERVAL_MS`) |
+| Location history | Append-only en `agent_location_history`, retention configurable (`LOCATION_HISTORY_RETENTION_DAYS`) |
+| Permissions | `perm_tierra`/`perm_digital` en JWT como `campaign_perms` map, validado en `authorize()` |
+
+## Modelo de Roles (5 niveles)
+
+| Rol | Nivel | Descripcion |
+|-----|-------|-------------|
+| `admin` | 50 | Acceso total al sistema |
+| `consultor` | 40 | Consultores externos con acceso amplio |
+| `jefe_campana` | 30 | Jefes de campana, gestion operativa |
+| `brigadista_zonal` | 20 | Coordinadores de zona |
+| `agente_campo` | 10 | Agentes de campo (mobile) |
+
+Jerarquia: un rol con nivel >= al requerido pasa el check.
 
 ---
 

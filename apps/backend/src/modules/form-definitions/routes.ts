@@ -17,7 +17,7 @@ export function buildFormDefinitionsRoutes(_env: AppEnv): FastifyPluginAsync {
     // List all form definitions (admin only)
     app.get(
       "/api/form-definitions",
-      { preHandler: [app.authenticate, authorize({ roles: ["admin", "supervisor"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["consultor"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { campaign_id, status } = request.query as {
@@ -49,7 +49,7 @@ export function buildFormDefinitionsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── GET /api/form-definitions/active ─────────────────────────────
-    // Get active form definitions for a campaign (agents + supervisors)
+    // Get active form definitions for a campaign (any authenticated user)
     app.get(
       "/api/form-definitions/active",
       { preHandler: [app.authenticate] },
@@ -131,7 +131,7 @@ export function buildFormDefinitionsRoutes(_env: AppEnv): FastifyPluginAsync {
     // Create new form definition (admin only)
     app.post(
       "/api/form-definitions",
-      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["consultor"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const authed = request as AuthenticatedRequest;
@@ -182,7 +182,7 @@ export function buildFormDefinitionsRoutes(_env: AppEnv): FastifyPluginAsync {
     // Update form definition (admin only)
     app.put(
       "/api/form-definitions/:id",
-      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["consultor"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { id } = request.params as { id: string };
@@ -235,7 +235,7 @@ export function buildFormDefinitionsRoutes(_env: AppEnv): FastifyPluginAsync {
     // Delete form definition (admin only)
     app.delete(
       "/api/form-definitions/:id",
-      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["consultor"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { id } = request.params as { id: string };

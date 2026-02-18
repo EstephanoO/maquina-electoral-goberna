@@ -15,6 +15,8 @@ export type UserCampaignRow = {
   campaign_slug: string;
   campaign_config: Record<string, unknown>;
   role: string;
+  perm_tierra: boolean;
+  perm_digital: boolean;
 };
 
 export type RefreshTokenRow = {
@@ -27,11 +29,19 @@ export type RefreshTokenRow = {
   created_at: Date;
 };
 
+/** Per-campaign permission flags carried in JWT */
+export type CampaignPerms = {
+  tierra: boolean;
+  digital: boolean;
+};
+
 export type JwtPayload = {
   sub: string;
   email: string;
   role: string;
   campaign_ids: string[];
+  /** Map of campaign_id -> permission flags */
+  campaign_perms?: Record<string, CampaignPerms>;
   iat?: number;
   exp?: number;
 };

@@ -103,7 +103,10 @@ jobs:
               docker compose up -d --build --remove-orphans
 
               echo "[deploy] running migrations..."
-              docker compose exec -T backend bun run migrate || true
+              if ! docker compose exec -T backend bun run migrate; then
+                echo "[deploy] ERROR: migration failed — aborting deploy"
+                return 1
+              fi
 
               echo "[deploy] waiting for readiness..."
               for attempt in $(seq 1 40); do

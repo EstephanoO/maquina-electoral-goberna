@@ -11,11 +11,19 @@ function resolveSslOption() {
     return false;
   }
 
-  if (mode === "require" || mode === "verify" || mode === "verify-full") {
+  if (mode === "require") {
     return { rejectUnauthorized: false };
   }
 
-  if (/sslmode=(require|verify|verify-full)/i.test(env.databaseUrl)) {
+  if (mode === "verify" || mode === "verify-full") {
+    return { rejectUnauthorized: true };
+  }
+
+  if (/sslmode=(verify|verify-full)/i.test(env.databaseUrl)) {
+    return { rejectUnauthorized: true };
+  }
+
+  if (/sslmode=require/i.test(env.databaseUrl)) {
     return { rejectUnauthorized: false };
   }
 

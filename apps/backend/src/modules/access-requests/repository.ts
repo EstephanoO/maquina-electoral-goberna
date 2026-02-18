@@ -69,7 +69,7 @@ export async function listPending(): Promise<AccessRequestRow[]> {
 
 /**
  * List pending access requests for specific campaigns.
- * Used by supervisors who only have access to certain campaigns.
+ * Used by non-admin roles who only have access to certain campaigns.
  */
 export async function listPendingByCampaigns(campaignIds: string[]): Promise<AccessRequestRow[]> {
   if (campaignIds.length === 0) return [];
@@ -124,7 +124,7 @@ export async function resolve(
   status: "approved" | "rejected",
   resolvedBy: string,
   note?: string,
-  role = "agent",
+  role = "agente_campo",
 ): Promise<AccessRequestRow | null> {
   const client = await pool.connect();
   try {
