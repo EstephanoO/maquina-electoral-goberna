@@ -1,7 +1,6 @@
 -- Migration 014: Agent Location History
 -- Adds: agent_location_history for GPS track retention (7-day rolling)
-
-BEGIN;
+-- NOTE: No BEGIN/COMMIT — the migration runner wraps each file in its own transaction.
 
 -- ── 1. Create agent_location_history table ────────────────────────────
 CREATE TABLE IF NOT EXISTS agent_location_history (
@@ -22,5 +21,3 @@ CREATE TABLE IF NOT EXISTS agent_location_history (
 CREATE INDEX IF NOT EXISTS idx_agent_history_agent_ts ON agent_location_history(agent_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_history_campaign ON agent_location_history(campaign_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_history_created ON agent_location_history(created_at);
-
-COMMIT;

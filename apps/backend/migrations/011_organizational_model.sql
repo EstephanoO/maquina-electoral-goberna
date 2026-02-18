@@ -1,30 +1,39 @@
 -- Migration 011: Organizational Model
 -- Adds: role expansion, org_hierarchy, zones, invitations
-
-BEGIN;
+--
+-- NOTE: No BEGIN/COMMIT here — the migration runner wraps each file
+-- in its own transaction. Inner BEGIN/COMMIT would break the runner.
+--
+-- This migration is IDEMPOTENT: safe to run even if a previous failed
+-- attempt partially committed some UPDATEs (handles both old and new values).
 
 -- ── 1. Expand role values in users table ──────────────────────────────
 -- Old: 'agent', 'supervisor', 'admin'
 -- New: 'admin', 'consultor', 'jefe_campana', 'brigadista_zonal', 'agente_campo'
--- IMPORTANT: Migrate data BEFORE changing the constraint to avoid check violation
+--
+-- CRITICAL ORDER: DROP constraint FIRST, then UPDATE data, then ADD new constraint.
+-- Previous version tried to UPDATE before DROP — that fails because the old
+-- constraint rejects 'agente_campo'/'jefe_campana'.
 
--- Migrate existing roles first (while old constraint still allows them)
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+
+-- Migrate existing roles (idempotent: WHERE clause only matches old values)
 UPDATE users SET role = 'agente_campo' WHERE role = 'agent';
 UPDATE users SET role = 'jefe_campana' WHERE role = 'supervisor';
 -- 'admin' stays as 'admin'
 
--- Now safe to replace the constraint
-ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+-- Add new constraint with expanded role set
 ALTER TABLE users ADD CONSTRAINT users_role_check
   CHECK (role IN ('admin', 'consultor', 'jefe_campana', 'brigadista_zonal', 'agente_campo'));
 
 -- ── 2. Expand role values in user_campaigns ────────────────────────────
--- Migrate data first
+ALTER TABLE user_campaigns DROP CONSTRAINT IF EXISTS user_campaigns_role_check;
+
+-- Migrate data (idempotent)
 UPDATE user_campaigns SET role = 'agente_campo' WHERE role = 'agent';
 UPDATE user_campaigns SET role = 'jefe_campana' WHERE role = 'supervisor';
 
--- Then replace constraint
-ALTER TABLE user_campaigns DROP CONSTRAINT IF EXISTS user_campaigns_role_check;
+-- Add new constraint
 ALTER TABLE user_campaigns ADD CONSTRAINT user_campaigns_role_check
   CHECK (role IN ('admin', 'consultor', 'jefe_campana', 'brigadista_zonal', 'agente_campo'));
 
@@ -82,5 +91,3 @@ CREATE TABLE IF NOT EXISTS invitations (
 
 CREATE INDEX IF NOT EXISTS idx_invitations_campaign ON invitations(campaign_id);
 CREATE INDEX IF NOT EXISTS idx_invitations_code ON invitations(code);
-
-COMMIT;

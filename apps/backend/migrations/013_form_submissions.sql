@@ -1,7 +1,6 @@
 -- Migration 013: Form Submissions
 -- Adds: form_submissions table (dynamic JSONB), migrates legacy data
-
-BEGIN;
+-- NOTE: No BEGIN/COMMIT — the migration runner wraps each file in its own transaction.
 
 -- ── 1. Create form_submissions table ──────────────────────────────────
 CREATE TABLE IF NOT EXISTS form_submissions (
@@ -54,5 +53,3 @@ SELECT
 FROM forms f
 WHERE f.campaign_id IS NOT NULL
 ON CONFLICT (client_id) DO NOTHING;
-
-COMMIT;

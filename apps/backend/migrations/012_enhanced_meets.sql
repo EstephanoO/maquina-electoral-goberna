@@ -1,7 +1,6 @@
 -- Migration 012: Enhanced Meets
 -- Adds: operational fields to meets, meet_groups, meet_group_members
-
-BEGIN;
+-- NOTE: No BEGIN/COMMIT — the migration runner wraps each file in its own transaction.
 
 -- ── 1. Enhance meets table ────────────────────────────────────────────
 ALTER TABLE meets ADD COLUMN IF NOT EXISTS leader_id UUID REFERENCES users(id) ON DELETE SET NULL;
@@ -45,5 +44,3 @@ CREATE TABLE IF NOT EXISTS meet_group_members (
 );
 
 CREATE INDEX IF NOT EXISTS idx_meet_group_members_user ON meet_group_members(user_id);
-
-COMMIT;
