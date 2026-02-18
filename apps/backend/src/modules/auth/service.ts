@@ -105,7 +105,7 @@ export class AuthService {
     await this.repo.revokeRefreshToken(stored.id);
 
     const user = await this.repo.findUserById(stored.user_id);
-    if (!user || user.status !== "active") {
+    if (!user || user.status === "suspended") {
       throw new AppError("AUTH_USER_INACTIVE", "usuario no activo", 403);
     }
 
