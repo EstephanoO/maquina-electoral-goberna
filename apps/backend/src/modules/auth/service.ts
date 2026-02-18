@@ -38,10 +38,6 @@ export class AuthService {
       throw new AppError("AUTH_USER_SUSPENDED", "usuario suspendido", 403);
     }
 
-    if (user.status === "pending") {
-      throw new AppError("AUTH_USER_PENDING", "usuario pendiente de activacion", 403);
-    }
-
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
       throw new AppError("AUTH_INVALID_CREDENTIALS", "email o password incorrectos", 401);

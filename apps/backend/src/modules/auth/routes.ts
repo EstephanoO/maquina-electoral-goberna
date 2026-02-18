@@ -7,9 +7,6 @@ import type { AuthenticatedRequest } from "../../infra/auth";
 import { AuthRepository } from "./repository";
 import { changePasswordSchema, loginSchema, refreshSchema, registerSchema } from "./schemas";
 import { AppError, AuthService } from "./service";
-import * as invitationsRepo from "../invitations/repository";
-import * as orgRepo from "../org-hierarchy/repository";
-import { addUserToCampaign } from "../campaigns/repository";
 
 export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
   return async (app) => {
@@ -106,9 +103,6 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
     );
 
     // ── POST /api/auth/register ────────────────────────────────────────
-    // Two modes:
-    // 1. With invitation_code: user is activated immediately, assigned to campaign + hierarchy
-    // 2. Without invitation_code: user is created as 'pending', needs admin approval
     app.post("/api/auth/register", {
       config: {
         rateLimit: {
@@ -132,46 +126,8 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
           return reply.code(409).send(errorPayload(requestId, "AUTH_EMAIL_EXISTS", "email ya registrado"));
         }
 
-        const { invitation_code, campaign_id } = parsed.data;
-        let invitation: Awaited<ReturnType<typeof invitationsRepo.findByCode>> = null;
-
-        // Validate invitation if provided
-        if (invitation_code) {
-          invitation = await invitationsRepo.findByCode(invitation_code);
-          if (!invitation) {
-            return reply.code(404).send(errorPayload(requestId, "INVITATION_NOT_FOUND", "codigo de invitacion no encontrado"));
-          }
-          if (!invitationsRepo.isValid(invitation)) {
-            return reply.code(410).send(errorPayload(requestId, "INVITATION_EXPIRED", "invitacion expirada o agotada"));
-          }
-        }
-
         const passwordHash = await service.hashPassword(parsed.data.password);
-
-        // With invitation: active immediately with assigned role
-        // Without invitation: pending status, agente_campo role
-        const userRole = invitation ? invitation.role : "agente_campo";
-        const userStatus = invitation ? "active" : "pending";
-
-        const user = await repo.createUser(parsed.data.email, passwordHash, parsed.data.full_name, userRole, userStatus);
-
-        // If invitation exists, set up campaign membership + org hierarchy
-        if (invitation) {
-          await invitationsRepo.incrementUsage(invitation.id);
-          await addUserToCampaign(user.id, invitation.campaign_id, invitation.role);
-
-          // Create org hierarchy node
-          await orgRepo.create({
-            campaign_id: invitation.campaign_id,
-            user_id: user.id,
-            parent_user_id: invitation.parent_user_id,
-            role: invitation.role as "consultor" | "jefe_campana" | "brigadista_zonal" | "agente_campo",
-            zone_id: invitation.zone_id,
-          });
-        } else if (campaign_id) {
-          // Open registration with campaign selection -> pending access request
-          // User will need approval to join the campaign
-        }
+        const user = await repo.createUser(parsed.data.email, passwordHash, parsed.data.full_name);
 
         return reply.code(201).send({
           ok: true,
@@ -183,7 +139,6 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
             role: user.role,
             status: user.status,
           },
-          invitation_used: !!invitation,
         });
       } catch (error) {
         if (error instanceof AppError) {

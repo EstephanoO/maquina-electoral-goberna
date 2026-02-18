@@ -13,7 +13,6 @@ export const registerSchema = z.object({
   email: z.string().email("email invalido").transform((e) => e.toLowerCase().trim()),
   password: z.string().min(8, "password debe tener al menos 8 caracteres"),
   full_name: z.string().trim().min(1, "nombre requerido").max(200, "nombre demasiado largo"),
-  invitation_code: z.string().trim().min(1).max(20).optional(),
   campaign_id: z.string().uuid().optional(),
 });
 
