@@ -71,7 +71,7 @@ export type AccessRequest = {
 
 // ── User Types ─────────────────────────────────────────────────────
 
-export type UserRole = "admin" | "supervisor" | "agent";
+export type UserRole = "admin" | "consultor" | "jefe_campana" | "candidato" | "brigadista_zonal" | "agente_campo";
 
 export type User = {
   id: string;

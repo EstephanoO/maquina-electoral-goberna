@@ -9,19 +9,25 @@ import { useEffect, useRef, useState, useCallback } from "react";
 
 /**
  * UI role derived from backend role.
- * Backend roles: admin | supervisor | agent
+ * Backend roles: admin | consultor | jefe_campana | candidato | brigadista_zonal | agente_campo
  * UI mapping:
- *   admin      → "admin"      (platform-wide control)
- *   supervisor → "candidato"  (campaign owner/candidate — sees their own data)
- *   agent      → "agente"     (field agent — minimal web access)
+ *   admin                    → "admin"      (platform-wide control)
+ *   consultor                → "consultor"  (external consultant — restricted data views)
+ *   jefe_campana | candidato → "candidato"  (campaign owner — sees their own data)
+ *   brigadista_zonal         → "agente"     (field coordinator — minimal web access)
+ *   agente_campo             → "agente"     (field agent — minimal web access)
  */
-type UIRole = "admin" | "candidato" | "agente";
+type UIRole = "admin" | "consultor" | "candidato" | "agente";
 
 function mapBackendRoleToUI(backendRole: string): UIRole {
   switch (backendRole) {
     case "admin":
       return "admin";
-    case "supervisor":
+    case "consultor":
+      return "consultor";
+    case "supervisor":  // legacy alias
+    case "jefe_campana":
+    case "candidato":
       return "candidato";
     default:
       return "agente";
@@ -31,18 +37,21 @@ function mapBackendRoleToUI(backendRole: string): UIRole {
 type NavItem = {
   icon: React.ReactNode;
   label: string;
-  href: string;
+  /** Static href or function that receives campaign slug for dynamic routes */
+  href: string | ((campaignSlug: string) => string);
   roles: UIRole[];
   section?: "main" | "admin";
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { icon: <DashboardIcon />, label: "Dashboard", href: "/", roles: ["admin", "candidato"], section: "main" },
+  { icon: <DashboardIcon />, label: "Dashboard", href: "/", roles: ["admin", "candidato", "consultor"], section: "main" },
   { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin" },
   { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["admin", "candidato"], section: "main" },
   { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin", "candidato"], section: "main" },
-  { icon: <CMSIcon />, label: "CMS", href: "/cms", roles: ["admin", "candidato"], section: "main" },
-  { icon: <CmsMetricsIcon />, label: "Metricas CMS", href: "/cms-metrics", roles: ["admin", "candidato"], section: "main" },
+  { icon: <CMSIcon />, label: "CMS", href: "/cms", roles: ["admin", "candidato", "consultor"], section: "main" },
+  { icon: <CmsMetricsIcon />, label: "Metricas CMS", href: "/cms-metrics", roles: ["admin", "candidato", "consultor"], section: "main" },
+  { icon: <MapIcon />, label: "Tierra", href: (slug) => `/candidatos/${slug}/tierra`, roles: ["consultor"], section: "main" },
+  { icon: <DigitalIcon />, label: "Digital", href: (slug) => `/candidatos/${slug}/digital`, roles: ["consultor"], section: "main" },
   // /ops exists but is hidden from nav — access via direct URL only
   // { icon: <OpsIcon />, label: "Operaciones", href: "/ops", roles: ["admin"], section: "admin" },
   { icon: <SettingsIcon />, label: "Configuracion", href: "/settings", roles: ["admin", "candidato"], section: "admin" },
@@ -151,6 +160,17 @@ function CmsMetricsIcon() {
       <path d="M18 20V10" />
       <path d="M12 20V4" />
       <path d="M6 20v-6" />
+    </svg>
+  );
+}
+
+function DigitalIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <title>Digital</title>
+      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
     </svg>
   );
 }
@@ -347,7 +367,15 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const activeCampaign = campaigns.find((c) => c.id === activeCampaignId);
   const isAdmin = user?.role === "admin";
 
-  const filteredNav = NAV_ITEMS.filter((item) => item.roles.includes(uiRole));
+  // Resolve dynamic hrefs (e.g., Tierra/Digital for consultor use campaign slug)
+  const campaignSlug = activeCampaign?.slug ?? "";
+  const resolveHref = (href: string | ((slug: string) => string)): string =>
+    typeof href === "function" ? href(campaignSlug) : href;
+
+  const filteredNav = NAV_ITEMS
+    .filter((item) => item.roles.includes(uiRole))
+    // Hide dynamic-href items when there's no active campaign slug
+    .filter((item) => typeof item.href === "string" || campaignSlug);
   const mainNav = filteredNav.filter((item) => item.section === "main");
   const adminNav = filteredNav.filter((item) => item.section === "admin");
 
@@ -465,16 +493,17 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           }}
         >
           {mainNav.map((item) => {
-            const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
-            const isHovered = hoveredItem === item.href;
+            const href = resolveHref(item.href);
+            const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
+            const isHovered = hoveredItem === href;
             const showLabel = !effectiveCollapsed || mobileOpen;
 
             return (
               <button
                 type="button"
-                key={item.href}
-                onClick={() => router.push(item.href)}
-                onMouseEnter={() => setHoveredItem(item.href)}
+                key={href}
+                onClick={() => router.push(href)}
+                onMouseEnter={() => setHoveredItem(href)}
                 onMouseLeave={() => setHoveredItem(null)}
                 style={{
                   display: "flex",
@@ -526,16 +555,17 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           )}
 
           {adminNav.map((item) => {
-            const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
-            const isHovered = hoveredItem === item.href;
+            const href = resolveHref(item.href);
+            const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
+            const isHovered = hoveredItem === href;
             const showLabel = !effectiveCollapsed || mobileOpen;
 
             return (
               <button
                 type="button"
-                key={item.href}
-                onClick={() => router.push(item.href)}
-                onMouseEnter={() => setHoveredItem(item.href)}
+                key={href}
+                onClick={() => router.push(href)}
+                onMouseEnter={() => setHoveredItem(href)}
                 onMouseLeave={() => setHoveredItem(null)}
                 style={{
                   display: "flex",
