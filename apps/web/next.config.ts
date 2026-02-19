@@ -9,11 +9,6 @@ const nextConfig: NextConfig = {
         pathname: "/uploads/**",
       },
       {
-        protocol: "https",
-        hostname: "api.goberna.us",
-        pathname: "/uploads/**",
-      },
-      {
         protocol: "http",
         hostname: "161.132.39.165",
         pathname: "/uploads/**",
@@ -26,7 +21,7 @@ const nextConfig: NextConfig = {
     ],
   },
   async rewrites() {
-    const target = process.env.BACKEND_PROXY_TARGET ?? "https://api.goberna.us";
+    const target = process.env.BACKEND_PROXY_TARGET ?? "http://161.132.39.165";
 
     return {
       beforeFiles: [
