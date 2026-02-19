@@ -14,7 +14,7 @@ import {
   Cell,
 } from "recharts";
 import type { FormRecord } from "@/lib/services";
-import type { EnrichedAgent } from "./tierra-map";
+import type { EnrichedAgent } from "./types";
 
 /* ========== Types ========== */
 

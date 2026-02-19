@@ -1,32 +1,10 @@
 "use client";
 
-/* ========== Types ========== */
+import type { DrillLevel, DrillState } from "./types";
 
-export type DrillLevel = 0 | 1 | 2 | 3 | 4;
-
-export type DrillState = {
-  level: DrillLevel;
-  /** Selected departamento code (CODDEP, 2 chars) */
-  depCode: string | null;
-  depName: string | null;
-  /** Selected provincia code (CODDEP+CODPROV, 4 chars) */
-  provCode: string | null;
-  provName: string | null;
-  /** Selected distrito code (UBIGEO, 6 chars) */
-  distCode: string | null;
-  distName: string | null;
-  /** Selected sector number */
-  sector: number | null;
-  sectorName: string | null;
-};
-
-export const INITIAL_DRILL: DrillState = {
-  level: 0,
-  depCode: null, depName: null,
-  provCode: null, provName: null,
-  distCode: null, distName: null,
-  sector: null, sectorName: null,
-};
+// Re-export types for backward compat (barrel and tierra-map import from here historically)
+export type { DrillLevel, DrillState };
+export { INITIAL_DRILL } from "./types";
 
 /* ========== Component ========== */
 

@@ -1,6 +1,6 @@
 "use client";
 
-import type { AgentStatus } from "./tierra-map";
+import type { AgentStatus } from "./types";
 
 /* ========== Types ========== */
 

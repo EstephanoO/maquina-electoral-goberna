@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import type { CampaignStats } from "@/lib/types";
-import type { EnrichedAgent, AgentStatus } from "./tierra-map";
+import type { EnrichedAgent, AgentStatus } from "./types";
 
 /* ========== Types ========== */
 
