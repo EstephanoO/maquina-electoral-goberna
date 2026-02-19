@@ -8,9 +8,9 @@
 
 // ─── Auth ───────────────────────────────────────────────────
 
-/** Backend roles: admin | supervisor | agent */
+/** Backend roles - matches ROLE_HIERARCHY in backend authorize.ts */
 // Backend role types (canonical)
-export type BackendRole = 'admin' | 'consultor' | 'jefe_campana' | 'brigadista_zonal' | 'agente_campo';
+export type BackendRole = 'admin' | 'consultor' | 'candidato' | 'jefe_campana' | 'brigadista_zonal' | 'agente_campo';
 
 // Mobile legacy aliases (for backward compatibility)
 export type MobileLegacyRole = 'agent' | 'supervisor';

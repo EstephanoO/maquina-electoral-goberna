@@ -49,16 +49,21 @@ export function getRecentEvents(campaignId: string, limit = 20): CampaignEvent[]
 
 const addMemberSchema = z.object({
   user_id: z.string().uuid(),
-  role: z.enum(["admin", "consultor", "candidato", "brigadista_zonal", "agente_campo"]),
+  role: z.enum(["admin", "consultor", "candidato", "jefe_campana", "brigadista_zonal", "agente_campo"]),
 });
 
 const updateMemberRoleSchema = z.object({
-  role: z.enum(["consultor", "candidato", "brigadista_zonal", "agente_campo"]),
+  role: z.enum(["consultor", "candidato", "jefe_campana", "brigadista_zonal", "agente_campo"]),
 });
 
 const setConsultorCampaignsSchema = z.object({
   campaign_ids: z.array(z.string().uuid()),
 });
+
+// Map API role names to DB column values (DB constraint uses jefe_campana, not candidato)
+function toDbRole(apiRole: string): string {
+  return apiRole === "candidato" ? "jefe_campana" : apiRole;
+}
 
 export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
   return async (app) => {
@@ -222,7 +227,7 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
             return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campana no encontrada"));
           }
 
-          await repo.addUserToCampaign(parsed.data.user_id, campaignId, parsed.data.role);
+          await repo.addUserToCampaign(parsed.data.user_id, campaignId, toDbRole(parsed.data.role));
           return reply.code(200).send({ ok: true, request_id: requestId });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "campaign add member failed");
@@ -295,7 +300,7 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
         }
 
         try {
-          const updated = await repo.updateMemberRole(userId, campaignId, parsed.data.role);
+          const updated = await repo.updateMemberRole(userId, campaignId, toDbRole(parsed.data.role));
           if (!updated) {
             return reply.code(404).send(errorPayload(requestId, "MEMBER_NOT_FOUND", "miembro no encontrado en esta campana"));
           }
