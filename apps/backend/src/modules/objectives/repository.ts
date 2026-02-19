@@ -71,10 +71,10 @@ export async function listZoneObjectives(campaignId: string): Promise<ZoneObject
        SELECT 
          COUNT(DISTINCT CASE WHEN uc.role = 'brigadista_zonal' THEN uc.user_id END)::int AS brigadista_count,
          COUNT(DISTINCT CASE WHEN uc.role = 'agente_campo' THEN uc.user_id END)::int AS agent_count,
-         (SELECT COUNT(*) FROM form_submissions fs 
-          JOIN users u ON u.id = fs.created_by 
-          WHERE fs.campaign_id = zo.campaign_id AND u.region = zo.region
-         )::int AS forms_collected
+       (SELECT COUNT(*) FROM form_submissions fs 
+           JOIN users u ON u.id = fs.submitted_by 
+           WHERE fs.campaign_id = zo.campaign_id AND u.region = zo.region
+          )::int AS forms_collected
        FROM user_campaigns uc
        JOIN users u ON u.id = uc.user_id
        WHERE uc.campaign_id = zo.campaign_id 
