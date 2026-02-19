@@ -45,6 +45,8 @@ export type LoginResponse = {
   refresh_token: string;
   user: AuthUser;
   campaigns: CampaignMembership[];
+  /** If true, user must set new password before accessing the app */
+  password_reset_required?: boolean;
 };
 
 /** Backend expects: { email, password, full_name, phone, region, campaign_id } */
@@ -317,7 +319,7 @@ export type MeetSummary = Meet & {
 // ─── API Response wrapper ───────────────────────────────────
 
 export type ApiOk<T> = { ok: true; data: T };
-export type ApiErr = { ok: false; error: string; code?: string; status?: number };
+export type ApiErr = { ok: false; error: string; code?: string; status?: number; passwordResetRequired?: boolean };
 export type ApiResult<T> = ApiOk<T> | ApiErr;
 
 // ─── API Error codes ────────────────────────────────────────

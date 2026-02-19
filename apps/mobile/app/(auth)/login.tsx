@@ -15,6 +15,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useApp } from '@/lib/app-context';
+import { API_BASE } from '@/lib/api';
 
 // ─── Design Tokens ─────────────────────────────────────────────
 const BRAND_BLUE = '#163960';
@@ -36,6 +37,9 @@ const isEmail = (input: string) => input.includes('@');
 // Generate email from phone number (for backend compatibility)
 const generateEmail = (phone: string) => `${phone}@goberna.pe`;
 
+// Password validation
+const PASSWORD_MIN = 8;
+
 export default function LoginScreen() {
   const router = useRouter();
   const { login } = useApp();
@@ -47,8 +51,23 @@ export default function LoginScreen() {
   const [phoneFocused, setPhoneFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
 
+  // Password reset flow state
+  const [resetMode, setResetMode] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [newPasswordFocused, setNewPasswordFocused] = useState(false);
+  const [confirmPasswordFocused, setConfirmPasswordFocused] = useState(false);
+
   // Hidden email detection (for admins who know to type email)
   const isEmailMode = isEmail(phone);
+
+  // Get identifier (email format for backend)
+  const getIdentifier = () => {
+    const trimmed = phone.trim();
+    if (isEmailMode) return trimmed.toLowerCase();
+    return generateEmail(trimmed);
+  };
 
   const handleLogin = async () => {
     const trimmed = phone.trim();
@@ -81,11 +100,217 @@ export default function LoginScreen() {
     setLoading(false);
 
     if (!result.ok) {
+      // Check if password reset is required
+      if (result.passwordResetRequired) {
+        setResetMode(true);
+        return;
+      }
       Alert.alert('Error de acceso', result.error || 'Credenciales incorrectas.');
     }
     // If ok, router guard in _layout.tsx handles navigation
   };
 
+  // Handle password reset submission
+  const handleResetPassword = async () => {
+    if (newPassword.length < PASSWORD_MIN) {
+      Alert.alert('Contraseña muy corta', `La nueva contraseña debe tener al menos ${PASSWORD_MIN} caracteres.`);
+      return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+      Alert.alert('No coinciden', 'Las contraseñas no coinciden.');
+      return;
+    }
+
+    setLoading(true);
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: getIdentifier(),
+          current_password: password.trim(),
+          new_password: newPassword.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.ok) {
+        Alert.alert(
+          'Contraseña actualizada', 
+          'Tu contraseña ha sido cambiada. Ahora puedes iniciar sesión.',
+          [{ 
+            text: 'OK', 
+            onPress: () => {
+              // Reset form and login with new password
+              setResetMode(false);
+              setPassword(newPassword);
+              setNewPassword('');
+              setConfirmPassword('');
+            }
+          }]
+        );
+      } else {
+        Alert.alert('Error', data.message || 'No se pudo cambiar la contraseña.');
+      }
+    } catch {
+      Alert.alert('Error', 'Error de conexión. Intenta de nuevo.');
+    }
+    
+    setLoading(false);
+  };
+
+  // Cancel reset and go back to login
+  const cancelReset = () => {
+    setResetMode(false);
+    setNewPassword('');
+    setConfirmPassword('');
+  };
+
+  // Password Reset Mode UI
+  if (resetMode) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView 
+            contentContainerStyle={styles.scroll} 
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={[styles.logoCircle, { backgroundColor: BRAND_YELLOW }]}>
+                <Ionicons name="key" size={36} color={BRAND_BLUE} />
+              </View>
+              <Text style={styles.title}>Nueva Contraseña</Text>
+              <Text style={styles.subtitle}>Crea tu nueva contraseña para continuar</Text>
+            </View>
+
+            {/* Reset Form */}
+            <View style={styles.form}>
+              {/* New Password */}
+              <View style={styles.field}>
+                <Text style={styles.label}>Nueva contraseña</Text>
+                <View style={[
+                  styles.inputWrapper,
+                  newPasswordFocused && styles.inputWrapperFocused
+                ]}>
+                  <Ionicons 
+                    name="lock-closed-outline" 
+                    size={20} 
+                    color={newPasswordFocused ? BORDER_FOCUS : TEXT_MUTED} 
+                    style={styles.inputIcon}
+                  />
+                  <TextInput
+                    style={[styles.input, styles.inputPassword]}
+                    placeholder="Mínimo 8 caracteres"
+                    placeholderTextColor={TEXT_MUTED}
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    secureTextEntry={!showNewPassword}
+                    autoComplete="new-password"
+                    onFocus={() => setNewPasswordFocused(true)}
+                    onBlur={() => setNewPasswordFocused(false)}
+                  />
+                  <Pressable 
+                    onPress={() => setShowNewPassword(!showNewPassword)}
+                    style={styles.eyeButton}
+                    hitSlop={12}
+                  >
+                    <Ionicons 
+                      name={showNewPassword ? 'eye-outline' : 'eye-off-outline'} 
+                      size={22} 
+                      color={TEXT_MUTED} 
+                    />
+                  </Pressable>
+                </View>
+                {newPassword.length > 0 && newPassword.length < PASSWORD_MIN && (
+                  <Text style={styles.hint}>
+                    {PASSWORD_MIN - newPassword.length} caracteres más
+                  </Text>
+                )}
+              </View>
+
+              {/* Confirm Password */}
+              <View style={styles.field}>
+                <Text style={styles.label}>Confirmar contraseña</Text>
+                <View style={[
+                  styles.inputWrapper,
+                  confirmPasswordFocused && styles.inputWrapperFocused,
+                  confirmPassword.length > 0 && confirmPassword !== newPassword && styles.inputWrapperError,
+                ]}>
+                  <Ionicons 
+                    name="checkmark-circle-outline" 
+                    size={20} 
+                    color={
+                      confirmPassword.length > 0 && confirmPassword === newPassword 
+                        ? '#10B981' 
+                        : confirmPasswordFocused ? BORDER_FOCUS : TEXT_MUTED
+                    } 
+                    style={styles.inputIcon}
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Repite la contraseña"
+                    placeholderTextColor={TEXT_MUTED}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry={!showNewPassword}
+                    autoComplete="new-password"
+                    onFocus={() => setConfirmPasswordFocused(true)}
+                    onBlur={() => setConfirmPasswordFocused(false)}
+                  />
+                </View>
+                {confirmPassword.length > 0 && confirmPassword !== newPassword && (
+                  <Text style={[styles.hint, { color: '#EF4444' }]}>
+                    Las contraseñas no coinciden
+                  </Text>
+                )}
+              </View>
+
+              {/* Submit Button */}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.button,
+                  loading && styles.buttonDisabled,
+                  pressed && !loading && styles.buttonPressed,
+                ]}
+                onPress={handleResetPassword}
+                disabled={loading}
+              >
+                {loading ? (
+                  <View style={styles.buttonContent}>
+                    <Text style={styles.buttonText}>Guardando...</Text>
+                  </View>
+                ) : (
+                  <View style={styles.buttonContent}>
+                    <Ionicons name="checkmark-done-outline" size={20} color="#FFFFFF" />
+                    <Text style={styles.buttonText}>Guardar Contraseña</Text>
+                  </View>
+                )}
+              </Pressable>
+
+              {/* Cancel Button */}
+              <Pressable
+                style={styles.cancelButton}
+                onPress={cancelReset}
+                disabled={loading}
+              >
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
+  // Normal Login UI
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -375,5 +600,22 @@ const styles = StyleSheet.create({
     color: BRAND_BLUE, 
     fontFamily: FONT, 
     textDecorationLine: 'underline' 
+  },
+  
+  // Reset mode styles
+  inputWrapperError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+  },
+  cancelButton: {
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  cancelButtonText: {
+    fontSize: 14,
+    color: TEXT_MUTED,
+    fontFamily: FONT,
+    textDecorationLine: 'underline',
   },
 });

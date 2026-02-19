@@ -7,6 +7,7 @@ export type UserRow = {
   region: string | null;
   role: string;
   status: string;
+  password_reset_required: boolean;
   created_at: Date;
   updated_at: Date;
 };
@@ -66,6 +67,8 @@ export type LoginResult = {
     slug: string;
     role: string;
   }>;
+  /** If true, user must set new password before accessing the app */
+  password_reset_required?: boolean;
 };
 
 export type RefreshResult = {

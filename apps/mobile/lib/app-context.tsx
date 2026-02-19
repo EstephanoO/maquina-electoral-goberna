@@ -199,7 +199,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const result = await api.login(body);
     if (!result.ok) return result;
 
-    const { user, campaigns } = result.data;
+    const { user, campaigns, password_reset_required } = result.data;
+
+    // Check if password reset is required BEFORE saving auth data
+    // User must set new password first, so we don't save tokens yet
+    if (password_reset_required) {
+      return { 
+        ok: false, 
+        error: 'Debes crear una nueva contraseña.',
+        code: 'AUTH_PASSWORD_RESET_REQUIRED',
+        passwordResetRequired: true,
+      };
+    }
+
     await authStore.saveAuthData(result.data);
 
     if (user.status === 'pending') {

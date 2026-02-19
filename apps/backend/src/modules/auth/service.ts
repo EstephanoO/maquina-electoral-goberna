@@ -40,7 +40,7 @@ export class AuthService {
   }
 
   /** Login with a pre-fetched user object (used for phone-based login) */
-  async loginWithUser(user: { id: string; email: string; full_name: string; phone?: string; region?: string; role: string; status: string; password_hash: string }, password: string): Promise<LoginResult> {
+  async loginWithUser(user: { id: string; email: string; full_name: string; phone?: string | null; region?: string | null; role: string; status: string; password_hash: string; password_reset_required?: boolean }, password: string): Promise<LoginResult> {
     if (user.status === "suspended") {
       throw new AppError("AUTH_USER_SUSPENDED", "usuario suspendido", 403);
     }
@@ -93,6 +93,8 @@ export class AuthService {
         slug: c.campaign_slug,
         role: c.role,
       })),
+      // Include flag if user needs to reset password
+      ...(user.password_reset_required ? { password_reset_required: true } : {}),
     };
   }
 

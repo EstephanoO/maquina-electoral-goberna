@@ -5,7 +5,8 @@ import { pool } from "../../db";
 import { errorPayload } from "../../infra/http";
 import type { AuthenticatedRequest } from "../../infra/auth";
 import { AuthRepository } from "./repository";
-import { changePasswordSchema, loginSchema, refreshSchema, registerSchema } from "./schemas";
+import { changePasswordSchema, loginSchema, refreshSchema, registerSchema, resetPasswordSchema } from "./schemas";
+import { authorize } from "../../infra/authorize";
 import { AppError, AuthService } from "./service";
 
 export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
@@ -248,6 +249,100 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
             status: user.status,
           },
           campaigns: campaignsList,
+        });
+      },
+    );
+
+    // ── POST /api/auth/reset-password ──────────────────────────────────
+    // For users who were marked for password reset (password_reset_required = true)
+    // User provides their identifier (phone/email), current password, and new password
+    // This clears the password_reset_required flag
+    app.post("/api/auth/reset-password", {
+      config: {
+        rateLimit: {
+          max: env.rateLimitAuthPerMinute,
+          timeWindow: "1 minute",
+          keyGenerator: (request) => request.ip,
+        },
+      },
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+
+      const parsed = resetPasswordSchema.safeParse(request.body);
+      if (!parsed.success) {
+        const message = parsed.error.issues.map((i) => i.message).join(", ");
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
+      }
+
+      try {
+        const { identifier, current_password, new_password } = parsed.data;
+        
+        // Find user by email or phone
+        const isEmail = identifier.includes("@");
+        const user = isEmail
+          ? await repo.findUserByEmail(identifier)
+          : await repo.findUserByPhone(identifier);
+
+        if (!user) {
+          return reply.code(401).send(errorPayload(requestId, "AUTH_INVALID_CREDENTIALS", "credenciales incorrectas"));
+        }
+
+        // Verify user is marked for reset
+        if (!user.password_reset_required) {
+          return reply.code(400).send(errorPayload(requestId, "AUTH_RESET_NOT_REQUIRED", "no se requiere cambio de password"));
+        }
+
+        // Use existing change password logic (verifies current password)
+        await service.changePassword(user.id, current_password, new_password);
+        
+        // Clear the reset flag
+        await repo.clearPasswordResetRequired(user.id);
+
+        app.log.info({ user_id: user.id, request_id: requestId }, "user reset password successfully");
+
+        return reply.code(200).send({ ok: true, request_id: requestId, message: "password actualizada" });
+      } catch (error) {
+        if (error instanceof AppError) {
+          return reply.code(error.statusCode).send(errorPayload(requestId, error.code, error.message));
+        }
+        throw error;
+      }
+    });
+
+    // ── POST /api/users/:userId/require-password-reset ─────────────────
+    // Admin/Consultor marks a user as requiring password reset on next login
+    // The user will see a "set new password" screen when they try to login
+    app.post(
+      "/api/users/:userId/require-password-reset",
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { userId } = request.params as { userId: string };
+
+        // Find the target user
+        const targetUser = await repo.findUserById(userId);
+        if (!targetUser) {
+          return reply.code(404).send(errorPayload(requestId, "USER_NOT_FOUND", "usuario no encontrado"));
+        }
+
+        // Cannot reset admin passwords (for security)
+        if (targetUser.role === "admin") {
+          return reply.code(403).send(errorPayload(requestId, "FORBIDDEN", "no se puede reiniciar password de admin"));
+        }
+
+        // Mark user for password reset
+        await repo.setPasswordResetRequired(userId, true);
+
+        app.log.info({ 
+          target_user_id: userId,
+          requester_id: (request as AuthenticatedRequest).userId,
+          request_id: requestId,
+        }, "user marked for password reset");
+
+        return reply.code(200).send({ 
+          ok: true, 
+          request_id: requestId, 
+          message: "usuario marcado para reiniciar password",
         });
       },
     );

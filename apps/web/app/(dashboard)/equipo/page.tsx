@@ -282,6 +282,14 @@ function IconMapPin() {
   );
 }
 
+function IconKey() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+    </svg>
+  );
+}
+
 /** Open WhatsApp chat with phone number */
 function openWhatsApp(phone: string) {
   // Clean phone number (remove spaces, dashes)
@@ -929,6 +937,7 @@ function MemberRow({
   updatingRole,
   onRoleChange,
   onRemove,
+  onResetPassword,
   allowedRoles,
 }: { 
   member: Member;
@@ -937,6 +946,7 @@ function MemberRow({
   updatingRole: boolean;
   onRoleChange: (role: string) => void;
   onRemove: () => void;
+  onResetPassword: () => void;
   allowedRoles: string[];
 }) {
   const config = getRoleConfig(member.role);
@@ -1078,7 +1088,35 @@ function MemberRow({
       
       {/* Actions */}
       {canManage && !isProtected && (
-        <div style={{ flex: "0 0 auto" }}>
+        <div style={{ flex: "0 0 auto", display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            onClick={onResetPassword}
+            title="Reiniciar contrasena"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "6px 10px",
+              fontSize: 11,
+              fontWeight: 600,
+              color: "var(--goberna-blue-600)",
+              background: "var(--goberna-blue-50)",
+              border: "1px solid var(--goberna-blue-200)",
+              borderRadius: 6,
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={(e) => { 
+              e.currentTarget.style.background = "var(--goberna-blue-100)"; 
+            }}
+            onMouseLeave={(e) => { 
+              e.currentTarget.style.background = "var(--goberna-blue-50)"; 
+            }}
+          >
+            <IconKey />
+            Reiniciar
+          </button>
           <button
             type="button"
             onClick={onRemove}
@@ -1507,6 +1545,18 @@ export default function EquipoPage() {
     const res = await api.delete(`/api/campaigns/${activeCampaignId}/members/${userId}`);
     if (res.ok) {
       setMembers((prev) => prev.filter((m) => m.user_id !== userId));
+    }
+  };
+
+  // ── Reset password ──
+  const handleResetPassword = async (userId: string, name: string) => {
+    if (!confirm(`¿Reiniciar la contraseña de ${name}? El usuario debera crear una nueva contraseña la proxima vez que inicie sesion.`)) return;
+    
+    const res = await api.post(`/api/users/${userId}/require-password-reset`, {});
+    if (res.ok) {
+      alert(`Contraseña reiniciada para ${name}. El usuario debera crear una nueva contraseña.`);
+    } else {
+      alert(res.error?.message ?? "Error reiniciando contraseña");
     }
   };
 
@@ -1983,6 +2033,7 @@ export default function EquipoPage() {
                   updatingRole={updatingRole === member.user_id}
                   onRoleChange={(role) => handleRoleChange(member.user_id, role)}
                   onRemove={() => handleRemove(member.user_id, member.full_name)}
+                  onResetPassword={() => handleResetPassword(member.user_id, member.full_name)}
                   allowedRoles={allowedRoles}
                 />
               ))

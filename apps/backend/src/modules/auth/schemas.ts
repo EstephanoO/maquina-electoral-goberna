@@ -36,7 +36,21 @@ export const changePasswordSchema = z.object({
   new_password: z.string().min(8, "nueva password debe tener al menos 8 caracteres"),
 });
 
+/**
+ * Reset password schema - for users who were marked for password reset
+ * Used when user logs in and backend returns password_reset_required: true
+ */
+export const resetPasswordSchema = z.object({
+  // Identifier (phone or email) to find the user
+  identifier: z.string().min(1, "telefono o email requerido").transform((val) => val.toLowerCase().trim()),
+  // Current password to verify identity
+  current_password: z.string().min(1, "password actual requerido"),
+  // New password
+  new_password: z.string().min(8, "nueva password debe tener al menos 8 caracteres"),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RefreshInput = z.infer<typeof refreshSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
