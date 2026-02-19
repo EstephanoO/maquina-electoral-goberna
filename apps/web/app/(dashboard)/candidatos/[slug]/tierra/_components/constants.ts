@@ -18,7 +18,13 @@ export const CLUSTER_STEPS = [5, 15, 50, 150] as const;
 export const CLUSTER_SIZES = [12, 16, 20, 26, 32] as const;
 export const DATA_POINT = "#2563eb";
 
-/* ─── Priority zone colors ─── */
+/* ─── Non-priority zone colors (neutral grey, outline-only feel) ─── */
+
+export const ZONE_FILL = "rgba(148, 163, 184, 0.06)";
+export const ZONE_LINE = "#334155";
+export const ZONE_LINE_GHOST = "#94a3b8";
+
+/* ─── Priority zone colors (red — must stand out) ─── */
 
 export const PRIORITY_FILL = "rgba(239, 68, 68, 0.35)";
 export const PRIORITY_LINE = "#991b1b";

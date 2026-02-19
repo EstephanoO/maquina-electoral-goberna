@@ -25,6 +25,7 @@ import type { TierraMapHandle, TierraMapProps, DrillLevel } from "./types";
 import { INITIAL_DRILL } from "./types";
 import {
   STATUS_COLORS, CLUSTER_COLORS, CLUSTER_STEPS, CLUSTER_SIZES, DATA_POINT,
+  ZONE_FILL, ZONE_LINE, ZONE_LINE_GHOST,
   PRIORITY_FILL, PRIORITY_LINE, SECTOR_FILL, SECTOR_LINE,
   PERU_VIEW, PERU_BOUNDS, MAP_STYLE, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
 } from "./constants";
@@ -326,23 +327,23 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
         {/* ── Tegola vector tiles ── */}
         <Source id="peru" type="vector" tiles={[tileUrl]} minzoom={0} maxzoom={14} promoteId={{ departamentos: "coddep", provincias: "codprov_full", distritos: "ubigeo" }}>
 
-          {/* DEPARTAMENTOS */}
+          {/* DEPARTAMENTOS — neutral grey, outline-only */}
           <Layer id="dep-fill" type="fill" source-layer="departamentos" filter={filters.depFillFilter}
-            paint={{ "fill-color": "rgba(59, 130, 246, 0.15)", "fill-opacity": drillState.level === 0 ? 0.8 : 0.04 }} />
+            paint={{ "fill-color": ZONE_FILL, "fill-opacity": drillState.level === 0 ? 1 : 0.02 }} />
           <Layer id="dep-line" type="line" source-layer="departamentos" filter={filters.depLineFilter}
-            paint={{ "line-color": drillState.level === 0 ? "#3b82f6" : "#94a3b8", "line-width": drillState.level === 0 ? 1.5 : 0.8, "line-opacity": drillState.level === 0 ? 0.6 : 0.2 }} />
+            paint={{ "line-color": drillState.level === 0 ? ZONE_LINE : ZONE_LINE_GHOST, "line-width": drillState.level === 0 ? 1.2 : 0.6, "line-opacity": drillState.level === 0 ? 0.7 : 0.2 }} />
 
-          {/* PROVINCIAS */}
+          {/* PROVINCIAS — neutral grey, outline-only */}
           <Layer id="prov-fill" type="fill" source-layer="provincias" filter={filters.provFilter}
-            paint={{ "fill-color": "rgba(16, 185, 129, 0.18)", "fill-opacity": drillState.level === 1 ? 0.85 : 0.04 }} />
+            paint={{ "fill-color": ZONE_FILL, "fill-opacity": drillState.level === 1 ? 1 : 0.02 }} />
           <Layer id="prov-line" type="line" source-layer="provincias" filter={filters.provFilter}
-            paint={{ "line-color": drillState.level === 1 ? "#10b981" : "#94a3b8", "line-width": drillState.level === 1 ? 1.2 : 0.6, "line-opacity": drillState.level === 1 ? 0.7 : 0.15 }} />
+            paint={{ "line-color": drillState.level === 1 ? ZONE_LINE : ZONE_LINE_GHOST, "line-width": drillState.level === 1 ? 1 : 0.5, "line-opacity": drillState.level === 1 ? 0.7 : 0.15 }} />
 
-          {/* DISTRITOS */}
+          {/* DISTRITOS — neutral grey, outline-only */}
           <Layer id="dist-fill" type="fill" source-layer="distritos" filter={filters.distFilter}
-            paint={{ "fill-color": "rgba(249, 115, 22, 0.18)", "fill-opacity": 0.85 }} />
+            paint={{ "fill-color": ZONE_FILL, "fill-opacity": 1 }} />
           <Layer id="dist-line" type="line" source-layer="distritos" filter={filters.distFilter}
-            paint={{ "line-color": "#f97316", "line-width": drillState.level >= 3 ? 1.5 : 1, "line-opacity": 0.7 }} />
+            paint={{ "line-color": ZONE_LINE, "line-width": drillState.level >= 3 ? 1.2 : 0.8, "line-opacity": 0.6 }} />
 
           {/* PRIORITY ZONES */}
           <Layer id="priority-dep-fill" type="fill" source-layer="priority_departamentos" filter={filters.priorityDepFilter}
