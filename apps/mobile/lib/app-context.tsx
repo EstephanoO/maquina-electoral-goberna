@@ -116,7 +116,7 @@ async function buildAppConfig(
       id: user.id,
       full_name: user.full_name,
       email: user.email,
-      role: user.role,
+      role: activeCampaign.role,  // Use campaign-specific role, not global user role
     },
     campaign: activeCampaign,
   };
