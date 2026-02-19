@@ -12,7 +12,7 @@ export function buildZonesRoutes(_env: AppEnv): FastifyPluginAsync {
     // ── POST /api/zones ─────────────────────────────────────────────
     app.post(
       "/api/zones",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const parsed = createZoneSchema.safeParse(request.body);
@@ -102,7 +102,7 @@ export function buildZonesRoutes(_env: AppEnv): FastifyPluginAsync {
     // ── PUT /api/zones/:id ──────────────────────────────────────────
     app.put(
       "/api/zones/:id",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { id } = request.params as { id: string };
@@ -129,7 +129,7 @@ export function buildZonesRoutes(_env: AppEnv): FastifyPluginAsync {
     // ── DELETE /api/zones/:id ───────────────────────────────────────
     app.delete(
       "/api/zones/:id",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { id } = request.params as { id: string };

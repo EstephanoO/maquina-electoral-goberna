@@ -38,7 +38,7 @@ export function buildObjectivesRoutes(_env: AppEnv): FastifyPluginAsync {
      */
     app.put(
       "/api/objectives/zones/:region",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
       async (request, reply) => {
         const authed = request as unknown as AuthenticatedRequest;
         const campaignId = request.activeCampaignId!;
@@ -73,7 +73,7 @@ export function buildObjectivesRoutes(_env: AppEnv): FastifyPluginAsync {
      */
     app.post(
       "/api/objectives/zones/bulk",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
       async (request, reply) => {
         const authed = request as unknown as AuthenticatedRequest;
         const campaignId = request.activeCampaignId!;
@@ -107,7 +107,7 @@ export function buildObjectivesRoutes(_env: AppEnv): FastifyPluginAsync {
      */
     app.delete(
       "/api/objectives/zones/:region",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
       async (request, reply) => {
         const campaignId = request.activeCampaignId!;
         const { region } = request.params as { region: string };
@@ -148,7 +148,7 @@ export function buildObjectivesRoutes(_env: AppEnv): FastifyPluginAsync {
      */
     app.put(
       "/api/objectives/users/:userId",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
       async (request, reply) => {
         const campaignId = request.activeCampaignId!;
         const { userId } = request.params as { userId: string };

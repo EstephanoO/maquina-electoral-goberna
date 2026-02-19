@@ -7,9 +7,20 @@ export class AuthRepository {
 
   async findUserByEmail(email: string): Promise<UserRow | null> {
     const { rows } = await this.pool.query<UserRow>(
-      `SELECT id, email, password_hash, full_name, role, status, created_at, updated_at
+      `SELECT id, email, password_hash, full_name, phone, region, role, status, created_at, updated_at
        FROM users WHERE lower(email) = lower($1)`,
       [email.trim()],
+    );
+    return rows[0] ?? null;
+  }
+
+  async findUserByPhone(phone: string): Promise<UserRow | null> {
+    // Normalize phone: remove non-digits for comparison
+    const normalizedPhone = phone.replace(/\D/g, "");
+    const { rows } = await this.pool.query<UserRow>(
+      `SELECT id, email, password_hash, full_name, phone, region, role, status, created_at, updated_at
+       FROM users WHERE REGEXP_REPLACE(phone, '\\D', '', 'g') = $1`,
+      [normalizedPhone],
     );
     return rows[0] ?? null;
   }

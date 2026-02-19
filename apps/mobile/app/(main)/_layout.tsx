@@ -24,8 +24,8 @@ export default function MainLayout() {
   const primary = candidate.color_primario;
   const secondary = candidate.color_secundario;
 
-  // Solicitudes tab visible for admin and supervisor roles
-  const showSolicitudes = agent.role === 'admin' || agent.role === 'supervisor';
+  // Solicitudes tab visible for admin, consultor, candidato, and jefe_campana (alias) roles
+  const showSolicitudes = ['admin', 'consultor', 'candidato', 'jefe_campana'].includes(agent.role);
 
   return (
     <Tabs

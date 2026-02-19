@@ -14,6 +14,7 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
     const service = new AuthService(repo, env);
 
     // ── POST /api/auth/login ───────────────────────────────────────────
+    // Supports login by email OR phone number
     app.post("/api/auth/login", {
       config: {
         rateLimit: {
@@ -32,7 +33,21 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
       }
 
       try {
-        const result = await service.login(parsed.data.email, parsed.data.password);
+        const { identifier, password } = parsed.data;
+        
+        // Determine if identifier is email or phone
+        const isEmail = identifier.includes("@");
+        
+        // Try to find user by email or phone
+        const user = isEmail
+          ? await repo.findUserByEmail(identifier)
+          : await repo.findUserByPhone(identifier);
+
+        if (!user) {
+          return reply.code(401).send(errorPayload(requestId, "AUTH_INVALID_CREDENTIALS", "credenciales incorrectas"));
+        }
+
+        const result = await service.loginWithUser(user, password);
         return reply.code(200).send({ ok: true, request_id: requestId, ...result });
       } catch (error) {
         if (error instanceof AppError) {
@@ -103,7 +118,8 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
     );
 
     // ── POST /api/auth/register ────────────────────────────────────────
-    // Creates user and automatically creates access request for the campaign
+    // Creates user with phone as primary identifier
+    // Email is optional - if not provided, generates {phone}@goberna.pe
     app.post("/api/auth/register", {
       config: {
         rateLimit: {
@@ -122,27 +138,41 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
       }
 
       try {
-        const existing = await repo.findUserByEmail(parsed.data.email);
-        if (existing) {
-          return reply.code(409).send(errorPayload(requestId, "AUTH_EMAIL_EXISTS", "email ya registrado"));
+        const { phone, password, full_name, region, campaign_id, email: providedEmail } = parsed.data;
+        
+        // Check if phone already registered
+        const existingByPhone = await repo.findUserByPhone(phone);
+        if (existingByPhone) {
+          return reply.code(409).send(errorPayload(requestId, "AUTH_PHONE_EXISTS", "telefono ya registrado"));
+        }
+
+        // Generate email if not provided: {phone}@goberna.pe
+        const email = providedEmail ?? `${phone.replace(/\D/g, "")}@goberna.pe`;
+
+        // Check if email already exists (in case they provided one)
+        if (providedEmail) {
+          const existingByEmail = await repo.findUserByEmail(email);
+          if (existingByEmail) {
+            return reply.code(409).send(errorPayload(requestId, "AUTH_EMAIL_EXISTS", "email ya registrado"));
+          }
         }
 
         // Verify campaign exists
         const { rows: campaignRows } = await pool.query(
           "SELECT id FROM campaigns WHERE id = $1",
-          [parsed.data.campaign_id],
+          [campaign_id],
         );
         if (campaignRows.length === 0) {
           return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "candidato no encontrado"));
         }
 
-        const passwordHash = await service.hashPassword(parsed.data.password);
+        const passwordHash = await service.hashPassword(password);
         const user = await repo.createUser(
-          parsed.data.email,
+          email,
           passwordHash,
-          parsed.data.full_name,
-          parsed.data.phone,
-          parsed.data.region,
+          full_name,
+          phone,
+          region,
         );
 
         // Create access request automatically with region
@@ -150,15 +180,16 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
           `INSERT INTO access_requests (user_id, campaign_id, region, perm_tierra, perm_digital)
            VALUES ($1, $2, $3, true, true)
            ON CONFLICT (user_id, campaign_id) WHERE status = 'pending' DO NOTHING`,
-          [user.id, parsed.data.campaign_id, parsed.data.region],
+          [user.id, campaign_id, region],
         );
 
         app.log.info({
           user_id: user.id,
-          campaign_id: parsed.data.campaign_id,
-          region: parsed.data.region,
+          campaign_id,
+          region,
+          phone,
           request_id: requestId,
-        }, "user registered with access request");
+        }, "user registered with access request (phone-based)");
 
         return reply.code(201).send({
           ok: true,

@@ -9,7 +9,8 @@ export const createAccessRequestSchema = z.object({
 /** Map frontend aliases to canonical role names */
 const ROLE_ALIASES: Record<string, string> = {
   agent: "agente_campo",
-  supervisor: "jefe_campana",
+  supervisor: "candidato",     // Legacy mobile alias
+  jefe_campana: "candidato",   // Legacy backend alias
 };
 
 export const resolveAccessRequestSchema = z.object({
@@ -17,7 +18,7 @@ export const resolveAccessRequestSchema = z.object({
   note: z.string().trim().max(500).optional(),
   /** Role to assign on approval. Accepts aliases: agent, supervisor */
   role: z.string().optional().default("agente_campo").transform((v) => ROLE_ALIASES[v] ?? v).pipe(
-    z.enum(["consultor", "jefe_campana", "brigadista_zonal", "agente_campo"]),
+    z.enum(["consultor", "candidato", "brigadista_zonal", "agente_campo"]),
   ),
   /** Permission for Tierra module (field operations) */
   perm_tierra: z.boolean().optional().default(true),

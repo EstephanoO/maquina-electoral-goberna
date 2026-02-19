@@ -98,11 +98,11 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── GET /api/access-requests/pending ────────────────────────────
-    // brigadista_zonal+ lists pending access requests.
-    // Admins see all, consultor/jefe_campana see their campaigns, brigadista_zonal sees their region only.
+    // candidato+ lists pending access requests.
+    // Admins see all, consultor/candidato see their campaigns, brigadista_zonal sees their region only.
     app.get(
       "/api/access-requests/pending",
-      { preHandler: [app.authenticate, authorize({ roles: ["brigadista_zonal"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const authed = request as AuthenticatedRequest;
@@ -117,7 +117,7 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
             // Brigadistas zonales only see requests from their region
             requests = await repo.listPendingByCampaignsAndRegion(authed.campaignIds, authed.userRegion);
           } else {
-            // Consultors/jefes see all requests for their campaigns
+            // Consultor/Candidato see all requests for their campaigns
             requests = await repo.listPendingByCampaigns(authed.campaignIds);
           }
 
@@ -136,11 +136,11 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── GET /api/access-requests ────────────────────────────────────
-    // Admin/Supervisor lists access requests. Optional ?status= filter.
-    // Supervisors see only their campaigns.
+    // Admin/Consultor/Candidato lists access requests. Optional ?status= filter.
+    // Non-admins see only their campaigns.
     app.get(
       "/api/access-requests",
-      { preHandler: [app.authenticate, authorize({ roles: ["consultor"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const authed = request as AuthenticatedRequest;
@@ -177,11 +177,11 @@ export function buildAccessRequestsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── PUT /api/access-requests/:requestId ─────────────────────────
-    // Admin/Supervisor approves or rejects an access request.
-    // Supervisors can only resolve requests for their campaigns.
+    // Admin/Consultor/Candidato approves or rejects an access request.
+    // Non-admins can only resolve requests for their campaigns.
     app.put(
       "/api/access-requests/:requestId",
-      { preHandler: [app.authenticate, authorize({ roles: ["consultor"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const authed = request as AuthenticatedRequest;

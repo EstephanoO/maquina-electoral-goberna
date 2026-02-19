@@ -49,6 +49,22 @@ type ZoneObjective = {
   updated_at: string;
 };
 
+type Campaign = {
+  id: string;
+  name: string;
+  slug: string;
+  cargo?: string;
+  partido?: string;
+  foto_url?: string;
+};
+
+type ConsultorCampaignAssignment = {
+  campaign_id: string;
+  campaign_name: string;
+  campaign_slug: string;
+  assigned_at: string;
+};
+
 // Peruvian departments for objectives
 const DEPARTAMENTOS = [
   "Amazonas", "Ancash", "Apurimac", "Arequipa", "Ayacucho",
@@ -85,6 +101,18 @@ const ROLES: Record<string, RoleConfig> = {
     bgColor: "linear-gradient(135deg, #ffd700, #ffb700)",
     borderColor: "#d4a500",
     description: "Control total del sistema y multiples campanas",
+    canManage: ["consultor", "supervisor", "director_regional", "capitan_brigada", "agent"],
+  },
+  consultor: {
+    key: "consultor",
+    label: "Consultor Estrategico",
+    shortLabel: "Consultor",
+    level: 90,
+    icon: "📊",
+    color: "#4f46e5",
+    bgColor: "linear-gradient(135deg, #818cf8, #6366f1)",
+    borderColor: "#6366f1",
+    description: "Asesora multiples campanas asignadas",
     canManage: ["supervisor", "director_regional", "capitan_brigada", "agent"],
   },
   supervisor: {
@@ -142,9 +170,10 @@ const ROLES: Record<string, RoleConfig> = {
 // Map backend roles to display roles (for compatibility)
 const ROLE_ALIASES: Record<string, string> = {
   jefe_campana: "supervisor",
+  candidato: "supervisor",
   brigadista_zonal: "capitan_brigada",
   agente_campo: "agent",
-  consultor: "admin",
+  // consultor maps to itself now
 };
 
 function normalizeRole(role: string): string {
@@ -1100,6 +1129,13 @@ export default function EquipoPage() {
   const [savingObjectives, setSavingObjectives] = useState(false);
   const [objectivesChanged, setObjectivesChanged] = useState(false);
 
+  // Consultor campaign assignment state (admin only)
+  const [showConsultorModal, setShowConsultorModal] = useState(false);
+  const [consultorToAssign, setConsultorToAssign] = useState<{ userId: string; name: string } | null>(null);
+  const [allCampaigns, setAllCampaigns] = useState<Campaign[]>([]);
+  const [consultorCampaigns, setConsultorCampaigns] = useState<Set<string>>(new Set());
+  const [savingConsultorCampaigns, setSavingConsultorCampaigns] = useState(false);
+
   const fontStack = "var(--font-montserrat), system-ui, sans-serif";
   
   // Determine user permissions
@@ -1220,15 +1256,87 @@ export default function EquipoPage() {
     setObjectivesChanged(true);
   };
 
+  // ── Open consultor campaign assignment modal ──
+  const openConsultorModal = async (userId: string, userName: string) => {
+    setConsultorToAssign({ userId, name: userName });
+    setSavingConsultorCampaigns(false);
+
+    // Fetch all campaigns and user's current assignments in parallel
+    try {
+      const [campaignsRes, assignmentsRes] = await Promise.all([
+        api.get<{ campaigns: Campaign[] }>("/api/campaigns"),
+        api.get<{ campaigns: ConsultorCampaignAssignment[] }>(`/api/consultors/${userId}/campaigns`),
+      ]);
+
+      if (campaignsRes.ok && campaignsRes.data) {
+        setAllCampaigns(campaignsRes.data.campaigns);
+      }
+
+      if (assignmentsRes.ok && assignmentsRes.data) {
+        setConsultorCampaigns(new Set(assignmentsRes.data.campaigns.map((c) => c.campaign_id)));
+      } else {
+        setConsultorCampaigns(new Set());
+      }
+    } catch {
+      setAllCampaigns([]);
+      setConsultorCampaigns(new Set());
+    }
+
+    setShowConsultorModal(true);
+  };
+
+  // ── Toggle campaign selection for consultor ──
+  const toggleConsultorCampaign = (campaignId: string) => {
+    setConsultorCampaigns((prev) => {
+      const next = new Set(prev);
+      if (next.has(campaignId)) {
+        next.delete(campaignId);
+      } else {
+        next.add(campaignId);
+      }
+      return next;
+    });
+  };
+
+  // ── Save consultor campaign assignments ──
+  const saveConsultorCampaigns = async () => {
+    if (!consultorToAssign) return;
+    setSavingConsultorCampaigns(true);
+
+    const res = await api.put(`/api/consultors/${consultorToAssign.userId}/campaigns`, {
+      campaign_ids: Array.from(consultorCampaigns),
+    });
+
+    if (res.ok) {
+      setShowConsultorModal(false);
+      setConsultorToAssign(null);
+      fetchData();
+    } else {
+      alert(res.error?.message ?? "Error guardando campanas del consultor");
+    }
+
+    setSavingConsultorCampaigns(false);
+  };
+
   // ── Change role ──
   const handleRoleChange = async (userId: string, newRole: string) => {
     if (!activeCampaignId) return;
+
+    // If changing to consultor, open the campaign selection modal
+    if (newRole === "consultor") {
+      const member = members.find((m) => m.user_id === userId);
+      if (member) {
+        openConsultorModal(userId, member.full_name);
+      }
+      return;
+    }
+
     setUpdatingRole(userId);
 
     // Map display role to backend role
-    const backendRole = newRole === "supervisor" ? "jefe_campana" 
+    const backendRole = newRole === "supervisor" ? "candidato" 
                       : newRole === "capitan_brigada" ? "brigadista_zonal"
-                      : newRole === "director_regional" ? "consultor" // Temporary mapping
+                      : newRole === "director_regional" ? "brigadista_zonal"
                       : "agente_campo";
 
     const res = await api.put(
@@ -1253,9 +1361,10 @@ export default function EquipoPage() {
     setResolvingRequest(requestId);
 
     // Map display role to backend role
-    const backendRole = role === "supervisor" ? "jefe_campana" 
+    const backendRole = role === "supervisor" ? "candidato" 
                       : role === "capitan_brigada" ? "brigadista_zonal"
-                      : role === "director_regional" ? "consultor"
+                      : role === "director_regional" ? "brigadista_zonal"
+                      : role === "consultor" ? "consultor"
                       : "agente_campo";
 
     const res = await api.put(`/api/access-requests/${requestId}`, {
@@ -1312,9 +1421,10 @@ export default function EquipoPage() {
     setBatchProcessing(true);
     
     // Map display role to backend role
-    const backendRole = batchRole === "supervisor" ? "jefe_campana" 
+    const backendRole = batchRole === "supervisor" ? "candidato" 
                       : batchRole === "capitan_brigada" ? "brigadista_zonal"
-                      : batchRole === "director_regional" ? "consultor"
+                      : batchRole === "director_regional" ? "brigadista_zonal"
+                      : batchRole === "consultor" ? "consultor"
                       : "agente_campo";
 
     let successCount = 0;
@@ -1878,6 +1988,245 @@ export default function EquipoPage() {
               ))
           )}
         </div>
+      )}
+
+      {/* ── Consultor Campaign Assignment Modal ────────────────── */}
+      {showConsultorModal && consultorToAssign && (
+        <>
+          {/* Backdrop */}
+          <button
+            type="button"
+            aria-label="Cerrar modal"
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0, 0, 0, 0.5)",
+              zIndex: 100,
+              animation: "goberna-fade-in 0.15s ease-out",
+              border: "none",
+              cursor: "default",
+            }}
+            onClick={() => setShowConsultorModal(false)}
+          />
+          
+          {/* Modal */}
+          <div style={{
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: "90%",
+            maxWidth: 500,
+            maxHeight: "80vh",
+            background: "var(--color-surface)",
+            borderRadius: "var(--radius-lg)",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+            zIndex: 101,
+            overflow: "hidden",
+            animation: "goberna-fade-in 0.2s ease-out",
+            display: "flex",
+            flexDirection: "column",
+          }}>
+            {/* Header */}
+            <div style={{
+              padding: "20px 24px",
+              borderBottom: "1px solid var(--color-border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)" }}>
+                  📊 Asignar Campanas a Consultor
+                </div>
+                <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginTop: 4 }}>
+                  {consultorToAssign.name}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConsultorModal(false)}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  border: "none",
+                  background: "var(--color-surface-secondary)",
+                  cursor: "pointer",
+                  fontSize: 16,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Campaign List */}
+            <div style={{
+              flex: 1,
+              overflowY: "auto",
+              padding: "16px 24px",
+            }}>
+              <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 16 }}>
+                Selecciona las campanas que este consultor podra gestionar. El consultor tendra acceso 
+                completo a los datos y miembros de las campanas seleccionadas.
+              </div>
+
+              {allCampaigns.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 40, color: "var(--color-text-tertiary)" }}>
+                  Cargando campanas...
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {allCampaigns.map((campaign) => {
+                    const isSelected = consultorCampaigns.has(campaign.id);
+                    return (
+                      <button
+                        key={campaign.id}
+                        type="button"
+                        onClick={() => toggleConsultorCampaign(campaign.id)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 12,
+                          padding: "12px 16px",
+                          background: isSelected ? "var(--goberna-blue-50)" : "var(--color-surface-secondary)",
+                          border: `2px solid ${isSelected ? "var(--goberna-blue-400)" : "transparent"}`,
+                          borderRadius: 10,
+                          cursor: "pointer",
+                          textAlign: "left",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        {/* Checkbox */}
+                        <div style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: 6,
+                          border: `2px solid ${isSelected ? "var(--goberna-blue-600)" : "var(--color-border-strong)"}`,
+                          background: isSelected ? "var(--goberna-blue-600)" : "transparent",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#fff",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          flexShrink: 0,
+                        }}>
+                          {isSelected && "✓"}
+                        </div>
+
+                        {/* Campaign Photo */}
+                        {campaign.foto_url ? (
+                          <img
+                            src={campaign.foto_url}
+                            alt={campaign.name}
+                            style={{
+                              width: 40,
+                              height: 40,
+                              borderRadius: 8,
+                              objectFit: "cover",
+                              flexShrink: 0,
+                            }}
+                          />
+                        ) : (
+                          <div style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: 8,
+                            background: "var(--goberna-blue-100)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 18,
+                            flexShrink: 0,
+                          }}>
+                            👔
+                          </div>
+                        )}
+
+                        {/* Campaign Info */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ 
+                            fontSize: 14, 
+                            fontWeight: 700, 
+                            color: "var(--color-text-primary)",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}>
+                            {campaign.name}
+                          </div>
+                          {(campaign.cargo || campaign.partido) && (
+                            <div style={{ 
+                              fontSize: 11, 
+                              color: "var(--color-text-tertiary)",
+                              marginTop: 2,
+                            }}>
+                              {[campaign.cargo, campaign.partido].filter(Boolean).join(" • ")}
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{
+              padding: "16px 24px",
+              borderTop: "1px solid var(--color-border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}>
+              <div style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>
+                {consultorCampaigns.size} campana{consultorCampaigns.size !== 1 ? "s" : ""} seleccionada{consultorCampaigns.size !== 1 ? "s" : ""}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowConsultorModal(false)}
+                  style={{
+                    padding: "10px 20px",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "var(--color-text-secondary)",
+                    background: "transparent",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: 8,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={saveConsultorCampaigns}
+                  disabled={savingConsultorCampaigns || consultorCampaigns.size === 0}
+                  style={{
+                    padding: "10px 24px",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: "#fff",
+                    background: consultorCampaigns.size === 0 ? "var(--color-border)" : "var(--goberna-blue-600)",
+                    border: "none",
+                    borderRadius: 8,
+                    cursor: savingConsultorCampaigns || consultorCampaigns.size === 0 ? "not-allowed" : "pointer",
+                    opacity: savingConsultorCampaigns ? 0.6 : 1,
+                  }}
+                >
+                  {savingConsultorCampaigns ? "Guardando..." : "Guardar Asignaciones"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

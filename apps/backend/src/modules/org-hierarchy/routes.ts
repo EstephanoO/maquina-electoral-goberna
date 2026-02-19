@@ -12,7 +12,7 @@ export function buildOrgHierarchyRoutes(_env: AppEnv): FastifyPluginAsync {
     // ── POST /api/org-hierarchy ──────────────────────────────────────
     app.post(
       "/api/org-hierarchy",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const parsed = createOrgNodeSchema.safeParse(request.body);
@@ -75,7 +75,7 @@ export function buildOrgHierarchyRoutes(_env: AppEnv): FastifyPluginAsync {
     // ── PUT /api/org-hierarchy/:id ──────────────────────────────────
     app.put(
       "/api/org-hierarchy/:id",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { id } = request.params as { id: string };
@@ -102,7 +102,7 @@ export function buildOrgHierarchyRoutes(_env: AppEnv): FastifyPluginAsync {
     // ── DELETE /api/org-hierarchy/campaign/:campaignId/user/:userId ──
     app.delete(
       "/api/org-hierarchy/campaign/:campaignId/user/:userId",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { campaignId, userId } = request.params as { campaignId: string; userId: string };

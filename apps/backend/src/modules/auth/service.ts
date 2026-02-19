@@ -27,20 +27,26 @@ export class AuthService {
     this.jwtSecretKey = new TextEncoder().encode(env.jwtSecret);
   }
 
+  /** Login by email (for backwards compatibility) */
   async login(email: string, password: string): Promise<LoginResult> {
     const user = await this.repo.findUserByEmail(email);
 
     if (!user) {
-      throw new AppError("AUTH_INVALID_CREDENTIALS", "email o password incorrectos", 401);
+      throw new AppError("AUTH_INVALID_CREDENTIALS", "credenciales incorrectas", 401);
     }
 
+    return this.loginWithUser(user, password);
+  }
+
+  /** Login with a pre-fetched user object (used for phone-based login) */
+  async loginWithUser(user: { id: string; email: string; full_name: string; phone?: string; region?: string; role: string; status: string; password_hash: string }, password: string): Promise<LoginResult> {
     if (user.status === "suspended") {
       throw new AppError("AUTH_USER_SUSPENDED", "usuario suspendido", 403);
     }
 
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
-      throw new AppError("AUTH_INVALID_CREDENTIALS", "email o password incorrectos", 401);
+      throw new AppError("AUTH_INVALID_CREDENTIALS", "credenciales incorrectas", 401);
     }
 
     // Admin users see ALL campaigns; others only their assigned ones
@@ -72,6 +78,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         full_name: user.full_name,
+        phone: user.phone,
         role: user.role,
         status: user.status,
       },

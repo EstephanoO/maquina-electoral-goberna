@@ -12,7 +12,7 @@ export function buildInvitationsRoutes(_env: AppEnv): FastifyPluginAsync {
     // ── POST /api/invitations ───────────────────────────────────────
     app.post(
       "/api/invitations",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const authed = request as AuthenticatedRequest;
@@ -40,7 +40,7 @@ export function buildInvitationsRoutes(_env: AppEnv): FastifyPluginAsync {
     // ── GET /api/invitations/campaign/:campaignId ────────────────────
     app.get(
       "/api/invitations/campaign/:campaignId",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { campaignId } = request.params as { campaignId: string };
@@ -93,7 +93,7 @@ export function buildInvitationsRoutes(_env: AppEnv): FastifyPluginAsync {
     // ── DELETE /api/invitations/:id ─────────────────────────────────
     app.delete(
       "/api/invitations/:id",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { id } = request.params as { id: string };

@@ -58,7 +58,7 @@ export async function getFullHierarchy(campaignId: string): Promise<OrgNodeWithU
        CASE oh.role
          WHEN 'admin' THEN 1
          WHEN 'consultor' THEN 2
-         WHEN 'jefe_campana' THEN 3
+         WHEN 'candidato' THEN 3
          WHEN 'brigadista_zonal' THEN 4
          WHEN 'agente_campo' THEN 5
        END,

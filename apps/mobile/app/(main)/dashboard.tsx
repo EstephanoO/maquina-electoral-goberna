@@ -134,6 +134,7 @@ interface OptionsMenuProps {
   campaigns: CampaignMembership[];
   activeCampaignId: string;
   isAdmin: boolean;
+  isConsultor: boolean;
   primaryColor: string;
 }
 
@@ -145,9 +146,11 @@ const OptionsMenu = memo(function OptionsMenu({
   campaigns,
   activeCampaignId,
   isAdmin,
+  isConsultor,
   primaryColor,
 }: OptionsMenuProps) {
-  const showCampaignSwitcher = isAdmin || campaigns.length > 1;
+  // Show campaign switcher for admin, consultor, or users with multiple campaigns
+  const showCampaignSwitcher = isAdmin || isConsultor || campaigns.length > 1;
 
   const handleLogout = () => {
     Alert.alert(
@@ -159,6 +162,13 @@ const OptionsMenu = memo(function OptionsMenu({
       ],
     );
   };
+
+  // Determine label for campaign switcher
+  const switcherLabel = isAdmin 
+    ? 'Cambiar Candidato (Admin)' 
+    : isConsultor 
+      ? 'Cambiar Candidato (Consultor)' 
+      : 'Cambiar Candidato';
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -174,7 +184,7 @@ const OptionsMenu = memo(function OptionsMenu({
           {showCampaignSwitcher && (
             <>
               <Text style={styles.sectionLabel}>
-                {isAdmin ? 'Cambiar Candidato (Admin)' : 'Cambiar Candidato'}
+                {switcherLabel}
               </Text>
               <View style={styles.campaignList}>
                 {campaigns.map((c) => (
@@ -431,6 +441,7 @@ export default function DashboardScreen() {
         campaigns={availableCampaigns}
         activeCampaignId={campaign.id}
         isAdmin={agent.role === 'admin'}
+        isConsultor={agent.role === 'consultor'}
         primaryColor={primary}
       />
     </SafeAreaView>

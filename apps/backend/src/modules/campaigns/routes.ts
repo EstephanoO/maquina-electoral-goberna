@@ -49,11 +49,15 @@ export function getRecentEvents(campaignId: string, limit = 20): CampaignEvent[]
 
 const addMemberSchema = z.object({
   user_id: z.string().uuid(),
-  role: z.enum(["admin", "consultor", "jefe_campana", "brigadista_zonal", "agente_campo"]),
+  role: z.enum(["admin", "consultor", "candidato", "brigadista_zonal", "agente_campo"]),
 });
 
 const updateMemberRoleSchema = z.object({
-  role: z.enum(["consultor", "jefe_campana", "brigadista_zonal", "agente_campo"]),
+  role: z.enum(["consultor", "candidato", "brigadista_zonal", "agente_campo"]),
+});
+
+const setConsultorCampaignsSchema = z.object({
+  campaign_ids: z.array(z.string().uuid()),
 });
 
 export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
@@ -173,7 +177,7 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
     // ── PUT /api/campaigns/:campaignId ────────────────────────────────
     app.put(
       "/api/campaigns/:campaignId",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { campaignId } = request.params as { campaignId: string };
@@ -231,7 +235,7 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
     // List team members of a campaign. Jefe de campana and above.
     app.get(
       "/api/campaigns/:campaignId/members",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { campaignId } = request.params as { campaignId: string };
@@ -273,7 +277,7 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
     // Change a member's role within a campaign. Jefe de campana and above.
     app.put(
       "/api/campaigns/:campaignId/members/:userId/role",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const authed = request as AuthenticatedRequest;
@@ -285,9 +289,9 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
           return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
         }
 
-        // Only admins/consultors can promote to jefe_campana
-        if (parsed.data.role === "jefe_campana" && authed.userRole !== "admin" && authed.userRole !== "consultor") {
-          return reply.code(403).send(errorPayload(requestId, "AUTHZ_ROLE_INSUFFICIENT", "solo admin o consultor puede asignar rol de jefe de campana"));
+        // Only admins/consultors can promote to candidato
+        if (parsed.data.role === "candidato" && authed.userRole !== "admin" && authed.userRole !== "consultor") {
+          return reply.code(403).send(errorPayload(requestId, "AUTHZ_ROLE_INSUFFICIENT", "solo admin o consultor puede asignar rol de candidato"));
         }
 
         try {
@@ -364,6 +368,118 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "campaign stats failed");
           return reply.code(500).send(errorPayload(requestId, "CAMPAIGN_STATS_ERROR", "error obteniendo stats"));
+        }
+      },
+    );
+
+    // ═══════════════════════════════════════════════════════════════════
+    // CONSULTOR MANAGEMENT ENDPOINTS
+    // Only admin can manage consultor assignments
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ── GET /api/consultors ───────────────────────────────────────────
+    // List all consultors (admin only)
+    app.get(
+      "/api/consultors",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+
+        try {
+          const consultors = await repo.listConsultors();
+          return reply.code(200).send({ ok: true, request_id: requestId, consultors });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "consultors list failed");
+          return reply.code(500).send(errorPayload(requestId, "CONSULTORS_LIST_ERROR", "error listando consultores"));
+        }
+      },
+    );
+
+    // ── GET /api/consultors/:userId/campaigns ─────────────────────────
+    // Get campaigns assigned to a specific consultor
+    app.get(
+      "/api/consultors/:userId/campaigns",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { userId } = request.params as { userId: string };
+
+        try {
+          const campaigns = await repo.getConsultorCampaigns(userId);
+          return reply.code(200).send({ ok: true, request_id: requestId, campaigns });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "consultor campaigns list failed");
+          return reply.code(500).send(errorPayload(requestId, "CONSULTOR_CAMPAIGNS_ERROR", "error listando campanas del consultor"));
+        }
+      },
+    );
+
+    // ── PUT /api/consultors/:userId/campaigns ─────────────────────────
+    // Set (replace) campaigns assigned to a consultor
+    app.put(
+      "/api/consultors/:userId/campaigns",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { userId } = request.params as { userId: string };
+
+        const parsed = setConsultorCampaignsSchema.safeParse(request.body);
+        if (!parsed.success) {
+          const message = parsed.error.issues.map((i) => i.message).join(", ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
+        }
+
+        try {
+          await repo.setConsultorCampaigns(userId, parsed.data.campaign_ids);
+          const campaigns = await repo.getConsultorCampaigns(userId);
+          return reply.code(200).send({ ok: true, request_id: requestId, campaigns });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "set consultor campaigns failed");
+          return reply.code(500).send(errorPayload(requestId, "CONSULTOR_CAMPAIGNS_ERROR", "error asignando campanas al consultor"));
+        }
+      },
+    );
+
+    // ── POST /api/consultors/:userId/campaigns/:campaignId ────────────
+    // Add a single campaign to a consultor's assignments
+    app.post(
+      "/api/consultors/:userId/campaigns/:campaignId",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { userId, campaignId } = request.params as { userId: string; campaignId: string };
+
+        try {
+          // Verify campaign exists
+          const campaign = await repo.findById(campaignId);
+          if (!campaign) {
+            return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campana no encontrada"));
+          }
+
+          await repo.addCampaignToConsultor(userId, campaignId);
+          return reply.code(200).send({ ok: true, request_id: requestId });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "add campaign to consultor failed");
+          return reply.code(500).send(errorPayload(requestId, "CONSULTOR_CAMPAIGNS_ERROR", "error agregando campana al consultor"));
+        }
+      },
+    );
+
+    // ── DELETE /api/consultors/:userId/campaigns/:campaignId ──────────
+    // Remove a campaign from a consultor's assignments
+    app.delete(
+      "/api/consultors/:userId/campaigns/:campaignId",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { userId, campaignId } = request.params as { userId: string; campaignId: string };
+
+        try {
+          await repo.removeCampaignFromConsultor(userId, campaignId);
+          return reply.code(200).send({ ok: true, request_id: requestId });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "remove campaign from consultor failed");
+          return reply.code(500).send(errorPayload(requestId, "CONSULTOR_CAMPAIGNS_ERROR", "error removiendo campana del consultor"));
         }
       },
     );

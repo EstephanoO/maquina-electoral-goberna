@@ -19,7 +19,7 @@ export function buildAnalyticsRoutes(_env: AppEnv): FastifyPluginAsync {
     // Save GA4 analytics data for a campaign (admin or jefe_campana)
     app.post(
       "/api/campaigns/:campaignId/analytics",
-      { preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
       async (request, reply) => {
         const requestId = String(request.id);
         const { campaignId } = request.params as { campaignId: string };

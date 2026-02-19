@@ -66,13 +66,13 @@ const ASSIGNABLE_ROLES: RoleOption[] = [
     description: 'Coordina agentes en su zona',
   },
   {
-    key: 'jefe_campana',
-    label: 'Jefe de Campaña',
-    shortLabel: 'Jefe',
+    key: 'candidato',
+    label: 'Candidato',
+    shortLabel: 'Candidato',
     icon: 'supervisor-account',
     color: '#2563EB',
     bgColor: '#DBEAFE',
-    description: 'Gestiona todo el equipo',
+    description: 'Control total de la campaña',
   },
 ];
 

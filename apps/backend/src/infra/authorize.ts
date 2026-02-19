@@ -16,17 +16,23 @@ declare module "fastify" {
 }
 
 // ── Role hierarchy ──────────────────────────────────────────────────
-export type Role = "admin" | "consultor" | "jefe_campana" | "brigadista_zonal" | "agente_campo";
+// candidato: The campaign owner, replaces jefe_campana
+export type Role = "admin" | "consultor" | "candidato" | "brigadista_zonal" | "agente_campo";
 
 export const ROLE_HIERARCHY: Record<Role, number> = {
   admin: 50,
   consultor: 40,
-  jefe_campana: 30,
+  candidato: 30,  // Campaign owner - full control of their campaign
   brigadista_zonal: 20,
   agente_campo: 10,
 };
 
-export const ALL_ROLES: Role[] = ["admin", "consultor", "jefe_campana", "brigadista_zonal", "agente_campo"];
+export const ALL_ROLES: Role[] = ["admin", "consultor", "candidato", "brigadista_zonal", "agente_campo"];
+
+// Backwards compatibility: jefe_campana maps to candidato
+export const ROLE_ALIASES: Record<string, Role> = {
+  jefe_campana: "candidato",
+};
 
 // ── Options ─────────────────────────────────────────────────────────
 export type AuthorizeOptions = {
@@ -41,7 +47,16 @@ export type AuthorizeOptions = {
 // ── Helpers ─────────────────────────────────────────────────────────
 
 function isValidRole(role: string): role is Role {
-  return role in ROLE_HIERARCHY;
+  // Check direct match or alias
+  return role in ROLE_HIERARCHY || role in ROLE_ALIASES;
+}
+
+function normalizeRole(role: string): Role {
+  // Map aliases to canonical roles
+  if (role in ROLE_ALIASES) {
+    return ROLE_ALIASES[role]!;
+  }
+  return role as Role;
 }
 
 /**
@@ -98,14 +113,15 @@ export function authorize(options: AuthorizeOptions = {}) {
 
     // ── Role check ────────────────────────────────────────────────
     if (minLevel !== undefined) {
-      const userRole = req.userRole;
+      const rawRole = req.userRole;
 
-      if (!isValidRole(userRole)) {
+      if (!isValidRole(rawRole)) {
         return reply
           .code(403)
           .send(errorPayload(requestId, "AUTHZ_ROLE_INVALID", "rol de usuario no reconocido"));
       }
 
+      const userRole = normalizeRole(rawRole);
       const userLevel = ROLE_HIERARCHY[userRole];
 
       if (userLevel < minLevel) {

@@ -28,7 +28,7 @@ export type CampaignRow = {
 export type CampaignStats = CampaignRow & {
   agente_campo_count: number;
   brigadista_zonal_count: number;
-  jefe_campana_count: number;
+  candidato_count: number;
   consultor_count: number;
   admin_count: number;
 };
@@ -71,7 +71,7 @@ export async function listAll(): Promise<CampaignStats[]> {
        c.id, c.name, c.slug, c.config, c.status, c.cargo, c.numero, c.partido, c.foto_url, c.created_at, c.updated_at,
        COUNT(CASE WHEN uc.role = 'agente_campo'     AND uc.status = 'active' THEN 1 END)::int AS agente_campo_count,
        COUNT(CASE WHEN uc.role = 'brigadista_zonal'  AND uc.status = 'active' THEN 1 END)::int AS brigadista_zonal_count,
-       COUNT(CASE WHEN uc.role = 'jefe_campana'      AND uc.status = 'active' THEN 1 END)::int AS jefe_campana_count,
+       COUNT(CASE WHEN uc.role IN ('candidato', 'jefe_campana') AND uc.status = 'active' THEN 1 END)::int AS candidato_count,
        COUNT(CASE WHEN uc.role = 'consultor'         AND uc.status = 'active' THEN 1 END)::int AS consultor_count,
        COUNT(CASE WHEN uc.role = 'admin'             AND uc.status = 'active' THEN 1 END)::int AS admin_count
      FROM campaigns c
@@ -292,9 +292,114 @@ export async function getCampaignMembers(campaignId: string): Promise<CampaignMe
      JOIN users u ON u.id = uc.user_id
      WHERE uc.campaign_id = $1 AND uc.status = 'active'
      ORDER BY
-       CASE uc.role WHEN 'admin' THEN 1 WHEN 'consultor' THEN 2 WHEN 'jefe_campana' THEN 3 WHEN 'brigadista_zonal' THEN 4 WHEN 'agente_campo' THEN 5 ELSE 6 END,
+       CASE uc.role WHEN 'admin' THEN 1 WHEN 'consultor' THEN 2 WHEN 'candidato' THEN 3 WHEN 'jefe_campana' THEN 3 WHEN 'brigadista_zonal' THEN 4 WHEN 'agente_campo' THEN 5 ELSE 6 END,
        u.full_name`,
     [campaignId],
   );
   return rows;
+}
+
+// ── Consultor management ────────────────────────────────────────────
+
+export type ConsultorUser = {
+  id: string;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  status: string;
+};
+
+export type ConsultorCampaignAssignment = {
+  campaign_id: string;
+  campaign_name: string;
+  campaign_slug: string;
+  assigned_at: Date;
+};
+
+/**
+ * List all users with role 'consultor' in any campaign
+ */
+export async function listConsultors(): Promise<ConsultorUser[]> {
+  const { rows } = await pool.query<ConsultorUser>(
+    `SELECT DISTINCT u.id, u.full_name, u.email, u.phone, u.status
+     FROM users u
+     JOIN user_campaigns uc ON uc.user_id = u.id
+     WHERE uc.role = 'consultor' AND uc.status = 'active'
+     ORDER BY u.full_name`,
+  );
+  return rows;
+}
+
+/**
+ * Get campaigns assigned to a specific consultor
+ */
+export async function getConsultorCampaigns(userId: string): Promise<ConsultorCampaignAssignment[]> {
+  const { rows } = await pool.query<ConsultorCampaignAssignment>(
+    `SELECT c.id AS campaign_id, c.name AS campaign_name, c.slug AS campaign_slug, uc.assigned_at
+     FROM user_campaigns uc
+     JOIN campaigns c ON c.id = uc.campaign_id
+     WHERE uc.user_id = $1 AND uc.role = 'consultor' AND uc.status = 'active' AND c.status = 'active'
+     ORDER BY c.name`,
+    [userId],
+  );
+  return rows;
+}
+
+/**
+ * Assign multiple campaigns to a consultor (replaces existing assignments)
+ */
+export async function setConsultorCampaigns(userId: string, campaignIds: string[]): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // First, revoke all existing consultor assignments for this user
+    await client.query(
+      `UPDATE user_campaigns SET status = 'revoked'
+       WHERE user_id = $1 AND role = 'consultor'`,
+      [userId],
+    );
+
+    // Then, add/reactivate the new assignments
+    for (const campaignId of campaignIds) {
+      await client.query(
+        `INSERT INTO user_campaigns (user_id, campaign_id, role, status, assigned_at)
+         VALUES ($1, $2, 'consultor', 'active', now())
+         ON CONFLICT (user_id, campaign_id)
+         DO UPDATE SET role = 'consultor', status = 'active', assigned_at = now()`,
+        [userId, campaignId],
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Add a single campaign to a consultor's assignments
+ */
+export async function addCampaignToConsultor(userId: string, campaignId: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO user_campaigns (user_id, campaign_id, role, status, assigned_at)
+     VALUES ($1, $2, 'consultor', 'active', now())
+     ON CONFLICT (user_id, campaign_id)
+     DO UPDATE SET role = 'consultor', status = 'active', assigned_at = now()`,
+    [userId, campaignId],
+  );
+}
+
+/**
+ * Remove a single campaign from a consultor's assignments
+ */
+export async function removeCampaignFromConsultor(userId: string, campaignId: string): Promise<void> {
+  await pool.query(
+    `UPDATE user_campaigns SET status = 'revoked'
+     WHERE user_id = $1 AND campaign_id = $2 AND role = 'consultor'`,
+    [userId, campaignId],
+  );
 }
