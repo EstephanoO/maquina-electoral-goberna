@@ -6,6 +6,8 @@ type Props = {
   cities: GA4City[];
   primaryColor: string;
   onCityHover?: (city: string | null) => void;
+  onCityClick?: (city: string | null) => void;
+  clickedCity?: string | null;
 };
 
 /* ── Peru city filter ────────────────────────────────────────────── */
@@ -22,9 +24,17 @@ function filterPeruCities(cities: GA4City[]): GA4City[] {
   );
 }
 
+function formatEngagementTime(seconds: number): string {
+  if (seconds <= 0) return "0s";
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  if (mins > 0) return `${mins}m ${secs}s`;
+  return `${secs}s`;
+}
+
 /* ── Component ───────────────────────────────────────────────────── */
 
-export function CitiesRanking({ cities, primaryColor, onCityHover }: Props) {
+export function CitiesRanking({ cities, primaryColor, onCityHover, onCityClick, clickedCity }: Props) {
   const peruCities = filterPeruCities(cities);
   const total = peruCities.reduce((s, c) => s + c.activeUsers, 0);
   const maxUsers = Math.max(...peruCities.map((c) => c.activeUsers), 1);
@@ -57,13 +67,26 @@ export function CitiesRanking({ cities, primaryColor, onCityHover }: Props) {
           const isTop3 = i < 3;
           const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
 
+          const isClicked = clickedCity === city.city;
+
           return (
             <li
               key={city.city}
-              style={styles.row}
+              style={{
+                ...styles.row,
+                backgroundColor: isClicked ? `${primaryColor}10` : undefined,
+                borderLeft: isClicked ? `3px solid ${primaryColor}` : "3px solid transparent",
+                cursor: "pointer",
+              }}
               onMouseEnter={() => onCityHover?.(city.city)}
               onMouseLeave={() => onCityHover?.(null)}
             >
+              <button
+                type="button"
+                onClick={() => onCityClick?.(isClicked ? null : city.city)}
+                style={styles.rowButton}
+                aria-label={`Zoom a ${city.city}`}
+              >
               {/* Rank */}
               <div style={{
                 ...styles.rank,
@@ -105,7 +128,30 @@ export function CitiesRanking({ cities, primaryColor, onCityHover }: Props) {
                   </div>
                   <span style={styles.pct}>{pct.toFixed(1)}%</span>
                 </div>
+
+                {/* Enriched metrics row (only if available) */}
+                {city.avgEngagementTime !== undefined && city.avgEngagementTime > 0 && (
+                  <div style={styles.metricsRow}>
+                    {city.newUsers !== undefined && (
+                      <span style={styles.metric}>
+                        <span style={styles.metricLabel}>Nuevos:</span>{" "}
+                        {city.newUsers.toLocaleString()}
+                      </span>
+                    )}
+                    <span style={styles.metric}>
+                      <span style={styles.metricLabel}>Tiempo:</span>{" "}
+                      {formatEngagementTime(city.avgEngagementTime)}
+                    </span>
+                    {city.events !== undefined && city.events > 0 && (
+                      <span style={styles.metric}>
+                        <span style={styles.metricLabel}>Eventos:</span>{" "}
+                        {city.events.toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
+              </button>
             </li>
           );
         })}
@@ -176,10 +222,23 @@ const styles: Record<string, React.CSSProperties> = {
   row: {
     display: "flex",
     alignItems: "center",
-    gap: 12,
-    padding: "8px 20px",
+    gap: 0,
+    padding: 0,
     cursor: "default",
     transition: "background-color 0.12s ease",
+  },
+  rowButton: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "8px 20px",
+    width: "100%",
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    textAlign: "left" as const,
+    font: "inherit",
+    color: "inherit",
   },
   rank: {
     width: 28,
@@ -207,7 +266,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cityUsers: {
     fontSize: 13,
-    tabularNums: "tabular-nums" as unknown as string,
+    fontVariantNumeric: "tabular-nums",
     flexShrink: 0,
     marginLeft: 8,
   },
@@ -246,5 +305,18 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     color: "#94a3b8",
     fontWeight: 500,
+  },
+  metricsRow: {
+    display: "flex",
+    gap: 12,
+    marginTop: 4,
+    flexWrap: "wrap" as const,
+  },
+  metric: {
+    fontSize: 10,
+    color: "#64748b",
+  },
+  metricLabel: {
+    color: "#94a3b8",
   },
 };

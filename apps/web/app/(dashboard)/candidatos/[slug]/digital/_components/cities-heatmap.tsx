@@ -10,6 +10,8 @@ type Props = {
   primaryColor: string;
   /** City name to fly-to and highlight (driven by parent hover) */
   highlightCity?: string | null;
+  /** City name for deep zoom on click */
+  clickedCity?: string | null;
 };
 
 /* ── Peru city geocoding ─────────────────────────────────────────── */
@@ -88,6 +90,11 @@ type GeocodedCity = {
   lng: number;
   lat: number;
   activeUsers: number;
+  // Enriched fields
+  newUsers?: number;
+  avgEngagementTime?: number;
+  engagementRate?: number;
+  events?: number;
 };
 
 function geocodeCities(cities: GA4City[]): GeocodedCity[] {
@@ -97,7 +104,16 @@ function geocodeCities(cities: GA4City[]): GeocodedCity[] {
     if (/^\d+$/.test(c.city)) continue;
     const coords = PERU_CITIES[c.city];
     if (coords) {
-      result.push({ city: c.city, lng: coords[0], lat: coords[1], activeUsers: c.activeUsers });
+      result.push({
+        city: c.city,
+        lng: coords[0],
+        lat: coords[1],
+        activeUsers: c.activeUsers,
+        newUsers: c.newUsers,
+        avgEngagementTime: c.avgEngagementTime,
+        engagementRate: c.engagementRate,
+        events: c.events,
+      });
     }
   }
   return result;
@@ -105,7 +121,7 @@ function geocodeCities(cities: GA4City[]): GeocodedCity[] {
 
 /* ── Component ───────────────────────────────────────────────────── */
 
-export function CitiesHeatmap({ cities, primaryColor, highlightCity }: Props) {
+export function CitiesHeatmap({ cities, primaryColor, highlightCity, clickedCity }: Props) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const popupRef = useRef<maplibregl.Popup | null>(null);
@@ -295,7 +311,9 @@ export function CitiesHeatmap({ cities, primaryColor, highlightCity }: Props) {
         const coords = f.geometry.coordinates as [number, number];
         const p = f.properties;
         const pct = totalUsers > 0 ? ((p.activeUsers / totalUsers) * 100).toFixed(1) : "0";
-        popup.setLngLat(coords).setHTML(popupHTML(p.city, p.activeUsers, pct, primaryColor)).addTo(m);
+        // Find full city data for enriched popup
+        const cityData = geocoded.find((c) => c.city === p.city);
+        popup.setLngLat(coords).setHTML(popupHTML(p.city, p.activeUsers, pct, primaryColor, cityData)).addTo(m);
       }
     });
 
@@ -313,7 +331,7 @@ export function CitiesHeatmap({ cities, primaryColor, highlightCity }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* ── Fly-to on highlightCity change ────────────────────────────── */
+  /* ── Fly-to on highlightCity change (hover — gentle zoom) ────── */
   const flyToCity = useCallback((cityName: string | null) => {
     const m = map.current;
     if (!m) return;
@@ -332,14 +350,42 @@ export function CitiesHeatmap({ cities, primaryColor, highlightCity }: Props) {
 
     const pct = totalUsers > 0 ? ((c.activeUsers / totalUsers) * 100).toFixed(1) : "0";
     popupRef.current?.setLngLat([c.lng, c.lat])
-      .setHTML(popupHTML(c.city, c.activeUsers, pct, primaryColor))
+      .setHTML(popupHTML(c.city, c.activeUsers, pct, primaryColor, c))
       .addTo(m);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* ── Deep zoom on clickedCity (click — close-up) ───────────── */
+  const deepZoomToCity = useCallback((cityName: string | null) => {
+    const m = map.current;
+    if (!m) return;
+
+    if (!cityName) {
+      m.flyTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, duration: 600 });
+      popupRef.current?.remove();
+      return;
+    }
+
+    const c = geocoded.find((g) => g.city === cityName);
+    if (!c) return;
+
+    m.flyTo({ center: [c.lng, c.lat], zoom: 11, duration: 800, essential: true });
+
+    const pct = totalUsers > 0 ? ((c.activeUsers / totalUsers) * 100).toFixed(1) : "0";
+    popupRef.current?.setLngLat([c.lng, c.lat])
+      .setHTML(popupHTML(c.city, c.activeUsers, pct, primaryColor, c))
+      .addTo(m);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Click takes priority over hover
   useEffect(() => {
-    flyToCity(highlightCity ?? null);
-  }, [highlightCity, flyToCity]);
+    if (clickedCity) {
+      deepZoomToCity(clickedCity);
+    } else {
+      flyToCity(highlightCity ?? null);
+    }
+  }, [clickedCity, highlightCity, flyToCity, deepZoomToCity]);
 
   return (
     <div style={styles.container}>
@@ -364,11 +410,57 @@ export function CitiesHeatmap({ cities, primaryColor, highlightCity }: Props) {
 
 /* ── Popup HTML helper ────────────────────────────────────────────── */
 
-function popupHTML(city: string, users: number, pct: string, color: string): string {
-  return `<div style="padding:8px 12px;font-family:system-ui,sans-serif">
+function popupHTML(city: string, users: number, pct: string, color: string, data?: GeocodedCity): string {
+  const hasEnriched = data && (data.avgEngagementTime !== undefined || data.newUsers !== undefined);
+  
+  let enrichedHTML = "";
+  if (hasEnriched && data) {
+    const rows: string[] = [];
+    
+    if (data.newUsers !== undefined) {
+      const newPct = users > 0 ? ((data.newUsers / users) * 100).toFixed(0) : "0";
+      rows.push(`<div style="display:flex;justify-content:space-between;gap:16px">
+        <span style="color:#94a3b8">Nuevos</span>
+        <span style="color:#334155;font-weight:500">${data.newUsers.toLocaleString()} (${newPct}%)</span>
+      </div>`);
+    }
+    
+    if (data.avgEngagementTime !== undefined && data.avgEngagementTime > 0) {
+      const mins = Math.floor(data.avgEngagementTime / 60);
+      const secs = Math.round(data.avgEngagementTime % 60);
+      const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+      rows.push(`<div style="display:flex;justify-content:space-between;gap:16px">
+        <span style="color:#94a3b8">Tiempo prom.</span>
+        <span style="color:#334155;font-weight:500">${timeStr}</span>
+      </div>`);
+    }
+    
+    if (data.engagementRate !== undefined && data.engagementRate > 0) {
+      rows.push(`<div style="display:flex;justify-content:space-between;gap:16px">
+        <span style="color:#94a3b8">Engagement</span>
+        <span style="color:#334155;font-weight:500">${(data.engagementRate * 100).toFixed(2)}%</span>
+      </div>`);
+    }
+    
+    if (data.events !== undefined && data.events > 0) {
+      rows.push(`<div style="display:flex;justify-content:space-between;gap:16px">
+        <span style="color:#94a3b8">Eventos</span>
+        <span style="color:#334155;font-weight:500">${data.events.toLocaleString()}</span>
+      </div>`);
+    }
+    
+    if (rows.length > 0) {
+      enrichedHTML = `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0;font-size:11px;display:flex;flex-direction:column;gap:3px">
+        ${rows.join("")}
+      </div>`;
+    }
+  }
+  
+  return `<div style="padding:8px 12px;font-family:system-ui,sans-serif;min-width:140px">
     <div style="font-weight:700;font-size:13px;color:#0f172a">${city}</div>
     <div style="font-size:20px;font-weight:800;color:${color};margin:3px 0">${Number(users).toLocaleString()}</div>
     <div style="font-size:11px;color:#64748b">usuarios activos · ${pct}%</div>
+    ${enrichedHTML}
   </div>`;
 }
 

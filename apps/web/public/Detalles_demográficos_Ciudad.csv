@@ -1,0 +1,88 @@
+# ----------------------------------------
+# Detalles demográficos: Ciudad
+# Cuenta: Cesar Vasquez
+# Propiedad: Web Cesar Vasquez
+# ----------------------------------------
+# 
+# Todos los usuarios
+# Fecha de inicio: 20260121
+# Fecha de finalización: 20260217
+Ciudad,Usuarios activos,Usuarios nuevos,Sesiones con interacción,Porcentaje de interacciones,Sesiones con interacción por usuario activo,Tiempo de interacción medio por usuario activo,Número de eventos,Eventos clave,Tasa de evento clave de usuarios,Total de ingresos
+Trujillo,1134,1128,1,0.0008488964346349745,0.0008818342151675485,2.2945326278659612,3625,0,0,0
+,842,840,1,0.0011299435028248588,0.0011876484560570072,4.431116389548694,3099,0,0,0
+Cajamarca,217,217,0,0,0,1.9078341013824884,692,0,0,0
+Chiclayo,60,60,0,0,0,4.366666666666666,195,0,0,0
+Cusco,48,47,0,0,0,1.6458333333333333,165,0,0,0
+Arequipa,41,41,0,0,0,0.9512195121951219,134,0,0,0
+Piura,39,38,0,0,0,9.153846153846153,122,0,0,0
+La Esperanza,25,23,0,0,0,1.24,77,0,0,0
+El Porvenir,24,24,0,0,0,0.08333333333333333,76,0,0,0
+Chimbote,21,20,0,0,0,0.8095238095238095,67,0,0,0
+Iquitos,19,19,0,0,0,0.7368421052631579,63,0,0,0
+Ica,18,18,0,0,0,2.5,57,0,0,0
+Cerro Colorado,17,17,0,0,0,0,52,0,0,0
+Victor Larco Herrera,16,16,0,0,0,0,49,0,0,0
+Jaen,13,13,0,0,0,0,40,0,0,0
+Huaraz,11,11,0,0,0,0.09090909090909091,34,0,0,0
+Tacna,7,7,0,0,0,0,21,0,0,0
+Lambayeque,6,5,0,0,0,33,21,0,0,0
+Tarapoto,6,6,0,0,0,0,19,0,0,0
+Jose Luis Bustamante,5,5,0,0,0,0,15,0,0,0
+Paucarpata,5,5,0,0,0,27.8,16,0,0,0
+Pucallpa,5,5,0,0,0,0,15,0,0,0
+Sullana,5,5,0,0,0,0,15,0,0,0
+Huancayo,4,4,0,0,0,0,12,0,0,0
+Ilo,4,4,0,0,0,0,12,0,0,0
+North Carolina's 3rd Congressional District 2022 redistricting,4,4,0,0,0,0,12,0,0,0
+Pisco,4,4,0,0,0,0,12,0,0,0
+(not set),3,3,2,0.6666666666666666,0.6666666666666666,8,13,0,0,0
+Ayacucho,3,3,0,0,0,0,9,0,0,0
+Cayma,3,3,0,0,0,0,9,0,0,0
+Chepen,3,3,0,0,0,0,10,0,0,0
+Fort Worth,3,2,0,0,0,1.6666666666666667,9,0,0,0
+Lulea,3,3,1,0.3333333333333333,0.3333333333333333,1.3333333333333333,11,0,0,0
+Miraflores,3,3,0,0,0,0,9,0,0,0
+Parcona District,3,3,0,0,0,0,9,0,0,0
+Puerto Maldonado,3,3,0,0,0,1.6666666666666667,10,0,0,0
+Talara,3,3,0,0,0,0,9,0,0,0
+39279,2,1,0,0,0,27.5,15,0,0,0
+Aspen,2,2,0,0,0,0,6,0,0,0
+Barranca,2,2,0,0,0,0,6,0,0,0
+Council Bluffs,2,2,0,0,0,0,6,0,0,0
+Huacho,2,2,0,0,0,0,8,0,0,0
+Jose Leonardo Ortiz,2,2,0,0,0,0,6,0,0,0
+Juliaca,2,2,0,0,0,0,6,0,0,0
+La Victoria,2,2,0,0,0,0,6,0,0,0
+Lurin,2,2,0,0,0,0,6,0,0,0
+Mariano Melgar,2,2,0,0,0,0,6,0,0,0
+Puno,2,2,0,0,0,0,6,0,0,0
+34698,1,1,0,0,0,0,3,0,0,0
+40384,1,1,0,0,0,0,3,0,0,0
+77066,1,1,0,0,0,0,3,0,0,0
+Alto Selva Alegre,1,1,0,0,0,0,3,0,0,0
+Cerro de Pasco,1,1,0,0,0,0,3,0,0,0
+Collegno,1,1,0,0,0,0,4,0,0,0
+Duluth,1,1,0,0,0,0,3,0,0,0
+Frankfurt am Main,1,1,0,0,0,3,4,0,0,0
+Gwalior,1,1,0,0,0,0,3,0,0,0
+Huaral,1,1,0,0,0,0,4,0,0,0
+Huaura,1,1,0,0,0,0,3,0,0,0
+Jacobo Hunter,1,1,0,0,0,0,3,0,0,0
+L'Hospitalet de Llobregat,1,1,0,0,0,0,3,0,0,0
+Miami,1,1,0,0,0,0,3,0,0,0
+Mollendo,1,1,0,0,0,0,3,0,0,0
+Moquegua,1,1,0,0,0,0,3,0,0,0
+Paita,1,1,0,0,0,0,3,0,0,0
+Paris,1,1,0,0,0,0,5,0,0,0
+Prineville,1,1,0,0,0,0,4,0,0,0
+Sachaca,1,1,0,0,0,0,3,0,0,0
+Salaverry,1,1,0,0,0,0,3,0,0,0
+San Ignacio,1,1,0,0,0,0,3,0,0,0
+San Martin de Pangoa,1,1,0,0,0,0,3,0,0,0
+San Pedro de Lloc,1,1,0,0,0,0,3,0,0,0
+Siberut Tengah,1,1,0,0,0,0,3,0,0,0
+Socabaya,1,1,0,0,0,0,3,0,0,0
+Springfield,1,1,0,0,0,0,3,0,0,0
+Srumbung,1,1,0,0,0,0,3,0,0,0
+Turin,1,1,0,0,0,0,3,0,0,0
+Yanahuara,1,1,0,0,0,0,3,0,0,0

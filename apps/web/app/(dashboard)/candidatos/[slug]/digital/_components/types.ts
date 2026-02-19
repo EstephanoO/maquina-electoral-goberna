@@ -34,6 +34,16 @@ export type GA4SessionSource = {
 export type GA4City = {
   city: string;
   activeUsers: number;
+  // Enriched fields from Detalles Demográficos CSV
+  newUsers?: number;
+  engagedSessions?: number;
+  engagementRate?: number; // 0-1 decimal
+  sessionsPerUser?: number;
+  avgEngagementTime?: number; // seconds
+  events?: number;
+  keyEvents?: number;
+  keyEventRate?: number; // 0-1 decimal
+  revenue?: number;
 };
 
 export type GA4DailyUsers = {

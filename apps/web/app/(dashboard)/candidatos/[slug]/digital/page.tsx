@@ -49,6 +49,7 @@ export default function DigitalPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hoveredCity, setHoveredCity] = useState<string | null>(null);
+  const [clickedCity, setClickedCity] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchAnalytics() {
@@ -173,10 +174,21 @@ export default function DigitalPage() {
         {/* HERO: Cities Ranking (left) + Heatmap (right) */}
         <section style={S.heroGrid}>
           <div style={S.heroLeft}>
-            <CitiesRanking cities={ga4Data.cities} primaryColor={pc} onCityHover={setHoveredCity} />
+            <CitiesRanking
+              cities={ga4Data.cities}
+              primaryColor={pc}
+              onCityHover={setHoveredCity}
+              onCityClick={setClickedCity}
+              clickedCity={clickedCity}
+            />
           </div>
           <div style={S.heroRight}>
-            <CitiesHeatmap cities={ga4Data.cities} primaryColor={pc} highlightCity={hoveredCity} />
+            <CitiesHeatmap
+              cities={ga4Data.cities}
+              primaryColor={pc}
+              highlightCity={hoveredCity}
+              clickedCity={clickedCity}
+            />
           </div>
         </section>
 
