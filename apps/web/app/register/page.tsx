@@ -2,15 +2,30 @@
 
 import { useAuth } from "../../lib/auth-context";
 import { api } from "../../lib/api-client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useEffect, useRef, type FormEvent } from "react";
+import { useState, useEffect, useRef, useMemo, type FormEvent, Suspense } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════════
    GOBERNA — Register Page
-   Institutional split-screen registration.
+   Phone-first registration, auto-associates to a campaign.
+   Supports ?c=slug query param to pick a specific candidate.
    ═══════════════════════════════════════════════════════════════════════ */
+
+type CandidateInfo = {
+  id: string;
+  name: string;
+  slug: string;
+  cargo: string | null;
+  numero: number | null;
+  partido: string | null;
+  foto_url: string | null;
+};
+
+// Normalize text for search (remove accents, lowercase)
+const normalize = (t: string) =>
+  t.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
 const INJECTED_STYLES = `
 @keyframes goberna-fade-in {
@@ -129,13 +144,30 @@ function IconSuccess() {
   );
 }
 
+// Wrap with Suspense for useSearchParams
 export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterPageInner />
+    </Suspense>
+  );
+}
+
+function RegisterPageInner() {
   const { isAuthenticated, isLoading, login } = useAuth();
   const router = useRouter();
-  const nameRef = useRef<HTMLInputElement>(null);
+  const searchParams = useSearchParams();
+  const phoneRef = useRef<HTMLInputElement>(null);
 
-  const [fullName, setFullName] = useState("");
+  // ── Candidates (fetched at mount) ────────────────────────────────
+  const [candidates, setCandidates] = useState<CandidateInfo[]>([]);
+  const [loadingCandidates, setLoadingCandidates] = useState(true);
+  const [candidateSearch, setCandidateSearch] = useState(searchParams.get("c") ?? "");
+
+  // ── Form state ───────────────────────────────────────────────────
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
@@ -145,8 +177,40 @@ export default function RegisterPage() {
   useEffect(injectStyles, []);
 
   useEffect(() => {
-    nameRef.current?.focus();
+    phoneRef.current?.focus();
   }, []);
+
+  // Fetch candidates on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get<{ candidates: CandidateInfo[] }>("/api/candidates");
+        if (res.ok && res.data?.candidates) {
+          setCandidates(res.data.candidates);
+          // If ?c= query param matches a slug, pre-fill search
+          const slugParam = searchParams.get("c");
+          if (slugParam) {
+            const match = res.data.candidates.find((c) => c.slug === slugParam);
+            if (match) setCandidateSearch(match.name.split(" ")[0]);
+          }
+        }
+      } catch {
+        // Non-critical: candidates just won't auto-match
+      } finally {
+        setLoadingCandidates(false);
+      }
+    })();
+  }, [searchParams]);
+
+  // Match candidate by first name (same logic as mobile)
+  const matchedCandidate = useMemo(() => {
+    const term = normalize(candidateSearch);
+    if (term.length < 3) return null;
+    return candidates.find((c) => {
+      const firstName = normalize(c.name.split(" ")[0]);
+      return firstName === term;
+    }) ?? null;
+  }, [candidateSearch, candidates]);
 
   // Already logged in → go to dashboard
   useEffect(() => {
@@ -162,11 +226,16 @@ export default function RegisterPage() {
     e.preventDefault();
     setError("");
 
+    const trimmedPhone = phone.trim();
     const trimmedName = fullName.trim();
-    const trimmedEmail = email.trim();
 
-    if (!trimmedName || !trimmedEmail || !password) {
-      setError("Todos los campos son obligatorios.");
+    if (!trimmedPhone || !trimmedName || !password) {
+      setError("Telefono, nombre y contrasena son obligatorios.");
+      return;
+    }
+
+    if (!/^9\d{8}$/.test(trimmedPhone)) {
+      setError("Ingrese un numero de 9 digitos que empiece con 9.");
       return;
     }
 
@@ -180,26 +249,44 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!matchedCandidate) {
+      setError("Escriba el primer nombre de su candidato para continuar.");
+      return;
+    }
+
     setSubmitting(true);
     try {
-      // 1) Register
+      const generatedEmail = `${trimmedPhone.replace(/\D/g, "")}@goberna.pe`;
+
+      // 1) Register — send all required fields
       const res = await api.post<{ user: { id: string; email: string } }>(
         "/api/auth/register",
-        { email: trimmedEmail, password, full_name: trimmedName },
+        {
+          phone: trimmedPhone,
+          password,
+          full_name: trimmedName,
+          region: "LIMA",
+          campaign_id: matchedCandidate.id,
+          email: generatedEmail,
+        },
       );
 
       if (!res.ok) {
-        setError(res.error?.message ?? "Error al registrarse.");
+        const msg = res.error?.message ?? "Error al registrarse.";
+        // Friendly messages for common errors
+        if (res.error?.code === "AUTH_PHONE_EXISTS") {
+          setError("Este numero de telefono ya esta registrado.");
+        } else {
+          setError(msg);
+        }
         return;
       }
 
-      // 2) Auto-login after successful registration
-      const loginResult = await login(trimmedEmail, password);
+      // 2) Auto-login with phone-based email
+      const loginResult = await login(generatedEmail, password);
       if (loginResult.ok) {
-        // Redirect to onboarding (candidate selection)
         router.replace("/onboarding");
       } else {
-        // Registration succeeded but auto-login failed — send to login page
         router.replace("/login");
       }
     } catch {
@@ -470,7 +557,6 @@ export default function RegisterPage() {
                 Nombre completo
               </label>
               <input
-                ref={nameRef}
                 id="reg-name"
                 type="text"
                 autoComplete="name"

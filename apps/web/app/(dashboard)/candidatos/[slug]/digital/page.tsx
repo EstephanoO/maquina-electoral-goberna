@@ -239,8 +239,8 @@ const FULL_SCREEN: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
   backgroundColor: "#f8fafc",
-  minHeight: "calc(100vh - 48px)",
-  margin: -24,
+  flex: 1,
+  minHeight: 0,
 };
 
 const S: Record<string, React.CSSProperties> = {

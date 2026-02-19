@@ -111,7 +111,7 @@ export default function TierraPage() {
   const [activeLayer, setActiveLayer] = useState<ActiveLayer>("datos");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
-  const [showTable, setShowTable] = useState(false);
+  const [showTable, setShowTable] = useState(true);
   const [showMetrics, setShowMetrics] = useState(false);
   const [logCollapsed, setLogCollapsed] = useState(false);
   const [logClearedAt, setLogClearedAt] = useState<number>(0);
@@ -547,13 +547,14 @@ export default function TierraPage() {
   );
 }
 
-/* ========== Full screen container (offset by collapsed sidebar 52px) ========== */
+/* ========== Full screen container (offset by collapsed sidebar 52px + tab bar 48px) ========== */
 
 const SIDEBAR_COLLAPSED_WIDTH = 52;
+const TAB_BAR_HEIGHT = 48;
 
 const FULL_SCREEN: React.CSSProperties = {
   position: "fixed",
-  top: 0,
+  top: TAB_BAR_HEIGHT,
   right: 0,
   bottom: 0,
   left: SIDEBAR_COLLAPSED_WIDTH,

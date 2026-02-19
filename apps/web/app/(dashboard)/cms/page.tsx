@@ -9,6 +9,7 @@ import {
   markHablado,
   markRespondieron,
   archiveContact,
+  revertContact,
   updateContactNotes,
   getCmsStats,
   type CmsContact,
@@ -17,6 +18,7 @@ import {
 } from "../../../lib/services/cms";
 import { ContactTableRow } from "./_components/contact-table-row";
 import { ContactNotesPanel } from "./_components/contact-notes-panel";
+import { TwilioConfigModal } from "./_components/twilio-config-modal";
 
 /* ═══════════════════════════════════════════════════════════════════
    GOBERNA — CMS: Contactos para Operadoras Digitales
@@ -50,6 +52,10 @@ export default function CmsPage() {
   const [notesContact, setNotesContact] = useState<CmsContact | null>(null);
   const [search, setSearch] = useState("");
   const [wspTemplateOpen, setWspTemplateOpen] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [reverting, setReverting] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [twilioConfigOpen, setTwilioConfigOpen] = useState(false);
 
   const sseRef = useRef<{ close: () => void } | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -237,13 +243,19 @@ export default function CmsPage() {
   const handleRespondieron = useCallback(
     async (id: string) => {
       if (!activeCampaignId) return;
+      setActionLoading(id);
+      setActionError(null);
       const res = await markRespondieron(activeCampaignId, id);
       if (res.ok) {
         setContacts((prev) => prev.filter((c) => c.id !== id));
         setStats((prev) =>
           prev ? { ...prev, hablados: Math.max(0, prev.hablados - 1), respondieron: prev.respondieron + 1 } : prev,
         );
+      } else {
+        setActionError(res.error ?? "Error marcando como contestó");
+        setTimeout(() => setActionError(null), 4000);
       }
+      setActionLoading(null);
     },
     [activeCampaignId],
   );
@@ -259,6 +271,25 @@ export default function CmsPage() {
           return { ...prev, archivados: prev.archivados + 1, total: Math.max(0, prev.total - 1) };
         });
       }
+    },
+    [activeCampaignId],
+  );
+
+  const handleRevert = useCallback(
+    async (id: string) => {
+      if (!activeCampaignId) return;
+      setReverting(id);
+      setActionError(null);
+      const res = await revertContact(activeCampaignId, id);
+      if (res.ok) {
+        // Remove from current tab list and refresh stats
+        setContacts((prev) => prev.filter((c) => c.id !== id));
+        if (activeCampaignId) getCmsStats(activeCampaignId).then((r) => { if (r.ok && r.stats) setStats(r.stats); });
+      } else {
+        setActionError(res.error ?? "No se pudo revertir");
+        setTimeout(() => setActionError(null), 4000);
+      }
+      setReverting(null);
     },
     [activeCampaignId],
   );
@@ -318,6 +349,35 @@ export default function CmsPage() {
             Gestion de contactos via WhatsApp
           </p>
         </div>
+        {/* Twilio config button — solo visible para admin */}
+        {user?.role === "admin" && (
+          <button
+            type="button"
+            onClick={() => setTwilioConfigOpen(true)}
+            title="Configurar Twilio WhatsApp"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 14px",
+              fontSize: 12,
+              fontWeight: 600,
+              fontFamily: FONT,
+              color: "#25D366",
+              background: "var(--color-surface)",
+              border: "1px solid #bbf7d0",
+              borderRadius: 8,
+              cursor: "pointer",
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <title>Configurar Twilio</title>
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            Twilio
+          </button>
+        )}
       </div>
 
       {/* WhatsApp Template Collapsible */}
@@ -572,8 +632,11 @@ export default function CmsPage() {
                     onRespondieron={handleRespondieron}
                     onArchive={handleArchive}
                     onRelease={handleRelease}
+                    onRevert={handleRevert}
                     onOpenNotes={setNotesContact}
                     claiming={claiming}
+                    actionLoading={actionLoading}
+                    reverting={reverting}
                   />
                 ))
               )}
@@ -603,6 +666,40 @@ export default function CmsPage() {
         </div>
       </div>
 
+      {/* Error toast */}
+      {actionError && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            padding: "12px 20px",
+            borderRadius: 10,
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            color: "#dc2626",
+            fontSize: 13,
+            fontWeight: 600,
+            fontFamily: FONT,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            animation: "slideIn 0.2s ease",
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2">
+            <title>Error</title>
+            <circle cx="12" cy="12" r="10" />
+            <line x1="15" y1="9" x2="9" y2="15" />
+            <line x1="9" y1="9" x2="15" y2="15" />
+          </svg>
+          {actionError}
+          <style>{"@keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }"}</style>
+        </div>
+      )}
+
       {/* Notes panel */}
       {notesContact && (
         <ContactNotesPanel
@@ -610,6 +707,14 @@ export default function CmsPage() {
           onSave={handleSaveNotes}
           onClose={() => setNotesContact(null)}
           saving={savingNotes}
+        />
+      )}
+
+      {/* Twilio config modal — solo admin */}
+      {twilioConfigOpen && activeCampaignId && (
+        <TwilioConfigModal
+          campaignId={activeCampaignId}
+          onClose={() => setTwilioConfigOpen(false)}
         />
       )}
     </div>

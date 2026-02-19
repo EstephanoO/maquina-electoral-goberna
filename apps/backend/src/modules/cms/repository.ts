@@ -10,6 +10,7 @@ export type CmsContactRow = {
   cms_claimed_by: string | null;
   cms_claimed_at: Date | null;
   cms_hablado_at: Date | null;
+  cms_respondieron_at: Date | null;
   cms_operator_notes: Record<string, unknown>;
   // Derived from data JSONB
   nombre: string;
@@ -29,7 +30,7 @@ export type CmsContactRow = {
 const CMS_SELECT = `
   fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
   fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
-  fs.cms_operator_notes,
+  fs.cms_respondieron_at, fs.cms_operator_notes,
   COALESCE(fs.data->>'nombre', '') AS nombre,
   COALESCE(fs.data->>'telefono', '') AS telefono,
   COALESCE(fs.data->>'encuestador', '') AS encuestador,
@@ -215,7 +216,8 @@ export async function claimContact(
      WHERE id = $1
        AND cms_status = 'nuevo'
      RETURNING id, campaign_id, data, client_id, created_at,
-               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at, cms_operator_notes,
+               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
+               cms_respondieron_at, cms_operator_notes,
                COALESCE(data->>'nombre', '') AS nombre,
                COALESCE(data->>'telefono', '') AS telefono,
                COALESCE(data->>'encuestador', '') AS encuestador,
@@ -259,11 +261,13 @@ export async function markHablado(
      SET cms_status = 'hablado',
          cms_claimed_by = $2,
          cms_claimed_at = COALESCE(cms_claimed_at, now()),
-         cms_hablado_at = now()
+         cms_hablado_at = now(),
+         cms_respondieron_at = NULL
      WHERE id = $1
        AND (cms_claimed_by = $2 OR cms_status = 'nuevo')
      RETURNING id, campaign_id, data, client_id, created_at,
-               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at, cms_operator_notes,
+               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
+               cms_respondieron_at, cms_operator_notes,
                COALESCE(data->>'nombre', '') AS nombre,
                COALESCE(data->>'telefono', '') AS telefono,
                COALESCE(data->>'encuestador', '') AS encuestador,
@@ -287,11 +291,13 @@ export async function markRespondieron(
      SET cms_status = 'respondieron',
          cms_claimed_by = $2,
          cms_claimed_at = COALESCE(cms_claimed_at, now()),
-         cms_hablado_at = COALESCE(cms_hablado_at, now())
+         cms_hablado_at = COALESCE(cms_hablado_at, now()),
+         cms_respondieron_at = now()
      WHERE id = $1
        AND (cms_claimed_by = $2 OR cms_status IN ('nuevo', 'claimed', 'hablado'))
      RETURNING id, campaign_id, data, client_id, created_at,
-               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at, cms_operator_notes,
+               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
+               cms_respondieron_at, cms_operator_notes,
                COALESCE(data->>'nombre', '') AS nombre,
                COALESCE(data->>'telefono', '') AS telefono,
                COALESCE(data->>'encuestador', '') AS encuestador,
@@ -317,7 +323,8 @@ export async function archiveContact(
          cms_claimed_at = COALESCE(cms_claimed_at, now())
      WHERE id = $1
      RETURNING id, campaign_id, data, client_id, created_at,
-               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at, cms_operator_notes,
+               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
+               cms_respondieron_at, cms_operator_notes,
                COALESCE(data->>'nombre', '') AS nombre,
                COALESCE(data->>'telefono', '') AS telefono,
                COALESCE(data->>'encuestador', '') AS encuestador,
@@ -343,7 +350,8 @@ export async function updateNotes(
      WHERE id = $1
        AND cms_claimed_by = $2
      RETURNING id, campaign_id, data, client_id, created_at,
-               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at, cms_operator_notes,
+               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
+               cms_respondieron_at, cms_operator_notes,
                COALESCE(data->>'nombre', '') AS nombre,
                COALESCE(data->>'telefono', '') AS telefono,
                COALESCE(data->>'encuestador', '') AS encuestador,
@@ -549,6 +557,138 @@ export async function getCmsMetricsByOperator(
     archivados: parseInt(r.archivados, 10),
     claimed_now: parseInt(r.claimed_now, 10),
   }));
+}
+
+// ── Revert contact status (undo accidental transitions) ─────────────
+
+/**
+ * Revert a contact one step back:
+ *   respondieron → hablado   (clears cms_respondieron_at)
+ *   hablado      → claimed   (clears cms_hablado_at)
+ * Only the operator who owns the contact (or the same campaign) can revert.
+ */
+export async function revertContact(
+  submissionId: string,
+  operatorId: string,
+): Promise<CmsContactRow | null> {
+  // First, check current status
+  const { rows: current } = await pool.query<{ cms_status: string; cms_claimed_by: string | null }>(
+    `SELECT cms_status, cms_claimed_by FROM form_submissions WHERE id = $1`,
+    [submissionId],
+  );
+  if (!current[0]) return null;
+
+  const status = current[0].cms_status;
+  const claimedBy = current[0].cms_claimed_by;
+
+  // Only the operator who owns it can revert (or if nobody owns it)
+  if (claimedBy && claimedBy !== operatorId) return null;
+
+  let sql: string;
+  if (status === "respondieron") {
+    // respondieron → hablado
+    sql = `UPDATE form_submissions
+           SET cms_status = 'hablado',
+               cms_respondieron_at = NULL
+           WHERE id = $1
+           RETURNING id, campaign_id, data, client_id, created_at,
+                     cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
+                     cms_respondieron_at, cms_operator_notes,
+                     COALESCE(data->>'nombre', '') AS nombre,
+                     COALESCE(data->>'telefono', '') AS telefono,
+                     COALESCE(data->>'encuestador', '') AS encuestador,
+                     COALESCE(data->>'zona', data->>'distrito', '') AS zona,
+                     COALESCE(data->>'distrito', '') AS distrito,
+                     COALESCE(data->>'candidato_preferido', '') AS candidato_preferido,
+                     false AS is_locked`;
+  } else if (status === "hablado") {
+    // hablado → claimed (keeps claimed_by/at intact)
+    sql = `UPDATE form_submissions
+           SET cms_status = 'claimed',
+               cms_hablado_at = NULL,
+               cms_respondieron_at = NULL
+           WHERE id = $1
+           RETURNING id, campaign_id, data, client_id, created_at,
+                     cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
+                     cms_respondieron_at, cms_operator_notes,
+                     COALESCE(data->>'nombre', '') AS nombre,
+                     COALESCE(data->>'telefono', '') AS telefono,
+                     COALESCE(data->>'encuestador', '') AS encuestador,
+                     COALESCE(data->>'zona', data->>'distrito', '') AS zona,
+                     COALESCE(data->>'distrito', '') AS distrito,
+                     COALESCE(data->>'candidato_preferido', '') AS candidato_preferido,
+                     false AS is_locked`;
+  } else {
+    // Can only revert respondieron or hablado
+    return null;
+  }
+
+  const { rows } = await pool.query<CmsContactRow>(sql, [submissionId]);
+  return rows[0] ?? null;
+}
+
+// ── Time-based metrics for CMS performance ──────────────────────────
+
+export type CmsTimeMetrics = {
+  avg_claim_to_hablado_mins: number | null;
+  avg_hablado_to_respondieron_mins: number | null;
+  median_claim_to_hablado_mins: number | null;
+  median_hablado_to_respondieron_mins: number | null;
+  total_with_hablado: number;
+  total_with_respondieron: number;
+};
+
+export async function getTimeMetrics(
+  campaignIds: string[] | null,
+): Promise<CmsTimeMetrics> {
+  const hasFilter = campaignIds !== null && campaignIds.length > 0;
+  const whereClause = hasFilter ? `WHERE campaign_id = ANY($1)` : `WHERE 1=1`;
+  const params = hasFilter ? [campaignIds] : [];
+
+  const { rows } = await pool.query<{
+    avg_claim_to_hablado: string | null;
+    avg_hablado_to_resp: string | null;
+    med_claim_to_hablado: string | null;
+    med_hablado_to_resp: string | null;
+    total_hablado: string;
+    total_resp: string;
+  }>(
+    `SELECT
+       ROUND(AVG(EXTRACT(EPOCH FROM (cms_hablado_at - cms_claimed_at)) / 60)::numeric, 1)::text
+         AS avg_claim_to_hablado,
+       ROUND(AVG(EXTRACT(EPOCH FROM (cms_respondieron_at - cms_hablado_at)) / 60)::numeric, 1)::text
+         FILTER (WHERE cms_respondieron_at IS NOT NULL)
+         AS avg_hablado_to_resp,
+       ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (
+         ORDER BY EXTRACT(EPOCH FROM (cms_hablado_at - cms_claimed_at)) / 60
+       )::numeric, 1)::text
+         AS med_claim_to_hablado,
+       ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (
+         ORDER BY EXTRACT(EPOCH FROM (cms_respondieron_at - cms_hablado_at)) / 60
+       )::numeric, 1)::text
+         FILTER (WHERE cms_respondieron_at IS NOT NULL)
+         AS med_hablado_to_resp,
+       COUNT(*) FILTER (WHERE cms_hablado_at IS NOT NULL AND cms_claimed_at IS NOT NULL)::text
+         AS total_hablado,
+       COUNT(*) FILTER (WHERE cms_respondieron_at IS NOT NULL AND cms_hablado_at IS NOT NULL)::text
+         AS total_resp
+     FROM form_submissions
+     ${whereClause}
+       AND cms_hablado_at IS NOT NULL
+       AND cms_claimed_at IS NOT NULL
+       AND cms_hablado_at > cms_claimed_at`,
+    params,
+  );
+
+  const r = rows[0];
+  return {
+    avg_claim_to_hablado_mins: r?.avg_claim_to_hablado ? parseFloat(r.avg_claim_to_hablado) : null,
+    avg_hablado_to_respondieron_mins: r?.avg_hablado_to_resp ? parseFloat(r.avg_hablado_to_resp) : null,
+    median_claim_to_hablado_mins: r?.med_claim_to_hablado ? parseFloat(r.med_claim_to_hablado) : null,
+    median_hablado_to_respondieron_mins: r?.med_hablado_to_resp ? parseFloat(r.med_hablado_to_resp) : null,
+    total_with_hablado: parseInt(r?.total_hablado ?? "0", 10),
+    total_with_respondieron: parseInt(r?.total_resp ?? "0", 10),
+  };
 }
 
 // ── Snapshot of currently claimed contacts (for SSE init) ───────────

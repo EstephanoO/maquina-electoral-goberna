@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const createInvitationSchema = z.object({
   campaign_id: z.string().uuid(),
-  role: z.enum(["consultor", "jefe_campana", "brigadista_zonal", "agente_campo"]),
+  role: z.enum(["consultor", "candidato", "brigadista_zonal", "agente_campo", "agente_digital"]),
   parent_user_id: z.string().uuid().nullable().optional(),
   zone_id: z.string().uuid().nullable().optional(),
   max_uses: z.number().int().min(1).max(1000).default(1),

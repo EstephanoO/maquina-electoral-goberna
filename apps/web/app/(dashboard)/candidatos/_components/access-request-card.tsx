@@ -27,7 +27,7 @@ type RoleOption = {
 
 const ROLE_OPTIONS: RoleOption[] = [
   {
-    key: "agent",
+    key: "agente_campo",
     backendKey: "agente_campo",
     label: "Agente de Campo",
     icon: "🚶",
@@ -36,27 +36,27 @@ const ROLE_OPTIONS: RoleOption[] = [
     description: "Operador territorial, sube formularios",
   },
   {
-    key: "capitan",
+    key: "agente_digital",
+    backendKey: "agente_digital",
+    label: "Agente Digital",
+    icon: "💻",
+    color: "#0369a1",
+    bgColor: "#e0f2fe",
+    description: "Redes sociales y operaciones digitales",
+  },
+  {
+    key: "brigadista_zonal",
     backendKey: "brigadista_zonal",
-    label: "Capitan de Brigada",
+    label: "Brigadista Zonal",
     icon: "🎖️",
     color: "#7c3aed",
     bgColor: "#f3e8ff",
-    description: "Lidera 5-10 agentes de campo",
-  },
-  {
-    key: "director",
-    backendKey: "brigadista_zonal", // Temporary - uses same backend role
-    label: "Director Regional",
-    icon: "🗺️",
-    color: "#047857",
-    bgColor: "#ecfdf5",
-    description: "Coordina capitanes en su region",
+    description: "Coordina agentes en su zona",
   },
   {
     key: "candidato",
-    backendKey: "supervisor",
-    label: "Candidato / Jefe",
+    backendKey: "candidato",
+    label: "Candidato",
     icon: "👔",
     color: "#1e40af",
     bgColor: "#dbeafe",
@@ -89,7 +89,7 @@ export function AccessRequestCard({ request, onResolved }: AccessRequestCardProp
       note: note.trim() || undefined,
       perm_tierra: permTierra,
       perm_digital: permDigital,
-      role: roleOption.backendKey as "agente_campo" | "supervisor" | "brigadista_zonal",
+      role: roleOption.backendKey as "agente_campo" | "agente_digital" | "brigadista_zonal" | "candidato",
     });
 
     setActing(false);

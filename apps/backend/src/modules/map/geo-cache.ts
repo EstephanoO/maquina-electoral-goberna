@@ -77,13 +77,13 @@ async function fetchDepartamentosFromDB(): Promise<DepartamentoInfo[]> {
   }>(`
     SELECT 
       coddep,
-      departamento,
+      nomdep AS departamento,
       ST_XMin(ST_Envelope(geom)) as min_lng,
       ST_YMin(ST_Envelope(geom)) as min_lat,
       ST_XMax(ST_Envelope(geom)) as max_lng,
       ST_YMax(ST_Envelope(geom)) as max_lat
     FROM peru_departamentos
-    ORDER BY departamento
+    ORDER BY nomdep
   `);
 
   return result.rows.map((row) => ({
@@ -110,14 +110,14 @@ async function fetchProvinciasFromDB(coddep: string): Promise<{ provincias: Prov
     SELECT 
       coddep,
       codprov,
-      provincia,
+      nomprov AS provincia,
       ST_XMin(ST_Envelope(geom)) as min_lng,
       ST_YMin(ST_Envelope(geom)) as min_lat,
       ST_XMax(ST_Envelope(geom)) as max_lng,
       ST_YMax(ST_Envelope(geom)) as max_lat
     FROM peru_provincias
     WHERE coddep = $1
-    ORDER BY provincia
+    ORDER BY nomprov
   `,
     [coddep]
   );
@@ -158,14 +158,14 @@ async function fetchDistritosFromDB(codprov_full: string): Promise<{ distritos: 
       coddep,
       codprov,
       ubigeo,
-      distrito,
+      nomdist AS distrito,
       ST_XMin(ST_Envelope(geom)) as min_lng,
       ST_YMin(ST_Envelope(geom)) as min_lat,
       ST_XMax(ST_Envelope(geom)) as max_lng,
       ST_YMax(ST_Envelope(geom)) as max_lat
     FROM peru_distritos
     WHERE coddep = $1 AND codprov = $2
-    ORDER BY distrito
+    ORDER BY nomdist
   `,
     [coddep, codprov]
   );
@@ -374,12 +374,14 @@ export async function reverseGeocode(lng: number, lat: number): Promise<ReverseG
     `
     SELECT 
       d.coddep,
-      d.departamento,
+      dep.nomdep AS departamento,
       d.codprov,
-      d.provincia,
+      prov.nomprov AS provincia,
       d.ubigeo,
-      d.distrito
+      d.nomdist AS distrito
     FROM peru_distritos d
+    JOIN peru_departamentos dep ON dep.coddep = d.coddep
+    JOIN peru_provincias prov ON prov.coddep = d.coddep AND prov.codprov = d.codprov
     WHERE ST_Contains(d.geom, ST_SetSRID(ST_Point($1, $2), 4326))
     LIMIT 1
   `,

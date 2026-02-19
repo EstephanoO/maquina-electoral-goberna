@@ -54,6 +54,8 @@ export type AppEnv = {
   rateLimitAuthPerMinute: number;
   refreshTokenCleanupIntervalMs: number;
   locationHistoryRetentionDays: number;
+  // Twilio — clave maestra para cifrar auth_tokens en DB (obligatoria si se usa Twilio)
+  twilioEncryptionKey: string;
 };
 
 function toNumber(value: string | undefined, fallback: number): number {
@@ -163,5 +165,6 @@ export function getEnv(): AppEnv {
     rateLimitAuthPerMinute: toNumber(process.env.RATE_LIMIT_AUTH_PER_MINUTE, 10),
     refreshTokenCleanupIntervalMs: toNumber(process.env.REFRESH_TOKEN_CLEANUP_INTERVAL_MS, 3600000),
     locationHistoryRetentionDays: toNumber(process.env.LOCATION_HISTORY_RETENTION_DAYS, 7),
+    twilioEncryptionKey: (process.env.TWILIO_ENCRYPTION_KEY ?? "").trim(),
   };
 }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const roleEnum = z.enum(["admin", "consultor", "candidato", "brigadista_zonal", "agente_campo"]);
+const roleEnum = z.enum(["admin", "consultor", "candidato", "brigadista_zonal", "agente_campo", "agente_digital"]);
 
 export const createOrgNodeSchema = z.object({
   campaign_id: z.string().uuid(),

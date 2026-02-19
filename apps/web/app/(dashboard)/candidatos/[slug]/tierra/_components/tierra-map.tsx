@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Layer, Map as MapLibre, Popup, Source } from "@vis.gl/react-maplibre";
+import { Layer, Map as MapLibre, Source } from "@vis.gl/react-maplibre";
 import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
 import type { FilterSpecification, StyleSpecification, MapGeoJSONFeature, GeoJSONSource } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -11,7 +11,6 @@ import {
   getDistritos,
   preloadProvincias,
   preloadDistritos,
-  reverseGeocode,
   type GeoBounds,
 } from "@/lib/services/geo";
 
@@ -37,16 +36,6 @@ export type FormPoint = {
   created_at: string;
   agent_id?: string;
 };
-
-type HoverInfo = {
-  lng: number;
-  lat: number;
-} & (
-  | { type: "cluster"; count: number }
-  | { type: "form"; nombre: string; created_at: string }
-  | { type: "agent"; agent: EnrichedAgent }
-  | { type: "zone"; name: string; level: string }
-);
 
 export type TierraMapHandle = {
   flyToPoint: (lng: number, lat: number, zoom?: number) => void;
@@ -108,30 +97,7 @@ const SECTOR_FILL = "rgba(220, 38, 38, 0.13)";
 const SECTOR_LINE = "#0a0a0a";
 const HIDE_FILTER: FilterSpecification = ["==", "1", "0"];
 
-/* ========== Dynamic Zoom Thresholds ========== */
-// These define at which zoom levels the hierarchy transitions happen.
-// The ranges create smooth crossfade zones where one level fades out while
-// the next fades in. The GPU handles these interpolations = buttery smooth.
 
-const ZOOM = {
-  /** Departamentos fully visible */
-  DEP_FULL: 5,
-  /** Departamentos start fading, provincias start appearing */
-  DEP_TO_PROV: 6.5,
-  /** Departamentos gone, provincias fully visible */
-  PROV_FULL: 7.5,
-  /** Provincias start fading, distritos start appearing */
-  PROV_TO_DIST: 8.5,
-  /** Provincias gone, distritos fully visible */
-  DIST_FULL: 9.5,
-  /** Distritos start fading into sectors */
-  DIST_TO_SECTOR: 11,
-  /** Sectors fully visible */
-  SECTOR_FULL: 12,
-} as const;
-
-/** Debounce time (ms) for zoom-based drill detection */
-const ZOOM_DRILL_DEBOUNCE = 400;
 
 /* ========== Map Config ========== */
 
@@ -146,6 +112,8 @@ const mapStyle: StyleSpecification = {
     "light-base": { type: "raster", tiles: [LIGHT_TILES], tileSize: 256, attribution: "&copy; CARTO", maxzoom: 19 },
   },
   layers: [{ id: "light-base", type: "raster", source: "light-base" }],
+  // Global transition for smooth property changes when filters/state update
+  transition: { duration: 400, delay: 0 },
 };
 
 const DEFAULT_TILE_TEMPLATE = "/api/tiles/{z}/{x}/{y}.vector.pbf";
@@ -215,8 +183,6 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
   const mapRef = useRef<MapRef | null>(null);
   const [tileUrl, setTileUrl] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const [hover, setHover] = useState<HoverInfo | null>(null);
-  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isZoomingRef = useRef(false);
   const zoomEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -280,90 +246,6 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
     [campaignId],
   );
 
-  /* ══════════════════════════════════════════════════════════════════════
-   *  DYNAMIC ZOOM DRILL SYSTEM
-   *
-   *  Instead of binary show/hide filters, layers use zoom-interpolated
-   *  opacities so transitions are buttery smooth (GPU-driven).
-   *
-   *  Additionally, when the user zooms in/out with scroll/pinch, we
-   *  detect the geographic center via reverse geocoding and auto-update
-   *  the drill state — the hierarchy "follows the zoom" dynamically.
-   *
-   *  Click drill-down still works as a quick shortcut.
-   * ══════════════════════════════════════════════════════════════════════ */
-
-  // Ref to prevent zoom-drill detection from firing during click-driven fitBounds
-  const isClickDrivenZoomRef = useRef(false);
-  const zoomDrillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Track the last reverse-geocoded center to avoid redundant calls
-  const lastGeoCenterRef = useRef<string>("");
-  // Ref to track the drillState for async callbacks without stale closures
-  const drillStateRef = useRef(drillState);
-  drillStateRef.current = drillState;
-
-  /* ─── Zoom-driven drill detection ─── */
-  const detectDrillFromZoom = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || isClickDrivenZoomRef.current) return;
-
-    const zoom = map.getZoom();
-    const center = map.getCenter();
-    // Round center to ~100m to deduplicate calls
-    const centerKey = `${center.lng.toFixed(3)},${center.lat.toFixed(3)},${zoom.toFixed(1)}`;
-
-    // Skip if center hasn't meaningfully changed
-    if (centerKey === lastGeoCenterRef.current) return;
-    lastGeoCenterRef.current = centerKey;
-
-    const currentDrill = drillStateRef.current;
-
-    // Zooming OUT: go back to upper levels without reverse geocode
-    if (zoom < ZOOM.DEP_TO_PROV && currentDrill.level > 0) {
-      onDrillChange({ ...INITIAL_DRILL });
-      return;
-    }
-
-    // Only trigger reverse geocode when zoom crosses into prov+ territory
-    if (zoom >= ZOOM.DEP_TO_PROV) {
-      reverseGeocode(center.lng, center.lat).then((result) => {
-        if (!result.ok || !result.result) return;
-        const { coddep, departamento, codprov_full, provincia, ubigeo, distrito } = result.result;
-        const latestDrill = drillStateRef.current;
-        const currentZoom = mapRef.current?.getZoom() ?? zoom;
-
-        if (currentZoom >= ZOOM.PROV_TO_DIST && currentZoom < ZOOM.DIST_TO_SECTOR) {
-          // District level
-          if (latestDrill.level !== 2 || latestDrill.provCode !== codprov_full) {
-            preloadDistritos(codprov_full);
-            onDrillChange({
-              level: 2, depCode: coddep, depName: departamento,
-              provCode: codprov_full, provName: provincia,
-              distCode: null, distName: null, sector: null, sectorName: null,
-            });
-          }
-        } else if (currentZoom >= ZOOM.DIST_TO_SECTOR) {
-          // Sector level
-          if (latestDrill.level !== 3 || latestDrill.distCode !== ubigeo) {
-            onDrillChange({
-              level: 3, depCode: coddep, depName: departamento,
-              provCode: codprov_full, provName: provincia,
-              distCode: ubigeo, distName: distrito, sector: null, sectorName: null,
-            });
-          }
-        } else if (currentZoom >= ZOOM.DEP_TO_PROV) {
-          // Province level
-          if (latestDrill.level !== 1 || latestDrill.depCode !== coddep) {
-            preloadProvincias(coddep);
-            onDrillChange({
-              ...INITIAL_DRILL, level: 1, depCode: coddep, depName: departamento,
-            });
-          }
-        }
-      }).catch(() => { /* ignore reverse geocode failures */ });
-    }
-  }, [onDrillChange]);
-
   /* ─── Drill-down filters ─── */
   //
   // Strategy: Layers are ALWAYS rendered but their opacity is controlled by
@@ -391,43 +273,41 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
     return HIDE_FILTER;
   }, [drillState.level, drillState.depCode]);
 
-  // Non-selected departamentos: only at level 0 (they fade out with zoom)
+  // Non-selected departamentos: only at level 0
   const depOtherFilter: FilterSpecification = useMemo(() => {
     if (drillState.level === 0) return ["all"] as FilterSpecification;
     return HIDE_FILTER;
   }, [drillState.level]);
 
-  // Provincias FILL: show within selected dep at level 1+
+  // Provincias: level 1 = all provs of selected dep, level 2+ = only selected prov
   const provFillFilter: FilterSpecification = useMemo(() => {
-    if (drillState.level >= 1 && drillState.depCode) {
-      return ["==", ["get", "coddep"], drillState.depCode];
-    }
+    if (drillState.level === 0) return HIDE_FILTER;
+    if (drillState.level >= 2 && drillState.provCode) return ["==", ["get", "codprov_full"], drillState.provCode];
+    if (drillState.depCode) return ["==", ["get", "coddep"], drillState.depCode];
     return HIDE_FILTER;
-  }, [drillState.level, drillState.depCode]);
+  }, [drillState.level, drillState.depCode, drillState.provCode]);
 
-  // Provincias LINE
   const provLineFilter: FilterSpecification = useMemo(() => {
-    if (drillState.level >= 1 && drillState.depCode) {
-      return ["==", ["get", "coddep"], drillState.depCode];
-    }
+    if (drillState.level === 0) return HIDE_FILTER;
+    if (drillState.level >= 2 && drillState.provCode) return ["==", ["get", "codprov_full"], drillState.provCode];
+    if (drillState.depCode) return ["==", ["get", "coddep"], drillState.depCode];
     return HIDE_FILTER;
-  }, [drillState.level, drillState.depCode]);
+  }, [drillState.level, drillState.depCode, drillState.provCode]);
 
-  // Distritos FILL: show within selected prov at level 2+
+  // Distritos: level 2 = all dists of selected prov, level 3+ = only selected dist
   const distFillFilter: FilterSpecification = useMemo(() => {
-    if (drillState.level >= 2 && drillState.provCode) {
-      return ["==", ["get", "codprov_full"], drillState.provCode];
-    }
+    if (drillState.level < 2) return HIDE_FILTER;
+    if (drillState.level >= 3 && drillState.distCode) return ["==", ["get", "ubigeo"], drillState.distCode];
+    if (drillState.provCode) return ["==", ["get", "codprov_full"], drillState.provCode];
     return HIDE_FILTER;
-  }, [drillState.level, drillState.provCode]);
+  }, [drillState.level, drillState.provCode, drillState.distCode]);
 
-  // Distritos LINE
   const distLineFilter: FilterSpecification = useMemo(() => {
-    if (drillState.level >= 2 && drillState.provCode) {
-      return ["==", ["get", "codprov_full"], drillState.provCode];
-    }
+    if (drillState.level < 2) return HIDE_FILTER;
+    if (drillState.level >= 3 && drillState.distCode) return ["==", ["get", "ubigeo"], drillState.distCode];
+    if (drillState.provCode) return ["==", ["get", "codprov_full"], drillState.provCode];
     return HIDE_FILTER;
-  }, [drillState.level, drillState.provCode]);
+  }, [drillState.level, drillState.provCode, drillState.distCode]);
 
   // ── Priority layer filters (red fill — campaign-specific zones) ──
 
@@ -503,10 +383,9 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
     
     const map = mapRef.current?.getMap();
     if (map) {
-      // Track zoom/pan to suppress tooltips during movement
+      // Track zoom/pan to suppress cursor feedback during movement
       const onMoveStart = () => {
         isZoomingRef.current = true;
-        setHover(null);
         if (zoomEndTimer.current) clearTimeout(zoomEndTimer.current);
       };
       const onMoveEnd = () => {
@@ -518,29 +397,15 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
       map.on("zoomstart", onMoveStart);
       map.on("moveend", onMoveEnd);
       map.on("zoomend", onMoveEnd);
-
-      // ── Dynamic zoom drill detection ──
-      // After zoom/pan ends, detect which geographic zone the user is looking at
-      // and auto-update the drill state. Debounced to avoid spamming reverse geocode.
-      map.on("moveend", () => {
-        if (isClickDrivenZoomRef.current) {
-          // Reset flag after click-driven animation completes
-          setTimeout(() => { isClickDrivenZoomRef.current = false; }, 200);
-          return;
-        }
-        if (zoomDrillTimerRef.current) clearTimeout(zoomDrillTimerRef.current);
-        zoomDrillTimerRef.current = setTimeout(detectDrillFromZoom, ZOOM_DRILL_DEBOUNCE);
-      });
     }
-  }, [detectDrillFromZoom]);
+  }, []);
 
-  // Drill-down click handler (quick shortcut — works alongside dynamic zoom)
+  // Drill-down click handler — click zones to drill in, click empty space to go back
   const handleClick = useCallback((e: MapLayerMouseEvent) => {
     const features = e.features;
     if (!features?.length) {
       // Click on empty space → go back one level
       if (drillState.level > 0) {
-        isClickDrivenZoomRef.current = true;
         const newLevel = (drillState.level - 1) as DrillLevel;
         const newState = { ...drillState, level: newLevel };
         if (newLevel < 4) { newState.sector = null; newState.sectorName = null; }
@@ -560,7 +425,7 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
     const f = features[0];
     const layerId = f.layer?.id;
 
-    // Cluster click → expand and detect geographic location via reverse geocoding
+    // Cluster click → just expand/zoom into the cluster
     if (layerId === "forms-clusters" || layerId === "forms-cluster-ring") {
       const clusterId = f.properties?.cluster_id;
       const coords = (f.geometry as GeoJSON.Point).coordinates;
@@ -570,82 +435,18 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
         const map = mapRef.current.getMap();
         const source = map.getSource("forms-clustered") as GeoJSONSource | undefined;
         
-        // Use reverse geocoding API to detect the distrito at this point
-        const detectAndUpdateDrillState = async (targetZoom: number) => {
-          // Call backend reverse geocode API
-          const result = await reverseGeocode(lng, lat);
-          
-          if (result.ok && result.result) {
-            const { coddep, departamento, codprov_full, provincia, ubigeo, distrito } = result.result;
-            
-            // Determine drill level based on zoom
-            if (targetZoom >= 9) {
-              // Drill to distrito level
-              skipNextFitRef.current = true;
-              onDrillChange({
-                level: 3,
-                depCode: coddep,
-                depName: departamento,
-                provCode: codprov_full,
-                provName: provincia,
-                distCode: ubigeo,
-                distName: distrito,
-                sector: null,
-                sectorName: null,
-              });
-            } else if (targetZoom >= 7) {
-              // Drill to provincia level
-              skipNextFitRef.current = true;
-              onDrillChange({
-                level: 2,
-                depCode: coddep,
-                depName: departamento,
-                provCode: codprov_full,
-                provName: provincia,
-                distCode: null,
-                distName: null,
-                sector: null,
-                sectorName: null,
-              });
-            } else {
-              // Drill to departamento level
-              skipNextFitRef.current = true;
-              onDrillChange({
-                ...INITIAL_DRILL,
-                level: 1,
-                depCode: coddep,
-                depName: departamento,
-              });
-            }
-          }
-          // If reverse geocode fails, just zoom without updating drill state
-        };
-        
-        // Perform cluster expansion zoom
-        const performZoomAndDetect = (targetZoom: number) => {
-          mapRef.current?.flyTo({
-            center: [lng, lat],
-            zoom: targetZoom,
-            duration: 600,
-            essential: true,
-          });
-          // Detect zone after fly animation completes
-          setTimeout(() => detectAndUpdateDrillState(targetZoom), 650);
+        const flyToZoom = (targetZoom: number) => {
+          mapRef.current?.flyTo({ center: [lng, lat], zoom: targetZoom, duration: 600, essential: true });
         };
         
         if (source && typeof source.getClusterExpansionZoom === "function") {
           source.getClusterExpansionZoom(clusterId).then((zoom) => {
-            const targetZoom = Math.min(zoom + 0.5, 18);
-            performZoomAndDetect(targetZoom);
+            flyToZoom(Math.min(zoom + 0.5, 18));
           }).catch(() => {
-            const currentZoom = mapRef.current?.getZoom() ?? 10;
-            const targetZoom = Math.min(currentZoom + 2, 18);
-            performZoomAndDetect(targetZoom);
+            flyToZoom(Math.min((mapRef.current?.getZoom() ?? 10) + 2, 18));
           });
         } else {
-          const currentZoom = mapRef.current?.getZoom() ?? 10;
-          const targetZoom = Math.min(currentZoom + 2, 18);
-          performZoomAndDetect(targetZoom);
+          flyToZoom(Math.min((mapRef.current?.getZoom() ?? 10) + 2, 18));
         }
       }
       return;
@@ -666,31 +467,37 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
     }
 
     // Priority zone / base map / GeoJSON drill-down clicks
-    // Include both Tegola base layers (dep-fill, prov-fill, dist-fill) and priority/GeoJSON layers
     const isDep = layerId === "dep-fill" || layerId?.startsWith("priority-dep") || layerId === "geo-dep-fill";
     const isProv = layerId === "prov-fill" || layerId?.startsWith("priority-prov") || layerId === "geo-prov-fill";
     const isDist = layerId === "dist-fill" || layerId?.startsWith("priority-dist") || layerId === "geo-dist-fill";
     const isSector = layerId?.startsWith("sector") || layerId === "geo-sector-fill";
     const isSubsector = layerId === "geo-subsector-fill";
 
+    // Clicking a ghost/context layer from a higher level = go back one level
+    // e.g. at level 3 (distrito), clicking the provincia ghost → go back to level 2
+    const clickedLevel = isDep ? 0 : isProv ? 1 : isDist ? 2 : isSector ? 3 : isSubsector ? 4 : -1;
+    if (clickedLevel >= 0 && clickedLevel < drillState.level) {
+      const newLevel = (drillState.level - 1) as DrillLevel;
+      const newState = { ...drillState, level: newLevel };
+      if (newLevel < 4) { newState.sector = null; newState.sectorName = null; }
+      if (newLevel < 3) { newState.distCode = null; newState.distName = null; }
+      if (newLevel < 2) { newState.provCode = null; newState.provName = null; }
+      if (newLevel < 1) { newState.depCode = null; newState.depName = null; }
+      onDrillChange(newState);
+      if (newLevel === 0) {
+        mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: 800 });
+      }
+      return;
+    }
+
     if (isDep) {
       const coddep = String(f.properties?.coddep ?? f.properties?.CODDEP ?? "");
       const name = String(f.properties?.departamento ?? f.properties?.departamen ?? f.properties?.DEPARTAMEN ?? coddep);
       if (coddep) {
-        isClickDrivenZoomRef.current = true;
         preloadProvincias(coddep);
-        
-        getProvincias(coddep).then((result) => {
-          if (result.ok && result.bounds && mapRef.current) {
-            mapRef.current.fitBounds(result.bounds, { padding: 40, duration: 800 });
-          } else {
-            const bounds = getBoundsFromFeature(f);
-            if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
-          }
-        }).catch(() => {
-          const bounds = getBoundsFromFeature(f);
-          if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
-        });
+        // Fit to the clicked feature itself — keeps zoom at departamento level
+        const bounds = getBoundsFromFeature(f);
+        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
         
         skipNextFitRef.current = true;
         onDrillChange({ ...INITIAL_DRILL, level: 1, depCode: coddep, depName: name });
@@ -703,20 +510,10 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
       const name = String(f.properties?.provincia ?? f.properties?.PROVINCIA ?? codprovFull);
       const coddep = String(f.properties?.coddep ?? f.properties?.CODDEP ?? drillState.depCode ?? "");
       if (codprovFull) {
-        isClickDrivenZoomRef.current = true;
         preloadDistritos(codprovFull);
-        
-        getDistritos(codprovFull).then((result) => {
-          if (result.ok && result.bounds && mapRef.current) {
-            mapRef.current.fitBounds(result.bounds, { padding: 40, duration: 800 });
-          } else {
-            const bounds = getBoundsFromFeature(f);
-            if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
-          }
-        }).catch(() => {
-          const bounds = getBoundsFromFeature(f);
-          if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
-        });
+        // Fit to the clicked feature itself — keeps zoom at provincia level
+        const bounds = getBoundsFromFeature(f);
+        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
         
         skipNextFitRef.current = true;
         onDrillChange({ ...drillState, level: 2, provCode: codprovFull, provName: name, depCode: coddep, distCode: null, distName: null, sector: null, sectorName: null });
@@ -732,7 +529,6 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
       const codprovFull = String(f.properties?.codprov_full ?? (((f.properties?.CODDEP ?? "") + (f.properties?.CODPROV ?? "")) || (drillState.provCode ?? "")));
       const provName = String(f.properties?.provincia ?? f.properties?.PROVINCIA ?? drillState.provName ?? "");
       if (ubigeo) {
-        isClickDrivenZoomRef.current = true;
         const bounds = getBoundsFromFeature(f);
         if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
         
@@ -762,62 +558,19 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
     }
   }, [drillState, onDrillChange, selectedAgentId, onSelectAgent, agents]);
 
-  // Hover handler — suppressed during zoom/pan for smooth UX
+  // Hover handler — only updates cursor, no tooltips
   const handleMouseMove = useCallback((e: MapLayerMouseEvent) => {
-    if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null; }
-    
-    // Don't show tooltips while zooming/panning
-    if (isZoomingRef.current) {
-      setHover(null);
-      return;
-    }
+    if (isZoomingRef.current) return;
     
     const features = e.features;
     if (!features?.length) {
-      hoverTimer.current = setTimeout(() => setHover(null), 60);
       if (mapRef.current) mapRef.current.getCanvas().style.cursor = "";
       return;
     }
     if (mapRef.current) mapRef.current.getCanvas().style.cursor = "pointer";
-    const f = features[0];
-    const layerId = f.layer?.id;
-    const coords = (f.geometry as GeoJSON.Point).coordinates;
-
-    if (layerId === "forms-clusters" || layerId === "forms-cluster-ring") {
-      setHover({ type: "cluster", lng: coords[0], lat: coords[1], count: f.properties?.point_count ?? 0 });
-    } else if (layerId === "forms-points") {
-      setHover({ type: "form", lng: coords[0], lat: coords[1], nombre: f.properties?.nombre ?? "", created_at: f.properties?.created_at ?? "" });
-    } else if (layerId === "agents-circles" || layerId === "agents-selected-ring") {
-      const agent = agents.find((a) => a.id === f.properties?.agent_id);
-      if (agent) setHover({ type: "agent", lng: coords[0], lat: coords[1], agent });
-    } else if (layerId === "dep-fill" || layerId === "prov-fill" || layerId === "dist-fill" || 
-               layerId?.startsWith("priority-dep") || layerId?.startsWith("priority-prov") || layerId?.startsWith("priority-dist") || 
-               layerId?.startsWith("geo-dep") || layerId?.startsWith("geo-prov") || layerId?.startsWith("geo-dist")) {
-      const name = String(f.properties?.departamento ?? f.properties?.DEPARTAMEN ?? f.properties?.provincia ?? f.properties?.PROVINCIA ?? f.properties?.distrito ?? f.properties?.DISTRITO ?? "");
-      const zoneLevel = layerId?.includes("dep") ? "departamento" : layerId?.includes("prov") ? "provincia" : "distrito";
-      // Zone tooltips shown with small delay to reduce lag when panning
-      hoverTimer.current = setTimeout(() => {
-        if (!isZoomingRef.current) {
-          setHover({ type: "zone", lng: e.lngLat.lng, lat: e.lngLat.lat, name, level: zoneLevel });
-        }
-      }, 120);
-      return;
-    } else if (layerId?.startsWith("sector") || layerId?.startsWith("geo-sector") || layerId?.startsWith("geo-subsector")) {
-      const name = String(f.properties?.zone_name ?? f.properties?.DISTRITO ?? `Sector ${f.properties?.sector ?? f.properties?.SECTOR ?? ""}`);
-      hoverTimer.current = setTimeout(() => {
-        if (!isZoomingRef.current) {
-          setHover({ type: "zone", lng: e.lngLat.lng, lat: e.lngLat.lat, name, level: "sector" });
-        }
-      }, 120);
-      return;
-    } else {
-      setHover(null);
-    }
-  }, [agents]);
+  }, []);
 
   const handleMouseLeave = useCallback(() => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    setHover(null);
     if (mapRef.current) mapRef.current.getCanvas().style.cursor = "";
   }, []);
 
@@ -937,7 +690,6 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
   }, [drillState.level, drillState.depCode, drillState.provCode, drillState.distCode, geoData]);
 
   useEffect(() => () => { 
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
     if (zoomEndTimer.current) clearTimeout(zoomEndTimer.current);
   }, []);
 
@@ -980,299 +732,99 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
         {/* ── Tegola vector tiles ── */}
         <Source id="peru" type="vector" tiles={[tileUrl]} minzoom={0} maxzoom={14} promoteId={{ departamentos: "coddep", provincias: "codprov_full", distritos: "ubigeo" }}>
 
-          {/* ══════════════════════════════════════════════════════════
-           *  DEPARTAMENTOS — zoom-driven opacity crossfade
-           *  Full opacity at low zoom, fades out as you zoom into a dep.
-           *  At level 1+, only the selected dep is shown as a context outline.
-           * ══════════════════════════════════════════════════════════ */}
+          {/* ── DEPARTAMENTOS ── visible at level 0, ghost outline at level 1+ */}
           <Layer id="dep-fill" type="fill" source-layer="departamentos" filter={depFillFilter}
             paint={{
               "fill-color": "rgba(59, 130, 246, 0.15)",
-              // Smooth crossfade: full at low zoom, fades out as provs appear
-              "fill-opacity": drillState.level === 0
-                ? ["interpolate", ["linear"], ["zoom"],
-                    ZOOM.DEP_FULL, 1,
-                    ZOOM.DEP_TO_PROV, 0.6,
-                    ZOOM.PROV_FULL, 0.08,
-                  ] as unknown as number
-                : 0.04, // Ghost outline when drilled in
+              "fill-opacity": drillState.level === 0 ? 0.8 : 0.04,
             }} />
           <Layer id="dep-line" type="line" source-layer="departamentos" filter={depLineFilter}
             paint={{
               "line-color": drillState.level === 0 ? "#3b82f6" : "#94a3b8",
-              "line-width": drillState.level === 0
-                ? ["interpolate", ["linear"], ["zoom"], ZOOM.DEP_FULL, 1.5, ZOOM.PROV_FULL, 0.5] as unknown as number
-                : 1.2,
-              "line-opacity": drillState.level === 0
-                ? ["interpolate", ["linear"], ["zoom"],
-                    ZOOM.DEP_FULL, 0.6,
-                    ZOOM.DEP_TO_PROV, 0.4,
-                    ZOOM.PROV_FULL, 0.15,
-                  ] as unknown as number
-                : 0.25,
-            }} />
-          {/* Dep labels — fade out with zoom */}
-          <Layer id="dep-label" type="symbol" source-layer="departamentos" filter={depOtherFilter} minzoom={4.5}
-            layout={{
-              "text-field": ["get", "departamento"],
-              "text-size": ["interpolate", ["linear"], ["zoom"], 4.5, 9, 6, 11, ZOOM.PROV_FULL, 11] as unknown as number,
-              "text-font": ["Open Sans Bold"],
-              "text-allow-overlap": false,
-              "text-transform": "uppercase",
-            }}
-            paint={{
-              "text-color": "#1e40af",
-              "text-halo-color": "rgba(255,255,255,0.95)",
-              "text-halo-width": 1.5,
-              "text-opacity": ["interpolate", ["linear"], ["zoom"],
-                ZOOM.DEP_FULL, 1,
-                ZOOM.DEP_TO_PROV, 0.6,
-                ZOOM.PROV_FULL, 0,
-              ] as unknown as number,
+              "line-width": drillState.level === 0 ? 1.5 : 0.8,
+              "line-opacity": drillState.level === 0 ? 0.6 : 0.2,
             }} />
 
-          {/* ══════════════════════════════════════════════════════════
-           *  PROVINCIAS — appear as you zoom past DEP_TO_PROV
-           *  Smooth fade-in, then fade-out as distritos take over.
-           * ══════════════════════════════════════════════════════════ */}
+          {/* ── PROVINCIAS ── visible at level 1, ghost outline at level 2+ (filter hides at level 0) */}
           <Layer id="prov-fill" type="fill" source-layer="provincias" filter={provFillFilter}
             paint={{
               "fill-color": "rgba(16, 185, 129, 0.18)",
-              "fill-opacity": drillState.level >= 1
-                ? ["interpolate", ["linear"], ["zoom"],
-                    ZOOM.DEP_TO_PROV, 0,
-                    ZOOM.PROV_FULL, 1,
-                    ZOOM.PROV_TO_DIST, 0.5,
-                    ZOOM.DIST_FULL, 0.05,
-                  ] as unknown as number
-                : 0,
+              "fill-opacity": drillState.level === 1 ? 0.85 : 0.04,
             }} />
           <Layer id="prov-line" type="line" source-layer="provincias" filter={provLineFilter}
             paint={{
-              "line-color": drillState.level <= 1 ? "#10b981" : "#94a3b8",
-              "line-width": drillState.level <= 1 ? 1.2 : 0.8,
-              "line-opacity": drillState.level >= 1
-                ? ["interpolate", ["linear"], ["zoom"],
-                    ZOOM.DEP_TO_PROV, 0,
-                    ZOOM.PROV_FULL, 0.7,
-                    ZOOM.PROV_TO_DIST, 0.4,
-                    ZOOM.DIST_FULL, 0.15,
-                  ] as unknown as number
-                : 0,
-            }} />
-          {/* Prov labels — appear with provs, fade as dists arrive */}
-          <Layer id="prov-label" type="symbol" source-layer="provincias" filter={provFillFilter}
-            minzoom={ZOOM.DEP_TO_PROV}
-            layout={{
-              "text-field": ["get", "provincia"],
-              "text-size": ["interpolate", ["linear"], ["zoom"], ZOOM.PROV_FULL, 10, ZOOM.PROV_TO_DIST, 11] as unknown as number,
-              "text-font": ["Open Sans Bold"],
-              "text-allow-overlap": false,
-            }}
-            paint={{
-              "text-color": "#047857",
-              "text-halo-color": "rgba(255,255,255,0.95)",
-              "text-halo-width": 1.5,
-              "text-opacity": ["interpolate", ["linear"], ["zoom"],
-                ZOOM.DEP_TO_PROV, 0,
-                ZOOM.PROV_FULL, 1,
-                ZOOM.PROV_TO_DIST, 0.7,
-                ZOOM.DIST_FULL, 0,
-              ] as unknown as number,
+              "line-color": drillState.level === 1 ? "#10b981" : "#94a3b8",
+              "line-width": drillState.level === 1 ? 1.2 : 0.6,
+              "line-opacity": drillState.level === 1 ? 0.7 : 0.15,
             }} />
 
-          {/* ══════════════════════════════════════════════════════════
-           *  DISTRITOS — appear past PROV_TO_DIST, fade at sector level
-           * ══════════════════════════════════════════════════════════ */}
+          {/* ── DISTRITOS ── level 2 = all dists, level 3 = only selected (painted) */}
           <Layer id="dist-fill" type="fill" source-layer="distritos" filter={distFillFilter}
             paint={{
               "fill-color": "rgba(249, 115, 22, 0.18)",
-              "fill-opacity": drillState.level >= 2
-                ? ["interpolate", ["linear"], ["zoom"],
-                    ZOOM.PROV_TO_DIST, 0,
-                    ZOOM.DIST_FULL, 1,
-                    ZOOM.DIST_TO_SECTOR, 0.4,
-                    ZOOM.SECTOR_FULL, 0.05,
-                  ] as unknown as number
-                : 0,
+              "fill-opacity": 0.85,
             }} />
           <Layer id="dist-line" type="line" source-layer="distritos" filter={distLineFilter}
             paint={{
-              "line-color": drillState.level <= 2 ? "#f97316" : "#94a3b8",
-              "line-width": drillState.level <= 2 ? 1 : 0.6,
-              "line-opacity": drillState.level >= 2
-                ? ["interpolate", ["linear"], ["zoom"],
-                    ZOOM.PROV_TO_DIST, 0,
-                    ZOOM.DIST_FULL, 0.7,
-                    ZOOM.DIST_TO_SECTOR, 0.4,
-                    ZOOM.SECTOR_FULL, 0.15,
-                  ] as unknown as number
-                : 0,
-            }} />
-          {/* Dist labels */}
-          <Layer id="dist-label" type="symbol" source-layer="distritos" filter={distFillFilter}
-            minzoom={ZOOM.PROV_TO_DIST}
-            layout={{
-              "text-field": ["get", "distrito"],
-              "text-size": ["interpolate", ["linear"], ["zoom"], ZOOM.DIST_FULL, 9, ZOOM.DIST_TO_SECTOR, 10] as unknown as number,
-              "text-font": ["Open Sans Bold"],
-              "text-allow-overlap": false,
-            }}
-            paint={{
-              "text-color": "#c2410c",
-              "text-halo-color": "rgba(255,255,255,0.95)",
-              "text-halo-width": 1.5,
-              "text-opacity": ["interpolate", ["linear"], ["zoom"],
-                ZOOM.PROV_TO_DIST, 0,
-                ZOOM.DIST_FULL, 1,
-                ZOOM.DIST_TO_SECTOR, 0.6,
-                ZOOM.SECTOR_FULL, 0,
-              ] as unknown as number,
+              "line-color": "#f97316",
+              "line-width": drillState.level >= 3 ? 1.5 : 1,
+              "line-opacity": 0.7,
             }} />
 
-          {/* ══════════════════════════════════════════════════════════
-           *  PRIORITY ZONES — red overlay, also zoom-faded
-           * ══════════════════════════════════════════════════════════ */}
-
-          {/* Priority departamentos */}
+          {/* ── PRIORITY ZONES ── red overlay, visibility by drill state */}
           <Layer id="priority-dep-fill" type="fill" source-layer="priority_departamentos" filter={priorityDepFilter}
-            paint={{
-              "fill-color": PRIORITY_FILL,
-              "fill-opacity": ["interpolate", ["linear"], ["zoom"],
-                ZOOM.DEP_FULL, 1,
-                ZOOM.DEP_TO_PROV, 0.5,
-                ZOOM.PROV_FULL, 0,
-              ] as unknown as number,
-            }} />
+            paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 }} />
           <Layer id="priority-dep-line" type="line" source-layer="priority_departamentos" filter={priorityDepFilter}
-            paint={{
-              "line-color": PRIORITY_LINE, "line-width": 0.8,
-              "line-opacity": ["interpolate", ["linear"], ["zoom"],
-                ZOOM.DEP_FULL, 0.4,
-                ZOOM.PROV_FULL, 0,
-              ] as unknown as number,
-            }} />
+            paint={{ "line-color": PRIORITY_LINE, "line-width": 0.8, "line-opacity": 0.4 }} />
 
-          {/* Priority provincias */}
           <Layer id="priority-prov-fill" type="fill" source-layer="priority_provincias" filter={priorityProvFilter}
-            paint={{
-              "fill-color": PRIORITY_FILL,
-              "fill-opacity": ["interpolate", ["linear"], ["zoom"],
-                ZOOM.DEP_TO_PROV, 0,
-                ZOOM.PROV_FULL, 1,
-                ZOOM.PROV_TO_DIST, 0.5,
-                ZOOM.DIST_FULL, 0,
-              ] as unknown as number,
-            }} />
+            paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 }} />
           <Layer id="priority-prov-line" type="line" source-layer="priority_provincias" filter={priorityProvFilter}
-            paint={{
-              "line-color": PRIORITY_LINE, "line-width": 0.6,
-              "line-opacity": ["interpolate", ["linear"], ["zoom"],
-                ZOOM.DEP_TO_PROV, 0,
-                ZOOM.PROV_FULL, 0.4,
-                ZOOM.DIST_FULL, 0,
-              ] as unknown as number,
-            }} />
+            paint={{ "line-color": PRIORITY_LINE, "line-width": 0.6, "line-opacity": 0.4 }} />
 
-          {/* Priority distritos */}
           <Layer id="priority-dist-fill" type="fill" source-layer="priority_distritos" filter={priorityDistFilter}
-            paint={{
-              "fill-color": PRIORITY_FILL,
-              "fill-opacity": ["interpolate", ["linear"], ["zoom"],
-                ZOOM.PROV_TO_DIST, 0,
-                ZOOM.DIST_FULL, 1,
-                ZOOM.DIST_TO_SECTOR, 0.5,
-                ZOOM.SECTOR_FULL, 0,
-              ] as unknown as number,
-            }} />
+            paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 }} />
           <Layer id="priority-dist-line" type="line" source-layer="priority_distritos" filter={priorityDistFilter}
-            paint={{
-              "line-color": PRIORITY_LINE, "line-width": 0.5,
-              "line-opacity": ["interpolate", ["linear"], ["zoom"],
-                ZOOM.PROV_TO_DIST, 0,
-                ZOOM.DIST_FULL, 0.4,
-                ZOOM.SECTOR_FULL, 0,
-              ] as unknown as number,
-            }} />
+            paint={{ "line-color": PRIORITY_LINE, "line-width": 0.5, "line-opacity": 0.4 }} />
 
-          {/* ══════════════════════════════════════════════════════════
-           *  SECTORS / SUBSECTORS — appear at deepest zoom
-           * ══════════════════════════════════════════════════════════ */}
+          {/* ── SECTORS / SUBSECTORS ── visible at level 3+ */}
           <Layer id="sector-fill" type="fill" source-layer="campaign_sectors" filter={sectorFilter}
-            paint={{
-              "fill-color": SECTOR_FILL,
-              "fill-opacity": ["interpolate", ["linear"], ["zoom"],
-                ZOOM.DIST_TO_SECTOR, 0,
-                ZOOM.SECTOR_FULL, 1,
-              ] as unknown as number,
-            }} />
+            paint={{ "fill-color": SECTOR_FILL, "fill-opacity": 0.8 }} />
           <Layer id="sector-line" type="line" source-layer="campaign_sectors" filter={sectorFilter}
-            paint={{
-              "line-color": SECTOR_LINE, "line-width": 0.5,
-              "line-opacity": ["interpolate", ["linear"], ["zoom"],
-                ZOOM.DIST_TO_SECTOR, 0,
-                ZOOM.SECTOR_FULL, 0.4,
-              ] as unknown as number,
-            }} />
-          <Layer id="sector-label" type="symbol" source-layer="campaign_sectors" filter={sectorFilter} minzoom={ZOOM.DIST_TO_SECTOR}
-            layout={{ "text-field": ["get", "zone_name"], "text-size": 10, "text-font": ["Open Sans Bold"], "text-allow-overlap": false }}
-            paint={{
-              "text-color": "#0f172a",
-              "text-halo-color": "rgba(255,255,255,0.9)",
-              "text-halo-width": 1.5,
-              "text-opacity": ["interpolate", ["linear"], ["zoom"],
-                ZOOM.DIST_TO_SECTOR, 0,
-                ZOOM.SECTOR_FULL, 1,
-              ] as unknown as number,
-            }} />
+            paint={{ "line-color": SECTOR_LINE, "line-width": 0.5, "line-opacity": 0.4 }} />
         </Source>
 
         {/* ── GeoJSON fallback: priority zones from local files ── */}
-        {/* These render when Tegola priority tables are empty (data not yet imported) */}
+        {/* Visibility controlled by drill state, not zoom */}
 
-        {/* GeoJSON priority zones — shown per drill level */}
-        {/* dep-level zones */}
+        {/* dep-level zones — only at level 0 */}
         {geoData.dep && drillState.level === 0 && (
           <Source id="geo-dep" type="geojson" data={geoData.dep}>
-            <Layer id="geo-dep-fill" type="fill" paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 1 }} />
+            <Layer id="geo-dep-fill" type="fill" paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 }} />
             <Layer id="geo-dep-line" type="line" paint={{ "line-color": PRIORITY_LINE, "line-width": 0.8, "line-opacity": 0.4 }} />
-            <Layer id="geo-dep-label" type="symbol" minzoom={5} layout={{
-              "text-field": ["get", "departamento"],
-              "text-size": 12,
-              "text-font": ["Open Sans Bold"],
-              "text-allow-overlap": false,
-            }} paint={{ "text-color": "#0f172a", "text-halo-color": "rgba(255,255,255,0.9)", "text-halo-width": 1.5 }} />
           </Source>
         )}
 
-        {/* prov-level zones - show when at level 1 (inside a dep) */}
+        {/* prov-level zones — only at level 1 */}
         {geoData.prov && drillState.level === 1 && drillState.depCode && (() => {
           const filtered = geoData.prov.features.filter((f) => f.properties?.coddep === drillState.depCode);
           if (filtered.length === 0) return null;
           return (
             <Source id="geo-prov" type="geojson" data={{ ...geoData.prov, features: filtered }}>
-              <Layer id="geo-prov-fill" type="fill" paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 1 }} />
+              <Layer id="geo-prov-fill" type="fill" paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 }} />
               <Layer id="geo-prov-line" type="line" paint={{ "line-color": PRIORITY_LINE, "line-width": 0.6, "line-opacity": 0.4 }} />
-              <Layer id="geo-prov-label" type="symbol" minzoom={7} layout={{
-                "text-field": ["get", "provincia"],
-                "text-size": 11,
-                "text-font": ["Open Sans Bold"],
-                "text-allow-overlap": false,
-              }} paint={{ "text-color": "#0f172a", "text-halo-color": "rgba(255,255,255,0.9)", "text-halo-width": 1.5 }} />
             </Source>
           );
         })()}
 
-        {/* dist-level zones — show at level 0 if no dep/prov data, else at level 2 */}
+        {/* dist-level zones — only at level 2 */}
         {geoData.dist && (() => {
-          // Determine which districts to show based on drill level
           let filtered: GeoJSON.Feature[] = [];
           
           if (drillState.level === 0 && !geoData.dep && !geoData.prov) {
-            // No parent data - show all districts at overview
+            // No higher-level GeoJSON available, show dists as top level
             filtered = geoData.dist.features;
           } else if (drillState.level === 2 && drillState.provCode) {
-            // Inside a province - show districts of that province
             filtered = geoData.dist.features.filter((f) => f.properties?.codprov_full === drillState.provCode);
           }
           
@@ -1280,31 +832,25 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
           
           return (
             <Source id="geo-dist" type="geojson" data={{ ...geoData.dist, features: filtered }}>
-              <Layer id="geo-dist-fill" type="fill" paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 1 }} />
+              <Layer id="geo-dist-fill" type="fill" paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 }} />
               <Layer id="geo-dist-line" type="line" paint={{ "line-color": PRIORITY_LINE, "line-width": 0.5, "line-opacity": 0.4 }} />
-              <Layer id="geo-dist-label" type="symbol" minzoom={9} layout={{
-                "text-field": ["get", "distrito"],
-                "text-size": 10,
-                "text-font": ["Open Sans Bold"],
-                "text-allow-overlap": false,
-              }} paint={{ "text-color": "#0f172a", "text-halo-color": "rgba(255,255,255,0.9)", "text-halo-width": 1.5 }} />
             </Source>
           );
         })()}
 
-        {/* sector-level zones */}
-        {geoData.sector && drillState.level === 3 && drillState.distCode && (
+        {/* sector-level zones — only at level 3+ */}
+        {geoData.sector && drillState.level >= 3 && drillState.distCode && (
           <Source id="geo-sector" type="geojson" data={{
             ...geoData.sector,
             features: geoData.sector.features.filter((f) => f.properties?.ubigeo === drillState.distCode),
           }}>
-            <Layer id="geo-sector-fill" type="fill" paint={{ "fill-color": SECTOR_FILL, "fill-opacity": 1 }} />
+            <Layer id="geo-sector-fill" type="fill" paint={{ "fill-color": SECTOR_FILL, "fill-opacity": 0.8 }} />
             <Layer id="geo-sector-line" type="line" paint={{ "line-color": SECTOR_LINE, "line-width": 0.5, "line-opacity": 0.4 }} />
           </Source>
         )}
 
         {/* subsector-level zones */}
-        {geoData.subsector && drillState.level === 4 && drillState.distCode && drillState.sector != null && (
+        {geoData.subsector && drillState.level >= 4 && drillState.distCode && drillState.sector != null && (
           <Source id="geo-subsector" type="geojson" data={{
             ...geoData.subsector,
             features: geoData.subsector.features.filter((f) =>
@@ -1380,177 +926,9 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
           </Source>
         )}
 
-        {/* ── Hover tooltips ── */}
-        {hover && <HoverTooltip hover={hover} primaryColor={primaryColor} />}
       </MapLibre>
     </div>
   );
 });
 
-/* ========== Hover Tooltip ========== */
 
-const STATUS_LABELS: Record<AgentStatus, string> = {
-  connected: "Conectado",
-  idle: "Inactivo",
-  inactive: "Desconectado",
-};
-
-function HoverTooltip({ hover, primaryColor }: { hover: HoverInfo; primaryColor: string }) {
-  if (hover.type === "cluster") {
-    return (
-      <Popup longitude={hover.lng} latitude={hover.lat} anchor="bottom" offset={[0, -8]} closeButton={false} closeOnClick={false}>
-        <div style={TT.wrap}>
-          <div style={TT.row}>
-            <span style={TT.icon}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3" />
-                <circle cx="12" cy="12" r="8" opacity="0.4" />
-              </svg>
-            </span>
-            <div>
-              <div style={TT.mainText}>
-                <span style={{ ...TT.number, color: "#2563eb" }}>{hover.count}</span>
-                <span style={TT.unit}>{hover.count === 1 ? "registro" : "registros"}</span>
-              </div>
-              <span style={TT.hint}>Click para expandir</span>
-            </div>
-          </div>
-        </div>
-      </Popup>
-    );
-  }
-
-  if (hover.type === "form") {
-    const d = hover.created_at ? new Date(hover.created_at).toLocaleString("es-PE", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
-    return (
-      <Popup longitude={hover.lng} latitude={hover.lat} anchor="bottom" offset={[0, -4]} closeButton={false} closeOnClick={false}>
-        <div style={TT.wrap}>
-          <div style={TT.row}>
-            <span style={{ ...TT.icon, backgroundColor: "rgba(37, 99, 235, 0.1)" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-            </span>
-            <div>
-              <div style={TT.title}>{hover.nombre || "Sin nombre"}</div>
-              {d && <div style={TT.subtitle}>{d}</div>}
-            </div>
-          </div>
-        </div>
-      </Popup>
-    );
-  }
-
-  if (hover.type === "agent") {
-    const { agent } = hover;
-    const statusColor = STATUS_COLORS[agent.status];
-    return (
-      <Popup longitude={hover.lng} latitude={hover.lat} anchor="bottom" offset={[0, -12]} closeButton={false} closeOnClick={false}>
-        <div style={TT.wrap}>
-          <div style={TT.row}>
-            <span style={{ ...TT.icon, backgroundColor: `${statusColor}15` }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
-                <circle cx="12" cy="9" r="2.5" fill={statusColor} />
-              </svg>
-            </span>
-            <div style={{ flex: 1 }}>
-              <div style={TT.title}>{agent.name}</div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: statusColor }} />
-                  <span style={{ ...TT.subtitle, marginTop: 0 }}>{STATUS_LABELS[agent.status]}</span>
-                </span>
-                <span style={{ color: "#cbd5e1" }}>•</span>
-                <span style={{ ...TT.subtitle, marginTop: 0 }}>
-                  <span style={{ fontWeight: 600, color: primaryColor }}>{agent.forms_count}</span> datos
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Popup>
-    );
-  }
-
-  if (hover.type === "zone") {
-    return (
-      <Popup longitude={hover.lng} latitude={hover.lat} anchor="bottom" offset={[0, -4]} closeButton={false} closeOnClick={false}>
-        <div style={TT.wrap}>
-          <div style={TT.row}>
-            <span style={{ ...TT.icon, backgroundColor: "rgba(239, 68, 68, 0.1)" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="12 2 2 7 12 12 22 7 12 2" />
-                <polyline points="2 17 12 22 22 17" />
-                <polyline points="2 12 12 17 22 12" />
-              </svg>
-            </span>
-            <div>
-              <div style={TT.title}>{hover.name}</div>
-              <div style={TT.subtitle}>{hover.level.charAt(0).toUpperCase() + hover.level.slice(1)}</div>
-              <span style={TT.hint}>Click para explorar</span>
-            </div>
-          </div>
-        </div>
-      </Popup>
-    );
-  }
-
-  return null;
-}
-
-/* Tooltip styles */
-const TT: Record<string, React.CSSProperties> = {
-  wrap: {
-    padding: "10px 12px",
-    minWidth: 140,
-  },
-  row: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-  icon: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    backgroundColor: "rgba(0, 0, 0, 0.04)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  },
-  mainText: {
-    display: "flex",
-    alignItems: "baseline",
-    gap: 4,
-  },
-  number: {
-    fontSize: 18,
-    fontWeight: 700,
-    lineHeight: 1,
-  },
-  unit: {
-    fontSize: 11,
-    color: "#64748b",
-    fontWeight: 500,
-  },
-  title: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#0f172a",
-    lineHeight: 1.3,
-  },
-  subtitle: {
-    fontSize: 11,
-    color: "#64748b",
-    marginTop: 2,
-  },
-  hint: {
-    display: "block",
-    fontSize: 10,
-    color: "#94a3b8",
-    marginTop: 4,
-  },
-};

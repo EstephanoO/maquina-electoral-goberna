@@ -5,6 +5,7 @@ import type { AppEnv } from "../../config/env";
 import type { AuthenticatedRequest } from "../../infra/auth";
 import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
+import { encrypt, decrypt, maskToken } from "../../infra/crypto";
 import * as repo from "./repository";
 import type { CampaignConfig } from "./repository";
 import { createCampaignSchema, updateCampaignSchema } from "./schemas";
@@ -49,20 +50,19 @@ export function getRecentEvents(campaignId: string, limit = 20): CampaignEvent[]
 
 const addMemberSchema = z.object({
   user_id: z.string().uuid(),
-  role: z.enum(["admin", "consultor", "candidato", "jefe_campana", "brigadista_zonal", "agente_campo"]),
+  role: z.enum(["admin", "consultor", "candidato", "brigadista_zonal", "agente_campo", "agente_digital"]),
 });
 
 const updateMemberRoleSchema = z.object({
-  role: z.enum(["consultor", "candidato", "jefe_campana", "brigadista_zonal", "agente_campo"]),
+  role: z.enum(["consultor", "candidato", "brigadista_zonal", "agente_campo", "agente_digital"]),
 });
 
 const setConsultorCampaignsSchema = z.object({
   campaign_ids: z.array(z.string().uuid()),
 });
 
-// Map API role names to DB column values (DB constraint uses jefe_campana, not candidato)
 function toDbRole(apiRole: string): string {
-  return apiRole === "candidato" ? "jefe_campana" : apiRole;
+  return apiRole;
 }
 
 export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
@@ -227,7 +227,7 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
             return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campana no encontrada"));
           }
 
-          await repo.addUserToCampaign(parsed.data.user_id, campaignId, toDbRole(parsed.data.role));
+          await repo.addUserToCampaign(parsed.data.user_id, campaignId, parsed.data.role);
           return reply.code(200).send({ ok: true, request_id: requestId });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "campaign add member failed");
@@ -300,7 +300,7 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
         }
 
         try {
-          const updated = await repo.updateMemberRole(userId, campaignId, toDbRole(parsed.data.role));
+          const updated = await repo.updateMemberRole(userId, campaignId, parsed.data.role);
           if (!updated) {
             return reply.code(404).send(errorPayload(requestId, "MEMBER_NOT_FOUND", "miembro no encontrado en esta campana"));
           }
@@ -485,6 +485,128 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "remove campaign from consultor failed");
           return reply.code(500).send(errorPayload(requestId, "CONSULTOR_CAMPAIGNS_ERROR", "error removiendo campana del consultor"));
+        }
+      },
+    );
+
+    // ═══════════════════════════════════════════════════════════════════
+    // TWILIO INTEGRATION PER CAMPAIGN
+    // Only admin can read or write Twilio credentials.
+    // Auth token is stored AES-256-GCM encrypted in campaigns.config JSONB.
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ── GET /api/campaigns/:campaignId/integrations/twilio ─────────────
+    // Returns masked Twilio config (auth_token is never returned in full).
+    app.get(
+      "/api/campaigns/:campaignId/integrations/twilio",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { campaignId } = request.params as { campaignId: string };
+
+        try {
+          const campaign = await repo.findById(campaignId);
+          if (!campaign) {
+            return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campaña no encontrada"));
+          }
+
+          const config = (campaign.config ?? {}) as Record<string, unknown>;
+          const twilio = (config.twilio ?? {}) as {
+            account_sid?: string;
+            auth_token?: string;  // encrypted
+            whatsapp_from?: string;
+          };
+
+          const isConfigured = Boolean(twilio.account_sid && twilio.auth_token && twilio.whatsapp_from);
+
+          // Derive hint from decrypted token — only last 4 chars
+          let authTokenHint = "";
+          if (twilio.auth_token) {
+            try {
+              const plain = decrypt(twilio.auth_token);
+              authTokenHint = maskToken(plain, 4);
+            } catch {
+              authTokenHint = "****????";
+            }
+          }
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            twilio: {
+              configured: isConfigured,
+              account_sid: twilio.account_sid ?? "",
+              auth_token_hint: authTokenHint,
+              whatsapp_from: twilio.whatsapp_from ?? "",
+            },
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "twilio config get failed");
+          return reply.code(500).send(errorPayload(requestId, "TWILIO_CONFIG_ERROR", "error obteniendo config de Twilio"));
+        }
+      },
+    );
+
+    // ── PUT /api/campaigns/:campaignId/integrations/twilio ─────────────
+    // Save (or update) Twilio credentials for a campaign.
+    // If auth_token is empty/omitted, preserves the existing encrypted value.
+    app.put(
+      "/api/campaigns/:campaignId/integrations/twilio",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { campaignId } = request.params as { campaignId: string };
+
+        const body = request.body as {
+          account_sid?: string;
+          auth_token?: string;
+          whatsapp_from?: string;
+        };
+
+        // Validate required fields (except auth_token which can be omitted to preserve)
+        if (!body.account_sid?.trim()) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "account_sid es requerido"));
+        }
+        if (!body.whatsapp_from?.trim()) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "whatsapp_from es requerido"));
+        }
+
+        try {
+          const campaign = await repo.findById(campaignId);
+          if (!campaign) {
+            return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campaña no encontrada"));
+          }
+
+          const existingConfig = (campaign.config ?? {}) as Record<string, unknown>;
+          const existingTwilio = (existingConfig.twilio ?? {}) as { auth_token?: string };
+
+          // Encrypt new token if provided, otherwise keep existing encrypted value
+          let encryptedToken = existingTwilio.auth_token ?? "";
+          if (body.auth_token?.trim()) {
+            try {
+              encryptedToken = encrypt(body.auth_token.trim());
+            } catch (encErr) {
+              app.log.error({ err: encErr, request_id: requestId }, "twilio token encryption failed");
+              return reply.code(500).send(errorPayload(requestId, "TWILIO_ENCRYPT_ERROR", "Error cifrando credenciales. Verificar TWILIO_ENCRYPTION_KEY."));
+            }
+          }
+
+          // Merge twilio config into campaign config JSONB
+          const newConfig = {
+            ...existingConfig,
+            twilio: {
+              account_sid: body.account_sid.trim(),
+              auth_token: encryptedToken,
+              whatsapp_from: body.whatsapp_from.trim(),
+            },
+          };
+
+          await repo.updateConfig(campaignId, newConfig);
+
+          return reply.code(200).send({ ok: true, request_id: requestId });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "twilio config save failed");
+          return reply.code(500).send(errorPayload(requestId, "TWILIO_CONFIG_ERROR", "error guardando config de Twilio"));
         }
       },
     );

@@ -22,14 +22,15 @@ export type ApiError = {
 export type ApiResponse<T = unknown> = ApiSuccess<T> | ApiError;
 
 // ── Roles ─────────────────────────────────────────────────────────────
-export type Role = "admin" | "consultor" | "jefe_campana" | "brigadista_zonal" | "agente_campo";
+export type Role = "admin" | "consultor" | "candidato" | "brigadista_zonal" | "agente_campo" | "agente_digital";
 
 export const ROLE_HIERARCHY: Record<Role, number> = {
   admin: 50,
   consultor: 40,
-  jefe_campana: 30,
+  candidato: 30,
   brigadista_zonal: 20,
   agente_campo: 10,
+  agente_digital: 10,
 };
 
 // ── Pagination ────────────────────────────────────────────────────────
@@ -135,8 +136,9 @@ export type Campaign = {
 
 export type CampaignStats = Campaign & {
   agente_campo_count: number;
+  agente_digital_count: number;
   brigadista_zonal_count: number;
-  jefe_campana_count: number;
+  candidato_count: number;
   consultor_count: number;
   admin_count: number;
 };

@@ -87,3 +87,4 @@ apps/web/public/geo/distritos*.geojson
 *.bak
 *.tmp
 *.temp
+.vercel

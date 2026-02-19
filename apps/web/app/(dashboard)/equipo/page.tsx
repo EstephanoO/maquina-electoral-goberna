@@ -169,11 +169,11 @@ const ROLES: Record<string, RoleConfig> = {
 
 // Map backend roles to display roles (for compatibility)
 const ROLE_ALIASES: Record<string, string> = {
-  jefe_campana: "supervisor",
   candidato: "supervisor",
   brigadista_zonal: "capitan_brigada",
   agente_campo: "agent",
-  // consultor maps to itself now
+  agente_digital: "agent",
+  // consultor and admin map to themselves
 };
 
 function normalizeRole(role: string): string {
@@ -1372,9 +1372,10 @@ export default function EquipoPage() {
     setUpdatingRole(userId);
 
     // Map display role to backend role
-    const backendRole = newRole === "supervisor" ? "candidato" 
+    const backendRole = newRole === "supervisor" ? "candidato"
                       : newRole === "capitan_brigada" ? "brigadista_zonal"
                       : newRole === "director_regional" ? "brigadista_zonal"
+                      : newRole === "consultor" ? "consultor"
                       : "agente_campo";
 
     const res = await api.put(
@@ -1399,7 +1400,7 @@ export default function EquipoPage() {
     setResolvingRequest(requestId);
 
     // Map display role to backend role
-    const backendRole = role === "supervisor" ? "candidato" 
+    const backendRole = role === "supervisor" ? "candidato"
                       : role === "capitan_brigada" ? "brigadista_zonal"
                       : role === "director_regional" ? "brigadista_zonal"
                       : role === "consultor" ? "consultor"
@@ -1459,7 +1460,7 @@ export default function EquipoPage() {
     setBatchProcessing(true);
     
     // Map display role to backend role
-    const backendRole = batchRole === "supervisor" ? "candidato" 
+    const backendRole = batchRole === "supervisor" ? "candidato"
                       : batchRole === "capitan_brigada" ? "brigadista_zonal"
                       : batchRole === "director_regional" ? "brigadista_zonal"
                       : batchRole === "consultor" ? "consultor"

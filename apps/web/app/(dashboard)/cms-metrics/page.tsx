@@ -7,6 +7,7 @@ import {
   type CmsMetrics,
   type CmsMetricsCampaign,
   type CmsMetricsOperator,
+  type CmsTimeMetrics,
 } from "../../../lib/services/cms";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -206,6 +207,145 @@ const tableWrapStyle: React.CSSProperties = {
   overflow: "auto",
 };
 
+// ── Time metrics section ────────────────────────────────────────────
+
+function formatMins(v: number | null): string {
+  if (v === null || v === undefined) return "—";
+  if (v < 1) return "<1 min";
+  if (v < 60) return `${Math.round(v)} min`;
+  const h = Math.floor(v / 60);
+  const m = Math.round(v % 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+function TimeMetricsSection({ tm }: { tm: CmsTimeMetrics }) {
+  const hasData = tm.total_with_hablado > 0 || tm.total_with_respondieron > 0;
+  if (!hasData) return null;
+
+  return (
+    <>
+      <SectionHeader title="Tiempos de Gestion" />
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: 16,
+          marginBottom: 8,
+        }}
+      >
+        {/* WSP → Hablado */}
+        <div style={timeCardStyle}>
+          <div style={timeCardHeader}>
+            <span style={timeCardIcon}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <title>WSP a Hablado</title>
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+            </span>
+            <span style={timeCardLabel}>WSP → Hablado</span>
+          </div>
+          <div style={{ display: "flex", gap: 24 }}>
+            <div>
+              <div style={timeCardValue}>{formatMins(tm.avg_claim_to_hablado_mins)}</div>
+              <div style={timeCardSub}>promedio</div>
+            </div>
+            <div>
+              <div style={{ ...timeCardValue, color: "var(--color-text-secondary)" }}>
+                {formatMins(tm.median_claim_to_hablado_mins)}
+              </div>
+              <div style={timeCardSub}>mediana</div>
+            </div>
+          </div>
+          <div style={timeCardFooter}>{tm.total_with_hablado} contacto{tm.total_with_hablado !== 1 ? "s" : ""}</div>
+        </div>
+
+        {/* Hablado → Contestó */}
+        <div style={timeCardStyle}>
+          <div style={timeCardHeader}>
+            <span style={timeCardIcon}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <title>Hablado a Contesto</title>
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+            </span>
+            <span style={timeCardLabel}>Hablado → Contestó</span>
+          </div>
+          <div style={{ display: "flex", gap: 24 }}>
+            <div>
+              <div style={{ ...timeCardValue, color: "#7c3aed" }}>
+                {formatMins(tm.avg_hablado_to_respondieron_mins)}
+              </div>
+              <div style={timeCardSub}>promedio</div>
+            </div>
+            <div>
+              <div style={{ ...timeCardValue, color: "var(--color-text-secondary)" }}>
+                {formatMins(tm.median_hablado_to_respondieron_mins)}
+              </div>
+              <div style={timeCardSub}>mediana</div>
+            </div>
+          </div>
+          <div style={timeCardFooter}>{tm.total_with_respondieron} contacto{tm.total_with_respondieron !== 1 ? "s" : ""}</div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+const timeCardStyle: React.CSSProperties = {
+  background: "var(--color-surface)",
+  borderRadius: "var(--radius-lg)",
+  padding: 20,
+  border: "1px solid var(--color-border)",
+  boxShadow: "var(--shadow-sm)",
+  fontFamily: FONT,
+};
+
+const timeCardHeader: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  marginBottom: 14,
+};
+
+const timeCardIcon: React.CSSProperties = {
+  width: 32,
+  height: 32,
+  borderRadius: 8,
+  background: "#f0fdf4",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const timeCardLabel: React.CSSProperties = {
+  fontSize: 13,
+  fontWeight: 600,
+  color: "var(--color-text-primary)",
+};
+
+const timeCardValue: React.CSSProperties = {
+  fontSize: 28,
+  fontWeight: 700,
+  color: "#16a34a",
+  lineHeight: 1.1,
+};
+
+const timeCardSub: React.CSSProperties = {
+  fontSize: 11,
+  color: "var(--color-text-tertiary)",
+  marginTop: 2,
+};
+
+const timeCardFooter: React.CSSProperties = {
+  fontSize: 11,
+  color: "var(--color-text-tertiary)",
+  marginTop: 12,
+  paddingTop: 10,
+  borderTop: "1px solid var(--color-border)",
+};
+
 // ── Main Page ───────────────────────────────────────────────────────
 
 export default function CmsMetricsPage() {
@@ -325,6 +465,9 @@ export default function CmsMetricsPage() {
         />
         <KpiCard label="Archivados" value={String(g.archivados)} tone="gray" />
       </div>
+
+      {/* Time Metrics */}
+      {metrics.time_metrics && <TimeMetricsSection tm={metrics.time_metrics} />}
 
       {/* Per-campaign table (only shown when multi-campaign or always for context) */}
       <SectionHeader title="Rendimiento por Campana" />

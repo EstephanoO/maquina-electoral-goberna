@@ -19,6 +19,7 @@ export type CmsContact = {
   cms_claimed_by: string | null;
   cms_claimed_at: string | null;
   cms_hablado_at: string | null;
+  cms_respondieron_at: string | null;
   cms_operator_notes: {
     local_votacion?: string;
     domicilio?: string;
@@ -86,10 +87,20 @@ export type CmsMetricsGlobalTotals = {
   response_rate: number;
 };
 
+export type CmsTimeMetrics = {
+  avg_claim_to_hablado_mins: number | null;
+  avg_hablado_to_respondieron_mins: number | null;
+  median_claim_to_hablado_mins: number | null;
+  median_hablado_to_respondieron_mins: number | null;
+  total_with_hablado: number;
+  total_with_respondieron: number;
+};
+
 export type CmsMetrics = {
   campaigns: CmsMetricsCampaign[];
   operators: CmsMetricsOperator[];
   global_totals: CmsMetricsGlobalTotals;
+  time_metrics: CmsTimeMetrics;
 };
 
 type CmsContactsResponse = {
@@ -220,6 +231,19 @@ export async function getCmsStats(
   return { ok: true, stats: res.data?.stats };
 }
 
+export async function revertContact(
+  campaignId: string,
+  contactId: string,
+): Promise<{ ok: boolean; contact?: CmsContact; error?: string }> {
+  const res = await api.put<CmsContactResponse>(
+    `/api/cms/contacts/${contactId}/revert`,
+    {},
+    { campaignId },
+  );
+  if (!res.ok) return { ok: false, error: res.error?.message };
+  return { ok: true, contact: res.data?.contact };
+}
+
 export async function getCmsMetrics(): Promise<{
   ok: boolean;
   metrics?: CmsMetrics;
@@ -228,4 +252,44 @@ export async function getCmsMetrics(): Promise<{
   const res = await api.get<CmsMetricsResponse>("/api/cms/metrics");
   if (!res.ok) return { ok: false, error: res.error?.message };
   return { ok: true, metrics: res.data?.metrics };
+}
+
+// ── Twilio config per campaign ───────────────────────────────────────
+
+export type CampaignTwilioConfig = {
+  configured: boolean;
+  account_sid: string;
+  auth_token_hint: string;
+  whatsapp_from: string;
+};
+
+type TwilioConfigGetResponse = {
+  ok: boolean;
+  twilio: CampaignTwilioConfig;
+};
+
+export async function getCampaignTwilioConfig(
+  campaignId: string,
+): Promise<{ ok: boolean; twilio?: CampaignTwilioConfig; error?: string }> {
+  const res = await api.get<TwilioConfigGetResponse>(
+    `/api/campaigns/${campaignId}/integrations/twilio`,
+  );
+  if (!res.ok) return { ok: false, error: res.error?.message };
+  return { ok: true, twilio: res.data?.twilio };
+}
+
+export async function saveCampaignTwilioConfig(
+  campaignId: string,
+  data: {
+    account_sid: string;
+    auth_token?: string;
+    whatsapp_from: string;
+  },
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await api.put(
+    `/api/campaigns/${campaignId}/integrations/twilio`,
+    data,
+  );
+  if (!res.ok) return { ok: false, error: res.error?.message };
+  return { ok: true };
 }

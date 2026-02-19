@@ -71,7 +71,7 @@ export async function listAll(): Promise<CampaignStats[]> {
        c.id, c.name, c.slug, c.config, c.status, c.cargo, c.numero, c.partido, c.foto_url, c.created_at, c.updated_at,
        COUNT(CASE WHEN uc.role = 'agente_campo'     AND uc.status = 'active' THEN 1 END)::int AS agente_campo_count,
        COUNT(CASE WHEN uc.role = 'brigadista_zonal'  AND uc.status = 'active' THEN 1 END)::int AS brigadista_zonal_count,
-       COUNT(CASE WHEN uc.role IN ('candidato', 'jefe_campana') AND uc.status = 'active' THEN 1 END)::int AS candidato_count,
+       COUNT(CASE WHEN uc.role = 'candidato' AND uc.status = 'active' THEN 1 END)::int AS candidato_count,
        COUNT(CASE WHEN uc.role = 'consultor'         AND uc.status = 'active' THEN 1 END)::int AS consultor_count,
        COUNT(CASE WHEN uc.role = 'admin'             AND uc.status = 'active' THEN 1 END)::int AS admin_count
      FROM campaigns c
@@ -292,7 +292,7 @@ export async function getCampaignMembers(campaignId: string): Promise<CampaignMe
      JOIN users u ON u.id = uc.user_id
      WHERE uc.campaign_id = $1 AND uc.status = 'active'
      ORDER BY
-       CASE uc.role WHEN 'admin' THEN 1 WHEN 'consultor' THEN 2 WHEN 'candidato' THEN 3 WHEN 'jefe_campana' THEN 3 WHEN 'brigadista_zonal' THEN 4 WHEN 'agente_campo' THEN 5 ELSE 6 END,
+        CASE uc.role WHEN 'admin' THEN 1 WHEN 'consultor' THEN 2 WHEN 'candidato' THEN 3 WHEN 'brigadista_zonal' THEN 4 WHEN 'agente_campo' THEN 5 WHEN 'agente_digital' THEN 5 ELSE 6 END,
        u.full_name`,
     [campaignId],
   );
@@ -401,5 +401,21 @@ export async function removeCampaignFromConsultor(userId: string, campaignId: st
     `UPDATE user_campaigns SET status = 'revoked'
      WHERE user_id = $1 AND campaign_id = $2 AND role = 'consultor'`,
     [userId, campaignId],
+  );
+}
+
+// ── Twilio integration config ────────────────────────────────────────
+
+/**
+ * Replaces the entire campaigns.config JSONB with the provided object.
+ * Caller is responsible for merging existing config fields before calling.
+ */
+export async function updateConfig(
+  id: string,
+  config: Record<string, unknown>,
+): Promise<void> {
+  await pool.query(
+    `UPDATE campaigns SET config = $1, updated_at = now() WHERE id = $2`,
+    [JSON.stringify(config), id],
   );
 }

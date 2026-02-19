@@ -205,6 +205,36 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── PUT /api/cms/contacts/:id/revert ──────────────────────────────
+    // Revert contact one step back (respondieron→hablado, hablado→claimed)
+    app.put(
+      "/api/cms/contacts/:id/revert",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
+        const { id } = request.params as { id: string };
+
+        try {
+          const result = await repo.revertContact(id, authed.userId);
+          if (!result) {
+            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado, no es tuyo, o no se puede revertir"));
+          }
+
+          broadcastToCampaign(result.campaign_id, "contact.reverted", {
+            id,
+            operator_id: authed.userId,
+            new_status: result.cms_status,
+          });
+
+          return reply.code(200).send({ ok: true, request_id: requestId, contact: result });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "cms revert failed");
+          return reply.code(500).send(errorPayload(requestId, "CMS_REVERT_ERROR", "error revirtiendo contacto"));
+        }
+      },
+    );
+
     // ── PUT /api/cms/contacts/:id/archive ────────────────────────────
     // Archive a contact
     app.put(
@@ -308,9 +338,10 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
           // Admin sees all campaigns; others see only their assigned campaigns
           const campaignScope = authed.userRole === "admin" ? null : authed.campaignIds;
 
-          const [campaigns, operators] = await Promise.all([
+          const [campaigns, operators, timeMetrics] = await Promise.all([
             repo.getCmsMetricsByCampaign(campaignScope),
             repo.getCmsMetricsByOperator(campaignScope),
+            repo.getTimeMetrics(campaignScope),
           ]);
 
           // Compute global totals across all visible campaigns
@@ -343,6 +374,7 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
               campaigns,
               operators,
               global_totals: { ...globalTotals, ...globalRates },
+              time_metrics: timeMetrics,
             },
           });
         } catch (error) {

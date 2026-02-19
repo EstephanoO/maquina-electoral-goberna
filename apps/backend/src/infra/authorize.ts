@@ -16,27 +16,25 @@ declare module "fastify" {
 }
 
 // ── Role hierarchy ──────────────────────────────────────────────────
-// candidato: The campaign owner, replaces jefe_campana
-export type Role = "admin" | "consultor" | "candidato" | "brigadista_zonal" | "agente_campo";
+export type Role = "admin" | "consultor" | "candidato" | "brigadista_zonal" | "agente_campo" | "agente_digital";
 
 export const ROLE_HIERARCHY: Record<Role, number> = {
   admin: 50,
   consultor: 40,
-  candidato: 30,  // Campaign owner - full control of their campaign
+  candidato: 30,
   brigadista_zonal: 20,
   agente_campo: 10,
+  agente_digital: 10,
 };
 
-export const ALL_ROLES: Role[] = ["admin", "consultor", "candidato", "brigadista_zonal", "agente_campo"];
+export const ALL_ROLES: Role[] = ["admin", "consultor", "candidato", "brigadista_zonal", "agente_campo", "agente_digital"];
 
-// Backwards compatibility: jefe_campana maps to candidato
-export const ROLE_ALIASES: Record<string, Role> = {
-  jefe_campana: "candidato",
-};
+// No aliases — jefe_campana is gone, DB will be migrated
+export const ROLE_ALIASES: Record<string, Role> = {};
 
 // ── Options ─────────────────────────────────────────────────────────
 export type AuthorizeOptions = {
-  /** Minimum roles allowed. Role hierarchy: admin > consultor > jefe_campana > brigadista_zonal > agente_campo */
+  /** Minimum roles allowed. Role hierarchy: admin > consultor > candidato > brigadista_zonal > agente_campo / agente_digital */
   roles?: Role[];
   /** If true, checks that the request includes a campaign_id and user has access */
   requireCampaign?: boolean;
@@ -94,9 +92,9 @@ function extractCampaignId(request: FastifyRequest): string | undefined {
  * // Only admins
  * app.get("/admin/stats", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, handler);
  *
- * // Jefes de campana and above, scoped to a campaign
+ * // Candidato and above, scoped to a campaign
  * app.post("/campaigns/:campaignId/export", {
- *   preHandler: [app.authenticate, authorize({ roles: ["jefe_campana"], requireCampaign: true })],
+ *   preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })],
  * }, handler);
  */
 export function authorize(options: AuthorizeOptions = {}) {

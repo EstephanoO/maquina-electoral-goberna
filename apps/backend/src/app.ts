@@ -27,6 +27,7 @@ import { buildFormSubmissionsRoutes } from "./modules/form-submissions/routes";
 import { buildAnalyticsRoutes } from "./modules/analytics/routes";
 import { buildObjectivesRoutes } from "./modules/objectives/routes";
 import { buildCmsRoutes } from "./modules/cms/routes";
+import { buildTwilioRoutes } from "./modules/twilio/twilio.routes";
 
 export function buildApp(env: AppEnv) {
   const app = Fastify({
@@ -133,6 +134,7 @@ export function buildApp(env: AppEnv) {
   app.register(buildAnalyticsRoutes(env));
   app.register(buildObjectivesRoutes(env));
   app.register(buildCmsRoutes(env));
+  app.register(buildTwilioRoutes(env));
 
   app.get("/api/metrics", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, async (_request, reply) => {
     reply.header("Cache-Control", "no-store");

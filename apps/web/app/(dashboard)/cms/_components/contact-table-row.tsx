@@ -12,8 +12,11 @@ type ContactTableRowProps = {
   onRespondieron: (id: string) => void;
   onArchive: (id: string) => void;
   onRelease: (id: string) => void;
+  onRevert: (id: string) => void;
   onOpenNotes: (contact: CmsContact) => void;
   claiming: string | null;
+  actionLoading: string | null;
+  reverting: string | null;
 };
 
 function formatPhone(phone: string): string {
@@ -110,12 +113,17 @@ export function ContactTableRow({
   onRespondieron,
   onArchive,
   onRelease,
+  onRevert,
   onOpenNotes,
   claiming,
+  actionLoading,
+  reverting,
 }: ContactTableRowProps) {
   const isLocked = contact.is_locked;
   const isClaimedByMe = contact.cms_claimed_by === currentUserId;
   const isClaiming = claiming === contact.id;
+  const isActionLoading = actionLoading === contact.id;
+  const isReverting = reverting === contact.id;
   const nombre = contact.nombre || "Sin nombre";
   const telefono = contact.telefono || "";
   const status = contact.cms_status;
@@ -257,7 +265,7 @@ export function ContactTableRow({
       </td>
 
       {/* ACCIONES */}
-      <td style={{ ...CELL, width: 220, textAlign: "right" }}>
+      <td style={{ ...CELL, width: 260, textAlign: "right" }}>
         <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", flexWrap: "nowrap" }}>
           {isLocked ? (
             <span style={{ ...BTN_BASE, background: "#fff7ed", color: "#d97706", cursor: "default", border: "1px solid #fed7aa" }}>
@@ -309,10 +317,31 @@ export function ContactTableRow({
             <>
               <button
                 type="button"
+                disabled={isActionLoading}
                 onClick={() => onRespondieron(contact.id)}
-                style={{ ...BTN_BASE, background: "#ede9fe", color: "#5b21b6" }}
+                style={{
+                  ...BTN_BASE,
+                  background: isActionLoading ? "#c4b5fd" : "#ede9fe",
+                  color: "#5b21b6",
+                  opacity: isActionLoading ? 0.7 : 1,
+                }}
               >
-                Contesto
+                {isActionLoading ? "..." : "Contesto"}
+              </button>
+              <button
+                type="button"
+                disabled={isReverting}
+                onClick={() => onRevert(contact.id)}
+                style={{
+                  ...BTN_BASE,
+                  background: isReverting ? "#fef3c7" : "#fffbeb",
+                  color: "#92400e",
+                  border: "1px solid #fde68a",
+                  opacity: isReverting ? 0.7 : 1,
+                }}
+                title="Deshacer: vuelve a En Curso"
+              >
+                {isReverting ? "..." : "Deshacer"}
               </button>
               <button
                 type="button"
@@ -331,6 +360,21 @@ export function ContactTableRow({
             </>
           ) : status === "respondieron" ? (
             <>
+              <button
+                type="button"
+                disabled={isReverting}
+                onClick={() => onRevert(contact.id)}
+                style={{
+                  ...BTN_BASE,
+                  background: isReverting ? "#fef3c7" : "#fffbeb",
+                  color: "#92400e",
+                  border: "1px solid #fde68a",
+                  opacity: isReverting ? 0.7 : 1,
+                }}
+                title="Deshacer: vuelve a Hablado"
+              >
+                {isReverting ? "..." : "Deshacer"}
+              </button>
               <button
                 type="button"
                 onClick={() => onOpenNotes(contact)}

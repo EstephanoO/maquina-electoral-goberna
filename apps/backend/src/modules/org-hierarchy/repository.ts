@@ -88,13 +88,14 @@ export async function getSubordinates(userId: string, campaignId: string): Promi
      JOIN users u ON u.id = s.user_id
      LEFT JOIN users pu ON pu.id = s.parent_user_id
      LEFT JOIN zones z ON z.id = s.zone_id
-     ORDER BY
-       CASE s.role
-         WHEN 'jefe_campana' THEN 1
-         WHEN 'brigadista_zonal' THEN 2
-         WHEN 'agente_campo' THEN 3
-         ELSE 4
-       END,
+      ORDER BY
+        CASE s.role
+          WHEN 'candidato' THEN 1
+          WHEN 'brigadista_zonal' THEN 2
+          WHEN 'agente_campo' THEN 3
+          WHEN 'agente_digital' THEN 3
+          ELSE 4
+        END,
        u.full_name`,
     [userId, campaignId],
   );
