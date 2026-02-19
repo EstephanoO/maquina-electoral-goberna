@@ -42,6 +42,7 @@ const NAV_ITEMS: NavItem[] = [
   { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["admin", "candidato"], section: "main" },
   { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin", "candidato"], section: "main" },
   { icon: <CMSIcon />, label: "CMS", href: "/cms", roles: ["admin", "candidato"], section: "main" },
+  { icon: <CmsMetricsIcon />, label: "Metricas CMS", href: "/cms-metrics", roles: ["admin", "candidato"], section: "main" },
   // /ops exists but is hidden from nav — access via direct URL only
   // { icon: <OpsIcon />, label: "Operaciones", href: "/ops", roles: ["admin"], section: "admin" },
   { icon: <SettingsIcon />, label: "Configuracion", href: "/settings", roles: ["admin", "candidato"], section: "admin" },
@@ -139,6 +140,17 @@ function CMSIcon() {
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       <line x1="9" y1="9" x2="15" y2="9" />
       <line x1="9" y1="13" x2="13" y2="13" />
+    </svg>
+  );
+}
+
+function CmsMetricsIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <title>Metricas CMS</title>
+      <path d="M18 20V10" />
+      <path d="M12 20V4" />
+      <path d="M6 20v-6" />
     </svg>
   );
 }

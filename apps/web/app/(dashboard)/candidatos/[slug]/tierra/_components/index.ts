@@ -11,3 +11,4 @@ export { ActivityCharts } from "./activity-charts";
 export type { EnrichedAgent, AgentStatus, FormPoint, TierraMapHandle } from "./tierra-map";
 export type { LogEntry } from "./activity-log";
 export type { DrillLevel, DrillState } from "./zone-breadcrumb";
+export type { ActiveLayer } from "./map-controls";

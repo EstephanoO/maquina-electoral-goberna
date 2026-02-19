@@ -61,7 +61,7 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
 
   return async (app) => {
     // ── GET /api/cms/contacts ───────────────────────────────────────
-    // List contacts for CMS operators (nuevo + claimed by others shown as locked)
+    // List contacts with status filtering + search
     app.get(
       "/api/cms/contacts",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
@@ -75,19 +75,13 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
         }
 
         try {
-          const query = request.query as { status?: string; limit?: string; offset?: string };
+          const query = request.query as { status?: string; limit?: string; offset?: string; search?: string };
           const status = query.status ?? "nuevo";
           const limit = Math.min(Number(query.limit) || 100, 500);
           const offset = Number(query.offset) || 0;
+          const search = query.search ?? "";
 
-          if (status === "hablado") {
-            // Only show contacts that THIS operator talked to
-            const result = await repo.getHabladoByOperator(campaignId, authed.userId, limit, offset);
-            return reply.code(200).send({ ok: true, request_id: requestId, ...result });
-          }
-
-          // Show nuevo + claimed contacts (claimed by others shown as locked)
-          const result = await repo.getNuevosForCms(campaignId, authed.userId, limit, offset);
+          const result = await repo.listContacts(campaignId, authed.userId, status, limit, offset, search);
           return reply.code(200).send({ ok: true, request_id: requestId, ...result });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "cms contacts list failed");
@@ -182,6 +176,64 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── PUT /api/cms/contacts/:id/respondieron ─────────────────────
+    // Mark contact as "respondieron" (they answered)
+    app.put(
+      "/api/cms/contacts/:id/respondieron",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
+        const { id } = request.params as { id: string };
+
+        try {
+          const result = await repo.markRespondieron(id, authed.userId);
+          if (!result) {
+            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado"));
+          }
+
+          broadcastToCampaign(result.campaign_id, "contact.respondieron", {
+            id,
+            operator_id: authed.userId,
+          });
+
+          return reply.code(200).send({ ok: true, request_id: requestId, contact: result });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "cms respondieron failed");
+          return reply.code(500).send(errorPayload(requestId, "CMS_RESPONDIERON_ERROR", "error marcando como respondieron"));
+        }
+      },
+    );
+
+    // ── PUT /api/cms/contacts/:id/archive ────────────────────────────
+    // Archive a contact
+    app.put(
+      "/api/cms/contacts/:id/archive",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
+        const { id } = request.params as { id: string };
+
+        try {
+          const result = await repo.archiveContact(id, authed.userId);
+          if (!result) {
+            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado"));
+          }
+
+          broadcastToCampaign(result.campaign_id, "contact.archived", {
+            id,
+            operator_id: authed.userId,
+          });
+
+          return reply.code(200).send({ ok: true, request_id: requestId, contact: result });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "cms archive failed");
+          return reply.code(500).send(errorPayload(requestId, "CMS_ARCHIVE_ERROR", "error archivando contacto"));
+        }
+      },
+    );
+
     // ── PUT /api/cms/contacts/:id/notes ──────────────────────────────
     // Update operator notes (local_votacion, domicilio, comentarios)
     app.put(
@@ -236,6 +288,66 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "cms stats failed");
           return reply.code(500).send(errorPayload(requestId, "CMS_STATS_ERROR", "error obteniendo stats"));
+        }
+      },
+    );
+
+    // ── GET /api/cms/metrics ────────────────────────────────────────
+    // CMS metrics scoped by role:
+    //   admin: ALL campaigns
+    //   consultor: assigned campaigns (from JWT campaignIds)
+    //   candidato: own campaign(s) (from JWT campaignIds)
+    app.get(
+      "/api/cms/metrics",
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
+
+        try {
+          // Admin sees all campaigns; others see only their assigned campaigns
+          const campaignScope = authed.userRole === "admin" ? null : authed.campaignIds;
+
+          const [campaigns, operators] = await Promise.all([
+            repo.getCmsMetricsByCampaign(campaignScope),
+            repo.getCmsMetricsByOperator(campaignScope),
+          ]);
+
+          // Compute global totals across all visible campaigns
+          const globalTotals = campaigns.reduce(
+            (acc, c) => ({
+              total: acc.total + c.total,
+              nuevos: acc.nuevos + c.nuevos,
+              claimed: acc.claimed + c.claimed,
+              hablados: acc.hablados + c.hablados,
+              respondieron: acc.respondieron + c.respondieron,
+              archivados: acc.archivados + c.archivados,
+            }),
+            { total: 0, nuevos: 0, claimed: 0, hablados: 0, respondieron: 0, archivados: 0 },
+          );
+
+          const contacted = globalTotals.hablados + globalTotals.respondieron;
+          const globalRates = {
+            contact_rate: globalTotals.total > 0
+              ? Math.round((contacted / globalTotals.total) * 100) / 100
+              : 0,
+            response_rate: contacted > 0
+              ? Math.round((globalTotals.respondieron / contacted) * 100) / 100
+              : 0,
+          };
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            metrics: {
+              campaigns,
+              operators,
+              global_totals: { ...globalTotals, ...globalRates },
+            },
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "cms metrics failed");
+          return reply.code(500).send(errorPayload(requestId, "CMS_METRICS_ERROR", "error obteniendo metricas CMS"));
         }
       },
     );

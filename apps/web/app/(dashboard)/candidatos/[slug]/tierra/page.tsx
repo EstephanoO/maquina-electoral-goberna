@@ -25,6 +25,7 @@ import {
   type LogEntry,
   type DrillState,
   type DrillLevel,
+  type ActiveLayer,
 } from "./_components";
 
 /* ========== Types ========== */
@@ -106,15 +107,19 @@ export default function TierraPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // UI — tracking OFF by default, datos ON
+  // UI — single active layer (mutually exclusive)
+  const [activeLayer, setActiveLayer] = useState<ActiveLayer>("datos");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [showTracking, setShowTracking] = useState(false);
-  const [showDatos, setShowDatos] = useState(true);
-  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
   const [showTable, setShowTable] = useState(false);
   const [showMetrics, setShowMetrics] = useState(false);
   const [logCollapsed, setLogCollapsed] = useState(false);
   const [logClearedAt, setLogClearedAt] = useState<number>(0);
+
+  // Derive booleans from activeLayer
+  const showTracking = activeLayer === "agentes";
+  const showDatos = activeLayer === "datos";
+  const showHeatmap = activeLayer === "densidad";
 
   // Drill-down state for geographic navigation
   const [drillState, setDrillState] = useState<DrillState>(INITIAL_DRILL);
@@ -127,6 +132,46 @@ export default function TierraPage() {
     if (level < 1) { newState.depCode = null; newState.depName = null; }
     setDrillState(newState);
   }, [drillState]);
+
+  // Layer change handler — mutually exclusive
+  const handleLayerChange = useCallback((layer: ActiveLayer) => {
+    setActiveLayer(layer);
+    // Clear agent selection when switching away from agents
+    if (layer !== "agentes") {
+      setSelectedAgentId(null);
+      setSelectedAgentIds(new Set());
+    }
+  }, []);
+
+  // Agent click from map or list: fly to agent + auto-enable Agentes layer
+  const handleSelectAgent = useCallback((agentId: string | null) => {
+    setSelectedAgentId(agentId);
+    if (agentId) {
+      // Auto-enable agentes layer when selecting an agent
+      setActiveLayer("agentes");
+    }
+  }, []);
+
+  // Agent click from agents list: fly to agent, enable layer, toggle multi-select
+  const handleAgentListClick = useCallback((agentId: string) => {
+    setActiveLayer("agentes");
+    setSelectedAgentId(agentId);
+    // Toggle in multi-select set
+    setSelectedAgentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) {
+        next.delete(agentId);
+      } else {
+        next.add(agentId);
+      }
+      return next;
+    });
+    // Fly to agent on map
+    const agent = enrichedAgentsRef.current.find((a) => a.id === agentId);
+    if (agent) {
+      mapHandleRef.current?.flyToPoint(agent.lng, agent.lat, 15);
+    }
+  }, []);
 
   // Fetch stats
   const fetchStats = useCallback(async () => {
@@ -203,6 +248,10 @@ export default function TierraPage() {
     });
   }, [stats, locations, forms]);
 
+  // Keep a ref for imperative access (agent list click handler)
+  const enrichedAgentsRef = useRef(enrichedAgents);
+  enrichedAgentsRef.current = enrichedAgents;
+
   // Form points for map — convert UTM to lat/lng
   const formPoints = useMemo(
     () =>
@@ -222,11 +271,27 @@ export default function TierraPage() {
     [enrichedAgents],
   );
 
-  // Filtered forms for table
+  // Filtered forms for table — by selected agent(s) or all
   const filteredForms = useMemo(() => {
-    if (!selectedAgentId) return forms;
-    return forms.filter((f) => f.agent_id === selectedAgentId || f.encuestador_id === selectedAgentId);
-  }, [forms, selectedAgentId]);
+    if (selectedAgentIds.size > 0) {
+      return forms.filter((f) => selectedAgentIds.has(f.agent_id ?? "") || selectedAgentIds.has(f.encuestador_id ?? ""));
+    }
+    if (selectedAgentId) {
+      return forms.filter((f) => f.agent_id === selectedAgentId || f.encuestador_id === selectedAgentId);
+    }
+    return forms;
+  }, [forms, selectedAgentId, selectedAgentIds]);
+
+  // Filtered agents for metrics — by selection or all
+  const filteredAgents = useMemo(() => {
+    if (selectedAgentIds.size > 0) {
+      return enrichedAgents.filter((a) => selectedAgentIds.has(a.id));
+    }
+    if (selectedAgentId) {
+      return enrichedAgents.filter((a) => a.id === selectedAgentId);
+    }
+    return enrichedAgents;
+  }, [enrichedAgents, selectedAgentId, selectedAgentIds]);
 
   // ─── Activity log entries ─────────────────────────────────
   const logEntries = useMemo((): LogEntry[] => {
@@ -313,6 +378,13 @@ export default function TierraPage() {
   const campaignMembership = campaigns.find((c) => c.id === campaign.id || c.slug === slug);
   const isAdmin = user?.role === "admin" || campaignMembership?.role === "admin" || campaignMembership?.role === "jefe_campana";
 
+  // Selection context label for metrics
+  const selectionLabel = selectedAgentIds.size > 0
+    ? `${selectedAgentIds.size} agente${selectedAgentIds.size > 1 ? "s" : ""}`
+    : selectedAgentId
+    ? enrichedAgents.find((a) => a.id === selectedAgentId)?.name ?? "Agente"
+    : null;
+
   return (
     <div style={FULL_SCREEN}>
       {/* ── Header ── */}
@@ -333,7 +405,7 @@ export default function TierraPage() {
           agents={enrichedAgents}
           forms={formPoints}
           selectedAgentId={selectedAgentId}
-          onSelectAgent={setSelectedAgentId}
+          onSelectAgent={handleSelectAgent}
           showTracking={showTracking}
           showDatos={showDatos}
           showHeatmap={showHeatmap}
@@ -372,13 +444,9 @@ export default function TierraPage() {
         {/* Controls — top left */}
         <div style={{ position: "absolute", top: 16, left: 16, zIndex: 10 }}>
           <MapControls
-            showTracking={showTracking}
-            showDatos={showDatos}
-            showHeatmap={showHeatmap}
+            activeLayer={activeLayer}
             showTable={showTable}
-            onToggleTracking={() => setShowTracking(!showTracking)}
-            onToggleDatos={() => setShowDatos(!showDatos)}
-            onToggleHeatmap={() => setShowHeatmap(!showHeatmap)}
+            onLayerChange={handleLayerChange}
             onToggleTable={() => setShowTable(!showTable)}
             agentCount={enrichedAgents.length}
             formCount={forms.length}
@@ -400,7 +468,7 @@ export default function TierraPage() {
 
         {/* Legend — bottom right (shift left when data panel is open) */}
         <div style={{ position: "absolute", bottom: showMetrics ? 320 : 24, right: showTable ? 396 : 16, zIndex: 10, transition: "all 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
-          <MapLegend showTracking={showTracking} showDatos={showDatos} showHeatmap={showHeatmap} />
+          <MapLegend activeLayer={activeLayer} />
         </div>
 
         {/* Metrics toggle button — bottom left */}
@@ -430,7 +498,7 @@ export default function TierraPage() {
               <path d="M13 17V5" />
               <path d="M8 17v-3" />
             </svg>
-            {showMetrics ? "Ocultar métricas" : "Ver métricas"}
+            {showMetrics ? "Ocultar metricas" : "Ver metricas"}
           </button>
         </div>
 
@@ -451,10 +519,13 @@ export default function TierraPage() {
         >
           {showMetrics && (
             <ActivityCharts
-              forms={forms}
-              agents={enrichedAgents}
+              forms={filteredForms}
+              agents={filteredAgents}
+              allForms={forms}
+              allAgents={enrichedAgents}
               primaryColor={campaign.color_primario}
               secondaryColor={campaign.color_secundario}
+              selectionLabel={selectionLabel}
             />
           )}
         </div>

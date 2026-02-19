@@ -106,8 +106,32 @@ const PRIORITY_FILL = "rgba(239, 68, 68, 0.35)";
 const PRIORITY_LINE = "#991b1b";
 const SECTOR_FILL = "rgba(220, 38, 38, 0.13)";
 const SECTOR_LINE = "#0a0a0a";
-const BORDER_COLOR = "#0a0a0a";
 const HIDE_FILTER: FilterSpecification = ["==", "1", "0"];
+
+/* ========== Dynamic Zoom Thresholds ========== */
+// These define at which zoom levels the hierarchy transitions happen.
+// The ranges create smooth crossfade zones where one level fades out while
+// the next fades in. The GPU handles these interpolations = buttery smooth.
+
+const ZOOM = {
+  /** Departamentos fully visible */
+  DEP_FULL: 5,
+  /** Departamentos start fading, provincias start appearing */
+  DEP_TO_PROV: 6.5,
+  /** Departamentos gone, provincias fully visible */
+  PROV_FULL: 7.5,
+  /** Provincias start fading, distritos start appearing */
+  PROV_TO_DIST: 8.5,
+  /** Provincias gone, distritos fully visible */
+  DIST_FULL: 9.5,
+  /** Distritos start fading into sectors */
+  DIST_TO_SECTOR: 11,
+  /** Sectors fully visible */
+  SECTOR_FULL: 12,
+} as const;
+
+/** Debounce time (ms) for zoom-based drill detection */
+const ZOOM_DRILL_DEBOUNCE = 400;
 
 /* ========== Map Config ========== */
 
@@ -193,6 +217,8 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
   const [ready, setReady] = useState(false);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isZoomingRef = useRef(false);
+  const zoomEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // GeoJSON fallback: loaded from /geo/*.geojson per campaign
   const [geoData, setGeoData] = useState<Record<GeoLevel, GeoJSON.FeatureCollection | null>>({
@@ -254,84 +280,174 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
     [campaignId],
   );
 
+  /* ══════════════════════════════════════════════════════════════════════
+   *  DYNAMIC ZOOM DRILL SYSTEM
+   *
+   *  Instead of binary show/hide filters, layers use zoom-interpolated
+   *  opacities so transitions are buttery smooth (GPU-driven).
+   *
+   *  Additionally, when the user zooms in/out with scroll/pinch, we
+   *  detect the geographic center via reverse geocoding and auto-update
+   *  the drill state — the hierarchy "follows the zoom" dynamically.
+   *
+   *  Click drill-down still works as a quick shortcut.
+   * ══════════════════════════════════════════════════════════════════════ */
+
+  // Ref to prevent zoom-drill detection from firing during click-driven fitBounds
+  const isClickDrivenZoomRef = useRef(false);
+  const zoomDrillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track the last reverse-geocoded center to avoid redundant calls
+  const lastGeoCenterRef = useRef<string>("");
+  // Ref to track the drillState for async callbacks without stale closures
+  const drillStateRef = useRef(drillState);
+  drillStateRef.current = drillState;
+
+  /* ─── Zoom-driven drill detection ─── */
+  const detectDrillFromZoom = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || isClickDrivenZoomRef.current) return;
+
+    const zoom = map.getZoom();
+    const center = map.getCenter();
+    // Round center to ~100m to deduplicate calls
+    const centerKey = `${center.lng.toFixed(3)},${center.lat.toFixed(3)},${zoom.toFixed(1)}`;
+
+    // Skip if center hasn't meaningfully changed
+    if (centerKey === lastGeoCenterRef.current) return;
+    lastGeoCenterRef.current = centerKey;
+
+    const currentDrill = drillStateRef.current;
+
+    // Zooming OUT: go back to upper levels without reverse geocode
+    if (zoom < ZOOM.DEP_TO_PROV && currentDrill.level > 0) {
+      onDrillChange({ ...INITIAL_DRILL });
+      return;
+    }
+
+    // Only trigger reverse geocode when zoom crosses into prov+ territory
+    if (zoom >= ZOOM.DEP_TO_PROV) {
+      reverseGeocode(center.lng, center.lat).then((result) => {
+        if (!result.ok || !result.result) return;
+        const { coddep, departamento, codprov_full, provincia, ubigeo, distrito } = result.result;
+        const latestDrill = drillStateRef.current;
+        const currentZoom = mapRef.current?.getZoom() ?? zoom;
+
+        if (currentZoom >= ZOOM.PROV_TO_DIST && currentZoom < ZOOM.DIST_TO_SECTOR) {
+          // District level
+          if (latestDrill.level !== 2 || latestDrill.provCode !== codprov_full) {
+            preloadDistritos(codprov_full);
+            onDrillChange({
+              level: 2, depCode: coddep, depName: departamento,
+              provCode: codprov_full, provName: provincia,
+              distCode: null, distName: null, sector: null, sectorName: null,
+            });
+          }
+        } else if (currentZoom >= ZOOM.DIST_TO_SECTOR) {
+          // Sector level
+          if (latestDrill.level !== 3 || latestDrill.distCode !== ubigeo) {
+            onDrillChange({
+              level: 3, depCode: coddep, depName: departamento,
+              provCode: codprov_full, provName: provincia,
+              distCode: ubigeo, distName: distrito, sector: null, sectorName: null,
+            });
+          }
+        } else if (currentZoom >= ZOOM.DEP_TO_PROV) {
+          // Province level
+          if (latestDrill.level !== 1 || latestDrill.depCode !== coddep) {
+            preloadProvincias(coddep);
+            onDrillChange({
+              ...INITIAL_DRILL, level: 1, depCode: coddep, depName: departamento,
+            });
+          }
+        }
+      }).catch(() => { /* ignore reverse geocode failures */ });
+    }
+  }, [onDrillChange]);
+
   /* ─── Drill-down filters ─── */
   //
-  // Strategy: Use database geometry (Tegola vector tiles) for hierarchy navigation.
-  // Level 0: Show all departamentos (clickable to drill into)
-  // Level 1: Show provincias of selected departamento
-  // Level 2: Show distritos of selected provincia
-  // Level 3+: Show campaign sectors/subsectors
+  // Strategy: Layers are ALWAYS rendered but their opacity is controlled by
+  // zoom-interpolation expressions. Filters narrow down WHICH features to
+  // show at each drill level (e.g. only the selected dep's provincias).
+  //
+  // The opacity crossfade is defined in the paint properties of each Layer
+  // (see JSX below), NOT here in the filters. Filters only handle geographic
+  // scoping (which dep/prov/dist).
 
   // ── Base map filters (Tegola vector tiles) ──
 
-  // Departamentos FILL: only at level 0 (clickable), hide at level 1+ to not block province clicks
+  // Departamentos FILL: show all at level 0, show ONLY selected dep at level 1+
+  // (non-selected deps are hidden so the selected one "emerges" alone)
   const depFillFilter: FilterSpecification = useMemo(() => {
     if (drillState.level === 0) return ["all"] as FilterSpecification;
-    return HIDE_FILTER; // Hide fill at level 1+ so provinces can be clicked
-  }, [drillState.level]);
+    if (drillState.depCode) return ["==", ["get", "coddep"], drillState.depCode];
+    return HIDE_FILTER;
+  }, [drillState.level, drillState.depCode]);
 
-  // Departamentos LINE: show outline of selected dep at level 1+ for context
+  // Departamentos LINE (for context outlines)
   const depLineFilter: FilterSpecification = useMemo(() => {
     if (drillState.level === 0) return ["all"] as FilterSpecification;
     if (drillState.depCode) return ["==", ["get", "coddep"], drillState.depCode];
     return HIDE_FILTER;
   }, [drillState.level, drillState.depCode]);
 
-  // Provincias FILL: only at level 1 (clickable), hide at level 2+ to not block district clicks
-  const provFillFilter: FilterSpecification = useMemo(() => {
-    if (drillState.level === 1 && drillState.depCode) {
-      return ["==", ["get", "coddep"], drillState.depCode];
-    }
-    return HIDE_FILTER; // Hide fill at level 2+ so districts can be clicked
-  }, [drillState.level, drillState.depCode]);
+  // Non-selected departamentos: only at level 0 (they fade out with zoom)
+  const depOtherFilter: FilterSpecification = useMemo(() => {
+    if (drillState.level === 0) return ["all"] as FilterSpecification;
+    return HIDE_FILTER;
+  }, [drillState.level]);
 
-  // Provincias LINE: show outline of selected prov at level 2+ for context
-  const provLineFilter: FilterSpecification = useMemo(() => {
-    if (drillState.level === 1 && drillState.depCode) {
+  // Provincias FILL: show within selected dep at level 1+
+  const provFillFilter: FilterSpecification = useMemo(() => {
+    if (drillState.level >= 1 && drillState.depCode) {
       return ["==", ["get", "coddep"], drillState.depCode];
-    }
-    if (drillState.level >= 2 && drillState.provCode) {
-      return ["==", ["get", "codprov_full"], drillState.provCode];
     }
     return HIDE_FILTER;
-  }, [drillState.level, drillState.depCode, drillState.provCode]);
+  }, [drillState.level, drillState.depCode]);
 
-  // Distritos FILL: only at level 2 (clickable)
+  // Provincias LINE
+  const provLineFilter: FilterSpecification = useMemo(() => {
+    if (drillState.level >= 1 && drillState.depCode) {
+      return ["==", ["get", "coddep"], drillState.depCode];
+    }
+    return HIDE_FILTER;
+  }, [drillState.level, drillState.depCode]);
+
+  // Distritos FILL: show within selected prov at level 2+
   const distFillFilter: FilterSpecification = useMemo(() => {
-    if (drillState.level === 2 && drillState.provCode) {
+    if (drillState.level >= 2 && drillState.provCode) {
       return ["==", ["get", "codprov_full"], drillState.provCode];
     }
     return HIDE_FILTER;
   }, [drillState.level, drillState.provCode]);
 
-  // Distritos LINE: show outline of selected dist at level 3+ for context
+  // Distritos LINE
   const distLineFilter: FilterSpecification = useMemo(() => {
-    if (drillState.level === 2 && drillState.provCode) {
+    if (drillState.level >= 2 && drillState.provCode) {
       return ["==", ["get", "codprov_full"], drillState.provCode];
     }
-    if (drillState.level >= 3 && drillState.distCode) {
-      return ["==", ["get", "ubigeo"], drillState.distCode];
-    }
     return HIDE_FILTER;
-  }, [drillState.level, drillState.provCode, drillState.distCode]);
+  }, [drillState.level, drillState.provCode]);
 
-  // ── Priority layer filters (red fill — the actual visible zones) ──
+  // ── Priority layer filters (red fill — campaign-specific zones) ──
 
-  // Priority deps: always show at level 0; hide once drilled into a dep
+  // Priority deps: show at level 0 (fade with zoom)
   const priorityDepFilter: FilterSpecification = useMemo(() => {
     if (drillState.level >= 1) return HIDE_FILTER;
     return ["all", campaignFilter] as FilterSpecification;
   }, [campaignFilter, drillState.level]);
 
-  // Priority provs: show at level 1 (inside a dep), filtered to that dep
+  // Priority provs: show at level 1+ filtered to selected dep
   const priorityProvFilter: FilterSpecification = useMemo(() => {
-    if (drillState.level !== 1 || !drillState.depCode) return HIDE_FILTER;
+    if (drillState.level < 1 || !drillState.depCode) return HIDE_FILTER;
+    if (drillState.level >= 2) return HIDE_FILTER;
     return ["all", campaignFilter, ["==", ["get", "coddep"], drillState.depCode]] as FilterSpecification;
   }, [campaignFilter, drillState.level, drillState.depCode]);
 
-  // Priority dists: show at level 2 (inside a prov), filtered to that prov
+  // Priority dists: show at level 2 filtered to selected prov
   const priorityDistFilter: FilterSpecification = useMemo(() => {
-    if (drillState.level !== 2 || !drillState.provCode) return HIDE_FILTER;
+    if (drillState.level < 2 || !drillState.provCode) return HIDE_FILTER;
+    if (drillState.level >= 3) return HIDE_FILTER;
     return ["all", campaignFilter, ["==", ["get", "codprov_full"], drillState.provCode]] as FilterSpecification;
   }, [campaignFilter, drillState.level, drillState.provCode]);
 
@@ -384,14 +500,47 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
 
   const handleLoad = useCallback(() => {
     mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
-  }, []);
+    
+    const map = mapRef.current?.getMap();
+    if (map) {
+      // Track zoom/pan to suppress tooltips during movement
+      const onMoveStart = () => {
+        isZoomingRef.current = true;
+        setHover(null);
+        if (zoomEndTimer.current) clearTimeout(zoomEndTimer.current);
+      };
+      const onMoveEnd = () => {
+        zoomEndTimer.current = setTimeout(() => {
+          isZoomingRef.current = false;
+        }, 300);
+      };
+      map.on("movestart", onMoveStart);
+      map.on("zoomstart", onMoveStart);
+      map.on("moveend", onMoveEnd);
+      map.on("zoomend", onMoveEnd);
 
-  // Drill-down click handler
+      // ── Dynamic zoom drill detection ──
+      // After zoom/pan ends, detect which geographic zone the user is looking at
+      // and auto-update the drill state. Debounced to avoid spamming reverse geocode.
+      map.on("moveend", () => {
+        if (isClickDrivenZoomRef.current) {
+          // Reset flag after click-driven animation completes
+          setTimeout(() => { isClickDrivenZoomRef.current = false; }, 200);
+          return;
+        }
+        if (zoomDrillTimerRef.current) clearTimeout(zoomDrillTimerRef.current);
+        zoomDrillTimerRef.current = setTimeout(detectDrillFromZoom, ZOOM_DRILL_DEBOUNCE);
+      });
+    }
+  }, [detectDrillFromZoom]);
+
+  // Drill-down click handler (quick shortcut — works alongside dynamic zoom)
   const handleClick = useCallback((e: MapLayerMouseEvent) => {
     const features = e.features;
     if (!features?.length) {
       // Click on empty space → go back one level
       if (drillState.level > 0) {
+        isClickDrivenZoomRef.current = true;
         const newLevel = (drillState.level - 1) as DrillLevel;
         const newState = { ...drillState, level: newLevel };
         if (newLevel < 4) { newState.sector = null; newState.sectorName = null; }
@@ -404,7 +553,6 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
         if (newLevel === 0) {
           mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: 800 });
         }
-        // For other levels, the fitBounds will happen when the filter updates and re-renders
       }
       return;
     }
@@ -529,15 +677,13 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
       const coddep = String(f.properties?.coddep ?? f.properties?.CODDEP ?? "");
       const name = String(f.properties?.departamento ?? f.properties?.departamen ?? f.properties?.DEPARTAMEN ?? coddep);
       if (coddep) {
-        // Preload provincias for this departamento (will be cached)
+        isClickDrivenZoomRef.current = true;
         preloadProvincias(coddep);
         
-        // Try to get bounds from cached API first, fallback to feature geometry
         getProvincias(coddep).then((result) => {
           if (result.ok && result.bounds && mapRef.current) {
             mapRef.current.fitBounds(result.bounds, { padding: 40, duration: 800 });
           } else {
-            // Fallback to feature bounds
             const bounds = getBoundsFromFeature(f);
             if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
           }
@@ -557,15 +703,13 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
       const name = String(f.properties?.provincia ?? f.properties?.PROVINCIA ?? codprovFull);
       const coddep = String(f.properties?.coddep ?? f.properties?.CODDEP ?? drillState.depCode ?? "");
       if (codprovFull) {
-        // Preload distritos for this provincia (will be cached)
+        isClickDrivenZoomRef.current = true;
         preloadDistritos(codprovFull);
         
-        // Try to get bounds from cached API first, fallback to feature geometry
         getDistritos(codprovFull).then((result) => {
           if (result.ok && result.bounds && mapRef.current) {
             mapRef.current.fitBounds(result.bounds, { padding: 40, duration: 800 });
           } else {
-            // Fallback to feature bounds
             const bounds = getBoundsFromFeature(f);
             if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
           }
@@ -588,7 +732,7 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
       const codprovFull = String(f.properties?.codprov_full ?? (((f.properties?.CODDEP ?? "") + (f.properties?.CODPROV ?? "")) || (drillState.provCode ?? "")));
       const provName = String(f.properties?.provincia ?? f.properties?.PROVINCIA ?? drillState.provName ?? "");
       if (ubigeo) {
-        // For distritos, use feature bounds (no deeper level to preload from API)
+        isClickDrivenZoomRef.current = true;
         const bounds = getBoundsFromFeature(f);
         if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
         
@@ -618,12 +762,19 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
     }
   }, [drillState, onDrillChange, selectedAgentId, onSelectAgent, agents]);
 
-  // Hover handler
+  // Hover handler — suppressed during zoom/pan for smooth UX
   const handleMouseMove = useCallback((e: MapLayerMouseEvent) => {
     if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null; }
+    
+    // Don't show tooltips while zooming/panning
+    if (isZoomingRef.current) {
+      setHover(null);
+      return;
+    }
+    
     const features = e.features;
     if (!features?.length) {
-      hoverTimer.current = setTimeout(() => setHover(null), 80);
+      hoverTimer.current = setTimeout(() => setHover(null), 60);
       if (mapRef.current) mapRef.current.getCanvas().style.cursor = "";
       return;
     }
@@ -644,10 +795,21 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
                layerId?.startsWith("geo-dep") || layerId?.startsWith("geo-prov") || layerId?.startsWith("geo-dist")) {
       const name = String(f.properties?.departamento ?? f.properties?.DEPARTAMEN ?? f.properties?.provincia ?? f.properties?.PROVINCIA ?? f.properties?.distrito ?? f.properties?.DISTRITO ?? "");
       const zoneLevel = layerId?.includes("dep") ? "departamento" : layerId?.includes("prov") ? "provincia" : "distrito";
-      setHover({ type: "zone", lng: e.lngLat.lng, lat: e.lngLat.lat, name, level: zoneLevel });
+      // Zone tooltips shown with small delay to reduce lag when panning
+      hoverTimer.current = setTimeout(() => {
+        if (!isZoomingRef.current) {
+          setHover({ type: "zone", lng: e.lngLat.lng, lat: e.lngLat.lat, name, level: zoneLevel });
+        }
+      }, 120);
+      return;
     } else if (layerId?.startsWith("sector") || layerId?.startsWith("geo-sector") || layerId?.startsWith("geo-subsector")) {
       const name = String(f.properties?.zone_name ?? f.properties?.DISTRITO ?? `Sector ${f.properties?.sector ?? f.properties?.SECTOR ?? ""}`);
-      setHover({ type: "zone", lng: e.lngLat.lng, lat: e.lngLat.lat, name, level: "sector" });
+      hoverTimer.current = setTimeout(() => {
+        if (!isZoomingRef.current) {
+          setHover({ type: "zone", lng: e.lngLat.lng, lat: e.lngLat.lat, name, level: "sector" });
+        }
+      }, 120);
+      return;
     } else {
       setHover(null);
     }
@@ -655,7 +817,7 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
 
   const handleMouseLeave = useCallback(() => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => setHover(null), 100);
+    setHover(null);
     if (mapRef.current) mapRef.current.getCanvas().style.cursor = "";
   }, []);
 
@@ -774,7 +936,10 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
     }
   }, [drillState.level, drillState.depCode, drillState.provCode, drillState.distCode, geoData]);
 
-  useEffect(() => () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }, []);
+  useEffect(() => () => { 
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    if (zoomEndTimer.current) clearTimeout(zoomEndTimer.current);
+  }, []);
 
   if (!ready || !tileUrl) {
     return (

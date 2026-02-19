@@ -4,14 +4,12 @@ import type { AgentStatus } from "./tierra-map";
 
 /* ========== Types ========== */
 
+type ActiveLayer = "datos" | "agentes" | "densidad" | null;
+
 type Props = {
-  showTracking: boolean;
-  showDatos: boolean;
-  showHeatmap: boolean;
+  activeLayer: ActiveLayer;
   showTable: boolean;
-  onToggleTracking: () => void;
-  onToggleDatos: () => void;
-  onToggleHeatmap: () => void;
+  onLayerChange: (layer: ActiveLayer) => void;
   onToggleTable: () => void;
   agentCount: number;
   formCount: number;
@@ -19,9 +17,7 @@ type Props = {
 };
 
 type LegendProps = {
-  showTracking: boolean;
-  showDatos: boolean;
-  showHeatmap: boolean;
+  activeLayer: ActiveLayer;
 };
 
 /* ========== Professional colors ========== */
@@ -33,15 +29,48 @@ const C = {
 
 /* ========== Layer Controls ========== */
 
-export function MapControls({ showTracking, showDatos, showHeatmap, showTable, onToggleTracking, onToggleDatos, onToggleHeatmap, onToggleTable, agentCount, formCount, primaryColor }: Props) {
+export function MapControls({ activeLayer, showTable, onLayerChange, onToggleTable, agentCount, formCount, primaryColor }: Props) {
   return (
     <div style={S.root}>
-      <div style={S.title}>CAPAS</div>
-      <LayerBtn active={showDatos} onClick={onToggleDatos} label="Datos" count={formCount} activeColor={C.datos} />
-      <LayerBtn active={showTracking} onClick={onToggleTracking} label="Agentes" count={agentCount} activeColor={C.agents} />
-      <LayerBtn active={showHeatmap} onClick={onToggleHeatmap} label="Densidad" activeColor={C.heat} />
+      <LayerBtn
+        active={activeLayer === "datos"}
+        onClick={() => onLayerChange(activeLayer === "datos" ? null : "datos")}
+        label="Datos"
+        count={formCount}
+        activeColor={C.datos}
+      />
+      <LayerBtn
+        active={activeLayer === "agentes"}
+        onClick={() => onLayerChange(activeLayer === "agentes" ? null : "agentes")}
+        label="Agentes"
+        count={agentCount}
+        activeColor={C.agents}
+      />
+      <LayerBtn
+        active={activeLayer === "densidad"}
+        onClick={() => onLayerChange(activeLayer === "densidad" ? null : "densidad")}
+        label="Densidad"
+        activeColor={C.heat}
+      />
       <div style={S.divider} />
-      <LayerBtn active={showTable} onClick={onToggleTable} label="Tabla" activeColor={primaryColor} />
+      <button
+        type="button"
+        onClick={onToggleTable}
+        style={{
+          ...S.btn,
+          backgroundColor: showTable ? primaryColor : "#f8fafc",
+          color: showTable ? "#fff" : "#475569",
+          borderColor: showTable ? primaryColor : "#e2e8f0",
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2" />
+          <path d="M3 9h18" />
+          <path d="M3 15h18" />
+          <path d="M9 3v18" />
+        </svg>
+        <span>Ver tabla</span>
+      </button>
     </div>
   );
 }
@@ -64,22 +93,23 @@ const STATUS_LEGEND: { status: AgentStatus; label: string; color: string }[] = [
   { status: "inactive", label: "Sin senal", color: "#64748b" },
 ];
 
-export function MapLegend({ showTracking, showDatos, showHeatmap }: LegendProps) {
+export function MapLegend({ activeLayer }: LegendProps) {
+  if (!activeLayer) return null;
   return (
     <div style={S.legend}>
-      {showDatos && (
+      {activeLayer === "datos" && (
         <div style={S.legendItem}>
           <span style={{ ...S.legendDot, backgroundColor: C.datos }} />
           <span style={S.legendLabel}>Dato</span>
         </div>
       )}
-      {showTracking && STATUS_LEGEND.map((s) => (
+      {activeLayer === "agentes" && STATUS_LEGEND.map((s) => (
         <div key={s.status} style={S.legendItem}>
           <span style={{ ...S.legendDot, backgroundColor: s.color }} />
           <span style={S.legendLabel}>{s.label}</span>
         </div>
       ))}
-      {showHeatmap && (
+      {activeLayer === "densidad" && (
         <div style={S.legendItem}>
           <div style={S.heatGradient} />
           <span style={S.legendLabel}>Densidad</span>
@@ -89,11 +119,14 @@ export function MapLegend({ showTracking, showDatos, showHeatmap }: LegendProps)
   );
 }
 
+/* ========== Export type ========== */
+
+export type { ActiveLayer };
+
 /* ========== Styles ========== */
 
 const S: Record<string, React.CSSProperties> = {
   root: { backgroundColor: "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)", borderRadius: 10, padding: 8, display: "flex", flexDirection: "column", gap: 3, border: "1px solid #e2e8f0", boxShadow: "0 1px 8px rgba(0,0,0,0.06)" },
-  title: { fontSize: 9, fontWeight: 700, color: "#94a3b8", letterSpacing: "0.1em", marginBottom: 1, paddingLeft: 4 },
   btn: { display: "flex", alignItems: "center", gap: 7, padding: "6px 10px", borderRadius: 6, border: "1px solid", fontSize: 11, fontWeight: 600, cursor: "pointer", transition: "all 0.15s ease", minWidth: 110 },
   count: { marginLeft: "auto", fontSize: 10, fontWeight: 700 },
   divider: { height: 1, backgroundColor: "#e2e8f0", margin: "1px 0" },
