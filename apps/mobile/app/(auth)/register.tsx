@@ -3,13 +3,10 @@
  *
  * Flujo simplificado en 2 pasos:
  * - Paso 1: Teléfono + Contraseña + Nombre
- * - Paso 2: Región + Candidato
+ * - Paso 2: Región + Candidato (solo aparece si hay match exacto por primer nombre)
  *
- * UX mejorada:
- * - Progreso visual con indicador de pasos
- * - Validación en tiempo real
- * - Búsqueda de candidato con lista visual
- * - Toggle de contraseña
+ * IMPORTANTE: No se muestra lista de candidatos por privacidad.
+ * El usuario debe conocer el primer nombre de su candidato.
  */
 
 import { useState, useEffect, useMemo } from 'react';
@@ -24,7 +21,6 @@ import {
   Text,
   TextInput,
   View,
-  FlatList,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -46,7 +42,6 @@ const BORDER_FOCUS = '#4A8AC4';
 const BG_INPUT = '#F8FAFC';
 const SUCCESS = '#22c55e';
 const SUCCESS_BG = '#f0fdf4';
-const ERROR = '#dc2626';
 const FONT = 'Montserrat-Bold';
 const FONT_REGULAR = 'Montserrat-Regular';
 
@@ -78,7 +73,7 @@ export default function RegisterScreen() {
   // Step 2
   const [region, setRegion] = useState<string | null>(null);
   const [candidateSearch, setCandidateSearch] = useState('');
-  const [selectedCandidate, setSelectedCandidate] = useState<CandidateInfo | null>(null);
+  const [matchedCandidate, setMatchedCandidate] = useState<CandidateInfo | null>(null);
 
   // ─── UI State ───────────────────────────────────────────────
   const [loading, setLoading] = useState(false);
@@ -102,15 +97,24 @@ export default function RegisterScreen() {
     })();
   }, []);
 
-  // ─── Filtered Candidates ────────────────────────────────────
-  const filteredCandidates = useMemo(() => {
-    if (!candidateSearch.trim()) return candidates;
-    const term = normalize(candidateSearch);
-    return candidates.filter((c) => {
-      const normalizedName = normalize(c.name);
-      const normalizedFirst = normalize(c.name.split(' ')[0]);
-      return normalizedFirst.startsWith(term) || normalizedName.includes(term);
+  // ─── Match Candidate by First Name ──────────────────────────
+  // Solo muestra si el primer nombre coincide exactamente (case/accent insensitive)
+  useEffect(() => {
+    const searchTerm = normalize(candidateSearch);
+    
+    // Necesita al menos 3 caracteres para buscar
+    if (searchTerm.length < 3) {
+      setMatchedCandidate(null);
+      return;
+    }
+
+    // Buscar match exacto por primer nombre
+    const match = candidates.find((c) => {
+      const firstName = normalize(c.name.split(' ')[0]);
+      return firstName === searchTerm;
     });
+
+    setMatchedCandidate(match ?? null);
   }, [candidateSearch, candidates]);
 
   // ─── Validation ─────────────────────────────────────────────
@@ -123,13 +127,12 @@ export default function RegisterScreen() {
   }, [phone, password, fullName]);
 
   const step2Valid = useMemo(() => {
-    return region !== null && selectedCandidate !== null;
-  }, [region, selectedCandidate]);
+    return region !== null && matchedCandidate !== null;
+  }, [region, matchedCandidate]);
 
   // ─── Handlers ───────────────────────────────────────────────
   const handleNext = () => {
     if (step === 1) {
-      // Validate step 1
       if (!phone.trim()) {
         Alert.alert('Campo requerido', 'Ingresa tu número de teléfono.');
         return;
@@ -159,7 +162,7 @@ export default function RegisterScreen() {
   };
 
   const handleRegister = async () => {
-    if (!step2Valid) return;
+    if (!step2Valid || !matchedCandidate) return;
 
     setLoading(true);
     const email = `${phone.trim()}@goberna.pe`;
@@ -172,7 +175,7 @@ export default function RegisterScreen() {
         password: password.trim(),
         phone: phone.trim(),
         region: region!,
-        campaign_id: selectedCandidate!.id,
+        campaign_id: matchedCandidate.id,
       });
 
       if (!registerResult.ok) {
@@ -201,11 +204,6 @@ export default function RegisterScreen() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const selectCandidate = (candidate: CandidateInfo) => {
-    setSelectedCandidate(candidate);
-    setCandidateSearch(candidate.name);
   };
 
   // ─── Photo URL Helper ───────────────────────────────────────
@@ -367,7 +365,7 @@ export default function RegisterScreen() {
             <View style={styles.stepContainer}>
               <Text style={styles.stepTitle}>¿A qué campaña te unes?</Text>
               <Text style={styles.stepDescription}>
-                Selecciona tu región y busca a tu candidato
+                Selecciona tu región y escribe el primer nombre de tu candidato
               </Text>
 
               {/* Region */}
@@ -380,165 +378,69 @@ export default function RegisterScreen() {
                 />
               </View>
 
-              {/* Candidate Search */}
+              {/* Candidate Search - Solo primer nombre */}
               <View style={styles.field}>
-                <Text style={styles.label}>Buscar candidato</Text>
+                <Text style={styles.label}>Primer nombre del candidato</Text>
                 <View style={[styles.inputWrapper, searchFocused && styles.inputWrapperFocused]}>
                   <Ionicons 
-                    name="search-outline" 
+                    name="person-outline" 
                     size={20} 
                     color={searchFocused ? BORDER_FOCUS : TEXT_MUTED} 
                     style={styles.inputIcon}
                   />
                   <TextInput
                     style={styles.input}
-                    placeholder="Escribe el nombre..."
+                    placeholder="Ej: César, Rosa, Juan..."
                     placeholderTextColor={TEXT_MUTED}
                     value={candidateSearch}
-                    onChangeText={(text) => {
-                      setCandidateSearch(text);
-                      if (selectedCandidate && text !== selectedCandidate.name) {
-                        setSelectedCandidate(null);
-                      }
-                    }}
+                    onChangeText={setCandidateSearch}
                     autoCapitalize="words"
+                    autoCorrect={false}
                     onFocus={() => setSearchFocused(true)}
                     onBlur={() => setSearchFocused(false)}
                   />
-                  {selectedCandidate && (
+                  {matchedCandidate && (
                     <Ionicons name="checkmark-circle" size={20} color={SUCCESS} />
                   )}
                 </View>
+                
+                {/* Hint when typing */}
+                {!matchedCandidate && candidateSearch.length > 0 && candidateSearch.length < 3 && (
+                  <Text style={styles.hint}>Escribe al menos 3 letras</Text>
+                )}
+                
+                {/* No match found */}
+                {!matchedCandidate && candidateSearch.length >= 3 && !loadingCandidates && (
+                  <Text style={styles.hintError}>
+                    No encontramos un candidato con ese nombre
+                  </Text>
+                )}
               </View>
 
-              {/* Selected Candidate Card */}
-              {selectedCandidate && (
-                <View style={styles.selectedCard}>
-                  {getPhotoUrl(selectedCandidate) ? (
+              {/* Matched Candidate Card - Solo aparece con match exacto */}
+              {matchedCandidate && (
+                <View style={styles.matchedCard}>
+                  {getPhotoUrl(matchedCandidate) ? (
                     <Image
-                      source={{ uri: getPhotoUrl(selectedCandidate)! }}
+                      source={{ uri: getPhotoUrl(matchedCandidate)! }}
                       style={styles.candidatePhoto}
                       contentFit="cover"
                     />
                   ) : (
                     <View style={[styles.candidatePhoto, styles.candidatePhotoPlaceholder]}>
                       <Text style={styles.candidatePhotoText}>
-                        {selectedCandidate.name.charAt(0)}
+                        {matchedCandidate.name.charAt(0)}
                       </Text>
                     </View>
                   )}
                   <View style={styles.candidateInfo}>
-                    <Text style={styles.candidateName}>{selectedCandidate.name}</Text>
-                    <Text style={styles.candidateCargo}>{selectedCandidate.cargo}</Text>
+                    <Text style={styles.candidateName}>{matchedCandidate.name}</Text>
+                    <Text style={styles.candidateCargo}>{matchedCandidate.cargo}</Text>
                     <Text style={styles.candidatePartido}>
-                      {selectedCandidate.partido} · #{selectedCandidate.numero}
+                      {matchedCandidate.partido} · #{matchedCandidate.numero}
                     </Text>
                   </View>
-                  <Pressable 
-                    onPress={() => {
-                      setSelectedCandidate(null);
-                      setCandidateSearch('');
-                    }}
-                    hitSlop={12}
-                  >
-                    <Ionicons name="close-circle" size={24} color={TEXT_MUTED} />
-                  </Pressable>
-                </View>
-              )}
-
-              {/* Candidate List */}
-              {!selectedCandidate && candidateSearch.trim().length > 0 && (
-                <View style={styles.candidateList}>
-                  {loadingCandidates ? (
-                    <View style={styles.loadingContainer}>
-                      <ActivityIndicator color={BRAND_BLUE} />
-                      <Text style={styles.loadingText}>Cargando candidatos...</Text>
-                    </View>
-                  ) : filteredCandidates.length === 0 ? (
-                    <View style={styles.emptyContainer}>
-                      <Ionicons name="search" size={32} color={TEXT_MUTED} />
-                      <Text style={styles.emptyText}>No encontramos candidatos</Text>
-                      <Text style={styles.emptyHint}>Intenta con otro nombre</Text>
-                    </View>
-                  ) : (
-                    <FlatList
-                      data={filteredCandidates.slice(0, 5)}
-                      keyExtractor={(item) => item.id}
-                      scrollEnabled={false}
-                      renderItem={({ item }) => (
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.candidateItem,
-                            pressed && styles.candidateItemPressed,
-                          ]}
-                          onPress={() => selectCandidate(item)}
-                        >
-                          {getPhotoUrl(item) ? (
-                            <Image
-                              source={{ uri: getPhotoUrl(item)! }}
-                              style={styles.candidateItemPhoto}
-                              contentFit="cover"
-                            />
-                          ) : (
-                            <View style={[styles.candidateItemPhoto, styles.candidatePhotoPlaceholder]}>
-                              <Text style={styles.candidatePhotoTextSmall}>
-                                {item.name.charAt(0)}
-                              </Text>
-                            </View>
-                          )}
-                          <View style={styles.candidateItemInfo}>
-                            <Text style={styles.candidateItemName}>{item.name}</Text>
-                            <Text style={styles.candidateItemCargo}>
-                              {item.cargo} · {item.partido}
-                            </Text>
-                          </View>
-                          <Ionicons name="chevron-forward" size={20} color={TEXT_MUTED} />
-                        </Pressable>
-                      )}
-                    />
-                  )}
-                </View>
-              )}
-
-              {/* Show all candidates if no search */}
-              {!selectedCandidate && candidateSearch.trim().length === 0 && !loadingCandidates && (
-                <View style={styles.candidateList}>
-                  <Text style={styles.listTitle}>Candidatos disponibles</Text>
-                  <FlatList
-                    data={candidates.slice(0, 6)}
-                    keyExtractor={(item) => item.id}
-                    scrollEnabled={false}
-                    renderItem={({ item }) => (
-                      <Pressable
-                        style={({ pressed }) => [
-                          styles.candidateItem,
-                          pressed && styles.candidateItemPressed,
-                        ]}
-                        onPress={() => selectCandidate(item)}
-                      >
-                        {getPhotoUrl(item) ? (
-                          <Image
-                            source={{ uri: getPhotoUrl(item)! }}
-                            style={styles.candidateItemPhoto}
-                            contentFit="cover"
-                          />
-                        ) : (
-                          <View style={[styles.candidateItemPhoto, styles.candidatePhotoPlaceholder]}>
-                            <Text style={styles.candidatePhotoTextSmall}>
-                              {item.name.charAt(0)}
-                            </Text>
-                          </View>
-                        )}
-                        <View style={styles.candidateItemInfo}>
-                          <Text style={styles.candidateItemName}>{item.name}</Text>
-                          <Text style={styles.candidateItemCargo}>
-                            {item.cargo} · {item.partido}
-                          </Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={20} color={TEXT_MUTED} />
-                      </Pressable>
-                    )}
-                  />
+                  <Ionicons name="checkmark-circle" size={28} color={SUCCESS} />
                 </View>
               )}
 
@@ -694,7 +596,7 @@ const styles = StyleSheet.create({
   },
   hintError: {
     fontSize: 12,
-    color: ERROR,
+    color: '#dc2626',
     fontFamily: FONT_REGULAR,
     marginLeft: 4,
   },
@@ -741,11 +643,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   
-  // Selected Candidate Card
-  selectedCard: {
+  // Matched Candidate Card
+  matchedCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    padding: 14,
     borderRadius: 14,
     backgroundColor: SUCCESS_BG,
     borderWidth: 1.5,
@@ -768,11 +670,6 @@ const styles = StyleSheet.create({
     color: BRAND_YELLOW,
     fontFamily: FONT,
   },
-  candidatePhotoTextSmall: {
-    fontSize: 16,
-    color: BRAND_YELLOW,
-    fontFamily: FONT,
-  },
   candidateInfo: {
     flex: 1,
   },
@@ -792,81 +689,5 @@ const styles = StyleSheet.create({
     fontFamily: FONT_REGULAR,
     color: TEXT_MUTED,
     marginTop: 2,
-  },
-  
-  // Candidate List
-  candidateList: {
-    backgroundColor: BG_INPUT,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: BORDER,
-    overflow: 'hidden',
-  },
-  listTitle: {
-    fontSize: 12,
-    fontFamily: FONT,
-    color: TEXT_MUTED,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    padding: 12,
-    paddingBottom: 8,
-  },
-  candidateItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: BORDER,
-  },
-  candidateItemPressed: {
-    backgroundColor: '#FFFFFF',
-  },
-  candidateItemPhoto: {
-    width: 44,
-    height: 44,
-    borderRadius: 10,
-    backgroundColor: '#e2e8f0',
-  },
-  candidateItemInfo: {
-    flex: 1,
-  },
-  candidateItemName: {
-    fontSize: 15,
-    fontFamily: FONT,
-    color: TEXT_DARK,
-  },
-  candidateItemCargo: {
-    fontSize: 12,
-    fontFamily: FONT_REGULAR,
-    color: TEXT_MUTED,
-    marginTop: 2,
-  },
-  
-  // Loading/Empty States
-  loadingContainer: {
-    padding: 24,
-    alignItems: 'center',
-    gap: 8,
-  },
-  loadingText: {
-    fontSize: 13,
-    fontFamily: FONT_REGULAR,
-    color: TEXT_MUTED,
-  },
-  emptyContainer: {
-    padding: 24,
-    alignItems: 'center',
-    gap: 8,
-  },
-  emptyText: {
-    fontSize: 14,
-    fontFamily: FONT,
-    color: TEXT_DARK,
-  },
-  emptyHint: {
-    fontSize: 13,
-    fontFamily: FONT_REGULAR,
-    color: TEXT_MUTED,
   },
 });
