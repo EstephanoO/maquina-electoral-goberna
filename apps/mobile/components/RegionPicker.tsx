@@ -14,11 +14,11 @@ import {
   Text,
   TextInput,
   Pressable,
-  FlatList,
+  ScrollView,
   StyleSheet,
   Keyboard,
 } from 'react-native';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   DEPARTAMENTOS,
@@ -93,11 +93,12 @@ export default function RegionPicker({ value, onSelect, placeholder = 'Seleccion
     []
   );
 
-  const renderItem = useCallback(
-    ({ item }: { item: Departamento }) => {
+  const renderOption = useCallback(
+    (item: Departamento) => {
       const isSelected = tempSelected === item.code;
       return (
         <Pressable
+          key={item.code}
           style={[styles.option, isSelected && styles.optionSelected]}
           onPress={() => setTempSelected(item.code)}
         >
@@ -113,8 +114,6 @@ export default function RegionPicker({ value, onSelect, placeholder = 'Seleccion
     },
     [tempSelected]
   );
-
-  const keyExtractor = useCallback((item: Departamento) => item.code, []);
 
   return (
     <>
@@ -139,9 +138,14 @@ export default function RegionPicker({ value, onSelect, placeholder = 'Seleccion
             handleIndicatorStyle={styles.handle}
             backgroundStyle={styles.sheetBackground}
           >
-            <BottomSheetView style={styles.sheetContent}>
+            <BottomSheetScrollView 
+              style={styles.sheetContent}
+              contentContainerStyle={styles.sheetContentContainer}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
               {/* Header */}
-              <Text style={styles.sheetTitle}>Selecciona tu region</Text>
+              <Text style={styles.sheetTitle}>Selecciona tu región</Text>
 
               {/* Search Input */}
               <View style={styles.searchContainer}>
@@ -157,16 +161,10 @@ export default function RegionPicker({ value, onSelect, placeholder = 'Seleccion
                 />
               </View>
 
-              {/* List */}
-              <FlatList
-                data={filteredDepartamentos}
-                renderItem={renderItem}
-                keyExtractor={keyExtractor}
-                style={styles.list}
-                contentContainerStyle={styles.listContent}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-              />
+              {/* List - usando map en vez de FlatList para evitar nested virtualized lists */}
+              <View style={styles.listContent}>
+                {filteredDepartamentos.map(renderOption)}
+              </View>
 
               {/* Confirm Button */}
               <Pressable
@@ -176,7 +174,7 @@ export default function RegionPicker({ value, onSelect, placeholder = 'Seleccion
               >
                 <Text style={styles.confirmButtonText}>Confirmar</Text>
               </Pressable>
-            </BottomSheetView>
+            </BottomSheetScrollView>
           </BottomSheet>
         </GestureHandlerRootView>
       )}
@@ -235,6 +233,8 @@ const styles = StyleSheet.create({
   },
   sheetContent: {
     flex: 1,
+  },
+  sheetContentContainer: {
     paddingHorizontal: 20,
     paddingBottom: 24,
   },
@@ -272,9 +272,6 @@ const styles = StyleSheet.create({
   },
 
   // List
-  list: {
-    flex: 1,
-  },
   listContent: {
     paddingBottom: 8,
   },
