@@ -2,9 +2,9 @@
  * Reuniones — Lista de meets + detalle con participantes y contador de datos.
  *
  * - Carga meets reales desde GET /api/meets/active
- * - Admin/supervisor pueden crear meets con FAB (+)
+ * - Candidato y superiores pueden crear meets con FAB (+)
  * - Click en meet abre detalle con participantes y form count
- * - Admin/supervisor ven seccion "Equipo" con todos los agentes de la campana
+ * - Candidato y superiores ven seccion "Equipo" con todos los agentes de la campana
  * - Pull to refresh
  */
 
@@ -74,31 +74,28 @@ const STATUS_COLORS: Record<string, string> = {
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin',
   consultor: 'Consultor',
-  jefe_campana: 'Jefe Campana',
+  candidato: 'Candidato',
   brigadista_zonal: 'Brigadista Zonal',
-  agente_campo: 'Agente',
-  // Aliases
-  supervisor: 'Supervisor',
-  agent: 'Agente',
+  agente_campo: 'Agente de Campo',
+  agente_digital: 'Agente Digital',
 };
 
 const ROLE_ICONS: Record<string, string> = {
   admin: 'admin-panel-settings',
   consultor: 'psychology',
-  jefe_campana: 'supervisor-account',
+  candidato: 'star',
   brigadista_zonal: 'map',
   agente_campo: 'person',
-  // Aliases
-  supervisor: 'manage-accounts',
-  agent: 'person',
+  agente_digital: 'computer',
 };
 
 const BACKEND_ROLES = [
   { key: 'admin', label: 'Admin', icon: 'admin-panel-settings' },
   { key: 'consultor', label: 'Consultor', icon: 'psychology' },
-  { key: 'jefe_campana', label: 'Jefe Campana', icon: 'supervisor-account' },
+  { key: 'candidato', label: 'Candidato', icon: 'star' },
   { key: 'brigadista_zonal', label: 'Brigadista Zonal', icon: 'map' },
   { key: 'agente_campo', label: 'Agente de Campo', icon: 'person' },
+  { key: 'agente_digital', label: 'Agente Digital', icon: 'computer' },
 ];
 
 function formatDate(iso: string): string {
@@ -129,12 +126,12 @@ export default function ReunionesScreen() {
   const agentId = config?.agent.id ?? '';
   const agentRole = config?.agent.role ?? 'agent';
   
-  // Roles that can see all team members (not filtered by region)
-  const isAdmin = agentRole === 'admin' || agentRole === 'supervisor' || 
-                  agentRole === 'consultor' || agentRole === 'jefe_campana';
+  // Permission levels
+  const isCandidatoOrAbove = agentRole === 'admin' || agentRole === 'consultor' || agentRole === 'candidato';
   const isBrigadistaZonal = agentRole === 'brigadista_zonal';
-  const canSeeTeam = isAdmin || isBrigadistaZonal;
-  const canManageRoles = isAdmin; // Only admin/jefe can change roles
+  const canSeeTeam = isCandidatoOrAbove || isBrigadistaZonal;
+  const canManageRoles = isCandidatoOrAbove;   // candidato+ can change roles
+  const canAcceptRequests = isCandidatoOrAbove; // candidato+ can accept new members (used in solicitudes tab)
 
   const [meets, setMeets] = useState<Meet[]>([]);
   const [members, setMembers] = useState<CampaignMember[]>([]);
@@ -219,7 +216,7 @@ export default function ReunionesScreen() {
   const { candidate, agent, campaign } = config;
   const primary = candidate.color_primario;
   const secondary = candidate.color_secundario;
-  const canCreate = agent.role === 'admin' || agent.role === 'supervisor';
+  const canCreate = isCandidatoOrAbove;
 
   // ── Render meet card ────────────────────────────────────
   const renderMeet = ({ item }: { item: Meet }) => (
@@ -384,9 +381,9 @@ export default function ReunionesScreen() {
           ListHeaderComponent={
             <View style={styles.teamStats}>
               <StatPill icon="admin-panel-settings" label="Admin" count={filteredMembers.filter(m => m.role === 'admin').length} color="#7C3AED" />
-              <StatPill icon="supervisor-account" label="Jefes" count={filteredMembers.filter(m => m.role === 'jefe_campana' || m.role === 'consultor').length} color="#2563EB" />
-              <StatPill icon="map" label="Brigadistas" count={filteredMembers.filter(m => m.role === 'brigadista_zonal').length} color="#F59E0B" />
-              <StatPill icon="person" label="Agentes" count={filteredMembers.filter(m => m.role === 'agente_campo').length} color="#059669" />
+             <StatPill icon="star" label="Candidatos" count={filteredMembers.filter(m => m.role === 'candidato' || m.role === 'consultor').length} color="#2563EB" />
+             <StatPill icon="map" label="Brigadistas" count={filteredMembers.filter(m => m.role === 'brigadista_zonal').length} color="#F59E0B" />
+             <StatPill icon="person" label="Agentes" count={filteredMembers.filter(m => m.role === 'agente_campo' || m.role === 'agente_digital').length} color="#059669" />
             </View>
           }
           ListEmptyComponent={
@@ -399,7 +396,7 @@ export default function ReunionesScreen() {
         />
       )}
 
-      {/* FAB — only for admin/supervisor, only on meets tab */}
+      {/* FAB — only for candidato and above, only on meets tab */}
       {canCreate && activeTab === 'meets' && (
         <Pressable
           style={[styles.fab, { backgroundColor: secondary }]}
@@ -669,8 +666,8 @@ function MeetDetailModal({
                 </>
               )}
 
-              {/* Delete button — admin/supervisor only */}
-              {(userRole === 'admin' || userRole === 'supervisor') && (
+             {/* Delete button — candidato and above only */}
+             {(userRole === 'admin' || userRole === 'consultor' || userRole === 'candidato') && (
                 <Pressable
                   style={[styles.deleteBtn, actionLoading && { opacity: 0.6 }]}
                   disabled={actionLoading}

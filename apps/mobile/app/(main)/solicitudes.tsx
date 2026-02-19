@@ -4,7 +4,7 @@
  * Data from GET /api/access-requests/pending.
  * 
  * Features:
- * - Select role before approving (agente_campo, brigadista_zonal, jefe_campana)
+ * - Select role before approving (agente_campo, agente_digital, brigadista_zonal, candidato)
  * - Visual feedback with loading states
  * - Swipe to see more actions
  */
@@ -50,11 +50,20 @@ const ASSIGNABLE_ROLES: RoleOption[] = [
   {
     key: 'agente_campo',
     label: 'Agente de Campo',
-    shortLabel: 'Agente',
+    shortLabel: 'Ag. Campo',
     icon: 'person',
     color: '#059669',
     bgColor: '#D1FAE5',
     description: 'Operador territorial, sube formularios',
+  },
+  {
+    key: 'agente_digital',
+    label: 'Agente Digital',
+    shortLabel: 'Ag. Digital',
+    icon: 'computer',
+    color: '#0891B2',
+    bgColor: '#CFFAFE',
+    description: 'Acceso al CMS web',
   },
   {
     key: 'brigadista_zonal',
@@ -69,7 +78,7 @@ const ASSIGNABLE_ROLES: RoleOption[] = [
     key: 'candidato',
     label: 'Candidato',
     shortLabel: 'Candidato',
-    icon: 'supervisor-account',
+    icon: 'star',
     color: '#2563EB',
     bgColor: '#DBEAFE',
     description: 'Control total de la campaña',

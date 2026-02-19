@@ -4,7 +4,7 @@
  * Tab visibility:
  * - Dashboard: Always visible
  * - Reuniones (Metas): Always visible  
- * - Solicitudes: Only for admin/supervisor roles
+ * - Solicitudes: Only for candidato and above
  * - new-form: Hidden (accessed via FAB)
  */
 
@@ -24,8 +24,8 @@ export default function MainLayout() {
   const primary = candidate.color_primario;
   const secondary = candidate.color_secundario;
 
-  // Solicitudes tab visible for admin, consultor, candidato, and jefe_campana (alias) roles
-  const showSolicitudes = ['admin', 'consultor', 'candidato', 'jefe_campana'].includes(agent.role);
+  // Solicitudes tab visible for candidato and above
+  const showSolicitudes = ['admin', 'consultor', 'candidato'].includes(agent.role);
 
   return (
     <Tabs
