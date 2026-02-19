@@ -1,5 +1,5 @@
 /**
- * RegionPicker - Bottom Sheet con buscador para seleccionar departamento
+ * RegionPicker - Modal fullscreen con buscador para seleccionar departamento
  * 
  * Uso:
  * <RegionPicker
@@ -8,7 +8,7 @@
  * />
  */
 
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,23 +16,30 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Keyboard,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import {
-  DEPARTAMENTOS,
   searchDepartamentos,
   getDepartamentoName,
   type Departamento,
 } from '@/lib/constants/departamentos';
 
+// ─── Design Tokens ─────────────────────────────────────────────
 const BRAND_BLUE = '#163960';
 const BRAND_YELLOW = '#FFC800';
 const TEXT_DARK = '#163960';
-const TEXT_MUTED = 'rgba(22, 57, 96, 0.7)';
+const TEXT_MUTED = 'rgba(22, 57, 96, 0.5)';
 const BORDER = '#E1E6F0';
+const BORDER_FOCUS = '#4A8AC4';
+const BG_INPUT = '#F8FAFC';
+const SUCCESS = '#22c55e';
+const SUCCESS_BG = '#f0fdf4';
 const FONT = 'Montserrat-Bold';
+const FONT_REGULAR = 'Montserrat-Regular';
 
 type Props = {
   value: string | null;
@@ -40,11 +47,10 @@ type Props = {
   placeholder?: string;
 };
 
-export default function RegionPicker({ value, onSelect, placeholder = 'Selecciona tu region' }: Props) {
-  const bottomSheetRef = useRef<BottomSheet>(null);
+export default function RegionPicker({ value, onSelect, placeholder = 'Selecciona tu región' }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const [tempSelected, setTempSelected] = useState<string | null>(value);
+  const [searchFocused, setSearchFocused] = useState(false);
 
   // Filtered list based on search
   const filteredDepartamentos = useMemo(
@@ -55,52 +61,32 @@ export default function RegionPicker({ value, onSelect, placeholder = 'Seleccion
   // Display text for the trigger button
   const displayText = value ? getDepartamentoName(value) : placeholder;
 
-  const openSheet = useCallback(() => {
-    setTempSelected(value);
+  const openModal = useCallback(() => {
     setSearch('');
     setIsOpen(true);
-    bottomSheetRef.current?.expand();
-  }, [value]);
+  }, []);
 
-  const closeSheet = useCallback(() => {
+  const closeModal = useCallback(() => {
     setIsOpen(false);
-    Keyboard.dismiss();
-    bottomSheetRef.current?.close();
   }, []);
 
-  const handleConfirm = useCallback(() => {
-    if (tempSelected) {
-      onSelect(tempSelected);
-    }
-    closeSheet();
-  }, [tempSelected, onSelect, closeSheet]);
-
-  const handleSheetChange = useCallback((index: number) => {
-    if (index === -1) {
-      setIsOpen(false);
-    }
-  }, []);
-
-  const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.5}
-      />
-    ),
-    []
-  );
+  const handleSelect = useCallback((code: string) => {
+    onSelect(code);
+    setIsOpen(false);
+  }, [onSelect]);
 
   const renderOption = useCallback(
     (item: Departamento) => {
-      const isSelected = tempSelected === item.code;
+      const isSelected = value === item.code;
       return (
         <Pressable
           key={item.code}
-          style={[styles.option, isSelected && styles.optionSelected]}
-          onPress={() => setTempSelected(item.code)}
+          style={({ pressed }) => [
+            styles.option,
+            isSelected && styles.optionSelected,
+            pressed && styles.optionPressed,
+          ]}
+          onPress={() => handleSelect(item.code)}
         >
           <View style={[styles.radio, isSelected && styles.radioSelected]}>
             {isSelected && <View style={styles.radioInner} />}
@@ -108,48 +94,72 @@ export default function RegionPicker({ value, onSelect, placeholder = 'Seleccion
           <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
             {item.name}
           </Text>
-          {isSelected && <Text style={styles.checkmark}>✓</Text>}
+          {isSelected && (
+            <Ionicons name="checkmark-circle" size={22} color={SUCCESS} />
+          )}
         </Pressable>
       );
     },
-    [tempSelected]
+    [value, handleSelect]
   );
 
   return (
     <>
       {/* Trigger Button */}
-      <Pressable style={[styles.trigger, value && styles.triggerSelected]} onPress={openSheet}>
+      <Pressable 
+        style={({ pressed }) => [
+          styles.trigger, 
+          value && styles.triggerSelected,
+          pressed && styles.triggerPressed,
+        ]} 
+        onPress={openModal}
+      >
+        <Ionicons 
+          name="location-outline" 
+          size={20} 
+          color={value ? BRAND_BLUE : TEXT_MUTED} 
+          style={styles.triggerIcon}
+        />
         <Text style={[styles.triggerText, !value && styles.triggerPlaceholder]}>
           {displayText}
         </Text>
-        <Text style={styles.triggerIcon}>▼</Text>
+        <Ionicons 
+          name="chevron-down" 
+          size={20} 
+          color={TEXT_MUTED} 
+        />
       </Pressable>
 
-      {/* Bottom Sheet - only render when open for performance */}
-      {isOpen && (
-        <GestureHandlerRootView style={styles.sheetContainer}>
-          <BottomSheet
-            ref={bottomSheetRef}
-            index={0}
-            snapPoints={['70%']}
-            enablePanDownToClose
-            onChange={handleSheetChange}
-            backdropComponent={renderBackdrop}
-            handleIndicatorStyle={styles.handle}
-            backgroundStyle={styles.sheetBackground}
+      {/* Modal - siempre encima de todo */}
+      <Modal
+        visible={isOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeModal}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <KeyboardAvoidingView
+            style={styles.flex}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
-            <BottomSheetScrollView 
-              style={styles.sheetContent}
-              contentContainerStyle={styles.sheetContentContainer}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              {/* Header */}
-              <Text style={styles.sheetTitle}>Selecciona tu región</Text>
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <Pressable onPress={closeModal} style={styles.closeBtn} hitSlop={12}>
+                <Ionicons name="close" size={28} color={TEXT_DARK} />
+              </Pressable>
+              <Text style={styles.modalTitle}>Selecciona tu región</Text>
+              <View style={styles.headerSpacer} />
+            </View>
 
-              {/* Search Input */}
-              <View style={styles.searchContainer}>
-                <Text style={styles.searchIcon}>🔍</Text>
+            {/* Search Input */}
+            <View style={styles.searchWrapper}>
+              <View style={[styles.searchContainer, searchFocused && styles.searchContainerFocused]}>
+                <Ionicons 
+                  name="search-outline" 
+                  size={20} 
+                  color={searchFocused ? BORDER_FOCUS : TEXT_MUTED} 
+                  style={styles.searchIcon}
+                />
                 <TextInput
                   style={styles.searchInput}
                   placeholder="Buscar departamento..."
@@ -158,122 +168,138 @@ export default function RegionPicker({ value, onSelect, placeholder = 'Seleccion
                   onChangeText={setSearch}
                   autoCapitalize="none"
                   autoCorrect={false}
+                  onFocus={() => setSearchFocused(true)}
+                  onBlur={() => setSearchFocused(false)}
                 />
+                {search.length > 0 && (
+                  <Pressable onPress={() => setSearch('')} hitSlop={8}>
+                    <Ionicons name="close-circle" size={20} color={TEXT_MUTED} />
+                  </Pressable>
+                )}
               </View>
+            </View>
 
-              {/* List - usando map en vez de FlatList para evitar nested virtualized lists */}
-              <View style={styles.listContent}>
-                {filteredDepartamentos.map(renderOption)}
-              </View>
-
-              {/* Confirm Button */}
-              <Pressable
-                style={[styles.confirmButton, !tempSelected && styles.confirmButtonDisabled]}
-                onPress={handleConfirm}
-                disabled={!tempSelected}
-              >
-                <Text style={styles.confirmButtonText}>Confirmar</Text>
-              </Pressable>
-            </BottomSheetScrollView>
-          </BottomSheet>
-        </GestureHandlerRootView>
-      )}
+            {/* List */}
+            <ScrollView 
+              style={styles.list}
+              contentContainerStyle={styles.listContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {filteredDepartamentos.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="search" size={48} color={TEXT_MUTED} />
+                  <Text style={styles.emptyText}>No se encontraron resultados</Text>
+                </View>
+              ) : (
+                filteredDepartamentos.map(renderOption)
+              )}
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
     </>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  
   // Trigger button
   trigger: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: BORDER,
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 14,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: BG_INPUT,
   },
   triggerSelected: {
-    borderColor: BRAND_BLUE,
-    backgroundColor: '#F0F4F8',
+    borderColor: BORDER_FOCUS,
+    backgroundColor: '#FFFFFF',
+  },
+  triggerPressed: {
+    opacity: 0.8,
+  },
+  triggerIcon: {
+    marginRight: 10,
   },
   triggerText: {
+    flex: 1,
     fontSize: 16,
     color: TEXT_DARK,
-    fontFamily: FONT,
-    flex: 1,
+    fontFamily: FONT_REGULAR,
   },
   triggerPlaceholder: {
     color: TEXT_MUTED,
   },
-  triggerIcon: {
-    fontSize: 12,
-    color: TEXT_MUTED,
-    marginLeft: 8,
-  },
 
-  // Sheet container
-  sheetContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 1000,
-  },
-  sheetBackground: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-  },
-  handle: {
-    backgroundColor: '#D1D5DB',
-    width: 40,
-  },
-  sheetContent: {
+  // Modal
+  modalContainer: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
-  sheetContentContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 24,
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
   },
-
-  // Header
-  sheetTitle: {
+  closeBtn: {
+    padding: 4,
+  },
+  modalTitle: {
+    flex: 1,
     fontSize: 18,
     color: TEXT_DARK,
     fontFamily: FONT,
     textAlign: 'center',
-    marginBottom: 16,
+  },
+  headerSpacer: {
+    width: 36,
   },
 
   // Search
+  searchWrapper: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: BORDER,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    backgroundColor: '#F8FAFC',
-    marginBottom: 12,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    backgroundColor: BG_INPUT,
+  },
+  searchContainerFocused: {
+    borderColor: BORDER_FOCUS,
+    backgroundColor: '#FFFFFF',
   },
   searchIcon: {
-    fontSize: 16,
-    marginRight: 8,
+    marginRight: 10,
   },
   searchInput: {
     flex: 1,
     paddingVertical: 12,
     fontSize: 16,
     color: TEXT_DARK,
-    fontFamily: FONT,
+    fontFamily: FONT_REGULAR,
   },
 
   // List
+  list: {
+    flex: 1,
+  },
   listContent: {
-    paddingBottom: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
   },
 
   // Option item
@@ -281,12 +307,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderRadius: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
     marginBottom: 4,
+    backgroundColor: '#FFFFFF',
   },
   optionSelected: {
-    backgroundColor: '#F0FDF4',
+    backgroundColor: SUCCESS_BG,
+  },
+  optionPressed: {
+    backgroundColor: BG_INPUT,
   },
   radio: {
     width: 22,
@@ -299,44 +329,35 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   radioSelected: {
-    borderColor: '#22c55e',
+    borderColor: SUCCESS,
   },
   radioInner: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#22c55e',
+    backgroundColor: SUCCESS,
   },
   optionText: {
     flex: 1,
     fontSize: 16,
     color: TEXT_DARK,
-    fontFamily: FONT,
+    fontFamily: FONT_REGULAR,
   },
   optionTextSelected: {
     color: '#15803d',
-  },
-  checkmark: {
-    fontSize: 18,
-    color: '#22c55e',
+    fontFamily: FONT,
   },
 
-  // Confirm button
-  confirmButton: {
-    backgroundColor: BRAND_YELLOW,
-    borderRadius: 14,
-    padding: 16,
+  // Empty state
+  emptyState: {
     alignItems: 'center',
-    marginTop: 12,
+    justifyContent: 'center',
+    paddingVertical: 48,
+    gap: 12,
   },
-  confirmButtonDisabled: {
-    opacity: 0.5,
-  },
-  confirmButtonText: {
-    fontSize: 14,
-    color: BRAND_BLUE,
-    fontFamily: FONT,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  emptyText: {
+    fontSize: 15,
+    color: TEXT_MUTED,
+    fontFamily: FONT_REGULAR,
   },
 });
