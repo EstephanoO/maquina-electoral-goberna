@@ -110,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refresh_token: string;
       user: User;
       campaigns: Campaign[];
-    }>("/api/auth/login", { email, password });
+    }>("/api/auth/login", { identifier: email, password });
 
     if (!res.ok || !res.data) {
       return { ok: false, error: res.error?.message ?? "Error de autenticación" };
