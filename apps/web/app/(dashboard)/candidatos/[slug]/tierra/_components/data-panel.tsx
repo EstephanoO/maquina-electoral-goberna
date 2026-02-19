@@ -5,7 +5,14 @@ import type { FormRecord } from "@/lib/services";
 import { deleteFormsBatch } from "@/lib/services";
 import { formCoordsToLatLng } from "@/lib/utils";
 
+import type { EnrichedAgent } from "./types";
+import type { LogEntry } from "./activity-log";
+import { AgentsTab } from "./agents-tab";
+import { LogTab } from "./log-tab";
+
 /* ========== Types ========== */
+
+export type PanelTab = "datos" | "agentes" | "log";
 
 type Props = {
   forms: FormRecord[];
@@ -17,11 +24,42 @@ type Props = {
   campaignId: string;
   isAdmin?: boolean;
   onFormsDeleted?: () => void;
+  /* Agents tab */
+  agents: EnrichedAgent[];
+  selectedAgentId: string | null;
+  onSelectAgent: (agentId: string) => void;
+  onWhatsApp?: (agent: EnrichedAgent) => void;
+  /* Log tab */
+  logEntries: LogEntry[];
+  onLogEntryClick: (entry: LogEntry) => void;
+  onClearLog?: () => void;
 };
 
 /* ========== Constants ========== */
 
 const WIDTH = 420;
+
+const TABS: { key: PanelTab; label: string; icon: string }[] = [
+  { key: "datos", label: "Datos", icon: "table" },
+  { key: "agentes", label: "Agentes", icon: "users" },
+  { key: "log", label: "Log", icon: "activity" },
+];
+
+/* ========== Tab Icons ========== */
+
+function TabIcon({ icon, size = 14 }: { icon: string; size?: number }) {
+  const props = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2.5, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  switch (icon) {
+    case "table":
+      return <svg {...props}><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M3 15h18" /><path d="M9 3v18" /></svg>;
+    case "users":
+      return <svg {...props}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>;
+    case "activity":
+      return <svg {...props}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>;
+    default:
+      return null;
+  }
+}
 
 /* ========== Component ========== */
 
@@ -35,20 +73,119 @@ export function DataPanel({
   campaignId,
   isAdmin = false,
   onFormsDeleted,
+  agents,
+  selectedAgentId,
+  onSelectAgent,
+  onWhatsApp,
+  logEntries,
+  onLogEntryClick,
+  onClearLog,
 }: Props) {
+  const [activeTab, setActiveTab] = useState<PanelTab>("datos");
+
+  return (
+    <div style={{ width: WIDTH, height: "100%", backgroundColor: "#ffffff", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {/* Tab bar + close button */}
+      <div style={S.tabBar}>
+        <div style={S.tabs}>
+          {TABS.map((tab) => {
+            const isActive = activeTab === tab.key;
+            // Badge count
+            let badge: number | null = null;
+            if (tab.key === "datos") badge = forms.length;
+            if (tab.key === "agentes") badge = agents.length;
+            if (tab.key === "log") badge = logEntries.length;
+
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                style={{
+                  ...S.tab,
+                  color: isActive ? primaryColor : "#64748b",
+                  borderBottomColor: isActive ? primaryColor : "transparent",
+                  fontWeight: isActive ? 700 : 500,
+                }}
+              >
+                <TabIcon icon={tab.icon} />
+                <span>{tab.label}</span>
+                {badge != null && badge > 0 && (
+                  <span style={{
+                    ...S.tabBadge,
+                    backgroundColor: isActive ? `${primaryColor}14` : "#f1f5f9",
+                    color: isActive ? primaryColor : "#94a3b8",
+                  }}>
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <button type="button" onClick={onClose} style={S.closeBtn} aria-label="Cerrar panel">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><title>Cerrar</title><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        </button>
+      </div>
+
+      {/* Tab content */}
+      <div style={{ flex: 1, overflow: "hidden" }}>
+        {activeTab === "datos" && (
+          <DatosContent
+            forms={forms}
+            selectedAgentName={selectedAgentName}
+            primaryColor={primaryColor}
+            onFlyTo={onFlyTo}
+            campaignId={campaignId}
+            isAdmin={isAdmin}
+            onFormsDeleted={onFormsDeleted}
+          />
+        )}
+        {activeTab === "agentes" && (
+          <AgentsTab
+            agents={agents}
+            selectedAgentId={selectedAgentId}
+            primaryColor={primaryColor}
+            onSelectAgent={onSelectAgent}
+            onWhatsApp={onWhatsApp}
+          />
+        )}
+        {activeTab === "log" && (
+          <LogTab
+            entries={logEntries}
+            onEntryClick={onLogEntryClick}
+            onClearLog={onClearLog}
+            primaryColor={primaryColor}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ========== Datos Tab Content (extracted inline) ========== */
+
+type DatosProps = {
+  forms: FormRecord[];
+  selectedAgentName: string | null;
+  primaryColor: string;
+  onFlyTo?: (lng: number, lat: number) => void;
+  campaignId: string;
+  isAdmin: boolean;
+  onFormsDeleted?: () => void;
+};
+
+function DatosContent({ forms, selectedAgentName, primaryColor, onFlyTo, campaignId, isAdmin, onFormsDeleted }: DatosProps) {
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Search & filters
   const [search, setSearch] = useState("");
   const [filterEncuestador, setFilterEncuestador] = useState<string>("all");
   const [filterDate, setFilterDate] = useState<string>("all");
 
-  // Selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Unique encuestadores for filter dropdown
   const encuestadores = useMemo(() => {
     const map = new Map<string, string>();
     for (const f of forms) {
@@ -58,7 +195,6 @@ export function DataPanel({
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [forms]);
 
-  // Apply filters
   const filteredForms = useMemo(() => {
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -69,32 +205,23 @@ export function DataPanel({
     return forms.filter((f) => {
       if (search) {
         const q = search.toLowerCase();
-        const match =
-          (f.nombre || "").toLowerCase().includes(q) ||
-          (f.telefono || "").toLowerCase().includes(q) ||
-          (f.encuestador || "").toLowerCase().includes(q) ||
-          (f.candidato_preferido || "").toLowerCase().includes(q) ||
-          (f.comentarios || "").toLowerCase().includes(q);
+        const match = (f.nombre || "").toLowerCase().includes(q) || (f.telefono || "").toLowerCase().includes(q) || (f.encuestador || "").toLowerCase().includes(q) || (f.candidato_preferido || "").toLowerCase().includes(q) || (f.comentarios || "").toLowerCase().includes(q);
         if (!match) return false;
       }
-
       if (filterEncuestador !== "all") {
         const fKey = f.encuestador_id || f.encuestador;
         if (fKey !== filterEncuestador) return false;
       }
-
       if (filterDate !== "all") {
         const created = new Date(f.created_at);
         if (filterDate === "today" && created < startOfToday) return false;
         if (filterDate === "week" && created < startOfWeek) return false;
         if (filterDate === "month" && created < startOfMonth) return false;
       }
-
       return true;
     });
   }, [forms, search, filterEncuestador, filterDate]);
 
-  // Scroll to top when filters change
   const prevCount = useRef(filteredForms.length);
   if (filteredForms.length !== prevCount.current) {
     prevCount.current = filteredForms.length;
@@ -122,108 +249,51 @@ export function DataPanel({
     setSelectedIds(new Set(allIds));
   }, [filteredForms]);
 
-  const clearSelection = useCallback(() => {
-    setSelectedIds(new Set());
-  }, []);
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
   const handleDelete = useCallback(async () => {
     if (selectedIds.size === 0) return;
-
-    const confirmed = window.confirm(
-      `¿Estás seguro de eliminar ${selectedIds.size} registro${selectedIds.size > 1 ? "s" : ""}? Esta acción no se puede deshacer.`
-    );
-
+    const confirmed = window.confirm(`¿Estás seguro de eliminar ${selectedIds.size} registro${selectedIds.size > 1 ? "s" : ""}? Esta acción no se puede deshacer.`);
     if (!confirmed) return;
-
     setIsDeleting(true);
     setDeleteError(null);
-
     try {
       const result = await deleteFormsBatch(Array.from(selectedIds), campaignId);
-      if (result.ok) {
-        setSelectedIds(new Set());
-        onFormsDeleted?.();
-      } else {
-        setDeleteError(result.error?.message || "Error al eliminar");
-      }
-    } catch {
-      setDeleteError("Error de conexión");
-    } finally {
-      setIsDeleting(false);
-    }
+      if (result.ok) { setSelectedIds(new Set()); onFormsDeleted?.(); }
+      else setDeleteError(result.error?.message || "Error al eliminar");
+    } catch { setDeleteError("Error de conexión"); }
+    finally { setIsDeleting(false); }
   }, [selectedIds, campaignId, onFormsDeleted]);
 
   const hasActiveFilters = search || filterEncuestador !== "all" || filterDate !== "all";
   const hasSelection = selectedIds.size > 0;
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: WIDTH,
-        transform: open ? "translateX(0)" : `translateX(${WIDTH}px)`,
-        transition: "transform 0.25s cubic-bezier(0.4,0,0.2,1)",
-        backgroundColor: "#ffffff",
-        borderLeft: "1px solid #e2e8f0",
-        boxShadow: open ? "-4px 0 20px rgba(0,0,0,0.08)" : "none",
-        display: "flex",
-        flexDirection: "column",
-        zIndex: 15,
-        overflow: "hidden",
-      }}
-    >
-      {/* Header */}
-      <div style={S.header}>
-        <div style={S.headerLeft}>
-          <div style={{ ...S.headerIcon, backgroundColor: `${primaryColor}14`, color: primaryColor }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><title>Datos</title><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          </div>
-          <div>
-            <h3 style={S.title}>{selectedAgentName ? `Datos: ${selectedAgentName}` : "Registros"}</h3>
-            <span style={{ ...S.count, color: primaryColor }}>
-              {filteredForms.length} de {forms.length}
-              {hasSelection && <span style={{ color: "#ef4444", marginLeft: 6 }}>• {selectedIds.size} seleccionados</span>}
-            </span>
-          </div>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* Sub-header */}
+      <div style={D.subHeader}>
+        <div>
+          <h3 style={D.title}>{selectedAgentName ? `Datos: ${selectedAgentName}` : "Registros"}</h3>
+          <span style={{ ...D.count, color: primaryColor }}>
+            {filteredForms.length} de {forms.length}
+            {hasSelection && <span style={{ color: "#ef4444", marginLeft: 6 }}>• {selectedIds.size} sel.</span>}
+          </span>
         </div>
-        <button type="button" onClick={onClose} style={S.closeBtn} aria-label="Cerrar panel">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><title>Cerrar</title><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
       </div>
 
-      {/* Selection toolbar (admin only) */}
+      {/* Selection toolbar (admin) */}
       {isAdmin && (
-        <div style={S.selectionBar}>
-          <div style={S.selectionLeft}>
-            <button
-              type="button"
-              onClick={hasSelection ? clearSelection : selectAll}
-              style={S.selectBtn}
-            >
+        <div style={D.selectionBar}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <button type="button" onClick={hasSelection ? clearSelection : selectAll} style={D.selectBtn}>
               {hasSelection ? "Deseleccionar" : "Seleccionar todo"}
             </button>
-            {hasSelection && (
-              <span style={S.selectionCount}>{selectedIds.size} seleccionados</span>
-            )}
+            {hasSelection && <span style={{ fontSize: 12, color: "#64748b" }}>{selectedIds.size} sel.</span>}
           </div>
           {hasSelection && (
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={isDeleting}
-              style={{
-                ...S.deleteBtn,
-                opacity: isDeleting ? 0.6 : 1,
-                cursor: isDeleting ? "wait" : "pointer",
-              }}
-            >
-              {isDeleting ? (
-                <span style={S.spinner} />
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><title>Eliminar</title><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            <button type="button" onClick={handleDelete} disabled={isDeleting} style={{ ...D.deleteBtn, opacity: isDeleting ? 0.6 : 1, cursor: isDeleting ? "wait" : "pointer" }}>
+              {isDeleting ? <span style={D.spinner} /> : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><title>Eliminar</title><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
               )}
               Eliminar
             </button>
@@ -231,86 +301,56 @@ export function DataPanel({
         </div>
       )}
 
-      {/* Error message */}
+      {/* Error */}
       {deleteError && (
-        <div style={S.errorBar}>
+        <div style={D.errorBar}>
           <span>{deleteError}</span>
-          <button type="button" onClick={() => setDeleteError(null)} style={S.errorClose}>✕</button>
+          <button type="button" onClick={() => setDeleteError(null)} style={D.errorClose}>&#10005;</button>
         </div>
       )}
 
-      {/* Search bar */}
-      <div style={S.searchContainer}>
-        <div style={S.searchInputWrapper}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><title>Buscar</title><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar nombre, teléfono, agente..."
-            style={S.searchInput}
-          />
-          {search && (
-            <button type="button" onClick={() => setSearch("")} style={S.clearSearchBtn} aria-label="Limpiar búsqueda">✕</button>
-          )}
+      {/* Search */}
+      <div style={D.searchContainer}>
+        <div style={D.searchInputWrapper}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><title>Buscar</title><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nombre, teléfono, agente..." style={D.searchInput} />
+          {search && <button type="button" onClick={() => setSearch("")} style={D.clearSearchBtn} aria-label="Limpiar búsqueda">&#10005;</button>}
         </div>
-
-        {/* Filters row */}
-        <div style={S.filtersRow}>
-          <select value={filterDate} onChange={(e) => setFilterDate(e.target.value)} style={S.filterSelect}>
+        <div style={D.filtersRow}>
+          <select value={filterDate} onChange={(e) => setFilterDate(e.target.value)} style={D.filterSelect}>
             <option value="all">Todo el tiempo</option>
             <option value="today">Hoy</option>
             <option value="week">Esta semana</option>
             <option value="month">Este mes</option>
           </select>
-
-          <select value={filterEncuestador} onChange={(e) => setFilterEncuestador(e.target.value)} style={S.filterSelect}>
+          <select value={filterEncuestador} onChange={(e) => setFilterEncuestador(e.target.value)} style={D.filterSelect}>
             <option value="all">Todos los agentes</option>
-            {encuestadores.map(([key, name]) => (
-              <option key={key} value={key}>{name}</option>
-            ))}
+            {encuestadores.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
           </select>
-
           {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={() => { setSearch(""); setFilterEncuestador("all"); setFilterDate("all"); }}
-              style={{ ...S.clearFiltersBtn, color: primaryColor }}
-            >
-              Limpiar
-            </button>
+            <button type="button" onClick={() => { setSearch(""); setFilterEncuestador("all"); setFilterDate("all"); }} style={{ ...D.clearFiltersBtn, color: primaryColor }}>Limpiar</button>
           )}
         </div>
       </div>
 
       {/* Table header */}
-      <div style={S.tableHeader}>
-        {isAdmin && <div style={{ ...S.thCell, width: 36 }} />}
-        <div style={{ ...S.thCell, flex: 2 }}>Nombre</div>
-        <div style={{ ...S.thCell, flex: 1.5 }}>Teléfono</div>
-        <div style={{ ...S.thCell, flex: 1.5 }}>Agente</div>
-        <div style={{ ...S.thCell, flex: 1, textAlign: "right" }}>Fecha</div>
+      <div style={D.tableHeader}>
+        {isAdmin && <div style={{ ...D.thCell, width: 36 }} />}
+        <div style={{ ...D.thCell, flex: 2 }}>Nombre</div>
+        <div style={{ ...D.thCell, flex: 1.5 }}>Teléfono</div>
+        <div style={{ ...D.thCell, flex: 1.5 }}>Agente</div>
+        <div style={{ ...D.thCell, flex: 1, textAlign: "right" }}>Fecha</div>
       </div>
 
       {/* Content */}
-      <div ref={listRef} style={S.list}>
+      <div ref={listRef} style={D.list}>
         {filteredForms.length === 0 ? (
-          <div style={S.empty}>
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><title>Sin datos</title><circle cx="12" cy="12" r="10"/><path d="M8 15h8"/><circle cx="9" cy="9" r="1"/><circle cx="15" cy="9" r="1"/></svg>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "#64748b" }}>
-              {hasActiveFilters ? "Sin resultados" : "Sin datos capturados"}
-            </span>
-            <span style={{ fontSize: 12, color: "#94a3b8" }}>
-              {hasActiveFilters ? "Intenta con otros filtros" : "Los datos aparecerán aquí"}
-            </span>
+          <div style={D.empty}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><title>Sin datos</title><circle cx="12" cy="12" r="10" /><path d="M8 15h8" /><circle cx="9" cy="9" r="1" /><circle cx="15" cy="9" r="1" /></svg>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#64748b" }}>{hasActiveFilters ? "Sin resultados" : "Sin datos capturados"}</span>
+            <span style={{ fontSize: 12, color: "#94a3b8" }}>{hasActiveFilters ? "Intenta con otros filtros" : "Los datos aparecerán aquí"}</span>
             {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={() => { setSearch(""); setFilterEncuestador("all"); setFilterDate("all"); }}
-                style={{ ...S.emptyResetBtn, color: primaryColor, borderColor: `${primaryColor}30` }}
-              >
-                Limpiar filtros
-              </button>
+              <button type="button" onClick={() => { setSearch(""); setFilterEncuestador("all"); setFilterDate("all"); }} style={{ ...D.emptyResetBtn, color: primaryColor, borderColor: `${primaryColor}30` }}>Limpiar filtros</button>
             )}
           </div>
         ) : (
@@ -318,50 +358,25 @@ export function DataPanel({
             const hasCoords = f.x && f.y;
             const isSelected = selectedIds.has(f.id);
             const date = new Date(f.created_at);
-
             return (
-              <div
-                key={f.id}
-                onClick={() => handleCardClick(f)}
-                onKeyDown={(e) => e.key === "Enter" && handleCardClick(f)}
-                role="button"
-                tabIndex={0}
-                style={{
-                  ...S.row,
-                  cursor: hasCoords && onFlyTo ? "pointer" : "default",
-                  backgroundColor: isSelected ? `${primaryColor}08` : idx % 2 === 0 ? "#ffffff" : "#fafbfc",
-                  borderLeft: isSelected ? `3px solid ${primaryColor}` : "3px solid transparent",
-                }}
-              >
+              <div key={f.id} onClick={() => handleCardClick(f)} onKeyDown={(e) => e.key === "Enter" && handleCardClick(f)} role="button" tabIndex={0} style={{ ...D.row, cursor: hasCoords && onFlyTo ? "pointer" : "default", backgroundColor: isSelected ? `${primaryColor}08` : idx % 2 === 0 ? "#ffffff" : "#fafbfc", borderLeft: isSelected ? `3px solid ${primaryColor}` : "3px solid transparent" }}>
                 {isAdmin && (
-                  <div style={{ ...S.cell, width: 36, justifyContent: "center" }} onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => {}}
-                      onClick={(e) => toggleSelect(f.id, e)}
-                      style={S.checkbox}
-                    />
+                  <div style={{ ...D.cell, width: 36, justifyContent: "center" }} onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={isSelected} onChange={() => {}} onClick={(e) => toggleSelect(f.id, e)} style={D.checkbox} />
                   </div>
                 )}
-                <div style={{ ...S.cell, flex: 2 }}>
-                  <div style={S.nameCell}>
-                    {hasCoords && onFlyTo && (
-                      <span style={{ ...S.locIcon, color: primaryColor }}>📍</span>
-                    )}
-                    <span style={S.name}>{f.nombre || "Sin nombre"}</span>
+                <div style={{ ...D.cell, flex: 2 }}>
+                  <div style={D.nameCell}>
+                    {hasCoords && onFlyTo && <span style={{ ...D.locIcon, color: primaryColor }}>📍</span>}
+                    <span style={D.name}>{f.nombre || "Sin nombre"}</span>
                   </div>
                 </div>
-                <div style={{ ...S.cell, flex: 1.5 }}>
-                  <span style={S.phone}>{f.telefono || "—"}</span>
-                </div>
-                <div style={{ ...S.cell, flex: 1.5 }}>
-                  <span style={S.agent}>{f.encuestador || "—"}</span>
-                </div>
-                <div style={{ ...S.cell, flex: 1, justifyContent: "flex-end" }}>
-                  <div style={S.dateCell}>
-                    <span style={S.dateDay}>{date.toLocaleDateString("es-PE", { day: "2-digit", month: "short" })}</span>
-                    <span style={S.dateTime}>{date.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}</span>
+                <div style={{ ...D.cell, flex: 1.5 }}><span style={D.phone}>{f.telefono || "—"}</span></div>
+                <div style={{ ...D.cell, flex: 1.5 }}><span style={D.agent}>{f.encuestador || "—"}</span></div>
+                <div style={{ ...D.cell, flex: 1, justifyContent: "flex-end" }}>
+                  <div style={D.dateCell}>
+                    <span style={D.dateDay}>{date.toLocaleDateString("es-PE", { day: "2-digit", month: "short" })}</span>
+                    <span style={D.dateTime}>{date.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}</span>
                   </div>
                 </div>
               </div>
@@ -371,46 +386,56 @@ export function DataPanel({
       </div>
 
       {/* Footer */}
-      <div style={S.footer}>
-        <span>
-          {filteredForms.length > 200 ? `Mostrando 200 de ${filteredForms.length}` : `${filteredForms.length} registros`}
-        </span>
+      <div style={D.footer}>
+        <span>{filteredForms.length > 200 ? `Mostrando 200 de ${filteredForms.length}` : `${filteredForms.length} registros`}</span>
         <span style={{ color: "#22c55e", display: "flex", alignItems: "center", gap: 4 }}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "#22c55e" }} />
           Auto-refresh 5s
         </span>
       </div>
-
-      {/* Spinner animation */}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
 
-/* ========== Styles ========== */
+/* ========== Tab Bar Styles ========== */
 
 const S: Record<string, React.CSSProperties> = {
-  header: {
+  tabBar: {
     display: "flex",
-    justifyContent: "space-between",
     alignItems: "center",
-    padding: "14px 16px",
-    borderBottom: "1px solid #f1f5f9",
+    borderBottom: "1px solid #e2e8f0",
     flexShrink: 0,
     backgroundColor: "#ffffff",
   },
-  headerLeft: { display: "flex", alignItems: "center", gap: 12 },
-  headerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+  tabs: {
+    display: "flex",
+    flex: 1,
+    minWidth: 0,
+  },
+  tab: {
+    flex: 1,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    flexShrink: 0,
+    gap: 6,
+    padding: "12px 8px",
+    fontSize: 12,
+    border: "none",
+    borderBottom: "2px solid transparent",
+    backgroundColor: "transparent",
+    cursor: "pointer",
+    transition: "all 0.15s ease",
+    whiteSpace: "nowrap" as const,
   },
-  title: { margin: 0, fontSize: 14, fontWeight: 700, color: "#1e293b", lineHeight: 1.2 },
-  count: { fontSize: 12, fontWeight: 500, lineHeight: 1.2, display: "flex", alignItems: "center" },
+  tabBadge: {
+    fontSize: 10,
+    fontWeight: 700,
+    padding: "1px 6px",
+    borderRadius: 10,
+    minWidth: 20,
+    textAlign: "center" as const,
+  },
   closeBtn: {
     width: 32,
     height: 32,
@@ -423,10 +448,25 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
+    margin: "0 8px",
     transition: "all 0.15s ease",
   },
+};
 
-  // Selection bar
+/* ========== Datos Content Styles ========== */
+
+const D: Record<string, React.CSSProperties> = {
+  subHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "10px 16px",
+    borderBottom: "1px solid #f1f5f9",
+    flexShrink: 0,
+  },
+  title: { margin: 0, fontSize: 14, fontWeight: 700, color: "#1e293b", lineHeight: 1.2 },
+  count: { fontSize: 12, fontWeight: 500, lineHeight: 1.2, display: "flex", alignItems: "center" },
+
   selectionBar: {
     display: "flex",
     justifyContent: "space-between",
@@ -436,7 +476,6 @@ const S: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid #e2e8f0",
     flexShrink: 0,
   },
-  selectionLeft: { display: "flex", alignItems: "center", gap: 12 },
   selectBtn: {
     fontSize: 12,
     fontWeight: 600,
@@ -447,7 +486,6 @@ const S: Record<string, React.CSSProperties> = {
     padding: "5px 12px",
     cursor: "pointer",
   },
-  selectionCount: { fontSize: 12, color: "#64748b" },
   deleteBtn: {
     display: "flex",
     alignItems: "center",
@@ -470,8 +508,6 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: "50%",
     animation: "spin 0.8s linear infinite",
   },
-
-  // Error bar
   errorBar: {
     display: "flex",
     justifyContent: "space-between",
@@ -484,16 +520,8 @@ const S: Record<string, React.CSSProperties> = {
     fontWeight: 500,
     flexShrink: 0,
   },
-  errorClose: {
-    background: "none",
-    border: "none",
-    color: "#dc2626",
-    cursor: "pointer",
-    fontSize: 14,
-    padding: 4,
-  },
+  errorClose: { background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontSize: 14, padding: 4 },
 
-  // Search
   searchContainer: {
     padding: "10px 16px",
     borderBottom: "1px solid #f1f5f9",
@@ -511,7 +539,6 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 8,
     border: "1px solid #e2e8f0",
     backgroundColor: "#f8fafc",
-    transition: "border-color 0.15s ease",
   },
   searchInput: {
     flex: 1,
@@ -534,11 +561,7 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
   },
-  filtersRow: {
-    display: "flex",
-    gap: 8,
-    alignItems: "center",
-  },
+  filtersRow: { display: "flex", gap: 8, alignItems: "center" },
   filterSelect: {
     flex: 1,
     fontSize: 12,
@@ -562,7 +585,6 @@ const S: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
 
-  // Table header
   tableHeader: {
     display: "flex",
     padding: "8px 16px",
@@ -579,11 +601,7 @@ const S: Record<string, React.CSSProperties> = {
     padding: "0 4px",
   },
 
-  // List
-  list: {
-    flex: 1,
-    overflowY: "auto" as const,
-  },
+  list: { flex: 1, overflowY: "auto" as const },
   empty: {
     display: "flex",
     flexDirection: "column" as const,
@@ -604,7 +622,6 @@ const S: Record<string, React.CSSProperties> = {
     marginTop: 8,
   },
 
-  // Rows
   row: {
     display: "flex",
     alignItems: "center",
@@ -612,55 +629,17 @@ const S: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid #f1f5f9",
     transition: "background 0.1s ease, border-left-color 0.1s ease",
   },
-  cell: {
-    display: "flex",
-    alignItems: "center",
-    padding: "0 4px",
-    minWidth: 0,
-  },
-  checkbox: {
-    width: 16,
-    height: 16,
-    cursor: "pointer",
-    accentColor: "#2563eb",
-  },
-  nameCell: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    minWidth: 0,
-  },
+  cell: { display: "flex", alignItems: "center", padding: "0 4px", minWidth: 0 },
+  checkbox: { width: 16, height: 16, cursor: "pointer", accentColor: "#2563eb" },
+  nameCell: { display: "flex", alignItems: "center", gap: 6, minWidth: 0 },
   locIcon: { fontSize: 12, flexShrink: 0 },
-  name: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#1e293b",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap" as const,
-  },
-  phone: {
-    fontSize: 12,
-    color: "#64748b",
-    fontFamily: "monospace",
-  },
-  agent: {
-    fontSize: 12,
-    color: "#475569",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap" as const,
-  },
-  dateCell: {
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "flex-end",
-    gap: 1,
-  },
+  name: { fontSize: 13, fontWeight: 600, color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const },
+  phone: { fontSize: 12, color: "#64748b", fontFamily: "monospace" },
+  agent: { fontSize: 12, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const },
+  dateCell: { display: "flex", flexDirection: "column" as const, alignItems: "flex-end", gap: 1 },
   dateDay: { fontSize: 11, color: "#475569", fontWeight: 500 },
   dateTime: { fontSize: 10, color: "#94a3b8" },
 
-  // Footer
   footer: {
     display: "flex",
     justifyContent: "space-between",

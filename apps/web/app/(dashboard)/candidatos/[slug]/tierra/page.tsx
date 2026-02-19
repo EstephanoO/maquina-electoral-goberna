@@ -11,9 +11,7 @@ import { useAuth } from "@/lib/auth-context";
 import {
   TierraMap,
   TierraHeader,
-  ActivityLog,
   MapControls,
-  MapLegend,
   DataPanel,
   KpiPanel,
   ActivityCharts,
@@ -34,6 +32,11 @@ type AgentLocation = { agent_id: string; agent_name?: string; ts: string; lat: n
 
 const TWO_MIN = 2 * 60_000;
 const TEN_MIN = 10 * 60_000;
+
+/** DataPanel width — all overlays must respect this boundary when panel is open */
+const PANEL_W = 420;
+/** Metrics panel height when expanded */
+const METRICS_H = 280;
 
 function getAgentStatus(ts: string, now: number): AgentStatus {
   const age = now - new Date(ts).getTime();
@@ -109,9 +112,8 @@ export default function TierraPage() {
   const [activeLayer, setActiveLayer] = useState<ActiveLayer>("datos");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
-  const [showTable, setShowTable] = useState(true);
+  const [showTable, setShowTable] = useState(false);
   const [showMetrics, setShowMetrics] = useState(false);
-  const [logCollapsed, setLogCollapsed] = useState(false);
   const [logClearedAt, setLogClearedAt] = useState<number>(0);
 
   // Derive booleans from activeLayer
@@ -333,6 +335,12 @@ export default function TierraPage() {
     }
   }, []);
 
+  // WhatsApp handler for agent tab
+  const handleWhatsApp = useCallback((agent: EnrichedAgent) => {
+    // Open WhatsApp with agent name as search (phone not available in EnrichedAgent)
+    window.open(`https://wa.me/?text=Hola ${encodeURIComponent(agent.name)}`, "_blank");
+  }, []);
+
   // ─── Loading / Error ──────────────────────────────────────
 
   if (loading) {
@@ -384,125 +392,162 @@ export default function TierraPage() {
         connectedCount={connectedCount}
       />
 
-      {/* ── Map + overlays ── */}
-      <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
-        <TierraMap
-          ref={mapHandleRef}
-          campaignId={campaign.id}
-          slug={slug}
-          primaryColor={campaign.color_primario}
-          agents={enrichedAgents}
-          forms={formPoints}
-          selectedAgentId={selectedAgentId}
-          onSelectAgent={handleSelectAgent}
-          showTracking={showTracking}
-          showDatos={showDatos}
-          showHeatmap={showHeatmap}
-          drillState={drillState}
-          onDrillChange={setDrillState}
-        />
+      {/* ── Main content area: map column + DataPanel side-by-side ── */}
+      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
 
-        {/* Controls — top left */}
-        <div style={{ position: "absolute", top: 16, left: 16, zIndex: 10 }}>
-          <MapControls
-            activeLayer={activeLayer}
-            showTable={showTable}
-            onLayerChange={handleLayerChange}
-            onToggleTable={() => setShowTable(!showTable)}
-            agentCount={enrichedAgents.length}
-            formCount={forms.length}
-            primaryColor={campaign.color_primario}
-          />
-        </div>
+        {/* Left column: map (shrinks) + metrics (grows) — flex column */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
 
-        {/* Activity log — top right (shift left when data panel is open) */}
-        <div style={{ position: "absolute", top: 16, right: showTable ? 396 : 16, zIndex: 10, transition: "right 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
-          <ActivityLog
-            entries={logEntries}
-            onEntryClick={handleLogEntryClick}
-            onClearLog={handleClearLog}
-            primaryColor={campaign.color_primario}
-            collapsed={logCollapsed}
-            onToggleCollapse={() => setLogCollapsed(!logCollapsed)}
-          />
-        </div>
+          {/* Map area — flex: 1 shrinks when metrics open */}
+          <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
+            <TierraMap
+              ref={mapHandleRef}
+              campaignId={campaign.id}
+              slug={slug}
+              primaryColor={campaign.color_primario}
+              agents={enrichedAgents}
+              forms={formPoints}
+              selectedAgentId={selectedAgentId}
+              onSelectAgent={handleSelectAgent}
+              showTracking={showTracking}
+              showDatos={showDatos}
+              showHeatmap={showHeatmap}
+              drillState={drillState}
+              onDrillChange={setDrillState}
+            />
 
-        {/* Legend — bottom right (shift left when data panel is open) */}
-        <div style={{ position: "absolute", bottom: showMetrics ? 320 : 24, right: showTable ? 396 : 16, zIndex: 10, transition: "all 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
-          <MapLegend activeLayer={activeLayer} />
-        </div>
+            {/* Controls — top left */}
+            <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10 }}>
+              <MapControls
+                activeLayer={activeLayer}
+                onLayerChange={handleLayerChange}
+                agentCount={enrichedAgents.length}
+                formCount={forms.length}
+              />
+            </div>
 
-        {/* Metrics toggle button — bottom left */}
-        <div style={{ position: "absolute", bottom: showMetrics ? 320 : 24, left: 16, zIndex: 10, transition: "bottom 0.25s cubic-bezier(0.4,0,0.2,1)" }}>
-          <button
-            type="button"
-            onClick={() => setShowMetrics(!showMetrics)}
-            style={{
+            {/* Bottom toolbar — metrics toggle + table toggle */}
+            <div style={{
+              position: "absolute",
+              bottom: 12,
+              left: 12,
+              zIndex: 10,
               display: "flex",
               alignItems: "center",
               gap: 8,
-              padding: "10px 16px",
-              backgroundColor: showMetrics ? campaign.color_primario : "#ffffff",
-              color: showMetrics ? "#ffffff" : "#334155",
-              border: "1px solid #e2e8f0",
-              borderRadius: 8,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-              transition: "all 0.2s ease",
+            }}>
+              <button
+                type="button"
+                onClick={() => setShowMetrics(!showMetrics)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 14px",
+                  backgroundColor: showMetrics ? campaign.color_primario : "#ffffff",
+                  color: showMetrics ? "#ffffff" : "#334155",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M3 3v18h18" />
+                  <path d="M18 17V9" />
+                  <path d="M13 17V5" />
+                  <path d="M8 17v-3" />
+                </svg>
+                {showMetrics ? "Ocultar" : "Metricas"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowTable(!showTable)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 14px",
+                  backgroundColor: showTable ? campaign.color_primario : "#ffffff",
+                  color: showTable ? "#ffffff" : "#334155",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M3 9h18" />
+                  <path d="M3 15h18" />
+                  <path d="M9 3v18" />
+                </svg>
+                {showTable ? "Cerrar tabla" : "Ver tabla"}
+              </button>
+            </div>
+          </div>
+
+          {/* Metrics panel — flex sibling below map, takes real space → triggers resize */}
+          <div
+            style={{
+              height: showMetrics ? METRICS_H : 0,
+              backgroundColor: "#ffffff",
+              borderTop: showMetrics ? "1px solid #e2e8f0" : "none",
+              overflow: "hidden",
+              transition: "height 0.3s cubic-bezier(0.4,0,0.2,1)",
+              flexShrink: 0,
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M3 3v18h18" />
-              <path d="M18 17V9" />
-              <path d="M13 17V5" />
-              <path d="M8 17v-3" />
-            </svg>
-            {showMetrics ? "Ocultar metricas" : "Ver metricas"}
-          </button>
+            {showMetrics && (
+              <ActivityCharts
+                forms={filteredForms}
+                agents={filteredAgents}
+                allForms={forms}
+                allAgents={enrichedAgents}
+                primaryColor={campaign.color_primario}
+                secondaryColor={campaign.color_secundario}
+                selectionLabel={selectionLabel}
+              />
+            )}
+          </div>
         </div>
 
-        {/* Metrics panel — bottom slide-up */}
-        <div
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: showTable ? 380 : 0,
-            height: showMetrics ? 300 : 0,
-            backgroundColor: "#ffffff",
-            borderTop: showMetrics ? "1px solid #e2e8f0" : "none",
-            overflow: "hidden",
-            transition: "all 0.3s cubic-bezier(0.4,0,0.2,1)",
-            zIndex: 11,
-          }}
-        >
-          {showMetrics && (
-            <ActivityCharts
+        {/* Data sidebar — right side, flex sibling → takes real space */}
+        <div style={{
+          width: showTable ? PANEL_W : 0,
+          flexShrink: 0,
+          transition: "width 0.25s cubic-bezier(0.4,0,0.2,1)",
+          overflow: "hidden",
+          borderLeft: showTable ? "1px solid #e2e8f0" : "none",
+          position: "relative",
+        }}>
+          <div style={{ width: PANEL_W, height: "100%", position: "absolute", top: 0, right: 0 }}>
+            <DataPanel
               forms={filteredForms}
-              agents={filteredAgents}
-              allForms={forms}
-              allAgents={enrichedAgents}
+              selectedAgentName={enrichedAgents.find((a) => a.id === selectedAgentId)?.name ?? null}
               primaryColor={campaign.color_primario}
-              secondaryColor={campaign.color_secundario}
-              selectionLabel={selectionLabel}
+              open={showTable}
+              onClose={() => setShowTable(false)}
+              onFlyTo={(lng, lat) => mapHandleRef.current?.flyToPoint(lng, lat, 17)}
+              campaignId={campaign.id}
+              isAdmin={isAdmin}
+              onFormsDeleted={fetchForms}
+              agents={enrichedAgents}
+              selectedAgentId={selectedAgentId}
+              onSelectAgent={handleAgentListClick}
+              onWhatsApp={handleWhatsApp}
+              logEntries={logEntries}
+              onLogEntryClick={handleLogEntryClick}
+              onClearLog={handleClearLog}
             />
-          )}
+          </div>
         </div>
-
-        {/* Data sidebar — right side */}
-        <DataPanel
-          forms={filteredForms}
-          selectedAgentName={enrichedAgents.find((a) => a.id === selectedAgentId)?.name ?? null}
-          primaryColor={campaign.color_primario}
-          open={showTable}
-          onClose={() => setShowTable(false)}
-          onFlyTo={(lng, lat) => mapHandleRef.current?.flyToPoint(lng, lat, 17)}
-          campaignId={campaign.id}
-          isAdmin={isAdmin}
-          onFormsDeleted={fetchForms}
-        />
       </div>
     </div>
   );

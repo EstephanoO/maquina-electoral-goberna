@@ -15,7 +15,7 @@ export function extractCoordsFromGeometry(c: unknown, coords: number[][]): void 
   }
 }
 
-type Bounds = [[number, number], [number, number]];
+export type Bounds = [[number, number], [number, number]];
 
 /**
  * Get the bounding box of a single MapGeoJSONFeature (clicked feature from map).
@@ -80,6 +80,121 @@ export function normalizeFeatureProperties(
     }),
   };
 }
+
+/* ─── Bounds for current drill level ─── */
+
+import type { DrillState, GeoDataState } from "./types";
+import { PERU_BOUNDS } from "./constants";
+
+/**
+ * Pure function: compute the map bounds for the current drill state.
+ * Used by both useAutoFit (on drill change) and ResizeObserver (on panel toggle).
+ */
+export function getBoundsForCurrentDrill(
+  drillState: DrillState,
+  geoData: GeoDataState,
+): Bounds | null {
+  // Level 0: all departments / Peru
+  if (drillState.level === 0) {
+    const features = geoData.dep?.features ?? geoData.dist?.features ?? [];
+    if (features.length > 0) {
+      return calculateBoundsFromFeatures(features);
+    }
+    return PERU_BOUNDS as Bounds;
+  }
+
+  let features: GeoJSON.Feature[] = [];
+
+  if (drillState.level === 1 && drillState.depCode) {
+    if (geoData.prov) {
+      features = geoData.prov.features.filter((f) => f.properties?.coddep === drillState.depCode);
+    }
+    if (features.length === 0 && geoData.dep) {
+      features = geoData.dep.features.filter((f) => f.properties?.coddep === drillState.depCode);
+    }
+  } else if (drillState.level === 2 && drillState.provCode) {
+    if (geoData.dist) {
+      features = geoData.dist.features.filter((f) => f.properties?.codprov_full === drillState.provCode);
+    }
+    if (features.length === 0 && geoData.prov) {
+      features = geoData.prov.features.filter((f) => f.properties?.codprov_full === drillState.provCode);
+    }
+  } else if (drillState.level === 3 && drillState.distCode) {
+    if (geoData.sector) {
+      features = geoData.sector.features.filter((f) => f.properties?.ubigeo === drillState.distCode);
+    }
+    if (features.length === 0 && geoData.dist) {
+      features = geoData.dist.features.filter((f) => f.properties?.ubigeo === drillState.distCode);
+    }
+  }
+
+  if (features.length === 0) return null;
+  return calculateBoundsFromFeatures(features);
+}
+
+/* ─── Spotlight mask (inverted polygon) ─── */
+
+/**
+ * Creates a GeoJSON FeatureCollection with a single polygon that covers
+ * the entire world EXCEPT the given feature's geometry.
+ * Effect: everything outside the selected zone is darkened.
+ *
+ * Works with Polygon, MultiPolygon, and GeometryCollection.
+ */
+export function createSpotlightMask(
+  feature: MapGeoJSONFeature | GeoJSON.Feature,
+): GeoJSON.FeatureCollection {
+  // World exterior ring (counter-clockwise for GeoJSON hole convention)
+  const world: GeoJSON.Position[] = [
+    [-180, -90], [-180, 90], [180, 90], [180, -90], [-180, -90],
+  ];
+
+  const holes = extractPolygonRings(feature.geometry);
+
+  if (holes.length === 0) {
+    // No valid geometry — return empty FC (no mask)
+    return { type: "FeatureCollection", features: [] };
+  }
+
+  // Build a single Polygon with the world as outer ring and feature rings as holes
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {},
+        geometry: {
+          type: "Polygon",
+          coordinates: [world, ...holes],
+        },
+      },
+    ],
+  };
+}
+
+/** Extract outer rings from any polygon-like geometry */
+function extractPolygonRings(geometry: GeoJSON.Geometry | null): GeoJSON.Position[][] {
+  if (!geometry) return [];
+
+  switch (geometry.type) {
+    case "Polygon":
+      // First ring is the exterior; use it as a hole in the mask
+      return [geometry.coordinates[0]];
+    case "MultiPolygon":
+      // Each sub-polygon's exterior ring becomes a hole
+      return geometry.coordinates.map((poly) => poly[0]);
+    case "GeometryCollection":
+      return geometry.geometries.flatMap((g) => extractPolygonRings(g));
+    default:
+      return [];
+  }
+}
+
+/** Empty FeatureCollection constant — no mask */
+export const EMPTY_FC: GeoJSON.FeatureCollection = {
+  type: "FeatureCollection",
+  features: [],
+};
 
 /* ─── Internal ─── */
 

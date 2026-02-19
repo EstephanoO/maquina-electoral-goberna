@@ -21,8 +21,21 @@ export const DATA_POINT = "#2563eb";
 /* ─── Non-priority zone colors (neutral grey, outline-only feel) ─── */
 
 export const ZONE_FILL = "rgba(148, 163, 184, 0.06)";
+export const ZONE_HOVER = "rgba(148, 163, 184, 0.18)";
 export const ZONE_LINE = "#334155";
 export const ZONE_LINE_GHOST = "#94a3b8";
+
+/* ─── Fill layers that support feature-state hover ─── */
+
+export const HOVER_LAYERS: Record<string, string> = {
+  "dep-fill": "departamentos",
+  "prov-fill": "provincias",
+  "dist-fill": "distritos",
+} as const;
+
+/* ─── Mask overlay (darkens areas outside selected zone) ─── */
+
+export const MASK_FILL = "rgba(0, 0, 0, 0.45)";
 
 /* ─── Priority zone colors (red — must stand out) ─── */
 

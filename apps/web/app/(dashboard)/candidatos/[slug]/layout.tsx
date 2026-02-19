@@ -5,9 +5,12 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 /* ── Tab config ─────────────────────────────────────────────────── */
 
 const TABS = [
-  { key: "tierra", label: "Tierra", icon: MapPinIcon },
-  { key: "digital", label: "Digital", icon: MonitorIcon },
+  { key: "tierra", label: "Territorio", icon: MapPinIcon },
+  { key: "analytics", label: "Analytics", icon: MonitorIcon },
+  { key: "cms-metrics", label: "Digital", icon: CmsIcon },
 ] as const;
+
+type TabKey = (typeof TABS)[number]["key"];
 
 /* ── Layout ─────────────────────────────────────────────────────── */
 
@@ -17,7 +20,8 @@ export default function CandidatoSlugLayout({ children }: { children: React.Reac
   const router = useRouter();
   const slug = params.slug as string;
 
-  const activeTab = TABS.find((t) => pathname.includes(`/${t.key}`))?.key ?? "tierra";
+  const activeTab: TabKey =
+    (TABS.find((t) => pathname.includes(`/${t.key}`))?.key as TabKey) ?? "tierra";
   const isTierra = pathname.includes("/tierra");
 
   return (
@@ -98,6 +102,26 @@ function MonitorIcon({ size = 16, active = false }: { size?: number; active?: bo
       <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
       <line x1="8" y1="21" x2="16" y2="21" />
       <line x1="12" y1="17" x2="12" y2="21" />
+    </svg>
+  );
+}
+
+function CmsIcon({ size = 16, active = false }: { size?: number; active?: boolean }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={active ? "var(--goberna-blue-900)" : "#64748b"}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M18 20V10" />
+      <path d="M12 20V4" />
+      <path d="M6 20v-6" />
     </svg>
   );
 }

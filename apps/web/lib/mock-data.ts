@@ -12,7 +12,7 @@ export { CARGO_OPTIONS } from "./constants";
 // Legacy types that may still be used elsewhere
 // TODO: Migrate consumers to use lib/types
 
-export type MockRole = "admin" | "candidato" | "operadora";
+export type MockRole = "admin" | "candidato";
 
 export type MockCandidate = {
   id: string;

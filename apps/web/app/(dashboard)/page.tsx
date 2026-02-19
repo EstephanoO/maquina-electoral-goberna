@@ -2,16 +2,17 @@
 
 import { useAuth } from "../../lib/auth-context";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getCampaignStats } from "../../lib/services/campaigns";
+import { getCmsMetrics } from "../../lib/services/cms";
 import {
   getAdminKPIs,
-  getCandidatoKPIs,
-  getOperadoraKPIs,
   getCandidateSubmissions,
   MOCK_SUBMISSIONS,
-  MOCK_CANDIDATES,
   type MockRole,
 } from "../../lib/mock-data";
+import type { CampaignStats } from "../../lib/types";
+import type { CmsMetrics } from "../../lib/services/cms";
 
 // ── KPI Card ────────────────────────────────────────────────────────
 
@@ -293,12 +294,24 @@ function IconMap({ stroke }: { stroke: string }) {
   );
 }
 
-function IconCheck({ stroke }: { stroke: string }) {
+function IconMonitor({ stroke }: { stroke: string }) {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <title>Procesados</title>
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-      <polyline points="22 4 12 14.01 9 11.01" />
+      <title>Digital</title>
+      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
+    </svg>
+  );
+}
+
+function IconBarChart({ stroke }: { stroke: string }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <title>CMS</title>
+      <path d="M18 20V10" />
+      <path d="M12 20V4" />
+      <path d="M6 20v-6" />
     </svg>
   );
 }
@@ -412,96 +425,283 @@ function AdminView({ userName }: { userName: string }) {
   );
 }
 
-// ── Candidato View ──────────────────────────────────────────────────
+// ── Candidato Preview Card ──────────────────────────────────────────
 
-function CandidatoView() {
-  const router = useRouter();
-  const kpis = getCandidatoKPIs("cand-001");
-  const candidate = MOCK_CANDIDATES.find((c) => c.id === "cand-001");
-  const subs = sortedSubmissionsDesc(getCandidateSubmissions("cand-001"));
+type DashboardSection = {
+  key: string;
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+  tone: "blue" | "green" | "gold" | "red";
+  stats: { label: string; value: string }[];
+  href: string;
+  loading?: boolean;
+};
+
+function PreviewCard({
+  section,
+  onClick,
+}: {
+  section: DashboardSection;
+  onClick: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
 
   return (
-    <>
-      <h1
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        flex: "1 1 280px",
+        background: "var(--color-surface)",
+        borderRadius: "var(--radius-lg)",
+        padding: "0",
+        boxShadow: hovered ? "var(--shadow-md)" : "var(--shadow-sm)",
+        border: `1px solid ${hovered ? "var(--goberna-blue-200)" : "var(--color-border)"}`,
+        cursor: "pointer",
+        textAlign: "left",
+        transition: "box-shadow 150ms ease, border-color 150ms ease, transform 150ms ease",
+        transform: hovered ? "translateY(-2px)" : "translateY(0)",
+        fontFamily: "var(--font-montserrat), system-ui, sans-serif",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
+      {/* Card header */}
+      <div
         style={{
-          fontSize: 24,
-          fontWeight: 700,
-          color: "var(--color-text-primary)",
-          margin: "0 0 4px 0",
-          fontFamily: "var(--font-montserrat), system-ui, sans-serif",
+          padding: "20px 20px 16px",
+          borderBottom: "1px solid var(--color-border)",
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 14,
         }}
       >
-        Tu Campana
-      </h1>
-      <p
-        style={{
-          fontSize: 14,
-          color: "var(--color-text-secondary)",
-          margin: "0 0 24px 0",
-          fontFamily: "var(--font-montserrat), system-ui, sans-serif",
-        }}
-      >
-        {candidate
-          ? `${candidate.name} — ${candidate.cargo} #${candidate.numero}`
-          : "Juan Carlos Ramirez — Alcalde #7"}
-      </p>
+        <div
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: "var(--radius-md)",
+            background: TONE_BG[section.tone],
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          {section.icon}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 16,
+              fontWeight: 700,
+              color: "var(--color-text-primary)",
+              marginBottom: 2,
+            }}
+          >
+            {section.title}
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--color-text-tertiary)",
+              lineHeight: 1.4,
+            }}
+          >
+            {section.description}
+          </div>
+        </div>
+      </div>
 
-      {/* KPI row */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginBottom: 24 }}>
-        <KPICard
-          label="Agentes Online"
-          value={`${kpis.agentsOnline} / ${kpis.totalAgents}`}
-          tone="green"
-          icon={<IconRadio stroke={TONE_STROKE.green} />}
-        />
-        <KPICard
-          label="Forms Hoy"
-          value={String(kpis.formsToday)}
-          tone="gold"
-          icon={<IconClipboard stroke={TONE_STROKE.gold} />}
-        />
-        <KPICard
-          label="Submissions Pendientes"
-          value={String(kpis.pendingSubmissions)}
-          tone={kpis.pendingSubmissions > 0 ? "red" : "blue"}
-          icon={
-            <IconAlert
-              stroke={
-                kpis.pendingSubmissions > 0
-                  ? TONE_STROKE.red
-                  : TONE_STROKE.blue
-              }
+      {/* Stats */}
+      <div
+        style={{
+          padding: "16px 20px",
+          display: "flex",
+          gap: 24,
+          flex: 1,
+        }}
+      >
+        {section.loading ? (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              color: "var(--color-text-tertiary)",
+              fontSize: 13,
+            }}
+          >
+            <div
+              style={{
+                width: 16,
+                height: 16,
+                border: "2px solid var(--color-border)",
+                borderTopColor: "var(--goberna-blue-600)",
+                borderRadius: "50%",
+                animation: "spin 0.8s linear infinite",
+              }}
             />
-          }
-        />
-        <KPICard
-          label="Cobertura"
-          value="6 zonas"
-          tone="blue"
-          icon={<IconMap stroke={TONE_STROKE.blue} />}
-        />
+            Cargando...
+          </div>
+        ) : (
+          section.stats.map((stat) => (
+            <div key={stat.label}>
+              <div
+                style={{
+                  fontSize: 24,
+                  fontWeight: 700,
+                  color: TONE_STROKE[section.tone],
+                  lineHeight: 1.1,
+                  marginBottom: 2,
+                }}
+              >
+                {stat.value}
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 500,
+                  color: "var(--color-text-tertiary)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
+                }}
+              >
+                {stat.label}
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
-      {/* Quick actions */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 28 }}>
-        <ActionButton label="Ir al CMS" onClick={() => router.push("/cms")} variant="gold" />
+      {/* CTA footer */}
+      <div
+        style={{
+          padding: "12px 20px",
+          borderTop: "1px solid var(--color-border)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          background: hovered ? "var(--goberna-blue-50)" : "transparent",
+          transition: "background 150ms ease",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: hovered ? "var(--goberna-blue-900)" : "var(--color-text-secondary)",
+            transition: "color 150ms ease",
+          }}
+        >
+          Ver dashboard
+        </span>
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke={hovered ? "var(--goberna-blue-900)" : "var(--color-text-tertiary)"}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ transition: "stroke 150ms ease, transform 150ms ease", transform: hovered ? "translateX(3px)" : "translateX(0)" }}
+        >
+          <title>Ver</title>
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
       </div>
-
-      {/* Recent submissions */}
-      <SubmissionsTable title="Submissions Recientes" rows={subsToRows(subs)} />
-    </>
+    </button>
   );
 }
 
-// ── Operadora View ──────────────────────────────────────────────────
+// ── Candidato View ──────────────────────────────────────────────────
 
-function OperadoraView() {
+function CandidatoView({ userName }: { userName: string }) {
   const router = useRouter();
-  const kpis = getOperadoraKPIs("cand-001");
-  const subs = sortedSubmissionsDesc(getCandidateSubmissions("cand-001"));
+  const { campaigns, activeCampaignId } = useAuth();
+
+  const activeCampaign = campaigns.find((c) => c.id === activeCampaignId) ?? campaigns[0];
+  const slug = activeCampaign?.slug ?? "";
+
+  const [stats, setStats] = useState<CampaignStats | null>(null);
+  const [cmsMetrics, setCmsMetrics] = useState<CmsMetrics | null>(null);
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [loadingCms, setLoadingCms] = useState(true);
+
+  useEffect(() => {
+    if (!slug) {
+      setLoadingStats(false);
+      return;
+    }
+    getCampaignStats(slug).then((res) => {
+      if (res.ok && res.data) setStats(res.data);
+      setLoadingStats(false);
+    });
+  }, [slug]);
+
+  useEffect(() => {
+    getCmsMetrics().then((res) => {
+      if (res.ok && res.metrics) setCmsMetrics(res.metrics);
+      setLoadingCms(false);
+    });
+  }, []);
+
+  const formsToday = stats?.totals?.forms_today ?? 0;
+  const formsTotal = stats?.totals?.forms_count ?? 0;
+  const cmsTotal = cmsMetrics?.global_totals?.total ?? 0;
+  const cmsContactRate = cmsMetrics?.global_totals?.contact_rate ?? 0;
+  const cmsPending = cmsMetrics?.global_totals?.nuevos ?? 0;
+
+  const sections: DashboardSection[] = [
+    {
+      key: "tierra",
+      title: "Territorio",
+      description: "Mapa operativo, agentes en campo y cobertura de zonas",
+      icon: <IconMap stroke={TONE_STROKE.blue} />,
+      tone: "blue",
+      loading: loadingStats,
+      stats: [
+        { label: "Forms hoy", value: String(formsToday) },
+        { label: "Total forms", value: String(formsTotal) },
+      ],
+      href: slug ? `/candidatos/${slug}/tierra` : "/",
+    },
+    {
+      key: "analytics",
+      title: "Analytics",
+      description: "Métricas digitales y presencia online de tu campaña",
+      icon: <IconMonitor stroke={TONE_STROKE.gold} />,
+      tone: "gold",
+      loading: false,
+      stats: [
+        { label: "Configurado", value: "GA4" },
+      ],
+      href: slug ? `/candidatos/${slug}/analytics` : "/",
+    },
+    {
+      key: "cms-metrics",
+      title: "Digital",
+      description: "Gestión de contactos WhatsApp y operadoras",
+      icon: <IconBarChart stroke={TONE_STROKE.green} />,
+      tone: "green",
+      loading: loadingCms,
+      stats: [
+        { label: "Contactos", value: String(cmsTotal) },
+        { label: "Pendientes", value: String(cmsPending) },
+        { label: "Tasa", value: `${(cmsContactRate * 100).toFixed(0)}%` },
+      ],
+      href: slug ? `/candidatos/${slug}/cms-metrics` : "/cms-metrics",
+    },
+  ];
 
   return (
     <>
+      {/* Welcome */}
       <h1
         style={{
           fontSize: 24,
@@ -511,76 +711,40 @@ function OperadoraView() {
           fontFamily: "var(--font-montserrat), system-ui, sans-serif",
         }}
       >
-        Centro de Operaciones
+        Tu Campaña
       </h1>
       <p
         style={{
           fontSize: 14,
           color: "var(--color-text-secondary)",
-          margin: "0 0 24px 0",
+          margin: "0 0 28px 0",
           fontFamily: "var(--font-montserrat), system-ui, sans-serif",
         }}
       >
-        Buen dia, gestiona las submissions pendientes
+        {activeCampaign?.name
+          ? `${activeCampaign.name} — Bienvenido, ${userName}`
+          : `Bienvenido, ${userName}`}
       </p>
 
-      {/* KPI row */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginBottom: 24 }}>
-        <KPICard
-          label="Submissions Pendientes"
-          value={String(kpis.pendingSubmissions)}
-          tone={kpis.pendingSubmissions > 0 ? "red" : "blue"}
-          icon={
-            <IconAlert
-              stroke={
-                kpis.pendingSubmissions > 0
-                  ? TONE_STROKE.red
-                  : TONE_STROKE.blue
-              }
-            />
-          }
-        />
-        <KPICard
-          label="Procesados Hoy"
-          value={String(kpis.processedToday)}
-          tone="green"
-          icon={<IconCheck stroke={TONE_STROKE.green} />}
-        />
+      {/* Preview cards grid */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 20,
+          marginBottom: 8,
+        }}
+      >
+        {sections.map((section) => (
+          <PreviewCard
+            key={section.key}
+            section={section}
+            onClick={() => router.push(section.href)}
+          />
+        ))}
       </div>
 
-      {/* CTA */}
-      <div style={{ marginBottom: 28 }}>
-        <button
-          type="button"
-          onClick={() => router.push("/cms")}
-          style={{
-            padding: "14px 40px",
-            borderRadius: "var(--radius-md)",
-            border: "none",
-            fontFamily: "var(--font-montserrat), system-ui, sans-serif",
-            fontSize: 16,
-            fontWeight: 700,
-            cursor: "pointer",
-            background: "var(--goberna-gold)",
-            color: "var(--color-text-on-accent)",
-            boxShadow: "var(--shadow-md)",
-            transition: "background 150ms ease, box-shadow 150ms ease",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "var(--goberna-gold-500)";
-            e.currentTarget.style.boxShadow = "var(--shadow-lg)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "var(--goberna-gold)";
-            e.currentTarget.style.boxShadow = "var(--shadow-md)";
-          }}
-        >
-          Abrir CMS
-        </button>
-      </div>
-
-      {/* Recent submissions */}
-      <SubmissionsTable title="Ultimas Submissions" rows={subsToRows(subs)} />
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </>
   );
 }
@@ -590,7 +754,6 @@ function OperadoraView() {
 const ROLE_OPTIONS: { value: MockRole; label: string }[] = [
   { value: "admin", label: "Admin" },
   { value: "candidato", label: "Candidato" },
-  { value: "operadora", label: "Operadora" },
 ];
 
 function RoleSwitcher({
@@ -668,8 +831,7 @@ export default function DashboardHomePage() {
       <RoleSwitcher current={mockRole} onChange={setMockRole} />
 
       {mockRole === "admin" && <AdminView userName={userName} />}
-      {mockRole === "candidato" && <CandidatoView />}
-      {mockRole === "operadora" && <OperadoraView />}
+      {mockRole === "candidato" && <CandidatoView userName={userName} />}
     </div>
   );
 }

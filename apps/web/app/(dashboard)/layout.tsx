@@ -49,9 +49,12 @@ const NAV_ITEMS: NavItem[] = [
   { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["admin", "candidato"], section: "main" },
   { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin", "candidato"], section: "main" },
   { icon: <CMSIcon />, label: "CMS", href: "/cms", roles: ["admin", "candidato", "consultor"], section: "main" },
-  { icon: <CmsMetricsIcon />, label: "Metricas CMS", href: "/cms-metrics", roles: ["admin", "candidato", "consultor"], section: "main" },
-  { icon: <MapIcon />, label: "Tierra", href: (slug) => `/candidatos/${slug}/tierra`, roles: ["consultor"], section: "main" },
-  { icon: <DigitalIcon />, label: "Digital", href: (slug) => `/candidatos/${slug}/digital`, roles: ["consultor"], section: "main" },
+  // Metricas CMS: admin accede por ruta global; candidato/consultor acceden via /candidatos/[slug]/cms-metrics desde el dashboard
+  { icon: <CmsMetricsIcon />, label: "Metricas CMS", href: "/cms-metrics", roles: ["admin"], section: "main" },
+  // Consultor: acceso directo a dashboards de la campaña activa via sidebar
+  { icon: <MapIcon />, label: "Territorio", href: (slug) => `/candidatos/${slug}/tierra`, roles: ["consultor"], section: "main" },
+  { icon: <DigitalIcon />, label: "Analytics", href: (slug) => `/candidatos/${slug}/analytics`, roles: ["consultor"], section: "main" },
+  { icon: <CmsMetricsIcon />, label: "Digital", href: (slug) => `/candidatos/${slug}/cms-metrics`, roles: ["consultor"], section: "main" },
   // /ops exists but is hidden from nav — access via direct URL only
   // { icon: <OpsIcon />, label: "Operaciones", href: "/ops", roles: ["admin"], section: "admin" },
   { icon: <SettingsIcon />, label: "Configuracion", href: "/settings", roles: ["admin", "candidato"], section: "admin" },

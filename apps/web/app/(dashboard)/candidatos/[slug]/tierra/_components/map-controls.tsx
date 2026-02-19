@@ -8,12 +8,9 @@ type ActiveLayer = "datos" | "agentes" | "densidad" | null;
 
 type Props = {
   activeLayer: ActiveLayer;
-  showTable: boolean;
   onLayerChange: (layer: ActiveLayer) => void;
-  onToggleTable: () => void;
   agentCount: number;
   formCount: number;
-  primaryColor: string;
 };
 
 type LegendProps = {
@@ -29,7 +26,7 @@ const C = {
 
 /* ========== Layer Controls ========== */
 
-export function MapControls({ activeLayer, showTable, onLayerChange, onToggleTable, agentCount, formCount, primaryColor }: Props) {
+export function MapControls({ activeLayer, onLayerChange, agentCount, formCount }: Props) {
   return (
     <div style={S.root}>
       <LayerBtn
@@ -52,25 +49,6 @@ export function MapControls({ activeLayer, showTable, onLayerChange, onToggleTab
         label="Densidad"
         activeColor={C.heat}
       />
-      <div style={S.divider} />
-      <button
-        type="button"
-        onClick={onToggleTable}
-        style={{
-          ...S.btn,
-          backgroundColor: showTable ? primaryColor : "#f8fafc",
-          color: showTable ? "#fff" : "#475569",
-          borderColor: showTable ? primaryColor : "#e2e8f0",
-        }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <path d="M3 9h18" />
-          <path d="M3 15h18" />
-          <path d="M9 3v18" />
-        </svg>
-        <span>Ver tabla</span>
-      </button>
     </div>
   );
 }
