@@ -27,12 +27,12 @@ export function buildHealthRoutes(env: AppEnv): FastifyPluginAsync {
   return async (app) => {
     app.get("/health", async (_request, reply) => {
       reply.header("Cache-Control", "no-store");
-      return { ok: true, service: "backend-fastify", map: env.tegolaMap, ts: new Date().toISOString() };
+      return { ok: true, service: "Goberna Api Service", map: env.tegolaMap, ts: new Date().toISOString() };
     });
 
     app.get("/api/health", async (_request, reply) => {
       reply.header("Cache-Control", "no-store");
-      return { ok: true, service: "backend-fastify", map: env.tegolaMap, ts: new Date().toISOString() };
+      return { ok: true, service: "Goberna Api Service", map: env.tegolaMap, ts: new Date().toISOString() };
     });
 
     app.get("/api/ready", async (_request, reply) => {
