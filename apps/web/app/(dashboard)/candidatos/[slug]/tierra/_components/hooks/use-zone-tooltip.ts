@@ -118,7 +118,7 @@ export function useZoneTooltip(isZoomingRef: RefObject<boolean>) {
     // Update content only when the hovered zone changes (not every pixel)
     if (name !== state.current.currentName) {
       state.current.currentName = name;
-      el.textContent = name;
+      el.textContent = name.toUpperCase();
       el.style.opacity = "1";
     }
 

@@ -16,7 +16,6 @@ import {
   MapLegend,
   DataPanel,
   KpiPanel,
-  ZoneBreadcrumb,
   ActivityCharts,
   INITIAL_DRILL,
   type TierraMapHandle,
@@ -24,7 +23,6 @@ import {
   type AgentStatus,
   type LogEntry,
   type DrillState,
-  type DrillLevel,
   type ActiveLayer,
 } from "./_components";
 
@@ -123,15 +121,6 @@ export default function TierraPage() {
 
   // Drill-down state for geographic navigation
   const [drillState, setDrillState] = useState<DrillState>(INITIAL_DRILL);
-
-  const handleBreadcrumbNavigate = useCallback((level: DrillLevel) => {
-    const newState = { ...drillState, level };
-    if (level < 4) { newState.sector = null; newState.sectorName = null; }
-    if (level < 3) { newState.distCode = null; newState.distName = null; }
-    if (level < 2) { newState.provCode = null; newState.provName = null; }
-    if (level < 1) { newState.depCode = null; newState.depName = null; }
-    setDrillState(newState);
-  }, [drillState]);
 
   // Layer change handler — mutually exclusive
   const handleLayerChange = useCallback((layer: ActiveLayer) => {
@@ -412,34 +401,6 @@ export default function TierraPage() {
           drillState={drillState}
           onDrillChange={setDrillState}
         />
-
-        {/* Zone breadcrumb — top center */}
-        <div style={{ position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 10 }}>
-          {drillState.level > 0 ? (
-            <ZoneBreadcrumb state={drillState} onNavigate={handleBreadcrumbNavigate} primaryColor={campaign.color_primario} />
-          ) : (
-            <div style={{
-              backgroundColor: "rgba(255,255,255,0.9)",
-              backdropFilter: "blur(8px)",
-              borderRadius: 8,
-              padding: "8px 14px",
-              border: "1px solid #e2e8f0",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-              fontSize: 12,
-              color: "#64748b",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-            }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <polygon points="12 2 2 7 12 12 22 7 12 2" />
-                <polyline points="2 17 12 22 22 17" />
-                <polyline points="2 12 12 17 22 12" />
-              </svg>
-              <span>Click en una zona para explorar</span>
-            </div>
-          )}
-        </div>
 
         {/* Controls — top left */}
         <div style={{ position: "absolute", top: 16, left: 16, zIndex: 10 }}>
