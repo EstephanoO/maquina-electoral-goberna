@@ -8,7 +8,7 @@
  * - Adjuntar x-campaign-id header cuando hay campana activa
  * - Wrapper Result<T> para manejo de errores consistente
  *
- * Backend: http://161.132.39.165/api (VPS directo, HTTP)
+ * Backend: https://api.goberna.us/api (VPS via Cloudflare, HTTPS)
  */
 
 import Constants from 'expo-constants';
@@ -46,10 +46,10 @@ import type {
 } from './types';
 
 // ─── Config ─────────────────────────────────────────────────
-// Read from app.json extras, fallback to VPS IP direct
+// Read from app.json extras, fallback to api.goberna.us
 const API_BASE =
   Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_API_URL ??
-  'http://161.132.39.165/api';
+  'https://api.goberna.us/api';
 
 const AGENT_INGEST_TOKEN =
   Constants.expoConfig?.extra?.EXPO_PUBLIC_AGENT_INGEST_TOKEN ?? '';

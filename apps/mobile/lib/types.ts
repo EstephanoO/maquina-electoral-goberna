@@ -1,6 +1,6 @@
 /**
  * Tipos compartidos para toda la app Expo.
- * Estos tipos definen el contrato con el backend real en 161.132.39.165.
+ * Estos tipos definen el contrato con el backend real en api.goberna.us.
  * Si el backend cambia, este archivo cambia y TypeScript te dice que se rompio.
  *
  * Backend contracts verified 2026-02-16 against live VPS.

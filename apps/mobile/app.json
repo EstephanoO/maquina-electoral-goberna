@@ -17,11 +17,7 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "Necesitamos tu ubicacion para registrar las coordenadas GPS del formulario.",
         "NSAppTransportSecurity": {
-          "NSExceptionDomains": {
-            "161.132.39.165": {
-              "NSExceptionAllowsInsecureHTTPLoads": true
-            }
-          }
+          "NSAllowsArbitraryLoads": false
         }
       }
     },
@@ -61,7 +57,7 @@
         "expo-build-properties",
         {
           "android": {
-            "usesCleartextTraffic": true,
+            "usesCleartextTraffic": false,
             "extraGradleProperties": {
               "org.gradle.jvmargs": "-Xmx4g -XX:MaxMetaspaceSize=1g -Dkotlin.daemon.jvm.options=-Xmx2g"
             }
@@ -88,7 +84,7 @@
     },
 
     "extra": {
-      "EXPO_PUBLIC_BACKEND_API_URL": "http://161.132.39.165/api",
+      "EXPO_PUBLIC_BACKEND_API_URL": "https://api.goberna.us/api",
       "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "JPVK6a0xrV-FYVFWRgn_1ruofUhPcxkY5proTSBEmULYrActHJaU_8a99p2pf8Bq",
 
       "eas": {
