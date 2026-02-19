@@ -390,7 +390,7 @@ export default function RegisterScreen() {
                   />
                   <TextInput
                     style={styles.input}
-                    placeholder="Ej: César, Rosa, Juan..."
+                    placeholder="Ingresa nombre"
                     placeholderTextColor={TEXT_MUTED}
                     value={candidateSearch}
                     onChangeText={setCandidateSearch}
