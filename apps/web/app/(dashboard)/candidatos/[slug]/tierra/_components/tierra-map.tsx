@@ -980,95 +980,251 @@ export const TierraMap = forwardRef<TierraMapHandle, Props>(function TierraMap(
         {/* ── Tegola vector tiles ── */}
         <Source id="peru" type="vector" tiles={[tileUrl]} minzoom={0} maxzoom={14} promoteId={{ departamentos: "coddep", provincias: "codprov_full", distritos: "ubigeo" }}>
 
-          {/* ── Departamentos: clickable at level 0, outline-only context at level 1+ ── */}
+          {/* ══════════════════════════════════════════════════════════
+           *  DEPARTAMENTOS — zoom-driven opacity crossfade
+           *  Full opacity at low zoom, fades out as you zoom into a dep.
+           *  At level 1+, only the selected dep is shown as a context outline.
+           * ══════════════════════════════════════════════════════════ */}
           <Layer id="dep-fill" type="fill" source-layer="departamentos" filter={depFillFilter}
-            paint={{ "fill-color": "rgba(59, 130, 246, 0.15)", "fill-opacity": 1 }} />
+            paint={{
+              "fill-color": "rgba(59, 130, 246, 0.15)",
+              // Smooth crossfade: full at low zoom, fades out as provs appear
+              "fill-opacity": drillState.level === 0
+                ? ["interpolate", ["linear"], ["zoom"],
+                    ZOOM.DEP_FULL, 1,
+                    ZOOM.DEP_TO_PROV, 0.6,
+                    ZOOM.PROV_FULL, 0.08,
+                  ] as unknown as number
+                : 0.04, // Ghost outline when drilled in
+            }} />
           <Layer id="dep-line" type="line" source-layer="departamentos" filter={depLineFilter}
-            paint={{ 
-              "line-color": drillState.level === 0 ? "#3b82f6" : "#94a3b8", 
-              "line-width": drillState.level === 0 ? 1.5 : 1, 
-              "line-opacity": drillState.level === 0 ? 0.6 : 0.3 
+            paint={{
+              "line-color": drillState.level === 0 ? "#3b82f6" : "#94a3b8",
+              "line-width": drillState.level === 0
+                ? ["interpolate", ["linear"], ["zoom"], ZOOM.DEP_FULL, 1.5, ZOOM.PROV_FULL, 0.5] as unknown as number
+                : 1.2,
+              "line-opacity": drillState.level === 0
+                ? ["interpolate", ["linear"], ["zoom"],
+                    ZOOM.DEP_FULL, 0.6,
+                    ZOOM.DEP_TO_PROV, 0.4,
+                    ZOOM.PROV_FULL, 0.15,
+                  ] as unknown as number
+                : 0.25,
             }} />
-          {drillState.level === 0 && (
-            <Layer id="dep-label" type="symbol" source-layer="departamentos" filter={depFillFilter} minzoom={5}
-              layout={{ 
-                "text-field": ["get", "departamento"], 
-                "text-size": 11, 
-                "text-font": ["Open Sans Bold"], 
-                "text-allow-overlap": false,
-                "text-transform": "uppercase"
-              }} 
-              paint={{ "text-color": "#1e40af", "text-halo-color": "rgba(255,255,255,0.95)", "text-halo-width": 1.5 }} />
-          )}
+          {/* Dep labels — fade out with zoom */}
+          <Layer id="dep-label" type="symbol" source-layer="departamentos" filter={depOtherFilter} minzoom={4.5}
+            layout={{
+              "text-field": ["get", "departamento"],
+              "text-size": ["interpolate", ["linear"], ["zoom"], 4.5, 9, 6, 11, ZOOM.PROV_FULL, 11] as unknown as number,
+              "text-font": ["Open Sans Bold"],
+              "text-allow-overlap": false,
+              "text-transform": "uppercase",
+            }}
+            paint={{
+              "text-color": "#1e40af",
+              "text-halo-color": "rgba(255,255,255,0.95)",
+              "text-halo-width": 1.5,
+              "text-opacity": ["interpolate", ["linear"], ["zoom"],
+                ZOOM.DEP_FULL, 1,
+                ZOOM.DEP_TO_PROV, 0.6,
+                ZOOM.PROV_FULL, 0,
+              ] as unknown as number,
+            }} />
 
-          {/* ── Provincias: clickable at level 1, outline-only context at level 2+ ── */}
+          {/* ══════════════════════════════════════════════════════════
+           *  PROVINCIAS — appear as you zoom past DEP_TO_PROV
+           *  Smooth fade-in, then fade-out as distritos take over.
+           * ══════════════════════════════════════════════════════════ */}
           <Layer id="prov-fill" type="fill" source-layer="provincias" filter={provFillFilter}
-            paint={{ "fill-color": "rgba(16, 185, 129, 0.18)", "fill-opacity": 1 }} />
+            paint={{
+              "fill-color": "rgba(16, 185, 129, 0.18)",
+              "fill-opacity": drillState.level >= 1
+                ? ["interpolate", ["linear"], ["zoom"],
+                    ZOOM.DEP_TO_PROV, 0,
+                    ZOOM.PROV_FULL, 1,
+                    ZOOM.PROV_TO_DIST, 0.5,
+                    ZOOM.DIST_FULL, 0.05,
+                  ] as unknown as number
+                : 0,
+            }} />
           <Layer id="prov-line" type="line" source-layer="provincias" filter={provLineFilter}
-            paint={{ 
-              "line-color": drillState.level === 1 ? "#10b981" : "#94a3b8", 
-              "line-width": drillState.level === 1 ? 1.2 : 0.8, 
-              "line-opacity": drillState.level === 1 ? 0.7 : 0.3 
+            paint={{
+              "line-color": drillState.level <= 1 ? "#10b981" : "#94a3b8",
+              "line-width": drillState.level <= 1 ? 1.2 : 0.8,
+              "line-opacity": drillState.level >= 1
+                ? ["interpolate", ["linear"], ["zoom"],
+                    ZOOM.DEP_TO_PROV, 0,
+                    ZOOM.PROV_FULL, 0.7,
+                    ZOOM.PROV_TO_DIST, 0.4,
+                    ZOOM.DIST_FULL, 0.15,
+                  ] as unknown as number
+                : 0,
             }} />
-          {drillState.level === 1 && (
-            <Layer id="prov-label" type="symbol" source-layer="provincias" filter={provFillFilter} minzoom={7}
-              layout={{ 
-                "text-field": ["get", "provincia"], 
-                "text-size": 11, 
-                "text-font": ["Open Sans Bold"], 
-                "text-allow-overlap": false 
-              }} 
-              paint={{ "text-color": "#047857", "text-halo-color": "rgba(255,255,255,0.95)", "text-halo-width": 1.5 }} />
-          )}
+          {/* Prov labels — appear with provs, fade as dists arrive */}
+          <Layer id="prov-label" type="symbol" source-layer="provincias" filter={provFillFilter}
+            minzoom={ZOOM.DEP_TO_PROV}
+            layout={{
+              "text-field": ["get", "provincia"],
+              "text-size": ["interpolate", ["linear"], ["zoom"], ZOOM.PROV_FULL, 10, ZOOM.PROV_TO_DIST, 11] as unknown as number,
+              "text-font": ["Open Sans Bold"],
+              "text-allow-overlap": false,
+            }}
+            paint={{
+              "text-color": "#047857",
+              "text-halo-color": "rgba(255,255,255,0.95)",
+              "text-halo-width": 1.5,
+              "text-opacity": ["interpolate", ["linear"], ["zoom"],
+                ZOOM.DEP_TO_PROV, 0,
+                ZOOM.PROV_FULL, 1,
+                ZOOM.PROV_TO_DIST, 0.7,
+                ZOOM.DIST_FULL, 0,
+              ] as unknown as number,
+            }} />
 
-          {/* ── Distritos: clickable at level 2, outline-only context at level 3+ ── */}
+          {/* ══════════════════════════════════════════════════════════
+           *  DISTRITOS — appear past PROV_TO_DIST, fade at sector level
+           * ══════════════════════════════════════════════════════════ */}
           <Layer id="dist-fill" type="fill" source-layer="distritos" filter={distFillFilter}
-            paint={{ "fill-color": "rgba(249, 115, 22, 0.18)", "fill-opacity": 1 }} />
-          <Layer id="dist-line" type="line" source-layer="distritos" filter={distLineFilter}
-            paint={{ 
-              "line-color": drillState.level === 2 ? "#f97316" : "#94a3b8", 
-              "line-width": drillState.level === 2 ? 1 : 0.6, 
-              "line-opacity": drillState.level === 2 ? 0.7 : 0.3 
+            paint={{
+              "fill-color": "rgba(249, 115, 22, 0.18)",
+              "fill-opacity": drillState.level >= 2
+                ? ["interpolate", ["linear"], ["zoom"],
+                    ZOOM.PROV_TO_DIST, 0,
+                    ZOOM.DIST_FULL, 1,
+                    ZOOM.DIST_TO_SECTOR, 0.4,
+                    ZOOM.SECTOR_FULL, 0.05,
+                  ] as unknown as number
+                : 0,
             }} />
-          {drillState.level === 2 && (
-            <Layer id="dist-label" type="symbol" source-layer="distritos" filter={distFillFilter} minzoom={9}
-              layout={{ 
-                "text-field": ["get", "distrito"], 
-                "text-size": 10, 
-                "text-font": ["Open Sans Bold"], 
-                "text-allow-overlap": false 
-              }} 
-              paint={{ "text-color": "#c2410c", "text-halo-color": "rgba(255,255,255,0.95)", "text-halo-width": 1.5 }} />
-          )}
+          <Layer id="dist-line" type="line" source-layer="distritos" filter={distLineFilter}
+            paint={{
+              "line-color": drillState.level <= 2 ? "#f97316" : "#94a3b8",
+              "line-width": drillState.level <= 2 ? 1 : 0.6,
+              "line-opacity": drillState.level >= 2
+                ? ["interpolate", ["linear"], ["zoom"],
+                    ZOOM.PROV_TO_DIST, 0,
+                    ZOOM.DIST_FULL, 0.7,
+                    ZOOM.DIST_TO_SECTOR, 0.4,
+                    ZOOM.SECTOR_FULL, 0.15,
+                  ] as unknown as number
+                : 0,
+            }} />
+          {/* Dist labels */}
+          <Layer id="dist-label" type="symbol" source-layer="distritos" filter={distFillFilter}
+            minzoom={ZOOM.PROV_TO_DIST}
+            layout={{
+              "text-field": ["get", "distrito"],
+              "text-size": ["interpolate", ["linear"], ["zoom"], ZOOM.DIST_FULL, 9, ZOOM.DIST_TO_SECTOR, 10] as unknown as number,
+              "text-font": ["Open Sans Bold"],
+              "text-allow-overlap": false,
+            }}
+            paint={{
+              "text-color": "#c2410c",
+              "text-halo-color": "rgba(255,255,255,0.95)",
+              "text-halo-width": 1.5,
+              "text-opacity": ["interpolate", ["linear"], ["zoom"],
+                ZOOM.PROV_TO_DIST, 0,
+                ZOOM.DIST_FULL, 1,
+                ZOOM.DIST_TO_SECTOR, 0.6,
+                ZOOM.SECTOR_FULL, 0,
+              ] as unknown as number,
+            }} />
 
-          {/* ── Priority zones: RED fill + thin black border ── */}
+          {/* ══════════════════════════════════════════════════════════
+           *  PRIORITY ZONES — red overlay, also zoom-faded
+           * ══════════════════════════════════════════════════════════ */}
 
-          {/* Priority departamentos — level 0 only */}
+          {/* Priority departamentos */}
           <Layer id="priority-dep-fill" type="fill" source-layer="priority_departamentos" filter={priorityDepFilter}
-            paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 1 }} />
+            paint={{
+              "fill-color": PRIORITY_FILL,
+              "fill-opacity": ["interpolate", ["linear"], ["zoom"],
+                ZOOM.DEP_FULL, 1,
+                ZOOM.DEP_TO_PROV, 0.5,
+                ZOOM.PROV_FULL, 0,
+              ] as unknown as number,
+            }} />
           <Layer id="priority-dep-line" type="line" source-layer="priority_departamentos" filter={priorityDepFilter}
-            paint={{ "line-color": PRIORITY_LINE, "line-width": 0.8, "line-opacity": 0.4 }} />
+            paint={{
+              "line-color": PRIORITY_LINE, "line-width": 0.8,
+              "line-opacity": ["interpolate", ["linear"], ["zoom"],
+                ZOOM.DEP_FULL, 0.4,
+                ZOOM.PROV_FULL, 0,
+              ] as unknown as number,
+            }} />
 
-          {/* Priority provincias — level 1 only */}
+          {/* Priority provincias */}
           <Layer id="priority-prov-fill" type="fill" source-layer="priority_provincias" filter={priorityProvFilter}
-            paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 1 }} />
+            paint={{
+              "fill-color": PRIORITY_FILL,
+              "fill-opacity": ["interpolate", ["linear"], ["zoom"],
+                ZOOM.DEP_TO_PROV, 0,
+                ZOOM.PROV_FULL, 1,
+                ZOOM.PROV_TO_DIST, 0.5,
+                ZOOM.DIST_FULL, 0,
+              ] as unknown as number,
+            }} />
           <Layer id="priority-prov-line" type="line" source-layer="priority_provincias" filter={priorityProvFilter}
-            paint={{ "line-color": PRIORITY_LINE, "line-width": 0.6, "line-opacity": 0.4 }} />
+            paint={{
+              "line-color": PRIORITY_LINE, "line-width": 0.6,
+              "line-opacity": ["interpolate", ["linear"], ["zoom"],
+                ZOOM.DEP_TO_PROV, 0,
+                ZOOM.PROV_FULL, 0.4,
+                ZOOM.DIST_FULL, 0,
+              ] as unknown as number,
+            }} />
 
-          {/* Priority distritos — level 2 only */}
+          {/* Priority distritos */}
           <Layer id="priority-dist-fill" type="fill" source-layer="priority_distritos" filter={priorityDistFilter}
-            paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 1 }} />
+            paint={{
+              "fill-color": PRIORITY_FILL,
+              "fill-opacity": ["interpolate", ["linear"], ["zoom"],
+                ZOOM.PROV_TO_DIST, 0,
+                ZOOM.DIST_FULL, 1,
+                ZOOM.DIST_TO_SECTOR, 0.5,
+                ZOOM.SECTOR_FULL, 0,
+              ] as unknown as number,
+            }} />
           <Layer id="priority-dist-line" type="line" source-layer="priority_distritos" filter={priorityDistFilter}
-            paint={{ "line-color": PRIORITY_LINE, "line-width": 0.5, "line-opacity": 0.4 }} />
+            paint={{
+              "line-color": PRIORITY_LINE, "line-width": 0.5,
+              "line-opacity": ["interpolate", ["linear"], ["zoom"],
+                ZOOM.PROV_TO_DIST, 0,
+                ZOOM.DIST_FULL, 0.4,
+                ZOOM.SECTOR_FULL, 0,
+              ] as unknown as number,
+            }} />
 
-          {/* Campaign sectors/subsectors — level 3+ */}
+          {/* ══════════════════════════════════════════════════════════
+           *  SECTORS / SUBSECTORS — appear at deepest zoom
+           * ══════════════════════════════════════════════════════════ */}
           <Layer id="sector-fill" type="fill" source-layer="campaign_sectors" filter={sectorFilter}
-            paint={{ "fill-color": SECTOR_FILL, "fill-opacity": 1 }} />
+            paint={{
+              "fill-color": SECTOR_FILL,
+              "fill-opacity": ["interpolate", ["linear"], ["zoom"],
+                ZOOM.DIST_TO_SECTOR, 0,
+                ZOOM.SECTOR_FULL, 1,
+              ] as unknown as number,
+            }} />
           <Layer id="sector-line" type="line" source-layer="campaign_sectors" filter={sectorFilter}
-            paint={{ "line-color": SECTOR_LINE, "line-width": 0.5, "line-opacity": 0.4 }} />
-          <Layer id="sector-label" type="symbol" source-layer="campaign_sectors" filter={sectorFilter} minzoom={11}
+            paint={{
+              "line-color": SECTOR_LINE, "line-width": 0.5,
+              "line-opacity": ["interpolate", ["linear"], ["zoom"],
+                ZOOM.DIST_TO_SECTOR, 0,
+                ZOOM.SECTOR_FULL, 0.4,
+              ] as unknown as number,
+            }} />
+          <Layer id="sector-label" type="symbol" source-layer="campaign_sectors" filter={sectorFilter} minzoom={ZOOM.DIST_TO_SECTOR}
             layout={{ "text-field": ["get", "zone_name"], "text-size": 10, "text-font": ["Open Sans Bold"], "text-allow-overlap": false }}
-            paint={{ "text-color": "#0f172a", "text-halo-color": "rgba(255,255,255,0.9)", "text-halo-width": 1.5 }} />
+            paint={{
+              "text-color": "#0f172a",
+              "text-halo-color": "rgba(255,255,255,0.9)",
+              "text-halo-width": 1.5,
+              "text-opacity": ["interpolate", ["linear"], ["zoom"],
+                ZOOM.DIST_TO_SECTOR, 0,
+                ZOOM.SECTOR_FULL, 1,
+              ] as unknown as number,
+            }} />
         </Source>
 
         {/* ── GeoJSON fallback: priority zones from local files ── */}
