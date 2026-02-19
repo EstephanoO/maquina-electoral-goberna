@@ -5,6 +5,7 @@ import { SignJWT } from "jose";
 import type { AppEnv } from "../../config/env";
 import type { AuthRepository } from "./repository";
 import type { CampaignPerms, JwtPayload, LoginResult, RefreshResult, UserCampaignRow } from "./types";
+import { ROLE_HIERARCHY, type Role, ROLE_ALIASES } from "../../infra/authorize";
 
 export class AppError extends Error {
   constructor(
@@ -55,10 +56,14 @@ export class AuthService {
       : await this.repo.getUserCampaigns(user.id);
     const campaignIds = campaigns.map((c) => c.campaign_id);
 
+    // Use the highest role between user's global role and campaign-specific roles
+    // This ensures a consultor for any campaign can access consultor-level endpoints
+    const effectiveRole = this.computeEffectiveRole(user.role, campaigns);
+
     const accessToken = await this.generateAccessToken({
       sub: user.id,
       email: user.email,
-      role: user.role,
+      role: effectiveRole,
       region: user.region,
       campaign_ids: campaignIds,
       campaign_perms: this.buildCampaignPerms(campaigns),
@@ -123,10 +128,13 @@ export class AuthService {
       : await this.repo.getUserCampaigns(user.id);
     const campaignIds = campaigns.map((c) => c.campaign_id);
 
+    // Use the highest role between user's global role and campaign-specific roles
+    const effectiveRole = this.computeEffectiveRole(user.role, campaigns);
+
     const accessToken = await this.generateAccessToken({
       sub: user.id,
       email: user.email,
-      role: user.role,
+      role: effectiveRole,
       region: user.region,
       campaign_ids: campaignIds,
       campaign_perms: this.buildCampaignPerms(campaigns),
@@ -212,5 +220,35 @@ export class AuthService {
       default:
         throw new Error(`unidad desconocida: ${unit}`);
     }
+  }
+
+  /**
+   * Compute the effective role for authorization: the highest role between
+   * the user's global role and all their campaign-specific roles.
+   * This ensures a consultor for any campaign can access consultor-level endpoints.
+   */
+  private computeEffectiveRole(userRole: string, campaigns: UserCampaignRow[]): string {
+    const normalizeRole = (role: string): Role => {
+      if (role in ROLE_ALIASES) return ROLE_ALIASES[role]!;
+      return role as Role;
+    };
+
+    const getRoleLevel = (role: string): number => {
+      const normalized = normalizeRole(role);
+      return ROLE_HIERARCHY[normalized] ?? 0;
+    };
+
+    let highestLevel = getRoleLevel(userRole);
+    let highestRole = userRole;
+
+    for (const campaign of campaigns) {
+      const level = getRoleLevel(campaign.role);
+      if (level > highestLevel) {
+        highestLevel = level;
+        highestRole = campaign.role;
+      }
+    }
+
+    return highestRole;
   }
 }
