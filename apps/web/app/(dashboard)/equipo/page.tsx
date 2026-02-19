@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "../../../lib/auth-context";
 import { api } from "../../../lib/services/api";
 
@@ -398,20 +399,130 @@ function RoleSelector({
   allowedRoles: string[];
 }) {
   const [open, setOpen] = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const config = getRoleConfig(value);
   
   // Filter roles to only show allowed ones
   const availableRoles = Object.values(ROLES).filter(r => allowedRoles.includes(r.key));
+
+  // Compute dropdown position from button rect (portal escapes overflow:hidden parents)
+  const handleOpen = () => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const DROPDOWN_WIDTH = 280;
+      // Prefer aligning to left of button; flip if it would overflow viewport right edge
+      const left = rect.left + DROPDOWN_WIDTH > window.innerWidth
+        ? rect.right - DROPDOWN_WIDTH
+        : rect.left;
+      setDropdownStyle({
+        position: "fixed",
+        top: rect.bottom + 4,
+        left,
+        zIndex: 9999,
+        minWidth: DROPDOWN_WIDTH,
+      });
+    }
+    setOpen(true);
+  };
+
+  // Close on scroll or resize so the dropdown doesn't float detached
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
   
   if (disabled || availableRoles.length <= 1) {
     return <RoleBadge role={value} />;
   }
   
+  const dropdown = open ? (
+    <>
+      {/* Backdrop */}
+      <button
+        type="button"
+        aria-label="Cerrar menu"
+        style={{ position: "fixed", inset: 0, zIndex: 9998, background: "transparent", border: "none", cursor: "default" }} 
+        onClick={() => setOpen(false)} 
+      />
+      {/* Dropdown — rendered via portal to escape overflow:hidden table rows */}
+      <div style={{
+        ...dropdownStyle,
+        background: "var(--color-surface)",
+        border: "1px solid var(--color-border)",
+        borderRadius: 12,
+        boxShadow: "0 10px 40px rgba(0,0,0,0.15)",
+        overflow: "hidden",
+        animation: "goberna-fade-in 0.15s ease-out",
+      }}>
+        <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--color-border)", fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          Seleccionar Rol
+        </div>
+        {availableRoles.sort((a, b) => b.level - a.level).map((role) => (
+          <button
+            key={role.key}
+            type="button"
+            onClick={() => { onChange(role.key); setOpen(false); }}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 12,
+              padding: "12px 14px",
+              background: value === role.key ? "var(--goberna-blue-50)" : "transparent",
+              border: "none",
+              borderBottom: "1px solid var(--color-border)",
+              cursor: "pointer",
+              textAlign: "left",
+              transition: "background 0.1s ease",
+            }}
+          >
+            <div style={{ 
+              width: 36, 
+              height: 36, 
+              borderRadius: 8, 
+              background: role.bgColor,
+              border: `2px solid ${role.borderColor}`,
+              display: "flex", 
+              alignItems: "center", 
+              justifyContent: "center",
+              fontSize: 18,
+              flexShrink: 0,
+            }}>
+              {role.icon}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: role.color, marginBottom: 2 }}>
+                {role.label}
+              </div>
+              <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", lineHeight: 1.3 }}>
+                {role.description}
+                {role.capacity && <span style={{ display: "block", fontWeight: 600, marginTop: 2 }}>{role.capacity}</span>}
+              </div>
+            </div>
+            {value === role.key && (
+              <div style={{ color: "var(--goberna-blue-600)", flexShrink: 0 }}>
+                <IconCheck />
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+    </>
+  ) : null;
+
   return (
     <div style={{ position: "relative" }}>
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={handleOpen}
         style={{
           display: "flex",
           alignItems: "center",
@@ -432,84 +543,9 @@ function RoleSelector({
         <IconChevronDown />
       </button>
       
-      {open && (
-        <>
-          {/* Backdrop */}
-          <button
-            type="button"
-            aria-label="Cerrar menu"
-            style={{ position: "fixed", inset: 0, zIndex: 40, background: "transparent", border: "none", cursor: "default" }} 
-            onClick={() => setOpen(false)} 
-          />
-          {/* Dropdown */}
-          <div style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            zIndex: 50,
-            minWidth: 280,
-            background: "var(--color-surface)",
-            border: "1px solid var(--color-border)",
-            borderRadius: 12,
-            boxShadow: "0 10px 40px rgba(0,0,0,0.15)",
-            overflow: "hidden",
-            animation: "goberna-fade-in 0.15s ease-out",
-          }}>
-            <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--color-border)", fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              Seleccionar Rol
-            </div>
-            {availableRoles.sort((a, b) => b.level - a.level).map((role) => (
-              <button
-                key={role.key}
-                type="button"
-                onClick={() => { onChange(role.key); setOpen(false); }}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 12,
-                  padding: "12px 14px",
-                  background: value === role.key ? "var(--goberna-blue-50)" : "transparent",
-                  border: "none",
-                  borderBottom: "1px solid var(--color-border)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  transition: "background 0.1s ease",
-                }}
-              >
-                <div style={{ 
-                  width: 36, 
-                  height: 36, 
-                  borderRadius: 8, 
-                  background: role.bgColor,
-                  border: `2px solid ${role.borderColor}`,
-                  display: "flex", 
-                  alignItems: "center", 
-                  justifyContent: "center",
-                  fontSize: 18,
-                  flexShrink: 0,
-                }}>
-                  {role.icon}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: role.color, marginBottom: 2 }}>
-                    {role.label}
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", lineHeight: 1.3 }}>
-                    {role.description}
-                    {role.capacity && <span style={{ display: "block", fontWeight: 600, marginTop: 2 }}>{role.capacity}</span>}
-                  </div>
-                </div>
-                {value === role.key && (
-                  <div style={{ color: "var(--goberna-blue-600)", flexShrink: 0 }}>
-                    <IconCheck />
-                  </div>
-                )}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      {typeof document !== "undefined" && dropdown
+        ? createPortal(dropdown, document.body)
+        : null}
     </div>
   );
 }
