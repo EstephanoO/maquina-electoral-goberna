@@ -50,8 +50,6 @@ export async function listContacts(
 ): Promise<{ contacts: CmsContactRow[]; total: number }> {
   // Build WHERE clause based on status filter
   let statusClause: string;
-  const params: unknown[] = [campaignId, currentUserId];
-  let paramIdx = 3;
 
   switch (status) {
     case "nuevo":
@@ -73,20 +71,40 @@ export async function listContacts(
       statusClause = "fs.cms_status IN ('nuevo', 'claimed')";
   }
 
-  let searchClause = "";
+  // Data query uses: $1=campaignId, $2=currentUserId (for is_locked), then search, limit, offset
+  const dataParams: unknown[] = [campaignId, currentUserId];
+  let dataParamIdx = 3;
+
+  // Count query uses: $1=campaignId, then search (no userId, no limit/offset)
+  const countParams: unknown[] = [campaignId];
+  let countParamIdx = 2;
+
+  let dataSearchClause = "";
+  let countSearchClause = "";
   if (search.trim()) {
-    searchClause = ` AND (
-      fs.data->>'nombre' ILIKE $${paramIdx}
-      OR fs.data->>'telefono' ILIKE $${paramIdx}
-      OR fs.data->>'encuestador' ILIKE $${paramIdx}
-      OR fs.data->>'zona' ILIKE $${paramIdx}
-      OR fs.data->>'distrito' ILIKE $${paramIdx}
+    const searchVal = `%${search.trim()}%`;
+    dataSearchClause = ` AND (
+      fs.data->>'nombre' ILIKE $${dataParamIdx}
+      OR fs.data->>'telefono' ILIKE $${dataParamIdx}
+      OR fs.data->>'encuestador' ILIKE $${dataParamIdx}
+      OR fs.data->>'zona' ILIKE $${dataParamIdx}
+      OR fs.data->>'distrito' ILIKE $${dataParamIdx}
     )`;
-    params.push(`%${search.trim()}%`);
-    paramIdx++;
+    dataParams.push(searchVal);
+    dataParamIdx++;
+
+    countSearchClause = ` AND (
+      fs.data->>'nombre' ILIKE $${countParamIdx}
+      OR fs.data->>'telefono' ILIKE $${countParamIdx}
+      OR fs.data->>'encuestador' ILIKE $${countParamIdx}
+      OR fs.data->>'zona' ILIKE $${countParamIdx}
+      OR fs.data->>'distrito' ILIKE $${countParamIdx}
+    )`;
+    countParams.push(searchVal);
+    countParamIdx++;
   }
 
-  params.push(limit, offset);
+  dataParams.push(limit, offset);
 
   // Order by relevant timestamp depending on status
   const orderClause = status === "hablado" || status === "respondieron"
@@ -109,10 +127,10 @@ export async function listContacts(
        WHERE fs.campaign_id = $1
          AND ${statusClause}
          AND COALESCE(fs.data->>'telefono', '') != ''
-         ${searchClause}
+         ${dataSearchClause}
        ORDER BY ${orderClause}
-       LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
-      params,
+       LIMIT $${dataParamIdx} OFFSET $${dataParamIdx + 1}`,
+      dataParams,
     ),
     pool.query<{ count: string }>(
       `SELECT COUNT(*)::text AS count
@@ -120,8 +138,8 @@ export async function listContacts(
        WHERE fs.campaign_id = $1
          AND ${statusClause}
          AND COALESCE(fs.data->>'telefono', '') != ''
-         ${searchClause}`,
-      params.slice(0, paramIdx - 1), // Exclude limit/offset params
+         ${countSearchClause}`,
+      countParams,
     ),
   ]);
 
