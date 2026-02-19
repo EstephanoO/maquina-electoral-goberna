@@ -411,17 +411,39 @@ function RoleSelector({
     if (buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
       const DROPDOWN_WIDTH = 280;
+      // Estimate dropdown height: header (36px) + up to 5 roles * 64px each
+      const DROPDOWN_HEIGHT = 36 + availableRoles.length * 64;
+      const MARGIN = 4;
+      const spaceBelow = window.innerHeight - rect.bottom - MARGIN;
+      const spaceAbove = rect.top - MARGIN;
+      const openUpward = spaceBelow < DROPDOWN_HEIGHT && spaceAbove > spaceBelow;
+
       // Prefer aligning to left of button; flip if it would overflow viewport right edge
       const left = rect.left + DROPDOWN_WIDTH > window.innerWidth
         ? rect.right - DROPDOWN_WIDTH
         : rect.left;
-      setDropdownStyle({
-        position: "fixed",
-        top: rect.bottom + 4,
-        left,
-        zIndex: 9999,
-        minWidth: DROPDOWN_WIDTH,
-      });
+
+      setDropdownStyle(
+        openUpward
+          ? {
+              position: "fixed",
+              bottom: window.innerHeight - rect.top + MARGIN,
+              left,
+              zIndex: 9999,
+              minWidth: DROPDOWN_WIDTH,
+              maxHeight: Math.min(spaceAbove, DROPDOWN_HEIGHT),
+              overflowY: "auto",
+            }
+          : {
+              position: "fixed",
+              top: rect.bottom + MARGIN,
+              left,
+              zIndex: 9999,
+              minWidth: DROPDOWN_WIDTH,
+              maxHeight: Math.min(spaceBelow, DROPDOWN_HEIGHT),
+              overflowY: "auto",
+            },
+      );
     }
     setOpen(true);
   };
