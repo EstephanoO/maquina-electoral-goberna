@@ -263,6 +263,8 @@ export type CampaignMember = {
   user_id: string;
   full_name: string;
   email: string;
+  phone: string | null;
+  region: string | null;
   role: string;
   user_status: string;
 };
@@ -277,7 +279,7 @@ export async function updateMemberRole(
      SET role = $3, assigned_at = now()
      FROM users u
      WHERE uc.user_id = $1 AND uc.campaign_id = $2 AND uc.status = 'active' AND u.id = uc.user_id
-     RETURNING uc.user_id, u.full_name, u.email, uc.role, u.status AS user_status`,
+     RETURNING uc.user_id, u.full_name, u.email, u.phone, u.region, uc.role, u.status AS user_status`,
     [userId, campaignId, role],
   );
   return rows[0] ?? null;
@@ -285,7 +287,7 @@ export async function updateMemberRole(
 
 export async function getCampaignMembers(campaignId: string): Promise<CampaignMember[]> {
   const { rows } = await pool.query<CampaignMember>(
-    `SELECT uc.user_id, u.full_name, u.email, uc.role, u.status AS user_status
+    `SELECT uc.user_id, u.full_name, u.email, u.phone, u.region, uc.role, u.status AS user_status
      FROM user_campaigns uc
      JOIN users u ON u.id = uc.user_id
      WHERE uc.campaign_id = $1 AND uc.status = 'active'

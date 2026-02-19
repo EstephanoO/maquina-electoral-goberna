@@ -35,6 +35,16 @@ export const ga4SourceSchema = z.object({
 export const ga4CitySchema = z.object({
   city: z.string(),
   activeUsers: z.number().int().min(0),
+  // Enriched fields from Detalles Demográficos CSV (all optional for backward compat)
+  newUsers: z.number().int().min(0).optional(),
+  engagedSessions: z.number().int().min(0).optional(),
+  engagementRate: z.number().min(0).max(1).optional(),
+  sessionsPerUser: z.number().min(0).optional(),
+  avgEngagementTime: z.number().min(0).optional(), // seconds
+  events: z.number().int().min(0).optional(),
+  keyEvents: z.number().int().min(0).optional(),
+  keyEventRate: z.number().min(0).max(1).optional(),
+  revenue: z.number().min(0).optional(),
 });
 
 export const ga4DailySchema = z.object({

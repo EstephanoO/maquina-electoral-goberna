@@ -1,30 +1,103 @@
 /**
- * Solicitudes Screen — Admin only.
- * Shows pending access requests with approve/reject buttons.
- * Data from GET /api/access-requests/pending (admin endpoint).
+ * Solicitudes Screen — Admin/Jefe de Campaña.
+ * Shows pending access requests with role selection and approve/reject buttons.
+ * Data from GET /api/access-requests/pending.
+ * 
+ * Features:
+ * - Select role before approving (agente_campo, brigadista_zonal, jefe_campana)
+ * - Visual feedback with loading states
+ * - Swipe to see more actions
  */
 
 import { useCallback, useState } from 'react';
-import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { MaterialIcons } from '@expo/vector-icons';
 
-import { useCandidate } from '@/lib/app-context';
+import { useApp } from '@/lib/app-context';
 import * as api from '@/lib/api';
 import type { AccessRequestRow } from '@/lib/types';
 
 const FONT = 'Montserrat-Bold';
 const BORDER = '#E1E6F0';
-const TEXT_MUTED = 'rgba(22, 57, 96, 0.7)';
+
+// ═══════════════════════════════════════════════════════════════
+// ROLE CONFIGURATION
+// ═══════════════════════════════════════════════════════════════
+
+type RoleOption = {
+  key: string;
+  label: string;
+  shortLabel: string;
+  icon: keyof typeof MaterialIcons.glyphMap;
+  color: string;
+  bgColor: string;
+  description: string;
+};
+
+const ASSIGNABLE_ROLES: RoleOption[] = [
+  {
+    key: 'agente_campo',
+    label: 'Agente de Campo',
+    shortLabel: 'Agente',
+    icon: 'person',
+    color: '#059669',
+    bgColor: '#D1FAE5',
+    description: 'Operador territorial, sube formularios',
+  },
+  {
+    key: 'brigadista_zonal',
+    label: 'Brigadista Zonal',
+    shortLabel: 'Brigadista',
+    icon: 'map',
+    color: '#D97706',
+    bgColor: '#FEF3C7',
+    description: 'Coordina agentes en su zona',
+  },
+  {
+    key: 'jefe_campana',
+    label: 'Jefe de Campaña',
+    shortLabel: 'Jefe',
+    icon: 'supervisor-account',
+    color: '#2563EB',
+    bgColor: '#DBEAFE',
+    description: 'Gestiona todo el equipo',
+  },
+];
+
+function getRoleConfig(roleKey: string): RoleOption {
+  return ASSIGNABLE_ROLES.find(r => r.key === roleKey) ?? ASSIGNABLE_ROLES[0]!;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN SCREEN
+// ═══════════════════════════════════════════════════════════════
 
 export default function SolicitudesScreen() {
-  const candidate = useCandidate();
-  const primary = candidate.color_primario;
+  const { auth } = useApp();
+  const config = auth.status === 'active' ? auth.config : null;
+  const primary = config?.candidate.color_primario ?? '#163960';
 
   const [requests, setRequests] = useState<AccessRequestRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  
+  // Modal state for role selection
+  const [selectedRequest, setSelectedRequest] = useState<AccessRequestRow | null>(null);
+  const [selectedRole, setSelectedRole] = useState<string>('agente_campo');
 
   const loadRequests = useCallback(async () => {
     setError(null);
@@ -49,29 +122,58 @@ export default function SolicitudesScreen() {
     }, [loadRequests]),
   );
 
-  const handleAction = async (id: string, status: 'approved' | 'rejected', name: string) => {
-    const label = status === 'approved' ? 'aprobar' : 'rechazar';
+  // Open role selection modal
+  const handleApprovePress = (request: AccessRequestRow) => {
+    setSelectedRequest(request);
+    setSelectedRole('agente_campo'); // Default to agente
+  };
 
+  // Confirm approval with selected role
+  const handleConfirmApproval = async () => {
+    if (!selectedRequest) return;
+    
+    setProcessingId(selectedRequest.id);
+    const result = await api.resolveAccessRequest(selectedRequest.id, { 
+      status: 'approved',
+      role: selectedRole,
+    });
+    
+    if (result.ok) {
+      setRequests((prev) => prev.filter((r) => r.id !== selectedRequest.id));
+      setSelectedRequest(null);
+    } else {
+      Alert.alert('Error', result.error);
+    }
+    setProcessingId(null);
+  };
+
+  // Direct reject (no role needed)
+  const handleReject = (request: AccessRequestRow) => {
     Alert.alert(
-      `¿${status === 'approved' ? 'Aprobar' : 'Rechazar'} solicitud?`,
-      `¿Deseas ${label} el acceso de ${name}?`,
+      'Rechazar solicitud',
+      `¿Rechazar el acceso de ${request.full_name}?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: status === 'approved' ? 'Aprobar' : 'Rechazar',
-          style: status === 'rejected' ? 'destructive' : 'default',
+          text: 'Rechazar',
+          style: 'destructive',
           onPress: async () => {
-            const result = await api.resolveAccessRequest(id, { status });
+            setProcessingId(request.id);
+            const result = await api.resolveAccessRequest(request.id, { status: 'rejected' });
             if (result.ok) {
-              setRequests((prev) => prev.filter((r) => r.id !== id));
+              setRequests((prev) => prev.filter((r) => r.id !== request.id));
             } else {
               Alert.alert('Error', result.error);
             }
+            setProcessingId(null);
           },
         },
       ],
     );
   };
+
+  // Early return if not active
+  if (auth.status !== 'active' || !config) return null;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -89,62 +191,219 @@ export default function SolicitudesScreen() {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primary} />
         }
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <View style={styles.cardInfo}>
-              <Text style={styles.cardName}>{item.full_name}</Text>
-              <Text style={styles.cardEmail}>{item.email}</Text>
-              <Text style={styles.cardDate}>
-                {new Date(item.created_at).toLocaleDateString('es-PE', {
-                  day: '2-digit',
-                  month: 'short',
-                  year: 'numeric',
-                })}
-              </Text>
+        renderItem={({ item }) => {
+          const isProcessing = processingId === item.id;
+          
+          return (
+            <View style={[styles.card, isProcessing && styles.cardProcessing]}>
+              <View style={styles.cardInfo}>
+                <Text style={styles.cardName}>{item.full_name}</Text>
+                <View style={styles.cardMetaRow}>
+                  {item.phone && (
+                    <View style={styles.metaItem}>
+                      <MaterialIcons name="phone" size={12} color="rgba(22,57,96,0.5)" />
+                      <Text style={styles.metaText}>{item.phone}</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.cardMetaRow}>
+                  {item.region && (
+                    <View style={styles.regionBadge}>
+                      <MaterialIcons name="place" size={10} color="#0369A1" />
+                      <Text style={styles.regionText}>{item.region}</Text>
+                    </View>
+                  )}
+                  <Text style={styles.dateText}>
+                    {new Date(item.created_at).toLocaleDateString('es-PE', {
+                      day: '2-digit',
+                      month: 'short',
+                    })}
+                  </Text>
+                </View>
+              </View>
+              
+              <View style={styles.cardActions}>
+                {isProcessing ? (
+                  <ActivityIndicator size="small" color={primary} />
+                ) : (
+                  <>
+                    <Pressable
+                      style={[styles.actionBtn, styles.approveBtn]}
+                      onPress={() => handleApprovePress(item)}
+                    >
+                      <MaterialIcons name="check" size={20} color="#16A34A" />
+                    </Pressable>
+                    <Pressable
+                      style={[styles.actionBtn, styles.rejectBtn]}
+                      onPress={() => handleReject(item)}
+                    >
+                      <MaterialIcons name="close" size={20} color="#DC2626" />
+                    </Pressable>
+                  </>
+                )}
+              </View>
             </View>
-            <View style={styles.cardActions}>
-              <Pressable
-                style={[styles.actionBtn, styles.approveBtn]}
-                onPress={() => handleAction(item.id, 'approved', item.full_name)}
-              >
-                <Text style={styles.approveText}>✓</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.actionBtn, styles.rejectBtn]}
-                onPress={() => handleAction(item.id, 'rejected', item.full_name)}
-              >
-                <Text style={styles.rejectText}>✕</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
+          );
+        }}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             {loading ? (
-              <Text style={styles.emptyText}>Cargando...</Text>
+              <ActivityIndicator size="large" color={primary} />
             ) : error ? (
               <>
+                <MaterialIcons name="error-outline" size={48} color="#DC2626" />
                 <Text style={styles.errorText}>{error}</Text>
                 <Pressable style={[styles.retryBtn, { backgroundColor: primary }]} onPress={loadRequests}>
                   <Text style={styles.retryText}>Reintentar</Text>
                 </Pressable>
               </>
             ) : (
-              <Text style={styles.emptyText}>No hay solicitudes pendientes</Text>
+              <>
+                <MaterialIcons name="check-circle" size={48} color="#22C55E" />
+                <Text style={styles.emptyTitle}>¡Todo al día!</Text>
+                <Text style={styles.emptyText}>No hay solicitudes pendientes</Text>
+              </>
             )}
           </View>
         }
+      />
+
+      {/* Role Selection Modal */}
+      <RoleSelectionModal
+        visible={!!selectedRequest}
+        request={selectedRequest}
+        selectedRole={selectedRole}
+        onSelectRole={setSelectedRole}
+        onConfirm={handleConfirmApproval}
+        onCancel={() => setSelectedRequest(null)}
+        processing={processingId === selectedRequest?.id}
+        primary={primary}
       />
     </SafeAreaView>
   );
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ROLE SELECTION MODAL
+// ═══════════════════════════════════════════════════════════════
+
+function RoleSelectionModal({
+  visible,
+  request,
+  selectedRole,
+  onSelectRole,
+  onConfirm,
+  onCancel,
+  processing,
+  primary,
+}: {
+  visible: boolean;
+  request: AccessRequestRow | null;
+  selectedRole: string;
+  onSelectRole: (role: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+  processing: boolean;
+  primary: string;
+}) {
+  if (!request) return null;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.modalOverlay}>
+        <Pressable style={styles.modalDismiss} onPress={onCancel} />
+        <View style={styles.modalContent}>
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: primary }]}>Aprobar solicitud</Text>
+            <Pressable onPress={onCancel} hitSlop={12}>
+              <MaterialIcons name="close" size={24} color="rgba(22,57,96,0.5)" />
+            </Pressable>
+          </View>
+
+          {/* User info */}
+          <View style={styles.userInfoSection}>
+            <View style={[styles.userAvatar, { backgroundColor: primary + '15' }]}>
+              <Text style={[styles.userInitial, { color: primary }]}>
+                {request.full_name.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+            <Text style={styles.userName}>{request.full_name}</Text>
+            {request.phone && <Text style={styles.userPhone}>{request.phone}</Text>}
+            {request.region && (
+              <View style={styles.userRegionBadge}>
+                <MaterialIcons name="place" size={12} color="#0369A1" />
+                <Text style={styles.userRegionText}>{request.region}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Role selection */}
+          <Text style={styles.sectionLabel}>Asignar como:</Text>
+          <View style={styles.roleOptions}>
+            {ASSIGNABLE_ROLES.map((role) => {
+              const isSelected = selectedRole === role.key;
+              return (
+                <Pressable
+                  key={role.key}
+                  style={[
+                    styles.roleOption,
+                    isSelected && { borderColor: role.color, backgroundColor: role.bgColor },
+                  ]}
+                  onPress={() => onSelectRole(role.key)}
+                >
+                  <View style={[styles.roleIcon, { backgroundColor: role.bgColor }]}>
+                    <MaterialIcons name={role.icon} size={20} color={role.color} />
+                  </View>
+                  <View style={styles.roleInfo}>
+                    <Text style={[styles.roleLabel, isSelected && { color: role.color }]}>
+                      {role.label}
+                    </Text>
+                    <Text style={styles.roleDescription}>{role.description}</Text>
+                  </View>
+                  {isSelected && (
+                    <MaterialIcons name="check-circle" size={20} color={role.color} />
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Confirm button */}
+          <Pressable
+            style={[styles.confirmBtn, { backgroundColor: primary }, processing && { opacity: 0.6 }]}
+            onPress={onConfirm}
+            disabled={processing}
+          >
+            {processing ? (
+              <ActivityIndicator color="#FFF" size="small" />
+            ) : (
+              <>
+                <MaterialIcons name="person-add" size={18} color="#FFF" />
+                <Text style={styles.confirmBtnText}>
+                  Aprobar como {getRoleConfig(selectedRole).shortLabel}
+                </Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STYLES
+// ═══════════════════════════════════════════════════════════════
+
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1, backgroundColor: '#F8FAFC' },
   header: { padding: 20, gap: 4 },
   headerTitle: { fontSize: 20, color: '#FFFFFF', fontFamily: FONT },
   headerCount: { fontSize: 13, color: 'rgba(255,255,255,0.7)', fontFamily: FONT },
   content: { padding: 16, paddingBottom: 40 },
+
+  // Card
   card: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
@@ -155,10 +414,27 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     alignItems: 'center',
   },
-  cardInfo: { flex: 1, gap: 2 },
+  cardProcessing: {
+    opacity: 0.5,
+  },
+  cardInfo: { flex: 1, gap: 4 },
   cardName: { fontSize: 15, color: '#163960', fontFamily: FONT },
-  cardEmail: { fontSize: 13, color: TEXT_MUTED, fontFamily: FONT },
-  cardDate: { fontSize: 11, color: 'rgba(22, 57, 96, 0.4)', fontFamily: FONT, marginTop: 4 },
+  cardMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText: { fontSize: 12, color: 'rgba(22,57,96,0.6)', fontFamily: FONT },
+  regionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  regionText: { fontSize: 10, color: '#0369A1', fontFamily: FONT, textTransform: 'uppercase' },
+  dateText: { fontSize: 11, color: 'rgba(22,57,96,0.4)', fontFamily: FONT },
+
+  // Actions
   cardActions: { flexDirection: 'row', gap: 8 },
   actionBtn: {
     width: 40,
@@ -169,11 +445,95 @@ const styles = StyleSheet.create({
   },
   approveBtn: { backgroundColor: '#DCFCE7' },
   rejectBtn: { backgroundColor: '#FEE2E2' },
-  approveText: { fontSize: 18, color: '#16A34A' },
-  rejectText: { fontSize: 18, color: '#DC2626' },
-  emptyState: { padding: 32, alignItems: 'center', gap: 16 },
-  emptyText: { fontSize: 16, color: '#163960', fontFamily: FONT },
+
+  // Empty state
+  emptyState: { padding: 48, alignItems: 'center', gap: 12 },
+  emptyTitle: { fontSize: 18, color: '#163960', fontFamily: FONT },
+  emptyText: { fontSize: 14, color: 'rgba(22,57,96,0.6)', fontFamily: FONT, textAlign: 'center' },
   errorText: { fontSize: 14, color: '#DC2626', fontFamily: FONT, textAlign: 'center' },
-  retryBtn: { borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 },
+  retryBtn: { borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20, marginTop: 8 },
   retryText: { fontSize: 13, color: '#FFFFFF', fontFamily: FONT },
+
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalDismiss: { flex: 1 },
+  modalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+    gap: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modalTitle: { fontSize: 18, fontFamily: FONT },
+
+  // User info section
+  userInfoSection: { alignItems: 'center', gap: 6, paddingVertical: 12 },
+  userAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userInitial: { fontSize: 22, fontFamily: FONT },
+  userName: { fontSize: 16, fontFamily: FONT, color: '#163960' },
+  userPhone: { fontSize: 13, color: 'rgba(22,57,96,0.6)', fontFamily: FONT },
+  userRegionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  userRegionText: { fontSize: 11, color: '#0369A1', fontFamily: FONT, textTransform: 'uppercase' },
+
+  // Role selection
+  sectionLabel: {
+    fontSize: 11,
+    fontFamily: FONT,
+    color: 'rgba(22,57,96,0.6)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  roleOptions: { gap: 10 },
+  roleOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: BORDER,
+    backgroundColor: '#FFF',
+  },
+  roleIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleInfo: { flex: 1, gap: 2 },
+  roleLabel: { fontSize: 14, fontFamily: FONT, color: '#163960' },
+  roleDescription: { fontSize: 11, color: 'rgba(22,57,96,0.5)', fontFamily: FONT },
+
+  // Confirm button
+  confirmBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  confirmBtnText: { fontSize: 15, color: '#FFF', fontFamily: FONT },
 });

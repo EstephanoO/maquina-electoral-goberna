@@ -325,6 +325,15 @@ export async function getCampaignMembers(
   return request<{ members: CampaignMember[] }>('GET', `/campaigns/${campaignId}/members`);
 }
 
+/** PUT /api/campaigns/:id/members/:userId/role — change member role (admin/jefe_campana only) */
+export async function updateMemberRole(
+  campaignId: string,
+  userId: string,
+  role: string,
+): Promise<ApiResult<{ success: boolean }>> {
+  return request<{ success: boolean }>('PUT', `/campaigns/${campaignId}/members/${userId}/role`, { role });
+}
+
 // ─── GPS Tracking ───────────────────────────────────────────
 
 /** POST /api/agents/location — uses x-agent-token header (NOT JWT) */

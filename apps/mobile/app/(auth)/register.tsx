@@ -1,16 +1,17 @@
 /**
- * Register Screen — Registro simplificado
+ * Register Screen — Registro con region
  *
  * Campos:
- * - Nombre completo del usuario
- * - Email
- * - Contraseña
- * - Nombre del candidato (primer nombre para buscar)
+ * 1. Nombre completo del usuario
+ * 2. Telefono
+ * 3. Contrasena
+ * 4. Region (departamento - bottom sheet con buscador)
+ * 5. Candidato (busqueda por nombre)
  *
  * Flujo:
- * 1. Usuario llena el formulario con nombre del candidato
+ * 1. Usuario llena el formulario con todos los campos
  * 2. Se busca candidato por nombre (match parcial)
- * 3. Se crea cuenta + login automático + solicitud de acceso
+ * 3. Se crea cuenta + login automatico + solicitud de acceso
  * 4. Se redirige a pantalla de espera
  */
 
@@ -32,8 +33,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { useApp } from '@/lib/app-context';
-import { getCandidates, createAccessRequest } from '@/lib/api';
+import { getCandidates } from '@/lib/api';
 import type { CandidateInfo } from '@/lib/types';
+import RegionPicker from '@/components/RegionPicker';
 
 const BRAND_BLUE = '#163960';
 const BRAND_YELLOW = '#FFC800';
@@ -43,16 +45,17 @@ const BORDER = '#E1E6F0';
 const FONT = 'Montserrat-Bold';
 const PHOTO_BASE_URL = 'https://maquina-electoral-goberna-web.vercel.app';
 
-// Email validation regex - basic but effective
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Phone validation regex - Peru format (9 digits starting with 9)
+const PHONE_REGEX = /^9\d{8}$/;
 
 export default function RegisterScreen() {
   const router = useRouter();
   const { register, login } = useApp();
 
   const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [region, setRegion] = useState<string | null>(null);
   const [candidateName, setCandidateName] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -94,22 +97,29 @@ export default function RegisterScreen() {
     setMatchedCandidate(match ?? null);
   }, [candidateName, candidates]);
 
+  // Generate email from phone number
+  const generateEmail = (phoneNumber: string) => `${phoneNumber}@goberna.pe`;
+
   const handleRegister = async () => {
     // Validations
     if (!fullName.trim()) {
       Alert.alert('Campo requerido', 'Ingresa tu nombre completo.');
       return;
     }
-    if (!email.trim()) {
-      Alert.alert('Campo requerido', 'Ingresa tu email.');
+    if (!phone.trim()) {
+      Alert.alert('Campo requerido', 'Ingresa tu numero de telefono.');
       return;
     }
-    if (!EMAIL_REGEX.test(email.trim())) {
-      Alert.alert('Email invalido', 'Ingresa un email valido (ej: usuario@correo.com).');
+    if (!PHONE_REGEX.test(phone.trim())) {
+      Alert.alert('Telefono invalido', 'Ingresa un numero valido de 9 digitos (ej: 987654321).');
       return;
     }
     if (!password.trim() || password.trim().length < 8) {
-      Alert.alert('Campo requerido', 'La contraseña debe tener al menos 8 caracteres.');
+      Alert.alert('Campo requerido', 'La contrasena debe tener al menos 8 caracteres.');
+      return;
+    }
+    if (!region) {
+      Alert.alert('Campo requerido', 'Selecciona tu region.');
       return;
     }
     if (!matchedCandidate) {
@@ -119,12 +129,17 @@ export default function RegisterScreen() {
 
     setLoading(true);
 
+    const email = generateEmail(phone.trim());
+
     try {
-      // 1. Register user
+      // 1. Register user (backend auto-creates access_request with region)
       const registerResult = await register({
         full_name: fullName.trim(),
-        email: email.trim(),
+        email: email,
         password: password.trim(),
+        phone: phone.trim(),
+        region: region,
+        campaign_id: matchedCandidate.id,
       });
 
       if (!registerResult.ok) {
@@ -135,31 +150,20 @@ export default function RegisterScreen() {
 
       // 2. Login immediately
       const loginResult = await login({
-        email: email.trim(),
+        email: email,
         password: password.trim(),
       });
 
       if (!loginResult.ok) {
-        Alert.alert('Error', loginResult.error ?? 'Cuenta creada pero no se pudo iniciar sesión.');
+        Alert.alert('Error', loginResult.error ?? 'Cuenta creada pero no se pudo iniciar sesion.');
         setLoading(false);
         return;
       }
 
-      // 3. Create access request for matched candidate
-      const accessResult = await createAccessRequest({
-        campaign_id: matchedCandidate.id,
-        perm_tierra: true,
-      });
-
-      if (!accessResult.ok && accessResult.code !== 'ACCESS_REQUEST_EXISTS') {
-        Alert.alert('Aviso', 'Cuenta creada. Solicita acceso desde la app.');
-        // Still go to pending since account was created
-      }
-
-      // 4. Navigate to pending screen
+      // 3. Navigate to pending screen (access_request already created by backend)
       Alert.alert(
-        '¡Solicitud enviada!',
-        `Solicitaste acceso a la campaña de ${matchedCandidate.name}. Un supervisor revisará tu solicitud pronto.`,
+        'Solicitud enviada!',
+        `Solicitaste acceso a la campana de ${matchedCandidate.name}. Un supervisor revisara tu solicitud pronto.`,
         [{ text: 'OK', onPress: () => router.replace('/(auth)/pending') }],
       );
     } catch (err) {
@@ -196,10 +200,10 @@ export default function RegisterScreen() {
           {/* Form */}
           <View style={styles.form}>
             <View style={styles.field}>
-              <Text style={styles.label}>Tu nombre completo</Text>
+              <Text style={styles.label}>Nombres y apellidos</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Juan Pérez"
+                placeholder="Juan Perez Garcia"
                 placeholderTextColor={TEXT_MUTED}
                 value={fullName}
                 onChangeText={setFullName}
@@ -208,24 +212,23 @@ export default function RegisterScreen() {
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.label}>Email</Text>
+              <Text style={styles.label}>Telefono</Text>
               <TextInput
                 style={styles.input}
-                placeholder="tu@correo.com"
+                placeholder="987654321"
                 placeholderTextColor={TEXT_MUTED}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+                maxLength={9}
               />
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.label}>Contraseña</Text>
+              <Text style={styles.label}>Contrasena</Text>
               <TextInput
                 style={styles.input}
-                placeholder="Mínimo 8 caracteres"
+                placeholder="Minimo 8 caracteres"
                 placeholderTextColor={TEXT_MUTED}
                 value={password}
                 onChangeText={setPassword}
@@ -233,9 +236,18 @@ export default function RegisterScreen() {
               />
             </View>
 
+            <View style={styles.field}>
+              <Text style={styles.label}>Region</Text>
+              <RegionPicker
+                value={region}
+                onSelect={setRegion}
+                placeholder="Selecciona tu departamento"
+              />
+            </View>
+
             {/* Candidate name input */}
             <View style={styles.field}>
-              <Text style={styles.label}>Nombre de tu candidato</Text>
+              <Text style={styles.label}>Candidato</Text>
               <TextInput
                 style={[styles.input, matchedCandidate && styles.inputSuccess]}
                 placeholder="Ingresa el nombre de tu candidato"

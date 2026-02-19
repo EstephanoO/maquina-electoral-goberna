@@ -22,22 +22,42 @@ const TEXT_MUTED = 'rgba(22, 57, 96, 0.7)';
 const BORDER = '#E1E6F0';
 const FONT = 'Montserrat-Bold';
 
+// Phone validation regex - Peru format (9 digits starting with 9)
+const PHONE_REGEX = /^9\d{8}$/;
+
+// Generate email from phone number (for backend compatibility)
+const generateEmail = (phone: string) => `${phone}@goberna.pe`;
+
+// Check if input looks like an email
+const isEmail = (input: string) => input.includes('@');
+
 export default function LoginScreen() {
   const router = useRouter();
   const { login } = useApp();
 
-  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Campos requeridos', 'Ingresa tu email y contraseña.');
+    if (!phone.trim() || !password.trim()) {
+      Alert.alert('Campos requeridos', 'Ingresa tu numero y contrasena.');
+      return;
+    }
+
+    // Determine email: if user typed email directly, use it; otherwise generate from phone
+    const email = isEmail(phone.trim()) 
+      ? phone.trim() 
+      : generateEmail(phone.trim());
+
+    // Validate phone format if not email
+    if (!isEmail(phone.trim()) && !PHONE_REGEX.test(phone.trim())) {
+      Alert.alert('Numero invalido', 'Ingresa un numero valido de 9 digitos (ej: 987654321).');
       return;
     }
 
     setLoading(true);
-    const result = await login({ email: email.trim(), password: password.trim() });
+    const result = await login({ email, password: password.trim() });
     setLoading(false);
 
     if (!result.ok) {
@@ -65,24 +85,25 @@ export default function LoginScreen() {
           {/* Form */}
           <View style={styles.form}>
             <View style={styles.field}>
-              <Text style={styles.label}>Email</Text>
+              <Text style={styles.label}>Numero de telefono</Text>
               <TextInput
                 style={styles.input}
-                placeholder="agente@correo.com"
+                placeholder="987654321"
                 placeholderTextColor={TEXT_MUTED}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
                 autoCapitalize="none"
                 autoCorrect={false}
+                maxLength={9}
               />
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.label}>Contraseña</Text>
+              <Text style={styles.label}>Contrasena</Text>
               <TextInput
                 style={styles.input}
-                placeholder="••••••••"
+                placeholder="********"
                 placeholderTextColor={TEXT_MUTED}
                 value={password}
                 onChangeText={setPassword}
@@ -103,7 +124,7 @@ export default function LoginScreen() {
 
           {/* Register link */}
           <View style={styles.footer}>
-            <Text style={styles.footerText}>¿No tienes cuenta?</Text>
+            <Text style={styles.footerText}>No tienes cuenta?</Text>
             <Pressable onPress={() => router.push('/(auth)/register')}>
               <Text style={styles.footerLink}>Registrate</Text>
             </Pressable>

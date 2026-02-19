@@ -21,6 +21,8 @@ type Member = {
   user_id: string;
   full_name: string;
   email: string;
+  phone: string | null;
+  region: string | null;
   role: string;
   user_status: string;
 };
@@ -32,8 +34,29 @@ type PendingRequest = {
   status: string;
   full_name: string;
   email: string;
+  phone: string | null;
+  region: string | null;
   created_at: string;
 };
+
+type ZoneObjective = {
+  id: string;
+  campaign_id: string;
+  region: string;
+  target_forms: number;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// Peruvian departments for objectives
+const DEPARTAMENTOS = [
+  "Amazonas", "Ancash", "Apurimac", "Arequipa", "Ayacucho",
+  "Cajamarca", "Callao", "Cusco", "Huancavelica", "Huanuco",
+  "Ica", "Junin", "La Libertad", "Lambayeque", "Lima",
+  "Loreto", "Madre de Dios", "Moquegua", "Pasco", "Piura",
+  "Puno", "San Martin", "Tacna", "Tumbes", "Ucayali",
+];
 
 // ── Role Hierarchy System ───────────────────────────────────────────
 
@@ -203,6 +226,40 @@ function IconChevronDown() {
       <polyline points="6 9 12 15 18 9" />
     </svg>
   );
+}
+
+function IconWhatsApp() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="#25D366" aria-hidden="true">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+    </svg>
+  );
+}
+
+function IconPhone() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+    </svg>
+  );
+}
+
+function IconMapPin() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+      <circle cx="12" cy="10" r="3"/>
+    </svg>
+  );
+}
+
+/** Open WhatsApp chat with phone number */
+function openWhatsApp(phone: string) {
+  // Clean phone number (remove spaces, dashes)
+  const cleanPhone = phone.replace(/\D/g, "");
+  // Peru country code
+  const fullPhone = cleanPhone.startsWith("51") ? cleanPhone : `51${cleanPhone}`;
+  window.open(`https://wa.me/${fullPhone}`, "_blank");
 }
 
 // ── Hierarchy Visualization ─────────────────────────────────────────
@@ -480,7 +537,201 @@ function StatCard({ label, value, role }: { label: string; value: number; role?:
   );
 }
 
-// ── Pending Request Card ────────────────────────────────────────────
+// ── Pending Request Card (Selectable for batch operations) ──────────
+
+function PendingRequestCardSelectable({ 
+  request, 
+  selected,
+  onToggleSelect,
+  resolving, 
+  onResolve,
+  allowedRoles,
+}: { 
+  request: PendingRequest;
+  selected: boolean;
+  onToggleSelect: () => void;
+  resolving: boolean;
+  onResolve: (status: "approved" | "rejected", role: string) => void;
+  allowedRoles: string[];
+}) {
+  const [selectedRole, setSelectedRole] = useState("agent");
+  
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "stretch",
+      padding: 16,
+      borderBottom: "1px solid var(--color-border)",
+      gap: 16,
+      flexWrap: "wrap",
+      opacity: resolving ? 0.5 : 1,
+      transition: "all 0.15s ease",
+      background: selected ? "var(--goberna-blue-50)" : "transparent",
+    }}>
+      {/* Checkbox */}
+      <button
+        type="button"
+        onClick={onToggleSelect}
+        disabled={resolving}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 24,
+          height: 24,
+          borderRadius: 6,
+          border: `2px solid ${selected ? "var(--goberna-blue-600)" : "var(--color-border-strong)"}`,
+          background: selected ? "var(--goberna-blue-600)" : "transparent",
+          cursor: resolving ? "not-allowed" : "pointer",
+          flexShrink: 0,
+          alignSelf: "center",
+          color: "#fff",
+          fontSize: 12,
+          fontWeight: 700,
+        }}
+      >
+        {selected && "✓"}
+      </button>
+
+      {/* User Info */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "1 1 280px", minWidth: 0 }}>
+        <div style={{
+          width: 44,
+          height: 44,
+          borderRadius: "50%",
+          background: "var(--goberna-blue-100)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 16,
+          fontWeight: 700,
+          color: "var(--goberna-blue-600)",
+          flexShrink: 0,
+        }}>
+          {request.full_name?.charAt(0)?.toUpperCase() ?? "?"}
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: "var(--color-text-primary)", marginBottom: 2 }}>
+            {request.full_name}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {request.phone && (
+              <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                <IconPhone />
+                <span>{request.phone}</span>
+              </div>
+            )}
+            {request.region && (
+              <div style={{ 
+                display: "inline-flex", 
+                alignItems: "center", 
+                gap: 3, 
+                fontSize: 9, 
+                fontWeight: 600,
+                color: "#0369A1",
+                background: "#E0F2FE", 
+                padding: "2px 6px", 
+                borderRadius: 4,
+                textTransform: "uppercase",
+              }}>
+                <IconMapPin />
+                {request.region}
+              </div>
+            )}
+          </div>
+          <div style={{ fontSize: 10, color: "var(--color-text-quaternary)", marginTop: 2 }}>
+            {formatDate(request.created_at)}
+          </div>
+        </div>
+        {/* WhatsApp button */}
+        {request.phone && (
+          <button
+            type="button"
+            onClick={() => openWhatsApp(request.phone!)}
+            title="Enviar WhatsApp"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              background: "#DCFCE7",
+              border: "1px solid #BBF7D0",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <IconWhatsApp />
+          </button>
+        )}
+      </div>
+      
+      {/* Role Selection (only show if not selected for batch) */}
+      {!selected && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "1 1 300px" }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-tertiary)" }}>
+            Asignar como:
+          </div>
+          <RoleSelector 
+            value={selectedRole} 
+            onChange={setSelectedRole}
+            allowedRoles={allowedRoles}
+          />
+        </div>
+      )}
+      
+      {/* Actions (only show if not selected for batch) */}
+      {!selected && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+          <button
+            type="button"
+            disabled={resolving}
+            onClick={() => onResolve("approved", selectedRole)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 16px",
+              fontSize: 12,
+              fontWeight: 700,
+              color: "#fff",
+              background: "var(--color-success)",
+              border: "none",
+              borderRadius: 8,
+              cursor: "pointer",
+              transition: "transform 0.1s ease",
+            }}
+          >
+            <IconCheck /> Aprobar
+          </button>
+          <button
+            type="button"
+            disabled={resolving}
+            onClick={() => onResolve("rejected", "agent")}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 12px",
+              fontSize: 12,
+              fontWeight: 700,
+              color: "var(--color-error)",
+              background: "transparent",
+              border: "1px solid var(--color-error)",
+              borderRadius: 8,
+              cursor: "pointer",
+            }}
+          >
+            <IconX />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Pending Request Card (Legacy - for backwards compat) ────────────
 
 function PendingRequestCard({ 
   request, 
@@ -507,7 +758,7 @@ function PendingRequestCard({
       transition: "opacity 0.2s ease",
     }}>
       {/* User Info */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "1 1 200px", minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "1 1 280px", minWidth: 0 }}>
         <div style={{
           width: 44,
           height: 44,
@@ -523,17 +774,61 @@ function PendingRequestCard({
         }}>
           {request.full_name?.charAt(0)?.toUpperCase() ?? "?"}
         </div>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: 14, color: "var(--color-text-primary)", marginBottom: 2 }}>
             {request.full_name}
           </div>
-          <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
-            {request.email}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {request.phone && (
+              <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                <IconPhone />
+                <span>{request.phone}</span>
+              </div>
+            )}
+            {request.region && (
+              <div style={{ 
+                display: "inline-flex", 
+                alignItems: "center", 
+                gap: 3, 
+                fontSize: 9, 
+                fontWeight: 600,
+                color: "#0369A1",
+                background: "#E0F2FE", 
+                padding: "2px 6px", 
+                borderRadius: 4,
+                textTransform: "uppercase",
+              }}>
+                <IconMapPin />
+                {request.region}
+              </div>
+            )}
           </div>
           <div style={{ fontSize: 10, color: "var(--color-text-quaternary)", marginTop: 2 }}>
             {formatDate(request.created_at)}
           </div>
         </div>
+        {/* WhatsApp button */}
+        {request.phone && (
+          <button
+            type="button"
+            onClick={() => openWhatsApp(request.phone!)}
+            title="Enviar WhatsApp"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              background: "#DCFCE7",
+              border: "1px solid #BBF7D0",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <IconWhatsApp />
+          </button>
+        )}
       </div>
       
       {/* Role Selection */}
@@ -630,8 +925,8 @@ function MemberRow({
       opacity: updatingRole ? 0.5 : 1,
       transition: "all 0.15s ease",
     }}>
-      {/* Avatar + Name */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "1 1 200px", minWidth: 0 }}>
+      {/* Avatar + Name + Contact */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flex: "1 1 280px", minWidth: 0 }}>
         <div style={{
           width: 40,
           height: 40,
@@ -648,7 +943,7 @@ function MemberRow({
         }}>
           {member.full_name.charAt(0).toUpperCase()}
         </div>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: 6 }}>
             {member.full_name}
             {isSelf && (
@@ -664,10 +959,57 @@ function MemberRow({
               </span>
             )}
           </div>
-          <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
-            {member.email}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+            {member.phone && (
+              <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                <IconPhone />
+                <span>{member.phone}</span>
+              </div>
+            )}
+            {member.region && (
+              <div style={{ 
+                display: "inline-flex", 
+                alignItems: "center", 
+                gap: 3, 
+                fontSize: 9, 
+                fontWeight: 600,
+                color: "#0369A1",
+                background: "#E0F2FE", 
+                padding: "2px 6px", 
+                borderRadius: 4,
+                textTransform: "uppercase",
+              }}>
+                <IconMapPin />
+                {member.region}
+              </div>
+            )}
           </div>
         </div>
+        {/* WhatsApp button */}
+        {member.phone && (
+          <button
+            type="button"
+            onClick={() => openWhatsApp(member.phone!)}
+            title="Enviar WhatsApp"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              background: "#DCFCE7",
+              border: "1px solid #BBF7D0",
+              cursor: "pointer",
+              flexShrink: 0,
+              transition: "transform 0.1s ease",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.05)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+          >
+            <IconWhatsApp />
+          </button>
+        )}
       </div>
       
       {/* Role */}
@@ -745,6 +1087,18 @@ export default function EquipoPage() {
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [resolvingRequest, setResolvingRequest] = useState<string | null>(null);
   const [showHierarchy, setShowHierarchy] = useState(false);
+  
+  // Batch selection state
+  const [selectedRequests, setSelectedRequests] = useState<Set<string>>(new Set());
+  const [batchRole, setBatchRole] = useState("agent");
+  const [batchProcessing, setBatchProcessing] = useState(false);
+
+  // Objectives state
+  const [showObjectives, setShowObjectives] = useState(false);
+  const [zoneObjectives, setZoneObjectives] = useState<ZoneObjective[]>([]);
+  const [objectiveInputs, setObjectiveInputs] = useState<Record<string, string>>({});
+  const [savingObjectives, setSavingObjectives] = useState(false);
+  const [objectivesChanged, setObjectivesChanged] = useState(false);
 
   const fontStack = "var(--font-montserrat), system-ui, sans-serif";
   
@@ -799,6 +1153,73 @@ export default function EquipoPage() {
     fetchData();
   }, [fetchData]);
 
+  // ── Fetch objectives ──
+  const fetchObjectives = useCallback(async () => {
+    if (!activeCampaignId || !canManage) return;
+    
+    try {
+      const res = await api.get<{ zones: ZoneObjective[] }>("/api/objectives/zones", {
+        campaignId: activeCampaignId,
+      });
+      
+      if (res.ok && res.data) {
+        setZoneObjectives(res.data.zones);
+        // Initialize inputs from existing objectives
+        const inputs: Record<string, string> = {};
+        for (const obj of res.data.zones) {
+          inputs[obj.region] = String(obj.target_forms);
+        }
+        setObjectiveInputs(inputs);
+        setObjectivesChanged(false);
+      }
+    } catch {
+      // Silently fail - objectives are optional
+    }
+  }, [activeCampaignId, canManage]);
+
+  useEffect(() => {
+    if (showObjectives) {
+      fetchObjectives();
+    }
+  }, [showObjectives, fetchObjectives]);
+
+  // ── Save objectives ──
+  const handleSaveObjectives = async () => {
+    if (!activeCampaignId) return;
+    setSavingObjectives(true);
+
+    // Build objectives array from inputs
+    const objectives = DEPARTAMENTOS
+      .filter((region) => {
+        const val = objectiveInputs[region];
+        return val && parseInt(val, 10) > 0;
+      })
+      .map((region) => ({
+        region,
+        target_forms: parseInt(objectiveInputs[region], 10),
+      }));
+
+    const res = await api.post("/api/objectives/zones/bulk", 
+      { objectives },
+      { campaignId: activeCampaignId }
+    );
+
+    if (res.ok) {
+      fetchObjectives();
+      setObjectivesChanged(false);
+    } else {
+      alert(res.error?.message ?? "Error guardando objetivos");
+    }
+
+    setSavingObjectives(false);
+  };
+
+  // ── Handle objective input change ──
+  const handleObjectiveInputChange = (region: string, value: string) => {
+    setObjectiveInputs((prev) => ({ ...prev, [region]: value }));
+    setObjectivesChanged(true);
+  };
+
   // ── Change role ──
   const handleRoleChange = async (userId: string, newRole: string) => {
     if (!activeCampaignId) return;
@@ -844,6 +1265,11 @@ export default function EquipoPage() {
 
     if (res.ok) {
       setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
+      setSelectedRequests((prev) => {
+        const next = new Set(prev);
+        next.delete(requestId);
+        return next;
+      });
       if (status === "approved") {
         fetchData();
       }
@@ -852,6 +1278,116 @@ export default function EquipoPage() {
     }
 
     setResolvingRequest(null);
+  };
+
+  // ── Toggle request selection ──
+  const toggleRequestSelection = (requestId: string) => {
+    setSelectedRequests((prev) => {
+      const next = new Set(prev);
+      if (next.has(requestId)) {
+        next.delete(requestId);
+      } else {
+        next.add(requestId);
+      }
+      return next;
+    });
+  };
+
+  // ── Select/deselect all ──
+  const toggleSelectAll = () => {
+    if (selectedRequests.size === pendingRequests.length) {
+      setSelectedRequests(new Set());
+    } else {
+      setSelectedRequests(new Set(pendingRequests.map((r) => r.id)));
+    }
+  };
+
+  // ── Batch approve ──
+  const handleBatchApprove = async () => {
+    if (selectedRequests.size === 0) return;
+    
+    const confirmMsg = `¿Aprobar ${selectedRequests.size} solicitud${selectedRequests.size > 1 ? "es" : ""} como ${ROLES[batchRole]?.shortLabel ?? batchRole}?`;
+    if (!confirm(confirmMsg)) return;
+
+    setBatchProcessing(true);
+    
+    // Map display role to backend role
+    const backendRole = batchRole === "supervisor" ? "jefe_campana" 
+                      : batchRole === "capitan_brigada" ? "brigadista_zonal"
+                      : batchRole === "director_regional" ? "consultor"
+                      : "agente_campo";
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Process in parallel with Promise.allSettled
+    const results = await Promise.allSettled(
+      Array.from(selectedRequests).map(async (requestId) => {
+        const res = await api.put(`/api/access-requests/${requestId}`, {
+          status: "approved",
+          role: backendRole,
+        });
+        if (!res.ok) throw new Error(res.error?.message ?? "Error");
+        return requestId;
+      })
+    );
+
+    const approvedIds: string[] = [];
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        successCount++;
+        approvedIds.push(result.value);
+      } else {
+        failCount++;
+      }
+    }
+
+    // Update state
+    setPendingRequests((prev) => prev.filter((r) => !approvedIds.includes(r.id)));
+    setSelectedRequests(new Set());
+    
+    // Refresh members list
+    if (successCount > 0) {
+      fetchData();
+    }
+
+    setBatchProcessing(false);
+
+    // Show result
+    if (failCount > 0) {
+      alert(`Aprobados: ${successCount}, Fallidos: ${failCount}`);
+    }
+  };
+
+  // ── Batch reject ──
+  const handleBatchReject = async () => {
+    if (selectedRequests.size === 0) return;
+    
+    const confirmMsg = `¿Rechazar ${selectedRequests.size} solicitud${selectedRequests.size > 1 ? "es" : ""}?`;
+    if (!confirm(confirmMsg)) return;
+
+    setBatchProcessing(true);
+
+    const results = await Promise.allSettled(
+      Array.from(selectedRequests).map(async (requestId) => {
+        const res = await api.put(`/api/access-requests/${requestId}`, {
+          status: "rejected",
+        });
+        if (!res.ok) throw new Error(res.error?.message ?? "Error");
+        return requestId;
+      })
+    );
+
+    const rejectedIds: string[] = [];
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        rejectedIds.push(result.value);
+      }
+    }
+
+    setPendingRequests((prev) => prev.filter((r) => !rejectedIds.includes(r.id)));
+    setSelectedRequests(new Set());
+    setBatchProcessing(false);
   };
 
   // ── Remove member ──
@@ -964,6 +1500,123 @@ export default function EquipoPage() {
               {pendingRequests.length}
             </span>
           </div>
+          
+          {/* Batch Actions Bar */}
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "12px 16px",
+            background: selectedRequests.size > 0 ? "var(--goberna-blue-50)" : "var(--color-surface-secondary)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-lg)",
+            marginBottom: 8,
+            flexWrap: "wrap",
+          }}>
+            {/* Select all checkbox */}
+            <button
+              type="button"
+              onClick={toggleSelectAll}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 12px",
+                background: "transparent",
+                border: "1px solid var(--color-border)",
+                borderRadius: 6,
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              <span style={{
+                width: 16,
+                height: 16,
+                borderRadius: 4,
+                border: "2px solid var(--color-border-strong)",
+                background: selectedRequests.size === pendingRequests.length && pendingRequests.length > 0 
+                  ? "var(--goberna-blue-600)" 
+                  : selectedRequests.size > 0 
+                    ? "var(--goberna-blue-300)" 
+                    : "transparent",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#fff",
+                fontSize: 10,
+              }}>
+                {selectedRequests.size > 0 && "✓"}
+              </span>
+              {selectedRequests.size === 0 
+                ? "Seleccionar todos" 
+                : selectedRequests.size === pendingRequests.length 
+                  ? "Deseleccionar todos"
+                  : `${selectedRequests.size} seleccionados`}
+            </button>
+
+            {selectedRequests.size > 0 && (
+              <>
+                {/* Batch role selector */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>Aprobar como:</span>
+                  <RoleSelector 
+                    value={batchRole} 
+                    onChange={setBatchRole}
+                    allowedRoles={allowedRoles}
+                  />
+                </div>
+
+                {/* Batch approve button */}
+                <button
+                  type="button"
+                  onClick={handleBatchApprove}
+                  disabled={batchProcessing}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "8px 16px",
+                    background: "var(--color-success)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 8,
+                    cursor: batchProcessing ? "not-allowed" : "pointer",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    opacity: batchProcessing ? 0.6 : 1,
+                  }}
+                >
+                  {batchProcessing ? "Procesando..." : `✓ Aprobar ${selectedRequests.size}`}
+                </button>
+
+                {/* Batch reject button */}
+                <button
+                  type="button"
+                  onClick={handleBatchReject}
+                  disabled={batchProcessing}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "8px 12px",
+                    background: "transparent",
+                    color: "var(--color-error)",
+                    border: "1px solid var(--color-error)",
+                    borderRadius: 8,
+                    cursor: batchProcessing ? "not-allowed" : "pointer",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    opacity: batchProcessing ? 0.6 : 1,
+                  }}
+                >
+                  ✕ Rechazar
+                </button>
+              </>
+            )}
+          </div>
+
           <div style={{
             background: "var(--color-surface)",
             border: "1px solid var(--color-border)",
@@ -971,15 +1624,186 @@ export default function EquipoPage() {
             overflow: "hidden",
           }}>
             {pendingRequests.map((req) => (
-              <PendingRequestCard
+              <PendingRequestCardSelectable
                 key={req.id}
                 request={req}
-                resolving={resolvingRequest === req.id}
+                selected={selectedRequests.has(req.id)}
+                onToggleSelect={() => toggleRequestSelection(req.id)}
+                resolving={resolvingRequest === req.id || batchProcessing}
                 onResolve={(status, role) => handleResolve(req.id, status, role)}
                 allowedRoles={allowedRoles}
               />
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── Zone Objectives ─────────────────────────────────────── */}
+      {canManage && (
+        <div style={{ marginBottom: 24 }}>
+          <button
+            type="button"
+            onClick={() => setShowObjectives(!showObjectives)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              width: "100%",
+              padding: "14px 18px",
+              background: showObjectives ? "var(--goberna-blue-50)" : "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-lg)",
+              cursor: "pointer",
+              fontSize: 14,
+              fontWeight: 700,
+              color: "var(--color-text-primary)",
+              textAlign: "left",
+            }}
+          >
+            <span style={{ fontSize: 18 }}>🎯</span>
+            Metas por Region (Departamento)
+            <span style={{
+              marginLeft: "auto",
+              fontSize: 12,
+              color: "var(--color-text-tertiary)",
+              transform: showObjectives ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 0.2s ease",
+            }}>
+              ▼
+            </span>
+          </button>
+
+          {showObjectives && (
+            <div style={{
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+              borderTop: "none",
+              borderRadius: "0 0 var(--radius-lg) var(--radius-lg)",
+              padding: 20,
+            }}>
+              <div style={{ 
+                fontSize: 12, 
+                color: "var(--color-text-tertiary)", 
+                marginBottom: 16,
+                lineHeight: 1.5,
+              }}>
+                Define cuantos formularios debe recopilar cada region. Los brigadistas zonales heredan 
+                el objetivo completo de su region. Los agentes de campo dividen el objetivo entre todos 
+                los agentes activos en esa region.
+              </div>
+
+              {/* Objectives Grid */}
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+                gap: 12,
+                marginBottom: 20,
+              }}>
+                {DEPARTAMENTOS.map((region) => {
+                  const currentObjective = zoneObjectives.find((o) => o.region === region);
+                  const inputValue = objectiveInputs[region] ?? "";
+                  const hasValue = inputValue && parseInt(inputValue, 10) > 0;
+                  
+                  // Count members in this region
+                  const membersInRegion = members.filter((m) => m.region === region).length;
+                  
+                  return (
+                    <div 
+                      key={region}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "10px 14px",
+                        background: hasValue ? "var(--goberna-blue-50)" : "var(--color-surface-secondary)",
+                        border: `1px solid ${hasValue ? "var(--goberna-blue-200)" : "var(--color-border)"}`,
+                        borderRadius: 8,
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ 
+                          fontSize: 12, 
+                          fontWeight: 600, 
+                          color: "var(--color-text-primary)",
+                          marginBottom: 2,
+                        }}>
+                          {region}
+                        </div>
+                        {membersInRegion > 0 && (
+                          <div style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>
+                            {membersInRegion} miembro{membersInRegion !== 1 ? "s" : ""}
+                          </div>
+                        )}
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={inputValue}
+                        onChange={(e) => handleObjectiveInputChange(region, e.target.value)}
+                        style={{
+                          width: 70,
+                          padding: "6px 10px",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          textAlign: "center",
+                          border: "1px solid var(--color-border)",
+                          borderRadius: 6,
+                          background: "var(--color-surface)",
+                          color: "var(--color-text-primary)",
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Summary + Save */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "14px 16px",
+                background: "var(--color-surface-secondary)",
+                borderRadius: 8,
+                flexWrap: "wrap",
+                gap: 12,
+              }}>
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 2 }}>
+                    Total de metas configuradas
+                  </div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "var(--goberna-blue-600)" }}>
+                    {Object.values(objectiveInputs).reduce((sum, val) => sum + (parseInt(val, 10) || 0), 0).toLocaleString()}
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-tertiary)", marginLeft: 6 }}>
+                      formularios
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveObjectives}
+                  disabled={savingObjectives || !objectivesChanged}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "10px 20px",
+                    background: objectivesChanged ? "var(--goberna-blue-600)" : "var(--color-border)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 8,
+                    cursor: savingObjectives || !objectivesChanged ? "not-allowed" : "pointer",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    opacity: savingObjectives ? 0.6 : 1,
+                  }}
+                >
+                  {savingObjectives ? "Guardando..." : objectivesChanged ? "💾 Guardar Metas" : "✓ Guardado"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

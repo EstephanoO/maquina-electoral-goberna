@@ -14,6 +14,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -32,6 +33,24 @@ import { useApp } from '@/lib/app-context';
 import { appEvents } from '@/lib/events';
 import * as api from '@/lib/api';
 import type { Meet, MeetSummary, MeetParticipant, CampaignMember } from '@/lib/types';
+
+// ═══════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════
+
+/** Open WhatsApp chat with phone number */
+function openWhatsApp(phone: string | null) {
+  if (!phone) {
+    Alert.alert('Sin telefono', 'Este usuario no tiene numero registrado.');
+    return;
+  }
+  // Clean phone number (remove spaces, dashes)
+  const cleanPhone = phone.replace(/\D/g, '');
+  // Peru country code
+  const fullPhone = cleanPhone.startsWith('51') ? cleanPhone : `51${cleanPhone}`;
+  const url = `https://wa.me/${fullPhone}`;
+  Linking.openURL(url).catch(() => Alert.alert('Error', 'No se pudo abrir WhatsApp.'));
+}
 
 const FONT = 'Montserrat-Bold';
 const BORDER = '#E1E6F0';
@@ -54,15 +73,33 @@ const STATUS_COLORS: Record<string, string> = {
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin',
+  consultor: 'Consultor',
+  jefe_campana: 'Jefe Campana',
+  brigadista_zonal: 'Brigadista Zonal',
+  agente_campo: 'Agente',
+  // Aliases
   supervisor: 'Supervisor',
   agent: 'Agente',
 };
 
 const ROLE_ICONS: Record<string, string> = {
   admin: 'admin-panel-settings',
+  consultor: 'psychology',
+  jefe_campana: 'supervisor-account',
+  brigadista_zonal: 'map',
+  agente_campo: 'person',
+  // Aliases
   supervisor: 'manage-accounts',
   agent: 'person',
 };
+
+const BACKEND_ROLES = [
+  { key: 'admin', label: 'Admin', icon: 'admin-panel-settings' },
+  { key: 'consultor', label: 'Consultor', icon: 'psychology' },
+  { key: 'jefe_campana', label: 'Jefe Campana', icon: 'supervisor-account' },
+  { key: 'brigadista_zonal', label: 'Brigadista Zonal', icon: 'map' },
+  { key: 'agente_campo', label: 'Agente de Campo', icon: 'person' },
+];
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -89,8 +126,15 @@ export default function ReunionesScreen() {
   // Derive config safely (may be undefined when not active)
   const config = auth.status === 'active' ? auth.config : null;
   const campaignId = config?.campaign.id ?? '';
+  const agentId = config?.agent.id ?? '';
   const agentRole = config?.agent.role ?? 'agent';
-  const canSeeTeam = agentRole === 'admin' || agentRole === 'supervisor';
+  
+  // Roles that can see all team members (not filtered by region)
+  const isAdmin = agentRole === 'admin' || agentRole === 'supervisor' || 
+                  agentRole === 'consultor' || agentRole === 'jefe_campana';
+  const isBrigadistaZonal = agentRole === 'brigadista_zonal';
+  const canSeeTeam = isAdmin || isBrigadistaZonal;
+  const canManageRoles = isAdmin; // Only admin/jefe can change roles
 
   const [meets, setMeets] = useState<Meet[]>([]);
   const [members, setMembers] = useState<CampaignMember[]>([]);
@@ -98,7 +142,17 @@ export default function ReunionesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [selectedMeetId, setSelectedMeetId] = useState<string | null>(null);
+  const [selectedMember, setSelectedMember] = useState<CampaignMember | null>(null);
   const [activeTab, setActiveTab] = useState<'meets' | 'equipo'>('meets');
+
+  // Get current user's region from members list (for brigadista filtering)
+  const currentUserMember = members.find(m => m.user_id === agentId);
+  const userRegion = currentUserMember?.region;
+
+  // Filter members for brigadista_zonal (only show their region)
+  const filteredMembers = isBrigadistaZonal && userRegion
+    ? members.filter(m => m.region === userRegion)
+    : members;
 
   const fetchMeets = useCallback(async () => {
     const result = await api.getActiveMeets();
@@ -223,22 +277,43 @@ export default function ReunionesScreen() {
 
   // ── Render member card ──────────────────────────────────
   const renderMember = ({ item }: { item: CampaignMember }) => (
-    <View style={styles.memberCard}>
-      <View style={[styles.memberAvatar, { backgroundColor: primary + '18' }]}>
-        <MaterialIcons
-          name={(ROLE_ICONS[item.role] ?? 'person') as keyof typeof MaterialIcons.glyphMap}
-          size={20}
-          color={primary}
-        />
+    <Pressable onPress={() => setSelectedMember(item)}>
+      <View style={styles.memberCard}>
+        <View style={[styles.memberAvatar, { backgroundColor: primary + '18' }]}>
+          <MaterialIcons
+            name={(ROLE_ICONS[item.role] ?? 'person') as keyof typeof MaterialIcons.glyphMap}
+            size={20}
+            color={primary}
+          />
+        </View>
+        <View style={styles.memberInfo}>
+          <Text style={[styles.memberName, { color: primary }]} numberOfLines={1}>{item.full_name}</Text>
+          <View style={styles.memberMetaRow}>
+            {item.phone && (
+              <Text style={styles.memberPhone} numberOfLines={1}>{item.phone}</Text>
+            )}
+            {item.region && (
+              <View style={styles.regionBadge}>
+                <Text style={styles.regionBadgeText}>{item.region}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+        {/* WhatsApp button */}
+        {item.phone && (
+          <Pressable
+            style={styles.whatsappBtn}
+            onPress={(e) => { e.stopPropagation(); openWhatsApp(item.phone); }}
+            hitSlop={8}
+          >
+            <MaterialIcons name="chat" size={18} color="#25D366" />
+          </Pressable>
+        )}
+        <View style={[styles.roleBadge, { backgroundColor: primary + '15' }]}>
+          <Text style={[styles.roleBadgeText, { color: primary }]}>{ROLE_LABELS[item.role] ?? item.role}</Text>
+        </View>
       </View>
-      <View style={styles.memberInfo}>
-        <Text style={[styles.memberName, { color: primary }]} numberOfLines={1}>{item.full_name}</Text>
-        <Text style={styles.memberEmail} numberOfLines={1}>{item.email}</Text>
-      </View>
-      <View style={[styles.roleBadge, { backgroundColor: primary + '15' }]}>
-        <Text style={[styles.roleBadgeText, { color: primary }]}>{ROLE_LABELS[item.role] ?? item.role}</Text>
-      </View>
-    </View>
+    </Pressable>
   );
 
   return (
@@ -266,7 +341,7 @@ export default function ReunionesScreen() {
           >
             <MaterialIcons name="groups" size={16} color={activeTab === 'equipo' ? primary : 'rgba(22,57,96,0.4)'} />
             <Text style={[styles.tabText, activeTab === 'equipo' && { color: primary }]}>
-              Equipo ({members.length})
+              Equipo ({filteredMembers.length})
             </Text>
           </Pressable>
         </View>
@@ -299,7 +374,7 @@ export default function ReunionesScreen() {
         />
       ) : (
         <FlatList
-          data={members}
+          data={filteredMembers}
           keyExtractor={(m) => m.user_id}
           renderItem={renderMember}
           contentContainerStyle={styles.list}
@@ -308,9 +383,10 @@ export default function ReunionesScreen() {
           }
           ListHeaderComponent={
             <View style={styles.teamStats}>
-              <StatPill icon="admin-panel-settings" label="Admin" count={members.filter(m => m.role === 'admin').length} color="#7C3AED" />
-              <StatPill icon="manage-accounts" label="Supervisores" count={members.filter(m => m.role === 'supervisor').length} color="#2563EB" />
-              <StatPill icon="person" label="Agentes" count={members.filter(m => m.role === 'agent').length} color="#059669" />
+              <StatPill icon="admin-panel-settings" label="Admin" count={filteredMembers.filter(m => m.role === 'admin').length} color="#7C3AED" />
+              <StatPill icon="supervisor-account" label="Jefes" count={filteredMembers.filter(m => m.role === 'jefe_campana' || m.role === 'consultor').length} color="#2563EB" />
+              <StatPill icon="map" label="Brigadistas" count={filteredMembers.filter(m => m.role === 'brigadista_zonal').length} color="#F59E0B" />
+              <StatPill icon="person" label="Agentes" count={filteredMembers.filter(m => m.role === 'agente_campo').length} color="#059669" />
             </View>
           }
           ListEmptyComponent={
@@ -352,6 +428,16 @@ export default function ReunionesScreen() {
         userId={agent.id}
         userRole={agent.role}
         onRefreshList={fetchMeets}
+      />
+
+      {/* Member detail modal */}
+      <MemberDetailModal
+        member={selectedMember}
+        onClose={() => setSelectedMember(null)}
+        primary={primary}
+        canManageRoles={canManageRoles}
+        campaignId={campaign.id}
+        onRoleChanged={fetchMembers}
       />
     </SafeAreaView>
   );
@@ -750,6 +836,162 @@ function CreateMeetModal({
 }
 
 // ═══════════════════════════════════════════════════════════════
+// MEMBER DETAIL MODAL
+// ═══════════════════════════════════════════════════════════════
+
+function MemberDetailModal({
+  member,
+  onClose,
+  primary,
+  canManageRoles,
+  campaignId,
+  onRoleChanged,
+}: {
+  member: CampaignMember | null;
+  onClose: () => void;
+  primary: string;
+  canManageRoles: boolean;
+  campaignId: string;
+  onRoleChanged: () => void;
+}) {
+  const [changing, setChanging] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (member) {
+      setSelectedRole(member.role);
+    }
+  }, [member]);
+
+  const handleChangeRole = async () => {
+    if (!member || !selectedRole || selectedRole === member.role) return;
+    
+    setChanging(true);
+    const result = await api.updateMemberRole(campaignId, member.user_id, selectedRole);
+    setChanging(false);
+    
+    if (result.ok) {
+      Alert.alert('Listo', 'El rol fue actualizado.');
+      onRoleChanged();
+      onClose();
+    } else {
+      Alert.alert('Error', result.error);
+    }
+  };
+
+  if (!member) return null;
+
+  return (
+    <Modal visible={!!member} animationType="slide" transparent>
+      <View style={styles.modalOverlay}>
+        <Pressable style={styles.modalDismiss} onPress={onClose} />
+        <View style={styles.modalContent}>
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { color: primary }]}>Miembro del equipo</Text>
+            <Pressable onPress={onClose} hitSlop={12}>
+              <MaterialIcons name="close" size={24} color="rgba(22,57,96,0.5)" />
+            </Pressable>
+          </View>
+
+          {/* Member info */}
+          <View style={styles.memberDetailSection}>
+            <View style={[styles.memberDetailAvatar, { backgroundColor: primary + '15' }]}>
+              <MaterialIcons
+                name={(ROLE_ICONS[member.role] ?? 'person') as keyof typeof MaterialIcons.glyphMap}
+                size={32}
+                color={primary}
+              />
+            </View>
+            <Text style={[styles.memberDetailName, { color: primary }]}>{member.full_name}</Text>
+            
+            {member.phone && (
+              <View style={styles.memberDetailRow}>
+                <MaterialIcons name="phone" size={16} color="rgba(22,57,96,0.5)" />
+                <Text style={styles.memberDetailText}>{member.phone}</Text>
+              </View>
+            )}
+            
+            {member.region && (
+              <View style={styles.memberDetailRow}>
+                <MaterialIcons name="place" size={16} color="rgba(22,57,96,0.5)" />
+                <Text style={styles.memberDetailText}>{member.region}</Text>
+              </View>
+            )}
+
+            <View style={styles.memberDetailRow}>
+              <MaterialIcons name="badge" size={16} color="rgba(22,57,96,0.5)" />
+              <Text style={styles.memberDetailText}>{ROLE_LABELS[member.role] ?? member.role}</Text>
+            </View>
+          </View>
+
+          {/* WhatsApp button */}
+          {member.phone && (
+            <Pressable
+              style={styles.whatsappFullBtn}
+              onPress={() => openWhatsApp(member.phone)}
+            >
+              <MaterialIcons name="chat" size={20} color="#25D366" />
+              <Text style={styles.whatsappFullBtnText}>Enviar mensaje por WhatsApp</Text>
+            </Pressable>
+          )}
+
+          {/* Role change (only for admins) */}
+          {canManageRoles && (
+            <View style={styles.roleChangeSection}>
+              <Text style={styles.roleChangeSectionTitle}>Cambiar rol</Text>
+              <View style={styles.roleOptions}>
+                {BACKEND_ROLES.map((role) => (
+                  <Pressable
+                    key={role.key}
+                    style={[
+                      styles.roleOption,
+                      selectedRole === role.key && { backgroundColor: primary + '15', borderColor: primary },
+                    ]}
+                    onPress={() => setSelectedRole(role.key)}
+                  >
+                    <MaterialIcons
+                      name={role.icon as keyof typeof MaterialIcons.glyphMap}
+                      size={18}
+                      color={selectedRole === role.key ? primary : 'rgba(22,57,96,0.5)'}
+                    />
+                    <Text
+                      style={[
+                        styles.roleOptionText,
+                        selectedRole === role.key && { color: primary },
+                      ]}
+                    >
+                      {role.label}
+                    </Text>
+                    {selectedRole === role.key && (
+                      <MaterialIcons name="check-circle" size={16} color={primary} />
+                    )}
+                  </Pressable>
+                ))}
+              </View>
+
+              {selectedRole !== member.role && (
+                <Pressable
+                  style={[styles.saveRoleBtn, { backgroundColor: primary }, changing && { opacity: 0.6 }]}
+                  onPress={handleChangeRole}
+                  disabled={changing}
+                >
+                  {changing ? (
+                    <ActivityIndicator color="#FFF" size="small" />
+                  ) : (
+                    <Text style={styles.saveRoleBtnText}>Guardar cambio de rol</Text>
+                  )}
+                </Pressable>
+              )}
+            </View>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // STYLES
 // ═══════════════════════════════════════════════════════════════
 
@@ -806,7 +1048,11 @@ const styles = StyleSheet.create({
   },
   memberInfo: { flex: 1, gap: 2 },
   memberName: { fontSize: 14, fontFamily: FONT },
-  memberEmail: { fontSize: 11, color: 'rgba(22,57,96,0.45)', fontFamily: FONT },
+  memberMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  memberPhone: { fontSize: 11, color: 'rgba(22,57,96,0.55)', fontFamily: FONT },
+  regionBadge: { backgroundColor: '#E0F2FE', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  regionBadgeText: { fontSize: 9, color: '#0369A1', fontFamily: FONT, textTransform: 'uppercase' },
+  whatsappBtn: { padding: 8 },
   roleBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   roleBadgeText: { fontSize: 10, fontFamily: FONT, textTransform: 'uppercase' },
 
@@ -898,4 +1144,36 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#FCA5A5', backgroundColor: '#FEF2F2',
   },
   deleteBtnText: { fontSize: 14, color: '#EF4444', fontFamily: FONT },
+
+  // Member detail modal
+  memberDetailSection: { alignItems: 'center', gap: 8, paddingVertical: 16 },
+  memberDetailAvatar: {
+    width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center',
+  },
+  memberDetailName: { fontSize: 18, fontFamily: FONT, marginTop: 8 },
+  memberDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  memberDetailText: { fontSize: 13, color: 'rgba(22,57,96,0.6)', fontFamily: FONT },
+
+  // WhatsApp full button
+  whatsappFullBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: '#DCFCE7', paddingVertical: 14, borderRadius: 12, marginTop: 8,
+  },
+  whatsappFullBtnText: { fontSize: 14, color: '#166534', fontFamily: FONT },
+
+  // Role change section
+  roleChangeSection: { marginTop: 20, gap: 12 },
+  roleChangeSectionTitle: {
+    fontSize: 12, fontFamily: FONT, color: 'rgba(22,57,96,0.6)',
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  roleOptions: { gap: 8 },
+  roleOption: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10,
+    borderWidth: 1, borderColor: BORDER, backgroundColor: '#FFF',
+  },
+  roleOptionText: { flex: 1, fontSize: 14, fontFamily: FONT, color: 'rgba(22,57,96,0.7)' },
+  saveRoleBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 8 },
+  saveRoleBtnText: { fontSize: 14, color: '#FFF', fontFamily: FONT },
 });

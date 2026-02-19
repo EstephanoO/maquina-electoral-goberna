@@ -9,7 +9,14 @@
 // ─── Auth ───────────────────────────────────────────────────
 
 /** Backend roles: admin | supervisor | agent */
-export type UserRole = 'agent' | 'supervisor' | 'admin';
+// Backend role types (canonical)
+export type BackendRole = 'admin' | 'consultor' | 'jefe_campana' | 'brigadista_zonal' | 'agente_campo';
+
+// Mobile legacy aliases (for backward compatibility)
+export type MobileLegacyRole = 'agent' | 'supervisor';
+
+// Combined role type (backend roles + legacy aliases)
+export type UserRole = BackendRole | MobileLegacyRole;
 export type UserStatus = 'active' | 'pending' | 'suspended';
 
 export type AuthUser = {
@@ -40,11 +47,14 @@ export type LoginResponse = {
   campaigns: CampaignMembership[];
 };
 
-/** Backend expects: { email, password, full_name } */
+/** Backend expects: { email, password, full_name, phone, region, campaign_id } */
 export type RegisterRequest = {
   email: string;
   password: string;
   full_name: string;
+  phone: string;
+  region: string;
+  campaign_id?: string;
 };
 
 /** Backend returns the created user object */
@@ -183,9 +193,10 @@ export type CreateAccessRequestPayload = {
   perm_digital?: boolean;
 };
 
-/** PUT /api/access-requests/:id expects: { status: 'approved' | 'rejected', note? } */
+/** PUT /api/access-requests/:id expects: { status: 'approved' | 'rejected', role?, note? } */
 export type ResolveAccessRequestPayload = {
   status: 'approved' | 'rejected';
+  role?: string; // Role to assign when approving (agente_campo, brigadista_zonal, jefe_campana)
   note?: string;
 };
 
@@ -196,6 +207,9 @@ export type AccessRequestRow = {
   status: 'pending' | 'approved' | 'rejected';
   full_name: string;
   email: string;
+  phone: string;
+  region: string;
+  campaign_name?: string;
   created_at: string;
 };
 
@@ -287,6 +301,8 @@ export type CampaignMember = {
   user_id: string;
   full_name: string;
   email: string;
+  phone: string | null;
+  region: string | null;
   role: UserRole;
   user_status: string;
 };
