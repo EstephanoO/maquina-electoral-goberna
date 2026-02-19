@@ -6,12 +6,18 @@
 --   2. Re-add constraints with new valid roles (candidato, agente_digital; no jefe_campana)
 --   3. Migrate existing jefe_campana rows to candidato
 
--- ── users ────────────────────────────────────────────────────────────
+-- ── Step 1: Data migration (must happen BEFORE adding new constraints) ──
 
--- Drop old constraint (name may vary; try both common patterns)
+UPDATE users SET role = 'candidato', updated_at = now()
+WHERE role = 'jefe_campana';
+
+UPDATE user_campaigns SET role = 'candidato', assigned_at = now()
+WHERE role = 'jefe_campana';
+
+-- ── Step 2: Replace CHECK constraint on users ────────────────────────
+
 DO $$
 BEGIN
-  -- Attempt to drop by the common auto-generated name
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints
     WHERE table_name = 'users'
@@ -33,7 +39,7 @@ ALTER TABLE users
   ADD CONSTRAINT users_role_check
   CHECK (role IN ('admin', 'consultor', 'candidato', 'brigadista_zonal', 'agente_campo', 'agente_digital'));
 
--- ── user_campaigns ────────────────────────────────────────────────────
+-- ── Step 3: Replace CHECK constraint on user_campaigns ───────────────
 
 DO $$
 BEGIN
@@ -57,11 +63,3 @@ END $$;
 ALTER TABLE user_campaigns
   ADD CONSTRAINT user_campaigns_role_check
   CHECK (role IN ('admin', 'consultor', 'candidato', 'brigadista_zonal', 'agente_campo', 'agente_digital'));
-
--- ── Data migration ────────────────────────────────────────────────────
-
-UPDATE users SET role = 'candidato', updated_at = now()
-WHERE role = 'jefe_campana';
-
-UPDATE user_campaigns SET role = 'candidato', assigned_at = now()
-WHERE role = 'jefe_campana';
