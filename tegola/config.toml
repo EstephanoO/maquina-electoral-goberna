@@ -4,57 +4,61 @@ port = ":8080"
   [webserver.headers]
   Access-Control-Allow-Origin = "*"
   Access-Control-Allow-Methods = "GET, OPTIONS"
-  Cache-Control = "public, max-age=5, stale-while-revalidate=1"
+  Cache-Control = "public, max-age=3600, stale-while-revalidate=600"
 
+# Tegola internal Redis cache — geographic data is static, cache aggressively
 [cache]
 type = "redis"
 uri = "redis://:${REDIS_PASSWORD}@redis:6379/0"
-max_zoom = 20
+max_zoom = 14
 
 [[providers]]
 name = "neon"
 type = "mvt_postgis"
 uri = "${DATABASE_URL}"
 
+  # ── Base map layers ──
+  # Use geom_3857 column (pre-projected, GIST-indexed) to avoid on-the-fly ST_Transform
+
   [[providers.layers]]
   name = "departamentos"
   geometry_type = "MultiPolygon"
   id_fieldname = "gid"
-  sql = "SELECT gid, coddep, nomdep AS departamento, NULL::text AS capital, ST_AsMVTGeom(ST_Transform(geom, 3857), !BBOX!) AS geom FROM public.peru_departamentos WHERE ST_Transform(geom, 3857) && !BBOX!"
+  sql = "SELECT gid, coddep, nomdep AS departamento, ST_AsMVTGeom(geom_3857, !BBOX!) AS geom FROM public.peru_departamentos WHERE geom_3857 && !BBOX!"
 
   [[providers.layers]]
   name = "provincias"
   geometry_type = "MultiPolygon"
   id_fieldname = "gid"
-  sql = "SELECT gid, coddep, codprov, (coddep || codprov) AS codprov_full, nomprov AS provincia, NULL::text AS capital, ST_AsMVTGeom(ST_Transform(geom, 3857), !BBOX!) AS geom FROM public.peru_provincias WHERE ST_Transform(geom, 3857) && !BBOX!"
+  sql = "SELECT gid, coddep, codprov, (coddep || codprov) AS codprov_full, nomprov AS provincia, ST_AsMVTGeom(geom_3857, !BBOX!) AS geom FROM public.peru_provincias WHERE geom_3857 && !BBOX!"
 
   [[providers.layers]]
   name = "distritos"
   geometry_type = "MultiPolygon"
   id_fieldname = "gid"
-  sql = "SELECT gid, ubigeo, coddep, codprov, (coddep || codprov) AS codprov_full, right(ubigeo, 2) AS coddist, nomdist AS distrito, NULL::text AS capital, ST_AsMVTGeom(ST_Transform(geom, 3857), !BBOX!) AS geom FROM public.peru_distritos WHERE ST_Transform(geom, 3857) && !BBOX!"
+  sql = "SELECT gid, ubigeo, coddep, codprov, (coddep || codprov) AS codprov_full, right(ubigeo, 2) AS coddist, nomdist AS distrito, ST_AsMVTGeom(geom_3857, !BBOX!) AS geom FROM public.peru_distritos WHERE geom_3857 && !BBOX!"
 
-  # --- Priority zones: base map JOINed with campaign_priority_zones ---
+  # ── Priority zones: base map JOINed with campaign_priority_zones ──
 
   [[providers.layers]]
   name = "priority_departamentos"
   geometry_type = "MultiPolygon"
   id_fieldname = "gid"
-  sql = "SELECT d.gid, d.coddep, d.nomdep AS departamento, cpz.campaign_id::text, cpz.priority, ST_AsMVTGeom(ST_Transform(d.geom, 3857), !BBOX!) AS geom FROM public.peru_departamentos d INNER JOIN public.campaign_priority_zones cpz ON cpz.zone_code = d.coddep AND cpz.zone_level = 'departamento' WHERE ST_Transform(d.geom, 3857) && !BBOX!"
+  sql = "SELECT d.gid, d.coddep, d.nomdep AS departamento, cpz.campaign_id::text, cpz.priority, ST_AsMVTGeom(d.geom_3857, !BBOX!) AS geom FROM public.peru_departamentos d INNER JOIN public.campaign_priority_zones cpz ON cpz.zone_code = d.coddep AND cpz.zone_level = 'departamento' WHERE d.geom_3857 && !BBOX!"
 
   [[providers.layers]]
   name = "priority_provincias"
   geometry_type = "MultiPolygon"
   id_fieldname = "gid"
-  sql = "SELECT p.gid, p.coddep, p.codprov, (p.coddep || p.codprov) AS codprov_full, p.nomprov AS provincia, cpz.campaign_id::text, cpz.priority, ST_AsMVTGeom(ST_Transform(p.geom, 3857), !BBOX!) AS geom FROM public.peru_provincias p INNER JOIN public.campaign_priority_zones cpz ON cpz.zone_code = (p.coddep || p.codprov) AND cpz.zone_level = 'provincia' WHERE ST_Transform(p.geom, 3857) && !BBOX!"
+  sql = "SELECT p.gid, p.coddep, p.codprov, (p.coddep || p.codprov) AS codprov_full, p.nomprov AS provincia, cpz.campaign_id::text, cpz.priority, ST_AsMVTGeom(p.geom_3857, !BBOX!) AS geom FROM public.peru_provincias p INNER JOIN public.campaign_priority_zones cpz ON cpz.zone_code = (p.coddep || p.codprov) AND cpz.zone_level = 'provincia' WHERE p.geom_3857 && !BBOX!"
 
   [[providers.layers]]
   name = "priority_distritos"
   geometry_type = "MultiPolygon"
   id_fieldname = "gid"
-  sql = "SELECT d.gid, d.ubigeo, d.coddep, d.codprov, (d.coddep || d.codprov) AS codprov_full, right(d.ubigeo, 2) AS coddist, d.nomdist AS distrito, cpz.campaign_id::text, cpz.priority, ST_AsMVTGeom(ST_Transform(d.geom, 3857), !BBOX!) AS geom FROM public.peru_distritos d INNER JOIN public.campaign_priority_zones cpz ON cpz.zone_code = d.ubigeo AND cpz.zone_level = 'distrito' WHERE ST_Transform(d.geom, 3857) && !BBOX!"
+  sql = "SELECT d.gid, d.ubigeo, d.coddep, d.codprov, (d.coddep || d.codprov) AS codprov_full, right(d.ubigeo, 2) AS coddist, d.nomdist AS distrito, cpz.campaign_id::text, cpz.priority, ST_AsMVTGeom(d.geom_3857, !BBOX!) AS geom FROM public.peru_distritos d INNER JOIN public.campaign_priority_zones cpz ON cpz.zone_code = d.ubigeo AND cpz.zone_level = 'distrito' WHERE d.geom_3857 && !BBOX!"
 
-  # --- Campaign custom zones: sectors/subsectors with own geometry (EPSG:4326) ---
+  # ── Campaign custom zones: sectors/subsectors with own geometry ──
 
   [[providers.layers]]
   name = "campaign_sectors"
@@ -69,36 +73,36 @@ center = [-75.0152, -9.1899, 5.0]
   [[maps.layers]]
   provider_layer = "neon.departamentos"
   min_zoom = 3
-  max_zoom = 20
+  max_zoom = 14
 
   [[maps.layers]]
   provider_layer = "neon.provincias"
   min_zoom = 5
-  max_zoom = 20
+  max_zoom = 14
 
   [[maps.layers]]
   provider_layer = "neon.distritos"
   min_zoom = 8
-  max_zoom = 20
+  max_zoom = 14
 
   # Priority zones overlays
   [[maps.layers]]
   provider_layer = "neon.priority_departamentos"
   min_zoom = 3
-  max_zoom = 20
+  max_zoom = 14
 
   [[maps.layers]]
   provider_layer = "neon.priority_provincias"
   min_zoom = 5
-  max_zoom = 20
+  max_zoom = 14
 
   [[maps.layers]]
   provider_layer = "neon.priority_distritos"
   min_zoom = 8
-  max_zoom = 20
+  max_zoom = 14
 
   # Campaign custom zones (sectors/subsectors)
   [[maps.layers]]
   provider_layer = "neon.campaign_sectors"
   min_zoom = 10
-  max_zoom = 20
+  max_zoom = 14

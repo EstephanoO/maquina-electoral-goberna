@@ -403,7 +403,10 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
         interactiveLayerIds={INTERACTIVE_LAYERS as unknown as string[]}
       >
         {/* ── Tegola vector tiles ── */}
-        <Source id="peru" type="vector" tiles={[tileUrl]} minzoom={0} maxzoom={14} promoteId={{ departamentos: "coddep", provincias: "codprov_full", distritos: "ubigeo" }}>
+        {/* maxzoom=12: MapLibre overzooms from z12 tiles at z13+, eliminating tile fetches at high zoom.
+            Tegola generates tiles up to z14, but the geometry detail at z12 is sufficient for all
+            administrative boundaries. This reduces unique tile requests by ~75% at deep zoom. */}
+        <Source id="peru" type="vector" tiles={[tileUrl]} minzoom={0} maxzoom={12} promoteId={{ departamentos: "coddep", provincias: "codprov_full", distritos: "ubigeo" }}>
 
           {/* DEPARTAMENTOS — tile-native masking: all deps always visible, non-selected darkened at level 1+ */}
           <Layer id="dep-fill" type="fill" source-layer="departamentos" filter={filters.depFillFilter}

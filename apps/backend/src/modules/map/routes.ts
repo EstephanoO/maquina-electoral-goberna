@@ -18,9 +18,9 @@ import {
 } from "./geo-cache";
 
 const layersContract = [
-  { id: "departamentos", sourceLayer: "departamentos", minZoom: 3, maxZoom: 20 },
-  { id: "provincias", sourceLayer: "provincias", minZoom: 5, maxZoom: 20 },
-  { id: "distritos", sourceLayer: "distritos", minZoom: 7, maxZoom: 20 },
+  { id: "departamentos", sourceLayer: "departamentos", minZoom: 3, maxZoom: 14 },
+  { id: "provincias", sourceLayer: "provincias", minZoom: 5, maxZoom: 14 },
+  { id: "distritos", sourceLayer: "distritos", minZoom: 8, maxZoom: 14 },
 ];
 
 export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
