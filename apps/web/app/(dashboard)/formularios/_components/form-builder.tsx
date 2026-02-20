@@ -317,11 +317,8 @@ export function FormBuilder({ campaigns, editForm, saving, onSave, onCancel }: F
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={formStatus === "active"}
+        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          <div
             onClick={() => setFormStatus(formStatus === "active" ? "draft" : "active")}
             style={{
               width: 44,
@@ -332,8 +329,6 @@ export function FormBuilder({ campaigns, editForm, saving, onSave, onCancel }: F
               cursor: "pointer",
               transition: "background .2s",
               flexShrink: 0,
-              border: "none",
-              padding: 0,
             }}
           >
             <div
@@ -349,7 +344,7 @@ export function FormBuilder({ campaigns, editForm, saving, onSave, onCancel }: F
                 boxShadow: "0 1px 4px rgba(0,0,0,.2)",
               }}
             />
-          </button>
+          </div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: "var(--color-text-primary)" }}>
               {formStatus === "active" ? "Activo" : "Borrador"}
@@ -360,7 +355,7 @@ export function FormBuilder({ campaigns, editForm, saving, onSave, onCancel }: F
                 : "El formulario no será visible hasta que lo actives"}
             </div>
           </div>
-        </div>
+        </label>
       </div>
 
       {/* Advanced: Slug */}

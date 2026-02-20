@@ -180,7 +180,7 @@ export function FieldEditor({ open, field, onClose, onChange, onSave }: FieldEdi
           <p style={{ ...LABEL, marginBottom: 10 }}>Opciones *</p>
           <div style={{ display: "grid", gap: 8 }}>
             {(field.options || []).map((opt, idx) => (
-              <div key={`opt-${idx}-${opt.value || idx}`} style={{ display: "flex", gap: 8 }}>
+              <div key={idx} style={{ display: "flex", gap: 8 }}>
                 <input
                   type="text"
                   value={opt.label}
