@@ -6,20 +6,40 @@
  * Architecture: Pure rendering component that composes domain hooks.
  * All data transformation, filtering, and memoization lives in hooks.
  *
- * Performance fixes applied:
- * - [P6] Wrapped in React.memo — parent re-renders don't cascade here
- * - [P1] All Sources always mounted — visibility controlled via layout property
- *   (no conditional {show && <Source>} which destroys WebGL buffers)
- * - [P2] All inline paint/filter/layout objects hoisted to module-level constants
- *   or useMemo with correct deps — prevents new object references each render
- * - [P5] tiles array and promoteId object are useMemo'd
- * - handleClick uses refs for volatile deps (agents, selectedAgentId, drillState)
- *   so the callback is stable and MapLibre doesn't re-register it
- * - flyTo effect only fires on selectedAgentId change (not agents array)
- * - interactive layers is a module-level constant
+ * Best practices applied (@vis.gl/react-maplibre patterns):
+ *
+ * [P1] Always-mounted Sources — visibility controlled via layout `visibility`
+ *      property. Never conditionally render {show && <Source>} — this destroys
+ *      WebGL buffers and forces full data re-parse on re-mount.
+ *
+ * [P2] Hoisted paint/layout — All static paint/layout/filter objects live as
+ *      module-level constants (zero per-render allocation). Dynamic objects use
+ *      useMemo with minimal deps. This prevents react-maplibre from running
+ *      style diffing on unchanged layers.
+ *
+ * [P3] Stable callbacks with refs — High-frequency handlers (onClick, onMouseMove)
+ *      read volatile data from refs instead of closing over state. Empty deps
+ *      array = stable function identity = MapLibre doesn't re-register listeners.
+ *
+ * [P4] Feature-state hover — Uses MapLibre's setFeatureState API for hover effects
+ *      instead of React state. Zero React re-renders during mouse movement.
+ *      Combined with rAF-batched tooltip positioning (useZoneTooltip hook).
+ *
+ * [P5] Memoized Source props — tiles array, promoteId object, and GeoJSON data
+ *      are useMemo'd. New reference = Source rebuild in react-maplibre.
+ *
+ * [P6] memo(forwardRef) — Prevents cascade re-renders from parent (SSE updates,
+ *      timer ticks, panel state changes).
+ *
+ * [P7] interactiveLayerIds as module constant — Changing this prop re-registers
+ *      all mouse event listeners. Must be referentially stable.
+ *
+ * Additional architecture:
  * - ALL geographic overlays served via Tegola vector tiles (no GeoJSON fallback)
  * - Tile-native masking: data-driven fill-color darkens non-selected zones
- * - Zoom-tiered Redis cache: z0-7=24h, z8-12=6h, z13-16=1h
+ * - flyTo effect only fires on selectedAgentId change (not agents array)
+ * - Cluster expansion zoom via native GeoJSONSource.getClusterExpansionZoom()
+ * - ResizeObserver for container resize → map.resize() + re-fit
  */
 
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
@@ -235,30 +255,27 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     getDrillState() { return drillStateRef.current; },
   }), []);
 
-  // ─── Init ───
+  // ─── Init (SSR guard: window.location only available client-side) ───
   useEffect(() => {
-    if (typeof window !== "undefined") setTileUrl(`${window.location.origin}${DEFAULT_TILE_TEMPLATE}`);
+    setTileUrl(`${window.location.origin}${DEFAULT_TILE_TEMPLATE}`);
     setReady(true);
   }, []);
 
   // ─── Map load ───
   const handleLoad = useCallback(() => {
     mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
+  }, []);
 
-    const map = mapRef.current?.getMap();
-    if (map) {
-      const onMoveStart = () => {
-        isZoomingRef.current = true;
-        if (zoomEndTimer.current) clearTimeout(zoomEndTimer.current);
-      };
-      const onMoveEnd = () => {
-        zoomEndTimer.current = setTimeout(() => { isZoomingRef.current = false; }, 300);
-      };
-      map.on("movestart", onMoveStart);
-      map.on("zoomstart", onMoveStart);
-      map.on("moveend", onMoveEnd);
-      map.on("zoomend", onMoveEnd);
-    }
+  // ─── Zoom tracking via react-maplibre callbacks (not native map.on) ───
+  // Using the declarative onMoveStart/onMoveEnd props keeps event registration
+  // managed by react-maplibre and avoids orphaned listeners on unmount.
+  const handleMoveStart = useCallback(() => {
+    isZoomingRef.current = true;
+    if (zoomEndTimer.current) clearTimeout(zoomEndTimer.current);
+  }, []);
+
+  const handleMoveEnd = useCallback(() => {
+    zoomEndTimer.current = setTimeout(() => { isZoomingRef.current = false; }, 300);
   }, []);
 
   // ─── Click handler (stable — reads from refs) ───
@@ -552,6 +569,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         style={{ width: "100%", height: "100%" }}
         mapStyle={MAP_STYLE}
         onLoad={handleLoad}
+        onMoveStart={handleMoveStart}
+        onMoveEnd={handleMoveEnd}
         onClick={handleClick}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
