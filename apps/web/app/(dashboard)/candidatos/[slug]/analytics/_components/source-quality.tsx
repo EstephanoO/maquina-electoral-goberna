@@ -104,6 +104,13 @@ export function SourceQuality({ sources, sessionSources, primaryColor }: Props) 
 
   const maxUsers = data[0]?.users || 1;
 
+  // Detect duplicate source names to show medium inline for disambiguation
+  const sourceNameCount = new Map<string, number>();
+  for (const ch of data.slice(0, 10)) {
+    const name = formatSourceName(ch.source);
+    sourceNameCount.set(name, (sourceNameCount.get(name) || 0) + 1);
+  }
+
   return (
     <div style={S.container}>
       <div style={S.headerRow}>
@@ -134,6 +141,9 @@ export function SourceQuality({ sources, sessionSources, primaryColor }: Props) 
         {data.slice(0, 10).map((ch, idx) => {
           const barWidth = Math.max(4, (ch.users / maxUsers) * 100);
           const color = getChannelColor(ch.source, primaryColor);
+          const displayName = formatSourceName(ch.source);
+          const isDuplicate = (sourceNameCount.get(displayName) || 0) > 1;
+          const mediumLabel = MEDIUM_LABELS[ch.medium] || ch.medium;
 
           return (
             <div key={`${ch.source}/${ch.medium}`} style={S.row}>
@@ -141,9 +151,11 @@ export function SourceQuality({ sources, sessionSources, primaryColor }: Props) 
               <div style={S.sourceCol}>
                 <div style={{ ...S.colorDot, backgroundColor: color }} />
                 <div style={S.sourceInfo}>
-                  <span style={S.sourceName}>{formatSourceName(ch.source)}</span>
+                  <span style={S.sourceName}>
+                    {isDuplicate ? `${displayName} (${mediumLabel})` : displayName}
+                  </span>
                   <span style={S.mediumTag}>
-                    {MEDIUM_LABELS[ch.medium] || ch.medium}
+                    {mediumLabel}
                   </span>
                 </div>
               </div>

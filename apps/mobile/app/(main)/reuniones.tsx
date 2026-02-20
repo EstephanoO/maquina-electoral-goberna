@@ -8,7 +8,7 @@
  * - Pull to refresh
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -32,7 +32,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useApp } from '@/lib/app-context';
 import { appEvents } from '@/lib/events';
 import * as api from '@/lib/api';
-import type { Meet, MeetSummary, MeetParticipant, CampaignMember } from '@/lib/types';
+import type { Meet, MeetSummary, MeetParticipant, CampaignMember, UserRole } from '@/lib/types';
 
 // ═══════════════════════════════════════════════════════════════
 // HELPERS
@@ -54,6 +54,38 @@ function openWhatsApp(phone: string | null) {
 
 const FONT = 'Montserrat-Bold';
 const BORDER = '#E1E6F0';
+
+// ── Role hierarchy (mirrors backend authorize.ts) ────────────
+const ROLE_HIERARCHY: Record<UserRole, number> = {
+  admin: 50,
+  consultor: 40,
+  candidato: 30,
+  brigadista_zonal: 20,
+  agente_campo: 10,
+  agente_digital: 10,
+};
+
+/** Returns true if roleA is strictly above roleB in the hierarchy */
+function isRoleAbove(roleA: UserRole, roleB: UserRole): boolean {
+  return ROLE_HIERARCHY[roleA] > ROLE_HIERARCHY[roleB];
+}
+
+/** Returns the roles that a given role can assign (strictly below their own level) */
+function getAssignableRoles(myRole: UserRole): UserRole[] {
+  const myLevel = ROLE_HIERARCHY[myRole];
+  // admin can assign everything except admin itself
+  if (myRole === 'admin') {
+    return ['consultor', 'candidato', 'brigadista_zonal', 'agente_campo', 'agente_digital'];
+  }
+  // consultor can assign candidato and below
+  if (myRole === 'consultor') {
+    return ['candidato', 'brigadista_zonal', 'agente_campo', 'agente_digital'];
+  }
+  // candidato can only assign strictly below
+  return Object.entries(ROLE_HIERARCHY)
+    .filter(([_, level]) => level < myLevel)
+    .map(([role]) => role as UserRole);
+}
 
 const STATUS_LABELS: Record<string, string> = {
   pending_location: 'Sin ubicacion',
@@ -87,6 +119,15 @@ const ROLE_ICONS: Record<string, string> = {
   brigadista_zonal: 'map',
   agente_campo: 'person',
   agente_digital: 'computer',
+};
+
+const ROLE_COLORS: Record<string, string> = {
+  admin: '#7C3AED',
+  consultor: '#6366F1',
+  candidato: '#2563EB',
+  brigadista_zonal: '#D97706',
+  agente_campo: '#059669',
+  agente_digital: '#0891B2',
 };
 
 const BACKEND_ROLES = [
@@ -179,14 +220,19 @@ export default function ReunionesScreen() {
   // Reload when tab gains focus (coming back from other tabs)
   useFocusEffect(
     useCallback(() => {
-      if (auth.status === 'active') fetchMeets();
-    }, [auth.status, fetchMeets]),
+      if (auth.status === 'active') fetchAll();
+    }, [auth.status, fetchAll]),
   );
 
   // Reload when a meet is created/updated from any screen
   useEffect(() => {
     return appEvents.on('meets:changed', fetchMeets);
   }, [fetchMeets]);
+
+  // Reload when a member role changes from any screen
+  useEffect(() => {
+    return appEvents.on('members:changed', fetchMembers);
+  }, [fetchMembers]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -432,8 +478,11 @@ export default function ReunionesScreen() {
         member={selectedMember}
         onClose={() => setSelectedMember(null)}
         primary={primary}
+        secondary={secondary}
         canManageRoles={canManageRoles}
         campaignId={campaign.id}
+        currentUserId={agent.id}
+        currentUserRole={agent.role as UserRole}
         onRoleChanged={fetchMembers}
       />
     </SafeAreaView>
@@ -840,17 +889,24 @@ function MemberDetailModal({
   member,
   onClose,
   primary,
+  secondary,
   canManageRoles,
   campaignId,
+  currentUserId,
+  currentUserRole,
   onRoleChanged,
 }: {
   member: CampaignMember | null;
   onClose: () => void;
   primary: string;
+  secondary: string;
   canManageRoles: boolean;
   campaignId: string;
+  currentUserId: string;
+  currentUserRole: UserRole;
   onRoleChanged: () => void;
 }) {
+  const { refreshConfig } = useApp();
   const [changing, setChanging] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string | null>(null);
 
@@ -860,128 +916,226 @@ function MemberDetailModal({
     }
   }, [member]);
 
+  // Determine if role change is allowed for this specific member
+  const isSelf = member?.user_id === currentUserId;
+  const memberRole = (member?.role ?? 'agente_campo') as UserRole;
+  const canChangeThisMember = canManageRoles && !isSelf && isRoleAbove(currentUserRole, memberRole);
+
+  // Get the roles the current user can assign
+  const assignableRoles = useMemo(() => getAssignableRoles(currentUserRole), [currentUserRole]);
+  const assignableRoleOptions = BACKEND_ROLES.filter(r => assignableRoles.includes(r.key as UserRole));
+
   const handleChangeRole = async () => {
     if (!member || !selectedRole || selectedRole === member.role) return;
-    
-    setChanging(true);
-    const result = await api.updateMemberRole(campaignId, member.user_id, selectedRole);
-    setChanging(false);
-    
-    if (result.ok) {
-      Alert.alert('Listo', 'El rol fue actualizado.');
-      onRoleChanged();
-      onClose();
-    } else {
-      Alert.alert('Error', result.error);
-    }
+
+    const targetLabel = ROLE_LABELS[selectedRole] ?? selectedRole;
+    Alert.alert(
+      'Confirmar cambio',
+      `Cambiar el rol de ${member.full_name} a "${targetLabel}"?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Confirmar',
+          onPress: async () => {
+            setChanging(true);
+            const result = await api.updateMemberRole(campaignId, member.user_id, selectedRole);
+            setChanging(false);
+
+            if (result.ok) {
+              Alert.alert('Listo', `${member.full_name} ahora es ${targetLabel}.`);
+              onRoleChanged();
+              appEvents.emit('members:changed');
+              // Refresh app context so own role updates if needed
+              refreshConfig();
+              onClose();
+            } else {
+              Alert.alert('Error', result.error);
+            }
+          },
+        },
+      ],
+    );
   };
 
   if (!member) return null;
+
+  const roleColor = ROLE_COLORS[member.role] ?? primary;
 
   return (
     <Modal visible={!!member} animationType="slide" transparent>
       <View style={styles.modalOverlay}>
         <Pressable style={styles.modalDismiss} onPress={onClose} />
-        <View style={styles.modalContent}>
-          {/* Header */}
-          <View style={styles.modalHeader}>
-            <Text style={[styles.modalTitle, { color: primary }]}>Miembro del equipo</Text>
-            <Pressable onPress={onClose} hitSlop={12}>
-              <MaterialIcons name="close" size={24} color="rgba(22,57,96,0.5)" />
-            </Pressable>
-          </View>
+        <View style={[styles.modalContent, { maxHeight: '85%' }]}>
+          <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+            {/* Close handle */}
+            <View style={styles.modalHandle} />
 
-          {/* Member info */}
-          <View style={styles.memberDetailSection}>
-            <View style={[styles.memberDetailAvatar, { backgroundColor: primary + '15' }]}>
-              <MaterialIcons
-                name={(ROLE_ICONS[member.role] ?? 'person') as keyof typeof MaterialIcons.glyphMap}
-                size={32}
-                color={primary}
-              />
-            </View>
-            <Text style={[styles.memberDetailName, { color: primary }]}>{member.full_name}</Text>
-            
-            {member.phone && (
-              <View style={styles.memberDetailRow}>
-                <MaterialIcons name="phone" size={16} color="rgba(22,57,96,0.5)" />
-                <Text style={styles.memberDetailText}>{member.phone}</Text>
+            {/* Profile header */}
+            <View style={styles.memberProfileHeader}>
+              <View style={[styles.memberDetailAvatar, { backgroundColor: roleColor + '18' }]}>
+                <MaterialIcons
+                  name={(ROLE_ICONS[member.role] ?? 'person') as keyof typeof MaterialIcons.glyphMap}
+                  size={32}
+                  color={roleColor}
+                />
               </View>
-            )}
-            
-            {member.region && (
-              <View style={styles.memberDetailRow}>
-                <MaterialIcons name="place" size={16} color="rgba(22,57,96,0.5)" />
-                <Text style={styles.memberDetailText}>{member.region}</Text>
+              <Text style={[styles.memberDetailName, { color: primary }]}>{member.full_name}</Text>
+              <View style={[styles.memberRolePill, { backgroundColor: roleColor + '15' }]}>
+                <MaterialIcons
+                  name={(ROLE_ICONS[member.role] ?? 'person') as keyof typeof MaterialIcons.glyphMap}
+                  size={12}
+                  color={roleColor}
+                />
+                <Text style={[styles.memberRolePillText, { color: roleColor }]}>
+                  {ROLE_LABELS[member.role] ?? member.role}
+                </Text>
               </View>
-            )}
-
-            <View style={styles.memberDetailRow}>
-              <MaterialIcons name="badge" size={16} color="rgba(22,57,96,0.5)" />
-              <Text style={styles.memberDetailText}>{ROLE_LABELS[member.role] ?? member.role}</Text>
-            </View>
-          </View>
-
-          {/* WhatsApp button */}
-          {member.phone && (
-            <Pressable
-              style={styles.whatsappFullBtn}
-              onPress={() => openWhatsApp(member.phone)}
-            >
-              <MaterialIcons name="chat" size={20} color="#25D366" />
-              <Text style={styles.whatsappFullBtnText}>Enviar mensaje por WhatsApp</Text>
-            </Pressable>
-          )}
-
-          {/* Role change (only for admins) */}
-          {canManageRoles && (
-            <View style={styles.roleChangeSection}>
-              <Text style={styles.roleChangeSectionTitle}>Cambiar rol</Text>
-              <View style={styles.roleOptions}>
-                {BACKEND_ROLES.map((role) => (
-                  <Pressable
-                    key={role.key}
-                    style={[
-                      styles.roleOption,
-                      selectedRole === role.key && { backgroundColor: primary + '15', borderColor: primary },
-                    ]}
-                    onPress={() => setSelectedRole(role.key)}
-                  >
-                    <MaterialIcons
-                      name={role.icon as keyof typeof MaterialIcons.glyphMap}
-                      size={18}
-                      color={selectedRole === role.key ? primary : 'rgba(22,57,96,0.5)'}
-                    />
-                    <Text
-                      style={[
-                        styles.roleOptionText,
-                        selectedRole === role.key && { color: primary },
-                      ]}
-                    >
-                      {role.label}
-                    </Text>
-                    {selectedRole === role.key && (
-                      <MaterialIcons name="check-circle" size={16} color={primary} />
-                    )}
-                  </Pressable>
-                ))}
-              </View>
-
-              {selectedRole !== member.role && (
-                <Pressable
-                  style={[styles.saveRoleBtn, { backgroundColor: primary }, changing && { opacity: 0.6 }]}
-                  onPress={handleChangeRole}
-                  disabled={changing}
-                >
-                  {changing ? (
-                    <ActivityIndicator color="#FFF" size="small" />
-                  ) : (
-                    <Text style={styles.saveRoleBtnText}>Guardar cambio de rol</Text>
-                  )}
-                </Pressable>
+              {isSelf && (
+                <View style={[styles.selfBadge, { backgroundColor: primary + '12' }]}>
+                  <Text style={[styles.selfBadgeText, { color: primary }]}>Tu cuenta</Text>
+                </View>
               )}
             </View>
-          )}
+
+            {/* Contact info cards */}
+            <View style={styles.memberContactSection}>
+              {member.email && (
+                <View style={styles.contactRow}>
+                  <View style={[styles.contactIconBox, { backgroundColor: '#3B82F612' }]}>
+                    <MaterialIcons name="email" size={16} color="#3B82F6" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.contactLabel}>Correo</Text>
+                    <Text style={styles.contactValue} numberOfLines={1}>{member.email}</Text>
+                  </View>
+                </View>
+              )}
+
+              {member.phone && (
+                <View style={styles.contactRow}>
+                  <View style={[styles.contactIconBox, { backgroundColor: '#22C55E12' }]}>
+                    <MaterialIcons name="phone" size={16} color="#22C55E" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.contactLabel}>Telefono</Text>
+                    <Text style={styles.contactValue}>{member.phone}</Text>
+                  </View>
+                </View>
+              )}
+
+              {member.region && (
+                <View style={styles.contactRow}>
+                  <View style={[styles.contactIconBox, { backgroundColor: '#F59E0B12' }]}>
+                    <MaterialIcons name="place" size={16} color="#F59E0B" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.contactLabel}>Region</Text>
+                    <Text style={styles.contactValue}>{member.region}</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {/* WhatsApp button */}
+            {member.phone && (
+              <Pressable
+                style={styles.whatsappFullBtn}
+                onPress={() => openWhatsApp(member.phone)}
+              >
+                <MaterialIcons name="chat" size={20} color="#25D366" />
+                <Text style={styles.whatsappFullBtnText}>Enviar WhatsApp</Text>
+              </Pressable>
+            )}
+
+            {/* Role change section — only if can manage AND target is below you AND not yourself */}
+            {canChangeThisMember && assignableRoleOptions.length > 0 && (
+              <View style={styles.roleChangeSection}>
+                <View style={styles.roleChangeTitleRow}>
+                  <MaterialIcons name="swap-vert" size={16} color="rgba(22,57,96,0.5)" />
+                  <Text style={styles.roleChangeSectionTitle}>Cambiar rol</Text>
+                </View>
+                <View style={styles.roleOptions}>
+                  {assignableRoleOptions.map((role) => {
+                    const isSelected = selectedRole === role.key;
+                    const isCurrent = member.role === role.key;
+                    const rColor = ROLE_COLORS[role.key] ?? primary;
+                    return (
+                      <Pressable
+                        key={role.key}
+                        style={[
+                          styles.roleOption,
+                          isSelected && { backgroundColor: rColor + '12', borderColor: rColor },
+                          isCurrent && !isSelected && { borderColor: rColor + '40', borderStyle: 'dashed' as const },
+                        ]}
+                        onPress={() => setSelectedRole(role.key)}
+                      >
+                        <View style={[styles.roleOptionIcon, { backgroundColor: rColor + '15' }]}>
+                          <MaterialIcons
+                            name={role.icon as keyof typeof MaterialIcons.glyphMap}
+                            size={16}
+                            color={rColor}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={[
+                              styles.roleOptionText,
+                              isSelected && { color: rColor, fontFamily: FONT },
+                            ]}
+                          >
+                            {role.label}
+                          </Text>
+                        </View>
+                        {isSelected && (
+                          <MaterialIcons name="check-circle" size={18} color={rColor} />
+                        )}
+                        {isCurrent && !isSelected && (
+                          <Text style={[styles.currentRoleTag, { color: rColor }]}>actual</Text>
+                        )}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {selectedRole !== member.role && (
+                  <Pressable
+                    style={[styles.saveRoleBtn, { backgroundColor: primary }, changing && { opacity: 0.6 }]}
+                    onPress={handleChangeRole}
+                    disabled={changing}
+                  >
+                    {changing ? (
+                      <ActivityIndicator color="#FFF" size="small" />
+                    ) : (
+                      <>
+                        <MaterialIcons name="check" size={18} color="#FFF" />
+                        <Text style={styles.saveRoleBtnText}>Guardar cambio de rol</Text>
+                      </>
+                    )}
+                  </Pressable>
+                )}
+              </View>
+            )}
+
+            {/* Info message when can't manage */}
+            {canManageRoles && !canChangeThisMember && !isSelf && (
+              <View style={styles.infoBox}>
+                <MaterialIcons name="info-outline" size={16} color="rgba(22,57,96,0.4)" />
+                <Text style={styles.infoBoxText}>
+                  No puedes modificar el rol de este miembro porque tiene un rol igual o superior al tuyo.
+                </Text>
+              </View>
+            )}
+
+            <View style={{ height: 24 }} />
+          </ScrollView>
+
+          {/* Close button at bottom */}
+          <Pressable
+            style={[styles.closeModalBtn, { borderColor: BORDER }]}
+            onPress={onClose}
+          >
+            <Text style={styles.closeModalBtnText}>Cerrar</Text>
+          </Pressable>
         </View>
       </View>
     </Modal>
@@ -1142,35 +1296,83 @@ const styles = StyleSheet.create({
   },
   deleteBtnText: { fontSize: 14, color: '#EF4444', fontFamily: FONT },
 
-  // Member detail modal
-  memberDetailSection: { alignItems: 'center', gap: 8, paddingVertical: 16 },
+  // Modal handle
+  modalHandle: {
+    width: 36, height: 4, borderRadius: 2, backgroundColor: '#E1E6F0',
+    alignSelf: 'center', marginBottom: 16,
+  },
+
+  // Member profile header
+  memberProfileHeader: { alignItems: 'center', gap: 8, paddingBottom: 20 },
   memberDetailAvatar: {
     width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center',
   },
   memberDetailName: { fontSize: 18, fontFamily: FONT, marginTop: 8 },
-  memberDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  memberDetailText: { fontSize: 13, color: 'rgba(22,57,96,0.6)', fontFamily: FONT },
+  memberRolePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8,
+  },
+  memberRolePillText: { fontSize: 11, fontFamily: FONT, textTransform: 'uppercase' },
+  selfBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 6, marginTop: 2 },
+  selfBadgeText: { fontSize: 10, fontFamily: FONT },
+
+  // Contact section
+  memberContactSection: {
+    gap: 1, backgroundColor: '#F1F5F9', borderRadius: 12, overflow: 'hidden' as const, marginBottom: 12,
+  },
+  contactRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#FFF',
+    paddingVertical: 12, paddingHorizontal: 14,
+  },
+  contactIconBox: {
+    width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+  },
+  contactLabel: { fontSize: 10, color: 'rgba(22,57,96,0.45)', fontFamily: FONT, textTransform: 'uppercase', letterSpacing: 0.3 },
+  contactValue: { fontSize: 14, color: '#163960', fontFamily: FONT, marginTop: 1 },
 
   // WhatsApp full button
   whatsappFullBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: '#DCFCE7', paddingVertical: 14, borderRadius: 12, marginTop: 8,
+    backgroundColor: '#DCFCE7', paddingVertical: 14, borderRadius: 12, marginBottom: 4,
   },
   whatsappFullBtnText: { fontSize: 14, color: '#166534', fontFamily: FONT },
 
   // Role change section
-  roleChangeSection: { marginTop: 20, gap: 12 },
+  roleChangeSection: { marginTop: 16, gap: 10 },
+  roleChangeTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
   roleChangeSectionTitle: {
     fontSize: 12, fontFamily: FONT, color: 'rgba(22,57,96,0.6)',
     textTransform: 'uppercase', letterSpacing: 0.5,
   },
-  roleOptions: { gap: 8 },
+  roleOptions: { gap: 6 },
   roleOption: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10,
-    borderWidth: 1, borderColor: BORDER, backgroundColor: '#FFF',
+    paddingVertical: 11, paddingHorizontal: 12, borderRadius: 10,
+    borderWidth: 1.5, borderColor: BORDER, backgroundColor: '#FFF',
   },
-  roleOptionText: { flex: 1, fontSize: 14, fontFamily: FONT, color: 'rgba(22,57,96,0.7)' },
-  saveRoleBtn: { paddingVertical: 14, borderRadius: 12, alignItems: 'center', marginTop: 8 },
+  roleOptionIcon: {
+    width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center',
+  },
+  roleOptionText: { flex: 1, fontSize: 13, fontFamily: FONT, color: 'rgba(22,57,96,0.7)' },
+  currentRoleTag: { fontSize: 10, fontFamily: FONT, textTransform: 'uppercase', opacity: 0.7 },
+  saveRoleBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 14, borderRadius: 12, marginTop: 6,
+  },
   saveRoleBtnText: { fontSize: 14, color: '#FFF', fontFamily: FONT },
+
+  // Info box
+  infoBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 16,
+    backgroundColor: '#F8FAFC', borderRadius: 10, padding: 12,
+    borderWidth: 1, borderColor: '#E1E6F0',
+  },
+  infoBoxText: { flex: 1, fontSize: 12, color: 'rgba(22,57,96,0.5)', fontFamily: FONT, lineHeight: 18 },
+
+  // Close modal button
+  closeModalBtn: {
+    paddingVertical: 12, borderRadius: 10, alignItems: 'center',
+    borderWidth: 1, marginTop: 8,
+  },
+  closeModalBtnText: { fontSize: 14, color: 'rgba(22,57,96,0.5)', fontFamily: FONT },
 });

@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { AppEnv } from "../../config/env";
 import type { AuthenticatedRequest } from "../../infra/auth";
-import { authorize } from "../../infra/authorize";
+import { authorize, ROLE_HIERARCHY, type Role } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
 import { encrypt, decrypt, maskToken } from "../../infra/crypto";
 import * as repo from "./repository";
@@ -294,9 +294,11 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
           return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
         }
 
-        // Only admins/consultors can promote to candidato
-        if (parsed.data.role === "candidato" && authed.userRole !== "admin" && authed.userRole !== "consultor") {
-          return reply.code(403).send(errorPayload(requestId, "AUTHZ_ROLE_INSUFFICIENT", "solo admin o consultor puede asignar rol de candidato"));
+        // Cannot promote to a role at or above your own level (unless you're admin)
+        const callerLevel = ROLE_HIERARCHY[authed.userRole as Role] ?? 0;
+        const targetLevel = ROLE_HIERARCHY[parsed.data.role as Role] ?? 0;
+        if (authed.userRole !== "admin" && targetLevel >= callerLevel) {
+          return reply.code(403).send(errorPayload(requestId, "AUTHZ_ROLE_INSUFFICIENT", "no puedes asignar un rol igual o superior al tuyo"));
         }
 
         try {

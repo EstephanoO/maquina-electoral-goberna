@@ -7,7 +7,7 @@ import { api } from "./api";
 
 // ── Types ───────────────────────────────────────────────────────────
 
-export type CmsStatus = "nuevo" | "claimed" | "hablado" | "respondieron" | "archivado";
+export type CmsStatus = "nuevo" | "hablado" | "respondieron" | "archivado";
 
 export type CmsContact = {
   id: string;
@@ -31,7 +31,6 @@ export type CmsContact = {
   zona: string;
   distrito: string;
   candidato_preferido: string;
-  is_locked: boolean;
   claimed_by_email?: string;
   submitted_by_email?: string;
 };
@@ -40,10 +39,8 @@ export type CmsStats = {
   total: number;
   nuevos: number;
   hablados: number;
-  hablados_mios: number;
   respondieron: number;
   archivados: number;
-  claimed: number;
 };
 
 /** Tab filter values the frontend sends to the backend */
@@ -56,7 +53,6 @@ export type CmsMetricsCampaign = {
   campaign_name: string;
   total: number;
   nuevos: number;
-  claimed: number;
   hablados: number;
   respondieron: number;
   archivados: number;
@@ -73,13 +69,11 @@ export type CmsMetricsOperator = {
   hablados: number;
   respondieron: number;
   archivados: number;
-  claimed_now: number;
 };
 
 export type CmsMetricsGlobalTotals = {
   total: number;
   nuevos: number;
-  claimed: number;
   hablados: number;
   respondieron: number;
   archivados: number;
@@ -124,6 +118,21 @@ type CmsMetricsResponse = {
   metrics: CmsMetrics;
 };
 
+// ── SSE event types ────────────────────────────────────────────────
+
+export type CmsSseContactUpdated = {
+  contact: CmsContact;
+  previous_status: string;
+  operator_id: string;
+  operator_email: string;
+};
+
+export type CmsSseNotesUpdated = {
+  contact: CmsContact;
+  operator_id: string;
+  operator_email: string;
+};
+
 // ── API calls ───────────────────────────────────────────────────────
 
 export async function listCmsContacts(
@@ -146,28 +155,6 @@ export async function listCmsContacts(
   );
   if (!res.ok) return { ok: false, contacts: [], total: 0, error: res.error?.message };
   return { ok: true, contacts: res.data?.contacts ?? [], total: res.data?.total ?? 0 };
-}
-
-export async function claimContact(
-  campaignId: string,
-  contactId: string,
-): Promise<{ ok: boolean; contact?: CmsContact; error?: string }> {
-  const res = await api.put<CmsContactResponse>(
-    `/api/cms/contacts/${contactId}/claim`,
-    {},
-    { campaignId },
-  );
-  if (!res.ok) return { ok: false, error: res.error?.message };
-  return { ok: true, contact: res.data?.contact };
-}
-
-export async function releaseContact(
-  campaignId: string,
-  contactId: string,
-): Promise<{ ok: boolean; error?: string }> {
-  const res = await api.put(`/api/cms/contacts/${contactId}/release`, {}, { campaignId });
-  if (!res.ok) return { ok: false, error: res.error?.message };
-  return { ok: true };
 }
 
 export async function markHablado(

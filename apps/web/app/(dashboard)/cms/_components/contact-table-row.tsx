@@ -7,16 +7,14 @@ const FONT = "var(--font-montserrat), system-ui, sans-serif";
 type ContactTableRowProps = {
   contact: CmsContact;
   currentUserId: string;
-  onClaim: (id: string) => void;
   onHablado: (id: string) => void;
   onRespondieron: (id: string) => void;
   onArchive: (id: string) => void;
-  onRelease: (id: string) => void;
   onRevert: (id: string) => void;
   onOpenNotes: (contact: CmsContact) => void;
-  claiming: string | null;
   actionLoading: string | null;
   reverting: string | null;
+  isSelected?: boolean;
 };
 
 function formatPhone(phone: string): string {
@@ -55,7 +53,6 @@ function formatDate(dateStr: string | null): string {
 function getOrigenInfo(c: CmsContact): { label: string; icon: "field" | "phone" } {
   const zona = c.zona || c.distrito || "";
   if (c.encuestador) {
-    // Came from field agent (formulario de campo)
     const parts = [`Campo: ${c.encuestador}`];
     if (zona) parts.push(zona);
     return { label: parts.join(" · "), icon: "field" };
@@ -68,11 +65,11 @@ function getOrigenInfo(c: CmsContact): { label: string; icon: "field" | "phone" 
 
 /** Pick the relevant timestamp for the row */
 function getRelevantTimestamp(c: CmsContact): { dateStr: string; label: string } {
-  if ((c.cms_status === "hablado" || c.cms_status === "respondieron") && c.cms_hablado_at) {
-    return { dateStr: c.cms_hablado_at, label: "Hablado" };
+  if (c.cms_status === "respondieron" && c.cms_respondieron_at) {
+    return { dateStr: c.cms_respondieron_at, label: "Contestó" };
   }
-  if (c.cms_status === "claimed" && c.cms_claimed_at) {
-    return { dateStr: c.cms_claimed_at, label: "En curso" };
+  if (c.cms_status === "hablado" && c.cms_hablado_at) {
+    return { dateStr: c.cms_hablado_at, label: "Hablado" };
   }
   return { dateStr: c.created_at, label: "Agregado" };
 }
@@ -80,9 +77,8 @@ function getRelevantTimestamp(c: CmsContact): { dateStr: string; label: string }
 /* Status badge colors */
 const STATUS_CONFIG: Record<string, { label: string; bg: string; color: string }> = {
   nuevo: { label: "NUEVO", bg: "#dbeafe", color: "#1d4ed8" },
-  claimed: { label: "EN CURSO", bg: "#fef3c7", color: "#92400e" },
   hablado: { label: "HABLADO", bg: "#d1fae5", color: "#065f46" },
-  respondieron: { label: "CONTESTO", bg: "#ede9fe", color: "#5b21b6" },
+  respondieron: { label: "CONTESTÓ", bg: "#ede9fe", color: "#5b21b6" },
   archivado: { label: "ARCHIVADO", bg: "#f3f4f6", color: "#6b7280" },
 };
 
@@ -105,56 +101,74 @@ const BTN_BASE: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const TAG: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 3,
+  padding: "1px 6px",
+  fontSize: 9,
+  fontWeight: 600,
+  borderRadius: 4,
+  whiteSpace: "nowrap",
+  maxWidth: 120,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+/** Minimal operator attribution label */
+function getOperatorLabel(email?: string): string {
+  if (!email) return "";
+  // Take the part before @ and capitalize first letter
+  const name = email.split("@")[0] ?? "";
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
 export function ContactTableRow({
   contact,
   currentUserId,
-  onClaim,
   onHablado,
   onRespondieron,
   onArchive,
-  onRelease,
   onRevert,
   onOpenNotes,
-  claiming,
   actionLoading,
   reverting,
+  isSelected,
 }: ContactTableRowProps) {
-  const isLocked = contact.is_locked;
-  const isClaimedByMe = contact.cms_claimed_by === currentUserId;
-  const isClaiming = claiming === contact.id;
   const isActionLoading = actionLoading === contact.id;
   const isReverting = reverting === contact.id;
   const nombre = contact.nombre || "Sin nombre";
   const telefono = contact.telefono || "";
   const status = contact.cms_status;
   const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.nuevo;
+  const isMyContact = contact.cms_claimed_by === currentUserId;
 
   const origen = getOrigenInfo(contact);
   const ts = getRelevantTimestamp(contact);
 
-  // Has operator notes?
-  const hasNotes = !!(
-    contact.cms_operator_notes?.local_votacion ||
-    contact.cms_operator_notes?.domicilio ||
-    contact.cms_operator_notes?.comentarios
-  );
+  // Operator attribution
+  const operatorName = getOperatorLabel(contact.claimed_by_email);
+
+  // Operator notes tags
+  const notes = contact.cms_operator_notes;
+  const noteTags: Array<{ label: string; value: string; color: string; bg: string }> = [];
+  if (notes?.local_votacion) noteTags.push({ label: "Local", value: notes.local_votacion, color: "#7c3aed", bg: "#ede9fe" });
+  if (notes?.domicilio) noteTags.push({ label: "Dom.", value: notes.domicilio, color: "#0369a1", bg: "#e0f2fe" });
+  if (notes?.comentarios) noteTags.push({ label: "Nota", value: notes.comentarios, color: "#92400e", bg: "#fef3c7" });
 
   return (
     <tr
       style={{
-        background: isLocked
-          ? "#fafafa"
-          : isClaimedByMe
-            ? "var(--goberna-blue-50)"
-            : "var(--color-surface)",
-        opacity: isLocked ? 0.55 : 1,
-        transition: "background .1s ease",
+        background: isSelected
+          ? "var(--goberna-blue-50)"
+          : "var(--color-surface)",
+        transition: "background .15s ease",
+        borderLeft: isSelected ? "3px solid var(--goberna-blue-600, #2563eb)" : "3px solid transparent",
       }}
     >
       {/* FECHA / HORA + ORIGEN */}
       <td style={{ ...CELL, width: 170, minWidth: 150 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {/* Icon */}
           {origen.icon === "field" ? (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" style={{ flexShrink: 0 }}>
               <title>Campo</title>
@@ -175,8 +189,8 @@ export function ContactTableRow({
             <div
               style={{
                 fontSize: 10,
-                color: ts.label === "Hablado" ? "#065f46" : "var(--color-text-tertiary)",
-                fontWeight: ts.label === "Hablado" ? 600 : 400,
+                color: ts.label === "Hablado" ? "#065f46" : ts.label === "Contestó" ? "#5b21b6" : "var(--color-text-tertiary)",
+                fontWeight: ts.label !== "Agregado" ? 600 : 400,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -190,8 +204,8 @@ export function ContactTableRow({
         </div>
       </td>
 
-      {/* CIUDADANO + candidato preferido */}
-      <td style={{ ...CELL, maxWidth: 200 }}>
+      {/* CIUDADANO + candidato preferido + tags */}
+      <td style={{ ...CELL, maxWidth: 240 }}>
         <div style={{ fontWeight: 600, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {nombre}
         </div>
@@ -200,9 +214,23 @@ export function ContactTableRow({
             Prefiere: {contact.candidato_preferido}
           </div>
         )}
+        {/* Operator note tags */}
+        {noteTags.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 4 }}>
+            {noteTags.map((t) => (
+              <span
+                key={t.label}
+                style={{ ...TAG, color: t.color, background: t.bg }}
+                title={`${t.label}: ${t.value}`}
+              >
+                {t.label}: {t.value}
+              </span>
+            ))}
+          </div>
+        )}
       </td>
 
-      {/* TELEFONO (WhatsApp) */}
+      {/* TELÉFONO (WhatsApp) */}
       <td style={{ ...CELL, width: 140 }}>
         {telefono ? (
           <a
@@ -219,11 +247,6 @@ export function ContactTableRow({
               fontSize: 12,
               textDecoration: "none",
             }}
-            onClick={() => {
-              if (status === "nuevo" && !isLocked) {
-                onClaim(contact.id);
-              }
-            }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="#25D366">
               <title>WhatsApp</title>
@@ -236,8 +259,8 @@ export function ContactTableRow({
         )}
       </td>
 
-      {/* ESTADO + context */}
-      <td style={{ ...CELL, width: 120 }}>
+      {/* ESTADO + OPERADOR */}
+      <td style={{ ...CELL, width: 140 }}>
         <span
           style={{
             display: "inline-block",
@@ -250,16 +273,29 @@ export function ContactTableRow({
             color: cfg.color,
           }}
         >
-          {isLocked ? "BLOQUEADO" : cfg.label}
+          {cfg.label}
         </span>
-        {isLocked && contact.claimed_by_email && (
-          <div style={{ fontSize: 10, color: "#d97706", marginTop: 2 }}>
-            {contact.claimed_by_email.split("@")[0]}
-          </div>
-        )}
-        {hasNotes && !isLocked && (
-          <div style={{ fontSize: 9, color: "#6366f1", marginTop: 2, fontWeight: 600 }}>
-            + notas
+        {/* Operator attribution — minimalist tag showing who acted */}
+        {operatorName && status !== "nuevo" && (
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--color-text-tertiary)",
+              marginTop: 3,
+              display: "flex",
+              alignItems: "center",
+              gap: 3,
+            }}
+            title={contact.claimed_by_email ?? ""}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, opacity: 0.6 }}>
+              <title>Operador</title>
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+            <span style={{ fontWeight: isMyContact ? 700 : 500, color: isMyContact ? "var(--goberna-blue-900)" : "var(--color-text-tertiary)" }}>
+              {isMyContact ? "Yo" : operatorName}
+            </span>
           </div>
         )}
       </td>
@@ -267,50 +303,23 @@ export function ContactTableRow({
       {/* ACCIONES */}
       <td style={{ ...CELL, width: 260, textAlign: "right" }}>
         <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", flexWrap: "nowrap" }}>
-          {isLocked ? (
-            <span style={{ ...BTN_BASE, background: "#fff7ed", color: "#d97706", cursor: "default", border: "1px solid #fed7aa" }}>
-              Bloqueado
-            </span>
-          ) : status === "nuevo" ? (
+          {status === "nuevo" ? (
             <>
               <button
                 type="button"
-                disabled={isClaiming}
-                onClick={() => {
-                  onClaim(contact.id);
-                  if (telefono) window.open(buildWhatsAppUrl(telefono, nombre), "_blank");
-                }}
-                style={{
-                  ...BTN_BASE,
-                  background: isClaiming ? "#86efac" : "#25D366",
-                  color: "#fff",
-                }}
+                disabled={isActionLoading}
+                onClick={() => onHablado(contact.id)}
+                style={{ ...BTN_BASE, background: isActionLoading ? "#86efac" : "#16a34a", color: "#fff", opacity: isActionLoading ? 0.7 : 1 }}
               >
-                WSP
+                {isActionLoading ? "..." : "Hablado"}
               </button>
               <button
                 type="button"
+                disabled={isActionLoading}
                 onClick={() => onArchive(contact.id)}
-                style={{ ...BTN_BASE, background: "#f3f4f6", color: "#6b7280" }}
+                style={{ ...BTN_BASE, background: "#f3f4f6", color: "#6b7280", opacity: isActionLoading ? 0.7 : 1 }}
               >
                 Archivar
-              </button>
-            </>
-          ) : isClaimedByMe && status === "claimed" ? (
-            <>
-              <button
-                type="button"
-                onClick={() => onHablado(contact.id)}
-                style={{ ...BTN_BASE, background: "#16a34a", color: "#fff" }}
-              >
-                Hablado
-              </button>
-              <button
-                type="button"
-                onClick={() => onRelease(contact.id)}
-                style={{ ...BTN_BASE, background: "var(--color-surface)", color: "var(--color-text-tertiary)", border: "1px solid var(--color-border)" }}
-              >
-                Soltar
               </button>
             </>
           ) : status === "hablado" ? (
@@ -326,7 +335,7 @@ export function ContactTableRow({
                   opacity: isActionLoading ? 0.7 : 1,
                 }}
               >
-                {isActionLoading ? "..." : "Contesto"}
+                {isActionLoading ? "..." : "Contestó"}
               </button>
               <button
                 type="button"
@@ -339,7 +348,7 @@ export function ContactTableRow({
                   border: "1px solid #fde68a",
                   opacity: isReverting ? 0.7 : 1,
                 }}
-                title="Deshacer: vuelve a En Curso"
+                title="Deshacer: vuelve a Nuevo"
               >
                 {isReverting ? "..." : "Deshacer"}
               </button>
@@ -352,8 +361,9 @@ export function ContactTableRow({
               </button>
               <button
                 type="button"
+                disabled={isActionLoading}
                 onClick={() => onArchive(contact.id)}
-                style={{ ...BTN_BASE, background: "#f3f4f6", color: "#6b7280" }}
+                style={{ ...BTN_BASE, background: "#f3f4f6", color: "#6b7280", opacity: isActionLoading ? 0.7 : 1 }}
               >
                 Archivar
               </button>
@@ -384,20 +394,38 @@ export function ContactTableRow({
               </button>
               <button
                 type="button"
+                disabled={isActionLoading}
                 onClick={() => onArchive(contact.id)}
-                style={{ ...BTN_BASE, background: "#f3f4f6", color: "#6b7280" }}
+                style={{ ...BTN_BASE, background: "#f3f4f6", color: "#6b7280", opacity: isActionLoading ? 0.7 : 1 }}
               >
                 Archivar
               </button>
             </>
           ) : status === "archivado" ? (
-            <button
-              type="button"
-              onClick={() => onOpenNotes(contact)}
-              style={{ ...BTN_BASE, background: "var(--goberna-blue-50)", color: "var(--goberna-blue-900)", border: "1px solid var(--goberna-blue-200, #bfdbfe)" }}
-            >
-              Ver
-            </button>
+            <>
+              <button
+                type="button"
+                disabled={isReverting}
+                onClick={() => onRevert(contact.id)}
+                style={{
+                  ...BTN_BASE,
+                  background: isReverting ? "#fef3c7" : "#fffbeb",
+                  color: "#92400e",
+                  border: "1px solid #fde68a",
+                  opacity: isReverting ? 0.7 : 1,
+                }}
+                title="Restaurar a Nuevo"
+              >
+                {isReverting ? "..." : "Restaurar"}
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenNotes(contact)}
+                style={{ ...BTN_BASE, background: "var(--goberna-blue-50)", color: "var(--goberna-blue-900)", border: "1px solid var(--goberna-blue-200, #bfdbfe)" }}
+              >
+                Ver
+              </button>
+            </>
           ) : null}
         </div>
       </td>

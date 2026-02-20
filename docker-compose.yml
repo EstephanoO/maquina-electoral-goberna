@@ -123,7 +123,7 @@ services:
     volumes:
       - uploads:/srv/uploads
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:${BACKEND_PORT}/api/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:${BACKEND_PORT}/api/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3

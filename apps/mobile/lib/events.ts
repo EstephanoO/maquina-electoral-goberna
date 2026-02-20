@@ -10,7 +10,7 @@
  *   // later: unsub();
  */
 
-type EventName = 'forms:changed' | 'meets:changed';
+type EventName = 'forms:changed' | 'meets:changed' | 'members:changed';
 type Listener = () => void;
 
 const listeners = new Map<EventName, Set<Listener>>();

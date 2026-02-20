@@ -152,34 +152,18 @@ export default function DigitalPage() {
 
   const hasEvents = ga4Data.events.length > 0;
   const hasPagesDetailed = ga4Data.pagesDetailed.length > 0;
+  const hasDailyUsers = ga4Data.dailyUsers.some((d) => d.newUsers > 0 || d.returningUsers > 0);
 
   /* ═══════════════════════════════════════════════════════════════
      UNIFIED DASHBOARD — Single scrollable view
      ─────────────────────────────────────────────────────────────
-     Header
-     KPIs (4 cards)
-     ┌────────────────────┬────────────────────────────────────┐
-     │  Cities Ranking    │        HEATMAP (Peru map)          │
-     │  (42%)             │        (58%)                       │
-     └────────────────────┴────────────────────────────────────┘
-     SECCION: Adquisicion
-     ┌──────────────────────┬──────────────────────┐
-     │  Source Quality      │  Traffic Sources      │
-     │  (calidad canal)     │  (donut)             │
-     └──────────────────────┴──────────────────────┘
-     SECCION: Contenido
-     ┌──────────────────────┬──────────────────────┐
-     │  Pages Detailed      │  Pages Table         │
-     │  (URLs engagement)   │  (titulos bounce)    │
-     └──────────────────────┴──────────────────────┘
-     SECCION: Eventos & Actividad
-     ┌──────────────────────┬──────────────────────┐
-     │  Events Funnel       │  Daily Chart         │
-     └──────────────────────┴──────────────────────┘
-     SECCION: Insights
-     ┌────────────────────────────────────────────────┐
-     │  Insights Panel (full width)                   │
-     └────────────────────────────────────────────────┘
+     Header + KPIs
+     Geografia:  Ranking (42%) | Heatmap (58%)
+     Adquisicion: Source Quality | Traffic Sources (donut)
+     Tendencia:  Daily Chart (full width) — only if data exists
+     Contenido:  Pages Table (full or split with PagesDetailed)
+     Eventos:    Events Funnel (full width) — only if events exist
+     Insights:   Panel (full width)
      ═══════════════════════════════════════════════════════════ */
 
   return (
@@ -234,40 +218,46 @@ export default function DigitalPage() {
           </div>
         </div>
 
-        {/* ── BLOQUE 4: Contenido ────────────────────────────────── */}
-        <SectionLabel label="Performance por Pagina" />
-        <div style={S.grid}>
-          <div style={S.column}>
-            {hasPagesDetailed ? (
-              <PagesDetailedTable pages={ga4Data.pagesDetailed} primaryColor={pc} />
-            ) : (
-              <PagesTable pages={ga4Data.pages} primaryColor={pc} />
-            )}
-          </div>
-          <div style={S.column}>
-            {hasPagesDetailed && (
-              <PagesTable pages={ga4Data.pages} primaryColor={pc} />
-            )}
-            {!hasPagesDetailed && (
+        {/* ── BLOQUE 4: Tendencia Diaria ─────────────────────────── */}
+        {hasDailyUsers && (
+          <>
+            <SectionLabel label="Tendencia Diaria" />
+            <section style={S.section}>
               <DailyChart dailyUsers={ga4Data.dailyUsers} primaryColor={pc} secondaryColor={sc} />
-            )}
-          </div>
-        </div>
+            </section>
+          </>
+        )}
 
-        {/* ── BLOQUE 5: Eventos & Actividad ──────────────────────── */}
-        <SectionLabel label="Eventos y Actividad" />
-        <div style={S.grid}>
-          <div style={S.column}>
-            <EventsFunnel events={ga4Data.events} primaryColor={pc} />
+        {/* ── BLOQUE 5: Contenido ────────────────────────────────── */}
+        <SectionLabel label="Performance por Pagina" />
+        {hasPagesDetailed ? (
+          <div style={S.grid}>
+            <div style={S.column}>
+              <PagesDetailedTable pages={ga4Data.pagesDetailed} primaryColor={pc} />
+            </div>
+            <div style={S.column}>
+              <PagesTable pages={ga4Data.pages} primaryColor={pc} />
+            </div>
           </div>
-          <div style={S.column}>
-            <DailyChart dailyUsers={ga4Data.dailyUsers} primaryColor={pc} secondaryColor={sc} />
-          </div>
-        </div>
+        ) : (
+          <section style={S.section}>
+            <PagesTable pages={ga4Data.pages} primaryColor={pc} />
+          </section>
+        )}
 
-        {/* ── BLOQUE 6: Insights ─────────────────────────────────── */}
+        {/* ── BLOQUE 6: Eventos ──────────────────────────────────── */}
+        {hasEvents && (
+          <>
+            <SectionLabel label="Eventos y Actividad" />
+            <section style={S.section}>
+              <EventsFunnel events={ga4Data.events} primaryColor={pc} />
+            </section>
+          </>
+        )}
+
+        {/* ── BLOQUE 7: Insights ─────────────────────────────────── */}
         <SectionLabel label="Insights Accionables" />
-        <section style={S.section}>
+        <section style={S.sectionLast}>
           <InsightsPanel data={ga4Data} primaryColor={pc} />
         </section>
       </div>
@@ -328,6 +318,7 @@ const S: Record<string, React.CSSProperties> = {
     backgroundColor: "#f8fafc",
   },
   section: { marginBottom: 24 },
+  sectionLast: { marginBottom: 0 },
   sectionLabel: {
     display: "flex",
     alignItems: "center",

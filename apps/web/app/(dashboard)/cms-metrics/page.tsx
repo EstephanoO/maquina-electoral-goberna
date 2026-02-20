@@ -155,23 +155,6 @@ function OperatorRow({ op, showCampaign }: { op: CmsMetricsOperator; showCampaig
           {totalWorked}
         </span>
       </td>
-      <td style={{ ...tdStyle, textAlign: "center" }}>
-        {op.claimed_now > 0 ? (
-          <span style={{
-            display: "inline-block",
-            padding: "2px 10px",
-            borderRadius: 12,
-            background: "#fef3c7",
-            color: "#92400e",
-            fontSize: 12,
-            fontWeight: 600,
-          }}>
-            {op.claimed_now} activo{op.claimed_now > 1 ? "s" : ""}
-          </span>
-        ) : (
-          <span style={{ color: "var(--color-text-tertiary)", fontSize: 12 }}>-</span>
-        )}
-      </td>
     </tr>
   );
 }
@@ -224,7 +207,7 @@ function TimeMetricsSection({ tm }: { tm: CmsTimeMetrics }) {
 
   return (
     <>
-      <SectionHeader title="Tiempos de Gestion" />
+      <SectionHeader title="Tiempos de Gestión" />
       <div
         style={{
           display: "grid",
@@ -362,12 +345,12 @@ export default function CmsMetricsPage() {
     try {
       const res = await getCmsMetrics();
       if (!res.ok) {
-        setError(res.error ?? "Error cargando metricas");
+        setError(res.error ?? "Error cargando métricas");
         return;
       }
       setMetrics(res.metrics ?? null);
     } catch {
-      setError("Error de conexion");
+      setError("Error de conexión");
     } finally {
       setLoading(false);
     }
@@ -384,7 +367,7 @@ export default function CmsMetricsPage() {
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "60vh", fontFamily: FONT }}>
         <div style={{ textAlign: "center" }}>
           <div style={{ width: 32, height: 32, border: "3px solid var(--color-border)", borderTopColor: "var(--goberna-blue-600)", borderRadius: "50%", animation: "spin 0.8s linear infinite", margin: "0 auto 12px" }} />
-          <div style={{ color: "var(--color-text-tertiary)", fontSize: 14 }}>Cargando metricas...</div>
+          <div style={{ color: "var(--color-text-tertiary)", fontSize: 14 }}>Cargando métricas...</div>
         </div>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
@@ -414,12 +397,12 @@ export default function CmsMetricsPage() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: "var(--color-text-primary)", margin: 0 }}>
-            Metricas CMS
+            MÉTRICAS CMS
           </h1>
           <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: "4px 0 0" }}>
             {isMultiCampaign
-              ? `${metrics.campaigns.length} campanas`
-              : metrics.campaigns[0]?.campaign_name ?? "Sin campanas"}
+              ? `${metrics.campaigns.length} campañas`
+              : metrics.campaigns[0]?.campaign_name ?? "Sin campañas"}
           </p>
         </div>
         <button
@@ -457,12 +440,6 @@ export default function CmsMetricsPage() {
           tone="purple"
         />
         <KpiCard label="Pendientes" value={String(g.nuevos)} tone="red" />
-        <KpiCard
-          label="En proceso"
-          value={String(g.claimed)}
-          subtitle="Siendo contactados ahora"
-          tone="gold"
-        />
         <KpiCard label="Archivados" value={String(g.archivados)} tone="gray" />
       </div>
 
@@ -470,12 +447,12 @@ export default function CmsMetricsPage() {
       {metrics.time_metrics && <TimeMetricsSection tm={metrics.time_metrics} />}
 
       {/* Per-campaign table (only shown when multi-campaign or always for context) */}
-      <SectionHeader title="Rendimiento por Campana" />
+      <SectionHeader title="Rendimiento por Campaña" />
       <div style={tableWrapStyle}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              <th style={thStyle}>Campana</th>
+              <th style={thStyle}>Campaña</th>
               <th style={{ ...thStyle, textAlign: "right" }}>Total</th>
               <th style={{ ...thStyle, textAlign: "right" }}>Pendientes</th>
               <th style={{ ...thStyle, textAlign: "right" }}>Hablados</th>
@@ -489,7 +466,7 @@ export default function CmsMetricsPage() {
             {metrics.campaigns.length === 0 ? (
               <tr>
                 <td colSpan={8} style={{ ...tdStyle, textAlign: "center", color: "var(--color-text-tertiary)", padding: 32 }}>
-                  Sin datos de campanas
+                  Sin datos de campañas
                 </td>
               </tr>
             ) : (
@@ -511,13 +488,12 @@ export default function CmsMetricsPage() {
               <th style={{ ...thStyle, textAlign: "right" }}>Respondieron</th>
               <th style={{ ...thStyle, textAlign: "right" }}>Archivados</th>
               <th style={{ ...thStyle, textAlign: "right" }}>Total Gestionados</th>
-              <th style={{ ...thStyle, textAlign: "center" }}>Estado</th>
             </tr>
           </thead>
           <tbody>
             {metrics.operators.length === 0 ? (
               <tr>
-                <td colSpan={isMultiCampaign ? 7 : 6} style={{ ...tdStyle, textAlign: "center", color: "var(--color-text-tertiary)", padding: 32 }}>
+                <td colSpan={isMultiCampaign ? 6 : 5} style={{ ...tdStyle, textAlign: "center", color: "var(--color-text-tertiary)", padding: 32 }}>
                   Sin operadoras activas
                 </td>
               </tr>

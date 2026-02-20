@@ -6,7 +6,7 @@ export type CmsContactRow = {
   data: Record<string, unknown>;
   client_id: string;
   created_at: Date;
-  cms_status: "nuevo" | "claimed" | "hablado" | "respondieron" | "archivado";
+  cms_status: "nuevo" | "hablado" | "respondieron" | "archivado";
   cms_claimed_by: string | null;
   cms_claimed_at: Date | null;
   cms_hablado_at: Date | null;
@@ -19,8 +19,7 @@ export type CmsContactRow = {
   zona: string;
   distrito: string;
   candidato_preferido: string;
-  // Computed
-  is_locked: boolean;
+  // Operator attribution
   claimed_by_email?: string;
   submitted_by_email?: string;
 };
@@ -43,7 +42,6 @@ const CMS_SELECT = `
 
 export async function listContacts(
   campaignId: string,
-  currentUserId: string,
   status: string,
   limit = 100,
   offset = 0,
@@ -54,7 +52,7 @@ export async function listContacts(
 
   switch (status) {
     case "nuevo":
-      statusClause = "fs.cms_status IN ('nuevo', 'claimed')";
+      statusClause = "fs.cms_status = 'nuevo'";
       break;
     case "hablado":
       statusClause = "fs.cms_status = 'hablado'";
@@ -69,14 +67,13 @@ export async function listContacts(
       statusClause = "1=1";
       break;
     default:
-      statusClause = "fs.cms_status IN ('nuevo', 'claimed')";
+      statusClause = "fs.cms_status = 'nuevo'";
   }
 
-  // Data query uses: $1=campaignId, $2=currentUserId (for is_locked), then search, limit, offset
-  const dataParams: unknown[] = [campaignId, currentUserId];
-  let dataParamIdx = 3;
+  // $1=campaignId, then search, limit, offset
+  const dataParams: unknown[] = [campaignId];
+  let dataParamIdx = 2;
 
-  // Count query uses: $1=campaignId, then search (no userId, no limit/offset)
   const countParams: unknown[] = [campaignId];
   let countParamIdx = 2;
 
@@ -116,10 +113,6 @@ export async function listContacts(
     pool.query<CmsContactRow>(
       `SELECT
          ${CMS_SELECT},
-         CASE
-           WHEN fs.cms_status = 'claimed' AND fs.cms_claimed_by != $2 THEN true
-           ELSE false
-         END AS is_locked,
          u.email AS claimed_by_email,
          su.email AS submitted_by_email
        FROM form_submissions fs
@@ -154,11 +147,10 @@ export async function listContacts(
 
 export async function getNuevosForCms(
   campaignId: string,
-  currentUserId: string,
   limit = 100,
   offset = 0,
 ): Promise<{ contacts: CmsContactRow[]; total: number }> {
-  return listContacts(campaignId, currentUserId, "nuevo", limit, offset);
+  return listContacts(campaignId, "nuevo", limit, offset);
 }
 
 // ── Legacy: getHabladoByOperator ─────────────────────────────────────
@@ -204,6 +196,7 @@ export async function getHabladoByOperator(
 
 // ── Claim contact ───────────────────────────────────────────────────
 
+/** @deprecated No longer used by the frontend — kept for backwards compat */
 export async function claimContact(
   submissionId: string,
   operatorId: string,
@@ -223,8 +216,7 @@ export async function claimContact(
                COALESCE(data->>'encuestador', '') AS encuestador,
                COALESCE(data->>'zona', data->>'distrito', '') AS zona,
                COALESCE(data->>'distrito', '') AS distrito,
-               COALESCE(data->>'candidato_preferido', '') AS candidato_preferido,
-               false AS is_locked`,
+               COALESCE(data->>'candidato_preferido', '') AS candidato_preferido`,
     [submissionId, operatorId],
   );
   return rows[0] ?? null;
@@ -257,24 +249,23 @@ export async function markHablado(
   operatorId: string,
 ): Promise<CmsContactRow | null> {
   const { rows } = await pool.query<CmsContactRow>(
-    `UPDATE form_submissions
+    `UPDATE form_submissions fs
      SET cms_status = 'hablado',
          cms_claimed_by = $2,
          cms_claimed_at = COALESCE(cms_claimed_at, now()),
          cms_hablado_at = now(),
          cms_respondieron_at = NULL
-     WHERE id = $1
-       AND (cms_claimed_by = $2 OR cms_status = 'nuevo')
-     RETURNING id, campaign_id, data, client_id, created_at,
-               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
-               cms_respondieron_at, cms_operator_notes,
-               COALESCE(data->>'nombre', '') AS nombre,
-               COALESCE(data->>'telefono', '') AS telefono,
-               COALESCE(data->>'encuestador', '') AS encuestador,
-               COALESCE(data->>'zona', data->>'distrito', '') AS zona,
-               COALESCE(data->>'distrito', '') AS distrito,
-               COALESCE(data->>'candidato_preferido', '') AS candidato_preferido,
-               false AS is_locked`,
+     WHERE fs.id = $1
+       AND fs.cms_status IN ('nuevo', 'claimed', 'hablado')
+     RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
+               fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
+               fs.cms_respondieron_at, fs.cms_operator_notes,
+               COALESCE(fs.data->>'nombre', '') AS nombre,
+               COALESCE(fs.data->>'telefono', '') AS telefono,
+               COALESCE(fs.data->>'encuestador', '') AS encuestador,
+               COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
+               COALESCE(fs.data->>'distrito', '') AS distrito,
+               COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido`,
     [submissionId, operatorId],
   );
   return rows[0] ?? null;
@@ -287,24 +278,23 @@ export async function markRespondieron(
   operatorId: string,
 ): Promise<CmsContactRow | null> {
   const { rows } = await pool.query<CmsContactRow>(
-    `UPDATE form_submissions
+    `UPDATE form_submissions fs
      SET cms_status = 'respondieron',
-         cms_claimed_by = $2,
-         cms_claimed_at = COALESCE(cms_claimed_at, now()),
-         cms_hablado_at = COALESCE(cms_hablado_at, now()),
+         cms_claimed_by = COALESCE(fs.cms_claimed_by, $2),
+         cms_claimed_at = COALESCE(fs.cms_claimed_at, now()),
+         cms_hablado_at = COALESCE(fs.cms_hablado_at, now()),
          cms_respondieron_at = now()
-     WHERE id = $1
-       AND (cms_claimed_by = $2 OR cms_status IN ('nuevo', 'claimed', 'hablado'))
-     RETURNING id, campaign_id, data, client_id, created_at,
-               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
-               cms_respondieron_at, cms_operator_notes,
-               COALESCE(data->>'nombre', '') AS nombre,
-               COALESCE(data->>'telefono', '') AS telefono,
-               COALESCE(data->>'encuestador', '') AS encuestador,
-               COALESCE(data->>'zona', data->>'distrito', '') AS zona,
-               COALESCE(data->>'distrito', '') AS distrito,
-               COALESCE(data->>'candidato_preferido', '') AS candidato_preferido,
-               false AS is_locked`,
+     WHERE fs.id = $1
+       AND fs.cms_status IN ('hablado', 'respondieron')
+     RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
+               fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
+               fs.cms_respondieron_at, fs.cms_operator_notes,
+               COALESCE(fs.data->>'nombre', '') AS nombre,
+               COALESCE(fs.data->>'telefono', '') AS telefono,
+               COALESCE(fs.data->>'encuestador', '') AS encuestador,
+               COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
+               COALESCE(fs.data->>'distrito', '') AS distrito,
+               COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido`,
     [submissionId, operatorId],
   );
   return rows[0] ?? null;
@@ -317,21 +307,20 @@ export async function archiveContact(
   operatorId: string,
 ): Promise<CmsContactRow | null> {
   const { rows } = await pool.query<CmsContactRow>(
-    `UPDATE form_submissions
+    `UPDATE form_submissions fs
      SET cms_status = 'archivado',
-         cms_claimed_by = COALESCE(cms_claimed_by, $2),
-         cms_claimed_at = COALESCE(cms_claimed_at, now())
-     WHERE id = $1
-     RETURNING id, campaign_id, data, client_id, created_at,
-               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
-               cms_respondieron_at, cms_operator_notes,
-               COALESCE(data->>'nombre', '') AS nombre,
-               COALESCE(data->>'telefono', '') AS telefono,
-               COALESCE(data->>'encuestador', '') AS encuestador,
-               COALESCE(data->>'zona', data->>'distrito', '') AS zona,
-               COALESCE(data->>'distrito', '') AS distrito,
-               COALESCE(data->>'candidato_preferido', '') AS candidato_preferido,
-               false AS is_locked`,
+         cms_claimed_by = COALESCE(fs.cms_claimed_by, $2),
+         cms_claimed_at = COALESCE(fs.cms_claimed_at, now())
+     WHERE fs.id = $1
+     RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
+               fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
+               fs.cms_respondieron_at, fs.cms_operator_notes,
+               COALESCE(fs.data->>'nombre', '') AS nombre,
+               COALESCE(fs.data->>'telefono', '') AS telefono,
+               COALESCE(fs.data->>'encuestador', '') AS encuestador,
+               COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
+               COALESCE(fs.data->>'distrito', '') AS distrito,
+               COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido`,
     [submissionId, operatorId],
   );
   return rows[0] ?? null;
@@ -344,21 +333,21 @@ export async function updateNotes(
   operatorId: string,
   notes: { local_votacion: string; domicilio: string; comentarios: string },
 ): Promise<CmsContactRow | null> {
+  // Any operator can edit notes — cms_claimed_by tracks last operator who acted
   const { rows } = await pool.query<CmsContactRow>(
-    `UPDATE form_submissions
-     SET cms_operator_notes = $3::jsonb
-     WHERE id = $1
-       AND cms_claimed_by = $2
-     RETURNING id, campaign_id, data, client_id, created_at,
-               cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
-               cms_respondieron_at, cms_operator_notes,
-               COALESCE(data->>'nombre', '') AS nombre,
-               COALESCE(data->>'telefono', '') AS telefono,
-               COALESCE(data->>'encuestador', '') AS encuestador,
-               COALESCE(data->>'zona', data->>'distrito', '') AS zona,
-               COALESCE(data->>'distrito', '') AS distrito,
-               COALESCE(data->>'candidato_preferido', '') AS candidato_preferido,
-               false AS is_locked`,
+    `UPDATE form_submissions fs
+     SET cms_operator_notes = $3::jsonb,
+         cms_claimed_by = COALESCE(fs.cms_claimed_by, $2)
+     WHERE fs.id = $1
+     RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
+               fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
+               fs.cms_respondieron_at, fs.cms_operator_notes,
+               COALESCE(fs.data->>'nombre', '') AS nombre,
+               COALESCE(fs.data->>'telefono', '') AS telefono,
+               COALESCE(fs.data->>'encuestador', '') AS encuestador,
+               COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
+               COALESCE(fs.data->>'distrito', '') AS distrito,
+               COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido`,
     [submissionId, operatorId, JSON.stringify(notes)],
   );
   return rows[0] ?? null;
@@ -368,46 +357,37 @@ export async function updateNotes(
 
 export async function getCmsStats(
   campaignId: string,
-  operatorId: string,
 ): Promise<{
   total: number;
   nuevos: number;
   hablados: number;
-  hablados_mios: number;
   respondieron: number;
   archivados: number;
-  claimed: number;
 }> {
   const { rows } = await pool.query<{
     total: string;
     nuevos: string;
     hablados: string;
-    hablados_mios: string;
     respondieron: string;
     archivados: string;
-    claimed: string;
   }>(
     `SELECT
        COUNT(*) FILTER (WHERE COALESCE(data->>'telefono', '') != '')::text AS total,
-       COUNT(*) FILTER (WHERE cms_status IN ('nuevo', 'claimed') AND COALESCE(data->>'telefono', '') != '')::text AS nuevos,
+       COUNT(*) FILTER (WHERE cms_status = 'nuevo' AND COALESCE(data->>'telefono', '') != '')::text AS nuevos,
        COUNT(*) FILTER (WHERE cms_status = 'hablado' AND COALESCE(data->>'telefono', '') != '')::text AS hablados,
-       COUNT(*) FILTER (WHERE cms_status = 'hablado' AND cms_claimed_by = $2)::text AS hablados_mios,
        COUNT(*) FILTER (WHERE cms_status = 'respondieron')::text AS respondieron,
-       COUNT(*) FILTER (WHERE cms_status = 'archivado')::text AS archivados,
-       COUNT(*) FILTER (WHERE cms_status = 'claimed')::text AS claimed
+       COUNT(*) FILTER (WHERE cms_status = 'archivado')::text AS archivados
      FROM form_submissions
      WHERE campaign_id = $1`,
-    [campaignId, operatorId],
+    [campaignId],
   );
   const row = rows[0];
   return {
     total: parseInt(row?.total ?? "0", 10),
     nuevos: parseInt(row?.nuevos ?? "0", 10),
     hablados: parseInt(row?.hablados ?? "0", 10),
-    hablados_mios: parseInt(row?.hablados_mios ?? "0", 10),
     respondieron: parseInt(row?.respondieron ?? "0", 10),
     archivados: parseInt(row?.archivados ?? "0", 10),
-    claimed: parseInt(row?.claimed ?? "0", 10),
   };
 }
 
@@ -418,7 +398,6 @@ export type CmsMetricsCampaign = {
   campaign_name: string;
   total: number;
   nuevos: number;
-  claimed: number;
   hablados: number;
   respondieron: number;
   archivados: number;
@@ -435,7 +414,6 @@ export type CmsMetricsOperator = {
   hablados: number;
   respondieron: number;
   archivados: number;
-  claimed_now: number;
 };
 
 /**
@@ -458,7 +436,6 @@ export async function getCmsMetricsByCampaign(
     campaign_name: string;
     total: string;
     nuevos: string;
-    claimed: string;
     hablados: string;
     respondieron: string;
     archivados: string;
@@ -467,8 +444,7 @@ export async function getCmsMetricsByCampaign(
        fs.campaign_id,
        COALESCE(c.name, 'Sin nombre') AS campaign_name,
        COUNT(*) FILTER (WHERE COALESCE(fs.data->>'telefono', '') != '')::text AS total,
-       COUNT(*) FILTER (WHERE fs.cms_status IN ('nuevo', 'claimed') AND COALESCE(fs.data->>'telefono', '') != '')::text AS nuevos,
-       COUNT(*) FILTER (WHERE fs.cms_status = 'claimed' AND COALESCE(fs.data->>'telefono', '') != '')::text AS claimed,
+       COUNT(*) FILTER (WHERE fs.cms_status = 'nuevo' AND COALESCE(fs.data->>'telefono', '') != '')::text AS nuevos,
        COUNT(*) FILTER (WHERE fs.cms_status = 'hablado' AND COALESCE(fs.data->>'telefono', '') != '')::text AS hablados,
        COUNT(*) FILTER (WHERE fs.cms_status = 'respondieron' AND COALESCE(fs.data->>'telefono', '') != '')::text AS respondieron,
        COUNT(*) FILTER (WHERE fs.cms_status = 'archivado' AND COALESCE(fs.data->>'telefono', '') != '')::text AS archivados
@@ -490,7 +466,6 @@ export async function getCmsMetricsByCampaign(
       campaign_name: r.campaign_name,
       total,
       nuevos: parseInt(r.nuevos, 10),
-      claimed: parseInt(r.claimed, 10),
       hablados,
       respondieron,
       archivados: parseInt(r.archivados, 10),
@@ -524,7 +499,6 @@ export async function getCmsMetricsByOperator(
     hablados: string;
     respondieron: string;
     archivados: string;
-    claimed_now: string;
   }>(
     `SELECT
        fs.cms_claimed_by AS user_id,
@@ -534,8 +508,7 @@ export async function getCmsMetricsByOperator(
        COALESCE(c.name, 'Sin nombre') AS campaign_name,
        COUNT(*) FILTER (WHERE fs.cms_status = 'hablado')::text AS hablados,
        COUNT(*) FILTER (WHERE fs.cms_status = 'respondieron')::text AS respondieron,
-       COUNT(*) FILTER (WHERE fs.cms_status = 'archivado')::text AS archivados,
-       COUNT(*) FILTER (WHERE fs.cms_status = 'claimed')::text AS claimed_now
+       COUNT(*) FILTER (WHERE fs.cms_status = 'archivado')::text AS archivados
      FROM form_submissions fs
      JOIN users u ON u.id = fs.cms_claimed_by
      LEFT JOIN campaigns c ON c.id = fs.campaign_id
@@ -555,7 +528,6 @@ export async function getCmsMetricsByOperator(
     hablados: parseInt(r.hablados, 10),
     respondieron: parseInt(r.respondieron, 10),
     archivados: parseInt(r.archivados, 10),
-    claimed_now: parseInt(r.claimed_now, 10),
   }));
 }
 
@@ -564,62 +536,71 @@ export async function getCmsMetricsByOperator(
 /**
  * Revert a contact one step back:
  *   respondieron → hablado   (clears cms_respondieron_at)
- *   hablado      → claimed   (clears cms_hablado_at)
- * Only the operator who owns the contact (or the same campaign) can revert.
+ *   hablado      → nuevo     (clears cms_hablado_at, cms_claimed_by, cms_claimed_at)
+ *   archivado    → nuevo     (clears all CMS fields, full restore)
  */
 export async function revertContact(
   submissionId: string,
-  operatorId: string,
+  _operatorId: string,
 ): Promise<CmsContactRow | null> {
-  // First, check current status
-  const { rows: current } = await pool.query<{ cms_status: string; cms_claimed_by: string | null }>(
-    `SELECT cms_status, cms_claimed_by FROM form_submissions WHERE id = $1`,
+  const { rows: current } = await pool.query<{ cms_status: string }>(
+    `SELECT cms_status FROM form_submissions WHERE id = $1`,
     [submissionId],
   );
   if (!current[0]) return null;
 
   const status = current[0].cms_status;
-  const claimedBy = current[0].cms_claimed_by;
-
-  // Only the operator who owns it can revert (or if nobody owns it)
-  if (claimedBy && claimedBy !== operatorId) return null;
 
   let sql: string;
   if (status === "respondieron") {
-    // respondieron → hablado
-    sql = `UPDATE form_submissions
+    sql = `UPDATE form_submissions fs
            SET cms_status = 'hablado',
                cms_respondieron_at = NULL
-           WHERE id = $1
-           RETURNING id, campaign_id, data, client_id, created_at,
-                     cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
-                     cms_respondieron_at, cms_operator_notes,
-                     COALESCE(data->>'nombre', '') AS nombre,
-                     COALESCE(data->>'telefono', '') AS telefono,
-                     COALESCE(data->>'encuestador', '') AS encuestador,
-                     COALESCE(data->>'zona', data->>'distrito', '') AS zona,
-                     COALESCE(data->>'distrito', '') AS distrito,
-                     COALESCE(data->>'candidato_preferido', '') AS candidato_preferido,
-                     false AS is_locked`;
+           WHERE fs.id = $1
+           RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
+                     fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
+                     fs.cms_respondieron_at, fs.cms_operator_notes,
+                     COALESCE(fs.data->>'nombre', '') AS nombre,
+                     COALESCE(fs.data->>'telefono', '') AS telefono,
+                     COALESCE(fs.data->>'encuestador', '') AS encuestador,
+                     COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
+                     COALESCE(fs.data->>'distrito', '') AS distrito,
+                     COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido`;
   } else if (status === "hablado") {
-    // hablado → claimed (keeps claimed_by/at intact)
-    sql = `UPDATE form_submissions
-           SET cms_status = 'claimed',
+    sql = `UPDATE form_submissions fs
+           SET cms_status = 'nuevo',
                cms_hablado_at = NULL,
-               cms_respondieron_at = NULL
-           WHERE id = $1
-           RETURNING id, campaign_id, data, client_id, created_at,
-                     cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
-                     cms_respondieron_at, cms_operator_notes,
-                     COALESCE(data->>'nombre', '') AS nombre,
-                     COALESCE(data->>'telefono', '') AS telefono,
-                     COALESCE(data->>'encuestador', '') AS encuestador,
-                     COALESCE(data->>'zona', data->>'distrito', '') AS zona,
-                     COALESCE(data->>'distrito', '') AS distrito,
-                     COALESCE(data->>'candidato_preferido', '') AS candidato_preferido,
-                     false AS is_locked`;
+               cms_respondieron_at = NULL,
+               cms_claimed_by = NULL,
+               cms_claimed_at = NULL
+           WHERE fs.id = $1
+           RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
+                     fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
+                     fs.cms_respondieron_at, fs.cms_operator_notes,
+                     COALESCE(fs.data->>'nombre', '') AS nombre,
+                     COALESCE(fs.data->>'telefono', '') AS telefono,
+                     COALESCE(fs.data->>'encuestador', '') AS encuestador,
+                     COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
+                     COALESCE(fs.data->>'distrito', '') AS distrito,
+                     COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido`;
+  } else if (status === "archivado") {
+    sql = `UPDATE form_submissions fs
+           SET cms_status = 'nuevo',
+               cms_hablado_at = NULL,
+               cms_respondieron_at = NULL,
+               cms_claimed_by = NULL,
+               cms_claimed_at = NULL
+           WHERE fs.id = $1
+           RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
+                     fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
+                     fs.cms_respondieron_at, fs.cms_operator_notes,
+                     COALESCE(fs.data->>'nombre', '') AS nombre,
+                     COALESCE(fs.data->>'telefono', '') AS telefono,
+                     COALESCE(fs.data->>'encuestador', '') AS encuestador,
+                     COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
+                     COALESCE(fs.data->>'distrito', '') AS distrito,
+                     COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido`;
   } else {
-    // Can only revert respondieron or hablado
     return null;
   }
 

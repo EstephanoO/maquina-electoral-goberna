@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { CmsContact } from "../../../../lib/services/cms";
 
 const FONT = "var(--font-montserrat), system-ui, sans-serif";
+const PANEL_WIDTH = 400;
 
 type ContactNotesPanelProps = {
   contact: CmsContact;
@@ -14,7 +15,7 @@ type ContactNotesPanelProps = {
 
 const LABEL_STYLE: React.CSSProperties = {
   display: "block",
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 700,
   color: "var(--color-text-tertiary)",
   textTransform: "uppercase",
@@ -32,6 +33,7 @@ const INPUT_STYLE: React.CSSProperties = {
   background: "var(--color-surface)",
   color: "var(--color-text-primary)",
   outline: "none",
+  boxSizing: "border-box",
 };
 
 function formatDateTime(dateStr: string | null): string {
@@ -47,6 +49,15 @@ function formatDateTime(dateStr: string | null): string {
   }
 }
 
+// ── Status badge for panel header ─────────────────────────────────
+
+const STATUS_LABELS: Record<string, { label: string; bg: string; color: string }> = {
+  nuevo: { label: "NUEVO", bg: "#dbeafe", color: "#1d4ed8" },
+  hablado: { label: "HABLADO", bg: "#d1fae5", color: "#065f46" },
+  respondieron: { label: "CONTESTÓ", bg: "#ede9fe", color: "#5b21b6" },
+  archivado: { label: "ARCHIVADO", bg: "#f3f4f6", color: "#6b7280" },
+};
+
 export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactNotesPanelProps) {
   const [localVotacion, setLocalVotacion] = useState(
     (contact.cms_operator_notes?.local_votacion as string) || "",
@@ -60,14 +71,16 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
 
   const nombre = contact.nombre || "Sin nombre";
   const isReadOnly = contact.cms_status === "archivado";
+  const statusCfg = STATUS_LABELS[contact.cms_status] ?? STATUS_LABELS.nuevo;
 
   // Context info
   const contextItems: Array<{ label: string; value: string }> = [];
   if (contact.encuestador) contextItems.push({ label: "Entrevistador", value: contact.encuestador });
-  if (contact.zona) contextItems.push({ label: "Zona / Ubicacion", value: contact.zona });
+  if (contact.zona) contextItems.push({ label: "Zona / Ubicación", value: contact.zona });
   if (contact.candidato_preferido) contextItems.push({ label: "Candidato preferido", value: contact.candidato_preferido });
   contextItems.push({ label: "Agregado", value: formatDateTime(contact.created_at) });
   if (contact.cms_hablado_at) contextItems.push({ label: "Hablado", value: formatDateTime(contact.cms_hablado_at) });
+  if (contact.cms_respondieron_at) contextItems.push({ label: "Contestó", value: formatDateTime(contact.cms_respondieron_at) });
 
   return (
     <div
@@ -75,33 +88,51 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
         position: "fixed",
         top: 0,
         right: 0,
-        width: 400,
+        width: PANEL_WIDTH,
         height: "100vh",
         background: "var(--color-surface)",
         borderLeft: "1px solid var(--color-border)",
-        boxShadow: "var(--shadow-lg)",
+        boxShadow: "-4px 0 24px rgba(0,0,0,0.08)",
         zIndex: 50,
         display: "flex",
         flexDirection: "column",
         fontFamily: FONT,
-        animation: "goberna-slide-in .25s ease-out",
+        animation: "goberna-slide-in .2s ease-out",
       }}
     >
       {/* Header */}
       <div
         style={{
-          padding: "20px 20px 16px",
+          padding: "16px 20px",
           borderBottom: "1px solid var(--color-border)",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "flex-start",
+          gap: 12,
         }}
       >
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)" }}>
-            {nombre}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {nombre}
+            </div>
+            <span
+              style={{
+                display: "inline-block",
+                padding: "2px 7px",
+                fontSize: 9,
+                fontWeight: 800,
+                letterSpacing: "0.04em",
+                borderRadius: 4,
+                background: statusCfg.bg,
+                color: statusCfg.color,
+                flexShrink: 0,
+              }}
+            >
+              {statusCfg.label}
+            </span>
           </div>
-          <div style={{ fontSize: 13, color: "#25D366", fontFamily: "monospace", marginTop: 4, fontWeight: 600 }}>
+          <div style={{ fontSize: 13, color: "#25D366", fontFamily: "monospace", fontWeight: 600 }}>
             {contact.telefono}
           </div>
         </div>
@@ -109,8 +140,8 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
           type="button"
           onClick={onClose}
           style={{
-            width: 32,
-            height: 32,
+            width: 28,
+            height: 28,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -118,6 +149,7 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
             borderRadius: 6,
             background: "var(--color-surface)",
             cursor: "pointer",
+            flexShrink: 0,
           }}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="2" strokeLinecap="round">
@@ -167,9 +199,13 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
         )}
 
         {/* Editable notes */}
+        <div style={{ fontSize: 10, fontWeight: 800, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
+          {isReadOnly ? "Notas del operador" : "Editar notas"}
+        </div>
+
         <div style={{ marginBottom: 16 }}>
           <label htmlFor="local_votacion" style={LABEL_STYLE}>
-            Local de Votacion
+            Local de Votación
           </label>
           <input
             id="local_votacion"
@@ -191,7 +227,7 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
             type="text"
             value={domicilio}
             onChange={(e) => setDomicilio(e.target.value)}
-            placeholder="Direccion del contacto"
+            placeholder="Dirección del contacto"
             readOnly={isReadOnly}
             style={{ ...INPUT_STYLE, opacity: isReadOnly ? 0.6 : 1 }}
           />
@@ -205,7 +241,7 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
             id="comentarios"
             value={comentarios}
             onChange={(e) => setComentarios(e.target.value)}
-            placeholder="Notas sobre la conversacion..."
+            placeholder="Notas sobre la conversación..."
             rows={4}
             readOnly={isReadOnly}
             style={{ ...INPUT_STYLE, resize: "vertical", opacity: isReadOnly ? 0.6 : 1 }}
@@ -215,7 +251,25 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
 
       {/* Footer */}
       {!isReadOnly && (
-        <div style={{ padding: "16px 20px", borderTop: "1px solid var(--color-border)" }}>
+        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--color-border)", display: "flex", gap: 10 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              flex: 1,
+              padding: "10px",
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: FONT,
+              color: "var(--color-text-secondary)",
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+              borderRadius: 8,
+              cursor: "pointer",
+            }}
+          >
+            Cancelar
+          </button>
           <button
             type="button"
             disabled={saving}
@@ -227,9 +281,9 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
               })
             }
             style={{
-              width: "100%",
-              padding: "12px",
-              fontSize: 14,
+              flex: 2,
+              padding: "10px",
+              fontSize: 13,
               fontWeight: 700,
               fontFamily: FONT,
               color: "#fff",

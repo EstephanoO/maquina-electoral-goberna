@@ -5,6 +5,7 @@ import type { AppEnv } from "../../config/env";
 import type { AuthenticatedRequest } from "../../infra/auth";
 import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
+import { pool } from "../../db";
 import * as repo from "./repository";
 
 // ── SSE helpers ─────────────────────────────────────────────────────
@@ -44,6 +45,22 @@ function broadcastToCampaign(campaignId: string, event: string, payload: unknown
   }
 }
 
+/**
+ * After a mutation, resolve claimed_by_email via a lightweight query
+ * so the SSE payload includes operator attribution.
+ */
+async function resolveOperatorEmail(userId: string): Promise<string> {
+  try {
+    const { rows } = await pool.query<{ email: string }>(
+      `SELECT email FROM users WHERE id = $1`,
+      [userId],
+    );
+    return rows[0]?.email ?? "";
+  } catch {
+    return "";
+  }
+}
+
 // ── Routes ──────────────────────────────────────────────────────────
 
 export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
@@ -61,13 +78,11 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
 
   return async (app) => {
     // ── GET /api/cms/contacts ───────────────────────────────────────
-    // List contacts with status filtering + search
     app.get(
       "/api/cms/contacts",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
       async (request, reply) => {
         const requestId = String(request.id);
-        const authed = request as AuthenticatedRequest;
         const campaignId = request.activeCampaignId;
 
         if (!campaignId) {
@@ -81,7 +96,7 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
           const offset = Number(query.offset) || 0;
           const search = query.search ?? "";
 
-          const result = await repo.listContacts(campaignId, authed.userId, status, limit, offset, search);
+          const result = await repo.listContacts(campaignId, status, limit, offset, search);
           return reply.code(200).send({ ok: true, request_id: requestId, ...result });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "cms contacts list failed");
@@ -91,7 +106,7 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── PUT /api/cms/contacts/:id/claim ─────────────────────────────
-    // Operator claims a contact (locks it for others)
+    // @deprecated — kept for backwards compat (mobile etc)
     app.put(
       "/api/cms/contacts/:id/claim",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
@@ -106,7 +121,6 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
             return reply.code(409).send(errorPayload(requestId, "ALREADY_CLAIMED", "contacto ya tomado por otra operadora"));
           }
 
-          // Broadcast lock to all CMS clients in this campaign
           broadcastToCampaign(result.campaign_id, "contact.claimed", {
             id,
             claimed_by: authed.userId,
@@ -122,7 +136,7 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── PUT /api/cms/contacts/:id/release ────────────────────────────
-    // Operator releases a claimed contact back to pool
+    // @deprecated — kept for backwards compat
     app.put(
       "/api/cms/contacts/:id/release",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
@@ -148,7 +162,6 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── PUT /api/cms/contacts/:id/hablado ───────────────────────────
-    // Mark contact as talked to
     app.put(
       "/api/cms/contacts/:id/hablado",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
@@ -160,12 +173,17 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
         try {
           const result = await repo.markHablado(id, authed.userId);
           if (!result) {
-            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado o no es tuyo"));
+            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado"));
           }
 
-          broadcastToCampaign(result.campaign_id, "contact.hablado", {
-            id,
+          const operatorEmail = await resolveOperatorEmail(authed.userId);
+
+          // Broadcast full contact so all operators can update their view
+          broadcastToCampaign(result.campaign_id, "contact.updated", {
+            contact: { ...result, claimed_by_email: operatorEmail },
+            previous_status: "nuevo",
             operator_id: authed.userId,
+            operator_email: operatorEmail,
           });
 
           return reply.code(200).send({ ok: true, request_id: requestId, contact: result });
@@ -177,7 +195,6 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── PUT /api/cms/contacts/:id/respondieron ─────────────────────
-    // Mark contact as "respondieron" (they answered)
     app.put(
       "/api/cms/contacts/:id/respondieron",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
@@ -192,9 +209,13 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
             return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado"));
           }
 
-          broadcastToCampaign(result.campaign_id, "contact.respondieron", {
-            id,
+          const operatorEmail = await resolveOperatorEmail(authed.userId);
+
+          broadcastToCampaign(result.campaign_id, "contact.updated", {
+            contact: { ...result, claimed_by_email: operatorEmail },
+            previous_status: "hablado",
             operator_id: authed.userId,
+            operator_email: operatorEmail,
           });
 
           return reply.code(200).send({ ok: true, request_id: requestId, contact: result });
@@ -206,7 +227,6 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── PUT /api/cms/contacts/:id/revert ──────────────────────────────
-    // Revert contact one step back (respondieron→hablado, hablado→claimed)
     app.put(
       "/api/cms/contacts/:id/revert",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
@@ -216,15 +236,27 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
         const { id } = request.params as { id: string };
 
         try {
+          // Grab the current status before revert to know previous_status
+          const pre = await pool.query<{ cms_status: string }>(
+            `SELECT cms_status FROM form_submissions WHERE id = $1`,
+            [id],
+          );
+          const previousStatus = pre.rows[0]?.cms_status ?? "unknown";
+
           const result = await repo.revertContact(id, authed.userId);
           if (!result) {
-            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado, no es tuyo, o no se puede revertir"));
+            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado o no se puede revertir"));
           }
 
-          broadcastToCampaign(result.campaign_id, "contact.reverted", {
-            id,
+          const operatorEmail = result.cms_claimed_by
+            ? await resolveOperatorEmail(result.cms_claimed_by)
+            : "";
+
+          broadcastToCampaign(result.campaign_id, "contact.updated", {
+            contact: { ...result, claimed_by_email: operatorEmail },
+            previous_status: previousStatus,
             operator_id: authed.userId,
-            new_status: result.cms_status,
+            operator_email: await resolveOperatorEmail(authed.userId),
           });
 
           return reply.code(200).send({ ok: true, request_id: requestId, contact: result });
@@ -236,7 +268,6 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── PUT /api/cms/contacts/:id/archive ────────────────────────────
-    // Archive a contact
     app.put(
       "/api/cms/contacts/:id/archive",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
@@ -246,14 +277,25 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
         const { id } = request.params as { id: string };
 
         try {
+          // Grab previous status
+          const pre = await pool.query<{ cms_status: string }>(
+            `SELECT cms_status FROM form_submissions WHERE id = $1`,
+            [id],
+          );
+          const previousStatus = pre.rows[0]?.cms_status ?? "unknown";
+
           const result = await repo.archiveContact(id, authed.userId);
           if (!result) {
             return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado"));
           }
 
-          broadcastToCampaign(result.campaign_id, "contact.archived", {
-            id,
+          const operatorEmail = await resolveOperatorEmail(authed.userId);
+
+          broadcastToCampaign(result.campaign_id, "contact.updated", {
+            contact: { ...result, claimed_by_email: operatorEmail },
+            previous_status: previousStatus,
             operator_id: authed.userId,
+            operator_email: operatorEmail,
           });
 
           return reply.code(200).send({ ok: true, request_id: requestId, contact: result });
@@ -265,7 +307,6 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── PUT /api/cms/contacts/:id/notes ──────────────────────────────
-    // Update operator notes (local_votacion, domicilio, comentarios)
     app.put(
       "/api/cms/contacts/:id/notes",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
@@ -288,8 +329,16 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
 
           const result = await repo.updateNotes(id, authed.userId, notes);
           if (!result) {
-            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado o no es tuyo"));
+            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado"));
           }
+
+          // Broadcast notes update so all operators see the change
+          const operatorEmail = await resolveOperatorEmail(authed.userId);
+          broadcastToCampaign(result.campaign_id, "contact.notes_updated", {
+            contact: { ...result, claimed_by_email: operatorEmail },
+            operator_id: authed.userId,
+            operator_email: operatorEmail,
+          });
 
           return reply.code(200).send({ ok: true, request_id: requestId, contact: result });
         } catch (error) {
@@ -305,7 +354,6 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
       async (request, reply) => {
         const requestId = String(request.id);
-        const authed = request as AuthenticatedRequest;
         const campaignId = request.activeCampaignId;
 
         if (!campaignId) {
@@ -313,7 +361,7 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
         }
 
         try {
-          const stats = await repo.getCmsStats(campaignId, authed.userId);
+          const stats = await repo.getCmsStats(campaignId);
           return reply.code(200).send({ ok: true, request_id: requestId, stats });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "cms stats failed");
@@ -323,10 +371,6 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── GET /api/cms/metrics ────────────────────────────────────────
-    // CMS metrics scoped by role:
-    //   admin: ALL campaigns
-    //   consultor: assigned campaigns (from JWT campaignIds)
-    //   candidato: own campaign(s) (from JWT campaignIds)
     app.get(
       "/api/cms/metrics",
       { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
@@ -335,7 +379,6 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
         const authed = request as AuthenticatedRequest;
 
         try {
-          // Admin sees all campaigns; others see only their assigned campaigns
           const campaignScope = authed.userRole === "admin" ? null : authed.campaignIds;
 
           const [campaigns, operators, timeMetrics] = await Promise.all([
@@ -344,17 +387,15 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
             repo.getTimeMetrics(campaignScope),
           ]);
 
-          // Compute global totals across all visible campaigns
           const globalTotals = campaigns.reduce(
             (acc, c) => ({
               total: acc.total + c.total,
               nuevos: acc.nuevos + c.nuevos,
-              claimed: acc.claimed + c.claimed,
               hablados: acc.hablados + c.hablados,
               respondieron: acc.respondieron + c.respondieron,
               archivados: acc.archivados + c.archivados,
             }),
-            { total: 0, nuevos: 0, claimed: 0, hablados: 0, respondieron: 0, archivados: 0 },
+            { total: 0, nuevos: 0, hablados: 0, respondieron: 0, archivados: 0 },
           );
 
           const contacted = globalTotals.hablados + globalTotals.respondieron;
@@ -385,7 +426,7 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── GET /api/cms/stream ─────────────────────────────────────────
-    // SSE for real-time lock/unlock/hablado events
+    // SSE for real-time contact updates across all operators
     app.get(
       "/api/cms/stream",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
@@ -413,9 +454,8 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
 
         reply.raw.write("retry: 5000\n\n");
 
-        // Send current claimed contacts as initial snapshot
-        const claimed = await repo.getClaimedSnapshot(campaignId);
-        writeSseEvent(reply.raw, "snapshot", { claimed });
+        // Send connected confirmation
+        writeSseEvent(reply.raw, "connected", { ts: Date.now() });
 
         const cleanup = () => { clients.delete(clientId); };
         request.raw.on("close", cleanup);

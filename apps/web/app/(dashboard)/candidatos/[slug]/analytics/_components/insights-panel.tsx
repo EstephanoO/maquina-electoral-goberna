@@ -51,21 +51,21 @@ export function InsightsPanel({ data, primaryColor }: Props) {
       </div>
 
       <div style={S.insightsList}>
-        {insights.map((insight) => (
-          <div key={`${insight.category}-${insight.title}`} style={S.insightCard}>
-            <div style={S.insightHeader}>
-              <span style={{
-                ...S.insightDot,
-                backgroundColor: insight.type === "positive" ? "#10b981" :
-                                 insight.type === "warning" ? "#f59e0b" :
-                                 insight.type === "negative" ? "#ef4444" : "#64748b",
-              }} />
-              <span style={S.insightCategory}>{insight.category}</span>
+        {insights.map((insight) => {
+          const typeColor = insight.type === "positive" ? "#10b981" :
+                            insight.type === "warning" ? "#f59e0b" :
+                            insight.type === "negative" ? "#ef4444" : "#64748b";
+          return (
+            <div key={`${insight.category}-${insight.title}`} style={{ ...S.insightCard, borderLeftColor: typeColor }}>
+              <div style={S.insightHeader}>
+                <span style={{ ...S.insightDot, backgroundColor: typeColor }} />
+                <span style={S.insightCategory}>{insight.category}</span>
+              </div>
+              <div style={S.insightTitle}>{insight.title}</div>
+              <div style={S.insightDetail}>{insight.detail}</div>
             </div>
-            <div style={S.insightTitle}>{insight.title}</div>
-            <div style={S.insightDetail}>{insight.detail}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -332,10 +332,11 @@ const S: Record<string, React.CSSProperties> = {
     gap: 10,
   },
   insightCard: {
-    padding: 14,
+    padding: "14px 14px 14px 16px",
     borderRadius: 10,
     backgroundColor: "#f8fafc",
     border: "1px solid #e2e8f0",
+    borderLeft: "3px solid transparent",
   },
   insightHeader: {
     display: "flex",
