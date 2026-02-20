@@ -46,6 +46,8 @@ export default function CmsPage() {
   const [contacts, setContacts] = useState<CmsContact[]>([]);
   const [stats, setStats] = useState<CmsStats | null>(null);
   const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState<string | null>(null);
   const [savingNotes, setSavingNotes] = useState(false);
@@ -60,13 +62,16 @@ export default function CmsPage() {
   const sseRef = useRef<{ close: () => void } | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // ── Fetch contacts ──────────────────────────────────────────────
+  const PAGE_LIMIT = 25;
+
+  // ── Fetch contacts (initial/reset) ──────────────────────────────
 
   const fetchContacts = useCallback(async () => {
     if (!activeCampaignId) return;
     setLoading(true);
+    setOffset(0);
     const [contactsRes, statsRes] = await Promise.all([
-      listCmsContacts(activeCampaignId, activeTab, 100, 0, search),
+      listCmsContacts(activeCampaignId, activeTab, PAGE_LIMIT, 0, search),
       getCmsStats(activeCampaignId),
     ]);
     if (contactsRes.ok) {
@@ -76,6 +81,20 @@ export default function CmsPage() {
     if (statsRes.ok && statsRes.stats) setStats(statsRes.stats);
     setLoading(false);
   }, [activeCampaignId, activeTab, search]);
+
+  // ── Load more (append next page) ────────────────────────────────
+
+  const handleLoadMore = useCallback(async () => {
+    if (!activeCampaignId || loadingMore) return;
+    setLoadingMore(true);
+    const nextOffset = offset + PAGE_LIMIT;
+    const res = await listCmsContacts(activeCampaignId, activeTab, PAGE_LIMIT, nextOffset, search);
+    if (res.ok) {
+      setContacts((prev) => [...prev, ...res.contacts]);
+      setOffset(nextOffset);
+    }
+    setLoadingMore(false);
+  }, [activeCampaignId, activeTab, search, offset, loadingMore]);
 
   useEffect(() => {
     fetchContacts();
@@ -655,14 +674,39 @@ export default function CmsPage() {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
+            gap: 12,
           }}
         >
           <span>{contacts.length} de {total} contactos</span>
-          {stats && (
-            <span style={{ fontSize: 11 }}>
-              En curso: {stats.claimed}
-            </span>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            {stats && (
+              <span style={{ fontSize: 11 }}>
+                En curso: {stats.claimed}
+              </span>
+            )}
+            {contacts.length < total && (
+              <button
+                type="button"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                style={{
+                  padding: "5px 14px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  fontFamily: FONT,
+                  color: "var(--goberna-blue-900)",
+                  background: "var(--color-surface)",
+                  border: "1px solid var(--goberna-blue-200)",
+                  borderRadius: 6,
+                  cursor: loadingMore ? "not-allowed" : "pointer",
+                  opacity: loadingMore ? 0.6 : 1,
+                  transition: "opacity 0.15s ease",
+                }}
+              >
+                {loadingMore ? "Cargando..." : `Cargar más (${total - contacts.length} restantes)`}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

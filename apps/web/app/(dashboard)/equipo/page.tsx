@@ -102,19 +102,19 @@ const ROLES: Record<string, RoleConfig> = {
     bgColor: "linear-gradient(135deg, #ffd700, #ffb700)",
     borderColor: "#d4a500",
     description: "Control total del sistema y multiples campanas",
-    canManage: ["consultor", "supervisor", "director_regional", "capitan_brigada", "agent"],
+    canManage: ["consultor", "supervisor", "capitan_brigada", "agent"],
   },
   consultor: {
     key: "consultor",
     label: "Consultor Estrategico",
     shortLabel: "Consultor",
-    level: 90,
+    level: 75,
     icon: "📊",
     color: "#4f46e5",
     bgColor: "linear-gradient(135deg, #818cf8, #6366f1)",
     borderColor: "#6366f1",
     description: "Asesora multiples campanas asignadas",
-    canManage: ["supervisor", "director_regional", "capitan_brigada", "agent"],
+    canManage: ["supervisor", "capitan_brigada", "agent"],
   },
   supervisor: {
     key: "supervisor",
@@ -128,29 +128,16 @@ const ROLES: Record<string, RoleConfig> = {
     description: "Control total de su campana electoral",
     canManage: ["director_regional", "capitan_brigada", "agent"],
   },
-  director_regional: {
-    key: "director_regional",
-    label: "Director Regional de Campo",
-    shortLabel: "Director Regional",
-    level: 60,
-    icon: "🗺️",
+  capitan_brigada: {
+    key: "capitan_brigada",
+    label: "Brigadista / Director de Campo",
+    shortLabel: "Brigadista",
+    level: 40,
+    icon: "🎖️",
     color: "#047857",
     bgColor: "linear-gradient(135deg, #10b981, #059669)",
     borderColor: "#059669",
-    description: "Coordina Capitanes de Brigada en su region",
-    canManage: ["capitan_brigada", "agent"],
-    capacity: "5-10 Capitanes",
-  },
-  capitan_brigada: {
-    key: "capitan_brigada",
-    label: "Capitan de Brigada",
-    shortLabel: "Capitan",
-    level: 40,
-    icon: "🎖️",
-    color: "#7c3aed",
-    bgColor: "linear-gradient(135deg, #8b5cf6, #7c3aed)",
-    borderColor: "#7c3aed",
-    description: "Lidera brigada de Agentes de Campo",
+    description: "Coordina y lidera agentes en su zona",
     canManage: ["agent"],
     capacity: "5-10 Agentes",
   },
@@ -174,6 +161,7 @@ const ROLE_ALIASES: Record<string, string> = {
   brigadista_zonal: "capitan_brigada",
   agente_campo: "agent",
   agente_digital: "agent",
+  director_regional: "capitan_brigada", // legacy alias — same backend role
   // consultor and admin map to themselves
 };
 
@@ -411,36 +399,40 @@ function RoleSelector({
     if (buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
       const DROPDOWN_WIDTH = 280;
-      // Estimate dropdown height: header (36px) + up to 5 roles * 64px each
-      const DROPDOWN_HEIGHT = 36 + availableRoles.length * 64;
-      const MARGIN = 4;
+      // Estimate dropdown height: header (36px) + roles * 80px each
+      const DROPDOWN_HEIGHT = 36 + availableRoles.length * 80;
+      const MARGIN = 6;
       const spaceBelow = window.innerHeight - rect.bottom - MARGIN;
       const spaceAbove = rect.top - MARGIN;
       const openUpward = spaceBelow < DROPDOWN_HEIGHT && spaceAbove > spaceBelow;
 
-      // Prefer aligning to left of button; flip if it would overflow viewport right edge
-      const left = rect.left + DROPDOWN_WIDTH > window.innerWidth
-        ? rect.right - DROPDOWN_WIDTH
-        : rect.left;
+      // Always align to RIGHT edge of button so it doesn't overflow the viewport right edge
+      const right = window.innerWidth - rect.right;
+      const left = Math.max(8, rect.right - DROPDOWN_WIDTH);
+
+      // Use right-anchored positioning to avoid right-edge overflow
+      const horizontalStyle = rect.right + 8 > window.innerWidth - DROPDOWN_WIDTH
+        ? { right, left: "auto" as const }
+        : { left, right: "auto" as const };
 
       setDropdownStyle(
         openUpward
           ? {
               position: "fixed",
               bottom: window.innerHeight - rect.top + MARGIN,
-              left,
+              ...horizontalStyle,
               zIndex: 9999,
-              minWidth: DROPDOWN_WIDTH,
-              maxHeight: Math.min(spaceAbove, DROPDOWN_HEIGHT),
+              width: DROPDOWN_WIDTH,
+              maxHeight: Math.min(spaceAbove - MARGIN, DROPDOWN_HEIGHT),
               overflowY: "auto",
             }
           : {
               position: "fixed",
               top: rect.bottom + MARGIN,
-              left,
+              ...horizontalStyle,
               zIndex: 9999,
-              minWidth: DROPDOWN_WIDTH,
-              maxHeight: Math.min(spaceBelow, DROPDOWN_HEIGHT),
+              width: DROPDOWN_WIDTH,
+              maxHeight: Math.min(spaceBelow - MARGIN, DROPDOWN_HEIGHT),
               overflowY: "auto",
             },
       );
@@ -482,6 +474,7 @@ function RoleSelector({
         boxShadow: "0 10px 40px rgba(0,0,0,0.15)",
         overflow: "hidden",
         animation: "goberna-fade-in 0.15s ease-out",
+        paddingBottom: 8,
       }}>
         <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--color-border)", fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
           Seleccionar Rol
@@ -992,6 +985,7 @@ function MemberRow({
   member, 
   isSelf, 
   canManage,
+  viewerRole,
   updatingRole,
   onRoleChange,
   onRemove,
@@ -1001,6 +995,7 @@ function MemberRow({
   member: Member;
   isSelf: boolean;
   canManage: boolean;
+  viewerRole: string;
   updatingRole: boolean;
   onRoleChange: (role: string) => void;
   onRemove: () => void;
@@ -1008,7 +1003,12 @@ function MemberRow({
   allowedRoles: string[];
 }) {
   const config = getRoleConfig(member.role);
-  const isProtected = member.role === "admin" || isSelf;
+  const memberNormalizedRole = normalizeRole(member.role);
+  // Admin siempre protegido; consultor solo editable por admin
+  const isProtected =
+    memberNormalizedRole === "admin" ||
+    isSelf ||
+    (memberNormalizedRole === "consultor" && viewerRole !== "admin");
   
   return (
     <div style={{
@@ -1219,7 +1219,6 @@ export default function EquipoPage() {
   const [batchProcessing, setBatchProcessing] = useState(false);
 
   // Objectives state
-  const [showObjectives, setShowObjectives] = useState(false);
   const [zoneObjectives, setZoneObjectives] = useState<ZoneObjective[]>([]);
   const [objectiveInputs, setObjectiveInputs] = useState<Record<string, string>>({});
   const [savingObjectives, setSavingObjectives] = useState(false);
@@ -1309,11 +1308,10 @@ export default function EquipoPage() {
     }
   }, [activeCampaignId, canManage]);
 
+  // Fetch objectives when data loads (now shown inline, not only when panel opens)
   useEffect(() => {
-    if (showObjectives) {
-      fetchObjectives();
-    }
-  }, [showObjectives, fetchObjectives]);
+    fetchObjectives();
+  }, [fetchObjectives]);
 
   // ── Save objectives ──
   const handleSaveObjectives = async () => {
@@ -1432,7 +1430,6 @@ export default function EquipoPage() {
     // Map display role to backend role
     const backendRole = newRole === "supervisor" ? "candidato"
                       : newRole === "capitan_brigada" ? "brigadista_zonal"
-                      : newRole === "director_regional" ? "brigadista_zonal"
                       : newRole === "consultor" ? "consultor"
                       : "agente_campo";
 
@@ -1460,7 +1457,6 @@ export default function EquipoPage() {
     // Map display role to backend role
     const backendRole = role === "supervisor" ? "candidato"
                       : role === "capitan_brigada" ? "brigadista_zonal"
-                      : role === "director_regional" ? "brigadista_zonal"
                       : role === "consultor" ? "consultor"
                       : "agente_campo";
 
@@ -1520,7 +1516,6 @@ export default function EquipoPage() {
     // Map display role to backend role
     const backendRole = batchRole === "supervisor" ? "candidato"
                       : batchRole === "capitan_brigada" ? "brigadista_zonal"
-                      : batchRole === "director_regional" ? "brigadista_zonal"
                       : batchRole === "consultor" ? "consultor"
                       : "agente_campo";
 
@@ -1857,176 +1852,7 @@ export default function EquipoPage() {
         </div>
       )}
 
-      {/* ── Zone Objectives ─────────────────────────────────────── */}
-      {canManage && (
-        <div style={{ marginBottom: 24 }}>
-          <button
-            type="button"
-            onClick={() => setShowObjectives(!showObjectives)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              width: "100%",
-              padding: "14px 18px",
-              background: showObjectives ? "var(--goberna-blue-50)" : "var(--color-surface)",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-lg)",
-              cursor: "pointer",
-              fontSize: 14,
-              fontWeight: 700,
-              color: "var(--color-text-primary)",
-              textAlign: "left",
-            }}
-          >
-            <span style={{ fontSize: 18 }}>🎯</span>
-            Metas por Region (Departamento)
-            <span style={{
-              marginLeft: "auto",
-              fontSize: 12,
-              color: "var(--color-text-tertiary)",
-              transform: showObjectives ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform 0.2s ease",
-            }}>
-              ▼
-            </span>
-          </button>
-
-          {showObjectives && (
-            <div style={{
-              background: "var(--color-surface)",
-              border: "1px solid var(--color-border)",
-              borderTop: "none",
-              borderRadius: "0 0 var(--radius-lg) var(--radius-lg)",
-              padding: 20,
-            }}>
-              <div style={{ 
-                fontSize: 12, 
-                color: "var(--color-text-tertiary)", 
-                marginBottom: 16,
-                lineHeight: 1.5,
-              }}>
-                Define cuantos formularios debe recopilar cada region. Los brigadistas zonales heredan 
-                el objetivo completo de su region. Los agentes de campo dividen el objetivo entre todos 
-                los agentes activos en esa region.
-              </div>
-
-              {/* Objectives Grid */}
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-                gap: 12,
-                marginBottom: 20,
-              }}>
-                {DEPARTAMENTOS.map((region) => {
-                  const currentObjective = zoneObjectives.find((o) => o.region === region);
-                  const inputValue = objectiveInputs[region] ?? "";
-                  const hasValue = inputValue && parseInt(inputValue, 10) > 0;
-                  
-                  // Count members in this region
-                  const membersInRegion = members.filter((m) => m.region === region).length;
-                  
-                  return (
-                    <div 
-                      key={region}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        padding: "10px 14px",
-                        background: hasValue ? "var(--goberna-blue-50)" : "var(--color-surface-secondary)",
-                        border: `1px solid ${hasValue ? "var(--goberna-blue-200)" : "var(--color-border)"}`,
-                        borderRadius: 8,
-                      }}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ 
-                          fontSize: 12, 
-                          fontWeight: 600, 
-                          color: "var(--color-text-primary)",
-                          marginBottom: 2,
-                        }}>
-                          {region}
-                        </div>
-                        {membersInRegion > 0 && (
-                          <div style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>
-                            {membersInRegion} miembro{membersInRegion !== 1 ? "s" : ""}
-                          </div>
-                        )}
-                      </div>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="0"
-                        value={inputValue}
-                        onChange={(e) => handleObjectiveInputChange(region, e.target.value)}
-                        style={{
-                          width: 70,
-                          padding: "6px 10px",
-                          fontSize: 13,
-                          fontWeight: 600,
-                          textAlign: "center",
-                          border: "1px solid var(--color-border)",
-                          borderRadius: 6,
-                          background: "var(--color-surface)",
-                          color: "var(--color-text-primary)",
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Summary + Save */}
-              <div style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "14px 16px",
-                background: "var(--color-surface-secondary)",
-                borderRadius: 8,
-                flexWrap: "wrap",
-                gap: 12,
-              }}>
-                <div>
-                  <div style={{ fontSize: 12, color: "var(--color-text-tertiary)", marginBottom: 2 }}>
-                    Total de metas configuradas
-                  </div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: "var(--goberna-blue-600)" }}>
-                    {Object.values(objectiveInputs).reduce((sum, val) => sum + (parseInt(val, 10) || 0), 0).toLocaleString()}
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--color-text-tertiary)", marginLeft: 6 }}>
-                      formularios
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSaveObjectives}
-                  disabled={savingObjectives || !objectivesChanged}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "10px 20px",
-                    background: objectivesChanged ? "var(--goberna-blue-600)" : "var(--color-border)",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: 8,
-                    cursor: savingObjectives || !objectivesChanged ? "not-allowed" : "pointer",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    opacity: savingObjectives ? 0.6 : 1,
-                  }}
-                >
-                  {savingObjectives ? "Guardando..." : objectivesChanged ? "💾 Guardar Metas" : "✓ Guardado"}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Members List ────────────────────────────────────────── */}
+      {/* ── Members List — grouped by region ───────────────────── */}
       <div style={{ 
         fontSize: 14, 
         fontWeight: 700, 
@@ -2063,42 +1889,234 @@ export default function EquipoPage() {
         }}>
           {error}
         </div>
-      ) : (
+      ) : members.length === 0 ? (
         <div style={{
           background: "var(--color-surface)",
           border: "1px solid var(--color-border)",
           borderRadius: "var(--radius-lg)",
-          overflow: "hidden",
+          padding: "60px 20px", textAlign: "center", color: "var(--color-text-tertiary)",
         }}>
-          {members.length === 0 ? (
-            <div style={{ padding: "60px 20px", textAlign: "center", color: "var(--color-text-tertiary)" }}>
-              <div style={{ fontSize: 32, marginBottom: 12 }}>👥</div>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>No hay miembros en esta campana</div>
-              <div style={{ fontSize: 12, marginTop: 4 }}>Aprueba solicitudes de acceso para agregar miembros.</div>
-            </div>
-          ) : (
-            members
-              .sort((a, b) => {
-                const levelA = getRoleConfig(a.role).level;
-                const levelB = getRoleConfig(b.role).level;
-                return levelB - levelA;
-              })
-              .map((member) => (
-                <MemberRow
-                  key={member.user_id}
-                  member={member}
-                  isSelf={member.user_id === user?.id}
-                  canManage={canManage}
-                  updatingRole={updatingRole === member.user_id}
-                  onRoleChange={(role) => handleRoleChange(member.user_id, role)}
-                  onRemove={() => handleRemove(member.user_id, member.full_name)}
-                  onResetPassword={() => handleResetPassword(member.user_id, member.full_name)}
-                  allowedRoles={allowedRoles}
-                />
-              ))
-          )}
+          <div style={{ fontSize: 32, marginBottom: 12 }}>👥</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>No hay miembros en esta campana</div>
+          <div style={{ fontSize: 12, marginTop: 4 }}>Aprueba solicitudes de acceso para agregar miembros.</div>
         </div>
-      )}
+      ) : (() => {
+        // Roles that belong to campaign leadership (no region grouping)
+        const LEADERSHIP_ROLES = new Set(["admin", "consultor", "supervisor"]);
+
+        // Split: leadership (candidato/admin/consultor) vs field members
+        const leadershipMembers = members
+          .filter((m) => LEADERSHIP_ROLES.has(normalizeRole(m.role)))
+          .sort((a, b) => getRoleConfig(b.role).level - getRoleConfig(a.role).level);
+
+        const fieldMembers = members.filter(
+          (m) => !LEADERSHIP_ROLES.has(normalizeRole(m.role)),
+        );
+
+        // Group field members by region
+        const grouped: Record<string, Member[]> = {};
+        for (const m of fieldMembers) {
+          const key = m.region ?? "__sin_region__";
+          if (!grouped[key]) grouped[key] = [];
+          grouped[key].push(m);
+        }
+
+        // Sort each group by role level desc
+        for (const key of Object.keys(grouped)) {
+          grouped[key].sort((a, b) => getRoleConfig(b.role).level - getRoleConfig(a.role).level);
+        }
+
+        // Sort region groups: named regions first (alpha), then "__sin_region__" last
+        const regionKeys = Object.keys(grouped).sort((a, b) => {
+          if (a === "__sin_region__") return 1;
+          if (b === "__sin_region__") return -1;
+          return a.localeCompare(b, "es");
+        });
+
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+            {/* ── Leadership block (Candidato + Consultores) ── */}
+            {leadershipMembers.length > 0 && (
+              <div style={{
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-lg)",
+                overflow: "hidden",
+              }}>
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "10px 16px",
+                  background: "linear-gradient(135deg, #fef9e7, #fdf2d0)",
+                  borderBottom: "1px solid var(--color-border)",
+                }}>
+                  <span style={{ fontSize: 14 }}>👔</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--goberna-blue-900)" }}>
+                    Conduccion de Campana
+                  </span>
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: "#92400e",
+                    background: "#fef3c7",
+                    border: "1px solid #fde68a",
+                    padding: "2px 8px",
+                    borderRadius: 10,
+                  }}>
+                    {leadershipMembers.length} miembro{leadershipMembers.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
+                {leadershipMembers.map((member) => (
+                  <MemberRow
+                    key={member.user_id}
+                    member={member}
+                    isSelf={member.user_id === user?.id}
+                    canManage={canManage}
+                    viewerRole={userRole}
+                    updatingRole={updatingRole === member.user_id}
+                    onRoleChange={(role) => handleRoleChange(member.user_id, role)}
+                    onRemove={() => handleRemove(member.user_id, member.full_name)}
+                    onResetPassword={() => handleResetPassword(member.user_id, member.full_name)}
+                    allowedRoles={allowedRoles}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* ── Field members grouped by region ── */}
+            {regionKeys.map((regionKey) => {
+              const regionLabel = regionKey === "__sin_region__" ? "Sin Región Asignada" : regionKey;
+              const regionMembers = grouped[regionKey];
+              const inputValue = objectiveInputs[regionKey] ?? "";
+              const targetForms = parseInt(inputValue, 10) || 0;
+
+              return (
+                <div
+                  key={regionKey}
+                  style={{
+                    background: "var(--color-surface)",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "var(--radius-lg)",
+                    overflow: "hidden",
+                  }}
+                >
+                  {/* Region header */}
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    padding: "10px 16px",
+                    background: regionKey === "__sin_region__"
+                      ? "var(--color-surface-secondary)"
+                      : "var(--goberna-blue-50)",
+                    borderBottom: "1px solid var(--color-border)",
+                    flexWrap: "wrap",
+                    gap: 8,
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 14 }}>
+                        {regionKey === "__sin_region__" ? "📍" : "🗺️"}
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--color-text-primary)" }}>
+                        {regionLabel}
+                      </span>
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "var(--goberna-blue-700)",
+                        background: "var(--goberna-blue-100)",
+                        padding: "2px 8px",
+                        borderRadius: 10,
+                      }}>
+                        {regionMembers.length} miembro{regionMembers.length !== 1 ? "s" : ""}
+                      </span>
+                    </div>
+
+                    {/* Inline objective for this region (only for managers, real regions) */}
+                    {canManage && regionKey !== "__sin_region__" && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", fontWeight: 600 }}>
+                          🎯 Meta:
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={inputValue}
+                          onChange={(e) => {
+                            handleObjectiveInputChange(regionKey, e.target.value);
+                          }}
+                          style={{
+                            width: 72,
+                            padding: "4px 8px",
+                            fontSize: 12,
+                            fontWeight: 600,
+                            textAlign: "center",
+                            border: "1px solid var(--color-border)",
+                            borderRadius: 6,
+                            background: "var(--color-surface)",
+                            color: "var(--color-text-primary)",
+                          }}
+                        />
+                        <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
+                          formularios
+                        </span>
+                        {objectivesChanged && (
+                          <button
+                            type="button"
+                            onClick={handleSaveObjectives}
+                            disabled={savingObjectives}
+                            style={{
+                              padding: "4px 10px",
+                              fontSize: 11,
+                              fontWeight: 700,
+                              color: "#fff",
+                              background: "var(--goberna-blue-600)",
+                              border: "none",
+                              borderRadius: 6,
+                              cursor: savingObjectives ? "not-allowed" : "pointer",
+                              opacity: savingObjectives ? 0.6 : 1,
+                            }}
+                          >
+                            {savingObjectives ? "..." : "Guardar"}
+                          </button>
+                        )}
+                        {!objectivesChanged && targetForms > 0 && (
+                          <span style={{
+                            fontSize: 10,
+                            color: "var(--color-success)",
+                            fontWeight: 700,
+                          }}>
+                            ✓
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Members in this region */}
+                  {regionMembers.map((member) => (
+                    <MemberRow
+                      key={member.user_id}
+                      member={member}
+                      isSelf={member.user_id === user?.id}
+                      canManage={canManage}
+                      viewerRole={userRole}
+                      updatingRole={updatingRole === member.user_id}
+                      onRoleChange={(role) => handleRoleChange(member.user_id, role)}
+                      onRemove={() => handleRemove(member.user_id, member.full_name)}
+                      onResetPassword={() => handleResetPassword(member.user_id, member.full_name)}
+                      allowedRoles={allowedRoles}
+                    />
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* ── Consultor Campaign Assignment Modal ────────────────── */}
       {showConsultorModal && consultorToAssign && (

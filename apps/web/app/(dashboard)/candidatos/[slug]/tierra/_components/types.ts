@@ -62,12 +62,6 @@ export type TierraMapHandle = {
   getDrillState: () => DrillState;
 };
 
-/* ─── GeoJSON Config ─── */
-
-export type GeoLevel = "dep" | "prov" | "dist" | "sector" | "subsector";
-export type GeoFileConfig = { file: string; level: GeoLevel };
-export type GeoDataState = Record<GeoLevel, GeoJSON.FeatureCollection | null>;
-
 /* ─── Drill Filters (output of useDrillFilters) ─── */
 
 export type DrillFilters = {

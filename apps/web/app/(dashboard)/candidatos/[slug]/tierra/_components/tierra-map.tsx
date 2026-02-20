@@ -11,9 +11,9 @@
  *   so the callback is stable and MapLibre doesn't re-register it
  * - flyTo effect only fires on selectedAgentId change (not agents array)
  * - interactive layers is a module-level constant
- * - GeoJSON fallback layers are pre-memoized in useFilteredGeoSources
+ * - ALL geographic overlays served via Tegola vector tiles (no GeoJSON fallback)
  * - Tile-native masking: data-driven fill-color darkens non-selected zones
- *   (replaces broken GeoJSON spotlight mask approach)
+ * - Zoom-tiered Redis cache: z0-7=24h, z8-12=6h, z13-16=1h
  */
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
@@ -30,12 +30,11 @@ import {
   PRIORITY_FILL, PRIORITY_LINE, SECTOR_FILL, SECTOR_LINE,
   PERU_VIEW, PERU_BOUNDS, MAP_STYLE, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
 } from "./constants";
-import { getBoundsFromFeature, getBoundsForCurrentDrill } from "./utils";
+import { getBoundsFromFeature } from "./utils";
 import { preloadProvincias, preloadDistritos, reverseGeocode } from "@/lib/services/geo";
 
-import { useGeoData } from "./hooks/use-geo-data";
 import { useDrillFilters } from "./hooks/use-drill-filters";
-import { useAgentsSource, useFormSources, useFilteredGeoSources } from "./hooks/use-map-sources";
+import { useAgentsSource, useFormSources } from "./hooks/use-map-sources";
 import { useAutoFit } from "./hooks/use-auto-fit";
 import { useZoneTooltip } from "./hooks/use-zone-tooltip";
 
@@ -61,13 +60,11 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
   agentsRef.current = agents;
 
   // ─── Hooks ───
-  const geoData = useGeoData(slug);
   const filters = useDrillFilters(drillState, campaignId);
   const agentsGeoJson = useAgentsSource(agents, selectedAgentId);
   const { formsGeoJson, formsHeatGeoJson } = useFormSources(forms, selectedAgentId);
-  const { geoDepData, geoProvData, geoDistData, geoSectorData, geoSubsectorData } = useFilteredGeoSources(geoData, drillState);
 
-  useAutoFit(mapRef, drillState, geoData, skipNextFitRef);
+  useAutoFit(mapRef, drillState, skipNextFitRef);
   const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef);
 
   // ─── Imperative handle ───
@@ -191,11 +188,11 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
     }
 
     // Drill navigation
-    const isDep = layerId === "dep-fill" || layerId?.startsWith("priority-dep") || layerId === "geo-dep-fill";
-    const isProv = layerId === "prov-fill" || layerId?.startsWith("priority-prov") || layerId === "geo-prov-fill";
-    const isDist = layerId === "dist-fill" || layerId?.startsWith("priority-dist") || layerId === "geo-dist-fill";
-    const isSector = layerId?.startsWith("sector") || layerId === "geo-sector-fill";
-    const isSubsector = layerId === "geo-subsector-fill";
+    const isDep = layerId === "dep-fill" || layerId?.startsWith("priority-dep");
+    const isProv = layerId === "prov-fill" || layerId?.startsWith("priority-prov");
+    const isDist = layerId === "dist-fill" || layerId?.startsWith("priority-dist");
+    const isSector = layerId?.startsWith("sector");
+    const isSubsector = false; // subsectors now handled within sector click via tile properties
 
     // Ghost layer click → go back
     const clickedLevel = isDep ? 0 : isProv ? 1 : isDist ? 2 : isSector ? 3 : isSubsector ? 4 : -1;
@@ -337,8 +334,6 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
   // ─── Resize: recalibrate + re-fit when panels change container size ───
   // Uses a callback ref because the container div is not rendered during
   // the loading state (early return), so a useEffect([]) would miss it.
-  const geoDataRef = useRef(geoData);
-  geoDataRef.current = geoData;
   const roRef = useRef<ResizeObserver | null>(null);
   const roTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const roPrevSize = useRef({ w: 0, h: 0 });
@@ -372,8 +367,8 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
 
         // Re-fit if size changed meaningfully (panel opened/closed)
         if (dw > 50 || dh > 50) {
-          const bounds = getBoundsForCurrentDrill(drillStateRef.current, geoDataRef.current);
-          if (bounds) map.fitBounds(bounds, { padding: 30, duration: 400 });
+          // Use Peru bounds as fallback — tile-based rendering handles the rest
+          map.fitBounds(PERU_BOUNDS, { padding: 30, duration: 400 });
         }
       }, 350);
     });
@@ -469,38 +464,6 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
           <Layer id="sector-line" type="line" source-layer="campaign_sectors" filter={filters.sectorFilter}
             paint={{ "line-color": SECTOR_LINE, "line-width": 0.5, "line-opacity": 0.4 }} />
         </Source>
-
-        {/* ── GeoJSON fallback: pre-memoized sources ── */}
-        {geoDepData && (
-          <Source id="geo-dep" type="geojson" data={geoDepData}>
-            <Layer id="geo-dep-fill" type="fill" paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 }} />
-            <Layer id="geo-dep-line" type="line" paint={{ "line-color": PRIORITY_LINE, "line-width": 0.8, "line-opacity": 0.4 }} />
-          </Source>
-        )}
-        {geoProvData && (
-          <Source id="geo-prov" type="geojson" data={geoProvData}>
-            <Layer id="geo-prov-fill" type="fill" paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 }} />
-            <Layer id="geo-prov-line" type="line" paint={{ "line-color": PRIORITY_LINE, "line-width": 0.6, "line-opacity": 0.4 }} />
-          </Source>
-        )}
-        {geoDistData && (
-          <Source id="geo-dist" type="geojson" data={geoDistData}>
-            <Layer id="geo-dist-fill" type="fill" paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 }} />
-            <Layer id="geo-dist-line" type="line" paint={{ "line-color": PRIORITY_LINE, "line-width": 0.5, "line-opacity": 0.4 }} />
-          </Source>
-        )}
-        {geoSectorData && (
-          <Source id="geo-sector" type="geojson" data={geoSectorData}>
-            <Layer id="geo-sector-fill" type="fill" paint={{ "fill-color": SECTOR_FILL, "fill-opacity": 0.8 }} />
-            <Layer id="geo-sector-line" type="line" paint={{ "line-color": SECTOR_LINE, "line-width": 0.5, "line-opacity": 0.4 }} />
-          </Source>
-        )}
-        {geoSubsectorData && (
-          <Source id="geo-subsector" type="geojson" data={geoSubsectorData}>
-            <Layer id="geo-subsector-fill" type="fill" paint={{ "fill-color": SECTOR_FILL, "fill-opacity": 1 }} />
-            <Layer id="geo-subsector-line" type="line" paint={{ "line-color": SECTOR_LINE, "line-width": 0.5, "line-opacity": 0.4 }} />
-          </Source>
-        )}
 
         {/* ── Heatmap ── */}
         {showHeatmap && (

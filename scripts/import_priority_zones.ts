@@ -368,7 +368,7 @@ async function main() {
             ${f.subsector},
             ${f.parentCode},
             ${f.population},
-            ST_Multi(ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON(${f.geometryJson}), 4326), 3857)),
+            ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(${f.geometryJson}), 4326)),
             'import'
           )
           ON CONFLICT (campaign_id, zone_level, zone_code, sector, subsector) DO UPDATE SET

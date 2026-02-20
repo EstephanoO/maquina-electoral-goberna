@@ -3,22 +3,19 @@
 /**
  * useAutoFit — fits map bounds when drill state changes.
  *
- * Fixes from original:
- * - geoData deps are now granular (only the levels actually read)
- * - skipNextFit ref exposed so click handler can coordinate
- * - Async API calls only fire on navigation-back
+ * All geographic data is now served via vector tiles (no GeoJSON fallback).
+ * Bounds are computed from the backend geo hierarchy cache (Redis-backed).
  */
 
 import { useEffect, useRef } from "react";
 import type { MapRef } from "@vis.gl/react-maplibre";
-import type { DrillState, GeoDataState } from "../types";
-import { getBoundsForCurrentDrill } from "../utils";
-import { getProvincias, getDistritos } from "@/lib/services/geo";
+import type { DrillState } from "../types";
+import { PERU_BOUNDS } from "../constants";
+import { getDepartamentos, getProvincias, getDistritos } from "@/lib/services/geo";
 
 export function useAutoFit(
   mapRef: React.RefObject<MapRef | null>,
   drillState: DrillState,
-  geoData: GeoDataState,
   skipNextFitRef: React.MutableRefObject<boolean>,
 ) {
   const prevLevelRef = useRef<number>(drillState.level);
@@ -33,34 +30,42 @@ export function useAutoFit(
       return;
     }
 
-    const prevLevel = prevLevelRef.current;
-    const isNavigatingBack = drillState.level < prevLevel;
     prevLevelRef.current = drillState.level;
-
     const map = mapRef.current;
 
-    // Navigation back — use cached API bounds (async, more precise)
-    if (isNavigatingBack) {
-      if (drillState.level === 1 && drillState.depCode) {
-        getProvincias(drillState.depCode).then((result) => {
-          if (result.ok && result.bounds && mapRef.current) {
-            mapRef.current.fitBounds(result.bounds, { padding: 50, duration: 800 });
-          }
-        }).catch(() => {});
-        return;
-      }
-      if (drillState.level === 2 && drillState.provCode) {
-        getDistritos(drillState.provCode).then((result) => {
-          if (result.ok && result.bounds && mapRef.current) {
-            mapRef.current.fitBounds(result.bounds, { padding: 50, duration: 800 });
-          }
-        }).catch(() => {});
-        return;
-      }
+    // Level 0: Peru overview
+    if (drillState.level === 0) {
+      map.fitBounds(PERU_BOUNDS, { padding: 40, duration: 800 });
+      return;
     }
 
-    // Use shared bounds calculation for current drill level
-    const bounds = getBoundsForCurrentDrill(drillState, geoData);
-    if (bounds) map.fitBounds(bounds, { padding: 50, duration: 800 });
-  }, [drillState.level, drillState.depCode, drillState.provCode, drillState.distCode, geoData, mapRef, skipNextFitRef]);
+    // Level 1: fit to departamento bounds via API
+    if (drillState.level === 1 && drillState.depCode) {
+      getDepartamentos().then((result) => {
+        if (!result.ok || !result.departamentos || !mapRef.current) return;
+        const dep = result.departamentos.find((d) => d.coddep === drillState.depCode);
+        if (dep) mapRef.current.fitBounds(dep.bounds, { padding: 50, duration: 800 });
+      }).catch(() => {});
+      return;
+    }
+
+    // Level 2: fit to provincia bounds via API
+    if (drillState.level === 2 && drillState.depCode && drillState.provCode) {
+      getProvincias(drillState.depCode).then((result) => {
+        if (!result.ok || !result.provincias || !mapRef.current) return;
+        const prov = result.provincias.find((p) => p.codprov_full === drillState.provCode);
+        if (prov) mapRef.current.fitBounds(prov.bounds, { padding: 50, duration: 800 });
+      }).catch(() => {});
+      return;
+    }
+
+    // Level 3+: fit to distrito bounds via API
+    if (drillState.level >= 3 && drillState.provCode && drillState.distCode) {
+      getDistritos(drillState.provCode).then((result) => {
+        if (!result.ok || !result.distritos || !mapRef.current) return;
+        const dist = result.distritos.find((d) => d.ubigeo === drillState.distCode);
+        if (dist) mapRef.current.fitBounds(dist.bounds, { padding: 50, duration: 800 });
+      }).catch(() => {});
+    }
+  }, [drillState.level, drillState.depCode, drillState.provCode, drillState.distCode, mapRef, skipNextFitRef]);
 }

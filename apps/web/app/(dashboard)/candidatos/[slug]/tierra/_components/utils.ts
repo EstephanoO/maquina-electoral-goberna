@@ -50,87 +50,9 @@ export function calculateBoundsFromFeatures(features: GeoJSON.Feature[]): Bounds
   return boundsFromCoords(coords);
 }
 
-/**
- * Normalize a GeoJSON FeatureCollection property names to lowercase
- * for consistent Tegola/GeoJSON filter interop.
- */
-export function normalizeFeatureProperties(
-  fc: GeoJSON.FeatureCollection,
-): GeoJSON.FeatureCollection {
-  return {
-    ...fc,
-    features: fc.features.map((f) => {
-      const p = f.properties ?? {};
-      return {
-        ...f,
-        properties: {
-          ...p,
-          coddep: p.CODDEP ?? p.coddep ?? "",
-          departamento: p.DEPARTAMEN ?? p.departamento ?? "",
-          codprov: p.CODPROV ?? p.codprov ?? "",
-          provincia: p.PROVINCIA ?? p.provincia ?? "",
-          codprov_full: (p.CODDEP ?? "") + (p.CODPROV ?? ""),
-          coddist: p.CODDIST ?? p.coddist ?? "",
-          distrito: p.DISTRITO ?? p.distrito ?? "",
-          ubigeo: p.UBIGEO ?? p.ubigeo ?? "",
-          sector: p.SECTOR ?? p.sector ?? null,
-          subsector: p.SUBSECTOR ?? p.subsector ?? null,
-        },
-      };
-    }),
-  };
-}
-
 /* ─── Bounds for current drill level ─── */
 
-import type { DrillState, GeoDataState } from "./types";
 import { PERU_BOUNDS } from "./constants";
-
-/**
- * Pure function: compute the map bounds for the current drill state.
- * Used by both useAutoFit (on drill change) and ResizeObserver (on panel toggle).
- */
-export function getBoundsForCurrentDrill(
-  drillState: DrillState,
-  geoData: GeoDataState,
-): Bounds | null {
-  // Level 0: all departments / Peru
-  if (drillState.level === 0) {
-    const features = geoData.dep?.features ?? geoData.dist?.features ?? [];
-    if (features.length > 0) {
-      return calculateBoundsFromFeatures(features);
-    }
-    return PERU_BOUNDS as Bounds;
-  }
-
-  let features: GeoJSON.Feature[] = [];
-
-  if (drillState.level === 1 && drillState.depCode) {
-    if (geoData.prov) {
-      features = geoData.prov.features.filter((f) => f.properties?.coddep === drillState.depCode);
-    }
-    if (features.length === 0 && geoData.dep) {
-      features = geoData.dep.features.filter((f) => f.properties?.coddep === drillState.depCode);
-    }
-  } else if (drillState.level === 2 && drillState.provCode) {
-    if (geoData.dist) {
-      features = geoData.dist.features.filter((f) => f.properties?.codprov_full === drillState.provCode);
-    }
-    if (features.length === 0 && geoData.prov) {
-      features = geoData.prov.features.filter((f) => f.properties?.codprov_full === drillState.provCode);
-    }
-  } else if (drillState.level === 3 && drillState.distCode) {
-    if (geoData.sector) {
-      features = geoData.sector.features.filter((f) => f.properties?.ubigeo === drillState.distCode);
-    }
-    if (features.length === 0 && geoData.dist) {
-      features = geoData.dist.features.filter((f) => f.properties?.ubigeo === drillState.distCode);
-    }
-  }
-
-  if (features.length === 0) return null;
-  return calculateBoundsFromFeatures(features);
-}
 
 /* ─── Internal ─── */
 

@@ -1,7 +1,7 @@
 /* ========== Tierra Map — Constants ========== */
 
 import type { FilterSpecification, StyleSpecification } from "maplibre-gl";
-import type { AgentStatus, GeoFileConfig } from "./types";
+import type { AgentStatus } from "./types";
 
 /* ─── Agent status colors ─── */
 
@@ -76,19 +76,4 @@ export const INTERACTIVE_LAYERS = [
   "dep-fill", "prov-fill", "dist-fill",
   "priority-dep-fill", "priority-prov-fill", "priority-dist-fill",
   "sector-fill",
-  "geo-dep-fill", "geo-prov-fill", "geo-dist-fill", "geo-sector-fill", "geo-subsector-fill",
 ] as const;
-
-/* ─── GeoJSON fallback files per campaign ─── */
-
-export const GEOJSON_FILES: Record<string, GeoFileConfig[]> = {
-  "giovanna-castagnino": [
-    { file: "/geo/nieto_giovanna.geojson", level: "dist" },
-    { file: "/geo/bisnieto_giovanna_v1.geojson", level: "sector" },
-  ],
-  "rocio-rodriguez": [
-    { file: "/geo/abuelo_rocio.geojson", level: "dep" },
-    { file: "/geo/padre_rocio.geojson", level: "prov" },
-    { file: "/geo/hijo_rocio.geojson", level: "dist" },
-  ],
-};

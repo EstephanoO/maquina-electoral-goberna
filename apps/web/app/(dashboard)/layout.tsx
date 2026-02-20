@@ -47,7 +47,7 @@ const NAV_ITEMS: NavItem[] = [
   { icon: <DashboardIcon />, label: "Dashboard", href: "/", roles: ["admin", "candidato", "consultor"], section: "main" },
   { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin" },
   { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["admin", "candidato"], section: "main" },
-  { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin", "candidato"], section: "main" },
+  { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin"], section: "main" },
   { icon: <CMSIcon />, label: "CMS", href: "/cms", roles: ["admin", "candidato", "consultor"], section: "main" },
   // Metricas CMS: admin accede por ruta global; candidato/consultor acceden via /candidatos/[slug]/cms-metrics desde el dashboard
   { icon: <CmsMetricsIcon />, label: "Metricas CMS", href: "/cms-metrics", roles: ["admin"], section: "main" },
@@ -57,7 +57,7 @@ const NAV_ITEMS: NavItem[] = [
   { icon: <CmsMetricsIcon />, label: "Digital", href: (slug) => `/candidatos/${slug}/cms-metrics`, roles: ["consultor"], section: "main" },
   // /ops exists but is hidden from nav — access via direct URL only
   // { icon: <OpsIcon />, label: "Operaciones", href: "/ops", roles: ["admin"], section: "admin" },
-  { icon: <SettingsIcon />, label: "Configuracion", href: "/settings", roles: ["admin", "candidato"], section: "admin" },
+  // Configuracion se renderiza como item fijo al fondo del sidebar (fuera del nav scrolleable)
 ];
 
 // ── Simple SVG icons ────────────────────────────────────────────────
@@ -326,7 +326,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   // Auto-collapse sidebar on /tierra routes (immersive map mode)
   const isTierraRoute = pathname.includes("/tierra");
 
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
@@ -604,6 +604,54 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
 
         </nav>
+
+        {/* Configuracion — fixed at bottom of sidebar */}
+        {(() => {
+          const settingsRoles: UIRole[] = ["admin", "candidato"];
+          if (!settingsRoles.includes(uiRole)) return null;
+          const href = "/settings";
+          const isActive = pathname === href || pathname.startsWith(href);
+          const isHovered = hoveredItem === "__settings__";
+          const showLabel = !effectiveCollapsed || mobileOpen;
+          return (
+            <button
+              type="button"
+              onClick={() => router.push(href)}
+              onMouseEnter={() => setHoveredItem("__settings__")}
+              onMouseLeave={() => setHoveredItem(null)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                width: "100%",
+                padding: showLabel ? "12px 20px" : "12px 0",
+                justifyContent: showLabel ? "flex-start" : "center",
+                background: isActive
+                  ? "rgba(255,255,255,0.1)"
+                  : isHovered
+                    ? "rgba(255,255,255,0.05)"
+                    : "transparent",
+                border: "none",
+                borderTop: "1px solid rgba(255,255,255,0.08)",
+                borderLeft: isActive ? "3px solid var(--goberna-gold)" : "3px solid transparent",
+                color: isActive ? "var(--goberna-gold)" : isHovered ? "#ffffff" : "rgba(255,255,255,0.5)",
+                cursor: "pointer",
+                fontSize: "13px",
+                fontWeight: isActive ? 600 : 400,
+                fontFamily: "inherit",
+                transition: "all 0.15s ease",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
+              aria-label="Configuracion"
+            >
+              <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
+                <SettingsIcon />
+              </span>
+              {showLabel && <span>Configuracion</span>}
+            </button>
+          );
+        })()}
 
         {/* Collapse toggle (desktop only) */}
         {!mobileOpen && (

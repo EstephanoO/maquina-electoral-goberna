@@ -10,6 +10,10 @@ import {
   getPeruBounds,
   getCachedTile,
   setCachedTile,
+  isCacheableZoom,
+  invalidateAllTiles,
+  invalidateTilesInBbox,
+  warmTiles,
   reverseGeocode,
 } from "./geo-cache";
 
@@ -116,7 +120,7 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
       return { ok: true, ...result };
     });
 
-    /* ========== Tile Proxy with Redis Cache ========== */
+    /* ========== Tile Proxy with Advanced Redis Cache ========== */
 
     app.get("/api/tiles/:z/:x/:y.vector.pbf", async (request, reply) => {
       const params = request.params as { z: string; x: string; y: string };
@@ -133,13 +137,17 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
         return reply.code(400).send({ ok: false, error: "x o y invalido" });
       }
 
-      // Check Redis cache first (only for lower zoom levels which are more commonly requested)
-      if (zNum <= 12) {
+      // Check Redis cache (zoom-tiered: z0-7=24h, z8-12=6h, z13-16=1h, z17+=no cache)
+      if (isCacheableZoom(zNum)) {
         const cachedTile = await getCachedTile(zNum, xNum, yNum);
         if (cachedTile) {
           reply.header("Content-Type", "application/x-protobuf");
-          reply.header("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=600");
+          reply.header("Content-Encoding", "identity");
+          // Browser cache: stale-while-revalidate lets MapLibre use old tiles while refreshing
+          const browserMaxAge = zNum <= 7 ? 3600 : zNum <= 12 ? 600 : 120;
+          reply.header("Cache-Control", `public, max-age=${browserMaxAge}, stale-while-revalidate=600`);
           reply.header("X-Cache", "HIT");
+          reply.header("X-Tile-Zoom", zNum.toString());
           return reply.send(cachedTile);
         }
       }
@@ -153,15 +161,16 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
       const targetUrl = `${env.tegolaBaseUrl}/maps/${env.tegolaMap}/${zNum}/${xNum}/${yNum}.vector.pbf`;
       const response = await fetchWithRetry(targetUrl, env, { headers: upstreamHeaders });
 
-      const cacheControl = response.headers.get("cache-control") ?? "public, max-age=3600, s-maxage=86400, stale-while-revalidate=600";
       const etag = response.headers.get("etag");
       const lastModified = response.headers.get("last-modified");
       const contentType = response.headers.get("content-type") ?? "application/x-protobuf";
 
-      reply.header("Cache-Control", cacheControl);
+      const browserMaxAge = zNum <= 7 ? 3600 : zNum <= 12 ? 600 : 120;
+      reply.header("Cache-Control", `public, max-age=${browserMaxAge}, stale-while-revalidate=600`);
       if (etag) reply.header("ETag", etag);
       if (lastModified) reply.header("Last-Modified", lastModified);
       reply.header("X-Cache", "MISS");
+      reply.header("X-Tile-Zoom", zNum.toString());
 
       if (response.status === 304) {
         return reply.code(304).send();
@@ -173,15 +182,71 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
 
       const body = Buffer.from(await response.arrayBuffer());
 
-      // Cache the tile in Redis (only for lower zoom levels)
-      if (zNum <= 12) {
-        setCachedTile(zNum, xNum, yNum, body).catch(() => {
-          // Ignore cache write errors
-        });
+      // Cache in Redis (fire-and-forget, zoom-tiered TTL)
+      if (isCacheableZoom(zNum)) {
+        setCachedTile(zNum, xNum, yNum, body).catch(() => {});
       }
 
       reply.header("Content-Type", contentType);
       return reply.send(body);
     });
+
+    /* ========== Tile Cache Management (admin only) ========== */
+
+    // Invalidate all tiles
+    app.post("/api/tiles/invalidate", async (request, reply) => {
+      // TODO: add admin auth check when integrated with auth decorator
+      const deleted = await invalidateAllTiles();
+      return { ok: true, deleted };
+    });
+
+    // Invalidate tiles in a bounding box
+    app.post<{ Body: { minLng: number; minLat: number; maxLng: number; maxLat: number; minZoom?: number; maxZoom?: number } }>(
+      "/api/tiles/invalidate/bbox",
+      async (request, reply) => {
+        const { minLng, minLat, maxLng, maxLat, minZoom, maxZoom } = request.body;
+        if (minLng == null || minLat == null || maxLng == null || maxLat == null) {
+          return reply.code(400).send({ ok: false, error: "minLng, minLat, maxLng, maxLat requeridos" });
+        }
+        const deleted = await invalidateTilesInBbox(minLng, minLat, maxLng, maxLat, minZoom, maxZoom);
+        return { ok: true, deleted };
+      },
+    );
+
+    // Warm up tiles for Peru base map (zooms 3-10)
+    app.post<{ Body: { zoomLevels?: number[]; minLng?: number; minLat?: number; maxLng?: number; maxLat?: number } }>(
+      "/api/tiles/warm",
+      async (request, reply) => {
+        const {
+          zoomLevels = [3, 4, 5, 6, 7, 8, 9, 10],
+          minLng = -81.4, minLat = -18.4,
+          maxLng = -68.7, maxLat = -0.1,
+        } = request.body ?? {};
+
+        // Estimate tile count to prevent abuse
+        let tileCount = 0;
+        for (const z of zoomLevels) {
+          const n = 2 ** z;
+          const xRange = Math.ceil(((maxLng - minLng) / 360) * n) + 1;
+          const yRange = Math.ceil(((maxLat - minLat) / 180) * n) + 1;
+          tileCount += xRange * yRange;
+        }
+
+        if (tileCount > 5000) {
+          return reply.code(400).send({
+            ok: false,
+            error: `Demasiados tiles (${tileCount}). Reduce zoom levels o bounding box. Max 5000.`,
+          });
+        }
+
+        const result = await warmTiles(
+          env.tegolaBaseUrl, env.tegolaMap,
+          minLng, minLat, maxLng, maxLat,
+          zoomLevels,
+        );
+
+        return { ok: true, ...result, total: tileCount };
+      },
+    );
   };
 }
