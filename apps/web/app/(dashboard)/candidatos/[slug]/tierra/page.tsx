@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 
-import { getCampaignStats, getRecentForms, api, type FormRecord } from "@/lib/services";
+import type { FormRecord } from "@/lib/services";
 import type { CampaignStats } from "@/lib/types";
 import { formCoordsToLatLng } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
+import { useCampaignStats, useRecentForms, useAgentLocationsSnapshot, tierraKeys, type AgentLocation } from "@/lib/hooks";
 
 import {
   TierraMap,
@@ -23,10 +25,6 @@ import {
   type DrillState,
   type ActiveLayer,
 } from "./_components";
-
-/* ========== Types ========== */
-
-type AgentLocation = { agent_id: string; agent_name?: string; ts: string; lat: number; lng: number };
 
 /* ========== Constants ========== */
 
@@ -125,13 +123,43 @@ export default function TierraPage() {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const { user, campaigns } = useAuth();
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(shellRef);
+  const queryClient = useQueryClient();
 
-  // Data
-  const [stats, setStats] = useState<CampaignStats | null>(null);
+  // ─── TanStack Query: stats (P3/P4 — structuralSharing prevents re-renders) ───
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    error: statsError,
+    refetch: refetchStats,
+  } = useCampaignStats(slug);
+
+  const campaignId = stats?.campaign.id;
+
+  // ─── TanStack Query: forms (P3 — polled every 5s, structuralSharing key) ───
+  const { data: forms = EMPTY_FORMS } = useRecentForms(campaignId);
+
+  // ─── TanStack Query: initial agent locations seed ───
+  const { data: initialLocations } = useAgentLocationsSnapshot(campaignId);
+
+  // ─── SSE: live agent locations (imperative — merges into local state) ───
   const [locations, setLocations] = useState<AgentLocation[]>([]);
-  const [forms, setForms] = useState<FormRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  // Seed locations from initial query when it arrives
+  useEffect(() => {
+    if (initialLocations?.length) {
+      setLocations(initialLocations);
+    }
+  }, [initialLocations]);
+
+  const handleSSEUpdate = useCallback((incoming: AgentLocation[]) => {
+    setLocations((prev) => {
+      const map = new Map(prev.map((l) => [l.agent_id, l]));
+      for (const loc of incoming) map.set(loc.agent_id, loc);
+      return Array.from(map.values());
+    });
+  }, []);
+
+  useAgentSSE(campaignId ?? null, handleSSEUpdate);
 
   // UI — single active layer (mutually exclusive)
   const [activeLayer, setActiveLayer] = useState<ActiveLayer>("datos");
@@ -152,7 +180,6 @@ export default function TierraPage() {
   // Layer change handler — mutually exclusive
   const handleLayerChange = useCallback((layer: ActiveLayer) => {
     setActiveLayer(layer);
-    // Clear agent selection when switching away from agents
     if (layer !== "agentes") {
       setSelectedAgentId(null);
       setSelectedAgentIds(new Set());
@@ -163,7 +190,6 @@ export default function TierraPage() {
   const handleSelectAgent = useCallback((agentId: string | null) => {
     setSelectedAgentId(agentId);
     if (agentId) {
-      // Auto-enable agentes layer when selecting an agent
       setActiveLayer("agentes");
     }
   }, []);
@@ -172,7 +198,6 @@ export default function TierraPage() {
   const handleAgentListClick = useCallback((agentId: string) => {
     setActiveLayer("agentes");
     setSelectedAgentId(agentId);
-    // Toggle in multi-select set
     setSelectedAgentIds((prev) => {
       const next = new Set(prev);
       if (next.has(agentId)) {
@@ -182,58 +207,13 @@ export default function TierraPage() {
       }
       return next;
     });
-    // Fly to agent on map
     const agent = enrichedAgentsRef.current.find((a) => a.id === agentId);
     if (agent) {
       mapHandleRef.current?.flyToPoint(agent.lng, agent.lat, 15);
     }
   }, []);
 
-  // Fetch stats
-  const fetchStats = useCallback(async () => {
-    const res = await getCampaignStats(slug, "day");
-    if (res.ok && res.data) { setStats(res.data); setError(null); }
-    else setError(res.error?.message ?? "Error cargando datos");
-    setLoading(false);
-  }, [slug]);
-
-  // Fetch forms
-  const fetchForms = useCallback(async () => {
-    if (!stats) return;
-    const res = await getRecentForms(stats.campaign.id, 200);
-    if (res.ok && res.data?.forms) setForms(res.data.forms);
-  }, [stats]);
-
-  // Initial load
-  useEffect(() => { fetchStats(); }, [fetchStats]);
-
-  // Forms polling (5s) + initial
-  useEffect(() => {
-    if (!stats) return;
-    fetchForms();
-    const id = setInterval(fetchForms, 5000);
-    return () => clearInterval(id);
-  }, [stats, fetchForms]);
-
-  // SSE for locations
-  const handleSSEUpdate = useCallback((incoming: AgentLocation[]) => {
-    setLocations((prev) => {
-      const map = new Map(prev.map((l) => [l.agent_id, l]));
-      for (const loc of incoming) map.set(loc.agent_id, loc);
-      return Array.from(map.values());
-    });
-  }, []);
-
-  useAgentSSE(stats?.campaign.id ?? null, handleSSEUpdate);
-
-  // Also do initial fetch for locations
-  useEffect(() => {
-    if (!stats) return;
-    api.get<{ agents: AgentLocation[] }>("/api/agents/live", { campaignId: stats.campaign.id })
-      .then((res) => { if (res.ok && res.data?.agents) setLocations(res.data.agents); });
-  }, [stats]);
-
-  // Enrich agents
+  // Enrich agents (P4 fix: forms from TanStack Query has stable reference via structuralSharing)
   const enrichedAgents = useMemo((): EnrichedAgent[] => {
     if (!stats) return [];
     const now = Date.now();
@@ -311,7 +291,6 @@ export default function TierraPage() {
 
   // ─── Activity log entries ─────────────────────────────────
   const logEntries = useMemo((): LogEntry[] => {
-    // Build from recent forms (the freshest data we have)
     const entries: LogEntry[] = forms.slice(0, 50).map((f) => {
       const coords = formCoordsToLatLng(f.x, f.y, f.zona);
       return {
@@ -325,7 +304,6 @@ export default function TierraPage() {
       };
     });
 
-    // Add recent events from stats
     if (stats?.recent_events) {
       for (const ev of stats.recent_events) {
         entries.push({
@@ -340,7 +318,6 @@ export default function TierraPage() {
       }
     }
 
-    // Sort newest first and filter by logClearedAt
     entries.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     const filtered = logClearedAt > 0
       ? entries.filter((e) => e.timestamp.getTime() > logClearedAt)
@@ -362,13 +339,19 @@ export default function TierraPage() {
 
   // WhatsApp handler for agent tab
   const handleWhatsApp = useCallback((agent: EnrichedAgent) => {
-    // Open WhatsApp with agent name as search (phone not available in EnrichedAgent)
     window.open(`https://wa.me/?text=Hola ${encodeURIComponent(agent.name)}`, "_blank");
   }, []);
 
+  // Refetch forms after deletion (invalidate TanStack Query cache)
+  const handleFormsDeleted = useCallback(() => {
+    if (campaignId) {
+      queryClient.invalidateQueries({ queryKey: tierraKeys.forms(campaignId) });
+    }
+  }, [queryClient, campaignId]);
+
   // ─── Loading / Error ──────────────────────────────────────
 
-  if (loading) {
+  if (statsLoading) {
     return (
       <div style={FULL_SCREEN}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: 12, backgroundColor: "#f8fafc" }}>
@@ -380,13 +363,13 @@ export default function TierraPage() {
     );
   }
 
-  if (error || !stats) {
+  if (statsError || !stats) {
     return (
       <div style={FULL_SCREEN}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: 12, backgroundColor: "#f8fafc" }}>
           <div style={{ fontSize: 18, fontWeight: 600, color: "#1e293b" }}>No se pudo cargar</div>
-          <div style={{ fontSize: 14, color: "#64748b" }}>{error ?? "Candidato no encontrado"}</div>
-          <button type="button" onClick={fetchStats} style={{ marginTop: 12, padding: "8px 20px", borderRadius: 8, border: "1px solid #e2e8f0", backgroundColor: "#ffffff", color: "#334155", fontSize: 13, cursor: "pointer" }}>
+          <div style={{ fontSize: 14, color: "#64748b" }}>{statsError instanceof Error ? statsError.message : "Candidato no encontrado"}</div>
+          <button type="button" onClick={() => refetchStats()} style={{ marginTop: 12, padding: "8px 20px", borderRadius: 8, border: "1px solid #e2e8f0", backgroundColor: "#ffffff", color: "#334155", fontSize: 13, cursor: "pointer" }}>
             Reintentar
           </button>
         </div>
@@ -605,7 +588,7 @@ export default function TierraPage() {
               onFlyTo={(lng, lat) => mapHandleRef.current?.flyToPoint(lng, lat, 17)}
               campaignId={campaign.id}
               isAdmin={isAdmin}
-              onFormsDeleted={fetchForms}
+              onFormsDeleted={handleFormsDeleted}
               agents={enrichedAgents}
               selectedAgentId={selectedAgentId}
               onSelectAgent={handleAgentListClick}
@@ -620,6 +603,11 @@ export default function TierraPage() {
     </div>
   );
 }
+
+/* ========== Constants ========== */
+
+/** Empty array — stable reference for when forms query hasn't loaded yet */
+const EMPTY_FORMS: FormRecord[] = [];
 
 /* ========== Full screen container (offset by collapsed sidebar 52px + tab bar 48px) ========== */
 

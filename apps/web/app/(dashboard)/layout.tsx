@@ -1,6 +1,7 @@
 "use client";
 
 import { AuthProvider, useAuth } from "../../lib/auth-context";
+import { QueryProvider } from "../../lib/query-provider";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -913,8 +914,10 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <AuthProvider>
-      <DashboardShell>{children}</DashboardShell>
-    </AuthProvider>
+    <QueryProvider>
+      <AuthProvider>
+        <DashboardShell>{children}</DashboardShell>
+      </AuthProvider>
+    </QueryProvider>
   );
 }
