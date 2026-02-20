@@ -3,12 +3,17 @@
 /**
  * useDrillFilters — all MapLibre filter expressions for the drill-down hierarchy.
  *
- * Fixes from original:
- * - depFillFilter === depLineFilter → consolidated into one
- * - provFillFilter === provLineFilter → consolidated into one
- * - distFillFilter === distLineFilter → consolidated into one
- * - depOtherFilter was zombie (only used by removed dep-label) → removed
- * - SHOW_ALL_FILTER constant reused (no new array per render)
+ * Tile-native masking strategy:
+ *   Fill layers always show ALL siblings at the active level so that the map
+ *   engine's own tile geometry can be used to darken non-selected zones via
+ *   data-driven paint expressions. Line layers stay restrictive to avoid
+ *   visual clutter.
+ *
+ * Example (level 1 = provincias active):
+ *   depFillFilter  = SHOW_ALL_FILTER   (all deps visible, paint darkens non-selected)
+ *   depLineFilter  = selected dep only (only selected dep outline shown)
+ *   provFillFilter = all provs in dep  (all siblings visible, paint darkens non-selected)
+ *   provLineFilter = all provs in dep  (same — lines for active level)
  */
 
 import { useMemo } from "react";
@@ -25,33 +30,50 @@ export function useDrillFilters(
     [campaignId],
   );
 
-  // Departamentos: all at level 0, only selected at level 1+
-  const depFillFilter: FilterSpecification = useMemo(() => {
+  // ─── DEPARTAMENTOS ───
+  // Fill: ALWAYS show all deps (tile-native mask darkens non-selected via paint)
+  const depFillFilter: FilterSpecification = SHOW_ALL_FILTER;
+
+  // Line: level 0 all, level 1+ only selected (reduce clutter)
+  const depLineFilter: FilterSpecification = useMemo(() => {
     if (drillState.level === 0) return SHOW_ALL_FILTER;
     if (drillState.depCode) return ["==", ["get", "coddep"], drillState.depCode];
     return HIDE_FILTER;
   }, [drillState.level, drillState.depCode]);
 
-  // Same filter for fill and line — one memo instead of two
-  const depLineFilter = depFillFilter;
+  // ─── PROVINCIAS ───
+  // Fill: show all provs in selected dep (for tile-native masking at level 2+)
+  const provFillFilter: FilterSpecification = useMemo(() => {
+    if (drillState.level === 0) return HIDE_FILTER;
+    if (drillState.depCode) return ["==", ["get", "coddep"], drillState.depCode];
+    return HIDE_FILTER;
+  }, [drillState.level, drillState.depCode]);
 
-  // Provincias: level 1 all provs, level 2+ only selected
-  const provFilter: FilterSpecification = useMemo(() => {
+  // Line: level 1 all provs in dep, level 2+ only selected prov
+  const provLineFilter: FilterSpecification = useMemo(() => {
     if (drillState.level === 0) return HIDE_FILTER;
     if (drillState.level >= 2 && drillState.provCode) return ["==", ["get", "codprov_full"], drillState.provCode];
     if (drillState.depCode) return ["==", ["get", "coddep"], drillState.depCode];
     return HIDE_FILTER;
   }, [drillState.level, drillState.depCode, drillState.provCode]);
 
-  // Distritos: level 2 all dists, level 3+ only selected
-  const distFilter: FilterSpecification = useMemo(() => {
+  // ─── DISTRITOS ───
+  // Fill: show all dists in selected prov (for tile-native masking at level 3+)
+  const distFillFilter: FilterSpecification = useMemo(() => {
+    if (drillState.level < 2) return HIDE_FILTER;
+    if (drillState.provCode) return ["==", ["get", "codprov_full"], drillState.provCode];
+    return HIDE_FILTER;
+  }, [drillState.level, drillState.provCode]);
+
+  // Line: level 2 all dists, level 3+ only selected dist
+  const distLineFilter: FilterSpecification = useMemo(() => {
     if (drillState.level < 2) return HIDE_FILTER;
     if (drillState.level >= 3 && drillState.distCode) return ["==", ["get", "ubigeo"], drillState.distCode];
     if (drillState.provCode) return ["==", ["get", "codprov_full"], drillState.provCode];
     return HIDE_FILTER;
   }, [drillState.level, drillState.provCode, drillState.distCode]);
 
-  // Priority layers (red campaign-specific zones)
+  // ─── PRIORITY LAYERS (red campaign-specific zones) ───
   const priorityDepFilter: FilterSpecification = useMemo(() => {
     if (drillState.level >= 1) return HIDE_FILTER;
     return ["all", campaignFilter] as FilterSpecification;
@@ -69,7 +91,7 @@ export function useDrillFilters(
     return ["all", campaignFilter, ["==", ["get", "codprov_full"], drillState.provCode]] as FilterSpecification;
   }, [campaignFilter, drillState.level, drillState.provCode]);
 
-  // Sectors / subsectors
+  // ─── SECTORS / SUBSECTORS ───
   const sectorFilter: FilterSpecification = useMemo(() => {
     if (drillState.level < 3 || !drillState.distCode) return HIDE_FILTER;
     if (drillState.level === 3) {
@@ -84,8 +106,10 @@ export function useDrillFilters(
   return {
     depFillFilter,
     depLineFilter,
-    provFilter,
-    distFilter,
+    provFillFilter,
+    provLineFilter,
+    distFillFilter,
+    distLineFilter,
     priorityDepFilter,
     priorityProvFilter,
     priorityDistFilter,

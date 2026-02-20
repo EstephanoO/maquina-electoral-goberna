@@ -73,8 +73,10 @@ export type GeoDataState = Record<GeoLevel, GeoJSON.FeatureCollection | null>;
 export type DrillFilters = {
   depFillFilter: FilterSpecification;
   depLineFilter: FilterSpecification;
-  provFilter: FilterSpecification;
-  distFilter: FilterSpecification;
+  provFillFilter: FilterSpecification;
+  provLineFilter: FilterSpecification;
+  distFillFilter: FilterSpecification;
+  distLineFilter: FilterSpecification;
   priorityDepFilter: FilterSpecification;
   priorityProvFilter: FilterSpecification;
   priorityDistFilter: FilterSpecification;

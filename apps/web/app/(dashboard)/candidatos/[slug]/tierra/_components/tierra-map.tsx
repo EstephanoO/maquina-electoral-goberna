@@ -12,7 +12,8 @@
  * - flyTo effect only fires on selectedAgentId change (not agents array)
  * - interactive layers is a module-level constant
  * - GeoJSON fallback layers are pre-memoized in useFilteredGeoSources
- * - Filter memos are consolidated (fill === line → one memo)
+ * - Tile-native masking: data-driven fill-color darkens non-selected zones
+ *   (replaces broken GeoJSON spotlight mask approach)
  */
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
@@ -29,7 +30,7 @@ import {
   PRIORITY_FILL, PRIORITY_LINE, SECTOR_FILL, SECTOR_LINE,
   PERU_VIEW, PERU_BOUNDS, MAP_STYLE, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
 } from "./constants";
-import { getBoundsFromFeature, getBoundsForCurrentDrill, createSpotlightMask, EMPTY_FC } from "./utils";
+import { getBoundsFromFeature, getBoundsForCurrentDrill } from "./utils";
 import { preloadProvincias, preloadDistritos, reverseGeocode } from "@/lib/services/geo";
 
 import { useGeoData } from "./hooks/use-geo-data";
@@ -51,9 +52,6 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
   const isZoomingRef = useRef(false);
   const zoomEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Spotlight mask: dark overlay with hole for selected zone
-  const [maskGeoJson, setMaskGeoJson] = useState<GeoJSON.FeatureCollection>(EMPTY_FC);
-
   // ─── Refs for volatile values (stable callbacks read these) ───
   const drillStateRef = useRef(drillState);
   drillStateRef.current = drillState;
@@ -61,8 +59,6 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
   selectedAgentIdRef.current = selectedAgentId;
   const agentsRef = useRef(agents);
   agentsRef.current = agents;
-  const setMaskRef = useRef(setMaskGeoJson);
-  setMaskRef.current = setMaskGeoJson;
 
   // ─── Hooks ───
   const geoData = useGeoData(slug);
@@ -126,7 +122,6 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
         if (newLevel < 1) { newState.depCode = null; newState.depName = null; }
         onDrillChange(newState);
         if (newLevel === 0) {
-          setMaskRef.current(EMPTY_FC);
           mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: 800 });
         }
       }
@@ -213,7 +208,6 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
       if (newLevel < 1) { newState.depCode = null; newState.depName = null; }
       onDrillChange(newState);
       if (newLevel === 0) {
-        setMaskRef.current(EMPTY_FC);
         mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: 800 });
       }
       return;
@@ -224,7 +218,6 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
       const name = String(f.properties?.departamento ?? f.properties?.departamen ?? f.properties?.DEPARTAMEN ?? coddep);
       if (coddep) {
         preloadProvincias(coddep);
-        setMaskRef.current(createSpotlightMask(f));
         const bounds = getBoundsFromFeature(f);
         if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
         skipNextFitRef.current = true;
@@ -239,7 +232,6 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
       const coddep = String(f.properties?.coddep ?? f.properties?.CODDEP ?? currentDrill.depCode ?? "");
       if (codprovFull) {
         preloadDistritos(codprovFull);
-        setMaskRef.current(createSpotlightMask(f));
         const bounds = getBoundsFromFeature(f);
         if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
         skipNextFitRef.current = true;
@@ -256,7 +248,6 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
       const codprovFull = String(f.properties?.codprov_full ?? (((f.properties?.CODDEP ?? "") + (f.properties?.CODPROV ?? "")) || (currentDrill.provCode ?? "")));
       const provName = String(f.properties?.provincia ?? f.properties?.PROVINCIA ?? currentDrill.provName ?? "");
       if (ubigeo) {
-        setMaskRef.current(createSpotlightMask(f));
         const bounds = getBoundsFromFeature(f);
         if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
         skipNextFitRef.current = true;
@@ -416,42 +407,46 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
         onMouseLeave={handleMouseLeave}
         interactiveLayerIds={INTERACTIVE_LAYERS as unknown as string[]}
       >
-        {/* ── Spotlight mask: dark overlay with hole for selected zone ── */}
-        {maskGeoJson.features.length > 0 && (
-          <Source id="spotlight-mask" type="geojson" data={maskGeoJson}>
-            <Layer id="spotlight-mask-fill" type="fill"
-              paint={{ "fill-color": MASK_FILL, "fill-opacity": 0.55 }} />
-          </Source>
-        )}
-
         {/* ── Tegola vector tiles ── */}
         <Source id="peru" type="vector" tiles={[tileUrl]} minzoom={0} maxzoom={14} promoteId={{ departamentos: "coddep", provincias: "codprov_full", distritos: "ubigeo" }}>
 
-          {/* DEPARTAMENTOS — neutral grey, subtle hover */}
+          {/* DEPARTAMENTOS — tile-native masking: all deps always visible, non-selected darkened at level 1+ */}
           <Layer id="dep-fill" type="fill" source-layer="departamentos" filter={filters.depFillFilter}
             paint={{
-              "fill-color": ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL],
-              "fill-opacity": drillState.level === 0 ? 1 : 0.02,
-            }} />
-          <Layer id="dep-line" type="line" source-layer="departamentos" filter={filters.depLineFilter}
-            paint={{ "line-color": drillState.level === 0 ? ZONE_LINE : ZONE_LINE_GHOST, "line-width": drillState.level === 0 ? 1.2 : 0.6, "line-opacity": drillState.level === 0 ? 0.7 : 0.2 }} />
-
-          {/* PROVINCIAS — neutral grey, subtle hover */}
-          <Layer id="prov-fill" type="fill" source-layer="provincias" filter={filters.provFilter}
-            paint={{
-              "fill-color": ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL],
-              "fill-opacity": drillState.level === 1 ? 1 : 0.02,
-            }} />
-          <Layer id="prov-line" type="line" source-layer="provincias" filter={filters.provFilter}
-            paint={{ "line-color": drillState.level === 1 ? ZONE_LINE : ZONE_LINE_GHOST, "line-width": drillState.level === 1 ? 1 : 0.5, "line-opacity": drillState.level === 1 ? 0.7 : 0.15 }} />
-
-          {/* DISTRITOS — neutral grey, subtle hover */}
-          <Layer id="dist-fill" type="fill" source-layer="distritos" filter={filters.distFilter}
-            paint={{
-              "fill-color": ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL],
+              "fill-color": drillState.level === 0
+                ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+                : drillState.depCode
+                  ? ["case", ["==", ["get", "coddep"], drillState.depCode], ZONE_FILL, MASK_FILL]
+                  : ZONE_FILL,
               "fill-opacity": 1,
             }} />
-          <Layer id="dist-line" type="line" source-layer="distritos" filter={filters.distFilter}
+          <Layer id="dep-line" type="line" source-layer="departamentos" filter={filters.depLineFilter}
+            paint={{ "line-color": drillState.level === 0 ? ZONE_LINE : ZONE_LINE_GHOST, "line-width": drillState.level === 0 ? 1.2 : 0.6, "line-opacity": drillState.level === 0 ? 0.7 : 0.3 }} />
+
+          {/* PROVINCIAS — tile-native masking: all provs in dep visible, non-selected darkened at level 2+ */}
+          <Layer id="prov-fill" type="fill" source-layer="provincias" filter={filters.provFillFilter}
+            paint={{
+              "fill-color": drillState.level === 1
+                ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+                : drillState.provCode
+                  ? ["case", ["==", ["get", "codprov_full"], drillState.provCode], ZONE_FILL, MASK_FILL]
+                  : ZONE_FILL,
+              "fill-opacity": 1,
+            }} />
+          <Layer id="prov-line" type="line" source-layer="provincias" filter={filters.provLineFilter}
+            paint={{ "line-color": drillState.level === 1 ? ZONE_LINE : ZONE_LINE_GHOST, "line-width": drillState.level === 1 ? 1 : 0.5, "line-opacity": drillState.level === 1 ? 0.7 : 0.2 }} />
+
+          {/* DISTRITOS — tile-native masking: all dists in prov visible, non-selected darkened at level 3+ */}
+          <Layer id="dist-fill" type="fill" source-layer="distritos" filter={filters.distFillFilter}
+            paint={{
+              "fill-color": drillState.level === 2
+                ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+                : drillState.distCode
+                  ? ["case", ["==", ["get", "ubigeo"], drillState.distCode], ZONE_FILL, MASK_FILL]
+                  : ZONE_FILL,
+              "fill-opacity": 1,
+            }} />
+          <Layer id="dist-line" type="line" source-layer="distritos" filter={filters.distLineFilter}
             paint={{ "line-color": ZONE_LINE, "line-width": drillState.level >= 3 ? 1.2 : 0.8, "line-opacity": 0.6 }} />
 
           {/* PRIORITY ZONES */}
