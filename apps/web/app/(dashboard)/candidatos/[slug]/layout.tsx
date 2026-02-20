@@ -5,9 +5,9 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 /* ── Tab config ─────────────────────────────────────────────────── */
 
 const TABS = [
-  { key: "tierra", label: "Territorio", icon: MapPinIcon },
-  { key: "analytics", label: "Analytics", icon: MonitorIcon },
-  { key: "cms-metrics", label: "Digital", icon: CmsIcon },
+  { key: "tierra", label: "TERRITORIO", icon: MapPinIcon },
+  { key: "analytics", label: "ANALYTICS", icon: MonitorIcon },
+  { key: "cms-metrics", label: "DIGITAL", icon: CmsIcon },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -27,7 +27,10 @@ export default function CandidatoSlugLayout({ children }: { children: React.Reac
   return (
     <div style={isTierra ? styles.wrapperTierra : styles.wrapper}>
       {/* Tab bar */}
-      <nav style={isTierra ? styles.tabBarTierra : styles.tabBar}>
+      <nav
+        style={isTierra ? styles.tabBarTierra : styles.tabBar}
+        className={isTierra ? "candidato-tabbar-tierra" : undefined}
+      >
         <div style={styles.tabGroup}>
           {TABS.map((tab) => {
             const isActive = activeTab === tab.key;
@@ -60,6 +63,15 @@ export default function CandidatoSlugLayout({ children }: { children: React.Reac
 
       {/* Page content */}
       <div style={{ flex: 1, position: "relative" }}>{children}</div>
+
+      {/* Responsive tierra tab bar */}
+      <style>{`
+        @media (max-width: 767px) {
+          .candidato-tabbar-tierra {
+            left: 0 !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
@@ -166,7 +178,7 @@ const styles: Record<string, React.CSSProperties> = {
     /* Fixed so it stays above the Tierra fixed container */
     position: "fixed",
     top: 0,
-    left: 52, /* collapsed sidebar width */
+    left: 72, /* collapsed sidebar width (SIDEBAR_W_COLLAPSED) */
     right: 0,
     zIndex: 60,
   },

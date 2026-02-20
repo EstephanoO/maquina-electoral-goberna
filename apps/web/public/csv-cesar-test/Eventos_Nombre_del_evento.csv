@@ -1,0 +1,18 @@
+# ----------------------------------------
+# Eventos: Nombre del evento
+# Cuenta: Cesar Vasquez
+# Propiedad: Web Cesar Vasquez
+# ----------------------------------------
+# 
+# Todos los usuarios
+# Fecha de inicio: 20260123
+# Fecha de finalización: 20260220
+Nombre del evento,Número de eventos,Total de usuarios,Número de eventos por usuario activo,Total de ingresos
+page_view,7762,6754,1.1502667457024303,0
+session_start,7234,6756,1.0724981467753891,0
+first_visit,6741,6745,0.9994069681245367,0
+user_engagement,550,251,2.4229074889867843,0
+scroll,309,214,1.5073170731707317,0
+click,158,129,1.234375,0
+form_start,31,29,1.0689655172413792,0
+contact_whatsapp,5,5,1,0

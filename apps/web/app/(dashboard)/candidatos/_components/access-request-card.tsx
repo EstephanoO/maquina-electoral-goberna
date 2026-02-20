@@ -30,7 +30,7 @@ const ROLE_OPTIONS: RoleOption[] = [
     key: "agente_campo",
     backendKey: "agente_campo",
     label: "Agente de Campo",
-    icon: "🚶",
+    icon: "field",
     color: "#475569",
     bgColor: "#f1f5f9",
     description: "Operador territorial, sube formularios",
@@ -39,7 +39,7 @@ const ROLE_OPTIONS: RoleOption[] = [
     key: "agente_digital",
     backendKey: "agente_digital",
     label: "Agente Digital",
-    icon: "💻",
+    icon: "digital",
     color: "#0369a1",
     bgColor: "#e0f2fe",
     description: "Redes sociales y operaciones digitales",
@@ -48,7 +48,7 @@ const ROLE_OPTIONS: RoleOption[] = [
     key: "brigadista_zonal",
     backendKey: "brigadista_zonal",
     label: "Brigadista Zonal",
-    icon: "🎖️",
+    icon: "brigadier",
     color: "#7c3aed",
     bgColor: "#f3e8ff",
     description: "Coordina agentes en su zona",
@@ -57,10 +57,10 @@ const ROLE_OPTIONS: RoleOption[] = [
     key: "candidato",
     backendKey: "candidato",
     label: "Candidato",
-    icon: "👔",
+    icon: "candidate",
     color: "#1e40af",
     bgColor: "#dbeafe",
-    description: "Control total de la campana",
+    description: "Control total de la campaña",
   },
 ];
 
@@ -95,7 +95,7 @@ export function AccessRequestCard({ request, onResolved }: AccessRequestCardProp
     setActing(false);
 
     if (!res.ok) {
-      setError(res.error?.message ?? "Error resolviendo solicitud.");
+      setError(res.error?.message ?? "Error al resolver la solicitud.");
       return;
     }
 
@@ -175,13 +175,13 @@ export function AccessRequestCard({ request, onResolved }: AccessRequestCardProp
               marginBottom: 12,
             }}
           >
-            Resolver solicitud de {displayName}
+            Resolver Solicitud de {displayName}
           </div>
 
           {/* Role Selection */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              Asignar Rol en Jerarquia
+              ASIGNAR ROL EN JERARQUÍA
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10 }}>
               {ROLE_OPTIONS.map((role) => (
@@ -198,7 +198,7 @@ export function AccessRequestCard({ request, onResolved }: AccessRequestCardProp
           {/* Permission toggles */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              Permisos de Modulo
+              PERMISOS DE MÓDULO
             </div>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               <PermissionToggle
@@ -206,21 +206,21 @@ export function AccessRequestCard({ request, onResolved }: AccessRequestCardProp
                 description="Campo, mapas y tracking"
                 checked={permTierra}
                 onChange={setPermTierra}
-                icon="🗺️"
+                iconType="map"
               />
               <PermissionToggle
                 label="Agente Digital"
                 description="Redes sociales y web"
                 checked={permDigital}
                 onChange={setPermDigital}
-                icon="💻"
+                iconType="monitor"
               />
             </div>
           </div>
 
           {/* Note */}
           <textarea
-            placeholder="Nota opcional..."
+            placeholder="            Nota opcional…"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             style={{
@@ -304,11 +304,10 @@ function RoleOptionCard({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontSize: 18,
         flexShrink: 0,
         transition: "all 0.15s ease",
       }}>
-        {role.icon}
+        <RoleIcon type={role.icon} color={selected ? "#fff" : role.color} size={18} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
@@ -347,6 +346,32 @@ function RoleOptionCard({
   );
 }
 
+// ── Role Icons (SVG, replaces emojis) ──────────────────────────────
+
+function RoleIcon({ type, color, size = 16 }: { type: string; color: string; size?: number }) {
+  const props = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true as const, role: "img" as const };
+  switch (type) {
+    case "field":
+      return (<svg {...props}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>);
+    case "digital":
+      return (<svg {...props}><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>);
+    case "brigadier":
+      return (<svg {...props}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>);
+    case "candidate":
+      return (<svg {...props}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>);
+    default:
+      return null;
+  }
+}
+
+function PermissionIcon({ type, color, size = 16 }: { type: "map" | "monitor"; color: string; size?: number }) {
+  const props = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true as const, role: "img" as const };
+  if (type === "map") {
+    return (<svg {...props}><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" /><line x1="8" y1="2" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="22" /></svg>);
+  }
+  return (<svg {...props}><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>);
+}
+
 // ── Permission Toggle ──────────────────────────────────────────────
 
 function PermissionToggle({
@@ -354,14 +379,14 @@ function PermissionToggle({
   description,
   checked,
   onChange,
-  icon,
+  iconType,
   highlight,
 }: {
   label: string;
   description?: string;
   checked: boolean;
   onChange: (value: boolean) => void;
-  icon?: string;
+  iconType?: "map" | "monitor";
   highlight?: boolean;
 }) {
   return (
@@ -437,7 +462,7 @@ function PermissionToggle({
           color: checked ? "var(--goberna-blue-700)" : "var(--color-text-primary)",
           marginBottom: description ? 2 : 0,
         }}>
-          {icon && <span style={{ fontSize: 14 }}>{icon}</span>}
+          {iconType && <PermissionIcon type={iconType} size={14} color={checked ? "var(--goberna-blue-700)" : "var(--color-text-primary)"} />}
           {label}
         </div>
         {description && (

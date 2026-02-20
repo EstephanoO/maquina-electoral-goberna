@@ -14,3 +14,27 @@ export { TextInput, SelectInput, TextAreaInput, ColorPicker, FieldWrapper } from
 export { PhotoUpload } from "./photo-upload";
 export { Tabs } from "./tabs";
 export { Alert } from "./alert";
+export {
+  IconUsers,
+  IconUserPlus,
+  IconCheck,
+  IconX,
+  IconChevronDown,
+  IconChevronRight,
+  IconPhone,
+  IconMapPin,
+  IconKey,
+  IconShield,
+  IconTarget,
+  IconBarChart,
+  IconBriefcase,
+  IconFlag,
+  IconMap,
+  IconClock,
+  IconTrash,
+  IconStar,
+  IconWhatsApp,
+  IconCrown,
+  IconAward,
+  IconCompass,
+} from "./icons";

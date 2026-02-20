@@ -99,7 +99,7 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
       if (photoFile) {
         const uploadRes = await uploadCandidatePhoto(photoFile, candidate.slug);
         if (!uploadRes.ok || !uploadRes.data?.upload?.path) {
-          setError("Error subiendo la foto");
+          setError("Error al subir la foto.");
           setSaving(false);
           return;
         }
@@ -121,14 +121,14 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
       });
 
       if (!result.ok) {
-        setError(result.error?.message ?? "Error actualizando candidato.");
+        setError(result.error?.message ?? "Error al actualizar el candidato.");
         setSaving(false);
         return;
       }
 
       onSuccess();
     } catch (err) {
-      setError("Error inesperado. Intente de nuevo.");
+      setError("Error inesperado. Intentá de nuevo.");
       setSaving(false);
     }
   }, [form, photoFile, candidate, onSuccess]);
@@ -149,7 +149,7 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
               fontFamily: FONT_STACK,
             }}
           >
-            Foto del Candidato
+            FOTO DEL CANDIDATO
           </span>
           <PhotoUpload
             value={photoFile}
@@ -171,7 +171,7 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
           label="Nombre completo"
           value={form.name}
           onChange={(e) => updateField("name", e.target.value)}
-          placeholder="Ej: Juan Carlos Ramirez"
+          placeholder="Ej: Juan Carlos Ramírez"
         />
 
         <SelectInput
@@ -180,13 +180,13 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
           value={form.cargo}
           onChange={(e) => updateField("cargo", e.target.value)}
           options={CARGO_SELECT_OPTIONS}
-          placeholder="Seleccionar cargo..."
+          placeholder="Seleccionar cargo…"
         />
 
         <TextInput
           id="ec-numero"
           type="number"
-          label="Numero de candidatura"
+          label="Número de candidatura"
           value={form.numero}
           onChange={(e) => updateField("numero", e.target.value)}
           placeholder="Ej: 7"
@@ -220,7 +220,7 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
               fontFamily: FONT_STACK,
             }}
           >
-            Colores del partido
+            COLORES DEL PARTIDO
           </span>
           <div style={{ display: "flex", gap: 20 }}>
             <ColorPicker
@@ -248,7 +248,7 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
               fontFamily: FONT_STACK,
             }}
           >
-            Vista previa
+            VISTA PREVIA
           </span>
           <div
             style={{
@@ -326,7 +326,7 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
               fontFamily: FONT_STACK,
             }}
           >
-            Slug (no editable)
+            SLUG (NO EDITABLE)
           </span>
           <code
             style={{

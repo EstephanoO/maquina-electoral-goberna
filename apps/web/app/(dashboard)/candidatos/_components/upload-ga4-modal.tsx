@@ -1,14 +1,17 @@
 /**
  * GOBERNA — UploadGA4Modal Component
- * Modal to upload and parse GA4 CSV reports.
- * Supports two CSV inputs:
- * - Informe Panorámico: overview, pages, sources, dailyUsers
- * - Detalles Demográficos: enriched city data with engagement metrics
+ * Modal to upload and parse 5 GA4 CSV reports.
+ *
+ * CSV 1: Informe Panoramico — overview, pages, sources, dailyUsers, basic cities
+ * CSV 2: Detalles Demograficos — enriched city data with engagement metrics
+ * CSV 3: Eventos — event funnel data (page_view, scroll, click, form_start, etc)
+ * CSV 4: Paginas y Pantallas — detailed page paths with engagement metrics
+ * CSV 5: Fuente/Medio (Respuesta Instantanea) — additional source/medium data
  */
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Button } from "../../../../lib/ui";
 import { api } from "../../../../lib/services";
 import type { Campaign } from "../../../../lib/types";
@@ -19,6 +22,8 @@ type Props = {
   campaign: Campaign;
   onSuccess: () => void;
 };
+
+/* ── Parsed data types (client-side only) ──────────────────────────── */
 
 type EnrichedCity = {
   city: string;
@@ -32,6 +37,25 @@ type EnrichedCity = {
   keyEvents?: number;
   keyEventRate?: number;
   revenue?: number;
+};
+
+type ParsedEvent = {
+  name: string;
+  count: number;
+  users: number;
+  countPerUser: number;
+  revenue: number;
+};
+
+type ParsedPageDetailed = {
+  path: string;
+  views: number;
+  activeUsers: number;
+  viewsPerUser: number;
+  avgEngagementTime: number;
+  events: number;
+  keyEvents: number;
+  revenue: number;
 };
 
 type ParsedGA4Data = {
@@ -49,11 +73,18 @@ type ParsedGA4Data = {
     events: number;
     bounceRate: number;
   }>;
+  pagesDetailed: ParsedPageDetailed[];
   sources: Array<{
     source: string;
     medium: string;
     users: number;
   }>;
+  sessionSources: Array<{
+    source: string;
+    medium: string;
+    sessions: number;
+  }>;
+  events: ParsedEvent[];
   cities: EnrichedCity[];
   dailyUsers: Array<{
     day: number;
@@ -62,100 +93,179 @@ type ParsedGA4Data = {
   }>;
 };
 
+type FileSlot = {
+  id: string;
+  label: string;
+  hint: string;
+  icon: string;
+  required: boolean;
+};
+
 type FileState = {
   file: File | null;
   parsing: boolean;
   error: string | null;
 };
 
+const FILE_SLOTS: FileSlot[] = [
+  { id: "panoramico", label: "Informe Panoramico", hint: "KPIs, paginas, fuentes, ciudades", icon: "chart", required: true },
+  { id: "demografico", label: "Detalles Demograficos", hint: "Ciudades con engagement", icon: "globe", required: false },
+  { id: "eventos", label: "Eventos", hint: "Funnel de eventos", icon: "zap", required: false },
+  { id: "paginas", label: "Paginas y Pantallas", hint: "URLs con metricas", icon: "file", required: false },
+  { id: "fuente", label: "Fuente / Medio", hint: "Canales de adquisicion", icon: "share", required: false },
+];
+
+const emptyFileState = (): FileState => ({ file: null, parsing: false, error: null });
+
 export function UploadGA4Modal({ open, onClose, campaign, onSuccess }: Props) {
-  // Two file inputs
-  const [panoramicoState, setPanoramicoState] = useState<FileState>({
-    file: null,
-    parsing: false,
-    error: null,
-  });
-  const [demograficoState, setDemograficoState] = useState<FileState>({
-    file: null,
-    parsing: false,
-    error: null,
+  const [files, setFiles] = useState<Record<string, FileState>>({
+    panoramico: emptyFileState(),
+    demografico: emptyFileState(),
+    eventos: emptyFileState(),
+    paginas: emptyFileState(),
+    fuente: emptyFileState(),
   });
 
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<ParsedGA4Data | null>(null);
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [step, setStep] = useState<"upload" | "preview">("upload");
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  // Parse Panorámico CSV
-  const handlePanoramicoChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  /* ── File handlers ──────────────────────────────────────────────── */
+
+  const updateFile = useCallback((slotId: string, update: Partial<FileState>) => {
+    setFiles((prev) => ({ ...prev, [slotId]: { ...prev[slotId], ...update } }));
+  }, []);
+
+  const handleFileChange = useCallback(async (slotId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
 
-    setPanoramicoState({ file: f, parsing: true, error: null });
+    updateFile(slotId, { file: f, parsing: true, error: null });
     setGlobalError(null);
 
     try {
       const text = await f.text();
-      const parsed = parseInformePanoramico(text);
-      
-      // Merge with existing demographics if any
-      setPreview((prev) => {
-        if (prev) {
-          return { ...parsed, cities: mergeCities(parsed.cities, prev.cities) };
+
+      switch (slotId) {
+        case "panoramico": {
+          const parsed = parseInformePanoramico(text);
+          setPreview((prev) => {
+            if (prev) {
+              return {
+                ...prev,
+                overview: parsed.overview,
+                pages: parsed.pages,
+                sources: parsed.sources,
+                sessionSources: parsed.sessionSources.length > 0 ? parsed.sessionSources : prev.sessionSources,
+                dailyUsers: parsed.dailyUsers,
+                cities: mergeCities(parsed.cities, prev.cities),
+              };
+            }
+            return parsed;
+          });
+          break;
         }
-        return parsed;
-      });
-      setPanoramicoState({ file: f, parsing: false, error: null });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error al parsear CSV";
-      setPanoramicoState({ file: f, parsing: false, error: msg });
-    }
-  }, []);
-
-  // Parse Demográficos CSV
-  const handleDemograficoChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-
-    setDemograficoState({ file: f, parsing: true, error: null });
-    setGlobalError(null);
-
-    try {
-      const text = await f.text();
-      const cities = parseDemograficosCSV(text);
-      
-      // Merge with existing preview or create minimal preview
-      setPreview((prev) => {
-        if (prev) {
-          return { ...prev, cities: mergeCities(prev.cities, cities) };
+        case "demografico": {
+          const cities = parseDemograficosCSV(text);
+          setPreview((prev) => {
+            if (prev) {
+              return { ...prev, cities: mergeCities(prev.cities, cities) };
+            }
+            return createMinimalPreview({ cities });
+          });
+          break;
         }
-        // If no panorámico yet, create placeholder
-        return {
-          overview: {
-            activeUsers: cities.reduce((sum, c) => sum + c.activeUsers, 0),
-            newUsers: cities.reduce((sum, c) => sum + (c.newUsers || 0), 0),
-            avgEngagementTime: 0,
-            totalEvents: cities.reduce((sum, c) => sum + (c.events || 0), 0),
-            dateRange: { start: "", end: "" },
-          },
-          pages: [],
-          sources: [],
-          cities,
-          dailyUsers: [],
-        };
-      });
-      setDemograficoState({ file: f, parsing: false, error: null });
+        case "eventos": {
+          const events = parseEventosCSV(text);
+          setPreview((prev) => {
+            if (prev) {
+              return { ...prev, events };
+            }
+            return createMinimalPreview({ events });
+          });
+          break;
+        }
+        case "paginas": {
+          const pagesDetailed = parsePaginasCSV(text);
+          setPreview((prev) => {
+            if (prev) {
+              return { ...prev, pagesDetailed };
+            }
+            return createMinimalPreview({ pagesDetailed });
+          });
+          break;
+        }
+        case "fuente": {
+          const sources = parseFuenteMedioCSV(text);
+          setPreview((prev) => {
+            if (prev) {
+              // Merge sources, preferring existing panoramico sources
+              const existingKeys = new Set(prev.sources.map((s) => `${s.source}/${s.medium}`));
+              const newSources = sources.filter((s) => !existingKeys.has(`${s.source}/${s.medium}`));
+              return { ...prev, sources: [...prev.sources, ...newSources] };
+            }
+            return createMinimalPreview({ sources });
+          });
+          break;
+        }
+      }
+      updateFile(slotId, { file: f, parsing: false, error: null });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Error al parsear CSV";
-      setDemograficoState({ file: f, parsing: false, error: msg });
+      const msg = err instanceof Error ? err.message : "Error al parsear el CSV.";
+      updateFile(slotId, { file: f, parsing: false, error: msg });
     }
-  }, []);
+  }, [updateFile]);
+
+  const handleRemoveFile = useCallback((slotId: string) => {
+    updateFile(slotId, { file: null, parsing: false, error: null });
+
+    // Reset input
+    const input = fileInputRefs.current[slotId];
+    if (input) input.value = "";
+
+    // Check if any other file remains
+    const hasOtherFile = Object.entries(files).some(
+      ([id, state]) => id !== slotId && state.file !== null
+    );
+
+    // Reparse remaining files
+    setPreview((prev) => {
+      if (!prev) return null;
+
+      switch (slotId) {
+        case "panoramico":
+          // Lost core data, try to rebuild from other files
+          if (!hasOtherFile) return null;
+          return {
+            ...prev,
+            overview: { activeUsers: 0, newUsers: 0, avgEngagementTime: 0, totalEvents: 0, dateRange: { start: "", end: "" } },
+            pages: [],
+            dailyUsers: [],
+          };
+        case "demografico":
+          return { ...prev, cities: prev.cities.map((c) => ({ city: c.city, activeUsers: c.activeUsers })) };
+        case "eventos":
+          return { ...prev, events: [] };
+        case "paginas":
+          return { ...prev, pagesDetailed: [] };
+        case "fuente":
+          return prev; // Sources from panoramico remain
+        default:
+          return prev;
+      }
+    });
+  }, [updateFile, files]);
+
+  /* ── Upload ─────────────────────────────────────────────────────── */
 
   const handleUpload = useCallback(async () => {
     if (!preview) return;
 
-    // Require at least one file
-    if (!panoramicoState.file && !demograficoState.file) {
-      setGlobalError("Debes subir al menos un archivo CSV");
+    const hasAnyFile = Object.values(files).some((s) => s.file !== null);
+    if (!hasAnyFile) {
+      setGlobalError("Debes subir al menos un archivo CSV.");
       return;
     }
 
@@ -173,61 +283,31 @@ export function UploadGA4Modal({ open, onClose, campaign, onSuccess }: Props) {
 
       onSuccess();
     } catch (err) {
-      setGlobalError(err instanceof Error ? err.message : "Error al guardar");
+      setGlobalError(err instanceof Error ? err.message : "Error al guardar.");
     } finally {
       setUploading(false);
     }
-  }, [preview, campaign.id, onSuccess, panoramicoState.file, demograficoState.file]);
+  }, [preview, campaign.id, onSuccess, files]);
 
   const handleClose = useCallback(() => {
-    setPanoramicoState({ file: null, parsing: false, error: null });
-    setDemograficoState({ file: null, parsing: false, error: null });
+    setFiles({
+      panoramico: emptyFileState(),
+      demografico: emptyFileState(),
+      eventos: emptyFileState(),
+      paginas: emptyFileState(),
+      fuente: emptyFileState(),
+    });
     setPreview(null);
     setGlobalError(null);
+    setStep("upload");
     onClose();
   }, [onClose]);
 
-  const handleRemovePanoramico = useCallback(() => {
-    setPanoramicoState({ file: null, parsing: false, error: null });
-    // If we have demographics, keep cities but clear panorámico data
-    if (demograficoState.file && preview) {
-      setPreview({
-        overview: {
-          activeUsers: preview.cities.reduce((sum, c) => sum + c.activeUsers, 0),
-          newUsers: preview.cities.reduce((sum, c) => sum + (c.newUsers || 0), 0),
-          avgEngagementTime: 0,
-          totalEvents: preview.cities.reduce((sum, c) => sum + (c.events || 0), 0),
-          dateRange: { start: "", end: "" },
-        },
-        pages: [],
-        sources: [],
-        cities: preview.cities,
-        dailyUsers: [],
-      });
-    } else {
-      setPreview(null);
-    }
-  }, [demograficoState.file, preview]);
-
-  const handleRemoveDemografico = useCallback(() => {
-    setDemograficoState({ file: null, parsing: false, error: null });
-    // If we have panorámico, reparse it to get basic cities
-    if (panoramicoState.file && preview) {
-      panoramicoState.file.text().then((text) => {
-        const parsed = parseInformePanoramico(text);
-        setPreview(parsed);
-      }).catch(() => {
-        // Ignore, keep current preview without enriched cities
-      });
-    } else {
-      setPreview(null);
-    }
-  }, [panoramicoState.file, preview]);
-
   if (!open) return null;
 
-  const hasAnyFile = panoramicoState.file || demograficoState.file;
-  const isParsing = panoramicoState.parsing || demograficoState.parsing;
+  const hasAnyFile = Object.values(files).some((s) => s.file !== null);
+  const isParsing = Object.values(files).some((s) => s.parsing);
+  const uploadedCount = Object.values(files).filter((s) => s.file !== null).length;
 
   return (
     <div
@@ -247,160 +327,117 @@ export function UploadGA4Modal({ open, onClose, campaign, onSuccess }: Props) {
         {/* Header */}
         <div style={styles.header}>
           <div>
-            <h2 id="upload-ga4-title" style={styles.title}>Subir datos de Google Analytics</h2>
-            <p style={styles.subtitle}>{campaign.name}</p>
+            <h2 id="upload-ga4-title" style={styles.title}>GOOGLE ANALYTICS</h2>
+            <p style={styles.subtitle}>
+              {campaign.name} — {step === "upload" ? "Subir CSVs" : "Vista previa"}
+            </p>
           </div>
-          <button type="button" onClick={handleClose} style={styles.closeBtn} aria-label="Cerrar">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+          <div style={styles.headerRight}>
+            {hasAnyFile && (
+              <span style={styles.fileBadge}>{uploadedCount}/5 archivos</span>
+            )}
+            <button type="button" onClick={handleClose} style={styles.closeBtn} aria-label="Cerrar">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Content */}
         <div style={styles.content}>
-          {/* Two upload zones side by side */}
-          <div style={styles.uploadGrid}>
-            {/* Panorámico */}
-            <div style={styles.uploadSection}>
-              <div style={styles.uploadLabel}>
-                <span style={styles.uploadLabelText}>Informe Panoramico</span>
-                <span style={styles.uploadLabelHint}>KPIs, paginas, fuentes</span>
-              </div>
-              {panoramicoState.file ? (
-                <div style={styles.fileCard}>
-                  <div style={styles.fileCardContent}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                      <polyline points="22 4 12 14.01 9 11.01" />
-                    </svg>
-                    <span style={styles.fileCardName}>{panoramicoState.file.name}</span>
-                  </div>
-                  <button type="button" onClick={handleRemovePanoramico} style={styles.removeBtn} aria-label="Eliminar">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-              ) : (
-                <label style={styles.dropzoneMini}>
-                  <input type="file" accept=".csv" onChange={handlePanoramicoChange} style={{ display: "none" }} />
-                  <div style={styles.dropzoneMiniContent}>
-                    {panoramicoState.parsing ? (
-                      <span style={styles.parsingText}>Parseando...</span>
-                    ) : (
-                      <>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" aria-hidden="true">
-                          <polyline points="17 8 12 3 7 8" />
-                          <line x1="12" y1="3" x2="12" y2="15" />
-                        </svg>
-                        <span style={styles.dropzoneMiniText}>Subir CSV</span>
-                      </>
-                    )}
-                  </div>
-                </label>
-              )}
-              {panoramicoState.error && (
-                <div style={styles.inlineError}>{panoramicoState.error}</div>
-              )}
-            </div>
-
-            {/* Demográficos */}
-            <div style={styles.uploadSection}>
-              <div style={styles.uploadLabel}>
-                <span style={styles.uploadLabelText}>Detalles Demograficos</span>
-                <span style={styles.uploadLabelHint}>Ciudades con metricas</span>
-              </div>
-              {demograficoState.file ? (
-                <div style={styles.fileCard}>
-                  <div style={styles.fileCardContent}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                      <polyline points="22 4 12 14.01 9 11.01" />
-                    </svg>
-                    <span style={styles.fileCardName}>{demograficoState.file.name}</span>
-                  </div>
-                  <button type="button" onClick={handleRemoveDemografico} style={styles.removeBtn} aria-label="Eliminar">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-              ) : (
-                <label style={styles.dropzoneMini}>
-                  <input type="file" accept=".csv" onChange={handleDemograficoChange} style={{ display: "none" }} />
-                  <div style={styles.dropzoneMiniContent}>
-                    {demograficoState.parsing ? (
-                      <span style={styles.parsingText}>Parseando...</span>
-                    ) : (
-                      <>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" aria-hidden="true">
-                          <polyline points="17 8 12 3 7 8" />
-                          <line x1="12" y1="3" x2="12" y2="15" />
-                        </svg>
-                        <span style={styles.dropzoneMiniText}>Subir CSV</span>
-                      </>
-                    )}
-                  </div>
-                </label>
-              )}
-              {demograficoState.error && (
-                <div style={styles.inlineError}>{demograficoState.error}</div>
-              )}
-            </div>
-          </div>
-
-          {/* Preview */}
-          {preview && hasAnyFile && !isParsing && (
-            <div style={styles.preview}>
-              <div style={styles.previewHeader}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                  <polyline points="22 4 12 14.01 9 11.01" />
-                </svg>
-                <span style={styles.previewTitle}>Datos listos para guardar</span>
+          {step === "upload" ? (
+            <>
+              {/* Instructions */}
+              <div style={styles.instructions}>
+                <SlotIcon icon="info" size={16} color="#3b82f6" />
+                <span>Exporta los 5 reportes desde Google Analytics 4 y subelosos aqui. Solo el Informe Panoramico es obligatorio.</span>
               </div>
 
-              {/* Stats grid */}
-              <div style={styles.statsGrid}>
-                <div style={styles.statCard}>
-                  <span style={styles.statValue}>{preview.overview.activeUsers.toLocaleString()}</span>
-                  <span style={styles.statLabel}>Usuarios</span>
-                </div>
-                <div style={styles.statCard}>
-                  <span style={styles.statValue}>{preview.pages.length}</span>
-                  <span style={styles.statLabel}>Paginas</span>
-                </div>
-                <div style={styles.statCard}>
-                  <span style={styles.statValue}>{preview.sources.length}</span>
-                  <span style={styles.statLabel}>Fuentes</span>
-                </div>
-                <div style={styles.statCard}>
-                  <span style={styles.statValue}>{preview.cities.length}</span>
-                  <span style={styles.statLabel}>Ciudades</span>
-                </div>
+              {/* 5 CSV slots in grid */}
+              <div style={styles.slotsGrid}>
+                {FILE_SLOTS.map((slot) => {
+                  const state = files[slot.id];
+                  return (
+                    <div key={slot.id} style={styles.slotCard}>
+                      <div style={styles.slotHeader}>
+                        <div style={styles.slotIcon}>
+                          <SlotIcon icon={slot.icon} size={18} color={state.file ? "#10b981" : "#94a3b8"} />
+                        </div>
+                        <div style={styles.slotInfo}>
+                          <div style={styles.slotLabel}>
+                            {slot.label}
+                            {slot.required && <span style={styles.requiredDot}>*</span>}
+                          </div>
+                          <div style={styles.slotHint}>{slot.hint}</div>
+                        </div>
+                      </div>
+
+                      {state.file ? (
+                        <div style={styles.fileCard}>
+                          <div style={styles.fileCardContent}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                            <span style={styles.fileCardName}>{state.file.name}</span>
+                          </div>
+                          <button type="button" onClick={() => handleRemoveFile(slot.id)} style={styles.removeBtn} aria-label="Eliminar">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                              <line x1="18" y1="6" x2="6" y2="18" />
+                              <line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
+                          </button>
+                        </div>
+                      ) : (
+                        <label style={styles.dropzone}>
+                          <input
+                            ref={(el) => { fileInputRefs.current[slot.id] = el; }}
+                            type="file"
+                            accept=".csv"
+                            onChange={(e) => handleFileChange(slot.id, e)}
+                            style={{ display: "none" }}
+                          />
+                          {state.parsing ? (
+                            <span style={styles.parsingText}>Procesando...</span>
+                          ) : (
+                            <div style={styles.dropzoneContent}>
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" aria-hidden="true">
+                                <polyline points="17 8 12 3 7 8" />
+                                <line x1="12" y1="3" x2="12" y2="15" />
+                                <path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4" />
+                              </svg>
+                              <span style={styles.dropzoneText}>Subir CSV</span>
+                            </div>
+                          )}
+                        </label>
+                      )}
+
+                      {state.error && (
+                        <div style={styles.inlineError}>{state.error}</div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Cities with engagement indicator */}
-              {demograficoState.file && preview.cities.some((c) => c.avgEngagementTime !== undefined) && (
-                <div style={styles.enrichedBadge}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" aria-hidden="true">
-                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              {/* Preview button */}
+              {preview && hasAnyFile && !isParsing && (
+                <button
+                  type="button"
+                  onClick={() => setStep("preview")}
+                  style={styles.previewButton}
+                >
+                  Ver vista previa de datos
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="9 18 15 12 9 6" />
                   </svg>
-                  <span>Ciudades con metricas de engagement</span>
-                </div>
+                </button>
               )}
-
-              {/* Date range */}
-              {preview.overview.dateRange.start && (
-                <div style={styles.dateRange}>
-                  Periodo: {formatDate(preview.overview.dateRange.start)} - {formatDate(preview.overview.dateRange.end)}
-                </div>
-              )}
-            </div>
+            </>
+          ) : (
+            /* Preview step */
+            <PreviewPanel preview={preview!} files={files} onBack={() => setStep("upload")} />
           )}
 
           {/* Global Error */}
@@ -418,6 +455,15 @@ export function UploadGA4Modal({ open, onClose, campaign, onSuccess }: Props) {
 
         {/* Footer */}
         <div style={styles.footer}>
+          {step === "preview" && (
+            <button type="button" onClick={() => setStep("upload")} style={styles.backBtn}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              Archivos
+            </button>
+          )}
+          <div style={{ flex: 1 }} />
           <Button variant="secondary" onClick={handleClose}>
             Cancelar
           </Button>
@@ -432,22 +478,207 @@ export function UploadGA4Modal({ open, onClose, campaign, onSuccess }: Props) {
   );
 }
 
-// ── CSV Parsers ───────────────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════════════════
+   Preview Panel
+   ═══════════════════════════════════════════════════════════════════ */
 
-/**
- * Parse Informe Panorámico CSV (overview, pages, sources, basic cities, dailyUsers)
- */
+function PreviewPanel({
+  preview,
+  files,
+  onBack,
+}: {
+  preview: ParsedGA4Data;
+  files: Record<string, FileState>;
+  onBack: () => void;
+}) {
+  return (
+    <div style={previewStyles.container}>
+      {/* Success badge */}
+      <div style={previewStyles.successBadge}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+          <polyline points="22 4 12 14.01 9 11.01" />
+        </svg>
+        <span style={previewStyles.successText}>Datos listos para guardar</span>
+      </div>
+
+      {/* Date range */}
+      {preview.overview.dateRange.start && (
+        <div style={previewStyles.dateRange}>
+          {formatDate(preview.overview.dateRange.start)} — {formatDate(preview.overview.dateRange.end)}
+        </div>
+      )}
+
+      {/* Stats grid */}
+      <div style={previewStyles.statsGrid}>
+        <StatCard value={preview.overview.activeUsers} label="Usuarios" />
+        <StatCard value={preview.overview.newUsers} label="Nuevos" />
+        <StatCard value={preview.overview.totalEvents} label="Eventos" />
+        <StatCard value={`${preview.overview.avgEngagementTime.toFixed(1)}s`} label="Tiempo prom." />
+      </div>
+
+      {/* Data inventory */}
+      <div style={previewStyles.inventory}>
+        <InventoryRow
+          icon="file"
+          label="Paginas (panoramico)"
+          count={preview.pages.length}
+          active={preview.pages.length > 0}
+        />
+        <InventoryRow
+          icon="file"
+          label="Paginas detalladas"
+          count={preview.pagesDetailed.length}
+          active={preview.pagesDetailed.length > 0}
+        />
+        <InventoryRow
+          icon="share"
+          label="Fuentes de trafico"
+          count={preview.sources.length}
+          active={preview.sources.length > 0}
+        />
+        <InventoryRow
+          icon="zap"
+          label="Tipos de evento"
+          count={preview.events.length}
+          active={preview.events.length > 0}
+        />
+        <InventoryRow
+          icon="globe"
+          label="Ciudades"
+          count={preview.cities.length}
+          active={preview.cities.length > 0}
+          badge={files.demografico.file ? "enriquecido" : undefined}
+        />
+        <InventoryRow
+          icon="chart"
+          label="Dias de datos"
+          count={preview.dailyUsers.length}
+          active={preview.dailyUsers.length > 0}
+        />
+      </div>
+
+      {/* Events funnel mini-preview */}
+      {preview.events.length > 0 && (
+        <div style={previewStyles.funnelPreview}>
+          <div style={previewStyles.funnelTitle}>Funnel de eventos</div>
+          <div style={previewStyles.funnelBars}>
+            {preview.events.slice(0, 6).map((evt) => {
+              const maxCount = preview.events[0]?.count || 1;
+              const pct = Math.max(4, (evt.count / maxCount) * 100);
+              return (
+                <div key={evt.name} style={previewStyles.funnelRow}>
+                  <span style={previewStyles.funnelLabel}>{evt.name}</span>
+                  <div style={previewStyles.funnelBarBg}>
+                    <div style={{ ...previewStyles.funnelBar, width: `${pct}%` }} />
+                  </div>
+                  <span style={previewStyles.funnelValue}>{evt.count.toLocaleString()}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ value, label }: { value: string | number; label: string }) {
+  const display = typeof value === "number" ? value.toLocaleString() : value;
+  return (
+    <div style={previewStyles.statCard}>
+      <span style={previewStyles.statValue}>{display}</span>
+      <span style={previewStyles.statLabel}>{label}</span>
+    </div>
+  );
+}
+
+function InventoryRow({
+  icon,
+  label,
+  count,
+  active,
+  badge,
+}: {
+  icon: string;
+  label: string;
+  count: number;
+  active: boolean;
+  badge?: string;
+}) {
+  return (
+    <div style={{ ...previewStyles.inventoryRow, opacity: active ? 1 : 0.4 }}>
+      <SlotIcon icon={icon} size={14} color={active ? "#10b981" : "#94a3b8"} />
+      <span style={previewStyles.inventoryLabel}>{label}</span>
+      {badge && <span style={previewStyles.inventoryBadge}>{badge}</span>}
+      <span style={previewStyles.inventoryCount}>{count}</span>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SlotIcon helper
+   ═══════════════════════════════════════════════════════════════════ */
+
+function SlotIcon({ icon, size, color }: { icon: string; size: number; color: string }) {
+  const s = { width: size, height: size };
+  switch (icon) {
+    case "chart":
+      return (
+        <svg {...s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 20V10" /><path d="M18 20V4" /><path d="M6 20v-4" />
+        </svg>
+      );
+    case "globe":
+      return (
+        <svg {...s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+        </svg>
+      );
+    case "zap":
+      return (
+        <svg {...s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+        </svg>
+      );
+    case "file":
+      return (
+        <svg {...s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+        </svg>
+      );
+    case "share":
+      return (
+        <svg {...s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+        </svg>
+      );
+    case "info":
+      return (
+        <svg {...s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CSV Parsers
+   ═══════════════════════════════════════════════════════════════════ */
+
+/** Parse Informe Panoramico CSV (overview, pages, sources, basic cities, dailyUsers) */
 function parseInformePanoramico(text: string): ParsedGA4Data {
   const lines = text.split("\n").map((l) => l.trim());
-  
-  // Find date range
+
   let dateStart = "";
   let dateEnd = "";
   for (const line of lines) {
     if (line.startsWith("# Fecha de inicio:")) {
       dateStart = line.split(":")[1]?.trim() || "";
     }
-    if (line.startsWith("# Fecha de finalización:")) {
+    if (line.startsWith("# Fecha de finalizaci")) {
       dateEnd = line.split(":")[1]?.trim() || "";
       break;
     }
@@ -456,7 +687,7 @@ function parseInformePanoramico(text: string): ParsedGA4Data {
   const sections = splitIntoSections(lines);
 
   // Parse overview
-  const overviewSection = sections.find((s) => 
+  const overviewSection = sections.find((s) =>
     s[0]?.includes("Usuarios activos") && s[0]?.includes("Usuarios nuevos")
   );
   let overview = { activeUsers: 0, newUsers: 0, avgEngagementTime: 0, totalEvents: 0 };
@@ -470,9 +701,9 @@ function parseInformePanoramico(text: string): ParsedGA4Data {
     };
   }
 
-  // Parse pages
-  const pagesSection = sections.find((s) => 
-    s[0]?.includes("Título de página") && s[0]?.includes("Vistas")
+  // Parse pages (by title)
+  const pagesSection = sections.find((s) =>
+    s[0]?.includes("Titulo de pagina") || s[0]?.includes("Título de página")
   );
   const pages: ParsedGA4Data["pages"] = [];
   if (pagesSection) {
@@ -490,8 +721,8 @@ function parseInformePanoramico(text: string): ParsedGA4Data {
     }
   }
 
-  // Parse sources
-  const sourcesSection = sections.find((s) => 
+  // Parse sources (first user source/medium)
+  const sourcesSection = sections.find((s) =>
     s[0]?.includes("Primera fuente/medio") && s[0]?.includes("Usuarios activos")
   );
   const sources: ParsedGA4Data["sources"] = [];
@@ -509,9 +740,28 @@ function parseInformePanoramico(text: string): ParsedGA4Data {
     }
   }
 
-  // Parse cities (basic, from panorámico)
-  const citiesSection = sections.find((s) => 
-    s[0]?.includes("Ciudad") && s[0]?.includes("Usuarios activos")
+  // Parse session sources
+  const sessionSourcesSection = sections.find((s) =>
+    s[0]?.includes("Fuente/medio de la sesi") && s[0]?.includes("Sesiones")
+  );
+  const sessionSources: ParsedGA4Data["sessionSources"] = [];
+  if (sessionSourcesSection) {
+    for (let i = 1; i < sessionSourcesSection.length; i++) {
+      const vals = parseCSVLine(sessionSourcesSection[i]);
+      if (vals.length >= 2) {
+        const [source, medium] = vals[0].split(" / ");
+        sessionSources.push({
+          source: source || "",
+          medium: medium || "",
+          sessions: parseInt(vals[1]) || 0,
+        });
+      }
+    }
+  }
+
+  // Parse cities (basic from panoramico)
+  const citiesSection = sections.find((s) =>
+    s[0]?.includes("Ciudad") && s[0]?.includes("Usuarios activos") && !s[0]?.includes("Usuarios nuevos")
   );
   const cities: EnrichedCity[] = [];
   if (citiesSection) {
@@ -530,8 +780,8 @@ function parseInformePanoramico(text: string): ParsedGA4Data {
   }
 
   // Parse daily users
-  const dailySection = sections.find((s) => 
-    s[0]?.includes("Día N") && s[0]?.includes("new")
+  const dailySection = sections.find((s) =>
+    s[0]?.includes("Dia N") || s[0]?.includes("Día N")
   );
   const dailyUsers: ParsedGA4Data["dailyUsers"] = [];
   if (dailySection) {
@@ -552,36 +802,32 @@ function parseInformePanoramico(text: string): ParsedGA4Data {
   }
 
   if (overview.activeUsers === 0 && pages.length === 0) {
-    throw new Error("No se pudo parsear el CSV. Verifica que sea un Informe panoramico de GA4.");
+    throw new Error("No se pudo parsear el CSV. Verifica que sea un Informe Panoramico de GA4.");
   }
 
   return {
     overview: { ...overview, dateRange: { start: dateStart, end: dateEnd } },
     pages,
+    pagesDetailed: [],
     sources,
+    sessionSources,
+    events: [],
     cities,
     dailyUsers,
   };
 }
 
-/**
- * Parse Detalles Demográficos CSV (enriched city data)
- * Headers: Ciudad, Usuarios activos, Usuarios nuevos, Sesiones con interacción, 
- * Porcentaje de interacciones, Sesiones con interacción por usuario activo, 
- * Tiempo de interacción medio por usuario activo, Número de eventos, 
- * Eventos clave, Tasa de evento clave de usuarios, Total de ingresos
- */
+/** Parse Detalles Demograficos CSV (enriched city data) */
 function parseDemograficosCSV(text: string): EnrichedCity[] {
   const lines = text.split("\n").map((l) => l.trim());
   const sections = splitIntoSections(lines);
 
-  // Find the section with city data (has "Ciudad" and "Usuarios activos")
   const citiesSection = sections.find((s) =>
     s[0]?.includes("Ciudad") && s[0]?.includes("Usuarios activos")
   );
 
   if (!citiesSection || citiesSection.length < 2) {
-    throw new Error("No se encontró la sección de ciudades en el CSV demográfico.");
+    throw new Error("No se encontro la seccion de ciudades en el CSV demografico.");
   }
 
   const cities: EnrichedCity[] = [];
@@ -589,12 +835,9 @@ function parseDemograficosCSV(text: string): EnrichedCity[] {
   for (let i = 1; i < citiesSection.length; i++) {
     const vals = parseCSVLine(citiesSection[i]);
     if (vals.length >= 7) {
-      // Detect empty city name (Lima case)
       let cityName = normalizeCityName(vals[0]);
-      
-      // Skip invalid entries like "(not set)" or zip codes
+
       if (!cityName || cityName === "(not set)" || /^\d+$/.test(cityName)) {
-        // If it's the empty Lima case (first column empty, has users)
         if (vals[0] === "" && parseInt(vals[1]) > 0) {
           cityName = "Lima";
         } else {
@@ -610,9 +853,9 @@ function parseDemograficosCSV(text: string): EnrichedCity[] {
         activeUsers,
         newUsers: parseInt(vals[2]) || 0,
         engagedSessions: parseInt(vals[3]) || 0,
-        engagementRate: parseFloat(vals[4]) || 0, // Already decimal in CSV
+        engagementRate: parseFloat(vals[4]) || 0,
         sessionsPerUser: parseFloat(vals[5]) || 0,
-        avgEngagementTime: parseFloat(vals[6]) || 0, // Seconds
+        avgEngagementTime: parseFloat(vals[6]) || 0,
         events: parseInt(vals[7]) || 0,
         keyEvents: parseInt(vals[8]) || 0,
         keyEventRate: parseFloat(vals[9]) || 0,
@@ -622,60 +865,175 @@ function parseDemograficosCSV(text: string): EnrichedCity[] {
   }
 
   if (cities.length === 0) {
-    throw new Error("No se encontraron ciudades válidas en el CSV demográfico.");
+    throw new Error("No se encontraron ciudades validas en el CSV demografico.");
   }
 
   return cities;
 }
 
-/**
- * Merge cities from panorámico and demográficos.
- * Demográficos data takes precedence (more fields).
- */
+/** Parse Eventos CSV */
+function parseEventosCSV(text: string): ParsedEvent[] {
+  const lines = text.split("\n").map((l) => l.trim());
+  const sections = splitIntoSections(lines);
+
+  const eventsSection = sections.find((s) =>
+    s[0]?.includes("Nombre del evento") && s[0]?.includes("Numero de eventos") ||
+    s[0]?.includes("Nombre del evento") && s[0]?.includes("Número de eventos")
+  );
+
+  if (!eventsSection || eventsSection.length < 2) {
+    throw new Error("No se encontro la seccion de eventos en el CSV.");
+  }
+
+  const events: ParsedEvent[] = [];
+
+  for (let i = 1; i < eventsSection.length; i++) {
+    const vals = parseCSVLine(eventsSection[i]);
+    if (vals.length >= 4) {
+      events.push({
+        name: vals[0],
+        count: parseInt(vals[1]) || 0,
+        users: parseInt(vals[2]) || 0,
+        countPerUser: parseFloat(vals[3]) || 0,
+        revenue: parseFloat(vals[4]) || 0,
+      });
+    }
+  }
+
+  if (events.length === 0) {
+    throw new Error("No se encontraron eventos validos en el CSV.");
+  }
+
+  // Sort by count descending
+  events.sort((a, b) => b.count - a.count);
+  return events;
+}
+
+/** Parse Paginas y Pantallas CSV (with URL paths) */
+function parsePaginasCSV(text: string): ParsedPageDetailed[] {
+  const lines = text.split("\n").map((l) => l.trim());
+  const sections = splitIntoSections(lines);
+
+  const pagesSection = sections.find((s) =>
+    s[0]?.includes("Ruta de pagina") || s[0]?.includes("Ruta de página")
+  );
+
+  if (!pagesSection || pagesSection.length < 2) {
+    throw new Error("No se encontro la seccion de paginas en el CSV.");
+  }
+
+  const pages: ParsedPageDetailed[] = [];
+
+  for (let i = 1; i < pagesSection.length; i++) {
+    const vals = parseCSVLine(pagesSection[i]);
+    if (vals.length >= 7) {
+      pages.push({
+        path: vals[0],
+        views: parseInt(vals[1]) || 0,
+        activeUsers: parseInt(vals[2]) || 0,
+        viewsPerUser: parseFloat(vals[3]) || 0,
+        avgEngagementTime: parseFloat(vals[4]) || 0,
+        events: parseInt(vals[5]) || 0,
+        keyEvents: parseInt(vals[6]) || 0,
+        revenue: parseFloat(vals[7]) || 0,
+      });
+    }
+  }
+
+  if (pages.length === 0) {
+    throw new Error("No se encontraron paginas validas en el CSV.");
+  }
+
+  return pages;
+}
+
+/** Parse Fuente/Medio CSV (respuesta instantanea) */
+function parseFuenteMedioCSV(text: string): ParsedGA4Data["sources"] {
+  const lines = text.split("\n").map((l) => l.trim());
+  const sections = splitIntoSections(lines);
+
+  const sourcesSection = sections.find((s) =>
+    s[0]?.includes("fuente/medio") || s[0]?.includes("Fuente/medio")
+  );
+
+  if (!sourcesSection || sourcesSection.length < 2) {
+    throw new Error("No se encontro la seccion de fuentes en el CSV.");
+  }
+
+  const sources: ParsedGA4Data["sources"] = [];
+
+  for (let i = 1; i < sourcesSection.length; i++) {
+    const vals = parseCSVLine(sourcesSection[i]);
+    if (vals.length >= 2) {
+      const [source, medium] = vals[0].split(" / ");
+      sources.push({
+        source: source || "",
+        medium: medium || "",
+        users: parseInt(vals[1]) || 0,
+      });
+    }
+  }
+
+  if (sources.length === 0) {
+    throw new Error("No se encontraron fuentes validas en el CSV.");
+  }
+
+  return sources;
+}
+
+/* ── Helpers ───────────────────────────────────────────────────────── */
+
+function createMinimalPreview(partial: Partial<ParsedGA4Data>): ParsedGA4Data {
+  return {
+    overview: {
+      activeUsers: 0,
+      newUsers: 0,
+      avgEngagementTime: 0,
+      totalEvents: 0,
+      dateRange: { start: "", end: "" },
+    },
+    pages: [],
+    pagesDetailed: [],
+    sources: [],
+    sessionSources: [],
+    events: [],
+    cities: [],
+    dailyUsers: [],
+    ...partial,
+  };
+}
+
 function mergeCities(baseCities: EnrichedCity[], enrichedCities: EnrichedCity[]): EnrichedCity[] {
   const cityMap = new Map<string, EnrichedCity>();
 
-  // Add base cities first
   for (const city of baseCities) {
-    const key = city.city.toLowerCase();
-    cityMap.set(key, city);
+    cityMap.set(city.city.toLowerCase(), city);
   }
 
-  // Override with enriched cities (they have more data)
   for (const city of enrichedCities) {
-    const key = city.city.toLowerCase();
-    cityMap.set(key, city);
+    cityMap.set(city.city.toLowerCase(), city);
   }
 
-  // Sort by activeUsers descending
   return Array.from(cityMap.values()).sort((a, b) => b.activeUsers - a.activeUsers);
 }
 
-/**
- * Normalize city name: trim, handle empty (Lima), filter garbage
- */
 function normalizeCityName(name: string): string {
   const trimmed = name.trim();
-  
-  // Skip garbage entries
-  if (trimmed === "(not set)" || /^\d+$/.test(trimmed)) {
-    return "";
-  }
-  
-  // Skip clearly non-Peru cities (can expand this list)
+
+  if (trimmed === "(not set)" || /^\d+$/.test(trimmed)) return "";
+
   const nonPeruCities = [
-    "fort worth", "council bluffs", "aspen", "miami", "springfield", 
+    "fort worth", "council bluffs", "aspen", "miami", "springfield",
     "duluth", "prineville", "frankfurt am main", "turin", "collegno",
-    "l'hospitalet de llobregat", "paris", "lulea", "gwalior", "siberut tengah", "srumbung"
+    "l'hospitalet de llobregat", "paris", "lulea", "gwalior",
+    "siberut tengah", "srumbung", "bad ragaz", "dublin",
+    "freiburg im breisgau", "guernica", "juiz de fora",
+    "buenos aires", "cayambe", "costa mesa", "madrid", "seville",
+    "new york", "vernon township",
   ];
-  if (nonPeruCities.includes(trimmed.toLowerCase())) {
-    return ""; // We could include them but skip for Peru focus
-  }
-  
-  // Skip congressional district entries
-  if (trimmed.toLowerCase().includes("congressional district")) {
-    return "";
-  }
+  if (nonPeruCities.includes(trimmed.toLowerCase())) return "";
+
+  if (trimmed.toLowerCase().includes("congressional district")) return "";
 
   return trimmed;
 }
@@ -725,10 +1083,13 @@ function formatDate(dateStr: string): string {
   const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
   const d = parseInt(dateStr.slice(6, 8));
   const m = parseInt(dateStr.slice(4, 6)) - 1;
-  return `${d} ${months[m]}`;
+  const y = dateStr.slice(0, 4);
+  return `${d} ${months[m]} ${y}`;
 }
 
-// ── Styles ─────────────────────────────────────────────────────────────
+/* ═══════════════════════════════════════════════════════════════════════
+   Styles
+   ═══════════════════════════════════════════════════════════════════ */
 
 const styles: Record<string, React.CSSProperties> = {
   overlay: {
@@ -745,9 +1106,11 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "#fff",
     borderRadius: 16,
     width: "100%",
-    maxWidth: 560,
+    maxWidth: 680,
+    maxHeight: "90vh",
     boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
-    overflow: "hidden",
+    display: "flex",
+    flexDirection: "column" as const,
   },
   header: {
     display: "flex",
@@ -755,17 +1118,35 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "flex-start",
     padding: "20px 24px",
     borderBottom: "1px solid #e2e8f0",
+    flexShrink: 0,
+  },
+  headerRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
   },
   title: {
     margin: 0,
-    fontSize: 18,
-    fontWeight: 700,
+    fontSize: 16,
+    fontWeight: 800,
     color: "#1e293b",
+    letterSpacing: "0.03em",
   },
   subtitle: {
     margin: "4px 0 0",
     fontSize: 13,
     color: "#64748b",
+  },
+  fileBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "4px 10px",
+    borderRadius: 20,
+    fontSize: 11,
+    fontWeight: 600,
+    backgroundColor: "#f0fdf4",
+    color: "#166534",
+    border: "1px solid #bbf7d0",
   },
   closeBtn: {
     width: 32,
@@ -781,51 +1162,92 @@ const styles: Record<string, React.CSSProperties> = {
   },
   content: {
     padding: 24,
+    overflow: "auto",
+    flex: 1,
+    minHeight: 0,
   },
-  uploadGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 16,
+  instructions: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 10,
+    padding: 14,
+    backgroundColor: "#eff6ff",
+    borderRadius: 10,
+    fontSize: 12,
+    color: "#1e40af",
+    lineHeight: 1.5,
     marginBottom: 20,
   },
-  uploadSection: {
+  slotsGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 12,
+  },
+  slotCard: {
     display: "flex",
     flexDirection: "column" as const,
     gap: 8,
+    padding: 14,
+    borderRadius: 12,
+    border: "1px solid #e2e8f0",
+    backgroundColor: "#fafbfc",
   },
-  uploadLabel: {
+  slotHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  slotIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "#f1f5f9",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  slotInfo: {
     display: "flex",
     flexDirection: "column" as const,
     gap: 2,
+    minWidth: 0,
   },
-  uploadLabelText: {
+  slotLabel: {
     fontSize: 13,
     fontWeight: 600,
     color: "#334155",
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
   },
-  uploadLabelHint: {
+  requiredDot: {
+    color: "#ef4444",
+    fontSize: 14,
+    fontWeight: 700,
+  },
+  slotHint: {
     fontSize: 11,
     color: "#94a3b8",
   },
-  dropzoneMini: {
+  dropzone: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     border: "2px dashed #e2e8f0",
-    borderRadius: 10,
-    padding: 24,
+    borderRadius: 8,
+    padding: "14px 12px",
     cursor: "pointer",
     transition: "all 0.2s ease",
-    minHeight: 80,
+    minHeight: 44,
   },
-  dropzoneMiniContent: {
+  dropzoneContent: {
     display: "flex",
-    flexDirection: "column" as const,
     alignItems: "center",
     gap: 8,
     pointerEvents: "none" as const,
   },
-  dropzoneMiniText: {
+  dropzoneText: {
     fontSize: 12,
     fontWeight: 500,
     color: "#64748b",
@@ -841,9 +1263,9 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     backgroundColor: "#f0fdf4",
     border: "1px solid #bbf7d0",
-    borderRadius: 10,
-    padding: "12px 14px",
-    minHeight: 80,
+    borderRadius: 8,
+    padding: "10px 12px",
+    minHeight: 44,
   },
   fileCardContent: {
     display: "flex",
@@ -852,17 +1274,17 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
   },
   fileCardName: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 500,
     color: "#166534",
     whiteSpace: "nowrap" as const,
     overflow: "hidden",
     textOverflow: "ellipsis",
-    maxWidth: 140,
+    maxWidth: 150,
   },
   removeBtn: {
-    width: 24,
-    height: 24,
+    width: 22,
+    height: 22,
     borderRadius: 6,
     border: "none",
     backgroundColor: "transparent",
@@ -876,68 +1298,24 @@ const styles: Record<string, React.CSSProperties> = {
   inlineError: {
     fontSize: 11,
     color: "#dc2626",
-    padding: "4px 0",
+    padding: "2px 0",
   },
-  preview: {
-    backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    padding: 20,
-  },
-  previewHeader: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 16,
-  },
-  previewTitle: {
-    fontSize: 14,
-    fontWeight: 600,
-    color: "#10b981",
-  },
-  statsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(4, 1fr)",
-    gap: 12,
-    marginBottom: 12,
-  },
-  statCard: {
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    padding: 12,
-    textAlign: "center" as const,
-    border: "1px solid #e2e8f0",
-  },
-  statValue: {
-    display: "block",
-    fontSize: 18,
-    fontWeight: 700,
-    color: "#1e293b",
-  },
-  statLabel: {
-    display: "block",
-    fontSize: 10,
-    fontWeight: 500,
-    color: "#94a3b8",
-    textTransform: "uppercase" as const,
-    marginTop: 2,
-  },
-  enrichedBadge: {
+  previewButton: {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    fontSize: 11,
-    color: "#8b5cf6",
-    fontWeight: 500,
-    marginBottom: 12,
-    padding: "6px 12px",
-    backgroundColor: "#f5f3ff",
-    borderRadius: 6,
-  },
-  dateRange: {
-    fontSize: 12,
-    color: "#64748b",
-    textAlign: "center" as const,
+    gap: 8,
+    width: "100%",
+    padding: "12px 16px",
+    marginTop: 16,
+    borderRadius: 10,
+    border: "1px solid #e2e8f0",
+    backgroundColor: "#f8fafc",
+    color: "#334155",
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+    transition: "all 0.2s ease",
   },
   error: {
     display: "flex",
@@ -952,10 +1330,164 @@ const styles: Record<string, React.CSSProperties> = {
   },
   footer: {
     display: "flex",
-    justifyContent: "flex-end",
+    alignItems: "center",
     gap: 12,
     padding: "16px 24px",
     borderTop: "1px solid #e2e8f0",
     backgroundColor: "#fafbfc",
+    flexShrink: 0,
+  },
+  backBtn: {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    padding: "6px 12px",
+    borderRadius: 8,
+    border: "1px solid #e2e8f0",
+    backgroundColor: "#fff",
+    color: "#64748b",
+    fontSize: 12,
+    fontWeight: 500,
+    cursor: "pointer",
+  },
+};
+
+const previewStyles: Record<string, React.CSSProperties> = {
+  container: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 16,
+  },
+  successBadge: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "10px 14px",
+    backgroundColor: "#f0fdf4",
+    borderRadius: 10,
+    border: "1px solid #bbf7d0",
+  },
+  successText: {
+    fontSize: 14,
+    fontWeight: 600,
+    color: "#166534",
+  },
+  dateRange: {
+    fontSize: 12,
+    color: "#64748b",
+    textAlign: "center" as const,
+  },
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, 1fr)",
+    gap: 10,
+  },
+  statCard: {
+    backgroundColor: "#f8fafc",
+    borderRadius: 10,
+    padding: 14,
+    textAlign: "center" as const,
+    border: "1px solid #e2e8f0",
+  },
+  statValue: {
+    display: "block",
+    fontSize: 20,
+    fontWeight: 700,
+    color: "#1e293b",
+  },
+  statLabel: {
+    display: "block",
+    fontSize: 10,
+    fontWeight: 500,
+    color: "#94a3b8",
+    textTransform: "uppercase" as const,
+    marginTop: 2,
+    letterSpacing: "0.03em",
+  },
+  inventory: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 6,
+    padding: 14,
+    backgroundColor: "#f8fafc",
+    borderRadius: 10,
+    border: "1px solid #e2e8f0",
+  },
+  inventoryRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "4px 0",
+  },
+  inventoryLabel: {
+    flex: 1,
+    fontSize: 12,
+    color: "#475569",
+  },
+  inventoryBadge: {
+    fontSize: 9,
+    fontWeight: 600,
+    color: "#8b5cf6",
+    backgroundColor: "#f5f3ff",
+    padding: "2px 6px",
+    borderRadius: 4,
+    textTransform: "uppercase" as const,
+  },
+  inventoryCount: {
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#1e293b",
+    minWidth: 28,
+    textAlign: "right" as const,
+  },
+  funnelPreview: {
+    padding: 14,
+    backgroundColor: "#f8fafc",
+    borderRadius: 10,
+    border: "1px solid #e2e8f0",
+  },
+  funnelTitle: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#475569",
+    marginBottom: 10,
+  },
+  funnelBars: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 6,
+  },
+  funnelRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  funnelLabel: {
+    fontSize: 11,
+    color: "#64748b",
+    width: 100,
+    whiteSpace: "nowrap" as const,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  },
+  funnelBarBg: {
+    flex: 1,
+    height: 6,
+    backgroundColor: "#e2e8f0",
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  funnelBar: {
+    height: "100%",
+    backgroundColor: "#3b82f6",
+    borderRadius: 3,
+    transition: "width 0.3s ease",
+  },
+  funnelValue: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: "#334155",
+    minWidth: 44,
+    textAlign: "right" as const,
   },
 };

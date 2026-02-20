@@ -20,7 +20,7 @@ export function CandidateList({ candidates, onEdit }: CandidateListProps) {
       <EmptyState
         icon={<UsersIcon />}
         title="No hay candidatos registrados"
-        description='Haga clic en "Nuevo Candidato" para agregar uno.'
+        description='Hacé clic en "Nuevo Candidato" para agregar uno.'
       />
     );
   }

@@ -33,6 +33,12 @@ logs/
 **/bun.lockb
 *.tsbuildinfo
 
+# ── Root phantom files (prevent accidental bun install from root) ──
+/package.json
+/bun.lock
+/package-lock.json
+/yarn.lock
+
 # ── Build outputs ───────────────────────────────────────────────────
 **/.next/
 **/dist/

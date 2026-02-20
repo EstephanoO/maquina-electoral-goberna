@@ -64,39 +64,42 @@ export function CandidateCard({ candidate, onEdit, onGA4Uploaded }: CandidateCar
             </Button>
           )}
 
-          {/* Tierra */}
+          {/* Territorio */}
           <button
             type="button"
             onClick={() => router.push(`/candidatos/${candidate.slug}/tierra`)}
             style={{ ...styles.actionBtn, ...styles.tierraBtn }}
-            title="Ver Tierra"
+            title="Ver territorio"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-              <circle cx="12" cy="10" r="3" />
+              <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+              <line x1="8" y1="2" x2="8" y2="18" />
+              <line x1="16" y1="6" x2="16" y2="22" />
             </svg>
-            Tierra
+            Territorio
           </button>
 
-          {/* Digital */}
+          {/* Analytics */}
           <button
             type="button"
-            onClick={() => router.push(`/candidatos/${candidate.slug}/digital`)}
+            onClick={() => router.push(`/candidatos/${candidate.slug}/analytics`)}
             style={{ 
               ...styles.actionBtn, 
               ...styles.digitalBtn,
-              opacity: hasGA4Data ? 1 : 0.6,
+              opacity: hasGA4Data ? 1 : 0.5,
             }}
-            title={hasGA4Data ? "Ver Digital" : "Sin datos GA4"}
+            title={hasGA4Data ? "Ver analytics" : "Sin datos GA4"}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              <path d="M18 20V10" />
+              <path d="M12 20V4" />
+              <path d="M6 20v-6" />
             </svg>
-            Digital
+            Analytics
             {!hasGA4Data && <span style={styles.noBadge}>!</span>}
           </button>
 
-          {/* Upload GA4 */}
+          {/* Subir GA4 */}
           <button
             type="button"
             onClick={() => setShowGA4Modal(true)}

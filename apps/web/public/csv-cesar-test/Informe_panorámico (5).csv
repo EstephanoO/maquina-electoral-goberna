@@ -1,0 +1,215 @@
+# ----------------------------------------
+# Informe panorámico
+# Cuenta: Cesar Vasquez
+# Propiedad: Web Cesar Vasquez
+# ----------------------------------------
+#  
+# Fecha de inicio: 20260123
+# Fecha de finalización: 20260220
+Usuarios activos,Usuarios nuevos,Tiempo de interacción medio por usuario activo,Número de eventos
+6753,6741,3.4472086480082926,22790
+
+#  
+# Fecha de inicio: 20260123
+# Fecha de finalización: 20260220
+Título de página y clase de pantalla,Vistas,Usuarios activos,Número de eventos,Porcentaje de rebote
+Senador Nacional - Cesar Vasquez 2026,5929,5296,17432,0.9525075314548999
+Senador Nacional - Cesar Vasquez,1508,1371,4436,0.9340892983699504
+Brigadistas - Voluntariado - Cesar Vasquez,88,61,289,0.4666666666666667
+Obras por Impuestos en salud: cómo aceleré hospitales sin esperar años,70,45,218,0.746031746031746
+Reactivar obras paralizadas en salud: ¿Cómo logré que vuelvan a servir?,49,35,140,0.4358974358974359
+Reactivar obras paralizadas en salud: lo que hice para que vuelvan a servir,30,7,70,0.45454545454545453
+Archivo Blog - Cesar Vasquez,29,6,69,0.375
+Modelo Fast Track: Cómo aceleré hospitales de alta complejidad con cooperación G2G,15,3,34,0.6
+Hospitales centenarios: cómo impulsé su modernización sin perder la historia,10,2,26,0
+Seguimiento de obras en salud: el control que evita que se paralicen,10,4,21,0.6
+Reconstrucción con Cambios en salud: Cómo devolvimos atención donde el desastre la rompió,5,4,12,0.2
+Encabezado - Cesar Vasquez,4,1,8,0.5
+Hospitales centenarios: Cómo impulsé su modernización sin perder la historia,3,1,7,0
+Puesta en marcha en salud: por qué una obra “terminada” todavía no es un servicio funcionando,3,2,8,0.5
+Footer - Cesar Vasquez,2,1,4,1
+Plantilla - Blog - Cesar Vasquez,2,1,4,1
+Tarjeta blog - Cesar Vasquez,2,1,6,0.5
+Archivos-Blog - Cesar Vasquez,1,1,2,1
+Entrada Prueba 1 - Cesar Vasquez,1,1,2,0
+Entrada de prueba 2 - Cesar Vasquez,1,1,2,0
+
+#  
+# Fecha de inicio: 20260123
+# Fecha de finalización: 20260220
+Primera fuente/medio del usuario,Usuarios activos
+fb / paid,5976
+fb / Pagado,336
+(direct) / (none),292
+ig / paid,71
+m.facebook.com / referral,28
+l.facebook.com / referral,13
+google / organic,9
+facebook.com / referral,5
+t.co / referral,2
+(data not available),1
+google / cpc,1
+l.wl.co / referral,1
+
+#  
+# Fecha de inicio: 20260123
+# Fecha de finalización: 20260220
+Fuente/medio de la sesión,Sesiones
+fb / paid,6324
+(direct) / (none),405
+fb / Pagado,343
+ig / paid,74
+google / organic,30
+m.facebook.com / referral,30
+l.facebook.com / referral,21
+facebook.com / referral,5
+google / cpc,3
+t.co / referral,3
+(data not available),1
+l.wl.co / referral,1
+
+#  
+# Fecha de inicio: 20260123
+# Fecha de finalización: 20260220
+Día N,new,returning
+0000,0,0
+0001,0,0
+0002,0,0
+0003,0,0
+0004,0,0
+0005,0,0
+0006,0,0
+0007,0,0
+0008,0,0
+0009,0,0
+0010,0,0
+0011,0,0
+0012,0,0
+0013,0,0
+0014,0,0
+0015,0,0
+0016,0,0
+0017,0,0
+0018,0,0
+0019,0,0
+0020,0,0
+0021,0,0
+0022,0,0
+0023,0,0
+0024,9,1
+0025,2764,94
+0026,1793,81
+0027,2162,9
+0028,12,2
+
+# Datos sobre la actividad en sus plataformas
+# Fecha de inicio: 20260123
+# Fecha de finalización: 20260220
+Plataforma,Eventos clave
+
+
+#  
+# Fecha de inicio: 20260123
+# Fecha de finalización: 20260220
+Ciudad,Usuarios activos
+Trujillo,2574
+Cajamarca,410
+Chiclayo,161
+Arequipa,147
+Piura,143
+Cusco,116
+Ica,60
+Cerro Colorado,55
+Iquitos,54
+La Esperanza,47
+El Porvenir,43
+Chimbote,42
+Huaraz,35
+Pucallpa,33
+Jaen,32
+Victor Larco Herrera,29
+Jose Luis Bustamante,20
+Tarapoto,20
+Tacna,19
+Lambayeque,16
+Ayacucho,15
+Paucarpata,15
+Huancayo,13
+Jose Leonardo Ortiz,11
+Juliaca,10
+Puno,10
+North Carolina's 3rd Congressional District 2022 redistricting,8
+Parcona District,8
+Sullana,8
+Pisco,7
+Chepen,6
+Miraflores,6
+Talara,6
+77066,5
+Ilo,5
+34698,4
+39279,4
+Barranca,4
+Cayma,4
+Fort Worth,4
+Huacho,4
+Huaral,4
+La Victoria,4
+Lurin,4
+Yanahuara,4
+40384,3
+Aspen,3
+Council Bluffs,3
+Forest City,3
+Jacobo Hunter,3
+Lulea,3
+Mariano Melgar,3
+Moquegua,3
+Paita,3
+Puerto Maldonado,3
+Sachaca,3
+Socabaya,3
+Alto Selva Alegre,2
+Dublin,2
+Ferrenafe,2
+Huancavelica,2
+Huaura,2
+Prineville,2
+Salaverry,2
+San Martin de Pangoa,2
+San Pedro de Lloc,2
+Santiago,2
+Siberut Tengah,2
+10430,1
+Bad Ragaz,1
+Buenos Aires,1
+Cayambe,1
+Cerro de Pasco,1
+Collegno,1
+Costa Mesa,1
+Duluth,1
+Frankfurt am Main,1
+Freiburg im Breisgau,1
+Guernica,1
+Gwalior,1
+Juiz de Fora,1
+L'Hospitalet de Llobregat,1
+La Union,1
+Madrid,1
+Mala,1
+Miami,1
+Mollendo,1
+New York,1
+Paris,1
+San Ignacio,1
+Seville,1
+Springfield,1
+Srumbung,1
+Turin,1
+Vernon Township,1
+
+#  
+# Fecha de inicio: 20260123
+# Fecha de finalización: 20260220
+Nombre de la audiencia,Usuarios activos
+All Users,6753

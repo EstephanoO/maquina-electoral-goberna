@@ -20,7 +20,7 @@ export function AccessRequestList({ requests, onResolved }: AccessRequestListPro
       <EmptyState
         icon={<CheckCircleIcon />}
         title="No hay solicitudes pendientes"
-        description="Todas las solicitudes han sido procesadas."
+        description="Todas las solicitudes fueron procesadas."
       />
     );
   }

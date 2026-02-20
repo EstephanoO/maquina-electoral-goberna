@@ -1,0 +1,207 @@
+/**
+ * GOBERNA — Role Configuration
+ * Centralized role hierarchy, types, and display config for the equipo module.
+ */
+
+import type { ReactNode } from "react";
+
+// ── Types ───────────────────────────────────────────────────────────
+
+export type Member = {
+  user_id: string;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  region: string | null;
+  role: string;
+  user_status: string;
+};
+
+export type PendingRequest = {
+  id: string;
+  user_id: string;
+  campaign_id: string;
+  status: string;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  region: string | null;
+  created_at: string;
+};
+
+export type ZoneObjective = {
+  id: string;
+  campaign_id: string;
+  region: string;
+  target_forms: number;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Campaign = {
+  id: string;
+  name: string;
+  slug: string;
+  cargo?: string;
+  partido?: string;
+  foto_url?: string;
+};
+
+export type ConsultorCampaignAssignment = {
+  campaign_id: string;
+  campaign_name: string;
+  campaign_slug: string;
+  assigned_at: string;
+};
+
+// ── Role Config ─────────────────────────────────────────────────────
+
+export type RoleConfig = {
+  key: string;
+  label: string;
+  shortLabel: string;
+  level: number;
+  icon: (props: { size?: number; color?: string }) => ReactNode;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  description: string;
+  canManage: string[];
+  capacity?: string;
+};
+
+// Icon imports are injected at usage site to avoid circular deps.
+// The ROLES record is built with a factory function.
+
+import {
+  IconCrown,
+  IconBarChart,
+  IconBriefcase,
+  IconAward,
+  IconCompass,
+} from "../../../../lib/ui";
+
+export const ROLES: Record<string, RoleConfig> = {
+  admin: {
+    key: "admin",
+    label: "Estratega / Admin",
+    shortLabel: "Admin",
+    level: 100,
+    icon: IconCrown,
+    color: "#1e3a5f",
+    bgColor: "linear-gradient(135deg, #ffd700, #ffb700)",
+    borderColor: "#d4a500",
+    description: "Control total del sistema y múltiples campañas",
+    canManage: ["consultor", "supervisor", "capitan_brigada", "agent"],
+  },
+  consultor: {
+    key: "consultor",
+    label: "Consultor Estratégico",
+    shortLabel: "Consultor",
+    level: 75,
+    icon: IconBarChart,
+    color: "#4f46e5",
+    bgColor: "linear-gradient(135deg, #818cf8, #6366f1)",
+    borderColor: "#6366f1",
+    description: "Asesora múltiples campañas asignadas",
+    canManage: ["supervisor", "capitan_brigada", "agent"],
+  },
+  supervisor: {
+    key: "supervisor",
+    label: "Candidato",
+    shortLabel: "Candidato",
+    level: 80,
+    icon: IconBriefcase,
+    color: "#1e40af",
+    bgColor: "linear-gradient(135deg, #3b82f6, #1d4ed8)",
+    borderColor: "#1d4ed8",
+    description: "Control total de su campaña electoral",
+    canManage: ["director_regional", "capitan_brigada", "agent"],
+  },
+  capitan_brigada: {
+    key: "capitan_brigada",
+    label: "Brigadista / Director de Campo",
+    shortLabel: "Brigadista",
+    level: 40,
+    icon: IconAward,
+    color: "#047857",
+    bgColor: "linear-gradient(135deg, #10b981, #059669)",
+    borderColor: "#059669",
+    description: "Coordina y lidera agentes en su zona",
+    canManage: ["agent"],
+    capacity: "5-10 Agentes",
+  },
+  agent: {
+    key: "agent",
+    label: "Agente de Campo",
+    shortLabel: "Agente",
+    level: 20,
+    icon: IconCompass,
+    color: "#475569",
+    bgColor: "linear-gradient(135deg, #64748b, #475569)",
+    borderColor: "#475569",
+    description: "Operador territorial, sube formularios",
+    canManage: [],
+  },
+};
+
+// ── Role Aliases (backend → display) ────────────────────────────────
+
+const ROLE_ALIASES: Record<string, string> = {
+  candidato: "supervisor",
+  brigadista_zonal: "capitan_brigada",
+  agente_campo: "agent",
+  agente_digital: "agent",
+  director_regional: "capitan_brigada",
+};
+
+export function normalizeRole(role: string): string {
+  return ROLE_ALIASES[role] ?? role;
+}
+
+export function getRoleConfig(role: string): RoleConfig {
+  return ROLES[normalizeRole(role)] ?? ROLES.agent;
+}
+
+/** Map display role key → backend role key */
+export function toBackendRole(displayRole: string): string {
+  switch (displayRole) {
+    case "supervisor": return "candidato";
+    case "capitan_brigada": return "brigadista_zonal";
+    case "consultor": return "consultor";
+    default: return "agente_campo";
+  }
+}
+
+// ── Peruvian Departments ────────────────────────────────────────────
+
+export const DEPARTAMENTOS = [
+  "Amazonas", "Áncash", "Apurímac", "Arequipa", "Ayacucho",
+  "Cajamarca", "Callao", "Cusco", "Huancavelica", "Huánuco",
+  "Ica", "Junín", "La Libertad", "Lambayeque", "Lima",
+  "Loreto", "Madre de Dios", "Moquegua", "Pasco", "Piura",
+  "Puno", "San Martín", "Tacna", "Tumbes", "Ucayali",
+];
+
+// ── Helpers ─────────────────────────────────────────────────────────
+
+export function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("es-PE", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+export function openWhatsApp(phone: string) {
+  const clean = phone.replace(/\D/g, "");
+  const full = clean.startsWith("51") ? clean : `51${clean}`;
+  window.open(`https://wa.me/${full}`, "_blank");
+}
+
+/** Leadership roles — no se agrupan por región */
+export const LEADERSHIP_ROLES = new Set(["admin", "consultor", "supervisor"]);

@@ -90,7 +90,7 @@ export function CreateCandidateForm({ onSuccess, onCancel }: CreateCandidateForm
     setCreating(false);
 
     if (!result.ok) {
-      setError(result.error ?? "Error creando candidato.");
+      setError(result.error ?? "Error al crear el candidato.");
       return;
     }
 
@@ -121,7 +121,7 @@ export function CreateCandidateForm({ onSuccess, onCancel }: CreateCandidateForm
               fontFamily: FONT_STACK,
             }}
           >
-            Foto del Candidato
+            FOTO DEL CANDIDATO
           </span>
           <PhotoUpload
             value={photoFile}
@@ -138,7 +138,7 @@ export function CreateCandidateForm({ onSuccess, onCancel }: CreateCandidateForm
           label="Nombre completo"
           value={form.name}
           onChange={(e) => updateField("name", e.target.value)}
-          placeholder="Ej: Juan Carlos Ramirez"
+          placeholder="Ej: Juan Carlos Ramírez"
         />
 
         <SelectInput
@@ -147,13 +147,13 @@ export function CreateCandidateForm({ onSuccess, onCancel }: CreateCandidateForm
           value={form.cargo}
           onChange={(e) => updateField("cargo", e.target.value)}
           options={CARGO_SELECT_OPTIONS}
-          placeholder="Seleccionar cargo..."
+          placeholder="Seleccionar cargo…"
         />
 
         <TextInput
           id="nc-numero"
           type="number"
-          label="Numero de candidatura"
+          label="Número de candidatura"
           value={form.numero}
           onChange={(e) => updateField("numero", e.target.value)}
           placeholder="Ej: 7"
@@ -179,7 +179,7 @@ export function CreateCandidateForm({ onSuccess, onCancel }: CreateCandidateForm
               fontFamily: FONT_STACK,
             }}
           >
-            Colores del partido
+            COLORES DEL PARTIDO
           </span>
           <div style={{ display: "flex", gap: 20 }}>
             <ColorPicker
@@ -207,7 +207,7 @@ export function CreateCandidateForm({ onSuccess, onCancel }: CreateCandidateForm
               fontFamily: FONT_STACK,
             }}
           >
-            Vista previa
+            VISTA PREVIA
           </span>
           <div
             style={{

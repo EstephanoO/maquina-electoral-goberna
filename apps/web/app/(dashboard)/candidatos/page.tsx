@@ -113,16 +113,22 @@ export default function CandidatosPage() {
                 fontWeight: 800,
                 color: "var(--color-text-primary)",
                 margin: "0 0 4px",
+                textTransform: "uppercase",
+                letterSpacing: "0.02em",
               }}
             >
-              Candidatos & Solicitudes
+              Candidatos y Solicitudes
             </h1>
             <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>
-              Gestione candidatos y apruebe solicitudes de acceso de usuarios.
+              Gestión de candidatos y aprobación de solicitudes de acceso.
             </p>
           </div>
           <Button variant="primary" onClick={() => setShowCreatePanel(true)}>
-            + Nuevo Candidato
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: 6 }}>
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Nuevo Candidato
           </Button>
         </div>
       </div>
@@ -155,7 +161,7 @@ export default function CandidatosPage() {
       <SlideOver
         open={showCreatePanel}
         onClose={() => setShowCreatePanel(false)}
-        title="Nuevo Candidato"
+        title="NUEVO CANDIDATO"
       >
         <CreateCandidateForm
           onSuccess={() => {
@@ -170,7 +176,7 @@ export default function CandidatosPage() {
       <SlideOver
         open={editingCandidate !== null}
         onClose={() => setEditingCandidate(null)}
-        title="Editar Candidato"
+        title="EDITAR CANDIDATO"
       >
         {editingCandidate && (
           <EditCandidateForm

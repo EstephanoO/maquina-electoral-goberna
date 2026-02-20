@@ -1,6 +1,7 @@
 /**
  * GOBERNA — Analytics Module Schemas
  * Zod validation for GA4 analytics data.
+ * Supports 5 CSV sources: Panoramico, Demograficos, Eventos, Paginas, Fuente/Medio
  */
 
 import { z } from "zod";
@@ -26,16 +27,43 @@ export const ga4PageSchema = z.object({
   bounceRate: z.number().min(0).max(100),
 });
 
+/** Detailed page with URL path + engagement (from Paginas y pantallas CSV) */
+export const ga4PageDetailedSchema = z.object({
+  path: z.string(),
+  views: z.number().int().min(0),
+  activeUsers: z.number().int().min(0),
+  viewsPerUser: z.number().min(0),
+  avgEngagementTime: z.number().min(0),
+  events: z.number().int().min(0),
+  keyEvents: z.number().int().min(0),
+  revenue: z.number().min(0),
+});
+
 export const ga4SourceSchema = z.object({
   source: z.string(),
   medium: z.string(),
   users: z.number().int().min(0),
 });
 
+export const ga4SessionSourceSchema = z.object({
+  source: z.string(),
+  medium: z.string(),
+  sessions: z.number().int().min(0),
+});
+
+/** Event type data from Eventos CSV */
+export const ga4EventSchema = z.object({
+  name: z.string(),
+  count: z.number().int().min(0),
+  users: z.number().int().min(0),
+  countPerUser: z.number().min(0),
+  revenue: z.number().min(0),
+});
+
 export const ga4CitySchema = z.object({
   city: z.string(),
   activeUsers: z.number().int().min(0),
-  // Enriched fields from Detalles Demográficos CSV (all optional for backward compat)
+  // Enriched fields from Detalles Demograficos CSV (all optional for backward compat)
   newUsers: z.number().int().min(0).optional(),
   engagedSessions: z.number().int().min(0).optional(),
   engagementRate: z.number().min(0).max(1).optional(),
@@ -56,7 +84,10 @@ export const ga4DailySchema = z.object({
 export const ga4DataSchema = z.object({
   overview: ga4OverviewSchema,
   pages: z.array(ga4PageSchema),
+  pagesDetailed: z.array(ga4PageDetailedSchema).optional().default([]),
   sources: z.array(ga4SourceSchema),
+  sessionSources: z.array(ga4SessionSourceSchema).optional().default([]),
+  events: z.array(ga4EventSchema).optional().default([]),
   cities: z.array(ga4CitySchema),
   dailyUsers: z.array(ga4DailySchema),
 });

@@ -19,6 +19,18 @@ export type GA4Page = {
   bounceRate: number;
 };
 
+/** Detailed page with URL path + engagement metrics (from Paginas y pantallas CSV) */
+export type GA4PageDetailed = {
+  path: string;
+  views: number;
+  activeUsers: number;
+  viewsPerUser: number;
+  avgEngagementTime: number; // seconds
+  events: number;
+  keyEvents: number;
+  revenue: number;
+};
+
 export type GA4Source = {
   source: string;
   medium: string;
@@ -29,6 +41,15 @@ export type GA4SessionSource = {
   source: string;
   medium: string;
   sessions: number;
+};
+
+/** Event type data from Eventos CSV */
+export type GA4Event = {
+  name: string;
+  count: number;
+  users: number;
+  countPerUser: number;
+  revenue: number;
 };
 
 export type GA4City = {
@@ -55,8 +76,10 @@ export type GA4DailyUsers = {
 export type GA4Data = {
   overview: GA4Overview;
   pages: GA4Page[];
+  pagesDetailed: GA4PageDetailed[];
   sources: GA4Source[];
   sessionSources: GA4SessionSource[];
+  events: GA4Event[];
   cities: GA4City[];
   dailyUsers: GA4DailyUsers[];
 };

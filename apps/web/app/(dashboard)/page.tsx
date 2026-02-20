@@ -6,8 +6,10 @@ import { useEffect } from "react";
 
 /**
  * Dashboard home — redirige según rol:
- *   admin     → /candidatos        (gestión de campañas)
- *   cualquier otro → /candidatos/[slug]/tierra  (mapa de su campaña activa)
+ *   admin      → /candidatos       (gestión de campañas)
+ *   candidato  → /equipo           (gestión de equipo de su campaña)
+ *   consultor  → /candidatos/[slug]/tierra  (mapa de la campaña activa)
+ *   otros      → /equipo           (vista de equipo)
  *
  * Muestra un spinner mínimo mientras resuelve auth + campaña activa.
  */
@@ -24,17 +26,26 @@ export default function DashboardHomePage() {
       return;
     }
 
-    // Para cualquier otro rol (candidato, consultor, brigadista, etc.)
-    // usar la campaña activa o la primera disponible
-    const campaign =
-      campaigns.find((c) => c.id === activeCampaignId) ?? campaigns[0];
-
-    if (campaign?.slug) {
-      router.replace(`/candidatos/${campaign.slug}/tierra`);
-    } else {
-      // Sin campaña asignada todavía — no redirigir en loop
-      router.replace("/settings");
+    // Candidato/jefe_campana → equipo (gestión de su equipo de campo)
+    if (user.role === "candidato" || user.role === "jefe_campana" || user.role === "supervisor") {
+      router.replace("/equipo");
+      return;
     }
+
+    // Consultor → mapa de territorio de la campaña activa
+    if (user.role === "consultor") {
+      const campaign =
+        campaigns.find((c) => c.id === activeCampaignId) ?? campaigns[0];
+      if (campaign?.slug) {
+        router.replace(`/candidatos/${campaign.slug}/tierra`);
+      } else {
+        router.replace("/settings");
+      }
+      return;
+    }
+
+    // Otros roles (brigadista, agente, etc.) → equipo
+    router.replace("/equipo");
   }, [isLoading, user, campaigns, activeCampaignId, router]);
 
   // Spinner mientras resuelve

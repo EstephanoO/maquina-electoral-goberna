@@ -13,6 +13,10 @@ import {
   CitiesHeatmap,
   CitiesRanking,
   DailyChart,
+  EventsFunnel,
+  PagesDetailedTable,
+  SourceQuality,
+  InsightsPanel,
   type GA4Data,
 } from "./_components";
 
@@ -55,10 +59,16 @@ export default function DigitalPage() {
     async function fetchAnalytics() {
       try {
         const res = await api.get<AnalyticsResponse>(`/api/analytics/by-slug/${slug}`);
-        
+
         if (res.ok && res.data) {
           setCampaign(res.data.campaign);
-          setGA4Data(res.data.analytics);
+          const analytics = res.data.analytics;
+          setGA4Data({
+            ...analytics,
+            pagesDetailed: analytics.pagesDetailed || [],
+            sessionSources: analytics.sessionSources || [],
+            events: analytics.events || [],
+          });
           setError(null);
         } else {
           const statsRes = await api.get<{ ok: boolean; campaign: CampaignInfo }>(`/api/campaigns/${slug}/stats`);
@@ -122,7 +132,7 @@ export default function DigitalPage() {
           </div>
           <div style={S.emptyTitle}>Sin datos de Google Analytics</div>
           <div style={S.emptyMessage}>Este candidato aun no tiene datos de GA4 configurados.</div>
-          <div style={S.emptyHint}>Sube el informe panoramico de GA4 para visualizar metricas digitales.</div>
+          <div style={S.emptyHint}>Sube los reportes CSV de GA4 desde la tarjeta del candidato.</div>
         </div>
       </div>
     );
@@ -140,20 +150,36 @@ export default function DigitalPage() {
     );
   }
 
+  const hasEvents = ga4Data.events.length > 0;
+  const hasPagesDetailed = ga4Data.pagesDetailed.length > 0;
+
   /* ═══════════════════════════════════════════════════════════════
-     MAIN LAYOUT
+     UNIFIED DASHBOARD — Single scrollable view
      ─────────────────────────────────────────────────────────────
      Header
-     KPIs (4 cards row)
-     ┌──────────────────┐  ┌──────────────────────────────────┐
-     │  Cities Ranking  │  │        HEATMAP (hero, tall)      │
-     │  (table, 42%)    │  │        Peru map (58%)            │
-     └──────────────────┘  └──────────────────────────────────┘
-     ┌──────────────────┐  ┌──────────────────┐
-     │   Traffic Sources│  │   Pages Table    │
-     ├──────────────────┤  └──────────────────┘
-     │   Daily Chart    │
-     └──────────────────┘
+     KPIs (4 cards)
+     ┌────────────────────┬────────────────────────────────────┐
+     │  Cities Ranking    │        HEATMAP (Peru map)          │
+     │  (42%)             │        (58%)                       │
+     └────────────────────┴────────────────────────────────────┘
+     SECCION: Adquisicion
+     ┌──────────────────────┬──────────────────────┐
+     │  Source Quality      │  Traffic Sources      │
+     │  (calidad canal)     │  (donut)             │
+     └──────────────────────┴──────────────────────┘
+     SECCION: Contenido
+     ┌──────────────────────┬──────────────────────┐
+     │  Pages Detailed      │  Pages Table         │
+     │  (URLs engagement)   │  (titulos bounce)    │
+     └──────────────────────┴──────────────────────┘
+     SECCION: Eventos & Actividad
+     ┌──────────────────────┬──────────────────────┐
+     │  Events Funnel       │  Daily Chart         │
+     └──────────────────────┴──────────────────────┘
+     SECCION: Insights
+     ┌────────────────────────────────────────────────┐
+     │  Insights Panel (full width)                   │
+     └────────────────────────────────────────────────┘
      ═══════════════════════════════════════════════════════════ */
 
   return (
@@ -166,12 +192,13 @@ export default function DigitalPage() {
       />
 
       <div style={S.content}>
-        {/* KPIs */}
+        {/* ── BLOQUE 1: KPIs ─────────────────────────────────────── */}
         <section style={S.section}>
           <KpiCards overview={ga4Data.overview} primaryColor={pc} secondaryColor={sc} />
         </section>
 
-        {/* HERO: Cities Ranking (left) + Heatmap (right) */}
+        {/* ── BLOQUE 2: Geografia ────────────────────────────────── */}
+        <SectionLabel label="Mapa Geografico" />
         <section style={S.heroGrid}>
           <div style={S.heroLeft}>
             <CitiesRanking
@@ -192,20 +219,70 @@ export default function DigitalPage() {
           </div>
         </section>
 
-        {/* Bottom grid: 2 columns */}
+        {/* ── BLOQUE 3: Adquisicion ──────────────────────────────── */}
+        <SectionLabel label="Adquisicion por Canal" />
         <div style={S.grid}>
-          {/* Left: Sources + Daily */}
+          <div style={S.column}>
+            <SourceQuality
+              sources={ga4Data.sources}
+              sessionSources={ga4Data.sessionSources}
+              primaryColor={pc}
+            />
+          </div>
           <div style={S.column}>
             <TrafficSources sources={ga4Data.sources} primaryColor={pc} />
-            <DailyChart dailyUsers={ga4Data.dailyUsers} primaryColor={pc} secondaryColor={sc} />
-          </div>
-
-          {/* Right: Pages */}
-          <div style={S.column}>
-            <PagesTable pages={ga4Data.pages} primaryColor={pc} />
           </div>
         </div>
+
+        {/* ── BLOQUE 4: Contenido ────────────────────────────────── */}
+        <SectionLabel label="Performance por Pagina" />
+        <div style={S.grid}>
+          <div style={S.column}>
+            {hasPagesDetailed ? (
+              <PagesDetailedTable pages={ga4Data.pagesDetailed} primaryColor={pc} />
+            ) : (
+              <PagesTable pages={ga4Data.pages} primaryColor={pc} />
+            )}
+          </div>
+          <div style={S.column}>
+            {hasPagesDetailed && (
+              <PagesTable pages={ga4Data.pages} primaryColor={pc} />
+            )}
+            {!hasPagesDetailed && (
+              <DailyChart dailyUsers={ga4Data.dailyUsers} primaryColor={pc} secondaryColor={sc} />
+            )}
+          </div>
+        </div>
+
+        {/* ── BLOQUE 5: Eventos & Actividad ──────────────────────── */}
+        <SectionLabel label="Eventos y Actividad" />
+        <div style={S.grid}>
+          <div style={S.column}>
+            <EventsFunnel events={ga4Data.events} primaryColor={pc} />
+          </div>
+          <div style={S.column}>
+            <DailyChart dailyUsers={ga4Data.dailyUsers} primaryColor={pc} secondaryColor={sc} />
+          </div>
+        </div>
+
+        {/* ── BLOQUE 6: Insights ─────────────────────────────────── */}
+        <SectionLabel label="Insights Accionables" />
+        <section style={S.section}>
+          <InsightsPanel data={ga4Data} primaryColor={pc} />
+        </section>
       </div>
+    </div>
+  );
+}
+
+/* ========== Section Label ========== */
+
+function SectionLabel({ label }: { label: string }) {
+  return (
+    <div style={S.sectionLabel}>
+      <div style={S.sectionLine} />
+      <span style={S.sectionText}>{label}</span>
+      <div style={S.sectionLine} />
     </div>
   );
 }
@@ -251,6 +328,26 @@ const S: Record<string, React.CSSProperties> = {
     backgroundColor: "#f8fafc",
   },
   section: { marginBottom: 24 },
+  sectionLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: 16,
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  sectionLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "#e2e8f0",
+  },
+  sectionText: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#94a3b8",
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.08em",
+    whiteSpace: "nowrap" as const,
+  },
   heroGrid: {
     display: "grid",
     gridTemplateColumns: "42% 1fr",
@@ -270,6 +367,7 @@ const S: Record<string, React.CSSProperties> = {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
     gap: 24,
+    marginBottom: 24,
   },
   column: {
     display: "flex",

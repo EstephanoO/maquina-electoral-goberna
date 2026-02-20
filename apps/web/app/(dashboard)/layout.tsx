@@ -45,15 +45,14 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { icon: <DashboardIcon />, label: "Dashboard", href: "/", roles: ["admin", "candidato", "consultor"], section: "main" },
-  { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin" },
   { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["admin", "candidato"], section: "main" },
+  { icon: <DashboardIcon />, label: "Dashboard", href: (slug) => `/candidatos/${slug}/tierra`, roles: ["admin", "candidato", "consultor"], section: "main" },
+  { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin" },
   { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin"], section: "main" },
   { icon: <CMSIcon />, label: "CMS", href: "/cms", roles: ["admin", "candidato", "consultor"], section: "main" },
   // Metricas CMS: admin accede por ruta global; candidato/consultor acceden via /candidatos/[slug]/cms-metrics desde el dashboard
   { icon: <CmsMetricsIcon />, label: "Metricas CMS", href: "/cms-metrics", roles: ["admin"], section: "main" },
   // Consultor: acceso directo a dashboards de la campaña activa via sidebar
-  { icon: <MapIcon />, label: "Territorio", href: (slug) => `/candidatos/${slug}/tierra`, roles: ["consultor"], section: "main" },
   { icon: <DigitalIcon />, label: "Analytics", href: (slug) => `/candidatos/${slug}/analytics`, roles: ["consultor"], section: "main" },
   { icon: <CmsMetricsIcon />, label: "Digital", href: (slug) => `/candidatos/${slug}/cms-metrics`, roles: ["consultor"], section: "main" },
   // /ops exists but is hidden from nav — access via direct URL only
@@ -317,6 +316,32 @@ function LoadingScreen() {
   );
 }
 
+// ── Sidebar state persistence ───────────────────────────────────────
+
+const SIDEBAR_STORAGE_KEY = "goberna_sidebar_collapsed";
+
+function readSidebarPref(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(SIDEBAR_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeSidebarPref(collapsed: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(SIDEBAR_STORAGE_KEY, collapsed ? "1" : "0");
+  } catch { /* noop */ }
+}
+
+// ── Sidebar constants ───────────────────────────────────────────────
+
+const SIDEBAR_W_EXPANDED = 260;
+const SIDEBAR_W_COLLAPSED = 72;
+const MOBILE_BREAKPOINT = 768;
+
 // ── Dashboard shell (inner, needs AuthProvider above) ───────────────
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -324,10 +349,8 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Auto-collapse sidebar on /tierra routes (immersive map mode)
-  const isTierraRoute = pathname.includes("/tierra");
-
-  const [collapsed, setCollapsed] = useState(true);
+  // ── Sidebar state ─────────────────────────────────────────
+  const [collapsed, setCollapsed] = useState(() => readSidebarPref());
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
@@ -336,12 +359,27 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   // Derive UI role from the authenticated user's backend role
   const uiRole: UIRole = mapBackendRoleToUI(user?.role ?? "agent");
 
-  // Force collapsed on tierra
-  const effectiveCollapsed = isTierraRoute || collapsed;
+  // Immersive routes auto-collapse the sidebar (user can still toggle)
+  const isImmersiveRoute = pathname.includes("/tierra");
+
+  // The effective collapsed state: on immersive routes, default to collapsed
+  // but don't lock it — user can still expand temporarily
+  const showCollapsed = isMobile ? true : (isImmersiveRoute ? true : collapsed);
+  const showLabel = !showCollapsed || mobileOpen;
+  const sidebarWidth = showCollapsed ? SIDEBAR_W_COLLAPSED : SIDEBAR_W_EXPANDED;
+
+  // Persist preference (only for non-immersive toggling)
+  const handleToggleCollapse = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      writeSidebarPref(next);
+      return next;
+    });
+  }, []);
 
   // Track viewport width for mobile detection (avoids SSR window access)
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
+    const check = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
@@ -360,6 +398,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     if (prevPathname.current !== pathname) {
       prevPathname.current = pathname;
       setMobileOpen(false);
+      setCampaignDropdownOpen(false);
     }
   });
 
@@ -386,7 +425,51 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   if (isLoading) return <LoadingScreen />;
   if (!isAuthenticated) return <LoadingScreen />;
 
-  const sidebarWidth = isTierraRoute ? "52px" : effectiveCollapsed ? "72px" : "260px";
+  // ── Render helper for nav buttons ──
+  const renderNavButton = (item: NavItem, href: string) => {
+    const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
+    const isHovered = hoveredItem === href;
+    const showText = showLabel;
+
+    return (
+      <button
+        type="button"
+        key={href}
+        onClick={() => router.push(href)}
+        onMouseEnter={() => setHoveredItem(href)}
+        onMouseLeave={() => setHoveredItem(null)}
+        title={showText ? undefined : item.label}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          width: "100%",
+          padding: showText ? "11px 20px" : "11px 0",
+          justifyContent: showText ? "flex-start" : "center",
+          background: isActive
+            ? "rgba(255,255,255,0.12)"
+            : isHovered
+              ? "rgba(255,255,255,0.06)"
+              : "transparent",
+          border: "none",
+          borderLeft: isActive ? "3px solid var(--goberna-gold)" : "3px solid transparent",
+          color: isActive ? "var(--goberna-gold)" : isHovered ? "#ffffff" : "rgba(255,255,255,0.7)",
+          cursor: "pointer",
+          fontSize: 13,
+          fontWeight: isActive ? 600 : 500,
+          fontFamily: "inherit",
+          transition: "all 0.15s ease",
+          whiteSpace: "nowrap",
+          textAlign: "left",
+        }}
+      >
+        <span style={{ flexShrink: 0, display: "flex", alignItems: "center", width: 20, justifyContent: "center" }}>
+          {item.icon}
+        </span>
+        {showText && <span>{item.label}</span>}
+      </button>
+    );
+  };
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--color-background)" }}>
@@ -399,13 +482,14 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.5)",
+            background: "rgba(0,0,0,0.45)",
             zIndex: 998,
             transition: "opacity 0.2s ease",
             border: "none",
             cursor: "pointer",
             width: "100%",
             height: "100%",
+            backdropFilter: "blur(2px)",
           }}
         />
       )}
@@ -417,16 +501,15 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           top: 0,
           left: 0,
           bottom: 0,
-          width: mobileOpen ? "260px" : isTierraRoute ? "52px" : sidebarWidth,
+          width: mobileOpen ? SIDEBAR_W_EXPANDED : sidebarWidth,
           background: "var(--goberna-blue-900)",
           color: "#ffffff",
-          display: "flex",
+          display: isMobile && !mobileOpen ? "none" : "flex",
           flexDirection: "column",
-          transition: "width 0.25s cubic-bezier(0.4,0,0.2,1), transform 0.25s cubic-bezier(0.4,0,0.2,1)",
+          transition: "width 0.2s cubic-bezier(0.4,0,0.2,1)",
           zIndex: 999,
-          boxShadow: "2px 0 12px rgba(0,0,0,0.15)",
+          boxShadow: mobileOpen ? "4px 0 24px rgba(0,0,0,0.25)" : "2px 0 8px rgba(0,0,0,0.1)",
           overflow: "hidden",
-          transform: isMobile && !mobileOpen ? "translateX(-100%)" : "translateX(0)",
         }}
       >
         {/* Logo area */}
@@ -434,27 +517,27 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: effectiveCollapsed && !mobileOpen ? "0px" : "12px",
-            padding: effectiveCollapsed && !mobileOpen ? "20px 0" : "20px 20px",
-            justifyContent: effectiveCollapsed && !mobileOpen ? "center" : "flex-start",
+            gap: showLabel ? 12 : 0,
+            padding: showLabel ? "16px 20px" : "16px 0",
+            justifyContent: showLabel ? "flex-start" : "center",
             borderBottom: "1px solid rgba(255,255,255,0.08)",
-            minHeight: "72px",
+            minHeight: 64,
             flexShrink: 0,
           }}
         >
           <Image
             src="/isotipo(2).jpg"
             alt="GOBERNA"
-            width={36}
-            height={36}
-            style={{ borderRadius: "6px", flexShrink: 0 }}
+            width={32}
+            height={32}
+            style={{ borderRadius: 6, flexShrink: 0 }}
           />
-          {(!effectiveCollapsed || mobileOpen) && (
+          {showLabel && (
             <span
               style={{
                 fontWeight: 800,
-                fontSize: "18px",
-                letterSpacing: "3px",
+                fontSize: 16,
+                letterSpacing: 3,
                 color: "var(--goberna-gold)",
                 whiteSpace: "nowrap",
                 fontFamily: "var(--font-montserrat), system-ui, sans-serif",
@@ -471,14 +554,16 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
               onClick={() => setMobileOpen(false)}
               style={{
                 marginLeft: "auto",
-                background: "none",
+                background: "rgba(255,255,255,0.08)",
                 border: "none",
-                color: "rgba(255,255,255,0.6)",
+                borderRadius: 6,
+                color: "rgba(255,255,255,0.7)",
                 cursor: "pointer",
-                padding: "4px",
+                padding: 6,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                transition: "background 0.15s ease",
               }}
               aria-label="Cerrar menu"
             >
@@ -493,419 +578,320 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             flex: 1,
             overflowY: "auto",
             overflowX: "hidden",
-            padding: "12px 0",
+            padding: "8px 0",
           }}
         >
-          {mainNav.map((item) => {
-            const href = resolveHref(item.href);
-            const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
-            const isHovered = hoveredItem === href;
-            const showLabel = !effectiveCollapsed || mobileOpen;
+          {mainNav.map((item) => renderNavButton(item, resolveHref(item.href)))}
 
-            return (
-              <button
-                type="button"
-                key={href}
-                onClick={() => router.push(href)}
-                onMouseEnter={() => setHoveredItem(href)}
-                onMouseLeave={() => setHoveredItem(null)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "12px",
-                  width: "100%",
-                  padding: showLabel ? "12px 20px" : "12px 0",
-                  justifyContent: showLabel ? "flex-start" : "center",
-                  background: isActive
-                    ? "rgba(255,255,255,0.1)"
-                    : isHovered
-                      ? "rgba(255,255,255,0.05)"
-                      : "transparent",
-                  border: "none",
-                  borderLeft: isActive ? "3px solid var(--goberna-gold)" : "3px solid transparent",
-                  color: isActive ? "var(--goberna-gold)" : isHovered ? "#ffffff" : "rgba(255,255,255,0.7)",
-                  cursor: "pointer",
-                  fontSize: "14px",
-                  fontWeight: isActive ? 600 : 500,
-                  fontFamily: "inherit",
-                  transition: "all 0.15s ease",
-                  whiteSpace: "nowrap",
-                  textAlign: "left",
-                }}
-              >
-                <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
-                  {item.icon}
-                </span>
-                {showLabel && <span>{item.label}</span>}
-              </button>
-            );
-          })}
-
-          {/* Section separator */}
+          {/* Admin section separator */}
           {adminNav.length > 0 && (
             <div
               style={{
-                margin: "8px 0",
+                margin: "8px 0 4px",
                 borderTop: "1px solid rgba(255,255,255,0.08)",
-                padding: (!effectiveCollapsed || mobileOpen) ? "8px 20px 0" : "8px 0 0",
+                padding: showLabel ? "10px 20px 0" : "10px 0 0",
               }}
             >
-              {(!effectiveCollapsed || mobileOpen) && (
-                <span style={{ fontSize: "10px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1.5px", color: "rgba(255,255,255,0.35)" }}>
+              {showLabel && (
+                <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, color: "rgba(255,255,255,0.3)" }}>
                   Administracion
                 </span>
               )}
             </div>
           )}
 
-          {adminNav.map((item) => {
-            const href = resolveHref(item.href);
-            const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
-            const isHovered = hoveredItem === href;
-            const showLabel = !effectiveCollapsed || mobileOpen;
+          {adminNav.map((item) => renderNavButton(item, resolveHref(item.href)))}
+        </nav>
 
+        {/* ── Bottom section ────────────────────────────────────── */}
+        <div style={{ flexShrink: 0 }}>
+          {/* Configuracion */}
+          {(() => {
+            const settingsRoles: UIRole[] = ["admin", "candidato"];
+            if (!settingsRoles.includes(uiRole)) return null;
+            const href = "/settings";
+            const isActive = pathname === href || pathname.startsWith(href);
+            const isHovered = hoveredItem === "__settings__";
             return (
               <button
                 type="button"
-                key={href}
                 onClick={() => router.push(href)}
-                onMouseEnter={() => setHoveredItem(href)}
+                onMouseEnter={() => setHoveredItem("__settings__")}
                 onMouseLeave={() => setHoveredItem(null)}
+                title={showLabel ? undefined : "Configuracion"}
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "12px",
+                  gap: 12,
                   width: "100%",
-                  padding: showLabel ? "12px 20px" : "12px 0",
+                  padding: showLabel ? "11px 20px" : "11px 0",
                   justifyContent: showLabel ? "flex-start" : "center",
                   background: isActive
-                    ? "rgba(255,255,255,0.1)"
+                    ? "rgba(255,255,255,0.12)"
                     : isHovered
-                      ? "rgba(255,255,255,0.05)"
+                      ? "rgba(255,255,255,0.06)"
                       : "transparent",
                   border: "none",
+                  borderTop: "1px solid rgba(255,255,255,0.08)",
                   borderLeft: isActive ? "3px solid var(--goberna-gold)" : "3px solid transparent",
-                  color: isActive ? "var(--goberna-gold)" : isHovered ? "#ffffff" : "rgba(255,255,255,0.7)",
+                  color: isActive ? "var(--goberna-gold)" : isHovered ? "#ffffff" : "rgba(255,255,255,0.5)",
                   cursor: "pointer",
-                  fontSize: "14px",
-                  fontWeight: isActive ? 600 : 500,
+                  fontSize: 13,
+                  fontWeight: isActive ? 600 : 400,
                   fontFamily: "inherit",
                   transition: "all 0.15s ease",
                   whiteSpace: "nowrap",
-                  textAlign: "left",
                 }}
+                aria-label="Configuracion"
               >
-                <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
-                  {item.icon}
+                <span style={{ flexShrink: 0, display: "flex", alignItems: "center", width: 20, justifyContent: "center" }}>
+                  <SettingsIcon />
                 </span>
-                {showLabel && <span>{item.label}</span>}
+                {showLabel && <span>Configuracion</span>}
               </button>
             );
-          })}
+          })()}
 
-
-        </nav>
-
-        {/* Configuracion — fixed at bottom of sidebar */}
-        {(() => {
-          const settingsRoles: UIRole[] = ["admin", "candidato"];
-          if (!settingsRoles.includes(uiRole)) return null;
-          const href = "/settings";
-          const isActive = pathname === href || pathname.startsWith(href);
-          const isHovered = hoveredItem === "__settings__";
-          const showLabel = !effectiveCollapsed || mobileOpen;
-          return (
-            <button
-              type="button"
-              onClick={() => router.push(href)}
-              onMouseEnter={() => setHoveredItem("__settings__")}
-              onMouseLeave={() => setHoveredItem(null)}
+          {/* Campaign selector */}
+          {showLabel && campaigns.length > 1 && (
+            <div
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-                width: "100%",
-                padding: showLabel ? "12px 20px" : "12px 0",
-                justifyContent: showLabel ? "flex-start" : "center",
-                background: isActive
-                  ? "rgba(255,255,255,0.1)"
-                  : isHovered
-                    ? "rgba(255,255,255,0.05)"
-                    : "transparent",
-                border: "none",
+                padding: "10px 16px",
                 borderTop: "1px solid rgba(255,255,255,0.08)",
-                borderLeft: isActive ? "3px solid var(--goberna-gold)" : "3px solid transparent",
-                color: isActive ? "var(--goberna-gold)" : isHovered ? "#ffffff" : "rgba(255,255,255,0.5)",
-                cursor: "pointer",
-                fontSize: "13px",
-                fontWeight: isActive ? 600 : 400,
-                fontFamily: "inherit",
-                transition: "all 0.15s ease",
-                whiteSpace: "nowrap",
-                flexShrink: 0,
-              }}
-              aria-label="Configuracion"
-            >
-              <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
-                <SettingsIcon />
-              </span>
-              {showLabel && <span>Configuracion</span>}
-            </button>
-          );
-        })()}
-
-        {/* Collapse toggle (desktop only) */}
-        {!mobileOpen && (
-          <button
-            type="button"
-            onClick={() => setCollapsed((c) => !c)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "8px",
-              padding: "10px 20px",
-              background: "none",
-              border: "none",
-              borderTop: "1px solid rgba(255,255,255,0.08)",
-              color: "rgba(255,255,255,0.5)",
-              cursor: "pointer",
-              fontSize: "12px",
-              fontFamily: "inherit",
-              transition: "color 0.15s ease",
-              flexShrink: 0,
-            }}
-            aria-label={effectiveCollapsed ? "Expandir menu" : "Colapsar menu"}
-          >
-            <CollapseIcon collapsed={effectiveCollapsed} />
-            {!effectiveCollapsed && <span>Colapsar</span>}
-          </button>
-        )}
-
-        {/* Campaign selector */}
-        {(!effectiveCollapsed || mobileOpen) && campaigns.length > 1 && (
-          <div
-            style={{
-              padding: "12px 16px",
-              borderTop: "1px solid rgba(255,255,255,0.08)",
-              flexShrink: 0,
-              position: "relative",
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setCampaignDropdownOpen((o) => !o)}
-              style={{
-                width: "100%",
-                padding: "8px 12px",
-                background: "rgba(255,255,255,0.07)",
-                border: "1px solid rgba(255,255,255,0.12)",
-                borderRadius: "var(--radius-sm)",
-                color: "#ffffff",
-                fontSize: "12px",
-                fontWeight: 500,
-                fontFamily: "inherit",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                transition: "background 0.15s ease",
+                position: "relative",
               }}
             >
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {activeCampaign?.name ?? "Seleccionar campana"}
-              </span>
-              <ChevronIcon open={campaignDropdownOpen} />
-            </button>
-
-            {campaignDropdownOpen && (
-              <div
+              <button
+                type="button"
+                onClick={() => setCampaignDropdownOpen((o) => !o)}
                 style={{
-                  position: "absolute",
-                  bottom: "100%",
-                  left: "16px",
-                  right: "16px",
-                  background: "var(--goberna-blue-800)",
-                  borderRadius: "var(--radius-sm)",
+                  width: "100%",
+                  padding: "8px 12px",
+                  background: "rgba(255,255,255,0.07)",
                   border: "1px solid rgba(255,255,255,0.12)",
-                  boxShadow: "0 -4px 12px rgba(0,0,0,0.3)",
-                  maxHeight: "200px",
-                  overflowY: "auto",
-                  zIndex: 10,
+                  borderRadius: "var(--radius-sm)",
+                  color: "#ffffff",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  fontFamily: "inherit",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  transition: "background 0.15s ease",
                 }}
               >
-                {campaigns.map((c) => (
-                  <button
-                    type="button"
-                    key={c.id}
-                    onClick={() => {
-                      setActiveCampaign(c.id);
-                      setCampaignDropdownOpen(false);
-                    }}
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {activeCampaign?.name ?? "Seleccionar campana"}
+                </span>
+                <ChevronIcon open={campaignDropdownOpen} />
+              </button>
+
+              {campaignDropdownOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: "100%",
+                    left: 16,
+                    right: 16,
+                    background: "var(--goberna-blue-800)",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    boxShadow: "0 -4px 12px rgba(0,0,0,0.3)",
+                    maxHeight: 200,
+                    overflowY: "auto",
+                    zIndex: 10,
+                  }}
+                >
+                  {campaigns.map((c) => (
+                    <button
+                      type="button"
+                      key={c.id}
+                      onClick={() => {
+                        setActiveCampaign(c.id);
+                        setCampaignDropdownOpen(false);
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        background: c.id === activeCampaignId ? "rgba(255,200,0,0.1)" : "transparent",
+                        border: "none",
+                        color: c.id === activeCampaignId ? "var(--goberna-gold)" : "rgba(255,255,255,0.8)",
+                        fontSize: 12,
+                        fontWeight: c.id === activeCampaignId ? 600 : 400,
+                        fontFamily: "inherit",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        transition: "background 0.1s ease",
+                      }}
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Collapse toggle (desktop only, not shown on mobile) */}
+          {!isMobile && (
+            <button
+              type="button"
+              onClick={handleToggleCollapse}
+              title={showCollapsed ? "Expandir menu" : "Colapsar menu"}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                padding: "10px 20px",
+                background: "none",
+                border: "none",
+                borderTop: "1px solid rgba(255,255,255,0.08)",
+                color: "rgba(255,255,255,0.4)",
+                cursor: "pointer",
+                fontSize: 12,
+                fontFamily: "inherit",
+                transition: "color 0.15s ease",
+                width: "100%",
+              }}
+              aria-label={showCollapsed ? "Expandir menu" : "Colapsar menu"}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.7)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; }}
+            >
+              <CollapseIcon collapsed={showCollapsed} />
+              {!showCollapsed && <span>Colapsar</span>}
+            </button>
+          )}
+
+          {/* User info */}
+          <div
+            style={{
+              padding: showLabel ? "12px 20px" : "12px 0",
+              borderTop: "1px solid rgba(255,255,255,0.08)",
+              display: "flex",
+              alignItems: showLabel ? "flex-start" : "center",
+              flexDirection: showLabel ? "row" : "column",
+              gap: 10,
+              justifyContent: showLabel ? "flex-start" : "center",
+            }}
+          >
+            {/* Avatar circle */}
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: "50%",
+                background: "var(--goberna-blue-700)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 13,
+                fontWeight: 700,
+                color: "var(--goberna-gold)",
+                flexShrink: 0,
+              }}
+            >
+              {user?.full_name?.charAt(0)?.toUpperCase() ?? "?"}
+            </div>
+
+            {showLabel && (
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "#ffffff",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {user?.full_name ?? "Usuario"}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                  <span
                     style={{
-                      width: "100%",
-                      padding: "10px 12px",
-                      background: c.id === activeCampaignId ? "rgba(255,200,0,0.1)" : "transparent",
-                      border: "none",
-                      color: c.id === activeCampaignId ? "var(--goberna-gold)" : "rgba(255,255,255,0.8)",
-                      fontSize: "12px",
-                      fontWeight: c.id === activeCampaignId ? 600 : 400,
-                      fontFamily: "inherit",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      transition: "background 0.1s ease",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      letterSpacing: 1,
+                      padding: "2px 6px",
+                      borderRadius: 3,
+                      background: isAdmin ? "var(--goberna-gold)" : "rgba(255,255,255,0.15)",
+                      color: isAdmin ? "var(--goberna-blue-950)" : "rgba(255,255,255,0.7)",
                     }}
                   >
-                    {c.name}
+                    {uiRole}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "rgba(255,255,255,0.4)",
+                      cursor: "pointer",
+                      padding: 2,
+                      display: "flex",
+                      alignItems: "center",
+                      transition: "color 0.15s ease",
+                    }}
+                    title="Cerrar sesion"
+                    aria-label="Cerrar sesion"
+                    onMouseEnter={(e) => { e.currentTarget.style.color = "#ffffff"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; }}
+                  >
+                    <LogoutIcon />
                   </button>
-                ))}
+                </div>
               </div>
             )}
           </div>
-        )}
-
-        {/* User info */}
-        <div
-          style={{
-            padding: effectiveCollapsed && !mobileOpen ? "16px 0" : "16px 20px",
-            borderTop: "1px solid rgba(255,255,255,0.08)",
-            display: "flex",
-            alignItems: effectiveCollapsed && !mobileOpen ? "center" : "flex-start",
-            flexDirection: effectiveCollapsed && !mobileOpen ? "column" : "row",
-            gap: "12px",
-            flexShrink: 0,
-            justifyContent: effectiveCollapsed && !mobileOpen ? "center" : "flex-start",
-          }}
-        >
-          {/* Avatar circle */}
-          <div
-            style={{
-              width: "32px",
-              height: "32px",
-              borderRadius: "50%",
-              background: "var(--goberna-blue-700)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "13px",
-              fontWeight: 700,
-              color: "var(--goberna-gold)",
-              flexShrink: 0,
-            }}
-          >
-            {user?.full_name?.charAt(0)?.toUpperCase() ?? "?"}
-          </div>
-
-          {(!effectiveCollapsed || mobileOpen) && (
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div
-                style={{
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  color: "#ffffff",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {user?.full_name ?? "Usuario"}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px" }}>
-                <span
-                  style={{
-                    fontSize: "10px",
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "1px",
-                    padding: "2px 6px",
-                    borderRadius: "3px",
-                    background: isAdmin ? "var(--goberna-gold)" : "rgba(255,255,255,0.15)",
-                    color: isAdmin ? "var(--goberna-blue-950)" : "rgba(255,255,255,0.7)",
-                  }}
-                >
-                  {uiRole}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "rgba(255,255,255,0.5)",
-                    cursor: "pointer",
-                    padding: "2px",
-                    display: "flex",
-                    alignItems: "center",
-                    transition: "color 0.15s ease",
-                  }}
-                  title="Cerrar sesion"
-                  aria-label="Cerrar sesion"
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "#ffffff"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.5)"; }}
-                >
-                  <LogoutIcon />
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </aside>
 
-      {/* ── Mobile hamburger ───────────────────────────────────── */}
-      <button
-        type="button"
-        onClick={() => setMobileOpen(true)}
-        style={{
-          position: "fixed",
-          top: "12px",
-          left: "12px",
-          zIndex: 997,
-          width: "44px",
-          height: "44px",
-          borderRadius: "var(--radius-md)",
-          background: "var(--goberna-blue-900)",
-          border: "none",
-          color: "#ffffff",
-          cursor: "pointer",
-          display: "none",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "var(--shadow-md)",
-        }}
-        className="mobile-hamburger"
-        aria-label="Abrir menu"
-      >
-        <MenuIcon />
-      </button>
+      {/* ── Mobile hamburger (only visible on mobile) ──────────── */}
+      {isMobile && !mobileOpen && (
+        <button
+          type="button"
+          onClick={() => setMobileOpen(true)}
+          style={{
+            position: "fixed",
+            top: 12,
+            left: 12,
+            zIndex: 997,
+            width: 44,
+            height: 44,
+            borderRadius: "var(--radius-md)",
+            background: "var(--goberna-blue-900)",
+            border: "none",
+            color: "#ffffff",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "var(--shadow-md)",
+          }}
+          aria-label="Abrir menu"
+        >
+          <MenuIcon />
+        </button>
+      )}
 
       {/* ── Main content ───────────────────────────────────────── */}
       <main
         style={{
           flex: 1,
-          marginLeft: sidebarWidth,
-          padding: isTierraRoute ? "0" : "24px",
-          transition: "margin-left 0.25s cubic-bezier(0.4,0,0.2,1)",
+          marginLeft: isMobile ? 0 : sidebarWidth,
+          padding: isImmersiveRoute ? 0 : isMobile ? "68px 16px 16px" : 24,
+          transition: "margin-left 0.2s cubic-bezier(0.4,0,0.2,1)",
           minHeight: "100vh",
-          overflow: isTierraRoute ? "hidden" : undefined,
+          overflow: isImmersiveRoute ? "hidden" : undefined,
         }}
-        className="dashboard-main"
       >
         {children}
       </main>
-
-      {/* ── Responsive styles ──────────────────────────────────── */}
-      <style>{`
-        @media (max-width: 767px) {
-          .mobile-hamburger {
-            display: flex !important;
-          }
-          .dashboard-main {
-            margin-left: 0 !important;
-            padding: 16px !important;
-            padding-top: 68px !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }
