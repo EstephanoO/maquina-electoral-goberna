@@ -642,8 +642,14 @@ export async function getTimeMetrics(
   campaignIds: string[] | null,
 ): Promise<CmsTimeMetrics> {
   const hasFilter = campaignIds !== null && campaignIds.length > 0;
-  const whereClause = hasFilter ? `WHERE campaign_id = ANY($1)` : `WHERE 1=1`;
+  const campaignFilter = hasFilter ? `AND campaign_id = ANY($1)` : "";
   const params = hasFilter ? [campaignIds] : [];
+
+  // Two separate queries:
+  //   1. claim→hablado metrics (rows where both timestamps exist and are ordered)
+  //   2. hablado→respondieron metrics (rows where all three timestamps exist)
+  // PERCENTILE_CONT does not support FILTER clause in PostgreSQL < 16,
+  // so we pre-filter via WHERE in subqueries instead.
 
   const { rows } = await pool.query<{
     avg_claim_to_hablado: string | null;
@@ -654,29 +660,60 @@ export async function getTimeMetrics(
     total_resp: string;
   }>(
     `SELECT
-       ROUND(AVG(EXTRACT(EPOCH FROM (cms_hablado_at - cms_claimed_at)) / 60)::numeric, 1)::text
-         AS avg_claim_to_hablado,
-       ROUND(AVG(EXTRACT(EPOCH FROM (cms_respondieron_at - cms_hablado_at)) / 60)::numeric, 1)::text
-         FILTER (WHERE cms_respondieron_at IS NOT NULL)
-         AS avg_hablado_to_resp,
-       ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (
-         ORDER BY EXTRACT(EPOCH FROM (cms_hablado_at - cms_claimed_at)) / 60
-       )::numeric, 1)::text
-         AS med_claim_to_hablado,
-       ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (
-         ORDER BY EXTRACT(EPOCH FROM (cms_respondieron_at - cms_hablado_at)) / 60
-       )::numeric, 1)::text
-         FILTER (WHERE cms_respondieron_at IS NOT NULL)
-         AS med_hablado_to_resp,
-       COUNT(*) FILTER (WHERE cms_hablado_at IS NOT NULL AND cms_claimed_at IS NOT NULL)::text
-         AS total_hablado,
-       COUNT(*) FILTER (WHERE cms_respondieron_at IS NOT NULL AND cms_hablado_at IS NOT NULL)::text
-         AS total_resp
-     FROM form_submissions
-     ${whereClause}
-       AND cms_hablado_at IS NOT NULL
-       AND cms_claimed_at IS NOT NULL
-       AND cms_hablado_at > cms_claimed_at`,
+       -- avg claim→hablado (minutes)
+       (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (cms_hablado_at - cms_claimed_at)) / 60)::numeric, 1)::text
+        FROM form_submissions
+        WHERE cms_hablado_at IS NOT NULL
+          AND cms_claimed_at IS NOT NULL
+          AND cms_hablado_at > cms_claimed_at
+          ${campaignFilter}
+       ) AS avg_claim_to_hablado,
+
+       -- avg hablado→respondieron (minutes)
+       (SELECT ROUND(AVG(EXTRACT(EPOCH FROM (cms_respondieron_at - cms_hablado_at)) / 60)::numeric, 1)::text
+        FROM form_submissions
+        WHERE cms_respondieron_at IS NOT NULL
+          AND cms_hablado_at IS NOT NULL
+          AND cms_respondieron_at > cms_hablado_at
+          ${campaignFilter}
+       ) AS avg_hablado_to_resp,
+
+       -- median claim→hablado (PERCENTILE_CONT, pre-filtered subquery)
+       (SELECT ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (cms_hablado_at - cms_claimed_at)) / 60
+        )::numeric, 1)::text
+        FROM form_submissions
+        WHERE cms_hablado_at IS NOT NULL
+          AND cms_claimed_at IS NOT NULL
+          AND cms_hablado_at > cms_claimed_at
+          ${campaignFilter}
+       ) AS med_claim_to_hablado,
+
+       -- median hablado→respondieron (pre-filtered subquery)
+       (SELECT ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (cms_respondieron_at - cms_hablado_at)) / 60
+        )::numeric, 1)::text
+        FROM form_submissions
+        WHERE cms_respondieron_at IS NOT NULL
+          AND cms_hablado_at IS NOT NULL
+          AND cms_respondieron_at > cms_hablado_at
+          ${campaignFilter}
+       ) AS med_hablado_to_resp,
+
+       -- counts
+       (SELECT COUNT(*)::text
+        FROM form_submissions
+        WHERE cms_hablado_at IS NOT NULL
+          AND cms_claimed_at IS NOT NULL
+          ${campaignFilter}
+       ) AS total_hablado,
+
+       (SELECT COUNT(*)::text
+        FROM form_submissions
+        WHERE cms_respondieron_at IS NOT NULL
+          AND cms_hablado_at IS NOT NULL
+          ${campaignFilter}
+       ) AS total_resp`,
     params,
   );
 
