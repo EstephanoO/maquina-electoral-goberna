@@ -26,8 +26,9 @@ import type { TierraMapHandle, TierraMapProps, DrillLevel } from "./types";
 import { INITIAL_DRILL } from "./types";
 import {
   STATUS_COLORS, CLUSTER_COLORS, CLUSTER_STEPS, CLUSTER_SIZES, DATA_POINT,
-  ZONE_FILL, ZONE_HOVER, ZONE_LINE, ZONE_LINE_GHOST, MASK_FILL, HOVER_LAYERS,
-  PRIORITY_FILL, PRIORITY_LINE, SECTOR_FILL, SECTOR_LINE,
+  ZONE_FILL, ZONE_HOVER, SPOT_FILL, SPOT_HOVER, ZONE_LINE,
+  HOVER_LAYERS, PRIORITY_FILL, PRIORITY_LINE, SECTOR_FILL, SECTOR_LINE,
+  DIM_LAYER_ID, DIM_OPACITY,
   PERU_VIEW, PERU_BOUNDS, MAP_STYLE, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
 } from "./constants";
 import { getBoundsFromFeature } from "./utils";
@@ -37,6 +38,66 @@ import { useDrillFilters } from "./hooks/use-drill-filters";
 import { useAgentsSource, useFormSources } from "./hooks/use-map-sources";
 import { useAutoFit } from "./hooks/use-auto-fit";
 import { useZoneTooltip } from "./hooks/use-zone-tooltip";
+
+/* ========== Static paint objects (hoisted — zero allocation per render) ========== */
+/* eslint-disable @typescript-eslint/no-explicit-any -- MapLibre expression types are too narrow for hoisted constants */
+
+const PRIORITY_DEP_FILL_PAINT = { "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 };
+const PRIORITY_DEP_LINE_PAINT = { "line-color": PRIORITY_LINE, "line-width": 0.8, "line-opacity": 0.4 };
+const PRIORITY_PROV_FILL_PAINT = { "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 };
+const PRIORITY_PROV_LINE_PAINT = { "line-color": PRIORITY_LINE, "line-width": 0.6, "line-opacity": 0.4 };
+const PRIORITY_DIST_FILL_PAINT = { "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 };
+const PRIORITY_DIST_LINE_PAINT = { "line-color": PRIORITY_LINE, "line-width": 0.5, "line-opacity": 0.4 };
+const SECTOR_FILL_PAINT = { "fill-color": SECTOR_FILL, "fill-opacity": 0.8 };
+const SECTOR_LINE_PAINT = { "line-color": SECTOR_LINE, "line-width": 0.5, "line-opacity": 0.4 };
+
+const HEATMAP_PAINT: any = {
+  "heatmap-weight": 1,
+  "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 5, 1, 12, 3],
+  "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 5, 15, 12, 25],
+  "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.6, 14, 0.25],
+  "heatmap-color": [
+    "interpolate", ["linear"], ["heatmap-density"],
+    0, "rgba(0,0,0,0)", 0.2, "rgba(30,58,95,0.35)", 0.4, "rgba(13,148,136,0.5)",
+    0.6, "rgba(217,119,6,0.6)", 0.8, "rgba(180,83,9,0.7)", 1, "rgba(127,29,29,0.8)",
+  ],
+};
+
+const CLUSTER_RING_PAINT: any = {
+  "circle-color": ["step", ["get", "point_count"], CLUSTER_COLORS[0], CLUSTER_STEPS[0], CLUSTER_COLORS[1], CLUSTER_STEPS[1], CLUSTER_COLORS[2], CLUSTER_STEPS[2], CLUSTER_COLORS[3], CLUSTER_STEPS[3], CLUSTER_COLORS[4]],
+  "circle-radius": ["step", ["get", "point_count"], CLUSTER_SIZES[0] + 3, CLUSTER_STEPS[0], CLUSTER_SIZES[1] + 3, CLUSTER_STEPS[1], CLUSTER_SIZES[2] + 3, CLUSTER_STEPS[2], CLUSTER_SIZES[3] + 3, CLUSTER_STEPS[3], CLUSTER_SIZES[4] + 3],
+  "circle-opacity": 0.1,
+};
+
+const CLUSTER_PAINT: any = {
+  "circle-color": ["step", ["get", "point_count"], CLUSTER_COLORS[0], CLUSTER_STEPS[0], CLUSTER_COLORS[1], CLUSTER_STEPS[1], CLUSTER_COLORS[2], CLUSTER_STEPS[2], CLUSTER_COLORS[3], CLUSTER_STEPS[3], CLUSTER_COLORS[4]],
+  "circle-radius": ["step", ["get", "point_count"], CLUSTER_SIZES[0], CLUSTER_STEPS[0], CLUSTER_SIZES[1], CLUSTER_STEPS[1], CLUSTER_SIZES[2], CLUSTER_STEPS[2], CLUSTER_SIZES[3], CLUSTER_STEPS[3], CLUSTER_SIZES[4]],
+  "circle-stroke-width": 2, "circle-stroke-color": "#ffffff", "circle-stroke-opacity": 0.7,
+};
+
+const CLUSTER_COUNT_LAYOUT: any = {
+  "text-field": "{point_count_abbreviated}",
+  "text-size": ["step", ["get", "point_count"], 9, CLUSTER_STEPS[0], 10, CLUSTER_STEPS[1], 11, CLUSTER_STEPS[2], 12, CLUSTER_STEPS[3], 14],
+  "text-font": ["Open Sans Bold"], "text-allow-overlap": true,
+};
+
+const FORM_POINTS_PAINT: any = {
+  "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 2.5, 10, 4, 14, 5.5, 18, 8],
+  "circle-color": DATA_POINT,
+  "circle-opacity": ["case", ["==", ["get", "is_filtered"], 1], 0.8, 0.2],
+  "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 5, 1, 14, 2],
+  "circle-stroke-color": "#ffffff", "circle-stroke-opacity": 0.85,
+};
+
+const CLUSTER_FILTER: any = ["has", "point_count"];
+const NOT_CLUSTER_FILTER: any = ["!", ["has", "point_count"]];
+const AGENTS_LABEL_LAYOUT: any = { "text-field": ["get", "name"], "text-size": 11, "text-offset": [0, 1.8], "text-allow-overlap": false, "text-font": ["Open Sans Bold"] };
+const AGENTS_LABEL_PAINT = { "text-color": "#1e293b", "text-halo-color": "rgba(255,255,255,0.92)", "text-halo-width": 1.5 };
+const AGENTS_COUNT_LAYOUT: any = { "text-field": ["to-string", ["get", "forms_count"]], "text-size": 9, "text-allow-overlap": true, "text-font": ["Open Sans Bold"] };
+const AGENTS_SELECTED_FILTER: any = ["==", ["get", "is_selected"], 1];
+const AGENTS_CONNECTED_FILTER: any = ["==", ["get", "status"], "connected"];
+
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 /* ========== Component ========== */
 
@@ -66,6 +127,22 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
 
   useAutoFit(mapRef, drillState, skipNextFitRef);
   const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef);
+
+  // ─── Dim overlay — imperatively toggle opacity on drill level change ───
+  // Zero React re-renders: we talk directly to the MapLibre GL instance.
+  const prevDimLevel = useRef(0);
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    const shouldDim = drillState.level > 0;
+    const wasDimmed = prevDimLevel.current > 0;
+    prevDimLevel.current = drillState.level;
+    if (shouldDim !== wasDimmed) {
+      try {
+        map.setPaintProperty(DIM_LAYER_ID, "background-opacity", shouldDim ? DIM_OPACITY : 0);
+      } catch { /* layer may not exist during first render */ }
+    }
+  }, [drillState.level]);
 
   // ─── Imperative handle ───
   useImperativeHandle(ref, () => ({
@@ -408,123 +485,111 @@ export const TierraMap = forwardRef<TierraMapHandle, TierraMapProps>(function Ti
             administrative boundaries. This reduces unique tile requests by ~75% at deep zoom. */}
         <Source id="peru" type="vector" tiles={[tileUrl]} minzoom={0} maxzoom={12} promoteId={{ departamentos: "coddep", provincias: "codprov_full", distritos: "ubigeo" }}>
 
-          {/* DEPARTAMENTOS — tile-native masking: all deps always visible, non-selected darkened at level 1+ */}
+          {/* DEPARTAMENTOS — spotlight: level 0 = idle, level 1+ = selected lit / rest transparent */}
           <Layer id="dep-fill" type="fill" source-layer="departamentos" filter={filters.depFillFilter}
             paint={{
               "fill-color": drillState.level === 0
                 ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
                 : drillState.depCode
-                  ? ["case", ["==", ["get", "coddep"], drillState.depCode], ZONE_FILL, MASK_FILL]
+                  ? ["case",
+                      ["==", ["get", "coddep"], drillState.depCode],
+                      ["case", ["boolean", ["feature-state", "hover"], false], SPOT_HOVER, SPOT_FILL],
+                      "transparent"]
                   : ZONE_FILL,
               "fill-opacity": 1,
+              "fill-opacity-transition": { duration: 400, delay: 0 },
             }} />
           <Layer id="dep-line" type="line" source-layer="departamentos" filter={filters.depLineFilter}
-            paint={{ "line-color": drillState.level === 0 ? ZONE_LINE : ZONE_LINE_GHOST, "line-width": drillState.level === 0 ? 1.2 : 0.6, "line-opacity": drillState.level === 0 ? 0.7 : 0.3 }} />
+            paint={{
+              "line-color": drillState.level === 0 ? ZONE_LINE : "#e2e8f0",
+              "line-width": drillState.level === 0 ? 1.2 : 1,
+              "line-opacity": drillState.level === 0 ? 0.7 : 0.6,
+            }} />
 
-          {/* PROVINCIAS — tile-native masking: all provs in dep visible, non-selected darkened at level 2+ */}
+          {/* PROVINCIAS — spotlight: level 1 = selectable, level 2+ = selected lit / rest transparent */}
           <Layer id="prov-fill" type="fill" source-layer="provincias" filter={filters.provFillFilter}
             paint={{
               "fill-color": drillState.level === 1
-                ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+                ? ["case", ["boolean", ["feature-state", "hover"], false], SPOT_HOVER, SPOT_FILL]
                 : drillState.provCode
-                  ? ["case", ["==", ["get", "codprov_full"], drillState.provCode], ZONE_FILL, MASK_FILL]
-                  : ZONE_FILL,
+                  ? ["case",
+                      ["==", ["get", "codprov_full"], drillState.provCode],
+                      ["case", ["boolean", ["feature-state", "hover"], false], SPOT_HOVER, SPOT_FILL],
+                      "transparent"]
+                  : SPOT_FILL,
               "fill-opacity": 1,
+              "fill-opacity-transition": { duration: 400, delay: 0 },
             }} />
           <Layer id="prov-line" type="line" source-layer="provincias" filter={filters.provLineFilter}
-            paint={{ "line-color": drillState.level === 1 ? ZONE_LINE : ZONE_LINE_GHOST, "line-width": drillState.level === 1 ? 1 : 0.5, "line-opacity": drillState.level === 1 ? 0.7 : 0.2 }} />
+            paint={{
+              "line-color": drillState.level === 1 ? "#e2e8f0" : "#f1f5f9",
+              "line-width": drillState.level === 1 ? 1 : 0.8,
+              "line-opacity": drillState.level === 1 ? 0.7 : 0.5,
+            }} />
 
-          {/* DISTRITOS — tile-native masking: all dists in prov visible, non-selected darkened at level 3+ */}
+          {/* DISTRITOS — spotlight: level 2 = selectable, level 3+ = selected lit / rest transparent */}
           <Layer id="dist-fill" type="fill" source-layer="distritos" filter={filters.distFillFilter}
             paint={{
               "fill-color": drillState.level === 2
-                ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+                ? ["case", ["boolean", ["feature-state", "hover"], false], SPOT_HOVER, SPOT_FILL]
                 : drillState.distCode
-                  ? ["case", ["==", ["get", "ubigeo"], drillState.distCode], ZONE_FILL, MASK_FILL]
-                  : ZONE_FILL,
+                  ? ["case",
+                      ["==", ["get", "ubigeo"], drillState.distCode],
+                      ["case", ["boolean", ["feature-state", "hover"], false], SPOT_HOVER, SPOT_FILL],
+                      "transparent"]
+                  : SPOT_FILL,
               "fill-opacity": 1,
+              "fill-opacity-transition": { duration: 400, delay: 0 },
             }} />
           <Layer id="dist-line" type="line" source-layer="distritos" filter={filters.distLineFilter}
-            paint={{ "line-color": ZONE_LINE, "line-width": drillState.level >= 3 ? 1.2 : 0.8, "line-opacity": 0.6 }} />
+            paint={{
+              "line-color": "#e2e8f0",
+              "line-width": drillState.level >= 3 ? 1.2 : 0.8,
+              "line-opacity": 0.6,
+            }} />
 
           {/* PRIORITY ZONES */}
-          <Layer id="priority-dep-fill" type="fill" source-layer="priority_departamentos" filter={filters.priorityDepFilter}
-            paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 }} />
-          <Layer id="priority-dep-line" type="line" source-layer="priority_departamentos" filter={filters.priorityDepFilter}
-            paint={{ "line-color": PRIORITY_LINE, "line-width": 0.8, "line-opacity": 0.4 }} />
-          <Layer id="priority-prov-fill" type="fill" source-layer="priority_provincias" filter={filters.priorityProvFilter}
-            paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 }} />
-          <Layer id="priority-prov-line" type="line" source-layer="priority_provincias" filter={filters.priorityProvFilter}
-            paint={{ "line-color": PRIORITY_LINE, "line-width": 0.6, "line-opacity": 0.4 }} />
-          <Layer id="priority-dist-fill" type="fill" source-layer="priority_distritos" filter={filters.priorityDistFilter}
-            paint={{ "fill-color": PRIORITY_FILL, "fill-opacity": 0.8 }} />
-          <Layer id="priority-dist-line" type="line" source-layer="priority_distritos" filter={filters.priorityDistFilter}
-            paint={{ "line-color": PRIORITY_LINE, "line-width": 0.5, "line-opacity": 0.4 }} />
+          <Layer id="priority-dep-fill" type="fill" source-layer="priority_departamentos" filter={filters.priorityDepFilter} paint={PRIORITY_DEP_FILL_PAINT} />
+          <Layer id="priority-dep-line" type="line" source-layer="priority_departamentos" filter={filters.priorityDepFilter} paint={PRIORITY_DEP_LINE_PAINT} />
+          <Layer id="priority-prov-fill" type="fill" source-layer="priority_provincias" filter={filters.priorityProvFilter} paint={PRIORITY_PROV_FILL_PAINT} />
+          <Layer id="priority-prov-line" type="line" source-layer="priority_provincias" filter={filters.priorityProvFilter} paint={PRIORITY_PROV_LINE_PAINT} />
+          <Layer id="priority-dist-fill" type="fill" source-layer="priority_distritos" filter={filters.priorityDistFilter} paint={PRIORITY_DIST_FILL_PAINT} />
+          <Layer id="priority-dist-line" type="line" source-layer="priority_distritos" filter={filters.priorityDistFilter} paint={PRIORITY_DIST_LINE_PAINT} />
 
           {/* SECTORS */}
-          <Layer id="sector-fill" type="fill" source-layer="campaign_sectors" filter={filters.sectorFilter}
-            paint={{ "fill-color": SECTOR_FILL, "fill-opacity": 0.8 }} />
-          <Layer id="sector-line" type="line" source-layer="campaign_sectors" filter={filters.sectorFilter}
-            paint={{ "line-color": SECTOR_LINE, "line-width": 0.5, "line-opacity": 0.4 }} />
+          <Layer id="sector-fill" type="fill" source-layer="campaign_sectors" filter={filters.sectorFilter} paint={SECTOR_FILL_PAINT} />
+          <Layer id="sector-line" type="line" source-layer="campaign_sectors" filter={filters.sectorFilter} paint={SECTOR_LINE_PAINT} />
         </Source>
 
         {/* ── Heatmap ── */}
         {showHeatmap && (
           <Source id="forms-heat" type="geojson" data={formsHeatGeoJson}>
-            <Layer id="forms-heatmap" type="heatmap" paint={{
-              "heatmap-weight": 1,
-              "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 5, 1, 12, 3],
-              "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 5, 15, 12, 25],
-              "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.6, 14, 0.25],
-              "heatmap-color": [
-                "interpolate", ["linear"], ["heatmap-density"],
-                0, "rgba(0,0,0,0)", 0.2, "rgba(30,58,95,0.35)", 0.4, "rgba(13,148,136,0.5)",
-                0.6, "rgba(217,119,6,0.6)", 0.8, "rgba(180,83,9,0.7)", 1, "rgba(127,29,29,0.8)",
-              ],
-            }} />
+            <Layer id="forms-heatmap" type="heatmap" paint={HEATMAP_PAINT} />
           </Source>
         )}
 
         {/* ── Clustered form data ── */}
         {showDatos && (
           <Source id="forms-clustered" type="geojson" data={formsGeoJson} cluster clusterRadius={40} clusterMaxZoom={16}>
-            <Layer id="forms-cluster-ring" type="circle" filter={["has", "point_count"]} paint={{
-              "circle-color": ["step", ["get", "point_count"], CLUSTER_COLORS[0], CLUSTER_STEPS[0], CLUSTER_COLORS[1], CLUSTER_STEPS[1], CLUSTER_COLORS[2], CLUSTER_STEPS[2], CLUSTER_COLORS[3], CLUSTER_STEPS[3], CLUSTER_COLORS[4]],
-              "circle-radius": ["step", ["get", "point_count"], CLUSTER_SIZES[0] + 3, CLUSTER_STEPS[0], CLUSTER_SIZES[1] + 3, CLUSTER_STEPS[1], CLUSTER_SIZES[2] + 3, CLUSTER_STEPS[2], CLUSTER_SIZES[3] + 3, CLUSTER_STEPS[3], CLUSTER_SIZES[4] + 3],
-              "circle-opacity": 0.1,
-            }} />
-            <Layer id="forms-clusters" type="circle" filter={["has", "point_count"]} paint={{
-              "circle-color": ["step", ["get", "point_count"], CLUSTER_COLORS[0], CLUSTER_STEPS[0], CLUSTER_COLORS[1], CLUSTER_STEPS[1], CLUSTER_COLORS[2], CLUSTER_STEPS[2], CLUSTER_COLORS[3], CLUSTER_STEPS[3], CLUSTER_COLORS[4]],
-              "circle-radius": ["step", ["get", "point_count"], CLUSTER_SIZES[0], CLUSTER_STEPS[0], CLUSTER_SIZES[1], CLUSTER_STEPS[1], CLUSTER_SIZES[2], CLUSTER_STEPS[2], CLUSTER_SIZES[3], CLUSTER_STEPS[3], CLUSTER_SIZES[4]],
-              "circle-stroke-width": 2, "circle-stroke-color": "#ffffff", "circle-stroke-opacity": 0.7,
-            }} />
-            <Layer id="forms-cluster-count" type="symbol" filter={["has", "point_count"]} layout={{
-              "text-field": "{point_count_abbreviated}",
-              "text-size": ["step", ["get", "point_count"], 9, CLUSTER_STEPS[0], 10, CLUSTER_STEPS[1], 11, CLUSTER_STEPS[2], 12, CLUSTER_STEPS[3], 14],
-              "text-font": ["Open Sans Bold"], "text-allow-overlap": true,
-            }} paint={{ "text-color": "#ffffff" }} />
-            <Layer id="forms-points" type="circle" filter={["!", ["has", "point_count"]]} paint={{
-              "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 2.5, 10, 4, 14, 5.5, 18, 8],
-              "circle-color": DATA_POINT,
-              "circle-opacity": ["case", ["==", ["get", "is_filtered"], 1], 0.8, 0.2],
-              "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 5, 1, 14, 2],
-              "circle-stroke-color": "#ffffff", "circle-stroke-opacity": 0.85,
-            }} />
+            <Layer id="forms-cluster-ring" type="circle" filter={CLUSTER_FILTER} paint={CLUSTER_RING_PAINT} />
+            <Layer id="forms-clusters" type="circle" filter={CLUSTER_FILTER} paint={CLUSTER_PAINT} />
+            <Layer id="forms-cluster-count" type="symbol" filter={CLUSTER_FILTER} layout={CLUSTER_COUNT_LAYOUT} paint={{ "text-color": "#ffffff" }} />
+            <Layer id="forms-points" type="circle" filter={NOT_CLUSTER_FILTER} paint={FORM_POINTS_PAINT} />
           </Source>
         )}
 
         {/* ── Agent markers ── */}
         {showTracking && (
           <Source id="agents" type="geojson" data={agentsGeoJson}>
-            <Layer id="agents-selected-ring" type="circle" filter={["==", ["get", "is_selected"], 1]} paint={{ "circle-radius": 24, "circle-color": primaryColor, "circle-opacity": 0.2 }} />
-            <Layer id="agents-pulse" type="circle" filter={["==", ["get", "status"], "connected"]} paint={{ "circle-radius": 18, "circle-color": STATUS_COLORS.connected, "circle-opacity": 0.12 }} />
+            <Layer id="agents-selected-ring" type="circle" filter={AGENTS_SELECTED_FILTER} paint={{ "circle-radius": 24, "circle-color": primaryColor, "circle-opacity": 0.2 }} />
+            <Layer id="agents-pulse" type="circle" filter={AGENTS_CONNECTED_FILTER} paint={{ "circle-radius": 18, "circle-color": STATUS_COLORS.connected, "circle-opacity": 0.12 }} />
             <Layer id="agents-circles" type="circle" paint={{
               "circle-radius": ["case", ["==", ["get", "is_selected"], 1], 12, 9],
               "circle-color": ["match", ["get", "status"], "connected", STATUS_COLORS.connected, "idle", STATUS_COLORS.idle, "inactive", STATUS_COLORS.inactive, primaryColor],
               "circle-stroke-width": 2.5, "circle-stroke-color": "#ffffff",
             }} />
-            <Layer id="agents-labels" type="symbol" minzoom={10} layout={{ "text-field": ["get", "name"], "text-size": 11, "text-offset": [0, 1.8], "text-allow-overlap": false, "text-font": ["Open Sans Bold"] }} paint={{ "text-color": "#1e293b", "text-halo-color": "rgba(255,255,255,0.92)", "text-halo-width": 1.5 }} />
-            <Layer id="agents-count" type="symbol" minzoom={8} layout={{ "text-field": ["to-string", ["get", "forms_count"]], "text-size": 9, "text-allow-overlap": true, "text-font": ["Open Sans Bold"] }} paint={{ "text-color": "#ffffff" }} />
+            <Layer id="agents-labels" type="symbol" minzoom={10} layout={AGENTS_LABEL_LAYOUT} paint={AGENTS_LABEL_PAINT} />
+            <Layer id="agents-count" type="symbol" minzoom={8} layout={AGENTS_COUNT_LAYOUT} paint={{ "text-color": "#ffffff" }} />
           </Source>
         )}
       </MapLibre>

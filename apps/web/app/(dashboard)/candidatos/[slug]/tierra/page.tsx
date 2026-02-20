@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useParams } from "next/navigation";
 
 import { getCampaignStats, getRecentForms, api, type FormRecord } from "@/lib/services";
@@ -93,13 +93,38 @@ function useAgentSSE(campaignId: string | null, onUpdate: (agents: AgentLocation
   }, [campaignId]);
 }
 
+/* ========== Fullscreen ========== */
+
+/** Zero-rerender fullscreen hook — subscribes to native fullscreenchange event */
+function useFullscreen(ref: React.RefObject<HTMLElement | null>) {
+  const subscribe = useCallback((cb: () => void) => {
+    document.addEventListener("fullscreenchange", cb);
+    return () => document.removeEventListener("fullscreenchange", cb);
+  }, []);
+  const getSnapshot = useCallback(() => document.fullscreenElement === ref.current, [ref]);
+  const isFullscreen = useSyncExternalStore(subscribe, getSnapshot, () => false);
+
+  const toggle = useCallback(() => {
+    if (!ref.current) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      ref.current.requestFullscreen().catch(() => {});
+    }
+  }, [ref]);
+
+  return { isFullscreen, toggle } as const;
+}
+
 /* ========== Page ========== */
 
 export default function TierraPage() {
   const params = useParams();
   const slug = params.slug as string;
   const mapHandleRef = useRef<TierraMapHandle | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
   const { user, campaigns } = useAuth();
+  const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(shellRef);
 
   // Data
   const [stats, setStats] = useState<CampaignStats | null>(null);
@@ -383,7 +408,7 @@ export default function TierraPage() {
     : null;
 
   return (
-    <div style={FULL_SCREEN}>
+    <div ref={shellRef} style={isFullscreen ? FULL_SCREEN_FS : FULL_SCREEN}>
       {/* ── Header ── */}
       <TierraHeader
         stats={stats}
@@ -425,6 +450,49 @@ export default function TierraPage() {
                 formCount={forms.length}
               />
             </div>
+
+            {/* Fullscreen toggle — top right */}
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              aria-label={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+              title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+              style={{
+                position: "absolute",
+                top: 12,
+                right: 12,
+                zIndex: 10,
+                width: 34,
+                height: 34,
+                borderRadius: 8,
+                border: "1px solid #e2e8f0",
+                backgroundColor: "rgba(255,255,255,0.95)",
+                backdropFilter: "blur(8px)",
+                color: "#475569",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 1px 6px rgba(0,0,0,0.08)",
+                transition: "background-color 0.15s ease",
+              }}
+            >
+              {isFullscreen ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="4 14 10 14 10 20" />
+                  <polyline points="20 10 14 10 14 4" />
+                  <line x1="14" y1="10" x2="21" y2="3" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polyline points="15 3 21 3 21 9" />
+                  <polyline points="9 21 3 21 3 15" />
+                  <line x1="21" y1="3" x2="14" y2="10" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+              )}
+            </button>
 
             {/* Bottom toolbar — metrics toggle + table toggle */}
             <div style={{
@@ -564,6 +632,17 @@ const FULL_SCREEN: React.CSSProperties = {
   right: 0,
   bottom: 0,
   left: SIDEBAR_COLLAPSED_WIDTH,
+  zIndex: 50,
+  display: "flex",
+  flexDirection: "column",
+  backgroundColor: "#f8fafc",
+  overflow: "hidden",
+};
+
+/** In native fullscreen the element covers the entire screen — no offsets */
+const FULL_SCREEN_FS: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
   zIndex: 50,
   display: "flex",
   flexDirection: "column",
