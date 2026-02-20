@@ -2,14 +2,14 @@
 
 > **Hereda de:** `/AGENTS.md` (root)  
 > **Alcance:** Solo `apps/web/**`  
-> **Ultima actualizacion:** 2026-02-16
+> **Ultima actualizacion:** 2026-02-20
 
 ---
 
 ## Contexto del Modulo
 
-Dashboard administrativo web en Next.js 16 + React 19.  
-Deployed en Vercel, consume backend via proxy `/api/*` y `/uploads/*`.
+Dashboard administrativo web en Next.js 16.1 + React 19.2 + Tailwind 4.  
+Deployed en Vercel (`dashboard.grupogoberna.com`), consume backend via proxy `/api/*` y `/uploads/*`.
 
 ---
 
@@ -17,61 +17,45 @@ Deployed en Vercel, consume backend via proxy `/api/*` y `/uploads/*`.
 
 ```
 apps/web/
-├── app/                          # Next.js App Router
-│   ├── (dashboard)/              # Dashboard routes (auth required)
-│   │   ├── candidatos/
-│   │   │   ├── _components/      # Feature-specific components
-│   │   │   └── page.tsx          # Page container (~130 lines)
-│   │   ├── equipo/
-│   │   ├── formularios/
-│   │   ├── cms/
-│   │   ├── map/
-│   │   ├── ops/
-│   │   ├── settings/
-│   │   ├── layout.tsx            # Dashboard layout
-│   │   └── page.tsx              # Home (map view)
-│   ├── login/
-│   ├── register/
-│   ├── onboarding/
-│   └── layout.tsx                # Root layout
-│
-├── lib/                          # Shared code (MODULAR)
-│   ├── types/                    # TypeScript type definitions
-│   │   └── index.ts              # Campaign, User, Form, etc.
-│   ├── constants/                # App constants
-│   │   └── index.ts              # Colors, cargos, config
-│   ├── utils/                    # Pure utility functions
-│   │   └── index.ts              # slugify, formatDate, etc.
-│   ├── hooks/                    # Custom React hooks
-│   │   ├── use-async.ts
-│   │   ├── use-file-upload.ts
-│   │   ├── use-inject-styles.ts
-│   │   └── index.ts
-│   ├── services/                 # API services (data layer)
-│   │   ├── api.ts                # Base API client
-│   │   ├── campaigns.ts          # Campaign CRUD
-│   │   ├── access-requests.ts    # Access request operations
-│   │   └── index.ts
-│   ├── ui/                       # Reusable UI components
-│   │   ├── spinner.tsx
-│   │   ├── status-badge.tsx
-│   │   ├── avatar.tsx
-│   │   ├── button.tsx
-│   │   ├── card.tsx
-│   │   ├── tabs.tsx
-│   │   ├── slide-over.tsx
-│   │   ├── empty-state.tsx
-│   │   ├── alert.tsx
-│   │   ├── form-field.tsx
-│   │   ├── photo-upload.tsx
-│   │   └── index.ts
-│   ├── api-client.ts             # Re-export (backward compat)
-│   ├── auth-context.tsx          # Auth state management
-│   └── mock-data.ts              # Legacy (deprecated)
-│
-├── public/                       # Static assets
-├── next.config.ts                # Rewrites for /api/* and /uploads/*
-└── package.json
+  app/                          # Next.js App Router
+    (dashboard)/                # Dashboard routes (auth required)
+      candidatos/               # Gestion de campanas/candidatos
+      cms/                      # CMS de contactos (operadoras)
+      cms-metrics/              # Metricas CMS global
+      equipo/                   # Gestion de equipo
+      formularios/              # Submissions de formularios
+      map/                      # Mapa interactivo + tracking
+      ops/                      # Panel operativo (metricas)
+      settings/                 # Configuracion
+      layout.tsx                # Dashboard layout
+      page.tsx                  # Home (map view)
+    login/                      # Login
+    register/                   # Registro
+    onboarding/                 # Onboarding
+    layout.tsx                  # Root layout
+
+  lib/                          # Shared code (MODULAR)
+    types/                      # TypeScript type definitions
+    constants/                  # App constants
+    utils/                      # Pure utility functions
+    hooks/                      # Custom React hooks
+    services/                   # API services (data layer)
+      api.ts                    # Base API client
+      campaigns.ts              # Campaign CRUD
+      access-requests.ts        # Access request operations
+      cms.ts                    # CMS service
+      forms.ts                  # Forms service
+      geo.ts                    # Geo/zones service
+      index.ts                  # Re-exports
+    ui/                         # Reusable UI components
+    schemas/                    # Validation schemas (vacio, para uso futuro)
+    auth-context.tsx            # Auth state management
+    api-client.ts               # Re-export (backward compat)
+    query-provider.tsx          # TanStack Query provider
+    mock-data.ts                # Legacy (deprecated)
+
+  next.config.ts                # Rewrites for /api/* and /uploads/*
+  package.json
 ```
 
 ---
@@ -94,13 +78,13 @@ apps/web/
 ### 2. Reglas de Importacion
 
 ```typescript
-// ✅ CORRECTO: Importar desde indices
+// CORRECTO: Importar desde indices
 import { Button, Spinner, Avatar } from "@/lib/ui";
 import { slugify, formatDate } from "@/lib/utils";
 import { listCampaigns, createCampaign } from "@/lib/services";
 import type { Campaign, User } from "@/lib/types";
 
-// ❌ INCORRECTO: Importar archivos directos
+// INCORRECTO: Importar archivos directos
 import { Button } from "@/lib/ui/button";  // No hacer
 ```
 
@@ -122,14 +106,12 @@ Ejemplo: `/app/(dashboard)/candidatos/`
 
 ```
 candidatos/
-├── _components/                  # Componentes propios del feature
-│   ├── candidate-card.tsx        # Card de un candidato
-│   ├── candidate-list.tsx        # Lista de candidatos
-│   ├── create-candidate-form.tsx # Formulario de creacion
-│   ├── access-request-card.tsx   # Card de solicitud
-│   ├── access-request-list.tsx   # Lista de solicitudes
-│   └── index.ts                  # Re-exports
-└── page.tsx                      # Contenedor principal (~130 lineas)
+  _components/                  # Componentes propios del feature
+    candidate-card.tsx
+    candidate-list.tsx
+    create-candidate-form.tsx
+    index.ts                    # Re-exports
+  page.tsx                      # Contenedor principal (~130 lineas)
 ```
 
 **El page.tsx solo debe:**
@@ -147,29 +129,6 @@ candidatos/
 
 ## API Services
 
-### Uso Correcto
-
-```typescript
-// lib/services/campaigns.ts
-export async function createCampaignWithPhoto(
-  input: CreateCampaignInput,
-  photoFile: File | null,
-): Promise<{ ok: boolean; campaign?: Campaign; error?: string }> {
-  // 1. Upload photo if provided
-  // 2. Create campaign with foto_url
-  // 3. Return result
-}
-
-// En el componente
-import { createCampaignWithPhoto } from "@/lib/services";
-
-const result = await createCampaignWithPhoto(formData, photoFile);
-if (!result.ok) {
-  setError(result.error);
-  return;
-}
-```
-
 ### Patron de Respuesta
 
 ```typescript
@@ -182,46 +141,20 @@ type ServiceResult<T> = {
 
 ---
 
-## UI Components
-
-### Principios
-
-1. **Stateless cuando sea posible** - Estado manejado por el padre
-2. **Estilos inline con CSS variables** - Consistencia visual
-3. **Props tipados estrictamente** - Autodocumentacion
-4. **Accesibilidad basica** - Labels, roles, aria
-
-### Ejemplo de uso
-
-```tsx
-import { Button, TextInput, SlideOver, Alert } from "@/lib/ui";
-
-<SlideOver open={showPanel} onClose={() => setShowPanel(false)} title="Nuevo">
-  <TextInput
-    id="name"
-    label="Nombre"
-    value={name}
-    onChange={(e) => setName(e.target.value)}
-  />
-  {error && <Alert variant="error" message={error} />}
-  <Button variant="primary" loading={saving} onClick={handleSave}>
-    Guardar
-  </Button>
-</SlideOver>
-```
-
----
-
 ## Conexion con Backend
 
 ### Rewrites (next.config.ts)
 
 ```typescript
-async rewrites() {
-  return [
-    { source: "/api/:path*", destination: `${BACKEND}/api/:path*` },
-    { source: "/uploads/:path*", destination: `${BACKEND}/uploads/:path*` },
-  ];
+const target = process.env.BACKEND_PROXY_TARGET ?? "https://api.goberna.us";
+
+rewrites() {
+  return {
+    beforeFiles: [
+      { source: "/api/:path*", destination: `${target}/api/:path*` },
+      { source: "/uploads/:path*", destination: `${target}/uploads/:path*` },
+    ],
+  };
 }
 ```
 
@@ -230,6 +163,8 @@ async rewrites() {
 ```typescript
 images: {
   remotePatterns: [
+    { protocol: "https", hostname: "dashboard.grupogoberna.com", pathname: "/uploads/**" },
+    { protocol: "https", hostname: "api.goberna.us", pathname: "/uploads/**" },
     { protocol: "http", hostname: "161.132.39.165", pathname: "/uploads/**" },
     { protocol: "http", hostname: "localhost", pathname: "/uploads/**" },
   ],
@@ -242,13 +177,23 @@ images: {
 
 | Endpoint | Service | Proposito |
 |----------|---------|-----------|
-| `GET /api/campaigns` | `listCampaigns()` | Lista campanas |
-| `POST /api/campaigns` | `createCampaign()` | Crear campana |
-| `GET /api/candidates` | `listCandidates()` | Candidatos publicos |
-| `GET /api/access-requests` | `listAccessRequests()` | Solicitudes |
-| `PUT /api/access-requests/:id` | `resolveAccessRequest()` | Resolver |
-| `POST /api/uploads` | `uploadCandidatePhoto()` | Subir foto |
-| `GET /api/auth/me` | (auth-context) | Perfil usuario |
+| `GET /api/campaigns` | `campaigns.ts` | Lista campanas |
+| `POST /api/campaigns` | `campaigns.ts` | Crear campana |
+| `GET /api/candidates` | `campaigns.ts` | Candidatos publicos |
+| `GET /api/access-requests` | `access-requests.ts` | Solicitudes |
+| `POST /api/access-requests/:id/resolve` | `access-requests.ts` | Resolver |
+| `POST /api/uploads` | `api.ts` | Subir foto |
+| `GET /api/auth/me` | `auth-context.tsx` | Perfil usuario |
+| `GET /api/cms/contacts` | `cms.ts` | Contactos CMS |
+| `GET /api/cms/stats` | `cms.ts` | Stats CMS |
+| `GET /api/cms/metrics` | `cms.ts` | Metricas CMS global |
+| `GET /api/cms/stream` | `cms.ts` | SSE CMS realtime |
+| `GET /api/form-submissions/*` | `forms.ts` | Submissions |
+| `GET /api/zones/*` | `geo.ts` | Zonas geograficas |
+| `GET /api/agents/live` | (map page) | Tracking live |
+| `GET /api/agents/stream` | (map page) | SSE tracking |
+| `GET /api/metrics` | (ops page) | Metricas operativas |
+| `GET /api/campaigns/:campaignId/analytics` | (analytics) | Datos GA4 |
 
 ---
 
@@ -301,6 +246,7 @@ Al encontrar archivos grandes (>300 lineas):
 - Usar `useCallback` para funciones pasadas a hijos
 - Lazy load de componentes pesados (mapas)
 - Imagenes con `unoptimized` para URLs externas
+- TanStack Query para cache y dedup de requests
 
 ---
 

@@ -1,7 +1,8 @@
 # AGENTS.md - Mobile App (Expo)
 
 > **Hereda de:** `/AGENTS.md` (root)  
-> **Alcance:** Solo `apps/mobile/**`
+> **Alcance:** Solo `apps/mobile/**`  
+> **Ultima actualizacion:** 2026-02-20
 
 ---
 
@@ -15,33 +16,25 @@ Offline-first, captura GPS y formularios, sync cuando hay conectividad.
 ## Arquitectura
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Expo App                                  │
-│                                                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
-│  │    Auth      │  │   Tracking   │  │     Formularios      │   │
-│  │   Screen     │  │   Service    │  │      Dinamicos       │   │
-│  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘   │
-│         │                 │                      │               │
-│         └─────────┬───────┴──────────────────────┘               │
-│                   │                                              │
-│           ┌───────▼───────┐                                      │
-│           │  SQLite Queue │  <- Offline-first storage            │
-│           │  (expo-sqlite)│                                      │
-│           └───────┬───────┘                                      │
-│                   │                                              │
-│           ┌───────▼───────┐                                      │
-│           │  Sync Service │  <- Cuando hay conectividad          │
-│           │               │                                      │
-│           └───────┬───────┘                                      │
-└───────────────────┼──────────────────────────────────────────────┘
-                    │
-                    │ HTTPS
-                    ▼
-          ┌───────────────────────┐
-          │   Backend (VPS)       │
-          │   161.132.39.165      │
-          └───────────────────────┘
+                    Expo App
+  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐
+  │    Auth      │  │   Tracking   │  │     Formularios      │
+  │   Screen     │  │   Service    │  │      Dinamicos       │
+  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘
+         │                 │                      │
+         └─────────┬───────┴──────────────────────┘
+                   │
+           ┌───────▼───────┐
+           │  SQLite Queue │  <- Offline-first storage
+           │  (expo-sqlite)│
+           └───────┬───────┘
+                   │
+           ┌───────▼───────┐
+           │  Sync Service │  <- Cuando hay conectividad
+           └───────┬───────┘
+                   │ HTTPS
+                   ▼
+         Backend (api.goberna.us)
 ```
 
 ---
@@ -55,25 +48,22 @@ Offline-first, captura GPS y formularios, sync cuando hay conectividad.
 | Main screens | `app/(main)/` |
 | API Client | `lib/api.ts` |
 | Auth Store | `lib/auth-store.ts` |
-| Tracking | `lib/tracking/index.ts` |
+| App Context | `lib/app-context.tsx` |
+| Types | `lib/types.ts` |
+| Events | `lib/events.ts` |
+| UTM utils | `lib/utm.ts` |
+| Constants | `lib/constants/` |
+| Tracking | `lib/tracking/` |
 | Offline Queue | `lib/offline-queue/` |
+| Components | `components/` |
+| Hooks | `hooks/` |
 | Config | `app.json` |
 
 ---
 
 ## Offline Queue (lib/offline-queue/)
 
-Sistema de persistencia offline-first usando SQLite.
-
-### Estructura
-```
-lib/offline-queue/
-  index.ts           # Re-exports publicos
-  db.ts              # Inicializacion SQLite
-  locations.ts       # Queue de ubicaciones GPS
-  forms.ts           # Queue de formularios
-  sync-service.ts    # Servicio de sincronizacion
-```
+Sistema de persistencia offline-first usando expo-sqlite.
 
 ### Tablas SQLite
 | Tabla | Proposito |
@@ -85,55 +75,10 @@ lib/offline-queue/
 ### Flujo de Datos
 ```
 1. Usuario captura GPS/Form
-       │
-       ▼
-2. queueLocation() / queueForm()
-   Guarda en SQLite inmediatamente
-       │
-       ▼
-3. Sync Service (cada 30s)
-   Detecta conexion → POST al backend
-       │
-       ▼
-4. Backend procesa
-   Valida + deduplicar + persiste
-       │
-       ▼
-5. Marca como synced en SQLite
-   Limpia registros viejos
-```
-
-### Uso
-```typescript
-import { 
-  queueLocation, 
-  queueForm, 
-  startAutoSync,
-  getQueueStats 
-} from '@/lib/offline-queue';
-
-// Queue location (non-blocking)
-await queueLocation({
-  agent_id: 'user-123',
-  ts: new Date().toISOString(),
-  lat: -12.0464,
-  lng: -77.0428,
-});
-
-// Queue form (non-blocking)
-await queueForm({
-  client_id: crypto.randomUUID(),
-  campaign_id: 'campaign-123',
-  form_definition_id: 'form-456',
-  data: { nombre: 'Juan', telefono: '999888777' },
-});
-
-// Start auto-sync (call once on app start)
-startAutoSync();
-
-// Get queue stats
-const stats = await getQueueStats();
-// { locations: { pending: 5, synced: 100 }, forms: { pending: 2 } }
+2. queueLocation() / queueForm() → SQLite inmediatamente
+3. Sync Service (cada 30s) → detecta conexion → POST al backend
+4. Backend procesa → valida + deduplica + persiste
+5. Marca como synced en SQLite → limpia registros viejos
 ```
 
 ---
@@ -153,105 +98,20 @@ Sistema de tracking GPS con soporte foreground y background.
 - `expo-location` background permission (opcional, mejor tracking)
 - Notificacion de servicio en Android
 
-### Uso
-```typescript
-import { 
-  startForegroundTracking,
-  startBackgroundTracking,
-  stopTracking,
-  getTrackingState 
-} from '@/lib/tracking';
-
-// Start foreground (basic)
-await startForegroundTracking(userId);
-
-// Upgrade to background (better but needs permission)
-await startBackgroundTracking(userId);
-
-// Stop all tracking
-await stopTracking();
-
-// Check state
-const state = getTrackingState(); // 'stopped' | 'foreground' | 'background'
-```
-
 ---
 
-## Conexion con el Sistema
+## Endpoints que Consume
 
-### Flujo Offline-First
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Agente    │     │    App      │     │   Backend   │
-│  (Campo)    │     │  (Expo)     │     │  (Fastify)  │
-└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
-       │                   │                   │
-       │ Captura GPS       │                   │
-       │──────────────────>│                   │
-       │                   │                   │
-       │                   │ Guardar local     │
-       │                   │ (SQLite queue)    │
-       │                   │                   │
-       │ Llena formulario  │                   │
-       │──────────────────>│                   │
-       │                   │                   │
-       │                   │ Guardar local     │
-       │                   │ (SQLite queue)    │
-       │                   │                   │
-       │                   │   [ Cuando hay    │
-       │                   │     conexion ]    │
-       │                   │                   │
-       │                   │ POST /api/agents/location
-       │                   │──────────────────>│
-       │                   │                   │
-       │                   │ POST /api/forms/batch
-       │                   │──────────────────>│
-       │                   │                   │
-       │                   │  { synced: true } │
-       │                   │<──────────────────│
-       │                   │                   │
-       │                   │ Marcar como sync'd│
-       │                   │ en SQLite         │
-```
-
-### Endpoints que Consume
-| Endpoint | Proposito |
-|----------|-----------|
-| `POST /api/auth/login` | Login con email/password |
-| `POST /api/auth/refresh` | Renovar tokens |
-| `GET /api/auth/me` | Perfil + campanas |
-| `GET /api/campaigns/:id` | Config de campana |
-| `GET /api/form-definitions/active` | Formularios a mostrar |
-| `POST /api/forms` | Submit individual |
-| `POST /api/forms/batch` | Submit batch offline |
-| `POST /api/agents/location` | Enviar ubicacion GPS |
-
-### Conexion con Web
-```
-Mobile genera datos, Web los visualiza.
-No hay comunicacion directa entre apps.
-
-Mobile App                       Web Dashboard
-     │                                │
-     │ POST /api/forms                │
-     │───────────────────┐            │
-     │                   │            │
-     │ POST /api/agents/ │            │
-     │   location        │            │
-     │───────────────────┤            │
-     │                   │            │
-     │              ┌────▼────┐       │
-     │              │ Backend │       │
-     │              │ (Redis +│       │
-     │              │ Postgres│       │
-     │              └────┬────┘       │
-     │                   │            │
-     │                   │ GET /api/agents/live
-     │                   │────────────>
-     │                   │            │
-     │                   │ GET /api/metrics
-     │                   │────────────>
-```
+| Endpoint | Auth | Proposito |
+|----------|------|-----------|
+| `POST /api/auth/login` | Ninguno | Login con email/password |
+| `POST /api/auth/refresh` | Ninguno | Renovar tokens |
+| `GET /api/auth/me` | JWT | Perfil + campanas |
+| `GET /api/campaigns/:id` | JWT | Config de campana |
+| `GET /api/form-definitions/active` | JWT | Formularios a mostrar |
+| `POST /api/forms` | JWT | Submit individual |
+| `POST /api/forms/batch` | JWT | Submit batch offline |
+| `POST /api/agents/location` | x-agent-token | Enviar ubicacion GPS |
 
 ---
 
@@ -261,22 +121,18 @@ Mobile App                       Web Dashboard
 2. **SQLite como source of truth local** - No confiar en memoria
 3. **Sync con backoff exponencial** - No saturar cuando hay red
 4. **GPS validado server-side** - App es untrusted
-5. **SecureStore para tokens** - No localStorage
+5. **SecureStore para tokens** - No AsyncStorage
 6. **Batch sync preferido** - Menos requests, mas eficiente
 
 ---
 
 ## Variables de Entorno
 
-### Configuracion en `app.json`
+### Configuracion en `app.json` > extra
 ```json
 {
-  "expo": {
-    "extra": {
-      "EXPO_PUBLIC_BACKEND_API_URL": "http://161.132.39.165/api",
-      "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "<token-de-produccion>"
-    }
-  }
+  "EXPO_PUBLIC_BACKEND_API_URL": "https://api.goberna.us/api",
+  "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "<valor-via-EAS-secrets>"
 }
 ```
 
@@ -318,7 +174,7 @@ bunx tsc --noEmit   # Type check
 3. Login funciona (con backend local o prod)
 4. GPS se captura y se guarda en queue local
 5. Sync funciona cuando hay conexion
-6. Si cambia contrato, actualizar docs compartidos
+6. Si cambia contrato, actualizar root `/AGENTS.md`
 
 ---
 
@@ -335,7 +191,7 @@ bunx tsc --noEmit   # Type check
 
 | Modulo | Relacion |
 |--------|----------|
-| Backend (`apps/backend`) | Consume API directo (no proxy) |
+| Backend (`apps/backend`) | Consume API directo `https://api.goberna.us/api` |
 | Web (`apps/web`) | Comparte backend, no comunicacion directa |
 | Tegola | No consume directamente (sin mapas por ahora) |
 

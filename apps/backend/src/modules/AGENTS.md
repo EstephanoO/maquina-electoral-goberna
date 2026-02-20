@@ -1,31 +1,55 @@
 # AGENTS.md - Guia comun de modulos backend
 
-## Herencia obligatoria
+> **Hereda de:** `/AGENTS.md` (root) y `apps/backend/AGENTS.md`  
+> **Alcance:** Solo `apps/backend/src/modules/**`  
+> **Ultima actualizacion:** 2026-02-20
 
-Este archivo hereda de `AGENTS.md` root y de `apps/backend/AGENTS.md`.
-Solo define reglas para `apps/backend/src/modules/**`.
+---
 
 ## Convenciones
 
-- Cada modulo define `routes.ts`, `schema.ts` y capa de persistencia (`store.ts` o `repository.ts`).
+- Cada modulo define `routes.ts`, `schemas.ts` y capa de persistencia (`store.ts` o `repository.ts`).
 - Sin dependencia circular entre modulos.
 - Endpoints y payloads explicitos; cero contratos implicitos.
+
+## Modulos registrados en app.ts (18 total)
+
+| Modulo | Prefijo API | Tipo |
+|--------|-------------|------|
+| `health` | `/api/health`, `/api/ready` | Ops |
+| `auth` | `/api/auth/*` | Core |
+| `campaigns` | `/api/campaigns/*`, `/api/candidates` | Core |
+| `forms` | `/api/forms/*` | Ingesta (write-behind) |
+| `form-submissions` | `/api/form-submissions/*` | Ingesta (directo) |
+| `form-definitions` | `/api/form-definitions/*` | Config |
+| `agents` | `/api/agents/*` | Ingesta (write-behind) |
+| `meets` | `/api/meets/*` | Operativo |
+| `zones` | `/api/zones/*` | Geo |
+| `org-hierarchy` | `/api/org-hierarchy/*` | Operativo |
+| `invitations` | `/api/invitations/*` | Onboarding |
+| `access-requests` | `/api/access-requests/*` | Onboarding |
+| `map` | `/api/config`, `/api/tiles/*`, `/api/capabilities` | Geo |
+| `uploads` | `/api/uploads/*` | Archivos |
+| `analytics` | `/api/campaigns/:id/analytics`, `/api/analytics/*` | Digital |
+| `cms` | `/api/cms/*` | CMS (SSE realtime) |
+| `objectives` | `/api/objectives/*` | Operativo |
+| `twilio` | `/api/twilio/*`, `/api/webhooks/twilio/*` | Messaging |
+
+**Ruta de metricas:** `GET /api/metrics` esta definido directamente en `app.ts` (no en un modulo).
 
 ## Checklist por cambio
 
 1. Mantener contrato backwards-compatible o versionar.
-2. Actualizar docs contractuales si cambia request/response.
+2. Actualizar seccion 6 del root `/AGENTS.md` si cambia request/response.
 3. Agregar smoke check CI cuando se agrega endpoint critico.
-4. Medir impacto en CPU/RAM/latencia (sobre todo en realtime).
+4. Medir impacto en CPU/RAM/latencia (sobre todo en realtime y SSE).
 5. Verificar que no rompe operabilidad de deploy ni readiness.
 6. Si cambia ingesta, validar `ingest_outcome_latencies` en `/api/metrics`.
 
 ## Guardrails de contexto actual
 
-- Tracking/forms usan write-behind en Redis Streams.
+- Tracking/forms usan write-behind en Redis Streams con DLQ.
 - Estado live de tracking no depende del historico.
 - `/api/ready` debe contemplar DB + Tegola + Redis.
-
-## Skills
-
-- Base: `nexus-web/.agents/skills/fastify-best-practices/SKILL.md`
+- CMS usa SSE en `/api/cms/stream` con broadcast por campaign_id.
+- Twilio webhook es publico pero valida firma `X-Twilio-Signature`.

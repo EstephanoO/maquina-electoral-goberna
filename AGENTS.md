@@ -1,6 +1,7 @@
 # AGENTS.md - Goberna Platform (Root Source of Truth)
 
 > **Regla #1:** Este archivo es la fuente de verdad absoluta del monorepo. Los AGENTS.md de cada app heredan de este. Si hay conflicto, este archivo prevalece.
+> **Ultima actualizacion:** 2026-02-20
 
 ---
 
@@ -12,7 +13,7 @@
 |---------|---------|
 | Organizacion | Grupo Goberna |
 | Mercado | Peru (conectividad intermitente, campo operativo real) |
-| Diferenciador | Offline-first, mapas vectoriales, CRM integrado, multi-campana |
+| Diferenciador | Offline-first, mapas vectoriales, CRM/CMS integrado, multi-campana |
 | Equipo | 2 devs |
 | Prioridad | Operabilidad > Sofisticacion |
 
@@ -23,6 +24,7 @@
 ```
 nexus6.0/
   AGENTS.md                    <- Este archivo (root, fuente de verdad)
+  .agents/                     <- Orquestacion de agentes y skills
   apps/
     backend/                   <- Fastify API (VPS produccion)
       AGENTS.md                <- Hereda de root
@@ -33,6 +35,8 @@ nexus6.0/
   docs/                        <- Documentacion compartida
   scripts/                     <- Scripts de desarrollo
   deploy/                      <- Configs de deploy
+  nginx/                       <- Templates Nginx (Cloudflare origin, HTTP, HTTPS)
+  tegola/                      <- Config Tegola (config.toml)
   docker-compose.yml           <- Produccion
   docker-compose.dev.yml       <- Desarrollo local
 ```
@@ -52,6 +56,7 @@ nexus6.0/
      +--------v--------+          +---------v---------+
      |    Vercel       |          |   VPS (32GB)      |
      |   (apps/web)    |          |   161.132.39.165  |
+     |                 |          |   api.goberna.us   |
      +-----------------+          |                   |
                                   |  +-------------+  |
                                   |  |   Nginx     |  |
@@ -72,19 +77,27 @@ nexus6.0/
                       +------------+ +------------+ +-------------+
 ```
 
+**Dominios publicos:**
+- API: `https://api.goberna.us` (Cloudflare → Nginx → Backend)
+- Web: `https://dashboard.grupogoberna.com` (Vercel)
+
 ---
 
 ## 4. Stack Tecnologico (Estado Actual)
 
 | Capa | Tecnologia | Ubicacion | Estado |
 |------|-----------|-----------|--------|
-| Backend API | Fastify + TypeScript + Bun | `apps/backend/` | **Produccion** |
-| Base de Datos | PostgreSQL 15 + PostGIS | Docker VPS | **Produccion** |
+| Backend API | Fastify 5.6 + TypeScript 5.9 + Bun | `apps/backend/` | **Produccion** |
+| Base de Datos | PostgreSQL 15 + PostGIS 3.4 | Docker VPS | **Produccion** |
 | Cache/Queues | Redis 7.4 (Streams) | Docker VPS | **Produccion** |
 | Vector Tiles | Tegola | Docker VPS | **Produccion** |
-| Web Admin | Next.js 16 + React 19 | `apps/web/` | **Produccion** (Vercel) |
-| Mobile App | Expo SDK 54 + RN 0.81 | `apps/mobile/` | **Desarrollo** |
+| Web Admin | Next.js 16.1 + React 19.2 + Tailwind 4 | `apps/web/` | **Produccion** (Vercel) |
+| Mobile App | Expo SDK 54 + React Native 0.81 | `apps/mobile/` | **Desarrollo** |
+| ORM | Drizzle ORM 0.44 | `apps/backend/` | **Produccion** |
+| Messaging | Twilio (WhatsApp) | `apps/backend/` | **Produccion** |
 | CI/CD | GitHub Actions | `.github/workflows/` | **Produccion** |
+
+**Dependencias clave del backend:** fastify, drizzle-orm, jose (JWT), bcryptjs, zod, redis, twilio, pg
 
 ---
 
@@ -97,7 +110,9 @@ nexus6.0/
 | SSH User | `deploy` |
 | Project Dir | `/srv/app` |
 | Timezone | `America/Lima` |
-| Frontend | Vercel (maquina-electoral-goberna-web) |
+| API Domain | `api.goberna.us` |
+| Frontend Domain | `dashboard.grupogoberna.com` |
+| Frontend Host | Vercel (maquina-electoral-goberna-web) |
 | DNS/Edge | Cloudflare (proxy ON) |
 
 ---
@@ -112,6 +127,8 @@ nexus6.0/
 | `POST /api/auth/login` | Login email/password |
 | `POST /api/auth/register` | Registro de usuario |
 | `GET /api/candidates` | Lista de candidatos/campanas |
+| `GET /api/invitations/validate/:code` | Validar codigo de invitacion |
+| `POST /api/webhooks/twilio/whatsapp` | Webhook Twilio (firmado) |
 
 ### Endpoints Autenticados (JWT Bearer)
 | Endpoint | Descripcion |
@@ -119,6 +136,7 @@ nexus6.0/
 | `GET /api/auth/me` | Perfil + campanas del usuario |
 | `POST /api/auth/refresh` | Renovar tokens |
 | `POST /api/auth/logout` | Cerrar sesion |
+| **Campaigns** | |
 | `GET /api/campaigns` | Listar campanas del usuario (admin ve todas) |
 | `GET /api/campaigns/:id` | Config de campana |
 | `POST /api/campaigns` | Crear campana (admin) |
@@ -128,6 +146,7 @@ nexus6.0/
 | `POST /api/campaigns/:id/members` | Agregar miembro (admin) |
 | `DELETE /api/campaigns/:id/members/:userId` | Remover miembro (admin) |
 | `PUT /api/campaigns/:id/members/:userId/role` | Cambiar rol (jefe_campana+) |
+| **Forms** | |
 | `GET /api/form-definitions/active` | Formularios activos |
 | `POST /api/forms` | Submit formulario (legacy write-behind) |
 | `POST /api/forms/batch` | Submit batch (legacy write-behind) |
@@ -137,27 +156,60 @@ nexus6.0/
 | `GET /api/form-submissions/recent` | Submissions recientes |
 | `GET /api/form-submissions/meet/:meetId` | Submissions de un meet |
 | `GET /api/form-submissions/stats` | Stats de submissions |
+| **Meets** | |
 | `GET /api/meets` | Listar meets de campana |
 | `POST /api/meets` | Crear meet |
 | `PUT /api/meets/:id` | Actualizar meet |
 | `PUT /api/meets/:id/status` | Cambiar estado de meet |
+| **Zones** | |
 | `GET /api/zones/campaign/:campaignId` | Listar zonas de campana |
 | `GET /api/zones/campaign/:campaignId/geojson` | Zonas como GeoJSON FeatureCollection |
 | `GET /api/zones/:id` | Detalle de zona |
 | `POST /api/zones` | Crear zona (jefe_campana+) |
 | `PUT /api/zones/:id` | Actualizar zona |
 | `DELETE /api/zones/:id` | Eliminar zona |
+| **Org Hierarchy** | |
 | `GET /api/org-hierarchy/campaign/:campaignId` | Arbol organizacional |
 | `GET /api/org-hierarchy/campaign/:campaignId/subordinates/:userId` | Subordinados de un usuario |
 | `POST /api/org-hierarchy` | Asignar relacion supervisor |
 | `PUT /api/org-hierarchy/:id` | Actualizar nodo |
 | `DELETE /api/org-hierarchy/:id` | Remover relacion |
+| **Invitations** | |
 | `POST /api/invitations` | Crear invitacion (jefe_campana+) |
 | `GET /api/invitations/campaign/:campaignId` | Listar invitaciones de campana |
-| `GET /api/invitations/validate/:code` | Validar codigo (publico, sin auth) |
 | `DELETE /api/invitations/:id` | Revocar invitacion |
+| **Access Requests** | |
 | `GET /api/access-requests` | Listar solicitudes (jefe_campana+) |
 | `POST /api/access-requests/:id/resolve` | Aprobar/rechazar solicitud |
+| **Analytics (GA4)** | |
+| `POST /api/campaigns/:campaignId/analytics` | Guardar datos GA4 (candidato+) |
+| `GET /api/campaigns/:campaignId/analytics` | Obtener datos GA4 |
+| `GET /api/analytics/by-slug/:slug` | Analytics por slug de campana |
+| `DELETE /api/campaigns/:campaignId/analytics` | Eliminar datos GA4 (admin) |
+| **CMS (Contact Management)** | |
+| `GET /api/cms/contacts` | Listar contactos con filtro/busqueda |
+| `PUT /api/cms/contacts/:id/claim` | Reclamar contacto (lock) |
+| `PUT /api/cms/contacts/:id/release` | Liberar contacto |
+| `PUT /api/cms/contacts/:id/hablado` | Marcar como hablado |
+| `PUT /api/cms/contacts/:id/respondieron` | Marcar como respondieron |
+| `PUT /api/cms/contacts/:id/revert` | Revertir un paso atras |
+| `PUT /api/cms/contacts/:id/archive` | Archivar contacto |
+| `PUT /api/cms/contacts/:id/notes` | Actualizar notas del operador |
+| `GET /api/cms/stats` | Stats CMS por campana |
+| `GET /api/cms/metrics` | Metricas CMS global (candidato+) |
+| `GET /api/cms/stream` | SSE eventos realtime del CMS |
+| **Objectives** | |
+| `GET /api/objectives/zones` | Objetivos por zona |
+| `PUT /api/objectives/zones/:region` | Crear/actualizar objetivo zona |
+| `POST /api/objectives/zones/bulk` | Bulk upsert objetivos zona |
+| `DELETE /api/objectives/zones/:region` | Eliminar objetivo zona |
+| `GET /api/objectives/users` | Objetivos efectivos por usuario |
+| `PUT /api/objectives/users/:userId` | Setear objetivo usuario |
+| `GET /api/objectives/summary` | Resumen de progreso |
+| **Twilio (WhatsApp)** | |
+| `POST /api/twilio/whatsapp/send` | Enviar mensaje WA a contacto CMS |
+| `GET /api/twilio/whatsapp/messages/:contactId` | Historial de conversacion WA |
+| **Metrics / Ops** | |
 | `GET /api/metrics` | Metricas operativas (admin) |
 
 ### Endpoints de Tracking (x-agent-token)
@@ -177,16 +229,47 @@ nexus6.0/
 # === OBLIGATORIAS ===
 DATABASE_URL=postgresql://user:pass@localhost:5432/db
 REDIS_URL=redis://localhost:6379
+REDIS_PASSWORD=<password>
 JWT_SECRET=<minimo-32-caracteres>
 AGENT_INGEST_TOKEN=<token-para-tracking>
 
 # === OPCIONALES (con defaults) ===
 PORT=3001
+BACKEND_PORT=3001
 LOG_LEVEL=info
 TEGOLA_BASE_URL=http://localhost:8080
+TEGOLA_MAP=peru
+FRONTEND_ORIGIN=https://dashboard.grupogoberna.com
+FRONTEND_ORIGINS=*
+RATE_LIMIT_MAX_PER_MINUTE=500000
 RATE_LIMIT_AUTH_PER_MINUTE=10
+RATE_LIMIT_FORMS_PER_MINUTE=1200
+RATE_LIMIT_AGENTS_LOCATION_PER_MINUTE=12000
 REFRESH_TOKEN_CLEANUP_INTERVAL_MS=3600000
 LOCATION_HISTORY_RETENTION_DAYS=7
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=7d
+BCRYPT_ROUNDS=10
+REQUEST_TIMEOUT_MS=5000
+UPSTREAM_RETRIES=2
+
+# === WRITE-BEHIND CONFIG ===
+FORMS_WB_BATCH_SIZE=200
+FORMS_WB_FLUSH_MS=300
+FORMS_WB_MAX_QUEUE=10000
+TRACKING_WB_BATCH_SIZE=300
+TRACKING_WB_FLUSH_MS=250
+TRACKING_WB_MAX_QUEUE=10000
+
+# === REDIS STREAMS ===
+TRACKING_STREAM_KEY=tracking:events
+FORMS_STREAM_KEY=forms:events
+FORMS_DEDUPE_TTL_SEC=604800
+
+# === DB POOL ===
+DB_POOL_MAX=30
+DB_IDLE_TIMEOUT_MS=30000
+DB_CONNECTION_TIMEOUT_MS=5000
 ```
 
 ### Web (`apps/web/.env.local`)
@@ -195,16 +278,18 @@ LOCATION_HISTORY_RETENTION_DAYS=7
 BACKEND_PROXY_TARGET=http://localhost:3001
 
 # Produccion (en Vercel env vars)
-# BACKEND_PROXY_TARGET=http://161.132.39.165
+# BACKEND_PROXY_TARGET=https://api.goberna.us
 ```
 
 ### Mobile (`apps/mobile/app.json` > extra)
 ```json
 {
-  "EXPO_PUBLIC_BACKEND_API_URL": "http://161.132.39.165/api",
-  "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "<token>"
+  "EXPO_PUBLIC_BACKEND_API_URL": "https://api.goberna.us/api",
+  "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "<token-NO-commitear-en-git>"
 }
 ```
+
+> **SEGURIDAD:** El `EXPO_PUBLIC_AGENT_INGEST_TOKEN` NO debe tener el valor real en git. Usar EAS secrets o `.env` local.
 
 ---
 
@@ -246,7 +331,8 @@ curl http://localhost:3001/api/health
 curl http://localhost:3001/api/ready
 
 # Health check produccion
-curl http://161.132.39.165/api/health
+curl https://api.goberna.us/api/health
+curl https://api.goberna.us/api/ready
 ```
 
 ---
@@ -276,12 +362,19 @@ Cada app tiene su propio `AGENTS.md` que:
 ```
 /AGENTS.md (root - este archivo)
     |
-    +-- /apps/backend/AGENTS.md
+    +-- /.agents/AGENTS.md              <- Orquestacion de agentes
     |
-    +-- /apps/web/AGENTS.md
+    +-- /apps/backend/AGENTS.md         <- Backend Fastify
+    |   +-- /apps/backend/src/modules/AGENTS.md  <- Convenciones de modulos
     |
-    +-- /apps/mobile/AGENTS.md
+    +-- /apps/web/AGENTS.md             <- Web Next.js
+    |   +-- /apps/web/.agents/AGENTS.md <- Skills web
+    |   +-- /apps/web/app/AGENTS.md     <- Reglas de rutas
+    |
+    +-- /apps/mobile/AGENTS.md          <- Mobile Expo
 ```
+
+**No deben existir** AGENTS.md individuales por modulo del backend (auth, campaigns, etc). Todo se consolida en `apps/backend/src/modules/AGENTS.md`.
 
 ---
 
