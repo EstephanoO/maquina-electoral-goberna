@@ -80,6 +80,7 @@ import {
   IconBriefcase,
   IconAward,
   IconCompass,
+  IconMonitor,
 } from "../../../../lib/ui";
 
 export const ROLES: Record<string, RoleConfig> = {
@@ -93,7 +94,7 @@ export const ROLES: Record<string, RoleConfig> = {
     bgColor: "linear-gradient(135deg, #ffd700, #ffb700)",
     borderColor: "#d4a500",
     description: "Control total del sistema y múltiples campañas",
-    canManage: ["consultor", "supervisor", "capitan_brigada", "agent"],
+    canManage: ["consultor", "candidato", "brigadista_zonal", "agente_campo", "agente_digital"],
   },
   consultor: {
     key: "consultor",
@@ -105,10 +106,10 @@ export const ROLES: Record<string, RoleConfig> = {
     bgColor: "linear-gradient(135deg, #818cf8, #6366f1)",
     borderColor: "#6366f1",
     description: "Asesora múltiples campañas asignadas",
-    canManage: ["supervisor", "capitan_brigada", "agent"],
+    canManage: ["candidato", "brigadista_zonal", "agente_campo", "agente_digital"],
   },
-  supervisor: {
-    key: "supervisor",
+  candidato: {
+    key: "candidato",
     label: "Candidato",
     shortLabel: "Candidato",
     level: 80,
@@ -117,10 +118,10 @@ export const ROLES: Record<string, RoleConfig> = {
     bgColor: "linear-gradient(135deg, #3b82f6, #1d4ed8)",
     borderColor: "#1d4ed8",
     description: "Control total de su campaña electoral",
-    canManage: ["director_regional", "capitan_brigada", "agent"],
+    canManage: ["brigadista_zonal", "agente_campo", "agente_digital"],
   },
-  capitan_brigada: {
-    key: "capitan_brigada",
+  brigadista_zonal: {
+    key: "brigadista_zonal",
     label: "Brigadista / Director de Campo",
     shortLabel: "Brigadista",
     level: 40,
@@ -129,49 +130,39 @@ export const ROLES: Record<string, RoleConfig> = {
     bgColor: "linear-gradient(135deg, #10b981, #059669)",
     borderColor: "#059669",
     description: "Coordina y lidera agentes en su zona",
-    canManage: ["agent"],
+    canManage: ["agente_campo", "agente_digital"],
     capacity: "5-10 Agentes",
   },
-  agent: {
-    key: "agent",
+  agente_campo: {
+    key: "agente_campo",
     label: "Agente de Campo",
-    shortLabel: "Agente",
+    shortLabel: "Campo",
     level: 20,
     icon: IconCompass,
     color: "#475569",
     bgColor: "linear-gradient(135deg, #64748b, #475569)",
     borderColor: "#475569",
-    description: "Operador territorial, sube formularios",
+    description: "Operador territorial — acceso a la app móvil",
+    canManage: [],
+  },
+  agente_digital: {
+    key: "agente_digital",
+    label: "Agente Digital",
+    shortLabel: "Digital",
+    level: 20,
+    icon: IconMonitor,
+    color: "#7c3aed",
+    bgColor: "linear-gradient(135deg, #a78bfa, #7c3aed)",
+    borderColor: "#7c3aed",
+    description: "Operador digital — acceso a la app y dashboard",
     canManage: [],
   },
 };
 
-// ── Role Aliases (backend → display) ────────────────────────────────
-
-const ROLE_ALIASES: Record<string, string> = {
-  candidato: "supervisor",
-  brigadista_zonal: "capitan_brigada",
-  agente_campo: "agent",
-  agente_digital: "agent",
-  director_regional: "capitan_brigada",
-};
-
-export function normalizeRole(role: string): string {
-  return ROLE_ALIASES[role] ?? role;
-}
+// ── Role Helpers ────────────────────────────────────────────────────
 
 export function getRoleConfig(role: string): RoleConfig {
-  return ROLES[normalizeRole(role)] ?? ROLES.agent;
-}
-
-/** Map display role key → backend role key */
-export function toBackendRole(displayRole: string): string {
-  switch (displayRole) {
-    case "supervisor": return "candidato";
-    case "capitan_brigada": return "brigadista_zonal";
-    case "consultor": return "consultor";
-    default: return "agente_campo";
-  }
+  return ROLES[role] ?? ROLES.agente_campo;
 }
 
 // ── Peruvian Departments ────────────────────────────────────────────
@@ -204,4 +195,4 @@ export function openWhatsApp(phone: string) {
 }
 
 /** Leadership roles — no se agrupan por región */
-export const LEADERSHIP_ROLES = new Set(["admin", "consultor", "supervisor"]);
+export const LEADERSHIP_ROLES = new Set(["admin", "consultor", "candidato"]);

@@ -117,10 +117,10 @@ export default function CandidatosPage() {
                 letterSpacing: "0.02em",
               }}
             >
-              Candidatos y Solicitudes
+              Candidatos & Solicitudes
             </h1>
             <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>
-              Gestión de candidatos y aprobación de solicitudes de acceso.
+              Gestione candidatos y apruebe solicitudes de acceso de usuarios.
             </p>
           </div>
           <Button variant="primary" onClick={() => setShowCreatePanel(true)}>

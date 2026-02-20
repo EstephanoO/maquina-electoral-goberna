@@ -12,7 +12,6 @@ import { Avatar, IconPhone, IconWhatsApp, IconKey, IconTrash } from "../../../..
 import {
   type Member,
   getRoleConfig,
-  normalizeRole,
   openWhatsApp,
 } from "./role-config";
 import { RoleBadge } from "./role-badge";
@@ -43,11 +42,10 @@ export function MemberRow({
 }: MemberRowProps) {
   const [hovered, setHovered] = useState(false);
   const config = getRoleConfig(member.role);
-  const normalized = normalizeRole(member.role);
   const isProtected =
-    normalized === "admin" ||
+    member.role === "admin" ||
     isSelf ||
-    (normalized === "consultor" && viewerRole !== "admin");
+    (member.role === "consultor" && viewerRole !== "admin");
 
   const showActions = canManage && !isProtected && hovered;
 
@@ -195,7 +193,7 @@ export function MemberRow({
         {/* Role badge or selector */}
         {canManage && !isProtected ? (
           <RoleSelector
-            value={normalized}
+            value={member.role}
             onChange={onRoleChange}
             disabled={updatingRole}
             allowedRoles={allowedRoles}

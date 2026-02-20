@@ -37,4 +37,5 @@ export {
   IconCrown,
   IconAward,
   IconCompass,
+  IconMonitor,
 } from "./icons";

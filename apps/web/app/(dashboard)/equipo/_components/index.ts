@@ -20,9 +20,7 @@ export {
   type ConsultorCampaignAssignment,
   ROLES,
   DEPARTAMENTOS,
-  normalizeRole,
   getRoleConfig,
-  toBackendRole,
   formatDate,
   openWhatsApp,
 } from "./role-config";

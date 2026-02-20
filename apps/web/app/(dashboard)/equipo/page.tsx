@@ -27,7 +27,7 @@ export default function EquipoPage() {
   useInjectStyles();
   const [showHierarchy, setShowHierarchy] = useState(false);
 
-  const eq = useEquipo(activeCampaignId, user?.role ?? "agent");
+  const eq = useEquipo(activeCampaignId, user?.role ?? "agente_campo");
 
   // ── Early returns ──────────────────────────────────────────────────
 
@@ -49,8 +49,10 @@ export default function EquipoPage() {
           <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--color-text-primary)", margin: "0 0 4px", letterSpacing: "0.02em" }}>
             EQUIPO DE CAMPAÑA
           </h1>
-          <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>
-            Estructura organizacional, roles y objetivos zonales
+          <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: 0 }}>
+            {eq.canManage
+              ? "Gestiona tu equipo y asigna roles según la jerarquía de mando."
+              : "Miembros de la campaña."}
           </p>
         </div>
         <button

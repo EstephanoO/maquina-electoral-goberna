@@ -10,7 +10,6 @@ import { FONT_STACK } from "../../../../lib/constants";
 import {
   type Member,
   getRoleConfig,
-  normalizeRole,
   LEADERSHIP_ROLES,
 } from "./role-config";
 import { MemberRow } from "./member-row";
@@ -63,10 +62,10 @@ export function MembersList({
 
   // Split leadership vs field
   const leadership = members
-    .filter((m) => LEADERSHIP_ROLES.has(normalizeRole(m.role)))
+    .filter((m) => LEADERSHIP_ROLES.has(m.role))
     .sort((a, b) => getRoleConfig(b.role).level - getRoleConfig(a.role).level);
 
-  const field = members.filter((m) => !LEADERSHIP_ROLES.has(normalizeRole(m.role)));
+  const field = members.filter((m) => !LEADERSHIP_ROLES.has(m.role));
 
   // Group field by region
   const grouped: Record<string, Member[]> = {};

@@ -5,7 +5,7 @@
 
 import type { CSSProperties } from "react";
 import { IconUsers, IconClock } from "../../../../lib/ui";
-import { getRoleConfig, normalizeRole, ROLES } from "./role-config";
+import { getRoleConfig, ROLES } from "./role-config";
 import { FONT_STACK } from "../../../../lib/constants";
 
 // ── Types ───────────────────────────────────────────────────────────

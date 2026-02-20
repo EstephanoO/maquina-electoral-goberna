@@ -13,9 +13,7 @@ import {
   type ConsultorCampaignAssignment,
   ROLES,
   DEPARTAMENTOS,
-  normalizeRole,
   getRoleConfig,
-  toBackendRole,
 } from "./role-config";
 
 export function useEquipo(activeCampaignId: string | null | undefined, userRoleRaw: string) {
@@ -28,7 +26,7 @@ export function useEquipo(activeCampaignId: string | null | undefined, userRoleR
 
   // Batch selection
   const [selectedRequests, setSelectedRequests] = useState<Set<string>>(new Set());
-  const [batchRole, setBatchRole] = useState("agent");
+  const [batchRole, setBatchRole] = useState("agente_campo");
   const [batchProcessing, setBatchProcessing] = useState(false);
 
   // Objectives
@@ -44,15 +42,18 @@ export function useEquipo(activeCampaignId: string | null | undefined, userRoleR
   const [savingConsultorCampaigns, setSavingConsultorCampaigns] = useState(false);
 
   // Derived permissions
-  const userRole = normalizeRole(userRoleRaw);
+  const userRole = userRoleRaw;
   const canManage = getRoleConfig(userRole).canManage.length > 0;
-  const allowedRoles = useMemo(() => ["agent", ...getRoleConfig(userRole).canManage], [userRole]);
+  const allowedRoles = useMemo(() => {
+    const cfg = getRoleConfig(userRole);
+    // Include self role + everything this role can manage
+    return [cfg.key, ...cfg.canManage];
+  }, [userRole]);
 
   const statsByRole = useMemo(() => {
     const byRole: Record<string, number> = {};
     for (const m of members) {
-      const key = normalizeRole(m.role);
-      byRole[key] = (byRole[key] ?? 0) + 1;
+      byRole[m.role] = (byRole[m.role] ?? 0) + 1;
     }
     return byRole;
   }, [members]);
@@ -115,15 +116,15 @@ export function useEquipo(activeCampaignId: string | null | undefined, userRoleR
       return;
     }
     setUpdatingRole(userId);
-    const res = await api.put(`/api/campaigns/${activeCampaignId}/members/${userId}/role`, { role: toBackendRole(newRole) }, { campaignId: activeCampaignId });
-    if (res.ok) setMembers((prev) => prev.map((m) => (m.user_id === userId ? { ...m, role: toBackendRole(newRole) } : m)));
+    const res = await api.put(`/api/campaigns/${activeCampaignId}/members/${userId}/role`, { role: newRole }, { campaignId: activeCampaignId });
+    if (res.ok) setMembers((prev) => prev.map((m) => (m.user_id === userId ? { ...m, role: newRole } : m)));
     else alert(res.error?.message ?? "Error cambiando rol");
     setUpdatingRole(null);
   }, [activeCampaignId, members, openConsultorModal]);
 
   const handleResolve = useCallback(async (requestId: string, status: "approved" | "rejected", role: string) => {
     setResolvingRequest(requestId);
-    const res = await api.put(`/api/access-requests/${requestId}`, { status, role: toBackendRole(role) });
+    const res = await api.put(`/api/access-requests/${requestId}`, { status, role });
     if (res.ok) {
       setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
       setSelectedRequests((prev) => { const n = new Set(prev); n.delete(requestId); return n; });
@@ -137,7 +138,7 @@ export function useEquipo(activeCampaignId: string | null | undefined, userRoleR
     if (!confirm(`¿Aprobar ${selectedRequests.size} solicitud${selectedRequests.size > 1 ? "es" : ""} como ${ROLES[batchRole]?.shortLabel ?? batchRole}?`)) return;
     setBatchProcessing(true);
     const results = await Promise.allSettled(Array.from(selectedRequests).map(async (id) => {
-      const res = await api.put(`/api/access-requests/${id}`, { status: "approved", role: toBackendRole(batchRole) });
+      const res = await api.put(`/api/access-requests/${id}`, { status: "approved", role: batchRole });
       if (!res.ok) throw new Error(); return id;
     }));
     const ids = results.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled").map((r) => r.value);

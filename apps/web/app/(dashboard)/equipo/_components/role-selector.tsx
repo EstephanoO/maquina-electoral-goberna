@@ -10,7 +10,7 @@ import { useState, useEffect, useRef } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { IconChevronDown, IconCheck } from "../../../../lib/ui";
-import { ROLES, getRoleConfig, normalizeRole } from "./role-config";
+import { ROLES, getRoleConfig } from "./role-config";
 import { RoleBadge } from "./role-badge";
 
 type RoleSelectorProps = {
@@ -96,7 +96,7 @@ export function RoleSelector({ value, onChange, disabled, allowedRoles }: RoleSe
           Seleccionar Rol
         </div>
         {availableRoles.sort((a, b) => b.level - a.level).map((role) => {
-          const isSelected = normalizeRole(value) === role.key;
+          const isSelected = value === role.key;
           return (
             <button
               key={role.key}

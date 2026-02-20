@@ -22,7 +22,7 @@ type RequestCardProps = {
 };
 
 function RequestCard({ request, selected, onToggleSelect, resolving, onResolve, allowedRoles }: RequestCardProps) {
-  const [selectedRole, setSelectedRole] = useState("agent");
+  const [selectedRole, setSelectedRole] = useState("agente_campo");
 
   return (
     <div style={{
@@ -143,7 +143,7 @@ function RequestCard({ request, selected, onToggleSelect, resolving, onResolve, 
             <button
               type="button"
               disabled={resolving}
-              onClick={() => onResolve("rejected", "agent")}
+              onClick={() => onResolve("rejected", "agente_campo")}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
