@@ -25,6 +25,14 @@ export const ZONE_HOVER = "rgba(148, 163, 184, 0.18)";
 export const ZONE_LINE = "#334155";
 export const ZONE_LINE_GHOST = "#94a3b8";
 
+/* ─── Mask system — opacity-based for instant GPU transitions ─── */
+
+/** Opacity values for the mask overlay (data-driven per feature) */
+export const MASK_OPACITY_ACTIVE = 0.06;   // selected zone — near transparent (matches ZONE_FILL alpha)
+export const MASK_OPACITY_HOVER = 0.14;    // hovered zone — subtle highlight
+export const MASK_OPACITY_DIM = 0.45;      // non-selected zones — darkened
+export const MASK_COLOR = "#0f172a";       // slate-900 — neutral dark mask base
+
 /* ─── Fill layers that support feature-state hover ─── */
 
 export const HOVER_LAYERS: Record<string, string> = {
@@ -49,10 +57,19 @@ export const SECTOR_LINE = "#0a0a0a";
 export const HIDE_FILTER: FilterSpecification = ["==", "1", "0"];
 export const SHOW_ALL_FILTER: FilterSpecification = ["all"];
 
+/* ─── Animation timing ─── */
+
+/** Drill navigation fly duration — short enough to feel snappy, long enough to orient */
+export const FLY_DURATION = 600;
+/** Resize re-fit duration — faster since it's a correction, not navigation */
+export const RESIZE_FLY_DURATION = 300;
+
 /* ─── Map viewport config ─── */
 
 export const PERU_VIEW = { longitude: -75.0152, latitude: -9.1899, zoom: 5 } as const;
 export const PERU_BOUNDS: [[number, number], [number, number]] = [[-81.4, -18.4], [-68.7, -0.1]];
+/** Flat [west, south, east, north] for Source bounds prop — tells MapLibre to skip tiles outside Peru */
+export const PERU_BOUNDS_FLAT: [number, number, number, number] = [-81.4, -18.4, -68.7, -0.1];
 
 /* ─── Tile config ─── */
 
@@ -65,7 +82,8 @@ export const MAP_STYLE: StyleSpecification = {
     "light-base": { type: "raster", tiles: [LIGHT_TILES], tileSize: 256, attribution: "&copy; CARTO", maxzoom: 19 },
   },
   layers: [{ id: "light-base", type: "raster", source: "light-base" }],
-  transition: { duration: 400, delay: 0 },
+  /** Instant paint transitions — mask/fill changes must sync with flyTo, not lag behind */
+  transition: { duration: 0, delay: 0 },
 };
 
 /* ─── Interactive layer IDs (static — never changes at runtime) ─── */

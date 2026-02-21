@@ -52,16 +52,67 @@ import { INITIAL_DRILL } from "./types";
 import {
   STATUS_COLORS, CLUSTER_COLORS, CLUSTER_STEPS, CLUSTER_SIZES, DATA_POINT,
   ZONE_FILL, ZONE_HOVER, ZONE_LINE, ZONE_LINE_GHOST, MASK_FILL, HOVER_LAYERS,
+  MASK_COLOR, MASK_OPACITY_ACTIVE, MASK_OPACITY_HOVER, MASK_OPACITY_DIM,
   PRIORITY_FILL, PRIORITY_LINE, SECTOR_FILL, SECTOR_LINE,
-  PERU_VIEW, PERU_BOUNDS, MAP_STYLE, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
+  PERU_VIEW, PERU_BOUNDS, PERU_BOUNDS_FLAT, MAP_STYLE, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
+  FLY_DURATION, RESIZE_FLY_DURATION,
 } from "./constants";
 import { getBoundsFromFeature } from "./utils";
-import { preloadProvincias, preloadDistritos, reverseGeocode } from "@/lib/services/geo";
+import { preloadProvincias, preloadDistritos, reverseGeocode, getDepartamentos, getProvincias, getDistritos } from "@/lib/services/geo";
 
 import { useDrillFilters } from "./hooks/use-drill-filters";
 import { useAgentsSource, useFormSources } from "./hooks/use-map-sources";
 import { useAutoFit } from "./hooks/use-auto-fit";
 import { useZoneTooltip } from "./hooks/use-zone-tooltip";
+
+/* ========== Tile pre-warming (background fetch of low-zoom tiles) ========== */
+
+/**
+ * Convert lng/lat to slippy-map tile coordinates at a given zoom.
+ * Standard Web Mercator formula.
+ */
+function lngLatToTile(lng: number, lat: number, z: number): [number, number] {
+  const n = 2 ** z;
+  const x = Math.floor(((lng + 180) / 360) * n);
+  const latRad = (lat * Math.PI) / 180;
+  const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n);
+  return [Math.max(0, Math.min(x, n - 1)), Math.max(0, Math.min(y, n - 1))];
+}
+
+/**
+ * Pre-fetch tiles for Peru at low zoom levels (z3–z8) in the background.
+ * Uses low-priority fetch so it doesn't compete with visible tile requests.
+ * Tiles are cached by the browser HTTP cache, making zoom-out transitions instant.
+ */
+function prewarmTiles(templateUrl: string) {
+  const PERU_SW: [number, number] = [-81.4, -18.4];
+  const PERU_NE: [number, number] = [-68.7, -0.1];
+
+  const urls: string[] = [];
+  for (let z = 3; z <= 8; z++) {
+    const [x0, y0] = lngLatToTile(PERU_SW[0], PERU_NE[1], z); // NW corner
+    const [x1, y1] = lngLatToTile(PERU_NE[0], PERU_SW[1], z); // SE corner
+    for (let x = x0; x <= x1; x++) {
+      for (let y = y0; y <= y1; y++) {
+        urls.push(templateUrl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y)));
+      }
+    }
+  }
+
+  // Fetch in small batches to avoid network congestion
+  let i = 0;
+  const BATCH = 6;
+  function fetchBatch() {
+    const batch = urls.slice(i, i + BATCH);
+    if (!batch.length) return;
+    i += BATCH;
+    Promise.all(batch.map((u) => fetch(u, { priority: "low" } as RequestInit).catch(() => {}))).then(() => {
+      // Small delay between batches to not starve interactive requests
+      setTimeout(fetchBatch, 50);
+    });
+  }
+  fetchBatch();
+}
 
 /* ========== Static paint/layout objects (P2 — hoisted, zero per-render allocation) ========== */
 
@@ -172,14 +223,32 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const tilesArray = useMemo(() => tileUrl ? [tileUrl] : [], [tileUrl]);
 
   // ─── P2: Memoize dynamic paint objects that depend on drillState ───
-  const depFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
-    "fill-color": drillState.level === 0
-      ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
-      : drillState.depCode
-        ? ["case", ["==", ["get", "coddep"], drillState.depCode], ZONE_FILL, MASK_FILL]
-        : ZONE_FILL,
-    "fill-opacity": 1,
-  }), [drillState.level, drillState.depCode]);
+  //
+  // Mask system: uses a fixed dark fill-color (MASK_COLOR) with data-driven
+  // fill-opacity. This is faster than interpolating RGBA colors because the
+  // GPU only varies one float (opacity) per feature instead of four (r,g,b,a).
+  // With transition.duration=0 in the style, changes are instant — no desfase
+  // between the mask and the flyTo animation.
+
+  const depFillPaint = useMemo((): FillLayerSpecification["paint"] => {
+    if (drillState.level === 0) {
+      // Active level: hover-aware, transparent base
+      return {
+        "fill-color": ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL],
+        "fill-opacity": 1,
+      };
+    }
+    // Mask mode: darken all except selected dep
+    return {
+      "fill-color": MASK_COLOR,
+      "fill-opacity": drillState.depCode
+        ? ["case",
+            ["==", ["get", "coddep"], drillState.depCode], MASK_OPACITY_ACTIVE,
+            MASK_OPACITY_DIM,
+          ]
+        : MASK_OPACITY_ACTIVE,
+    };
+  }, [drillState.level, drillState.depCode]);
 
   const depLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
     "line-color": drillState.level === 0 ? ZONE_LINE : ZONE_LINE_GHOST,
@@ -187,14 +256,25 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     "line-opacity": drillState.level === 0 ? 0.7 : 0.3,
   }), [drillState.level]);
 
-  const provFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
-    "fill-color": drillState.level === 1
-      ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
-      : drillState.provCode
-        ? ["case", ["==", ["get", "codprov_full"], drillState.provCode], ZONE_FILL, MASK_FILL]
-        : ZONE_FILL,
-    "fill-opacity": 1,
-  }), [drillState.level, drillState.provCode]);
+  const provFillPaint = useMemo((): FillLayerSpecification["paint"] => {
+    if (drillState.level === 1) {
+      // Active level: hover-aware, transparent base
+      return {
+        "fill-color": ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL],
+        "fill-opacity": 1,
+      };
+    }
+    // Mask mode: darken all except selected prov
+    return {
+      "fill-color": MASK_COLOR,
+      "fill-opacity": drillState.provCode
+        ? ["case",
+            ["==", ["get", "codprov_full"], drillState.provCode], MASK_OPACITY_ACTIVE,
+            MASK_OPACITY_DIM,
+          ]
+        : MASK_OPACITY_ACTIVE,
+    };
+  }, [drillState.level, drillState.provCode]);
 
   const provLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
     "line-color": drillState.level === 1 ? ZONE_LINE : ZONE_LINE_GHOST,
@@ -202,14 +282,25 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     "line-opacity": drillState.level === 1 ? 0.7 : 0.2,
   }), [drillState.level]);
 
-  const distFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
-    "fill-color": drillState.level === 2
-      ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
-      : drillState.distCode
-        ? ["case", ["==", ["get", "ubigeo"], drillState.distCode], ZONE_FILL, MASK_FILL]
-        : ZONE_FILL,
-    "fill-opacity": 1,
-  }), [drillState.level, drillState.distCode]);
+  const distFillPaint = useMemo((): FillLayerSpecification["paint"] => {
+    if (drillState.level === 2) {
+      // Active level: hover-aware, transparent base
+      return {
+        "fill-color": ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL],
+        "fill-opacity": 1,
+      };
+    }
+    // Mask mode: darken all except selected dist
+    return {
+      "fill-color": MASK_COLOR,
+      "fill-opacity": drillState.distCode
+        ? ["case",
+            ["==", ["get", "ubigeo"], drillState.distCode], MASK_OPACITY_ACTIVE,
+            MASK_OPACITY_DIM,
+          ]
+        : MASK_OPACITY_ACTIVE,
+    };
+  }, [drillState.level, drillState.distCode]);
 
   const distLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
     "line-color": ZONE_LINE,
@@ -250,7 +341,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Imperative handle ───
   useImperativeHandle(ref, () => ({
     flyToPoint(lng: number, lat: number, zoom = 17) {
-      mapRef.current?.flyTo({ center: [lng, lat], zoom, duration: 1200, essential: true });
+      mapRef.current?.flyTo({ center: [lng, lat], zoom, duration: FLY_DURATION, essential: true });
     },
     getDrillState() { return drillStateRef.current; },
   }), []);
@@ -264,7 +355,19 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Map load ───
   const handleLoad = useCallback(() => {
     mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
-  }, []);
+
+    // Pre-warm low-zoom tiles so zoom-out transitions are instant.
+    // These tiles cover all of Peru at z3-z8 and will be cached by the
+    // browser HTTP cache + MapLibre internal tile cache, eliminating the
+    // "loading by squares" effect when navigating back from a drill-down.
+    if (tileUrl) {
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(() => prewarmTiles(tileUrl), { timeout: 3000 });
+      } else {
+        setTimeout(() => prewarmTiles(tileUrl), 1000);
+      }
+    }
+  }, [tileUrl]);
 
   // ─── Zoom tracking via react-maplibre callbacks (not native map.on) ───
   // Using the declarative onMoveStart/onMoveEnd props keeps event registration
@@ -296,7 +399,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         if (newLevel < 1) { newState.depCode = null; newState.depName = null; }
         onDrillChange(newState);
         if (newLevel === 0) {
-          mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: 800 });
+          mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: FLY_DURATION });
         }
       }
       return;
@@ -316,7 +419,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         const source = map.getSource("forms-clustered") as GeoJSONSource | undefined;
 
         const flyToZoom = (targetZoom: number) => {
-          mapRef.current?.flyTo({ center: [lng, lat], zoom: targetZoom, duration: 600, essential: true });
+          mapRef.current?.flyTo({ center: [lng, lat], zoom: targetZoom, duration: FLY_DURATION, essential: true });
         };
 
         if (source && typeof source.getClusterExpansionZoom === "function") {
@@ -358,7 +461,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         else {
           onSelectAgent(agentId);
           const agent = currentAgents.find((a) => a.id === agentId);
-          if (agent) mapRef.current?.flyTo({ center: [agent.lng, agent.lat], zoom: 13, duration: 800 });
+          if (agent) mapRef.current?.flyTo({ center: [agent.lng, agent.lat], zoom: 13, duration: FLY_DURATION });
         }
       }
       return;
@@ -382,7 +485,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
       if (newLevel < 1) { newState.depCode = null; newState.depName = null; }
       onDrillChange(newState);
       if (newLevel === 0) {
-        mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: 800 });
+        mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: FLY_DURATION });
       }
       return;
     }
@@ -393,7 +496,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
       if (coddep) {
         preloadProvincias(coddep);
         const bounds = getBoundsFromFeature(f);
-        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
+        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
         skipNextFitRef.current = true;
         onDrillChange({ ...INITIAL_DRILL, level: 1, depCode: coddep, depName: name });
       }
@@ -407,7 +510,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
       if (codprovFull) {
         preloadDistritos(codprovFull);
         const bounds = getBoundsFromFeature(f);
-        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
+        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
         skipNextFitRef.current = true;
         onDrillChange({ ...currentDrill, level: 2, provCode: codprovFull, provName: name, depCode: coddep, distCode: null, distName: null, sector: null, sectorName: null });
       }
@@ -423,7 +526,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
       const provName = String(f.properties?.provincia ?? f.properties?.PROVINCIA ?? currentDrill.provName ?? "");
       if (ubigeo) {
         const bounds = getBoundsFromFeature(f);
-        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
+        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
         skipNextFitRef.current = true;
         onDrillChange({ level: 3, depCode: coddep, depName, provCode: codprovFull, provName, distCode: ubigeo, distName: name, sector: null, sectorName: null });
       }
@@ -436,14 +539,14 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
       if (sectorNum != null) {
         const bounds = getBoundsFromFeature(f);
         onDrillChange({ ...currentDrill, level: 4, sector: sectorNum, sectorName: `Sector ${sectorNum}` });
-        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
+        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
       }
       return;
     }
 
     if (isSubsector) {
       const bounds = getBoundsFromFeature(f);
-      if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: 800 });
+      if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
     }
   }, [onDrillChange, onSelectAgent]); // stable — reads volatile values from refs
 
@@ -504,7 +607,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
     if (selectedAgentId && mapRef.current) {
       const agent = agents.find((a) => a.id === selectedAgentId);
-      if (agent) mapRef.current.flyTo({ center: [agent.lng, agent.lat], zoom: 13, duration: 800 });
+      if (agent) mapRef.current.flyTo({ center: [agent.lng, agent.lat], zoom: 13, duration: FLY_DURATION });
     }
   }, [selectedAgentId, agents]);
 
@@ -539,8 +642,32 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
         map.resize();
 
+        // Re-fit to current drill level bounds (not always Peru)
         if (dw > 50 || dh > 50) {
-          map.fitBounds(PERU_BOUNDS, { padding: 30, duration: 400 });
+          const drill = drillStateRef.current;
+          if (drill.level === 0) {
+            map.fitBounds(PERU_BOUNDS, { padding: 30, duration: RESIZE_FLY_DURATION });
+          } else if (drill.level >= 3 && drill.provCode && drill.distCode) {
+            getDistritos(drill.provCode).then((r) => {
+              if (!r.ok || !r.distritos || !mapRef.current) return;
+              const d = r.distritos.find((x) => x.ubigeo === drill.distCode);
+              if (d) mapRef.current.fitBounds(d.bounds, { padding: 40, duration: RESIZE_FLY_DURATION });
+            }).catch(() => {});
+          } else if (drill.level === 2 && drill.depCode && drill.provCode) {
+            getProvincias(drill.depCode).then((r) => {
+              if (!r.ok || !r.provincias || !mapRef.current) return;
+              const p = r.provincias.find((x) => x.codprov_full === drill.provCode);
+              if (p) mapRef.current.fitBounds(p.bounds, { padding: 40, duration: RESIZE_FLY_DURATION });
+            }).catch(() => {});
+          } else if (drill.level === 1 && drill.depCode) {
+            getDepartamentos().then((r) => {
+              if (!r.ok || !r.departamentos || !mapRef.current) return;
+              const dep = r.departamentos.find((x) => x.coddep === drill.depCode);
+              if (dep) mapRef.current.fitBounds(dep.bounds, { padding: 40, duration: RESIZE_FLY_DURATION });
+            }).catch(() => {});
+          } else {
+            map.fitBounds(PERU_BOUNDS, { padding: 30, duration: RESIZE_FLY_DURATION });
+          }
         }
       }, 350);
     });
@@ -568,6 +695,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         initialViewState={PERU_VIEW}
         style={{ width: "100%", height: "100%" }}
         mapStyle={MAP_STYLE}
+        maxTileCacheZoomLevels={10}
         onLoad={handleLoad}
         onMoveStart={handleMoveStart}
         onMoveEnd={handleMoveEnd}
@@ -577,7 +705,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         interactiveLayerIds={INTERACTIVE_LAYERS as unknown as string[]}
       >
         {/* ── Tegola vector tiles ── */}
-        <Source id="peru" type="vector" tiles={tilesArray} minzoom={0} maxzoom={12} promoteId={PROMOTE_ID}>
+        <Source id="peru" type="vector" tiles={tilesArray} minzoom={0} maxzoom={14} bounds={PERU_BOUNDS_FLAT} promoteId={PROMOTE_ID}>
 
           {/* DEPARTAMENTOS */}
           <Layer id="dep-fill" type="fill" source-layer="departamentos" filter={filters.depFillFilter} paint={depFillPaint} />
