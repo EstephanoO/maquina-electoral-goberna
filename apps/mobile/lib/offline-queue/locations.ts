@@ -43,7 +43,12 @@ export interface LocationPayload {
 }
 
 /**
- * Get the next sequence number (persisted across app restarts)
+ * Get the next sequence number (persisted across app restarts).
+ *
+ * Uses a floor of Date.now()/1000 (unix seconds) to guarantee the seq is
+ * always higher than any value the server has seen, even after app reinstall
+ * or SQLite wipe. This prevents permanent dedup rejection when the local
+ * counter resets to 0 while the server remembers a higher seq.
  */
 export async function getNextSeq(): Promise<number> {
   const db = await getDatabase();
@@ -52,8 +57,10 @@ export async function getNextSeq(): Promise<number> {
     "SELECT value FROM sync_meta WHERE key = 'location_seq'"
   );
   
-  const currentSeq = row ? parseInt(row.value, 10) : 0;
-  const nextSeq = currentSeq + 1;
+  const storedSeq = row ? parseInt(row.value, 10) : 0;
+  // Ensure seq is always above both the stored value and current unix seconds
+  const floor = Math.floor(Date.now() / 1000);
+  const nextSeq = Math.max(storedSeq, floor) + 1;
   
   await db.runAsync(
     "UPDATE sync_meta SET value = ?, updated_at = datetime('now') WHERE key = 'location_seq'",
