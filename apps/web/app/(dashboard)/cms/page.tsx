@@ -352,6 +352,25 @@ export default function CmsPage() {
       if (!res.ok) {
         setActionError(res.error ?? "No se pudo revertir");
         setTimeout(() => setActionError(null), 4000);
+      } else if (res.contact) {
+        // Optimistic local update in case SSE is delayed or disconnected
+        const contact = res.contact;
+        const tab = activeTabRef.current;
+        const belongsInTab = tab === "todos" || contact.cms_status === tab;
+        setContacts((prev) => {
+          if (belongsInTab) {
+            // Update in place or prepend
+            const idx = prev.findIndex((c) => c.id === id);
+            if (idx >= 0) { const next = [...prev]; next[idx] = contact; return next; }
+            return [contact, ...prev];
+          }
+          // Contact left this tab — remove
+          return prev.filter((c) => c.id !== id);
+        });
+        // Refresh stats
+        getCmsStats(activeCampaignId).then((r) => {
+          if (r.ok && r.stats) setStats(r.stats);
+        });
       }
       setReverting(null);
     },
