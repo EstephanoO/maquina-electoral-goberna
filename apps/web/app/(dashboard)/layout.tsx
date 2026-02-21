@@ -43,19 +43,18 @@ type NavItem = {
   href: string | ((campaignSlug: string) => string);
   roles: UIRole[];
   section?: "main" | "admin";
+  /** When the item is visible: "always" | "campaign" (only with active campaign) | "global" (only Admin General) */
+  visibility?: "always" | "campaign" | "global";
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["admin", "candidato"], section: "main" },
-  { icon: <DashboardIcon />, label: "Dashboard", href: (slug) => `/candidatos/${slug}/tierra`, roles: ["admin", "candidato", "consultor"], section: "main" },
-  { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin" },
-  { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin"], section: "main" },
-  { icon: <CMSIcon />, label: "CMS", href: "/cms", roles: ["admin", "candidato", "consultor"], section: "main" },
-  // Metricas CMS: admin accede por ruta global; candidato/consultor acceden via /candidatos/[slug]/cms-metrics desde el dashboard
-  { icon: <CmsMetricsIcon />, label: "Metricas CMS", href: "/cms-metrics", roles: ["admin"], section: "main" },
-  // Consultor: acceso directo a dashboards de la campaña activa via sidebar
-  { icon: <DigitalIcon />, label: "Analytics", href: (slug) => `/candidatos/${slug}/analytics`, roles: ["consultor"], section: "main" },
-  { icon: <CmsMetricsIcon />, label: "Digital", href: (slug) => `/candidatos/${slug}/cms-metrics`, roles: ["consultor"], section: "main" },
+  { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["admin", "candidato"], section: "main", visibility: "always" },
+  { icon: <DashboardIcon />, label: "Dashboard", href: (slug) => `/candidatos/${slug}/tierra`, roles: ["admin", "candidato", "consultor"], section: "main", visibility: "campaign" },
+  { icon: <CMSIcon />, label: "CMS", href: "/cms", roles: ["admin", "candidato", "consultor"], section: "main", visibility: "always" },
+  { icon: <DigitalIcon />, label: "Analytics", href: (slug) => `/candidatos/${slug}/analytics`, roles: ["admin", "candidato", "consultor"], section: "main", visibility: "campaign" },
+  // Admin-only: visible only in Admin General mode
+  { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin", visibility: "global" },
+  { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin"], section: "admin", visibility: "global" },
   // Configuracion se renderiza como item fijo al fondo del sidebar (fuera del nav scrolleable)
 ];
 
@@ -116,15 +115,6 @@ function CMSIcon() {
   );
 }
 
-function CmsMetricsIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M18 20V10" />
-      <path d="M12 20V4" />
-      <path d="M6 20v-6" />
-    </svg>
-  );
-}
 
 function DigitalIcon() {
   return (
@@ -383,23 +373,28 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
     [campaignSlug],
   );
 
-  // FIX: Memoize nav lists — was recomputed on every render
+  // Memoize nav lists — filters by role, campaign context, and visibility
+  const hasCampaign = !!activeCampaignId;
   const { mainNav, adminNav } = useMemo(() => {
     const filtered = NAV_ITEMS
       .filter((item) => item.roles.includes(uiRole))
-      .filter((item) => typeof item.href === "string" || campaignSlug);
+      .filter((item) => {
+        const vis = item.visibility ?? "always";
+        if (vis === "campaign") return hasCampaign && !!campaignSlug;
+        if (vis === "global") return !hasCampaign;
+        return true; // "always"
+      });
     return {
       mainNav: filtered.filter((item) => item.section === "main"),
       adminNav: filtered.filter((item) => item.section === "admin"),
     };
-  }, [uiRole, campaignSlug]);
+  }, [uiRole, campaignSlug, hasCampaign]);
 
   // ── Active state: smart matching ──
   // Dynamic hrefs (functions — "/candidatos/slug/tierra") use prefix match
   // so that sub-routes stay highlighted.
   // Static hrefs ("/candidatos", "/cms", etc.) use EXACT match only.
-  // This prevents "/candidatos" lighting up on "/candidatos/slug/tierra"
-  // and "/cms" lighting up on "/cms-metrics".
+  // This prevents "/candidatos" lighting up on "/candidatos/slug/tierra".
   const isNavActive = useCallback(
     (item: NavItem, href: string): boolean => {
       if (pathname === href) return true;
@@ -449,7 +444,15 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "var(--color-background)" }}>
+    <div
+      style={{
+        display: "flex",
+        minHeight: "100vh",
+        background: "var(--color-background)",
+        // Expose current sidebar width as CSS variable for child layouts
+        "--sidebar-current-width": `${isMobile ? 0 : sidebarWidth}px`,
+      } as React.CSSProperties}
+    >
       {/* ── Mobile overlay ──────────────────────────────────────── */}
       {mobileOpen && (
         <button
@@ -494,8 +497,8 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
           style={{
             display: "flex",
             alignItems: "center",
-            gap: showLabel ? 12 : 0,
-            padding: showLabel ? "16px 20px" : "16px 0",
+            gap: showLabel ? 14 : 0,
+            padding: showLabel ? "14px 20px" : "14px 0",
             justifyContent: showLabel ? "flex-start" : "center",
             borderBottom: "1px solid rgba(255,255,255,0.08)",
             minHeight: 64,
@@ -505,23 +508,36 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
           <Image
             src="/isotipo_2_-removebg-preview.png"
             alt="GOBERNA"
-            width={32}
-            height={32}
-            style={{ borderRadius: 6, flexShrink: 0 }}
+            width={36}
+            height={36}
+            style={{ flexShrink: 0 }}
           />
           {showLabel && (
-            <span
-              style={{
-                fontWeight: 800,
-                fontSize: 16,
-                letterSpacing: 3,
-                color: "var(--goberna-gold)",
-                whiteSpace: "nowrap",
-                fontFamily: "var(--font-montserrat), system-ui, sans-serif",
-              }}
-            >
-              GOBERNA
-            </span>
+            <>
+              <span
+                style={{
+                  width: 1.5,
+                  height: 28,
+                  backgroundColor: "var(--goberna-gold)",
+                  borderRadius: 1,
+                  flexShrink: 0,
+                  opacity: 0.6,
+                }}
+              />
+              <span
+                style={{
+                  fontWeight: 700,
+                  fontSize: 15,
+                  letterSpacing: 4,
+                  color: "var(--goberna-gold)",
+                  whiteSpace: "nowrap",
+                  fontFamily: "var(--font-montserrat), system-ui, sans-serif",
+                  lineHeight: 1,
+                }}
+              >
+                GOBERNA
+              </span>
+            </>
           )}
 
           {/* Mobile close button */}
@@ -548,6 +564,33 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             </button>
           )}
         </div>
+
+        {/* Active campaign context indicator */}
+        {showLabel && (
+          <div
+            style={{
+              padding: "10px 20px",
+              borderBottom: "1px solid rgba(255,255,255,0.08)",
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, color: "rgba(255,255,255,0.35)", marginBottom: 4 }}>
+              {activeCampaign ? "Campaña activa" : "Vista"}
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: activeCampaign ? "var(--goberna-gold)" : "rgba(255,255,255,0.6)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {activeCampaign?.name ?? "General"}
+            </div>
+          </div>
+        )}
 
         {/* Nav links */}
         <nav
@@ -615,8 +658,8 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             );
           })()}
 
-          {/* Campaign selector */}
-          {showLabel && campaigns.length > 1 && (
+          {/* Campaign selector — admin always sees it (with "Admin" global option) */}
+          {showLabel && (isAdmin || campaigns.length > 1) && (
             <div
               style={{
                 padding: "10px 16px",
@@ -630,8 +673,8 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                 style={{
                   width: "100%",
                   padding: "8px 12px",
-                  background: "rgba(255,255,255,0.07)",
-                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: activeCampaignId ? "rgba(255,255,255,0.07)" : "rgba(255,200,0,0.08)",
+                  border: activeCampaignId ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(255,200,0,0.25)",
                   borderRadius: "var(--radius-sm)",
                   color: "#ffffff",
                   fontSize: 12,
@@ -645,7 +688,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                 }}
               >
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {activeCampaign?.name ?? "Seleccionar campana"}
+                  {activeCampaign?.name ?? (isAdmin ? "Admin — General" : "Seleccionar campana")}
                 </span>
                 <ChevronIcon open={campaignDropdownOpen} />
               </button>
@@ -666,6 +709,39 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                     zIndex: 10,
                   }}
                 >
+                  {/* Admin global option */}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveCampaign(null);
+                        setCampaignDropdownOpen(false);
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        background: !activeCampaignId ? "rgba(255,200,0,0.1)" : "transparent",
+                        border: "none",
+                        borderBottom: "1px solid rgba(255,255,255,0.08)",
+                        color: !activeCampaignId ? "var(--goberna-gold)" : "rgba(255,255,255,0.8)",
+                        fontSize: 12,
+                        fontWeight: !activeCampaignId ? 700 : 400,
+                        fontFamily: "inherit",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        transition: "background 0.1s ease",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                      </svg>
+                      Admin — General
+                    </button>
+                  )}
                   {campaigns.map((c) => (
                     <button
                       type="button"
@@ -898,12 +974,12 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
       <main
         style={{
           flex: 1,
-          marginLeft: isMobile ? 0 : sidebarWidth,
+          marginLeft: "var(--sidebar-current-width)",
           padding: isImmersiveRoute ? 0 : isMobile ? "68px 16px 16px" : 24,
           transition: "margin-left 0.2s cubic-bezier(0.4,0,0.2,1)",
           minHeight: "100vh",
           overflow: isImmersiveRoute ? "hidden" : undefined,
-        }}
+        } as React.CSSProperties}
       >
         {children}
       </main>

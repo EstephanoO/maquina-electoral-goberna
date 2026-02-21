@@ -5,7 +5,7 @@ import {
   getCampaignTwilioConfig,
   saveCampaignTwilioConfig,
   type CampaignTwilioConfig,
-} from "../../../../lib/services/cms";
+} from "@/lib/services/cms";
 
 const FONT = "var(--font-montserrat), system-ui, sans-serif";
 

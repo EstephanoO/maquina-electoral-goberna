@@ -16,12 +16,7 @@ gzip_types
     text/plain
     text/event-stream;
 
-map $uri $tile_cache_ttl {
-    default          2h;
-    "~*/tiles/[0-7]/"  24h;
-    "~*/tiles/1[3-9]/" 30m;
-    "~*/tiles/14/"     30m;
-}
+
 
 server {
     listen 80;
@@ -37,7 +32,8 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     server_name ${API_DOMAIN};
 
     ssl_certificate /etc/letsencrypt/live/${API_DOMAIN}/fullchain.pem;
@@ -76,7 +72,7 @@ server {
 
         proxy_cache tiles_cache;
         proxy_cache_key $uri;
-        proxy_cache_valid 200 $tile_cache_ttl;
+        proxy_cache_valid 200 2h;
         proxy_cache_valid 204 1m;
         proxy_cache_valid 404 1m;
         proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;

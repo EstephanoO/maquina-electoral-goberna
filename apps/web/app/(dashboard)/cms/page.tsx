@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useAuth } from "../../../lib/auth-context";
+import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
 import {
   listCmsContacts,
   markHablado,
@@ -15,9 +16,8 @@ import {
   type CmsTabFilter,
   type CmsSseContactUpdated,
   type CmsSseNotesUpdated,
-} from "../../../lib/services/cms";
-import { ContactTableRow } from "./_components/contact-table-row";
-import { ContactNotesPanel } from "./_components/contact-notes-panel";
+} from "@/lib/services/cms";
+import { ContactTableRow, ContactNotesPanel } from "./_components";
 import { TwilioConfigModal } from "./_components/twilio-config-modal";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -39,7 +39,7 @@ const TABS: Tab[] = [
 ];
 
 export default function CmsPage() {
-  const { user, activeCampaignId } = useAuth();
+  const { user, activeCampaignId, campaigns } = useAuth();
 
   const [activeTab, setActiveTab] = useState<CmsTabFilter>("nuevo");
   const [contacts, setContacts] = useState<CmsContact[]>([]);
@@ -51,6 +51,7 @@ export default function CmsPage() {
   const [savingNotes, setSavingNotes] = useState(false);
   const [notesContact, setNotesContact] = useState<CmsContact | null>(null);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [reverting, setReverting] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -72,7 +73,7 @@ export default function CmsPage() {
     setLoading(true);
     setOffset(0);
     const [contactsRes, statsRes] = await Promise.all([
-      listCmsContacts(activeCampaignId, activeTab, PAGE_LIMIT, 0, search),
+      listCmsContacts(activeCampaignId, activeTab, PAGE_LIMIT, 0, debouncedSearch),
       getCmsStats(activeCampaignId),
     ]);
     if (contactsRes.ok) {
@@ -81,7 +82,7 @@ export default function CmsPage() {
     }
     if (statsRes.ok && statsRes.stats) setStats(statsRes.stats);
     setLoading(false);
-  }, [activeCampaignId, activeTab, search]);
+  }, [activeCampaignId, activeTab, debouncedSearch]);
 
   // ── Load more (append) ──────────────────────────────────────────
 
@@ -89,22 +90,23 @@ export default function CmsPage() {
     if (!activeCampaignId || loadingMore) return;
     setLoadingMore(true);
     const nextOffset = offset + PAGE_LIMIT;
-    const res = await listCmsContacts(activeCampaignId, activeTab, PAGE_LIMIT, nextOffset, search);
+    const res = await listCmsContacts(activeCampaignId, activeTab, PAGE_LIMIT, nextOffset, debouncedSearch);
     if (res.ok) {
       setContacts((prev) => [...prev, ...res.contacts]);
       setOffset(nextOffset);
     }
     setLoadingMore(false);
-  }, [activeCampaignId, activeTab, search, offset, loadingMore]);
+  }, [activeCampaignId, activeTab, debouncedSearch, offset, loadingMore]);
 
   useEffect(() => {
     fetchContacts();
   }, [fetchContacts]);
 
-  // Debounced search
+  // Debounced search — update input immediately, delay API call
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => setDebouncedSearch(value), 350);
   }, []);
 
   // ── SSE: Real-time contact updates ──────────────────────────────
@@ -415,6 +417,37 @@ export default function CmsPage() {
               Gestión de contactos vía WhatsApp
             </p>
           </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {(() => {
+              const activeSlug = campaigns.find((c) => c.id === activeCampaignId)?.slug;
+              if (!activeSlug) return null;
+              return (
+                <Link
+                  href={`/candidatos/${activeSlug}/cms-metrics`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "8px 14px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    fontFamily: FONT,
+                    color: "var(--goberna-blue-900)",
+                    background: "var(--goberna-blue-50)",
+                    border: "1px solid var(--goberna-blue-200, #bfdbfe)",
+                    borderRadius: 8,
+                    textDecoration: "none",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <title>Metricas</title>
+                    <path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" />
+                  </svg>
+                  Metricas
+                </Link>
+              );
+            })()}
           {user?.role === "admin" && (
             <button
               type="button"
@@ -443,6 +476,7 @@ export default function CmsPage() {
               Twilio
             </button>
           )}
+          </div>
         </div>
 
         {/* Search + refresh */}

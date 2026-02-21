@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useAuth } from "../../../lib/auth-context";
+import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
 import {
   getCmsMetrics,
   type CmsMetrics,
   type CmsMetricsCampaign,
   type CmsMetricsOperator,
   type CmsTimeMetrics,
-} from "../../../lib/services/cms";
+} from "@/lib/services/cms";
 
 /* ═══════════════════════════════════════════════════════════════════
    GOBERNA — CMS Metrics Dashboard
@@ -332,18 +333,20 @@ const timeCardFooter: React.CSSProperties = {
 // ── Main Page ───────────────────────────────────────────────────────
 
 export default function CmsMetricsPage() {
-  const { user } = useAuth();
+  const { user, activeCampaignId, campaigns } = useAuth();
   const [metrics, setMetrics] = useState<CmsMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const activeCampaign = campaigns.find((c) => c.id === activeCampaignId);
   const isMultiCampaign = (metrics?.campaigns.length ?? 0) > 1;
 
   const fetchMetrics = useCallback(async () => {
+    if (!activeCampaignId) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await getCmsMetrics();
+      const res = await getCmsMetrics(activeCampaignId);
       if (!res.ok) {
         setError(res.error ?? "Error cargando métricas");
         return;
@@ -354,13 +357,28 @@ export default function CmsMetricsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeCampaignId]);
 
   useEffect(() => {
     fetchMetrics();
   }, [fetchMetrics]);
 
+  // Auto-refresh every 30s to keep metrics current during active operation
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
+  useEffect(() => {
+    intervalRef.current = setInterval(fetchMetrics, 30_000);
+    return () => clearInterval(intervalRef.current);
+  }, [fetchMetrics]);
+
   // ── Loading / Error states ──────────────────────────────────────
+
+  if (!activeCampaignId) {
+    return (
+      <div style={{ padding: 40, textAlign: "center", fontFamily: FONT, color: "var(--color-text-tertiary)" }}>
+        Selecciona una campaña para ver las métricas.
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -400,28 +418,52 @@ export default function CmsMetricsPage() {
             MÉTRICAS CMS
           </h1>
           <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: "4px 0 0" }}>
-            {isMultiCampaign
-              ? `${metrics.campaigns.length} campañas`
-              : metrics.campaigns[0]?.campaign_name ?? "Sin campañas"}
+            {activeCampaign?.name ?? metrics.campaigns[0]?.campaign_name ?? "Campaña"}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={fetchMetrics}
-          style={{
-            padding: "8px 16px",
-            borderRadius: "var(--radius-md)",
-            border: "1px solid var(--color-border)",
-            background: "var(--color-surface)",
-            color: "var(--color-text-primary)",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-            fontFamily: FONT,
-          }}
-        >
-          Actualizar
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Link
+            href="/cms"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 14px",
+              fontSize: 13,
+              fontWeight: 600,
+              fontFamily: FONT,
+              color: "var(--goberna-blue-900)",
+              background: "var(--goberna-blue-50)",
+              border: "1px solid var(--goberna-blue-200, #bfdbfe)",
+              borderRadius: "var(--radius-md)",
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <title>CMS</title>
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            Ver Contactos
+          </Link>
+          <button
+            type="button"
+            onClick={fetchMetrics}
+            style={{
+              padding: "8px 16px",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--color-border)",
+              background: "var(--color-surface)",
+              color: "var(--color-text-primary)",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: FONT,
+            }}
+          >
+            Actualizar
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}

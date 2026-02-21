@@ -147,6 +147,26 @@ export async function remove(id: string): Promise<boolean> {
   return (rowCount ?? 0) > 0;
 }
 
+/** Soft-delete: mark as pending_deletion instead of removing */
+export async function softRemove(id: string, deletedBy: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE form_definitions SET status = 'pending_deletion', deleted_by = $2, deleted_at = now()
+     WHERE id = $1 AND status != 'pending_deletion'`,
+    [id, deletedBy],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Restore a soft-deleted form definition */
+export async function restore(id: string): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `UPDATE form_definitions SET status = 'archived', deleted_by = NULL, deleted_at = NULL
+     WHERE id = $1 AND status = 'pending_deletion'`,
+    [id],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
 // ── Default form creation ───────────────────────────────────────────
 
 const DEFAULT_FORM_SCHEMA = {

@@ -232,12 +232,15 @@ export async function revertContact(
   return { ok: true, contact: res.data?.contact };
 }
 
-export async function getCmsMetrics(): Promise<{
+export async function getCmsMetrics(campaignId?: string): Promise<{
   ok: boolean;
   metrics?: CmsMetrics;
   error?: string;
 }> {
-  const res = await api.get<CmsMetricsResponse>("/api/cms/metrics");
+  const res = await api.get<CmsMetricsResponse>(
+    "/api/cms/metrics",
+    campaignId ? { campaignId } : undefined,
+  );
   if (!res.ok) return { ok: false, error: res.error?.message };
   return { ok: true, metrics: res.data?.metrics };
 }

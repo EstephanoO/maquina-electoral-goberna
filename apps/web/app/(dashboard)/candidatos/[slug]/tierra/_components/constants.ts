@@ -54,8 +54,10 @@ export const SECTOR_LINE = "#0a0a0a";
 
 /* ─── Reusable MapLibre filter constants ─── */
 
-export const HIDE_FILTER: FilterSpecification = ["==", "1", "0"];
-export const SHOW_ALL_FILTER: FilterSpecification = ["all"];
+/** Always-false filter (expression syntax required by MapLibre GL v5+) */
+export const HIDE_FILTER: FilterSpecification = ["==", ["literal", false], true];
+/** Always-true filter — shows all features */
+export const SHOW_ALL_FILTER: FilterSpecification = ["literal", true];
 
 /* ─── Animation timing ─── */
 

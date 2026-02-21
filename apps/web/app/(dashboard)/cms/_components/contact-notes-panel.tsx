@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { CmsContact } from "../../../../lib/services/cms";
+import { useState, useEffect } from "react";
+import type { CmsContact } from "@/lib/services/cms";
 
 const FONT = "var(--font-montserrat), system-ui, sans-serif";
 const PANEL_WIDTH = 400;
@@ -69,6 +69,13 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
     (contact.cms_operator_notes?.comentarios as string) || "",
   );
 
+  // Re-sync local state when the contact prop changes (e.g. SSE update)
+  useEffect(() => {
+    setLocalVotacion((contact.cms_operator_notes?.local_votacion as string) || "");
+    setDomicilio((contact.cms_operator_notes?.domicilio as string) || "");
+    setComentarios((contact.cms_operator_notes?.comentarios as string) || "");
+  }, [contact.id, contact.cms_operator_notes]);
+
   const nombre = contact.nombre || "Sin nombre";
   const isReadOnly = contact.cms_status === "archivado";
   const statusCfg = STATUS_LABELS[contact.cms_status] ?? STATUS_LABELS.nuevo;
@@ -100,6 +107,7 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
         animation: "goberna-slide-in .2s ease-out",
       }}
     >
+      <style>{`@keyframes goberna-slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }`}</style>
       {/* Header */}
       <div
         style={{

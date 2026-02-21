@@ -9,7 +9,7 @@ import { IconChevronDown } from "../../../../lib/ui";
 import { ROLES } from "./role-config";
 
 export function HierarchyDiagram() {
-  const sorted = Object.values(ROLES).sort((a, b) => b.level - a.level);
+  const sorted = Object.values(ROLES).filter((r) => r.key !== "admin").sort((a, b) => b.level - a.level);
 
   const headerStyle: CSSProperties = {
     fontSize: 13,

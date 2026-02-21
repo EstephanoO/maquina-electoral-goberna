@@ -429,6 +429,7 @@ export async function reverseGeocode(lng: number, lat: number): Promise<ReverseG
 }
 
 /* ========== Tile Cache ========== */
-// Tile caching is handled by Tegola's own Redis cache (max_zoom=14 in config.toml).
+// Tile caching: Tegola Redis cache (max_zoom=14) + Nginx disk cache (zoom-tiered TTL).
 // The backend only proxies tiles to Tegola — no second Redis cache layer needed.
 // Browser caching is handled via Cache-Control headers on the tile proxy route.
+// All tables (including campaign_custom_zones) use pre-projected geom_3857 columns.

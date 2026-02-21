@@ -178,9 +178,10 @@ const styles: Record<string, React.CSSProperties> = {
     /* Fixed so it stays above the Tierra fixed container */
     position: "fixed",
     top: 0,
-    left: 72, /* collapsed sidebar width (SIDEBAR_W_COLLAPSED) */
+    left: "var(--sidebar-current-width, 72px)" as unknown as number, /* adapts to sidebar state */
     right: 0,
     zIndex: 60,
+    transition: "left 0.2s cubic-bezier(0.4,0,0.2,1)",
   },
   tabGroup: {
     display: "flex",

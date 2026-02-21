@@ -154,7 +154,7 @@ export const ROLES: Record<string, RoleConfig> = {
     color: "#7c3aed",
     bgColor: "linear-gradient(135deg, #a78bfa, #7c3aed)",
     borderColor: "#7c3aed",
-    description: "Operador digital — acceso a la app y dashboard",
+    description: "Operador digital — acceso a la app y al CMS",
     canManage: [],
   },
 };

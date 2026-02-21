@@ -30,7 +30,7 @@ type AuthState = {
 type AuthActions = {
   login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
-  setActiveCampaign: (campaignId: string) => void;
+  setActiveCampaign: (campaignId: string | null) => void;
 };
 
 type AuthContextValue = AuthState & AuthActions;
@@ -143,9 +143,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setActiveCampaignId(null);
   }, []);
 
-  const setActiveCampaign = useCallback((campaignId: string) => {
+  const setActiveCampaign = useCallback((campaignId: string | null) => {
     setActiveCampaignId(campaignId);
-    localStorage.setItem(STORAGE_KEYS.activeCampaign, campaignId);
+    if (campaignId) {
+      localStorage.setItem(STORAGE_KEYS.activeCampaign, campaignId);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.activeCampaign);
+    }
   }, []);
 
   const value = useMemo<AuthContextValue>(

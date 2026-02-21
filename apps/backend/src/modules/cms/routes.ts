@@ -390,7 +390,18 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
         const authed = request as AuthenticatedRequest;
 
         try {
-          const campaignScope = authed.userRole === "admin" ? null : authed.campaignIds;
+          // If an explicit x-campaign-id header is sent, scope to that single campaign
+          // (even for admins). Otherwise fall back to JWT-based scoping.
+          const headerCampaignId =
+            typeof request.headers["x-campaign-id"] === "string" && request.headers["x-campaign-id"].length > 0
+              ? request.headers["x-campaign-id"]
+              : null;
+
+          const campaignScope = headerCampaignId
+            ? [headerCampaignId]
+            : authed.userRole === "admin"
+              ? null
+              : authed.campaignIds;
 
           const [campaigns, operators, timeMetrics] = await Promise.all([
             repo.getCmsMetricsByCampaign(campaignScope),

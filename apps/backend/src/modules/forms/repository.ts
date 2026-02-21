@@ -210,13 +210,13 @@ export async function getFormsByCampaign(
         encuestador, encuestador_id, candidato_preferido, 
         comentarios, campaign_id, created_at
        FROM public.forms 
-       WHERE campaign_id = $1
+       WHERE campaign_id = $1 AND deleted_at IS NULL
        ORDER BY created_at DESC 
        LIMIT $2 OFFSET $3`,
       [campaignId, limit, offset],
     ),
     pool.query<{ count: string }>(
-      `SELECT COUNT(*)::text as count FROM public.forms WHERE campaign_id = $1`,
+      `SELECT COUNT(*)::text as count FROM public.forms WHERE campaign_id = $1 AND deleted_at IS NULL`,
       [campaignId],
     ),
   ]);
@@ -241,7 +241,7 @@ export async function getRecentForms(campaignId: string, limit = 20): Promise<Fo
         comentarios, campaign_id, created_at,
         NULL::uuid as agent_id
       FROM public.forms 
-      WHERE campaign_id = $1
+      WHERE campaign_id = $1 AND deleted_at IS NULL
       
       UNION ALL
       
@@ -266,6 +266,7 @@ export async function getRecentForms(campaignId: string, limit = 20): Promise<Fo
       LEFT JOIN users u ON u.id = fs.submitted_by
       WHERE fs.campaign_id = $1
         AND fs.synced_at IS NULL  -- Only non-synced (direct submissions, not dual-writes)
+        AND fs.deleted_at IS NULL
     )
     SELECT DISTINCT ON (client_id) *
     FROM combined
@@ -278,14 +279,13 @@ export async function getRecentForms(campaignId: string, limit = 20): Promise<Fo
 }
 
 /**
- * Delete a form by ID (admin only)
- * Deletes from both legacy forms table and form_submissions table
+ * Hard-delete a form by ID (admin only).
+ * Deletes from both legacy forms table and form_submissions table.
  */
 export async function deleteFormById(
   formId: string,
   campaignId: string,
 ): Promise<{ deleted: boolean; source: "forms" | "form_submissions" | null }> {
-  // Try to delete from legacy forms table first
   const legacyResult = await pool.query(
     `DELETE FROM public.forms WHERE id = $1 AND campaign_id = $2 RETURNING id`,
     [formId, campaignId],
@@ -295,7 +295,6 @@ export async function deleteFormById(
     return { deleted: true, source: "forms" };
   }
 
-  // Try to delete from form_submissions table
   const submissionsResult = await pool.query(
     `DELETE FROM form_submissions WHERE id = $1 AND campaign_id = $2 RETURNING id`,
     [formId, campaignId],
@@ -306,4 +305,84 @@ export async function deleteFormById(
   }
 
   return { deleted: false, source: null };
+}
+
+/**
+ * Soft-delete a form by ID (non-admin).
+ * Sets deleted_at + deleted_by instead of removing the row.
+ */
+export async function softDeleteFormById(
+  formId: string,
+  campaignId: string,
+  deletedBy: string,
+): Promise<{ deleted: boolean; source: "forms" | "form_submissions" | null }> {
+  const legacyResult = await pool.query(
+    `UPDATE public.forms SET deleted_at = now(), deleted_by = $3
+     WHERE id = $1 AND campaign_id = $2 AND deleted_at IS NULL RETURNING id`,
+    [formId, campaignId, deletedBy],
+  );
+
+  if (legacyResult.rowCount && legacyResult.rowCount > 0) {
+    return { deleted: true, source: "forms" };
+  }
+
+  const submissionsResult = await pool.query(
+    `UPDATE form_submissions SET deleted_at = now(), deleted_by = $3
+     WHERE id = $1 AND campaign_id = $2 AND deleted_at IS NULL RETURNING id`,
+    [formId, campaignId, deletedBy],
+  );
+
+  if (submissionsResult.rowCount && submissionsResult.rowCount > 0) {
+    return { deleted: true, source: "form_submissions" };
+  }
+
+  return { deleted: false, source: null };
+}
+
+/**
+ * Restore a soft-deleted form (admin only).
+ */
+export async function restoreFormById(
+  formId: string,
+  campaignId: string,
+): Promise<boolean> {
+  const r1 = await pool.query(
+    `UPDATE public.forms SET deleted_at = NULL, deleted_by = NULL
+     WHERE id = $1 AND campaign_id = $2 AND deleted_at IS NOT NULL RETURNING id`,
+    [formId, campaignId],
+  );
+  if (r1.rowCount && r1.rowCount > 0) return true;
+
+  const r2 = await pool.query(
+    `UPDATE form_submissions SET deleted_at = NULL, deleted_by = NULL
+     WHERE id = $1 AND campaign_id = $2 AND deleted_at IS NOT NULL RETURNING id`,
+    [formId, campaignId],
+  );
+  return (r2.rowCount ?? 0) > 0;
+}
+
+/**
+ * Get all soft-deleted forms pending admin review.
+ */
+export async function getPendingDeletions(campaignId: string) {
+  const result = await pool.query(
+    `(
+      SELECT f.id, 'forms' AS source, f.campaign_id,
+             f.deleted_at, f.deleted_by, u.full_name AS deleted_by_name,
+             f.data->>'nombre' AS record_name, f.created_at
+      FROM public.forms f
+      LEFT JOIN users u ON u.id = f.deleted_by
+      WHERE f.campaign_id = $1 AND f.deleted_at IS NOT NULL
+    ) UNION ALL (
+      SELECT fs.id, 'form_submissions' AS source, fs.campaign_id,
+             fs.deleted_at, fs.deleted_by, u.full_name AS deleted_by_name,
+             fs.data->>'nombre' AS record_name, fs.created_at
+      FROM form_submissions fs
+      LEFT JOIN users u ON u.id = fs.deleted_by
+      WHERE fs.campaign_id = $1 AND fs.deleted_at IS NOT NULL
+    )
+    ORDER BY deleted_at DESC`,
+    [campaignId],
+  );
+  return result.rows;
 }

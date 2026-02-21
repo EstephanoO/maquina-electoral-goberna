@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { FormRecord } from "@/lib/services";
 import type { CampaignStats } from "@/lib/types";
 import type { AgentLocation } from "@/lib/hooks";
+import type { GeoBounds } from "@/lib/services/geo";
 import { formCoordsToLatLng } from "@/lib/utils";
 import type { EnrichedAgent, FormPoint } from "../types";
 import { getAgentStatus } from "../utils";
@@ -19,12 +20,18 @@ const DEFAULT_LNG = -77.043;
  * Optimization: pre-indexes forms by agent_id/encuestador_id into a Map so
  * the agent loop is O(agents + forms) instead of O(agents * forms).
  */
+/** Fast point-in-bounds check (O(1) per point) */
+function inBounds(lat: number, lng: number, b: GeoBounds): boolean {
+  return lng >= b[0][0] && lng <= b[1][0] && lat >= b[0][1] && lat <= b[1][1];
+}
+
 export function useEnrichedAgents(
   stats: CampaignStats | undefined,
   locations: AgentLocation[],
   forms: FormRecord[],
   selectedAgentId: string | null,
   selectedAgentIds: Set<string>,
+  drillBounds: GeoBounds | null = null,
 ) {
   // ── Pre-index: forms by agent_id → most recent form with coords (O(forms)) ──
   const agentFormIndex = useMemo(() => {
@@ -108,25 +115,55 @@ export function useEnrichedAgents(
     [enrichedAgents],
   );
 
+  // Pre-compute form coords once for geo-filtering (reuses formPoints calculation)
+  const formCoordsIndex = useMemo(() => {
+    if (!drillBounds) return null;
+    const idx = new Map<string, { lat: number; lng: number }>();
+    for (const f of forms) {
+      const coords = formCoordsToLatLng(f.x, f.y, f.zona);
+      if (coords) idx.set(f.id, coords);
+    }
+    return idx;
+  }, [forms, drillBounds]);
+
   const filteredForms = useMemo(() => {
+    let result = forms;
+
+    // Agent selection filter
     if (selectedAgentIds.size > 0) {
-      return forms.filter((f) => selectedAgentIds.has(f.agent_id ?? "") || selectedAgentIds.has(f.encuestador_id ?? ""));
+      result = result.filter((f) => selectedAgentIds.has(f.agent_id ?? "") || selectedAgentIds.has(f.encuestador_id ?? ""));
+    } else if (selectedAgentId) {
+      result = result.filter((f) => f.agent_id === selectedAgentId || f.encuestador_id === selectedAgentId);
     }
-    if (selectedAgentId) {
-      return forms.filter((f) => f.agent_id === selectedAgentId || f.encuestador_id === selectedAgentId);
+
+    // Geo-filter by drill bounds
+    if (drillBounds && formCoordsIndex) {
+      result = result.filter((f) => {
+        const coords = formCoordsIndex.get(f.id);
+        return coords ? inBounds(coords.lat, coords.lng, drillBounds) : false;
+      });
     }
-    return forms;
-  }, [forms, selectedAgentId, selectedAgentIds]);
+
+    return result;
+  }, [forms, selectedAgentId, selectedAgentIds, drillBounds, formCoordsIndex]);
 
   const filteredAgents = useMemo(() => {
+    let result = enrichedAgents;
+
+    // Agent selection filter
     if (selectedAgentIds.size > 0) {
-      return enrichedAgents.filter((a) => selectedAgentIds.has(a.id));
+      result = result.filter((a) => selectedAgentIds.has(a.id));
+    } else if (selectedAgentId) {
+      result = result.filter((a) => a.id === selectedAgentId);
     }
-    if (selectedAgentId) {
-      return enrichedAgents.filter((a) => a.id === selectedAgentId);
+
+    // Geo-filter by drill bounds
+    if (drillBounds) {
+      result = result.filter((a) => inBounds(a.lat, a.lng, drillBounds));
     }
-    return enrichedAgents;
-  }, [enrichedAgents, selectedAgentId, selectedAgentIds]);
+
+    return result;
+  }, [enrichedAgents, selectedAgentId, selectedAgentIds, drillBounds]);
 
   return { enrichedAgents, formPoints, connectedCount, filteredForms, filteredAgents };
 }

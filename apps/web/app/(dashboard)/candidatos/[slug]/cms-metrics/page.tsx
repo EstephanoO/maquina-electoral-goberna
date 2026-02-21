@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import {
   getCmsMetrics,
@@ -332,18 +333,27 @@ const timeCardFooter: React.CSSProperties = {
 // ── Main Page ───────────────────────────────────────────────────────
 
 export default function CmsMetricsPage() {
-  const { user } = useAuth();
+  const { user, campaigns } = useAuth();
+  const params = useParams();
+  const slug = params.slug as string;
+
+  // Resolve campaignId from URL slug
+  const campaign = campaigns.find((c) => c.slug === slug);
+  const campaignId = campaign?.id ?? null;
+
   const [metrics, setMetrics] = useState<CmsMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isMultiCampaign = (metrics?.campaigns.length ?? 0) > 1;
 
   const fetchMetrics = useCallback(async () => {
+    if (!campaignId) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await getCmsMetrics();
+      const res = await getCmsMetrics(campaignId);
       if (!res.ok) {
         setError(res.error ?? "Error cargando métricas");
         return;
@@ -354,13 +364,28 @@ export default function CmsMetricsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [campaignId]);
 
   useEffect(() => {
     fetchMetrics();
+    // Auto-refresh every 30s
+    refreshRef.current = setInterval(fetchMetrics, 30_000);
+    return () => {
+      if (refreshRef.current) clearInterval(refreshRef.current);
+    };
   }, [fetchMetrics]);
 
   // ── Loading / Error states ──────────────────────────────────────
+
+  if (!campaignId) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "60vh", fontFamily: FONT }}>
+        <div style={{ textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 14 }}>
+          Campaña no encontrada para &ldquo;{slug}&rdquo;
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -400,9 +425,7 @@ export default function CmsMetricsPage() {
             MÉTRICAS CMS
           </h1>
           <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: "4px 0 0" }}>
-            {isMultiCampaign
-              ? `${metrics.campaigns.length} campañas`
-              : metrics.campaigns[0]?.campaign_name ?? "Sin campañas"}
+            {campaign?.name ?? slug}
           </p>
         </div>
         <button

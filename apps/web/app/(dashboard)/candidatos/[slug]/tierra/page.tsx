@@ -17,6 +17,7 @@ import {
 import { useAgentSSE } from "./_components/hooks/use-agent-sse";
 import { useFullscreen } from "./_components/hooks/use-fullscreen";
 import { useEnrichedAgents } from "./_components/hooks/use-enriched-agents";
+import { useDrillBounds } from "./_components/hooks/use-drill-bounds";
 import { useActivityLog } from "./_components/hooks/use-activity-log";
 
 /** Lazy-load TierraMap — keeps MapLibre GL out of the shared chunk */
@@ -86,9 +87,12 @@ export default function TierraPage() {
   const showDatos = activeLayer === "datos";
   const showHeatmap = activeLayer === "densidad";
 
+  // ─── Geo bounds for current drill level (filters metrics/table to selected region) ───
+  const drillBounds = useDrillBounds(drillState);
+
   // ─── Derived data ───
   const { enrichedAgents, formPoints, connectedCount, filteredForms, filteredAgents } =
-    useEnrichedAgents(stats, locations, forms, selectedAgentId, selectedAgentIds);
+    useEnrichedAgents(stats, locations, forms, selectedAgentId, selectedAgentIds, drillBounds);
 
   const enrichedAgentsRef = useRef(enrichedAgents);
   enrichedAgentsRef.current = enrichedAgents;
@@ -180,17 +184,15 @@ export default function TierraPage() {
             <BottomToolbar showMetrics={showMetrics} showTable={showTable} onToggleMetrics={() => setShowMetrics(!showMetrics)} onToggleTable={() => setShowTable(!showTable)} color={campaign.color_primario} />
           </div>
 
-          {/* Metrics panel */}
-          <div style={{ height: showMetrics ? METRICS_H : 0, backgroundColor: "#ffffff", borderTop: showMetrics ? "1px solid #e2e8f0" : "none", overflow: "hidden", transition: "height 0.3s cubic-bezier(0.4,0,0.2,1)", flexShrink: 0 }}>
-            {showMetrics && <ActivityCharts forms={filteredForms} agents={filteredAgents} allForms={forms} allAgents={enrichedAgents} primaryColor={campaign.color_primario} secondaryColor={campaign.color_secundario} selectionLabel={selectionLabel} />}
+          {/* Metrics panel — always mounted, GPU transform slide (no layout thrash) */}
+          <div style={{ height: METRICS_H, backgroundColor: "#ffffff", borderTop: "1px solid #e2e8f0", overflow: "hidden", flexShrink: 0, transform: showMetrics ? "translateY(0)" : `translateY(${METRICS_H}px)`, marginBottom: showMetrics ? 0 : -METRICS_H, transition: "transform 0.25s cubic-bezier(0.4,0,0.2,1), margin-bottom 0.25s cubic-bezier(0.4,0,0.2,1)", willChange: "transform" }}>
+            <ActivityCharts forms={filteredForms} agents={filteredAgents} allForms={forms} allAgents={enrichedAgents} primaryColor={campaign.color_primario} secondaryColor={campaign.color_secundario} selectionLabel={selectionLabel} />
           </div>
         </div>
 
-        {/* Data sidebar */}
-        <div style={{ width: showTable ? PANEL_W : 0, flexShrink: 0, transition: "width 0.25s cubic-bezier(0.4,0,0.2,1)", overflow: "hidden", borderLeft: showTable ? "1px solid #e2e8f0" : "none", position: "relative" }}>
-          <div style={{ width: PANEL_W, height: "100%", position: "absolute", top: 0, right: 0 }}>
-            <DataPanel forms={filteredForms} selectedAgentName={enrichedAgents.find((a) => a.id === selectedAgentId)?.name ?? null} primaryColor={campaign.color_primario} open={showTable} onClose={() => setShowTable(false)} onFlyTo={(lng, lat) => mapHandleRef.current?.flyToPoint(lng, lat, 17)} campaignId={campaign.id} isAdmin={isAdmin} onFormsDeleted={handleFormsDeleted} agents={enrichedAgents} selectedAgentId={selectedAgentId} onSelectAgent={handleAgentListClick} onWhatsApp={handleWhatsApp} logEntries={logEntries} onLogEntryClick={handleLogEntryClick} onClearLog={handleClearLog} />
-          </div>
+        {/* Data sidebar — always mounted, GPU transform slide (no width reflow) */}
+        <div style={{ width: PANEL_W, flexShrink: 0, overflow: "hidden", borderLeft: "1px solid #e2e8f0", position: "relative", transform: showTable ? "translateX(0)" : `translateX(${PANEL_W}px)`, marginLeft: showTable ? 0 : -PANEL_W, transition: "transform 0.2s cubic-bezier(0.4,0,0.2,1), margin-left 0.2s cubic-bezier(0.4,0,0.2,1)", willChange: "transform" }}>
+          <DataPanel forms={filteredForms} selectedAgentName={enrichedAgents.find((a) => a.id === selectedAgentId)?.name ?? null} primaryColor={campaign.color_primario} open={showTable} onClose={() => setShowTable(false)} onFlyTo={(lng, lat) => mapHandleRef.current?.flyToPoint(lng, lat, 17)} campaignId={campaign.id} isAdmin={isAdmin} onFormsDeleted={handleFormsDeleted} agents={enrichedAgents} selectedAgentId={selectedAgentId} onSelectAgent={handleAgentListClick} onWhatsApp={handleWhatsApp} logEntries={logEntries} onLogEntryClick={handleLogEntryClick} onClearLog={handleClearLog} />
         </div>
       </div>
     </div>
@@ -229,13 +231,14 @@ function BottomToolbar({ showMetrics, showTable, onToggleMetrics, onToggleTable,
 
 /* ========== Layout Styles ========== */
 
-const SIDEBAR_W = 52;
 const TAB_H = 48;
 
-const S_SHELL: React.CSSProperties = {
-  position: "fixed", top: TAB_H, right: 0, bottom: 0, left: SIDEBAR_W,
+const S_SHELL = {
+  position: "fixed", top: TAB_H, right: 0, bottom: 0,
+  left: "var(--sidebar-current-width, 72px)",
+  transition: "left 0.2s cubic-bezier(0.4,0,0.2,1)",
   zIndex: 50, display: "flex", flexDirection: "column", backgroundColor: "#f8fafc", overflow: "hidden",
-};
+} as React.CSSProperties;
 const S_SHELL_FS: React.CSSProperties = {
   position: "fixed", inset: 0,
   zIndex: 50, display: "flex", flexDirection: "column", backgroundColor: "#f8fafc", overflow: "hidden",

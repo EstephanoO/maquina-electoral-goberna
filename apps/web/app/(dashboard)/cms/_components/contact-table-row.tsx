@@ -1,6 +1,6 @@
 "use client";
 
-import type { CmsContact } from "../../../../lib/services/cms";
+import type { CmsContact } from "@/lib/services/cms";
 
 const FONT = "var(--font-montserrat), system-ui, sans-serif";
 

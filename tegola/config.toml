@@ -61,15 +61,13 @@ uri = "${DATABASE_URL}"
   sql = "SELECT d.gid, d.ubigeo, d.coddep, d.codprov, (d.coddep || d.codprov) AS codprov_full, right(d.ubigeo, 2) AS coddist, d.nomdist AS distrito, cpz.campaign_id::text, cpz.priority, ST_AsMVTGeom(d.geom_3857, !BBOX!) AS geom FROM public.peru_distritos d INNER JOIN public.campaign_priority_zones cpz ON cpz.zone_code = d.ubigeo AND cpz.zone_level = 'distrito' WHERE d.geom_3857 && !BBOX!"
 
   # ── Campaign custom zones: sectors/subsectors with own geometry ──
-  # TODO: Add geom_3857 column + trigger to campaign_custom_zones table
-  #       to avoid on-the-fly ST_Transform. Migration pending.
-  # For now, subquery transforms once instead of twice (SELECT + WHERE).
+  # geom_3857 column + trigger added in migration 025_ccz_geom_3857.sql
 
   [[providers.layers]]
   name = "campaign_sectors"
   geometry_type = "MultiPolygon"
   id_fieldname = "id"
-  sql = "SELECT id, campaign_id, zone_level, zone_code, zone_name, sector, subsector, parent_code, population, ST_AsMVTGeom(geom_3857, !BBOX!) AS geom FROM (SELECT id, campaign_id::text, zone_level, zone_code, zone_name, sector, subsector, parent_code, population, ST_Transform(geom, 3857) AS geom_3857 FROM public.campaign_custom_zones) sub WHERE geom_3857 && !BBOX!"
+  sql = "SELECT id, campaign_id::text, zone_level, zone_code, zone_name, sector, subsector, parent_code, population, ST_AsMVTGeom(geom_3857, !BBOX!) AS geom FROM public.campaign_custom_zones WHERE geom_3857 && !BBOX!"
 
 [[maps]]
 name = "peru"

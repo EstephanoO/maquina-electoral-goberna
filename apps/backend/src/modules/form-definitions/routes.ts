@@ -223,13 +223,15 @@ export function buildFormDefinitionsRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ── DELETE /api/form-definitions/:id ─────────────────────────────
-    // Delete form definition (admin only)
+    // Admin: hard-delete. Non-admin: soft-delete (status → pending_deletion).
     app.delete(
       "/api/form-definitions/:id",
       { preHandler: [app.authenticate, authorize({ roles: ["consultor"] })] },
       async (request, reply) => {
+        const req = request as AuthenticatedRequest;
         const requestId = String(request.id);
         const { id } = request.params as { id: string };
+        const isAdmin = req.userRole === "admin";
 
         try {
           const existing = await repo.findById(id);
@@ -239,12 +241,15 @@ export function buildFormDefinitionsRoutes(_env: AppEnv): FastifyPluginAsync {
               .send(errorPayload(requestId, "FORM_DEFINITION_NOT_FOUND", "formulario no encontrado"));
           }
 
-          const deleted = await repo.remove(id);
+          const deleted = isAdmin
+            ? await repo.remove(id)
+            : await repo.softRemove(id, req.userId);
 
           return reply.code(200).send({
             ok: true,
             request_id: requestId,
             deleted,
+            mode: isAdmin ? "hard_delete" : "pending_review",
           });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "form definition delete failed");

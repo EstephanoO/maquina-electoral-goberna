@@ -10,7 +10,7 @@ import { consumeDualWeightedRateLimit } from "../../infra/redis";
 import { emitCampaignEvent } from "../campaigns/routes";
 import { formSchema, type FormInput } from "./schema";
 import { FormsWriteBehindQueue } from "./write-behind-queue";
-import { getFormsByCampaign, getRecentForms, deleteFormById } from "./repository";
+import { getFormsByCampaign, getRecentForms, deleteFormById, softDeleteFormById, restoreFormById, getPendingDeletions } from "./repository";
 
 function parseFormsPayload(body: unknown): FormInput[] {
   const items = Array.isArray(body) ? body : [body];
@@ -276,13 +276,15 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
       },
     );
 
-    // DELETE /api/forms/batch - Delete multiple forms (admin only)
+    // DELETE /api/forms/batch - Admin: hard-delete. Non-admin: soft-delete (pending review).
     app.delete(
       "/api/forms/batch",
-      { preHandler: [app.authenticate, authorize({ roles: ["admin"], requireCampaign: true })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
       async (request, reply) => {
+        const req = request as AuthenticatedRequest;
         const requestId = String(request.id);
         const campaignId = request.activeCampaignId;
+        const isAdmin = req.userRole === "admin";
         const { ids } = request.body as { ids: string[] };
 
         if (!campaignId) {
@@ -300,7 +302,9 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
         try {
           let deleted = 0;
           for (const id of ids) {
-            const result = await deleteFormById(id, campaignId);
+            const result = isAdmin
+              ? await deleteFormById(id, campaignId)
+              : await softDeleteFormById(id, campaignId, req.userId);
             if (result.deleted) deleted++;
           }
 
@@ -309,11 +313,73 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
             request_id: requestId,
             deleted,
             total: ids.length,
+            mode: isAdmin ? "hard_delete" : "pending_review",
           });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "forms batch delete failed");
           return reply.code(500).send(errorPayload(requestId, "FORMS_DELETE_ERROR", "error eliminando formularios"));
         }
+      },
+    );
+
+    // GET /api/forms/pending-deletions - Admin: view soft-deleted forms pending review
+    app.get(
+      "/api/forms/pending-deletions",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"], requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+        const rows = await getPendingDeletions(campaignId);
+        return { ok: true, request_id: requestId, pending: rows };
+      },
+    );
+
+    // POST /api/forms/confirm-deletion - Admin: permanently delete soft-deleted forms
+    app.post(
+      "/api/forms/confirm-deletion",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"], requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+        const { ids } = request.body as { ids: string[] };
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+        if (!Array.isArray(ids) || ids.length === 0) {
+          return reply.code(400).send(errorPayload(requestId, "INVALID_PAYLOAD", "ids array requerido"));
+        }
+        let confirmed = 0;
+        for (const id of ids) {
+          const result = await deleteFormById(id, campaignId);
+          if (result.deleted) confirmed++;
+        }
+        return { ok: true, request_id: requestId, confirmed, total: ids.length };
+      },
+    );
+
+    // POST /api/forms/restore - Admin: restore soft-deleted forms
+    app.post(
+      "/api/forms/restore",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"], requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+        const { ids } = request.body as { ids: string[] };
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+        if (!Array.isArray(ids) || ids.length === 0) {
+          return reply.code(400).send(errorPayload(requestId, "INVALID_PAYLOAD", "ids array requerido"));
+        }
+        let restored = 0;
+        for (const id of ids) {
+          const ok = await restoreFormById(id, campaignId);
+          if (ok) restored++;
+        }
+        return { ok: true, request_id: requestId, restored, total: ids.length };
       },
     );
   };
