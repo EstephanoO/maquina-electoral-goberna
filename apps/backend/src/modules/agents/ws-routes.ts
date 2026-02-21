@@ -59,6 +59,7 @@ function toState(value: unknown): AgentLiveState {
 
   return {
     agentId: parsed.data.agent_id,
+    agentName: parsed.data.agent_name ?? null,
     ts: new Date(parsed.data.ts).toISOString(),
     lat: parsed.data.lat,
     lng: parsed.data.lng,
@@ -112,7 +113,7 @@ async function ingestSingle(
 
   // Track for disconnect events
   if (!wasOnline && next.campaignId) {
-    const agentName = `Agente ${next.agentId.slice(0, 8)}`;
+    const agentName = next.agentName ?? `Agente ${next.agentId.slice(0, 8)}`;
     ctx.previouslyOnlineAgents.set(next.agentId, {
       campaignId: next.campaignId,
       agentName,
@@ -127,6 +128,7 @@ async function ingestSingle(
     const existing = ctx.previouslyOnlineAgents.get(next.agentId);
     if (existing) {
       existing.campaignId = next.campaignId;
+      if (next.agentName) existing.agentName = next.agentName;
     }
   }
 

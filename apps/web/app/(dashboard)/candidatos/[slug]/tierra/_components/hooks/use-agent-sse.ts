@@ -3,14 +3,27 @@
 import { useEffect, useRef } from "react";
 import type { AgentLocation } from "@/lib/hooks";
 
+type AgentOfflinePayload = {
+  agent_id: string;
+  agent_name?: string;
+  ts: string;
+};
+
 /**
  * Subscribe to the agent tracking SSE stream.
  * Calls `onUpdate` with incoming location batches — the caller merges into state.
+ * Calls `onOffline` when an agent goes offline — the caller removes from state.
  * Reconnects with exponential backoff (max 30s).
  */
-export function useAgentSSE(campaignId: string | null, onUpdate: (agents: AgentLocation[]) => void) {
-  const cbRef = useRef(onUpdate);
-  cbRef.current = onUpdate;
+export function useAgentSSE(
+  campaignId: string | null,
+  onUpdate: (agents: AgentLocation[]) => void,
+  onOffline?: (payload: AgentOfflinePayload) => void,
+) {
+  const updateRef = useRef(onUpdate);
+  updateRef.current = onUpdate;
+  const offlineRef = useRef(onOffline);
+  offlineRef.current = onOffline;
 
   useEffect(() => {
     if (!campaignId) return;
@@ -25,7 +38,7 @@ export function useAgentSSE(campaignId: string | null, onUpdate: (agents: AgentL
       es.addEventListener("snapshot", (e) => {
         try {
           const data = JSON.parse(e.data);
-          if (data.agents) cbRef.current(data.agents);
+          if (data.agents) updateRef.current(data.agents);
           attempt = 0;
         } catch { /* ignore */ }
       });
@@ -33,7 +46,14 @@ export function useAgentSSE(campaignId: string | null, onUpdate: (agents: AgentL
       es.addEventListener("location.batch", (e) => {
         try {
           const data = JSON.parse(e.data);
-          if (data.agents) cbRef.current(data.agents);
+          if (data.agents) updateRef.current(data.agents);
+        } catch { /* ignore */ }
+      });
+
+      es.addEventListener("agent.offline", (e) => {
+        try {
+          const data = JSON.parse(e.data) as AgentOfflinePayload;
+          offlineRef.current?.(data);
         } catch { /* ignore */ }
       });
 

@@ -53,6 +53,7 @@ export async function loadAllLiveAgentLocations(): Promise<AgentLiveState[]> {
 
   return result.rows.map((row) => ({
     agentId: row.agent_id,
+    agentName: null,
     seq: Number(row.seq),
     ts: new Date(row.ts).toISOString(),
     lat: row.lat,

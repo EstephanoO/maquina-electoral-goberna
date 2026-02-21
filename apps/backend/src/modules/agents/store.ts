@@ -60,6 +60,7 @@ export class AgentsStore {
   serialize(state: AgentLiveState): AgentLocationInput {
     return {
       agent_id: state.agentId,
+      agent_name: state.agentName ?? undefined,
       ts: state.ts,
       lat: state.lat,
       lng: state.lng,

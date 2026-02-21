@@ -7,13 +7,15 @@ import { formCoordsToLatLng } from "@/lib/utils";
 import type { LogEntry } from "../types";
 
 /**
- * Build activity log entries from recent forms and campaign stats events.
+ * Build activity log entries from recent forms, campaign stats events,
+ * and real-time SSE events (connect/disconnect pushed instantly).
  * Returns sorted entries (newest first) and clear/click handlers.
  */
 export function useActivityLog(
   forms: FormRecord[],
   stats: CampaignStats | undefined,
   onFlyToPoint: (lng: number, lat: number, zoom: number) => void,
+  sseEvents?: LogEntry[],
 ) {
   const [logClearedAt, setLogClearedAt] = useState(0);
 
@@ -45,12 +47,22 @@ export function useActivityLog(
       }
     }
 
+    // Merge SSE-pushed events (connect/disconnect arrive instantly via SSE)
+    if (sseEvents) {
+      for (const ev of sseEvents) {
+        // Dedupe: skip if same id already exists from stats
+        if (!entries.some((e) => e.id === ev.id)) {
+          entries.push(ev);
+        }
+      }
+    }
+
     entries.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
     const filtered = logClearedAt > 0
       ? entries.filter((e) => e.timestamp.getTime() > logClearedAt)
       : entries;
     return filtered.slice(0, 60);
-  }, [forms, stats, logClearedAt]);
+  }, [forms, stats, sseEvents, logClearedAt]);
 
   const handleClearLog = useCallback(() => {
     setLogClearedAt(Date.now());

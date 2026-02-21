@@ -53,7 +53,9 @@ export function useCampaignStats(slug: string) {
       }
       return res.data;
     },
-    // Stats don't change fast — 30s stale is fine (uses global default)
+    // Refetch every 10s for activity log updates (connect/disconnect events from campaign buffer)
+    refetchInterval: 10_000,
+    staleTime: 8_000,
   });
 }
 

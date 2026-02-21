@@ -36,6 +36,7 @@ export type WsTransportState = 'disconnected' | 'connecting' | 'connected' | 're
 
 export type LocationPayload = {
   agent_id: string;
+  agent_name?: string;
   ts: string;
   lat: number;
   lng: number;

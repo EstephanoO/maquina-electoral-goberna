@@ -20,7 +20,7 @@ import * as Location from 'expo-location';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import { queueLocation, startAutoSync, stopAutoSync } from '../offline-queue';
-import { getActiveCampaignId } from '../auth-store';
+import { getActiveCampaignId, getStoredUser } from '../auth-store';
 import {
   connect as wsConnect,
   disconnect as wsDisconnect,
@@ -58,6 +58,7 @@ type PermissionChangeCallback = (permissions: { foreground: boolean; background:
 let currentState: TrackingState = 'stopped';
 let foregroundSubscription: Location.LocationSubscription | null = null;
 let currentAgentId: string | null = null;
+let currentAgentName: string | null = null;
 let permissionCallbacks: PermissionChangeCallback[] = [];
 let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
 
@@ -113,6 +114,7 @@ async function processLocation(location: Location.LocationObject): Promise<void>
 
   const payload: LocationPayload & { agent_id: string } = {
     agent_id: currentAgentId,
+    agent_name: currentAgentName ?? undefined,
     campaign_id: campaignId ?? undefined,
     ts: new Date(location.timestamp).toISOString(),
     lat: location.coords.latitude,
@@ -205,6 +207,14 @@ export async function startForegroundTracking(
   currentState = 'starting';
   currentAgentId = agentId;
 
+  // Fetch agent name from stored user profile (best-effort, non-blocking)
+  try {
+    const user = await getStoredUser();
+    currentAgentName = user?.full_name ?? null;
+  } catch {
+    currentAgentName = null;
+  }
+
   try {
     const hasForeground = await requestForegroundPermission();
     if (!hasForeground) {
@@ -285,6 +295,7 @@ export async function stopTracking(): Promise<void> {
   // It will be stopped when app terminates or user logs out
 
   currentAgentId = null;
+  currentAgentName = null;
   currentState = 'stopped';
   console.log('[Tracking] Tracking stopped');
 }

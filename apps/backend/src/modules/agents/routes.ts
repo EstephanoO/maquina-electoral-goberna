@@ -25,6 +25,7 @@ function toState(value: unknown): AgentLiveState {
 
   return {
     agentId: parsed.data.agent_id,
+    agentName: parsed.data.agent_name ?? null,
     ts: new Date(parsed.data.ts).toISOString(),
     lat: parsed.data.lat,
     lng: parsed.data.lng,
@@ -148,10 +149,14 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
     const staleSweepTimer = setInterval(() => {
       const removed = store.removeStale();
       for (const agentId of removed) {
-        broadcastAll("agent.offline", { agent_id: agentId, ts: new Date().toISOString() });
+        const agentInfo = previouslyOnlineAgents.get(agentId);
+        broadcastAll("agent.offline", {
+          agent_id: agentId,
+          agent_name: agentInfo?.agentName ?? `Agente ${agentId.slice(0, 8)}`,
+          ts: new Date().toISOString(),
+        });
         
         // Emit disconnect event for campaign dashboard
-        const agentInfo = previouslyOnlineAgents.get(agentId);
         if (agentInfo?.campaignId) {
           emitCampaignEvent(agentInfo.campaignId, {
             type: "agent_disconnected",
@@ -373,10 +378,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
 
           // Track agent for disconnect events and emit connect event if new
           if (!wasOnline && next.campaignId) {
-            // Get agent name from request body if available
-            const body = request.body as { agent_name?: string } | undefined;
-            const agentName = body?.agent_name ?? `Agente ${next.agentId.slice(0, 8)}`;
-            
+            const agentName = next.agentName ?? `Agente ${next.agentId.slice(0, 8)}`;
             previouslyOnlineAgents.set(next.agentId, {
               campaignId: next.campaignId,
               agentName,
@@ -389,10 +391,11 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
               message: `${agentName} se conecto`,
             });
           } else if (next.campaignId) {
-            // Update campaign info in case it changed
+            // Update campaign/name info in case it changed
             const existing = previouslyOnlineAgents.get(next.agentId);
             if (existing) {
               existing.campaignId = next.campaignId;
+              if (next.agentName) existing.agentName = next.agentName;
             }
           }
 
@@ -497,7 +500,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
 
               // Track for disconnect events
               if (!wasOnline && next.campaignId) {
-                const agentName = `Agente ${next.agentId.slice(0, 8)}`;
+                const agentName = next.agentName ?? `Agente ${next.agentId.slice(0, 8)}`;
                 previouslyOnlineAgents.set(next.agentId, {
                   campaignId: next.campaignId,
                   agentName,
@@ -512,6 +515,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
                 const existing = previouslyOnlineAgents.get(next.agentId);
                 if (existing) {
                   existing.campaignId = next.campaignId;
+                  if (next.agentName) existing.agentName = next.agentName;
                 }
               }
 

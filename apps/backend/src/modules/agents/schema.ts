@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const agentLocationSchema = z.object({
   agent_id: z.string().trim().min(1),
+  agent_name: z.string().trim().min(1).max(100).optional(),
   ts: z.string().datetime(),
   lat: z.number().finite().min(-90).max(90),
   lng: z.number().finite().min(-180).max(180),

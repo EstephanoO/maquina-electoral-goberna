@@ -12,7 +12,7 @@ import { useCampaignStats, useRecentForms, useAgentLocationsSnapshot, tierraKeys
 import {
   TierraHeader, MapControls, DataPanel, KpiPanel, ActivityCharts,
   INITIAL_DRILL,
-  type TierraMapHandle, type EnrichedAgent, type DrillState, type ActiveLayer,
+  type TierraMapHandle, type EnrichedAgent, type DrillState, type ActiveLayer, type LogEntry,
 } from "./_components";
 import { useAgentSSE } from "./_components/hooks/use-agent-sse";
 import { useFullscreen } from "./_components/hooks/use-fullscreen";
@@ -73,7 +73,23 @@ export default function TierraPage() {
     }, 250);
   }, []);
   useEffect(() => () => { if (sseTimerRef.current) clearTimeout(sseTimerRef.current); }, []);
-  useAgentSSE(campaignId ?? null, handleSSEUpdate);
+
+  // ─── SSE: agent offline (removes agent from locations + injects activity log event) ───
+  const [sseEvents, setSseEvents] = useState<LogEntry[]>([]);
+  const handleAgentOffline = useCallback((payload: { agent_id: string; agent_name?: string; ts: string }) => {
+    setLocations((prev) => prev.filter((l) => l.agent_id !== payload.agent_id));
+    const name = payload.agent_name ?? `Agente ${payload.agent_id.slice(0, 8)}`;
+    setSseEvents((prev) => [{
+      id: `sse-offline-${payload.agent_id}-${payload.ts}`,
+      type: "agent_disconnected" as const,
+      agentName: name,
+      message: `${name} se desconecto`,
+      timestamp: new Date(payload.ts),
+      lat: null,
+      lng: null,
+    }, ...prev].slice(0, 30));
+  }, []);
+  useAgentSSE(campaignId ?? null, handleSSEUpdate, handleAgentOffline);
 
   // ─── UI state ───
   const [activeLayer, setActiveLayer] = useState<ActiveLayer>("datos");
@@ -100,7 +116,7 @@ export default function TierraPage() {
   const flyToPoint = useCallback((lng: number, lat: number, zoom: number) => {
     mapHandleRef.current?.flyToPoint(lng, lat, zoom);
   }, []);
-  const { logEntries, handleClearLog, handleLogEntryClick } = useActivityLog(forms, stats, flyToPoint);
+  const { logEntries, handleClearLog, handleLogEntryClick } = useActivityLog(forms, stats, flyToPoint, sseEvents);
 
   // ─── Handlers ───
   const handleLayerChange = useCallback((layer: ActiveLayer) => {

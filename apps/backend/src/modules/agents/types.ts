@@ -1,5 +1,6 @@
 export type AgentLocationInput = {
   agent_id: string;
+  agent_name?: string;
   ts: string;
   lat: number;
   lng: number;
@@ -13,6 +14,7 @@ export type AgentLocationInput = {
 
 export type AgentLiveState = {
   agentId: string;
+  agentName: string | null;
   ts: string;
   lat: number;
   lng: number;
