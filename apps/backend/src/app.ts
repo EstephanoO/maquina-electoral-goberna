@@ -3,6 +3,7 @@ import compress from "@fastify/compress";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
+import websocket from "@fastify/websocket";
 
 import type { AppEnv } from "./config/env";
 import { registerAuthDecorator } from "./infra/auth";
@@ -113,6 +114,9 @@ export function buildApp(env: AppEnv) {
     }
     done();
   });
+
+  // WebSocket support (must be before routes that use { websocket: true })
+  app.register(websocket);
 
   // Auth decorator (must be before routes that use app.authenticate)
   registerAuthDecorator(app, env.jwtSecret);

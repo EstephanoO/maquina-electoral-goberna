@@ -62,13 +62,13 @@ export async function getNextSeq(): Promise<number> {
 }
 
 /**
- * Queue a location for sync. Returns immediately (non-blocking).
+ * Queue a location for sync. Returns the monotonic seq number assigned.
  */
 export async function queueLocation(payload: LocationPayload): Promise<number> {
   const db = await getDatabase();
   const seq = await getNextSeq();
   
-  const result = await db.runAsync(
+  await db.runAsync(
     `INSERT INTO pending_locations 
      (agent_id, campaign_id, ts, lat, lng, accuracy, speed, heading, battery, seq)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -86,7 +86,7 @@ export async function queueLocation(payload: LocationPayload): Promise<number> {
     ]
   );
   
-  return result.lastInsertRowId;
+  return seq;
 }
 
 /**

@@ -97,7 +97,7 @@ nexus6.0/
 | Messaging | Twilio (WhatsApp) | `apps/backend/` | **Produccion** |
 | CI/CD | GitHub Actions | `.github/workflows/` | **Produccion** |
 
-**Dependencias clave del backend:** fastify, drizzle-orm, jose (JWT), bcryptjs, zod, redis, twilio, pg
+**Dependencias clave del backend:** fastify, @fastify/websocket, drizzle-orm, jose (JWT), bcryptjs, zod, redis, twilio, pg
 
 ---
 
@@ -216,9 +216,20 @@ nexus6.0/
 | Endpoint | Descripcion |
 |----------|-------------|
 | `POST /api/agents/location` | Enviar ubicacion (+ history append) |
+| `POST /api/agents/locations/batch` | Enviar batch de ubicaciones (hasta 100) |
 | `GET /api/agents/live` | Posiciones actuales |
 | `GET /api/agents/stream` | SSE de posiciones |
 | `GET /api/agents/health` | Health del tracking |
+
+### WebSocket Tracking (wss://)
+| Endpoint | Descripcion |
+|----------|-------------|
+| `GET /ws/tracking?token=<agent_token>` | WebSocket bidireccional para ingest de ubicaciones mobile |
+| `GET /ws/tracking/health` | Health del WS tracking |
+
+**Protocolo WS (JSON):**
+- **Client→Server:** `{ type: "location", data: LocationPayload }` / `{ type: "location.batch", data: LocationPayload[] }` / `{ type: "ping" }`
+- **Server→Client:** `{ type: "ack", seq, accepted, deduped }` / `{ type: "ack.batch", accepted, deduped, failed }` / `{ type: "config", interval_ms?, distance_m? }` / `{ type: "pong" }` / `{ type: "error", code, message }`
 
 ---
 

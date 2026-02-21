@@ -9,15 +9,27 @@
  * - Offline-first: saves to SQLite queue, syncs when online
  * - Battery level included when available
  * - Automatic permission handling
+ * - WebSocket transport for low-latency delivery (fallback: HTTP batch)
+ * - AppState listener: restarts GPS when app returns to foreground
  *
  * Note: Background tracking disabled to comply with Google Play policies.
  * GPS is only captured when the app is in foreground.
  */
 
 import * as Location from 'expo-location';
+import { AppState, type AppStateStatus } from 'react-native';
 
 import { queueLocation, startAutoSync, stopAutoSync } from '../offline-queue';
 import { getActiveCampaignId } from '../auth-store';
+import {
+  connect as wsConnect,
+  disconnect as wsDisconnect,
+  sendLocation as wsSendLocation,
+  isConnected as wsIsConnected,
+  getState as wsGetState,
+  type LocationPayload,
+  type WsTransportState,
+} from './ws-transport';
 
 // Optional battery API
 let Battery: { getBatteryLevelAsync: () => Promise<number> } | null = null;
@@ -47,6 +59,38 @@ let currentState: TrackingState = 'stopped';
 let foregroundSubscription: Location.LocationSubscription | null = null;
 let currentAgentId: string | null = null;
 let permissionCallbacks: PermissionChangeCallback[] = [];
+let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
+
+// ─── AppState Listener ────────────────────────────────────────
+// Restarts GPS watch when app returns to foreground (OS kills it on background)
+
+function handleAppStateChange(nextAppState: AppStateStatus): void {
+  if (nextAppState === 'active' && currentAgentId) {
+    // When the app returns to foreground, the OS may have killed our
+    // watchPositionAsync subscription (foreground-only permission).
+    // We need to restart it regardless of current state.
+    console.log('[Tracking] App returned to foreground, restarting GPS watch');
+
+    // Mark state as stopped so startForegroundTracking re-inits everything
+    if (foregroundSubscription) {
+      foregroundSubscription.remove();
+      foregroundSubscription = null;
+    }
+    const agentId = currentAgentId;
+    currentState = 'stopped';
+
+    startForegroundTracking(agentId).catch((err) => {
+      console.warn('[Tracking] Failed to resume after foreground:', err);
+    });
+  }
+
+  if (nextAppState === 'background' || nextAppState === 'inactive') {
+    // GPS will stop naturally (foreground-only permission).
+    // WS connection stays alive briefly — OS may kill it after ~30s.
+    // That's fine: sync-service will catch up via HTTP batch on resume.
+    console.log('[Tracking] App going to background');
+  }
+}
 
 // ─── Location Processing ──────────────────────────────────────
 
@@ -67,7 +111,7 @@ async function processLocation(location: Location.LocationObject): Promise<void>
     // Battery API may fail silently
   }
 
-  await queueLocation({
+  const payload: LocationPayload & { agent_id: string } = {
     agent_id: currentAgentId,
     campaign_id: campaignId ?? undefined,
     ts: new Date(location.timestamp).toISOString(),
@@ -85,10 +129,20 @@ async function processLocation(location: Location.LocationObject): Promise<void>
         ? location.coords.heading
         : undefined,
     battery: batteryLevel != null ? Math.round(batteryLevel * 100) : undefined,
-  });
+    seq: 0, // Will be set by queueLocation with actual seq
+  };
+
+  // Always queue to SQLite (offline-first guarantee)
+  const queuedSeq = await queueLocation(payload);
+
+  // Also send via WebSocket for real-time delivery (best-effort, fire-and-forget)
+  // The SQLite queue + sync-service is the durable path; WS is the fast path.
+  if (wsIsConnected() && queuedSeq != null) {
+    wsSendLocation({ ...payload, seq: queuedSeq });
+  }
 
   console.log(
-    `[Tracking] Location queued: ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)}`
+    `[Tracking] Location queued (seq=${queuedSeq ?? '?'}): ${location.coords.latitude.toFixed(6)}, ${location.coords.longitude.toFixed(6)} [ws=${wsIsConnected() ? 'on' : 'off'}]`
   );
 }
 
@@ -177,8 +231,16 @@ export async function startForegroundTracking(
       }
     );
 
-    // Start auto-sync service (syncs queued locations to backend)
+    // Start auto-sync service (syncs queued locations to backend via HTTP batch)
     startAutoSync();
+
+    // Connect WebSocket for real-time delivery (non-blocking, best-effort)
+    wsConnect();
+
+    // Listen for app state changes (foreground/background)
+    if (!appStateSubscription) {
+      appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
+    }
 
     currentState = 'foreground';
     console.log('[Tracking] Foreground tracking started for agent:', agentId);
@@ -208,6 +270,15 @@ export async function stopTracking(): Promise<void> {
   if (foregroundSubscription) {
     foregroundSubscription.remove();
     foregroundSubscription = null;
+  }
+
+  // Disconnect WebSocket
+  wsDisconnect();
+
+  // Remove AppState listener
+  if (appStateSubscription) {
+    appStateSubscription.remove();
+    appStateSubscription = null;
   }
 
   // Note: We keep auto-sync running to flush any pending locations
@@ -284,6 +355,16 @@ export async function resumeTrackingIfNeeded(): Promise<{
     state: currentState,
     agentId: currentAgentId,
   };
+}
+
+// ─── WebSocket Transport Status ───────────────────────────────
+
+export function getWsTransportState(): WsTransportState {
+  return wsGetState();
+}
+
+export function isWsConnected(): boolean {
+  return wsIsConnected();
 }
 
 // ─── Legacy exports for backwards compatibility ───────────────

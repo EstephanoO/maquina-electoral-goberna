@@ -12,6 +12,7 @@ import { agentLocationBatchSchema, agentLocationSchema } from "./schema";
 import { AgentsStore } from "./store";
 import type { AgentLiveState, AgentLocationInput } from "./types";
 import { AgentsWriteBehindQueue } from "./write-behind-queue";
+import { buildAgentsWsRoutes } from "./ws-routes";
 
 // Track which agents were previously online (for disconnect events)
 const previouslyOnlineAgents = new Map<string, { campaignId: string | null; agentName: string }>();
@@ -183,6 +184,18 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       }
       clients.clear();
     });
+
+    // ─── WebSocket tracking endpoint ─────────────────────────
+    // Shares the same ingest pipeline (store, queue, SSE broadcast)
+    app.register(
+      buildAgentsWsRoutes(env, {
+        store,
+        queue,
+        pendingBatchByAgent,
+        previouslyOnlineAgents,
+        lastIngestAtMs: { get value() { return lastIngestAtMs; }, set value(v) { lastIngestAtMs = v; } },
+      }),
+    );
 
     app.get(
       "/api/agents/live",

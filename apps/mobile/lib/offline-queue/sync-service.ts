@@ -6,15 +6,21 @@
  * - Exponential backoff on failures
  * - Batch operations for efficiency
  * - Non-blocking (doesn't freeze UI)
+ * - WebSocket transport preferred for location sync (lower latency)
+ * - Graceful fallback to HTTP batch when WS unavailable
  * 
  * Sync strategy:
- * - Locations: POST /api/agents/location (one by one with x-agent-token)
- * - Forms: POST /api/forms/batch (batched with JWT auth)
+ * - Locations: WebSocket batch (preferred) or POST /api/agents/locations/batch (fallback)
+ * - Forms: POST /api/forms (one by one with JWT auth)
  */
 
 import * as Network from 'expo-network';
 
 import { API_BASE, AGENT_INGEST_TOKEN } from '../api';
+import {
+  isConnected as wsIsConnected,
+  sendLocationBatch as wsSendLocationBatch,
+} from '../tracking/ws-transport';
 import {
   getAccessToken,
   getRefreshToken,
@@ -84,6 +90,43 @@ async function isOnline(): Promise<boolean> {
 
 // ─── Location Sync ────────────────────────────────────────────
 
+/**
+ * Try to sync locations via WebSocket (lower latency, already-open connection).
+ * Returns true if WS was used successfully, false if caller should fallback to HTTP.
+ */
+async function trySyncLocationsViaWs(
+  ids: number[],
+  locations: Array<Record<string, unknown>>,
+): Promise<boolean> {
+  if (!wsIsConnected()) return false;
+
+  return new Promise<boolean>((resolve) => {
+    const timeout = setTimeout(() => {
+      // WS ack didn't arrive in 10s — fall back to HTTP
+      resolve(false);
+    }, 10_000);
+
+    const sent = wsSendLocationBatch(
+      locations as Parameters<typeof wsSendLocationBatch>[0],
+      async (accepted, deduped, failed) => {
+        clearTimeout(timeout);
+        // WS acknowledged — mark all as synced regardless of dedup/fail counts
+        // (the backend already persisted or deduped them)
+        await markAsSynced(ids);
+        console.log(
+          `[SyncService] WS batch sync: ${accepted} accepted, ${deduped} deduped, ${failed} failed`,
+        );
+        resolve(true);
+      },
+    );
+
+    if (!sent) {
+      clearTimeout(timeout);
+      resolve(false);
+    }
+  });
+}
+
 async function syncLocations(): Promise<{ synced: number; failed: number }> {
   const pending = await getPendingLocations(100); // Batch up to 100
   if (pending.length === 0) {
@@ -107,6 +150,13 @@ async function syncLocations(): Promise<{ synced: number; failed: number }> {
     ...(location.campaign_id ? { campaign_id: location.campaign_id } : {}),
   }));
 
+  // Try WebSocket first (lower latency)
+  const wsOk = await trySyncLocationsViaWs(ids, locations);
+  if (wsOk) {
+    return { synced: pending.length, failed: 0 };
+  }
+
+  // Fallback to HTTP batch
   try {
     const response = await fetch(`${API_BASE}/agents/locations/batch`, {
       method: 'POST',
@@ -121,7 +171,7 @@ async function syncLocations(): Promise<{ synced: number; failed: number }> {
       // Batch accepted - mark all as synced
       const result = await response.json() as { accepted: number; deduped: number; failed: number };
       await markAsSynced(ids);
-      console.log(`[SyncService] Batch sync: ${result.accepted} accepted, ${result.deduped} deduped, ${result.failed} failed`);
+      console.log(`[SyncService] HTTP batch sync: ${result.accepted} accepted, ${result.deduped} deduped, ${result.failed} failed`);
       return { synced: pending.length, failed: 0 };
     } else if (response.status === 401) {
       // Token invalid - mark as failed, don't retry
