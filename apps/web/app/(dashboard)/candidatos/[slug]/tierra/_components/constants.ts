@@ -70,6 +70,8 @@ export const PERU_VIEW = { longitude: -75.0152, latitude: -9.1899, zoom: 5 } as 
 export const PERU_BOUNDS: [[number, number], [number, number]] = [[-81.4, -18.4], [-68.7, -0.1]];
 /** Flat [west, south, east, north] for Source bounds prop — tells MapLibre to skip tiles outside Peru */
 export const PERU_BOUNDS_FLAT: [number, number, number, number] = [-81.4, -18.4, -68.7, -0.1];
+/** Pan limit — Peru + generous margin. Prevents scrolling to Africa/Asia. */
+export const PERU_MAX_BOUNDS: [[number, number], [number, number]] = [[-90, -25], [-60, 5]];
 
 /* ─── Tile config ─── */
 
@@ -81,7 +83,12 @@ export const MAP_STYLE: StyleSpecification = {
   sources: {
     "light-base": { type: "raster", tiles: [LIGHT_TILES], tileSize: 256, attribution: "&copy; CARTO", maxzoom: 19 },
   },
-  layers: [{ id: "light-base", type: "raster", source: "light-base" }],
+  layers: [
+    /** Background layer — visible while raster tiles load. Color matches CARTO light_nolabels
+     *  basemap background (#e6e5e3). Without this, unloaded tiles show as pure white squares. */
+    { id: "background", type: "background", paint: { "background-color": "#e6e5e3" } },
+    { id: "light-base", type: "raster", source: "light-base" },
+  ],
   /** Instant paint transitions — mask/fill changes must sync with flyTo, not lag behind */
   transition: { duration: 0, delay: 0 },
 };

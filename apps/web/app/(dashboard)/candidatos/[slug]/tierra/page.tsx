@@ -49,15 +49,29 @@ export default function TierraPage() {
   const { data: initialLocations } = useAgentLocationsSnapshot(campaignId);
 
   // ─── SSE: live agent locations ───
+  // Buffer rapid SSE batches (~120ms) and flush on 250ms debounce
+  // to avoid re-computing enrichedAgents on every micro-batch.
   const [locations, setLocations] = useState<AgentLocation[]>([]);
   useEffect(() => { if (initialLocations?.length) setLocations(initialLocations); }, [initialLocations]);
+  const ssePendingRef = useRef<Map<string, AgentLocation> | null>(null);
+  const sseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleSSEUpdate = useCallback((incoming: AgentLocation[]) => {
-    setLocations((prev) => {
-      const map = new Map(prev.map((l) => [l.agent_id, l]));
-      for (const loc of incoming) map.set(loc.agent_id, loc);
-      return Array.from(map.values());
-    });
+    if (!ssePendingRef.current) ssePendingRef.current = new Map();
+    for (const loc of incoming) ssePendingRef.current.set(loc.agent_id, loc);
+    if (sseTimerRef.current) return; // already scheduled
+    sseTimerRef.current = setTimeout(() => {
+      sseTimerRef.current = null;
+      const pending = ssePendingRef.current;
+      if (!pending || pending.size === 0) return;
+      ssePendingRef.current = null;
+      setLocations((prev) => {
+        const map = new Map(prev.map((l) => [l.agent_id, l]));
+        for (const [id, loc] of pending) map.set(id, loc);
+        return Array.from(map.values());
+      });
+    }, 250);
   }, []);
+  useEffect(() => () => { if (sseTimerRef.current) clearTimeout(sseTimerRef.current); }, []);
   useAgentSSE(campaignId ?? null, handleSSEUpdate);
 
   // ─── UI state ───

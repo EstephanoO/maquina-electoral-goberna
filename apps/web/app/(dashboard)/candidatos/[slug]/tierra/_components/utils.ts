@@ -108,7 +108,12 @@ export function lngLatToTile(lng: number, lat: number, z: number): [number, numb
  * Pre-fetch tiles for Peru at low zoom levels (z3-z8) in the background.
  * Uses low-priority fetch; tiles are cached by the browser HTTP cache,
  * making zoom-out transitions instant after the first load.
+ *
+ * Prewarms BOTH vector tiles (Tegola) and raster basemap tiles (CARTO).
+ * Without raster prewarming, zoom-out shows background color until CARTO tiles arrive.
  */
+const CARTO_TEMPLATE = "https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png";
+
 export function prewarmTiles(templateUrl: string) {
   const PERU_SW: [number, number] = [-81.4, -18.4];
   const PERU_NE: [number, number] = [-68.7, -0.1];
@@ -119,7 +124,10 @@ export function prewarmTiles(templateUrl: string) {
     const [x1, y1] = lngLatToTile(PERU_NE[0], PERU_SW[1], z);
     for (let x = x0; x <= x1; x++) {
       for (let y = y0; y <= y1; y++) {
+        // Vector tiles (Tegola via backend proxy)
         urls.push(templateUrl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y)));
+        // Raster basemap tiles (CARTO CDN) — without these, zoom-out shows white/background
+        urls.push(CARTO_TEMPLATE.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y)));
       }
     }
   }

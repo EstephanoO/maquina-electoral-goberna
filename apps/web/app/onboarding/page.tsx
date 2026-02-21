@@ -452,7 +452,7 @@ export default function OnboardingPage() {
           }}
         >
           <Image
-            src="/isotipo(2).jpg"
+            src="/isotipo_2_-removebg-preview.png"
             alt="GOBERNA"
             width={40}
             height={40}
@@ -531,7 +531,7 @@ export default function OnboardingPage() {
         }}
       >
         <Image
-          src="/isotipo(2).jpg"
+          src="/isotipo_2_-removebg-preview.png"
           alt="GOBERNA"
           width={40}
           height={40}

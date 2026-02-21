@@ -125,6 +125,12 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
         return reply.code(400).send({ ok: false, error: "z invalido" });
       }
 
+      // Tegola layers start at z3 — reject lower zooms to avoid 500 from upstream
+      if (zNum < 3) {
+        reply.header("Cache-Control", "public, max-age=86400");
+        return reply.code(204).send();
+      }
+
       const maxXY = 2 ** zNum - 1;
       const xNum = parseTileParam(params.x, 0, maxXY);
       const yNum = parseTileParam(params.y, 0, maxXY);
@@ -132,12 +138,14 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
         return reply.code(400).send({ ok: false, error: "x o y invalido" });
       }
 
-      // Forward conditional headers for 304 support
+      // Forward conditional + encoding headers for 304 support and gzip passthrough
       const upstreamHeaders: Record<string, string> = {};
       const ifNoneMatch = request.headers["if-none-match"];
       const ifModifiedSince = request.headers["if-modified-since"];
+      const acceptEncoding = request.headers["accept-encoding"];
       if (typeof ifNoneMatch === "string") upstreamHeaders["if-none-match"] = ifNoneMatch;
       if (typeof ifModifiedSince === "string") upstreamHeaders["if-modified-since"] = ifModifiedSince;
+      if (typeof acceptEncoding === "string") upstreamHeaders["accept-encoding"] = acceptEncoding;
 
       const targetUrl = `${env.tegolaBaseUrl}/maps/${env.tegolaMap}/${zNum}/${xNum}/${yNum}.vector.pbf`;
       const response = await fetchWithRetry(targetUrl, env, { headers: upstreamHeaders });
@@ -161,8 +169,16 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
         return reply.code(response.status).send({ error: "No se pudo obtener el tile de Tegola" });
       }
 
-      const body = Buffer.from(await response.arrayBuffer());
       reply.header("Content-Type", contentType);
+      const contentEncoding = response.headers.get("content-encoding");
+      if (contentEncoding) reply.header("Content-Encoding", contentEncoding);
+
+      // Stream response body directly — avoid double-buffering (ArrayBuffer → Buffer copy)
+      if (response.body) {
+        return reply.send(response.body);
+      }
+      // Fallback for runtimes without ReadableStream body
+      const body = Buffer.from(await response.arrayBuffer());
       return reply.send(body);
     });
   };

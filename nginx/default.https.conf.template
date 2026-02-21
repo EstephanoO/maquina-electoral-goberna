@@ -2,6 +2,20 @@
 proxy_cache_path /var/cache/nginx/tiles levels=1:2 keys_zone=tiles_cache:10m
                  max_size=256m inactive=24h use_temp_path=off;
 
+# ─── Gzip: compress API JSON + MVT protobuf tiles (60-80% savings) ───
+gzip on;
+gzip_vary on;
+gzip_proxied any;
+gzip_comp_level 4;
+gzip_min_length 256;
+gzip_types
+    application/json
+    application/x-protobuf
+    application/octet-stream
+    application/vnd.mapbox-vector-tile
+    text/plain
+    text/event-stream;
+
 map $uri $tile_cache_ttl {
     default          2h;
     "~*/tiles/[0-7]/"  24h;

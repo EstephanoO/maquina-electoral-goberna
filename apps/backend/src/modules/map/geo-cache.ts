@@ -338,11 +338,36 @@ export async function getPeruBounds(): Promise<GeoBounds> {
 
 /* ========== Cache Invalidation ========== */
 
+/**
+ * Invalidate all geo cache entries using explicit key construction.
+ * Avoids KEYS command which blocks Redis during full keyspace scan.
+ */
 export async function invalidateGeoCache(): Promise<void> {
-  const pattern = `${CACHE_PREFIX}*`;
-  const keys = await redisClient.keys(pattern);
-  if (keys.length > 0) {
-    await redisClient.del(keys);
+  // Explicit keys: 1 departamentos + 25 dep provincias + ~196 prov distritos + 1 peru bounds
+  // Much safer than KEYS pattern scan on production Redis
+  const keysToDelete: string[] = [
+    keys.departamentos(),
+    keys.peruBounds(),
+  ];
+
+  // Peru has 25 departamentos (coddep: "01" to "25")
+  for (let i = 1; i <= 25; i++) {
+    const coddep = String(i).padStart(2, "0");
+    keysToDelete.push(keys.provincias(coddep));
+  }
+
+  // Provincias: each dep has ~8 provincias (codprov_full = coddep + codprov "01"-"20")
+  // Over-delete is fine — DEL on non-existent keys is a no-op
+  for (let dep = 1; dep <= 25; dep++) {
+    const coddep = String(dep).padStart(2, "0");
+    for (let prov = 1; prov <= 20; prov++) {
+      keysToDelete.push(keys.distritos(coddep + String(prov).padStart(2, "0")));
+    }
+  }
+
+  // DEL is O(1) per key and non-existent keys are ignored
+  if (keysToDelete.length > 0) {
+    await redisClient.del(keysToDelete);
   }
 }
 

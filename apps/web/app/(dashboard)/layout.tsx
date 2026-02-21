@@ -394,9 +394,6 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
     };
   }, [uiRole, campaignSlug]);
 
-  if (isLoading) return <LoadingScreen />;
-  if (!isAuthenticated) return <LoadingScreen />;
-
   // ── Active state: smart matching ──
   // Dynamic hrefs (functions — "/candidatos/slug/tierra") use prefix match
   // so that sub-routes stay highlighted.
@@ -416,6 +413,10 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
     },
     [pathname],
   );
+
+  // ── Early returns AFTER all hooks ─────────────────────────
+  if (isLoading) return <LoadingScreen />;
+  if (!isAuthenticated) return <LoadingScreen />;
 
   // ── Render helper: <Link> with prefetch for instant navigation ──
   const renderNavLink = (item: NavItem, href: string) => {

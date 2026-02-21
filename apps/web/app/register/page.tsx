@@ -406,7 +406,7 @@ function RegisterPageInner() {
             }}
           >
             <Image
-              src="/isotipo(2).jpg"
+              src="/isotipo_2_-removebg-preview.png"
               alt="GOBERNA — Logotipo"
               width={120}
               height={120}

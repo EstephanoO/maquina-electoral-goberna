@@ -70,15 +70,21 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
     store.seed(seeded);
     await queue.start();
 
-    const clients = new Map<number, ServerResponse>();
+    type SSEClient = {
+      res: ServerResponse;
+      campaignIds: string[];
+      isAdmin: boolean;
+    };
+
+    const clients = new Map<number, SSEClient>();
     let clientSeq = 0;
     let lastIngestAtMs: number | null = null;
     const pendingBatchByAgent = new Map<string, AgentLocationInput>();
 
-    const pruneSlowClients = (entries: Array<[number, ServerResponse]>) => {
+    const pruneSlowClients = (entries: Array<[number, SSEClient]>) => {
       for (const [clientId, client] of entries) {
         try {
-          client.end();
+          client.res.end();
         } catch {
           // ignore close errors
         }
@@ -86,11 +92,36 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       }
     };
 
-    const broadcast = (event: string, payload: unknown) => {
-      const toPrune: Array<[number, ServerResponse]> = [];
+    /** Broadcast to all clients (heartbeat, agent.offline — no filtering needed) */
+    const broadcastAll = (event: string, payload: unknown) => {
+      const toPrune: Array<[number, SSEClient]> = [];
       for (const entry of clients.entries()) {
         const [clientId, client] = entry;
-        const writable = writeSseEvent(client, event, payload);
+        const writable = writeSseEvent(client.res, event, payload);
+        if (!writable) {
+          toPrune.push([clientId, client]);
+        }
+      }
+      if (toPrune.length > 0) {
+        pruneSlowClients(toPrune);
+      }
+    };
+
+    /** Broadcast location batch filtered per-client by campaign_id */
+    const broadcastFiltered = (agents: AgentLocationInput[]) => {
+      if (clients.size === 0) return;
+      const toPrune: Array<[number, SSEClient]> = [];
+      const ts = new Date().toISOString();
+
+      for (const [clientId, client] of clients.entries()) {
+        // Admins get all agents; others get only their campaigns
+        const filtered = client.isAdmin
+          ? agents
+          : agents.filter((a) => a.campaign_id && client.campaignIds.includes(a.campaign_id));
+
+        if (filtered.length === 0) continue;
+
+        const writable = writeSseEvent(client.res, "location.batch", { ts, agents: filtered });
         if (!writable) {
           toPrune.push([clientId, client]);
         }
@@ -104,19 +135,19 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       if (pendingBatchByAgent.size === 0) return;
       const agents = Array.from(pendingBatchByAgent.values());
       pendingBatchByAgent.clear();
-      broadcast("location.batch", { ts: new Date().toISOString(), agents });
+      broadcastFiltered(agents);
     }, env.agentStreamBatchFlushMs);
     batchFlushTimer.unref();
 
     const heartbeatTimer = setInterval(() => {
-      broadcast("heartbeat", { ts: new Date().toISOString() });
+      broadcastAll("heartbeat", { ts: new Date().toISOString() });
     }, env.agentStreamHeartbeatMs);
     heartbeatTimer.unref();
 
     const staleSweepTimer = setInterval(() => {
       const removed = store.removeStale();
       for (const agentId of removed) {
-        broadcast("agent.offline", { agent_id: agentId, ts: new Date().toISOString() });
+        broadcastAll("agent.offline", { agent_id: agentId, ts: new Date().toISOString() });
         
         // Emit disconnect event for campaign dashboard
         const agentInfo = previouslyOnlineAgents.get(agentId);
@@ -148,7 +179,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       queue.stop();
       await queue.drain();
       for (const client of clients.values()) {
-        client.end();
+        client.res.end();
       }
       clients.clear();
     });
@@ -223,15 +254,15 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
         reply.raw.setHeader("X-Accel-Buffering", "no");
         reply.raw.flushHeaders?.();
 
-        const clientId = ++clientSeq;
-        clients.set(clientId, reply.raw);
-
         const authed = request as AuthenticatedRequest;
         const campaignIds = authed.campaignIds;
+        const isAdmin = authed.userRole === "admin";
+
+        const clientId = ++clientSeq;
+        clients.set(clientId, { res: reply.raw, campaignIds, isAdmin });
+
         const filterAgents = (list: AgentLocationInput[]) =>
-          authed.userRole === "admin"
-            ? list
-            : list.filter((a) => a.campaign_id && campaignIds.includes(a.campaign_id));
+          isAdmin ? list : list.filter((a) => a.campaign_id && campaignIds.includes(a.campaign_id));
 
         reply.raw.write("retry: 5000\n\n");
         writeSseEvent(reply.raw, "snapshot", { ts: new Date().toISOString(), agents: filterAgents(store.listLive()) });

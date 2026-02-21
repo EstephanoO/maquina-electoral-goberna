@@ -345,7 +345,7 @@ export default function LoginPage() {
             }}
           >
             <Image
-              src="/isotipo(2).jpg"
+              src="/isotipo_2_-removebg-preview.png"
               alt="GOBERNA — Logotipo"
               width={140}
               height={140}
@@ -461,7 +461,7 @@ export default function LoginPage() {
             }}
           >
             <Image
-              src="/isotipo(2).jpg"
+              src="/isotipo_2_-removebg-preview.png"
               alt="GOBERNA"
               width={56}
               height={56}

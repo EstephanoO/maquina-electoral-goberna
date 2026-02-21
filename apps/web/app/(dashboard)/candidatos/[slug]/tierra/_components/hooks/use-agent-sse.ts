@@ -33,7 +33,7 @@ export function useAgentSSE(campaignId: string | null, onUpdate: (agents: AgentL
       es.addEventListener("location.batch", (e) => {
         try {
           const data = JSON.parse(e.data);
-          if (data.locations) cbRef.current(data.locations);
+          if (data.agents) cbRef.current(data.agents);
         } catch { /* ignore */ }
       });
 

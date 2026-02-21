@@ -38,7 +38,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { TierraMapHandle, TierraMapProps } from "./types";
 import {
   STATUS_COLORS, ZONE_FILL, ZONE_HOVER, ZONE_LINE, ZONE_LINE_GHOST, MASK_FILL, HOVER_LAYERS,
-  PERU_VIEW, PERU_BOUNDS, PERU_BOUNDS_FLAT, MAP_STYLE, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
+  PERU_VIEW, PERU_BOUNDS, PERU_BOUNDS_FLAT, PERU_MAX_BOUNDS, MAP_STYLE, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
   FLY_DURATION,
 } from "./constants";
 import { prewarmTiles } from "./utils";
@@ -272,20 +272,23 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Loading ───
   if (!ready || !tileUrl) {
     return (
-      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f8fafc" }}>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#e6e5e3" }}>
         <span style={{ color: "#64748b", fontSize: 13 }}>Cargando mapa...</span>
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} style={{ position: "absolute", inset: 0 }}>
+    <div ref={containerRef} style={{ position: "absolute", inset: 0, backgroundColor: "#e6e5e3" }}>
       <MapLibre
         ref={mapRef}
         initialViewState={PERU_VIEW}
         style={{ width: "100%", height: "100%" }}
         mapStyle={MAP_STYLE}
+        minZoom={3}
+        maxBounds={PERU_MAX_BOUNDS}
         maxTileCacheZoomLevels={10}
+        fadeDuration={0}
         onLoad={handleLoad}
         onMoveStart={handleMoveStart}
         onMoveEnd={handleMoveEnd}
@@ -295,7 +298,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         interactiveLayerIds={INTERACTIVE_LAYERS as unknown as string[]}
       >
         {/* ── Tegola vector tiles ── */}
-        <Source id="peru" type="vector" tiles={tilesArray} minzoom={0} maxzoom={14} bounds={PERU_BOUNDS_FLAT} promoteId={PROMOTE_ID}>
+        <Source id="peru" type="vector" tiles={tilesArray} minzoom={3} maxzoom={14} bounds={PERU_BOUNDS_FLAT} promoteId={PROMOTE_ID}>
           <Layer id="dep-fill" type="fill" source-layer="departamentos" filter={filters.depFillFilter} paint={depFillPaint} />
           <Layer id="dep-line" type="line" source-layer="departamentos" filter={filters.depLineFilter} paint={depLinePaint} />
           <Layer id="prov-fill" type="fill" source-layer="provincias" filter={filters.provFillFilter} paint={provFillPaint} />
