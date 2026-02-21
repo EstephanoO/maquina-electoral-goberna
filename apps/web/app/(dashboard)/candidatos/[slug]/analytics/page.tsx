@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 
 import { api } from "@/lib/services";
@@ -10,7 +11,6 @@ import {
   KpiCards,
   PagesTable,
   TrafficSources,
-  CitiesHeatmap,
   CitiesRanking,
   DailyChart,
   EventsFunnel,
@@ -19,6 +19,12 @@ import {
   InsightsPanel,
   type GA4Data,
 } from "./_components";
+
+/** Lazy-load CitiesHeatmap — keeps MapLibre GL out of the analytics chunk */
+const CitiesHeatmap = dynamic(
+  () => import("./_components/cities-heatmap").then((m) => m.CitiesHeatmap),
+  { ssr: false },
+);
 
 /* ========== Types ========== */
 

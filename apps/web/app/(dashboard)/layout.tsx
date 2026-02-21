@@ -2,9 +2,10 @@
 
 import { AuthProvider, useAuth } from "../../lib/auth-context";
 import { QueryProvider } from "../../lib/query-provider";
+import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, memo } from "react";
 
 // ── Nav items ───────────────────────────────────────────────────────
 
@@ -55,28 +56,14 @@ const NAV_ITEMS: NavItem[] = [
   // Consultor: acceso directo a dashboards de la campaña activa via sidebar
   { icon: <DigitalIcon />, label: "Analytics", href: (slug) => `/candidatos/${slug}/analytics`, roles: ["consultor"], section: "main" },
   { icon: <CmsMetricsIcon />, label: "Digital", href: (slug) => `/candidatos/${slug}/cms-metrics`, roles: ["consultor"], section: "main" },
-  // /ops exists but is hidden from nav — access via direct URL only
-  // { icon: <OpsIcon />, label: "Operaciones", href: "/ops", roles: ["admin"], section: "admin" },
   // Configuracion se renderiza como item fijo al fondo del sidebar (fuera del nav scrolleable)
 ];
 
 // ── Simple SVG icons ────────────────────────────────────────────────
 
-function MapIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>Mapa</title>
-      <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
-      <line x1="8" y1="2" x2="8" y2="18" />
-      <line x1="16" y1="6" x2="16" y2="22" />
-    </svg>
-  );
-}
-
 function DashboardIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>Dashboard</title>
       <rect x="3" y="3" width="7" height="7" rx="1" />
       <rect x="14" y="3" width="7" height="7" rx="1" />
       <rect x="3" y="14" width="7" height="7" rx="1" />
@@ -88,7 +75,6 @@ function DashboardIcon() {
 function AgentsIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>Agentes</title>
       <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
       <circle cx="9" cy="7" r="4" />
       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
@@ -97,33 +83,9 @@ function AgentsIcon() {
   );
 }
 
-function SurveysIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>Encuestas</title>
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="16" y1="13" x2="8" y2="13" />
-      <line x1="16" y1="17" x2="8" y2="17" />
-      <polyline points="10 9 9 9 8 9" />
-    </svg>
-  );
-}
-
-function OpsIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>Operaciones</title>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
-}
-
 function CandidatosIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>Candidatos</title>
       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
       <circle cx="12" cy="7" r="4" />
       <path d="M12 11v4" />
@@ -135,7 +97,6 @@ function CandidatosIcon() {
 function FormulariosIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>Formularios</title>
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <polyline points="14 2 14 8 20 8" />
       <line x1="16" y1="13" x2="8" y2="13" />
@@ -148,7 +109,6 @@ function FormulariosIcon() {
 function CMSIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>CMS</title>
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       <line x1="9" y1="9" x2="15" y2="9" />
       <line x1="9" y1="13" x2="13" y2="13" />
@@ -159,7 +119,6 @@ function CMSIcon() {
 function CmsMetricsIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>Metricas CMS</title>
       <path d="M18 20V10" />
       <path d="M12 20V4" />
       <path d="M6 20v-6" />
@@ -170,7 +129,6 @@ function CmsMetricsIcon() {
 function DigitalIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>Digital</title>
       <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
       <line x1="8" y1="21" x2="16" y2="21" />
       <line x1="12" y1="17" x2="12" y2="21" />
@@ -181,7 +139,6 @@ function DigitalIcon() {
 function SettingsIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>Configuracion</title>
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51-1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
@@ -191,7 +148,6 @@ function SettingsIcon() {
 function MenuIcon() {
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>Menu</title>
       <line x1="3" y1="12" x2="21" y2="12" />
       <line x1="3" y1="6" x2="21" y2="6" />
       <line x1="3" y1="18" x2="21" y2="18" />
@@ -202,7 +158,6 @@ function MenuIcon() {
 function CloseIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>Cerrar</title>
       <line x1="18" y1="6" x2="6" y2="18" />
       <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
@@ -226,7 +181,6 @@ function CollapseIcon({ collapsed }: { collapsed: boolean }) {
         transition: "transform 0.2s ease",
       }}
     >
-      <title>Colapsar</title>
       <polyline points="15 18 9 12 15 6" />
     </svg>
   );
@@ -235,7 +189,6 @@ function CollapseIcon({ collapsed }: { collapsed: boolean }) {
 function LogoutIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <title>Cerrar sesion</title>
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
       <polyline points="16 17 21 12 16 7" />
       <line x1="21" y1="12" x2="9" y2="12" />
@@ -259,7 +212,6 @@ function ChevronIcon({ open }: { open: boolean }) {
         transition: "transform 0.15s ease",
       }}
     >
-      <title>Expandir</title>
       <polyline points="6 9 12 15 18 9" />
     </svg>
   );
@@ -342,9 +294,26 @@ const SIDEBAR_W_EXPANDED = 260;
 const SIDEBAR_W_COLLAPSED = 72;
 const MOBILE_BREAKPOINT = 768;
 
+// ── Shared nav link styles ──────────────────────────────────────────
+
+const navLinkBase: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
+  width: "100%",
+  border: "none",
+  cursor: "pointer",
+  fontSize: 13,
+  fontFamily: "inherit",
+  transition: "background 0.15s ease, color 0.15s ease",
+  whiteSpace: "nowrap",
+  textAlign: "left",
+  textDecoration: "none",
+};
+
 // ── Dashboard shell (inner, needs AuthProvider above) ───────────────
 
-function DashboardShell({ children }: { children: React.ReactNode }) {
+const DashboardShell = memo(function DashboardShell({ children }: { children: React.ReactNode }) {
   const { user, campaigns, activeCampaignId, setActiveCampaign, isAuthenticated, isLoading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -353,7 +322,6 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(() => readSidebarPref());
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false);
 
   // Derive UI role from the authenticated user's backend role
@@ -392,15 +360,11 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     }
   }, [isLoading, isAuthenticated, router]);
 
-  // Close mobile sidebar on route change
-  const prevPathname = useRef(pathname);
+  // FIX: Close mobile sidebar on route change (was missing dependency array)
   useEffect(() => {
-    if (prevPathname.current !== pathname) {
-      prevPathname.current = pathname;
-      setMobileOpen(false);
-      setCampaignDropdownOpen(false);
-    }
-  });
+    setMobileOpen(false);
+    setCampaignDropdownOpen(false);
+  }, [pathname]);
 
   const handleLogout = useCallback(async () => {
     await logout();
@@ -412,62 +376,52 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
   // Resolve dynamic hrefs (e.g., Tierra/Digital for consultor use campaign slug)
   const campaignSlug = activeCampaign?.slug ?? "";
-  const resolveHref = (href: string | ((slug: string) => string)): string =>
-    typeof href === "function" ? href(campaignSlug) : href;
+  const resolveHref = useCallback(
+    (href: string | ((slug: string) => string)): string =>
+      typeof href === "function" ? href(campaignSlug) : href,
+    [campaignSlug],
+  );
 
-  const filteredNav = NAV_ITEMS
-    .filter((item) => item.roles.includes(uiRole))
-    // Hide dynamic-href items when there's no active campaign slug
-    .filter((item) => typeof item.href === "string" || campaignSlug);
-  const mainNav = filteredNav.filter((item) => item.section === "main");
-  const adminNav = filteredNav.filter((item) => item.section === "admin");
+  // FIX: Memoize nav lists — was recomputed on every render
+  const { mainNav, adminNav } = useMemo(() => {
+    const filtered = NAV_ITEMS
+      .filter((item) => item.roles.includes(uiRole))
+      .filter((item) => typeof item.href === "string" || campaignSlug);
+    return {
+      mainNav: filtered.filter((item) => item.section === "main"),
+      adminNav: filtered.filter((item) => item.section === "admin"),
+    };
+  }, [uiRole, campaignSlug]);
 
   if (isLoading) return <LoadingScreen />;
   if (!isAuthenticated) return <LoadingScreen />;
 
-  // ── Render helper for nav buttons ──
-  const renderNavButton = (item: NavItem, href: string) => {
+  // ── Render helper: <Link> with prefetch for instant navigation ──
+  const renderNavLink = (item: NavItem, href: string) => {
     const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
-    const isHovered = hoveredItem === href;
-    const showText = showLabel;
 
     return (
-      <button
-        type="button"
+      <Link
         key={href}
-        onClick={() => router.push(href)}
-        onMouseEnter={() => setHoveredItem(href)}
-        onMouseLeave={() => setHoveredItem(null)}
-        title={showText ? undefined : item.label}
+        href={href}
+        prefetch={true}
+        onClick={() => { if (isMobile) setMobileOpen(false); }}
+        title={showLabel ? undefined : item.label}
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          width: "100%",
-          padding: showText ? "11px 20px" : "11px 0",
-          justifyContent: showText ? "flex-start" : "center",
-          background: isActive
-            ? "rgba(255,255,255,0.12)"
-            : isHovered
-              ? "rgba(255,255,255,0.06)"
-              : "transparent",
-          border: "none",
+          ...navLinkBase,
+          padding: showLabel ? "11px 20px" : "11px 0",
+          justifyContent: showLabel ? "flex-start" : "center",
+          background: isActive ? "rgba(255,255,255,0.12)" : "transparent",
           borderLeft: isActive ? "3px solid var(--goberna-gold)" : "3px solid transparent",
-          color: isActive ? "var(--goberna-gold)" : isHovered ? "#ffffff" : "rgba(255,255,255,0.7)",
-          cursor: "pointer",
-          fontSize: 13,
+          color: isActive ? "var(--goberna-gold)" : "rgba(255,255,255,0.7)",
           fontWeight: isActive ? 600 : 500,
-          fontFamily: "inherit",
-          transition: "all 0.15s ease",
-          whiteSpace: "nowrap",
-          textAlign: "left",
         }}
       >
         <span style={{ flexShrink: 0, display: "flex", alignItems: "center", width: 20, justifyContent: "center" }}>
           {item.icon}
         </span>
-        {showText && <span>{item.label}</span>}
-      </button>
+        {showLabel && <span>{item.label}</span>}
+      </Link>
     );
   };
 
@@ -581,7 +535,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             padding: "8px 0",
           }}
         >
-          {mainNav.map((item) => renderNavButton(item, resolveHref(item.href)))}
+          {mainNav.map((item) => renderNavLink(item, resolveHref(item.href)))}
 
           {/* Admin section separator */}
           {adminNav.length > 0 && (
@@ -600,47 +554,32 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          {adminNav.map((item) => renderNavButton(item, resolveHref(item.href)))}
+          {adminNav.map((item) => renderNavLink(item, resolveHref(item.href)))}
         </nav>
 
         {/* ── Bottom section ────────────────────────────────────── */}
         <div style={{ flexShrink: 0 }}>
-          {/* Configuracion */}
+          {/* Configuracion — Link instead of button */}
           {(() => {
             const settingsRoles: UIRole[] = ["admin", "candidato"];
             if (!settingsRoles.includes(uiRole)) return null;
             const href = "/settings";
             const isActive = pathname === href || pathname.startsWith(href);
-            const isHovered = hoveredItem === "__settings__";
             return (
-              <button
-                type="button"
-                onClick={() => router.push(href)}
-                onMouseEnter={() => setHoveredItem("__settings__")}
-                onMouseLeave={() => setHoveredItem(null)}
+              <Link
+                href={href}
+                prefetch={true}
+                onClick={() => { if (isMobile) setMobileOpen(false); }}
                 title={showLabel ? undefined : "Configuracion"}
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  width: "100%",
+                  ...navLinkBase,
                   padding: showLabel ? "11px 20px" : "11px 0",
                   justifyContent: showLabel ? "flex-start" : "center",
-                  background: isActive
-                    ? "rgba(255,255,255,0.12)"
-                    : isHovered
-                      ? "rgba(255,255,255,0.06)"
-                      : "transparent",
-                  border: "none",
+                  background: isActive ? "rgba(255,255,255,0.12)" : "transparent",
                   borderTop: "1px solid rgba(255,255,255,0.08)",
                   borderLeft: isActive ? "3px solid var(--goberna-gold)" : "3px solid transparent",
-                  color: isActive ? "var(--goberna-gold)" : isHovered ? "#ffffff" : "rgba(255,255,255,0.5)",
-                  cursor: "pointer",
-                  fontSize: 13,
+                  color: isActive ? "var(--goberna-gold)" : "rgba(255,255,255,0.5)",
                   fontWeight: isActive ? 600 : 400,
-                  fontFamily: "inherit",
-                  transition: "all 0.15s ease",
-                  whiteSpace: "nowrap",
                 }}
                 aria-label="Configuracion"
               >
@@ -648,7 +587,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
                   <SettingsIcon />
                 </span>
                 {showLabel && <span>Configuracion</span>}
-              </button>
+              </Link>
             );
           })()}
 
@@ -733,7 +672,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
 
-          {/* Collapse toggle (desktop only, not shown on mobile) */}
+          {/* Collapse toggle (desktop only) */}
           {!isMobile && (
             <button
               type="button"
@@ -756,8 +695,6 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
                 width: "100%",
               }}
               aria-label={showCollapsed ? "Expandir menu" : "Colapsar menu"}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.7)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; }}
             >
               <CollapseIcon collapsed={showCollapsed} />
               {!showCollapsed && <span>Colapsar</span>}
@@ -839,8 +776,6 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
                     }}
                     title="Cerrar sesion"
                     aria-label="Cerrar sesion"
-                    onMouseEnter={(e) => { e.currentTarget.style.color = "#ffffff"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; }}
                   >
                     <LogoutIcon />
                   </button>
@@ -894,7 +829,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       </main>
     </div>
   );
-}
+});
 
 // ── Exported layout wraps with AuthProvider ─────────────────────────
 
