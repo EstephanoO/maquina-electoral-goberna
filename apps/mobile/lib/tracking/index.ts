@@ -342,11 +342,21 @@ export async function sendSingleLocation(
     });
 
     const prevAgentId = currentAgentId;
+    const prevAgentName = currentAgentName;
     currentAgentId = agentId;
+
+    // Ensure agent name is set for the location payload
+    if (!currentAgentName) {
+      try {
+        const user = await getStoredUser();
+        currentAgentName = user?.full_name ?? null;
+      } catch { /* best-effort */ }
+    }
 
     await processLocation(location);
 
     currentAgentId = prevAgentId;
+    currentAgentName = prevAgentName;
     return { success: true };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Error desconocido';

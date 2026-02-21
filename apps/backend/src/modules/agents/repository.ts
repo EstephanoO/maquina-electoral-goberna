@@ -5,6 +5,7 @@ import type { AgentLiveState } from "./types";
 
 type PersistedLiveRow = {
   agent_id: string;
+  agent_name: string | null;
   seq: number;
   ts: string;
   lat: number;
@@ -46,14 +47,18 @@ export async function ensureAgentLocationsLiveTable() {
 }
 
 export async function loadAllLiveAgentLocations(): Promise<AgentLiveState[]> {
+  // Join with users table to recover agent_name across backend restarts
   const result = (await pool.query(`
-    SELECT agent_id, seq, ts, lat, lng, accuracy, speed, heading, battery, campaign_id, updated_at
-    FROM public.agent_locations_live
+    SELECT a.agent_id, u.full_name AS agent_name,
+           a.seq, a.ts, a.lat, a.lng, a.accuracy, a.speed, a.heading, a.battery,
+           a.campaign_id, a.updated_at
+    FROM public.agent_locations_live a
+    LEFT JOIN public.users u ON u.id::text = a.agent_id
   `)) as { rows: PersistedLiveRow[] };
 
   return result.rows.map((row) => ({
     agentId: row.agent_id,
-    agentName: null,
+    agentName: row.agent_name ?? null,
     seq: Number(row.seq),
     ts: new Date(row.ts).toISOString(),
     lat: row.lat,

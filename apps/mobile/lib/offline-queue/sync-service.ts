@@ -143,6 +143,7 @@ async function syncLocations(): Promise<{ synced: number; failed: number }> {
     lat: location.lat,
     lng: location.lng,
     seq: location.seq,
+    ...(location.agent_name ? { agent_name: location.agent_name } : {}),
     ...(location.accuracy != null ? { accuracy: location.accuracy } : {}),
     ...(location.speed != null ? { speed: location.speed } : {}),
     ...(location.heading != null ? { heading: location.heading } : {}),

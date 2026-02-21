@@ -13,6 +13,7 @@ import { getDatabase } from './db';
 export interface PendingLocation {
   id: number;
   agent_id: string;
+  agent_name: string | null;
   campaign_id: string | null;
   ts: string;
   lat: number;
@@ -30,6 +31,7 @@ export interface PendingLocation {
 
 export interface LocationPayload {
   agent_id: string;
+  agent_name?: string;
   campaign_id?: string;
   ts: string;
   lat: number;
@@ -70,10 +72,11 @@ export async function queueLocation(payload: LocationPayload): Promise<number> {
   
   await db.runAsync(
     `INSERT INTO pending_locations 
-     (agent_id, campaign_id, ts, lat, lng, accuracy, speed, heading, battery, seq)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     (agent_id, agent_name, campaign_id, ts, lat, lng, accuracy, speed, heading, battery, seq)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       payload.agent_id,
+      payload.agent_name ?? null,
       payload.campaign_id ?? null,
       payload.ts,
       payload.lat,

@@ -7,38 +7,16 @@ import { errorPayload } from "../../infra/http";
 import type { IngestOutcome } from "../../infra/metrics";
 import { metricsRegistry } from "../../infra/metrics";
 import { emitCampaignEvent } from "../campaigns/routes";
+import { toState } from "./helpers";
 import { loadAllLiveAgentLocations } from "./repository";
-import { agentLocationBatchSchema, agentLocationSchema } from "./schema";
+import { agentLocationBatchSchema } from "./schema";
 import { AgentsStore } from "./store";
-import type { AgentLiveState, AgentLocationInput } from "./types";
+import type { AgentLocationInput } from "./types";
 import { AgentsWriteBehindQueue } from "./write-behind-queue";
 import { buildAgentsWsRoutes } from "./ws-routes";
 
 // Track which agents were previously online (for disconnect events)
 const previouslyOnlineAgents = new Map<string, { campaignId: string | null; agentName: string }>();
-
-function toState(value: unknown): AgentLiveState {
-  const parsed = agentLocationSchema.safeParse(value);
-  if (!parsed.success) {
-    throw new Error("payload invalido");
-  }
-
-  return {
-    agentId: parsed.data.agent_id,
-    agentName: parsed.data.agent_name ?? null,
-    ts: new Date(parsed.data.ts).toISOString(),
-    lat: parsed.data.lat,
-    lng: parsed.data.lng,
-    accuracy: parsed.data.accuracy ?? null,
-    speed: parsed.data.speed ?? null,
-    heading: parsed.data.heading ?? null,
-    battery: parsed.data.battery ?? null,
-    seq: parsed.data.seq,
-    campaignId: parsed.data.campaign_id ?? null,
-    receivedAt: new Date().toISOString(),
-    lastSeenAtMs: Date.now(),
-  };
-}
 
 function writeSseEvent(res: ServerResponse, event: string, payload: unknown): boolean {
   try {
@@ -199,7 +177,6 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
         pendingBatchByAgent,
         previouslyOnlineAgents,
         lastIngestAtMs: { get value() { return lastIngestAtMs; }, set value(v) { lastIngestAtMs = v; } },
-        broadcastAll,
       }),
     );
 

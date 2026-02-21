@@ -28,9 +28,10 @@ import type { WebSocket } from "@fastify/websocket";
 import type { AppEnv } from "../../config/env";
 import { metricsRegistry } from "../../infra/metrics";
 import { emitCampaignEvent } from "../campaigns/routes";
-import { agentLocationBatchSchema, agentLocationSchema } from "./schema";
+import { toState } from "./helpers";
+import { agentLocationBatchSchema } from "./schema";
 import type { AgentsStore } from "./store";
-import type { AgentLiveState, AgentLocationInput } from "./types";
+import type { AgentLocationInput } from "./types";
 import type { AgentsWriteBehindQueue } from "./write-behind-queue";
 
 // ─── Types ────────────────────────────────────────────────────
@@ -41,40 +42,15 @@ type IngestContext = {
   pendingBatchByAgent: Map<string, AgentLocationInput>;
   previouslyOnlineAgents: Map<string, { campaignId: string | null; agentName: string }>;
   lastIngestAtMs: { value: number | null };
-  broadcastAll: (event: string, payload: unknown) => void;
 };
 
 type ClientMessage =
   | { type: "location"; data: unknown }
   | { type: "location.batch"; data: unknown[] }
-  | { type: "status"; data: { agent_id: string; agent_name?: string; status: string; campaign_id?: string } }
   | { type: "ping" }
   | { type: "pong" };
 
 // ─── Helpers ──────────────────────────────────────────────────
-
-function toState(value: unknown): AgentLiveState {
-  const parsed = agentLocationSchema.safeParse(value);
-  if (!parsed.success) {
-    throw new Error("payload invalido");
-  }
-
-  return {
-    agentId: parsed.data.agent_id,
-    agentName: parsed.data.agent_name ?? null,
-    ts: new Date(parsed.data.ts).toISOString(),
-    lat: parsed.data.lat,
-    lng: parsed.data.lng,
-    accuracy: parsed.data.accuracy ?? null,
-    speed: parsed.data.speed ?? null,
-    heading: parsed.data.heading ?? null,
-    battery: parsed.data.battery ?? null,
-    seq: parsed.data.seq,
-    campaignId: parsed.data.campaign_id ?? null,
-    receivedAt: new Date().toISOString(),
-    lastSeenAtMs: Date.now(),
-  };
-}
 
 function sendJson(ws: WebSocket, payload: unknown): boolean {
   try {
@@ -303,45 +279,6 @@ export function buildAgentsWsRoutes(env: AppEnv, ctx: IngestContext): FastifyPlu
                 server_ts: new Date().toISOString(),
               });
               metricsRegistry.incCounter("ws_messages_in", "location.batch");
-              return;
-            }
-
-            if (msg.type === "status") {
-              const { agent_id, agent_name, status: agentStatus, campaign_id } = msg.data;
-              if (!agent_id || !agentStatus) return;
-
-              const ts = new Date().toISOString();
-              const name = agent_name ?? ctx.previouslyOnlineAgents.get(agent_id)?.agentName ?? `Agente ${agent_id.slice(0, 8)}`;
-
-              // Broadcast status change to all SSE dashboard clients
-              ctx.broadcastAll("agent.status", {
-                agent_id,
-                agent_name: name,
-                status: agentStatus, // "background" | "foreground"
-                campaign_id: campaign_id ?? ctx.previouslyOnlineAgents.get(agent_id)?.campaignId ?? null,
-                ts,
-              });
-
-              // Emit campaign event for activity log
-              const campaignId = campaign_id ?? ctx.previouslyOnlineAgents.get(agent_id)?.campaignId;
-              if (campaignId && agentStatus === "background") {
-                emitCampaignEvent(campaignId, {
-                  type: "agent_disconnected",
-                  agent_id,
-                  agent_name: name,
-                  message: `${name} puso la app en segundo plano`,
-                });
-              } else if (campaignId && agentStatus === "foreground") {
-                emitCampaignEvent(campaignId, {
-                  type: "agent_connected",
-                  agent_id,
-                  agent_name: name,
-                  message: `${name} volvio a la app`,
-                });
-              }
-
-              sendJson(socket, { type: "ack.status", status: agentStatus, server_ts: ts });
-              metricsRegistry.incCounter("ws_messages_in", "status");
               return;
             }
 

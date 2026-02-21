@@ -58,6 +58,13 @@ async function initTables(database: SQLite.SQLiteDatabase): Promise<void> {
     );
   `);
   
+  // Migration: add agent_name column (safe on existing DBs — IF NOT EXISTS is implicit with ADD COLUMN)
+  try {
+    await database.execAsync(`ALTER TABLE pending_locations ADD COLUMN agent_name TEXT;`);
+  } catch {
+    // Column already exists — expected on subsequent launches
+  }
+
   // Index for efficient sync queries
   await database.execAsync(`
     CREATE INDEX IF NOT EXISTS idx_locations_sync_status 
