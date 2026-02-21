@@ -52,7 +52,6 @@ import { INITIAL_DRILL } from "./types";
 import {
   STATUS_COLORS, CLUSTER_COLORS, CLUSTER_STEPS, CLUSTER_SIZES, DATA_POINT,
   ZONE_FILL, ZONE_HOVER, ZONE_LINE, ZONE_LINE_GHOST, MASK_FILL, HOVER_LAYERS,
-  MASK_COLOR, MASK_OPACITY_ACTIVE, MASK_OPACITY_HOVER, MASK_OPACITY_DIM,
   PRIORITY_FILL, PRIORITY_LINE, SECTOR_FILL, SECTOR_LINE,
   PERU_VIEW, PERU_BOUNDS, PERU_BOUNDS_FLAT, MAP_STYLE, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
   FLY_DURATION, RESIZE_FLY_DURATION,
@@ -223,32 +222,15 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const tilesArray = useMemo(() => tileUrl ? [tileUrl] : [], [tileUrl]);
 
   // ─── P2: Memoize dynamic paint objects that depend on drillState ───
-  //
-  // Mask system: uses a fixed dark fill-color (MASK_COLOR) with data-driven
-  // fill-opacity. This is faster than interpolating RGBA colors because the
-  // GPU only varies one float (opacity) per feature instead of four (r,g,b,a).
-  // With transition.duration=0 in the style, changes are instant — no desfase
-  // between the mask and the flyTo animation.
 
-  const depFillPaint = useMemo((): FillLayerSpecification["paint"] => {
-    if (drillState.level === 0) {
-      // Active level: hover-aware, transparent base
-      return {
-        "fill-color": ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL],
-        "fill-opacity": 1,
-      };
-    }
-    // Mask mode: darken all except selected dep
-    return {
-      "fill-color": MASK_COLOR,
-      "fill-opacity": drillState.depCode
-        ? ["case",
-            ["==", ["get", "coddep"], drillState.depCode], MASK_OPACITY_ACTIVE,
-            MASK_OPACITY_DIM,
-          ]
-        : MASK_OPACITY_ACTIVE,
-    };
-  }, [drillState.level, drillState.depCode]);
+  const depFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
+    "fill-color": drillState.level === 0
+      ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+      : drillState.depCode
+        ? ["case", ["==", ["get", "coddep"], drillState.depCode], ZONE_FILL, MASK_FILL]
+        : ZONE_FILL,
+    "fill-opacity": 1,
+  }), [drillState.level, drillState.depCode]);
 
   const depLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
     "line-color": drillState.level === 0 ? ZONE_LINE : ZONE_LINE_GHOST,
@@ -256,25 +238,14 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     "line-opacity": drillState.level === 0 ? 0.7 : 0.3,
   }), [drillState.level]);
 
-  const provFillPaint = useMemo((): FillLayerSpecification["paint"] => {
-    if (drillState.level === 1) {
-      // Active level: hover-aware, transparent base
-      return {
-        "fill-color": ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL],
-        "fill-opacity": 1,
-      };
-    }
-    // Mask mode: darken all except selected prov
-    return {
-      "fill-color": MASK_COLOR,
-      "fill-opacity": drillState.provCode
-        ? ["case",
-            ["==", ["get", "codprov_full"], drillState.provCode], MASK_OPACITY_ACTIVE,
-            MASK_OPACITY_DIM,
-          ]
-        : MASK_OPACITY_ACTIVE,
-    };
-  }, [drillState.level, drillState.provCode]);
+  const provFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
+    "fill-color": drillState.level === 1
+      ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+      : drillState.provCode
+        ? ["case", ["==", ["get", "codprov_full"], drillState.provCode], ZONE_FILL, MASK_FILL]
+        : ZONE_FILL,
+    "fill-opacity": 1,
+  }), [drillState.level, drillState.provCode]);
 
   const provLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
     "line-color": drillState.level === 1 ? ZONE_LINE : ZONE_LINE_GHOST,
@@ -282,25 +253,14 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     "line-opacity": drillState.level === 1 ? 0.7 : 0.2,
   }), [drillState.level]);
 
-  const distFillPaint = useMemo((): FillLayerSpecification["paint"] => {
-    if (drillState.level === 2) {
-      // Active level: hover-aware, transparent base
-      return {
-        "fill-color": ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL],
-        "fill-opacity": 1,
-      };
-    }
-    // Mask mode: darken all except selected dist
-    return {
-      "fill-color": MASK_COLOR,
-      "fill-opacity": drillState.distCode
-        ? ["case",
-            ["==", ["get", "ubigeo"], drillState.distCode], MASK_OPACITY_ACTIVE,
-            MASK_OPACITY_DIM,
-          ]
-        : MASK_OPACITY_ACTIVE,
-    };
-  }, [drillState.level, drillState.distCode]);
+  const distFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
+    "fill-color": drillState.level === 2
+      ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+      : drillState.distCode
+        ? ["case", ["==", ["get", "ubigeo"], drillState.distCode], ZONE_FILL, MASK_FILL]
+        : ZONE_FILL,
+    "fill-opacity": 1,
+  }), [drillState.level, drillState.distCode]);
 
   const distLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
     "line-color": ZONE_LINE,
