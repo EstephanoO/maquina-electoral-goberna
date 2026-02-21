@@ -8,7 +8,7 @@ import type { IngestOutcome } from "../../infra/metrics";
 import { metricsRegistry } from "../../infra/metrics";
 import { emitCampaignEvent } from "../campaigns/routes";
 import { toState } from "./helpers";
-import { loadAllLiveAgentLocations } from "./repository";
+import { loadAllLiveAgentLocations, getAgentTrail } from "./repository";
 import { agentLocationBatchSchema } from "./schema";
 import { AgentsStore } from "./store";
 import type { AgentLocationInput } from "./types";
@@ -202,6 +202,27 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
             ? allAgents
             : allAgents.filter((a) => a.campaign_id && campaignIds.includes(a.campaign_id));
         return { ok: true, ts: new Date().toISOString(), agents };
+      },
+    );
+
+    // ─── Agent Trail (location history for route visualization) ───────
+    app.get(
+      "/api/agents/:agentId/trail",
+      {
+        preHandler: [app.authenticate],
+        config: {
+          rateLimit: {
+            max: 60,
+            timeWindow: "1 minute",
+          },
+        },
+      },
+      async (request, reply) => {
+        reply.header("Cache-Control", "no-store");
+        const { agentId } = request.params as { agentId: string };
+        const limit = Math.min(Math.max(Number((request.query as { limit?: string }).limit) || 20, 1), 100);
+        const trail = await getAgentTrail(agentId, limit);
+        return { ok: true, agent_id: agentId, trail };
       },
     );
 

@@ -7,7 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import type { FormRecord } from "@/lib/services";
 import { useAuth } from "@/lib/auth-context";
-import { useCampaignStats, useRecentForms, useAgentLocationsSnapshot, tierraKeys, type AgentLocation } from "@/lib/hooks";
+import { useCampaignStats, useRecentForms, useAgentLocationsSnapshot, useAgentTrail, tierraKeys, type AgentLocation } from "@/lib/hooks";
 
 import {
   TierraHeader, MapControls, DataPanel, KpiPanel, ActivityCharts,
@@ -125,6 +125,10 @@ export default function TierraPage() {
   const [showTable, setShowTable] = useState(false);
   const [showMetrics, setShowMetrics] = useState(false);
   const [drillState, setDrillState] = useState<DrillState>(INITIAL_DRILL);
+  const [routeAgentId, setRouteAgentId] = useState<string | null>(null);
+
+  // ─── Route mode: fetch trail for selected agent ───
+  const { data: routeTrail = null } = useAgentTrail(routeAgentId);
 
   const showTracking = activeLayer === "agentes";
   const showDatos = activeLayer === "datos";
@@ -136,6 +140,12 @@ export default function TierraPage() {
   // ─── Derived data ───
   const { enrichedAgents, formPoints, connectedCount, filteredForms, filteredAgents } =
     useEnrichedAgents(stats, locations, forms, selectedAgentId, selectedAgentIds, drillBounds, backgroundAgentIds);
+
+  // ─── Route mode: filter forms for the route agent ───
+  const routeForms = useMemo(() => {
+    if (!routeAgentId) return null;
+    return formPoints.filter((f) => f.agent_id === routeAgentId);
+  }, [routeAgentId, formPoints]);
 
   const enrichedAgentsRef = useRef(enrichedAgents);
   enrichedAgentsRef.current = enrichedAgents;
@@ -167,6 +177,20 @@ export default function TierraPage() {
     const agent = enrichedAgentsRef.current.find((a) => a.id === agentId);
     if (agent) mapHandleRef.current?.flyToPoint(agent.lng, agent.lat, 15);
   }, []);
+
+  const handleViewRoute = useCallback((agentId: string) => {
+    // Toggle: if same agent, close route mode
+    if (routeAgentId === agentId) {
+      setRouteAgentId(null);
+      return;
+    }
+    setRouteAgentId(agentId);
+    setActiveLayer("agentes");
+    setSelectedAgentId(agentId);
+    // Fly to the agent
+    const agent = enrichedAgentsRef.current.find((a) => a.id === agentId);
+    if (agent) mapHandleRef.current?.flyToPoint(agent.lng, agent.lat, 15);
+  }, [routeAgentId]);
 
   const handleWhatsApp = useCallback((agent: EnrichedAgent) => {
     window.open(`https://wa.me/?text=Hola ${encodeURIComponent(agent.name)}`, "_blank");
@@ -217,11 +241,29 @@ export default function TierraPage() {
         {/* Left column: map + metrics */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
           <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
-            <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} showHeatmap={showHeatmap} drillState={drillState} onDrillChange={setDrillState} />
+            <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} showHeatmap={showHeatmap} drillState={drillState} onDrillChange={setDrillState} routeTrail={routeTrail} routeForms={routeForms} routeAgentId={routeAgentId} />
 
             <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10 }}>
               <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} agentCount={enrichedAgents.length} formCount={forms.length} />
             </div>
+
+            {/* Route mode overlay bar */}
+            {routeAgentId && (
+              <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 15, display: "flex", alignItems: "center", gap: 12, padding: "8px 16px", borderRadius: 10, backgroundColor: "rgba(15, 23, 42, 0.92)", backdropFilter: "blur(8px)", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", color: "#f8fafc" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>
+                  Ruta de {enrichedAgents.find((a) => a.id === routeAgentId)?.name ?? "Agente"}
+                </span>
+                {routeTrail && routeTrail.length > 0 && (
+                  <span style={{ fontSize: 11, color: "#94a3b8" }}>
+                    {routeTrail.length} puntos
+                  </span>
+                )}
+                <button type="button" onClick={() => setRouteAgentId(null)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.2)", backgroundColor: "rgba(255,255,255,0.1)", color: "#f8fafc", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                  Cerrar
+                </button>
+              </div>
+            )}
 
             <FullscreenButton isFullscreen={isFullscreen} onToggle={toggleFullscreen} />
             <BottomToolbar showMetrics={showMetrics} showTable={showTable} onToggleMetrics={() => setShowMetrics(!showMetrics)} onToggleTable={() => setShowTable(!showTable)} color={campaign.color_primario} />
@@ -235,7 +277,7 @@ export default function TierraPage() {
 
         {/* Data sidebar — always mounted, GPU transform slide (no width reflow) */}
         <div style={{ width: PANEL_W, flexShrink: 0, overflow: "hidden", borderLeft: "1px solid #e2e8f0", position: "relative", transform: showTable ? "translateX(0)" : `translateX(${PANEL_W}px)`, marginLeft: showTable ? 0 : -PANEL_W, transition: "transform 0.2s cubic-bezier(0.4,0,0.2,1), margin-left 0.2s cubic-bezier(0.4,0,0.2,1)", willChange: "transform" }}>
-          <DataPanel forms={filteredForms} selectedAgentName={enrichedAgents.find((a) => a.id === selectedAgentId)?.name ?? null} primaryColor={campaign.color_primario} open={showTable} onClose={() => setShowTable(false)} onFlyTo={(lng, lat) => mapHandleRef.current?.flyToPoint(lng, lat, 17)} campaignId={campaign.id} isAdmin={isAdmin} onFormsDeleted={handleFormsDeleted} agents={enrichedAgents} selectedAgentId={selectedAgentId} onSelectAgent={handleAgentListClick} onWhatsApp={handleWhatsApp} logEntries={logEntries} onLogEntryClick={handleLogEntryClick} onClearLog={handleClearLog} />
+          <DataPanel forms={filteredForms} selectedAgentName={enrichedAgents.find((a) => a.id === selectedAgentId)?.name ?? null} primaryColor={campaign.color_primario} open={showTable} onClose={() => setShowTable(false)} onFlyTo={(lng, lat) => mapHandleRef.current?.flyToPoint(lng, lat, 17)} campaignId={campaign.id} isAdmin={isAdmin} onFormsDeleted={handleFormsDeleted} agents={enrichedAgents} selectedAgentId={selectedAgentId} onSelectAgent={handleAgentListClick} onWhatsApp={handleWhatsApp} logEntries={logEntries} onLogEntryClick={handleLogEntryClick} onClearLog={handleClearLog} routeAgentId={routeAgentId} onViewRoute={handleViewRoute} />
         </div>
       </div>
     </div>

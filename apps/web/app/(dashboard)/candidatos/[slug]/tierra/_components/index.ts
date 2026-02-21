@@ -16,6 +16,6 @@ export { ActivityCharts } from "./activity-charts";
 export { INITIAL_DRILL } from "./types";
 
 /* ─── Types ─── */
-export type { EnrichedAgent, AgentStatus, FormPoint, TierraMapHandle, DrillLevel, DrillState, LogEntry } from "./types";
+export type { EnrichedAgent, AgentStatus, FormPoint, TrailPoint, TierraMapHandle, DrillLevel, DrillState, LogEntry } from "./types";
 export type { ActiveLayer } from "./map-controls";
 export type { PanelTab } from "./data-panel";
