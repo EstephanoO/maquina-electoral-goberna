@@ -21,11 +21,11 @@ import { AppState, type AppStateStatus } from 'react-native';
 
 import { queueLocation, startAutoSync, stopAutoSync } from '../offline-queue';
 import { getActiveCampaignId, getStoredUser } from '../auth-store';
+import { API_BASE, AGENT_INGEST_TOKEN } from '../api';
 import {
   connect as wsConnect,
   disconnect as wsDisconnect,
   sendLocation as wsSendLocation,
-  sendStatus as wsSendStatus,
   isConnected as wsIsConnected,
   getState as wsGetState,
   type LocationPayload,
@@ -66,6 +66,25 @@ let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = 
 // ─── AppState Listener ────────────────────────────────────────
 // Restarts GPS watch when app returns to foreground (OS kills it on background)
 
+/** Send agent status via HTTP POST (fire-and-forget, works even when WS is off) */
+function sendStatusHttp(agentId: string, status: 'background' | 'foreground'): void {
+  getActiveCampaignId().then((campaignId) => {
+    fetch(`${API_BASE}/agents/status`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-agent-token': AGENT_INGEST_TOKEN,
+      },
+      body: JSON.stringify({
+        agent_id: agentId,
+        agent_name: currentAgentName ?? undefined,
+        status,
+        campaign_id: campaignId ?? undefined,
+      }),
+    }).catch(() => { /* best-effort, fire-and-forget */ });
+  }).catch(() => { /* best-effort */ });
+}
+
 function handleAppStateChange(nextAppState: AppStateStatus): void {
   if (nextAppState === 'active' && currentAgentId) {
     // When the app returns to foreground, the OS may have killed our
@@ -73,17 +92,8 @@ function handleAppStateChange(nextAppState: AppStateStatus): void {
     // We need to restart it regardless of current state.
     console.log('[Tracking] App returned to foreground, restarting GPS watch');
 
-    // Notify backend immediately so dashboard shows agent as active
-    if (wsIsConnected()) {
-      getActiveCampaignId().then((campaignId) => {
-        wsSendStatus({
-          agent_id: currentAgentId!,
-          agent_name: currentAgentName ?? undefined,
-          status: 'foreground',
-          campaign_id: campaignId ?? undefined,
-        });
-      }).catch(() => { /* best-effort */ });
-    }
+    // Notify backend via HTTP so dashboard shows agent as active
+    sendStatusHttp(currentAgentId, 'foreground');
 
     // Mark state as stopped so startForegroundTracking re-inits everything
     if (foregroundSubscription) {
@@ -100,20 +110,11 @@ function handleAppStateChange(nextAppState: AppStateStatus): void {
 
   if (nextAppState === 'background' || nextAppState === 'inactive') {
     // GPS will stop naturally (foreground-only permission).
-    // WS connection stays alive briefly — OS may kill it after ~30s.
-    // That's fine: sync-service will catch up via HTTP batch on resume.
     console.log('[Tracking] App going to background');
 
-    // Notify backend immediately so dashboard shows agent as inactive
-    if (currentAgentId && wsIsConnected()) {
-      getActiveCampaignId().then((campaignId) => {
-        wsSendStatus({
-          agent_id: currentAgentId!,
-          agent_name: currentAgentName ?? undefined,
-          status: 'background',
-          campaign_id: campaignId ?? undefined,
-        });
-      }).catch(() => { /* best-effort */ });
+    // Notify backend via HTTP so dashboard shows agent as inactive immediately
+    if (currentAgentId) {
+      sendStatusHttp(currentAgentId, 'background');
     }
   }
 }

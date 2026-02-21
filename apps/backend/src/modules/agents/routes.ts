@@ -426,6 +426,72 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ─── Agent Status (background/foreground) ──────────────────────
+    // Fire-and-forget HTTP call from mobile when app goes to background/foreground.
+    // Uses x-agent-token (same as location ingest) so it works even when WS is off.
+    app.post(
+      "/api/agents/status",
+      {
+        config: {
+          rateLimit: {
+            max: 60,
+            timeWindow: "1 minute",
+          },
+        },
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+
+        // Validate token (same as location ingest)
+        if (env.agentIngestToken) {
+          const provided = String(request.headers["x-agent-token"] ?? "").trim();
+          if (!provided || provided !== env.agentIngestToken) {
+            metricsRegistry.incCounter("tracking_ingest_total", "401");
+            return reply.code(401).send(errorPayload(requestId, "INVALID_TOKEN", "token invalido"));
+          }
+        }
+
+        const body = request.body as { agent_id?: string; agent_name?: string; status?: string; campaign_id?: string } | null;
+        const agentId = body?.agent_id;
+        const agentStatus = body?.status;
+        if (!agentId || !agentStatus) {
+          return reply.code(400).send(errorPayload(requestId, "INVALID_PAYLOAD", "agent_id y status requeridos"));
+        }
+
+        const ts = new Date().toISOString();
+        const name = body?.agent_name ?? previouslyOnlineAgents.get(agentId)?.agentName ?? `Agente ${agentId.slice(0, 8)}`;
+        const campaignId = body?.campaign_id ?? previouslyOnlineAgents.get(agentId)?.campaignId ?? null;
+
+        // Broadcast to all SSE dashboard clients
+        broadcastAll("agent.status", {
+          agent_id: agentId,
+          agent_name: name,
+          status: agentStatus,
+          campaign_id: campaignId,
+          ts,
+        });
+
+        // Emit campaign event for activity log
+        if (campaignId && agentStatus === "background") {
+          emitCampaignEvent(campaignId, {
+            type: "agent_disconnected",
+            agent_id: agentId,
+            agent_name: name,
+            message: `${name} puso la app en segundo plano`,
+          });
+        } else if (campaignId && agentStatus === "foreground") {
+          emitCampaignEvent(campaignId, {
+            type: "agent_connected",
+            agent_id: agentId,
+            agent_name: name,
+            message: `${name} volvio a la app`,
+          });
+        }
+
+        return reply.code(200).send({ ok: true, request_id: requestId, status: agentStatus, server_ts: ts });
+      },
+    );
+
     // ─── Batch Location Ingest ────────────────────────────────────
     // More efficient for mobile sync: send up to 100 locations in one request
     app.post(
