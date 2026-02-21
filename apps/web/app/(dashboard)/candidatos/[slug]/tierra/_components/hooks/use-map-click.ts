@@ -7,7 +7,7 @@ import type { DrillLevel, DrillState, EnrichedAgent } from "../types";
 import { INITIAL_DRILL } from "../types";
 import { PERU_BOUNDS, FLY_DURATION } from "../constants";
 import { getBoundsFromFeature } from "../utils";
-import { preloadProvincias, preloadDistritos, reverseGeocode } from "@/lib/services/geo";
+import { preloadProvincias, preloadDistritos } from "@/lib/services/geo";
 
 /**
  * Stable click handler for the map. Reads volatile values from refs so the
@@ -19,6 +19,7 @@ export function useMapClick(
   selectedAgentIdRef: React.RefObject<string | null>,
   agentsRef: React.RefObject<EnrichedAgent[]>,
   skipNextFitRef: React.MutableRefObject<boolean>,
+  pendingClusterDrillRef: React.MutableRefObject<boolean>,
   onDrillChange: (state: DrillState) => void,
   onSelectAgent: (agentId: string | null) => void,
 ) {
@@ -48,7 +49,7 @@ export function useMapClick(
     const f = features[0];
     const layerId = f.layer?.id;
 
-    // Cluster → expand + auto-drill to distrito via reverse geocode
+    // Cluster → expand zoom, then moveEnd will reverse-geocode to auto-drill
     if (layerId === "forms-clusters" || layerId === "forms-cluster-ring") {
       const clusterId = f.properties?.cluster_id;
       const coords = (f.geometry as GeoJSON.Point).coordinates;
@@ -62,6 +63,10 @@ export function useMapClick(
           mapRef.current?.flyTo({ center: [lng, lat], zoom: targetZoom, duration: FLY_DURATION, essential: true });
         };
 
+        // Mark pending — handleMoveEnd will reverse-geocode the final center
+        skipNextFitRef.current = true;
+        pendingClusterDrillRef.current = true;
+
         if (source && typeof source.getClusterExpansionZoom === "function") {
           source.getClusterExpansionZoom(clusterId).then((zoom) => {
             flyToZoom(Math.min(zoom + 0.5, 18));
@@ -71,17 +76,6 @@ export function useMapClick(
         } else {
           flyToZoom(Math.min((mapRef.current?.getZoom() ?? 10) + 2, 18));
         }
-
-        skipNextFitRef.current = true;
-        reverseGeocode(lng, lat).then((res) => {
-          if (!res.ok || !res.result) return;
-          const r = res.result;
-          onDrillChange({
-            level: 3, depCode: r.coddep, depName: r.departamento,
-            provCode: r.codprov_full, provName: r.provincia,
-            distCode: r.ubigeo, distName: r.distrito, sector: null, sectorName: null,
-          });
-        }).catch(() => {});
       }
       return;
     }
@@ -172,5 +166,5 @@ export function useMapClick(
         if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
       }
     }
-  }, [mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, onDrillChange, onSelectAgent]);
+  }, [mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingClusterDrillRef, onDrillChange, onSelectAgent]);
 }

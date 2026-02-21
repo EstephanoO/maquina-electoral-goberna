@@ -59,6 +59,7 @@ import { useAutoFit } from "./hooks/use-auto-fit";
 import { useZoneTooltip } from "./hooks/use-zone-tooltip";
 import { useMapClick } from "./hooks/use-map-click";
 import { useMapResize } from "./hooks/use-map-resize";
+import { reverseGeocode } from "@/lib/services/geo";
 
 /* ========== Component (P6 — wrapped with memo) ========== */
 
@@ -72,6 +73,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const skipNextFitRef = useRef(false);
   const isZoomingRef = useRef(false);
   const zoomEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Set to true by cluster click — moveEnd will reverse-geocode the map center to update drill */
+  const pendingClusterDrillRef = useRef(false);
 
   // ─── Refs for volatile values (stable callbacks read these) ───
   const drillStateRef = useRef(drillState);
@@ -88,7 +91,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   useAutoFit(mapRef, drillState, skipNextFitRef);
   const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef);
-  const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, onDrillChange, onSelectAgent);
+  const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingClusterDrillRef, onDrillChange, onSelectAgent);
   const containerRef = useMapResize(mapRef, drillStateRef);
 
   // ─── P5: Memoize tiles array (new array = new Source in react-maplibre) ───
@@ -205,7 +208,44 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   const handleMoveEnd = useCallback(() => {
     zoomEndTimer.current = setTimeout(() => { isZoomingRef.current = false; }, 300);
-  }, []);
+
+    // After cluster flyTo lands, reverse-geocode the map center and drill
+    // to the appropriate level based on how far we zoomed in.
+    if (pendingClusterDrillRef.current && mapRef.current) {
+      pendingClusterDrillRef.current = false;
+      const center = mapRef.current.getCenter();
+      const zoom = mapRef.current.getZoom();
+      reverseGeocode(center.lng, center.lat).then((res) => {
+        if (!res.ok || !res.result) return;
+        const r = res.result;
+        skipNextFitRef.current = true;
+
+        // Progressive drill: pick level based on resulting zoom
+        if (zoom < 7) {
+          // Departamento level
+          onDrillChange({
+            level: 1, depCode: r.coddep, depName: r.departamento,
+            provCode: null, provName: null,
+            distCode: null, distName: null, sector: null, sectorName: null,
+          });
+        } else if (zoom < 9.5) {
+          // Provincia level
+          onDrillChange({
+            level: 2, depCode: r.coddep, depName: r.departamento,
+            provCode: r.codprov_full, provName: r.provincia,
+            distCode: null, distName: null, sector: null, sectorName: null,
+          });
+        } else {
+          // Distrito level
+          onDrillChange({
+            level: 3, depCode: r.coddep, depName: r.departamento,
+            provCode: r.codprov_full, provName: r.provincia,
+            distCode: r.ubigeo, distName: r.distrito, sector: null, sectorName: null,
+          });
+        }
+      }).catch(() => {});
+    }
+  }, [onDrillChange]);
 
   // ─── Feature-state hover tracking (zero React re-renders) ───
   const hoveredRef = useRef<{ source: string; sourceLayer: string; id: string | number } | null>(null);
