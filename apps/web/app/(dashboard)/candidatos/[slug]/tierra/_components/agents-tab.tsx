@@ -2,6 +2,8 @@
 
 import { useState, useMemo, useCallback } from "react";
 import type { EnrichedAgent, AgentStatus } from "./types";
+import { STATUS_CFG } from "./constants";
+import { getTimeAgo } from "./utils";
 
 /* ========== Types ========== */
 
@@ -12,26 +14,6 @@ type Props = {
   onSelectAgent: (agentId: string) => void;
   onWhatsApp?: (agent: EnrichedAgent) => void;
 };
-
-/* ========== Constants ========== */
-
-const STATUS_CFG: Record<AgentStatus, { label: string; color: string; dot: string }> = {
-  connected: { label: "Conectado", color: "#22c55e", dot: "#22c55e" },
-  idle: { label: "Inactivo", color: "#eab308", dot: "#eab308" },
-  inactive: { label: "Sin señal", color: "#94a3b8", dot: "#94a3b8" },
-};
-
-/* ========== Helpers ========== */
-
-function getTimeAgo(date: Date): string {
-  const diff = Date.now() - date.getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "ahora";
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
 
 /* ========== Component ========== */
 
@@ -140,7 +122,7 @@ export function AgentsTab({ agents, selectedAgentId, primaryColor, onSelectAgent
               >
                 {/* Status dot + info */}
                 <div style={S.rowMain}>
-                  <span style={{ ...S.statusDot, backgroundColor: cfg.dot }} />
+                  <span style={{ ...S.statusDot, backgroundColor: cfg.color }} />
                   <div style={S.rowInfo}>
                     <div style={S.rowName}>{agent.name}</div>
                     <div style={S.rowMeta}>

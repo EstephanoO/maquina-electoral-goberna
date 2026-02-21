@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { LogEntry } from "./activity-log";
+import type { LogEntry } from "./types";
+import { LOG_ICON_BG, LOG_ICON_LABEL } from "./constants";
+import { timeAgo } from "./utils";
 
 /* ========== Types ========== */
 
@@ -11,35 +13,6 @@ type Props = {
   onClearLog?: () => void;
   primaryColor: string;
 };
-
-/* ========== Constants ========== */
-
-const ICON_BG: Record<LogEntry["type"], string> = {
-  form_submitted: "#2563eb",
-  form_new: "#1d4ed8",
-  agent_connected: "#0d9488",
-  agent_disconnected: "#64748b",
-};
-
-const ICON_LABEL: Record<LogEntry["type"], string> = {
-  form_submitted: "^",
-  form_new: "+",
-  agent_connected: ">",
-  agent_disconnected: "x",
-};
-
-/* ========== Helpers ========== */
-
-function timeAgo(date: Date): string {
-  const s = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (s < 10) return "ahora";
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
 
 /* ========== Component ========== */
 
@@ -94,8 +67,8 @@ export function LogTab({ entries, onEntryClick, onClearLog, primaryColor }: Prop
                 title={hasLocation ? "Click para ver en mapa" : undefined}
               >
                 {/* Icon */}
-                <span style={{ ...S.icon, backgroundColor: ICON_BG[entry.type] }}>
-                  {ICON_LABEL[entry.type]}
+                <span style={{ ...S.icon, backgroundColor: LOG_ICON_BG[entry.type] }}>
+                  {LOG_ICON_LABEL[entry.type]}
                 </span>
 
                 {/* Content */}

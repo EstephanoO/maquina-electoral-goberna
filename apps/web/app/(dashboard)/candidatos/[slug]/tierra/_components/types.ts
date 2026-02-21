@@ -93,3 +93,16 @@ export type TierraMapProps = {
   drillState: DrillState;
   onDrillChange: (state: DrillState) => void;
 };
+
+/* ─── Log Entries ─── */
+
+export type LogEntry = {
+  id: string;
+  type: "form_submitted" | "agent_connected" | "agent_disconnected" | "form_new";
+  agentName: string;
+  message: string;
+  timestamp: Date;
+  /** Coordinates for fly-to on click (null = no location) */
+  lat: number | null;
+  lng: number | null;
+};

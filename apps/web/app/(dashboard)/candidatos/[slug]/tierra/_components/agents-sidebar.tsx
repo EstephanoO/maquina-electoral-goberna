@@ -3,6 +3,8 @@
 import Image from "next/image";
 import type { CampaignStats } from "@/lib/types";
 import type { EnrichedAgent, AgentStatus } from "./types";
+import { STATUS_CFG } from "./constants";
+import { getTimeAgo } from "./utils";
 
 /* ========== Types ========== */
 
@@ -18,26 +20,6 @@ type Props = {
   statusFilter: AgentStatus | "all";
   onStatusFilter: (s: AgentStatus | "all") => void;
 };
-
-/* ========== Constants ========== */
-
-const STATUS_CFG: Record<AgentStatus, { label: string; color: string; short: string }> = {
-  connected: { label: "Conectado", color: "#22c55e", short: "ON" },
-  idle: { label: "Inactivo", color: "#eab308", short: "IDLE" },
-  inactive: { label: "Sin señal", color: "#94a3b8", short: "OFF" },
-};
-
-/* ========== Helpers ========== */
-
-function getTimeAgo(date: Date): string {
-  const diff = Date.now() - date.getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "ahora";
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
 
 /* ========== Component ========== */
 

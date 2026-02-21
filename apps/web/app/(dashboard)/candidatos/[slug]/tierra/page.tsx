@@ -25,23 +25,14 @@ import {
   type DrillState,
   type ActiveLayer,
 } from "./_components";
+import { getAgentStatus } from "./_components/utils";
 
 /* ========== Constants ========== */
-
-const TWO_MIN = 2 * 60_000;
-const TEN_MIN = 10 * 60_000;
 
 /** DataPanel width — all overlays must respect this boundary when panel is open */
 const PANEL_W = 420;
 /** Metrics panel height when expanded */
 const METRICS_H = 280;
-
-function getAgentStatus(ts: string, now: number): AgentStatus {
-  const age = now - new Date(ts).getTime();
-  if (age < TWO_MIN) return "connected";
-  if (age < TEN_MIN) return "idle";
-  return "inactive";
-}
 
 /* ========== SSE Hook ========== */
 

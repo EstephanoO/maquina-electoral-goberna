@@ -6,7 +6,7 @@ import { deleteFormsBatch } from "@/lib/services";
 import { formCoordsToLatLng } from "@/lib/utils";
 
 import type { EnrichedAgent } from "./types";
-import type { LogEntry } from "./activity-log";
+import type { LogEntry } from "./types";
 import { AgentsTab } from "./agents-tab";
 import { LogTab } from "./log-tab";
 

@@ -1,6 +1,45 @@
 /* ========== Tierra Map — Pure Utility Functions ========== */
 
 import type { MapGeoJSONFeature } from "maplibre-gl";
+import type { AgentStatus } from "./types";
+
+/* ─── Time helpers ─── */
+
+/** Second-precision relative time (for activity logs where events just happened) */
+export function timeAgo(date: Date): string {
+  const s = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (s < 10) return "ahora";
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
+/** Minute-precision relative time (for "last seen" timestamps) */
+export function getTimeAgo(date: Date): string {
+  const diff = Date.now() - date.getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "ahora";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+/* ─── Agent status ─── */
+
+const TWO_MIN = 2 * 60_000;
+const TEN_MIN = 10 * 60_000;
+
+/** Derive agent connection status from its last-seen timestamp */
+export function getAgentStatus(ts: string, now: number): AgentStatus {
+  const age = now - new Date(ts).getTime();
+  if (age < TWO_MIN) return "connected";
+  if (age < TEN_MIN) return "idle";
+  return "inactive";
+}
 
 /**
  * Recursively extract [lng, lat] coordinate pairs from any GeoJSON geometry.

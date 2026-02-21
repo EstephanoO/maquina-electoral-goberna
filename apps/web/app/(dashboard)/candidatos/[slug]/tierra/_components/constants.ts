@@ -1,7 +1,7 @@
 /* ========== Tierra Map — Constants ========== */
 
 import type { FilterSpecification, StyleSpecification } from "maplibre-gl";
-import type { AgentStatus } from "./types";
+import type { AgentStatus, LogEntry } from "./types";
 
 /* ─── Agent status colors ─── */
 
@@ -95,3 +95,27 @@ export const INTERACTIVE_LAYERS = [
   "priority-dep-fill", "priority-prov-fill", "priority-dist-fill",
   "sector-fill",
 ] as const;
+
+/* ─── Agent status config (unified across sidebar, tab, etc.) ─── */
+
+export const STATUS_CFG: Record<AgentStatus, { label: string; color: string; short: string }> = {
+  connected: { label: "Conectado", color: "#22c55e", short: "ON" },
+  idle: { label: "Inactivo", color: "#eab308", short: "IDLE" },
+  inactive: { label: "Sin señal", color: "#94a3b8", short: "OFF" },
+};
+
+/* ─── Log entry icon config ─── */
+
+export const LOG_ICON_BG: Record<LogEntry["type"], string> = {
+  form_submitted: "#2563eb",
+  form_new: "#1d4ed8",
+  agent_connected: "#0d9488",
+  agent_disconnected: "#64748b",
+};
+
+export const LOG_ICON_LABEL: Record<LogEntry["type"], string> = {
+  form_submitted: "^",
+  form_new: "+",
+  agent_connected: ">",
+  agent_disconnected: "x",
+};

@@ -1,19 +1,13 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { LogEntry } from "./types";
+import { LOG_ICON_BG, LOG_ICON_LABEL } from "./constants";
+import { timeAgo } from "./utils";
 
 /* ========== Types ========== */
 
-export type LogEntry = {
-  id: string;
-  type: "form_submitted" | "agent_connected" | "agent_disconnected" | "form_new";
-  agentName: string;
-  message: string;
-  timestamp: Date;
-  /** Coordinates for fly-to on click (null = no location) */
-  lat: number | null;
-  lng: number | null;
-};
+// LogEntry is now defined in types.ts and re-exported from index.ts
 
 type Props = {
   entries: LogEntry[];
@@ -23,35 +17,6 @@ type Props = {
   collapsed: boolean;
   onToggleCollapse: () => void;
 };
-
-/* ========== Constants ========== */
-
-const ICON: Record<LogEntry["type"], string> = {
-  form_submitted: "^",
-  form_new: "+",
-  agent_connected: ">",
-  agent_disconnected: "x",
-};
-
-const ICON_BG: Record<LogEntry["type"], string> = {
-  form_submitted: "#2563eb",
-  form_new: "#1d4ed8",
-  agent_connected: "#0d9488",
-  agent_disconnected: "#64748b",
-};
-
-/* ========== Helpers ========== */
-
-function timeAgo(date: Date): string {
-  const s = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (s < 10) return "ahora";
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
-}
 
 /* ========== Component ========== */
 
@@ -119,8 +84,8 @@ export function ActivityLog({ entries, onEntryClick, onClearLog, primaryColor, c
                 title={hasLocation ? "Click para ver en mapa" : undefined}
               >
                 {/* Icon */}
-                <span style={{ ...S.icon, backgroundColor: ICON_BG[entry.type] }}>
-                  {ICON[entry.type]}
+                <span style={{ ...S.icon, backgroundColor: LOG_ICON_BG[entry.type] }}>
+                  {LOG_ICON_LABEL[entry.type]}
                 </span>
 
                 {/* Content */}
