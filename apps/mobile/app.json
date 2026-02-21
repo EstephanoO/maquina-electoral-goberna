@@ -24,7 +24,6 @@
 
     "android": {
       "package": "com.estephano.gobernaterritory02",
-      "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
