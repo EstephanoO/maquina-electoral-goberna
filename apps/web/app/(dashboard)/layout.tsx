@@ -273,11 +273,14 @@ function LoadingScreen() {
 const SIDEBAR_STORAGE_KEY = "goberna_sidebar_collapsed";
 
 function readSidebarPref(): boolean {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined") return true;
   try {
-    return localStorage.getItem(SIDEBAR_STORAGE_KEY) === "1";
+    const val = localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    // Default to collapsed on first visit (no stored preference)
+    if (val === null) return true;
+    return val === "1";
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -327,14 +330,11 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
   // Derive UI role from the authenticated user's backend role
   const uiRole: UIRole = mapBackendRoleToUI(user?.role ?? "agent");
 
-  // Immersive routes auto-collapse the sidebar (user can still toggle)
-  const isImmersiveRoute = pathname.includes("/tierra");
-
-  // The effective collapsed state: on immersive routes, default to collapsed
-  // but don't lock it — user can still expand temporarily
-  const showCollapsed = isMobile ? true : (isImmersiveRoute ? true : collapsed);
+  // Sidebar respects user preference on all routes (including /tierra)
+  const showCollapsed = isMobile ? true : collapsed;
   const showLabel = !showCollapsed || mobileOpen;
   const sidebarWidth = showCollapsed ? SIDEBAR_W_COLLAPSED : SIDEBAR_W_EXPANDED;
+  const isImmersiveRoute = pathname.includes("/tierra");
 
   // Persist preference (only for non-immersive toggling)
   const handleToggleCollapse = useCallback(() => {
