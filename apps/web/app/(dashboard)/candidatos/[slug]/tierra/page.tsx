@@ -65,6 +65,18 @@ export default function TierraPage() {
       const pending = ssePendingRef.current;
       if (!pending || pending.size === 0) return;
       ssePendingRef.current = null;
+
+      // Auto-clear agents from backgroundAgentIds when new GPS arrives
+      // (they came back from background and are actively sending location again)
+      setBackgroundAgentIds((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        for (const id of pending.keys()) {
+          if (next.has(id)) { next.delete(id); changed = true; }
+        }
+        return changed ? next : prev;
+      });
+
       setLocations((prev) => {
         const map = new Map(prev.map((l) => [l.agent_id, l]));
         for (const [id, loc] of pending) map.set(id, loc);
@@ -76,6 +88,8 @@ export default function TierraPage() {
 
   // ─── SSE: agent offline (removes agent from locations + injects activity log event) ───
   const [sseEvents, setSseEvents] = useState<LogEntry[]>([]);
+  const [backgroundAgentIds, setBackgroundAgentIds] = useState<Set<string>>(new Set());
+
   const handleAgentOffline = useCallback((payload: { agent_id: string; agent_name?: string; ts: string }) => {
     setLocations((prev) => prev.filter((l) => l.agent_id !== payload.agent_id));
     const name = payload.agent_name ?? `Agente ${payload.agent_id.slice(0, 8)}`;
@@ -89,7 +103,36 @@ export default function TierraPage() {
       lng: null,
     }, ...prev].slice(0, 30));
   }, []);
-  useAgentSSE(campaignId ?? null, handleSSEUpdate, handleAgentOffline);
+
+  // ─── SSE: agent status change (background/foreground) ───
+  const handleAgentStatus = useCallback((payload: { agent_id: string; agent_name?: string; status: string; ts: string }) => {
+    const name = payload.agent_name ?? `Agente ${payload.agent_id.slice(0, 8)}`;
+    if (payload.status === "background") {
+      setBackgroundAgentIds((prev) => { const next = new Set(prev); next.add(payload.agent_id); return next; });
+      setSseEvents((prev) => [{
+        id: `sse-bg-${payload.agent_id}-${payload.ts}`,
+        type: "agent_disconnected" as const,
+        agentName: name,
+        message: `${name} puso la app en segundo plano`,
+        timestamp: new Date(payload.ts),
+        lat: null,
+        lng: null,
+      }, ...prev].slice(0, 30));
+    } else if (payload.status === "foreground") {
+      setBackgroundAgentIds((prev) => { const next = new Set(prev); next.delete(payload.agent_id); return next; });
+      setSseEvents((prev) => [{
+        id: `sse-fg-${payload.agent_id}-${payload.ts}`,
+        type: "agent_connected" as const,
+        agentName: name,
+        message: `${name} volvio a la app`,
+        timestamp: new Date(payload.ts),
+        lat: null,
+        lng: null,
+      }, ...prev].slice(0, 30));
+    }
+  }, []);
+
+  useAgentSSE(campaignId ?? null, handleSSEUpdate, handleAgentOffline, handleAgentStatus);
 
   // ─── UI state ───
   const [activeLayer, setActiveLayer] = useState<ActiveLayer>("datos");
@@ -108,7 +151,7 @@ export default function TierraPage() {
 
   // ─── Derived data ───
   const { enrichedAgents, formPoints, connectedCount, filteredForms, filteredAgents } =
-    useEnrichedAgents(stats, locations, forms, selectedAgentId, selectedAgentIds, drillBounds);
+    useEnrichedAgents(stats, locations, forms, selectedAgentId, selectedAgentIds, drillBounds, backgroundAgentIds);
 
   const enrichedAgentsRef = useRef(enrichedAgents);
   enrichedAgentsRef.current = enrichedAgents;

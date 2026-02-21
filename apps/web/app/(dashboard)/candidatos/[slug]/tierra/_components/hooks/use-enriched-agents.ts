@@ -32,6 +32,7 @@ export function useEnrichedAgents(
   selectedAgentId: string | null,
   selectedAgentIds: Set<string>,
   drillBounds: GeoBounds | null = null,
+  backgroundAgentIds: Set<string> = new Set(),
 ) {
   // ── Pre-index: forms by agent_id → most recent form with coords (O(forms)) ──
   const agentFormIndex = useMemo(() => {
@@ -92,11 +93,23 @@ export function useEnrichedAgents(
       }
     }
 
-    return Array.from(agentMap.values()).sort((a, b) => {
+    const agents = Array.from(agentMap.values());
+
+    // Override status for agents that sent a "background" status message.
+    // They may still have a recent GPS timestamp but are known to be inactive.
+    if (backgroundAgentIds.size > 0) {
+      for (const agent of agents) {
+        if (backgroundAgentIds.has(agent.id) && agent.status !== "inactive") {
+          agent.status = "inactive";
+        }
+      }
+    }
+
+    return agents.sort((a, b) => {
       const o = { connected: 0, idle: 1, inactive: 2 };
       return o[a.status] !== o[b.status] ? o[a.status] - o[b.status] : b.forms_count - a.forms_count;
     });
-  }, [stats, locations, agentFormIndex]);
+  }, [stats, locations, agentFormIndex, backgroundAgentIds]);
 
   const formPoints = useMemo(
     (): FormPoint[] =>

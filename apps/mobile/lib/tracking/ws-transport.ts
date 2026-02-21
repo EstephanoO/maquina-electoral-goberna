@@ -322,6 +322,27 @@ export function sendLocationBatch(
   }
 }
 
+/**
+ * Send a status change (background/foreground) via WebSocket.
+ * Fire-and-forget — no ack expected.
+ */
+export function sendStatus(data: {
+  agent_id: string;
+  agent_name?: string;
+  status: 'background' | 'foreground';
+  campaign_id?: string;
+}): boolean {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+
+  try {
+    ws.send(JSON.stringify({ type: 'status', data }));
+    messagesSent++;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Status Getters ───────────────────────────────────────────
 
 export function isConnected(): boolean {

@@ -199,6 +199,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
         pendingBatchByAgent,
         previouslyOnlineAgents,
         lastIngestAtMs: { get value() { return lastIngestAtMs; }, set value(v) { lastIngestAtMs = v; } },
+        broadcastAll,
       }),
     );
 

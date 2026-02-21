@@ -25,6 +25,7 @@ import {
   connect as wsConnect,
   disconnect as wsDisconnect,
   sendLocation as wsSendLocation,
+  sendStatus as wsSendStatus,
   isConnected as wsIsConnected,
   getState as wsGetState,
   type LocationPayload,
@@ -72,6 +73,18 @@ function handleAppStateChange(nextAppState: AppStateStatus): void {
     // We need to restart it regardless of current state.
     console.log('[Tracking] App returned to foreground, restarting GPS watch');
 
+    // Notify backend immediately so dashboard shows agent as active
+    if (wsIsConnected()) {
+      getActiveCampaignId().then((campaignId) => {
+        wsSendStatus({
+          agent_id: currentAgentId!,
+          agent_name: currentAgentName ?? undefined,
+          status: 'foreground',
+          campaign_id: campaignId ?? undefined,
+        });
+      }).catch(() => { /* best-effort */ });
+    }
+
     // Mark state as stopped so startForegroundTracking re-inits everything
     if (foregroundSubscription) {
       foregroundSubscription.remove();
@@ -90,6 +103,18 @@ function handleAppStateChange(nextAppState: AppStateStatus): void {
     // WS connection stays alive briefly — OS may kill it after ~30s.
     // That's fine: sync-service will catch up via HTTP batch on resume.
     console.log('[Tracking] App going to background');
+
+    // Notify backend immediately so dashboard shows agent as inactive
+    if (currentAgentId && wsIsConnected()) {
+      getActiveCampaignId().then((campaignId) => {
+        wsSendStatus({
+          agent_id: currentAgentId!,
+          agent_name: currentAgentName ?? undefined,
+          status: 'background',
+          campaign_id: campaignId ?? undefined,
+        });
+      }).catch(() => { /* best-effort */ });
+    }
   }
 }
 

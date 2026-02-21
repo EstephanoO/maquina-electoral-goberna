@@ -10,6 +10,14 @@ type AgentOfflinePayload = {
   ts: string;
 };
 
+export type AgentStatusPayload = {
+  agent_id: string;
+  agent_name?: string;
+  status: "background" | "foreground";
+  campaign_id?: string | null;
+  ts: string;
+};
+
 /**
  * Subscribe to the agent tracking SSE stream using fetch() + ReadableStream.
  *
@@ -24,11 +32,14 @@ export function useAgentSSE(
   campaignId: string | null,
   onUpdate: (agents: AgentLocation[]) => void,
   onOffline?: (payload: AgentOfflinePayload) => void,
+  onStatusChange?: (payload: AgentStatusPayload) => void,
 ) {
   const updateRef = useRef(onUpdate);
   updateRef.current = onUpdate;
   const offlineRef = useRef(onOffline);
   offlineRef.current = onOffline;
+  const statusRef = useRef(onStatusChange);
+  statusRef.current = onStatusChange;
 
   useEffect(() => {
     if (!campaignId) return;
@@ -49,6 +60,8 @@ export function useAgentSSE(
           if (parsed.agents) updateRef.current(parsed.agents);
         } else if (event === "agent.offline") {
           offlineRef.current?.(parsed as AgentOfflinePayload);
+        } else if (event === "agent.status") {
+          statusRef.current?.(parsed as AgentStatusPayload);
         }
         // heartbeat events are silently ignored
       } catch { /* ignore parse errors */ }
