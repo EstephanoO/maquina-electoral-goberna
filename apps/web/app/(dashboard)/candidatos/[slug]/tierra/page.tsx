@@ -105,30 +105,14 @@ export default function TierraPage() {
   }, []);
 
   // ─── SSE: agent status change (background/foreground) ───
-  const handleAgentStatus = useCallback((payload: { agent_id: string; agent_name?: string; status: string; ts: string }) => {
-    const name = payload.agent_name ?? `Agente ${payload.agent_id.slice(0, 8)}`;
+  // Only updates the backgroundAgentIds set for visual status override.
+  // No log injection — real connect/disconnect events from the stale sweep
+  // and location ingest are sufficient for the activity log.
+  const handleAgentStatus = useCallback((payload: { agent_id: string; status: string }) => {
     if (payload.status === "background") {
       setBackgroundAgentIds((prev) => { const next = new Set(prev); next.add(payload.agent_id); return next; });
-      setSseEvents((prev) => [{
-        id: `sse-bg-${payload.agent_id}-${payload.ts}`,
-        type: "agent_disconnected" as const,
-        agentName: name,
-        message: `${name} puso la app en segundo plano`,
-        timestamp: new Date(payload.ts),
-        lat: null,
-        lng: null,
-      }, ...prev].slice(0, 30));
     } else if (payload.status === "foreground") {
       setBackgroundAgentIds((prev) => { const next = new Set(prev); next.delete(payload.agent_id); return next; });
-      setSseEvents((prev) => [{
-        id: `sse-fg-${payload.agent_id}-${payload.ts}`,
-        type: "agent_connected" as const,
-        agentName: name,
-        message: `${name} volvio a la app`,
-        timestamp: new Date(payload.ts),
-        lat: null,
-        lng: null,
-      }, ...prev].slice(0, 30));
     }
   }, []);
 

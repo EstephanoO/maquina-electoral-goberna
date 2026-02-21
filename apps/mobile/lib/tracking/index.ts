@@ -43,9 +43,9 @@ try {
 // ─── Constants ────────────────────────────────────────────────
 
 const FOREGROUND_OPTIONS: Location.LocationOptions = {
-  accuracy: Location.Accuracy.High,
-  timeInterval: 30_000, // 30 seconds
-  distanceInterval: 10, // 10 meters minimum movement
+  accuracy: Location.Accuracy.BestForNavigation, // GPS forced on iOS (kCLLocationAccuracyBest)
+  timeInterval: 15_000, // 15 seconds (Android only; iOS ignores this)
+  distanceInterval: 5,  // 5 meters — more responsive to movement
 };
 
 // ─── Types ────────────────────────────────────────────────────
@@ -66,36 +66,54 @@ let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = 
 // ─── AppState Listener ────────────────────────────────────────
 // Restarts GPS watch when app returns to foreground (OS kills it on background)
 
-/** Send agent status via HTTP POST (fire-and-forget, works even when WS is off) */
+// Pre-cached campaign ID so we don't need an async SecureStore read
+// in the critical background path (OS may kill the app mid-promise).
+let cachedCampaignId: string | null = null;
+
+/**
+ * Send agent status via HTTP POST.
+ * Uses pre-cached values to avoid async SecureStore reads in the
+ * background transition path (iOS gives ~5s before suspension).
+ * Timeout of 5s to not waste the background execution window.
+ */
 function sendStatusHttp(agentId: string, status: 'background' | 'foreground'): void {
-  getActiveCampaignId().then((campaignId) => {
-    fetch(`${API_BASE}/agents/status`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-agent-token': AGENT_INGEST_TOKEN,
-      },
-      body: JSON.stringify({
-        agent_id: agentId,
-        agent_name: currentAgentName ?? undefined,
-        status,
-        campaign_id: campaignId ?? undefined,
-      }),
-    }).catch(() => { /* best-effort, fire-and-forget */ });
-  }).catch(() => { /* best-effort */ });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5_000);
+
+  fetch(`${API_BASE}/agents/status`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-agent-token': AGENT_INGEST_TOKEN,
+    },
+    body: JSON.stringify({
+      agent_id: agentId,
+      agent_name: currentAgentName ?? undefined,
+      status,
+      campaign_id: cachedCampaignId ?? undefined,
+    }),
+    signal: controller.signal,
+  })
+    .catch(() => { /* best-effort */ })
+    .finally(() => clearTimeout(timeoutId));
 }
 
+// Track previous AppState to avoid false positives.
+// iOS fires 'inactive' for Control Center / notifications — that's not a real background.
+let previousAppState: AppStateStatus = AppState.currentState;
+
 function handleAppStateChange(nextAppState: AppStateStatus): void {
+  const prev = previousAppState;
+  previousAppState = nextAppState;
+
   if (nextAppState === 'active' && currentAgentId) {
-    // When the app returns to foreground, the OS may have killed our
-    // watchPositionAsync subscription (foreground-only permission).
-    // We need to restart it regardless of current state.
-    console.log('[Tracking] App returned to foreground, restarting GPS watch');
+    // Only send foreground status if we were truly in background (not just 'inactive')
+    if (prev === 'background') {
+      console.log('[Tracking] App returned to foreground, restarting GPS watch');
+      sendStatusHttp(currentAgentId, 'foreground');
+    }
 
-    // Notify backend via HTTP so dashboard shows agent as active
-    sendStatusHttp(currentAgentId, 'foreground');
-
-    // Mark state as stopped so startForegroundTracking re-inits everything
+    // Restart GPS watch regardless (OS may have killed the subscription)
     if (foregroundSubscription) {
       foregroundSubscription.remove();
       foregroundSubscription = null;
@@ -108,14 +126,10 @@ function handleAppStateChange(nextAppState: AppStateStatus): void {
     });
   }
 
-  if (nextAppState === 'background' || nextAppState === 'inactive') {
-    // GPS will stop naturally (foreground-only permission).
+  // Only trigger on real background — NOT 'inactive' (iOS Control Center, notifications)
+  if (nextAppState === 'background' && currentAgentId) {
     console.log('[Tracking] App going to background');
-
-    // Notify backend via HTTP so dashboard shows agent as inactive immediately
-    if (currentAgentId) {
-      sendStatusHttp(currentAgentId, 'background');
-    }
+    sendStatusHttp(currentAgentId, 'background');
   }
 }
 
@@ -241,6 +255,14 @@ export async function startForegroundTracking(
     currentAgentName = null;
   }
 
+  // Pre-cache campaign ID for sendStatusHttp — avoids async SecureStore reads
+  // during the critical background transition window (iOS gives ~5s)
+  try {
+    cachedCampaignId = await getActiveCampaignId();
+  } catch {
+    cachedCampaignId = null;
+  }
+
   try {
     const hasForeground = await requestForegroundPermission();
     if (!hasForeground) {
@@ -251,7 +273,7 @@ export async function startForegroundTracking(
     // Get initial location immediately
     try {
       const initialLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.BestForNavigation,
       });
       await processLocation(initialLocation);
     } catch (err) {
@@ -322,6 +344,7 @@ export async function stopTracking(): Promise<void> {
 
   currentAgentId = null;
   currentAgentName = null;
+  cachedCampaignId = null;
   currentState = 'stopped';
   console.log('[Tracking] Tracking stopped');
 }

@@ -406,12 +406,18 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
     // ─── Agent Status (background/foreground) ──────────────────────
     // Fire-and-forget HTTP call from mobile when app goes to background/foreground.
     // Uses x-agent-token (same as location ingest) so it works even when WS is off.
+    //
+    // Throttle: only one status change per agent per 30s is broadcast/logged.
+    // This prevents log spam when agents toggle between apps rapidly.
+    const lastStatusByAgent = new Map<string, { status: string; ts: number }>();
+    const STATUS_THROTTLE_MS = 30_000;
+
     app.post(
       "/api/agents/status",
       {
         config: {
           rateLimit: {
-            max: 60,
+            max: 30,
             timeWindow: "1 minute",
           },
         },
@@ -436,10 +442,18 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
         }
 
         const ts = new Date().toISOString();
+        const now = Date.now();
         const name = body?.agent_name ?? previouslyOnlineAgents.get(agentId)?.agentName ?? `Agente ${agentId.slice(0, 8)}`;
         const campaignId = body?.campaign_id ?? previouslyOnlineAgents.get(agentId)?.campaignId ?? null;
 
-        // Broadcast to all SSE dashboard clients
+        // Throttle: skip if same agent sent the same status within 30s
+        const last = lastStatusByAgent.get(agentId);
+        if (last && last.status === agentStatus && now - last.ts < STATUS_THROTTLE_MS) {
+          return reply.code(200).send({ ok: true, request_id: requestId, status: agentStatus, throttled: true, server_ts: ts });
+        }
+        lastStatusByAgent.set(agentId, { status: agentStatus, ts: now });
+
+        // Broadcast to all SSE dashboard clients (real-time status change)
         broadcastAll("agent.status", {
           agent_id: agentId,
           agent_name: name,
@@ -448,22 +462,10 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
           ts,
         });
 
-        // Emit campaign event for activity log
-        if (campaignId && agentStatus === "background") {
-          emitCampaignEvent(campaignId, {
-            type: "agent_disconnected",
-            agent_id: agentId,
-            agent_name: name,
-            message: `${name} puso la app en segundo plano`,
-          });
-        } else if (campaignId && agentStatus === "foreground") {
-          emitCampaignEvent(campaignId, {
-            type: "agent_connected",
-            agent_id: agentId,
-            agent_name: name,
-            message: `${name} volvio a la app`,
-          });
-        }
+        // Don't pollute the campaign event buffer with bg/fg toggles.
+        // The SSE broadcast above is enough for real-time dashboard updates.
+        // Real connect/disconnect events are emitted by the stale sweep and
+        // location ingest handlers — those are the meaningful ones for the log.
 
         return reply.code(200).send({ ok: true, request_id: requestId, status: agentStatus, server_ts: ts });
       },
