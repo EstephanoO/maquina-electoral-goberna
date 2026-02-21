@@ -19,7 +19,7 @@ export function useMapClick(
   selectedAgentIdRef: React.RefObject<string | null>,
   agentsRef: React.RefObject<EnrichedAgent[]>,
   skipNextFitRef: React.MutableRefObject<boolean>,
-  pendingClusterDrillRef: React.MutableRefObject<boolean>,
+  pendingDrillRef: React.MutableRefObject<boolean>,
   onDrillChange: (state: DrillState) => void,
   onSelectAgent: (agentId: string | null) => void,
 ) {
@@ -65,7 +65,7 @@ export function useMapClick(
 
         // Mark pending — handleMoveEnd will reverse-geocode the final center
         skipNextFitRef.current = true;
-        pendingClusterDrillRef.current = true;
+        pendingDrillRef.current = true;
 
         if (source && typeof source.getClusterExpansionZoom === "function") {
           source.getClusterExpansionZoom(clusterId).then((zoom) => {
@@ -88,7 +88,11 @@ export function useMapClick(
         else {
           onSelectAgent(agentId);
           const agent = currentAgents.find((a) => a.id === agentId);
-          if (agent) mapRef.current?.flyTo({ center: [agent.lng, agent.lat], zoom: 13, duration: FLY_DURATION });
+          if (agent) {
+            skipNextFitRef.current = true;
+            pendingDrillRef.current = true;
+            mapRef.current?.flyTo({ center: [agent.lng, agent.lat], zoom: 13, duration: FLY_DURATION });
+          }
         }
       }
       return;
@@ -166,5 +170,5 @@ export function useMapClick(
         if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
       }
     }
-  }, [mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingClusterDrillRef, onDrillChange, onSelectAgent]);
+  }, [mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent]);
 }

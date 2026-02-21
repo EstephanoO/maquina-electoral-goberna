@@ -73,8 +73,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const skipNextFitRef = useRef(false);
   const isZoomingRef = useRef(false);
   const zoomEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Set to true by cluster click — moveEnd will reverse-geocode the map center to update drill */
-  const pendingClusterDrillRef = useRef(false);
+  /** Set to true before any flyTo that should auto-drill — moveEnd will reverse-geocode the map center */
+  const pendingDrillRef = useRef(false);
 
   // ─── Refs for volatile values (stable callbacks read these) ───
   const drillStateRef = useRef(drillState);
@@ -91,7 +91,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   useAutoFit(mapRef, drillState, skipNextFitRef);
   const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef);
-  const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingClusterDrillRef, onDrillChange, onSelectAgent);
+  const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent);
   const containerRef = useMapResize(mapRef, drillStateRef);
 
   // ─── P5: Memoize tiles array (new array = new Source in react-maplibre) ───
@@ -177,6 +177,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Imperative handle ───
   useImperativeHandle(ref, () => ({
     flyToPoint(lng: number, lat: number, zoom = 17) {
+      skipNextFitRef.current = true;
+      pendingDrillRef.current = true;
       mapRef.current?.flyTo({ center: [lng, lat], zoom, duration: FLY_DURATION, essential: true });
     },
     getDrillState() { return drillStateRef.current; },
@@ -211,8 +213,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
     // After cluster flyTo lands, reverse-geocode the map center and drill
     // to the appropriate level based on how far we zoomed in.
-    if (pendingClusterDrillRef.current && mapRef.current) {
-      pendingClusterDrillRef.current = false;
+    if (pendingDrillRef.current && mapRef.current) {
+      pendingDrillRef.current = false;
       const center = mapRef.current.getCenter();
       const zoom = mapRef.current.getZoom();
       reverseGeocode(center.lng, center.lat).then((res) => {
@@ -300,7 +302,11 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     prevSelectedRef.current = selectedAgentId;
     if (selectedAgentId && mapRef.current) {
       const agent = agents.find((a) => a.id === selectedAgentId);
-      if (agent) mapRef.current.flyTo({ center: [agent.lng, agent.lat], zoom: 13, duration: FLY_DURATION });
+      if (agent) {
+        skipNextFitRef.current = true;
+        pendingDrillRef.current = true;
+        mapRef.current.flyTo({ center: [agent.lng, agent.lat], zoom: 13, duration: FLY_DURATION });
+      }
     }
   }, [selectedAgentId, agents]);
 
