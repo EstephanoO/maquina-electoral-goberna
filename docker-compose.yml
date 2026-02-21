@@ -154,6 +154,7 @@ services:
       - ./certbot/www:/var/www/certbot:ro
       - ./certbot/conf:/etc/letsencrypt:ro
       - uploads:/srv/uploads:ro
+      - tile-cache:/var/cache/nginx/tiles
     networks:
       - app_network
 
@@ -161,6 +162,7 @@ volumes:
   pgdata:
   redis-data:
   uploads:
+  tile-cache:
 
 networks:
   app_network:

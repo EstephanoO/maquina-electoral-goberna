@@ -1,8 +1,9 @@
 "use client";
 
 /* ========== Datos Tab — Form records table with search, filter, selection & delete ========== */
+/* Virtualized row rendering: only visible rows + overscan are mounted in the DOM. */
 
-import { useRef, useState, useMemo, useCallback } from "react";
+import { useRef, useState, useMemo, useCallback, useEffect } from "react";
 import type { FormRecord } from "@/lib/services";
 import { deleteFormsBatch } from "@/lib/services";
 import { formCoordsToLatLng } from "@/lib/utils";
@@ -19,10 +20,17 @@ export type DatosTabProps = {
   onFormsDeleted?: () => void;
 };
 
+/* ========== Constants ========== */
+
+const ROW_HEIGHT = 42;
+const OVERSCAN = 8;
+
 /* ========== Component ========== */
 
 export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, campaignId, isAdmin, onFormsDeleted }: DatosTabProps) {
-  const listRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportH, setViewportH] = useState(400);
 
   const [search, setSearch] = useState("");
   const [filterEncuestador, setFilterEncuestador] = useState<string>("all");
@@ -68,11 +76,39 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
     });
   }, [forms, search, filterEncuestador, filterDate]);
 
+  // Reset scroll when filter changes
   const prevCount = useRef(filteredForms.length);
   if (filteredForms.length !== prevCount.current) {
     prevCount.current = filteredForms.length;
-    listRef.current?.scrollTo(0, 0);
+    scrollRef.current?.scrollTo(0, 0);
   }
+
+  // Measure viewport height on mount + resize
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setViewportH(el.clientHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Scroll handler — batched via rAF to avoid layout thrashing
+  const rafRef = useRef(0);
+  const handleScroll = useCallback(() => {
+    if (rafRef.current) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0;
+      setScrollTop(scrollRef.current?.scrollTop ?? 0);
+    });
+  }, []);
+
+  // Windowed range
+  const totalHeight = filteredForms.length * ROW_HEIGHT;
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const endIdx = Math.min(filteredForms.length, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + OVERSCAN);
+  const visibleForms = filteredForms.slice(startIdx, endIdx);
 
   const handleCardClick = (f: FormRecord) => {
     if (!onFlyTo) return;
@@ -91,8 +127,7 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
   }, []);
 
   const selectAll = useCallback(() => {
-    const allIds = filteredForms.slice(0, 200).map((f) => f.id);
-    setSelectedIds(new Set(allIds));
+    setSelectedIds(new Set(filteredForms.map((f) => f.id)));
   }, [filteredForms]);
 
   const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
@@ -156,7 +191,7 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
         </div>
       )}
 
-      {/* Search */}
+      {/* Search + Filters */}
       <div style={D.searchContainer}>
         <div style={D.searchInputWrapper}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><title>Buscar</title><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
@@ -189,8 +224,8 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
         <div style={{ ...D.thCell, flex: 1, textAlign: "right" }}>Fecha</div>
       </div>
 
-      {/* Content */}
-      <div ref={listRef} style={D.list}>
+      {/* ─── Virtualized content ─── */}
+      <div ref={scrollRef} onScroll={handleScroll} style={D.list}>
         {filteredForms.length === 0 ? (
           <div style={D.empty}>
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><title>Sin datos</title><circle cx="12" cy="12" r="10" /><path d="M8 15h8" /><circle cx="9" cy="9" r="1" /><circle cx="15" cy="9" r="1" /></svg>
@@ -201,40 +236,60 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
             )}
           </div>
         ) : (
-          filteredForms.slice(0, 200).map((f, idx) => {
-            const hasCoords = f.x && f.y;
-            const isSelected = selectedIds.has(f.id);
-            const date = new Date(f.created_at);
-            return (
-              <div key={f.id} onClick={() => handleCardClick(f)} onKeyDown={(e) => e.key === "Enter" && handleCardClick(f)} role="button" tabIndex={0} style={{ ...D.row, cursor: hasCoords && onFlyTo ? "pointer" : "default", backgroundColor: isSelected ? `${primaryColor}08` : idx % 2 === 0 ? "#ffffff" : "#fafbfc", borderLeft: isSelected ? `3px solid ${primaryColor}` : "3px solid transparent" }}>
-                {isAdmin && (
-                  <div style={{ ...D.cell, width: 36, justifyContent: "center" }} onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={isSelected} onChange={() => {}} onClick={(e) => toggleSelect(f.id, e)} style={D.checkbox} />
+          <div style={{ position: "relative", height: totalHeight }}>
+            {visibleForms.map((f, i) => {
+              const absIdx = startIdx + i;
+              const hasCoords = f.x && f.y;
+              const isSelected = selectedIds.has(f.id);
+              const date = new Date(f.created_at);
+              return (
+                <div
+                  key={f.id}
+                  onClick={() => handleCardClick(f)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCardClick(f)}
+                  role="button"
+                  tabIndex={0}
+                  style={{
+                    ...D.row,
+                    position: "absolute",
+                    top: absIdx * ROW_HEIGHT,
+                    left: 0,
+                    right: 0,
+                    height: ROW_HEIGHT,
+                    cursor: hasCoords && onFlyTo ? "pointer" : "default",
+                    backgroundColor: isSelected ? `${primaryColor}08` : absIdx % 2 === 0 ? "#ffffff" : "#fafbfc",
+                    borderLeft: isSelected ? `3px solid ${primaryColor}` : "3px solid transparent",
+                  }}
+                >
+                  {isAdmin && (
+                    <div style={{ ...D.cell, width: 36, justifyContent: "center" }} onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={isSelected} onChange={() => {}} onClick={(e) => toggleSelect(f.id, e)} style={D.checkbox} />
+                    </div>
+                  )}
+                  <div style={{ ...D.cell, flex: 2 }}>
+                    <div style={D.nameCell}>
+                      {hasCoords && onFlyTo && <span style={{ ...D.locIcon, color: primaryColor }}>📍</span>}
+                      <span style={D.name}>{f.nombre || "Sin nombre"}</span>
+                    </div>
                   </div>
-                )}
-                <div style={{ ...D.cell, flex: 2 }}>
-                  <div style={D.nameCell}>
-                    {hasCoords && onFlyTo && <span style={{ ...D.locIcon, color: primaryColor }}>📍</span>}
-                    <span style={D.name}>{f.nombre || "Sin nombre"}</span>
+                  <div style={{ ...D.cell, flex: 1.5 }}><span style={D.phone}>{f.telefono || "—"}</span></div>
+                  <div style={{ ...D.cell, flex: 1.5 }}><span style={D.agent}>{f.encuestador || "—"}</span></div>
+                  <div style={{ ...D.cell, flex: 1, justifyContent: "flex-end" }}>
+                    <div style={D.dateCell}>
+                      <span style={D.dateDay}>{date.toLocaleDateString("es-PE", { day: "2-digit", month: "short" })}</span>
+                      <span style={D.dateTime}>{date.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}</span>
+                    </div>
                   </div>
                 </div>
-                <div style={{ ...D.cell, flex: 1.5 }}><span style={D.phone}>{f.telefono || "—"}</span></div>
-                <div style={{ ...D.cell, flex: 1.5 }}><span style={D.agent}>{f.encuestador || "—"}</span></div>
-                <div style={{ ...D.cell, flex: 1, justifyContent: "flex-end" }}>
-                  <div style={D.dateCell}>
-                    <span style={D.dateDay}>{date.toLocaleDateString("es-PE", { day: "2-digit", month: "short" })}</span>
-                    <span style={D.dateTime}>{date.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })
+              );
+            })}
+          </div>
         )}
       </div>
 
       {/* Footer */}
       <div style={D.footer}>
-        <span>{filteredForms.length > 200 ? `Mostrando 200 de ${filteredForms.length}` : `${filteredForms.length} registros`}</span>
+        <span>{filteredForms.length} registros</span>
         <span style={{ color: "#22c55e", display: "flex", alignItems: "center", gap: 4 }}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "#22c55e" }} />
           Auto-refresh 5s
@@ -274,7 +329,7 @@ const D: Record<string, React.CSSProperties> = {
   empty: { display: "flex", flexDirection: "column" as const, alignItems: "center", justifyContent: "center", gap: 8, padding: 48, textAlign: "center" as const },
   emptyResetBtn: { fontSize: 12, fontWeight: 600, border: "1px solid", backgroundColor: "transparent", cursor: "pointer", padding: "8px 20px", borderRadius: 8, marginTop: 8 },
 
-  row: { display: "flex", alignItems: "center", padding: "10px 16px", borderBottom: "1px solid #f1f5f9", transition: "background 0.1s ease, border-left-color 0.1s ease" },
+  row: { display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid #f1f5f9", transition: "background 0.1s ease, border-left-color 0.1s ease", boxSizing: "border-box" as const },
   cell: { display: "flex", alignItems: "center", padding: "0 4px", minWidth: 0 },
   checkbox: { width: 16, height: 16, cursor: "pointer", accentColor: "#2563eb" },
   nameCell: { display: "flex", alignItems: "center", gap: 6, minWidth: 0 },
