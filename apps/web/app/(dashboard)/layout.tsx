@@ -672,34 +672,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             </div>
           )}
 
-          {/* Collapse toggle (desktop only) */}
-          {!isMobile && (
-            <button
-              type="button"
-              onClick={handleToggleCollapse}
-              title={showCollapsed ? "Expandir menu" : "Colapsar menu"}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                padding: "10px 20px",
-                background: "none",
-                border: "none",
-                borderTop: "1px solid rgba(255,255,255,0.08)",
-                color: "rgba(255,255,255,0.4)",
-                cursor: "pointer",
-                fontSize: 12,
-                fontFamily: "inherit",
-                transition: "color 0.15s ease",
-                width: "100%",
-              }}
-              aria-label={showCollapsed ? "Expandir menu" : "Colapsar menu"}
-            >
-              <CollapseIcon collapsed={showCollapsed} />
-              {!showCollapsed && <span>Colapsar</span>}
-            </button>
-          )}
+          {/* Collapse toggle removed from bottom — now on sidebar edge */}
 
           {/* User info */}
           <div
@@ -785,6 +758,62 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
           </div>
         </div>
       </aside>
+
+      {/* ── Sidebar edge toggle (desktop only) ─────────────────── */}
+      {!isMobile && (
+        <button
+          type="button"
+          onClick={handleToggleCollapse}
+          aria-label={showCollapsed ? "Expandir menu" : "Colapsar menu"}
+          style={{
+            position: "fixed",
+            top: 28,
+            left: sidebarWidth - 10,
+            zIndex: 1000,
+            width: 20,
+            height: 20,
+            borderRadius: "50%",
+            background: "var(--goberna-blue-900)",
+            border: "2px solid var(--color-background)",
+            color: "rgba(255,255,255,0.6)",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0,
+            transition: "left 0.2s cubic-bezier(0.4,0,0.2,1), background 0.15s ease, color 0.15s ease",
+            opacity: 0.5,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.opacity = "1";
+            e.currentTarget.style.color = "#ffffff";
+            e.currentTarget.style.background = "var(--goberna-blue-800)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.opacity = "0.5";
+            e.currentTarget.style.color = "rgba(255,255,255,0.6)";
+            e.currentTarget.style.background = "var(--goberna-blue-900)";
+          }}
+        >
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            style={{
+              transform: showCollapsed ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 0.2s ease",
+            }}
+          >
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+      )}
 
       {/* ── Mobile hamburger (only visible on mobile) ──────────── */}
       {isMobile && !mobileOpen && (
