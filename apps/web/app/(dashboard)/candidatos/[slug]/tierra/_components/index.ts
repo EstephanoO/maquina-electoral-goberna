@@ -3,6 +3,7 @@ export { TierraMap } from "./tierra-map";
 export { AgentsSidebar } from "./agents-sidebar";
 export { MapControls, MapLegend } from "./map-controls";
 export { DataPanel } from "./data-panel";
+export { DatosTab } from "./datos-tab";
 export { AgentsTab } from "./agents-tab";
 export { LogTab } from "./log-tab";
 export { TierraHeader } from "./tierra-header";

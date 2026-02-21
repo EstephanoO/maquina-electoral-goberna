@@ -93,6 +93,50 @@ export function calculateBoundsFromFeatures(features: GeoJSON.Feature[]): Bounds
 
 import { PERU_BOUNDS } from "./constants";
 
+/* ─── Tile coordinate math ─── */
+
+/** Convert lng/lat to slippy-map tile coordinates at a given zoom (Web Mercator). */
+export function lngLatToTile(lng: number, lat: number, z: number): [number, number] {
+  const n = 2 ** z;
+  const x = Math.floor(((lng + 180) / 360) * n);
+  const latRad = (lat * Math.PI) / 180;
+  const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n);
+  return [Math.max(0, Math.min(x, n - 1)), Math.max(0, Math.min(y, n - 1))];
+}
+
+/**
+ * Pre-fetch tiles for Peru at low zoom levels (z3-z8) in the background.
+ * Uses low-priority fetch; tiles are cached by the browser HTTP cache,
+ * making zoom-out transitions instant after the first load.
+ */
+export function prewarmTiles(templateUrl: string) {
+  const PERU_SW: [number, number] = [-81.4, -18.4];
+  const PERU_NE: [number, number] = [-68.7, -0.1];
+
+  const urls: string[] = [];
+  for (let z = 3; z <= 8; z++) {
+    const [x0, y0] = lngLatToTile(PERU_SW[0], PERU_NE[1], z);
+    const [x1, y1] = lngLatToTile(PERU_NE[0], PERU_SW[1], z);
+    for (let x = x0; x <= x1; x++) {
+      for (let y = y0; y <= y1; y++) {
+        urls.push(templateUrl.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y)));
+      }
+    }
+  }
+
+  let i = 0;
+  const BATCH = 6;
+  function fetchBatch() {
+    const batch = urls.slice(i, i + BATCH);
+    if (!batch.length) return;
+    i += BATCH;
+    Promise.all(batch.map((u) => fetch(u, { priority: "low" } as RequestInit).catch(() => {}))).then(() => {
+      setTimeout(fetchBatch, 50);
+    });
+  }
+  fetchBatch();
+}
+
 /* ─── Internal ─── */
 
 function boundsFromCoords(coords: number[][]): Bounds | null {
