@@ -235,7 +235,7 @@ function LoadingScreen() {
       }}
     >
       <Image
-        src="/isotipo(2).jpg"
+        src="/isotipo_2_-removebg-preview.png"
         alt="GOBERNA"
         width={64}
         height={64}
@@ -326,6 +326,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false);
+  const [edgeHover, setEdgeHover] = useState(false);
 
   // Derive UI role from the authenticated user's backend role
   const uiRole: UIRole = mapBackendRoleToUI(user?.role ?? "agent");
@@ -396,9 +397,29 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
   if (isLoading) return <LoadingScreen />;
   if (!isAuthenticated) return <LoadingScreen />;
 
+  // ── Active state: smart matching ──
+  // Dynamic hrefs (functions — "/candidatos/slug/tierra") use prefix match
+  // so that sub-routes stay highlighted.
+  // Static hrefs ("/candidatos", "/cms", etc.) use EXACT match only.
+  // This prevents "/candidatos" lighting up on "/candidatos/slug/tierra"
+  // and "/cms" lighting up on "/cms-metrics".
+  const isNavActive = useCallback(
+    (item: NavItem, href: string): boolean => {
+      if (pathname === href) return true;
+      if (href === "/") return false;
+      // Dynamic href → prefix match
+      if (typeof item.href === "function") {
+        return pathname.startsWith(href);
+      }
+      // Static href → exact match only (already checked above)
+      return false;
+    },
+    [pathname],
+  );
+
   // ── Render helper: <Link> with prefetch for instant navigation ──
   const renderNavLink = (item: NavItem, href: string) => {
-    const isActive = pathname === href || (href !== "/" && pathname.startsWith(href));
+    const isActive = isNavActive(item, href);
 
     return (
       <Link
@@ -407,6 +428,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
         prefetch={true}
         onClick={() => { if (isMobile) setMobileOpen(false); }}
         title={showLabel ? undefined : item.label}
+        className={`sidebar-nav-link${isActive ? " sidebar-nav-active" : ""}`}
         style={{
           ...navLinkBase,
           padding: showLabel ? "11px 20px" : "11px 0",
@@ -480,7 +502,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
           }}
         >
           <Image
-            src="/isotipo(2).jpg"
+            src="/isotipo_2_-removebg-preview.png"
             alt="GOBERNA"
             width={32}
             height={32}
@@ -564,13 +586,14 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             const settingsRoles: UIRole[] = ["admin", "candidato"];
             if (!settingsRoles.includes(uiRole)) return null;
             const href = "/settings";
-            const isActive = pathname === href || pathname.startsWith(href);
+            const isActive = pathname === href;
             return (
               <Link
                 href={href}
                 prefetch={true}
                 onClick={() => { if (isMobile) setMobileOpen(false); }}
                 title={showLabel ? undefined : "Configuracion"}
+                className={`sidebar-nav-link${isActive ? " sidebar-nav-active" : ""}`}
                 style={{
                   ...navLinkBase,
                   padding: showLabel ? "11px 20px" : "11px 0",
@@ -759,60 +782,87 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
         </div>
       </aside>
 
-      {/* ── Sidebar edge toggle (desktop only) ─────────────────── */}
+      {/* ── Sidebar edge hover zone + toggle (desktop only) ──── */}
       {!isMobile && (
-        <button
-          type="button"
-          onClick={handleToggleCollapse}
-          aria-label={showCollapsed ? "Expandir menu" : "Colapsar menu"}
+        <div
+          className="sidebar-edge-zone"
+          onMouseEnter={() => setEdgeHover(true)}
+          onMouseLeave={() => setEdgeHover(false)}
           style={{
             position: "fixed",
-            top: 28,
-            left: sidebarWidth - 10,
+            top: 0,
+            left: sidebarWidth - 8,
+            bottom: 0,
+            width: 16,
             zIndex: 1000,
-            width: 20,
-            height: 20,
-            borderRadius: "50%",
-            background: "var(--goberna-blue-900)",
-            border: "2px solid var(--color-background)",
-            color: "rgba(255,255,255,0.6)",
             cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 0,
-            transition: "left 0.2s cubic-bezier(0.4,0,0.2,1), background 0.15s ease, color 0.15s ease",
-            opacity: 0.5,
+            transition: "left 0.2s cubic-bezier(0.4,0,0.2,1)",
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.opacity = "1";
-            e.currentTarget.style.color = "#ffffff";
-            e.currentTarget.style.background = "var(--goberna-blue-800)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.opacity = "0.5";
-            e.currentTarget.style.color = "rgba(255,255,255,0.6)";
-            e.currentTarget.style.background = "var(--goberna-blue-900)";
-          }}
+          onClick={handleToggleCollapse}
+          role="presentation"
         >
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+          {/* Visible edge line on hover */}
+          <div
+            className="sidebar-edge-line"
             style={{
-              transform: showCollapsed ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform 0.2s ease",
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: 7,
+              width: 2,
+              borderRadius: 1,
+              background: "var(--goberna-gold)",
+              opacity: edgeHover ? 0.6 : 0,
+              transition: "opacity 0.2s ease",
+              pointerEvents: "none",
+            }}
+          />
+          {/* Toggle button centered on edge */}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); handleToggleCollapse(); }}
+            aria-label={showCollapsed ? "Expandir menu" : "Colapsar menu"}
+            className="sidebar-edge-btn"
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: 24,
+              height: 24,
+              borderRadius: "50%",
+              background: edgeHover ? "var(--goberna-blue-800)" : "var(--goberna-blue-900)",
+              border: "2px solid var(--color-background)",
+              color: edgeHover ? "#ffffff" : "rgba(255,255,255,0.5)",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
+              opacity: edgeHover ? 1 : 0,
+              transition: "opacity 0.2s ease, background 0.15s ease, color 0.15s ease",
+              boxShadow: edgeHover ? "0 0 8px rgba(0,0,0,0.3)" : "none",
             }}
           >
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-        </button>
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              style={{
+                transform: showCollapsed ? "rotate(180deg)" : "rotate(0deg)",
+                transition: "transform 0.2s ease",
+              }}
+            >
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+        </div>
       )}
 
       {/* ── Mobile hamburger (only visible on mobile) ──────────── */}
@@ -856,6 +906,23 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
       >
         {children}
       </main>
+
+      {/* ── Sidebar CSS (hover, edge zone) ───────────────────── */}
+      <style>{`
+        .sidebar-nav-link:hover:not(.sidebar-nav-active) {
+          background: rgba(255,255,255,0.07) !important;
+          color: rgba(255,255,255,0.95) !important;
+        }
+        .sidebar-nav-link:active {
+          background: rgba(255,255,255,0.14) !important;
+        }
+        .sidebar-nav-active:hover {
+          background: rgba(255,255,255,0.16) !important;
+        }
+        .sidebar-edge-zone:hover .sidebar-edge-btn {
+          opacity: 1 !important;
+        }
+      `}</style>
     </div>
   );
 });
