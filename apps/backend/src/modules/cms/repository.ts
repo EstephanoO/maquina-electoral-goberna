@@ -302,16 +302,29 @@ export async function markRespondieron(
 
 // ── Archive contact ─────────────────────────────────────────────────
 
+export type CmsContactRowWithPrev = CmsContactRow & { previous_status: string };
+
+/**
+ * Archive a contact atomically — captures previous_status in a single CTE
+ * to avoid TOCTOU race conditions between SELECT and UPDATE.
+ * Guards against archiving an already-archived contact.
+ */
 export async function archiveContact(
   submissionId: string,
   operatorId: string,
-): Promise<CmsContactRow | null> {
-  const { rows } = await pool.query<CmsContactRow>(
-    `UPDATE form_submissions fs
+): Promise<CmsContactRowWithPrev | null> {
+  const { rows } = await pool.query<CmsContactRowWithPrev>(
+    `WITH prev AS (
+       SELECT id, cms_status AS previous_status
+       FROM form_submissions
+       WHERE id = $1 AND cms_status != 'archivado'
+     )
+     UPDATE form_submissions fs
      SET cms_status = 'archivado',
          cms_claimed_by = COALESCE(fs.cms_claimed_by, $2),
          cms_claimed_at = COALESCE(fs.cms_claimed_at, now())
-     WHERE fs.id = $1
+     FROM prev
+     WHERE fs.id = prev.id
      RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
                fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
                fs.cms_respondieron_at, fs.cms_operator_notes,
@@ -320,7 +333,8 @@ export async function archiveContact(
                COALESCE(fs.data->>'encuestador', '') AS encuestador,
                COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
                COALESCE(fs.data->>'distrito', '') AS distrito,
-               COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido`,
+               COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido,
+               prev.previous_status`,
     [submissionId, operatorId],
   );
   return rows[0] ?? null;
@@ -533,8 +547,21 @@ export async function getCmsMetricsByOperator(
 
 // ── Revert contact status (undo accidental transitions) ─────────────
 
+const REVERT_RETURNING = `
+  RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
+            fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
+            fs.cms_respondieron_at, fs.cms_operator_notes,
+            COALESCE(fs.data->>'nombre', '') AS nombre,
+            COALESCE(fs.data->>'telefono', '') AS telefono,
+            COALESCE(fs.data->>'encuestador', '') AS encuestador,
+            COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
+            COALESCE(fs.data->>'distrito', '') AS distrito,
+            COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido,
+            prev.previous_status`;
+
 /**
- * Revert a contact one step back:
+ * Revert a contact one step back atomically using a CTE
+ * to capture and guard on the current status in a single query:
  *   respondieron → hablado   (clears cms_respondieron_at)
  *   hablado      → nuevo     (clears cms_hablado_at, cms_claimed_by, cms_claimed_at)
  *   archivado    → nuevo     (clears all CMS fields, full restore)
@@ -542,70 +569,66 @@ export async function getCmsMetricsByOperator(
 export async function revertContact(
   submissionId: string,
   _operatorId: string,
-): Promise<CmsContactRow | null> {
-  const { rows: current } = await pool.query<{ cms_status: string }>(
-    `SELECT cms_status FROM form_submissions WHERE id = $1`,
+): Promise<CmsContactRowWithPrev | null> {
+  // Try respondieron → hablado
+  const { rows: r1 } = await pool.query<CmsContactRowWithPrev>(
+    `WITH prev AS (
+       SELECT id, cms_status AS previous_status
+       FROM form_submissions
+       WHERE id = $1 AND cms_status = 'respondieron'
+     )
+     UPDATE form_submissions fs
+     SET cms_status = 'hablado',
+         cms_respondieron_at = NULL
+     FROM prev
+     WHERE fs.id = prev.id
+     ${REVERT_RETURNING}`,
     [submissionId],
   );
-  if (!current[0]) return null;
+  if (r1[0]) return r1[0];
 
-  const status = current[0].cms_status;
+  // Try hablado → nuevo
+  const { rows: r2 } = await pool.query<CmsContactRowWithPrev>(
+    `WITH prev AS (
+       SELECT id, cms_status AS previous_status
+       FROM form_submissions
+       WHERE id = $1 AND cms_status = 'hablado'
+     )
+     UPDATE form_submissions fs
+     SET cms_status = 'nuevo',
+         cms_hablado_at = NULL,
+         cms_respondieron_at = NULL,
+         cms_claimed_by = NULL,
+         cms_claimed_at = NULL
+     FROM prev
+     WHERE fs.id = prev.id
+     ${REVERT_RETURNING}`,
+    [submissionId],
+  );
+  if (r2[0]) return r2[0];
 
-  let sql: string;
-  if (status === "respondieron") {
-    sql = `UPDATE form_submissions fs
-           SET cms_status = 'hablado',
-               cms_respondieron_at = NULL
-           WHERE fs.id = $1
-           RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
-                     fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
-                     fs.cms_respondieron_at, fs.cms_operator_notes,
-                     COALESCE(fs.data->>'nombre', '') AS nombre,
-                     COALESCE(fs.data->>'telefono', '') AS telefono,
-                     COALESCE(fs.data->>'encuestador', '') AS encuestador,
-                     COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
-                     COALESCE(fs.data->>'distrito', '') AS distrito,
-                     COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido`;
-  } else if (status === "hablado") {
-    sql = `UPDATE form_submissions fs
-           SET cms_status = 'nuevo',
-               cms_hablado_at = NULL,
-               cms_respondieron_at = NULL,
-               cms_claimed_by = NULL,
-               cms_claimed_at = NULL
-           WHERE fs.id = $1
-           RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
-                     fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
-                     fs.cms_respondieron_at, fs.cms_operator_notes,
-                     COALESCE(fs.data->>'nombre', '') AS nombre,
-                     COALESCE(fs.data->>'telefono', '') AS telefono,
-                     COALESCE(fs.data->>'encuestador', '') AS encuestador,
-                     COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
-                     COALESCE(fs.data->>'distrito', '') AS distrito,
-                     COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido`;
-  } else if (status === "archivado") {
-    sql = `UPDATE form_submissions fs
-           SET cms_status = 'nuevo',
-               cms_hablado_at = NULL,
-               cms_respondieron_at = NULL,
-               cms_claimed_by = NULL,
-               cms_claimed_at = NULL
-           WHERE fs.id = $1
-           RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
-                     fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
-                     fs.cms_respondieron_at, fs.cms_operator_notes,
-                     COALESCE(fs.data->>'nombre', '') AS nombre,
-                     COALESCE(fs.data->>'telefono', '') AS telefono,
-                     COALESCE(fs.data->>'encuestador', '') AS encuestador,
-                     COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
-                     COALESCE(fs.data->>'distrito', '') AS distrito,
-                     COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido`;
-  } else {
-    return null;
-  }
+  // Try archivado → nuevo
+  const { rows: r3 } = await pool.query<CmsContactRowWithPrev>(
+    `WITH prev AS (
+       SELECT id, cms_status AS previous_status
+       FROM form_submissions
+       WHERE id = $1 AND cms_status = 'archivado'
+     )
+     UPDATE form_submissions fs
+     SET cms_status = 'nuevo',
+         cms_hablado_at = NULL,
+         cms_respondieron_at = NULL,
+         cms_claimed_by = NULL,
+         cms_claimed_at = NULL
+     FROM prev
+     WHERE fs.id = prev.id
+     ${REVERT_RETURNING}`,
+    [submissionId],
+  );
+  if (r3[0]) return r3[0];
 
-  const { rows } = await pool.query<CmsContactRow>(sql, [submissionId]);
-  return rows[0] ?? null;
+  // Cannot revert from 'nuevo' or unknown
+  return null;
 }
 
 // ── Time-based metrics for CMS performance ──────────────────────────

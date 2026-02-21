@@ -176,7 +176,11 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
             return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado"));
           }
 
-          const operatorEmail = await resolveOperatorEmail(authed.userId);
+          // Resolve operator email and stats in parallel
+          const [operatorEmail, stats] = await Promise.all([
+            resolveOperatorEmail(authed.userId),
+            repo.getCmsStats(result.campaign_id),
+          ]);
 
           // Broadcast full contact so all operators can update their view
           broadcastToCampaign(result.campaign_id, "contact.updated", {
@@ -184,6 +188,7 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
             previous_status: "nuevo",
             operator_id: authed.userId,
             operator_email: operatorEmail,
+            stats,
           });
 
           return reply.code(200).send({ ok: true, request_id: requestId, contact: result });
@@ -209,13 +214,18 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
             return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado"));
           }
 
-          const operatorEmail = await resolveOperatorEmail(authed.userId);
+          // Resolve operator email and stats in parallel
+          const [operatorEmail, stats] = await Promise.all([
+            resolveOperatorEmail(authed.userId),
+            repo.getCmsStats(result.campaign_id),
+          ]);
 
           broadcastToCampaign(result.campaign_id, "contact.updated", {
             contact: { ...result, claimed_by_email: operatorEmail },
             previous_status: "hablado",
             operator_id: authed.userId,
             operator_email: operatorEmail,
+            stats,
           });
 
           return reply.code(200).send({ ok: true, request_id: requestId, contact: result });
@@ -236,30 +246,30 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
         const { id } = request.params as { id: string };
 
         try {
-          // Grab the current status before revert to know previous_status
-          const pre = await pool.query<{ cms_status: string }>(
-            `SELECT cms_status FROM form_submissions WHERE id = $1`,
-            [id],
-          );
-          const previousStatus = pre.rows[0]?.cms_status ?? "unknown";
-
+          // Atomic: CTE captures previous_status and guards on it
           const result = await repo.revertContact(id, authed.userId);
           if (!result) {
             return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado o no se puede revertir"));
           }
 
-          const operatorEmail = result.cms_claimed_by
-            ? await resolveOperatorEmail(result.cms_claimed_by)
-            : "";
+          const { previous_status: previousStatus, ...contact } = result;
 
-          broadcastToCampaign(result.campaign_id, "contact.updated", {
-            contact: { ...result, claimed_by_email: operatorEmail },
+          // Resolve operator emails and stats in parallel
+          const [operatorEmail, actorEmail, stats] = await Promise.all([
+            contact.cms_claimed_by ? resolveOperatorEmail(contact.cms_claimed_by) : Promise.resolve(""),
+            resolveOperatorEmail(authed.userId),
+            repo.getCmsStats(contact.campaign_id),
+          ]);
+
+          broadcastToCampaign(contact.campaign_id, "contact.updated", {
+            contact: { ...contact, claimed_by_email: operatorEmail },
             previous_status: previousStatus,
             operator_id: authed.userId,
-            operator_email: await resolveOperatorEmail(authed.userId),
+            operator_email: actorEmail,
+            stats,
           });
 
-          return reply.code(200).send({ ok: true, request_id: requestId, contact: result });
+          return reply.code(200).send({ ok: true, request_id: requestId, contact });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "cms revert failed");
           return reply.code(500).send(errorPayload(requestId, "CMS_REVERT_ERROR", "error revirtiendo contacto"));
@@ -277,28 +287,29 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
         const { id } = request.params as { id: string };
 
         try {
-          // Grab previous status
-          const pre = await pool.query<{ cms_status: string }>(
-            `SELECT cms_status FROM form_submissions WHERE id = $1`,
-            [id],
-          );
-          const previousStatus = pre.rows[0]?.cms_status ?? "unknown";
-
+          // Atomic: CTE captures previous_status and guards against double-archive
           const result = await repo.archiveContact(id, authed.userId);
           if (!result) {
-            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado"));
+            return reply.code(409).send(errorPayload(requestId, "ALREADY_ARCHIVED", "contacto ya archivado o no encontrado"));
           }
 
-          const operatorEmail = await resolveOperatorEmail(authed.userId);
+          const { previous_status: previousStatus, ...contact } = result;
 
-          broadcastToCampaign(result.campaign_id, "contact.updated", {
-            contact: { ...result, claimed_by_email: operatorEmail },
+          // Resolve operator email and stats in parallel
+          const [operatorEmail, stats] = await Promise.all([
+            resolveOperatorEmail(authed.userId),
+            repo.getCmsStats(contact.campaign_id),
+          ]);
+
+          broadcastToCampaign(contact.campaign_id, "contact.updated", {
+            contact: { ...contact, claimed_by_email: operatorEmail },
             previous_status: previousStatus,
             operator_id: authed.userId,
             operator_email: operatorEmail,
+            stats,
           });
 
-          return reply.code(200).send({ ok: true, request_id: requestId, contact: result });
+          return reply.code(200).send({ ok: true, request_id: requestId, contact });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "cms archive failed");
           return reply.code(500).send(errorPayload(requestId, "CMS_ARCHIVE_ERROR", "error archivando contacto"));

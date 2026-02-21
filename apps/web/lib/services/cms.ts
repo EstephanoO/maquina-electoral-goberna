@@ -125,6 +125,7 @@ export type CmsSseContactUpdated = {
   previous_status: string;
   operator_id: string;
   operator_email: string;
+  stats?: CmsStats;
 };
 
 export type CmsSseNotesUpdated = {

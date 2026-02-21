@@ -141,24 +141,40 @@ export default function CmsPage() {
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
           let buffer = "";
+          // Persist SSE field state across chunk boundaries
+          let currentEvent = "";
+          let currentData = "";
 
           function processChunk(): Promise<void> {
             return reader.read().then(({ done, value }) => {
-              if (done) return;
+              if (done) {
+                // Stream ended — fire any pending event before closing
+                if (currentEvent && currentData) {
+                  handleSseEvent(currentEvent, currentData);
+                  currentEvent = "";
+                  currentData = "";
+                }
+                return;
+              }
               buffer += decoder.decode(value, { stream: true });
               const lines = buffer.split("\n");
               buffer = lines.pop() ?? "";
 
-              let currentEvent = "";
-              let currentData = "";
-
               for (const line of lines) {
                 if (line.startsWith("event: ")) {
-                  currentEvent = line.substring(7);
+                  // New event starting — flush any incomplete prior event
+                  if (currentEvent && currentData) {
+                    handleSseEvent(currentEvent, currentData);
+                  }
+                  currentEvent = line.substring(7).trim();
+                  currentData = "";
                 } else if (line.startsWith("data: ")) {
-                  currentData = line.substring(6);
-                } else if (line === "" && currentEvent && currentData) {
-                  handleSseEvent(currentEvent, currentData);
+                  currentData += (currentData ? "\n" : "") + line.substring(6);
+                } else if (line.trim() === "") {
+                  // Empty line = end of SSE message
+                  if (currentEvent && currentData) {
+                    handleSseEvent(currentEvent, currentData);
+                  }
                   currentEvent = "";
                   currentData = "";
                 }
@@ -201,23 +217,27 @@ export default function CmsPage() {
 
           setContacts((prev) => {
             // Does the contact's NEW status belong in the current tab?
-            const belongsInTab = tab === "todos"
-              || newStatus === tab;
+            const belongsInTab = tab === "todos" || newStatus === tab;
 
             // Did the contact's PREVIOUS status belong in the current tab?
-            const wasInTab = tab === "todos"
-              || prevStatus === tab;
+            const wasInTab = tab === "todos" || prevStatus === tab;
 
-            if (belongsInTab) {
-              // Upsert: update if exists, prepend if new to this tab
+            if (belongsInTab && wasInTab) {
+              // Contact stays in this tab (e.g. "todos" or status didn't change)
+              // → in-place update only
               const idx = prev.findIndex((c) => c.id === contact.id);
               if (idx >= 0) {
                 const next = [...prev];
                 next[idx] = contact;
                 return next;
               }
-              // New to this tab — prepend
+              // Wasn't loaded yet — prepend
               return [contact, ...prev];
+            }
+
+            if (belongsInTab) {
+              // Contact is new to this tab — prepend
+              return [contact, ...prev.filter((c) => c.id !== contact.id)];
             }
 
             if (wasInTab) {
@@ -228,8 +248,11 @@ export default function CmsPage() {
             return prev;
           });
 
-          // Refresh stats
-          if (activeCampaignId) {
+          // Update stats from SSE payload (avoids extra network round-trip)
+          if (payload.stats) {
+            setStats(payload.stats);
+          } else if (activeCampaignId) {
+            // Fallback: fetch stats if backend didn't include them
             getCmsStats(activeCampaignId).then((r) => {
               if (r.ok && r.stats) setStats(r.stats);
             });
