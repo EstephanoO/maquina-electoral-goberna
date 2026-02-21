@@ -749,6 +749,12 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                       onClick={() => {
                         setActiveCampaign(c.id);
                         setCampaignDropdownOpen(false);
+                        // If on a /candidatos/[slug]/* route, navigate to same sub-route with new slug
+                        const slugMatch = pathname.match(/^\/candidatos\/([^/]+)(\/.*)?$/);
+                        if (slugMatch && c.slug && slugMatch[1] !== c.slug) {
+                          const subPath = slugMatch[2] ?? "/tierra";
+                          router.push(`/candidatos/${c.slug}${subPath}`);
+                        }
                       }}
                       style={{
                         width: "100%",
