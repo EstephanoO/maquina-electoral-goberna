@@ -75,8 +75,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# ── Uploads (user-generated, not in repo) ──────────────────────────
-**/uploads/
+# ── Uploads (user-generated files, not source code) ────────────────
+/uploads/
+/apps/*/uploads/
+/srv/uploads/
 
 # ── Mobile build artifacts ─────────────────────────────────────────
 *.aab
@@ -88,6 +90,9 @@ geojsons/
 apps/web/public/geo/departamentos*.geojson
 apps/web/public/geo/provincias*.geojson
 apps/web/public/geo/distritos*.geojson
+
+# ── Security audits (NEVER commit) ──────────────────────────────────
+SECURITY-AUDIT*.md
 
 # ── Misc ────────────────────────────────────────────────────────────
 *.bak

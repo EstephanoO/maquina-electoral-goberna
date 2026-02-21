@@ -32,9 +32,10 @@ export function buildUploadsRoutes(env: AppEnv): FastifyPluginAsync {
     await mkdir(uploadsDir, { recursive: true });
 
     // Register content type parsers for image uploads
-    // This tells Fastify to NOT parse these content types and let us handle the raw stream
+    // This tells Fastify to NOT parse these content types and let us handle the raw buffer.
+    // bodyLimit must match MAX_FILE_SIZE — Fastify's default is 1MB which rejects 1-5MB files.
     for (const mime of ALLOWED_MIME) {
-      app.addContentTypeParser(mime, { parseAs: "buffer" }, (_request, payload, done) => {
+      app.addContentTypeParser(mime, { parseAs: "buffer", bodyLimit: MAX_FILE_SIZE }, (_request, payload, done) => {
         done(null, payload);
       });
     }
@@ -43,7 +44,7 @@ export function buildUploadsRoutes(env: AppEnv): FastifyPluginAsync {
     // Admin uploads a file (candidate photo, etc.)
     app.post(
       "/api/uploads",
-      { preHandler: [app.authenticate, authorize({ roles: ["consultor"] })] },
+      { preHandler: [app.authenticate, authorize({ roles: ["consultor"] })], bodyLimit: MAX_FILE_SIZE },
       async (request, reply) => {
         const requestId = String(request.id);
 
