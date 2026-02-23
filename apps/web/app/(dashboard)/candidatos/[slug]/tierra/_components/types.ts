@@ -92,20 +92,6 @@ export type TierraMapProps = {
   showHeatmap: boolean;
   drillState: DrillState;
   onDrillChange: (state: DrillState) => void;
-  /** Route mode: trail + form submissions for a specific agent */
-  routeTrail: TrailPoint[] | null;
-  routeForms: FormPoint[] | null;
-  routeAgentId: string | null;
-};
-
-/* ─── Agent Trail (route visualization) ─── */
-
-export type TrailPoint = {
-  ts: string;
-  lat: number;
-  lng: number;
-  accuracy: number | null;
-  speed: number | null;
 };
 
 /* ─── Log Entries ─── */

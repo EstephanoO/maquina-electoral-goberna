@@ -13,13 +13,11 @@ type Props = {
   primaryColor: string;
   onSelectAgent: (agentId: string) => void;
   onWhatsApp?: (agent: EnrichedAgent) => void;
-  routeAgentId?: string | null;
-  onViewRoute?: (agentId: string) => void;
 };
 
 /* ========== Component ========== */
 
-export function AgentsTab({ agents, selectedAgentId, primaryColor, onSelectAgent, onWhatsApp, routeAgentId, onViewRoute }: Props) {
+export function AgentsTab({ agents, selectedAgentId, primaryColor, onSelectAgent, onWhatsApp }: Props) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<AgentStatus | "all">("all");
 
@@ -46,11 +44,6 @@ export function AgentsTab({ agents, selectedAgentId, primaryColor, onSelectAgent
     e.stopPropagation();
     if (onWhatsApp) onWhatsApp(agent);
   }, [onWhatsApp]);
-
-  const handleRoute = useCallback((e: React.MouseEvent, agentId: string) => {
-    e.stopPropagation();
-    if (onViewRoute) onViewRoute(agentId);
-  }, [onViewRoute]);
 
   return (
     <div style={S.root}>
@@ -140,27 +133,11 @@ export function AgentsTab({ agents, selectedAgentId, primaryColor, onSelectAgent
                   </div>
                 </div>
 
-                {/* Right: forms count + route + WhatsApp */}
+                {/* Right: forms count + WhatsApp */}
                 <div style={S.rowRight}>
                   <div style={{ ...S.formsBadge, color: primaryColor, backgroundColor: `${primaryColor}12` }}>
                     {agent.forms_count}
                   </div>
-                  {onViewRoute && (
-                    <button
-                      type="button"
-                      onClick={(e) => handleRoute(e, agent.id)}
-                      style={{
-                        ...S.routeBtn,
-                        backgroundColor: routeAgentId === agent.id ? primaryColor : "#f8fafc",
-                        color: routeAgentId === agent.id ? "#ffffff" : "#475569",
-                        borderColor: routeAgentId === agent.id ? primaryColor : "#e2e8f0",
-                      }}
-                      title={routeAgentId === agent.id ? "Cerrar ruta" : `Ver ruta de ${agent.name}`}
-                      aria-label={routeAgentId === agent.id ? "Cerrar ruta" : `Ver ruta de ${agent.name}`}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><title>Ruta</title><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>
-                    </button>
-                  )}
                   {onWhatsApp && (
                     <button
                       type="button"
@@ -355,18 +332,6 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     minWidth: 28,
     textAlign: "center" as const,
-  },
-  routeBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    border: "1px solid",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "all 0.15s ease",
-    flexShrink: 0,
   },
   waBtn: {
     width: 30,

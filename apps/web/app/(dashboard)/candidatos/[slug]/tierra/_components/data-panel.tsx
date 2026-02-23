@@ -30,8 +30,6 @@ type Props = {
   logEntries: LogEntry[];
   onLogEntryClick: (entry: LogEntry) => void;
   onClearLog?: () => void;
-  routeAgentId?: string | null;
-  onViewRoute?: (agentId: string) => void;
 };
 
 /* ========== Constants ========== */
@@ -67,7 +65,6 @@ export function DataPanel({
   campaignId, isAdmin = false, onFormsDeleted,
   agents, selectedAgentId, onSelectAgent, onWhatsApp,
   logEntries, onLogEntryClick, onClearLog,
-  routeAgentId, onViewRoute,
 }: Props) {
   const [activeTab, setActiveTab] = useState<PanelTab>("datos");
 
@@ -121,7 +118,7 @@ export function DataPanel({
           <DatosTab forms={forms} selectedAgentName={selectedAgentName} primaryColor={primaryColor} onFlyTo={onFlyTo} campaignId={campaignId} isAdmin={isAdmin} onFormsDeleted={onFormsDeleted} />
         )}
         {activeTab === "agentes" && (
-          <AgentsTab agents={agents} selectedAgentId={selectedAgentId} primaryColor={primaryColor} onSelectAgent={onSelectAgent} onWhatsApp={onWhatsApp} routeAgentId={routeAgentId} onViewRoute={onViewRoute} />
+          <AgentsTab agents={agents} selectedAgentId={selectedAgentId} primaryColor={primaryColor} onSelectAgent={onSelectAgent} onWhatsApp={onWhatsApp} />
         )}
         {activeTab === "log" && (
           <LogTab entries={logEntries} onEntryClick={onLogEntryClick} onClearLog={onClearLog} primaryColor={primaryColor} />

@@ -778,8 +778,6 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             </div>
           )}
 
-          {/* Collapse toggle removed from bottom — now on sidebar edge */}
-
           {/* User info */}
           <div
             style={{
@@ -874,9 +872,9 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
           style={{
             position: "fixed",
             top: 0,
-            left: sidebarWidth - 8,
+            left: sidebarWidth - 10,
             bottom: 0,
-            width: 16,
+            width: 20,
             zIndex: 1000,
             cursor: "pointer",
             transition: "left 0.2s cubic-bezier(0.4,0,0.2,1)",
@@ -891,16 +889,16 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
               position: "absolute",
               top: 0,
               bottom: 0,
-              left: 7,
+              left: 9,
               width: 2,
               borderRadius: 1,
               background: "var(--goberna-gold)",
-              opacity: edgeHover ? 0.6 : 0,
+              opacity: edgeHover ? 0.7 : 0,
               transition: "opacity 0.2s ease",
               pointerEvents: "none",
             }}
           />
-          {/* Toggle button centered on edge */}
+          {/* Toggle pill centered on edge — always partially visible */}
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); handleToggleCollapse(); }}
@@ -911,20 +909,20 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
               top: "50%",
               left: "50%",
               transform: "translate(-50%, -50%)",
-              width: 24,
-              height: 24,
-              borderRadius: "50%",
-              background: edgeHover ? "var(--goberna-blue-800)" : "var(--goberna-blue-900)",
+              width: 20,
+              height: 40,
+              borderRadius: 10,
+              background: edgeHover ? "var(--goberna-blue-700)" : "var(--goberna-blue-800)",
               border: "2px solid var(--color-background)",
-              color: edgeHover ? "#ffffff" : "rgba(255,255,255,0.5)",
+              color: edgeHover ? "#ffffff" : "rgba(255,255,255,0.45)",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               padding: 0,
-              opacity: edgeHover ? 1 : 0,
-              transition: "opacity 0.2s ease, background 0.15s ease, color 0.15s ease",
-              boxShadow: edgeHover ? "0 0 8px rgba(0,0,0,0.3)" : "none",
+              opacity: edgeHover ? 1 : 0.5,
+              transition: "opacity 0.2s ease, background 0.15s ease, color 0.15s ease, transform 0.15s ease",
+              boxShadow: edgeHover ? "0 2px 8px rgba(0,0,0,0.25)" : "0 1px 3px rgba(0,0,0,0.15)",
             }}
           >
             <svg

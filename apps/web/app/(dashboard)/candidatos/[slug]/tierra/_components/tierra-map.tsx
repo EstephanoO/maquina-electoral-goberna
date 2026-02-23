@@ -33,7 +33,7 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Layer, Map as MapLibre, Source } from "@vis.gl/react-maplibre";
 import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
-import type { FillLayerSpecification, LineLayerSpecification, CircleLayerSpecification, SymbolLayerSpecification } from "maplibre-gl";
+import type { FillLayerSpecification, LineLayerSpecification, CircleLayerSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { TierraMapHandle, TierraMapProps } from "./types";
 import {
@@ -54,7 +54,7 @@ import {
 } from "./map-paint-constants";
 
 import { useDrillFilters } from "./hooks/use-drill-filters";
-import { useAgentsSource, useFormSources, useRouteSources } from "./hooks/use-map-sources";
+import { useAgentsSource, useFormSources } from "./hooks/use-map-sources";
 import { useAutoFit } from "./hooks/use-auto-fit";
 import { useZoneTooltip } from "./hooks/use-zone-tooltip";
 import { useMapClick } from "./hooks/use-map-click";
@@ -64,7 +64,7 @@ import { reverseGeocode } from "@/lib/services/geo";
 /* ========== Component (P6 — wrapped with memo) ========== */
 
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
-  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, showHeatmap, drillState, onDrillChange, routeTrail, routeForms, routeAgentId },
+  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, showHeatmap, drillState, onDrillChange },
   ref,
 ) {
   const mapRef = useRef<MapRef | null>(null);
@@ -88,10 +88,6 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const filters = useDrillFilters(drillState, campaignId);
   const agentsGeoJson = useAgentsSource(agents, selectedAgentId);
   const { formsGeoJson, formsHeatGeoJson } = useFormSources(forms, selectedAgentId);
-  const { routeLineGeoJson, routePointsGeoJson, routeFormsGeoJson } = useRouteSources(routeTrail, routeForms);
-
-  const isRouteMode = !!routeAgentId;
-  const routeDimOpacity = isRouteMode ? 0.15 : 1;
 
   useAutoFit(mapRef, drillState, skipNextFitRef);
   const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef);
@@ -157,54 +153,13 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     "circle-radius": ["case", ["==", ["get", "is_selected"], 1], 12, 9],
     "circle-color": ["match", ["get", "status"], "connected", STATUS_COLORS.connected, "idle", STATUS_COLORS.idle, "inactive", STATUS_COLORS.inactive, primaryColor],
     "circle-stroke-width": 2.5, "circle-stroke-color": "#ffffff",
-    "circle-opacity": routeDimOpacity,
-    "circle-stroke-opacity": routeDimOpacity,
-  }), [primaryColor, routeDimOpacity]);
-
-  // ─── Route mode paints ───
-  const routeLineVisibility = useMemo(() => isRouteMode ? VIS_VISIBLE : VIS_NONE, [isRouteMode]);
-
-  const routeLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
-    "line-color": primaryColor,
-    "line-width": 3,
-    "line-opacity": 0.8,
+    "circle-opacity": 1,
+    "circle-stroke-opacity": 1,
   }), [primaryColor]);
-
-  const routePointsPaint = useMemo((): CircleLayerSpecification["paint"] => ({
-    "circle-radius": ["case", ["==", ["get", "is_latest"], 1], 7, 4],
-    "circle-color": ["case", ["==", ["get", "is_latest"], 1], primaryColor, "#ffffff"],
-    "circle-stroke-width": 2,
-    "circle-stroke-color": primaryColor,
-    "circle-opacity": 0.9,
-  }), [primaryColor]);
-
-  const routeFormsPaint = useMemo((): CircleLayerSpecification["paint"] => ({
-    "circle-radius": 8,
-    "circle-color": "#22c55e",
-    "circle-stroke-width": 2.5,
-    "circle-stroke-color": "#ffffff",
-    "circle-opacity": 0.95,
-  }), []);
-
-  const ROUTE_FORMS_LABEL_LAYOUT = useMemo((): SymbolLayerSpecification["layout"] => ({
-    "text-field": ["get", "nombre"],
-    "text-size": 10,
-    "text-offset": [0, 1.6],
-    "text-allow-overlap": false,
-    "text-font": ["Open Sans Bold"],
-    ...(isRouteMode ? {} : { visibility: "none" as const }),
-  }), [isRouteMode]);
-
-  const ROUTE_FORMS_LABEL_PAINT: SymbolLayerSpecification["paint"] = useMemo(() => ({
-    "text-color": "#166534",
-    "text-halo-color": "rgba(255,255,255,0.92)",
-    "text-halo-width": 1.5,
-  }), []);
 
   // ─── P1: Visibility layout objects for always-mounted Sources ───
-  // In route mode, hide heatmap and datos layers completely. Agents stay visible but dimmed via opacity.
-  const heatmapVisibility = useMemo(() => (showHeatmap && !isRouteMode) ? VIS_VISIBLE : VIS_NONE, [showHeatmap, isRouteMode]);
-  const datosVisibility = useMemo(() => (showDatos && !isRouteMode) ? VIS_VISIBLE : VIS_NONE, [showDatos, isRouteMode]);
+  const heatmapVisibility = useMemo(() => showHeatmap ? VIS_VISIBLE : VIS_NONE, [showHeatmap]);
+  const datosVisibility = useMemo(() => showDatos ? VIS_VISIBLE : VIS_NONE, [showDatos]);
   const trackingVisibility = useMemo(() => showTracking ? VIS_VISIBLE : VIS_NONE, [showTracking]);
 
   // ─── Cluster count layout merged with visibility ───
@@ -357,40 +312,6 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     }
   }, [selectedAgentId, agents]);
 
-  // ─── Route mode: auto-fit bounds to trail extent ───
-  const prevRouteAgentRef = useRef(routeAgentId);
-  useEffect(() => {
-    if (!routeTrail || routeTrail.length === 0 || !mapRef.current) return;
-    // Only auto-fit when entering route mode or when trail first loads
-    if (routeAgentId && (prevRouteAgentRef.current !== routeAgentId || routeTrail.length > 1)) {
-      prevRouteAgentRef.current = routeAgentId;
-      let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
-      for (const p of routeTrail) {
-        if (p.lng < minLng) minLng = p.lng;
-        if (p.lng > maxLng) maxLng = p.lng;
-        if (p.lat < minLat) minLat = p.lat;
-        if (p.lat > maxLat) maxLat = p.lat;
-      }
-      // Include route forms in bounds
-      if (routeForms) {
-        for (const f of routeForms) {
-          if (f.lng < minLng) minLng = f.lng;
-          if (f.lng > maxLng) maxLng = f.lng;
-          if (f.lat < minLat) minLat = f.lat;
-          if (f.lat > maxLat) maxLat = f.lat;
-        }
-      }
-      // Add small padding if all points are very close (< 0.001 deg ~ 100m)
-      const dlng = maxLng - minLng;
-      const dlat = maxLat - minLat;
-      if (dlng < 0.001) { minLng -= 0.002; maxLng += 0.002; }
-      if (dlat < 0.001) { minLat -= 0.002; maxLat += 0.002; }
-      skipNextFitRef.current = true;
-      mapRef.current.fitBounds([[minLng, minLat], [maxLng, maxLat]], { padding: 80, duration: FLY_DURATION });
-    }
-    if (!routeAgentId) prevRouteAgentRef.current = null;
-  }, [routeAgentId, routeTrail, routeForms]);
-
   // ─── Cleanup ───
   useEffect(() => () => {
     if (zoomEndTimer.current) clearTimeout(zoomEndTimer.current);
@@ -464,17 +385,6 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
           <Layer id="agents-count" type="symbol" minzoom={8} layout={agentCountLayoutWithVis} paint={AGENT_COUNT_PAINT} />
         </Source>
 
-        {/* ── Route mode layers — trail line, GPS points, form markers ── */}
-        <Source id="route-line" type="geojson" data={routeLineGeoJson}>
-          <Layer id="route-line-layer" type="line" layout={{ ...routeLineVisibility, "line-join": "round", "line-cap": "round" }} paint={routeLinePaint} />
-        </Source>
-        <Source id="route-points" type="geojson" data={routePointsGeoJson}>
-          <Layer id="route-points-layer" type="circle" layout={routeLineVisibility} paint={routePointsPaint} />
-        </Source>
-        <Source id="route-forms" type="geojson" data={routeFormsGeoJson}>
-          <Layer id="route-forms-layer" type="circle" layout={routeLineVisibility} paint={routeFormsPaint} />
-          <Layer id="route-forms-labels" type="symbol" layout={ROUTE_FORMS_LABEL_LAYOUT} paint={ROUTE_FORMS_LABEL_PAINT} />
-        </Source>
       </MapLibre>
 
       {/* ── Zone name tooltip ── */}

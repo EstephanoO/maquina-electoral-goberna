@@ -9,7 +9,7 @@
  */
 
 import { useMemo } from "react";
-import type { EnrichedAgent, FormPoint, TrailPoint } from "../types";
+import type { EnrichedAgent, FormPoint } from "../types";
 
 /* ─── Agent source ─── */
 
@@ -72,65 +72,4 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
   return { formsGeoJson, formsHeatGeoJson };
 }
 
-/* ─── Route sources (trail line + trail points + route form markers) ─── */
 
-type RouteSources = {
-  routeLineGeoJson: GeoJSON.FeatureCollection;
-  routePointsGeoJson: GeoJSON.FeatureCollection;
-  routeFormsGeoJson: GeoJSON.FeatureCollection;
-};
-
-const EMPTY_FC: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
-
-export function useRouteSources(
-  trail: TrailPoint[] | null,
-  routeForms: FormPoint[] | null,
-): RouteSources {
-  const routeLineGeoJson = useMemo(() => {
-    if (!trail || trail.length < 2) return EMPTY_FC;
-    return {
-      type: "FeatureCollection" as const,
-      features: [{
-        type: "Feature" as const,
-        properties: {},
-        geometry: {
-          type: "LineString" as const,
-          coordinates: trail.map((p) => [p.lng, p.lat]),
-        },
-      }],
-    };
-  }, [trail]);
-
-  const routePointsGeoJson = useMemo(() => {
-    if (!trail || trail.length === 0) return EMPTY_FC;
-    return {
-      type: "FeatureCollection" as const,
-      features: trail.map((p, i) => ({
-        type: "Feature" as const,
-        properties: {
-          idx: i,
-          ts: p.ts,
-          is_latest: i === trail.length - 1 ? 1 : 0,
-        },
-        geometry: { type: "Point" as const, coordinates: [p.lng, p.lat] },
-      })),
-    };
-  }, [trail]);
-
-  const routeFormsGeoJson = useMemo(() => {
-    if (!routeForms || routeForms.length === 0) return EMPTY_FC;
-    return {
-      type: "FeatureCollection" as const,
-      features: routeForms.map((f) => ({
-        type: "Feature" as const,
-        properties: {
-          nombre: f.nombre,
-          created_at: f.created_at,
-        },
-        geometry: { type: "Point" as const, coordinates: [f.lng, f.lat] },
-      })),
-    };
-  }, [routeForms]);
-
-  return { routeLineGeoJson, routePointsGeoJson, routeFormsGeoJson };
-}

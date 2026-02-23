@@ -28,14 +28,6 @@ export type AgentLocation = {
   lng: number;
 };
 
-export type TrailPoint = {
-  ts: string;
-  lat: number;
-  lng: number;
-  accuracy: number | null;
-  speed: number | null;
-};
-
 // ── Query Keys (colocated for easy invalidation) ───────────────────
 
 export const tierraKeys = {
@@ -43,7 +35,6 @@ export const tierraKeys = {
   stats: (slug: string) => [...tierraKeys.all, "stats", slug] as const,
   forms: (campaignId: string) => [...tierraKeys.all, "forms", campaignId] as const,
   locations: (campaignId: string) => [...tierraKeys.all, "locations", campaignId] as const,
-  trail: (agentId: string) => [...tierraKeys.all, "trail", agentId] as const,
 };
 
 // ── useCampaignStats ───────────────────────────────────────────────
@@ -118,25 +109,4 @@ export function useAgentLocationsSnapshot(campaignId: string | undefined) {
   });
 }
 
-// ── useAgentTrail ──────────────────────────────────────────────────
 
-/**
- * Fetches the last N GPS trail points for a specific agent.
- * Used in "Ver ruta" mode to draw the agent's route on the map.
- * Refetches every 30s while the route is open to show live movement.
- */
-export function useAgentTrail(agentId: string | null, limit = 20) {
-  return useQuery({
-    queryKey: tierraKeys.trail(agentId ?? ""),
-    queryFn: async (): Promise<TrailPoint[]> => {
-      const res = await api.get<{ trail: TrailPoint[] }>(
-        `/api/agents/${agentId}/trail?limit=${limit}`,
-      );
-      if (!res.ok || !res.data?.trail) return [];
-      return res.data.trail;
-    },
-    enabled: !!agentId,
-    refetchInterval: 30_000,
-    staleTime: 25_000,
-  });
-}

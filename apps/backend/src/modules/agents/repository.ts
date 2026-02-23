@@ -200,38 +200,6 @@ async function insertLocationHistory(states: AgentLiveState[]): Promise<void> {
 }
 
 /**
- * Get the most recent N location points for a specific agent.
- * Uses the (agent_id, ts DESC) index for efficient retrieval.
- */
-export type TrailPoint = {
-  ts: string;
-  lat: number;
-  lng: number;
-  accuracy: number | null;
-  speed: number | null;
-};
-
-export async function getAgentTrail(agentId: string, limit = 20): Promise<TrailPoint[]> {
-  const result = (await pool.query(
-    `SELECT ts, lat, lng, accuracy, speed
-     FROM agent_location_history
-     WHERE agent_id = $1
-     ORDER BY ts DESC
-     LIMIT $2`,
-    [agentId, limit],
-  )) as { rows: Array<{ ts: string; lat: number; lng: number; accuracy: number | null; speed: number | null }> };
-
-  // Reverse to chronological order (oldest → newest) for line drawing
-  return result.rows.reverse().map((r) => ({
-    ts: new Date(r.ts).toISOString(),
-    lat: r.lat,
-    lng: r.lng,
-    accuracy: r.accuracy,
-    speed: r.speed,
-  }));
-}
-
-/**
  * Cleanup location history older than retention period (7 days by default).
  * Call from a periodic timer/cron.
  */
