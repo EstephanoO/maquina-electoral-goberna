@@ -91,10 +91,10 @@ jobs:
                 git checkout -- .
               fi
 
-              UNTRACKED=$(git ls-files --others --exclude-standard)
+              UNTRACKED=$(git ls-files --others --exclude-standard --exclude='nginx/certs/*' --exclude='.env' --exclude='backups/')
               if [ -n "$UNTRACKED" ]; then
                 echo "[deploy] drift: untracked files on VPS — cleaning"
-                git clean -fd
+                git clean -fd -e 'nginx/certs/' -e '.env' -e 'backups/'
               fi
             }
 

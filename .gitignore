@@ -15,6 +15,9 @@ CREDENCIALES.md
 # ── Runtime folders (VPS) ───────────────────────────────────────────
 certbot/conf/
 certbot/www/
+nginx/certs/*.crt
+nginx/certs/*.key
+nginx/certs/*.pem
 .runtime/
 logs/
 
