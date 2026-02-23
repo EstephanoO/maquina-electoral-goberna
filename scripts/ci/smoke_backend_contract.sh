@@ -35,6 +35,7 @@ POSTGRES_USER=appuser
 POSTGRES_PASSWORD=ci_pass_local
 DATABASE_URL=postgresql://appuser:ci_pass_local@postgres:5432/appdb
 REDIS_URL=redis://redis:6379
+REDIS_PASSWORD=ci_redis_pass
 JWT_SECRET=ci_jwt_local_secret_that_is_long_enough_for_validation_32plus
 AGENT_INGEST_TOKEN=ci_agent_token_local
 BACKUP_DIR=/tmp/backups
@@ -66,15 +67,34 @@ docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" up -d --
 echo "[smoke] waiting for postgres..."
 for attempt in $(seq 1 30); do
 	if docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" exec -T postgres pg_isready -U appuser -d appdb >/dev/null 2>&1; then
-		echo "[smoke] postgres ready"
+		echo "[smoke] postgres ready after ${attempt}s"
 		break
+	fi
+	if [ "$attempt" -eq 30 ]; then
+		echo "[smoke] ERROR: postgres not ready after 30s"
+		diagnose
+		exit 1
 	fi
 	sleep 1
 done
 
-# Run migrations
+# Run migrations (retry up to 3 times — backend container may be restarting)
 echo "[smoke] running migrations..."
-docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" exec -T backend bun run migrate || true
+MIGRATED=false
+for attempt in $(seq 1 3); do
+	if docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" exec -T backend bun run migrate 2>&1; then
+		echo "[smoke] migrations ok (attempt ${attempt})"
+		MIGRATED=true
+		break
+	fi
+	echo "[smoke] migration attempt ${attempt} failed, retrying in 5s..."
+	sleep 5
+done
+if [ "$MIGRATED" != "true" ]; then
+	echo "[smoke] ERROR: migrations failed after 3 attempts"
+	diagnose
+	exit 1
+fi
 
 echo "[smoke] waiting for backend readiness..."
 READY=false
