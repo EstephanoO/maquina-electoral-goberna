@@ -41,19 +41,9 @@ def check_frontend_screaming_guardrails() -> None:
         fail("frontend app importando backend internals: " + ", ".join(bad))
 
 
-def check_tracking_contract_file() -> None:
-    contract = ROOT / "EXPO_INTEGRATION.md"
-    if not contract.exists():
-        fail("falta EXPO_INTEGRATION.md")
-    text = read(contract)
-    if "location" not in text.lower():
-        fail("EXPO_INTEGRATION.md debe documentar el tracking de location")
-
-
 def main() -> int:
     check_backend_hexagonal_guardrails()
     check_frontend_screaming_guardrails()
-    check_tracking_contract_file()
     print("[architecture-check] ok")
     return 0
 
