@@ -95,67 +95,69 @@ fi
 curl -fsS "http://127.0.0.1/api/config" >/dev/null
 curl -fsS "http://127.0.0.1/api/agents/health" >/dev/null
 
-# ── Auth setup: register + activate via DB + create campaign + login ──
-CI_EMAIL="ci-smoke-$(date +%s)@test.goberna.pe"
+# ── Auth setup: create campaign in DB + register via API + activate + login ──
+CI_PHONE="900$(date +%s | tail -c 7)"
+CI_EMAIL="${CI_PHONE}@goberna.pe"
 CI_PASS="CiSmoke1234!"
+CI_CAMPAIGN_ID="00000000-0000-0000-0000-000000000001"
 
-echo "[smoke] registering CI user: $CI_EMAIL"
+echo "[smoke] creating CI campaign in DB..."
+docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" exec -T postgres psql -U appuser -d appdb -c "
+  INSERT INTO campaigns (id, name, slug, status) VALUES
+    ('$CI_CAMPAIGN_ID', 'CI Test Campaign', 'ci-test', 'active')
+    ON CONFLICT (slug) DO NOTHING;
+" 2>&1
+
+echo "[smoke] registering CI user: $CI_PHONE"
 register_response="$(curl -s -X POST "http://127.0.0.1/api/auth/register" \
-  -H "Content-Type: application/json" \
-  -d "{\"email\":\"$CI_EMAIL\",\"password\":\"$CI_PASS\",\"full_name\":\"CI Smoke User\"}")"
+	-H "Content-Type: application/json" \
+	-d "{\"phone\":\"$CI_PHONE\",\"password\":\"$CI_PASS\",\"full_name\":\"CI Smoke User\",\"region\":\"Lima\",\"campaign_id\":\"$CI_CAMPAIGN_ID\"}")"
 echo "[smoke] register response: $register_response"
 
 # Verify registration succeeded
 register_ok="$(echo "$register_response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('ok',''))" 2>/dev/null || true)"
 if [ "$register_ok" != "True" ]; then
-  echo "[smoke] ERROR: registration failed — response: $register_response"
-  diagnose
-  exit 1
+	echo "[smoke] ERROR: registration failed — response: $register_response"
+	diagnose
+	exit 1
 fi
 
-# Activate user + promote to admin + create a CI campaign + assign membership directly in DB
-# (Registration without invitation creates user as 'pending' which blocks login)
-echo "[smoke] activating CI user and creating test campaign via DB..."
+# Activate user + promote to admin (registration creates user as 'pending')
+echo "[smoke] activating CI user and promoting to admin..."
 docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" exec -T postgres psql -U appuser -d appdb -c "
   UPDATE users SET status = 'active', role = 'admin' WHERE email = lower('$CI_EMAIL');
 " 2>&1
 docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" exec -T postgres psql -U appuser -d appdb -c "
-  INSERT INTO campaigns (id, name, slug, status) VALUES
-    ('00000000-0000-0000-0000-000000000001', 'CI Test Campaign', 'ci-test', 'active')
-    ON CONFLICT (slug) DO NOTHING;
-" 2>&1
-docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" exec -T postgres psql -U appuser -d appdb -c "
-  INSERT INTO user_campaigns (user_id, campaign_id, role, status)
-    SELECT u.id, '00000000-0000-0000-0000-000000000001', 'admin', 'active'
-    FROM users u WHERE u.email = lower('$CI_EMAIL')
-    ON CONFLICT (user_id, campaign_id) DO NOTHING;
+  UPDATE user_campaigns SET role = 'admin', status = 'active'
+    WHERE campaign_id = '$CI_CAMPAIGN_ID'
+    AND user_id = (SELECT id FROM users WHERE email = lower('$CI_EMAIL'));
 " 2>&1
 
 echo "[smoke] logging in CI user..."
 login_response="$(curl -s -X POST "http://127.0.0.1/api/auth/login" \
-  -H "Content-Type: application/json" \
-  -d "{\"email\":\"$CI_EMAIL\",\"password\":\"$CI_PASS\"}")"
+	-H "Content-Type: application/json" \
+	-d "{\"identifier\":\"$CI_PHONE\",\"password\":\"$CI_PASS\"}")"
 
 CI_TOKEN="$(echo "$login_response" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)"
 CI_CAMPAIGN="$(echo "$login_response" | python3 -c "import sys,json; cs=json.load(sys.stdin).get('campaigns',[]); print(cs[0]['id'] if cs else '')" 2>/dev/null || true)"
 
 if [ -z "$CI_TOKEN" ]; then
-  echo "[smoke] WARNING: login failed, response: $login_response"
+	echo "[smoke] WARNING: login failed, response: $login_response"
 fi
 
 # Forms test: if user has a campaign, test with auth; otherwise test form-submissions directly
 if [ -n "$CI_TOKEN" ] && [ -n "$CI_CAMPAIGN" ]; then
-  echo "[smoke] testing forms with auth (campaign: $CI_CAMPAIGN)"
-  AUTH_HEADERS="-H \"Authorization: Bearer $CI_TOKEN\" -H \"x-campaign-id: $CI_CAMPAIGN\""
+	echo "[smoke] testing forms with auth (campaign: $CI_CAMPAIGN)"
+	AUTH_HEADERS="-H \"Authorization: Bearer $CI_TOKEN\" -H \"x-campaign-id: $CI_CAMPAIGN\""
 
-  client_id="ci-$(date +%s)"
-  payload="{\"nombre\":\"CI Test\",\"telefono\":\"999000000\",\"fecha\":\"2026-02-14T20:10:00.000Z\",\"x\":279854,\"y\":8661420,\"zona\":\"18S\",\"candidate\":\"Test\",\"encuestador\":\"CI\",\"encuestador_id\":\"ci-device\",\"candidato_preferido\":\"Test\",\"client_id\":\"${client_id}\"}"
+	client_id="ci-$(date +%s)"
+	payload="{\"nombre\":\"CI Test\",\"telefono\":\"999000000\",\"fecha\":\"2026-02-14T20:10:00.000Z\",\"x\":279854,\"y\":8661420,\"zona\":\"18S\",\"candidate\":\"Test\",\"encuestador\":\"CI\",\"encuestador_id\":\"ci-device\",\"candidato_preferido\":\"Test\",\"client_id\":\"${client_id}\"}"
 
-  first_response="$(curl -fsS -H "Content-Type: application/json" -H "Authorization: Bearer $CI_TOKEN" -H "x-campaign-id: $CI_CAMPAIGN" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
-  second_response="$(curl -fsS -H "Content-Type: application/json" -H "Authorization: Bearer $CI_TOKEN" -H "x-campaign-id: $CI_CAMPAIGN" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
-  third_response="$(curl -fsS -H "Content-Type: application/json" -H "Authorization: Bearer $CI_TOKEN" -H "x-campaign-id: $CI_CAMPAIGN" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
+	first_response="$(curl -fsS -H "Content-Type: application/json" -H "Authorization: Bearer $CI_TOKEN" -H "x-campaign-id: $CI_CAMPAIGN" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
+	second_response="$(curl -fsS -H "Content-Type: application/json" -H "Authorization: Bearer $CI_TOKEN" -H "x-campaign-id: $CI_CAMPAIGN" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
+	third_response="$(curl -fsS -H "Content-Type: application/json" -H "Authorization: Bearer $CI_TOKEN" -H "x-campaign-id: $CI_CAMPAIGN" -X POST "http://127.0.0.1/api/forms" --data "$payload")"
 
-  python3 - "$first_response" "$second_response" "$third_response" <<'PY'
+	python3 - "$first_response" "$second_response" "$third_response" <<'PY'
 import json
 import sys
 
@@ -176,8 +178,8 @@ if third.get("deduped", 0) < 1:
     raise SystemExit("dedupe not working on third retry")
 PY
 else
-  echo "[smoke] CI user has no campaign — skipping authenticated forms test"
-  echo "[smoke] testing form-submissions with auth only (no campaign required for POST)"
+	echo "[smoke] CI user has no campaign — skipping authenticated forms test"
+	echo "[smoke] testing form-submissions with auth only (no campaign required for POST)"
 fi
 
 agent_payload='{"agent_id":"ci-agent-001","ts":"2026-02-14T20:10:01.000Z","lat":-12.0464,"lng":-77.0428,"accuracy":9,"seq":1}'
@@ -188,11 +190,11 @@ tracking_third="$(curl -fsS -H "Content-Type: application/json" -H "x-agent-toke
 # agents/live requires JWT auth; agents/health is public
 HAS_AUTH="false"
 if [ -n "$CI_TOKEN" ]; then
-  agents_live="$(curl -fsS -H "Authorization: Bearer $CI_TOKEN" "http://127.0.0.1/api/agents/live")"
-  HAS_AUTH="true"
+	agents_live="$(curl -fsS -H "Authorization: Bearer $CI_TOKEN" "http://127.0.0.1/api/agents/live")"
+	HAS_AUTH="true"
 else
-  agents_live='{"ok":true,"agents":[],"ts":"skip"}'
-  echo "[smoke] WARNING: no CI_TOKEN — agents/live check will be relaxed"
+	agents_live='{"ok":true,"agents":[],"ts":"skip"}'
+	echo "[smoke] WARNING: no CI_TOKEN — agents/live check will be relaxed"
 fi
 agents_health="$(curl -fsS "http://127.0.0.1/api/agents/health")"
 
@@ -238,7 +240,7 @@ PY
 
 # SSE test requires JWT auth for /api/agents/stream
 if [ -n "$CI_TOKEN" ]; then
-  python3 - "$CI_TOKEN" <<'PY'
+	python3 - "$CI_TOKEN" <<'PY'
 import json
 import os
 import sys
@@ -300,7 +302,7 @@ if "event: location.update" in events:
     raise SystemExit("legacy location.update still emitted")
 PY
 else
-  echo "[smoke] skipping SSE test (no CI_TOKEN available)"
+	echo "[smoke] skipping SSE test (no CI_TOKEN available)"
 fi
 
 echo "[smoke] backend contract ok"
