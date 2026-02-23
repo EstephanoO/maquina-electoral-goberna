@@ -380,7 +380,7 @@ export default function OnboardingPage() {
   // If user already has campaigns, skip onboarding
   useEffect(() => {
     if (!isLoading && isAuthenticated && campaigns.length > 0) {
-      router.replace("/");
+      router.replace("/home");
     }
   }, [isLoading, isAuthenticated, campaigns, router]);
 

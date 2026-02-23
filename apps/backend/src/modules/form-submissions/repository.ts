@@ -112,6 +112,15 @@ export async function getByCampaign(
   };
 }
 
+/** Lightweight lookup to verify meet exists and get its campaign_id */
+export async function getMeetCampaignId(meetId: string): Promise<{ campaign_id: string } | null> {
+  const { rows } = await pool.query<{ campaign_id: string }>(
+    `SELECT campaign_id FROM meets WHERE id = $1`,
+    [meetId],
+  );
+  return rows[0] ?? null;
+}
+
 export async function getByMeet(meetId: string, limit = 100): Promise<FormSubmissionRow[]> {
   const { rows } = await pool.query<FormSubmissionRow>(
     `SELECT id, form_definition_id, campaign_id, meet_id, meet_group_id,

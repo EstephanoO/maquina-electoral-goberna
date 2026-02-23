@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { ServerResponse } from "node:http";
+import { z } from "zod";
 
 import type { AppEnv } from "../../config/env";
 import type { AuthenticatedRequest } from "../../infra/auth";
@@ -7,6 +8,14 @@ import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
 import { pool } from "../../db";
 import * as repo from "./repository";
+
+// ── Schemas ─────────────────────────────────────────────────────────
+
+const updateNotesSchema = z.object({
+  local_votacion: z.string().max(500).optional().default(""),
+  domicilio: z.string().max(500).optional().default(""),
+  comentarios: z.string().max(2000).optional().default(""),
+});
 
 // ── SSE helpers ─────────────────────────────────────────────────────
 
@@ -325,18 +334,15 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
         const requestId = String(request.id);
         const authed = request as AuthenticatedRequest;
         const { id } = request.params as { id: string };
-        const body = request.body as {
-          local_votacion?: string;
-          domicilio?: string;
-          comentarios?: string;
-        };
+
+        const parsed = updateNotesSchema.safeParse(request.body);
+        if (!parsed.success) {
+          const msg = parsed.error.issues.map((e) => e.message).join("; ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", msg));
+        }
 
         try {
-          const notes = {
-            local_votacion: body.local_votacion ?? "",
-            domicilio: body.domicilio ?? "",
-            comentarios: body.comentarios ?? "",
-          };
+          const notes = parsed.data;
 
           const result = await repo.updateNotes(id, authed.userId, notes);
           if (!result) {

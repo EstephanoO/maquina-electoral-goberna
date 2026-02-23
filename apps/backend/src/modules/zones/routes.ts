@@ -105,6 +105,7 @@ export function buildZonesRoutes(_env: AppEnv): FastifyPluginAsync {
       { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
         const { id } = request.params as { id: string };
 
         const parsed = updateZoneSchema.safeParse(request.body);
@@ -114,6 +115,15 @@ export function buildZonesRoutes(_env: AppEnv): FastifyPluginAsync {
         }
 
         try {
+          // Verify zone exists and user has access to its campaign
+          const existing = await repo.findById(id);
+          if (!existing) {
+            return reply.code(404).send(errorPayload(requestId, "ZONE_NOT_FOUND", "zona no encontrada"));
+          }
+          if (authed.userRole !== "admin" && !authed.campaignIds.includes(existing.campaign_id)) {
+            return reply.code(403).send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
+          }
+
           const zone = await repo.update(id, parsed.data);
           if (!zone) {
             return reply.code(404).send(errorPayload(requestId, "ZONE_NOT_FOUND", "zona no encontrada"));
@@ -132,9 +142,19 @@ export function buildZonesRoutes(_env: AppEnv): FastifyPluginAsync {
       { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
         const { id } = request.params as { id: string };
 
         try {
+          // Verify zone exists and user has access to its campaign
+          const existing = await repo.findById(id);
+          if (!existing) {
+            return reply.code(404).send(errorPayload(requestId, "ZONE_NOT_FOUND", "zona no encontrada"));
+          }
+          if (authed.userRole !== "admin" && !authed.campaignIds.includes(existing.campaign_id)) {
+            return reply.code(403).send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
+          }
+
           const deleted = await repo.remove(id);
           if (!deleted) {
             return reply.code(404).send(errorPayload(requestId, "ZONE_NOT_FOUND", "zona no encontrada"));

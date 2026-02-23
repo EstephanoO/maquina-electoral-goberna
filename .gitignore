@@ -23,9 +23,30 @@ logs/
 
 # ── Agent/IDE tooling ───────────────────────────────────────────────
 .agents/
+.agent/
 .claude/
+.cline/
+.commandcode/
+.continue/
+.crush/
 .cursor/
+.factory/
+.goose/
 .idea/
+.kilocode/
+.kiro/
+.mcpjam/
+.neovate/
+.openhands/
+.pi/
+.qoder/
+.qwen/
+.roo/
+.testsprite/
+.trae/
+.windsurf/
+.zencoder/
+skills/
 *.swp
 *.swo
 *~

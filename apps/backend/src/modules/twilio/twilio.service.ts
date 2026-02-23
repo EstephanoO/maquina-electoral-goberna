@@ -189,7 +189,11 @@ export async function handleTwilioWebhook(params: {
 // Uses the auth token from the campaign that owns the incoming number.
 // For the webhook we don't know the campaign yet (inbound correlates later),
 // so we validate against ANY configured campaign that has a matching number.
-// For simplicity in MVP: if TWILIO_ENCRYPTION_KEY is absent, skip validation.
+//
+// SECURITY: All failure paths return false (reject). Only an explicit
+// successful Twilio.validateRequest returns true. In dev environments
+// without TWILIO_ENCRYPTION_KEY, webhooks are rejected — configure the
+// key or test with Twilio's request validator manually.
 
 export async function validateTwilioWebhookSignature(
   signature: string,
@@ -197,10 +201,14 @@ export async function validateTwilioWebhookSignature(
   params: Record<string, string>,
 ): Promise<boolean> {
   const encryptionKey = process.env.TWILIO_ENCRYPTION_KEY?.trim() ?? "";
-  if (!encryptionKey) return true; // Dev mode: skip
+  if (!encryptionKey) return false; // No encryption key → reject webhook
+
+  if (!signature) return false; // No signature header → reject
 
   // Find the auth token for the campaign whose whatsapp_from matches the To param
   const toNumber = params.To ?? "";
+  if (!toNumber) return false; // No To param → reject
+
   const res = await pool.query<{ config: Record<string, unknown> }>(
     `SELECT config FROM campaigns
      WHERE config->'twilio'->>'whatsapp_from' = $1
@@ -209,10 +217,10 @@ export async function validateTwilioWebhookSignature(
   );
 
   const row = res.rows[0];
-  if (!row) return true; // Can't find campaign — skip validation in MVP
+  if (!row) return false; // No campaign with this number → reject
 
   const encryptedToken = (row.config?.twilio as { auth_token?: string })?.auth_token ?? "";
-  if (!encryptedToken) return true;
+  if (!encryptedToken) return false; // No auth token configured → reject
 
   try {
     const authToken = decrypt(encryptedToken);

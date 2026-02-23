@@ -51,7 +51,7 @@ export default function CandidatosPage() {
   // Redirect non-admin users
   useEffect(() => {
     if (user && !isAdmin) {
-      router.replace("/");
+      router.replace("/home");
     }
   }, [user, isAdmin, router]);
 

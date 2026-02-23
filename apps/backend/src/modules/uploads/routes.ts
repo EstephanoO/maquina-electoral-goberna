@@ -24,6 +24,23 @@ const MIME_TO_EXT: Record<string, string> = {
   "image/gif": ".gif",
 };
 
+// ── Magic bytes validation ──────────────────────────────────────────
+// Verify file content matches its declared Content-Type to prevent
+// disguised uploads (e.g. a .exe renamed to .jpg).
+const MAGIC_BYTES: Array<{ mime: string; bytes: number[] }> = [
+  { mime: "image/jpeg", bytes: [0xFF, 0xD8, 0xFF] },
+  { mime: "image/png", bytes: [0x89, 0x50, 0x4E, 0x47] },
+  { mime: "image/gif", bytes: [0x47, 0x49, 0x46, 0x38] },
+  { mime: "image/webp", bytes: [0x52, 0x49, 0x46, 0x46] }, // "RIFF" prefix
+];
+
+function validateMagicBytes(buffer: Buffer, declaredMime: string): boolean {
+  const entry = MAGIC_BYTES.find((m) => m.mime === declaredMime);
+  if (!entry) return false; // Unknown MIME — reject
+  if (buffer.length < entry.bytes.length) return false;
+  return entry.bytes.every((byte, i) => buffer[i] === byte);
+}
+
 export function buildUploadsRoutes(env: AppEnv): FastifyPluginAsync {
   return async (app) => {
     const uploadsDir = env.uploadsDir;
@@ -73,18 +90,35 @@ export function buildUploadsRoutes(env: AppEnv): FastifyPluginAsync {
             );
           }
 
+          // Validate magic bytes match declared Content-Type
+          if (!validateMagicBytes(buffer, contentType)) {
+            return reply.code(400).send(
+              errorPayload(requestId, "INVALID_FILE_CONTENT", "contenido del archivo no coincide con el tipo declarado"),
+            );
+          }
+
           // Generate unique filename
           const ext = MIME_TO_EXT[contentType] ?? extname("file.bin");
           const slug = (request.headers["x-upload-slug"] as string | undefined)?.replace(/[^a-z0-9-]/gi, "-").toLowerCase() ?? "";
           const prefix = slug ? `${slug}-` : "";
           const filename = `${prefix}${randomUUID()}${ext}`;
 
-          // Optionally organize by subfolder
+          // Optionally organize by subfolder (sanitized to prevent path traversal)
           const subfolder = (request.headers["x-upload-folder"] as string | undefined)?.replace(/[^a-z0-9-]/gi, "-").toLowerCase() ?? "";
           const targetDir = subfolder ? join(uploadsDir, subfolder) : uploadsDir;
           await mkdir(targetDir, { recursive: true });
 
           const filePath = join(targetDir, filename);
+
+          // Path traversal guard: ensure resolved path stays within uploadsDir
+          const { resolve } = await import("node:path");
+          const resolvedPath = resolve(filePath);
+          const resolvedUploadsDir = resolve(uploadsDir);
+          if (!resolvedPath.startsWith(resolvedUploadsDir)) {
+            return reply.code(400).send(
+              errorPayload(requestId, "INVALID_PATH", "ruta de archivo invalida"),
+            );
+          }
           await writeFile(filePath, buffer);
 
           // Return the public URL path

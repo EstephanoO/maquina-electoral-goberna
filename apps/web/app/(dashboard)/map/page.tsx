@@ -37,6 +37,28 @@ const MapView = dynamic(() => import("./_map-view"), {
   ),
 });
 
+/**
+ * @deprecated This page is a legacy debug/diagnostic map. The production
+ * tracking view is at /candidatos/[slug]/tierra. This page lacks JWT auth
+ * for SSE and will be removed in a future release.
+ */
 export default function MapPage() {
-  return <MapView />;
+  return (
+    <div>
+      <div
+        style={{
+          padding: "8px 16px",
+          background: "var(--goberna-gold-100, #fef3c7)",
+          color: "var(--goberna-gold-800, #92400e)",
+          fontSize: 13,
+          fontWeight: 500,
+          textAlign: "center",
+          borderBottom: "1px solid var(--goberna-gold-200, #fde68a)",
+        }}
+      >
+        Vista legacy — usa <a href="/candidatos" style={{ textDecoration: "underline", fontWeight: 600 }}>Tierra</a> para tracking en tiempo real
+      </div>
+      <MapView />
+    </div>
+  );
 }

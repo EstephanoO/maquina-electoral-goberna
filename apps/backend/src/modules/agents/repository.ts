@@ -147,8 +147,11 @@ export async function upsertLatestAgentLocationsBatch(states: AgentLiveState[]):
 
   const row = result.rows[0] ?? { attempted: 0, accepted: 0 };
 
-  // Also insert into agent_location_history for GPS track retention
-  if (states.length > 0) {
+  // Also insert into agent_location_history for GPS track retention.
+  // Only write history when the upsert actually accepted new rows —
+  // if everything was deduped (accepted=0) there's no new data to record.
+  const accepted = Number(row.accepted ?? 0);
+  if (accepted > 0) {
     try {
       await insertLocationHistory(states);
     } catch {

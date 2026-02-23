@@ -33,6 +33,15 @@ export async function create(input: CreateOrgNodeInput): Promise<OrgNodeRow> {
   return rows[0]!;
 }
 
+export async function findById(id: string): Promise<OrgNodeRow | null> {
+  const { rows } = await pool.query<OrgNodeRow>(
+    `SELECT id, campaign_id, user_id, parent_user_id, role, zone_id, status, created_at, updated_at
+     FROM org_hierarchy WHERE id = $1`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
 export async function findByUserAndCampaign(userId: string, campaignId: string): Promise<OrgNodeRow | null> {
   const { rows } = await pool.query<OrgNodeRow>(
     `SELECT id, campaign_id, user_id, parent_user_id, role, zone_id, status, created_at, updated_at

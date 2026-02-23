@@ -19,7 +19,7 @@
 import * as Location from 'expo-location';
 import { AppState, type AppStateStatus } from 'react-native';
 
-import { queueLocation, startAutoSync, stopAutoSync } from '../offline-queue';
+import { queueLocation, startAutoSync, stopAutoSync, forceSyncNow } from '../offline-queue';
 import { getActiveCampaignId, getStoredUser } from '../auth-store';
 import { API_BASE, AGENT_INGEST_TOKEN } from '../api';
 import {
@@ -42,8 +42,9 @@ try {
 
 // ─── Constants ────────────────────────────────────────────────
 
+// Mutable so the server can push config changes via WebSocket (M5)
 const FOREGROUND_OPTIONS: Location.LocationOptions = {
-  accuracy: Location.Accuracy.BestForNavigation, // GPS forced on iOS (kCLLocationAccuracyBest)
+  accuracy: Location.Accuracy.High, // Good accuracy without the battery cost of BestForNavigation
   timeInterval: 15_000, // 15 seconds (Android only; iOS ignores this)
   distanceInterval: 5,  // 5 meters — more responsive to movement
 };
@@ -135,22 +136,36 @@ function handleAppStateChange(nextAppState: AppStateStatus): void {
 
 // ─── Location Processing ──────────────────────────────────────
 
+// ─── Battery Cache ────────────────────────────────────────────────
+// Battery level changes slowly — cache for 60s to avoid per-location async calls.
+let cachedBatteryLevel: number | null = null;
+let batteryLevelCachedAtMs = 0;
+const BATTERY_CACHE_TTL_MS = 60_000;
+
+async function getCachedBatteryLevel(): Promise<number | null> {
+  if (!Battery) return null;
+  const now = Date.now();
+  if (cachedBatteryLevel != null && now - batteryLevelCachedAtMs < BATTERY_CACHE_TTL_MS) {
+    return cachedBatteryLevel;
+  }
+  try {
+    cachedBatteryLevel = await Battery.getBatteryLevelAsync();
+    batteryLevelCachedAtMs = now;
+  } catch {
+    // Battery API may fail silently
+  }
+  return cachedBatteryLevel;
+}
+
 async function processLocation(location: Location.LocationObject): Promise<void> {
   if (!currentAgentId) {
     console.log('[Tracking] No agent ID set, skipping location');
     return;
   }
 
-  const campaignId = await getActiveCampaignId();
-  let batteryLevel: number | null = null;
-
-  try {
-    if (Battery) {
-      batteryLevel = await Battery.getBatteryLevelAsync();
-    }
-  } catch {
-    // Battery API may fail silently
-  }
+  // Use pre-cached campaign ID (set at tracking start, avoids SecureStore read per location)
+  const campaignId = cachedCampaignId;
+  const batteryLevel = await getCachedBatteryLevel();
 
   const payload: LocationPayload & { agent_id: string } = {
     agent_id: currentAgentId,
@@ -273,7 +288,7 @@ export async function startForegroundTracking(
     // Get initial location immediately
     try {
       const initialLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.BestForNavigation,
+        accuracy: Location.Accuracy.High,
       });
       await processLocation(initialLocation);
     } catch (err) {
@@ -293,7 +308,36 @@ export async function startForegroundTracking(
     startAutoSync();
 
     // Connect WebSocket for real-time delivery (non-blocking, best-effort)
-    wsConnect();
+    // Wire server config callback to dynamically update GPS watcher options
+    wsConnect({
+      onConfig: (config) => {
+        console.log('[Tracking] Server config received:', config);
+        // Apply server-pushed GPS configuration changes.
+        // If interval or distance changed, restart the watcher with new options.
+        let changed = false;
+        if (config.interval_ms != null && config.interval_ms !== FOREGROUND_OPTIONS.timeInterval) {
+          FOREGROUND_OPTIONS.timeInterval = config.interval_ms;
+          changed = true;
+        }
+        if (config.distance_m != null && config.distance_m !== FOREGROUND_OPTIONS.distanceInterval) {
+          FOREGROUND_OPTIONS.distanceInterval = config.distance_m;
+          changed = true;
+        }
+        // Restart GPS watcher with new config if it changed and we're actively tracking
+        if (changed && foregroundSubscription && currentAgentId) {
+          foregroundSubscription.remove();
+          foregroundSubscription = null;
+          Location.watchPositionAsync(FOREGROUND_OPTIONS, async (location) => {
+            await processLocation(location);
+          }).then((sub) => {
+            foregroundSubscription = sub;
+            console.log('[Tracking] GPS watcher restarted with server config');
+          }).catch((err) => {
+            console.warn('[Tracking] Failed to restart GPS with server config:', err);
+          });
+        }
+      },
+    });
 
     // Listen for app state changes (foreground/background)
     if (!appStateSubscription) {
@@ -339,8 +383,10 @@ export async function stopTracking(): Promise<void> {
     appStateSubscription = null;
   }
 
-  // Note: We keep auto-sync running to flush any pending locations
-  // It will be stopped when app terminates or user logs out
+  // Trigger one last sync to flush any pending locations, then stop the interval.
+  // forceSyncNow is best-effort — if offline, items stay in SQLite for next session.
+  forceSyncNow().catch(() => { /* best-effort */ });
+  stopAutoSync();
 
   currentAgentId = null;
   currentAgentName = null;

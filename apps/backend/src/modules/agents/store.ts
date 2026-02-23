@@ -9,6 +9,11 @@ export class AgentsStore {
     this.env = env;
   }
 
+  /** Total entries in the map (includes potentially stale agents). */
+  get size(): number {
+    return this.agents.size;
+  }
+
   get(agentId: string): AgentLiveState | undefined {
     return this.agents.get(agentId);
   }
@@ -41,6 +46,18 @@ export class AgentsStore {
     }
 
     return removed;
+  }
+
+  /** Count of live (non-stale) agents without allocating an array. */
+  countLive(): number {
+    const now = Date.now();
+    let count = 0;
+    for (const state of this.agents.values()) {
+      if (now - state.lastSeenAtMs <= this.env.agentStaleAfterMs) {
+        count++;
+      }
+    }
+    return count;
   }
 
   listLive(): AgentLocationInput[] {

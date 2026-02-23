@@ -215,7 +215,7 @@ function RegisterPageInner() {
   // Already logged in → go to dashboard
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace("/");
+      router.replace("/home");
     }
   }, [isLoading, isAuthenticated, router]);
 

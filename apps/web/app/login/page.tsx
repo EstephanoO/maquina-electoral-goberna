@@ -194,7 +194,7 @@ export default function LoginPage() {
   // Redirect if already authenticated
   useEffect(() => {
     if (!isLoading && isAuthenticated) {
-      router.replace("/");
+      router.replace("/home");
     }
   }, [isLoading, isAuthenticated, router]);
 
@@ -216,7 +216,7 @@ export default function LoginPage() {
     try {
       const result = await login(trimmedEmail, password);
       if (result.ok) {
-        router.replace("/");
+        router.replace("/home");
       } else {
         setError(result.error ?? "Credenciales incorrectas.");
       }

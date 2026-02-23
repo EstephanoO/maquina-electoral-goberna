@@ -398,7 +398,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
   const isNavActive = useCallback(
     (item: NavItem, href: string): boolean => {
       if (pathname === href) return true;
-      if (href === "/") return false;
+      if (href === "/home") return false;
       // Dynamic href → prefix match
       if (typeof item.href === "function") {
         return pathname.startsWith(href);

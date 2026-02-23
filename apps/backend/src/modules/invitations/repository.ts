@@ -38,6 +38,15 @@ export async function create(input: CreateInvitationInput, createdBy: string): P
   return rows[0]!;
 }
 
+export async function findById(id: string): Promise<InvitationRow | null> {
+  const { rows } = await pool.query<InvitationRow>(
+    `SELECT id, campaign_id, code, role, parent_user_id, zone_id, created_by, max_uses, used_count, expires_at, created_at
+     FROM invitations WHERE id = $1`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
 export async function findByCode(code: string): Promise<InvitationWithCampaign | null> {
   const { rows } = await pool.query<InvitationWithCampaign>(
     `SELECT i.id, i.campaign_id, i.code, i.role, i.parent_user_id, i.zone_id,

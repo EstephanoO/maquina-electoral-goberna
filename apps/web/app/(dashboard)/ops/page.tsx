@@ -485,7 +485,7 @@ export default function OpsDashboardPage() {
             <h1 style={{ margin: 0, fontSize: "30px", letterSpacing: "0.4px" }}>Ops Dashboard</h1>
             <p style={{ margin: "8px 0 0", color: "#334155" }}>Tracking Expo + Backend + cola write-behind en una sola vista.</p>
           </div>
-          <a href="/" style={{ alignSelf: "center", textDecoration: "none", color: "#0f172a", border: "1px solid #94a3b8", borderRadius: "10px", padding: "8px 12px", background: "#ffffff" }}>
+          <a href="/home" style={{ alignSelf: "center", textDecoration: "none", color: "#0f172a", border: "1px solid #94a3b8", borderRadius: "10px", padding: "8px 12px", background: "#ffffff" }}>
             Volver al mapa
           </a>
         </header>

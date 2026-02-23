@@ -151,9 +151,19 @@ export function buildFormSubmissionsRoutes(_env: AppEnv): FastifyPluginAsync {
       { preHandler: [app.authenticate] },
       async (request, reply) => {
         const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
         const { meetId } = request.params as { meetId: string };
 
         try {
+          // Verify the meet exists and user has access to its campaign
+          const meet = await repo.getMeetCampaignId(meetId);
+          if (!meet) {
+            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "meet no encontrado"));
+          }
+          if (authed.userRole !== "admin" && !authed.campaignIds.includes(meet.campaign_id)) {
+            return reply.code(403).send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
+          }
+
           const submissions = await repo.getByMeet(meetId);
 
           return reply.code(200).send({

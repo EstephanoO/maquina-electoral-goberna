@@ -171,11 +171,13 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
 
     app.post(
       "/api/forms",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
       async (request, reply) => enqueueForms(request, reply),
     );
 
     app.post(
       "/api/forms/batch",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
       async (request, reply) => enqueueForms(request, reply),
     );
 

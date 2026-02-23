@@ -11,6 +11,13 @@ import type { CampaignConfig } from "./repository";
 import { createCampaignSchema, updateCampaignSchema } from "./schemas";
 import { createDefaultForCampaign } from "../form-definitions/repository";
 
+// Twilio config schema for PUT /api/campaigns/:campaignId/integrations/twilio
+const twilioConfigSchema = z.object({
+  account_sid: z.string().min(1, "account_sid es requerido").max(200),
+  auth_token: z.string().max(200).optional(),
+  whatsapp_from: z.string().min(1, "whatsapp_from es requerido").max(50),
+});
+
 // ── Event log (in-memory circular buffer) ─────────────────────────────
 type CampaignEvent = {
   type: "form_submitted" | "agent_connected" | "agent_disconnected";
@@ -559,19 +566,13 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
         const requestId = String(request.id);
         const { campaignId } = request.params as { campaignId: string };
 
-        const body = request.body as {
-          account_sid?: string;
-          auth_token?: string;
-          whatsapp_from?: string;
-        };
+        const parsed = twilioConfigSchema.safeParse(request.body);
+        if (!parsed.success) {
+          const msg = parsed.error.issues.map((e) => e.message).join("; ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", msg));
+        }
 
-        // Validate required fields (except auth_token which can be omitted to preserve)
-        if (!body.account_sid?.trim()) {
-          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "account_sid es requerido"));
-        }
-        if (!body.whatsapp_from?.trim()) {
-          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "whatsapp_from es requerido"));
-        }
+        const body = parsed.data;
 
         try {
           const campaign = await repo.findById(campaignId);

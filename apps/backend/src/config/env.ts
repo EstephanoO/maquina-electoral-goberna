@@ -54,6 +54,11 @@ export type AppEnv = {
   rateLimitAuthPerMinute: number;
   refreshTokenCleanupIntervalMs: number;
   locationHistoryRetentionDays: number;
+  // Default tracking config pushed to mobile clients via WS welcome message
+  trackingDefaultIntervalMs: number;
+  trackingDefaultDistanceM: number;
+  // Health check: max acceptable stream lag before health endpoint degrades
+  trackingHealthMaxLag: number;
   // Twilio — clave maestra para cifrar auth_tokens en DB (obligatoria si se usa Twilio)
   twilioEncryptionKey: string;
 };
@@ -165,6 +170,9 @@ export function getEnv(): AppEnv {
     rateLimitAuthPerMinute: toNumber(process.env.RATE_LIMIT_AUTH_PER_MINUTE, 10),
     refreshTokenCleanupIntervalMs: toNumber(process.env.REFRESH_TOKEN_CLEANUP_INTERVAL_MS, 3600000),
     locationHistoryRetentionDays: toNumber(process.env.LOCATION_HISTORY_RETENTION_DAYS, 7),
+    trackingDefaultIntervalMs: toNumber(process.env.TRACKING_DEFAULT_INTERVAL_MS, 15000),
+    trackingDefaultDistanceM: toNumber(process.env.TRACKING_DEFAULT_DISTANCE_M, 5),
+    trackingHealthMaxLag: toNumber(process.env.TRACKING_HEALTH_MAX_LAG, 1000),
     twilioEncryptionKey: (process.env.TWILIO_ENCRYPTION_KEY ?? "").trim(),
   };
 }

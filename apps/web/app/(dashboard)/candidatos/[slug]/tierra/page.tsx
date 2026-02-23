@@ -52,8 +52,19 @@ export default function TierraPage() {
   // ─── SSE: live agent locations ───
   // Buffer rapid SSE batches (~120ms) and flush on 250ms debounce
   // to avoid re-computing enrichedAgents on every micro-batch.
+  //
+  // Optimization (R10): Keep a persistent Map<agent_id, AgentLocation> as source
+  // of truth to avoid rebuilding the Map from the array on every flush.
   const [locations, setLocations] = useState<AgentLocation[]>([]);
-  useEffect(() => { if (initialLocations?.length) setLocations(initialLocations); }, [initialLocations]);
+  const locationsMapRef = useRef<Map<string, AgentLocation>>(new Map());
+  useEffect(() => {
+    if (initialLocations?.length) {
+      const map = new Map<string, AgentLocation>();
+      for (const loc of initialLocations) map.set(loc.agent_id, loc);
+      locationsMapRef.current = map;
+      setLocations(initialLocations);
+    }
+  }, [initialLocations]);
   const ssePendingRef = useRef<Map<string, AgentLocation> | null>(null);
   const sseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleSSEUpdate = useCallback((incoming: AgentLocation[]) => {
@@ -77,11 +88,10 @@ export default function TierraPage() {
         return changed ? next : prev;
       });
 
-      setLocations((prev) => {
-        const map = new Map(prev.map((l) => [l.agent_id, l]));
-        for (const [id, loc] of pending) map.set(id, loc);
-        return Array.from(map.values());
-      });
+      // Merge into persistent Map (avoids rebuilding Map from array each flush)
+      const map = locationsMapRef.current;
+      for (const [id, loc] of pending) map.set(id, loc);
+      setLocations(Array.from(map.values()));
     }, 250);
   }, []);
   useEffect(() => () => { if (sseTimerRef.current) clearTimeout(sseTimerRef.current); }, []);
@@ -91,6 +101,7 @@ export default function TierraPage() {
   const [backgroundAgentIds, setBackgroundAgentIds] = useState<Set<string>>(new Set());
 
   const handleAgentOffline = useCallback((payload: { agent_id: string; agent_name?: string; ts: string }) => {
+    locationsMapRef.current.delete(payload.agent_id);
     setLocations((prev) => prev.filter((l) => l.agent_id !== payload.agent_id));
     const name = payload.agent_name ?? `Agente ${payload.agent_id.slice(0, 8)}`;
     setSseEvents((prev) => [{

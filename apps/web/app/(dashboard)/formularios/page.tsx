@@ -159,7 +159,7 @@ export default function FormulariosPage() {
       return;
     }
     if (user && user.role !== "admin") {
-      router.push("/");
+      router.push("/home");
       return;
     }
   }, [user, authLoading, router]);

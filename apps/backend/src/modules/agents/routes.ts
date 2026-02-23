@@ -149,7 +149,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       const queueStats = queue.getStats();
       metricsRegistry.setGauge("tracking_queue_depth", queueStats.depth);
       metricsRegistry.setGauge("tracking_sse_clients", clients.size);
-      metricsRegistry.setGauge("tracking_online_agents", store.listLive().length);
+      metricsRegistry.setGauge("tracking_online_agents", store.countLive());
       if (queueStats.lastFlushAtMs) {
         metricsRegistry.setGauge("tracking_last_flush_age_ms", Date.now() - queueStats.lastFlushAtMs);
       }
@@ -160,6 +160,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       clearInterval(batchFlushTimer);
       clearInterval(heartbeatTimer);
       clearInterval(staleSweepTimer);
+      clearInterval(auxMapCleanupTimer);
       queue.stop();
       await queue.drain();
       for (const client of clients.values()) {
@@ -209,18 +210,28 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       reply.header("Cache-Control", "no-store");
 
       const now = Date.now();
-      const onlineAgents = store.listLive().length;
+      const onlineAgents = store.countLive();
       const queueStats = queue.getStats();
 
+      // Degrade health when queue lag exceeds threshold (stuck consumer, Redis issues, etc.)
+      const lagDegraded = queueStats.depth > env.trackingHealthMaxLag;
+      const healthy = !lagDegraded;
+
+      if (!healthy) {
+        reply.code(503);
+      }
+
       return {
-        ok: true,
+        ok: healthy,
         service: "agents-tracking",
         ts: new Date().toISOString(),
+        degraded: lagDegraded ? "queue_lag_exceeded" : null,
         online_agents: onlineAgents,
         sse_clients: clients.size,
         stale_after_ms: env.agentStaleAfterMs,
         heartbeat_ms: env.agentStreamHeartbeatMs,
         queue_depth: queueStats.depth,
+        queue_depth_max: env.trackingHealthMaxLag,
         queue_flushing: queueStats.flushing,
         last_flush_at: queueStats.lastFlushAtMs ? new Date(queueStats.lastFlushAtMs).toISOString() : null,
         last_flush_duration_ms: queueStats.lastFlushDurationMs,
@@ -411,6 +422,30 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
     // This prevents log spam when agents toggle between apps rapidly.
     const lastStatusByAgent = new Map<string, { status: string; ts: number }>();
     const STATUS_THROTTLE_MS = 30_000;
+
+    // Periodic cleanup of stale entries in auxiliary Maps to prevent slow memory leaks.
+    // Agents that haven't been seen for 24h are removed from previouslyOnlineAgents
+    // and lastStatusByAgent.
+    const STALE_MAP_CLEANUP_MS = 24 * 60 * 60 * 1000; // 24 hours
+    const auxMapCleanupTimer = setInterval(() => {
+      const now = Date.now();
+
+      // Clean previouslyOnlineAgents for agents no longer in the live store
+      for (const agentId of previouslyOnlineAgents.keys()) {
+        const liveAgent = store.get(agentId);
+        if (!liveAgent || now - liveAgent.lastSeenAtMs > STALE_MAP_CLEANUP_MS) {
+          previouslyOnlineAgents.delete(agentId);
+        }
+      }
+
+      // Clean lastStatusByAgent for entries older than 24h
+      for (const [agentId, entry] of lastStatusByAgent.entries()) {
+        if (now - entry.ts > STALE_MAP_CLEANUP_MS) {
+          lastStatusByAgent.delete(agentId);
+        }
+      }
+    }, 60 * 60 * 1000); // Run every hour
+    auxMapCleanupTimer.unref();
 
     app.post(
       "/api/agents/status",

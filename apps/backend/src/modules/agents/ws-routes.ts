@@ -193,11 +193,11 @@ export function buildAgentsWsRoutes(env: AppEnv, ctx: IngestContext): FastifyPlu
           lastPongMs = Date.now();
         });
 
-        // Send welcome with current config
+        // Send welcome with current config (values from env, not hardcoded)
         sendJson(socket, {
           type: "config",
-          interval_ms: 30_000,
-          distance_m: 10,
+          interval_ms: env.trackingDefaultIntervalMs,
+          distance_m: env.trackingDefaultDistanceM,
           server_ts: new Date().toISOString(),
         });
 
@@ -260,14 +260,24 @@ export function buildAgentsWsRoutes(env: AppEnv, ctx: IngestContext): FastifyPlu
               let deduped = 0;
               let failed = 0;
 
-              for (const loc of parsed.data.locations) {
-                try {
-                  const result = await ingestSingle(loc, ctx, app.log);
-                  if (result.accepted) accepted++;
-                  else if (result.deduped) deduped++;
-                  else failed++;
-                } catch {
-                  failed++;
+              // Process batch with bounded concurrency (up to 10 parallel Redis calls)
+              // instead of fully sequential to reduce total latency on large batches.
+              const CONCURRENCY = 10;
+              const locations = parsed.data.locations;
+
+              for (let i = 0; i < locations.length; i += CONCURRENCY) {
+                const chunk = locations.slice(i, i + CONCURRENCY);
+                const results = await Promise.allSettled(
+                  chunk.map((loc) => ingestSingle(loc, ctx, app.log)),
+                );
+                for (const result of results) {
+                  if (result.status === "fulfilled") {
+                    if (result.value.accepted) accepted++;
+                    else if (result.value.deduped) deduped++;
+                    else failed++;
+                  } else {
+                    failed++;
+                  }
                 }
               }
 

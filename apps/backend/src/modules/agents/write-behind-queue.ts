@@ -155,7 +155,8 @@ export class AgentsWriteBehindQueue {
       } catch (error) {
         metricsRegistry.incCounter("tracking_queue_flush_total", "error");
         this.logger.error({ err: error }, "tracking stream consume failed");
-        await sleep(1000);
+        // Jitter prevents thundering herd when multiple workers retry simultaneously
+        await sleep(1000 + Math.floor(Math.random() * 500));
       }
     }
   }

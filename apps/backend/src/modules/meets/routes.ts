@@ -161,6 +161,7 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
       { preHandler: [app.authenticate, authorize({ roles: ["brigadista_zonal"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
         const { id } = request.params as { id: string };
 
         const parsed = updateMeetSchema.safeParse(request.body);
@@ -170,6 +171,15 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
         }
 
         try {
+          // Verify meet exists and user has access to its campaign
+          const existing = await repo.findById(id);
+          if (!existing) {
+            return reply.code(404).send(errorPayload(requestId, "MEET_NOT_FOUND", "meet no encontrado"));
+          }
+          if (authed.userRole !== "admin" && !authed.campaignIds.includes(existing.campaign_id)) {
+            return reply.code(403).send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
+          }
+
           const meet = await repo.update(id, parsed.data);
           if (!meet) {
             return reply.code(404).send(errorPayload(requestId, "MEET_NOT_FOUND", "meet no encontrado"));
@@ -190,6 +200,7 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
       { preHandler: [app.authenticate, authorize({ roles: ["brigadista_zonal"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
         const { id } = request.params as { id: string };
 
         const parsed = updateMeetStatusSchema.safeParse(request.body);
@@ -202,6 +213,11 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
           const existing = await repo.findById(id);
           if (!existing) {
             return reply.code(404).send(errorPayload(requestId, "MEET_NOT_FOUND", "meet no encontrado"));
+          }
+
+          // Campaign scope check
+          if (authed.userRole !== "admin" && !authed.campaignIds.includes(existing.campaign_id)) {
+            return reply.code(403).send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
           }
 
           // Validate state transitions
@@ -237,12 +253,18 @@ export function buildMeetsRoutes(_env: AppEnv): FastifyPluginAsync {
       { preHandler: [app.authenticate, authorize({ roles: ["brigadista_zonal"] })] },
       async (request, reply) => {
         const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
         const { id } = request.params as { id: string };
 
         try {
           const meet = await repo.findById(id);
           if (!meet) {
             return reply.code(404).send(errorPayload(requestId, "MEET_NOT_FOUND", "meet no encontrado"));
+          }
+
+          // Campaign scope check
+          if (authed.userRole !== "admin" && !authed.campaignIds.includes(meet.campaign_id)) {
+            return reply.code(403).send(errorPayload(requestId, "AUTHZ_CAMPAIGN_DENIED", "sin acceso a esta campana"));
           }
 
           const deleted = await repo.remove(id);
