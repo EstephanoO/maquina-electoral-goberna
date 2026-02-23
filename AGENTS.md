@@ -1,7 +1,7 @@
 # AGENTS.md - Goberna Platform (Root Source of Truth)
 
 > **Regla #1:** Este archivo es la fuente de verdad absoluta del monorepo. Los AGENTS.md de cada app heredan de este. Si hay conflicto, este archivo prevalece.
-> **Ultima actualizacion:** 2026-02-20
+> **Ultima actualizacion:** 2026-02-23
 
 ---
 
@@ -14,8 +14,23 @@
 | Organizacion | Grupo Goberna |
 | Mercado | Peru (conectividad intermitente, campo operativo real) |
 | Diferenciador | Offline-first, mapas vectoriales, CRM/CMS integrado, multi-campana |
-| Equipo | 2 devs |
+| Equipo | EstephanoO (lead) + Maximoff19 (dev CMS) |
 | Prioridad | Operabilidad > Sofisticacion |
+
+### Equipo y Responsabilidades
+
+| Persona | GitHub | Rol | Area |
+|---------|--------|-----|------|
+| EstephanoO | `@EstephanoO` | Lead / Reviewer | Todo el sistema |
+| Maximoff19 | `@Maximoff19` | Developer | CMS + Twilio (`apps/backend/src/modules/cms/`, `twilio/`, `apps/web/app/(dashboard)/cms/`) |
+
+### Documentacion de Desarrollo
+
+| Archivo | Proposito |
+|---------|-----------|
+| `CONTRIBUTING.md` | Flujo GitHub Flow, convenciones, guia para ambos devs |
+| `ONBOARDING.md` | Setup rapido para nuevos integrantes |
+| `CMS_DEVELOPER_GUIDE.md` | Guia tecnica completa del modulo CMS + Twilio |
 
 ---
 
@@ -348,7 +363,64 @@ curl https://api.goberna.us/api/ready
 
 ---
 
-## 9. Principios de Arquitectura (No Negociables)
+## 9. Flujo de Desarrollo (GitHub Flow)
+
+### Ramas
+
+| Tipo | Patron | Proposito |
+|------|--------|-----------|
+| `main` | Protegida | Produccion. Nadie pushea directo. |
+| `feature/*` | Temporal | Nueva funcionalidad |
+| `hotfix/*` | Temporal | Fix urgente en produccion |
+
+### Proceso
+
+```
+1. Crear rama desde main:  git checkout -b feature/nombre-descriptivo
+2. Desarrollar + commits atomicos
+3. Push:  git push -u origin feature/nombre-descriptivo
+4. Crear PR en GitHub (usa template automatico)
+5. EstephanoO revisa y aprueba (CODEOWNERS)
+6. Squash merge a main
+7. CI despliega automaticamente
+```
+
+### Reglas
+
+- **Squash merge siempre** — main limpio, un commit por PR
+- **PR obligatorio** — sin push directo a main (convencion, GitHub Free no lo enforce)
+- **CODEOWNERS** — `@EstephanoO` auto-asignado como reviewer
+- **CI corre en cada PR** — type check backend, build web, gitleaks
+- **CI corre en push a main** — deploy automatico al VPS
+
+### CI/CD Pipeline (`.github/workflows/deploy.yml`)
+
+```
+PR abierto/actualizado:
+  → Type check backend (bunx tsc --noEmit)
+  → Build web (bun run build)
+  → Gitleaks (scan de secretos)
+  → Smoke test (health + register + login)
+
+Push a main:
+  → Mismos checks
+  → Deploy al VPS (SSH + docker compose)
+  → Verify (health + ready)
+```
+
+### Archivos de Configuracion
+
+| Archivo | Proposito |
+|---------|-----------|
+| `.github/workflows/deploy.yml` | Pipeline CI/CD completo |
+| `.github/CODEOWNERS` | Auto-assign reviewer |
+| `.github/pull_request_template.md` | Template de PR |
+| `CONTRIBUTING.md` | Guia detallada del flujo |
+| `ONBOARDING.md` | Setup rapido para nuevos devs |
+
+---
+
+## 10. Principios de Arquitectura (No Negociables)
 
 1. **Offline-first siempre.** Peru tiene conectividad intermitente.
 2. **Multi-tenant por campaign_id.** Todo aislado por campana.
@@ -359,7 +431,7 @@ curl https://api.goberna.us/api/ready
 
 ---
 
-## 10. Reglas de Herencia de AGENTS.md
+## 11. Reglas de Herencia de AGENTS.md
 
 Cada app tiene su propio `AGENTS.md` que:
 
@@ -389,7 +461,7 @@ Cada app tiene su propio `AGENTS.md` que:
 
 ---
 
-## 11. Definition of Done (Global)
+## 12. Definition of Done (Global)
 
 Cualquier cambio debe cumplir:
 
@@ -403,7 +475,7 @@ Cualquier cambio debe cumplir:
 
 ---
 
-## 12. Estado Actual Consolidado
+## 13. Estado Actual Consolidado
 
 > **IMPORTANTE:** Este estado manda sobre cualquier supuesto viejo en AGENTS.md locales.
 
@@ -417,7 +489,7 @@ Cualquier cambio debe cumplir:
 
 ---
 
-## 13. Reglas Operativas de Produccion
+## 14. Reglas Operativas de Produccion
 
 1. **Nunca** subir `.env` a git
 2. **Nunca** exponer PostgreSQL ni Redis a internet
@@ -427,7 +499,7 @@ Cualquier cambio debe cumplir:
 
 ---
 
-## 14. Anti-patterns a Evitar
+## 15. Anti-patterns a Evitar
 
 - Kubernetes (overkill para 2 devs)
 - Exponer DB/Redis publicamente
@@ -438,7 +510,7 @@ Cualquier cambio debe cumplir:
 
 ---
 
-## 15. Prioridad de Decision
+## 16. Prioridad de Decision
 
 Cuando haya conflicto, decidir en este orden:
 

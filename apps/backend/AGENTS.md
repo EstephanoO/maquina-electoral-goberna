@@ -2,7 +2,15 @@
 
 > **Hereda de:** `/AGENTS.md` (root)  
 > **Alcance:** Solo `apps/backend/**`  
-> **Ultima actualizacion:** 2026-02-20
+> **Ultima actualizacion:** 2026-02-23
+
+---
+
+## Flujo de Desarrollo
+
+Ver `/CONTRIBUTING.md` para el flujo GitHub Flow completo.  
+Ver `/CMS_DEVELOPER_GUIDE.md` para guia tecnica del modulo CMS + Twilio.  
+Ver seccion 9 del root `/AGENTS.md` para CI/CD y ramas.
 
 ---
 
