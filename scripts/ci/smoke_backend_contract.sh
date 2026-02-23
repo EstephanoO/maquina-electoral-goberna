@@ -99,13 +99,13 @@ curl -fsS "http://127.0.0.1/api/agents/health" >/dev/null
 CI_PHONE="900$(date +%s | tail -c 7)"
 CI_EMAIL="${CI_PHONE}@goberna.pe"
 CI_PASS="CiSmoke1234!"
-CI_CAMPAIGN_ID="00000000-0000-0000-0000-000000000001"
+CI_CAMPAIGN_ID="a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
 
 echo "[smoke] creating CI campaign in DB..."
 docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" exec -T postgres psql -U appuser -d appdb -c "
   INSERT INTO campaigns (id, name, slug, status) VALUES
-    ('$CI_CAMPAIGN_ID', 'CI Test Campaign', 'ci-test', 'active')
-    ON CONFLICT (slug) DO NOTHING;
+    ('$CI_CAMPAIGN_ID', 'CI Test Campaign', 'ci-test-$(date +%s)', 'active')
+    ON CONFLICT (id) DO NOTHING;
 " 2>&1
 
 echo "[smoke] registering CI user: $CI_PHONE"
