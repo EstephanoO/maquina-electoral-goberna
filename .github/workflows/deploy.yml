@@ -113,7 +113,7 @@ jobs:
 
               echo "[deploy] waiting for readiness..."
               for attempt in $(seq 1 40); do
-                if curl -fsS "http://127.0.0.1/api/ready" >/dev/null 2>&1; then
+                if curl -fsSk "https://127.0.0.1/api/ready" >/dev/null 2>&1; then
                   echo "[deploy] ready after ${attempt} attempts"
                   break
                 fi
@@ -125,14 +125,14 @@ jobs:
               done
 
               # Public endpoint smoke checks (no auth required)
-              curl -fsS "http://127.0.0.1/api/health" >/dev/null
-              curl -fsS "http://127.0.0.1/api/config" >/dev/null
-              curl -fsS "http://127.0.0.1/api/agents/health" >/dev/null
+              curl -fsSk "https://127.0.0.1/api/health" >/dev/null
+              curl -fsSk "https://127.0.0.1/api/config" >/dev/null
+              curl -fsSk "https://127.0.0.1/api/agents/health" >/dev/null
 
               # Tracking smoke (uses x-agent-token, not JWT)
               AGENT_TOKEN=$(grep -oP '(?<=AGENT_INGEST_TOKEN=).*' /srv/app/.env | head -1)
               agent_payload='{"agent_id":"deploy-smoke-agent","ts":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","lat":-12.0464,"lng":-77.0428,"accuracy":8,"seq":1}'
-              curl -fsS -H "Content-Type: application/json" -H "x-agent-token: ${AGENT_TOKEN}" -X POST "http://127.0.0.1/api/agents/location" --data "$agent_payload" >/dev/null
+              curl -fsSk -H "Content-Type: application/json" -H "x-agent-token: ${AGENT_TOKEN}" -X POST "https://127.0.0.1/api/agents/location" --data "$agent_payload" >/dev/null
 
               test -x scripts/backup.sh
               docker compose ps
@@ -147,7 +147,7 @@ jobs:
               git reset --hard "$PREVIOUS_COMMIT"
               docker compose up -d --build --remove-orphans
               for attempt in $(seq 1 40); do
-                if curl -fsS "http://127.0.0.1/api/ready" >/dev/null 2>&1; then
+                if curl -fsSk "https://127.0.0.1/api/ready" >/dev/null 2>&1; then
                   break
                 fi
                 if [ "$attempt" -eq 40 ]; then

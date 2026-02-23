@@ -20,4 +20,6 @@ jobs:
             set -euo pipefail
             cd /srv/app
             export OPS_ALERT_WEBHOOK_URL="${{ secrets.OPS_ALERT_WEBHOOK_URL }}"
-            python3 scripts/ops/check_ops_alerts.py --api-base http://127.0.0.1 --state-file /var/lib/nexus/ops-alert-state.json
+            # Use backend port directly (bypass nginx HTTPS redirect)
+            BACKEND_PORT=$(grep -oP '(?<=BACKEND_PORT=)\d+' /srv/app/.env 2>/dev/null || echo "3000")
+            python3 scripts/ops/check_ops_alerts.py --api-base "http://127.0.0.1:${BACKEND_PORT}" --state-file /var/lib/nexus/ops-alert-state.json
