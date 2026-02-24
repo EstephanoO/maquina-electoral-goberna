@@ -59,9 +59,19 @@ export async function listForms(
 
 /**
  * Get recent forms for a campaign (for dashboard).
+ * @param from - Optional ISO date string (inclusive lower bound)
+ * @param to   - Optional ISO date string (exclusive upper bound)
  */
-export async function getRecentForms(campaignId: string, limit = 20) {
-  return api.get<FormsRecentResponse>(`/api/forms/recent?limit=${limit}`, {
+export async function getRecentForms(
+  campaignId: string,
+  limit = 20,
+  from?: string,
+  to?: string,
+) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  return api.get<FormsRecentResponse>(`/api/forms/recent?${params.toString()}`, {
     headers: { "x-campaign-id": campaignId },
   });
 }

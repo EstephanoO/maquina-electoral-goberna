@@ -575,10 +575,29 @@ export type CmsBrigadistaMetrics = {
  * two different brigadistas, only the first capture counts.
  *
  * @param campaignId — single campaign scope (required for tierra page)
+ * @param from - Optional ISO date string (inclusive lower bound on created_at)
+ * @param to   - Optional ISO date string (exclusive upper bound on created_at)
  */
 export async function getMetricsByBrigadista(
   campaignId: string,
+  from?: string,
+  to?: string,
 ): Promise<CmsBrigadistaMetrics[]> {
+  const params: string[] = [campaignId];
+  let paramIdx = 2;
+  let dateFilter = "";
+
+  if (from) {
+    dateFilter += ` AND created_at >= $${paramIdx}`;
+    params.push(from);
+    paramIdx++;
+  }
+  if (to) {
+    dateFilter += ` AND created_at < $${paramIdx}`;
+    params.push(to);
+    paramIdx++;
+  }
+
   const { rows } = await pool.query<{
     brigadista_id: string;
     full_name: string;
@@ -596,7 +615,7 @@ export async function getMetricsByBrigadista(
        FROM form_submissions
        WHERE campaign_id = $1
          AND COALESCE(data->>'telefono', '') != ''
-         AND deleted_at IS NULL
+         AND deleted_at IS NULL${dateFilter}
        ORDER BY data->>'telefono', created_at ASC
      )
      SELECT
@@ -612,7 +631,7 @@ export async function getMetricsByBrigadista(
      JOIN users u ON u.id = uc.submitted_by
      GROUP BY uc.submitted_by, u.full_name, u.email
      ORDER BY COUNT(*) DESC`,
-    [campaignId],
+    params,
   );
 
   return rows.map((r) => {

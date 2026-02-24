@@ -228,10 +228,41 @@ export async function getFormsByCampaign(
 }
 
 /**
- * Get recent forms for a campaign (for dashboard)
- * Reads from both legacy forms table AND new form_submissions table
+ * Get recent forms for a campaign (for dashboard).
+ * Reads from both legacy forms table AND new form_submissions table.
+ *
+ * @param from - Optional ISO date string (inclusive lower bound on created_at)
+ * @param to   - Optional ISO date string (exclusive upper bound on created_at)
  */
-export async function getRecentForms(campaignId: string, limit = 20): Promise<FormRecord[]> {
+export async function getRecentForms(
+  campaignId: string,
+  limit = 20,
+  from?: string,
+  to?: string,
+): Promise<FormRecord[]> {
+  // Build dynamic WHERE clauses for date range
+  const params: (string | number)[] = [campaignId];
+  let paramIdx = 2;
+
+  let legacyDateFilter = "";
+  let submissionsDateFilter = "";
+
+  if (from) {
+    legacyDateFilter += ` AND created_at >= $${paramIdx}`;
+    submissionsDateFilter += ` AND fs.created_at >= $${paramIdx}`;
+    params.push(from);
+    paramIdx++;
+  }
+  if (to) {
+    legacyDateFilter += ` AND created_at < $${paramIdx}`;
+    submissionsDateFilter += ` AND fs.created_at < $${paramIdx}`;
+    params.push(to);
+    paramIdx++;
+  }
+
+  params.push(limit);
+  const limitParam = `$${paramIdx}`;
+
   const result = await pool.query<FormRecord>(
     `WITH combined AS (
       -- Legacy forms table
@@ -241,7 +272,7 @@ export async function getRecentForms(campaignId: string, limit = 20): Promise<Fo
         comentarios, campaign_id, created_at,
         NULL::uuid as agent_id
       FROM public.forms 
-      WHERE campaign_id = $1 AND deleted_at IS NULL
+      WHERE campaign_id = $1 AND deleted_at IS NULL${legacyDateFilter}
       
       UNION ALL
       
@@ -265,14 +296,14 @@ export async function getRecentForms(campaignId: string, limit = 20): Promise<Fo
       FROM form_submissions fs
       LEFT JOIN users u ON u.id = fs.submitted_by
       WHERE fs.campaign_id = $1
-        AND fs.synced_at IS NULL  -- Only non-synced (direct submissions, not dual-writes)
-        AND fs.deleted_at IS NULL
+        AND fs.synced_at IS NULL
+        AND fs.deleted_at IS NULL${submissionsDateFilter}
     )
     SELECT DISTINCT ON (client_id) *
     FROM combined
     ORDER BY client_id, created_at DESC
-    LIMIT $2`,
-    [campaignId, limit],
+    LIMIT ${limitParam}`,
+    params,
   );
 
   return result.rows;

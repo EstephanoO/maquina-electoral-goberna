@@ -252,15 +252,26 @@ export type CmsBrigadistaMetricsResponse = {
   brigadistas: import("@/lib/types").CmsBrigadistaMetrics[];
 };
 
-export async function getBrigadistaMetrics(campaignId: string): Promise<{
+/**
+ * @param from - Optional ISO date string (inclusive lower bound)
+ * @param to   - Optional ISO date string (exclusive upper bound)
+ */
+export async function getBrigadistaMetrics(
+  campaignId: string,
+  from?: string,
+  to?: string,
+): Promise<{
   ok: boolean;
   brigadistas?: import("@/lib/types").CmsBrigadistaMetrics[];
   error?: string;
 }> {
-  const res = await api.get<CmsBrigadistaMetricsResponse>(
-    "/api/cms/metrics/brigadistas",
-    { campaignId },
-  );
+  const params = new URLSearchParams();
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const qs = params.toString();
+  const path = qs ? `/api/cms/metrics/brigadistas?${qs}` : "/api/cms/metrics/brigadistas";
+
+  const res = await api.get<CmsBrigadistaMetricsResponse>(path, { campaignId });
   if (!res.ok) return { ok: false, error: res.error?.message };
   return { ok: true, brigadistas: res.data?.brigadistas ?? [] };
 }

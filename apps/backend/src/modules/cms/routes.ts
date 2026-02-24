@@ -470,7 +470,11 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
         }
 
         try {
-          const brigadistas = await repo.getMetricsByBrigadista(campaignId);
+          const query = request.query as { from?: string; to?: string };
+          const from = query.from && !isNaN(Date.parse(query.from)) ? query.from : undefined;
+          const to = query.to && !isNaN(Date.parse(query.to)) ? query.to : undefined;
+
+          const brigadistas = await repo.getMetricsByBrigadista(campaignId, from, to);
           return reply.code(200).send({ ok: true, request_id: requestId, brigadistas });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "cms brigadista metrics failed");

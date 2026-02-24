@@ -228,10 +228,14 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
         }
 
         try {
-          const query = request.query as { limit?: string };
+          const query = request.query as { limit?: string; from?: string; to?: string };
           const limit = Math.min(Number(query.limit) || 20, 100);
 
-          const forms = await getRecentForms(campaignId, limit);
+          // Validate ISO date strings (optional)
+          const from = query.from && !isNaN(Date.parse(query.from)) ? query.from : undefined;
+          const to = query.to && !isNaN(Date.parse(query.to)) ? query.to : undefined;
+
+          const forms = await getRecentForms(campaignId, limit, from, to);
 
           return reply.code(200).send({
             ok: true,

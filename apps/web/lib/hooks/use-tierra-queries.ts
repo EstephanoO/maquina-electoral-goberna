@@ -33,9 +33,9 @@ export type AgentLocation = {
 export const tierraKeys = {
   all: ["tierra"] as const,
   stats: (slug: string) => [...tierraKeys.all, "stats", slug] as const,
-  forms: (campaignId: string) => [...tierraKeys.all, "forms", campaignId] as const,
+  forms: (campaignId: string, from?: string, to?: string) => [...tierraKeys.all, "forms", campaignId, from ?? "", to ?? ""] as const,
   locations: (campaignId: string) => [...tierraKeys.all, "locations", campaignId] as const,
-  brigadistaMetrics: (campaignId: string) => [...tierraKeys.all, "brigadista-metrics", campaignId] as const,
+  brigadistaMetrics: (campaignId: string, from?: string, to?: string) => [...tierraKeys.all, "brigadista-metrics", campaignId, from ?? "", to ?? ""] as const,
 };
 
 // ── useCampaignStats ───────────────────────────────────────────────
@@ -70,11 +70,11 @@ export function useCampaignStats(slug: string) {
  * the `data` reference stays the same → downstream useMemo (formPoints,
  * formsGeoJson) don't recompute → TierraMap doesn't re-render.
  */
-export function useRecentForms(campaignId: string | undefined) {
+export function useRecentForms(campaignId: string | undefined, from?: string, to?: string) {
   return useQuery({
-    queryKey: tierraKeys.forms(campaignId ?? ""),
+    queryKey: tierraKeys.forms(campaignId ?? "", from, to),
     queryFn: async (): Promise<FormRecord[]> => {
-      const res = await getRecentForms(campaignId!, 200);
+      const res = await getRecentForms(campaignId!, 500, from, to);
       if (!res.ok || !res.data?.forms) {
         throw new Error("Error cargando formularios");
       }
@@ -117,11 +117,11 @@ export function useAgentLocationsSnapshot(campaignId: string | undefined) {
  * Used by both Pipeline view and AgentsTab mini-funnel enrichment.
  * Refetches every 30s — CMS pipeline changes are slower than tracking.
  */
-export function useBrigadistaMetrics(campaignId: string | undefined) {
+export function useBrigadistaMetrics(campaignId: string | undefined, from?: string, to?: string) {
   return useQuery({
-    queryKey: tierraKeys.brigadistaMetrics(campaignId ?? ""),
+    queryKey: tierraKeys.brigadistaMetrics(campaignId ?? "", from, to),
     queryFn: async (): Promise<CmsBrigadistaMetrics[]> => {
-      const res = await getBrigadistaMetrics(campaignId!);
+      const res = await getBrigadistaMetrics(campaignId!, from, to);
       if (!res.ok || !res.brigadistas) {
         throw new Error(res.error ?? "Error cargando metricas de brigadistas");
       }

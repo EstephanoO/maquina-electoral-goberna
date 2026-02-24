@@ -349,7 +349,7 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
           // Fetch all stats in parallel
           const [totals, topAgents, agentFormsData] = await Promise.all([
             repo.getFormsTotals(campaign.id),
-            repo.getTopAgents(campaign.id, 10),
+            repo.getTopAgents(campaign.id, 100),
             repo.getAgentFormsForPeriod(campaign.id, period),
           ]);
 

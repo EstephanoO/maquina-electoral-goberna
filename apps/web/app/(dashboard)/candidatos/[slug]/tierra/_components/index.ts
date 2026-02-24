@@ -6,8 +6,9 @@ export { DatosTab } from "./datos-tab";
 export { AgentsTab } from "./agents-tab";
 export { LogTab } from "./log-tab";
 export { TierraHeader } from "./tierra-header";
-export { ActivityCharts } from "./activity-charts";
 export { PipelineView } from "./pipeline-view";
+export { PipelineFilters } from "./pipeline-filters";
+export { CampoOverlay } from "./campo-overlay";
 
 /* ─── Values ─── */
 export { INITIAL_DRILL } from "./types";
