@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import type { LogEntry } from "./types";
-import { timeAgo } from "./utils";
 
 /* ========== Types ========== */
 
@@ -23,6 +22,10 @@ function formatDate(date: Date): string {
   return date.toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
 }
 
+/* ========== Grid template — shared between header and rows ========== */
+
+const GRID_COLS = "minmax(0,2fr) minmax(0,2fr) minmax(0,1.2fr) 90px";
+
 /* ========== Component ========== */
 
 export function LogModal({ open, onClose, entries, onEntryClick }: Props) {
@@ -41,7 +44,7 @@ export function LogModal({ open, onClose, entries, onEntryClick }: Props) {
 
   if (!open) return null;
 
-  const formEntries = entries.filter((e) => e.type === "form_new" || e.type === "form_submitted");
+  const formEntries = entries.filter((e) => e.type === "form_new");
 
   return (
     <div
@@ -55,7 +58,7 @@ export function LogModal({ open, onClose, entries, onEntryClick }: Props) {
           <div className="flex items-center gap-3">
             <h2 className="text-[15px] font-bold text-slate-800">Registro de datos</h2>
             <span className="text-[12px] font-semibold tabular-nums text-slate-400 bg-slate-100 px-2.5 py-0.5 rounded-md">
-              {formEntries.length} registros
+              {formEntries.length}
             </span>
           </div>
           <button
@@ -72,12 +75,11 @@ export function LogModal({ open, onClose, entries, onEntryClick }: Props) {
         </div>
 
         {/* ── Table header ── */}
-        <div className="grid shrink-0 border-b border-slate-100 bg-slate-50/80 px-6 py-2" style={{ gridTemplateColumns: "1fr 1fr 1fr 80px 44px" }}>
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Nombre</span>
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Encuestador</span>
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Zona</span>
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider text-right">Hora</span>
-          <span />
+        <div className="grid items-center shrink-0 border-b border-slate-200 bg-slate-50 px-6 py-2.5 gap-3" style={{ gridTemplateColumns: GRID_COLS }}>
+          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Nombre</span>
+          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Encuestador</span>
+          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Zona</span>
+          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider text-right">Fecha</span>
         </div>
 
         {/* ── Table body ── */}
@@ -85,8 +87,8 @@ export function LogModal({ open, onClose, entries, onEntryClick }: Props) {
           {formEntries.length === 0 ? (
             <div className="flex items-center justify-center py-16 text-sm text-slate-400">Sin registros</div>
           ) : (
-            formEntries.map((entry) => (
-              <ModalRow key={entry.id} entry={entry} onEntryClick={onEntryClick} />
+            formEntries.map((entry, idx) => (
+              <ModalRow key={entry.id} entry={entry} onEntryClick={onEntryClick} even={idx % 2 === 0} />
             ))
           )}
         </div>
@@ -97,46 +99,38 @@ export function LogModal({ open, onClose, entries, onEntryClick }: Props) {
 
 /* ========== Row ========== */
 
-function ModalRow({ entry, onEntryClick }: { entry: LogEntry; onEntryClick: (e: LogEntry) => void }) {
+function ModalRow({ entry, onEntryClick, even }: { entry: LogEntry; onEntryClick: (e: LogEntry) => void; even: boolean }) {
   const hasLoc = entry.lat != null && entry.lng != null;
   const ts = entry.timestamp;
 
   return (
-    <button
-      type="button"
+    <div
+      role={hasLoc ? "button" : undefined}
+      tabIndex={hasLoc ? 0 : undefined}
       onClick={() => hasLoc && onEntryClick(entry)}
-      className={`w-full grid items-center px-6 py-2 border-b border-slate-50 transition-colors text-left ${hasLoc ? "cursor-pointer hover:bg-blue-50/40" : "cursor-default"}`}
-      style={{ gridTemplateColumns: "1fr 1fr 1fr 80px 44px" }}
+      onKeyDown={(e) => { if (hasLoc && (e.key === "Enter" || e.key === " ")) onEntryClick(entry); }}
+      className={`grid items-center px-6 py-2.5 gap-3 border-b border-slate-50 transition-colors ${even ? "bg-white" : "bg-slate-50/40"} ${hasLoc ? "cursor-pointer hover:bg-blue-50/50" : ""}`}
+      style={{ gridTemplateColumns: GRID_COLS }}
     >
-      {/* Nombre */}
-      <div className="min-w-0 pr-2">
-        <span className="text-[12px] font-semibold text-slate-800 truncate block">{entry.nombre || "—"}</span>
+      {/* Nombre + telefono */}
+      <div className="min-w-0">
+        <span className="text-[12px] font-semibold text-slate-800 block truncate">{entry.nombre || "—"}</span>
         {entry.telefono && (
-          <span className="text-[10px] text-slate-400 tabular-nums truncate block">{entry.telefono}</span>
+          <span className="text-[10px] text-slate-400 tabular-nums block">{entry.telefono}</span>
         )}
       </div>
 
       {/* Encuestador */}
-      <span className="text-[12px] text-slate-600 truncate pr-2">{entry.encuestador || "—"}</span>
+      <span className="text-[12px] text-slate-600 truncate">{entry.encuestador || "—"}</span>
 
       {/* Zona */}
-      <span className="text-[11px] text-slate-500 truncate pr-2">{entry.zona || "—"}</span>
+      <span className="text-[11px] text-slate-500 truncate">{entry.zona || "—"}</span>
 
-      {/* Hora */}
-      <div className="text-right pr-1">
-        <span className="text-[11px] text-slate-600 tabular-nums block">{formatTime(ts)}</span>
+      {/* Fecha + hora */}
+      <div className="text-right">
+        <span className="text-[11px] text-slate-700 tabular-nums block">{formatTime(ts)}</span>
         <span className="text-[9px] text-slate-400 tabular-nums block">{formatDate(ts)}</span>
       </div>
-
-      {/* Location indicator */}
-      <div className="flex justify-center">
-        {hasLoc && (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-            <circle cx="12" cy="12" r="10" />
-            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
-          </svg>
-        )}
-      </div>
-    </button>
+    </div>
   );
 }

@@ -20,7 +20,7 @@ export function useActivityLog(
   const [logClearedAt, setLogClearedAt] = useState(0);
 
   const logEntries = useMemo((): LogEntry[] => {
-    const entries: LogEntry[] = forms.slice(0, 50).map((f) => {
+    const entries: LogEntry[] = forms.map((f) => {
       const coords = formCoordsToLatLng(f.x, f.y, f.zona);
       return {
         id: `form-${f.id}`,
@@ -37,8 +37,11 @@ export function useActivityLog(
       };
     });
 
+    // Only add connect/disconnect events from stats — form_submitted duplicates
+    // the richer form_new entries we already build from forms[]
     if (stats?.recent_events) {
       for (const ev of stats.recent_events) {
+        if (ev.type === "form_submitted") continue;
         entries.push({
           id: `ev-${ev.timestamp}-${ev.agent_id}`,
           type: ev.type,
