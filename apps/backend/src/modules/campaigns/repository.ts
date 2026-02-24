@@ -188,13 +188,22 @@ export type AgentFormsData = {
 };
 
 export async function getFormsTotals(campaignId: string): Promise<FormsTotals> {
+  // Dedup by phone (first-write-wins) — consistent with CMS pipeline metrics
   const { rows } = await pool.query<{ forms_count: string; forms_today: string; forms_week: string }>(
-    `SELECT
+    `WITH unique_forms AS (
+       SELECT DISTINCT ON (data->>'telefono')
+         id, created_at
+       FROM form_submissions
+       WHERE campaign_id = $1
+         AND COALESCE(data->>'telefono', '') != ''
+         AND deleted_at IS NULL
+       ORDER BY data->>'telefono', created_at ASC
+     )
+     SELECT
        COUNT(*)::text AS forms_count,
        COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE)::text AS forms_today,
        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::text AS forms_week
-     FROM form_submissions
-     WHERE campaign_id = $1`,
+     FROM unique_forms`,
     [campaignId],
   );
   const row = rows[0];
@@ -206,19 +215,28 @@ export async function getFormsTotals(campaignId: string): Promise<FormsTotals> {
 }
 
 export async function getTopAgents(campaignId: string, limit = 10): Promise<TopAgent[]> {
+  // Dedup by phone (first-write-wins) — consistent with CMS pipeline metrics
   // Uses submitted_by for new submissions; falls back to data->>'encuestador_id' for legacy migrated rows
   const { rows } = await pool.query<{ id: string; name: string; forms_count: string; forms_today: string }>(
-    `SELECT
-       COALESCE(fs.submitted_by::text, fs.data->>'encuestador_id') AS id,
-       COALESCE(u.full_name, fs.data->>'encuestador', 'Agente') AS name,
+    `WITH unique_forms AS (
+       SELECT DISTINCT ON (data->>'telefono')
+         id, submitted_by, data, created_at
+       FROM form_submissions
+       WHERE campaign_id = $1
+         AND COALESCE(data->>'telefono', '') != ''
+         AND deleted_at IS NULL
+       ORDER BY data->>'telefono', created_at ASC
+     )
+     SELECT
+       COALESCE(uf.submitted_by::text, uf.data->>'encuestador_id') AS id,
+       COALESCE(u.full_name, uf.data->>'encuestador', 'Agente') AS name,
        COUNT(*)::text AS forms_count,
-       COUNT(*) FILTER (WHERE fs.created_at >= CURRENT_DATE)::text AS forms_today
-     FROM form_submissions fs
-     LEFT JOIN users u ON u.id = fs.submitted_by
-     WHERE fs.campaign_id = $1
-       AND (fs.submitted_by IS NOT NULL OR fs.data->>'encuestador_id' IS NOT NULL)
-     GROUP BY COALESCE(fs.submitted_by::text, fs.data->>'encuestador_id'),
-              COALESCE(u.full_name, fs.data->>'encuestador', 'Agente')
+       COUNT(*) FILTER (WHERE uf.created_at >= CURRENT_DATE)::text AS forms_today
+     FROM unique_forms uf
+     LEFT JOIN users u ON u.id = uf.submitted_by
+     WHERE (uf.submitted_by IS NOT NULL OR uf.data->>'encuestador_id' IS NOT NULL)
+     GROUP BY COALESCE(uf.submitted_by::text, uf.data->>'encuestador_id'),
+              COALESCE(u.full_name, uf.data->>'encuestador', 'Agente')
      ORDER BY COUNT(*) DESC
      LIMIT $2`,
     [campaignId, limit],
@@ -236,19 +254,27 @@ export async function getAgentFormsForPeriod(
   period: "day" | "week",
 ): Promise<AgentFormsData[]> {
   const interval = period === "day" ? "24 hours" : "7 days";
-  // Uses submitted_by for new submissions; falls back to data->>'encuestador_id' for legacy migrated rows
+  // Dedup by phone (first-write-wins) — consistent with CMS pipeline metrics
   const { rows } = await pool.query<{ id: string; name: string; count: string }>(
-    `SELECT
-       COALESCE(fs.submitted_by::text, fs.data->>'encuestador_id') AS id,
-       COALESCE(u.full_name, fs.data->>'encuestador', 'Agente') AS name,
+    `WITH unique_forms AS (
+       SELECT DISTINCT ON (data->>'telefono')
+         id, submitted_by, data, created_at
+       FROM form_submissions
+       WHERE campaign_id = $1
+         AND COALESCE(data->>'telefono', '') != ''
+         AND deleted_at IS NULL
+         AND created_at >= NOW() - $2::interval
+       ORDER BY data->>'telefono', created_at ASC
+     )
+     SELECT
+       COALESCE(uf.submitted_by::text, uf.data->>'encuestador_id') AS id,
+       COALESCE(u.full_name, uf.data->>'encuestador', 'Agente') AS name,
        COUNT(*)::text AS count
-     FROM form_submissions fs
-     LEFT JOIN users u ON u.id = fs.submitted_by
-     WHERE fs.campaign_id = $1 
-       AND fs.created_at >= NOW() - $2::interval
-       AND (fs.submitted_by IS NOT NULL OR fs.data->>'encuestador_id' IS NOT NULL)
-     GROUP BY COALESCE(fs.submitted_by::text, fs.data->>'encuestador_id'),
-              COALESCE(u.full_name, fs.data->>'encuestador', 'Agente')
+     FROM unique_forms uf
+     LEFT JOIN users u ON u.id = uf.submitted_by
+     WHERE (uf.submitted_by IS NOT NULL OR uf.data->>'encuestador_id' IS NOT NULL)
+     GROUP BY COALESCE(uf.submitted_by::text, uf.data->>'encuestador_id'),
+              COALESCE(u.full_name, uf.data->>'encuestador', 'Agente')
      ORDER BY COUNT(*) DESC`,
     [campaignId, interval],
   );
