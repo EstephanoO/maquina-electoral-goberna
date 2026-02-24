@@ -335,13 +335,11 @@ export default function LoginPage() {
             style={{
               width: 140,
               height: 140,
-              borderRadius: "50%",
-              overflow: "hidden",
-              border: "3px solid rgba(255,200,0,.25)",
-              boxShadow:
-                "0 0 60px rgba(255,200,0,.1), 0 8px 32px rgba(0,0,0,.4)",
               marginBottom: 36,
               flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
             <Image
@@ -350,7 +348,7 @@ export default function LoginPage() {
               width={140}
               height={140}
               priority
-              style={{ objectFit: "cover", display: "block" }}
+              style={{ objectFit: "contain", display: "block" }}
             />
           </div>
 
@@ -391,30 +389,11 @@ export default function LoginPage() {
               textAlign: "center",
             }}
           >
-            Plataforma de Gestion Territorial
+            TERRITORIO
           </p>
         </div>
 
-        {/* Bottom motto */}
-        <p
-          data-hero-bottom
-          style={{
-            position: "absolute",
-            bottom: 36,
-            left: 0,
-            right: 0,
-            textAlign: "center",
-            fontSize: 12,
-            fontWeight: 400,
-            color: "rgba(255,255,255,.35)",
-            letterSpacing: "0.06em",
-            margin: 0,
-            padding: "0 24px",
-            animation: "goberna-fade-in 1s ease-out .6s both",
-          }}
-        >
-          Inteligencia geoespacial para la toma de decisiones.
-        </p>
+
       </div>
 
       {/* ══════════ RIGHT PANEL — Login Form ══════════ */}
@@ -481,16 +460,7 @@ export default function LoginPage() {
           >
             Iniciar Sesion
           </h2>
-          <p
-            style={{
-              fontSize: 14,
-              fontWeight: 400,
-              color: "var(--color-text-tertiary)",
-              margin: "0 0 36px",
-            }}
-          >
-            Acceda a su panel de gestion territorial
-          </p>
+          <div style={{ marginBottom: 36 }} />
 
           {/* Error banner */}
           {error && (
