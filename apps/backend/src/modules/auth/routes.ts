@@ -1,18 +1,63 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply } from "fastify";
 
 import type { AppEnv } from "../../config/env";
 import { pool } from "../../db";
 import { errorPayload } from "../../infra/http";
-import type { AuthenticatedRequest } from "../../infra/auth";
+import { AUTH_COOKIE_NAMES, parseCookies, type AuthenticatedRequest } from "../../infra/auth";
 import { AuthRepository } from "./repository";
 import { changePasswordSchema, loginSchema, refreshSchema, registerSchema, resetPasswordSchema } from "./schemas";
 import { authorize } from "../../infra/authorize";
 import { AppError, AuthService } from "./service";
 
+// ── Cookie helpers ──────────────────────────────────────────────────
+
+/**
+ * Set auth cookies (httpOnly for tokens, plain for session indicator).
+ * Fastify supports multiple Set-Cookie values via reply.header() — each call appends.
+ * `isProd` controls the Secure flag — derived from `env.nodeEnv` at build-time.
+ */
+function setAuthCookies(
+  reply: FastifyReply,
+  accessToken: string,
+  refreshToken: string,
+  isProd: boolean,
+): void {
+  const secure = isProd ? "; Secure" : "";
+
+  // httpOnly access token — 15 min (matches JWT_ACCESS_EXPIRES_IN default)
+  reply.header(
+    "Set-Cookie",
+    `${AUTH_COOKIE_NAMES.accessToken}=${accessToken}; Path=/; SameSite=Lax${secure}; HttpOnly; Max-Age=900`,
+  );
+
+  // httpOnly refresh token — 7 days, restricted to /api/auth paths only
+  reply.header(
+    "Set-Cookie",
+    `${AUTH_COOKIE_NAMES.refreshToken}=${refreshToken}; Path=/api/auth; SameSite=Lax${secure}; HttpOnly; Max-Age=604800`,
+  );
+
+  // Non-httpOnly session flag — lets Next.js middleware detect auth state
+  // Contains no sensitive data, just "1" to indicate a session exists
+  reply.header(
+    "Set-Cookie",
+    `${AUTH_COOKIE_NAMES.session}=1; Path=/; SameSite=Lax${secure}; Max-Age=604800`,
+  );
+}
+
+/** Clear all auth cookies on logout or failed refresh */
+function clearAuthCookies(reply: FastifyReply, isProd: boolean): void {
+  const secure = isProd ? "; Secure" : "";
+
+  reply.header("Set-Cookie", `${AUTH_COOKIE_NAMES.accessToken}=; Path=/; SameSite=Lax${secure}; HttpOnly; Max-Age=0`);
+  reply.header("Set-Cookie", `${AUTH_COOKIE_NAMES.refreshToken}=; Path=/api/auth; SameSite=Lax${secure}; HttpOnly; Max-Age=0`);
+  reply.header("Set-Cookie", `${AUTH_COOKIE_NAMES.session}=; Path=/; SameSite=Lax${secure}; Max-Age=0`);
+}
+
 export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
   return async (app) => {
     const repo = new AuthRepository(pool);
     const service = new AuthService(repo, env);
+    const isProd = env.nodeEnv === "production";
 
     // ── POST /api/auth/login ───────────────────────────────────────────
     // Supports login by email OR phone number
@@ -49,6 +94,7 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
         }
 
         const result = await service.loginWithUser(user, password);
+        setAuthCookies(reply, result.access_token, result.refresh_token, isProd);
         return reply.code(200).send({ ok: true, request_id: requestId, ...result });
       } catch (error) {
         if (error instanceof AppError) {
@@ -59,19 +105,41 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
     });
 
     // ── POST /api/auth/refresh ─────────────────────────────────────────
-    app.post("/api/auth/refresh", async (request, reply) => {
+    // Accepts refresh_token from JSON body (mobile) OR httpOnly cookie (web)
+    app.post("/api/auth/refresh", {
+      config: {
+        rateLimit: {
+          max: env.rateLimitAuthPerMinute,
+          timeWindow: "1 minute",
+          keyGenerator: (request) => request.ip,
+        },
+      },
+    }, async (request, reply) => {
       const requestId = String(request.id);
 
+      // Try body first (mobile), then httpOnly cookie (web)
       const parsed = refreshSchema.safeParse(request.body);
-      if (!parsed.success) {
-        const message = parsed.error.issues.map((i) => i.message).join(", ");
-        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
+      let refreshToken: string | undefined;
+
+      if (parsed.success) {
+        refreshToken = parsed.data.refresh_token;
+      } else {
+        // Fall back to httpOnly cookie (reuse shared parser)
+        const cookies = parseCookies(request.headers.cookie);
+        refreshToken = cookies[AUTH_COOKIE_NAMES.refreshToken];
+      }
+
+      if (!refreshToken) {
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "refresh_token requerido"));
       }
 
       try {
-        const result = await service.refresh(parsed.data.refresh_token);
+        const result = await service.refresh(refreshToken);
+        setAuthCookies(reply, result.access_token, result.refresh_token, isProd);
         return reply.code(200).send({ ok: true, request_id: requestId, ...result });
       } catch (error) {
+        // Clear stale cookies so the browser doesn't get stuck retrying
+        clearAuthCookies(reply, isProd);
         if (error instanceof AppError) {
           return reply.code(error.statusCode).send(errorPayload(requestId, error.code, error.message));
         }
@@ -88,6 +156,7 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
         const userId = (request as AuthenticatedRequest).userId;
 
         await service.logout(userId);
+        clearAuthCookies(reply, isProd);
         return reply.code(200).send({ ok: true, request_id: requestId });
       },
     );

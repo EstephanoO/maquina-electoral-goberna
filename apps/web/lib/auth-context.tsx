@@ -35,13 +35,31 @@ type AuthActions = {
 
 type AuthContextValue = AuthState & AuthActions;
 
-// ── Storage keys ────────────────────────────────────────────────────
+// ── Storage keys (only non-sensitive preferences — tokens are in httpOnly cookies) ──
 
 const STORAGE_KEYS = {
-  accessToken: "goberna_access_token",
-  refreshToken: "goberna_refresh_token",
   activeCampaign: "goberna_active_campaign",
 } as const;
+
+// ── Cookie helpers ──────────────────────────────────────────────────
+
+/** Read a cookie value by name (for non-httpOnly cookies only) */
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]*)`));
+  return match?.[1] ?? null;
+}
+
+/** Delete a cookie by name */
+function deleteCookie(name: string): void {
+  if (typeof document === "undefined") return;
+  document.cookie = `${name}=; Path=/; Max-Age=0`;
+}
+
+/** Check if the session indicator cookie exists (non-httpOnly, safe to read) */
+function hasSessionCookie(): boolean {
+  return getCookie("goberna_session") === "1";
+}
 
 // ── Context ─────────────────────────────────────────────────────────
 
@@ -55,18 +73,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [activeCampaignId, setActiveCampaignId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Register token store with api-client
+  // Register token store with api-client.
+  // Tokens are now in httpOnly cookies — the browser sends them automatically.
+  // The tokenStore is a thin shim: getAccessToken returns the session flag (for "has token?" checks),
+  // and refresh is handled server-side via the cookie.
   useEffect(() => {
     setTokenStore({
-      getAccessToken: () => localStorage.getItem(STORAGE_KEYS.accessToken),
-      getRefreshToken: () => localStorage.getItem(STORAGE_KEYS.refreshToken),
-      setTokens: (access, refresh) => {
-        localStorage.setItem(STORAGE_KEYS.accessToken, access);
-        localStorage.setItem(STORAGE_KEYS.refreshToken, refresh);
+      getAccessToken: () => (hasSessionCookie() ? "__cookie__" : null),
+      getRefreshToken: () => (hasSessionCookie() ? "__cookie__" : null),
+      setTokens: () => {
+        // No-op: tokens are set via httpOnly Set-Cookie headers by the backend
       },
       clearTokens: () => {
-        localStorage.removeItem(STORAGE_KEYS.accessToken);
-        localStorage.removeItem(STORAGE_KEYS.refreshToken);
+        // Clear the session indicator; httpOnly cookies are cleared by the backend on logout
+        deleteCookie("goberna_session");
       },
     });
   }, []);
@@ -74,12 +94,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Restore session on mount
   useEffect(() => {
     const restore = async () => {
-      const token = localStorage.getItem(STORAGE_KEYS.accessToken);
-      if (!token) {
+      if (!hasSessionCookie()) {
         setIsLoading(false);
         return;
       }
 
+      // Cookies are sent automatically by the browser via the proxy
       const res = await api.get<{
         user: User;
         campaigns: Campaign[];
@@ -93,9 +113,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const validCampaign = res.data.campaigns.find((c) => c.id === savedCampaign);
         setActiveCampaignId(validCampaign?.id ?? res.data.campaigns[0]?.id ?? null);
       } else {
-        // Token invalid, clear
-        localStorage.removeItem(STORAGE_KEYS.accessToken);
-        localStorage.removeItem(STORAGE_KEYS.refreshToken);
+        // Session invalid — clear indicator
+        deleteCookie("goberna_session");
       }
 
       setIsLoading(false);
@@ -116,8 +135,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, error: res.error?.message ?? "Error de autenticación" };
     }
 
-    localStorage.setItem(STORAGE_KEYS.accessToken, res.data.access_token);
-    localStorage.setItem(STORAGE_KEYS.refreshToken, res.data.refresh_token);
+    // Tokens are now set as httpOnly cookies by the backend Set-Cookie headers.
+    // The session indicator cookie (goberna_session=1) is also set by the backend.
 
     setUser(res.data.user);
     setCampaigns(res.data.campaigns);
@@ -132,10 +151,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Backend clears httpOnly cookies via Set-Cookie headers
     await api.post("/api/auth/logout").catch(() => {});
 
-    localStorage.removeItem(STORAGE_KEYS.accessToken);
-    localStorage.removeItem(STORAGE_KEYS.refreshToken);
+    // Clear session indicator and preferences
+    deleteCookie("goberna_session");
     localStorage.removeItem(STORAGE_KEYS.activeCampaign);
 
     setUser(null);

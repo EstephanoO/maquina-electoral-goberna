@@ -161,6 +161,30 @@ export type AgentFormsData = {
   count: number;
 };
 
+// ── Brigadista CMS Metrics ──────────────────────────────────────────
+
+export type CmsBrigadistaMetrics = {
+  brigadista_id: string;
+  full_name: string;
+  email: string;
+  /** Total unique phone numbers captured (first-write-wins dedup) */
+  total_captures: number;
+  /** Unique phones still in 'nuevo' status */
+  nuevos: number;
+  /** Unique phones in 'hablado' status */
+  hablados: number;
+  /** Unique phones in 'respondieron' status */
+  respondieron: number;
+  /** Unique phones in 'archivado' status */
+  archivados: number;
+  /** (hablados + respondieron) / total */
+  contact_rate: number;
+  /** respondieron / (hablados + respondieron) */
+  response_rate: number;
+};
+
+// ── Campaign Stats ─────────────────────────────────────────────────
+
 export type CampaignStats = {
   campaign: {
     id: string;

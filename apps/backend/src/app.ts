@@ -40,10 +40,22 @@ export function buildApp(env: AppEnv) {
 
   app.register(helmet);
   app.register(compress);
+  // Warn at startup if CORS is misconfigured (wildcard + credentials is insecure)
+  if (env.frontendOrigins.includes("*") && env.nodeEnv === "production") {
+    app.log.error(
+      "SECURITY: FRONTEND_ORIGINS=* with credentials:true in production allows any site to use victim cookies. Set explicit origins!",
+    );
+  }
   app.register(cors, {
     origin: (origin, callback) => {
       if (!origin) {
         callback(null, true);
+        return;
+      }
+
+      // In production, never honour wildcard — require explicit origin match
+      if (env.nodeEnv === "production" && env.frontendOrigins.includes("*")) {
+        callback(new Error("Wildcard CORS blocked in production"), false);
         return;
       }
 

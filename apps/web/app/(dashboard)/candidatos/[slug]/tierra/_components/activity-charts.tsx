@@ -45,6 +45,17 @@ function getHourKey(date: Date): string {
   return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}-${date.getHours().toString().padStart(2, "0")}`;
 }
 
+/* ========== Tooltip styles (inline needed for Recharts) ========== */
+
+const tooltipStyle: React.CSSProperties = {
+  backgroundColor: "#ffffff",
+  border: "1px solid #e2e8f0",
+  borderRadius: 8,
+  fontSize: 11,
+  boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+  padding: "8px 12px",
+};
+
 /* ========== Component ========== */
 
 export function ActivityCharts({ forms, agents, allForms, allAgents, primaryColor, secondaryColor, selectionLabel }: Props) {
@@ -55,14 +66,14 @@ export function ActivityCharts({ forms, agents, allForms, allAgents, primaryColo
   const hourlyData = useMemo((): HourlyData[] => {
     const now = new Date();
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    
+
     const hourMap = new Map<string, { forms: number; agents: Set<string> }>();
     for (let i = 0; i < 24; i++) {
       const hourDate = new Date(now.getTime() - (23 - i) * 60 * 60 * 1000);
       const key = getHourKey(hourDate);
       hourMap.set(key, { forms: 0, agents: new Set() });
     }
-    
+
     for (const form of forms) {
       const formDate = new Date(form.created_at);
       if (formDate >= twentyFourHoursAgo) {
@@ -76,7 +87,7 @@ export function ActivityCharts({ forms, agents, allForms, allAgents, primaryColo
         }
       }
     }
-    
+
     const result: HourlyData[] = [];
     for (let i = 0; i < 24; i++) {
       const hourDate = new Date(now.getTime() - (23 - i) * 60 * 60 * 1000);
@@ -89,7 +100,7 @@ export function ActivityCharts({ forms, agents, allForms, allAgents, primaryColo
         agents: data?.agents.size ?? 0,
       });
     }
-    
+
     return result;
   }, [forms]);
 
@@ -112,18 +123,18 @@ export function ActivityCharts({ forms, agents, allForms, allAgents, primaryColo
     const oneHourAgo = now - 60 * 60 * 1000;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const formsLastHour = forms.filter((f) => new Date(f.created_at).getTime() > oneHourAgo).length;
     const formsToday = forms.filter((f) => new Date(f.created_at) >= today).length;
     const activeAgents = agents.filter((a) => a.status === "connected" || a.status === "idle").length;
     const totalForms = forms.length;
-    
+
     // Peak hour
     const peakHour = hourlyData.reduce((max, h) => h.forms > max.forms ? h : max, hourlyData[0]);
-    
+
     // Average forms per agent
     const avgPerAgent = agents.length > 0 ? Math.round(totalForms / agents.length) : 0;
-    
+
     // Velocity: forms per hour in last 3 hours
     const threeHoursAgo = now - 3 * 60 * 60 * 1000;
     const formsLast3h = forms.filter((f) => new Date(f.created_at).getTime() > threeHoursAgo).length;
@@ -132,7 +143,7 @@ export function ActivityCharts({ forms, agents, allForms, allAgents, primaryColo
     // Totals from all data (not filtered)
     const allTotal = allForms.length;
     const allAgentsTotal = allAgents.length;
-    
+
     return { formsLastHour, formsToday, activeAgents, totalForms, peakHour, avgPerAgent, velocity, allTotal, allAgentsTotal };
   }, [forms, agents, hourlyData, allForms, allAgents]);
 
@@ -144,32 +155,23 @@ export function ActivityCharts({ forms, agents, allForms, allAgents, primaryColo
   };
 
   return (
-    <div style={S.container}>
+    <div className="flex flex-col gap-2 px-4 py-3 bg-white h-full overflow-hidden">
       {/* Selection context banner */}
       {hasSelection && (
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "6px 12px",
-          backgroundColor: `${primaryColor}10`,
-          borderRadius: 6,
-          border: `1px solid ${primaryColor}25`,
-          marginBottom: 4,
-        }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: primaryColor }} />
-          <span style={{ fontSize: 11, fontWeight: 600, color: primaryColor }}>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md mb-1" style={{ backgroundColor: `${primaryColor}10`, border: `1px solid ${primaryColor}25` }}>
+          <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: primaryColor }} />
+          <span className="text-[11px] font-semibold" style={{ color: primaryColor }}>
             Metricas de: {selectionLabel}
           </span>
-          <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: "auto" }}>
+          <span className="text-[10px] text-slate-400 ml-auto">
             {stats.totalForms} de {stats.allTotal} registros
           </span>
         </div>
       )}
 
-      <div style={S.mainGrid}>
+      <div className="grid flex-1 min-h-0 gap-3" style={{ gridTemplateColumns: "auto 1fr 260px" }}>
         {/* Left: KPI Cards (2x2) */}
-        <div style={S.kpiGrid}>
+        <div className="grid grid-cols-2 gap-2 w-60">
           <KpiCard
             label="Ultima hora"
             value={stats.formsLastHour}
@@ -201,12 +203,12 @@ export function ActivityCharts({ forms, agents, allForms, allAgents, primaryColo
         </div>
 
         {/* Center: 24h activity chart */}
-        <div style={S.chartCard}>
-          <div style={S.chartHeader}>
-            <span style={S.chartTitle}>Actividad 24h</span>
+        <div className="bg-slate-50/80 rounded-lg border border-slate-100 px-3 py-2.5 flex flex-col min-w-0">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wide">Actividad 24h</span>
             {stats.peakHour && stats.peakHour.forms > 0 && (
-              <span style={{ fontSize: 10, color: "#94a3b8" }}>
-                Pico: <span style={{ color: primaryColor, fontWeight: 700 }}>{stats.peakHour.forms}</span> a las {stats.peakHour.label}
+              <span className="text-[10px] text-slate-400">
+                Pico: <span className="font-bold" style={{ color: primaryColor }}>{stats.peakHour.forms}</span> a las {stats.peakHour.label}
               </span>
             )}
           </div>
@@ -219,70 +221,32 @@ export function ActivityCharts({ forms, agents, allForms, allAgents, primaryColo
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis 
-                dataKey="label" 
-                tick={{ fontSize: 9, fill: "#94a3b8" }} 
-                axisLine={false} 
-                tickLine={false}
-                interval={3}
-              />
-              <YAxis 
-                tick={{ fontSize: 9, fill: "#94a3b8" }} 
-                axisLine={false} 
-                tickLine={false} 
-                allowDecimals={false}
-              />
+              <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval={3} />
+              <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
               <Tooltip
-                contentStyle={S.tooltip}
+                contentStyle={tooltipStyle}
                 labelFormatter={(l) => `${l}`}
                 formatter={(value, name) => [String(value ?? 0), name === "forms" ? "Registros" : "Agentes"]}
               />
-              <Area 
-                type="monotone" 
-                dataKey="forms" 
-                stroke={primaryColor} 
-                strokeWidth={2}
-                fill="url(#areaGrad)" 
-                name="forms"
-                animationDuration={800}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="agents" 
-                stroke={accentColor} 
-                strokeWidth={1.5}
-                fill="transparent"
-                strokeDasharray="4 2"
-                name="agents"
-                animationDuration={800}
-              />
+              <Area type="monotone" dataKey="forms" stroke={primaryColor} strokeWidth={2} fill="url(#areaGrad)" name="forms" animationDuration={800} />
+              <Area type="monotone" dataKey="agents" stroke={accentColor} strokeWidth={1.5} fill="transparent" strokeDasharray="4 2" name="agents" animationDuration={800} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
 
         {/* Right: Agent ranking bars */}
-        <div style={S.chartCard}>
-          <div style={S.chartHeader}>
-            <span style={S.chartTitle}>Rendimiento</span>
-            <span style={{ fontSize: 10, color: "#94a3b8" }}>{agents.length} agentes</span>
+        <div className="bg-slate-50/80 rounded-lg border border-slate-100 px-3 py-2.5 flex flex-col min-w-0">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wide">Rendimiento</span>
+            <span className="text-[10px] text-slate-400">{agents.length} agentes</span>
           </div>
           {agentRanking.length > 0 ? (
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={agentRanking} layout="vertical" margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                <YAxis 
-                  type="category" 
-                  dataKey="name" 
-                  tick={{ fontSize: 10, fill: "#64748b" }} 
-                  axisLine={false} 
-                  tickLine={false}
-                  width={65}
-                />
-                <Tooltip
-                  contentStyle={S.tooltip}
-                  formatter={(value) => [String(value ?? 0), "Registros"]}
-                />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} width={65} />
+                <Tooltip contentStyle={tooltipStyle} formatter={(value) => [String(value ?? 0), "Registros"]} />
                 <Bar dataKey="forms" radius={[0, 4, 4, 0]} maxBarSize={18} animationDuration={600}>
                   {agentRanking.map((entry) => (
                     <Cell key={entry.id} fill={statusColors[entry.status] ?? primaryColor} fillOpacity={0.85} />
@@ -291,7 +255,7 @@ export function ActivityCharts({ forms, agents, allForms, allAgents, primaryColo
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div style={S.noData}>Sin datos de agentes</div>
+            <div className="flex items-center justify-center h-40 text-xs text-slate-400">Sin datos de agentes</div>
           )}
         </div>
       </div>
@@ -301,29 +265,22 @@ export function ActivityCharts({ forms, agents, allForms, allAgents, primaryColo
 
 /* ========== KPI Card ========== */
 
-function KpiCard({ label, value, color, trend, subtitle, icon }: { 
+function KpiCard({ label, value, color, trend, subtitle, icon }: {
   label: string; value: number; color: string; trend?: string; subtitle?: string; icon: React.ReactNode;
 }) {
   return (
-    <div style={S.kpiCard}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-        <span style={{ ...S.kpiIcon, color }}>{icon}</span>
+    <div className="px-3 py-2.5 bg-slate-50/80 rounded-lg border border-slate-100">
+      <div className="flex items-center justify-between mb-1">
+        <span className="flex items-center" style={{ color }}>{icon}</span>
         {trend && (
-          <span style={{
-            fontSize: 9,
-            fontWeight: 700,
-            color: "#10b981",
-            backgroundColor: "#ecfdf5",
-            padding: "2px 6px",
-            borderRadius: 4,
-          }}>
+          <span className="text-[9px] font-bold text-emerald-500 bg-emerald-50 px-1.5 py-0.5 rounded">
             {trend}
           </span>
         )}
       </div>
-      <div style={{ ...S.kpiValue, color }}>{value}</div>
-      <div style={S.kpiLabel}>{label}</div>
-      {subtitle && <div style={S.kpiSubtitle}>{subtitle}</div>}
+      <div className="text-[22px] font-extrabold leading-tight tabular-nums" style={{ color }}>{value}</div>
+      <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">{label}</div>
+      {subtitle && <div className="text-[9px] text-slate-300 mt-px">{subtitle}</div>}
     </div>
   );
 }
@@ -368,97 +325,3 @@ function TrendIcon() {
     </svg>
   );
 }
-
-/* ========== Styles ========== */
-
-const S: Record<string, React.CSSProperties> = {
-  container: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-    padding: "12px 16px",
-    backgroundColor: "#ffffff",
-    height: "100%",
-    overflow: "hidden",
-  },
-  mainGrid: {
-    display: "grid",
-    gridTemplateColumns: "auto 1fr 260px",
-    gap: 12,
-    flex: 1,
-    minHeight: 0,
-  },
-  kpiGrid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 8,
-    width: 240,
-  },
-  kpiCard: {
-    padding: "10px 12px",
-    backgroundColor: "#fafbfc",
-    borderRadius: 8,
-    border: "1px solid #f1f5f9",
-  },
-  kpiIcon: {
-    display: "flex",
-    alignItems: "center",
-  },
-  kpiValue: {
-    fontSize: 22,
-    fontWeight: 800,
-    lineHeight: 1.1,
-    fontVariantNumeric: "tabular-nums",
-  },
-  kpiLabel: {
-    fontSize: 9,
-    fontWeight: 700,
-    color: "#94a3b8",
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-    marginTop: 2,
-  },
-  kpiSubtitle: {
-    fontSize: 9,
-    color: "#cbd5e1",
-    marginTop: 1,
-  },
-  chartCard: {
-    backgroundColor: "#fafbfc",
-    borderRadius: 8,
-    border: "1px solid #f1f5f9",
-    padding: "10px 12px",
-    display: "flex",
-    flexDirection: "column",
-    minWidth: 0,
-  },
-  chartHeader: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 6,
-  },
-  chartTitle: {
-    fontSize: 10,
-    fontWeight: 700,
-    color: "#475569",
-    textTransform: "uppercase",
-    letterSpacing: "0.04em",
-  },
-  tooltip: {
-    backgroundColor: "#ffffff",
-    border: "1px solid #e2e8f0",
-    borderRadius: 8,
-    fontSize: 11,
-    boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-    padding: "8px 12px",
-  },
-  noData: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    height: 160,
-    fontSize: 12,
-    color: "#94a3b8",
-  },
-};

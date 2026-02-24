@@ -1,19 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 
 import type { FormRecord } from "@/lib/services";
 import { useAuth } from "@/lib/auth-context";
-import { useCampaignStats, useRecentForms, useAgentLocationsSnapshot, tierraKeys, type AgentLocation } from "@/lib/hooks";
+import { useCampaignStats, useRecentForms, useAgentLocationsSnapshot, useBrigadistaMetrics, tierraKeys, type AgentLocation } from "@/lib/hooks";
 
 import {
-  TierraHeader, MapControls, DataPanel, KpiPanel, ActivityCharts,
+  TierraHeader, MapControls, DataPanel, ActivityCharts, PipelineView,
   INITIAL_DRILL,
   type TierraMapHandle, type EnrichedAgent, type DrillState, type ActiveLayer, type LogEntry,
 } from "./_components";
+import type { TierraViewMode } from "./_components/tierra-header";
 import { useAgentSSE } from "./_components/hooks/use-agent-sse";
 import { useFullscreen } from "./_components/hooks/use-fullscreen";
 import { useEnrichedAgents } from "./_components/hooks/use-enriched-agents";
@@ -48,13 +49,9 @@ export default function TierraPage() {
   const campaignId = stats?.campaign.id;
   const { data: forms = EMPTY_FORMS } = useRecentForms(campaignId);
   const { data: initialLocations } = useAgentLocationsSnapshot(campaignId);
+  const { data: brigadistaMetrics, isLoading: metricsLoading } = useBrigadistaMetrics(campaignId);
 
   // ─── SSE: live agent locations ───
-  // Buffer rapid SSE batches (~120ms) and flush on 250ms debounce
-  // to avoid re-computing enrichedAgents on every micro-batch.
-  //
-  // Optimization (R10): Keep a persistent Map<agent_id, AgentLocation> as source
-  // of truth to avoid rebuilding the Map from the array on every flush.
   const [locations, setLocations] = useState<AgentLocation[]>([]);
   const locationsMapRef = useRef<Map<string, AgentLocation>>(new Map());
   useEffect(() => {
@@ -70,15 +67,13 @@ export default function TierraPage() {
   const handleSSEUpdate = useCallback((incoming: AgentLocation[]) => {
     if (!ssePendingRef.current) ssePendingRef.current = new Map();
     for (const loc of incoming) ssePendingRef.current.set(loc.agent_id, loc);
-    if (sseTimerRef.current) return; // already scheduled
+    if (sseTimerRef.current) return;
     sseTimerRef.current = setTimeout(() => {
       sseTimerRef.current = null;
       const pending = ssePendingRef.current;
       if (!pending || pending.size === 0) return;
       ssePendingRef.current = null;
 
-      // Auto-clear agents from backgroundAgentIds when new GPS arrives
-      // (they came back from background and are actively sending location again)
       setBackgroundAgentIds((prev) => {
         let changed = false;
         const next = new Set(prev);
@@ -88,7 +83,6 @@ export default function TierraPage() {
         return changed ? next : prev;
       });
 
-      // Merge into persistent Map (avoids rebuilding Map from array each flush)
       const map = locationsMapRef.current;
       for (const [id, loc] of pending) map.set(id, loc);
       setLocations(Array.from(map.values()));
@@ -96,7 +90,7 @@ export default function TierraPage() {
   }, []);
   useEffect(() => () => { if (sseTimerRef.current) clearTimeout(sseTimerRef.current); }, []);
 
-  // ─── SSE: agent offline (removes agent from locations + injects activity log event) ───
+  // ─── SSE: agent offline ───
   const [sseEvents, setSseEvents] = useState<LogEntry[]>([]);
   const [backgroundAgentIds, setBackgroundAgentIds] = useState<Set<string>>(new Set());
 
@@ -115,10 +109,6 @@ export default function TierraPage() {
     }, ...prev].slice(0, 30));
   }, []);
 
-  // ─── SSE: agent status change (background/foreground) ───
-  // Only updates the backgroundAgentIds set for visual status override.
-  // No log injection — real connect/disconnect events from the stale sweep
-  // and location ingest are sufficient for the activity log.
   const handleAgentStatus = useCallback((payload: { agent_id: string; status: string }) => {
     if (payload.status === "background") {
       setBackgroundAgentIds((prev) => { const next = new Set(prev); next.add(payload.agent_id); return next; });
@@ -130,6 +120,7 @@ export default function TierraPage() {
   useAgentSSE(campaignId ?? null, handleSSEUpdate, handleAgentOffline, handleAgentStatus);
 
   // ─── UI state ───
+  const [viewMode, setViewMode] = useState<TierraViewMode>("campo");
   const [activeLayer, setActiveLayer] = useState<ActiveLayer>("datos");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
@@ -137,12 +128,11 @@ export default function TierraPage() {
   const [showMetrics, setShowMetrics] = useState(false);
   const [drillState, setDrillState] = useState<DrillState>(INITIAL_DRILL);
 
-
   const showTracking = activeLayer === "agentes";
   const showDatos = activeLayer === "datos";
   const showHeatmap = activeLayer === "densidad";
 
-  // ─── Geo bounds for current drill level (filters metrics/table to selected region) ───
+  // ─── Geo bounds for current drill level ───
   const drillBounds = useDrillBounds(drillState);
 
   // ─── Derived data ───
@@ -151,6 +141,23 @@ export default function TierraPage() {
 
   const enrichedAgentsRef = useRef(enrichedAgents);
   enrichedAgentsRef.current = enrichedAgents;
+
+  // ─── Pipeline totals for header KPIs ───
+  const pipelineTotals = useMemo(() => {
+    if (!brigadistaMetrics?.length) return undefined;
+    const totals = brigadistaMetrics.reduce(
+      (acc, b) => ({
+        captures: acc.captures + b.total_captures,
+        contacted: acc.contacted + b.hablados + b.respondieron,
+        responded: acc.responded + b.respondieron,
+      }),
+      { captures: 0, contacted: 0, responded: 0 },
+    );
+    return {
+      ...totals,
+      contactRate: totals.captures > 0 ? Math.round((totals.contacted / totals.captures) * 100) : 0,
+    };
+  }, [brigadistaMetrics]);
 
   const flyToPoint = useCallback((lng: number, lat: number, zoom: number) => {
     mapHandleRef.current?.flyToPoint(lng, lat, zoom);
@@ -191,22 +198,21 @@ export default function TierraPage() {
   // ─── Loading / Error ───
   if (statsLoading) {
     return (
-      <div style={S_SHELL}>
-        <div style={S_CENTER}>
-          <div style={{ width: 32, height: 32, border: "3px solid #e2e8f0", borderTopColor: "#1d4ed8", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
-          <span style={{ fontSize: 14, color: "#64748b" }}>Cargando campana...</span>
-          <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
+      <div className="fixed top-12 right-0 bottom-0 z-50 flex flex-col bg-slate-50 overflow-hidden transition-[left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]" style={{ left: "var(--sidebar-current-width, 72px)" }}>
+        <div className="flex flex-col items-center justify-center flex-1 gap-3 bg-slate-50">
+          <div className="w-8 h-8 border-[3px] border-slate-200 border-t-blue-700 rounded-full animate-spin" />
+          <span className="text-sm text-slate-500">Cargando campana...</span>
         </div>
       </div>
     );
   }
   if (statsError || !stats) {
     return (
-      <div style={S_SHELL}>
-        <div style={S_CENTER}>
-          <div style={{ fontSize: 18, fontWeight: 600, color: "#1e293b" }}>No se pudo cargar</div>
-          <div style={{ fontSize: 14, color: "#64748b" }}>{statsError instanceof Error ? statsError.message : "Candidato no encontrado"}</div>
-          <button type="button" onClick={() => refetchStats()} style={{ marginTop: 12, padding: "8px 20px", borderRadius: 8, border: "1px solid #e2e8f0", backgroundColor: "#ffffff", color: "#334155", fontSize: 13, cursor: "pointer" }}>
+      <div className="fixed top-12 right-0 bottom-0 z-50 flex flex-col bg-slate-50 overflow-hidden transition-[left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]" style={{ left: "var(--sidebar-current-width, 72px)" }}>
+        <div className="flex flex-col items-center justify-center flex-1 gap-3 bg-slate-50">
+          <div className="text-lg font-semibold text-slate-800">No se pudo cargar</div>
+          <div className="text-sm text-slate-500">{statsError instanceof Error ? statsError.message : "Candidato no encontrado"}</div>
+          <button type="button" onClick={() => refetchStats()} className="mt-3 px-5 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-[13px] cursor-pointer hover:bg-slate-50">
             Reintentar
           </button>
         </div>
@@ -222,34 +228,57 @@ export default function TierraPage() {
     : selectedAgentId ? enrichedAgents.find((a) => a.id === selectedAgentId)?.name ?? "Agente" : null;
 
   return (
-    <div ref={shellRef} style={isFullscreen ? S_SHELL_FS : S_SHELL}>
-      <TierraHeader stats={stats} agentCount={enrichedAgents.length} formCount={forms.length} connectedCount={connectedCount} />
+    <div
+      ref={shellRef}
+      className={`fixed z-50 flex flex-col bg-slate-50 overflow-hidden ${isFullscreen ? "inset-0" : "top-12 right-0 bottom-0 transition-[left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"}`}
+      style={isFullscreen ? undefined : { left: "var(--sidebar-current-width, 72px)" }}
+    >
+      <TierraHeader stats={stats} agentCount={enrichedAgents.length} formCount={forms.length} connectedCount={connectedCount} viewMode={viewMode} onViewModeChange={setViewMode} pipelineTotals={pipelineTotals} />
 
-      <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-        {/* Left column: map + metrics */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
-          <div style={{ flex: 1, position: "relative", minHeight: 0 }}>
-            <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} showHeatmap={showHeatmap} drillState={drillState} onDrillChange={setDrillState} />
+      {viewMode === "campo" ? (
+        /* ═══ Vista Campo ═══ */
+        <div className="flex flex-1 min-h-0">
+          <div className="flex flex-col flex-1 min-w-0 relative">
+            <div className="flex-1 relative min-h-0">
+              <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} showHeatmap={showHeatmap} drillState={drillState} onDrillChange={setDrillState} />
 
-            <div style={{ position: "absolute", top: 12, left: 12, zIndex: 10 }}>
-              <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} agentCount={enrichedAgents.length} formCount={forms.length} />
+              <div className="absolute top-3 left-3 z-10">
+                <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} agentCount={enrichedAgents.length} formCount={forms.length} />
+              </div>
+
+              <FullscreenButton isFullscreen={isFullscreen} onToggle={toggleFullscreen} />
+              <BottomToolbar showMetrics={showMetrics} showTable={showTable} onToggleMetrics={() => setShowMetrics(!showMetrics)} onToggleTable={() => setShowTable(!showTable)} color={campaign.color_primario} />
             </div>
 
-            <FullscreenButton isFullscreen={isFullscreen} onToggle={toggleFullscreen} />
-            <BottomToolbar showMetrics={showMetrics} showTable={showTable} onToggleMetrics={() => setShowMetrics(!showMetrics)} onToggleTable={() => setShowTable(!showTable)} color={campaign.color_primario} />
+            {/* Metrics panel — always mounted, GPU transform slide */}
+            <div
+              className="bg-white border-t border-slate-200 overflow-hidden shrink-0 transition-[transform,margin-bottom] duration-250 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-transform"
+              style={{
+                height: METRICS_H,
+                transform: showMetrics ? "translateY(0)" : `translateY(${METRICS_H}px)`,
+                marginBottom: showMetrics ? 0 : -METRICS_H,
+              }}
+            >
+              <ActivityCharts forms={filteredForms} agents={filteredAgents} allForms={forms} allAgents={enrichedAgents} primaryColor={campaign.color_primario} secondaryColor={campaign.color_secundario} selectionLabel={selectionLabel} />
+            </div>
           </div>
 
-          {/* Metrics panel — always mounted, GPU transform slide (no layout thrash) */}
-          <div style={{ height: METRICS_H, backgroundColor: "#ffffff", borderTop: "1px solid #e2e8f0", overflow: "hidden", flexShrink: 0, transform: showMetrics ? "translateY(0)" : `translateY(${METRICS_H}px)`, marginBottom: showMetrics ? 0 : -METRICS_H, transition: "transform 0.25s cubic-bezier(0.4,0,0.2,1), margin-bottom 0.25s cubic-bezier(0.4,0,0.2,1)", willChange: "transform" }}>
-            <ActivityCharts forms={filteredForms} agents={filteredAgents} allForms={forms} allAgents={enrichedAgents} primaryColor={campaign.color_primario} secondaryColor={campaign.color_secundario} selectionLabel={selectionLabel} />
+          {/* Data sidebar — always mounted, GPU transform slide */}
+          <div
+            className="shrink-0 overflow-hidden border-l border-slate-200 relative transition-[transform,margin-left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-transform"
+            style={{
+              width: PANEL_W,
+              transform: showTable ? "translateX(0)" : `translateX(${PANEL_W}px)`,
+              marginLeft: showTable ? 0 : -PANEL_W,
+            }}
+          >
+            <DataPanel forms={filteredForms} selectedAgentName={enrichedAgents.find((a) => a.id === selectedAgentId)?.name ?? null} primaryColor={campaign.color_primario} open={showTable} onClose={() => setShowTable(false)} onFlyTo={(lng, lat) => mapHandleRef.current?.flyToPoint(lng, lat, 17)} campaignId={campaign.id} isAdmin={isAdmin} onFormsDeleted={handleFormsDeleted} agents={enrichedAgents} selectedAgentId={selectedAgentId} onSelectAgent={handleAgentListClick} onWhatsApp={handleWhatsApp} logEntries={logEntries} onLogEntryClick={handleLogEntryClick} onClearLog={handleClearLog} brigadistaMetrics={brigadistaMetrics} />
           </div>
         </div>
-
-        {/* Data sidebar — always mounted, GPU transform slide (no width reflow) */}
-        <div style={{ width: PANEL_W, flexShrink: 0, overflow: "hidden", borderLeft: "1px solid #e2e8f0", position: "relative", transform: showTable ? "translateX(0)" : `translateX(${PANEL_W}px)`, marginLeft: showTable ? 0 : -PANEL_W, transition: "transform 0.2s cubic-bezier(0.4,0,0.2,1), margin-left 0.2s cubic-bezier(0.4,0,0.2,1)", willChange: "transform" }}>
-          <DataPanel forms={filteredForms} selectedAgentName={enrichedAgents.find((a) => a.id === selectedAgentId)?.name ?? null} primaryColor={campaign.color_primario} open={showTable} onClose={() => setShowTable(false)} onFlyTo={(lng, lat) => mapHandleRef.current?.flyToPoint(lng, lat, 17)} campaignId={campaign.id} isAdmin={isAdmin} onFormsDeleted={handleFormsDeleted} agents={enrichedAgents} selectedAgentId={selectedAgentId} onSelectAgent={handleAgentListClick} onWhatsApp={handleWhatsApp} logEntries={logEntries} onLogEntryClick={handleLogEntryClick} onClearLog={handleClearLog} />
-        </div>
-      </div>
+      ) : (
+        /* ═══ Vista Pipeline ═══ */
+        <PipelineView brigadistas={brigadistaMetrics ?? []} isLoading={metricsLoading} primaryColor={campaign.color_primario} />
+      )}
     </div>
   );
 }
@@ -258,7 +287,13 @@ export default function TierraPage() {
 
 function FullscreenButton({ isFullscreen, onToggle }: { isFullscreen: boolean; onToggle: () => void }) {
   return (
-    <button type="button" onClick={onToggle} aria-label={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"} title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"} style={{ position: "absolute", top: 12, right: 12, zIndex: 10, width: 34, height: 34, borderRadius: 8, border: "1px solid #e2e8f0", backgroundColor: "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)", color: "#475569", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 6px rgba(0,0,0,0.08)", transition: "background-color 0.15s ease" }}>
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+      title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+      className="absolute top-3 right-3 z-10 w-[34px] h-[34px] rounded-lg border border-slate-200 bg-white/95 backdrop-blur-sm text-slate-600 cursor-pointer flex items-center justify-center shadow-sm transition-colors duration-150 hover:bg-slate-50"
+    >
       {isFullscreen ? (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" /></svg>
       ) : (
@@ -269,35 +304,32 @@ function FullscreenButton({ isFullscreen, onToggle }: { isFullscreen: boolean; o
 }
 
 function BottomToolbar({ showMetrics, showTable, onToggleMetrics, onToggleTable, color }: { showMetrics: boolean; showTable: boolean; onToggleMetrics: () => void; onToggleTable: () => void; color: string }) {
-  const btnBase: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.08)", transition: "all 0.2s ease" };
   return (
-    <div style={{ position: "absolute", bottom: 12, left: 12, zIndex: 10, display: "flex", alignItems: "center", gap: 8 }}>
-      <button type="button" onClick={onToggleMetrics} style={{ ...btnBase, backgroundColor: showMetrics ? color : "#ffffff", color: showMetrics ? "#ffffff" : "#334155" }}>
+    <div className="absolute bottom-3 left-3 z-10 flex items-center gap-2">
+      <button
+        type="button"
+        onClick={onToggleMetrics}
+        className="flex items-center gap-2 px-3.5 py-2 border border-slate-200 rounded-lg text-xs font-semibold cursor-pointer shadow-sm transition-all duration-200"
+        style={{
+          backgroundColor: showMetrics ? color : "#ffffff",
+          color: showMetrics ? "#ffffff" : "#334155",
+        }}
+      >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" /></svg>
         {showMetrics ? "Ocultar" : "Metricas"}
       </button>
-      <button type="button" onClick={onToggleTable} style={{ ...btnBase, backgroundColor: showTable ? color : "#ffffff", color: showTable ? "#ffffff" : "#334155" }}>
+      <button
+        type="button"
+        onClick={onToggleTable}
+        className="flex items-center gap-2 px-3.5 py-2 border border-slate-200 rounded-lg text-xs font-semibold cursor-pointer shadow-sm transition-all duration-200"
+        style={{
+          backgroundColor: showTable ? color : "#ffffff",
+          color: showTable ? "#ffffff" : "#334155",
+        }}
+      >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M3 15h18" /><path d="M9 3v18" /></svg>
         {showTable ? "Cerrar tabla" : "Ver tabla"}
       </button>
     </div>
   );
 }
-
-/* ========== Layout Styles ========== */
-
-const TAB_H = 48;
-
-const S_SHELL = {
-  position: "fixed", top: TAB_H, right: 0, bottom: 0,
-  left: "var(--sidebar-current-width, 72px)",
-  transition: "left 0.2s cubic-bezier(0.4,0,0.2,1)",
-  zIndex: 50, display: "flex", flexDirection: "column", backgroundColor: "#f8fafc", overflow: "hidden",
-} as React.CSSProperties;
-const S_SHELL_FS: React.CSSProperties = {
-  position: "fixed", inset: 0,
-  zIndex: 50, display: "flex", flexDirection: "column", backgroundColor: "#f8fafc", overflow: "hidden",
-};
-const S_CENTER: React.CSSProperties = {
-  display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: 12, backgroundColor: "#f8fafc",
-};

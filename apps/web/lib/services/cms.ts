@@ -245,6 +245,26 @@ export async function getCmsMetrics(campaignId?: string): Promise<{
   return { ok: true, metrics: res.data?.metrics };
 }
 
+// ── Brigadista Metrics ──────────────────────────────────────────────
+
+export type CmsBrigadistaMetricsResponse = {
+  ok: boolean;
+  brigadistas: import("@/lib/types").CmsBrigadistaMetrics[];
+};
+
+export async function getBrigadistaMetrics(campaignId: string): Promise<{
+  ok: boolean;
+  brigadistas?: import("@/lib/types").CmsBrigadistaMetrics[];
+  error?: string;
+}> {
+  const res = await api.get<CmsBrigadistaMetricsResponse>(
+    "/api/cms/metrics/brigadistas",
+    { campaignId },
+  );
+  if (!res.ok) return { ok: false, error: res.error?.message };
+  return { ok: true, brigadistas: res.data?.brigadistas ?? [] };
+}
+
 // ── Twilio config per campaign ───────────────────────────────────────
 
 export type CampaignTwilioConfig = {

@@ -17,3 +17,10 @@ export const agentLocationSchema = z.object({
 export const agentLocationBatchSchema = z.object({
   locations: z.array(agentLocationSchema).min(1).max(100),
 });
+
+export const agentStatusSchema = z.object({
+  agent_id: z.string().trim().min(1),
+  agent_name: z.string().trim().min(1).max(100).optional(),
+  status: z.enum(["background", "foreground"]),
+  campaign_id: z.string().uuid().optional(),
+});

@@ -119,84 +119,114 @@ export default function CmsPage() {
   useEffect(() => {
     if (!activeCampaignId) return;
 
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("goberna_access_token")
-        : null;
-    if (!token) return;
-
     let retryTimeout: ReturnType<typeof setTimeout>;
 
-    function connect() {
+    let attempt = 0;
+
+    /** Try to refresh the access token using the httpOnly cookie */
+    async function tryRefreshToken(): Promise<boolean> {
+      try {
+        const res = await fetch("/api/auth/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+          credentials: "same-origin",
+        });
+        return res.ok;
+      } catch {
+        return false;
+      }
+    }
+
+    async function connect() {
       const controller = new AbortController();
+      sseRef.current = { close: () => controller.abort() };
 
-      fetch("/api/cms/stream", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "x-campaign-id": activeCampaignId!,
-          Accept: "text/event-stream",
-        },
-        signal: controller.signal,
-      })
-        .then((res) => {
-          if (!res.ok || !res.body) return;
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-          // Persist SSE field state across chunk boundaries
-          let currentEvent = "";
-          let currentData = "";
+      try {
+        let res = await fetch("/api/cms/stream", {
+          headers: {
+            "x-campaign-id": activeCampaignId!,
+            Accept: "text/event-stream",
+          },
+          signal: controller.signal,
+          credentials: "same-origin",
+        });
 
-          function processChunk(): Promise<void> {
-            return reader.read().then(({ done, value }) => {
-              if (done) {
-                // Stream ended — fire any pending event before closing
-                if (currentEvent && currentData) {
-                  handleSseEvent(currentEvent, currentData);
-                  currentEvent = "";
-                  currentData = "";
-                }
-                return;
-              }
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split("\n");
-              buffer = lines.pop() ?? "";
-
-              for (const line of lines) {
-                if (line.startsWith("event: ")) {
-                  // New event starting — flush any incomplete prior event
-                  if (currentEvent && currentData) {
-                    handleSseEvent(currentEvent, currentData);
-                  }
-                  currentEvent = line.substring(7).trim();
-                  currentData = "";
-                } else if (line.startsWith("data: ")) {
-                  currentData += (currentData ? "\n" : "") + line.substring(6);
-                } else if (line.trim() === "") {
-                  // Empty line = end of SSE message
-                  if (currentEvent && currentData) {
-                    handleSseEvent(currentEvent, currentData);
-                  }
-                  currentEvent = "";
-                  currentData = "";
-                }
-              }
-
-              return processChunk();
+        // If 401, try refreshing the token once before giving up
+        if (res.status === 401) {
+          const refreshed = await tryRefreshToken();
+          if (refreshed) {
+            res = await fetch("/api/cms/stream", {
+              headers: {
+                "x-campaign-id": activeCampaignId!,
+                Accept: "text/event-stream",
+              },
+              signal: controller.signal,
+              credentials: "same-origin",
             });
           }
+        }
 
-          processChunk().catch(() => {
-            setSseConnected(false);
-            retryTimeout = setTimeout(connect, 5000);
-          });
+        if (!res.ok || !res.body) {
+          throw new Error(`CMS SSE error: ${res.status}`);
+        }
 
-          sseRef.current = { close: () => controller.abort() };
-        })
-        .catch(() => {
-          setSseConnected(false);
-          retryTimeout = setTimeout(connect, 5000);
-        });
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        // Persist SSE field state across chunk boundaries
+        let currentEvent = "";
+        let currentData = "";
+
+        async function processChunk(): Promise<void> {
+          const { done, value } = await reader.read();
+          if (done) {
+            // Stream ended — fire any pending event before closing
+            if (currentEvent && currentData) {
+              handleSseEvent(currentEvent, currentData);
+            }
+            return;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (line.startsWith("event: ")) {
+              // New event starting — flush any incomplete prior event
+              if (currentEvent && currentData) {
+                handleSseEvent(currentEvent, currentData);
+              }
+              currentEvent = line.substring(7).trim();
+              currentData = "";
+            } else if (line.startsWith("data: ")) {
+              currentData += (currentData ? "\n" : "") + line.substring(6);
+            } else if (line.trim() === "") {
+              // Empty line = end of SSE message
+              if (currentEvent && currentData) {
+                handleSseEvent(currentEvent, currentData);
+              }
+              currentEvent = "";
+              currentData = "";
+            }
+          }
+
+          return processChunk();
+        }
+
+        await processChunk();
+        // If we get here, stream ended normally — reconnect
+        attempt = 0;
+      } catch (err) {
+        // AbortError means intentional disconnect
+        if (err instanceof DOMException && err.name === "AbortError") return;
+      }
+
+      // Reconnect with exponential backoff (max 30s)
+      setSseConnected(false);
+      const delay = Math.min(1000 * 2 ** attempt, 30_000);
+      attempt++;
+      retryTimeout = setTimeout(connect, delay);
     }
 
     function handleSseEvent(event: string, dataStr: string) {
@@ -205,6 +235,7 @@ export default function CmsPage() {
 
         if (event === "connected") {
           setSseConnected(true);
+          attempt = 0;
           return;
         }
 

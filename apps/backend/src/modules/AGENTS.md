@@ -60,3 +60,14 @@ Ver `/CMS_DEVELOPER_GUIDE.md` para guia tecnica del modulo CMS + Twilio.
 - `/api/ready` debe contemplar DB + Tegola + Redis.
 - CMS usa SSE en `/api/cms/stream` con broadcast por campaign_id.
 - Twilio webhook es publico pero valida firma `X-Twilio-Signature`.
+
+## Guardrails de seguridad (auth module)
+
+- El modulo `auth/` usa cookie helpers (`setAuthCookies`, `clearAuthCookies`) definidos en `auth/routes.ts`.
+- Ambos reciben `isProd: boolean` derivado de `env.nodeEnv` (NO de `process.env` directo).
+- La funcion `parseCookies()` se importa de `infra/auth.ts` — NO duplicar con regex.
+- `AUTH_COOKIE_NAMES` se importa de `infra/auth.ts` — es la fuente de verdad de los nombres de cookies.
+- `/api/auth/refresh` tiene rate limit per-IP (`rateLimitAuthPerMinute`) igual que login y register.
+- Si `service.refresh()` falla, el catch **DEBE** llamar `clearAuthCookies()` antes de responder.
+- `/api/config` (modulo `map/`) no debe exponer URLs internas (`tegolaBaseUrl`).
+- Endpoints de `agents/` validan `agentStatusSchema` (zod enum `"background" | "foreground"`) para el status.

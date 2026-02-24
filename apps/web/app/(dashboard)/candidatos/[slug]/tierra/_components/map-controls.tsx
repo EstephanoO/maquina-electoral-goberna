@@ -28,7 +28,7 @@ const C = {
 
 export function MapControls({ activeLayer, onLayerChange, agentCount, formCount }: Props) {
   return (
-    <div style={S.root}>
+    <div className="bg-white/95 backdrop-blur-sm rounded-[10px] p-2 flex flex-col gap-0.5 border border-slate-200 shadow-sm">
       <LayerBtn
         active={activeLayer === "datos"}
         onClick={() => onLayerChange(activeLayer === "datos" ? null : "datos")}
@@ -55,10 +55,22 @@ export function MapControls({ activeLayer, onLayerChange, agentCount, formCount 
 
 function LayerBtn({ active, onClick, label, count, activeColor }: { active: boolean; onClick: () => void; label: string; count?: number; activeColor: string }) {
   return (
-    <button type="button" onClick={onClick} style={{ ...S.btn, backgroundColor: active ? activeColor : "#f8fafc", color: active ? "#fff" : "#475569", borderColor: active ? activeColor : "#e2e8f0" }}>
-      <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: active ? "#fff" : activeColor, opacity: active ? 0.9 : 0.4, flexShrink: 0 }} />
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-[7px] py-1.5 px-2.5 rounded-md border text-[11px] font-semibold cursor-pointer transition-all duration-150 min-w-[110px]"
+      style={{
+        backgroundColor: active ? activeColor : "#f8fafc",
+        color: active ? "#fff" : "#475569",
+        borderColor: active ? activeColor : "#e2e8f0",
+      }}
+    >
+      <span
+        className="w-[7px] h-[7px] rounded-full shrink-0"
+        style={{ backgroundColor: active ? "#fff" : activeColor, opacity: active ? 0.9 : 0.4 }}
+      />
       <span>{label}</span>
-      {count != null && <span style={{ ...S.count, opacity: active ? 1 : 0.5 }}>{count}</span>}
+      {count != null && <span className="ml-auto text-[10px] font-bold" style={{ opacity: active ? 1 : 0.5 }}>{count}</span>}
     </button>
   );
 }
@@ -74,23 +86,23 @@ const STATUS_LEGEND: { status: AgentStatus; label: string; color: string }[] = [
 export function MapLegend({ activeLayer }: LegendProps) {
   if (!activeLayer) return null;
   return (
-    <div style={S.legend}>
+    <div className="bg-white/95 backdrop-blur-sm rounded-md py-[5px] px-3 flex gap-3 border border-slate-200 shadow-sm">
       {activeLayer === "datos" && (
-        <div style={S.legendItem}>
-          <span style={{ ...S.legendDot, backgroundColor: C.datos }} />
-          <span style={S.legendLabel}>Dato</span>
+        <div className="flex items-center gap-[5px]">
+          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: C.datos }} />
+          <span className="text-[10px] text-slate-600 font-medium">Dato</span>
         </div>
       )}
       {activeLayer === "agentes" && STATUS_LEGEND.map((s) => (
-        <div key={s.status} style={S.legendItem}>
-          <span style={{ ...S.legendDot, backgroundColor: s.color }} />
-          <span style={S.legendLabel}>{s.label}</span>
+        <div key={s.status} className="flex items-center gap-[5px]">
+          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: s.color }} />
+          <span className="text-[10px] text-slate-600 font-medium">{s.label}</span>
         </div>
       ))}
       {activeLayer === "densidad" && (
-        <div style={S.legendItem}>
-          <div style={S.heatGradient} />
-          <span style={S.legendLabel}>Densidad</span>
+        <div className="flex items-center gap-[5px]">
+          <div className="w-7 h-2 rounded" style={{ background: "linear-gradient(to right, rgba(30,58,95,0.5), rgba(13,148,136,0.6), rgba(217,119,6,0.7), rgba(127,29,29,0.8))" }} />
+          <span className="text-[10px] text-slate-600 font-medium">Densidad</span>
         </div>
       )}
     </div>
@@ -100,17 +112,3 @@ export function MapLegend({ activeLayer }: LegendProps) {
 /* ========== Export type ========== */
 
 export type { ActiveLayer };
-
-/* ========== Styles ========== */
-
-const S: Record<string, React.CSSProperties> = {
-  root: { backgroundColor: "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)", borderRadius: 10, padding: 8, display: "flex", flexDirection: "column", gap: 3, border: "1px solid #e2e8f0", boxShadow: "0 1px 8px rgba(0,0,0,0.06)" },
-  btn: { display: "flex", alignItems: "center", gap: 7, padding: "6px 10px", borderRadius: 6, border: "1px solid", fontSize: 11, fontWeight: 600, cursor: "pointer", transition: "all 0.15s ease", minWidth: 110 },
-  count: { marginLeft: "auto", fontSize: 10, fontWeight: 700 },
-  divider: { height: 1, backgroundColor: "#e2e8f0", margin: "1px 0" },
-  legend: { backgroundColor: "rgba(255,255,255,0.95)", backdropFilter: "blur(8px)", borderRadius: 6, padding: "5px 12px", display: "flex", gap: 12, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" },
-  legendItem: { display: "flex", alignItems: "center", gap: 5 },
-  legendDot: { width: 8, height: 8, borderRadius: "50%" },
-  legendLabel: { fontSize: 10, color: "#475569", fontWeight: 500 },
-  heatGradient: { width: 28, height: 8, borderRadius: 4, background: "linear-gradient(to right, rgba(30,58,95,0.5), rgba(13,148,136,0.6), rgba(217,119,6,0.7), rgba(127,29,29,0.8))" },
-};

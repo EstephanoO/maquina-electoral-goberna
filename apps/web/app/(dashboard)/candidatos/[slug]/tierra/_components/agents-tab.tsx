@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
+import type { CmsBrigadistaMetrics } from "@/lib/types";
 import type { EnrichedAgent, AgentStatus } from "./types";
 import { STATUS_CFG } from "./constants";
 import { getTimeAgo } from "./utils";
@@ -13,13 +14,32 @@ type Props = {
   primaryColor: string;
   onSelectAgent: (agentId: string) => void;
   onWhatsApp?: (agent: EnrichedAgent) => void;
+  /** Per-brigadista CMS metrics — matched by agent id */
+  brigadistaMetrics?: CmsBrigadistaMetrics[];
 };
+
+/* ========== Constants ========== */
+
+const PIPELINE_COLORS = {
+  nuevos: "#94a3b8",
+  hablados: "#f59e0b",
+  respondieron: "#10b981",
+} as const;
 
 /* ========== Component ========== */
 
-export function AgentsTab({ agents, selectedAgentId, primaryColor, onSelectAgent, onWhatsApp }: Props) {
+export function AgentsTab({ agents, selectedAgentId, primaryColor, onSelectAgent, onWhatsApp, brigadistaMetrics }: Props) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<AgentStatus | "all">("all");
+
+  // Index brigadista metrics by ID for O(1) lookup
+  const metricsMap = useMemo(() => {
+    const map = new Map<string, CmsBrigadistaMetrics>();
+    if (brigadistaMetrics) {
+      for (const m of brigadistaMetrics) map.set(m.brigadista_id, m);
+    }
+    return map;
+  }, [brigadistaMetrics]);
 
   // Status counts
   const counts = useMemo(() => {
@@ -46,67 +66,68 @@ export function AgentsTab({ agents, selectedAgentId, primaryColor, onSelectAgent
   }, [onWhatsApp]);
 
   return (
-    <div style={S.root}>
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Status filter pills */}
-      <div style={S.filters}>
+      <div className="flex gap-1.5 px-4 py-2.5 border-b border-slate-100 shrink-0">
         {(["connected", "idle", "inactive"] as const).map((s) => (
           <button
             key={s}
             type="button"
             onClick={() => setStatusFilter(statusFilter === s ? "all" : s)}
+            className="flex-1 flex flex-col items-center py-2 px-1.5 rounded-lg border cursor-pointer transition-all duration-150"
             style={{
-              ...S.filterBtn,
               backgroundColor: statusFilter === s ? STATUS_CFG[s].color : "#f8fafc",
               color: statusFilter === s ? "#fff" : STATUS_CFG[s].color,
               borderColor: statusFilter === s ? STATUS_CFG[s].color : "#e2e8f0",
             }}
           >
-            <span style={S.filterCount}>{counts[s]}</span>
-            <span style={S.filterLabel}>{STATUS_CFG[s].label}</span>
+            <span className="text-base font-bold">{counts[s]}</span>
+            <span className="text-[9px] font-semibold tracking-wide">{STATUS_CFG[s].label}</span>
           </button>
         ))}
       </div>
 
       {/* Search */}
-      <div style={S.searchBox}>
-        <div style={S.searchWrap}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><title>Buscar</title><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+      <div className="px-4 py-2 border-b border-slate-100 shrink-0">
+        <div className="flex items-center gap-2.5 py-2 px-3 rounded-lg border border-slate-200 bg-slate-50">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><title>Buscar</title><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar agente..."
-            style={S.searchInput}
+            className="flex-1 border-none outline-none bg-transparent text-[13px] text-slate-700"
           />
           {search && (
-            <button type="button" onClick={() => setSearch("")} style={S.clearBtn} aria-label="Limpiar">&#10005;</button>
+            <button type="button" onClick={() => setSearch("")} className="w-5 h-5 rounded border-none bg-slate-200 text-slate-500 cursor-pointer text-[10px] flex items-center justify-center" aria-label="Limpiar">✕</button>
           )}
         </div>
       </div>
 
       {/* List header */}
-      <div style={S.listHeader}>
-        <span style={S.listTitle}>Agentes ({filtered.length})</span>
-        <span style={S.liveTag}>
-          <span style={S.liveDot} />
+      <div className="flex justify-between items-center px-4 py-2 border-b border-slate-100 shrink-0">
+        <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Agentes ({filtered.length})</span>
+        <span className="flex items-center gap-1.5 text-[10px] font-bold text-green-500">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
           LIVE
         </span>
       </div>
 
       {/* Agent list */}
-      <div style={S.list}>
+      <div className="flex-1 overflow-y-auto px-2 py-1">
         {filtered.length === 0 ? (
-          <div style={S.empty}>
+          <div className="flex flex-col items-center justify-center gap-2 p-12 text-center">
             <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><title>Sin agentes</title><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "#64748b" }}>Sin agentes</span>
-            <span style={{ fontSize: 12, color: "#94a3b8" }}>
-              {search || statusFilter !== "all" ? "Intenta con otros filtros" : "Los agentes aparecerán aquí"}
+            <span className="text-[13px] font-semibold text-slate-500">Sin agentes</span>
+            <span className="text-xs text-slate-400">
+              {search || statusFilter !== "all" ? "Intenta con otros filtros" : "Los agentes apareceran aqui"}
             </span>
           </div>
         ) : (
           filtered.map((agent) => {
             const isSelected = selectedAgentId === agent.id;
             const cfg = STATUS_CFG[agent.status];
+            const metrics = metricsMap.get(agent.id);
             return (
               <div
                 key={agent.id}
@@ -114,35 +135,49 @@ export function AgentsTab({ agents, selectedAgentId, primaryColor, onSelectAgent
                 tabIndex={0}
                 onClick={() => onSelectAgent(agent.id)}
                 onKeyDown={(e) => e.key === "Enter" && onSelectAgent(agent.id)}
+                className="w-full flex items-center justify-between py-2.5 px-3 mb-0.5 rounded-lg border-l-[3px] cursor-pointer transition-colors duration-100"
                 style={{
-                  ...S.row,
                   backgroundColor: isSelected ? `${primaryColor}08` : "transparent",
                   borderLeftColor: cfg.color,
                 }}
               >
-                {/* Status dot + info */}
-                <div style={S.rowMain}>
-                  <span style={{ ...S.statusDot, backgroundColor: cfg.color }} />
-                  <div style={S.rowInfo}>
-                    <div style={S.rowName}>{agent.name}</div>
-                    <div style={S.rowMeta}>
-                      <span style={{ color: cfg.color, fontSize: 11, fontWeight: 500 }}>{cfg.label}</span>
-                      <span style={S.rowSep}>·</span>
-                      <span style={S.rowTime}>{getTimeAgo(agent.lastSeen)}</span>
+                {/* Left: status + info + mini funnel */}
+                <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cfg.color }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold text-slate-800 whitespace-nowrap overflow-hidden text-ellipsis">{agent.name}</div>
+                    <div className="text-[11px] flex items-center gap-1 mt-px">
+                      <span className="font-medium" style={{ color: cfg.color }}>{cfg.label}</span>
+                      <span className="text-slate-300">·</span>
+                      <span className="text-slate-400 text-[11px]">{getTimeAgo(agent.lastSeen)}</span>
                     </div>
+                    {/* Mini pipeline bar */}
+                    {metrics && metrics.total_captures > 0 && (
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <div className="flex h-1 rounded-sm overflow-hidden flex-1 bg-slate-100">
+                          {metrics.nuevos > 0 && <div className="h-full" style={{ width: `${(metrics.nuevos / metrics.total_captures) * 100}%`, backgroundColor: PIPELINE_COLORS.nuevos }} />}
+                          {metrics.hablados > 0 && <div className="h-full" style={{ width: `${(metrics.hablados / metrics.total_captures) * 100}%`, backgroundColor: PIPELINE_COLORS.hablados }} />}
+                          {metrics.respondieron > 0 && <div className="h-full" style={{ width: `${(metrics.respondieron / metrics.total_captures) * 100}%`, backgroundColor: PIPELINE_COLORS.respondieron }} />}
+                        </div>
+                        <span className="text-[9px] font-bold text-slate-400 shrink-0">{Math.round(metrics.contact_rate * 100)}%</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Right: forms count + WhatsApp */}
-                <div style={S.rowRight}>
-                  <div style={{ ...S.formsBadge, color: primaryColor, backgroundColor: `${primaryColor}12` }}>
+                <div className="flex items-center gap-2 shrink-0 ml-2">
+                  <div
+                    className="text-sm font-bold px-2 py-px rounded-md min-w-[28px] text-center"
+                    style={{ color: primaryColor, backgroundColor: `${primaryColor}12` }}
+                  >
                     {agent.forms_count}
                   </div>
                   {onWhatsApp && (
                     <button
                       type="button"
                       onClick={(e) => handleWhatsApp(e, agent)}
-                      style={S.waBtn}
+                      className="w-[30px] h-[30px] rounded-lg border border-slate-200 bg-green-50 cursor-pointer flex items-center justify-center transition-all duration-150 shrink-0 hover:bg-green-100"
                       title={`WhatsApp a ${agent.name}`}
                       aria-label={`WhatsApp a ${agent.name}`}
                     >
@@ -158,192 +193,3 @@ export function AgentsTab({ agents, selectedAgentId, primaryColor, onSelectAgent
     </div>
   );
 }
-
-/* ========== Styles ========== */
-
-const S: Record<string, React.CSSProperties> = {
-  root: {
-    display: "flex",
-    flexDirection: "column",
-    height: "100%",
-    overflow: "hidden",
-  },
-  filters: {
-    display: "flex",
-    gap: 6,
-    padding: "10px 16px",
-    borderBottom: "1px solid #f1f5f9",
-    flexShrink: 0,
-  },
-  filterBtn: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "center",
-    padding: "8px 6px",
-    borderRadius: 8,
-    border: "1px solid",
-    cursor: "pointer",
-    transition: "all 0.15s ease",
-    backgroundColor: "transparent",
-  },
-  filterCount: { fontSize: 16, fontWeight: 700 },
-  filterLabel: { fontSize: 9, fontWeight: 600, letterSpacing: "0.03em" },
-
-  searchBox: {
-    padding: "8px 16px",
-    borderBottom: "1px solid #f1f5f9",
-    flexShrink: 0,
-  },
-  searchWrap: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "8px 12px",
-    borderRadius: 8,
-    border: "1px solid #e2e8f0",
-    backgroundColor: "#f8fafc",
-  },
-  searchInput: {
-    flex: 1,
-    border: "none",
-    outline: "none",
-    backgroundColor: "transparent",
-    fontSize: 13,
-    color: "#334155",
-  },
-  clearBtn: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    border: "none",
-    backgroundColor: "#e2e8f0",
-    color: "#64748b",
-    cursor: "pointer",
-    fontSize: 10,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  listHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "8px 16px",
-    borderBottom: "1px solid #f1f5f9",
-    flexShrink: 0,
-  },
-  listTitle: {
-    fontSize: 10,
-    fontWeight: 700,
-    textTransform: "uppercase" as const,
-    color: "#64748b",
-    letterSpacing: "0.05em",
-  },
-  liveTag: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    fontSize: 10,
-    fontWeight: 700,
-    color: "#22c55e",
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: "50%",
-    backgroundColor: "#22c55e",
-  },
-
-  list: {
-    flex: 1,
-    overflowY: "auto" as const,
-    padding: "4px 8px",
-  },
-  empty: {
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    padding: 48,
-    textAlign: "center" as const,
-  },
-
-  row: {
-    width: "100%",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "10px 12px",
-    marginBottom: 2,
-    borderRadius: 8,
-    borderLeft: "3px solid",
-    cursor: "pointer",
-    transition: "background 0.12s ease",
-  },
-  rowMain: {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    flex: 1,
-    minWidth: 0,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: "50%",
-    flexShrink: 0,
-  },
-  rowInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  rowName: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: "#1e293b",
-    whiteSpace: "nowrap" as const,
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  rowMeta: {
-    fontSize: 11,
-    display: "flex",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 1,
-  },
-  rowSep: { color: "#cbd5e1" },
-  rowTime: { color: "#94a3b8", fontSize: 11 },
-
-  rowRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    flexShrink: 0,
-    marginLeft: 8,
-  },
-  formsBadge: {
-    fontSize: 14,
-    fontWeight: 700,
-    padding: "2px 8px",
-    borderRadius: 6,
-    minWidth: 28,
-    textAlign: "center" as const,
-  },
-  waBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    border: "1px solid #e2e8f0",
-    backgroundColor: "#f0fdf4",
-    cursor: "pointer",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    transition: "all 0.15s ease",
-    flexShrink: 0,
-  },
-};

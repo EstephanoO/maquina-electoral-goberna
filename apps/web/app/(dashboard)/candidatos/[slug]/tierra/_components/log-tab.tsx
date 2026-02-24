@@ -29,28 +29,34 @@ export function LogTab({ entries, onEntryClick, onClearLog, primaryColor }: Prop
   }, [entries.length]);
 
   return (
-    <div style={S.root}>
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Header row */}
-      <div style={S.header}>
-        <div style={S.headerLeft}>
-          <span style={S.liveDot} />
-          <span style={S.title}>Log Operativo</span>
-          <span style={{ ...S.countBadge, color: primaryColor }}>{entries.length}</span>
+      <div className="flex justify-between items-center px-4 py-2.5 border-b border-slate-100 shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="w-[7px] h-[7px] rounded-full bg-teal-600" />
+          <span className="text-xs font-bold text-slate-800 tracking-tight">Log Operativo</span>
+          <span className="text-[11px] font-bold" style={{ color: primaryColor }}>{entries.length}</span>
         </div>
         {onClearLog && entries.length > 0 && (
-          <button type="button" onClick={onClearLog} style={S.clearBtn} aria-label="Limpiar log" title="Limpiar log">
+          <button
+            type="button"
+            onClick={onClearLog}
+            className="text-[11px] font-semibold text-red-500 bg-red-50 border border-red-200 rounded-md px-2.5 py-1 cursor-pointer transition-all duration-150 hover:bg-red-100"
+            aria-label="Limpiar log"
+            title="Limpiar log"
+          >
             Limpiar
           </button>
         )}
       </div>
 
       {/* Entry list */}
-      <div ref={listRef} style={S.list}>
+      <div ref={listRef} className="flex-1 overflow-y-auto px-2 py-1">
         {entries.length === 0 ? (
-          <div style={S.empty}>
+          <div className="flex flex-col items-center justify-center gap-2 p-12 text-center">
             <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><title>Sin actividad</title><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
-            <span style={{ fontSize: 13, fontWeight: 600, color: "#64748b" }}>Sin actividad reciente</span>
-            <span style={{ fontSize: 12, color: "#94a3b8" }}>Los eventos aparecerán aquí</span>
+            <span className="text-[13px] font-semibold text-slate-500">Sin actividad reciente</span>
+            <span className="text-xs text-slate-400">Los eventos aparecerán aquí</span>
           </div>
         ) : (
           entries.map((entry) => {
@@ -60,30 +66,30 @@ export function LogTab({ entries, onEntryClick, onClearLog, primaryColor }: Prop
                 key={entry.id}
                 type="button"
                 onClick={() => hasLocation && onEntryClick(entry)}
-                style={{
-                  ...S.entry,
-                  cursor: hasLocation ? "pointer" : "default",
-                }}
+                className={`w-full flex items-center gap-2.5 py-2 px-2.5 rounded-lg border-none bg-transparent text-left transition-colors duration-100 ${hasLocation ? "cursor-pointer hover:bg-slate-50" : "cursor-default"}`}
                 title={hasLocation ? "Click para ver en mapa" : undefined}
               >
                 {/* Icon */}
-                <span style={{ ...S.icon, backgroundColor: LOG_ICON_BG[entry.type] }}>
+                <span
+                  className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-white text-xs font-extrabold shrink-0"
+                  style={{ backgroundColor: LOG_ICON_BG[entry.type] }}
+                >
                   {LOG_ICON_LABEL[entry.type]}
                 </span>
 
                 {/* Content */}
-                <div style={S.entryContent}>
-                  <div style={S.entryMsg}>
-                    <span style={S.entryAgent}>{entry.agentName}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs leading-snug text-slate-700">
+                    <span className="font-bold text-slate-800">{entry.agentName}</span>
                     {" "}
-                    <span style={S.entryAction}>{entry.message}</span>
+                    <span className="font-normal text-slate-500">{entry.message}</span>
                   </div>
-                  <span style={S.entryTime}>{timeAgo(entry.timestamp)}</span>
+                  <span className="text-[10px] text-slate-400 mt-px">{timeAgo(entry.timestamp)}</span>
                 </div>
 
                 {/* Location indicator */}
                 {hasLocation && (
-                  <span style={{ ...S.locPin, color: primaryColor }}>&#9679;</span>
+                  <span className="text-[8px] shrink-0 opacity-60" style={{ color: primaryColor }}>&#9679;</span>
                 )}
               </button>
             );
@@ -93,120 +99,3 @@ export function LogTab({ entries, onEntryClick, onClearLog, primaryColor }: Prop
     </div>
   );
 }
-
-/* ========== Styles ========== */
-
-const S: Record<string, React.CSSProperties> = {
-  root: {
-    display: "flex",
-    flexDirection: "column",
-    height: "100%",
-    overflow: "hidden",
-  },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "10px 16px",
-    borderBottom: "1px solid #f1f5f9",
-    flexShrink: 0,
-  },
-  headerLeft: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  },
-  liveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: "50%",
-    backgroundColor: "#0d9488",
-  },
-  title: {
-    fontSize: 12,
-    fontWeight: 700,
-    color: "#1e293b",
-    letterSpacing: "0.02em",
-  },
-  countBadge: {
-    fontSize: 11,
-    fontWeight: 700,
-  },
-  clearBtn: {
-    fontSize: 11,
-    fontWeight: 600,
-    color: "#ef4444",
-    backgroundColor: "#fef2f2",
-    border: "1px solid #fecaca",
-    borderRadius: 6,
-    padding: "4px 10px",
-    cursor: "pointer",
-    transition: "all 0.15s ease",
-  },
-
-  list: {
-    flex: 1,
-    overflowY: "auto" as const,
-    padding: "4px 8px",
-  },
-  empty: {
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    padding: 48,
-    textAlign: "center" as const,
-  },
-  entry: {
-    width: "100%",
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    padding: "8px 10px",
-    borderRadius: 8,
-    border: "none",
-    backgroundColor: "transparent",
-    textAlign: "left" as const,
-    transition: "background 0.12s ease",
-  },
-  icon: {
-    width: 26,
-    height: 26,
-    borderRadius: 7,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: 800,
-    flexShrink: 0,
-  },
-  entryContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-  entryMsg: {
-    fontSize: 12,
-    lineHeight: 1.3,
-    color: "#334155",
-  },
-  entryAgent: {
-    fontWeight: 700,
-    color: "#1e293b",
-  },
-  entryAction: {
-    fontWeight: 400,
-    color: "#64748b",
-  },
-  entryTime: {
-    fontSize: 10,
-    color: "#94a3b8",
-    marginTop: 1,
-  },
-  locPin: {
-    fontSize: 8,
-    flexShrink: 0,
-    opacity: 0.6,
-  },
-};

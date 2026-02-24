@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import type { FormRecord } from "@/lib/services";
+import type { CmsBrigadistaMetrics } from "@/lib/types";
 import type { EnrichedAgent, LogEntry } from "./types";
 import { AgentsTab } from "./agents-tab";
 import { LogTab } from "./log-tab";
@@ -30,6 +31,7 @@ type Props = {
   logEntries: LogEntry[];
   onLogEntryClick: (entry: LogEntry) => void;
   onClearLog?: () => void;
+  brigadistaMetrics?: CmsBrigadistaMetrics[];
 };
 
 /* ========== Constants ========== */
@@ -65,14 +67,15 @@ export function DataPanel({
   campaignId, isAdmin = false, onFormsDeleted,
   agents, selectedAgentId, onSelectAgent, onWhatsApp,
   logEntries, onLogEntryClick, onClearLog,
+  brigadistaMetrics,
 }: Props) {
   const [activeTab, setActiveTab] = useState<PanelTab>("datos");
 
   return (
-    <div style={{ width: WIDTH, height: "100%", backgroundColor: "#ffffff", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div className="h-full bg-white flex flex-col overflow-hidden" style={{ width: WIDTH }}>
       {/* Tab bar + close button */}
-      <div style={S.tabBar}>
-        <div style={S.tabs}>
+      <div className="flex items-center border-b border-slate-200 shrink-0 bg-white">
+        <div className="flex flex-1 min-w-0">
           {TABS.map((tab) => {
             const isActive = activeTab === tab.key;
             let badge: number | null = null;
@@ -85,8 +88,8 @@ export function DataPanel({
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-3 px-2 text-xs border-none border-b-2 bg-transparent cursor-pointer transition-all duration-150 whitespace-nowrap"
                 style={{
-                  ...S.tab,
                   color: isActive ? primaryColor : "#64748b",
                   borderBottomColor: isActive ? primaryColor : "transparent",
                   fontWeight: isActive ? 700 : 500,
@@ -95,11 +98,13 @@ export function DataPanel({
                 <TabIcon icon={tab.icon} />
                 <span>{tab.label}</span>
                 {badge != null && badge > 0 && (
-                  <span style={{
-                    ...S.tabBadge,
-                    backgroundColor: isActive ? `${primaryColor}14` : "#f1f5f9",
-                    color: isActive ? primaryColor : "#94a3b8",
-                  }}>
+                  <span
+                    className="text-[10px] font-bold px-1.5 py-px rounded-[10px] min-w-[20px] text-center"
+                    style={{
+                      backgroundColor: isActive ? `${primaryColor}14` : "#f1f5f9",
+                      color: isActive ? primaryColor : "#94a3b8",
+                    }}
+                  >
                     {badge > 99 ? "99+" : badge}
                   </span>
                 )}
@@ -107,18 +112,23 @@ export function DataPanel({
             );
           })}
         </div>
-        <button type="button" onClick={onClose} style={S.closeBtn} aria-label="Cerrar panel">
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-8 h-8 rounded-lg border border-slate-200 bg-slate-50 text-slate-500 cursor-pointer flex items-center justify-center shrink-0 mx-2 transition-all duration-150 hover:bg-slate-100"
+          aria-label="Cerrar panel"
+        >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><title>Cerrar</title><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
         </button>
       </div>
 
       {/* Tab content */}
-      <div style={{ flex: 1, overflow: "hidden" }}>
+      <div className="flex-1 overflow-hidden">
         {activeTab === "datos" && (
           <DatosTab forms={forms} selectedAgentName={selectedAgentName} primaryColor={primaryColor} onFlyTo={onFlyTo} campaignId={campaignId} isAdmin={isAdmin} onFormsDeleted={onFormsDeleted} />
         )}
         {activeTab === "agentes" && (
-          <AgentsTab agents={agents} selectedAgentId={selectedAgentId} primaryColor={primaryColor} onSelectAgent={onSelectAgent} onWhatsApp={onWhatsApp} />
+          <AgentsTab agents={agents} selectedAgentId={selectedAgentId} primaryColor={primaryColor} onSelectAgent={onSelectAgent} onWhatsApp={onWhatsApp} brigadistaMetrics={brigadistaMetrics} />
         )}
         {activeTab === "log" && (
           <LogTab entries={logEntries} onEntryClick={onLogEntryClick} onClearLog={onClearLog} primaryColor={primaryColor} />
@@ -127,13 +137,3 @@ export function DataPanel({
     </div>
   );
 }
-
-/* ========== Styles ========== */
-
-const S: Record<string, React.CSSProperties> = {
-  tabBar: { display: "flex", alignItems: "center", borderBottom: "1px solid #e2e8f0", flexShrink: 0, backgroundColor: "#ffffff" },
-  tabs: { display: "flex", flex: 1, minWidth: 0 },
-  tab: { flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "12px 8px", fontSize: 12, border: "none", borderBottom: "2px solid transparent", backgroundColor: "transparent", cursor: "pointer", transition: "all 0.15s ease", whiteSpace: "nowrap" as const },
-  tabBadge: { fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10, minWidth: 20, textAlign: "center" as const },
-  closeBtn: { width: 32, height: 32, borderRadius: 8, border: "1px solid #e2e8f0", backgroundColor: "#f8fafc", color: "#64748b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, margin: "0 8px", transition: "all 0.15s ease" },
-};

@@ -73,6 +73,7 @@ src/modules/
 3. **Configurable** - Nada hardcodeado de timeout/retry/rate-limit; todo por env
 4. **Backwards-compatible** - Contratos versionados si hay breaking change
 5. **Errores seguros** - Deterministicos, sin leak de secretos
+6. **Config centralizada** - Usar `env` de `config/env.ts`, NUNCA `process.env` directamente en modulos
 
 ---
 
@@ -102,7 +103,7 @@ Cada modulo sigue esta estructura:
 | Regla | Detalle |
 |-------|---------|
 | Auth tracking | `AGENT_INGEST_TOKEN` obligatorio en prod para `/api/agents/location` |
-| Rate limit auth | Per-IP rate limit en login/register (`RATE_LIMIT_AUTH_PER_MINUTE`, default 10) |
+| Rate limit auth | Per-IP rate limit en login/register/refresh (`RATE_LIMIT_AUTH_PER_MINUTE`, default 10) |
 | Rate limit forms | Dual actor + IP guardrail, configurable por env |
 | Readiness | `/api/ready` valida DB + Tegola + Redis |
 | Redis policy | Produccion en `noeviction` |
@@ -113,6 +114,36 @@ Cada modulo sigue esta estructura:
 | Permissions | `perm_tierra`/`perm_digital` en JWT como `campaign_perms` map, validado en `authorize()` |
 | CMS SSE | Broadcast de eventos lock/unlock/hablado a clientes de la misma campana |
 | Twilio | Webhook publico valida firma `X-Twilio-Signature` antes de procesar |
+| CORS prod | Wildcard `*` bloqueado en produccion (fail-safe). Usar origenes explicitos. |
+| Auth cookies | Login/refresh setean httpOnly cookies + session flag. Ver seccion 13.1 del root. |
+| Refresh fail | Si refresh falla, `clearAuthCookies()` limpia cookies para evitar retry loops. |
+
+## Seguridad Auth (Dual-Mode)
+
+El backend soporta dos modos de auth simultaneamente (ver seccion 13.1 del root `/AGENTS.md`):
+
+| Mecanismo | Cliente | Archivos clave |
+|-----------|---------|----------------|
+| `Authorization: Bearer` header | Mobile (Expo) | `src/infra/auth.ts` (resolucion) |
+| httpOnly cookies (`goberna_access_token`) | Web (Next.js proxy) | `src/infra/auth.ts` (resolucion), `src/modules/auth/routes.ts` (set/clear) |
+
+### Archivos de seguridad
+
+| Archivo | Responsabilidad |
+|---------|-----------------|
+| `src/infra/auth.ts` | Decorator `authenticate`: resuelve Bearer o cookie, verifica JWT, decora request |
+| `src/infra/auth.ts` | Exporta `parseCookies()`, `AUTH_COOKIE_NAMES` (compartidos con auth routes) |
+| `src/modules/auth/routes.ts` | `setAuthCookies()` y `clearAuthCookies()` — helpers para manejar cookies en login/refresh/logout |
+| `src/app.ts` | CORS config con bloqueo de wildcard en produccion |
+
+### Reglas al modificar auth
+
+- **NUNCA** leer `process.env.NODE_ENV` directamente; usar `env.nodeEnv` del constructor
+- **SIEMPRE** pasar `isProd` a `setAuthCookies()`/`clearAuthCookies()` (controla flag `Secure`)
+- **SIEMPRE** limpiar cookies en catch de refresh (evita retry loops del browser)
+- **SIEMPRE** reutilizar `parseCookies()` de `infra/auth.ts` (no regex ad-hoc)
+- El endpoint `/api/auth/refresh` tiene rate limit per-IP igual que login
+- `/api/config` NO debe exponer `tegolaBaseUrl` (URL interna de infraestructura)
 
 ## Modelo de Roles (5 niveles)
 

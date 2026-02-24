@@ -212,6 +212,7 @@ nexus6.0/
 | `PUT /api/cms/contacts/:id/notes` | Actualizar notas del operador |
 | `GET /api/cms/stats` | Stats CMS por campana |
 | `GET /api/cms/metrics` | Metricas CMS global (candidato+) |
+| `GET /api/cms/metrics/brigadistas` | Metricas por brigadista con dedup telefono |
 | `GET /api/cms/stream` | SSE eventos realtime del CMS |
 | **Objectives** | |
 | `GET /api/objectives/zones` | Objetivos por zona |
@@ -486,6 +487,71 @@ Cualquier cambio debe cumplir:
 5. Redis en produccion con politica `noeviction`
 6. `AGENT_INGEST_TOKEN` obligatorio en produccion para tracking
 7. `/api/metrics` expone latencias por ruta con p50/p90/p95/p99
+8. Autenticacion dual-mode: cookies httpOnly (web) + Bearer tokens (mobile) — ver seccion 13.1
+9. Next.js middleware fail-closed protege rutas del dashboard server-side
+10. CORS bloqueado en produccion si `FRONTEND_ORIGINS=*` (fail-safe)
+
+---
+
+## 13.1 Arquitectura de Seguridad (Auth Dual-Mode)
+
+El backend sirve a **dos clientes** con mecanismos de auth distintos:
+
+| Cliente | Transporte de tokens | Storage | Refresh |
+|---------|---------------------|---------|---------|
+| **Web** (Next.js via Vercel proxy) | httpOnly cookies (automatico) | Cookies del browser | `POST /api/auth/refresh` con cookie |
+| **Mobile** (Expo directo) | `Authorization: Bearer` header | SecureStore | `POST /api/auth/refresh` con body JSON |
+
+### Cookies que setea el backend (login + refresh)
+
+| Cookie | httpOnly | Path | Max-Age | Proposito |
+|--------|----------|------|---------|-----------|
+| `goberna_access_token` | Si | `/` | 900 (15m) | JWT de acceso |
+| `goberna_refresh_token` | Si | `/api/auth` | 604800 (7d) | JWT de refresh (scope restringido) |
+| `goberna_session` | No | `/` | 604800 (7d) | Flag `"1"` — Next.js middleware detecta sesion |
+
+### Resolucion de token (`src/infra/auth.ts`)
+
+```
+1. Authorization: Bearer <token>  → si existe, usar (mobile/programmatic)
+2. Cookie: goberna_access_token   → fallback (web via httpOnly cookie)
+3. Si ninguno → 401 AUTH_TOKEN_MISSING
+```
+
+### Reglas de seguridad (No Negociables)
+
+- **NUNCA** guardar tokens en localStorage/sessionStorage en la web
+- **NUNCA** leer el JWT desde JavaScript en el browser (es httpOnly)
+- El flag `goberna_session=1` es el unico indicador client-side de sesion
+- En produccion, cookies llevan flag `Secure` (solo HTTPS)
+- El refresh cookie tiene `Path=/api/auth` (scope restringido)
+- Las cookies funcionan via proxy Next.js porque el browser ve same-origin `/api/*`
+- En fallo de refresh, el backend **limpia todas las cookies** para evitar retry loops
+
+### Politica CORS
+
+- En produccion, `FRONTEND_ORIGINS=*` **bloquea todas las requests** cross-origin (fail-safe)
+- El backend loguea `.error()` al arrancar si detecta wildcard + produccion
+- Siempre usar origenes explicitos en produccion: `FRONTEND_ORIGINS=https://dashboard.grupogoberna.com`
+- `credentials: true` siempre activo (necesario para cookies)
+
+### Middleware Next.js (`apps/web/middleware.ts`)
+
+- Protege rutas server-side **ANTES** de renderizar cualquier contenido
+- Modelo **fail-closed**: rutas desconocidas se tratan como protegidas
+- Solo rutas explicitamente publicas pasan sin auth: `/`, `/login`, `/register`, `/onboarding`, `/mapa`
+- Chequea cookie `goberna_session` — si no existe, redirect a `/login?from=<path>`
+- Agrega security headers a todas las respuestas (X-Frame-Options: DENY, nosniff, HSTS, Referrer-Policy, Permissions-Policy)
+
+### SSE con auth cookie (patron obligatorio para web)
+
+Toda conexion SSE en el dashboard debe:
+
+1. Usar `credentials: "same-origin"` en el `fetch()`
+2. Manejar 401 intentando `POST /api/auth/refresh` una vez
+3. Re-intentar la conexion SSE si el refresh tuvo exito
+4. Reconectar con **backoff exponencial** (max 30s), no intervalo fijo
+5. Referencia: `use-agent-sse.ts` (agents) y `cms/page.tsx` (CMS)
 
 ---
 
@@ -507,6 +573,11 @@ Cualquier cambio debe cumplir:
 - Backups sin test de restore
 - Secretos en repositorio
 - Documentacion desactualizada
+- Guardar tokens en localStorage/sessionStorage (web)
+- Usar `window`/`document` en render inicial de componentes (hydration mismatch)
+- CORS con wildcard `*` en produccion
+- Reconexion SSE con intervalo fijo (usar backoff exponencial)
+- Leer `process.env` directamente en modulos (usar `env` centralizado de `config/env.ts`)
 
 ---
 

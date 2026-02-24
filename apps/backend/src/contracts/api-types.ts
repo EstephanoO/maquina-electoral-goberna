@@ -890,6 +890,36 @@ export type MetricsResponse = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════
+// CMS — /api/cms/*
+// ═══════════════════════════════════════════════════════════════════════
+
+export type CmsStatus = "nuevo" | "hablado" | "respondieron" | "archivado";
+
+export type CmsBrigadistaMetrics = {
+  brigadista_id: string;
+  full_name: string;
+  email: string;
+  /** Total unique phone numbers captured (first-write-wins dedup) */
+  total_captures: number;
+  /** Unique phones still in 'nuevo' status */
+  nuevos: number;
+  /** Unique phones in 'hablado' status */
+  hablados: number;
+  /** Unique phones in 'respondieron' status */
+  respondieron: number;
+  /** Unique phones in 'archivado' status */
+  archivados: number;
+  /** (hablados + respondieron) / total */
+  contact_rate: number;
+  /** respondieron / (hablados + respondieron) */
+  response_rate: number;
+};
+
+export type CmsBrigadistaMetricsResponse = ApiSuccess<{
+  brigadistas: CmsBrigadistaMetrics[];
+}>;
+
+// ═══════════════════════════════════════════════════════════════════════
 // ERROR CODES (complete reference)
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -990,4 +1020,19 @@ export type ErrorCode =
   | "UPLOAD_ERROR"
   | "INVALID_FILE_TYPE"
   | "EMPTY_FILE"
-  | "FILE_TOO_LARGE";
+  | "FILE_TOO_LARGE"
+  // CMS
+  | "CMS_LIST_ERROR"
+  | "CMS_CLAIM_ERROR"
+  | "CMS_RELEASE_ERROR"
+  | "CMS_HABLADO_ERROR"
+  | "CMS_RESPONDIERON_ERROR"
+  | "CMS_REVERT_ERROR"
+  | "CMS_ARCHIVE_ERROR"
+  | "CMS_NOTES_ERROR"
+  | "CMS_STATS_ERROR"
+  | "CMS_METRICS_ERROR"
+  | "CMS_BRIGADISTA_METRICS_ERROR"
+  | "ALREADY_CLAIMED"
+  | "ALREADY_ARCHIVED"
+  | "MISSING_CAMPAIGN";

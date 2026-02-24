@@ -545,6 +545,96 @@ export async function getCmsMetricsByOperator(
   }));
 }
 
+// ── Metrics: per-brigadista (field agent) captures + CMS pipeline ────
+
+export type CmsBrigadistaMetrics = {
+  brigadista_id: string;
+  full_name: string;
+  email: string;
+  /** Total unique phone numbers captured (first-write-wins dedup) */
+  total_captures: number;
+  /** Unique phones still in 'nuevo' status */
+  nuevos: number;
+  /** Unique phones in 'hablado' status */
+  hablados: number;
+  /** Unique phones in 'respondieron' status */
+  respondieron: number;
+  /** Unique phones in 'archivado' status */
+  archivados: number;
+  /** (hablados + respondieron) / total — how much of their data got contacted */
+  contact_rate: number;
+  /** respondieron / (hablados + respondieron) — how much responded */
+  response_rate: number;
+};
+
+/**
+ * Get CMS metrics grouped by brigadista (field agent who captured the data).
+ *
+ * Dedup strategy: query-time DISTINCT ON (data->>'telefono') with first-write-wins
+ * (ORDER BY created_at ASC). This means if the same phone was captured by
+ * two different brigadistas, only the first capture counts.
+ *
+ * @param campaignId — single campaign scope (required for tierra page)
+ */
+export async function getMetricsByBrigadista(
+  campaignId: string,
+): Promise<CmsBrigadistaMetrics[]> {
+  const { rows } = await pool.query<{
+    brigadista_id: string;
+    full_name: string;
+    email: string;
+    total_captures: string;
+    nuevos: string;
+    hablados: string;
+    respondieron: string;
+    archivados: string;
+  }>(
+    `WITH unique_captures AS (
+       -- Dedup by phone: keep the first submission per phone number (first-write-wins)
+       SELECT DISTINCT ON (data->>'telefono')
+         id, submitted_by, cms_status, created_at
+       FROM form_submissions
+       WHERE campaign_id = $1
+         AND COALESCE(data->>'telefono', '') != ''
+         AND deleted_at IS NULL
+       ORDER BY data->>'telefono', created_at ASC
+     )
+     SELECT
+       uc.submitted_by AS brigadista_id,
+       COALESCE(u.full_name, u.email) AS full_name,
+       u.email,
+       COUNT(*)::text AS total_captures,
+       COUNT(*) FILTER (WHERE uc.cms_status = 'nuevo')::text AS nuevos,
+       COUNT(*) FILTER (WHERE uc.cms_status = 'hablado')::text AS hablados,
+       COUNT(*) FILTER (WHERE uc.cms_status = 'respondieron')::text AS respondieron,
+       COUNT(*) FILTER (WHERE uc.cms_status = 'archivado')::text AS archivados
+     FROM unique_captures uc
+     JOIN users u ON u.id = uc.submitted_by
+     GROUP BY uc.submitted_by, u.full_name, u.email
+     ORDER BY COUNT(*) DESC`,
+    [campaignId],
+  );
+
+  return rows.map((r) => {
+    const total = parseInt(r.total_captures, 10);
+    const hablados = parseInt(r.hablados, 10);
+    const respondieron = parseInt(r.respondieron, 10);
+    const contacted = hablados + respondieron;
+    return {
+      brigadista_id: r.brigadista_id,
+      full_name: r.full_name,
+      email: r.email,
+      total_captures: total,
+      nuevos: parseInt(r.nuevos, 10),
+      hablados,
+      respondieron,
+      archivados: parseInt(r.archivados, 10),
+      contact_rate: total > 0 ? Math.round((contacted / total) * 100) / 100 : 0,
+      response_rate: contacted > 0 ? Math.round((respondieron / contacted) * 100) / 100 : 0,
+    };
+  });
+}
+
 // ── Revert contact status (undo accidental transitions) ─────────────
 
 const REVERT_RETURNING = `

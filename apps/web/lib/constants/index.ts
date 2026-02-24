@@ -72,10 +72,10 @@ export const GOBERNA_KEYFRAMES = `
 `;
 
 // ── Storage Keys ───────────────────────────────────────────────────
+// NOTE: Auth tokens are now in httpOnly cookies (not localStorage).
+// Only non-sensitive preferences remain here.
 
 export const STORAGE_KEYS = {
-  accessToken: "goberna_access_token",
-  refreshToken: "goberna_refresh_token",
   activeCampaign: "goberna_active_campaign",
   user: "goberna_user",
 } as const;

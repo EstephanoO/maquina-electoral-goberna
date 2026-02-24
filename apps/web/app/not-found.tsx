@@ -1,22 +1,22 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 
 /* ═══════════════════════════════════════════════════════════════════════
    GOBERNA — 404 Not Found
    Branded page with auth-aware redirect button.
+   Auth check runs in useEffect to avoid SSR/client hydration mismatch.
    ═══════════════════════════════════════════════════════════════════════ */
 
-const STORAGE_KEY = "goberna_access_token";
-
-function isLoggedIn(): boolean {
-  if (typeof window === "undefined") return false;
-  return !!localStorage.getItem(STORAGE_KEY);
-}
-
 export default function NotFound() {
-  const authenticated = typeof window !== "undefined" && isLoggedIn();
+  const [authenticated, setAuthenticated] = useState(false);
+
+  useEffect(() => {
+    setAuthenticated(document.cookie.includes("goberna_session=1"));
+  }, []);
+
   const href = authenticated ? "/home" : "/login";
   const label = authenticated ? "Ir al Dashboard" : "Iniciar Sesion";
 

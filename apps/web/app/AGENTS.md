@@ -1,7 +1,7 @@
 # AGENTS.md - Web App Routes
 
 > **Hereda de:** `/AGENTS.md` (root) y `apps/web/AGENTS.md`  
-> **Ultima actualizacion:** 2026-02-20
+> **Ultima actualizacion:** 2026-02-23
 
 ## Objetivo
 
@@ -35,12 +35,15 @@ Visualizar Peru administrativo + tracking de agentes en tiempo real con UX fluid
 
 ## Reglas de implementacion
 
-- No usar `window` en render inicial para evitar mismatch.
+- No usar `window`/`document` en render inicial para evitar hydration mismatch — usar `useState` + `useEffect`.
 - URL de tiles siempre sanitizada y sin credenciales.
 - Feature hover por `feature-state` + `promoteId`.
-- Reconexion SSE robusta sin loops de reconexion agresivos.
+- Reconexion SSE robusta con backoff exponencial (max 30s), NUNCA intervalo fijo.
+- SSE DEBE manejar 401 intentando refresh una vez antes de reconectar (ver `use-agent-sse.ts` y `cms/page.tsx`).
+- Todas las requests `fetch()` deben usar `credentials: "same-origin"` (cookies httpOnly).
 - Tolerar estado offline/online de agentes sin bloquear render.
 - En `/ops`, mostrar outcome latencies y cards de alerta SLO sin romper tabla por ruta.
+- Rutas nuevas del dashboard son protegidas por defecto (middleware fail-closed). Para hacer una ruta publica, agregarla explicitamente en `middleware.ts`.
 
 ## Performance
 

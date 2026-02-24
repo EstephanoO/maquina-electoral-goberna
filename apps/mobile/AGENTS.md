@@ -210,3 +210,14 @@ bunx tsc --noEmit   # Type check
 - **Refresh token rotation** - Cada refresh genera nuevo
 - **Campaign_id validado server-side** - App no decide permisos
 - **GPS validado server-side** - App puede mentir
+
+### Auth Dual-Mode (compatibilidad con backend)
+
+El backend soporta auth dual-mode (ver seccion 13.1 del root `/AGENTS.md`):
+
+- **Mobile usa `Authorization: Bearer`** header — el backend lo prioriza sobre cookies
+- **Web usa httpOnly cookies** — transparente, no afecta a mobile
+- El endpoint `/api/auth/refresh` acepta `refresh_token` en body JSON (mobile) O en cookie httpOnly (web)
+- Mobile SIEMPRE envia `refresh_token` en el body JSON del POST (NO depende de cookies)
+- El backend retorna tokens en JSON body + setea cookies — mobile **ignora** las cookies y usa el JSON
+- Rate limit en login/register/refresh es per-IP (`RATE_LIMIT_AUTH_PER_MINUTE`, default 10/min)

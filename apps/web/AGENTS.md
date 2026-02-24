@@ -172,11 +172,12 @@ images: {
   remotePatterns: [
     { protocol: "https", hostname: "dashboard.grupogoberna.com", pathname: "/uploads/**" },
     { protocol: "https", hostname: "api.goberna.us", pathname: "/uploads/**" },
-    { protocol: "http", hostname: "161.132.39.165", pathname: "/uploads/**" },
     { protocol: "http", hostname: "localhost", pathname: "/uploads/**" },
   ],
 }
 ```
+
+> **Nota:** No incluir IPs de VPS en `remotePatterns` (leak de infraestructura interna).
 
 ---
 
@@ -201,6 +202,62 @@ images: {
 | `GET /api/agents/stream` | (map page) | SSE tracking |
 | `GET /api/metrics` | (ops page) | Metricas operativas |
 | `GET /api/campaigns/:campaignId/analytics` | (analytics) | Datos GA4 |
+
+---
+
+## Seguridad Web (Auth Cookie-Based)
+
+> Ver seccion 13.1 del root `/AGENTS.md` para la arquitectura completa.
+
+### Middleware (`middleware.ts`)
+
+- Protege rutas server-side **ANTES** de renderizar contenido
+- **Fail-closed**: rutas no reconocidas se tratan como protegidas
+- Solo rutas publicas explicitas pasan sin auth: `/`, `/login`, `/register`, `/onboarding`, `/mapa`
+- Revisa cookie `goberna_session` — si no existe, redirect a `/login?from=<path>`
+- Agrega security headers a todas las respuestas
+
+### Auth Context (`lib/auth-context.tsx`)
+
+- **NO** guarda tokens en localStorage/sessionStorage
+- Sesion se detecta via cookie `goberna_session=1` (no-httpOnly, solo flag)
+- Refresh llama `POST /api/auth/refresh` con body vacio + `credentials: "same-origin"` (el cookie httpOnly va automaticamente)
+- Logout llama `POST /api/auth/logout` que limpia todas las cookies server-side
+
+### API Client (`lib/services/api.ts`)
+
+- Todas las requests usan `credentials: "same-origin"` para enviar cookies
+- NO hay header `Authorization` manual (el JWT viaja en httpOnly cookie automaticamente via proxy)
+
+### SSE (patron obligatorio)
+
+Toda conexion SSE en el dashboard **DEBE**:
+
+1. Usar `credentials: "same-origin"` en el `fetch()`
+2. Manejar 401 intentando `POST /api/auth/refresh` una sola vez
+3. Re-intentar la conexion SSE si el refresh tuvo exito
+4. Reconectar con **backoff exponencial** (max 30s), NUNCA intervalo fijo
+5. Implementaciones de referencia:
+   - `use-agent-sse.ts` (tracking agents — incluye heartbeat timeout)
+   - `cms/page.tsx` (CMS contacts)
+
+### Security Headers (next.config.ts)
+
+| Header | Valor |
+|--------|-------|
+| `X-Frame-Options` | `DENY` |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(self)` |
+
+### Reglas de seguridad (No Negociables)
+
+- **NUNCA** guardar tokens en localStorage/sessionStorage
+- **NUNCA** leer el JWT desde JavaScript (es httpOnly)
+- **NUNCA** usar `window`/`document` en render inicial (hydration mismatch) — usar `useState` + `useEffect`
+- **NUNCA** incluir IPs de infraestructura en `remotePatterns` de `next.config.ts`
+- Al agregar una ruta nueva al dashboard: se protege automaticamente (fail-closed)
+- Al agregar una ruta publica nueva: agregarla explicitamente a `PUBLIC_PATHS` o prefijos publicos en `middleware.ts`
 
 ---
 
@@ -230,6 +287,8 @@ bun run lint     # ESLint
 4. Componentes feature < 300 lineas
 5. Imports desde indices (`lib/ui`, `lib/services`)
 6. Types en `lib/types/`
+7. Sin tokens en localStorage/sessionStorage
+8. SSE con 401 handling + backoff exponencial
 
 ---
 

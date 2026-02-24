@@ -151,30 +151,40 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
   const clearFilters = () => { setSearch(""); setFilterEncuestador("all"); setFilterDate("all"); };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Sub-header */}
-      <div style={D.subHeader}>
+      <div className="flex justify-between items-center px-4 py-2.5 border-b border-slate-100 shrink-0">
         <div>
-          <h3 style={D.title}>{selectedAgentName ? `Datos: ${selectedAgentName}` : "Registros"}</h3>
-          <span style={{ ...D.count, color: primaryColor }}>
+          <h3 className="m-0 text-sm font-bold text-slate-800 leading-tight">{selectedAgentName ? `Datos: ${selectedAgentName}` : "Registros"}</h3>
+          <span className="text-xs font-medium leading-tight flex items-center" style={{ color: primaryColor }}>
             {filteredForms.length} de {forms.length}
-            {hasSelection && <span style={{ color: "#ef4444", marginLeft: 6 }}>• {selectedIds.size} sel.</span>}
+            {hasSelection && <span className="text-red-500 ml-1.5">• {selectedIds.size} sel.</span>}
           </span>
         </div>
       </div>
 
       {/* Selection toolbar (admin) */}
       {isAdmin && (
-        <div style={D.selectionBar}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <button type="button" onClick={hasSelection ? clearSelection : selectAll} style={D.selectBtn}>
+        <div className="flex justify-between items-center px-4 py-2 bg-slate-50 border-b border-slate-200 shrink-0">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={hasSelection ? clearSelection : selectAll}
+              className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-md px-3 py-[5px] cursor-pointer"
+            >
               {hasSelection ? "Deseleccionar" : "Seleccionar todo"}
             </button>
-            {hasSelection && <span style={{ fontSize: 12, color: "#64748b" }}>{selectedIds.size} sel.</span>}
+            {hasSelection && <span className="text-xs text-slate-500">{selectedIds.size} sel.</span>}
           </div>
           {hasSelection && (
-            <button type="button" onClick={handleDelete} disabled={isDeleting} style={{ ...D.deleteBtn, opacity: isDeleting ? 0.6 : 1, cursor: isDeleting ? "wait" : "pointer" }}>
-              {isDeleting ? <span style={D.spinner} /> : (
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="flex items-center gap-1.5 text-xs font-semibold text-white bg-red-500 border-none rounded-md px-3.5 py-1.5 transition-all duration-150"
+              style={{ opacity: isDeleting ? 0.6 : 1, cursor: isDeleting ? "wait" : "pointer" }}
+            >
+              {isDeleting ? <span className="w-3.5 h-3.5 border-2 border-white/25 border-t-white rounded-full animate-spin" /> : (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><title>Eliminar</title><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
               )}
               Eliminar
@@ -185,58 +195,58 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
 
       {/* Error */}
       {deleteError && (
-        <div style={D.errorBar}>
+        <div className="flex justify-between items-center px-4 py-2 bg-red-50 border-b border-red-200 text-red-600 text-xs font-medium shrink-0">
           <span>{deleteError}</span>
-          <button type="button" onClick={() => setDeleteError(null)} style={D.errorClose}>&#10005;</button>
+          <button type="button" onClick={() => setDeleteError(null)} className="bg-transparent border-none text-red-600 cursor-pointer text-sm p-1">&#10005;</button>
         </div>
       )}
 
       {/* Search + Filters */}
-      <div style={D.searchContainer}>
-        <div style={D.searchInputWrapper}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><title>Buscar</title><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nombre, teléfono, agente..." style={D.searchInput} />
-          {search && <button type="button" onClick={() => setSearch("")} style={D.clearSearchBtn} aria-label="Limpiar búsqueda">&#10005;</button>}
+      <div className="px-4 py-2.5 border-b border-slate-100 shrink-0 flex flex-col gap-2 bg-white">
+        <div className="flex items-center gap-2.5 py-2 px-3 rounded-lg border border-slate-200 bg-slate-50">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><title>Buscar</title><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nombre, teléfono, agente..." className="flex-1 border-none outline-none bg-transparent text-[13px] text-slate-700" />
+          {search && <button type="button" onClick={() => setSearch("")} className="w-5 h-5 rounded border-none bg-slate-200 text-slate-500 cursor-pointer text-[10px] flex items-center justify-center" aria-label="Limpiar búsqueda">&#10005;</button>}
         </div>
-        <div style={D.filtersRow}>
-          <select value={filterDate} onChange={(e) => setFilterDate(e.target.value)} style={D.filterSelect}>
+        <div className="flex gap-2 items-center">
+          <select value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="flex-1 text-xs text-slate-600 px-2.5 py-1.5 rounded-md border border-slate-200 bg-white cursor-pointer outline-none">
             <option value="all">Todo el tiempo</option>
             <option value="today">Hoy</option>
             <option value="week">Esta semana</option>
             <option value="month">Este mes</option>
           </select>
-          <select value={filterEncuestador} onChange={(e) => setFilterEncuestador(e.target.value)} style={D.filterSelect}>
+          <select value={filterEncuestador} onChange={(e) => setFilterEncuestador(e.target.value)} className="flex-1 text-xs text-slate-600 px-2.5 py-1.5 rounded-md border border-slate-200 bg-white cursor-pointer outline-none">
             <option value="all">Todos los agentes</option>
             {encuestadores.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
           </select>
           {hasActiveFilters && (
-            <button type="button" onClick={clearFilters} style={{ ...D.clearFiltersBtn, color: primaryColor }}>Limpiar</button>
+            <button type="button" onClick={clearFilters} className="text-xs font-semibold border-none bg-transparent cursor-pointer px-2.5 py-1.5 rounded-md whitespace-nowrap shrink-0" style={{ color: primaryColor }}>Limpiar</button>
           )}
         </div>
       </div>
 
       {/* Table header */}
-      <div style={D.tableHeader}>
-        {isAdmin && <div style={{ ...D.thCell, width: 36 }} />}
-        <div style={{ ...D.thCell, flex: 2 }}>Nombre</div>
-        <div style={{ ...D.thCell, flex: 1.5 }}>Teléfono</div>
-        <div style={{ ...D.thCell, flex: 1.5 }}>Agente</div>
-        <div style={{ ...D.thCell, flex: 1, textAlign: "right" }}>Fecha</div>
+      <div className="flex px-4 py-2 bg-slate-50 border-b-2 border-slate-200 shrink-0">
+        {isAdmin && <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1 w-9" />}
+        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1 flex-[2]">Nombre</div>
+        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1 flex-[1.5]">Teléfono</div>
+        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1 flex-[1.5]">Agente</div>
+        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1 flex-1 text-right">Fecha</div>
       </div>
 
       {/* ─── Virtualized content ─── */}
-      <div ref={scrollRef} onScroll={handleScroll} style={D.list}>
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
         {filteredForms.length === 0 ? (
-          <div style={D.empty}>
+          <div className="flex flex-col items-center justify-center gap-2 p-12 text-center">
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><title>Sin datos</title><circle cx="12" cy="12" r="10" /><path d="M8 15h8" /><circle cx="9" cy="9" r="1" /><circle cx="15" cy="9" r="1" /></svg>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "#64748b" }}>{hasActiveFilters ? "Sin resultados" : "Sin datos capturados"}</span>
-            <span style={{ fontSize: 12, color: "#94a3b8" }}>{hasActiveFilters ? "Intenta con otros filtros" : "Los datos aparecerán aquí"}</span>
+            <span className="text-sm font-semibold text-slate-500">{hasActiveFilters ? "Sin resultados" : "Sin datos capturados"}</span>
+            <span className="text-xs text-slate-400">{hasActiveFilters ? "Intenta con otros filtros" : "Los datos aparecerán aquí"}</span>
             {hasActiveFilters && (
-              <button type="button" onClick={clearFilters} style={{ ...D.emptyResetBtn, color: primaryColor, borderColor: `${primaryColor}30` }}>Limpiar filtros</button>
+              <button type="button" onClick={clearFilters} className="text-xs font-semibold border bg-transparent cursor-pointer px-5 py-2 rounded-lg mt-2" style={{ color: primaryColor, borderColor: `${primaryColor}30` }}>Limpiar filtros</button>
             )}
           </div>
         ) : (
-          <div style={{ position: "relative", height: totalHeight }}>
+          <div className="relative" style={{ height: totalHeight }}>
             {visibleForms.map((f, i) => {
               const absIdx = startIdx + i;
               const hasCoords = f.x && f.y;
@@ -249,12 +259,9 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
                   onKeyDown={(e) => e.key === "Enter" && handleCardClick(f)}
                   role="button"
                   tabIndex={0}
+                  className="absolute left-0 right-0 flex items-center px-4 border-b border-slate-100 transition-colors duration-100 box-border"
                   style={{
-                    ...D.row,
-                    position: "absolute",
                     top: absIdx * ROW_HEIGHT,
-                    left: 0,
-                    right: 0,
                     height: ROW_HEIGHT,
                     cursor: hasCoords && onFlyTo ? "pointer" : "default",
                     backgroundColor: isSelected ? `${primaryColor}08` : absIdx % 2 === 0 ? "#ffffff" : "#fafbfc",
@@ -262,22 +269,22 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
                   }}
                 >
                   {isAdmin && (
-                    <div style={{ ...D.cell, width: 36, justifyContent: "center" }} onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" checked={isSelected} onChange={() => {}} onClick={(e) => toggleSelect(f.id, e)} style={D.checkbox} />
+                    <div className="flex items-center justify-center w-9 px-1" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={isSelected} onChange={() => {}} onClick={(e) => toggleSelect(f.id, e)} className="w-4 h-4 cursor-pointer accent-blue-600" />
                     </div>
                   )}
-                  <div style={{ ...D.cell, flex: 2 }}>
-                    <div style={D.nameCell}>
-                      {hasCoords && onFlyTo && <span style={{ ...D.locIcon, color: primaryColor }}>📍</span>}
-                      <span style={D.name}>{f.nombre || "Sin nombre"}</span>
+                  <div className="flex items-center px-1 flex-[2] min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {hasCoords && onFlyTo && <span className="text-xs shrink-0" style={{ color: primaryColor }}>📍</span>}
+                      <span className="text-[13px] font-semibold text-slate-800 overflow-hidden text-ellipsis whitespace-nowrap">{f.nombre || "Sin nombre"}</span>
                     </div>
                   </div>
-                  <div style={{ ...D.cell, flex: 1.5 }}><span style={D.phone}>{f.telefono || "—"}</span></div>
-                  <div style={{ ...D.cell, flex: 1.5 }}><span style={D.agent}>{f.encuestador || "—"}</span></div>
-                  <div style={{ ...D.cell, flex: 1, justifyContent: "flex-end" }}>
-                    <div style={D.dateCell}>
-                      <span style={D.dateDay}>{date.toLocaleDateString("es-PE", { day: "2-digit", month: "short" })}</span>
-                      <span style={D.dateTime}>{date.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}</span>
+                  <div className="flex items-center px-1 flex-[1.5]"><span className="text-xs text-slate-500 font-mono">{f.telefono || "—"}</span></div>
+                  <div className="flex items-center px-1 flex-[1.5]"><span className="text-xs text-slate-600 overflow-hidden text-ellipsis whitespace-nowrap">{f.encuestador || "—"}</span></div>
+                  <div className="flex items-center justify-end px-1 flex-1">
+                    <div className="flex flex-col items-end gap-px">
+                      <span className="text-[11px] text-slate-600 font-medium">{date.toLocaleDateString("es-PE", { day: "2-digit", month: "short" })}</span>
+                      <span className="text-[10px] text-slate-400">{date.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })}</span>
                     </div>
                   </div>
                 </div>
@@ -288,58 +295,13 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
       </div>
 
       {/* Footer */}
-      <div style={D.footer}>
+      <div className="flex justify-between items-center px-4 py-2.5 text-[11px] text-slate-500 border-t border-slate-100 shrink-0 bg-slate-50/80 font-medium">
         <span>{filteredForms.length} registros</span>
-        <span style={{ color: "#22c55e", display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: "#22c55e" }} />
+        <span className="text-green-500 flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
           Auto-refresh 5s
         </span>
       </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
-
-/* ========== Styles ========== */
-
-const D: Record<string, React.CSSProperties> = {
-  subHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderBottom: "1px solid #f1f5f9", flexShrink: 0 },
-  title: { margin: 0, fontSize: 14, fontWeight: 700, color: "#1e293b", lineHeight: 1.2 },
-  count: { fontSize: 12, fontWeight: 500, lineHeight: 1.2, display: "flex", alignItems: "center" },
-
-  selectionBar: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 16px", backgroundColor: "#f8fafc", borderBottom: "1px solid #e2e8f0", flexShrink: 0 },
-  selectBtn: { fontSize: 12, fontWeight: 600, color: "#475569", backgroundColor: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 12px", cursor: "pointer" },
-  deleteBtn: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "#ffffff", backgroundColor: "#ef4444", border: "none", borderRadius: 6, padding: "6px 14px", cursor: "pointer", transition: "all 0.15s ease" },
-  spinner: { width: 14, height: 14, border: "2px solid #ffffff40", borderTopColor: "#ffffff", borderRadius: "50%", animation: "spin 0.8s linear infinite" },
-  errorBar: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 16px", backgroundColor: "#fef2f2", borderBottom: "1px solid #fecaca", color: "#dc2626", fontSize: 12, fontWeight: 500, flexShrink: 0 },
-  errorClose: { background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontSize: 14, padding: 4 },
-
-  searchContainer: { padding: "10px 16px", borderBottom: "1px solid #f1f5f9", flexShrink: 0, display: "flex", flexDirection: "column" as const, gap: 8, backgroundColor: "#ffffff" },
-  searchInputWrapper: { display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 8, border: "1px solid #e2e8f0", backgroundColor: "#f8fafc" },
-  searchInput: { flex: 1, border: "none", outline: "none", backgroundColor: "transparent", fontSize: 13, color: "#334155" },
-  clearSearchBtn: { width: 20, height: 20, borderRadius: 4, border: "none", backgroundColor: "#e2e8f0", color: "#64748b", cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center" },
-  filtersRow: { display: "flex", gap: 8, alignItems: "center" },
-  filterSelect: { flex: 1, fontSize: 12, color: "#475569", padding: "6px 10px", borderRadius: 6, border: "1px solid #e2e8f0", backgroundColor: "#ffffff", cursor: "pointer", outline: "none" },
-  clearFiltersBtn: { fontSize: 12, fontWeight: 600, border: "none", backgroundColor: "transparent", cursor: "pointer", padding: "6px 10px", borderRadius: 6, whiteSpace: "nowrap" as const, flexShrink: 0 },
-
-  tableHeader: { display: "flex", padding: "8px 16px", backgroundColor: "#f8fafc", borderBottom: "2px solid #e2e8f0", flexShrink: 0 },
-  thCell: { fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase" as const, letterSpacing: "0.05em", padding: "0 4px" },
-
-  list: { flex: 1, overflowY: "auto" as const },
-  empty: { display: "flex", flexDirection: "column" as const, alignItems: "center", justifyContent: "center", gap: 8, padding: 48, textAlign: "center" as const },
-  emptyResetBtn: { fontSize: 12, fontWeight: 600, border: "1px solid", backgroundColor: "transparent", cursor: "pointer", padding: "8px 20px", borderRadius: 8, marginTop: 8 },
-
-  row: { display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid #f1f5f9", transition: "background 0.1s ease, border-left-color 0.1s ease", boxSizing: "border-box" as const },
-  cell: { display: "flex", alignItems: "center", padding: "0 4px", minWidth: 0 },
-  checkbox: { width: 16, height: 16, cursor: "pointer", accentColor: "#2563eb" },
-  nameCell: { display: "flex", alignItems: "center", gap: 6, minWidth: 0 },
-  locIcon: { fontSize: 12, flexShrink: 0 },
-  name: { fontSize: 13, fontWeight: 600, color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const },
-  phone: { fontSize: 12, color: "#64748b", fontFamily: "monospace" },
-  agent: { fontSize: 12, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const },
-  dateCell: { display: "flex", flexDirection: "column" as const, alignItems: "flex-end", gap: 1 },
-  dateDay: { fontSize: 11, color: "#475569", fontWeight: 500 },
-  dateTime: { fontSize: 10, color: "#94a3b8" },
-
-  footer: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", fontSize: 11, color: "#64748b", borderTop: "1px solid #f1f5f9", flexShrink: 0, backgroundColor: "#fafbfc", fontWeight: 500 },
-};

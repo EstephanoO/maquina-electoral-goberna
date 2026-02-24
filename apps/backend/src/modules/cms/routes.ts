@@ -453,6 +453,32 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── GET /api/cms/metrics/brigadistas ──────────────────────────────
+    // Per-brigadista (field agent) capture metrics with CMS pipeline progression.
+    // Used by the tierra dashboard to show how each agent's captured data
+    // flows through the CMS pipeline (nuevo → hablado → respondieron → archivado).
+    // Dedup: first-write-wins on phone number.
+    app.get(
+      "/api/cms/metrics/brigadistas",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        try {
+          const brigadistas = await repo.getMetricsByBrigadista(campaignId);
+          return reply.code(200).send({ ok: true, request_id: requestId, brigadistas });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "cms brigadista metrics failed");
+          return reply.code(500).send(errorPayload(requestId, "CMS_BRIGADISTA_METRICS_ERROR", "error obteniendo metricas de brigadistas"));
+        }
+      },
+    );
+
     // ── GET /api/cms/stream ─────────────────────────────────────────
     // SSE for real-time contact updates across all operators
     app.get(

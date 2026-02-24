@@ -14,8 +14,8 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { getCampaignStats, getRecentForms, api } from "@/lib/services";
-import type { CampaignStats } from "@/lib/types";
+import { getCampaignStats, getRecentForms, getBrigadistaMetrics, api } from "@/lib/services";
+import type { CampaignStats, CmsBrigadistaMetrics } from "@/lib/types";
 import type { FormRecord } from "@/lib/services/forms";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -35,6 +35,7 @@ export const tierraKeys = {
   stats: (slug: string) => [...tierraKeys.all, "stats", slug] as const,
   forms: (campaignId: string) => [...tierraKeys.all, "forms", campaignId] as const,
   locations: (campaignId: string) => [...tierraKeys.all, "locations", campaignId] as const,
+  brigadistaMetrics: (campaignId: string) => [...tierraKeys.all, "brigadista-metrics", campaignId] as const,
 };
 
 // ── useCampaignStats ───────────────────────────────────────────────
@@ -109,4 +110,25 @@ export function useAgentLocationsSnapshot(campaignId: string | undefined) {
   });
 }
 
+// ── useBrigadistaMetrics ───────────────────────────────────────────
 
+/**
+ * Per-brigadista CMS pipeline metrics (captures, contact rate, etc.).
+ * Used by both Pipeline view and AgentsTab mini-funnel enrichment.
+ * Refetches every 30s — CMS pipeline changes are slower than tracking.
+ */
+export function useBrigadistaMetrics(campaignId: string | undefined) {
+  return useQuery({
+    queryKey: tierraKeys.brigadistaMetrics(campaignId ?? ""),
+    queryFn: async (): Promise<CmsBrigadistaMetrics[]> => {
+      const res = await getBrigadistaMetrics(campaignId!);
+      if (!res.ok || !res.brigadistas) {
+        throw new Error(res.error ?? "Error cargando metricas de brigadistas");
+      }
+      return res.brigadistas;
+    },
+    enabled: !!campaignId,
+    refetchInterval: 30_000,
+    staleTime: 25_000,
+  });
+}

@@ -1,8 +1,7 @@
-/* ========== SSE Hook — Live Agent Locations (fetch-based for Bearer auth) ========== */
+/* ========== SSE Hook — Live Agent Locations (fetch-based, cookie auth) ========== */
 
 import { useEffect, useRef } from "react";
 import type { AgentLocation } from "@/lib/hooks";
-import { STORAGE_KEYS } from "@/lib/constants";
 
 type AgentOfflinePayload = {
   agent_id: string;
@@ -19,36 +18,21 @@ export type AgentStatusPayload = {
 };
 
 /**
- * Try to refresh the access token using the stored refresh token.
- * Returns the new access token on success, or null on failure.
+ * Try to refresh the access token using the httpOnly cookie.
+ * Returns true on success, false on failure.
  */
-async function tryRefreshToken(): Promise<string | null> {
-  const refreshToken = localStorage.getItem(STORAGE_KEYS.refreshToken);
-  if (!refreshToken) return null;
-
+async function tryRefreshToken(): Promise<boolean> {
   try {
     const res = await fetch("/api/auth/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      body: JSON.stringify({}),
+      credentials: "same-origin",
     });
 
-    if (!res.ok) {
-      localStorage.removeItem(STORAGE_KEYS.accessToken);
-      localStorage.removeItem(STORAGE_KEYS.refreshToken);
-      return null;
-    }
-
-    const data = await res.json();
-    if (data.access_token && data.refresh_token) {
-      localStorage.setItem(STORAGE_KEYS.accessToken, data.access_token);
-      localStorage.setItem(STORAGE_KEYS.refreshToken, data.refresh_token);
-      return data.access_token as string;
-    }
-
-    return null;
+    return res.ok;
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -58,16 +42,12 @@ const HEARTBEAT_TIMEOUT_MS = 60_000;
 /**
  * Subscribe to the agent tracking SSE stream using fetch() + ReadableStream.
  *
- * We cannot use native EventSource because it doesn't support custom headers,
- * and the /api/agents/stream endpoint requires a Bearer JWT token.
- *
- * Calls `onUpdate` with incoming location batches — the caller merges into state.
- * Calls `onOffline` when an agent goes offline — the caller removes from state.
+ * Auth is handled via httpOnly cookies — the browser sends them automatically.
  * Reconnects with exponential backoff (max 30s).
  *
  * Features:
- * - Auto-refreshes JWT on 401 before reconnecting (W1 fix)
- * - Detects stale connections via heartbeat timeout (W3 fix)
+ * - Auto-refreshes JWT on 401 before reconnecting
+ * - Detects stale connections via heartbeat timeout
  */
 export function useAgentSSE(
   campaignId: string | null,
@@ -125,40 +105,26 @@ export function useAgentSSE(
     async function connect() {
       if (disposed) return;
 
-      let token: string | null = typeof window !== "undefined"
-        ? localStorage.getItem(STORAGE_KEYS.accessToken)
-        : null;
-      if (!token) {
-        // No token yet — retry shortly
-        reconnectTimer = setTimeout(connect, 2000);
-        return;
-      }
-
       abortController = new AbortController();
       resetHeartbeatTimer();
 
       try {
         let res = await fetch("/api/agents/stream", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            Accept: "text/event-stream",
-          },
+          headers: { Accept: "text/event-stream" },
           signal: abortController.signal,
+          credentials: "same-origin",
         });
 
-        // [W1] If 401, try refreshing the token once before giving up
+        // If 401, try refreshing the token once before giving up
         if (res.status === 401) {
-          const newToken = await tryRefreshToken();
-          if (newToken && !disposed) {
-            token = newToken;
+          const refreshed = await tryRefreshToken();
+          if (refreshed && !disposed) {
             // Re-create abort controller since the previous fetch completed
             abortController = new AbortController();
             res = await fetch("/api/agents/stream", {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                Accept: "text/event-stream",
-              },
+              headers: { Accept: "text/event-stream" },
               signal: abortController.signal,
+              credentials: "same-origin",
             });
           }
         }

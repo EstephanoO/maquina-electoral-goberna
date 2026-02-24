@@ -9,7 +9,7 @@ import { metricsRegistry } from "../../infra/metrics";
 import { emitCampaignEvent } from "../campaigns/routes";
 import { toState } from "./helpers";
 import { loadAllLiveAgentLocations } from "./repository";
-import { agentLocationBatchSchema } from "./schema";
+import { agentLocationBatchSchema, agentStatusSchema } from "./schema";
 import { AgentsStore } from "./store";
 import type { AgentLocationInput } from "./types";
 import { AgentsWriteBehindQueue } from "./write-behind-queue";
@@ -469,17 +469,18 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
           }
         }
 
-        const body = request.body as { agent_id?: string; agent_name?: string; status?: string; campaign_id?: string } | null;
-        const agentId = body?.agent_id;
-        const agentStatus = body?.status;
-        if (!agentId || !agentStatus) {
-          return reply.code(400).send(errorPayload(requestId, "INVALID_PAYLOAD", "agent_id y status requeridos"));
+        const parsed = agentStatusSchema.safeParse(request.body);
+        if (!parsed.success) {
+          const message = parsed.error.issues.map((i) => i.message).join(", ");
+          return reply.code(400).send(errorPayload(requestId, "INVALID_PAYLOAD", message));
         }
+
+        const { agent_id: agentId, status: agentStatus, agent_name, campaign_id } = parsed.data;
 
         const ts = new Date().toISOString();
         const now = Date.now();
-        const name = body?.agent_name ?? previouslyOnlineAgents.get(agentId)?.agentName ?? `Agente ${agentId.slice(0, 8)}`;
-        const campaignId = body?.campaign_id ?? previouslyOnlineAgents.get(agentId)?.campaignId ?? null;
+        const name = agent_name ?? previouslyOnlineAgents.get(agentId)?.agentName ?? `Agente ${agentId.slice(0, 8)}`;
+        const campaignId = campaign_id ?? previouslyOnlineAgents.get(agentId)?.campaignId ?? null;
 
         // Throttle: skip if same agent sent the same status within 30s
         const last = lastStatusByAgent.get(agentId);

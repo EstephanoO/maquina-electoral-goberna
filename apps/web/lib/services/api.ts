@@ -1,6 +1,10 @@
 /**
  * GOBERNA — API Service
  * Handles authenticated requests with automatic token refresh.
+ *
+ * Auth tokens are stored in httpOnly cookies set by the backend.
+ * The browser sends them automatically on every fetch via the Next.js proxy.
+ * The TokenStore is now a thin shim for "has session?" checks only.
  */
 
 import type { ApiResponse } from "../types";
@@ -25,14 +29,15 @@ function getBaseUrl(): string {
 
 async function refreshAccessToken(): Promise<boolean> {
   if (!tokenStore) return false;
-  const refreshToken = tokenStore.getRefreshToken();
-  if (!refreshToken) return false;
 
   try {
+    // Refresh token is in httpOnly cookie — sent automatically by the browser.
+    // POST body is empty; backend reads the cookie.
     const res = await fetch(`${getBaseUrl()}/api/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      body: JSON.stringify({}),
+      credentials: "same-origin",
     });
 
     if (!res.ok) {
@@ -40,13 +45,10 @@ async function refreshAccessToken(): Promise<boolean> {
       return false;
     }
 
+    // Backend sets new httpOnly cookies via Set-Cookie headers automatically.
+    // No need to manually store tokens.
     const data = await res.json();
-    if (data.access_token && data.refresh_token) {
-      tokenStore.setTokens(data.access_token, data.refresh_token);
-      return true;
-    }
-
-    return false;
+    return !!data.access_token;
   } catch {
     return false;
   }
@@ -66,19 +68,15 @@ export async function apiRequest<T = unknown>(
     headers.set("Content-Type", "application/json");
   }
 
-  if (tokenStore) {
-    const token = tokenStore.getAccessToken();
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
-  }
+  // Auth is handled by httpOnly cookies sent automatically by the browser.
+  // No need to set Authorization header for web requests.
 
   if (campaignId) {
     headers.set("x-campaign-id", campaignId);
   }
 
   const doFetch = async (): Promise<Response> => {
-    return fetch(url, { ...fetchOptions, headers });
+    return fetch(url, { ...fetchOptions, headers, credentials: "same-origin" });
   };
 
   let res = await doFetch();
@@ -87,10 +85,7 @@ export async function apiRequest<T = unknown>(
   if (res.status === 401 && tokenStore?.getRefreshToken()) {
     const refreshed = await refreshAccessToken();
     if (refreshed) {
-      const newToken = tokenStore!.getAccessToken();
-      if (newToken) {
-        headers.set("Authorization", `Bearer ${newToken}`);
-      }
+      // Retry with the new cookie (set by the refresh response)
       res = await doFetch();
     }
   }

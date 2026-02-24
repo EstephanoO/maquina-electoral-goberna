@@ -22,7 +22,9 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
     app.get("/api/config", async (_request, reply) => {
       reply.header("Cache-Control", "public, max-age=300");
       return {
-        tegolaBaseUrl: env.tegolaBaseUrl,
+        // NOTE: tegolaBaseUrl removed for security — internal infrastructure URL
+        // should not be exposed to unauthenticated clients. Tiles are proxied via
+        // the tileUrlTemplate path below.
         mapName: env.tegolaMap,
         tileUrlTemplate: "/api/tiles/{z}/{x}/{y}.vector.pbf",
         layers: layersContract,
