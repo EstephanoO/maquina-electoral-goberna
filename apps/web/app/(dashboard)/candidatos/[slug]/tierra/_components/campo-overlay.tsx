@@ -6,6 +6,7 @@ import { STATUS_CFG } from "./constants";
 import {
   Glass, Kpi, CardHeader, AgentRow, RankingRow, LogRow, MoreBtn, SCROLL_MAX,
 } from "./campo-overlay-parts";
+import { LogModal } from "./log-modal";
 
 /* ========== Types ========== */
 
@@ -39,6 +40,7 @@ export function CampoOverlay({
   const [agentsOpen, setAgentsOpen] = useState(false);
   const [rankingOpen, setRankingOpen] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
+  const [logModalOpen, setLogModalOpen] = useState(false);
   const logListRef = useRef<HTMLDivElement>(null);
   const prevLogCount = useRef(logEntries.length);
 
@@ -183,6 +185,15 @@ export function CampoOverlay({
           <CardHeader onClick={() => setLogOpen(!logOpen)} open={logOpen}>
             <span className="font-semibold text-[12px] text-slate-700">Log</span>
             <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: primaryColor }}>{logEntries.length}</span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setLogModalOpen(true); }}
+              className="ml-auto mr-2 text-[9px] font-semibold uppercase tracking-wider cursor-pointer transition-colors hover:opacity-80"
+              style={{ color: primaryColor }}
+              title="Ver registro completo"
+            >
+              Ver todos
+            </button>
           </CardHeader>
 
           <div ref={logListRef} className={logOpen ? "max-h-[340px] overflow-y-auto" : ""}>
@@ -200,6 +211,14 @@ export function CampoOverlay({
           )}
         </Glass>
       </div>
+
+      {/* ═══ Full log modal ═══ */}
+      <LogModal
+        open={logModalOpen}
+        onClose={() => setLogModalOpen(false)}
+        entries={logEntries}
+        onEntryClick={(entry) => { setLogModalOpen(false); onLogEntryClick(entry); }}
+      />
     </div>
   );
 }

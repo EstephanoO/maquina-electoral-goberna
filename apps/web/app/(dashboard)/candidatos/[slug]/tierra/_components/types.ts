@@ -106,4 +106,8 @@ export type LogEntry = {
   /** Coordinates for fly-to on click (null = no location) */
   lat: number | null;
   lng: number | null;
+  /** Enriched form data — only present for form_new/form_submitted entries */
+  nombre?: string;
+  telefono?: string;
+  zona?: string;
 };

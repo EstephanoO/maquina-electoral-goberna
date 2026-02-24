@@ -97,13 +97,14 @@ export function RankingRow({ agent, rank, primaryColor, selected, onClick }: { a
 
 export function LogRow({ entry, onLogEntryClick }: { entry: LogEntry; onLogEntryClick: (e: LogEntry) => void }) {
   const hasLoc = entry.lat != null && entry.lng != null;
+  const isForm = entry.type === "form_new" || entry.type === "form_submitted";
   return (
     <button
       type="button"
       onClick={() => hasLoc && onLogEntryClick(entry)}
-      className={`w-full flex items-center gap-2 px-3 py-[5px] transition-colors text-left ${hasLoc ? "cursor-pointer hover:bg-white/30" : "cursor-default"}`}
+      className={`w-full flex items-start gap-2 px-3 py-[5px] transition-colors text-left ${hasLoc ? "cursor-pointer hover:bg-white/30" : "cursor-default"}`}
     >
-      <span className="w-[22px] h-[22px] rounded-md flex items-center justify-center text-white text-[9px] font-bold shrink-0 shadow-sm" style={{ backgroundColor: LOG_ICON_BG[entry.type] }}>
+      <span className="w-[22px] h-[22px] rounded-md flex items-center justify-center text-white text-[9px] font-bold shrink-0 shadow-sm mt-0.5" style={{ backgroundColor: LOG_ICON_BG[entry.type] }}>
         {LOG_ICON_LABEL[entry.type]}
       </span>
       <div className="flex-1 min-w-0">
@@ -111,8 +112,14 @@ export function LogRow({ entry, onLogEntryClick }: { entry: LogEntry; onLogEntry
           <span className="font-semibold">{entry.agentName}</span>
           <span className="text-slate-500/80"> {entry.message}</span>
         </span>
+        {isForm && (entry.nombre || entry.telefono) && (
+          <span className="text-[9px] text-slate-400/70 truncate block mt-px">
+            {entry.nombre}{entry.telefono ? ` · ${entry.telefono}` : ""}
+            {entry.zona ? ` · ${entry.zona}` : ""}
+          </span>
+        )}
       </div>
-      <span className="text-[9px] text-slate-400/70 tabular-nums shrink-0">{timeAgo(entry.timestamp)}</span>
+      <span className="text-[9px] text-slate-400/70 tabular-nums shrink-0 mt-0.5">{timeAgo(entry.timestamp)}</span>
     </button>
   );
 }

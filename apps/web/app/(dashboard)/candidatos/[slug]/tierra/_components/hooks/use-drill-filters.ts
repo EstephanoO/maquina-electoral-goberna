@@ -73,23 +73,10 @@ export function useDrillFilters(
     return HIDE_FILTER;
   }, [drillState.level, drillState.provCode, drillState.distCode]);
 
-  // ─── PRIORITY LAYERS (red campaign-specific zones) ───
-  const priorityDepFilter: FilterSpecification = useMemo(() => {
-    if (drillState.level >= 1) return HIDE_FILTER;
-    return ["all", campaignFilter] as FilterSpecification;
-  }, [campaignFilter, drillState.level]);
-
-  const priorityProvFilter: FilterSpecification = useMemo(() => {
-    if (drillState.level < 1 || !drillState.depCode) return HIDE_FILTER;
-    if (drillState.level >= 2) return HIDE_FILTER;
-    return ["all", campaignFilter, ["==", ["get", "coddep"], drillState.depCode]] as FilterSpecification;
-  }, [campaignFilter, drillState.level, drillState.depCode]);
-
-  const priorityDistFilter: FilterSpecification = useMemo(() => {
-    if (drillState.level < 2 || !drillState.provCode) return HIDE_FILTER;
-    if (drillState.level >= 3) return HIDE_FILTER;
-    return ["all", campaignFilter, ["==", ["get", "codprov_full"], drillState.provCode]] as FilterSpecification;
-  }, [campaignFilter, drillState.level, drillState.provCode]);
+  // ─── PRIORITY LAYERS — disabled (no priority zones configured for current campaigns) ───
+  const priorityDepFilter: FilterSpecification = HIDE_FILTER;
+  const priorityProvFilter: FilterSpecification = HIDE_FILTER;
+  const priorityDistFilter: FilterSpecification = HIDE_FILTER;
 
   // ─── SECTORS / SUBSECTORS ───
   const sectorFilter: FilterSpecification = useMemo(() => {

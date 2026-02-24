@@ -101,7 +101,6 @@ export const INTERACTIVE_LAYERS = [
   "agents-circles", "agents-selected-ring",
   "forms-clusters", "forms-cluster-ring", "forms-points",
   "dep-fill", "prov-fill", "dist-fill",
-  "priority-dep-fill", "priority-prov-fill", "priority-dist-fill",
   "sector-fill",
 ] as const;
 

@@ -30,6 +30,9 @@ export function useActivityLog(
         timestamp: new Date(f.created_at),
         lat: coords?.lat ?? null,
         lng: coords?.lng ?? null,
+        nombre: f.nombre || undefined,
+        telefono: f.telefono || undefined,
+        zona: f.zona || undefined,
       };
     });
 
@@ -61,7 +64,7 @@ export function useActivityLog(
     const filtered = logClearedAt > 0
       ? entries.filter((e) => e.timestamp.getTime() > logClearedAt)
       : entries;
-    return filtered.slice(0, 60);
+    return filtered.slice(0, 200);
   }, [forms, stats, sseEvents, logClearedAt]);
 
   const handleClearLog = useCallback(() => {
