@@ -185,19 +185,21 @@ export function CampoOverlay({
 
         {/* ═══ Log card — datos subidos ═══ */}
         <Glass>
-          <CardHeader onClick={() => setLogOpen(!logOpen)} open={logOpen}>
-            <span className="font-semibold text-[12px] text-slate-700">Datos</span>
-            <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: primaryColor }}>{formLogEntries.length}</span>
+          <div className="flex items-center">
+            <CardHeader onClick={() => setLogOpen(!logOpen)} open={logOpen}>
+              <span className="font-semibold text-[12px] text-slate-700">Datos</span>
+              <span className="ml-1.5 text-[11px] font-bold tabular-nums mr-auto" style={{ color: primaryColor }}>{formLogEntries.length}</span>
+            </CardHeader>
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); setLogModalOpen(true); }}
-              className="ml-auto mr-2 text-[9px] font-semibold uppercase tracking-wider cursor-pointer transition-colors hover:opacity-80"
+              onClick={() => setLogModalOpen(true)}
+              className="shrink-0 mr-3 text-[9px] font-semibold uppercase tracking-wider cursor-pointer transition-colors hover:opacity-80"
               style={{ color: primaryColor }}
               title="Ver registro completo"
             >
               Ver todos
             </button>
-          </CardHeader>
+          </div>
 
           <div ref={logListRef} className={logOpen ? "max-h-[340px] overflow-y-auto" : ""}>
             {visibleLogs.length === 0 ? (
