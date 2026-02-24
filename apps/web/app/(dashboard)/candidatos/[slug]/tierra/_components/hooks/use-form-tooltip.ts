@@ -1,11 +1,15 @@
 /**
- * useFormTooltip — Glassmorphism tooltip for form data points on hover.
+ * useFormTooltip — Glassmorphism tooltip for form data points and clusters.
  *
  * Same zero-render architecture as useZoneTooltip:
  * - Direct DOM manipulation via refs (no React state)
  * - requestAnimationFrame coalesces position updates
  * - Content only updates when hovered feature changes
  * - 60fps tracking with zero GC pressure
+ *
+ * Handles two cases:
+ * - Individual form points → nombre, telefono, encuestador, fecha
+ * - Clusters → count summary with icon
  */
 
 import { useCallback, useRef, type RefObject } from "react";
@@ -38,12 +42,16 @@ function fmtDate(iso: string): string {
   }
 }
 
-/** Mask "987654321" → "987 •••• 21" */
-function maskPhone(tel: string): string {
+/** Format phone: "987654321" → "987 654 321" */
+function fmtPhone(tel: string): string {
   const clean = tel.replace(/\D/g, "");
-  if (clean.length < 6) return tel;
-  return `${clean.slice(0, 3)} •••• ${clean.slice(-2)}`;
+  if (clean.length === 9) return `${clean.slice(0, 3)} ${clean.slice(3, 6)} ${clean.slice(6)}`;
+  if (clean.length === 10) return `${clean.slice(0, 3)} ${clean.slice(3, 6)} ${clean.slice(6)}`;
+  return tel;
 }
+
+/** Layers that trigger tooltip */
+const FORM_LAYERS = new Set(["forms-points", "forms-clusters", "forms-cluster-ring"]);
 
 /* ─── Hook ─── */
 
@@ -81,8 +89,7 @@ export function useFormTooltip(isZoomingRef: RefObject<boolean>) {
     const f = features?.[0];
     const layerId = f?.layer?.id ?? "";
 
-    // Only show for individual form points (not clusters)
-    if (layerId !== "forms-points" || !f?.properties) {
+    if (!FORM_LAYERS.has(layerId) || !f?.properties) {
       if (state.current.currentId !== null) {
         el.style.opacity = "0";
         state.current.currentId = null;
@@ -91,24 +98,43 @@ export function useFormTooltip(isZoomingRef: RefObject<boolean>) {
     }
 
     const props = f.properties;
-    const featureId = `${props.nombre}-${props.created_at}`;
+    const isCluster = layerId === "forms-clusters" || layerId === "forms-cluster-ring";
+
+    const featureId = isCluster
+      ? `cluster-${props.cluster_id}`
+      : `pt-${props.nombre}-${props.created_at}`;
 
     if (featureId !== state.current.currentId) {
       state.current.currentId = featureId;
 
-      const nombre = String(props.nombre ?? "—");
-      const telefono = String(props.telefono ?? "");
-      const encuestador = String(props.encuestador ?? "");
-      const createdAt = String(props.created_at ?? "");
+      if (isCluster) {
+        const count = Number(props.point_count ?? 0);
+        el.innerHTML =
+          `<div style="display:flex;align-items:center;gap:6px">` +
+            `<div style="width:22px;height:22px;border-radius:6px;background:#2563eb;display:flex;align-items:center;justify-content:center">` +
+              `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>` +
+            `</div>` +
+            `<div>` +
+              `<div style="font-weight:700;font-size:13px;color:#1e293b;line-height:1.2">${count} datos</div>` +
+              `<div style="font-size:9px;color:#94a3b8;line-height:1.3">Click para expandir</div>` +
+            `</div>` +
+          `</div>`;
+      } else {
+        const nombre = String(props.nombre ?? "—");
+        const telefono = String(props.telefono ?? "");
+        const encuestador = String(props.encuestador ?? "");
+        const createdAt = String(props.created_at ?? "");
 
-      // Build HTML — using template literal for perf (single innerHTML write)
-      el.innerHTML =
-        `<div style="font-weight:700;font-size:12px;color:#1e293b;line-height:1.3;margin-bottom:3px">${nombre}</div>` +
-        (telefono ? `<div style="font-size:10px;color:#64748b;line-height:1.3;letter-spacing:0.5px">${maskPhone(telefono)}</div>` : "") +
-        `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-top:4px;border-top:1px solid rgba(148,163,184,0.2)">` +
-          (encuestador ? `<span style="font-size:10px;color:#475569;font-weight:500">${encuestador.split(" ")[0]}</span>` : "") +
-          (createdAt ? `<span style="font-size:9px;color:#94a3b8;margin-left:auto">${fmtDate(createdAt)}</span>` : "") +
-        `</div>`;
+        el.innerHTML =
+          `<div style="font-weight:700;font-size:12px;color:#1e293b;line-height:1.3;margin-bottom:2px">${nombre}</div>` +
+          (telefono
+            ? `<div style="font-size:11px;color:#475569;line-height:1.3;letter-spacing:0.3px;font-variant-numeric:tabular-nums">${fmtPhone(telefono)}</div>`
+            : "") +
+          `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-top:4px;border-top:1px solid rgba(148,163,184,0.15)">` +
+            (encuestador ? `<span style="font-size:10px;color:#64748b;font-weight:500">${encuestador.split(" ")[0]}</span>` : "") +
+            (createdAt ? `<span style="font-size:9px;color:#94a3b8;margin-left:auto">${fmtDate(createdAt)}</span>` : "") +
+          `</div>`;
+      }
 
       el.style.opacity = "1";
     }
