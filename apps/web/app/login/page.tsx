@@ -208,7 +208,7 @@ export default function LoginPage() {
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !password) {
-      setError("Ingrese correo y contrasena.");
+      setError("Ingrese correo y contraseña.");
       return;
     }
 
@@ -221,7 +221,7 @@ export default function LoginPage() {
         setError(result.error ?? "Credenciales incorrectas.");
       }
     } catch {
-      setError("Error de conexion. Intente de nuevo.");
+      setError("Error de conexión. Intente de nuevo.");
     } finally {
       setSubmitting(false);
     }
@@ -458,7 +458,7 @@ export default function LoginPage() {
               lineHeight: 1.2,
             }}
           >
-            Iniciar Sesion
+            Iniciar Sesión
           </h2>
           <div style={{ marginBottom: 36 }} />
 
@@ -498,7 +498,7 @@ export default function LoginPage() {
             {/* Email */}
             <div style={{ marginBottom: 20 }}>
               <label htmlFor="login-email" style={labelStyle}>
-                Correo electronico
+                Correo electrónico
               </label>
               <input
                 ref={emailRef}
@@ -519,7 +519,7 @@ export default function LoginPage() {
             {/* Password */}
             <div style={{ marginBottom: 28 }}>
               <label htmlFor="login-password" style={labelStyle}>
-                Contrasena
+                Contraseña
               </label>
               <div style={{ position: "relative" }}>
                 <input
@@ -540,7 +540,7 @@ export default function LoginPage() {
                   type="button"
                   tabIndex={-1}
                   aria-label={
-                    showPassword ? "Ocultar contrasena" : "Mostrar contrasena"
+                    showPassword ? "Ocultar contraseña" : "Mostrar contraseña"
                   }
                   onClick={() => setShowPassword((v) => !v)}
                   style={{
