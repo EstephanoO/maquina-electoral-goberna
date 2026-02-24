@@ -111,4 +111,8 @@ export type LogEntry = {
   telefono?: string;
   zona?: string;
   encuestador?: string;
+  /** Original form submission ID (for delete operations) */
+  formId?: string;
+  /** Campaign ID the form belongs to */
+  campaignId?: string;
 };

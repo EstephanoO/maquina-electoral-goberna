@@ -77,6 +77,19 @@ export async function getRecentForms(
 }
 
 /**
+ * Update editable fields of a form (admin/consultor only).
+ */
+export async function updateForm(
+  formId: string,
+  campaignId: string,
+  updates: { nombre?: string; telefono?: string; zona?: string; comentarios?: string | null },
+) {
+  return api.put<{ updated: boolean; source: string }>(`/api/forms/${formId}`, updates, {
+    headers: { "x-campaign-id": campaignId },
+  });
+}
+
+/**
  * Delete a single form by ID (admin only).
  */
 export async function deleteForm(formId: string, campaignId: string) {

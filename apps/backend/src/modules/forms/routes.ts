@@ -10,7 +10,7 @@ import { consumeDualWeightedRateLimit } from "../../infra/redis";
 import { emitCampaignEvent } from "../campaigns/routes";
 import { formSchema, type FormInput } from "./schema";
 import { FormsWriteBehindQueue } from "./write-behind-queue";
-import { getFormsByCampaign, getRecentForms, deleteFormById, softDeleteFormById, restoreFormById, getPendingDeletions } from "./repository";
+import { getFormsByCampaign, getRecentForms, deleteFormById, softDeleteFormById, restoreFormById, getPendingDeletions, updateFormById } from "./repository";
 
 function parseFormsPayload(body: unknown): FormInput[] {
   const items = Array.isArray(body) ? body : [body];
@@ -278,6 +278,57 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "form delete failed");
           return reply.code(500).send(errorPayload(requestId, "FORM_DELETE_ERROR", "error eliminando formulario"));
+        }
+      },
+    );
+
+    // PUT /api/forms/:id - Update a form (admin/consultor only)
+    app.put(
+      "/api/forms/:id",
+      { preHandler: [app.authenticate, authorize({ roles: ["consultor"], requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+        const { id } = request.params as { id: string };
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        const body = request.body as {
+          nombre?: string;
+          telefono?: string;
+          zona?: string;
+          comentarios?: string | null;
+        };
+
+        // Validate at least one field to update
+        const updates: Record<string, string | null | undefined> = {};
+        if (typeof body.nombre === "string" && body.nombre.trim()) updates.nombre = body.nombre.trim();
+        if (typeof body.telefono === "string" && body.telefono.trim()) updates.telefono = body.telefono.trim();
+        if (typeof body.zona === "string" && body.zona.trim()) updates.zona = body.zona.trim();
+        if (body.comentarios !== undefined) updates.comentarios = typeof body.comentarios === "string" ? body.comentarios.trim() : null;
+
+        if (Object.keys(updates).length === 0) {
+          return reply.code(400).send(errorPayload(requestId, "INVALID_PAYLOAD", "al menos un campo para actualizar"));
+        }
+
+        try {
+          const result = await updateFormById(id, campaignId, updates);
+
+          if (!result.updated) {
+            return reply.code(404).send(errorPayload(requestId, "FORM_NOT_FOUND", "formulario no encontrado"));
+          }
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            updated: true,
+            source: result.source,
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "form update failed");
+          return reply.code(500).send(errorPayload(requestId, "FORM_UPDATE_ERROR", "error actualizando formulario"));
         }
       },
     );

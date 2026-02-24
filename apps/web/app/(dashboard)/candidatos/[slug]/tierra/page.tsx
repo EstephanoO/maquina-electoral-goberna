@@ -3,9 +3,12 @@
 import { useCallback, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 
 import type { FormRecord } from "@/lib/services";
+import { deleteForm, updateForm } from "@/lib/services";
 import { useCampaignStats, useRecentForms, useAgentLocationsSnapshot } from "@/lib/hooks";
+import { useAuth } from "@/lib/auth-context";
 
 import {
   TierraHeader, MapControls, PipelineView, CampoOverlay,
@@ -34,6 +37,8 @@ export default function TierraPage() {
   const params = useParams();
   const slug = params.slug as string;
   const mapHandleRef = useRef<TierraMapHandle | null>(null);
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
 
   // ─── Data fetching ───
   const { data: stats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useCampaignStats(slug);
@@ -88,6 +93,25 @@ export default function TierraPage() {
     });
   }, []);
 
+  const handleDeleteForm = useCallback(async (formId: string, campaignId: string): Promise<boolean> => {
+    const res = await deleteForm(formId, campaignId);
+    if (res.ok) {
+      queryClient.invalidateQueries({ queryKey: ["recent-forms"] });
+      queryClient.invalidateQueries({ queryKey: ["campaign-stats"] });
+      return true;
+    }
+    return false;
+  }, [queryClient]);
+
+  const handleUpdateForm = useCallback(async (formId: string, campaignId: string, updates: Record<string, string>): Promise<boolean> => {
+    const res = await updateForm(formId, campaignId, updates);
+    if (res.ok) {
+      queryClient.invalidateQueries({ queryKey: ["recent-forms"] });
+      return true;
+    }
+    return false;
+  }, [queryClient]);
+
   // ─── Loading / Error ───
   if (statsLoading) {
     return (
@@ -123,7 +147,7 @@ export default function TierraPage() {
           <div className="absolute top-3 left-3 z-10">
             <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} agentCount={enrichedAgents.length} formCount={forms.length} />
           </div>
-          <CampoOverlay agents={enrichedAgents} connectedCount={connectedCount} logEntries={logEntries} formCount={forms.length} primaryColor={campaign.color_primario} selectedAgentId={selectedAgentId} onAgentClick={handleAgentListClick} onLogEntryClick={handleLogEntryClick} />
+          <CampoOverlay agents={enrichedAgents} connectedCount={connectedCount} logEntries={logEntries} formCount={forms.length} primaryColor={campaign.color_primario} selectedAgentId={selectedAgentId} onAgentClick={handleAgentListClick} onLogEntryClick={handleLogEntryClick} userRole={user?.role} onDeleteForm={handleDeleteForm} onUpdateForm={handleUpdateForm} />
         </div>
       ) : (
         <PipelineView

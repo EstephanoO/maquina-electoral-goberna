@@ -339,6 +339,81 @@ export async function deleteFormById(
 }
 
 /**
+ * Update editable fields of a form (admin/consultor only).
+ * Updates both legacy forms table and form_submissions table.
+ */
+export async function updateFormById(
+  formId: string,
+  campaignId: string,
+  updates: { nombre?: string; telefono?: string; zona?: string; comentarios?: string | null },
+): Promise<{ updated: boolean; source: "forms" | "form_submissions" | null }> {
+  // Build SET clauses dynamically for legacy forms table
+  const setClauses: string[] = [];
+  const params: (string | null)[] = [formId, campaignId];
+  let paramIdx = 3;
+
+  if (updates.nombre !== undefined) {
+    setClauses.push(`nombre = $${paramIdx}`);
+    params.push(updates.nombre);
+    paramIdx++;
+  }
+  if (updates.telefono !== undefined) {
+    setClauses.push(`telefono = $${paramIdx}`);
+    params.push(updates.telefono);
+    paramIdx++;
+  }
+  if (updates.zona !== undefined) {
+    setClauses.push(`zona = $${paramIdx}`);
+    params.push(updates.zona);
+    paramIdx++;
+  }
+  if (updates.comentarios !== undefined) {
+    setClauses.push(`comentarios = $${paramIdx}`);
+    params.push(updates.comentarios);
+    paramIdx++;
+  }
+
+  if (setClauses.length === 0) {
+    return { updated: false, source: null };
+  }
+
+  // Try legacy forms table first
+  const legacyResult = await pool.query(
+    `UPDATE public.forms SET ${setClauses.join(", ")}
+     WHERE id = $1 AND campaign_id = $2 AND deleted_at IS NULL RETURNING id`,
+    params,
+  );
+
+  if (legacyResult.rowCount && legacyResult.rowCount > 0) {
+    return { updated: true, source: "forms" };
+  }
+
+  // Try form_submissions table (JSONB data column)
+  const jsonbSets: string[] = [];
+  if (updates.nombre !== undefined) jsonbSets.push(`'nombre', to_jsonb($${setClauses.length > 0 ? 3 : paramIdx}::text)`);
+  if (updates.telefono !== undefined) jsonbSets.push(`'telefono', to_jsonb($${setClauses.length > 0 ? (updates.nombre !== undefined ? 4 : 3) : paramIdx}::text)`);
+
+  // For form_submissions, build jsonb_set chain
+  const jsonbUpdates: Record<string, string> = {};
+  if (updates.nombre !== undefined) jsonbUpdates.nombre = updates.nombre;
+  if (updates.telefono !== undefined) jsonbUpdates.telefono = updates.telefono;
+  if (updates.zona !== undefined) jsonbUpdates.zona = updates.zona;
+  if (updates.comentarios !== undefined) jsonbUpdates.comentarios = updates.comentarios ?? "";
+
+  const submissionsResult = await pool.query(
+    `UPDATE form_submissions SET data = data || $3::jsonb
+     WHERE id = $1 AND campaign_id = $2 AND deleted_at IS NULL RETURNING id`,
+    [formId, campaignId, JSON.stringify(jsonbUpdates)],
+  );
+
+  if (submissionsResult.rowCount && submissionsResult.rowCount > 0) {
+    return { updated: true, source: "form_submissions" };
+  }
+
+  return { updated: false, source: null };
+}
+
+/**
  * Soft-delete a form by ID (non-admin).
  * Sets deleted_at + deleted_by instead of removing the row.
  */

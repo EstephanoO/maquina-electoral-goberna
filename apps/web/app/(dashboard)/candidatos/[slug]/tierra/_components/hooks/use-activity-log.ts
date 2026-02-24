@@ -34,6 +34,8 @@ export function useActivityLog(
         telefono: f.telefono || undefined,
         zona: f.zona || undefined,
         encuestador: f.encuestador || undefined,
+        formId: f.id,
+        campaignId: f.campaign_id || undefined,
       };
     });
 

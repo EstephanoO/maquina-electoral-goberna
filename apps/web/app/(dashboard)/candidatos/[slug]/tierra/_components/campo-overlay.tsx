@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import type { EnrichedAgent, LogEntry, AgentStatus } from "./types";
 import { STATUS_CFG } from "./constants";
 import {
@@ -19,6 +19,12 @@ type Props = {
   selectedAgentId: string | null;
   onAgentClick: (agentId: string) => void;
   onLogEntryClick: (entry: LogEntry) => void;
+  /** User role for permission checks */
+  userRole?: string;
+  /** Delete handler — called from modal */
+  onDeleteForm?: (formId: string, campaignId: string) => Promise<boolean>;
+  /** Update handler — called from modal */
+  onUpdateForm?: (formId: string, campaignId: string, updates: Record<string, string>) => Promise<boolean>;
 };
 
 /* ========== Constants ========== */
@@ -35,6 +41,7 @@ const RANKING_EXPANDED = 15;
 export function CampoOverlay({
   agents, connectedCount, logEntries, formCount,
   primaryColor, selectedAgentId, onAgentClick, onLogEntryClick,
+  userRole, onDeleteForm, onUpdateForm,
 }: Props) {
   const [visible, setVisible] = useState(true);
   const [agentsOpen, setAgentsOpen] = useState(false);
@@ -223,6 +230,9 @@ export function CampoOverlay({
         onClose={() => setLogModalOpen(false)}
         entries={logEntries}
         onEntryClick={(entry) => { setLogModalOpen(false); onLogEntryClick(entry); }}
+        userRole={userRole}
+        onDelete={onDeleteForm}
+        onUpdate={onUpdateForm}
       />
     </div>
   );
