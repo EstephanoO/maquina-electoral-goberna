@@ -57,9 +57,7 @@ const INJECTED_STYLES = `
   [data-login-gold-stripe] {
     display: none !important;
   }
-  [data-login-mobile-logo] {
-    display: flex !important;
-  }
+
 }
 `;
 
@@ -430,24 +428,6 @@ export default function LoginPage() {
             animation: "goberna-fade-in .7s ease-out .2s both",
           }}
         >
-          {/* Mobile-only logo (hidden on desktop, shown via media query) */}
-          <div
-            data-login-mobile-logo
-            style={{
-              display: "none",
-              justifyContent: "center",
-              marginBottom: 24,
-            }}
-          >
-            <Image
-              src="/isotipo_2_-removebg-preview.png"
-              alt="GOBERNA"
-              width={56}
-              height={56}
-              style={{ borderRadius: "50%", objectFit: "cover" }}
-            />
-          </div>
-
           {/* Heading */}
           <h2
             style={{
