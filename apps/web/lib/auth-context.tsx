@@ -31,6 +31,8 @@ type AuthActions = {
   login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
   setActiveCampaign: (campaignId: string | null) => void;
+  /** Re-fetch /api/auth/me to refresh user + campaigns data (e.g. after editing a candidate) */
+  refreshSession: () => Promise<void>;
 };
 
 type AuthContextValue = AuthState & AuthActions;
@@ -172,6 +174,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const refreshSession = useCallback(async () => {
+    const res = await api.get<{ user: User; campaigns: Campaign[] }>("/api/auth/me");
+    if (res.ok && res.data) {
+      setUser(res.data.user);
+      setCampaigns(res.data.campaigns);
+      // Keep current activeCampaignId if still valid, otherwise fall back
+      setActiveCampaignId((prev) => {
+        const stillValid = res.data!.campaigns.some((c) => c.id === prev);
+        return stillValid ? prev : res.data!.campaigns[0]?.id ?? null;
+      });
+    }
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -182,8 +197,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       login,
       logout,
       setActiveCampaign,
+      refreshSession,
     }),
-    [user, campaigns, activeCampaignId, isLoading, login, logout, setActiveCampaign],
+    [user, campaigns, activeCampaignId, isLoading, login, logout, setActiveCampaign, refreshSession],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;

@@ -32,7 +32,7 @@ import { FONT_STACK } from "../../../lib/constants";
 // ── Page Component ─────────────────────────────────────────────────
 
 export default function CandidatosPage() {
-  const { user } = useAuth();
+  const { user, refreshSession } = useAuth();
   const router = useRouter();
 
   // State
@@ -184,6 +184,7 @@ export default function CandidatosPage() {
             onSuccess={() => {
               setEditingCandidate(null);
               fetchAll();
+              refreshSession(); // Update sidebar campaign names immediately
             }}
             onCancel={() => setEditingCandidate(null)}
           />
