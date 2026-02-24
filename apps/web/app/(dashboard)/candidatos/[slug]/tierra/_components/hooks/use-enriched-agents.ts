@@ -57,22 +57,29 @@ export function useEnrichedAgents(
 
     for (const agent of stats.top_agents) {
       const loc = locMap.get(agent.id);
+      const formEntry = agentFormIndex.get(agent.id);
+      const formTs = formEntry ? new Date(formEntry.last.created_at).getTime() : 0;
+
       if (loc) {
+        // Use the MOST RECENT timestamp between GPS location and last form submission.
+        // An agent may have old GPS data but submitted a form seconds ago.
+        const locTs = new Date(loc.ts).getTime();
+        const bestTs = Math.max(locTs, formTs);
+        const bestDate = new Date(bestTs);
         agentMap.set(agent.id, {
           id: agent.id, name: agent.name,
-          status: getAgentStatus(loc.ts, now),
-          lastSeen: new Date(loc.ts),
+          status: getAgentStatus(bestDate.toISOString(), now),
+          lastSeen: bestDate,
           forms_count: agent.forms_count,
           lat: loc.lat, lng: loc.lng,
         });
       } else {
         // No GPS — use pre-indexed form coords (O(1) lookup)
-        const entry = agentFormIndex.get(agent.id);
-        const lastCoords = entry?.coords ?? null;
+        const lastCoords = formEntry?.coords ?? null;
         agentMap.set(agent.id, {
           id: agent.id, name: agent.name,
-          status: "inactive",
-          lastSeen: entry ? new Date(entry.last.created_at) : new Date(0),
+          status: formTs > 0 ? getAgentStatus(new Date(formTs).toISOString(), now) : "inactive",
+          lastSeen: formTs > 0 ? new Date(formTs) : new Date(0),
           forms_count: agent.forms_count,
           lat: lastCoords?.lat ?? DEFAULT_LAT,
           lng: lastCoords?.lng ?? DEFAULT_LNG,

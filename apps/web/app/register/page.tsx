@@ -230,22 +230,22 @@ function RegisterPageInner() {
     const trimmedName = fullName.trim();
 
     if (!trimmedPhone || !trimmedName || !password) {
-      setError("Telefono, nombre y contrasena son obligatorios.");
+      setError("Teléfono, nombre y contraseña son obligatorios.");
       return;
     }
 
     if (!/^9\d{8}$/.test(trimmedPhone)) {
-      setError("Ingrese un numero de 9 digitos que empiece con 9.");
+      setError("Ingrese un número de 9 dígitos que empiece con 9.");
       return;
     }
 
     if (password.length < 8) {
-      setError("La contrasena debe tener al menos 8 caracteres.");
+      setError("La contraseña debe tener al menos 8 caracteres.");
       return;
     }
 
     if (password !== confirmPassword) {
-      setError("Las contrasenas no coinciden.");
+      setError("Las contraseñas no coinciden.");
       return;
     }
 
@@ -275,7 +275,7 @@ function RegisterPageInner() {
         const msg = res.error?.message ?? "Error al registrarse.";
         // Friendly messages for common errors
         if (res.error?.code === "AUTH_PHONE_EXISTS") {
-          setError("Este numero de telefono ya esta registrado.");
+          setError("Este número de teléfono ya está registrado.");
         } else {
           setError(msg);
         }
@@ -290,7 +290,7 @@ function RegisterPageInner() {
         router.replace("/login");
       }
     } catch {
-      setError("Error de conexion. Intente de nuevo.");
+      setError("Error de conexión. Intente de nuevo.");
     } finally {
       setSubmitting(false);
     }
@@ -449,7 +449,7 @@ function RegisterPageInner() {
               textAlign: "center",
             }}
           >
-            Plataforma de Gestion Territorial
+            Plataforma de Gestión Territorial
           </p>
         </div>
 
@@ -470,7 +470,7 @@ function RegisterPageInner() {
             animation: "goberna-fade-in 1s ease-out .6s both",
           }}
         >
-          Registrese para acceder a la gestion territorial.
+          Regístrese para acceder a la gestión territorial.
         </p>
       </div>
 
@@ -574,7 +574,7 @@ function RegisterPageInner() {
             {/* Email */}
             <div style={{ marginBottom: 16 }}>
               <label htmlFor="reg-email" style={labelStyle}>
-                Correo electronico
+                Correo electrónico
               </label>
               <input
                 id="reg-email"
@@ -594,7 +594,7 @@ function RegisterPageInner() {
             {/* Password */}
             <div style={{ marginBottom: 16 }}>
               <label htmlFor="reg-password" style={labelStyle}>
-                Contrasena
+                Contraseña
               </label>
               <div style={{ position: "relative" }}>
                 <input
@@ -602,7 +602,7 @@ function RegisterPageInner() {
                   type={showPassword ? "text" : "password"}
                   autoComplete="new-password"
                   required
-                  placeholder="Minimo 8 caracteres"
+                  placeholder="Mínimo 8 caracteres"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={submitting}
@@ -613,7 +613,7 @@ function RegisterPageInner() {
                 <button
                   type="button"
                   tabIndex={-1}
-                  aria-label={showPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
+                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                   onClick={() => setShowPassword((v) => !v)}
                   style={{
                     position: "absolute",
@@ -637,14 +637,14 @@ function RegisterPageInner() {
             {/* Confirm Password */}
             <div style={{ marginBottom: 24 }}>
               <label htmlFor="reg-confirm" style={labelStyle}>
-                Confirmar contrasena
+                Confirmar contraseña
               </label>
               <input
                 id="reg-confirm"
                 type={showPassword ? "text" : "password"}
                 autoComplete="new-password"
                 required
-                placeholder="Repita la contrasena"
+                placeholder="Repita la contraseña"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 disabled={submitting}
@@ -712,7 +712,7 @@ function RegisterPageInner() {
               color: "var(--color-text-secondary)",
             }}
           >
-            Ya tiene una cuenta?{" "}
+            ¿Ya tiene una cuenta?{" "}
             <Link
               href="/login"
               style={{
@@ -721,7 +721,7 @@ function RegisterPageInner() {
                 textDecoration: "none",
               }}
             >
-              Iniciar Sesion
+              Iniciar Sesión
             </Link>
           </p>
 

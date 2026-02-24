@@ -138,7 +138,7 @@ export function PublicHeader() {
               fontFamily: FONT_STACK,
             }}
           >
-            Iniciar Sesion
+            Iniciar Sesión
           </Link>
 
           <Link
@@ -244,7 +244,7 @@ export function PublicHeader() {
               fontFamily: FONT_STACK,
             }}
           >
-            Iniciar Sesion
+            Iniciar Sesión
           </Link>
 
           <Link

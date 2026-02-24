@@ -290,7 +290,7 @@ function PendingScreen({ candidateName }: { candidateName: string }) {
           lineHeight: 1.5,
         }}
       >
-        Un administrador revisara su solicitud y le otorgara acceso.
+        Un administrador revisará su solicitud y le otorgará acceso.
         Esto puede tomar algunos minutos.
       </p>
 
@@ -324,7 +324,7 @@ function PendingScreen({ candidateName }: { candidateName: string }) {
             letterSpacing: "0.06em",
           }}
         >
-          Pendiente de aprobacion
+          Pendiente de aprobación
         </span>
       </div>
 
@@ -353,7 +353,7 @@ function PendingScreen({ candidateName }: { candidateName: string }) {
             e.currentTarget.style.borderColor = "var(--goberna-blue-200)";
           }}
         >
-          Ir a Iniciar Sesion
+          Ir a Iniciar Sesión
         </button>
       </div>
     </div>
@@ -488,7 +488,7 @@ export default function OnboardingPage() {
 
       if (!res.ok) {
         if (res.error?.code === "ACCESS_REQUEST_DUPLICATE") {
-          setError("Ya tiene una solicitud pendiente para este candidato.");
+          setError("Ya tiene una solicitud pendiente para este candidato");
         } else {
           setError(res.error?.message ?? "Error enviando solicitud.");
         }
@@ -499,7 +499,7 @@ export default function OnboardingPage() {
       setSubmittedName(selected?.name ?? "el candidato seleccionado");
       setSubmitted(true);
     } catch {
-      setError("Error de conexion. Intente de nuevo.");
+      setError("Error de conexión. Intente de nuevo.");
     } finally {
       setSubmitting(false);
     }
@@ -573,7 +573,7 @@ export default function OnboardingPage() {
         }}
       >
         Seleccione el candidato con el que desea colaborar.
-        Un administrador aprobara su solicitud.
+        Un administrador aprobará su solicitud.
       </p>
 
       {/* Error */}

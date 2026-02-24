@@ -82,7 +82,7 @@ export const PipelineView = memo(function PipelineView({
           </div>
           <div>
             <span className="text-base font-semibold text-slate-600 block">Sin datos en este periodo</span>
-            <span className="text-sm text-slate-400 mt-1 block max-w-xs">Proba seleccionando &quot;Todo&quot; o un periodo mas amplio</span>
+            <span className="text-sm text-slate-400 mt-1 block max-w-xs">Probá seleccionando &quot;Todo&quot; o un período más amplio</span>
           </div>
         </div>
       ) : (

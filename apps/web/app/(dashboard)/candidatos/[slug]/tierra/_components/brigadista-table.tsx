@@ -96,7 +96,7 @@ export function BrigadistaTable({ brigadistas, primaryColor }: Props) {
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 p-12 text-center">
             <span className="text-[13px] font-semibold text-slate-500">Sin brigadistas</span>
-            <span className="text-xs text-slate-400">{search ? "Intenta con otra busqueda" : "Los brigadistas apareceran cuando capturen datos"}</span>
+            <span className="text-xs text-slate-400">{search ? "Intenta con otra búsqueda" : "Los brigadistas aparecerán cuando capturen datos"}</span>
           </div>
         ) : (
           filtered.map((b, idx) => (

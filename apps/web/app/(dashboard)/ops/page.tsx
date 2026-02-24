@@ -555,10 +555,10 @@ export default function OpsDashboardPage() {
                 </BarChart>
               </div>
             ) : (
-              <div style={{ height: "300px", display: "grid", placeItems: "center", color: "#64748b" }}>Inicializando grafico...</div>
+              <div style={{ height: "300px", display: "grid", placeItems: "center", color: "#64748b" }}>Inicializando gráfico...</div>
             )}
             <p style={{ margin: "10px 0 0", fontSize: "12px", color: "#64748b" }}>
-              Los contadores son acumulados desde el ultimo restart del backend.
+              Los contadores son acumulados desde el último restart del backend.
             </p>
             <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#475569", wordBreak: "break-word" }}>
               tracking={JSON.stringify(metrics?.counters?.tracking_ingest_total ?? {})}
@@ -568,7 +568,7 @@ export default function OpsDashboardPage() {
             </p>
           </Panel>
 
-          <Panel title="Colas y usuarios activos (ultimos puntos)">
+          <Panel title="Colas y usuarios activos (últimos puntos)">
             {chartsReady ? (
               <div style={{ width: "100%", overflowX: "auto" }}>
                 <LineChart width={640} height={300} data={points} margin={{ top: 12, right: 16, left: 4, bottom: 4 }}>
@@ -584,7 +584,7 @@ export default function OpsDashboardPage() {
                 </LineChart>
               </div>
             ) : (
-              <div style={{ height: "300px", display: "grid", placeItems: "center", color: "#64748b" }}>Inicializando grafico...</div>
+              <div style={{ height: "300px", display: "grid", placeItems: "center", color: "#64748b" }}>Inicializando gráfico...</div>
             )}
           </Panel>
         </section>

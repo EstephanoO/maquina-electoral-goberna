@@ -178,7 +178,7 @@ export default function CmsMetricsPage() {
       if (!res.ok) { setError(res.error ?? "Error cargando metricas"); return; }
       setMetrics(res.metrics ?? null);
     } catch {
-      setError("Error de conexion");
+      setError("Error de conexión");
     } finally {
       setLoading(false);
     }

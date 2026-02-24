@@ -56,7 +56,7 @@ export function CtaSection() {
             margin: "0 0 16px",
           }}
         >
-          Tu operacion territorial{" "}
+          Tu operación territorial{" "}
           <span style={{ color: "var(--goberna-gold)" }}>empieza hoy</span>
         </h2>
 

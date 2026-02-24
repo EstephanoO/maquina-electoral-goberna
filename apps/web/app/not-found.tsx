@@ -18,7 +18,7 @@ export default function NotFound() {
   }, []);
 
   const href = authenticated ? "/home" : "/login";
-  const label = authenticated ? "Ir al Dashboard" : "Iniciar Sesion";
+  const label = authenticated ? "Ir al Dashboard" : "Iniciar Sesión";
 
   return (
     <div
@@ -149,7 +149,7 @@ export default function NotFound() {
             lineHeight: 1.3,
           }}
         >
-          Pagina no encontrada
+          Página no encontrada
         </h2>
 
         {/* Subtitle */}
@@ -233,7 +233,7 @@ export default function NotFound() {
           padding: "0 24px",
         }}
       >
-        Plataforma de Gestion Territorial
+        Plataforma de Gestión Territorial
       </p>
 
       {/* Scoped animation */}

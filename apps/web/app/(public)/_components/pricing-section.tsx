@@ -43,17 +43,17 @@ type Plan = {
 const PLANS: Plan[] = [
   {
     name: "Basic",
-    badge: "Activacion Temporal",
+    badge: "Activación Temporal",
     price: "$390",
     priceNote: "USD/mes",
-    description: "Arranca tu operacion territorial con lo esencial para ganar traccion en campo.",
+    description: "Arranca tu operación territorial con lo esencial para ganar tracción en campo.",
     features: [
       "Hasta 15 agentes de campo",
       "Formularios dinamicos personalizados",
-      "Mapa basico de cobertura (heatmap)",
-      "Dashboard de metricas esenciales",
-      "Exportacion CSV",
-      "1 capacitacion estrategica",
+      "Mapa básico de cobertura (heatmap)",
+      "Dashboard de métricas esenciales",
+      "Exportación CSV",
+      "1 capacitación estratégica",
     ],
     cta: "Comenzar Ahora",
     ctaHref: "/onboarding",
@@ -61,19 +61,19 @@ const PLANS: Plan[] = [
   },
   {
     name: "Plus",
-    badge: "Operacion de Campo",
+    badge: "Operación de Campo",
     price: "$1,800",
     priceNote: "USD/mes",
-    description: "Para equipos que ya operan en territorio y necesitan escalar con datos, cobertura y coordinacion real.",
+    description: "Para equipos que ya operan en territorio y necesitan escalar con datos, cobertura y coordinación real.",
     features: [
       "Hasta 50 agentes de campo",
       "Todo lo de Basic incluido",
       "Mapa de cobertura avanzado con zonas",
-      "Coordinacion de brigadistas",
+      "Coordinación de brigadistas",
       "Reportes automatizados por zona",
       "Notificaciones en tiempo real",
-      "Exportacion avanzada (CSV + PDF)",
-      "2 capacitaciones estrategicas",
+      "Exportación avanzada (CSV + PDF)",
+      "2 capacitaciones estratégicas",
     ],
     cta: "Elegir Plus",
     ctaHref: "/onboarding",
@@ -85,16 +85,16 @@ const PLANS: Plan[] = [
     price: "$4,500",
     priceNote: "USD/mes",
     strikePrice: "$6,000",
-    description: "Para campanas serias que necesitan inteligencia territorial completa y operacion a escala.",
+    description: "Para campañas serias que necesitan inteligencia territorial completa y operación a escala.",
     features: [
       "Hasta 120 agentes de campo",
       "Plataformas de mensajeria integrada",
-      "Modelos de priorizacion territorial",
-      "Zonas calientes y frias automaticas",
-      "Cruce de data historica + formularios",
+      "Modelos de priorización territorial",
+      "Zonas calientes y frías automáticas",
+      "Cruce de data histórica + formularios",
       "Modulo de brigadistas con ranking",
       "API access para WhatsApp",
-      "3 capacitaciones estrategicas",
+      "3 capacitaciones estratégicas",
     ],
     cta: "Elegir Pro",
     ctaHref: "/onboarding",
@@ -274,7 +274,7 @@ export function PricingSection() {
               margin: 0,
             }}
           >
-            Desde operaciones de activacion hasta campanas de alcance nacional.
+            Desde operaciones de activación hasta campañas de alcance nacional.
             Cada plan incluye soporte, actualizaciones y acceso completo a la plataforma.
           </p>
         </div>

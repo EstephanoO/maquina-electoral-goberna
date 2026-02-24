@@ -614,7 +614,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             >
               {showLabel && (
                 <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, color: "rgba(255,255,255,0.3)" }}>
-                  Administracion
+                  Administración
                 </span>
               )}
             </div>
@@ -636,7 +636,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                 href={href}
                 prefetch={true}
                 onClick={() => { if (isMobile) setMobileOpen(false); }}
-                title={showLabel ? undefined : "Configuracion"}
+                 title={showLabel ? undefined : "Configuración"}
                 className={`sidebar-nav-link${isActive ? " sidebar-nav-active" : ""}`}
                 style={{
                   ...navLinkBase,
@@ -648,12 +648,12 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                   color: isActive ? "var(--goberna-gold)" : "rgba(255,255,255,0.5)",
                   fontWeight: isActive ? 600 : 400,
                 }}
-                aria-label="Configuracion"
+                aria-label="Configuración"
               >
                 <span style={{ flexShrink: 0, display: "flex", alignItems: "center", width: 20, justifyContent: "center" }}>
                   <SettingsIcon />
                 </span>
-                {showLabel && <span>Configuracion</span>}
+                {showLabel && <span>Configuración</span>}
               </Link>
             );
           })()}
@@ -688,7 +688,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                 }}
               >
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {activeCampaign?.name ?? (isAdmin ? "Admin — General" : "Seleccionar campana")}
+                  {activeCampaign?.name ?? (isAdmin ? "Admin — General" : "Seleccionar campaña")}
                 </span>
                 <ChevronIcon open={campaignDropdownOpen} />
               </button>
@@ -851,8 +851,8 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                       alignItems: "center",
                       transition: "color 0.15s ease",
                     }}
-                    title="Cerrar sesion"
-                    aria-label="Cerrar sesion"
+                    title="Cerrar sesión"
+                    aria-label="Cerrar sesión"
                   >
                     <LogoutIcon />
                   </button>

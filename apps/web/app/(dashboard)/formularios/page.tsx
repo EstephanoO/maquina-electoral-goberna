@@ -80,7 +80,7 @@ const DEFAULT_FIELDS: FormField[] = [
   {
     id: "telefono",
     type: "phone",
-    label: "Telefono",
+    label: "Teléfono",
     placeholder: "999 888 777",
     required: true,
     validation: { pattern: "^[0-9]{9}$" },
@@ -88,7 +88,7 @@ const DEFAULT_FIELDS: FormField[] = [
   {
     id: "ubicacion",
     type: "location",
-    label: "Ubicacion GPS",
+    label: "Ubicación GPS",
     required: true,
   },
 ];
@@ -1026,10 +1026,10 @@ export default function FormulariosPage() {
                               <span style={{ fontSize: 20 }}>📍</span>
                               <div>
                                 <div style={{ fontSize: 14, fontWeight: 600, color: "#1E40AF" }}>
-                                  Captura de ubicacion GPS
+                                  Captura de ubicación GPS
                                 </div>
                                 <div style={{ fontSize: 12, color: "#3B82F6", marginTop: 2 }}>
-                                  El agente presionara este boton para capturar coordenadas UTM
+                                  El agente presionará este botón para capturar coordenadas UTM
                                 </div>
                               </div>
                             </div>

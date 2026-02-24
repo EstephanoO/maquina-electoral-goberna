@@ -94,7 +94,7 @@ export default function TierraPage() {
       <div className="fixed top-12 right-0 bottom-0 z-50 flex flex-col bg-slate-50 overflow-hidden transition-[left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]" style={{ left: "var(--sidebar-current-width, 72px)" }}>
         <div className="flex flex-col items-center justify-center flex-1 gap-3 bg-slate-50">
           <div className="w-8 h-8 border-[3px] border-slate-200 border-t-blue-700 rounded-full animate-spin" />
-          <span className="text-sm text-slate-500">Cargando campana...</span>
+          <span className="text-sm text-slate-500">Cargando campaña...</span>
         </div>
       </div>
     );
