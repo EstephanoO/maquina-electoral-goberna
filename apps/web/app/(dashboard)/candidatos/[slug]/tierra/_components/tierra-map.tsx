@@ -92,7 +92,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   useAutoFit(mapRef, drillState, skipNextFitRef);
   const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef);
-  const { formTooltipRef, onFormMouseMove, onFormMouseLeave } = useFormTooltip(isZoomingRef);
+  const { formTooltipRef, onFormMouseMove, onFormMouseLeave } = useFormTooltip(isZoomingRef, mapRef);
   const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent);
   const containerRef = useMapResize(mapRef, drillStateRef);
 

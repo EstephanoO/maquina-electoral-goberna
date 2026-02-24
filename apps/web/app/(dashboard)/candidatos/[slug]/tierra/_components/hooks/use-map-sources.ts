@@ -39,9 +39,18 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
     [forms],
   );
 
+  // When an agent is selected, only include that agent's points.
+  // This makes clusters re-compute with only filtered data (correct counts).
+  const visibleForms = useMemo(
+    () => selectedAgentId
+      ? validForms.filter((f) => f.agent_id === selectedAgentId)
+      : validForms,
+    [validForms, selectedAgentId],
+  );
+
   const formsGeoJson = useMemo(() => ({
     type: "FeatureCollection" as const,
-    features: validForms.map((f) => ({
+    features: visibleForms.map((f) => ({
       type: "Feature" as const,
       properties: {
         nombre: f.nombre,
@@ -49,11 +58,10 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
         encuestador: f.encuestador ?? "",
         agent_id: f.agent_id ?? "",
         created_at: f.created_at,
-        is_filtered: selectedAgentId ? (f.agent_id === selectedAgentId ? 1 : 0) : 1,
       },
       geometry: { type: "Point" as const, coordinates: [f.lng, f.lat] },
     })),
-  }), [validForms, selectedAgentId]);
+  }), [visibleForms]);
 
   return { formsGeoJson };
 }

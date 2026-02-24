@@ -73,7 +73,7 @@ export const CLUSTER_COUNT_PAINT: SymbolLayerSpecification["paint"] = { "text-co
 export const FORM_POINTS_PAINT: CircleLayerSpecification["paint"] = {
   "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 2.5, 10, 4, 14, 5.5, 18, 8],
   "circle-color": DATA_POINT,
-  "circle-opacity": ["case", ["==", ["get", "is_filtered"], 1], 0.8, 0.2],
+  "circle-opacity": 0.8,
   "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 5, 1, 14, 2],
   "circle-stroke-color": "#ffffff", "circle-stroke-opacity": 0.85,
 };

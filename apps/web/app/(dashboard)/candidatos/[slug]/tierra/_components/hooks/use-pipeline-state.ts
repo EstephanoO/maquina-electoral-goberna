@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition, useCallback } from "react";
 import type { FormRecord } from "@/lib/services";
 import { useBrigadistaMetrics } from "@/lib/hooks";
-import { type PipelinePeriod, getDateRanges } from "../pipeline-filters";
+import { type PipelinePeriod, type PipelineDateRanges, getDateRanges } from "../pipeline-filters";
 
 /* ========== Types ========== */
 
@@ -12,6 +12,7 @@ export type PipelineState = {
   onPeriodChange: (p: PipelinePeriod) => void;
   isPending: boolean;
   periodLabel: string;
+  dateRanges: PipelineDateRanges;
   filteredForms: FormRecord[];
   prevFilteredForms: FormRecord[];
   brigadistaMetrics: ReturnType<typeof useBrigadistaMetrics>["data"];
@@ -96,6 +97,7 @@ export function usePipelineState(
     onPeriodChange,
     isPending,
     periodLabel: dateRanges.previousLabel,
+    dateRanges,
     filteredForms,
     prevFilteredForms,
     brigadistaMetrics,

@@ -14,8 +14,7 @@ import {
   Cell,
 } from "recharts";
 import type { FormRecord } from "@/lib/services";
-import type { EnrichedAgent } from "./types";
-import type { PipelinePeriod } from "./pipeline-filters";
+import type { PipelinePeriod, PipelineDateRanges } from "./pipeline-filters";
 import { KpiCard, ChartIcon, UsersIcon, ClockIcon, TrendIcon } from "./kpi-cards";
 
 /* ========== Types ========== */
@@ -23,11 +22,11 @@ import { KpiCard, ChartIcon, UsersIcon, ClockIcon, TrendIcon } from "./kpi-cards
 type Props = {
   forms: FormRecord[];
   prevForms: FormRecord[];
-  agents: EnrichedAgent[];
   primaryColor: string;
   secondaryColor?: string;
   periodLabel: string;
   period: PipelinePeriod;
+  dateRanges: PipelineDateRanges;
 };
 
 type TimeSeriesPoint = { label: string; forms: number; agents: number };
@@ -49,6 +48,31 @@ function pctChange(current: number, prev: number): number | null {
   return Math.round(((current - prev) / prev) * 100);
 }
 
+/** Build day buckets between two dates (inclusive start, exclusive end). */
+function buildDayBuckets(from: Date, to: Date): Map<string, { forms: number; agents: Set<string> }> {
+  const map = new Map<string, { forms: number; agents: Set<string> }>();
+  const cursor = new Date(from);
+  cursor.setHours(0, 0, 0, 0);
+  const end = new Date(to);
+  end.setHours(0, 0, 0, 0);
+  while (cursor < end) {
+    map.set(getDayKey(cursor), { forms: 0, agents: new Set() });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return map;
+}
+
+/** Sort day keys chronologically and produce TimeSeries. */
+function dayMapToSeries(dayMap: Map<string, { forms: number; agents: Set<string> }>): TimeSeriesPoint[] {
+  return [...dayMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, bucket]) => {
+      const [y, m, d] = key.split("-").map(Number);
+      const date = new Date(y, m - 1, d);
+      return { label: formatDayLabel(date), forms: bucket.forms, agents: bucket.agents.size };
+    });
+}
+
 /* ========== Tooltip styles (inline required for Recharts) ========== */
 
 const tooltipStyle: React.CSSProperties = {
@@ -63,104 +87,148 @@ const tooltipStyle: React.CSSProperties = {
 /* ========== Component ========== */
 
 export const ActivityCharts = memo(function ActivityCharts({
-  forms, prevForms, agents, primaryColor, secondaryColor, periodLabel, period,
+  forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges,
 }: Props) {
   const accentColor = secondaryColor || "#0d9488";
   const hasPrev = prevForms.length > 0 && period !== "all";
 
-  /* ── Time series ── */
+  /* ── Time series — buckets match actual period dates ── */
   const timeSeriesData = useMemo((): TimeSeriesPoint[] => {
     const now = new Date();
 
+    /* TODAY: hour buckets 0..currentHour */
     if (period === "today") {
-      const todayStart = new Date(now);
-      todayStart.setHours(0, 0, 0, 0);
-
+      const currentHour = now.getHours();
       const hourMap = new Map<number, { forms: number; agents: Set<string> }>();
-      for (let h = 0; h < 24; h++) hourMap.set(h, { forms: 0, agents: new Set() });
+      for (let h = 0; h <= currentHour; h++) hourMap.set(h, { forms: 0, agents: new Set() });
 
       for (const form of forms) {
         const d = new Date(form.created_at);
-        if (d >= todayStart) {
-          const bucket = hourMap.get(d.getHours());
-          if (bucket) {
-            bucket.forms++;
-            if (form.agent_id || form.encuestador_id)
-              bucket.agents.add(form.agent_id || form.encuestador_id || "");
-          }
+        const bucket = hourMap.get(d.getHours());
+        if (bucket) {
+          bucket.forms++;
+          const agentKey = form.agent_id || form.encuestador_id;
+          if (agentKey) bucket.agents.add(agentKey);
         }
       }
 
       const result: TimeSeriesPoint[] = [];
-      for (let h = 0; h < 24; h++) {
+      for (let h = 0; h <= currentHour; h++) {
         const bucket = hourMap.get(h)!;
         result.push({ label: `${h.toString().padStart(2, "0")}:00`, forms: bucket.forms, agents: bucket.agents.size });
       }
       return result;
     }
 
-    const days = period === "month" ? 30 : period === "week" ? 7 : 14;
-    const dayMap = new Map<string, { forms: number; agents: Set<string> }>();
-    for (let i = 0; i < days; i++) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - (days - 1 - i));
-      dayMap.set(getDayKey(d), { forms: 0, agents: new Set() });
+    /* WEEK / MONTH: use actual period boundaries from dateRanges */
+    if (period === "week" || period === "month") {
+      const from = new Date(dateRanges.current.from);
+      const to = new Date(dateRanges.current.to);
+      const dayMap = buildDayBuckets(from, to);
+
+      for (const form of forms) {
+        const d = new Date(form.created_at);
+        const bucket = dayMap.get(getDayKey(d));
+        if (bucket) {
+          bucket.forms++;
+          const agentKey = form.agent_id || form.encuestador_id;
+          if (agentKey) bucket.agents.add(agentKey);
+        }
+      }
+
+      return dayMapToSeries(dayMap);
     }
+
+    /* ALL: derive range from actual form data (earliest → today) */
+    if (forms.length === 0) return [];
+
+    let earliest = now.getTime();
+    let latest = 0;
+    for (const form of forms) {
+      const ts = new Date(form.created_at).getTime();
+      if (ts < earliest) earliest = ts;
+      if (ts > latest) latest = ts;
+    }
+
+    const from = new Date(earliest);
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(latest);
+    to.setDate(to.getDate() + 1);
+    to.setHours(0, 0, 0, 0);
+
+    const dayMap = buildDayBuckets(from, to);
 
     for (const form of forms) {
       const d = new Date(form.created_at);
       const bucket = dayMap.get(getDayKey(d));
       if (bucket) {
         bucket.forms++;
-        if (form.agent_id || form.encuestador_id)
-          bucket.agents.add(form.agent_id || form.encuestador_id || "");
+        const agentKey = form.agent_id || form.encuestador_id;
+        if (agentKey) bucket.agents.add(agentKey);
       }
     }
 
-    const result: TimeSeriesPoint[] = [];
-    for (let i = 0; i < days; i++) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - (days - 1 - i));
-      const key = getDayKey(d);
-      const bucket = dayMap.get(key);
-      result.push({ label: formatDayLabel(d), forms: bucket?.forms ?? 0, agents: bucket?.agents.size ?? 0 });
-    }
-    return result;
-  }, [forms, period]);
+    return dayMapToSeries(dayMap);
+  }, [forms, period, dateRanges]);
 
-  /* ── Agent ranking (top 10) ── */
+  /* ── Agent ranking (top 10) — computed from filtered forms, not unfiltered agents ── */
   const agentRanking = useMemo(() => {
-    return agents
-      .map((agent) => {
-        const firstName = agent.name.split(" ")[0];
-        return { id: agent.id, name: firstName.length > 10 ? `${firstName.slice(0, 9)}…` : firstName, fullName: agent.name, forms: agent.forms_count, status: agent.status };
-      })
-      .sort((a, b) => b.forms - a.forms)
-      .slice(0, 10);
-  }, [agents]);
+    const countMap = new Map<string, { id: string; name: string; count: number }>();
+    for (const form of forms) {
+      const agentId = form.agent_id || form.encuestador_id;
+      const agentName = form.encuestador || "Desconocido";
+      if (!agentId) continue;
+      const existing = countMap.get(agentId);
+      if (existing) {
+        existing.count++;
+      } else {
+        countMap.set(agentId, { id: agentId, name: agentName, count: 1 });
+      }
+    }
+
+    return [...countMap.values()]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
+      .map((entry) => {
+        const firstName = entry.name.split(" ")[0];
+        return {
+          id: entry.id,
+          name: firstName.length > 10 ? `${firstName.slice(0, 9)}…` : firstName,
+          fullName: entry.name,
+          forms: entry.count,
+        };
+      });
+  }, [forms]);
 
   /* ── Stats ── */
   const stats = useMemo(() => {
     const totalForms = forms.length;
     const prevTotal = prevForms.length;
-    const activeAgents = agents.filter((a) => a.status === "connected" || a.status === "idle").length;
-    const avgPerAgent = agents.length > 0 ? Math.round(totalForms / agents.length) : 0;
 
     const uniqueAgents = new Set<string>();
-    for (const f of forms) if (f.agent_id || f.encuestador_id) uniqueAgents.add(f.agent_id || f.encuestador_id || "");
+    for (const f of forms) {
+      const key = f.agent_id || f.encuestador_id;
+      if (key) uniqueAgents.add(key);
+    }
 
     const prevUniqueAgents = new Set<string>();
-    for (const f of prevForms) if (f.agent_id || f.encuestador_id) prevUniqueAgents.add(f.agent_id || f.encuestador_id || "");
+    for (const f of prevForms) {
+      const key = f.agent_id || f.encuestador_id;
+      if (key) prevUniqueAgents.add(key);
+    }
 
-    const peak = timeSeriesData.reduce((max, d) => d.forms > max.forms ? d : max, timeSeriesData[0]);
+    const avgPerAgent = uniqueAgents.size > 0 ? Math.round(totalForms / uniqueAgents.size) : 0;
+    const peak = timeSeriesData.length > 0
+      ? timeSeriesData.reduce((max, d) => d.forms > max.forms ? d : max, timeSeriesData[0])
+      : undefined;
 
     return {
-      totalForms, prevTotal, activeAgents, avgPerAgent,
+      totalForms, prevTotal, avgPerAgent,
       totalAgents: uniqueAgents.size, prevTotalAgents: prevUniqueAgents.size, peak,
       formsDelta: pctChange(totalForms, prevTotal),
       agentsDelta: pctChange(uniqueAgents.size, prevUniqueAgents.size),
     };
-  }, [forms, prevForms, agents, timeSeriesData]);
+  }, [forms, prevForms, timeSeriesData]);
 
   /* ── Ranking colors ── */
   const rankingColors = useMemo(() => [
@@ -170,14 +238,23 @@ export const ActivityCharts = memo(function ActivityCharts({
     "#64748b", "#94a3b8", "#cbd5e1",
   ], [primaryColor, accentColor]);
 
+  /* ── Adaptive XAxis interval ── */
+  const xInterval = useMemo(() => {
+    const len = timeSeriesData.length;
+    if (len <= 7) return 0;
+    if (len <= 14) return 1;
+    if (len <= 31) return 4;
+    return Math.floor(len / 8);
+  }, [timeSeriesData]);
+
   return (
     <div className="flex flex-col gap-3 px-4 py-3.5">
       {/* ═══ KPI strip ═══ */}
       <div className="grid grid-cols-4 gap-2.5">
         <KpiCard label="Registros" value={stats.totalForms} color={primaryColor} delta={hasPrev ? stats.formsDelta : undefined} deltaLabel={periodLabel} icon={<ChartIcon />} />
         <KpiCard label="Brigadistas" value={stats.totalAgents} color="#2563eb" delta={hasPrev ? stats.agentsDelta : undefined} deltaLabel={periodLabel} icon={<UsersIcon />} />
-        <KpiCard label="Activos ahora" value={stats.activeAgents} color={accentColor} subtitle={`de ${agents.length}`} icon={<ClockIcon />} />
-        <KpiCard label="Prom/agente" value={stats.avgPerAgent} color="#8b5cf6" subtitle={stats.peak?.forms > 0 ? `pico: ${stats.peak.label}` : undefined} icon={<TrendIcon />} />
+        <KpiCard label="Prom/agente" value={stats.avgPerAgent} color={accentColor} subtitle={stats.peak && stats.peak.forms > 0 ? `pico: ${stats.peak.label}` : undefined} icon={<ClockIcon />} />
+        <KpiCard label="Top agente" value={agentRanking[0]?.forms ?? 0} color="#8b5cf6" subtitle={agentRanking[0]?.fullName} icon={<TrendIcon />} />
       </div>
 
       {/* ═══ Charts row (2/3 timeline + 1/3 ranking) ═══ */}
@@ -199,29 +276,33 @@ export const ActivityCharts = memo(function ActivityCharts({
               </div>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={210}>
-            <AreaChart data={timeSeriesData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="areaGradPipeline" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={primaryColor} stopOpacity={0.25} />
-                  <stop offset="100%" stopColor={primaryColor} stopOpacity={0.01} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval={period === "month" ? 4 : period === "today" ? 3 : 0} />
-              <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(value, name) => [String(value ?? 0), name === "forms" ? "Registros" : "Agentes"]} />
-              <Area type="monotone" dataKey="forms" stroke={primaryColor} strokeWidth={2} fill="url(#areaGradPipeline)" name="forms" animationDuration={800} />
-              <Area type="monotone" dataKey="agents" stroke={accentColor} strokeWidth={1.5} fill="transparent" strokeDasharray="4 2" name="agents" animationDuration={800} />
-            </AreaChart>
-          </ResponsiveContainer>
+          {timeSeriesData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={210}>
+              <AreaChart data={timeSeriesData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="areaGradPipeline" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={primaryColor} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={primaryColor} stopOpacity={0.01} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval={xInterval} />
+                <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip contentStyle={tooltipStyle} formatter={(value, name) => [String(value ?? 0), name === "forms" ? "Registros" : "Agentes"]} />
+                <Area type="monotone" dataKey="forms" stroke={primaryColor} strokeWidth={2} fill="url(#areaGradPipeline)" name="forms" animationDuration={800} />
+                <Area type="monotone" dataKey="agents" stroke={accentColor} strokeWidth={1.5} fill="transparent" strokeDasharray="4 2" name="agents" animationDuration={800} />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-[210px] text-xs text-slate-400">Sin registros en este periodo</div>
+          )}
         </div>
 
         {/* Right: Agent ranking bars */}
         <div className="bg-slate-50/60 rounded-xl border border-slate-100 px-4 py-3 flex flex-col min-w-0 max-h-[320px] overflow-y-auto">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Rendimiento</span>
-            <span className="text-[10px] text-slate-400 tabular-nums">{agents.length} agentes</span>
+            <span className="text-[10px] text-slate-400 tabular-nums">{stats.totalAgents} agentes</span>
           </div>
           {agentRanking.length > 0 ? (
             <ResponsiveContainer width="100%" height={Math.max(210, agentRanking.length * 28)}>

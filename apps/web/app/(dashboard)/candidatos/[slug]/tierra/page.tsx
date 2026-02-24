@@ -139,6 +139,7 @@ export default function TierraPage() {
           period={pipeline.period}
           onPeriodChange={pipeline.onPeriodChange}
           periodLabel={pipeline.periodLabel}
+          dateRanges={pipeline.dateRanges}
         />
       )}
     </div>

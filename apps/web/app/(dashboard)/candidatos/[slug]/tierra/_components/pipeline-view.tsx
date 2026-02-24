@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import type { CmsBrigadistaMetrics } from "@/lib/types";
 import type { FormRecord } from "@/lib/services";
 import type { EnrichedAgent } from "./types";
-import { PipelineFilters, type PipelinePeriod } from "./pipeline-filters";
+import { PipelineFilters, type PipelinePeriod, type PipelineDateRanges } from "./pipeline-filters";
 
 /* ========== Lazy-loaded chart components (Recharts = heavy bundle) ========== */
 
@@ -39,13 +39,14 @@ type Props = {
   period: PipelinePeriod;
   onPeriodChange: (p: PipelinePeriod) => void;
   periodLabel: string;
+  dateRanges: PipelineDateRanges;
 };
 
 /* ========== Component ========== */
 
 export const PipelineView = memo(function PipelineView({
   brigadistas, prevBrigadistas, isLoading, isPending, primaryColor, secondaryColor,
-  forms, prevForms, agents, period, onPeriodChange, periodLabel,
+  forms, prevForms, agents, period, onPeriodChange, periodLabel, dateRanges,
 }: Props) {
   if (isLoading) {
     return (
@@ -56,12 +57,19 @@ export const PipelineView = memo(function PipelineView({
     );
   }
 
-  if (brigadistas.length === 0 && forms.length === 0) {
-    return (
-      <div className="flex flex-col flex-1 min-h-0">
-        <div className="shrink-0 border-b border-slate-100 bg-white">
-          <PipelineFilters period={period} onChange={onPeriodChange} primaryColor={primaryColor} />
-        </div>
+  const hasForms = forms.length > 0;
+  const hasBrigadistas = brigadistas.length > 0;
+  const isEmpty = !hasForms && !hasBrigadistas;
+
+  return (
+    <div className={`flex flex-col flex-1 min-h-0 overflow-y-auto bg-slate-50/80 transition-opacity duration-150 ${isPending ? "opacity-70" : "opacity-100"}`}>
+      {/* ═══ Filter bar ═══ */}
+      <div className="shrink-0 border-b border-slate-100 bg-white">
+        <PipelineFilters period={period} onChange={onPeriodChange} primaryColor={primaryColor} />
+      </div>
+
+      {isEmpty ? (
+        /* Full empty state — no forms AND no brigadista metrics */
         <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center p-16">
           <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -77,39 +85,38 @@ export const PipelineView = memo(function PipelineView({
             <span className="text-sm text-slate-400 mt-1 block max-w-xs">Proba seleccionando &quot;Todo&quot; o un periodo mas amplio</span>
           </div>
         </div>
-      </div>
-    );
-  }
+      ) : (
+        <>
+          {/* ═══ Activity Charts — always show if forms exist ═══ */}
+          {hasForms && (
+            <div className="shrink-0 border-b border-slate-100">
+              <ActivityCharts
+                forms={forms}
+                prevForms={prevForms}
+                primaryColor={primaryColor}
+                secondaryColor={secondaryColor}
+                periodLabel={periodLabel}
+                period={period}
+                dateRanges={dateRanges}
+              />
+            </div>
+          )}
 
-  return (
-    <div className={`flex flex-col flex-1 min-h-0 overflow-y-auto bg-slate-50/80 transition-opacity duration-150 ${isPending ? "opacity-70" : "opacity-100"}`}>
-      {/* ═══ Filter bar ═══ */}
-      <div className="shrink-0 border-b border-slate-100 bg-white">
-        <PipelineFilters period={period} onChange={onPeriodChange} primaryColor={primaryColor} />
-      </div>
+          {/* ═══ Pipeline funnel — only when brigadista data exists ═══ */}
+          {hasBrigadistas && (
+            <div className="shrink-0 border-b border-slate-100 bg-white">
+              <PipelineFunnel brigadistas={brigadistas} primaryColor={primaryColor} />
+            </div>
+          )}
 
-      {/* ═══ Activity Charts — lazy loaded, skips SSR (Recharts) ═══ */}
-      <div className="shrink-0 border-b border-slate-100">
-        <ActivityCharts
-          forms={forms}
-          prevForms={prevForms}
-          agents={agents}
-          primaryColor={primaryColor}
-          secondaryColor={secondaryColor}
-          periodLabel={periodLabel}
-          period={period}
-        />
-      </div>
-
-      {/* ═══ Pipeline funnel — lazy loaded ═══ */}
-      <div className="shrink-0 border-b border-slate-100 bg-white">
-        <PipelineFunnel brigadistas={brigadistas} primaryColor={primaryColor} />
-      </div>
-
-      {/* ═══ Brigadista table — lazy loaded ═══ */}
-      <div className="flex-1 min-h-0 bg-white">
-        <BrigadistaTable brigadistas={brigadistas} primaryColor={primaryColor} />
-      </div>
+          {/* ═══ Brigadista table — only when brigadista data exists ═══ */}
+          {hasBrigadistas && (
+            <div className="flex-1 min-h-0 bg-white">
+              <BrigadistaTable brigadistas={brigadistas} primaryColor={primaryColor} />
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 });
