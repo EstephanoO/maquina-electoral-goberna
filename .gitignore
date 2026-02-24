@@ -46,6 +46,7 @@ logs/
 .trae/
 .windsurf/
 .zencoder/
+.opencode/
 skills/
 *.swp
 *.swo

@@ -23,6 +23,8 @@ export type FormPoint = {
   lat: number;
   lng: number;
   nombre: string;
+  telefono: string;
+  encuestador: string;
   created_at: string;
   agent_id?: string;
 };
@@ -89,7 +91,6 @@ export type TierraMapProps = {
   onSelectAgent: (agentId: string | null) => void;
   showTracking: boolean;
   showDatos: boolean;
-  showHeatmap: boolean;
   drillState: DrillState;
   onDrillChange: (state: DrillState) => void;
 };

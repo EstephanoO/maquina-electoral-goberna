@@ -4,7 +4,7 @@ import type { AgentStatus } from "./types";
 
 /* ========== Types ========== */
 
-type ActiveLayer = "datos" | "agentes" | "densidad" | null;
+type ActiveLayer = "datos" | "agentes" | null;
 
 type Props = {
   activeLayer: ActiveLayer;
@@ -21,7 +21,6 @@ type LegendProps = {
 const C = {
   datos: "#2563eb",
   agents: "#0d9488",
-  heat: "#b45309",
 };
 
 /* ========== Layer Controls ========== */
@@ -42,12 +41,6 @@ export function MapControls({ activeLayer, onLayerChange, agentCount, formCount 
         label="Agentes"
         count={agentCount}
         activeColor={C.agents}
-      />
-      <LayerBtn
-        active={activeLayer === "densidad"}
-        onClick={() => onLayerChange(activeLayer === "densidad" ? null : "densidad")}
-        label="Densidad"
-        activeColor={C.heat}
       />
     </div>
   );
@@ -99,12 +92,7 @@ export function MapLegend({ activeLayer }: LegendProps) {
           <span className="text-[10px] text-slate-600 font-medium">{s.label}</span>
         </div>
       ))}
-      {activeLayer === "densidad" && (
-        <div className="flex items-center gap-[5px]">
-          <div className="w-7 h-2 rounded" style={{ background: "linear-gradient(to right, rgba(30,58,95,0.5), rgba(13,148,136,0.6), rgba(217,119,6,0.7), rgba(127,29,29,0.8))" }} />
-          <span className="text-[10px] text-slate-600 font-medium">Densidad</span>
-        </div>
-      )}
+
     </div>
   );
 }

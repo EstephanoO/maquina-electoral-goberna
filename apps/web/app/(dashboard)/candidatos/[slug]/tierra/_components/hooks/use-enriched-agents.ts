@@ -117,7 +117,7 @@ export function useEnrichedAgents(
         .map((f) => {
           const coords = formCoordsToLatLng(f.x, f.y, f.zona);
           if (!coords) return null;
-          return { id: f.id, lat: coords.lat, lng: coords.lng, nombre: f.nombre, created_at: f.created_at, agent_id: f.agent_id || f.encuestador_id };
+          return { id: f.id, lat: coords.lat, lng: coords.lng, nombre: f.nombre, telefono: f.telefono ?? "", encuestador: f.encuestador ?? "", created_at: f.created_at, agent_id: f.agent_id || f.encuestador_id };
         })
         .filter((p): p is NonNullable<typeof p> => p !== null),
     [forms],

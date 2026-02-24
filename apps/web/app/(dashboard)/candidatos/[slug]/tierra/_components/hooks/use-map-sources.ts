@@ -30,14 +30,9 @@ export function useAgentsSource(agents: EnrichedAgent[], selectedAgentId: string
   }), [agents, selectedAgentId]);
 }
 
-/* ─── Form sources (clustered + heatmap) ─── */
+/* ─── Form sources (clustered) ─── */
 
-type FormSources = {
-  formsGeoJson: GeoJSON.FeatureCollection;
-  formsHeatGeoJson: GeoJSON.FeatureCollection;
-};
-
-export function useFormSources(forms: FormPoint[], selectedAgentId: string | null): FormSources {
+export function useFormSources(forms: FormPoint[], selectedAgentId: string | null) {
   // Base filtered forms — only valid coordinates
   const validForms = useMemo(
     () => forms.filter((f) => f.lat && f.lng && !isNaN(f.lat) && !isNaN(f.lng)),
@@ -50,6 +45,8 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
       type: "Feature" as const,
       properties: {
         nombre: f.nombre,
+        telefono: f.telefono ?? "",
+        encuestador: f.encuestador ?? "",
         agent_id: f.agent_id ?? "",
         created_at: f.created_at,
         is_filtered: selectedAgentId ? (f.agent_id === selectedAgentId ? 1 : 0) : 1,
@@ -58,18 +55,7 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
     })),
   }), [validForms, selectedAgentId]);
 
-  // Heatmap: derive from validForms (not re-iterate raw forms)
-  // Only depends on forms, NOT selectedAgentId — stable when selection changes
-  const formsHeatGeoJson = useMemo(() => ({
-    type: "FeatureCollection" as const,
-    features: validForms.map((f) => ({
-      type: "Feature" as const,
-      properties: {},
-      geometry: { type: "Point" as const, coordinates: [f.lng, f.lat] },
-    })),
-  }), [validForms]);
-
-  return { formsGeoJson, formsHeatGeoJson };
+  return { formsGeoJson };
 }
 
 

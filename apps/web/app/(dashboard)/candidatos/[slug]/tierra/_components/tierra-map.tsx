@@ -45,7 +45,7 @@ import { prewarmTiles } from "./utils";
 import {
   VIS_VISIBLE, VIS_NONE, PROMOTE_ID,
   PRIORITY_FILL_PAINT, PRIORITY_DEP_LINE_PAINT, PRIORITY_PROV_LINE_PAINT, PRIORITY_DIST_LINE_PAINT,
-  SECTOR_FILL_PAINT, SECTOR_LINE_PAINT, HEATMAP_PAINT,
+  SECTOR_FILL_PAINT, SECTOR_LINE_PAINT,
   HAS_POINT_COUNT, NOT_HAS_POINT_COUNT,
   CLUSTER_RING_PAINT, CLUSTER_CIRCLE_PAINT, CLUSTER_COUNT_LAYOUT, CLUSTER_COUNT_PAINT,
   FORM_POINTS_PAINT,
@@ -57,6 +57,7 @@ import { useDrillFilters } from "./hooks/use-drill-filters";
 import { useAgentsSource, useFormSources } from "./hooks/use-map-sources";
 import { useAutoFit } from "./hooks/use-auto-fit";
 import { useZoneTooltip } from "./hooks/use-zone-tooltip";
+import { useFormTooltip } from "./hooks/use-form-tooltip";
 import { useMapClick } from "./hooks/use-map-click";
 import { useMapResize } from "./hooks/use-map-resize";
 import { reverseGeocode } from "@/lib/services/geo";
@@ -64,7 +65,7 @@ import { reverseGeocode } from "@/lib/services/geo";
 /* ========== Component (P6 — wrapped with memo) ========== */
 
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
-  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, showHeatmap, drillState, onDrillChange },
+  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, drillState, onDrillChange },
   ref,
 ) {
   const mapRef = useRef<MapRef | null>(null);
@@ -87,10 +88,11 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Hooks ───
   const filters = useDrillFilters(drillState, campaignId);
   const agentsGeoJson = useAgentsSource(agents, selectedAgentId);
-  const { formsGeoJson, formsHeatGeoJson } = useFormSources(forms, selectedAgentId);
+  const { formsGeoJson } = useFormSources(forms, selectedAgentId);
 
   useAutoFit(mapRef, drillState, skipNextFitRef);
   const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef);
+  const { formTooltipRef, onFormMouseMove, onFormMouseLeave } = useFormTooltip(isZoomingRef);
   const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent);
   const containerRef = useMapResize(mapRef, drillStateRef);
 
@@ -158,7 +160,6 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   }), [primaryColor]);
 
   // ─── P1: Visibility layout objects for always-mounted Sources ───
-  const heatmapVisibility = useMemo(() => showHeatmap ? VIS_VISIBLE : VIS_NONE, [showHeatmap]);
   const datosVisibility = useMemo(() => showDatos ? VIS_VISIBLE : VIS_NONE, [showDatos]);
   const trackingVisibility = useMemo(() => showTracking ? VIS_VISIBLE : VIS_NONE, [showTracking]);
 
@@ -289,13 +290,15 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     }
 
     tooltipMouseMove(e);
-  }, [tooltipMouseMove, clearHover]);
+    onFormMouseMove(e);
+  }, [tooltipMouseMove, onFormMouseMove, clearHover]);
 
   const handleMouseLeave = useCallback(() => {
     if (mapRef.current) mapRef.current.getCanvas().style.cursor = "";
     clearHover();
     tooltipMouseLeave();
-  }, [tooltipMouseLeave, clearHover]);
+    onFormMouseLeave();
+  }, [tooltipMouseLeave, onFormMouseLeave, clearHover]);
 
   // ─── FlyTo on agent selection (NOT on agents array change) ───
   const prevSelectedRef = useRef(selectedAgentId);
@@ -363,11 +366,6 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
           <Layer id="sector-line" type="line" source-layer="campaign_sectors" filter={filters.sectorFilter} paint={SECTOR_LINE_PAINT} />
         </Source>
 
-        {/* ── Heatmap — always mounted, visibility controlled via layout ── */}
-        <Source id="forms-heat" type="geojson" data={formsHeatGeoJson}>
-          <Layer id="forms-heatmap" type="heatmap" layout={heatmapVisibility} paint={HEATMAP_PAINT} />
-        </Source>
-
         {/* ── Clustered form data — always mounted, visibility controlled via layout ── */}
         <Source id="forms-clustered" type="geojson" data={formsGeoJson} cluster clusterRadius={40} clusterMaxZoom={16}>
           <Layer id="forms-cluster-ring" type="circle" filter={HAS_POINT_COUNT} layout={datosVisibility} paint={CLUSTER_RING_PAINT} />
@@ -396,6 +394,21 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
           fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6,
           whiteSpace: "nowrap", zIndex: 20, opacity: 0, willChange: "transform",
           transform: "translate(0px, 0px)", transition: "opacity 120ms ease-out",
+        }}
+      />
+
+      {/* ── Form point tooltip (glassmorphism) ── */}
+      <div
+        ref={formTooltipRef}
+        style={{
+          position: "absolute", top: 0, left: 0, pointerEvents: "none",
+          background: "rgba(255, 255, 255, 0.72)",
+          backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
+          borderRadius: 12, padding: "8px 12px", minWidth: 140, maxWidth: 200,
+          boxShadow: "0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04)",
+          border: "1px solid rgba(255,255,255,0.5)",
+          zIndex: 21, opacity: 0, willChange: "transform",
+          transform: "translate(0px, 0px)", transition: "opacity 150ms ease-out",
         }}
       />
     </div>
