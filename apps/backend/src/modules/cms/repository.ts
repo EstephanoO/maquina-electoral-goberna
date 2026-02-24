@@ -119,6 +119,7 @@ export async function listContacts(
        LEFT JOIN users u ON u.id = fs.cms_claimed_by
        LEFT JOIN users su ON su.id = fs.submitted_by
        WHERE fs.campaign_id = $1
+         AND fs.deleted_at IS NULL
          AND ${statusClause}
          AND COALESCE(fs.data->>'telefono', '') != ''
          ${dataSearchClause}
@@ -130,6 +131,7 @@ export async function listContacts(
       `SELECT COUNT(*)::text AS count
        FROM form_submissions fs
        WHERE fs.campaign_id = $1
+         AND fs.deleted_at IS NULL
          AND ${statusClause}
          AND COALESCE(fs.data->>'telefono', '') != ''
          ${countSearchClause}`,
@@ -172,6 +174,7 @@ export async function getHabladoByOperator(
        LEFT JOIN users u ON u.id = fs.cms_claimed_by
        LEFT JOIN users su ON su.id = fs.submitted_by
        WHERE fs.campaign_id = $1
+         AND fs.deleted_at IS NULL
          AND fs.cms_status = 'hablado'
          AND fs.cms_claimed_by = $2
        ORDER BY COALESCE(fs.cms_hablado_at, fs.cms_claimed_at) DESC
@@ -182,6 +185,7 @@ export async function getHabladoByOperator(
       `SELECT COUNT(*)::text AS count
        FROM form_submissions
        WHERE campaign_id = $1
+         AND deleted_at IS NULL
          AND cms_status = 'hablado'
          AND cms_claimed_by = $2`,
       [campaignId, operatorId],
@@ -207,6 +211,7 @@ export async function claimContact(
          cms_claimed_by = $2,
          cms_claimed_at = now()
      WHERE id = $1
+       AND deleted_at IS NULL
        AND cms_status = 'nuevo'
      RETURNING id, campaign_id, data, client_id, created_at,
                cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
@@ -234,6 +239,7 @@ export async function releaseContact(
          cms_claimed_by = NULL,
          cms_claimed_at = NULL
      WHERE id = $1
+       AND deleted_at IS NULL
        AND cms_claimed_by = $2
        AND cms_status = 'claimed'
      RETURNING campaign_id`,
@@ -256,6 +262,7 @@ export async function markHablado(
          cms_hablado_at = now(),
          cms_respondieron_at = NULL
      WHERE fs.id = $1
+       AND fs.deleted_at IS NULL
        AND fs.cms_status IN ('nuevo', 'claimed', 'hablado')
      RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
                fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
@@ -285,6 +292,7 @@ export async function markRespondieron(
          cms_hablado_at = COALESCE(fs.cms_hablado_at, now()),
          cms_respondieron_at = now()
      WHERE fs.id = $1
+       AND fs.deleted_at IS NULL
        AND fs.cms_status IN ('hablado', 'respondieron')
      RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
                fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
@@ -317,7 +325,7 @@ export async function archiveContact(
     `WITH prev AS (
        SELECT id, cms_status AS previous_status
        FROM form_submissions
-       WHERE id = $1 AND cms_status != 'archivado'
+       WHERE id = $1 AND deleted_at IS NULL AND cms_status != 'archivado'
      )
      UPDATE form_submissions fs
      SET cms_status = 'archivado',
@@ -353,6 +361,7 @@ export async function updateNotes(
      SET cms_operator_notes = $3::jsonb,
          cms_claimed_by = COALESCE(fs.cms_claimed_by, $2)
      WHERE fs.id = $1
+       AND fs.deleted_at IS NULL
      RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
                fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
                fs.cms_respondieron_at, fs.cms_operator_notes,
@@ -392,7 +401,8 @@ export async function getCmsStats(
        COUNT(*) FILTER (WHERE cms_status = 'respondieron')::text AS respondieron,
        COUNT(*) FILTER (WHERE cms_status = 'archivado')::text AS archivados
      FROM form_submissions
-     WHERE campaign_id = $1`,
+     WHERE campaign_id = $1
+       AND deleted_at IS NULL`,
     [campaignId],
   );
   const row = rows[0];
@@ -440,8 +450,8 @@ export async function getCmsMetricsByCampaign(
   const hasFilter = campaignIds !== null && campaignIds.length > 0;
 
   const whereClause = hasFilter
-    ? `WHERE fs.campaign_id = ANY($1)`
-    : `WHERE 1=1`;
+    ? `WHERE fs.campaign_id = ANY($1) AND fs.deleted_at IS NULL`
+    : `WHERE fs.deleted_at IS NULL`;
 
   const params = hasFilter ? [campaignIds] : [];
 
@@ -499,8 +509,8 @@ export async function getCmsMetricsByOperator(
   const hasFilter = campaignIds !== null && campaignIds.length > 0;
 
   const whereClause = hasFilter
-    ? `WHERE fs.campaign_id = ANY($1)`
-    : `WHERE 1=1`;
+    ? `WHERE fs.campaign_id = ANY($1) AND fs.deleted_at IS NULL`
+    : `WHERE fs.deleted_at IS NULL`;
 
   const params = hasFilter ? [campaignIds] : [];
 
@@ -684,7 +694,7 @@ export async function revertContact(
     `WITH prev AS (
        SELECT id, cms_status AS previous_status
        FROM form_submissions
-       WHERE id = $1 AND cms_status = 'respondieron'
+       WHERE id = $1 AND deleted_at IS NULL AND cms_status = 'respondieron'
      )
      UPDATE form_submissions fs
      SET cms_status = 'hablado',
@@ -701,7 +711,7 @@ export async function revertContact(
     `WITH prev AS (
        SELECT id, cms_status AS previous_status
        FROM form_submissions
-       WHERE id = $1 AND cms_status = 'hablado'
+       WHERE id = $1 AND deleted_at IS NULL AND cms_status = 'hablado'
      )
      UPDATE form_submissions fs
      SET cms_status = 'nuevo',
@@ -721,7 +731,7 @@ export async function revertContact(
     `WITH prev AS (
        SELECT id, cms_status AS previous_status
        FROM form_submissions
-       WHERE id = $1 AND cms_status = 'archivado'
+       WHERE id = $1 AND deleted_at IS NULL AND cms_status = 'archivado'
      )
      UPDATE form_submissions fs
      SET cms_status = 'nuevo',
@@ -755,7 +765,7 @@ export async function getTimeMetrics(
   campaignIds: string[] | null,
 ): Promise<CmsTimeMetrics> {
   const hasFilter = campaignIds !== null && campaignIds.length > 0;
-  const campaignFilter = hasFilter ? `AND campaign_id = ANY($1)` : "";
+  const campaignFilter = hasFilter ? `AND deleted_at IS NULL AND campaign_id = ANY($1)` : `AND deleted_at IS NULL`;
   const params = hasFilter ? [campaignIds] : [];
 
   // Two separate queries:
@@ -855,6 +865,7 @@ export async function getClaimedSnapshot(
      FROM form_submissions fs
      LEFT JOIN users u ON u.id = fs.cms_claimed_by
      WHERE fs.campaign_id = $1
+       AND fs.deleted_at IS NULL
        AND fs.cms_status = 'claimed'`,
     [campaignId],
   );
