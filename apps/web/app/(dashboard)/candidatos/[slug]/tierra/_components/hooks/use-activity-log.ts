@@ -25,14 +25,15 @@ export function useActivityLog(
       return {
         id: `form-${f.id}`,
         type: "form_new" as const,
-        agentName: f.encuestador || "Agente",
-        message: `registro a ${f.nombre || "contacto"}`,
+        agentName: f.nombre || "Contacto",
+        message: `registrado por ${f.encuestador || "agente"}`,
         timestamp: new Date(f.created_at),
         lat: coords?.lat ?? null,
         lng: coords?.lng ?? null,
         nombre: f.nombre || undefined,
         telefono: f.telefono || undefined,
         zona: f.zona || undefined,
+        encuestador: f.encuestador || undefined,
       };
     });
 

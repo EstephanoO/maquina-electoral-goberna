@@ -68,7 +68,10 @@ export function CampoOverlay({
 
   const visibleAgents = agentsOpen ? sortedAgents : sortedAgents.slice(0, AGENTS_COLLAPSED);
   const visibleRanking = rankingOpen ? rankedAgents.slice(0, RANKING_EXPANDED) : rankedAgents.slice(0, RANKING_COLLAPSED);
-  const visibleLogs = logOpen ? logEntries.slice(0, LOG_EXPANDED) : logEntries.slice(0, LOG_COLLAPSED);
+
+  // Inline log: only form entries (datos subidos)
+  const formLogEntries = useMemo(() => logEntries.filter((e) => e.type === "form_new" || e.type === "form_submitted"), [logEntries]);
+  const visibleLogs = logOpen ? formLogEntries.slice(0, LOG_EXPANDED) : formLogEntries.slice(0, LOG_COLLAPSED);
 
   const selectedAgent = selectedAgentId ? agents.find((a) => a.id === selectedAgentId) : null;
 
@@ -180,11 +183,11 @@ export function CampoOverlay({
           </Glass>
         )}
 
-        {/* ═══ Log card ═══ */}
+        {/* ═══ Log card — datos subidos ═══ */}
         <Glass>
           <CardHeader onClick={() => setLogOpen(!logOpen)} open={logOpen}>
-            <span className="font-semibold text-[12px] text-slate-700">Log</span>
-            <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: primaryColor }}>{logEntries.length}</span>
+            <span className="font-semibold text-[12px] text-slate-700">Datos</span>
+            <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: primaryColor }}>{formLogEntries.length}</span>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setLogModalOpen(true); }}
@@ -198,7 +201,7 @@ export function CampoOverlay({
 
           <div ref={logListRef} className={logOpen ? "max-h-[340px] overflow-y-auto" : ""}>
             {visibleLogs.length === 0 ? (
-              <p className="px-3 py-3 text-center text-[11px] text-slate-400/80 italic">Sin actividad</p>
+              <p className="px-3 py-3 text-center text-[11px] text-slate-400/80 italic">Sin registros</p>
             ) : (
               visibleLogs.map((e) => (
                 <LogRow key={e.id} entry={e} onLogEntryClick={onLogEntryClick} />
@@ -206,8 +209,8 @@ export function CampoOverlay({
             )}
           </div>
 
-          {!logOpen && logEntries.length > LOG_COLLAPSED && (
-            <MoreBtn count={logEntries.length - LOG_COLLAPSED} color={primaryColor} onClick={() => setLogOpen(true)} />
+          {!logOpen && formLogEntries.length > LOG_COLLAPSED && (
+            <MoreBtn count={formLogEntries.length - LOG_COLLAPSED} color={primaryColor} onClick={() => setLogOpen(true)} />
           )}
         </Glass>
       </div>

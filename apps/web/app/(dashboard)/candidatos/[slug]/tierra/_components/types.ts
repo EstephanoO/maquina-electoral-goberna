@@ -110,4 +110,5 @@ export type LogEntry = {
   nombre?: string;
   telefono?: string;
   zona?: string;
+  encuestador?: string;
 };
