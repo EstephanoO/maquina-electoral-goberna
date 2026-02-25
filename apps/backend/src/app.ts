@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import compress from "@fastify/compress";
 import cors from "@fastify/cors";
+import formbody from "@fastify/formbody";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import websocket from "@fastify/websocket";
@@ -40,6 +41,7 @@ export function buildApp(env: AppEnv) {
 
   app.register(helmet);
   app.register(compress);
+  app.register(formbody); // Twilio webhooks arrive as application/x-www-form-urlencoded
   // Warn at startup if CORS is misconfigured (wildcard + credentials is insecure)
   if (env.frontendOrigins.includes("*") && env.nodeEnv === "production") {
     app.log.error(

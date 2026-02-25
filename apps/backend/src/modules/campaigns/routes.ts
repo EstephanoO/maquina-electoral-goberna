@@ -16,6 +16,7 @@ const twilioConfigSchema = z.object({
   account_sid: z.string().min(1, "account_sid es requerido").max(200),
   auth_token: z.string().max(200).optional(),
   whatsapp_from: z.string().min(1, "whatsapp_from es requerido").max(50),
+  messaging_service_sid: z.string().max(200).optional(),
 });
 
 // ── Event log (in-memory circular buffer) ─────────────────────────────
@@ -595,13 +596,17 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
           }
 
           // Merge twilio config into campaign config JSONB
+          const twilioConfig: Record<string, string> = {
+            account_sid: body.account_sid.trim(),
+            auth_token: encryptedToken,
+            whatsapp_from: body.whatsapp_from.trim(),
+          };
+          if (body.messaging_service_sid?.trim()) {
+            twilioConfig.messaging_service_sid = body.messaging_service_sid.trim();
+          }
           const newConfig = {
             ...existingConfig,
-            twilio: {
-              account_sid: body.account_sid.trim(),
-              auth_token: encryptedToken,
-              whatsapp_from: body.whatsapp_from.trim(),
-            },
+            twilio: twilioConfig,
           };
 
           await repo.updateConfig(campaignId, newConfig);

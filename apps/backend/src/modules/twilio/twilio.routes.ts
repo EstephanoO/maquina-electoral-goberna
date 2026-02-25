@@ -12,6 +12,7 @@ import type { AppEnv } from "../../config/env";
 import type { AuthenticatedRequest } from "../../infra/auth";
 import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
+import { cmsEvents } from "../../infra/cms-events";
 import { pool } from "../../db";
 import {
   sendWhatsAppMessage,
@@ -76,6 +77,14 @@ export function buildTwilioRoutes(_env: AppEnv): FastifyPluginAsync {
           app.log.warn({ error: result.error, contact_id, request_id: requestId }, "twilio send failed");
           return reply.code(502).send(errorPayload(requestId, "TWILIO_SEND_ERROR", result.error));
         }
+
+        // Notify CMS SSE clients about the new outbound message
+        cmsEvents.emitCms("message.new", {
+          campaignId: campaign_id,
+          contactId: contact_id,
+          direction: "outbound",
+          messageId: result.message.id,
+        });
 
         return reply.code(200).send({
           ok: true,
@@ -167,6 +176,34 @@ export function buildTwilioRoutes(_env: AppEnv): FastifyPluginAsync {
             { type: result.type, sid: messageSid, request_id: requestId },
             "twilio webhook processed",
           );
+
+          // Notify CMS SSE clients about inbound messages or status updates
+          if (result.type === "inbound") {
+            cmsEvents.emitCms("message.new", {
+              campaignId: result.message.campaign_id,
+              contactId: result.message.contact_id,
+              direction: "inbound",
+              messageId: result.message.id,
+            });
+          } else if (result.type === "status_update") {
+            // For status updates we need to look up the message to get campaign/contact
+            try {
+              const msgRow = await pool.query<{ contact_id: string; campaign_id: string }>(
+                `SELECT contact_id, campaign_id FROM cms_twilio_messages WHERE twilio_sid = $1 LIMIT 1`,
+                [result.sid],
+              );
+              if (msgRow.rows[0]) {
+                cmsEvents.emitCms("message.status", {
+                  campaignId: msgRow.rows[0].campaign_id,
+                  contactId: msgRow.rows[0].contact_id,
+                  twilioSid: result.sid,
+                  status: result.status,
+                });
+              }
+            } catch (err) {
+              app.log.warn({ err, sid: result.sid }, "twilio webhook: failed to resolve message for SSE broadcast");
+            }
+          }
         }
 
         // Twilio expects empty 200 TwiML response or plain text

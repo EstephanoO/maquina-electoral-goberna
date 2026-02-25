@@ -6,6 +6,7 @@ import type { AppEnv } from "../../config/env";
 import type { AuthenticatedRequest } from "../../infra/auth";
 import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
+import { cmsEvents, type CmsMessageEvent, type CmsStatusUpdateEvent } from "../../infra/cms-events";
 import { pool } from "../../db";
 import * as repo from "./repository";
 
@@ -96,6 +97,25 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
     }
   }, 25_000);
   heartbeatTimer.unref();
+
+  // ── Event bus subscriptions ─────────────────────────────────────
+  // Listen for cross-module events (e.g. Twilio inbound messages)
+  // and broadcast them to SSE clients of the matching campaign.
+  cmsEvents.onCms("message.new", (payload: CmsMessageEvent) => {
+    broadcastToCampaign(payload.campaignId, "message.new", {
+      contact_id: payload.contactId,
+      direction: payload.direction,
+      message_id: payload.messageId,
+    });
+  });
+
+  cmsEvents.onCms("message.status", (payload: CmsStatusUpdateEvent) => {
+    broadcastToCampaign(payload.campaignId, "message.status", {
+      contact_id: payload.contactId,
+      twilio_sid: payload.twilioSid,
+      status: payload.status,
+    });
+  });
 
   return async (app) => {
     // ── GET /api/cms/contacts ───────────────────────────────────────
@@ -533,6 +553,92 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
         request.raw.on("error", cleanup);
 
         return reply;
+      },
+    );
+
+    // ── POST /api/cms/contacts/public ───────────────────────────────────
+    // Public endpoint (no auth) — creates a contact for a campaign by slug.
+    // Designed for external integrations / frontends that don't have JWT.
+    const publicContactSchema = z.object({
+      campaign_slug: z.string().min(1, "campaign_slug es requerido"),
+      nombre: z.string().min(1, "nombre es requerido").max(200),
+      telefono: z.string().min(6, "telefono es requerido").max(20),
+      zona: z.string().max(200).optional().default(""),
+      distrito: z.string().max(200).optional().default(""),
+      comentarios: z.string().max(2000).optional().default(""),
+    });
+
+    app.post(
+      "/api/cms/contacts/public",
+      async (request, reply) => {
+        const requestId = String(request.id);
+
+        const parsed = publicContactSchema.safeParse(request.body);
+        if (!parsed.success) {
+          const msg = parsed.error.issues.map((e) => e.message).join("; ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", msg));
+        }
+
+        const { campaign_slug, nombre, telefono, zona, distrito, comentarios } = parsed.data;
+
+        // Resolve campaign by slug
+        const campaignRes = await pool.query<{ id: string; name: string }>(
+          `SELECT id, name FROM campaigns WHERE slug = $1 LIMIT 1`,
+          [campaign_slug],
+        );
+
+        if (campaignRes.rows.length === 0) {
+          return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", `Campaña '${campaign_slug}' no encontrada`));
+        }
+
+        const campaign = campaignRes.rows[0]!;
+
+        // Check for duplicate phone in same campaign
+        const dupeRes = await pool.query<{ id: string }>(
+          `SELECT id FROM form_submissions
+           WHERE campaign_id = $1 AND data->>'telefono' = $2 AND deleted_at IS NULL
+           LIMIT 1`,
+          [campaign.id, telefono.replace(/[^\d]/g, "")],
+        );
+
+        if (dupeRes.rows.length > 0) {
+          return reply.code(409).send(errorPayload(requestId, "DUPLICATE", `Ya existe un contacto con teléfono ${telefono} en esta campaña`));
+        }
+
+        // Insert contact
+        const cleanPhone = telefono.replace(/[^\d]/g, "");
+        const data: Record<string, string> = { nombre, telefono: cleanPhone };
+        if (zona) data.zona = zona;
+        if (distrito) data.distrito = distrito;
+        if (comentarios) data.comentarios = comentarios;
+
+        const insertRes = await pool.query<{ id: string; created_at: string }>(
+          `INSERT INTO form_submissions (campaign_id, data, client_id, cms_status)
+           VALUES ($1, $2, $3, 'nuevo')
+           RETURNING id, created_at`,
+          [campaign.id, JSON.stringify(data), `public-api-${Date.now()}`],
+        );
+
+        const contact = insertRes.rows[0]!;
+
+        app.log.info(
+          { contact_id: contact.id, campaign: campaign_slug, phone: cleanPhone, request_id: requestId },
+          "public contact created",
+        );
+
+        return reply.code(201).send({
+          ok: true,
+          request_id: requestId,
+          contact: {
+            id: contact.id,
+            campaign_id: campaign.id,
+            campaign_name: campaign.name,
+            nombre,
+            telefono: cleanPhone,
+            cms_status: "nuevo",
+            created_at: contact.created_at,
+          },
+        });
       },
     );
   };

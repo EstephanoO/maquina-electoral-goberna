@@ -439,6 +439,23 @@ export default function CmsPage() {
 
           setNotesContact((prev) => (prev && prev.id === contact.id ? contact : prev));
         }
+
+        // New WhatsApp message (inbound or outbound from another tab/operator)
+        if (event === "message.new") {
+          const payload = data as { contact_id: string; direction: string; message_id: string };
+          // Reload messages if this contact is currently selected
+          if (selectedContactIdRef.current === payload.contact_id) {
+            void syncSelectedContactMessages(payload.contact_id);
+          }
+        }
+
+        // WhatsApp message status update (delivered, read, etc.)
+        if (event === "message.status") {
+          const payload = data as { contact_id: string; twilio_sid: string; status: string };
+          if (selectedContactIdRef.current === payload.contact_id) {
+            void syncSelectedContactMessages(payload.contact_id);
+          }
+        }
       } catch {
         // Ignore malformed events
       }

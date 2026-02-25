@@ -19,6 +19,7 @@ type CampaignTwilioConfig = {
   accountSid: string;
   authToken: string;
   from: string;
+  messagingServiceSid?: string;
 };
 
 /**
@@ -39,6 +40,7 @@ async function getCampaignTwilioConfig(
     account_sid?: string;
     auth_token?: string;
     whatsapp_from?: string;
+    messaging_service_sid?: string;
   };
 
   if (!twilioCfg.account_sid || !twilioCfg.auth_token || !twilioCfg.whatsapp_from) {
@@ -56,6 +58,7 @@ async function getCampaignTwilioConfig(
     accountSid: twilioCfg.account_sid,
     authToken,
     from: twilioCfg.whatsapp_from,
+    messagingServiceSid: twilioCfg.messaging_service_sid || undefined,
   };
 }
 
@@ -99,11 +102,13 @@ export async function sendWhatsAppMessage(params: {
 
   try {
     const client = twilio(cfg.accountSid, cfg.authToken);
-    const msg = await client.messages.create({
-      from: cfg.from,
-      to: toWhatsApp,
-      body,
-    });
+    // Prefer MessagingServiceSid for WhatsApp Business senders;
+    // fall back to direct from for sandbox/legacy setups.
+    const msg = await client.messages.create(
+      cfg.messagingServiceSid
+        ? { messagingServiceSid: cfg.messagingServiceSid, to: toWhatsApp, body }
+        : { from: cfg.from, to: toWhatsApp, body },
+    );
 
     const row = await insertMessage({
       contactId,
@@ -152,16 +157,48 @@ export async function handleTwilioWebhook(params: {
   // Inbound message from citizen
   if (body && from) {
     const normalizedFrom = normalizePhone(from.replace("whatsapp:", ""));
+    // Strip country code for flexible matching — DB may store "955135507" or "51955135507"
+    const phoneDigits = normalizedFrom.replace("+", "");
+    const phoneLocal = phoneDigits.startsWith("51") ? phoneDigits.slice(2) : phoneDigits;
+
+    // First try: correlate via previous outbound message to same phone
     const existing = await pool.query<{ contact_id: string; campaign_id: string }>(
       `SELECT m.contact_id, m.campaign_id
        FROM cms_twilio_messages m
        JOIN form_submissions fs ON fs.id = m.contact_id
-       WHERE COALESCE(fs.data->>'telefono', '') = $1
+       WHERE (COALESCE(fs.data->>'telefono', '') = $1
+              OR COALESCE(fs.data->>'telefono', '') = $2)
          AND m.direction = 'outbound'
        ORDER BY m.created_at DESC
        LIMIT 1`,
-      [normalizedFrom.replace("+", "")],
+      [phoneDigits, phoneLocal],
     );
+
+    // Fallback: find contact by phone even without previous outbound message
+    if (existing.rows.length === 0) {
+      const fallback = await pool.query<{ id: string; campaign_id: string }>(
+        `SELECT id, campaign_id
+         FROM form_submissions
+         WHERE COALESCE(data->>'telefono', '') IN ($1, $2)
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [phoneDigits, phoneLocal],
+      );
+
+      if (fallback.rows.length > 0 && fallback.rows[0]) {
+        const { id: contact_id, campaign_id } = fallback.rows[0];
+        const row = await insertMessage({
+          contactId: contact_id,
+          campaignId: campaign_id,
+          direction: "inbound",
+          body,
+          twilioSid: messageSid,
+          status: "received",
+          sentBy: null,
+        });
+        return { ok: true, type: "inbound", message: row };
+      }
+    }
 
     if (existing.rows.length === 0 || !existing.rows[0]) {
       return { ok: true, type: "unknown" };
