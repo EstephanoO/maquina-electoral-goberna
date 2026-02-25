@@ -369,7 +369,7 @@ export const ActivityCharts = memo(function ActivityCharts({
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval={xInterval} />
                   <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={tooltipStyle} formatter={(value: number, name: string) => [String(value), name === "actual" ? "Real" : "Ideal"]} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(value, name) => [String(value ?? 0), name === "actual" ? "Real" : "Ideal"]} />
                   {agentDrillData.goal > 0 && (
                     <>
                       <Line type="monotone" dataKey="ideal" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="6 3" dot={false} name="ideal" animationDuration={600} />
