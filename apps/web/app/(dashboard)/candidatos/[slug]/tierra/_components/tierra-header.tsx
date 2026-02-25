@@ -25,7 +25,8 @@ export function TierraHeader({ stats, agentCount, formCount, connectedCount, vie
   const pc = campaign.color_primario;
   const sc = campaign.color_secundario;
 
-  const datosProgress = metas.datos > 0 ? Math.min((totals.forms_count / metas.datos) * 100, 100) : 0;
+  const metaDatos = metas.datos > 0 ? metas.datos : 200000;
+  const datosProgress = Math.min((totals.forms_count / metaDatos) * 100, 100);
   const votosProgress = metas.votos > 0 ? Math.min((totals.forms_count / metas.votos) * 100, 100) : 0;
 
   return (
@@ -93,7 +94,7 @@ export function TierraHeader({ stats, agentCount, formCount, connectedCount, vie
 
       {/* Right: metas (both modes) */}
       <div className="flex gap-4 shrink-0">
-        <MetaBar label="Meta datos" current={totals.forms_count} target={metas.datos} pct={datosProgress} color={pc} />
+        <MetaBar label="Meta datos" current={totals.forms_count} target={metaDatos} pct={datosProgress} color={pc} />
         <MetaBar label="Meta votos" current={null} target={metas.votos} pct={votosProgress} color={sc || pc} />
       </div>
     </header>
