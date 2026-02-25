@@ -185,8 +185,22 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
             height: 100dvh;
             background: var(--color-surface);
             border-left: 1px solid var(--color-border);
-            box-shadow: -6px 0 28px rgba(15, 23, 42, 0.22);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
             animation: goberna-slide-in 0.2s ease-out;
+          }
+
+          @media (min-width: 1025px) {
+            .cms-notes-overlay {
+              background: transparent !important;
+              backdrop-filter: none !important;
+              -webkit-backdrop-filter: none !important;
+            }
+
+            .cms-notes-panel {
+              margin: 8px 0;
+              height: calc(100dvh - 16px);
+              border-radius: 14px 0 0 14px;
+            }
           }
 
           @keyframes goberna-slide-in {

@@ -26,7 +26,7 @@ import {
 
 const FONT = "var(--font-montserrat), system-ui, sans-serif";
 const NOTES_PANEL_WIDTH = 400;
-const NOTES_PANEL_GAP = 14;
+const NOTES_PANEL_GAP = 32;
 const PAGE_LIMIT = 25;
 
 type Tab = { key: CmsTabFilter; label: string; statKey: keyof CmsStats | null };
