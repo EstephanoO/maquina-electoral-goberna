@@ -9,6 +9,26 @@ import { api } from "./api";
 
 export type CmsStatus = "nuevo" | "hablado" | "respondieron" | "archivado";
 
+export type CmsVoteTier = "contacto_basura" | "voto_blando" | "voto_duro";
+
+export type CmsSignalFlags = {
+  responde?: boolean;
+  hace_pregunta?: boolean;
+  pide_informacion?: boolean;
+  comparte_ubicacion?: boolean;
+  deja_en_visto?: boolean;
+  bloquea?: boolean;
+};
+
+export type CmsOperatorNotes = {
+  local_votacion?: string;
+  domicilio?: string;
+  comentarios?: string;
+  signal_flags?: CmsSignalFlags;
+  signal_score?: number;
+  vote_tier?: CmsVoteTier;
+};
+
 export type CmsContact = {
   id: string;
   campaign_id: string;
@@ -20,11 +40,7 @@ export type CmsContact = {
   cms_claimed_at: string | null;
   cms_hablado_at: string | null;
   cms_respondieron_at: string | null;
-  cms_operator_notes: {
-    local_votacion?: string;
-    domicilio?: string;
-    comentarios?: string;
-  };
+  cms_operator_notes: CmsOperatorNotes;
   nombre: string;
   telefono: string;
   encuestador: string;
@@ -239,7 +255,7 @@ export async function archiveContact(
 export async function updateContactNotes(
   campaignId: string,
   contactId: string,
-  notes: { local_votacion?: string; domicilio?: string; comentarios?: string },
+  notes: CmsOperatorNotes,
 ): Promise<{ ok: boolean; contact?: CmsContact; error?: string }> {
   const res = await api.put<CmsContactResponse>(
     `/api/cms/contacts/${contactId}/notes`,

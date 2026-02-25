@@ -10,6 +10,7 @@ import {
   getContactWhatsAppMessages,
   sendContactWhatsAppMessage,
   type CmsContact,
+  type CmsOperatorNotes,
   type CmsStats,
   type CmsTabFilter,
   type CmsSseContactUpdated,
@@ -486,7 +487,7 @@ export default function CmsPage() {
   const handleSaveNotes = useCallback(
     async (
       id: string,
-      notes: { local_votacion: string; domicilio: string; comentarios: string },
+      notes: CmsOperatorNotes,
     ) => {
       if (!activeCampaignId) return;
 

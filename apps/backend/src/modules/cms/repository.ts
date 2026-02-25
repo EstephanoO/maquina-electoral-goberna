@@ -353,7 +353,21 @@ export async function archiveContact(
 export async function updateNotes(
   submissionId: string,
   operatorId: string,
-  notes: { local_votacion: string; domicilio: string; comentarios: string },
+  notes: {
+    local_votacion: string;
+    domicilio: string;
+    comentarios: string;
+    signal_flags?: {
+      responde?: boolean;
+      hace_pregunta?: boolean;
+      pide_informacion?: boolean;
+      comparte_ubicacion?: boolean;
+      deja_en_visto?: boolean;
+      bloquea?: boolean;
+    };
+    signal_score?: number;
+    vote_tier?: "contacto_basura" | "voto_blando" | "voto_duro";
+  },
 ): Promise<CmsContactRow | null> {
   // Any operator can edit notes — cms_claimed_by tracks last operator who acted
   const { rows } = await pool.query<CmsContactRow>(

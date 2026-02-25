@@ -11,10 +11,22 @@ import * as repo from "./repository";
 
 // ── Schemas ─────────────────────────────────────────────────────────
 
+const signalFlagsSchema = z.object({
+  responde: z.boolean().optional(),
+  hace_pregunta: z.boolean().optional(),
+  pide_informacion: z.boolean().optional(),
+  comparte_ubicacion: z.boolean().optional(),
+  deja_en_visto: z.boolean().optional(),
+  bloquea: z.boolean().optional(),
+});
+
 const updateNotesSchema = z.object({
   local_votacion: z.string().max(500).optional().default(""),
   domicilio: z.string().max(500).optional().default(""),
   comentarios: z.string().max(2000).optional().default(""),
+  signal_flags: signalFlagsSchema.optional().default({}),
+  signal_score: z.number().int().min(-200).max(200).optional().default(0),
+  vote_tier: z.enum(["contacto_basura", "voto_blando", "voto_duro"]).optional().default("contacto_basura"),
 });
 
 // ── SSE helpers ─────────────────────────────────────────────────────
