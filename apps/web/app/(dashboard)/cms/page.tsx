@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import {
   listCmsContacts,
@@ -28,7 +27,6 @@ import {
   ChatContactListItem,
   ChatConversationPane,
   ContactNotesPanel,
-  TwilioConfigModal,
 } from "./_components";
 
 const FONT = "var(--font-montserrat), system-ui, sans-serif";
@@ -107,8 +105,34 @@ function getTagColor(tagName: string): string {
   return TAG_COLOR_PALETTE[hashTag(normalized) % TAG_COLOR_PALETTE.length];
 }
 
+function toMs(value: string | null | undefined): number {
+  if (!value) return 0;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+function getContactLastInteractionMs(contact: CmsContact): number {
+  const updatedAt = (contact as CmsContact & { updated_at?: string }).updated_at;
+  const dataLastInteraction = typeof contact.data?.last_interaction_at === "string"
+    ? contact.data.last_interaction_at
+    : null;
+  const dataLastMessage = typeof contact.data?.last_message_at === "string"
+    ? contact.data.last_message_at
+    : null;
+
+  return Math.max(
+    toMs(contact.cms_respondieron_at),
+    toMs(contact.cms_hablado_at),
+    toMs(contact.cms_claimed_at),
+    toMs(updatedAt),
+    toMs(dataLastInteraction),
+    toMs(dataLastMessage),
+    toMs(contact.created_at),
+  );
+}
+
 export default function CmsPage() {
-  const { user, activeCampaignId, campaigns } = useAuth();
+  const { user, activeCampaignId } = useAuth();
 
   const [activeTab, setActiveTab] = useState<CmsTabFilter>("todos");
   const [contacts, setContacts] = useState<CmsContact[]>([]);
@@ -123,7 +147,6 @@ export default function CmsPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [uiError, setUiError] = useState<string | null>(null);
-  const [twilioConfigOpen, setTwilioConfigOpen] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
   const [messagesByContact, setMessagesByContact] = useState<Record<string, CmsTwilioMessage[]>>({});
   const [messagesLoadingByContact, setMessagesLoadingByContact] = useState<Record<string, boolean>>({});
@@ -136,6 +159,9 @@ export default function CmsPage() {
   const [tagSearchSidebar, setTagSearchSidebar] = useState("");
 
   const sseRef = useRef<{ close: () => void } | null>(null);
+  const contactListRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeTabRef = useRef(activeTab);
   const selectedContactIdRef = useRef<string | null>(selectedContactId);
@@ -147,7 +173,6 @@ export default function CmsPage() {
     [contacts, selectedContactId],
   );
   const panelOpen = notesContact !== null;
-  const activeCampaignSlug = campaigns.find((campaign) => campaign.id === activeCampaignId)?.slug;
   const latestMessageByContact = useMemo<Record<string, CmsTwilioMessage | undefined>>(() => {
     const next: Record<string, CmsTwilioMessage | undefined> = {};
     for (const [contactId, messages] of Object.entries(messagesByContact)) {
@@ -181,7 +206,7 @@ export default function CmsPage() {
     [activeCampaignId],
   );
 
-  const { connected: chatWsConnected } = useChatWs({
+  useChatWs({
     campaignId: activeCampaignId,
     contactId: selectedContactId,
     onMessageEvent: handleChatWsEvent,
@@ -189,7 +214,7 @@ export default function CmsPage() {
 
   const filteredContacts = useMemo(() => {
     const query = debouncedSearch.trim().toLowerCase();
-    return contacts.filter((contact) => {
+    const filtered = contacts.filter((contact) => {
       const tags = contact.cms_tags ?? [];
       const matchesTagFilter = selectedTagFilter === "__all"
         || tags.some((tag) => tag.toLowerCase() === selectedTagFilter.toLowerCase());
@@ -212,6 +237,7 @@ export default function CmsPage() {
       const matchesTagSearch = tags.some((tag) => tag.toLowerCase().includes(query));
       return textBlock.includes(query) || matchesTagSearch;
     });
+    return filtered.slice().sort((a, b) => getContactLastInteractionMs(b) - getContactLastInteractionMs(a));
   }, [contacts, debouncedSearch, selectedTagFilter]);
 
   const fetchContacts = useCallback(async () => {
@@ -245,27 +271,64 @@ export default function CmsPage() {
   }, [activeCampaignId, activeTab]);
 
   const handleLoadMore = useCallback(async () => {
-    if (!activeCampaignId || loadingMore) return;
+    if (!activeCampaignId || loadingMoreRef.current) return;
+    if (contacts.length >= total) return;
 
+    loadingMoreRef.current = true;
     setLoadingMore(true);
-    const nextOffset = offset + PAGE_LIMIT;
-    const res = await listCmsContacts(
-      activeCampaignId,
-      activeTab,
-      PAGE_LIMIT,
-      nextOffset,
-      "",
+    try {
+      const nextOffset = offset + PAGE_LIMIT;
+      const res = await listCmsContacts(
+        activeCampaignId,
+        activeTab,
+        PAGE_LIMIT,
+        nextOffset,
+        "",
+      );
+
+      if (res.ok) {
+        setContacts((prev) => {
+          const byId = new Map<string, CmsContact>();
+          for (const item of prev) byId.set(item.id, item);
+          for (const item of res.contacts) byId.set(item.id, item);
+          return Array.from(byId.values());
+        });
+        setOffset(nextOffset);
+      } else {
+        setUiError(res.error ?? "No se pudieron cargar mas contactos");
+      }
+    } catch {
+      setUiError("No se pudieron cargar mas contactos");
+    } finally {
+      setLoadingMore(false);
+      loadingMoreRef.current = false;
+    }
+  }, [activeCampaignId, activeTab, contacts.length, offset, total]);
+
+  useEffect(() => {
+    if (loading || loadingMore) return;
+    if (contacts.length >= total) return;
+
+    const root = contactListRef.current;
+    const sentinel = loadMoreSentinelRef.current;
+    if (!root || !sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting) return;
+        void handleLoadMore();
+      },
+      {
+        root,
+        rootMargin: "180px 0px",
+        threshold: 0.01,
+      },
     );
 
-    if (res.ok) {
-      setContacts((prev) => [...prev, ...res.contacts]);
-      setOffset(nextOffset);
-    } else {
-      setUiError(res.error ?? "No se pudieron cargar mas contactos");
-    }
-
-    setLoadingMore(false);
-  }, [activeCampaignId, activeTab, loadingMore, offset]);
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [contacts.length, total, handleLoadMore, loading, loadingMore]);
 
   useEffect(() => {
     fetchContacts();
@@ -820,8 +883,9 @@ export default function CmsPage() {
         fontFamily: FONT,
         display: "flex",
         flexDirection: "column",
-        gap: 12,
-        minHeight: "calc(100vh - 80px)",
+        gap: 8,
+        minHeight: "calc(100dvh - 80px)",
+        height: "calc(100dvh - 80px)",
       }}
     >
       <div
@@ -860,72 +924,6 @@ export default function CmsPage() {
           <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
             Vista operativa tipo chat (modo claro)
           </p>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {activeCampaignSlug && (
-            <Link
-              href={`/candidatos/${activeCampaignSlug}/cms-metrics`}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 14px",
-                fontSize: 12,
-                fontWeight: 700,
-                color: "var(--goberna-blue-900)",
-                background: "var(--goberna-blue-50)",
-                border: "1px solid var(--goberna-blue-200)",
-                borderRadius: 8,
-                textDecoration: "none",
-                whiteSpace: "nowrap",
-              }}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <title>Metricas</title>
-                <path d="M18 20V10" />
-                <path d="M12 20V4" />
-                <path d="M6 20v-6" />
-              </svg>
-              Metricas
-            </Link>
-          )}
-
-          {user?.role === "admin" && (
-            <button
-              type="button"
-              onClick={() => setTwilioConfigOpen(true)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "8px 14px",
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#15803d",
-                background: "#ecfdf3",
-                border: "1px solid #bbf7d0",
-                borderRadius: 8,
-                cursor: "pointer",
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <title>Configurar Twilio</title>
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-              Twilio
-            </button>
-          )}
         </div>
       </div>
 
@@ -1237,7 +1235,7 @@ export default function CmsPage() {
               </div>
             </div>
 
-            <div className="cms-chat-contact-list">
+            <div className="cms-chat-contact-list" ref={contactListRef}>
               {loading ? (
                 <div style={{ padding: 22, textAlign: "center", color: "#64748b", fontSize: 13 }}>
                   Cargando contactos...
@@ -1267,6 +1265,16 @@ export default function CmsPage() {
                   />
                 ))
               )}
+
+              {!loading && contacts.length < total && (
+                <div ref={loadMoreSentinelRef} style={{ height: 1 }} />
+              )}
+
+              {!loading && loadingMore && (
+                <div style={{ padding: "8px 12px", textAlign: "center", fontSize: 12, color: "#64748b" }}>
+                  Cargando mas contactos...
+                </div>
+              )}
             </div>
 
             <div
@@ -1283,27 +1291,6 @@ export default function CmsPage() {
               <span style={{ fontSize: 12, color: "#64748b" }}>
                 {filteredContacts.length} visibles · {contacts.length} cargados de {total}
               </span>
-
-              {contacts.length < total && (
-                <button
-                  type="button"
-                  onClick={handleLoadMore}
-                  disabled={loadingMore}
-                  style={{
-                    border: "1px solid #d6dde6",
-                    background: "#ffffff",
-                    color: "#334155",
-                    borderRadius: 8,
-                    padding: "6px 10px",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: loadingMore ? "not-allowed" : "pointer",
-                    opacity: loadingMore ? 0.65 : 1,
-                  }}
-                >
-                  {loadingMore ? "Cargando..." : "Cargar mas"}
-                </button>
-              )}
             </div>
           </aside>
 
@@ -1366,18 +1353,11 @@ export default function CmsPage() {
         </div>
       )}
 
-      {twilioConfigOpen && activeCampaignId && (
-        <TwilioConfigModal
-          campaignId={activeCampaignId}
-          onClose={() => setTwilioConfigOpen(false)}
-        />
-      )}
-
       <style>{`
         .cms-chat-root {
           flex: 1;
           min-height: 0;
-          height: clamp(360px, calc(100dvh - 190px), 900px);
+          height: 100%;
           transition: margin-right 240ms ease;
           overflow: hidden;
         }
@@ -1429,10 +1409,6 @@ export default function CmsPage() {
         }
 
         @media (max-width: 1024px) {
-          .cms-chat-root {
-            height: calc(100dvh - 220px);
-          }
-
           .cms-chat-shell {
             flex-direction: column;
             min-height: 0;
@@ -1448,16 +1424,6 @@ export default function CmsPage() {
 
           .cms-chat-main {
             min-height: 0;
-          }
-        }
-
-        @media (max-width: 640px) {
-          .cms-chat-root {
-            height: calc(100dvh - 200px);
-          }
-
-          .cms-chat-sidebar {
-            max-height: min(46dvh, 360px);
           }
         }
       `}</style>

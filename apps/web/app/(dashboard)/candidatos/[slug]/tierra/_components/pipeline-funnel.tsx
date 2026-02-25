@@ -16,6 +16,10 @@ type Props = {
   metaDatos: number;
   /** Currently selected period key */
   period: "today" | "week" | "month" | "all";
+  /** When set, hero card shows this agent's name instead of "Pipeline Global" */
+  selectedAgentName?: string;
+  /** Per-brigadista goal for the current period (used when agent drill-down active) */
+  periodGoalPerBrig?: number;
 };
 
 /* ========== Helpers ========== */
@@ -33,7 +37,7 @@ function fmt(n: number): string {
 
 /* ========== Component ========== */
 
-export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesCampoCount, metaDatos: campaignMeta, period }: Props) {
+export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesCampoCount, metaDatos: campaignMeta, period, selectedAgentName, periodGoalPerBrig: periodGoalOverride }: Props) {
   // ── Editable goal inputs ──
   const [metaDatos, setMetaDatos] = useState(campaignMeta > 0 ? campaignMeta : 200000);
   const [brigadistasGoal, setBrigadistasGoal] = useState(agentesCampoCount > 0 ? agentesCampoCount : 40);
@@ -43,22 +47,21 @@ export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesC
   // ── Derived calculations ──
   const dias = useMemo(() => calcDaysUntil(fechaLimite), [fechaLimite]);
   const metaDiaria = useMemo(() => dias > 0 ? Math.ceil(metaDatos / dias) : 0, [metaDatos, dias]);
-  const metaPorBrigDia = useMemo(() => brigadistasGoal > 0 && dias > 0 ? Math.ceil(metaDatos / (brigadistasGoal * dias)) : 0, [metaDatos, brigadistasGoal, dias]);
-  const metaPorBrigTotal = useMemo(() => brigadistasGoal > 0 ? Math.ceil(metaDatos / brigadistasGoal) : 0, [metaDatos, brigadistasGoal]);
-
-  // ── Period-adaptive goal ──
+  // ── Period-adaptive goal (agent drill-down uses per-brig goal) ──
+  const isAgentMode = !!selectedAgentName;
   const periodGoal = useMemo(() => {
+    if (isAgentMode && periodGoalOverride != null) {
+      const labels: Record<string, string> = { today: "Meta del dia", week: "Meta semanal", month: "Meta mensual", all: "Meta total" };
+      return { label: labels[period] ?? "Meta", target: periodGoalOverride, current: periodDatos };
+    }
     if (period === "today") return { label: "Meta de hoy", target: metaDiaria, current: periodDatos };
     if (period === "week") return { label: "Meta semanal", target: metaDiaria * 7, current: periodDatos };
     if (period === "month") return { label: "Meta mensual", target: metaDiaria * 30, current: periodDatos };
     return { label: "Meta total", target: metaDatos, current: totalDatos };
-  }, [period, metaDiaria, metaDatos, periodDatos, totalDatos]);
+  }, [period, metaDiaria, metaDatos, periodDatos, totalDatos, isAgentMode, periodGoalOverride]);
 
   const periodPct = periodGoal.target > 0 ? Math.min((periodGoal.current / periodGoal.target) * 100, 100) : 0;
   const periodRemaining = Math.max(periodGoal.target - periodGoal.current, 0);
-
-  // ── Global progress ──
-  const globalPct = metaDatos > 0 ? Math.min((totalDatos / metaDatos) * 100, 100) : 0;
 
   // ── Urgency ──
   const urgencyColor = dias <= 7 ? "#ef4444" : dias <= 14 ? "#f59e0b" : "#10b981";
@@ -73,10 +76,14 @@ export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesC
       {/* ═══ Header ═══ */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Pipeline Global</h3>
-          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-            {brigadistasGoal} brigadistas
-          </span>
+          <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+            {isAgentMode ? selectedAgentName : "Pipeline Global"}
+          </h3>
+          {!isAgentMode && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+              {brigadistasGoal} brigadistas
+            </span>
+          )}
         </div>
         <button
           type="button"
@@ -166,47 +173,12 @@ export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesC
         </div>
       </div>
 
-      {/* ═══ Goal metrics strip ═══ */}
-      <div className="grid grid-cols-4 gap-2 mb-2">
-        <GoalMetric label="Meta Total" value={fmt(metaDatos)} subvalue={`${globalPct.toFixed(1)}%`} color={primaryColor} />
-        <GoalMetric label="Meta / Dia" value={fmt(metaDiaria)} subvalue={`${fmt(periodDatos)} hoy`} color="#2563eb" />
-        <GoalMetric label="Meta / Brig / Dia" value={fmt(metaPorBrigDia)} color="#7c3aed" />
-        <GoalMetric label="Meta / Brig Total" value={fmt(metaPorBrigTotal)} color="#059669" />
-      </div>
 
-      {/* ═══ Global progress ═══ */}
-      {period !== "all" && (
-        <div className="flex items-center gap-2.5 px-3 py-2 bg-slate-900/[0.04] rounded-xl border border-slate-200/60">
-          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider shrink-0">Global</span>
-          <div className="flex-1 h-2 bg-slate-200/80 rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-[width] duration-500 ease-out" style={{ width: `${globalPct}%`, backgroundColor: primaryColor }} />
-          </div>
-          <span className="text-[12px] font-extrabold tabular-nums" style={{ color: primaryColor }}>{fmt(totalDatos)}</span>
-          <span className="text-[10px] text-slate-400 font-medium">/ {fmt(metaDatos)}</span>
-          <span
-            className="text-[11px] font-black tabular-nums px-1.5 py-0.5 rounded-md"
-            style={{ color: globalPct >= 100 ? "#059669" : primaryColor, backgroundColor: globalPct >= 100 ? "#05966910" : `${primaryColor}10` }}
-          >
-            {globalPct.toFixed(0)}%
-          </span>
-        </div>
-      )}
     </div>
   );
 }
 
 /* ========== Sub-components ========== */
-
-function GoalMetric({ label, value, subvalue, color }: { label: string; value: string; subvalue?: string; color: string }) {
-  return (
-    <div className="relative flex flex-col px-3 py-2.5 rounded-xl border border-slate-200/60 bg-white overflow-hidden" style={{ boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-      <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: color }} />
-      <span className="text-[18px] font-black tabular-nums leading-tight pl-1" style={{ color }}>{value}</span>
-      <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-0.5 pl-1">{label}</span>
-      {subvalue && <span className="text-[10px] text-slate-500 font-semibold mt-0.5 tabular-nums pl-1">{subvalue}</span>}
-    </div>
-  );
-}
 
 function ConfigInput({ label, value, onChange, step, min, hint, onHintClick }: {
   label: string; value: number; onChange: (v: number) => void; step?: number; min?: number;
