@@ -248,7 +248,7 @@ export const ActivityCharts = memo(function ActivityCharts({
   }, [timeSeriesData]);
 
   return (
-    <div className="flex flex-col gap-3 px-4 py-3.5">
+    <div className="flex flex-col gap-2.5 px-4 py-3">
       {/* ═══ KPI strip ═══ */}
       <div className="grid grid-cols-4 gap-2.5">
         <KpiCard label="Registros" value={stats.totalForms} color={primaryColor} delta={hasPrev ? stats.formsDelta : undefined} deltaLabel={periodLabel} icon={<ChartIcon />} />
@@ -277,7 +277,7 @@ export const ActivityCharts = memo(function ActivityCharts({
             </div>
           </div>
           {timeSeriesData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={210}>
+            <ResponsiveContainer width="100%" height={170}>
               <AreaChart data={timeSeriesData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="areaGradPipeline" x1="0" y1="0" x2="0" y2="1">
@@ -294,18 +294,18 @@ export const ActivityCharts = memo(function ActivityCharts({
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center h-[210px] text-xs text-slate-400">Sin registros en este periodo</div>
+            <div className="flex items-center justify-center h-[170px] text-xs text-slate-400">Sin registros en este periodo</div>
           )}
         </div>
 
         {/* Right: Agent ranking bars */}
-        <div className="bg-slate-50/60 rounded-xl border border-slate-100 px-4 py-3 flex flex-col min-w-0 max-h-[320px] overflow-y-auto">
+        <div className="bg-slate-50/60 rounded-xl border border-slate-100 px-4 py-3 flex flex-col min-w-0 max-h-[260px] overflow-y-auto">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Rendimiento</span>
             <span className="text-[10px] text-slate-400 tabular-nums">{stats.totalAgents} agentes</span>
           </div>
           {agentRanking.length > 0 ? (
-            <ResponsiveContainer width="100%" height={Math.max(210, agentRanking.length * 28)}>
+            <ResponsiveContainer width="100%" height={Math.max(170, agentRanking.length * 24)}>
               <BarChart data={agentRanking} layout="vertical" margin={{ top: 4, right: 12, left: 4, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} />

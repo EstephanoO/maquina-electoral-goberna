@@ -164,8 +164,8 @@ function PipelineKpis({ totalDatos, metaDatosTarget, primaryColor }: { totalDato
 function KpiSlot({ value, label, className, style }: { value: string; label: string; className?: string; style?: React.CSSProperties }) {
   return (
     <div className="flex flex-col items-center">
-      <span className={`text-lg font-extrabold leading-tight tabular-nums ${className ?? "text-slate-800"}`} style={style}>{value}</span>
-      <span className="text-[9px] font-medium uppercase text-slate-400 tracking-wider">{label}</span>
+      <span className={`text-[20px] font-black leading-tight tabular-nums ${className ?? "text-slate-800"}`} style={style}>{value}</span>
+      <span className="text-[9px] font-bold uppercase text-slate-500 tracking-wider">{label}</span>
     </div>
   );
 }
