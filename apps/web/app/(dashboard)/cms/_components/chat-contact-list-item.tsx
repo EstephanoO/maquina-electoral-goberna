@@ -1,12 +1,13 @@
 "use client";
 
-import type { CmsContact } from "@/lib/services/cms";
+import type { CmsContact, CmsTwilioMessage } from "@/lib/services/cms";
 
 const FONT = "var(--font-montserrat), system-ui, sans-serif";
 
 type Props = {
   contact: CmsContact;
   selected: boolean;
+  lastMessage?: CmsTwilioMessage;
   onSelect: (contactId: string) => void;
   onOpenProfile: (contact: CmsContact) => void;
 };
@@ -50,7 +51,8 @@ function getInitials(name: string): string {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 }
 
-function getRelevantTimestamp(contact: CmsContact): string {
+function getRelevantTimestamp(contact: CmsContact, lastMessage?: CmsTwilioMessage): string {
+  if (lastMessage?.created_at) return lastMessage.created_at;
   if (contact.cms_respondieron_at) return contact.cms_respondieron_at;
   if (contact.cms_hablado_at) return contact.cms_hablado_at;
   return contact.created_at;
@@ -82,7 +84,12 @@ function formatTimestamp(dateStr: string): string {
   }
 }
 
-function buildPreview(contact: CmsContact): string {
+function buildPreview(contact: CmsContact, lastMessage?: CmsTwilioMessage): string {
+  if (lastMessage?.body?.trim()) {
+    const prefix = lastMessage.direction === "outbound" ? "Tu: " : "";
+    return `${prefix}${lastMessage.body.trim()}`;
+  }
+
   const comment = contact.cms_operator_notes?.comentarios?.trim();
   if (comment) return comment;
 
@@ -104,13 +111,14 @@ function buildPreview(contact: CmsContact): string {
 export function ChatContactListItem({
   contact,
   selected,
+  lastMessage,
   onSelect,
   onOpenProfile,
 }: Props) {
   const displayName = contact.nombre?.trim() || "Sin nombre";
-  const preview = buildPreview(contact);
+  const preview = buildPreview(contact, lastMessage);
   const badge = STATUS_BADGE[contact.cms_status] ?? STATUS_BADGE.nuevo;
-  const timestamp = formatTimestamp(getRelevantTimestamp(contact));
+  const timestamp = formatTimestamp(getRelevantTimestamp(contact, lastMessage));
 
   return (
     <div

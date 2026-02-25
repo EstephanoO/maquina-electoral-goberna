@@ -7,11 +7,14 @@ import {
   listCmsContacts,
   updateContactNotes,
   getCmsStats,
+  getContactWhatsAppMessages,
+  sendContactWhatsAppMessage,
   type CmsContact,
   type CmsStats,
   type CmsTabFilter,
   type CmsSseContactUpdated,
   type CmsSseNotesUpdated,
+  type CmsTwilioMessage,
 } from "@/lib/services/cms";
 import {
   ChatContactListItem,
@@ -52,6 +55,11 @@ export default function CmsPage() {
   const [uiError, setUiError] = useState<string | null>(null);
   const [twilioConfigOpen, setTwilioConfigOpen] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
+  const [messagesByContact, setMessagesByContact] = useState<Record<string, CmsTwilioMessage[]>>({});
+  const [messagesLoadingByContact, setMessagesLoadingByContact] = useState<Record<string, boolean>>({});
+  const [messagesErrorByContact, setMessagesErrorByContact] = useState<Record<string, string | null>>({});
+  const [draftByContact, setDraftByContact] = useState<Record<string, string>>({});
+  const [sendingByContact, setSendingByContact] = useState<Record<string, boolean>>({});
 
   const sseRef = useRef<{ close: () => void } | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -64,6 +72,20 @@ export default function CmsPage() {
   );
   const panelOpen = notesContact !== null;
   const activeCampaignSlug = campaigns.find((campaign) => campaign.id === activeCampaignId)?.slug;
+  const latestMessageByContact = useMemo<Record<string, CmsTwilioMessage | undefined>>(() => {
+    const next: Record<string, CmsTwilioMessage | undefined> = {};
+    for (const [contactId, messages] of Object.entries(messagesByContact)) {
+      if (messages.length > 0) {
+        next[contactId] = messages[messages.length - 1];
+      }
+    }
+    return next;
+  }, [messagesByContact]);
+  const selectedMessages = selectedContactId ? (messagesByContact[selectedContactId] ?? []) : [];
+  const selectedMessagesLoading = selectedContactId ? Boolean(messagesLoadingByContact[selectedContactId]) : false;
+  const selectedMessagesError = selectedContactId ? (messagesErrorByContact[selectedContactId] ?? null) : null;
+  const selectedDraft = selectedContactId ? (draftByContact[selectedContactId] ?? "") : "";
+  const selectedSending = selectedContactId ? Boolean(sendingByContact[selectedContactId]) : false;
 
   const fetchContacts = useCallback(async () => {
     if (!activeCampaignId) return;
@@ -121,6 +143,14 @@ export default function CmsPage() {
   useEffect(() => {
     fetchContacts();
   }, [fetchContacts]);
+
+  useEffect(() => {
+    setMessagesByContact({});
+    setMessagesLoadingByContact({});
+    setMessagesErrorByContact({});
+    setDraftByContact({});
+    setSendingByContact({});
+  }, [activeCampaignId]);
 
   useEffect(() => {
     if (!contacts.length) {
@@ -347,6 +377,111 @@ export default function CmsPage() {
       setSseConnected(false);
     };
   }, [activeCampaignId]);
+
+  const loadMessages = useCallback(
+    async (contactId: string, opts?: { silent?: boolean }) => {
+      if (!activeCampaignId) return;
+      const silent = opts?.silent ?? false;
+
+      if (!silent) {
+        setMessagesLoadingByContact((prev) => ({ ...prev, [contactId]: true }));
+      }
+
+      const res = await getContactWhatsAppMessages(activeCampaignId, contactId);
+      if (res.ok) {
+        setMessagesByContact((prev) => ({ ...prev, [contactId]: res.messages }));
+        setMessagesErrorByContact((prev) => ({ ...prev, [contactId]: null }));
+      } else {
+        setMessagesErrorByContact((prev) => ({
+          ...prev,
+          [contactId]: res.error ?? "No se pudieron cargar los mensajes",
+        }));
+      }
+
+      if (!silent) {
+        setMessagesLoadingByContact((prev) => ({ ...prev, [contactId]: false }));
+      }
+    },
+    [activeCampaignId],
+  );
+
+  useEffect(() => {
+    if (!selectedContactId) return;
+    loadMessages(selectedContactId);
+  }, [selectedContactId, loadMessages]);
+
+  useEffect(() => {
+    if (!selectedContactId) return;
+    const interval = setInterval(() => {
+      loadMessages(selectedContactId, { silent: true });
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [selectedContactId, loadMessages]);
+
+  const handleDraftChange = useCallback(
+    (value: string) => {
+      if (!selectedContactId) return;
+      setDraftByContact((prev) => ({ ...prev, [selectedContactId]: value }));
+    },
+    [selectedContactId],
+  );
+
+  const handleRefreshMessages = useCallback(() => {
+    if (!selectedContactId) return;
+    loadMessages(selectedContactId);
+  }, [selectedContactId, loadMessages]);
+
+  const handleSendMessage = useCallback(async () => {
+    if (!activeCampaignId || !selectedContactId) return;
+
+    const messageBody = selectedDraft.trim();
+    if (!messageBody) return;
+
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMessage: CmsTwilioMessage = {
+      id: tempId,
+      contact_id: selectedContactId,
+      campaign_id: activeCampaignId,
+      direction: "outbound",
+      body: messageBody,
+      twilio_sid: null,
+      status: "queued",
+      sent_by: user?.id ?? null,
+      created_at: new Date().toISOString(),
+    };
+
+    setSendingByContact((prev) => ({ ...prev, [selectedContactId]: true }));
+    setMessagesErrorByContact((prev) => ({ ...prev, [selectedContactId]: null }));
+    setDraftByContact((prev) => ({ ...prev, [selectedContactId]: "" }));
+    setMessagesByContact((prev) => ({
+      ...prev,
+      [selectedContactId]: [...(prev[selectedContactId] ?? []), optimisticMessage],
+    }));
+
+    const res = await sendContactWhatsAppMessage(activeCampaignId, selectedContactId, messageBody);
+    if (!res.ok) {
+      setMessagesByContact((prev) => ({
+        ...prev,
+        [selectedContactId]: (prev[selectedContactId] ?? []).filter((msg) => msg.id !== tempId),
+      }));
+      setDraftByContact((prev) => ({ ...prev, [selectedContactId]: messageBody }));
+      setMessagesErrorByContact((prev) => ({
+        ...prev,
+        [selectedContactId]: res.error ?? "No se pudo enviar el mensaje",
+      }));
+      setSendingByContact((prev) => ({ ...prev, [selectedContactId]: false }));
+      return;
+    }
+
+    await loadMessages(selectedContactId, { silent: true });
+    setSendingByContact((prev) => ({ ...prev, [selectedContactId]: false }));
+  }, [
+    activeCampaignId,
+    loadMessages,
+    selectedContactId,
+    selectedDraft,
+    user?.id,
+  ]);
 
   const handleSaveNotes = useCallback(
     async (
@@ -615,6 +750,7 @@ export default function CmsPage() {
                     key={contact.id}
                     contact={contact}
                     selected={selectedContactId === contact.id}
+                    lastMessage={latestMessageByContact[contact.id]}
                     onSelect={setSelectedContactId}
                     onOpenProfile={setNotesContact}
                   />
@@ -664,7 +800,15 @@ export default function CmsPage() {
             <ChatConversationPane
               contact={selectedContact}
               sseConnected={sseConnected}
+              messages={selectedMessages}
+              loadingMessages={selectedMessagesLoading}
+              messagesError={selectedMessagesError}
+              draft={selectedDraft}
+              sending={selectedSending}
               onOpenProfile={setNotesContact}
+              onDraftChange={handleDraftChange}
+              onSend={handleSendMessage}
+              onRefreshMessages={handleRefreshMessages}
             />
           </section>
         </div>

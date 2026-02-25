@@ -1,20 +1,39 @@
 "use client";
 
-import type { CmsContact } from "@/lib/services/cms";
+import { useEffect, useMemo, useRef } from "react";
+import type { CmsContact, CmsTwilioMessage } from "@/lib/services/cms";
 
 const FONT = "var(--font-montserrat), system-ui, sans-serif";
 
 type Props = {
   contact: CmsContact | null;
   sseConnected: boolean;
+  messages: CmsTwilioMessage[];
+  loadingMessages: boolean;
+  messagesError: string | null;
+  draft: string;
+  sending: boolean;
   onOpenProfile: (contact: CmsContact) => void;
+  onDraftChange: (value: string) => void;
+  onSend: () => void;
+  onRefreshMessages: () => void;
 };
 
-const STATUS_LABELS: Record<CmsContact["cms_status"], string> = {
+const CONTACT_STATUS_LABELS: Record<CmsContact["cms_status"], string> = {
   nuevo: "Nuevo",
   hablado: "Hablado",
   respondieron: "Contesto",
   archivado: "Archivado",
+};
+
+const MESSAGE_STATUS_LABELS: Record<string, string> = {
+  queued: "En cola",
+  sent: "Enviado",
+  delivered: "Entregado",
+  read: "Leido",
+  failed: "Error",
+  undelivered: "No entregado",
+  received: "Recibido",
 };
 
 function getInitials(name: string): string {
@@ -37,23 +56,104 @@ function buildWhatsAppUrl(phone: string, nombre: string): string {
   return `https://wa.me/${normalized}?text=${text}`;
 }
 
-function formatDateTime(dateStr: string | null): string {
-  if (!dateStr) return "";
-  try {
-    return new Date(dateStr).toLocaleString("es-PE", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  } catch {
-    return "";
-  }
+function parseDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
 }
 
-export function ChatConversationPane({ contact, sseConnected, onOpenProfile }: Props) {
+function formatDateTime(dateStr: string | null): string {
+  const date = parseDate(dateStr);
+  if (!date) return "";
+  return date.toLocaleString("es-PE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function formatMessageTime(dateStr: string): string {
+  const date = parseDate(dateStr);
+  if (!date) return "--:--";
+  return date.toLocaleTimeString("es-PE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function formatDayLabel(date: Date): string {
+  return date.toLocaleDateString("es-PE", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+  });
+}
+
+function sameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+type TimelineRow =
+  | { type: "day"; key: string; label: string }
+  | { type: "message"; key: string; message: CmsTwilioMessage };
+
+export function ChatConversationPane({
+  contact,
+  sseConnected,
+  messages,
+  loadingMessages,
+  messagesError,
+  draft,
+  sending,
+  onOpenProfile,
+  onDraftChange,
+  onSend,
+  onRefreshMessages,
+}: Props) {
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const timeline = useMemo<TimelineRow[]>(() => {
+    const rows: TimelineRow[] = [];
+    let lastDay: Date | null = null;
+
+    for (const message of messages) {
+      const createdAt = parseDate(message.created_at);
+      if (createdAt) {
+        if (!lastDay || !sameDay(lastDay, createdAt)) {
+          rows.push({
+            type: "day",
+            key: `day-${createdAt.toISOString()}`,
+            label: formatDayLabel(createdAt),
+          });
+          lastDay = createdAt;
+        }
+      }
+
+      rows.push({
+        type: "message",
+        key: `msg-${message.id}`,
+        message,
+      });
+    }
+
+    return rows;
+  }, [messages]);
+
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+  }, [timeline.length, contact?.id]);
+
   if (!contact) {
     return (
       <div
@@ -73,18 +173,11 @@ export function ChatConversationPane({ contact, sseConnected, onOpenProfile }: P
   }
 
   const name = contact.nombre?.trim() || "Sin nombre";
-  const statusLabel = STATUS_LABELS[contact.cms_status] ?? STATUS_LABELS.nuevo;
+  const statusLabel = CONTACT_STATUS_LABELS[contact.cms_status] ?? CONTACT_STATUS_LABELS.nuevo;
   const activityDate = formatDateTime(
     contact.cms_respondieron_at ?? contact.cms_hablado_at ?? contact.created_at,
   );
-  const notes = contact.cms_operator_notes;
-
-  const contextLines = [
-    contact.zona ? `Zona: ${contact.zona}` : "",
-    contact.distrito ? `Distrito: ${contact.distrito}` : "",
-    contact.candidato_preferido ? `Candidato preferido: ${contact.candidato_preferido}` : "",
-    contact.encuestador ? `Encuestador: ${contact.encuestador}` : "",
-  ].filter(Boolean);
+  const canSend = Boolean(draft.trim()) && !sending;
 
   return (
     <div
@@ -171,7 +264,7 @@ export function ChatConversationPane({ contact, sseConnected, onOpenProfile }: P
                 }}
               />
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {sseConnected ? "Esperando mensajes..." : "Reconectando tiempo real..."}
+                {sseConnected ? "Tiempo real conectado" : "Reconectando tiempo real..."}
               </span>
             </div>
           </div>
@@ -208,36 +301,22 @@ export function ChatConversationPane({ contact, sseConnected, onOpenProfile }: P
 
           <button
             type="button"
-            disabled
             style={iconButtonStyle}
-            aria-label="Buscar en la conversacion"
-            title="Buscar"
+            aria-label="Recargar mensajes"
+            title="Recargar mensajes"
+            onClick={onRefreshMessages}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <title>Buscar</title>
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-          </button>
-
-          <button
-            type="button"
-            disabled
-            style={iconButtonStyle}
-            aria-label="Opciones"
-            title="Opciones"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <title>Opciones</title>
-              <circle cx="12" cy="5" r="2" />
-              <circle cx="12" cy="12" r="2" />
-              <circle cx="12" cy="19" r="2" />
+              <title>Recargar</title>
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
             </svg>
           </button>
         </div>
       </div>
 
       <div
+        ref={messagesContainerRef}
         style={{
           flex: 1,
           overflowY: "auto",
@@ -258,58 +337,139 @@ export function ChatConversationPane({ contact, sseConnected, onOpenProfile }: P
             color: "#f8fafc",
             borderRadius: 8,
             padding: "8px 12px",
-            fontSize: 13,
+            fontSize: 12,
             boxShadow: "0 2px 8px rgba(15, 23, 42, 0.2)",
           }}
         >
-          Conectando al API de mensajeria.
+          Estado: {statusLabel}{activityDate ? ` · ${activityDate}` : ""}
         </div>
 
-        <div
-          style={{
-            alignSelf: "flex-start",
-            maxWidth: "min(540px, 85%)",
-            background: "#ffffff",
-            border: "1px solid #d6dde6",
-            borderRadius: 10,
-            padding: "10px 12px",
-            boxShadow: "0 1px 3px rgba(15, 23, 42, 0.08)",
-          }}
-        >
-          <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>
-            Resumen del contacto
-          </div>
-          <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.5 }}>
-            Estado actual: <strong>{statusLabel}</strong>
-            {activityDate ? ` · ${activityDate}` : ""}
-          </div>
-          {contextLines.length > 0 && (
-            <div style={{ marginTop: 6, fontSize: 12, color: "#475569", lineHeight: 1.45 }}>
-              {contextLines.join(" · ")}
-            </div>
-          )}
-        </div>
-
-        {notes?.comentarios?.trim() && (
+        {loadingMessages && messages.length === 0 && (
           <div
             style={{
-              alignSelf: "flex-end",
-              maxWidth: "min(520px, 85%)",
-              background: "#dcfce7",
-              border: "1px solid #86efac",
-              borderRadius: 10,
-              padding: "10px 12px",
-              boxShadow: "0 1px 3px rgba(15, 23, 42, 0.08)",
+              alignSelf: "center",
+              fontSize: 13,
+              color: "#475569",
+              background: "rgba(255,255,255,0.85)",
+              border: "1px solid #d6dde6",
+              borderRadius: 8,
+              padding: "8px 12px",
             }}
           >
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#166534", marginBottom: 4 }}>
-              Nota del operador
-            </div>
-            <div style={{ fontSize: 13, color: "#14532d", whiteSpace: "pre-wrap" }}>
-              {notes.comentarios}
-            </div>
+            Cargando mensajes...
           </div>
         )}
+
+        {messagesError && (
+          <div
+            style={{
+              alignSelf: "center",
+              maxWidth: 520,
+              width: "100%",
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              borderRadius: 10,
+              padding: "10px 12px",
+              color: "#991b1b",
+              fontSize: 13,
+            }}
+          >
+            <div>{messagesError}</div>
+            <button
+              type="button"
+              onClick={onRefreshMessages}
+              style={{
+                marginTop: 8,
+                border: "1px solid #fecaca",
+                background: "#ffffff",
+                borderRadius: 8,
+                padding: "6px 10px",
+                fontSize: 12,
+                cursor: "pointer",
+                color: "#7f1d1d",
+              }}
+            >
+              Reintentar
+            </button>
+          </div>
+        )}
+
+        {!loadingMessages && messages.length === 0 && !messagesError && (
+          <div
+            style={{
+              alignSelf: "center",
+              maxWidth: 520,
+              width: "100%",
+              background: "rgba(255,255,255,0.9)",
+              border: "1px solid #d6dde6",
+              borderRadius: 10,
+              padding: "10px 12px",
+              color: "#475569",
+              fontSize: 13,
+            }}
+          >
+            No hay mensajes para este contacto. Escribe para iniciar la conversacion.
+          </div>
+        )}
+
+        {timeline.map((row) => {
+          if (row.type === "day") {
+            return (
+              <div
+                key={row.key}
+                style={{
+                  alignSelf: "center",
+                  background: "rgba(15, 23, 42, 0.12)",
+                  color: "#1e293b",
+                  borderRadius: 999,
+                  padding: "4px 10px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                {row.label}
+              </div>
+            );
+          }
+
+          const { message } = row;
+          const outbound = message.direction === "outbound";
+          const statusText = MESSAGE_STATUS_LABELS[message.status] ?? message.status;
+
+          return (
+            <div
+              key={row.key}
+              style={{
+                alignSelf: outbound ? "flex-end" : "flex-start",
+                maxWidth: "min(560px, 86%)",
+                background: outbound ? "#dcfce7" : "#ffffff",
+                border: outbound ? "1px solid #86efac" : "1px solid #d6dde6",
+                borderRadius: 10,
+                padding: "10px 12px",
+                boxShadow: "0 1px 3px rgba(15, 23, 42, 0.08)",
+              }}
+            >
+              <div style={{ fontSize: 14, color: "#0f172a", whiteSpace: "pre-wrap" }}>
+                {message.body}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 6,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: 8,
+                  fontSize: 11,
+                  color: "#64748b",
+                }}
+              >
+                <span>{formatMessageTime(message.created_at)}</span>
+                {outbound && <span>{statusText}</span>}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <div
@@ -341,24 +501,39 @@ export function ChatConversationPane({ contact, sseConnected, onOpenProfile }: P
 
         <input
           type="text"
-          readOnly
-          disabled
-          value=""
+          value={draft}
           placeholder="Escribe un mensaje"
+          onChange={(event) => onDraftChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              if (canSend) onSend();
+            }
+          }}
           style={{
             flex: 1,
             minWidth: 0,
             border: "1px solid #d6dde6",
             borderRadius: 12,
             padding: "10px 12px",
-            fontSize: 16,
+            fontSize: 14,
             fontFamily: FONT,
             background: "#ffffff",
-            color: "#64748b",
+            color: "#0f172a",
           }}
         />
 
-        <button type="button" disabled style={iconButtonStyle} aria-label="Enviar">
+        <button
+          type="button"
+          disabled={!canSend}
+          onClick={onSend}
+          style={{
+            ...iconButtonStyle,
+            color: canSend ? "#0f172a" : "#94a3b8",
+            cursor: canSend ? "pointer" : "not-allowed",
+          }}
+          aria-label="Enviar"
+        >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
             <title>Enviar</title>
             <line x1="22" y1="2" x2="11" y2="13" />
@@ -380,5 +555,4 @@ const iconButtonStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  cursor: "default",
 };

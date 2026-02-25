@@ -134,6 +134,45 @@ export type CmsSseNotesUpdated = {
   operator_email: string;
 };
 
+// ── WhatsApp message types ──────────────────────────────────────────
+
+export type CmsTwilioDirection = "outbound" | "inbound";
+
+export type CmsTwilioStatus =
+  | "queued"
+  | "sent"
+  | "delivered"
+  | "read"
+  | "failed"
+  | "undelivered"
+  | "received";
+
+export type CmsTwilioMessage = {
+  id: string;
+  contact_id: string;
+  campaign_id: string;
+  direction: CmsTwilioDirection;
+  body: string;
+  twilio_sid: string | null;
+  status: CmsTwilioStatus;
+  sent_by: string | null;
+  created_at: string;
+};
+
+type CmsTwilioMessagesResponse = {
+  ok: boolean;
+  request_id: string;
+  messages: CmsTwilioMessage[];
+};
+
+type CmsTwilioSendResponse = {
+  ok: boolean;
+  request_id: string;
+  message_id: string;
+  twilio_sid: string | null;
+  status: CmsTwilioStatus;
+};
+
 // ── API calls ───────────────────────────────────────────────────────
 
 export async function listCmsContacts(
@@ -243,6 +282,42 @@ export async function getCmsMetrics(campaignId?: string): Promise<{
   );
   if (!res.ok) return { ok: false, error: res.error?.message };
   return { ok: true, metrics: res.data?.metrics };
+}
+
+// ── Twilio WhatsApp messages ────────────────────────────────────────
+
+export async function getContactWhatsAppMessages(
+  campaignId: string,
+  contactId: string,
+): Promise<{ ok: boolean; messages: CmsTwilioMessage[]; error?: string }> {
+  const res = await api.get<CmsTwilioMessagesResponse>(
+    `/api/twilio/whatsapp/messages/${contactId}`,
+    { campaignId },
+  );
+  if (!res.ok) return { ok: false, messages: [], error: res.error?.message };
+  return { ok: true, messages: res.data?.messages ?? [] };
+}
+
+export async function sendContactWhatsAppMessage(
+  campaignId: string,
+  contactId: string,
+  body: string,
+): Promise<{ ok: boolean; messageId?: string; status?: CmsTwilioStatus; error?: string }> {
+  const res = await api.post<CmsTwilioSendResponse>(
+    "/api/twilio/whatsapp/send",
+    {
+      contact_id: contactId,
+      campaign_id: campaignId,
+      body,
+    },
+    { campaignId },
+  );
+  if (!res.ok) return { ok: false, error: res.error?.message };
+  return {
+    ok: true,
+    messageId: res.data?.message_id,
+    status: res.data?.status,
+  };
 }
 
 // ── Brigadista Metrics ──────────────────────────────────────────────
