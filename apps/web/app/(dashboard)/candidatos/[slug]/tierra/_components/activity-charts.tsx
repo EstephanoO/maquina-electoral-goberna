@@ -84,6 +84,16 @@ function dayMapToSeries(dayMap: Map<string, { forms: number; agents: Set<string>
     });
 }
 
+/** Round up to a nice Y-axis ceiling (5, 10, 20, 50, 100…) with ~20% headroom */
+function niceYMax(max: number): [number, number] {
+  if (max === 0) return [0, 10];
+  const padded = Math.ceil(max * 1.2);
+  const mag = Math.pow(10, Math.floor(Math.log10(padded)));
+  const steps = [1, 2, 5, 10].map((s) => s * mag);
+  const nice = steps.find((s) => s >= padded) ?? padded;
+  return [0, nice];
+}
+
 /* ========== Tooltip styles (inline required for Recharts) ========== */
 
 const tooltipStyle: React.CSSProperties = {
@@ -388,41 +398,25 @@ export const ActivityCharts = memo(function ActivityCharts({
     return Math.floor(len / 8);
   }, [timeSeriesData]);
 
-  /* ── Adaptive YAxis domain for compare chart ── */
+  /* ── Adaptive YAxis domain for compare chart — only agentA & agentB, ignoring meta/ideal ── */
   const compareYDomain = useMemo((): [number, number] | undefined => {
     if (!compareData) return undefined;
     let max = 0;
     for (const pt of compareData.series) {
       if (pt.agentA > max) max = pt.agentA;
       if (pt.agentB > max) max = pt.agentB;
-      if (pt.ideal > max) max = pt.ideal;
     }
-    if (compareData.goal > max) max = compareData.goal;
-    if (max === 0) return [0, 10]; // empty data — show a small range
-    // Round up to a nice ceiling with ~20% headroom
-    const padded = Math.ceil(max * 1.2);
-    // Pick a nice step: 1, 2, 5, 10, 20, 50, 100, 200, 500...
-    const mag = Math.pow(10, Math.floor(Math.log10(padded)));
-    const steps = [1, 2, 5, 10].map((s) => s * mag);
-    const nice = steps.find((s) => s >= padded) ?? padded;
-    return [0, nice];
+    return niceYMax(max);
   }, [compareData]);
 
-  /* ── Adaptive YAxis domain for drill-down chart ── */
+  /* ── Adaptive YAxis domain for drill-down chart — only actual, ignoring meta/ideal ── */
   const drillYDomain = useMemo((): [number, number] | undefined => {
     if (!agentDrillData) return undefined;
     let max = 0;
     for (const pt of agentDrillData.series) {
       if (pt.actual > max) max = pt.actual;
-      if (pt.ideal > max) max = pt.ideal;
     }
-    if (agentDrillData.goal > max) max = agentDrillData.goal;
-    if (max === 0) return [0, 10];
-    const padded = Math.ceil(max * 1.2);
-    const mag = Math.pow(10, Math.floor(Math.log10(padded)));
-    const steps = [1, 2, 5, 10].map((s) => s * mag);
-    const nice = steps.find((s) => s >= padded) ?? padded;
-    return [0, nice];
+    return niceYMax(max);
   }, [agentDrillData]);
 
   return (
@@ -447,6 +441,9 @@ export const ActivityCharts = memo(function ActivityCharts({
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] font-bold tabular-nums" style={{ color: primaryColor }}>{compareNames.a.split(" ")[0]}: {compareData.totalA}</span>
                   <span className="text-[10px] font-bold tabular-nums" style={{ color: compareColorB }}>{compareNames.b.split(" ")[0]}: {compareData.totalB}</span>
+                  {compareData.goal > 0 && (
+                    <span className="text-[10px] text-slate-400 tabular-nums">meta: {compareData.goal.toLocaleString()}</span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-4 mb-1">
@@ -458,12 +455,6 @@ export const ActivityCharts = memo(function ActivityCharts({
                   <div className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: compareColorB }} />
                   <span className="text-[9px] text-slate-400 truncate max-w-[80px]">{compareNames.b.split(" ")[0]}</span>
                 </div>
-                {compareData.goal > 0 && (
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-0.5 rounded-full border-b border-dashed" style={{ borderColor: "#94a3b8" }} />
-                    <span className="text-[9px] text-slate-400">Meta</span>
-                  </div>
-                )}
               </div>
               <ResponsiveContainer width="100%" height={170}>
                 <LineChart data={compareData.series} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
@@ -471,12 +462,6 @@ export const ActivityCharts = memo(function ActivityCharts({
                   <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval={xInterval} />
                   <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} domain={compareYDomain} />
                   <Tooltip contentStyle={tooltipStyle} formatter={(value, name) => [String(value ?? 0), name === "agentA" ? compareNames.a : name === "agentB" ? compareNames.b : "Meta"]} />
-                  {compareData.goal > 0 && (
-                    <>
-                      <Line type="monotone" dataKey="ideal" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="6 3" dot={false} name="ideal" animationDuration={600} />
-                      <ReferenceLine y={compareData.goal} stroke="#ef4444" strokeDasharray="3 3" strokeWidth={1} label={{ value: `Meta: ${compareData.goal}`, position: "right", fill: "#ef4444", fontSize: 9, fontWeight: 700 }} />
-                    </>
-                  )}
                   <Line type="monotone" dataKey="agentA" stroke={primaryColor} strokeWidth={2.5} dot={{ r: 2.5, fill: primaryColor }} name="agentA" animationDuration={800} />
                   <Line type="monotone" dataKey="agentB" stroke={compareColorB} strokeWidth={2.5} dot={{ r: 2.5, fill: compareColorB }} name="agentB" animationDuration={800} />
                 </LineChart>
@@ -513,27 +498,15 @@ export const ActivityCharts = memo(function ActivityCharts({
               <div className="flex items-center gap-4 mb-1">
                 <div className="flex items-center gap-1.5">
                   <div className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: primaryColor }} />
-                  <span className="text-[9px] text-slate-400">Real (acumulado)</span>
+                  <span className="text-[9px] text-slate-400">Acumulado</span>
                 </div>
-                {agentDrillData.goal > 0 && (
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-0.5 rounded-full border-b border-dashed" style={{ borderColor: "#94a3b8" }} />
-                    <span className="text-[9px] text-slate-400">Proyeccion ideal</span>
-                  </div>
-                )}
               </div>
               <ResponsiveContainer width="100%" height={170}>
                 <LineChart data={agentDrillData.series} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval={xInterval} />
                   <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} domain={drillYDomain} />
-                  <Tooltip contentStyle={tooltipStyle} formatter={(value, name) => [String(value ?? 0), name === "actual" ? "Real" : "Ideal"]} />
-                  {agentDrillData.goal > 0 && (
-                    <>
-                      <Line type="monotone" dataKey="ideal" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="6 3" dot={false} name="ideal" animationDuration={600} />
-                      <ReferenceLine y={agentDrillData.goal} stroke="#ef4444" strokeDasharray="3 3" strokeWidth={1} label={{ value: `Meta: ${agentDrillData.goal}`, position: "right", fill: "#ef4444", fontSize: 9, fontWeight: 700 }} />
-                    </>
-                  )}
+                  <Tooltip contentStyle={tooltipStyle} formatter={(value) => [String(value ?? 0), "Registros"]} />
                   <Line type="monotone" dataKey="actual" stroke={primaryColor} strokeWidth={2.5} dot={{ r: 2.5, fill: primaryColor }} name="actual" animationDuration={800} />
                 </LineChart>
               </ResponsiveContainer>
