@@ -35,6 +35,18 @@ const FONT = "var(--font-montserrat), system-ui, sans-serif";
 const NOTES_PANEL_WIDTH = 400;
 const NOTES_PANEL_GAP = 32;
 const PAGE_LIMIT = 25;
+const TAG_COLOR_PALETTE = [
+  "#0ea5e9",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#14b8a6",
+  "#f97316",
+  "#84cc16",
+  "#ec4899",
+  "#6366f1",
+] as const;
 
 type Tab = { key: CmsTabFilter; label: string; statKey: keyof CmsStats | null };
 
@@ -78,6 +90,21 @@ function mergeContactForActiveTab(
 
 function normalizeTagName(raw: string): string {
   return raw.trim().replace(/\s+/g, " ").slice(0, 32);
+}
+
+function hashTag(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function getTagColor(tagName: string): string {
+  const normalized = normalizeTagName(tagName).toLowerCase();
+  if (!normalized) return TAG_COLOR_PALETTE[0];
+  return TAG_COLOR_PALETTE[hashTag(normalized) % TAG_COLOR_PALETTE.length];
 }
 
 export default function CmsPage() {
@@ -1013,7 +1040,17 @@ export default function CmsPage() {
                         flexShrink: 0,
                       }}
                     >
-                      {selectedTagFilter}
+                      <span
+                        aria-hidden
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: getTagColor(selectedTagFilter),
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span>{selectedTagFilter}</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -1116,13 +1153,25 @@ export default function CmsPage() {
                             fontWeight: 500,
                           }}
                           onMouseEnter={(e) => {
-                            (e.target as HTMLElement).style.background = "#f1f5f9";
+                            e.currentTarget.style.background = "#f1f5f9";
                           }}
                           onMouseLeave={(e) => {
-                            (e.target as HTMLElement).style.background = "transparent";
+                            e.currentTarget.style.background = "transparent";
                           }}
                         >
-                          {tag}
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                            <span
+                              aria-hidden
+                              style={{
+                                width: 8,
+                                height: 8,
+                                borderRadius: "50%",
+                                background: getTagColor(tag),
+                                flexShrink: 0,
+                              }}
+                            />
+                            <span>{tag}</span>
+                          </span>
                         </button>
                       ))}
                     {!availableTags.some((t) =>
@@ -1152,13 +1201,25 @@ export default function CmsPage() {
                           fontWeight: 600,
                         }}
                         onMouseEnter={(e) => {
-                          (e.target as HTMLElement).style.background = "#eff6ff";
+                          e.currentTarget.style.background = "#eff6ff";
                         }}
                         onMouseLeave={(e) => {
-                          (e.target as HTMLElement).style.background = "transparent";
+                          e.currentTarget.style.background = "transparent";
                         }}
                       >
-                        + Crear &ldquo;{tagSearchSidebar.trim()}&rdquo;
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <span
+                            aria-hidden
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: "50%",
+                              background: getTagColor(tagSearchSidebar),
+                              flexShrink: 0,
+                            }}
+                          />
+                          <span>+ Crear &ldquo;{tagSearchSidebar.trim()}&rdquo;</span>
+                        </span>
                       </button>
                     )}
                     {availableTags.filter((t) =>

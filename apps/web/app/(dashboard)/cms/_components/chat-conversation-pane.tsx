@@ -4,6 +4,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CmsContact, CmsTwilioMessage } from "@/lib/services/cms";
 
 const FONT = "var(--font-montserrat), system-ui, sans-serif";
+const TAG_COLOR_PALETTE = [
+  "#0ea5e9",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#14b8a6",
+  "#f97316",
+  "#84cc16",
+  "#ec4899",
+  "#6366f1",
+] as const;
 
 type Props = {
   contact: CmsContact | null;
@@ -109,6 +121,21 @@ function sameDay(a: Date, b: Date): boolean {
   );
 }
 
+function hashTag(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
+function getTagColor(tagName: string): string {
+  const normalized = tagName.trim().toLowerCase();
+  if (!normalized) return TAG_COLOR_PALETTE[0];
+  return TAG_COLOR_PALETTE[hashTag(normalized) % TAG_COLOR_PALETTE.length];
+}
+
 type TimelineRow =
   | { type: "day"; key: string; label: string }
   | { type: "message"; key: string; message: CmsTwilioMessage };
@@ -134,8 +161,8 @@ export function ChatConversationPane({
   onRemoveTag,
 }: Props) {
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
-  const [tagsMenuOpen, setTagsMenuOpen] = useState(false);
-  const [tagSearchInput, setTagSearchInput] = useState("");
+  const [tagsPanelOpen, setTagsPanelOpen] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
 
   const timeline = useMemo<TimelineRow[]>(() => {
     const rows: TimelineRow[] = [];
@@ -171,8 +198,8 @@ export function ChatConversationPane({
   }, [timeline.length, contact?.id]);
 
   useEffect(() => {
-    setTagsMenuOpen(false);
-    setTagSearchInput("");
+    setTagsPanelOpen(false);
+    setNewTagName("");
   }, [contact?.id]);
 
   if (!contact) {
@@ -199,9 +226,7 @@ export function ChatConversationPane({
     contact.cms_respondieron_at ?? contact.cms_hablado_at ?? contact.created_at,
   );
   const canSend = Boolean(draft.trim()) && !sending;
-  const assignableTags = availableTags.filter(
-    (tag) => !contactTags.some((assigned) => assigned.toLowerCase() === tag.toLowerCase()),
-  );
+  const selectedTagKeys = new Set(contactTags.map((tag) => tag.toLowerCase()));
 
   return (
     <div
@@ -211,16 +236,18 @@ export function ChatConversationPane({
         flexDirection: "column",
         minHeight: "100%",
         fontFamily: FONT,
+        position: "relative",
+        overflow: "hidden",
       }}
     >
       <div
         style={{
-          height: 72,
-          padding: "0 16px",
+          minHeight: 82,
+          padding: "10px 16px",
           borderBottom: "1px solid #d6dde6",
           background: "#f0f2f5",
           display: "flex",
-          alignItems: "center",
+          alignItems: "flex-start",
           justifyContent: "space-between",
           gap: 12,
         }}
@@ -254,7 +281,7 @@ export function ChatConversationPane({
             {getInitials(name)}
           </button>
 
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
             <div
               style={{
                 fontSize: 18,
@@ -274,7 +301,6 @@ export function ChatConversationPane({
                 gap: 6,
                 fontSize: 12,
                 color: "#64748b",
-                marginTop: 1,
               }}
             >
               <span
@@ -291,16 +317,45 @@ export function ChatConversationPane({
                 {sseConnected ? "Tiempo real conectado" : "Reconectando tiempo real..."}
               </span>
             </div>
+
+            {contact.telefono && (
+              <a
+                href={buildWhatsAppUrl(contact.telefono, name)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  textDecoration: "none",
+                  color: "#0f766e",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  width: "fit-content",
+                  maxWidth: "100%",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+                title="Abrir chat en WhatsApp"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <title>Abrir WhatsApp</title>
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347" />
+                </svg>
+                {formatPhone(contact.telefono)}
+              </a>
+            )}
           </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <button
             type="button"
-            onClick={() => setTagsMenuOpen((prev) => !prev)}
+            onClick={() => setTagsPanelOpen((prev) => !prev)}
             style={{
               border: "1px solid #cbd5e1",
-              background: tagsMenuOpen ? "#e2e8f0" : "#ffffff",
+              background: tagsPanelOpen ? "#e2e8f0" : "#ffffff",
               color: "#334155",
               borderRadius: 999,
               padding: "6px 10px",
@@ -311,7 +366,7 @@ export function ChatConversationPane({
             }}
             title="Etiquetas del contacto"
           >
-            Etiquetas
+            Etiquetas ({contactTags.length})
           </button>
 
           <button
@@ -323,255 +378,235 @@ export function ChatConversationPane({
               if (ok) onArchiveContact(contact.id);
             }}
             style={{
+              ...iconButtonStyle,
               border: "1px solid #fecaca",
               background: "#fff1f2",
               color: "#be123c",
-              borderRadius: 999,
-              padding: "6px 10px",
-              fontSize: 11,
-              fontWeight: 700,
-              whiteSpace: "nowrap",
+              borderRadius: 10,
+              width: 34,
+              height: 34,
               cursor: archiving || contact.cms_status === "archivado" ? "not-allowed" : "pointer",
               opacity: archiving || contact.cms_status === "archivado" ? 0.6 : 1,
             }}
             title={contact.cms_status === "archivado" ? "Contacto archivado" : "Archivar contacto"}
+            aria-label={contact.cms_status === "archivado" ? "Contacto archivado" : "Archivar contacto"}
           >
-            {archiving ? "Archivando..." : (contact.cms_status === "archivado" ? "Archivado" : "Archivar")}
-          </button>
-
-          {contact.telefono && (
-            <a
-              href={buildWhatsAppUrl(contact.telefono, name)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                textDecoration: "none",
-                color: "#047857",
-                background: "#d1fae5",
-                border: "1px solid #a7f3d0",
-                borderRadius: 999,
-                padding: "6px 10px",
-                fontSize: 11,
-                fontWeight: 700,
-                whiteSpace: "nowrap",
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                <title>Abrir WhatsApp</title>
-                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347" />
+            {archiving ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <title>Archivando</title>
+                <circle cx="12" cy="12" r="9" strokeDasharray="10 12" />
               </svg>
-              {formatPhone(contact.telefono)}
-            </a>
-          )}
-
-          <button
-            type="button"
-            style={iconButtonStyle}
-            aria-label="Recargar mensajes"
-            title="Recargar mensajes"
-            onClick={onRefreshMessages}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <title>Recargar</title>
-              <polyline points="23 4 23 10 17 10" />
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-            </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <title>Archivar</title>
+                <polyline points="21 8 21 21 3 21 3 8" />
+                <rect x="1" y="3" width="22" height="5" />
+                <line x1="10" y1="12" x2="14" y2="12" />
+              </svg>
+            )}
           </button>
         </div>
       </div>
 
-      {tagsMenuOpen && (
-        <div
-          style={{
-            borderBottom: "1px solid #d6dde6",
-            background: "#f8fafc",
-            padding: "10px 12px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.05em", color: "#64748b", textTransform: "uppercase" }}>
-              Etiquetas del contacto
-            </span>
-            <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>
-              {contactTags.length} asignada{contactTags.length === 1 ? "" : "s"}
-            </span>
-          </div>
+      {tagsPanelOpen && (
+        <>
+          <button
+            type="button"
+            aria-label="Cerrar panel de etiquetas"
+            onClick={() => setTagsPanelOpen(false)}
+            style={{
+              position: "absolute",
+              inset: 0,
+              border: "none",
+              background: "rgba(15, 23, 42, 0.18)",
+              zIndex: 20,
+              padding: 0,
+              margin: 0,
+            }}
+          />
 
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {contactTags.length === 0 ? (
-              <span style={{ fontSize: 12, color: "#64748b" }}>Sin etiquetas</span>
-            ) : (
-              contactTags.map((tag) => (
-                <span
-                  key={tag}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "4px 8px",
-                    borderRadius: 999,
-                    border: "1px solid #cbd5e1",
-                    background: "#ffffff",
-                    fontSize: 12,
-                    color: "#334155",
-                    fontWeight: 600,
-                  }}
-                >
-                  {tag}
-                  <button
-                    type="button"
-                    onClick={() => onRemoveTag(contact.id, tag)}
-                    style={{
-                      border: "none",
-                      background: "transparent",
-                      color: "#64748b",
-                      padding: 0,
-                      cursor: "pointer",
-                      fontSize: 12,
-                      lineHeight: 1,
-                    }}
-                    aria-label={`Quitar etiqueta ${tag}`}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))
-            )}
-          </div>
-
-          <div style={{ position: "relative" }}>
-            <input
-              type="text"
-              placeholder="Buscar o crear etiqueta..."
-              value={tagSearchInput}
-              onChange={(e) => setTagSearchInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  setTagSearchInput("");
-                }
-                if (e.key === "Enter" && tagSearchInput.trim()) {
-                  const query = tagSearchInput.trim().toLowerCase();
-                  const match = assignableTags.find((t) => t.toLowerCase().includes(query));
-                  if (match) {
-                    const ok = onAssignTag(contact.id, match);
-                    if (ok) setTagSearchInput("");
-                  } else {
-                    const created = onCreateTag(tagSearchInput);
-                    if (created) {
-                      onAssignTag(contact.id, created);
-                      setTagSearchInput("");
-                    }
-                  }
-                }
-              }}
+          <aside
+            style={{
+              position: "absolute",
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: "min(340px, 100%)",
+              background: "#ffffff",
+              borderLeft: "1px solid #d6dde6",
+              boxShadow: "-8px 0 24px rgba(15, 23, 42, 0.18)",
+              display: "flex",
+              flexDirection: "column",
+              zIndex: 21,
+            }}
+          >
+            <div
               style={{
-                width: "100%",
-                border: "1px solid #d6dde6",
-                borderRadius: 8,
-                padding: "8px 10px",
-                fontSize: 12,
-                fontFamily: FONT,
-                background: "#ffffff",
-                color: "#0f172a",
-                outline: "none",
+                padding: "12px 14px",
+                borderBottom: "1px solid #e2e8f0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
               }}
-            />
-            {tagSearchInput.trim() && (
-              <div
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a" }}>Etiquetas del contacto</div>
+                <div style={{ marginTop: 2, fontSize: 12, color: "#64748b" }}>
+                  {contactTags.length} seleccionada{contactTags.length === 1 ? "" : "s"}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTagsPanelOpen(false)}
                 style={{
-                  position: "absolute",
-                  top: "100%",
-                  left: 0,
-                  right: 0,
-                  marginTop: 4,
+                  ...iconButtonStyle,
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
                   background: "#ffffff",
-                  border: "1px solid #d6dde6",
-                  borderRadius: 10,
-                  boxShadow: "0 8px 24px rgba(15, 23, 42, 0.12)",
-                  zIndex: 50,
-                  maxHeight: 160,
-                  overflowY: "auto",
+                  color: "#475569",
+                }}
+                aria-label="Cerrar panel de etiquetas"
+                title="Cerrar"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <title>Cerrar</title>
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <div
+              style={{
+                padding: "10px 12px",
+                borderBottom: "1px solid #e2e8f0",
+                display: "flex",
+                gap: 8,
+              }}
+            >
+              <input
+                type="text"
+                value={newTagName}
+                placeholder="Nueva etiqueta"
+                onChange={(event) => setNewTagName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  const created = onCreateTag(newTagName);
+                  if (!created) return;
+                  onAssignTag(contact.id, created);
+                  setNewTagName("");
+                }}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 8,
+                  padding: "8px 10px",
+                  fontSize: 12,
+                  fontFamily: FONT,
+                  color: "#0f172a",
+                  background: "#ffffff",
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const created = onCreateTag(newTagName);
+                  if (!created) return;
+                  onAssignTag(contact.id, created);
+                  setNewTagName("");
+                }}
+                style={{
+                  border: "1px solid #cbd5e1",
+                  borderRadius: 8,
+                  padding: "8px 10px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  background: "#ffffff",
+                  color: "#334155",
+                  cursor: "pointer",
                 }}
               >
-                {assignableTags
-                  .filter((t) => t.toLowerCase().includes(tagSearchInput.trim().toLowerCase()))
-                  .map((tag) => (
-                    <button
+                Crear
+              </button>
+            </div>
+
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+                padding: "8px 8px 12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
+              {availableTags.length === 0 ? (
+                <div style={{ padding: 8, fontSize: 12, color: "#64748b" }}>
+                  Todavia no hay etiquetas disponibles.
+                </div>
+              ) : (
+                availableTags.map((tag) => {
+                  const checked = selectedTagKeys.has(tag.toLowerCase());
+                  return (
+                    <label
                       key={tag}
-                      type="button"
-                      onClick={() => {
-                        const ok = onAssignTag(contact.id, tag);
-                        if (ok) setTagSearchInput("");
-                      }}
                       style={{
-                        display: "block",
-                        width: "100%",
-                        textAlign: "left",
-                        padding: "8px 12px",
-                        fontSize: 12,
-                        fontFamily: FONT,
-                        border: "none",
-                        background: "transparent",
-                        color: "#0f172a",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        borderRadius: 8,
+                        padding: "8px 10px",
+                        border: "1px solid #e2e8f0",
+                        background: checked ? "#f8fafc" : "#ffffff",
                         cursor: "pointer",
-                        fontWeight: 500,
-                      }}
-                      onMouseEnter={(e) => {
-                        (e.target as HTMLElement).style.background = "#f1f5f9";
-                      }}
-                      onMouseLeave={(e) => {
-                        (e.target as HTMLElement).style.background = "transparent";
                       }}
                     >
-                      {tag}
-                    </button>
-                  ))}
-                {!availableTags.some((t) =>
-                  t.toLowerCase() === tagSearchInput.trim().toLowerCase(),
-                ) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const created = onCreateTag(tagSearchInput);
-                      if (created) {
-                        onAssignTag(contact.id, created);
-                        setTagSearchInput("");
-                      }
-                    }}
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      textAlign: "left",
-                      padding: "8px 12px",
-                      fontSize: 12,
-                      fontFamily: FONT,
-                      border: "none",
-                      borderTop: "1px solid #eef2f7",
-                      background: "transparent",
-                      color: "#3b82f6",
-                      cursor: "pointer",
-                      fontWeight: 600,
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.target as HTMLElement).style.background = "#eff6ff";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.target as HTMLElement).style.background = "transparent";
-                    }}
-                  >
-                    + Crear &ldquo;{tagSearchInput.trim()}&rdquo;
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) => {
+                          if (event.target.checked) {
+                            onAssignTag(contact.id, tag);
+                            return;
+                          }
+                          onRemoveTag(contact.id, tag);
+                        }}
+                      />
+                      <span
+                        aria-hidden
+                        style={{
+                          width: 9,
+                          height: 9,
+                          borderRadius: "50%",
+                          flexShrink: 0,
+                          background: getTagColor(tag),
+                        }}
+                      />
+                      <span
+                        style={{
+                          fontSize: 13,
+                          color: "#0f172a",
+                          fontWeight: checked ? 700 : 500,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {tag}
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          </aside>
+        </>
       )}
 
       <div
