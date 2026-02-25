@@ -118,10 +118,16 @@ export async function listContacts(
 
   dataParams.push(limit, offset);
 
-  // Order by relevant timestamp depending on status
-  const orderClause = status === "hablado" || status === "respondieron"
-    ? "COALESCE(fs.cms_hablado_at, fs.created_at) DESC"
-    : "fs.created_at DESC";
+  // Keep pagination stable by always sorting from most recent interaction.
+  const orderClause = `
+    GREATEST(
+      COALESCE(fs.cms_respondieron_at, to_timestamp(0)),
+      COALESCE(fs.cms_hablado_at, to_timestamp(0)),
+      COALESCE(fs.cms_claimed_at, to_timestamp(0)),
+      fs.created_at
+    ) DESC,
+    fs.created_at DESC
+  `;
 
   const [dataResult, countResult] = await Promise.all([
     pool.query<CmsContactRow>(
