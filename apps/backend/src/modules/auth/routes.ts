@@ -245,13 +245,36 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
           region,
         );
 
-        // Create access request automatically with region
-        await pool.query(
-          `INSERT INTO access_requests (user_id, campaign_id, region, perm_tierra, perm_digital)
-           VALUES ($1, $2, $3, true, true)
-           ON CONFLICT (user_id, campaign_id) WHERE status = 'pending' DO NOTHING`,
-          [user.id, campaign_id, region],
-        );
+        // Auto-accept: create approved access request + add to campaign directly
+        // (temporary: skip pending state so mobile users get immediate access)
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+
+          // Create access request as already approved
+          await client.query(
+            `INSERT INTO access_requests (user_id, campaign_id, region, perm_tierra, perm_digital, status, resolved_at)
+             VALUES ($1, $2, $3, true, true, 'approved', now())
+             ON CONFLICT (user_id, campaign_id) WHERE status = 'pending' DO NOTHING`,
+            [user.id, campaign_id, region],
+          );
+
+          // Add user directly to campaign as agente_campo
+          await client.query(
+            `INSERT INTO user_campaigns (user_id, campaign_id, role, status, perm_tierra, perm_digital, region)
+             VALUES ($1, $2, 'agente_campo', 'active', true, true, $3)
+             ON CONFLICT (user_id, campaign_id)
+             DO UPDATE SET role = 'agente_campo', status = 'active', perm_tierra = true, perm_digital = true, region = $3, assigned_at = now()`,
+            [user.id, campaign_id, region],
+          );
+
+          await client.query("COMMIT");
+        } catch (txErr) {
+          await client.query("ROLLBACK");
+          throw txErr;
+        } finally {
+          client.release();
+        }
 
         app.log.info({
           user_id: user.id,
@@ -259,7 +282,7 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
           region,
           phone,
           request_id: requestId,
-        }, "user registered with access request (phone-based)");
+        }, "user registered and auto-accepted as agente_campo (phone-based)");
 
         return reply.code(201).send({
           ok: true,
