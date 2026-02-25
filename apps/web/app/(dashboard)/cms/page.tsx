@@ -26,6 +26,7 @@ import {
 
 const FONT = "var(--font-montserrat), system-ui, sans-serif";
 const NOTES_PANEL_WIDTH = 400;
+const NOTES_PANEL_GAP = 14;
 const PAGE_LIMIT = 25;
 
 type Tab = { key: CmsTabFilter; label: string; statKey: keyof CmsStats | null };
@@ -829,7 +830,7 @@ export default function CmsPage() {
           style={{
             position: "fixed",
             bottom: 24,
-            right: panelOpen ? NOTES_PANEL_WIDTH + 24 : 24,
+            right: panelOpen ? NOTES_PANEL_WIDTH + NOTES_PANEL_GAP + 24 : 24,
             padding: "12px 16px",
             borderRadius: 10,
             background: "#fef2f2",
@@ -905,7 +906,7 @@ export default function CmsPage() {
 
         @media (min-width: 1025px) {
           .cms-chat-root.panel-open {
-            margin-right: 400px;
+            margin-right: ${NOTES_PANEL_WIDTH + NOTES_PANEL_GAP}px;
           }
         }
 
