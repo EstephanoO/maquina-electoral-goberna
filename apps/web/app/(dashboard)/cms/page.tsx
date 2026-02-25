@@ -1,14 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import {
   listCmsContacts,
-  markHablado,
-  markRespondieron,
-  archiveContact,
-  revertContact,
   updateContactNotes,
   getCmsStats,
   type CmsContact,
@@ -17,31 +13,31 @@ import {
   type CmsSseContactUpdated,
   type CmsSseNotesUpdated,
 } from "@/lib/services/cms";
-import { ContactTableRow, ContactNotesPanel } from "./_components";
-import { TwilioConfigModal } from "./_components/twilio-config-modal";
-
-/* ═══════════════════════════════════════════════════════════════════
-   GOBERNA — CMS: Contactos para Operadoras Digitales
-   SSE-driven state: all operators see all contacts in real time.
-   ═══════════════════════════════════════════════════════════════════ */
+import {
+  ChatContactListItem,
+  ChatConversationPane,
+  ContactNotesPanel,
+  TwilioConfigModal,
+} from "./_components";
 
 const FONT = "var(--font-montserrat), system-ui, sans-serif";
 const NOTES_PANEL_WIDTH = 400;
+const PAGE_LIMIT = 25;
 
 type Tab = { key: CmsTabFilter; label: string; statKey: keyof CmsStats | null };
 
 const TABS: Tab[] = [
-  { key: "nuevo", label: "NO HABLADOS", statKey: "nuevos" },
-  { key: "hablado", label: "HABLADOS", statKey: "hablados" },
-  { key: "respondieron", label: "CONTESTARON", statKey: "respondieron" },
-  { key: "archivado", label: "ARCHIVADOS", statKey: "archivados" },
-  { key: "todos", label: "TODOS", statKey: "total" },
+  { key: "todos", label: "Todos", statKey: "total" },
+  { key: "nuevo", label: "No hablados", statKey: "nuevos" },
+  { key: "hablado", label: "Hablados", statKey: "hablados" },
+  { key: "respondieron", label: "Contestaron", statKey: "respondieron" },
+  { key: "archivado", label: "Archivados", statKey: "archivados" },
 ];
 
 export default function CmsPage() {
   const { user, activeCampaignId, campaigns } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<CmsTabFilter>("nuevo");
+  const [activeTab, setActiveTab] = useState<CmsTabFilter>("todos");
   const [contacts, setContacts] = useState<CmsContact[]>([]);
   const [stats, setStats] = useState<CmsStats | null>(null);
   const [total, setTotal] = useState(0);
@@ -50,80 +46,129 @@ export default function CmsPage() {
   const [loading, setLoading] = useState(true);
   const [savingNotes, setSavingNotes] = useState(false);
   const [notesContact, setNotesContact] = useState<CmsContact | null>(null);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [reverting, setReverting] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [uiError, setUiError] = useState<string | null>(null);
   const [twilioConfigOpen, setTwilioConfigOpen] = useState(false);
   const [sseConnected, setSseConnected] = useState(false);
 
   const sseRef = useRef<{ close: () => void } | null>(null);
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
 
-  const PAGE_LIMIT = 25;
+  const selectedContact = useMemo(
+    () => contacts.find((contact) => contact.id === selectedContactId) ?? null,
+    [contacts, selectedContactId],
+  );
   const panelOpen = notesContact !== null;
-
-  // ── Fetch contacts (initial/tab change) ─────────────────────────
+  const activeCampaignSlug = campaigns.find((campaign) => campaign.id === activeCampaignId)?.slug;
 
   const fetchContacts = useCallback(async () => {
     if (!activeCampaignId) return;
+
     setLoading(true);
     setOffset(0);
+    setUiError(null);
+
     const [contactsRes, statsRes] = await Promise.all([
       listCmsContacts(activeCampaignId, activeTab, PAGE_LIMIT, 0, debouncedSearch),
       getCmsStats(activeCampaignId),
     ]);
+
     if (contactsRes.ok) {
       setContacts(contactsRes.contacts);
       setTotal(contactsRes.total);
+    } else {
+      setContacts([]);
+      setTotal(0);
+      setUiError(contactsRes.error ?? "No se pudieron cargar los contactos");
     }
-    if (statsRes.ok && statsRes.stats) setStats(statsRes.stats);
+
+    if (statsRes.ok && statsRes.stats) {
+      setStats(statsRes.stats);
+    } else if (!contactsRes.ok) {
+      setUiError((prev) => prev ?? statsRes.error ?? "No se pudieron cargar los totales");
+    }
+
     setLoading(false);
   }, [activeCampaignId, activeTab, debouncedSearch]);
 
-  // ── Load more (append) ──────────────────────────────────────────
-
   const handleLoadMore = useCallback(async () => {
     if (!activeCampaignId || loadingMore) return;
+
     setLoadingMore(true);
     const nextOffset = offset + PAGE_LIMIT;
-    const res = await listCmsContacts(activeCampaignId, activeTab, PAGE_LIMIT, nextOffset, debouncedSearch);
+    const res = await listCmsContacts(
+      activeCampaignId,
+      activeTab,
+      PAGE_LIMIT,
+      nextOffset,
+      debouncedSearch,
+    );
+
     if (res.ok) {
       setContacts((prev) => [...prev, ...res.contacts]);
       setOffset(nextOffset);
+    } else {
+      setUiError(res.error ?? "No se pudieron cargar mas contactos");
     }
+
     setLoadingMore(false);
-  }, [activeCampaignId, activeTab, debouncedSearch, offset, loadingMore]);
+  }, [activeCampaignId, activeTab, debouncedSearch, loadingMore, offset]);
 
   useEffect(() => {
     fetchContacts();
   }, [fetchContacts]);
 
-  // Debounced search — update input immediately, delay API call
+  useEffect(() => {
+    if (!contacts.length) {
+      setSelectedContactId(null);
+      return;
+    }
+
+    setSelectedContactId((prev) => {
+      if (prev && contacts.some((contact) => contact.id === prev)) {
+        return prev;
+      }
+      return contacts[0]?.id ?? null;
+    });
+  }, [contacts]);
+
+  useEffect(() => {
+    if (!notesContact) return;
+    const refreshedContact = contacts.find((contact) => contact.id === notesContact.id);
+    if (refreshedContact && refreshedContact !== notesContact) {
+      setNotesContact(refreshedContact);
+    }
+  }, [contacts, notesContact]);
+
   const handleSearchChange = useCallback((value: string) => {
     setSearch(value);
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => setDebouncedSearch(value), 350);
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current);
+    }
+    searchDebounceRef.current = setTimeout(() => {
+      setDebouncedSearch(value);
+    }, 350);
   }, []);
 
-  // ── SSE: Real-time contact updates ──────────────────────────────
-  // All state changes broadcast `contact.updated` with the full contact.
-  // The frontend applies the change to the current view:
-  //   - If the contact's NEW status matches the active tab → insert/update
-  //   - If the contact's PREVIOUS status matches the active tab → remove
-  //   - Stats are refreshed on every event
+  useEffect(() => {
+    return () => {
+      if (searchDebounceRef.current) {
+        clearTimeout(searchDebounceRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!activeCampaignId) return;
+    const campaignId = activeCampaignId;
 
     let retryTimeout: ReturnType<typeof setTimeout>;
-
     let attempt = 0;
 
-    /** Try to refresh the access token using the httpOnly cookie */
     async function tryRefreshToken(): Promise<boolean> {
       try {
         const res = await fetch("/api/auth/refresh", {
@@ -145,20 +190,19 @@ export default function CmsPage() {
       try {
         let res = await fetch("/api/cms/stream", {
           headers: {
-            "x-campaign-id": activeCampaignId!,
+            "x-campaign-id": campaignId,
             Accept: "text/event-stream",
           },
           signal: controller.signal,
           credentials: "same-origin",
         });
 
-        // If 401, try refreshing the token once before giving up
         if (res.status === 401) {
           const refreshed = await tryRefreshToken();
           if (refreshed) {
             res = await fetch("/api/cms/stream", {
               headers: {
-                "x-campaign-id": activeCampaignId!,
+                "x-campaign-id": campaignId,
                 Accept: "text/event-stream",
               },
               signal: controller.signal,
@@ -174,26 +218,24 @@ export default function CmsPage() {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-        // Persist SSE field state across chunk boundaries
         let currentEvent = "";
         let currentData = "";
 
         async function processChunk(): Promise<void> {
           const { done, value } = await reader.read();
           if (done) {
-            // Stream ended — fire any pending event before closing
             if (currentEvent && currentData) {
               handleSseEvent(currentEvent, currentData);
             }
             return;
           }
+
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
 
           for (const line of lines) {
             if (line.startsWith("event: ")) {
-              // New event starting — flush any incomplete prior event
               if (currentEvent && currentData) {
                 handleSseEvent(currentEvent, currentData);
               }
@@ -202,7 +244,6 @@ export default function CmsPage() {
             } else if (line.startsWith("data: ")) {
               currentData += (currentData ? "\n" : "") + line.substring(6);
             } else if (line.trim() === "") {
-              // Empty line = end of SSE message
               if (currentEvent && currentData) {
                 handleSseEvent(currentEvent, currentData);
               }
@@ -215,14 +256,13 @@ export default function CmsPage() {
         }
 
         await processChunk();
-        // If we get here, stream ended normally — reconnect
         attempt = 0;
-      } catch (err) {
-        // AbortError means intentional disconnect
-        if (err instanceof DOMException && err.name === "AbortError") return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
       }
 
-      // Reconnect with exponential backoff (max 30s)
       setSseConnected(false);
       const delay = Math.min(1000 * 2 ** attempt, 30_000);
       attempt++;
@@ -244,50 +284,42 @@ export default function CmsPage() {
         if (event === "contact.updated") {
           const payload = data as CmsSseContactUpdated;
           const contact = payload.contact;
-          const prevStatus = payload.previous_status;
-          const newStatus = contact.cms_status;
-          const tab = activeTabRef.current;
+          const previousStatus = payload.previous_status;
+          const nextStatus = contact.cms_status;
+          const active = activeTabRef.current;
 
           setContacts((prev) => {
-            // Does the contact's NEW status belong in the current tab?
-            const belongsInTab = tab === "todos" || newStatus === tab;
-
-            // Did the contact's PREVIOUS status belong in the current tab?
-            const wasInTab = tab === "todos" || prevStatus === tab;
+            const belongsInTab = active === "todos" || nextStatus === active;
+            const wasInTab = active === "todos" || previousStatus === active;
 
             if (belongsInTab && wasInTab) {
-              // Contact stays in this tab (e.g. "todos" or status didn't change)
-              // → in-place update only
-              const idx = prev.findIndex((c) => c.id === contact.id);
+              const idx = prev.findIndex((item) => item.id === contact.id);
               if (idx >= 0) {
                 const next = [...prev];
                 next[idx] = contact;
                 return next;
               }
-              // Wasn't loaded yet — prepend
               return [contact, ...prev];
             }
 
             if (belongsInTab) {
-              // Contact is new to this tab — prepend
-              return [contact, ...prev.filter((c) => c.id !== contact.id)];
+              return [contact, ...prev.filter((item) => item.id !== contact.id)];
             }
 
             if (wasInTab) {
-              // Contact left this tab — remove it
-              return prev.filter((c) => c.id !== contact.id);
+              return prev.filter((item) => item.id !== contact.id);
             }
 
             return prev;
           });
 
-          // Update stats from SSE payload (avoids extra network round-trip)
           if (payload.stats) {
             setStats(payload.stats);
-          } else if (activeCampaignId) {
-            // Fallback: fetch stats if backend didn't include them
-            getCmsStats(activeCampaignId).then((r) => {
-              if (r.ok && r.stats) setStats(r.stats);
+          } else if (campaignId) {
+            getCmsStats(campaignId).then((response) => {
+              if (response.ok && response.stats) {
+                setStats(response.stats);
+              }
             });
           }
         }
@@ -297,23 +329,14 @@ export default function CmsPage() {
           const contact = payload.contact;
 
           setContacts((prev) =>
-            prev.map((c) => (c.id === contact.id ? contact : c)),
+            prev.map((item) => (item.id === contact.id ? contact : item)),
           );
 
-          // If the notes panel is open for this contact, update it
           setNotesContact((prev) => (prev && prev.id === contact.id ? contact : prev));
         }
-
-        // Legacy events from claim/release (backwards compat with mobile)
-        if (event === "contact.claimed" || event === "contact.released") {
-          // Just refresh the current view
-          if (activeCampaignId) {
-            getCmsStats(activeCampaignId).then((r) => {
-              if (r.ok && r.stats) setStats(r.stats);
-            });
-          }
-        }
-      } catch { /* ignore parse errors */ }
+      } catch {
+        // Ignore malformed events
+      }
     }
 
     connect();
@@ -325,194 +348,142 @@ export default function CmsPage() {
     };
   }, [activeCampaignId]);
 
-  // ── Actions ─────────────────────────────────────────────────────
-
-  const handleHablado = useCallback(
-    async (id: string) => {
-      if (!activeCampaignId) return;
-      setActionLoading(id);
-      setActionError(null);
-      const res = await markHablado(activeCampaignId, id);
-      if (!res.ok) {
-        setActionError(res.error ?? "Error marcando como hablado");
-        setTimeout(() => setActionError(null), 4000);
-      }
-      // SSE will handle the state update for all operators
-      setActionLoading(null);
-    },
-    [activeCampaignId],
-  );
-
-  const handleRespondieron = useCallback(
-    async (id: string) => {
-      if (!activeCampaignId) return;
-      setActionLoading(id);
-      setActionError(null);
-      const res = await markRespondieron(activeCampaignId, id);
-      if (!res.ok) {
-        setActionError(res.error ?? "Error marcando como contestó");
-        setTimeout(() => setActionError(null), 4000);
-      }
-      setActionLoading(null);
-    },
-    [activeCampaignId],
-  );
-
-  const handleArchive = useCallback(
-    async (id: string) => {
-      if (!activeCampaignId) return;
-      setActionLoading(id);
-      setActionError(null);
-      const res = await archiveContact(activeCampaignId, id);
-      if (!res.ok) {
-        setActionError(res.error ?? "Error archivando contacto");
-        setTimeout(() => setActionError(null), 4000);
-      }
-      if (notesContact?.id === id) setNotesContact(null);
-      setActionLoading(null);
-    },
-    [activeCampaignId, notesContact],
-  );
-
-  const handleRevert = useCallback(
-    async (id: string) => {
-      if (!activeCampaignId) return;
-      setReverting(id);
-      setActionError(null);
-      const res = await revertContact(activeCampaignId, id);
-      if (!res.ok) {
-        setActionError(res.error ?? "No se pudo revertir");
-        setTimeout(() => setActionError(null), 4000);
-      } else if (res.contact) {
-        // Optimistic local update in case SSE is delayed or disconnected
-        const contact = res.contact;
-        const tab = activeTabRef.current;
-        const belongsInTab = tab === "todos" || contact.cms_status === tab;
-        setContacts((prev) => {
-          if (belongsInTab) {
-            // Update in place or prepend
-            const idx = prev.findIndex((c) => c.id === id);
-            if (idx >= 0) { const next = [...prev]; next[idx] = contact; return next; }
-            return [contact, ...prev];
-          }
-          // Contact left this tab — remove
-          return prev.filter((c) => c.id !== id);
-        });
-        // Refresh stats
-        getCmsStats(activeCampaignId).then((r) => {
-          if (r.ok && r.stats) setStats(r.stats);
-        });
-      }
-      setReverting(null);
-    },
-    [activeCampaignId],
-  );
-
   const handleSaveNotes = useCallback(
-    async (id: string, notes: { local_votacion: string; domicilio: string; comentarios: string }) => {
+    async (
+      id: string,
+      notes: { local_votacion: string; domicilio: string; comentarios: string },
+    ) => {
       if (!activeCampaignId) return;
+
       setSavingNotes(true);
+      setUiError(null);
+
       const res = await updateContactNotes(activeCampaignId, id, notes);
       if (res.ok) {
-        // SSE will broadcast the update; close panel
         setNotesContact(null);
+      } else {
+        setUiError(res.error ?? "No se pudieron guardar las notas");
       }
+
       setSavingNotes(false);
     },
     [activeCampaignId],
   );
 
-  // ── Render ──────────────────────────────────────────────────────
-
   if (!activeCampaignId) {
     return (
-      <div style={{ padding: 40, textAlign: "center", fontFamily: FONT, color: "var(--color-text-tertiary)" }}>
-        Selecciona una campaña para ver los contactos.
+      <div
+        style={{
+          padding: 40,
+          textAlign: "center",
+          fontFamily: FONT,
+          color: "var(--color-text-tertiary)",
+        }}
+      >
+        Selecciona una campana para ver los contactos.
       </div>
     );
   }
 
   return (
-    <div style={{ fontFamily: FONT, display: "flex", gap: 0, minHeight: "calc(100vh - 80px)" }}>
-      {/* ── Main content ─────────────────────────────────────────── */}
+    <div
+      style={{
+        fontFamily: FONT,
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        minHeight: "calc(100vh - 80px)",
+      }}
+    >
       <div
         style={{
-          flex: 1,
-          minWidth: 0,
-          transition: "margin-right 0.25s ease",
-          marginRight: panelOpen ? NOTES_PANEL_WIDTH : 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
         }}
       >
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <h1 style={{ fontSize: 22, fontWeight: 800, color: "var(--color-text-primary)", margin: "0 0 4px", letterSpacing: "0.02em" }}>
-                CONTACTOS CMS
-              </h1>
-              {/* SSE connection indicator */}
-              <span
-                title={sseConnected ? "Conectado en tiempo real" : "Reconectando..."}
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: sseConnected ? "#16a34a" : "#d97706",
-                  display: "inline-block",
-                  flexShrink: 0,
-                }}
-              />
-            </div>
-            <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: 0 }}>
-              Gestión de contactos vía WhatsApp
-            </p>
-          </div>
+        <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {(() => {
-              const activeSlug = campaigns.find((c) => c.id === activeCampaignId)?.slug;
-              if (!activeSlug) return null;
-              return (
-                <Link
-                  href={`/candidatos/${activeSlug}/cms-metrics`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "8px 14px",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    fontFamily: FONT,
-                    color: "var(--goberna-blue-900)",
-                    background: "var(--goberna-blue-50)",
-                    border: "1px solid var(--goberna-blue-200, #bfdbfe)",
-                    borderRadius: 8,
-                    textDecoration: "none",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <title>Metricas</title>
-                    <path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" />
-                  </svg>
-                  Metricas
-                </Link>
-              );
-            })()}
-          {user?.role === "admin" && (
-            <button
-              type="button"
-              onClick={() => setTwilioConfigOpen(true)}
-              title="Configurar Twilio WhatsApp"
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 22,
+                fontWeight: 800,
+                color: "#0f172a",
+                letterSpacing: "0.01em",
+              }}
+            >
+              Contactos CMS
+            </h1>
+            <span
+              title={sseConnected ? "Conectado en tiempo real" : "Reconectando..."}
+              style={{
+                width: 9,
+                height: 9,
+                borderRadius: "50%",
+                display: "inline-block",
+                background: sseConnected ? "#16a34a" : "#d97706",
+              }}
+            />
+          </div>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
+            Vista operativa tipo chat (modo claro)
+          </p>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {activeCampaignSlug && (
+            <Link
+              href={`/candidatos/${activeCampaignSlug}/cms-metrics`}
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
                 padding: "8px 14px",
                 fontSize: 12,
-                fontWeight: 600,
-                fontFamily: FONT,
-                color: "#25D366",
-                background: "var(--color-surface)",
+                fontWeight: 700,
+                color: "var(--goberna-blue-900)",
+                background: "var(--goberna-blue-50)",
+                border: "1px solid var(--goberna-blue-200)",
+                borderRadius: 8,
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <title>Metricas</title>
+                <path d="M18 20V10" />
+                <path d="M12 20V4" />
+                <path d="M6 20v-6" />
+              </svg>
+              Metricas
+            </Link>
+          )}
+
+          {user?.role === "admin" && (
+            <button
+              type="button"
+              onClick={() => setTwilioConfigOpen(true)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 14px",
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#15803d",
+                background: "#ecfdf3",
                 border: "1px solid #bbf7d0",
                 borderRadius: 8,
                 cursor: "pointer",
@@ -526,249 +497,179 @@ export default function CmsPage() {
               Twilio
             </button>
           )}
-          </div>
-        </div>
-
-        {/* Search + refresh */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-          <div style={{ position: "relative", flex: 1, maxWidth: 360 }}>
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--color-text-tertiary)"
-              strokeWidth="2"
-              style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}
-            >
-              <title>Buscar</title>
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Buscar nombre, teléfono, entrevistador..."
-              value={search}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              style={{
-                width: "100%",
-                padding: "9px 12px 9px 34px",
-                fontSize: 13,
-                fontFamily: FONT,
-                border: "1px solid var(--color-border)",
-                borderRadius: 8,
-                background: "var(--color-surface)",
-                color: "var(--color-text-primary)",
-                outline: "none",
-              }}
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={fetchContacts}
-            style={{
-              padding: "8px 14px",
-              fontSize: 12,
-              fontWeight: 600,
-              fontFamily: FONT,
-              color: "var(--color-text-secondary)",
-              background: "var(--color-surface)",
-              border: "1px solid var(--color-border)",
-              borderRadius: 8,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <title>Actualizar</title>
-              <polyline points="23 4 23 10 17 10" />
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-            </svg>
-            Actualizar
-          </button>
-        </div>
-
-        {/* Tabs */}
-        <div
-          style={{
-            display: "flex",
-            gap: 0,
-            marginBottom: 0,
-            borderBottom: "2px solid var(--color-border)",
-            overflowX: "auto",
-          }}
-        >
-          {TABS.map((t) => {
-            const isActive = activeTab === t.key;
-            const count = t.statKey && stats ? stats[t.statKey] : undefined;
-            return (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setActiveTab(t.key)}
-                style={{
-                  padding: "10px 18px",
-                  fontSize: 12,
-                  fontWeight: isActive ? 700 : 500,
-                  fontFamily: FONT,
-                  letterSpacing: "0.04em",
-                  color: isActive ? "var(--goberna-blue-900)" : "var(--color-text-tertiary)",
-                  background: "transparent",
-                  border: "none",
-                  borderBottom: isActive ? "2px solid var(--goberna-blue-900)" : "2px solid transparent",
-                  cursor: "pointer",
-                  marginBottom: -2,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {t.label}
-                {count !== undefined && (
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: "2px 7px",
-                      borderRadius: 10,
-                      background: isActive ? "var(--goberna-blue-900)" : "var(--color-border)",
-                      color: isActive ? "#fff" : "var(--color-text-tertiary)",
-                    }}
-                  >
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Table */}
-        <div
-          style={{
-            background: "var(--color-surface)",
-            border: "1px solid var(--color-border)",
-            borderTop: "none",
-            borderRadius: "0 0 10px 10px",
-            overflow: "hidden",
-            boxShadow: "var(--shadow-sm)",
-          }}
-        >
-          <div style={{ overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontFamily: FONT,
-                tableLayout: "auto",
-              }}
-            >
-              <thead>
-                <tr style={{ background: "var(--goberna-blue-50)" }}>
-                  {["FECHA / ORIGEN", "CIUDADANO", "TELÉFONO", "ESTADO", "ACCIONES"].map((h) => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: "8px 12px",
-                        fontSize: 10,
-                        fontWeight: 800,
-                        letterSpacing: "0.08em",
-                        color: "var(--goberna-blue-900)",
-                        textAlign: h === "ACCIONES" ? "right" : "left",
-                        borderBottom: "2px solid var(--goberna-blue-200, #bfdbfe)",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={5} style={{ padding: 48, textAlign: "center", color: "var(--color-text-tertiary)", fontSize: 13 }}>
-                      Cargando contactos...
-                    </td>
-                  </tr>
-                ) : contacts.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} style={{ padding: 48, textAlign: "center", color: "var(--color-text-tertiary)" }}>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>
-                        {search ? "Sin resultados para la búsqueda" : "No hay contactos en esta categoría"}
-                      </div>
-                      <div style={{ fontSize: 12, marginTop: 4 }}>
-                        {search ? "Intenta con otro término" : "Los contactos aparecen al recibir formularios de campo"}
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  contacts.map((c) => (
-                    <ContactTableRow
-                      key={c.id}
-                      contact={c}
-                      currentUserId={user?.id ?? ""}
-                      onHablado={handleHablado}
-                      onRespondieron={handleRespondieron}
-                      onArchive={handleArchive}
-                      onRevert={handleRevert}
-                      onOpenNotes={setNotesContact}
-                      actionLoading={actionLoading}
-                      reverting={reverting}
-                      isSelected={notesContact?.id === c.id}
-                    />
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Footer */}
-          <div
-            style={{
-              padding: "8px 16px",
-              fontSize: 12,
-              color: "var(--color-text-tertiary)",
-              borderTop: "1px solid var(--color-border)",
-              background: "var(--goberna-blue-50)",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 12,
-            }}
-          >
-            <span>{contacts.length} de {total} contactos</span>
-            {contacts.length < total && (
-              <button
-                type="button"
-                onClick={handleLoadMore}
-                disabled={loadingMore}
-                style={{
-                  padding: "5px 14px",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  fontFamily: FONT,
-                  color: "var(--goberna-blue-900)",
-                  background: "var(--color-surface)",
-                  border: "1px solid var(--goberna-blue-200)",
-                  borderRadius: 6,
-                  cursor: loadingMore ? "not-allowed" : "pointer",
-                  opacity: loadingMore ? 0.6 : 1,
-                  transition: "opacity 0.15s ease",
-                }}
-              >
-                {loadingMore ? "Cargando..." : `Cargar más (${total - contacts.length} restantes)`}
-              </button>
-            )}
-          </div>
         </div>
       </div>
 
-      {/* ── Notes panel ──────────────────────────────────────────── */}
+      <div className={`cms-chat-root ${panelOpen ? "panel-open" : ""}`}>
+        <div className="cms-chat-shell">
+          <aside className="cms-chat-sidebar">
+            <div style={{ padding: "12px 12px 10px", borderBottom: "1px solid #eef2f7" }}>
+              <div style={{ position: "relative" }}>
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#64748b"
+                  strokeWidth="2"
+                  style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}
+                >
+                  <title>Buscar</title>
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Buscar o iniciar chat"
+                  value={search}
+                  onChange={(event) => handleSearchChange(event.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px 10px 34px",
+                    borderRadius: 10,
+                    border: "1px solid #d6dde6",
+                    background: "#f8fafc",
+                    color: "#0f172a",
+                    fontSize: 14,
+                    outline: "none",
+                    fontFamily: FONT,
+                  }}
+                />
+              </div>
+
+              <div
+                style={{
+                  marginTop: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  overflowX: "auto",
+                  paddingBottom: 2,
+                }}
+              >
+                {TABS.map((tab) => {
+                  const count = tab.statKey && stats ? stats[tab.statKey] : undefined;
+                  const isActive = activeTab === tab.key;
+
+                  return (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setActiveTab(tab.key)}
+                      style={{
+                        border: "none",
+                        borderRadius: 999,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                        padding: "7px 12px",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        fontFamily: FONT,
+                        background: isActive ? "#0f172a" : "#eef2f7",
+                        color: isActive ? "#ffffff" : "#475569",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      {tab.label}
+                      {count !== undefined && (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            lineHeight: 1,
+                            padding: "3px 6px",
+                            borderRadius: 999,
+                            background: isActive ? "rgba(255, 255, 255, 0.2)" : "#dbe3ec",
+                            color: isActive ? "#ffffff" : "#334155",
+                          }}
+                        >
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ flex: 1, overflowY: "auto", background: "#ffffff" }}>
+              {loading ? (
+                <div style={{ padding: 22, textAlign: "center", color: "#64748b", fontSize: 13 }}>
+                  Cargando contactos...
+                </div>
+              ) : contacts.length === 0 ? (
+                <div style={{ padding: 22, textAlign: "center", color: "#64748b" }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>
+                    {search ? "Sin resultados para la busqueda" : "No hay contactos en este filtro"}
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 12 }}>
+                    {search
+                      ? "Prueba con otro termino"
+                      : "Los contactos aparecen cuando ingresan formularios"}
+                  </div>
+                </div>
+              ) : (
+                contacts.map((contact) => (
+                  <ChatContactListItem
+                    key={contact.id}
+                    contact={contact}
+                    selected={selectedContactId === contact.id}
+                    onSelect={setSelectedContactId}
+                    onOpenProfile={setNotesContact}
+                  />
+                ))
+              )}
+            </div>
+
+            <div
+              style={{
+                padding: "10px 12px",
+                borderTop: "1px solid #eef2f7",
+                background: "#f8fafc",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+              }}
+            >
+              <span style={{ fontSize: 12, color: "#64748b" }}>
+                {contacts.length} de {total} contactos
+              </span>
+
+              {contacts.length < total && (
+                <button
+                  type="button"
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  style={{
+                    border: "1px solid #d6dde6",
+                    background: "#ffffff",
+                    color: "#334155",
+                    borderRadius: 8,
+                    padding: "6px 10px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: loadingMore ? "not-allowed" : "pointer",
+                    opacity: loadingMore ? 0.65 : 1,
+                  }}
+                >
+                  {loadingMore ? "Cargando..." : "Cargar mas"}
+                </button>
+              )}
+            </div>
+          </aside>
+
+          <section className="cms-chat-main">
+            <ChatConversationPane
+              contact={selectedContact}
+              sseConnected={sseConnected}
+              onOpenProfile={setNotesContact}
+            />
+          </section>
+        </div>
+      </div>
+
       {notesContact && (
         <ContactNotesPanel
           contact={notesContact}
@@ -778,48 +679,96 @@ export default function CmsPage() {
         />
       )}
 
-      {/* Error toast */}
-      {actionError && (
+      {uiError && (
         <div
           style={{
             position: "fixed",
             bottom: 24,
             right: panelOpen ? NOTES_PANEL_WIDTH + 24 : 24,
-            padding: "12px 20px",
+            padding: "12px 16px",
             borderRadius: 10,
             background: "#fef2f2",
             border: "1px solid #fecaca",
             color: "#dc2626",
             fontSize: 13,
             fontWeight: 600,
-            fontFamily: FONT,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+            boxShadow: "0 6px 18px rgba(15, 23, 42, 0.15)",
             zIndex: 9999,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            animation: "slideIn 0.2s ease",
-            transition: "right 0.25s ease",
+            transition: "right 240ms ease",
+            cursor: "pointer",
           }}
+          onClick={() => setUiError(null)}
+          title="Cerrar"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2">
-            <title>Error</title>
-            <circle cx="12" cy="12" r="10" />
-            <line x1="15" y1="9" x2="9" y2="15" />
-            <line x1="9" y1="9" x2="15" y2="15" />
-          </svg>
-          {actionError}
-          <style>{"@keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }"}</style>
+          {uiError}
         </div>
       )}
 
-      {/* Twilio config modal */}
       {twilioConfigOpen && activeCampaignId && (
         <TwilioConfigModal
           campaignId={activeCampaignId}
           onClose={() => setTwilioConfigOpen(false)}
         />
       )}
+
+      <style>{`
+        .cms-chat-root {
+          flex: 1;
+          min-height: calc(100vh - 190px);
+          transition: margin-right 240ms ease;
+        }
+
+        .cms-chat-shell {
+          height: 100%;
+          min-height: calc(100vh - 190px);
+          border: 1px solid #d6dde6;
+          border-radius: 16px;
+          overflow: hidden;
+          background: #f0f2f5;
+          box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+          display: flex;
+        }
+
+        .cms-chat-sidebar {
+          width: min(380px, 100%);
+          min-width: 320px;
+          display: flex;
+          flex-direction: column;
+          background: #ffffff;
+          border-right: 1px solid #d6dde6;
+        }
+
+        .cms-chat-main {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+        }
+
+        @media (min-width: 1180px) {
+          .cms-chat-root.panel-open {
+            margin-right: 400px;
+          }
+        }
+
+        @media (max-width: 1024px) {
+          .cms-chat-shell {
+            flex-direction: column;
+            min-height: calc(100vh - 180px);
+          }
+
+          .cms-chat-sidebar {
+            width: 100%;
+            min-width: 0;
+            border-right: none;
+            border-bottom: 1px solid #d6dde6;
+            max-height: 52dvh;
+          }
+
+          .cms-chat-main {
+            min-height: 48dvh;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -95,7 +95,7 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
         position: "fixed",
         top: 0,
         right: 0,
-        width: PANEL_WIDTH,
+        width: `min(${PANEL_WIDTH}px, 100vw)`,
         height: "100vh",
         background: "var(--color-surface)",
         borderLeft: "1px solid var(--color-border)",
