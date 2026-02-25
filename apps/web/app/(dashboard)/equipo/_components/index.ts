@@ -6,6 +6,7 @@ export { HierarchyDiagram } from "./hierarchy-diagram";
 export { RoleBadge } from "./role-badge";
 export { RoleSelector } from "./role-selector";
 export { StatGrid } from "./stat-cards";
+export { CampaignGoals } from "./campaign-goals";
 export { PendingRequestsSection } from "./pending-requests";
 export { MemberRow } from "./member-row";
 export { MembersList } from "./members-list";

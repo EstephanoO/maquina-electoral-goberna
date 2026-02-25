@@ -18,7 +18,6 @@ export type PipelineState = {
   brigadistaMetrics: ReturnType<typeof useBrigadistaMetrics>["data"];
   prevBrigadistaMetrics: ReturnType<typeof useBrigadistaMetrics>["data"];
   metricsLoading: boolean;
-  pipelineTotals: { captures: number; contacted: number; responded: number; contactRate: number } | undefined;
 };
 
 /* ========== Hook ========== */
@@ -29,7 +28,6 @@ export type PipelineState = {
  * - Date range computation (current + previous)
  * - Client-side form filtering
  * - Dual brigadista metrics queries (current + previous period)
- * - Pipeline totals for header KPIs
  */
 export function usePipelineState(
   campaignId: string | undefined,
@@ -75,23 +73,6 @@ export function usePipelineState(
     });
   }, [forms, prevFrom, prevTo]);
 
-  // Pipeline totals for header KPIs
-  const pipelineTotals = useMemo(() => {
-    if (!brigadistaMetrics?.length) return undefined;
-    const totals = brigadistaMetrics.reduce(
-      (acc, b) => ({
-        captures: acc.captures + b.total_captures,
-        contacted: acc.contacted + b.hablados + b.respondieron,
-        responded: acc.responded + b.respondieron,
-      }),
-      { captures: 0, contacted: 0, responded: 0 },
-    );
-    return {
-      ...totals,
-      contactRate: totals.captures > 0 ? Math.round((totals.contacted / totals.captures) * 100) : 0,
-    };
-  }, [brigadistaMetrics]);
-
   return {
     period,
     onPeriodChange,
@@ -103,6 +84,5 @@ export function usePipelineState(
     brigadistaMetrics,
     prevBrigadistaMetrics,
     metricsLoading,
-    pipelineTotals,
   };
 }

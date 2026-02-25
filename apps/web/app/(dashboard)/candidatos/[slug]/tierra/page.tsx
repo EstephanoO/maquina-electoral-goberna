@@ -139,7 +139,7 @@ export default function TierraPage() {
 
   return (
     <div className="fixed z-50 flex flex-col bg-slate-50 overflow-hidden top-12 right-0 bottom-0 transition-[left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]" style={{ left: "var(--sidebar-current-width, 72px)" }}>
-      <TierraHeader stats={stats} agentCount={enrichedAgents.length} formCount={forms.length} connectedCount={connectedCount} viewMode={viewMode} onViewModeChange={setViewMode} pipelineTotals={pipeline.pipelineTotals} />
+      <TierraHeader stats={stats} agentCount={enrichedAgents.length} formCount={forms.length} connectedCount={connectedCount} viewMode={viewMode} onViewModeChange={setViewMode} totalDatos={stats.totals.forms_count} metaDatosTarget={stats.metas.datos} />
 
       {viewMode === "campo" ? (
         <div className="flex-1 min-h-0 relative">
@@ -164,6 +164,9 @@ export default function TierraPage() {
           onPeriodChange={pipeline.onPeriodChange}
           periodLabel={pipeline.periodLabel}
           dateRanges={pipeline.dateRanges}
+          totalDatos={stats.totals.forms_count}
+          agentesCampoCount={enrichedAgents.length}
+          metaDatos={stats.metas.datos}
         />
       )}
     </div>

@@ -14,6 +14,7 @@ import { FONT_STACK } from "../../../lib/constants";
 import {
   HierarchyDiagram,
   StatGrid,
+  CampaignGoals,
   PendingRequestsSection,
   MembersList,
   ConsultorModal,
@@ -90,6 +91,8 @@ export default function EquipoPage() {
             statsByRole={eq.statsByRole}
             pendingCount={eq.pendingRequests.length}
           />
+
+          <CampaignGoals agentesCampoCount={eq.statsByRole.agente_campo ?? 0} />
 
           {eq.canManage && eq.pendingRequests.length > 0 && (
             <PendingRequestsSection
