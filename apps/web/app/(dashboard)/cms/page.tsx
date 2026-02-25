@@ -105,6 +105,22 @@ function getTagColor(tagName: string): string {
   return TAG_COLOR_PALETTE[hashTag(normalized) % TAG_COLOR_PALETTE.length];
 }
 
+function withAlpha(hexColor: string, alpha: number): string {
+  const sanitized = hexColor.replace("#", "");
+  const fullHex = sanitized.length === 3
+    ? sanitized.split("").map((ch) => `${ch}${ch}`).join("")
+    : sanitized;
+
+  if (!/^[0-9a-fA-F]{6}$/.test(fullHex)) {
+    return `rgba(59, 130, 246, ${alpha})`;
+  }
+
+  const r = Number.parseInt(fullHex.slice(0, 2), 16);
+  const g = Number.parseInt(fullHex.slice(2, 4), 16);
+  const b = Number.parseInt(fullHex.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function toMs(value: string | null | undefined): number {
   if (!value) return 0;
   const ms = Date.parse(value);
@@ -147,7 +163,6 @@ export default function CmsPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [uiError, setUiError] = useState<string | null>(null);
-  const [sseConnected, setSseConnected] = useState(false);
   const [messagesByContact, setMessagesByContact] = useState<Record<string, CmsTwilioMessage[]>>({});
   const [messagesLoadingByContact, setMessagesLoadingByContact] = useState<Record<string, boolean>>({});
   const [messagesErrorByContact, setMessagesErrorByContact] = useState<Record<string, string | null>>({});
@@ -188,6 +203,9 @@ export default function CmsPage() {
   const selectedDraft = selectedContactId ? (draftByContact[selectedContactId] ?? "") : "";
   const selectedSending = selectedContactId ? Boolean(sendingByContact[selectedContactId]) : false;
   const selectedContactTags = selectedContact?.cms_tags ?? [];
+  const selectedFilterColor = selectedTagFilter === "__all"
+    ? "#3b82f6"
+    : getTagColor(selectedTagFilter);
 
   // ── WebSocket for real-time WhatsApp messages ───────────────────
   const handleChatWsEvent = useCallback(
@@ -523,7 +541,6 @@ export default function CmsPage() {
         }
       }
 
-      setSseConnected(false);
       const delay = Math.min(1000 * 2 ** attempt, 30_000);
       attempt++;
       retryTimeout = setTimeout(connect, delay);
@@ -534,7 +551,6 @@ export default function CmsPage() {
         const data = JSON.parse(dataStr);
 
         if (event === "connected") {
-          setSseConnected(true);
           attempt = 0;
           const selectedId = selectedContactIdRef.current;
           if (selectedId) {
@@ -621,7 +637,6 @@ export default function CmsPage() {
     return () => {
       sseRef.current?.close();
       clearTimeout(retryTimeout);
-      setSseConnected(false);
     };
   }, [activeCampaignId]);
 
@@ -883,50 +898,10 @@ export default function CmsPage() {
         fontFamily: FONT,
         display: "flex",
         flexDirection: "column",
-        gap: 8,
-        minHeight: "calc(100dvh - 80px)",
-        height: "calc(100dvh - 80px)",
+        minHeight: "calc(100dvh - 64px)",
+        height: "calc(100dvh - 64px)",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <h1
-              style={{
-                margin: 0,
-                fontSize: 22,
-                fontWeight: 800,
-                color: "#0f172a",
-                letterSpacing: "0.01em",
-              }}
-            >
-              Contactos CMS
-            </h1>
-            <span
-              title={sseConnected ? "Conectado en tiempo real" : "Reconectando..."}
-              style={{
-                width: 9,
-                height: 9,
-                borderRadius: "50%",
-                display: "inline-block",
-                background: sseConnected ? "#16a34a" : "#d97706",
-              }}
-            />
-          </div>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
-            Vista operativa tipo chat (modo claro)
-          </p>
-        </div>
-      </div>
-
       <div className={`cms-chat-root ${panelOpen ? "panel-open" : ""}`}>
         <div className="cms-chat-shell">
           <aside className="cms-chat-sidebar">
@@ -1029,10 +1004,10 @@ export default function CmsPage() {
                         gap: 4,
                         padding: "5px 8px",
                         borderRadius: 999,
-                        border: "1px solid #93c5fd",
-                        background: "#eff6ff",
+                        border: `1px solid ${withAlpha(selectedFilterColor, 0.55)}`,
+                        background: withAlpha(selectedFilterColor, 0.14),
                         fontSize: 11,
-                        color: "#1e40af",
+                        color: selectedFilterColor,
                         fontWeight: 600,
                         whiteSpace: "nowrap",
                         flexShrink: 0,
@@ -1058,7 +1033,7 @@ export default function CmsPage() {
                         style={{
                           border: "none",
                           background: "transparent",
-                          color: "#3b82f6",
+                          color: selectedFilterColor,
                           padding: 0,
                           cursor: "pointer",
                           fontSize: 13,
@@ -1146,9 +1121,9 @@ export default function CmsPage() {
                             fontFamily: FONT,
                             border: "none",
                             background: "transparent",
-                            color: "#0f172a",
+                            color: getTagColor(tag),
                             cursor: "pointer",
-                            fontWeight: 500,
+                            fontWeight: 600,
                           }}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.background = "#f1f5f9";
@@ -1194,7 +1169,7 @@ export default function CmsPage() {
                           border: "none",
                           borderTop: "1px solid #eef2f7",
                           background: "transparent",
-                          color: "#3b82f6",
+                          color: getTagColor(tagSearchSidebar),
                           cursor: "pointer",
                           fontWeight: 600,
                         }}
@@ -1297,7 +1272,6 @@ export default function CmsPage() {
           <section className="cms-chat-main">
             <ChatConversationPane
               contact={selectedContact}
-              sseConnected={sseConnected}
               messages={selectedMessages}
               loadingMessages={selectedMessagesLoading}
               messagesError={selectedMessagesError}

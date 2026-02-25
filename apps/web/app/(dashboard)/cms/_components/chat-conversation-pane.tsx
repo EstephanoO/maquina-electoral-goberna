@@ -19,7 +19,6 @@ const TAG_COLOR_PALETTE = [
 
 type Props = {
   contact: CmsContact | null;
-  sseConnected: boolean;
   messages: CmsTwilioMessage[];
   loadingMessages: boolean;
   messagesError: string | null;
@@ -136,7 +135,6 @@ type TimelineRow =
 
 export function ChatConversationPane({
   contact,
-  sseConnected,
   messages,
   loadingMessages,
   messagesError,
@@ -287,25 +285,6 @@ export function ChatConversationPane({
               }}
             >
               {name}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-              title={sseConnected ? "Estado: conectado" : "Estado: reconectando"}
-            >
-              <span
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  background: sseConnected ? "#16a34a" : "#f59e0b",
-                  display: "inline-block",
-                  flexShrink: 0,
-                }}
-              />
             </div>
 
             {contact.telefono && (
@@ -576,7 +555,7 @@ export function ChatConversationPane({
                       <span
                         style={{
                           fontSize: 13,
-                          color: "#0f172a",
+                          color: getTagColor(tag),
                           fontWeight: checked ? 700 : 500,
                           overflow: "hidden",
                           textOverflow: "ellipsis",
