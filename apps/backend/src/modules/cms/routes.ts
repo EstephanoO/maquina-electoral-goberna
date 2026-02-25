@@ -135,13 +135,14 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         }
 
         try {
-          const query = request.query as { status?: string; limit?: string; offset?: string; search?: string };
+          const query = request.query as { status?: string; limit?: string; offset?: string; search?: string; tag?: string };
           const status = query.status ?? "nuevo";
           const limit = Math.min(Number(query.limit) || 100, 500);
           const offset = Number(query.offset) || 0;
           const search = query.search ?? "";
+          const tag = query.tag ?? "";
 
-          const result = await repo.listContacts(campaignId, status, limit, offset, search);
+          const result = await repo.listContacts(campaignId, status, limit, offset, search, tag);
           return reply.code(200).send({ ok: true, request_id: requestId, ...result });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "cms contacts list failed");
@@ -397,6 +398,71 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "cms notes update failed");
           return reply.code(500).send(errorPayload(requestId, "CMS_NOTES_ERROR", "error actualizando notas"));
+        }
+      },
+    );
+
+    // ── GET /api/cms/tags ──────────────────────────────────────────
+    // List all distinct tags used in the campaign
+    app.get(
+      "/api/cms/tags",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        try {
+          const tags = await repo.getCampaignTags(campaignId);
+          return reply.code(200).send({ ok: true, request_id: requestId, tags });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "cms tags list failed");
+          return reply.code(500).send(errorPayload(requestId, "CMS_TAGS_ERROR", "error listando etiquetas"));
+        }
+      },
+    );
+
+    // ── PUT /api/cms/contacts/:id/tags ──────────────────────────────
+    // Set tags on a contact (replaces existing)
+    const setTagsSchema = z.object({
+      tags: z.array(z.string().min(1).max(32)).max(20),
+    });
+
+    app.put(
+      "/api/cms/contacts/:id/tags",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
+        const { id } = request.params as { id: string };
+
+        const parsed = setTagsSchema.safeParse(request.body);
+        if (!parsed.success) {
+          const msg = parsed.error.issues.map((e) => e.message).join("; ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", msg));
+        }
+
+        try {
+          const result = await repo.setContactTags(id, parsed.data.tags);
+          if (!result) {
+            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado"));
+          }
+
+          // Broadcast to all SSE clients
+          const operatorEmail = await resolveOperatorEmail(authed.userId);
+          broadcastToCampaign(result.campaign_id, "contact.tags_updated", {
+            contact: { ...result, claimed_by_email: operatorEmail },
+            operator_id: authed.userId,
+            operator_email: operatorEmail,
+          });
+
+          return reply.code(200).send({ ok: true, request_id: requestId, contact: result });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "cms set tags failed");
+          return reply.code(500).send(errorPayload(requestId, "CMS_TAGS_ERROR", "error actualizando etiquetas"));
         }
       },
     );

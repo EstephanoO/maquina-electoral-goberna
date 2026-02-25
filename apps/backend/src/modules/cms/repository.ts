@@ -12,6 +12,7 @@ export type CmsContactRow = {
   cms_hablado_at: Date | null;
   cms_respondieron_at: Date | null;
   cms_operator_notes: Record<string, unknown>;
+  cms_tags: string[];
   // Derived from data JSONB
   nombre: string;
   telefono: string;
@@ -29,7 +30,7 @@ export type CmsContactRow = {
 const CMS_SELECT = `
   fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
   fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
-  fs.cms_respondieron_at, fs.cms_operator_notes,
+  fs.cms_respondieron_at, fs.cms_operator_notes, fs.cms_tags,
   COALESCE(fs.data->>'nombre', '') AS nombre,
   COALESCE(fs.data->>'telefono', '') AS telefono,
   COALESCE(fs.data->>'encuestador', '') AS encuestador,
@@ -46,6 +47,7 @@ export async function listContacts(
   limit = 100,
   offset = 0,
   search = "",
+  tag = "",
 ): Promise<{ contacts: CmsContactRow[]; total: number }> {
   // Build WHERE clause based on status filter
   let statusClause: string;
@@ -102,6 +104,18 @@ export async function listContacts(
     countParamIdx++;
   }
 
+  let dataTagClause = "";
+  let countTagClause = "";
+  if (tag.trim()) {
+    dataTagClause = ` AND $${dataParamIdx} = ANY(fs.cms_tags)`;
+    dataParams.push(tag.trim());
+    dataParamIdx++;
+
+    countTagClause = ` AND $${countParamIdx} = ANY(fs.cms_tags)`;
+    countParams.push(tag.trim());
+    countParamIdx++;
+  }
+
   dataParams.push(limit, offset);
 
   // Order by relevant timestamp depending on status
@@ -123,6 +137,7 @@ export async function listContacts(
          AND ${statusClause}
          AND COALESCE(fs.data->>'telefono', '') != ''
          ${dataSearchClause}
+         ${dataTagClause}
        ORDER BY ${orderClause}
        LIMIT $${dataParamIdx} OFFSET $${dataParamIdx + 1}`,
       dataParams,
@@ -134,7 +149,8 @@ export async function listContacts(
          AND fs.deleted_at IS NULL
          AND ${statusClause}
          AND COALESCE(fs.data->>'telefono', '') != ''
-         ${countSearchClause}`,
+         ${countSearchClause}
+         ${countTagClause}`,
       countParams,
     ),
   ]);
@@ -167,7 +183,6 @@ export async function getHabladoByOperator(
     pool.query<CmsContactRow>(
       `SELECT
          ${CMS_SELECT},
-         false AS is_locked,
          u.email AS claimed_by_email,
          su.email AS submitted_by_email
        FROM form_submissions fs
@@ -215,7 +230,7 @@ export async function claimContact(
        AND cms_status = 'nuevo'
      RETURNING id, campaign_id, data, client_id, created_at,
                cms_status, cms_claimed_by, cms_claimed_at, cms_hablado_at,
-               cms_respondieron_at, cms_operator_notes,
+               cms_respondieron_at, cms_operator_notes, cms_tags,
                COALESCE(data->>'nombre', '') AS nombre,
                COALESCE(data->>'telefono', '') AS telefono,
                COALESCE(data->>'encuestador', '') AS encuestador,
@@ -266,7 +281,7 @@ export async function markHablado(
        AND fs.cms_status IN ('nuevo', 'claimed', 'hablado')
      RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
                fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
-               fs.cms_respondieron_at, fs.cms_operator_notes,
+               fs.cms_respondieron_at, fs.cms_operator_notes, fs.cms_tags,
                COALESCE(fs.data->>'nombre', '') AS nombre,
                COALESCE(fs.data->>'telefono', '') AS telefono,
                COALESCE(fs.data->>'encuestador', '') AS encuestador,
@@ -296,7 +311,7 @@ export async function markRespondieron(
        AND fs.cms_status IN ('hablado', 'respondieron')
      RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
                fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
-               fs.cms_respondieron_at, fs.cms_operator_notes,
+               fs.cms_respondieron_at, fs.cms_operator_notes, fs.cms_tags,
                COALESCE(fs.data->>'nombre', '') AS nombre,
                COALESCE(fs.data->>'telefono', '') AS telefono,
                COALESCE(fs.data->>'encuestador', '') AS encuestador,
@@ -335,7 +350,7 @@ export async function archiveContact(
      WHERE fs.id = prev.id
      RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
                fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
-               fs.cms_respondieron_at, fs.cms_operator_notes,
+               fs.cms_respondieron_at, fs.cms_operator_notes, fs.cms_tags,
                COALESCE(fs.data->>'nombre', '') AS nombre,
                COALESCE(fs.data->>'telefono', '') AS telefono,
                COALESCE(fs.data->>'encuestador', '') AS encuestador,
@@ -378,7 +393,7 @@ export async function updateNotes(
        AND fs.deleted_at IS NULL
      RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
                fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
-               fs.cms_respondieron_at, fs.cms_operator_notes,
+               fs.cms_respondieron_at, fs.cms_operator_notes, fs.cms_tags,
                COALESCE(fs.data->>'nombre', '') AS nombre,
                COALESCE(fs.data->>'telefono', '') AS telefono,
                COALESCE(fs.data->>'encuestador', '') AS encuestador,
@@ -683,7 +698,7 @@ export async function getMetricsByBrigadista(
 const REVERT_RETURNING = `
   RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
             fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
-            fs.cms_respondieron_at, fs.cms_operator_notes,
+            fs.cms_respondieron_at, fs.cms_operator_notes, fs.cms_tags,
             COALESCE(fs.data->>'nombre', '') AS nombre,
             COALESCE(fs.data->>'telefono', '') AS telefono,
             COALESCE(fs.data->>'encuestador', '') AS encuestador,
@@ -863,6 +878,72 @@ export async function getTimeMetrics(
     total_with_hablado: parseInt(r?.total_hablado ?? "0", 10),
     total_with_respondieron: parseInt(r?.total_resp ?? "0", 10),
   };
+}
+
+// ── Snapshot of currently claimed contacts (for SSE init) ───────────
+
+// ── Tags ────────────────────────────────────────────────────────────
+
+/**
+ * Set the full tag array for a contact (replaces existing tags).
+ */
+export async function setContactTags(
+  submissionId: string,
+  tags: string[],
+): Promise<CmsContactRow | null> {
+  const { rows } = await pool.query<CmsContactRow>(
+    `UPDATE form_submissions fs
+     SET cms_tags = $2
+     WHERE fs.id = $1
+       AND fs.deleted_at IS NULL
+     RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
+               fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
+               fs.cms_respondieron_at, fs.cms_operator_notes, fs.cms_tags,
+               COALESCE(fs.data->>'nombre', '') AS nombre,
+               COALESCE(fs.data->>'telefono', '') AS telefono,
+               COALESCE(fs.data->>'encuestador', '') AS encuestador,
+               COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
+               COALESCE(fs.data->>'distrito', '') AS distrito,
+               COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido`,
+    [submissionId, tags],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Get all distinct tags used across contacts in a campaign.
+ */
+export async function getCampaignTags(
+  campaignId: string,
+): Promise<string[]> {
+  const { rows } = await pool.query<{ tag: string }>(
+    `SELECT DISTINCT unnest(cms_tags) AS tag
+     FROM form_submissions
+     WHERE campaign_id = $1
+       AND deleted_at IS NULL
+       AND array_length(cms_tags, 1) > 0
+     ORDER BY tag`,
+    [campaignId],
+  );
+  return rows.map((r) => r.tag);
+}
+
+/**
+ * Get tags for multiple contacts at once.
+ */
+export async function getContactTagsBulk(
+  contactIds: string[],
+): Promise<Record<string, string[]>> {
+  if (contactIds.length === 0) return {};
+  const { rows } = await pool.query<{ id: string; cms_tags: string[] }>(
+    `SELECT id, cms_tags FROM form_submissions WHERE id = ANY($1) AND deleted_at IS NULL`,
+    [contactIds],
+  );
+  const result: Record<string, string[]> = {};
+  for (const row of rows) {
+    result[row.id] = row.cms_tags ?? [];
+  }
+  return result;
 }
 
 // ── Snapshot of currently claimed contacts (for SSE init) ───────────

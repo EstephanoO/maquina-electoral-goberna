@@ -7,6 +7,8 @@ import {
   listCmsContacts,
   updateContactNotes,
   getCmsStats,
+  getCmsTags,
+  setContactTags as apiSetContactTags,
   getContactWhatsAppMessages,
   sendContactWhatsAppMessage,
   markHablado,
@@ -18,6 +20,7 @@ import {
   type CmsTabFilter,
   type CmsSseContactUpdated,
   type CmsSseNotesUpdated,
+  type CmsSseTagsUpdated,
   type CmsTwilioMessage,
 } from "@/lib/services/cms";
 import { useChatWs } from "@/lib/hooks";
@@ -77,28 +80,6 @@ function normalizeTagName(raw: string): string {
   return raw.trim().replace(/\s+/g, " ").slice(0, 32);
 }
 
-function dedupeAndSortTags(tags: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const tag of tags) {
-    const normalized = normalizeTagName(tag);
-    if (!normalized) continue;
-    const key = normalized.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(normalized);
-  }
-  return result.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
-}
-
-function normalizeContactTagsMap(input: Record<string, string[]>): Record<string, string[]> {
-  const next: Record<string, string[]> = {};
-  for (const [contactId, tags] of Object.entries(input)) {
-    next[contactId] = dedupeAndSortTags(tags ?? []);
-  }
-  return next;
-}
-
 export default function CmsPage() {
   const { user, activeCampaignId, campaigns } = useAuth();
 
@@ -124,8 +105,8 @@ export default function CmsPage() {
   const [sendingByContact, setSendingByContact] = useState<Record<string, boolean>>({});
   const [archivingContactId, setArchivingContactId] = useState<string | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [contactTagsById, setContactTagsById] = useState<Record<string, string[]>>({});
   const [selectedTagFilter, setSelectedTagFilter] = useState<string>("__all");
+  const [tagSearchSidebar, setTagSearchSidebar] = useState("");
 
   const sseRef = useRef<{ close: () => void } | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -154,7 +135,7 @@ export default function CmsPage() {
   const selectedMessagesError = selectedContactId ? (messagesErrorByContact[selectedContactId] ?? null) : null;
   const selectedDraft = selectedContactId ? (draftByContact[selectedContactId] ?? "") : "";
   const selectedSending = selectedContactId ? Boolean(sendingByContact[selectedContactId]) : false;
-  const selectedContactTags = selectedContactId ? (contactTagsById[selectedContactId] ?? []) : [];
+  const selectedContactTags = selectedContact?.cms_tags ?? [];
 
   // ── WebSocket for real-time WhatsApp messages ───────────────────
   const handleChatWsEvent = useCallback(
@@ -182,9 +163,9 @@ export default function CmsPage() {
   const filteredContacts = useMemo(() => {
     const query = debouncedSearch.trim().toLowerCase();
     return contacts.filter((contact) => {
-      const contactTags = contactTagsById[contact.id] ?? [];
+      const tags = contact.cms_tags ?? [];
       const matchesTagFilter = selectedTagFilter === "__all"
-        || contactTags.some((tag) => tag.toLowerCase() === selectedTagFilter.toLowerCase());
+        || tags.some((tag) => tag.toLowerCase() === selectedTagFilter.toLowerCase());
 
       if (!matchesTagFilter) return false;
       if (!query) return true;
@@ -201,10 +182,10 @@ export default function CmsPage() {
         .join(" ")
         .toLowerCase();
 
-      const matchesTagSearch = contactTags.some((tag) => tag.toLowerCase().includes(query));
+      const matchesTagSearch = tags.some((tag) => tag.toLowerCase().includes(query));
       return textBlock.includes(query) || matchesTagSearch;
     });
-  }, [contacts, contactTagsById, debouncedSearch, selectedTagFilter]);
+  }, [contacts, debouncedSearch, selectedTagFilter]);
 
   const fetchContacts = useCallback(async () => {
     if (!activeCampaignId) return;
@@ -274,41 +255,16 @@ export default function CmsPage() {
   useEffect(() => {
     if (!activeCampaignId) {
       setAvailableTags([]);
-      setContactTagsById({});
       setSelectedTagFilter("__all");
       return;
     }
 
-    try {
-      const storedTags = window.localStorage.getItem(`cms:tags:${activeCampaignId}`);
-      const storedContactTags = window.localStorage.getItem(`cms:contact-tags:${activeCampaignId}`);
-      setAvailableTags(storedTags ? dedupeAndSortTags(JSON.parse(storedTags) as string[]) : []);
-      setContactTagsById(
-        storedContactTags
-          ? normalizeContactTagsMap(JSON.parse(storedContactTags) as Record<string, string[]>)
-          : {},
-      );
-    } catch {
-      setAvailableTags([]);
-      setContactTagsById({});
-    }
+    getCmsTags(activeCampaignId).then((res) => {
+      if (res.ok) {
+        setAvailableTags(res.tags);
+      }
+    });
   }, [activeCampaignId]);
-
-  useEffect(() => {
-    if (!activeCampaignId) return;
-    window.localStorage.setItem(
-      `cms:tags:${activeCampaignId}`,
-      JSON.stringify(dedupeAndSortTags(availableTags)),
-    );
-  }, [activeCampaignId, availableTags]);
-
-  useEffect(() => {
-    if (!activeCampaignId) return;
-    window.localStorage.setItem(
-      `cms:contact-tags:${activeCampaignId}`,
-      JSON.stringify(normalizeContactTagsMap(contactTagsById)),
-    );
-  }, [activeCampaignId, contactTagsById]);
 
   useEffect(() => {
     if (selectedTagFilter === "__all") return;
@@ -533,6 +489,22 @@ export default function CmsPage() {
           setNotesContact((prev) => (prev && prev.id === contact.id ? contact : prev));
         }
 
+        if (event === "contact.tags_updated") {
+          const payload = data as CmsSseTagsUpdated;
+          const contact = payload.contact;
+
+          setContacts((prev) =>
+            prev.map((item) => (item.id === contact.id ? contact : item)),
+          );
+
+          // Refresh available tags list since new tags may have been created
+          if (campaignId) {
+            getCmsTags(campaignId).then((res) => {
+              if (res.ok) setAvailableTags(res.tags);
+            });
+          }
+        }
+
         // New WhatsApp message (inbound or outbound from another tab/operator)
         if (event === "message.new") {
           const payload = data as { contact_id: string; direction: string; message_id: string };
@@ -618,36 +590,76 @@ export default function CmsPage() {
     setAvailableTags((prev) => {
       const hasTag = prev.some((tag) => tag.toLowerCase() === canonical.toLowerCase());
       if (hasTag) return prev;
-      return dedupeAndSortTags([...prev, canonical]);
+      return [...prev, canonical].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
     });
 
     return canonical;
   }, [availableTags]);
 
   const handleAssignTag = useCallback((contactId: string, rawName: string): boolean => {
+    if (!activeCampaignId) return false;
     const tag = normalizeTagName(rawName);
     if (!tag) return false;
 
-    setContactTagsById((prev) => {
-      const current = prev[contactId] ?? [];
-      if (current.some((item) => item.toLowerCase() === tag.toLowerCase())) return prev;
-      return {
-        ...prev,
-        [contactId]: dedupeAndSortTags([...current, tag]),
-      };
+    const contact = contacts.find((c) => c.id === contactId);
+    if (!contact) return false;
+    const currentTags = contact.cms_tags ?? [];
+    if (currentTags.some((item) => item.toLowerCase() === tag.toLowerCase())) return false;
+
+    const newTags = [...currentTags, tag];
+
+    // Optimistic update
+    setContacts((prev) =>
+      prev.map((c) => (c.id === contactId ? { ...c, cms_tags: newTags } : c)),
+    );
+
+    // Persist to backend
+    apiSetContactTags(activeCampaignId, contactId, newTags).then((res) => {
+      if (!res.ok) {
+        // Rollback
+        setContacts((prev) =>
+          prev.map((c) => (c.id === contactId ? { ...c, cms_tags: currentTags } : c)),
+        );
+        setUiError(res.error ?? "No se pudo asignar la etiqueta");
+      } else if (res.contact) {
+        setContacts((prev) =>
+          prev.map((c) => (c.id === contactId ? res.contact! : c)),
+        );
+      }
     });
 
     return true;
-  }, []);
+  }, [activeCampaignId, contacts]);
 
   const handleRemoveTag = useCallback((contactId: string, tagName: string) => {
-    setContactTagsById((prev) => {
-      const current = prev[contactId] ?? [];
-      const next = current.filter((item) => item.toLowerCase() !== tagName.toLowerCase());
-      if (next.length === current.length) return prev;
-      return { ...prev, [contactId]: next };
+    if (!activeCampaignId) return;
+
+    const contact = contacts.find((c) => c.id === contactId);
+    if (!contact) return;
+    const currentTags = contact.cms_tags ?? [];
+    const newTags = currentTags.filter((item) => item.toLowerCase() !== tagName.toLowerCase());
+    if (newTags.length === currentTags.length) return;
+
+    // Optimistic update
+    setContacts((prev) =>
+      prev.map((c) => (c.id === contactId ? { ...c, cms_tags: newTags } : c)),
+    );
+
+    // Persist to backend
+    apiSetContactTags(activeCampaignId, contactId, newTags).then((res) => {
+      if (!res.ok) {
+        // Rollback
+        setContacts((prev) =>
+          prev.map((c) => (c.id === contactId ? { ...c, cms_tags: currentTags } : c)),
+        );
+        setUiError(res.error ?? "No se pudo quitar la etiqueta");
+      } else if (res.contact) {
+        setContacts((prev) =>
+          prev.map((c) => (c.id === contactId ? res.contact! : c)),
+        );
+      }
     });
-  }, []);
+  }, [activeCampaignId, contacts]);
 
   const handleSendMessage = useCallback(async () => {
     if (!activeCampaignId || !selectedContactId) return;
@@ -982,54 +994,185 @@ export default function CmsPage() {
                 })}
               </div>
 
-              <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-                <select
-                  value={selectedTagFilter}
-                  onChange={(event) => setSelectedTagFilter(event.target.value)}
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    border: "1px solid #d6dde6",
-                    borderRadius: 8,
-                    padding: "8px 10px",
-                    fontSize: 12,
-                    fontFamily: FONT,
-                    background: "#ffffff",
-                    color: "#334155",
-                  }}
-                >
-                  <option value="__all">Todas las etiquetas</option>
-                  {availableTags.map((tag) => (
-                    <option key={tag} value={tag}>
-                      {tag}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const raw = window.prompt("Nueva etiqueta");
-                    if (!raw) return;
-                    const created = handleCreateTag(raw);
-                    if (!created) return;
-                    setSelectedTagFilter(created);
-                  }}
-                  style={{
-                    width: 34,
-                    height: 34,
-                    borderRadius: 8,
-                    border: "1px solid #cbd5e1",
-                    background: "#ffffff",
-                    color: "#334155",
-                    fontSize: 20,
-                    lineHeight: 1,
-                    cursor: "pointer",
-                  }}
-                  title="Crear etiqueta"
-                  aria-label="Crear etiqueta"
-                >
-                  +
-                </button>
+              <div style={{ marginTop: 8, position: "relative" }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {selectedTagFilter !== "__all" && (
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "5px 8px",
+                        borderRadius: 999,
+                        border: "1px solid #93c5fd",
+                        background: "#eff6ff",
+                        fontSize: 11,
+                        color: "#1e40af",
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {selectedTagFilter}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTagFilter("__all");
+                          setTagSearchSidebar("");
+                        }}
+                        style={{
+                          border: "none",
+                          background: "transparent",
+                          color: "#3b82f6",
+                          padding: 0,
+                          cursor: "pointer",
+                          fontSize: 13,
+                          lineHeight: 1,
+                          fontWeight: 700,
+                        }}
+                        aria-label="Quitar filtro de etiqueta"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  )}
+                  <input
+                    type="text"
+                    placeholder={selectedTagFilter === "__all" ? "Filtrar por etiqueta..." : "Cambiar etiqueta..."}
+                    value={tagSearchSidebar}
+                    onChange={(e) => setTagSearchSidebar(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        setTagSearchSidebar("");
+                      }
+                      if (e.key === "Enter" && tagSearchSidebar.trim()) {
+                        const query = tagSearchSidebar.trim().toLowerCase();
+                        const match = availableTags.find((t) => t.toLowerCase().includes(query));
+                        if (match) {
+                          setSelectedTagFilter(match);
+                          setTagSearchSidebar("");
+                        } else {
+                          // Create new tag and set as filter
+                          const created = handleCreateTag(tagSearchSidebar);
+                          if (created) {
+                            setSelectedTagFilter(created);
+                            setTagSearchSidebar("");
+                          }
+                        }
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      border: "1px solid #d6dde6",
+                      borderRadius: 8,
+                      padding: "8px 10px",
+                      fontSize: 12,
+                      fontFamily: FONT,
+                      background: "#ffffff",
+                      color: "#0f172a",
+                      outline: "none",
+                    }}
+                  />
+                </div>
+                {tagSearchSidebar.trim() && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      marginTop: 4,
+                      background: "#ffffff",
+                      border: "1px solid #d6dde6",
+                      borderRadius: 10,
+                      boxShadow: "0 8px 24px rgba(15, 23, 42, 0.12)",
+                      zIndex: 50,
+                      maxHeight: 180,
+                      overflowY: "auto",
+                    }}
+                  >
+                    {availableTags
+                      .filter((t) => t.toLowerCase().includes(tagSearchSidebar.trim().toLowerCase()))
+                      .map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => {
+                            setSelectedTagFilter(tag);
+                            setTagSearchSidebar("");
+                          }}
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "8px 12px",
+                            fontSize: 12,
+                            fontFamily: FONT,
+                            border: "none",
+                            background: "transparent",
+                            color: "#0f172a",
+                            cursor: "pointer",
+                            fontWeight: 500,
+                          }}
+                          onMouseEnter={(e) => {
+                            (e.target as HTMLElement).style.background = "#f1f5f9";
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.target as HTMLElement).style.background = "transparent";
+                          }}
+                        >
+                          {tag}
+                        </button>
+                      ))}
+                    {!availableTags.some((t) =>
+                      t.toLowerCase() === tagSearchSidebar.trim().toLowerCase(),
+                    ) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const created = handleCreateTag(tagSearchSidebar);
+                          if (created) {
+                            setSelectedTagFilter(created);
+                            setTagSearchSidebar("");
+                          }
+                        }}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "8px 12px",
+                          fontSize: 12,
+                          fontFamily: FONT,
+                          border: "none",
+                          borderTop: "1px solid #eef2f7",
+                          background: "transparent",
+                          color: "#3b82f6",
+                          cursor: "pointer",
+                          fontWeight: 600,
+                        }}
+                        onMouseEnter={(e) => {
+                          (e.target as HTMLElement).style.background = "#eff6ff";
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.target as HTMLElement).style.background = "transparent";
+                        }}
+                      >
+                        + Crear &ldquo;{tagSearchSidebar.trim()}&rdquo;
+                      </button>
+                    )}
+                    {availableTags.filter((t) =>
+                      t.toLowerCase().includes(tagSearchSidebar.trim().toLowerCase()),
+                    ).length === 0 &&
+                      availableTags.some((t) =>
+                        t.toLowerCase() === tagSearchSidebar.trim().toLowerCase(),
+                      ) && (
+                        <div style={{ padding: "8px 12px", fontSize: 12, color: "#64748b" }}>
+                          No hay mas resultados
+                        </div>
+                      )}
+                  </div>
+                )}
               </div>
             </div>
 

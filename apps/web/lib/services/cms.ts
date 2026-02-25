@@ -41,6 +41,7 @@ export type CmsContact = {
   cms_hablado_at: string | null;
   cms_respondieron_at: string | null;
   cms_operator_notes: CmsOperatorNotes;
+  cms_tags: string[];
   nombre: string;
   telefono: string;
   encuestador: string;
@@ -145,6 +146,12 @@ export type CmsSseContactUpdated = {
 };
 
 export type CmsSseNotesUpdated = {
+  contact: CmsContact;
+  operator_id: string;
+  operator_email: string;
+};
+
+export type CmsSseTagsUpdated = {
   contact: CmsContact;
   operator_id: string;
   operator_email: string;
@@ -334,6 +341,35 @@ export async function sendContactWhatsAppMessage(
     messageId: res.data?.message_id,
     status: res.data?.status,
   };
+}
+
+// ── Tags ────────────────────────────────────────────────────────────
+
+type CmsTagsResponse = {
+  ok: boolean;
+  tags: string[];
+};
+
+export async function getCmsTags(
+  campaignId: string,
+): Promise<{ ok: boolean; tags: string[]; error?: string }> {
+  const res = await api.get<CmsTagsResponse>("/api/cms/tags", { campaignId });
+  if (!res.ok) return { ok: false, tags: [], error: res.error?.message };
+  return { ok: true, tags: res.data?.tags ?? [] };
+}
+
+export async function setContactTags(
+  campaignId: string,
+  contactId: string,
+  tags: string[],
+): Promise<{ ok: boolean; contact?: CmsContact; error?: string }> {
+  const res = await api.put<CmsContactResponse>(
+    `/api/cms/contacts/${contactId}/tags`,
+    { tags },
+    { campaignId },
+  );
+  if (!res.ok) return { ok: false, error: res.error?.message };
+  return { ok: true, contact: res.data?.contact };
 }
 
 // ── Brigadista Metrics ──────────────────────────────────────────────

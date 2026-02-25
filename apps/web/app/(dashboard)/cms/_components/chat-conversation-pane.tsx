@@ -135,7 +135,7 @@ export function ChatConversationPane({
 }: Props) {
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const [tagsMenuOpen, setTagsMenuOpen] = useState(false);
-  const [tagToAssign, setTagToAssign] = useState("");
+  const [tagSearchInput, setTagSearchInput] = useState("");
 
   const timeline = useMemo<TimelineRow[]>(() => {
     const rows: TimelineRow[] = [];
@@ -172,7 +172,7 @@ export function ChatConversationPane({
 
   useEffect(() => {
     setTagsMenuOpen(false);
-    setTagToAssign("");
+    setTagSearchInput("");
   }, [contact?.id]);
 
   if (!contact) {
@@ -445,13 +445,33 @@ export function ChatConversationPane({
             )}
           </div>
 
-          <div style={{ display: "flex", gap: 8 }}>
-            <select
-              value={tagToAssign}
-              onChange={(event) => setTagToAssign(event.target.value)}
+          <div style={{ position: "relative" }}>
+            <input
+              type="text"
+              placeholder="Buscar o crear etiqueta..."
+              value={tagSearchInput}
+              onChange={(e) => setTagSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setTagSearchInput("");
+                }
+                if (e.key === "Enter" && tagSearchInput.trim()) {
+                  const query = tagSearchInput.trim().toLowerCase();
+                  const match = assignableTags.find((t) => t.toLowerCase().includes(query));
+                  if (match) {
+                    const ok = onAssignTag(contact.id, match);
+                    if (ok) setTagSearchInput("");
+                  } else {
+                    const created = onCreateTag(tagSearchInput);
+                    if (created) {
+                      onAssignTag(contact.id, created);
+                      setTagSearchInput("");
+                    }
+                  }
+                }
+              }}
               style={{
-                flex: 1,
-                minWidth: 0,
+                width: "100%",
                 border: "1px solid #d6dde6",
                 borderRadius: 8,
                 padding: "8px 10px",
@@ -459,64 +479,97 @@ export function ChatConversationPane({
                 fontFamily: FONT,
                 background: "#ffffff",
                 color: "#0f172a",
+                outline: "none",
               }}
-            >
-              <option value="">Selecciona etiqueta</option>
-              {assignableTags.map((tag) => (
-                <option key={tag} value={tag}>
-                  {tag}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              disabled={!tagToAssign}
-              onClick={() => {
-                if (!tagToAssign) return;
-                const ok = onAssignTag(contact.id, tagToAssign);
-                if (ok) setTagToAssign("");
-              }}
-              style={{
-                border: "1px solid #cbd5e1",
-                background: "#ffffff",
-                color: "#334155",
-                borderRadius: 8,
-                padding: "8px 10px",
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: tagToAssign ? "pointer" : "not-allowed",
-                opacity: tagToAssign ? 1 : 0.6,
-                whiteSpace: "nowrap",
-              }}
-            >
-              Asignar
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const raw = window.prompt("Nueva etiqueta");
-                if (!raw) return;
-                const created = onCreateTag(raw);
-                if (!created) return;
-                const ok = onAssignTag(contact.id, created);
-                if (ok) setTagToAssign("");
-              }}
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                background: "#ffffff",
-                color: "#334155",
-                fontSize: 20,
-                lineHeight: 1,
-                cursor: "pointer",
-              }}
-              title="Crear etiqueta"
-              aria-label="Crear etiqueta"
-            >
-              +
-            </button>
+            />
+            {tagSearchInput.trim() && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  left: 0,
+                  right: 0,
+                  marginTop: 4,
+                  background: "#ffffff",
+                  border: "1px solid #d6dde6",
+                  borderRadius: 10,
+                  boxShadow: "0 8px 24px rgba(15, 23, 42, 0.12)",
+                  zIndex: 50,
+                  maxHeight: 160,
+                  overflowY: "auto",
+                }}
+              >
+                {assignableTags
+                  .filter((t) => t.toLowerCase().includes(tagSearchInput.trim().toLowerCase()))
+                  .map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => {
+                        const ok = onAssignTag(contact.id, tag);
+                        if (ok) setTagSearchInput("");
+                      }}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "8px 12px",
+                        fontSize: 12,
+                        fontFamily: FONT,
+                        border: "none",
+                        background: "transparent",
+                        color: "#0f172a",
+                        cursor: "pointer",
+                        fontWeight: 500,
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.target as HTMLElement).style.background = "#f1f5f9";
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.target as HTMLElement).style.background = "transparent";
+                      }}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                {!availableTags.some((t) =>
+                  t.toLowerCase() === tagSearchInput.trim().toLowerCase(),
+                ) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const created = onCreateTag(tagSearchInput);
+                      if (created) {
+                        onAssignTag(contact.id, created);
+                        setTagSearchInput("");
+                      }
+                    }}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "8px 12px",
+                      fontSize: 12,
+                      fontFamily: FONT,
+                      border: "none",
+                      borderTop: "1px solid #eef2f7",
+                      background: "transparent",
+                      color: "#3b82f6",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.target as HTMLElement).style.background = "#eff6ff";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.target as HTMLElement).style.background = "transparent";
+                    }}
+                  >
+                    + Crear &ldquo;{tagSearchInput.trim()}&rdquo;
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
