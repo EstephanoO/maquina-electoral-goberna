@@ -15,15 +15,11 @@ type Props = {
   connectedCount: number;
   viewMode: TierraViewMode;
   onViewModeChange: (mode: TierraViewMode) => void;
-  /** Total form submissions all-time (for goal progress in header) */
-  totalDatos?: number;
-  /** Campaign meta de datos */
-  metaDatosTarget?: number;
 };
 
 /* ========== Component ========== */
 
-export function TierraHeader({ stats, agentCount, formCount, connectedCount, viewMode, onViewModeChange, totalDatos, metaDatosTarget }: Props) {
+export function TierraHeader({ stats, agentCount, formCount, connectedCount, viewMode, onViewModeChange }: Props) {
   const router = useRouter();
   const { campaign, metas, totals } = stats;
   const pc = campaign.color_primario;
@@ -86,13 +82,12 @@ export function TierraHeader({ stats, agentCount, formCount, connectedCount, vie
           />
         </div>
 
-        <div className="w-px h-8 bg-slate-200/70" />
-
-        {/* Contextual KPIs */}
-        {viewMode === "campo" ? (
-          <CampoKpis formCount={formCount} agentCount={agentCount} connectedCount={connectedCount} todayCount={totals.forms_today} primaryColor={pc} />
-        ) : (
-          <PipelineKpis totalDatos={totalDatos ?? totals.forms_count} metaDatosTarget={metaDatosTarget ?? metas.datos} primaryColor={pc} />
+        {/* Contextual KPIs — only for Campo mode; Pipeline has the hero card */}
+        {viewMode === "campo" && (
+          <>
+            <div className="w-px h-8 bg-slate-200/70" />
+            <CampoKpis formCount={formCount} agentCount={agentCount} connectedCount={connectedCount} todayCount={totals.forms_today} primaryColor={pc} />
+          </>
         )}
       </div>
 
@@ -141,23 +136,7 @@ function CampoKpis({ formCount, agentCount, connectedCount, todayCount, primaryC
   );
 }
 
-function PipelineKpis({ totalDatos, metaDatosTarget, primaryColor }: { totalDatos?: number; metaDatosTarget?: number; primaryColor: string }) {
-  if (totalDatos == null) return <span className="text-xs text-slate-400">Cargando...</span>;
-  const meta = metaDatosTarget && metaDatosTarget > 0 ? metaDatosTarget : 200000;
-  const pct = Math.min((totalDatos / meta) * 100, 100);
-  const remaining = Math.max(meta - totalDatos, 0);
-  return (
-    <div className="flex items-center gap-4">
-      <KpiSlot value={totalDatos.toLocaleString()} label="Registros" style={{ color: primaryColor }} />
-      <KpiDivider />
-      <KpiSlot value={meta.toLocaleString()} label="Meta" className="text-slate-500" />
-      <KpiDivider />
-      <KpiSlot value={`${pct.toFixed(0)}%`} label="Progreso" style={{ color: pct >= 100 ? "#10b981" : primaryColor }} />
-      <KpiDivider />
-      <KpiSlot value={remaining > 0 ? `-${remaining.toLocaleString()}` : "OK"} label="Faltan" className={remaining > 0 ? "text-slate-500" : "text-emerald-500"} />
-    </div>
-  );
-}
+
 
 /* ========== Sub-components ========== */
 

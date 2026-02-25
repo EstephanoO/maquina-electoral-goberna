@@ -141,6 +141,7 @@ export const PipelineView = memo(function PipelineView({
               periodLabel={periodLabel}
               period={period}
               dateRanges={dateRanges}
+              periodGoalPerBrig={goalCalcs.periodGoalPerBrig}
             />
           )}
 
@@ -166,9 +167,9 @@ export const PipelineView = memo(function PipelineView({
 
 /* ========== Collapsible Charts Section ========== */
 
-function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges }: {
+function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges, periodGoalPerBrig }: {
   forms: FormRecord[]; prevForms: FormRecord[]; primaryColor: string; secondaryColor?: string;
-  periodLabel: string; period: PipelinePeriod; dateRanges: PipelineDateRanges;
+  periodLabel: string; period: PipelinePeriod; dateRanges: PipelineDateRanges; periodGoalPerBrig?: number;
 }) {
   const [open, setOpen] = useState(true);
   return (
@@ -191,14 +192,15 @@ function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodL
       </button>
       {open && (
         <ActivityCharts
-          forms={forms}
-          prevForms={prevForms}
-          primaryColor={primaryColor}
-          secondaryColor={secondaryColor}
-          periodLabel={periodLabel}
-          period={period}
-          dateRanges={dateRanges}
-        />
+              forms={forms}
+              prevForms={prevForms}
+              primaryColor={primaryColor}
+              secondaryColor={secondaryColor}
+              periodLabel={periodLabel}
+              period={period}
+              dateRanges={dateRanges}
+              periodGoalPerBrig={periodGoalPerBrig}
+            />
       )}
     </div>
   );
