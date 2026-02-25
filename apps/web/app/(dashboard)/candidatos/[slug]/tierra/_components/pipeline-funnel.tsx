@@ -113,55 +113,49 @@ export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesC
         </div>
       )}
 
-      {/* ═══ Dark Hero Card ═══ */}
+      {/* ═══ Hero Card (light) ═══ */}
       <div
-        className="relative overflow-hidden rounded-2xl mb-3"
-        style={{ background: `linear-gradient(135deg, #0f172a 0%, #1e293b 50%, ${primaryColor}22 100%)` }}
+        className="relative overflow-hidden rounded-2xl mb-3 border border-slate-200/80"
+        style={{ background: `linear-gradient(135deg, #ffffff 0%, #f8fafc 50%, ${primaryColor}08 100%)`, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}
       >
-        {/* Decorative glows */}
-        <div className="absolute -top-16 -right-16 w-48 h-48 rounded-full opacity-20 blur-3xl" style={{ background: primaryColor }} />
-        <div className="absolute -bottom-8 -left-8 w-32 h-32 rounded-full opacity-10 blur-2xl" style={{ background: urgencyColor }} />
-
         <div className="relative flex items-center gap-5 px-5 py-4">
           {/* SVG ring */}
           <div className="relative shrink-0 w-[92px] h-[92px]">
             <svg width="92" height="92" viewBox="0 0 92 92" className="transform -rotate-90" role="img" aria-label={`${periodPct.toFixed(0)}% progreso`}>
               <title>{periodPct.toFixed(0)}% progreso</title>
-              <circle cx="46" cy="46" r={ringR} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="7" />
+              <circle cx="46" cy="46" r={ringR} fill="none" stroke="#e2e8f0" strokeWidth="7" />
               <circle
                 cx="46" cy="46" r={ringR} fill="none"
                 stroke={periodPct >= 100 ? "#10b981" : primaryColor}
                 strokeWidth="7" strokeLinecap="round"
                 strokeDasharray={ringC} strokeDashoffset={ringOffset}
                 className="transition-all duration-1000 ease-out"
-                style={{ filter: `drop-shadow(0 0 6px ${periodPct >= 100 ? "#10b981" : primaryColor}80)` }}
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-[22px] font-black text-white tabular-nums leading-none">{periodPct.toFixed(0)}%</span>
+              <span className="text-[22px] font-black tabular-nums leading-none" style={{ color: periodPct >= 100 ? "#10b981" : primaryColor }}>{periodPct.toFixed(0)}%</span>
             </div>
           </div>
 
           {/* Numbers */}
           <div className="flex-1 min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-white/50 mb-1 block">{periodGoal.label}</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1 block">{periodGoal.label}</span>
             <div className="flex items-baseline gap-2 mb-1.5">
-              <span className="text-[32px] font-black tabular-nums leading-none text-white">{fmt(periodGoal.current)}</span>
-              <span className="text-[16px] text-white/30 font-bold">/ {fmt(periodGoal.target)}</span>
+              <span className="text-[32px] font-black tabular-nums leading-none text-slate-900">{fmt(periodGoal.current)}</span>
+              <span className="text-[16px] text-slate-300 font-bold">/ {fmt(periodGoal.target)}</span>
             </div>
-            <div className="h-2 bg-white/10 rounded-full overflow-hidden mb-1.5">
+            <div className="h-2 bg-slate-200/80 rounded-full overflow-hidden mb-1.5">
               <div
                 className="h-full rounded-full transition-[width] duration-700 ease-out"
                 style={{
                   width: `${periodPct}%`,
                   background: periodPct >= 100 ? "linear-gradient(90deg, #10b981, #059669)" : `linear-gradient(90deg, ${primaryColor}, ${primaryColor}cc)`,
-                  boxShadow: `0 0 12px ${periodPct >= 100 ? "#10b981" : primaryColor}60`,
                 }}
               />
             </div>
             <div className="flex items-center gap-4">
-              <span className="text-[11px] text-white/40">
-                {periodRemaining > 0 ? <>Faltan <strong className="text-white/80">{fmt(periodRemaining)}</strong></> : <strong className="text-emerald-400">Meta alcanzada</strong>}
+              <span className="text-[11px] text-slate-400">
+                {periodRemaining > 0 ? <>Faltan <strong className="text-slate-700">{fmt(periodRemaining)}</strong></> : <strong className="text-emerald-500">Meta alcanzada</strong>}
               </span>
               <span className="text-[11px] font-bold flex items-center gap-1" style={{ color: urgencyColor }}>
                 <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: urgencyColor }} />
