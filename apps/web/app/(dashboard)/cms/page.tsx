@@ -76,6 +76,28 @@ function normalizeTagName(raw: string): string {
   return raw.trim().replace(/\s+/g, " ").slice(0, 32);
 }
 
+function dedupeAndSortTags(tags: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const tag of tags) {
+    const normalized = normalizeTagName(tag);
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(normalized);
+  }
+  return result.sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+}
+
+function normalizeContactTagsMap(input: Record<string, string[]>): Record<string, string[]> {
+  const next: Record<string, string[]> = {};
+  for (const [contactId, tags] of Object.entries(input)) {
+    next[contactId] = dedupeAndSortTags(tags ?? []);
+  }
+  return next;
+}
+
 export default function CmsPage() {
   const { user, activeCampaignId, campaigns } = useAuth();
 
@@ -102,6 +124,7 @@ export default function CmsPage() {
   const [archivingContactId, setArchivingContactId] = useState<string | null>(null);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [contactTagsById, setContactTagsById] = useState<Record<string, string[]>>({});
+  const [selectedTagFilter, setSelectedTagFilter] = useState<string>("__all");
 
   const sseRef = useRef<{ close: () => void } | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -131,6 +154,32 @@ export default function CmsPage() {
   const selectedDraft = selectedContactId ? (draftByContact[selectedContactId] ?? "") : "";
   const selectedSending = selectedContactId ? Boolean(sendingByContact[selectedContactId]) : false;
   const selectedContactTags = selectedContactId ? (contactTagsById[selectedContactId] ?? []) : [];
+  const filteredContacts = useMemo(() => {
+    const query = debouncedSearch.trim().toLowerCase();
+    return contacts.filter((contact) => {
+      const contactTags = contactTagsById[contact.id] ?? [];
+      const matchesTagFilter = selectedTagFilter === "__all"
+        || contactTags.some((tag) => tag.toLowerCase() === selectedTagFilter.toLowerCase());
+
+      if (!matchesTagFilter) return false;
+      if (!query) return true;
+
+      const textBlock = [
+        contact.nombre,
+        contact.telefono,
+        contact.zona,
+        contact.distrito,
+        contact.candidato_preferido,
+        contact.encuestador,
+        contact.cms_operator_notes?.comentarios ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const matchesTagSearch = contactTags.some((tag) => tag.toLowerCase().includes(query));
+      return textBlock.includes(query) || matchesTagSearch;
+    });
+  }, [contacts, contactTagsById, debouncedSearch, selectedTagFilter]);
 
   const fetchContacts = useCallback(async () => {
     if (!activeCampaignId) return;
@@ -140,7 +189,7 @@ export default function CmsPage() {
     setUiError(null);
 
     const [contactsRes, statsRes] = await Promise.all([
-      listCmsContacts(activeCampaignId, activeTab, PAGE_LIMIT, 0, debouncedSearch),
+      listCmsContacts(activeCampaignId, activeTab, PAGE_LIMIT, 0, ""),
       getCmsStats(activeCampaignId),
     ]);
 
@@ -160,7 +209,7 @@ export default function CmsPage() {
     }
 
     setLoading(false);
-  }, [activeCampaignId, activeTab, debouncedSearch]);
+  }, [activeCampaignId, activeTab]);
 
   const handleLoadMore = useCallback(async () => {
     if (!activeCampaignId || loadingMore) return;
@@ -172,7 +221,7 @@ export default function CmsPage() {
       activeTab,
       PAGE_LIMIT,
       nextOffset,
-      debouncedSearch,
+      "",
     );
 
     if (res.ok) {
@@ -183,7 +232,7 @@ export default function CmsPage() {
     }
 
     setLoadingMore(false);
-  }, [activeCampaignId, activeTab, debouncedSearch, loadingMore, offset]);
+  }, [activeCampaignId, activeTab, loadingMore, offset]);
 
   useEffect(() => {
     fetchContacts();
@@ -201,14 +250,19 @@ export default function CmsPage() {
     if (!activeCampaignId) {
       setAvailableTags([]);
       setContactTagsById({});
+      setSelectedTagFilter("__all");
       return;
     }
 
     try {
       const storedTags = window.localStorage.getItem(`cms:tags:${activeCampaignId}`);
       const storedContactTags = window.localStorage.getItem(`cms:contact-tags:${activeCampaignId}`);
-      setAvailableTags(storedTags ? (JSON.parse(storedTags) as string[]) : []);
-      setContactTagsById(storedContactTags ? (JSON.parse(storedContactTags) as Record<string, string[]>) : {});
+      setAvailableTags(storedTags ? dedupeAndSortTags(JSON.parse(storedTags) as string[]) : []);
+      setContactTagsById(
+        storedContactTags
+          ? normalizeContactTagsMap(JSON.parse(storedContactTags) as Record<string, string[]>)
+          : {},
+      );
     } catch {
       setAvailableTags([]);
       setContactTagsById({});
@@ -217,27 +271,41 @@ export default function CmsPage() {
 
   useEffect(() => {
     if (!activeCampaignId) return;
-    window.localStorage.setItem(`cms:tags:${activeCampaignId}`, JSON.stringify(availableTags));
+    window.localStorage.setItem(
+      `cms:tags:${activeCampaignId}`,
+      JSON.stringify(dedupeAndSortTags(availableTags)),
+    );
   }, [activeCampaignId, availableTags]);
 
   useEffect(() => {
     if (!activeCampaignId) return;
-    window.localStorage.setItem(`cms:contact-tags:${activeCampaignId}`, JSON.stringify(contactTagsById));
+    window.localStorage.setItem(
+      `cms:contact-tags:${activeCampaignId}`,
+      JSON.stringify(normalizeContactTagsMap(contactTagsById)),
+    );
   }, [activeCampaignId, contactTagsById]);
 
   useEffect(() => {
-    if (!contacts.length) {
+    if (selectedTagFilter === "__all") return;
+    const exists = availableTags.some((tag) => tag.toLowerCase() === selectedTagFilter.toLowerCase());
+    if (!exists) {
+      setSelectedTagFilter("__all");
+    }
+  }, [selectedTagFilter, availableTags]);
+
+  useEffect(() => {
+    if (!filteredContacts.length) {
       setSelectedContactId(null);
       return;
     }
 
     setSelectedContactId((prev) => {
-      if (prev && contacts.some((contact) => contact.id === prev)) {
+      if (prev && filteredContacts.some((contact) => contact.id === prev)) {
         return prev;
       }
-      return contacts[0]?.id ?? null;
+      return filteredContacts[0]?.id ?? null;
     });
-  }, [contacts]);
+  }, [filteredContacts]);
 
   useEffect(() => {
     if (!notesContact) return;
@@ -520,14 +588,19 @@ export default function CmsPage() {
     if (!normalized) return null;
 
     const existing = availableTags.find((tag) => tag.toLowerCase() === normalized.toLowerCase());
-    if (existing) return existing;
+    const canonical = existing ?? normalized;
 
-    setAvailableTags((prev) => [...prev, normalized].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" })));
-    return normalized;
+    setAvailableTags((prev) => {
+      const hasTag = prev.some((tag) => tag.toLowerCase() === canonical.toLowerCase());
+      if (hasTag) return prev;
+      return dedupeAndSortTags([...prev, canonical]);
+    });
+
+    return canonical;
   }, [availableTags]);
 
   const handleAssignTag = useCallback((contactId: string, rawName: string): boolean => {
-    const tag = handleCreateTag(rawName);
+    const tag = normalizeTagName(rawName);
     if (!tag) return false;
 
     setContactTagsById((prev) => {
@@ -535,12 +608,12 @@ export default function CmsPage() {
       if (current.some((item) => item.toLowerCase() === tag.toLowerCase())) return prev;
       return {
         ...prev,
-        [contactId]: [...current, tag].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" })),
+        [contactId]: dedupeAndSortTags([...current, tag]),
       };
     });
 
     return true;
-  }, [handleCreateTag]);
+  }, []);
 
   const handleRemoveTag = useCallback((contactId: string, tagName: string) => {
     setContactTagsById((prev) => {
@@ -883,6 +956,56 @@ export default function CmsPage() {
                   );
                 })}
               </div>
+
+              <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                <select
+                  value={selectedTagFilter}
+                  onChange={(event) => setSelectedTagFilter(event.target.value)}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    border: "1px solid #d6dde6",
+                    borderRadius: 8,
+                    padding: "8px 10px",
+                    fontSize: 12,
+                    fontFamily: FONT,
+                    background: "#ffffff",
+                    color: "#334155",
+                  }}
+                >
+                  <option value="__all">Todas las etiquetas</option>
+                  {availableTags.map((tag) => (
+                    <option key={tag} value={tag}>
+                      {tag}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const raw = window.prompt("Nueva etiqueta");
+                    if (!raw) return;
+                    const created = handleCreateTag(raw);
+                    if (!created) return;
+                    setSelectedTagFilter(created);
+                  }}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 8,
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
+                    color: "#334155",
+                    fontSize: 20,
+                    lineHeight: 1,
+                    cursor: "pointer",
+                  }}
+                  title="Crear etiqueta"
+                  aria-label="Crear etiqueta"
+                >
+                  +
+                </button>
+              </div>
             </div>
 
             <div className="cms-chat-contact-list">
@@ -890,19 +1013,21 @@ export default function CmsPage() {
                 <div style={{ padding: 22, textAlign: "center", color: "#64748b", fontSize: 13 }}>
                   Cargando contactos...
                 </div>
-              ) : contacts.length === 0 ? (
+              ) : filteredContacts.length === 0 ? (
                 <div style={{ padding: 22, textAlign: "center", color: "#64748b" }}>
                   <div style={{ fontSize: 14, fontWeight: 700 }}>
-                    {search ? "Sin resultados para la busqueda" : "No hay contactos en este filtro"}
+                    {search || selectedTagFilter !== "__all"
+                      ? "Sin resultados para los filtros aplicados"
+                      : "No hay contactos en este filtro"}
                   </div>
                   <div style={{ marginTop: 4, fontSize: 12 }}>
-                    {search
-                      ? "Prueba con otro termino"
+                    {search || selectedTagFilter !== "__all"
+                      ? "Prueba con otra búsqueda o etiqueta"
                       : "Los contactos aparecen cuando ingresan formularios"}
                   </div>
                 </div>
               ) : (
-                contacts.map((contact) => (
+                filteredContacts.map((contact) => (
                   <ChatContactListItem
                     key={contact.id}
                     contact={contact}
@@ -927,7 +1052,7 @@ export default function CmsPage() {
               }}
             >
               <span style={{ fontSize: 12, color: "#64748b" }}>
-                {contacts.length} de {total} contactos
+                {filteredContacts.length} visibles · {contacts.length} cargados de {total}
               </span>
 
               {contacts.length < total && (

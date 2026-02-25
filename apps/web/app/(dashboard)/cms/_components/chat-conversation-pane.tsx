@@ -134,7 +134,7 @@ export function ChatConversationPane({
   onRemoveTag,
 }: Props) {
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
-  const [newTag, setNewTag] = useState("");
+  const [tagsMenuOpen, setTagsMenuOpen] = useState(false);
   const [tagToAssign, setTagToAssign] = useState("");
 
   const timeline = useMemo<TimelineRow[]>(() => {
@@ -171,7 +171,7 @@ export function ChatConversationPane({
   }, [timeline.length, contact?.id]);
 
   useEffect(() => {
-    setNewTag("");
+    setTagsMenuOpen(false);
     setTagToAssign("");
   }, [contact?.id]);
 
@@ -297,6 +297,25 @@ export function ChatConversationPane({
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <button
             type="button"
+            onClick={() => setTagsMenuOpen((prev) => !prev)}
+            style={{
+              border: "1px solid #cbd5e1",
+              background: tagsMenuOpen ? "#e2e8f0" : "#ffffff",
+              color: "#334155",
+              borderRadius: 999,
+              padding: "6px 10px",
+              fontSize: 11,
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+              cursor: "pointer",
+            }}
+            title="Etiquetas del contacto"
+          >
+            Etiquetas
+          </button>
+
+          <button
+            type="button"
             disabled={archiving || contact.cms_status === "archivado"}
             onClick={() => {
               if (contact.cms_status === "archivado") return;
@@ -364,118 +383,68 @@ export function ChatConversationPane({
         </div>
       </div>
 
-      <div
-        style={{
-          borderBottom: "1px solid #d6dde6",
-          background: "#f8fafc",
-          padding: "10px 12px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.05em", color: "#64748b", textTransform: "uppercase" }}>
-            Etiquetas
-          </span>
-          <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>
-            {contactTags.length} asignada{contactTags.length === 1 ? "" : "s"}
-          </span>
-        </div>
+      {tagsMenuOpen && (
+        <div
+          style={{
+            borderBottom: "1px solid #d6dde6",
+            background: "#f8fafc",
+            padding: "10px 12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.05em", color: "#64748b", textTransform: "uppercase" }}>
+              Etiquetas del contacto
+            </span>
+            <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>
+              {contactTags.length} asignada{contactTags.length === 1 ? "" : "s"}
+            </span>
+          </div>
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {contactTags.length === 0 ? (
-            <span style={{ fontSize: 12, color: "#64748b" }}>Sin etiquetas</span>
-          ) : (
-            contactTags.map((tag) => (
-              <span
-                key={tag}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "4px 8px",
-                  borderRadius: 999,
-                  border: "1px solid #cbd5e1",
-                  background: "#ffffff",
-                  fontSize: 12,
-                  color: "#334155",
-                  fontWeight: 600,
-                }}
-              >
-                {tag}
-                <button
-                  type="button"
-                  onClick={() => onRemoveTag(contact.id, tag)}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {contactTags.length === 0 ? (
+              <span style={{ fontSize: 12, color: "#64748b" }}>Sin etiquetas</span>
+            ) : (
+              contactTags.map((tag) => (
+                <span
+                  key={tag}
                   style={{
-                    border: "none",
-                    background: "transparent",
-                    color: "#64748b",
-                    padding: 0,
-                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "4px 8px",
+                    borderRadius: 999,
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
                     fontSize: 12,
-                    lineHeight: 1,
+                    color: "#334155",
+                    fontWeight: 600,
                   }}
-                  aria-label={`Quitar etiqueta ${tag}`}
                 >
-                  ×
-                </button>
-              </span>
-            ))
-          )}
-        </div>
+                  {tag}
+                  <button
+                    type="button"
+                    onClick={() => onRemoveTag(contact.id, tag)}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      color: "#64748b",
+                      padding: 0,
+                      cursor: "pointer",
+                      fontSize: 12,
+                      lineHeight: 1,
+                    }}
+                    aria-label={`Quitar etiqueta ${tag}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))
+            )}
+          </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            type="text"
-            value={newTag}
-            placeholder="Nueva etiqueta"
-            onChange={(event) => setNewTag(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              const created = onCreateTag(newTag);
-              if (!created) return;
-              const ok = onAssignTag(contact.id, created);
-              if (ok) setNewTag("");
-            }}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              border: "1px solid #d6dde6",
-              borderRadius: 8,
-              padding: "8px 10px",
-              fontSize: 12,
-              fontFamily: FONT,
-              background: "#ffffff",
-              color: "#0f172a",
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              const created = onCreateTag(newTag);
-              if (!created) return;
-              const ok = onAssignTag(contact.id, created);
-              if (ok) setNewTag("");
-            }}
-            style={{
-              border: "1px solid #cbd5e1",
-              background: "#ffffff",
-              color: "#334155",
-              borderRadius: 8,
-              padding: "8px 10px",
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-            }}
-          >
-            Crear
-          </button>
-        </div>
-
-        {assignableTags.length > 0 && (
           <div style={{ display: "flex", gap: 8 }}>
             <select
               value={tagToAssign}
@@ -492,7 +461,7 @@ export function ChatConversationPane({
                 color: "#0f172a",
               }}
             >
-              <option value="">Asignar etiqueta existente</option>
+              <option value="">Selecciona etiqueta</option>
               {assignableTags.map((tag) => (
                 <option key={tag} value={tag}>
                   {tag}
@@ -522,9 +491,35 @@ export function ChatConversationPane({
             >
               Asignar
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                const raw = window.prompt("Nueva etiqueta");
+                if (!raw) return;
+                const created = onCreateTag(raw);
+                if (!created) return;
+                const ok = onAssignTag(contact.id, created);
+                if (ok) setTagToAssign("");
+              }}
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 8,
+                border: "1px solid #cbd5e1",
+                background: "#ffffff",
+                color: "#334155",
+                fontSize: 20,
+                lineHeight: 1,
+                cursor: "pointer",
+              }}
+              title="Crear etiqueta"
+              aria-label="Crear etiqueta"
+            >
+              +
+            </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <div
         ref={messagesContainerRef}
