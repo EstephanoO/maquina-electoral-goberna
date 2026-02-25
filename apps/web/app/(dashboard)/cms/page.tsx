@@ -867,6 +867,7 @@ export default function CmsPage() {
         }
 
         .cms-chat-shell {
+          width: 100%;
           height: 100%;
           min-height: 0;
           border: 1px solid #d6dde6;
@@ -875,6 +876,7 @@ export default function CmsPage() {
           background: #f0f2f5;
           box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
           display: flex;
+          transition: width 240ms ease;
         }
 
         .cms-chat-sidebar {
@@ -907,6 +909,10 @@ export default function CmsPage() {
         @media (min-width: 1025px) {
           .cms-chat-root.panel-open {
             margin-right: ${NOTES_PANEL_WIDTH + NOTES_PANEL_GAP}px;
+          }
+
+          .cms-chat-root.panel-open .cms-chat-shell {
+            width: calc(100% - ${NOTES_PANEL_WIDTH + NOTES_PANEL_GAP}px);
           }
         }
 
