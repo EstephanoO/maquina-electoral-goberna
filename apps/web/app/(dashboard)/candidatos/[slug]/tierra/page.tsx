@@ -162,6 +162,8 @@ export default function TierraPage() {
           agents={enrichedAgents}
           period={pipeline.period}
           onPeriodChange={pipeline.onPeriodChange}
+          offset={pipeline.offset}
+          onOffsetChange={pipeline.onOffsetChange}
           periodLabel={pipeline.periodLabel}
           dateRanges={pipeline.dateRanges}
           totalDatos={stats.totals.forms_count}

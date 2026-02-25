@@ -32,10 +32,12 @@ type Props = {
   dateRanges: PipelineDateRanges;
   /** Goal per brigadista for the selected period (used in agent drill-down projection) */
   periodGoalPerBrig?: number;
-  /** Lifted agent drill-down state — null = global view */
-  selectedAgentId: string | null;
-  /** Callback to select/deselect an agent for drill-down */
-  onAgentSelect: (id: string | null) => void;
+  /** Selected agent IDs for compare/drill-down (0 = global, 1 = drill-down, 2 = compare) */
+  compareIds: string[];
+  /** Toggle an agent in/out of the compare list */
+  onToggleCompare: (id: string) => void;
+  /** Clear all compare selections */
+  onClearCompare: () => void;
 };
 
 type TimeSeriesPoint = { label: string; forms: number; agents: number };
@@ -97,13 +99,15 @@ const tooltipStyle: React.CSSProperties = {
 
 export const ActivityCharts = memo(function ActivityCharts({
   forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges, periodGoalPerBrig,
-  selectedAgentId, onAgentSelect,
+  compareIds, onToggleCompare, onClearCompare,
 }: Props) {
   const accentColor = secondaryColor || "#0d9488";
+  const compareColorB = "#f59e0b"; // amber for second agent
   const hasPrev = prevForms.length > 0 && period !== "all";
+  const selectedAgentId = compareIds.length === 1 ? compareIds[0] : null;
   const handleAgentClick = useCallback((agentId: string) => {
-    onAgentSelect(selectedAgentId === agentId ? null : agentId);
-  }, [onAgentSelect, selectedAgentId]);
+    onToggleCompare(agentId);
+  }, [onToggleCompare]);
 
   /* ── Time series — buckets match actual period dates ── */
   const timeSeriesData = useMemo((): TimeSeriesPoint[] => {
@@ -306,6 +310,75 @@ export const ActivityCharts = memo(function ActivityCharts({
     return { series, total: cumulative, goal };
   }, [selectedAgentId, forms, period, dateRanges, periodGoalPerBrig]);
 
+  /* ── Compare chart data (2 agents side-by-side) ── */
+  const compareData = useMemo(() => {
+    if (compareIds.length !== 2) return null;
+    const [idA, idB] = compareIds;
+    const formsA = forms.filter((f) => (f.agent_id || f.encuestador_id) === idA);
+    const formsB = forms.filter((f) => (f.agent_id || f.encuestador_id) === idB);
+    if (formsA.length === 0 && formsB.length === 0) return null;
+    const goal = periodGoalPerBrig ?? 0;
+    const now = new Date();
+
+    // Build unified time buckets
+    if (period === "today") {
+      const currentHour = now.getHours();
+      let cumA = 0, cumB = 0;
+      const hourCountA = new Map<number, number>();
+      const hourCountB = new Map<number, number>();
+      for (let h = 0; h <= currentHour; h++) { hourCountA.set(h, 0); hourCountB.set(h, 0); }
+      for (const f of formsA) { const h = new Date(f.created_at).getHours(); if (hourCountA.has(h)) hourCountA.set(h, (hourCountA.get(h) ?? 0) + 1); }
+      for (const f of formsB) { const h = new Date(f.created_at).getHours(); if (hourCountB.has(h)) hourCountB.set(h, (hourCountB.get(h) ?? 0) + 1); }
+      const series: { label: string; agentA: number; agentB: number; ideal: number }[] = [];
+      for (let h = 0; h <= currentHour; h++) {
+        cumA += hourCountA.get(h) ?? 0;
+        cumB += hourCountB.get(h) ?? 0;
+        const idealRate = goal > 0 ? (goal / 24) * (h + 1) : 0;
+        series.push({ label: `${h.toString().padStart(2, "0")}:00`, agentA: cumA, agentB: cumB, ideal: Math.round(idealRate) });
+      }
+      return { series, totalA: cumA, totalB: cumB, goal };
+    }
+
+    // Week / Month / All — day buckets
+    const allForms = [...formsA, ...formsB];
+    const from = period === "all"
+      ? new Date(Math.min(...allForms.map((f) => new Date(f.created_at).getTime())))
+      : new Date(dateRanges.current.from);
+    const to = period === "all"
+      ? new Date(Math.max(...allForms.map((f) => new Date(f.created_at).getTime())) + 86400000)
+      : new Date(dateRanges.current.to);
+    from.setHours(0, 0, 0, 0);
+    to.setHours(0, 0, 0, 0);
+
+    const dayCountA = new Map<string, number>();
+    const dayCountB = new Map<string, number>();
+    const cursor = new Date(from);
+    while (cursor < to) { const k = getDayKey(cursor); dayCountA.set(k, 0); dayCountB.set(k, 0); cursor.setDate(cursor.getDate() + 1); }
+    for (const f of formsA) { const k = getDayKey(new Date(f.created_at)); if (dayCountA.has(k)) dayCountA.set(k, (dayCountA.get(k) ?? 0) + 1); }
+    for (const f of formsB) { const k = getDayKey(new Date(f.created_at)); if (dayCountB.has(k)) dayCountB.set(k, (dayCountB.get(k) ?? 0) + 1); }
+
+    const totalDays = dayCountA.size;
+    let cumA = 0, cumB = 0, dayIdx = 0;
+    const series: { label: string; agentA: number; agentB: number; ideal: number }[] = [];
+    for (const [key] of [...dayCountA.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      cumA += dayCountA.get(key) ?? 0;
+      cumB += dayCountB.get(key) ?? 0;
+      dayIdx++;
+      const [y, m, d] = key.split("-").map(Number);
+      const date = new Date(y, m - 1, d);
+      const idealRate = goal > 0 && totalDays > 0 ? (goal / totalDays) * dayIdx : 0;
+      series.push({ label: formatDayLabel(date), agentA: cumA, agentB: cumB, ideal: Math.round(idealRate) });
+    }
+    return { series, totalA: cumA, totalB: cumB, goal };
+  }, [compareIds, forms, period, dateRanges, periodGoalPerBrig]);
+
+  /* ── Compare agent names ── */
+  const compareNames = useMemo(() => {
+    if (compareIds.length !== 2) return null;
+    const getName = (id: string) => agentRanking.find((a) => a.id === id)?.fullName ?? "Agente";
+    return { a: getName(compareIds[0]), b: getName(compareIds[1]) };
+  }, [compareIds, agentRanking]);
+
   /* ── Adaptive XAxis interval ── */
   const xInterval = useMemo(() => {
     const len = timeSeriesData.length;
@@ -327,15 +400,59 @@ export const ActivityCharts = memo(function ActivityCharts({
 
       {/* ═══ Charts row (2/3 timeline + 1/3 ranking) ═══ */}
       <div className="grid gap-3" style={{ gridTemplateColumns: "2fr 1fr" }}>
-        {/* Left: Activity timeline OR agent drill-down */}
+        {/* Left: Activity timeline / agent drill-down / compare */}
         <div className="bg-slate-50/60 rounded-xl border border-slate-100 px-4 py-3 flex flex-col min-w-0">
-          {selectedAgent && agentDrillData ? (
+          {compareData && compareNames ? (
+            /* ── COMPARE MODE (2 agents) ── */
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Comparacion</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold tabular-nums" style={{ color: primaryColor }}>{compareNames.a.split(" ")[0]}: {compareData.totalA}</span>
+                  <span className="text-[10px] font-bold tabular-nums" style={{ color: compareColorB }}>{compareNames.b.split(" ")[0]}: {compareData.totalB}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 mb-1">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: primaryColor }} />
+                  <span className="text-[9px] text-slate-400 truncate max-w-[80px]">{compareNames.a.split(" ")[0]}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: compareColorB }} />
+                  <span className="text-[9px] text-slate-400 truncate max-w-[80px]">{compareNames.b.split(" ")[0]}</span>
+                </div>
+                {compareData.goal > 0 && (
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-0.5 rounded-full border-b border-dashed" style={{ borderColor: "#94a3b8" }} />
+                    <span className="text-[9px] text-slate-400">Meta</span>
+                  </div>
+                )}
+              </div>
+              <ResponsiveContainer width="100%" height={170}>
+                <LineChart data={compareData.series} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval={xInterval} />
+                  <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(value, name) => [String(value ?? 0), name === "agentA" ? compareNames.a : name === "agentB" ? compareNames.b : "Meta"]} />
+                  {compareData.goal > 0 && (
+                    <>
+                      <Line type="monotone" dataKey="ideal" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="6 3" dot={false} name="ideal" animationDuration={600} />
+                      <ReferenceLine y={compareData.goal} stroke="#ef4444" strokeDasharray="3 3" strokeWidth={1} label={{ value: `Meta: ${compareData.goal}`, position: "right", fill: "#ef4444", fontSize: 9, fontWeight: 700 }} />
+                    </>
+                  )}
+                  <Line type="monotone" dataKey="agentA" stroke={primaryColor} strokeWidth={2.5} dot={{ r: 2.5, fill: primaryColor }} name="agentA" animationDuration={800} />
+                  <Line type="monotone" dataKey="agentB" stroke={compareColorB} strokeWidth={2.5} dot={{ r: 2.5, fill: compareColorB }} name="agentB" animationDuration={800} />
+                </LineChart>
+              </ResponsiveContainer>
+            </>
+          ) : selectedAgent && agentDrillData ? (
+            /* ── DRILL-DOWN MODE (1 agent) ── */
             <>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => onAgentSelect(null)}
+                    onClick={onClearCompare}
                     className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 text-[10px] cursor-pointer border-none hover:bg-slate-300 transition-colors"
                     aria-label="Volver"
                   >
@@ -385,6 +502,7 @@ export const ActivityCharts = memo(function ActivityCharts({
               </ResponsiveContainer>
             </>
           ) : (
+            /* ── GLOBAL MODE (0 selected) ── */
             <>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
@@ -439,9 +557,21 @@ export const ActivityCharts = memo(function ActivityCharts({
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "#475569" }} axisLine={false} tickLine={false} width={80} interval={0} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(value, _name, props) => { const entry = props.payload as (typeof agentRanking)[number]; return [String(value ?? 0), entry.fullName]; }} />
                 <Bar dataKey="forms" radius={[0, 6, 6, 0]} maxBarSize={18} animationDuration={600} cursor="pointer">
-                  {agentRanking.map((entry, idx) => (
-                    <Cell key={entry.id} fill={entry.id === selectedAgentId ? primaryColor : (rankingColors[idx] ?? "#cbd5e1")} fillOpacity={entry.id === selectedAgentId ? 1 : 0.9} stroke={entry.id === selectedAgentId ? primaryColor : "none"} strokeWidth={entry.id === selectedAgentId ? 2 : 0} />
-                  ))}
+                  {agentRanking.map((entry, idx) => {
+                    const isA = compareIds[0] === entry.id;
+                    const isB = compareIds[1] === entry.id;
+                    const isSelected = isA || isB;
+                    const highlightColor = isA ? primaryColor : isB ? compareColorB : undefined;
+                    return (
+                      <Cell
+                        key={entry.id}
+                        fill={highlightColor ?? (rankingColors[idx] ?? "#cbd5e1")}
+                        fillOpacity={isSelected ? 1 : 0.9}
+                        stroke={highlightColor ?? "none"}
+                        strokeWidth={isSelected ? 2 : 0}
+                      />
+                    );
+                  })}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>

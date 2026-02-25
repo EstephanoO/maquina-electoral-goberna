@@ -10,6 +10,9 @@ import { type PipelinePeriod, type PipelineDateRanges, getDateRanges } from "../
 export type PipelineState = {
   period: PipelinePeriod;
   onPeriodChange: (p: PipelinePeriod) => void;
+  /** Period offset: 0 = current, -1 = previous, etc. */
+  offset: number;
+  onOffsetChange: (offset: number) => void;
   isPending: boolean;
   periodLabel: string;
   dateRanges: PipelineDateRanges;
@@ -34,13 +37,18 @@ export function usePipelineState(
   forms: FormRecord[],
 ): PipelineState {
   const [period, setPeriod] = useState<PipelinePeriod>("week");
+  const [offset, setOffset] = useState(0);
   const [isPending, startTransition] = useTransition();
 
   const onPeriodChange = useCallback((p: PipelinePeriod) => {
-    startTransition(() => setPeriod(p));
+    startTransition(() => { setPeriod(p); setOffset(0); }); // reset offset on period change
   }, []);
 
-  const dateRanges = useMemo(() => getDateRanges(period), [period]);
+  const onOffsetChange = useCallback((o: number) => {
+    startTransition(() => setOffset(Math.min(o, 0))); // never go into the future
+  }, []);
+
+  const dateRanges = useMemo(() => getDateRanges(period, offset), [period, offset]);
   const periodFrom = dateRanges.current.from || undefined;
   const periodTo = dateRanges.current.to || undefined;
   const prevFrom = dateRanges.previous.from || undefined;
@@ -76,6 +84,8 @@ export function usePipelineState(
   return {
     period,
     onPeriodChange,
+    offset,
+    onOffsetChange,
     isPending,
     periodLabel: dateRanges.previousLabel,
     dateRanges,

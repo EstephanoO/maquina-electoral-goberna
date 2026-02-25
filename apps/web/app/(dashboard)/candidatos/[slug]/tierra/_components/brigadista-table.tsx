@@ -15,14 +15,17 @@ type Props = {
   periodGoalPerBrig: number;
   period: "today" | "week" | "month" | "all";
   daysRemaining: number;
-  /** Currently selected agent for drill-down (null = none) */
-  selectedAgentId?: string | null;
-  /** Callback when a row is clicked to trigger drill-down */
-  onAgentSelect?: (id: string | null) => void;
+  /** Selected agent IDs for compare/drill-down (max 2) */
+  compareIds: string[];
+  /** Toggle an agent in/out of compare selection */
+  onToggleCompare: (id: string) => void;
 };
 
 /* ========== Constants ========== */
 
+const COMPARE_COLOR_A_BG = "rgba(59, 130, 246, 0.06)"; // primary tint
+const COMPARE_COLOR_B = "#f59e0b"; // amber
+const COMPARE_COLOR_B_BG = "rgba(245, 158, 11, 0.06)"; // amber tint
 const MEDAL = ["#f59e0b", "#94a3b8", "#cd7f32"] as const;
 
 const STATUS_CONFIG = {
@@ -41,7 +44,7 @@ const PERIOD_LABELS: Record<Props["period"], string> = {
 
 /* ========== Component ========== */
 
-export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, goalPerBrigadistaPerDay, periodGoalPerBrig, period, daysRemaining, selectedAgentId, onAgentSelect }: Props) {
+export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, goalPerBrigadistaPerDay, periodGoalPerBrig, period, daysRemaining, compareIds, onToggleCompare }: Props) {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("total_captures");
   const [sortAsc, setSortAsc] = useState(false);
@@ -135,7 +138,8 @@ export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, 
       )}
 
       {/* ── Table header ── */}
-      <div className="grid grid-cols-[32px_1fr_120px_90px_70px] gap-2 px-4 py-2 border-b border-slate-200/80 bg-slate-50 shrink-0 items-center">
+      <div className="grid grid-cols-[28px_32px_1fr_120px_90px_70px] gap-2 px-4 py-2 border-b border-slate-200/80 bg-slate-50 shrink-0 items-center">
+        <span /> {/* checkbox col */}
         <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 text-center">#</span>
         <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Brigadista</span>
         <button type="button" onClick={() => handleSort("goal_pct")} className="text-[9px] font-bold uppercase tracking-wider text-center cursor-pointer bg-transparent border-none text-slate-500 hover:text-slate-800 transition-colors" title="Ordenar por % de meta">
@@ -155,18 +159,21 @@ export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, 
             <span className="text-[12px] text-slate-400">{search ? "Intenta con otra busqueda" : "Los brigadistas apareceran cuando capturen datos"}</span>
           </div>
         ) : (
-          filtered.map((b, idx) => (
-            <Row
-              key={b.brigadista_id}
-              b={b}
-              rank={idx + 1}
-              pc={primaryColor}
-              even={idx % 2 === 1}
-              goal={periodGoalPerBrig}
-              isSelected={b.brigadista_id === selectedAgentId}
-              onSelect={onAgentSelect ? () => onAgentSelect(b.brigadista_id === selectedAgentId ? null : b.brigadista_id) : undefined}
-            />
-          ))
+          filtered.map((b, idx) => {
+            const compareIdx = compareIds.indexOf(b.brigadista_id);
+            return (
+              <Row
+                key={b.brigadista_id}
+                b={b}
+                rank={idx + 1}
+                pc={primaryColor}
+                even={idx % 2 === 1}
+                goal={periodGoalPerBrig}
+                compareIdx={compareIdx}
+                onToggle={() => onToggleCompare(b.brigadista_id)}
+              />
+            );
+          })
         )}
       </div>
     </div>
@@ -180,19 +187,41 @@ type EB = CmsBrigadistaMetrics & {
   status: "ahead" | "on_track" | "behind" | "done";
 };
 
-function Row({ b, rank, pc, even, goal, isSelected, onSelect }: { b: EB; rank: number; pc: string; even: boolean; goal: number; isSelected?: boolean; onSelect?: () => void }) {
+function Row({ b, rank, pc, even, goal, compareIdx, onToggle }: { b: EB; rank: number; pc: string; even: boolean; goal: number; compareIdx: number; onToggle: () => void }) {
   const isMedal = rank <= 3;
   const cfg = STATUS_CONFIG[b.status];
   const pct = Math.min(b.goalPct, 100);
   const statusLabel = b.status === "behind" ? `${b.needsPerDay}/dia` : cfg.label;
+  const isSelected = compareIdx >= 0;
+  const checkColor = compareIdx === 0 ? pc : compareIdx === 1 ? COMPARE_COLOR_B : undefined;
+  const rowBg = compareIdx === 0 ? COMPARE_COLOR_A_BG : compareIdx === 1 ? COMPARE_COLOR_B_BG : even ? "rgba(248,250,252,0.5)" : "#fff";
 
   return (
     <button
       type="button"
-      onClick={onSelect}
-      className={`grid grid-cols-[32px_1fr_120px_90px_70px] gap-2 px-4 items-center min-h-[48px] border-b border-slate-100/80 transition-colors hover:bg-slate-100/60 w-full text-left bg-transparent border-x-0 border-t-0 ${isSelected ? "bg-blue-50/70 border-l-[3px] border-l-blue-500" : even ? "bg-slate-50/50" : "bg-white"} ${onSelect ? "cursor-pointer" : ""}`}
+      onClick={onToggle}
+      className={`grid grid-cols-[28px_32px_1fr_120px_90px_70px] gap-2 px-4 items-center min-h-[48px] border-b border-slate-100/80 transition-colors hover:bg-slate-100/60 w-full text-left bg-transparent border-x-0 border-t-0 cursor-pointer`}
+      style={{ backgroundColor: rowBg }}
       title={`${b.full_name} — ${b.goalPct.toFixed(0)}% de meta`}
     >
+      {/* Checkbox */}
+      <div className="flex items-center justify-center">
+        <span
+          className="w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors"
+          style={{
+            borderColor: isSelected ? checkColor : "#cbd5e1",
+            backgroundColor: isSelected ? checkColor : "transparent",
+          }}
+        >
+          {isSelected && (
+            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Seleccionado">
+              <title>Seleccionado</title>
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          )}
+        </span>
+      </div>
+
       {/* Rank */}
       <div className="flex items-center justify-center">
         {isMedal ? (

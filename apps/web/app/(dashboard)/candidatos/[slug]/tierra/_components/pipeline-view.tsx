@@ -50,6 +50,9 @@ type Props = {
   agents: EnrichedAgent[];
   period: PipelinePeriod;
   onPeriodChange: (p: PipelinePeriod) => void;
+  /** Period offset for time navigation (0 = current, -1 = previous, etc.) */
+  offset: number;
+  onOffsetChange: (offset: number) => void;
   periodLabel: string;
   dateRanges: PipelineDateRanges;
   totalDatos: number;
@@ -61,12 +64,19 @@ type Props = {
 
 export const PipelineView = memo(function PipelineView({
   brigadistas, prevBrigadistas, isLoading, isPending, primaryColor, secondaryColor,
-  forms, prevForms, agents, period, onPeriodChange, periodLabel, dateRanges,
+  forms, prevForms, agents, period, onPeriodChange, offset, onOffsetChange, periodLabel, dateRanges,
   totalDatos, agentesCampoCount, metaDatos,
 }: Props) {
-  // ── Selected agent drill-down (lifted state for all children) ──
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const handleAgentSelect = useCallback((id: string | null) => setSelectedAgentId(id), []);
+  // ── Compare / drill-down state (max 2 selected) ──
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const handleToggleCompare = useCallback((id: string) => {
+    setCompareIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 2) return [prev[1], id]; // FIFO: drop oldest
+      return [...prev, id];
+    });
+  }, []);
+  const handleClearCompare = useCallback(() => setCompareIds([]), []);
 
   // Goal calculations for brigadista table — period-adaptive
   const goalCalcs = useMemo(() => {
@@ -85,16 +95,29 @@ export const PipelineView = memo(function PipelineView({
     return { goalPerBrigadista, goalPerBrigadistaPerDay, periodGoalPerBrig, daysRemaining: dias };
   }, [metaDatos, agentesCampoCount, brigadistas.length, period]);
 
-  // ── Agent-specific data when drilled down ──
+  // ── Agent-specific data for single drill-down (1 selected) ──
   const agentDrill = useMemo(() => {
-    if (!selectedAgentId) return null;
-    const brig = brigadistas.find((b) => b.brigadista_id === selectedAgentId);
-    const agentForms = forms.filter((f) => (f.agent_id || f.encuestador_id) === selectedAgentId);
+    if (compareIds.length !== 1) return null;
+    const id = compareIds[0];
+    const brig = brigadistas.find((b) => b.brigadista_id === id);
+    const agentForms = forms.filter((f) => (f.agent_id || f.encuestador_id) === id);
     const agentName = brig?.full_name ?? agentForms[0]?.encuestador ?? "Agente";
     const periodDatos = agentForms.length;
     const totalCaptures = brig?.total_captures ?? periodDatos;
-    return { id: selectedAgentId, name: agentName, periodDatos, totalCaptures };
-  }, [selectedAgentId, brigadistas, forms]);
+    return { id, name: agentName, periodDatos, totalCaptures };
+  }, [compareIds, brigadistas, forms]);
+
+  // ── Compare pair names (2 selected) ──
+  const comparePair = useMemo(() => {
+    if (compareIds.length !== 2) return null;
+    const getName = (id: string) => {
+      const b = brigadistas.find((br) => br.brigadista_id === id);
+      if (b) return b.full_name;
+      const f = forms.find((fr) => (fr.agent_id || fr.encuestador_id) === id);
+      return f?.encuestador ?? "Agente";
+    };
+    return { a: { id: compareIds[0], name: getName(compareIds[0]) }, b: { id: compareIds[1], name: getName(compareIds[1]) } };
+  }, [compareIds, brigadistas, forms]);
 
   if (isLoading) {
     return (
@@ -113,15 +136,15 @@ export const PipelineView = memo(function PipelineView({
     <div className={`flex flex-col flex-1 min-h-0 overflow-y-auto bg-slate-50/80 transition-opacity duration-150 ${isPending ? "opacity-70" : "opacity-100"}`}>
       {/* 1. Filter bar */}
       <div className="shrink-0 border-b border-slate-100 bg-white">
-        <PipelineFilters period={period} onChange={onPeriodChange} primaryColor={primaryColor} />
+        <PipelineFilters period={period} onChange={onPeriodChange} primaryColor={primaryColor} offset={offset} onOffsetChange={onOffsetChange} />
       </div>
 
-      {/* Agent drill-down banner */}
+      {/* Agent drill-down banner (1 selected) */}
       {agentDrill && (
         <div className="flex items-center gap-3 px-4 py-2 bg-white border-b border-slate-200/80 shrink-0">
           <button
             type="button"
-            onClick={() => setSelectedAgentId(null)}
+            onClick={handleClearCompare}
             className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-[11px] cursor-pointer border-none hover:bg-slate-200 transition-colors shrink-0"
             aria-label="Volver a vista global"
           >
@@ -131,6 +154,23 @@ export const PipelineView = memo(function PipelineView({
           <span className="text-[11px] font-extrabold tabular-nums ml-auto" style={{ color: primaryColor }}>
             {agentDrill.periodDatos} registros en periodo
           </span>
+        </div>
+      )}
+
+      {/* Compare banner (2 selected) */}
+      {comparePair && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-white border-b border-slate-200/80 shrink-0">
+          <button
+            type="button"
+            onClick={handleClearCompare}
+            className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-[11px] cursor-pointer border-none hover:bg-slate-200 transition-colors shrink-0"
+            aria-label="Limpiar comparacion"
+          >
+            &times;
+          </button>
+          <span className="text-[12px] font-bold truncate" style={{ color: primaryColor }}>{comparePair.a.name}</span>
+          <span className="text-[10px] font-bold text-slate-400">vs</span>
+          <span className="text-[12px] font-bold truncate" style={{ color: "#f59e0b" }}>{comparePair.b.name}</span>
         </div>
       )}
 
@@ -161,7 +201,7 @@ export const PipelineView = memo(function PipelineView({
               agentesCampoCount={agentesCampoCount}
               metaDatos={metaDatos}
               period={period}
-              selectedAgentName={agentDrill?.name}
+              selectedAgentName={agentDrill?.name ?? undefined}
               periodGoalPerBrig={goalCalcs.periodGoalPerBrig}
             />
           </div>
@@ -177,8 +217,9 @@ export const PipelineView = memo(function PipelineView({
               period={period}
               dateRanges={dateRanges}
               periodGoalPerBrig={goalCalcs.periodGoalPerBrig}
-              selectedAgentId={selectedAgentId}
-              onAgentSelect={handleAgentSelect}
+              compareIds={compareIds}
+              onToggleCompare={handleToggleCompare}
+              onClearCompare={handleClearCompare}
             />
           )}
 
@@ -193,8 +234,8 @@ export const PipelineView = memo(function PipelineView({
                 periodGoalPerBrig={goalCalcs.periodGoalPerBrig}
                 period={period}
                 daysRemaining={goalCalcs.daysRemaining}
-                selectedAgentId={selectedAgentId}
-                onAgentSelect={handleAgentSelect}
+                compareIds={compareIds}
+                onToggleCompare={handleToggleCompare}
               />
             </div>
           )}
@@ -206,10 +247,10 @@ export const PipelineView = memo(function PipelineView({
 
 /* ========== Collapsible Charts Section ========== */
 
-function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges, periodGoalPerBrig, selectedAgentId, onAgentSelect }: {
+function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges, periodGoalPerBrig, compareIds, onToggleCompare, onClearCompare }: {
   forms: FormRecord[]; prevForms: FormRecord[]; primaryColor: string; secondaryColor?: string;
   periodLabel: string; period: PipelinePeriod; dateRanges: PipelineDateRanges; periodGoalPerBrig?: number;
-  selectedAgentId: string | null; onAgentSelect: (id: string | null) => void;
+  compareIds: string[]; onToggleCompare: (id: string) => void; onClearCompare: () => void;
 }) {
   const [open, setOpen] = useState(true);
   return (
@@ -240,8 +281,9 @@ function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodL
               period={period}
               dateRanges={dateRanges}
               periodGoalPerBrig={periodGoalPerBrig}
-              selectedAgentId={selectedAgentId}
-              onAgentSelect={onAgentSelect}
+              compareIds={compareIds}
+              onToggleCompare={onToggleCompare}
+              onClearCompare={onClearCompare}
             />
       )}
     </div>
