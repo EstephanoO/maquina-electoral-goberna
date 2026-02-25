@@ -15,6 +15,10 @@ type Props = {
   periodGoalPerBrig: number;
   period: "today" | "week" | "month" | "all";
   daysRemaining: number;
+  /** Currently selected agent for drill-down (null = none) */
+  selectedAgentId?: string | null;
+  /** Callback when a row is clicked to trigger drill-down */
+  onAgentSelect?: (id: string | null) => void;
 };
 
 /* ========== Constants ========== */
@@ -37,7 +41,7 @@ const PERIOD_LABELS: Record<Props["period"], string> = {
 
 /* ========== Component ========== */
 
-export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, goalPerBrigadistaPerDay, periodGoalPerBrig, period, daysRemaining }: Props) {
+export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, goalPerBrigadistaPerDay, periodGoalPerBrig, period, daysRemaining, selectedAgentId, onAgentSelect }: Props) {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("total_captures");
   const [sortAsc, setSortAsc] = useState(false);
@@ -152,7 +156,16 @@ export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, 
           </div>
         ) : (
           filtered.map((b, idx) => (
-            <Row key={b.brigadista_id} b={b} rank={idx + 1} pc={primaryColor} even={idx % 2 === 1} goal={periodGoalPerBrig} />
+            <Row
+              key={b.brigadista_id}
+              b={b}
+              rank={idx + 1}
+              pc={primaryColor}
+              even={idx % 2 === 1}
+              goal={periodGoalPerBrig}
+              isSelected={b.brigadista_id === selectedAgentId}
+              onSelect={onAgentSelect ? () => onAgentSelect(b.brigadista_id === selectedAgentId ? null : b.brigadista_id) : undefined}
+            />
           ))
         )}
       </div>
@@ -167,15 +180,17 @@ type EB = CmsBrigadistaMetrics & {
   status: "ahead" | "on_track" | "behind" | "done";
 };
 
-function Row({ b, rank, pc, even, goal }: { b: EB; rank: number; pc: string; even: boolean; goal: number }) {
+function Row({ b, rank, pc, even, goal, isSelected, onSelect }: { b: EB; rank: number; pc: string; even: boolean; goal: number; isSelected?: boolean; onSelect?: () => void }) {
   const isMedal = rank <= 3;
   const cfg = STATUS_CONFIG[b.status];
   const pct = Math.min(b.goalPct, 100);
   const statusLabel = b.status === "behind" ? `${b.needsPerDay}/dia` : cfg.label;
 
   return (
-    <div
-      className={`grid grid-cols-[32px_1fr_120px_90px_70px] gap-2 px-4 items-center min-h-[48px] border-b border-slate-100/80 transition-colors hover:bg-slate-50 ${even ? "bg-slate-50/50" : "bg-white"}`}
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`grid grid-cols-[32px_1fr_120px_90px_70px] gap-2 px-4 items-center min-h-[48px] border-b border-slate-100/80 transition-colors hover:bg-slate-100/60 w-full text-left bg-transparent border-x-0 border-t-0 ${isSelected ? "bg-blue-50/70 border-l-[3px] border-l-blue-500" : even ? "bg-slate-50/50" : "bg-white"} ${onSelect ? "cursor-pointer" : ""}`}
       title={`${b.full_name} — ${b.goalPct.toFixed(0)}% de meta`}
     >
       {/* Rank */}
@@ -232,7 +247,7 @@ function Row({ b, rank, pc, even, goal }: { b: EB; rank: number; pc: string; eve
           <span className="text-[12px] font-black text-emerald-500">OK</span>
         )}
       </div>
-    </div>
+    </button>
   );
 }
 

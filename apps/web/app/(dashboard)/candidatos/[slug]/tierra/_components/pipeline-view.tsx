@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import type { CmsBrigadistaMetrics } from "@/lib/types";
 import type { FormRecord } from "@/lib/services";
@@ -64,6 +64,10 @@ export const PipelineView = memo(function PipelineView({
   forms, prevForms, agents, period, onPeriodChange, periodLabel, dateRanges,
   totalDatos, agentesCampoCount, metaDatos,
 }: Props) {
+  // ── Selected agent drill-down (lifted state for all children) ──
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const handleAgentSelect = useCallback((id: string | null) => setSelectedAgentId(id), []);
+
   // Goal calculations for brigadista table — period-adaptive
   const goalCalcs = useMemo(() => {
     const meta = metaDatos > 0 ? metaDatos : DEFAULT_META_DATOS;
@@ -80,6 +84,17 @@ export const PipelineView = memo(function PipelineView({
 
     return { goalPerBrigadista, goalPerBrigadistaPerDay, periodGoalPerBrig, daysRemaining: dias };
   }, [metaDatos, agentesCampoCount, brigadistas.length, period]);
+
+  // ── Agent-specific data when drilled down ──
+  const agentDrill = useMemo(() => {
+    if (!selectedAgentId) return null;
+    const brig = brigadistas.find((b) => b.brigadista_id === selectedAgentId);
+    const agentForms = forms.filter((f) => (f.agent_id || f.encuestador_id) === selectedAgentId);
+    const agentName = brig?.full_name ?? agentForms[0]?.encuestador ?? "Agente";
+    const periodDatos = agentForms.length;
+    const totalCaptures = brig?.total_captures ?? periodDatos;
+    return { id: selectedAgentId, name: agentName, periodDatos, totalCaptures };
+  }, [selectedAgentId, brigadistas, forms]);
 
   if (isLoading) {
     return (
@@ -100,6 +115,24 @@ export const PipelineView = memo(function PipelineView({
       <div className="shrink-0 border-b border-slate-100 bg-white">
         <PipelineFilters period={period} onChange={onPeriodChange} primaryColor={primaryColor} />
       </div>
+
+      {/* Agent drill-down banner */}
+      {agentDrill && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-white border-b border-slate-200/80 shrink-0">
+          <button
+            type="button"
+            onClick={() => setSelectedAgentId(null)}
+            className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-[11px] cursor-pointer border-none hover:bg-slate-200 transition-colors shrink-0"
+            aria-label="Volver a vista global"
+          >
+            &larr;
+          </button>
+          <span className="text-[12px] font-bold text-slate-700 truncate">{agentDrill.name}</span>
+          <span className="text-[11px] font-extrabold tabular-nums ml-auto" style={{ color: primaryColor }}>
+            {agentDrill.periodDatos} registros en periodo
+          </span>
+        </div>
+      )}
 
       {isEmpty ? (
         <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center p-16">
@@ -123,11 +156,13 @@ export const PipelineView = memo(function PipelineView({
           <div className="shrink-0 border-b border-slate-100 bg-white">
             <PipelineFunnel
               primaryColor={primaryColor}
-              totalDatos={totalDatos}
-              periodDatos={forms.length}
+              totalDatos={agentDrill ? agentDrill.totalCaptures : totalDatos}
+              periodDatos={agentDrill ? agentDrill.periodDatos : forms.length}
               agentesCampoCount={agentesCampoCount}
               metaDatos={metaDatos}
               period={period}
+              selectedAgentName={agentDrill?.name}
+              periodGoalPerBrig={goalCalcs.periodGoalPerBrig}
             />
           </div>
 
@@ -142,6 +177,8 @@ export const PipelineView = memo(function PipelineView({
               period={period}
               dateRanges={dateRanges}
               periodGoalPerBrig={goalCalcs.periodGoalPerBrig}
+              selectedAgentId={selectedAgentId}
+              onAgentSelect={handleAgentSelect}
             />
           )}
 
@@ -156,6 +193,8 @@ export const PipelineView = memo(function PipelineView({
                 periodGoalPerBrig={goalCalcs.periodGoalPerBrig}
                 period={period}
                 daysRemaining={goalCalcs.daysRemaining}
+                selectedAgentId={selectedAgentId}
+                onAgentSelect={handleAgentSelect}
               />
             </div>
           )}
@@ -167,9 +206,10 @@ export const PipelineView = memo(function PipelineView({
 
 /* ========== Collapsible Charts Section ========== */
 
-function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges, periodGoalPerBrig }: {
+function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges, periodGoalPerBrig, selectedAgentId, onAgentSelect }: {
   forms: FormRecord[]; prevForms: FormRecord[]; primaryColor: string; secondaryColor?: string;
   periodLabel: string; period: PipelinePeriod; dateRanges: PipelineDateRanges; periodGoalPerBrig?: number;
+  selectedAgentId: string | null; onAgentSelect: (id: string | null) => void;
 }) {
   const [open, setOpen] = useState(true);
   return (
@@ -200,6 +240,8 @@ function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodL
               period={period}
               dateRanges={dateRanges}
               periodGoalPerBrig={periodGoalPerBrig}
+              selectedAgentId={selectedAgentId}
+              onAgentSelect={onAgentSelect}
             />
       )}
     </div>
@@ -228,12 +270,7 @@ function FunnelSkeleton() {
   return (
     <div className="px-4 py-4 animate-pulse">
       <div className="h-3 w-32 bg-slate-100 rounded mb-4" />
-      <div className="p-4 bg-slate-100/80 rounded-xl h-[120px] mb-3" />
-      <div className="grid grid-cols-4 gap-2.5">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={`goal-skel-${i}`} className="bg-slate-100/80 rounded-xl h-[60px]" />
-        ))}
-      </div>
+      <div className="p-4 bg-slate-100/80 rounded-xl h-[120px]" />
     </div>
   );
 }

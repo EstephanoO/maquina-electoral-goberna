@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useState, useCallback } from "react";
+import { memo, useMemo, useCallback } from "react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -32,6 +32,10 @@ type Props = {
   dateRanges: PipelineDateRanges;
   /** Goal per brigadista for the selected period (used in agent drill-down projection) */
   periodGoalPerBrig?: number;
+  /** Lifted agent drill-down state — null = global view */
+  selectedAgentId: string | null;
+  /** Callback to select/deselect an agent for drill-down */
+  onAgentSelect: (id: string | null) => void;
 };
 
 type TimeSeriesPoint = { label: string; forms: number; agents: number };
@@ -93,13 +97,13 @@ const tooltipStyle: React.CSSProperties = {
 
 export const ActivityCharts = memo(function ActivityCharts({
   forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges, periodGoalPerBrig,
+  selectedAgentId, onAgentSelect,
 }: Props) {
   const accentColor = secondaryColor || "#0d9488";
   const hasPrev = prevForms.length > 0 && period !== "all";
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const handleAgentClick = useCallback((agentId: string) => {
-    setSelectedAgentId((prev) => (prev === agentId ? null : agentId));
-  }, []);
+    onAgentSelect(selectedAgentId === agentId ? null : agentId);
+  }, [onAgentSelect, selectedAgentId]);
 
   /* ── Time series — buckets match actual period dates ── */
   const timeSeriesData = useMemo((): TimeSeriesPoint[] => {
@@ -331,7 +335,7 @@ export const ActivityCharts = memo(function ActivityCharts({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setSelectedAgentId(null)}
+                    onClick={() => onAgentSelect(null)}
                     className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 text-[10px] cursor-pointer border-none hover:bg-slate-300 transition-colors"
                     aria-label="Volver"
                   >
@@ -429,7 +433,7 @@ export const ActivityCharts = memo(function ActivityCharts({
           </div>
           {agentRanking.length > 0 ? (
             <ResponsiveContainer width="100%" height={Math.max(170, agentRanking.length * 24)}>
-              <BarChart data={agentRanking} layout="vertical" margin={{ top: 4, right: 12, left: 4, bottom: 0 }} onClick={(state) => { if (state?.activePayload?.[0]) { const entry = state.activePayload[0].payload as (typeof agentRanking)[number]; handleAgentClick(entry.id); } }}>
+              <BarChart data={agentRanking} layout="vertical" margin={{ top: 4, right: 12, left: 4, bottom: 0 }} onClick={(state: Record<string, unknown>) => { const ap = (state as { activePayload?: { payload: (typeof agentRanking)[number] }[] })?.activePayload; if (ap?.[0]) handleAgentClick(ap[0].payload.id); }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "#475569" }} axisLine={false} tickLine={false} width={80} interval={0} />
