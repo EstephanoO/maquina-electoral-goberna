@@ -9,8 +9,11 @@ import {
   getCmsStats,
   getContactWhatsAppMessages,
   sendContactWhatsAppMessage,
+  markHablado,
+  archiveContact,
   type CmsContact,
   type CmsOperatorNotes,
+  type CmsStatus,
   type CmsStats,
   type CmsTabFilter,
   type CmsSseContactUpdated,
@@ -39,6 +42,40 @@ const TABS: Tab[] = [
   { key: "archivado", label: "Archivados", statKey: "archivados" },
 ];
 
+function mergeContactForActiveTab(
+  prev: CmsContact[],
+  contact: CmsContact,
+  previousStatus: string,
+  activeTab: CmsTabFilter,
+): CmsContact[] {
+  const belongsInTab = activeTab === "todos" || contact.cms_status === activeTab;
+  const wasInTab = activeTab === "todos" || previousStatus === activeTab;
+
+  if (belongsInTab && wasInTab) {
+    const idx = prev.findIndex((item) => item.id === contact.id);
+    if (idx >= 0) {
+      const next = [...prev];
+      next[idx] = contact;
+      return next;
+    }
+    return [contact, ...prev];
+  }
+
+  if (belongsInTab) {
+    return [contact, ...prev.filter((item) => item.id !== contact.id)];
+  }
+
+  if (wasInTab) {
+    return prev.filter((item) => item.id !== contact.id);
+  }
+
+  return prev;
+}
+
+function normalizeTagName(raw: string): string {
+  return raw.trim().replace(/\s+/g, " ").slice(0, 32);
+}
+
 export default function CmsPage() {
   const { user, activeCampaignId, campaigns } = useAuth();
 
@@ -62,6 +99,9 @@ export default function CmsPage() {
   const [messagesErrorByContact, setMessagesErrorByContact] = useState<Record<string, string | null>>({});
   const [draftByContact, setDraftByContact] = useState<Record<string, string>>({});
   const [sendingByContact, setSendingByContact] = useState<Record<string, boolean>>({});
+  const [archivingContactId, setArchivingContactId] = useState<string | null>(null);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [contactTagsById, setContactTagsById] = useState<Record<string, string[]>>({});
 
   const sseRef = useRef<{ close: () => void } | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,6 +128,7 @@ export default function CmsPage() {
   const selectedMessagesError = selectedContactId ? (messagesErrorByContact[selectedContactId] ?? null) : null;
   const selectedDraft = selectedContactId ? (draftByContact[selectedContactId] ?? "") : "";
   const selectedSending = selectedContactId ? Boolean(sendingByContact[selectedContactId]) : false;
+  const selectedContactTags = selectedContactId ? (contactTagsById[selectedContactId] ?? []) : [];
 
   const fetchContacts = useCallback(async () => {
     if (!activeCampaignId) return;
@@ -153,6 +194,34 @@ export default function CmsPage() {
     setDraftByContact({});
     setSendingByContact({});
   }, [activeCampaignId]);
+
+  useEffect(() => {
+    if (!activeCampaignId) {
+      setAvailableTags([]);
+      setContactTagsById({});
+      return;
+    }
+
+    try {
+      const storedTags = window.localStorage.getItem(`cms:tags:${activeCampaignId}`);
+      const storedContactTags = window.localStorage.getItem(`cms:contact-tags:${activeCampaignId}`);
+      setAvailableTags(storedTags ? (JSON.parse(storedTags) as string[]) : []);
+      setContactTagsById(storedContactTags ? (JSON.parse(storedContactTags) as Record<string, string[]>) : {});
+    } catch {
+      setAvailableTags([]);
+      setContactTagsById({});
+    }
+  }, [activeCampaignId]);
+
+  useEffect(() => {
+    if (!activeCampaignId) return;
+    window.localStorage.setItem(`cms:tags:${activeCampaignId}`, JSON.stringify(availableTags));
+  }, [activeCampaignId, availableTags]);
+
+  useEffect(() => {
+    if (!activeCampaignId) return;
+    window.localStorage.setItem(`cms:contact-tags:${activeCampaignId}`, JSON.stringify(contactTagsById));
+  }, [activeCampaignId, contactTagsById]);
 
   useEffect(() => {
     if (!contacts.length) {
@@ -317,33 +386,9 @@ export default function CmsPage() {
           const payload = data as CmsSseContactUpdated;
           const contact = payload.contact;
           const previousStatus = payload.previous_status;
-          const nextStatus = contact.cms_status;
           const active = activeTabRef.current;
 
-          setContacts((prev) => {
-            const belongsInTab = active === "todos" || nextStatus === active;
-            const wasInTab = active === "todos" || previousStatus === active;
-
-            if (belongsInTab && wasInTab) {
-              const idx = prev.findIndex((item) => item.id === contact.id);
-              if (idx >= 0) {
-                const next = [...prev];
-                next[idx] = contact;
-                return next;
-              }
-              return [contact, ...prev];
-            }
-
-            if (belongsInTab) {
-              return [contact, ...prev.filter((item) => item.id !== contact.id)];
-            }
-
-            if (wasInTab) {
-              return prev.filter((item) => item.id !== contact.id);
-            }
-
-            return prev;
-          });
+          setContacts((prev) => mergeContactForActiveTab(prev, contact, previousStatus, active));
 
           if (payload.stats) {
             setStats(payload.stats);
@@ -433,6 +478,42 @@ export default function CmsPage() {
     loadMessages(selectedContactId);
   }, [selectedContactId, loadMessages]);
 
+  const handleCreateTag = useCallback((rawName: string): string | null => {
+    const normalized = normalizeTagName(rawName);
+    if (!normalized) return null;
+
+    const existing = availableTags.find((tag) => tag.toLowerCase() === normalized.toLowerCase());
+    if (existing) return existing;
+
+    setAvailableTags((prev) => [...prev, normalized].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" })));
+    return normalized;
+  }, [availableTags]);
+
+  const handleAssignTag = useCallback((contactId: string, rawName: string): boolean => {
+    const tag = handleCreateTag(rawName);
+    if (!tag) return false;
+
+    setContactTagsById((prev) => {
+      const current = prev[contactId] ?? [];
+      if (current.some((item) => item.toLowerCase() === tag.toLowerCase())) return prev;
+      return {
+        ...prev,
+        [contactId]: [...current, tag].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" })),
+      };
+    });
+
+    return true;
+  }, [handleCreateTag]);
+
+  const handleRemoveTag = useCallback((contactId: string, tagName: string) => {
+    setContactTagsById((prev) => {
+      const current = prev[contactId] ?? [];
+      const next = current.filter((item) => item.toLowerCase() !== tagName.toLowerCase());
+      if (next.length === current.length) return prev;
+      return { ...prev, [contactId]: next };
+    });
+  }, []);
+
   const handleSendMessage = useCallback(async () => {
     if (!activeCampaignId || !selectedContactId) return;
 
@@ -475,15 +556,52 @@ export default function CmsPage() {
       return;
     }
 
+    if (selectedContact?.cms_status === "nuevo") {
+      const prevStatus: CmsStatus = selectedContact.cms_status;
+      const habladoRes = await markHablado(activeCampaignId, selectedContactId);
+      if (habladoRes.ok && habladoRes.contact) {
+        const updated = habladoRes.contact;
+        setContacts((prev) =>
+          mergeContactForActiveTab(prev, updated, prevStatus, activeTabRef.current),
+        );
+        setNotesContact((prev) => (prev && prev.id === updated.id ? updated : prev));
+      } else {
+        setUiError((prev) => prev ?? "Mensaje enviado, pero no se pudo marcar como hablado");
+      }
+    }
+
     await loadMessages(selectedContactId, { silent: true });
     setSendingByContact((prev) => ({ ...prev, [selectedContactId]: false }));
   }, [
     activeCampaignId,
     loadMessages,
     selectedContactId,
+    selectedContact,
     selectedDraft,
     user?.id,
   ]);
+
+  const handleArchiveContact = useCallback(async (contactId: string) => {
+    if (!activeCampaignId) return;
+    const current = contacts.find((item) => item.id === contactId);
+    if (!current || current.cms_status === "archivado") return;
+
+    setArchivingContactId(contactId);
+    setUiError(null);
+
+    const res = await archiveContact(activeCampaignId, contactId);
+    if (res.ok && res.contact) {
+      const updated = res.contact;
+      setContacts((prev) =>
+        mergeContactForActiveTab(prev, updated, current.cms_status, activeTabRef.current),
+      );
+      setNotesContact((prev) => (prev && prev.id === updated.id ? updated : prev));
+    } else {
+      setUiError(res.error ?? "No se pudo archivar el contacto");
+    }
+
+    setArchivingContactId(null);
+  }, [activeCampaignId, contacts]);
 
   const handleSaveNotes = useCallback(
     async (
@@ -811,6 +929,13 @@ export default function CmsPage() {
               onDraftChange={handleDraftChange}
               onSend={handleSendMessage}
               onRefreshMessages={handleRefreshMessages}
+              onArchiveContact={handleArchiveContact}
+              archiving={Boolean(selectedContactId && archivingContactId === selectedContactId)}
+              contactTags={selectedContactTags}
+              availableTags={availableTags}
+              onCreateTag={handleCreateTag}
+              onAssignTag={handleAssignTag}
+              onRemoveTag={handleRemoveTag}
             />
           </section>
         </div>
