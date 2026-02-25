@@ -11,21 +11,22 @@ export function KpiCard({ label, value, color, delta, deltaLabel, subtitle, icon
   const isPositive = (delta ?? 0) >= 0;
 
   return (
-    <div className="px-3.5 py-3 bg-slate-50/60 rounded-xl border border-slate-100">
+    <div className="relative px-3.5 py-3 bg-white rounded-xl border border-slate-200/60 overflow-hidden" style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+      <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-xl" style={{ backgroundColor: color }} />
       <div className="flex items-center justify-between mb-1.5">
-        <span className="flex items-center opacity-60" style={{ color }}>{icon}</span>
+        <span className="flex items-center" style={{ color }}>{icon}</span>
         {showDelta ? (
-          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${isPositive ? "text-emerald-600 bg-emerald-50" : "text-red-500 bg-red-50"}`}>
-            {isPositive ? "▲" : "▼"} {Math.abs(delta!)}%
+          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${isPositive ? "text-emerald-600 bg-emerald-50" : "text-red-500 bg-red-50"}`}>
+            {isPositive ? "+" : ""}{delta}%
           </span>
         ) : null}
       </div>
-      <div className="text-2xl font-extrabold leading-tight tabular-nums" style={{ color }}>{value}</div>
-      <div className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider mt-1">{label}</div>
+      <div className="text-[26px] font-black leading-tight tabular-nums" style={{ color }}>{value}</div>
+      <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mt-1">{label}</div>
       {showDelta && deltaLabel ? (
-        <div className="text-[9px] text-slate-300 mt-0.5">vs {deltaLabel}</div>
+        <div className="text-[9px] text-slate-400 font-semibold mt-0.5">vs {deltaLabel}</div>
       ) : null}
-      {subtitle && !showDelta ? <div className="text-[9px] text-slate-300 mt-0.5">{subtitle}</div> : null}
+      {subtitle && !showDelta ? <div className="text-[9px] text-slate-400 font-semibold mt-0.5 truncate">{subtitle}</div> : null}
     </div>
   );
 }
