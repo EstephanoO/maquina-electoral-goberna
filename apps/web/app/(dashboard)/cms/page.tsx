@@ -907,10 +907,6 @@ export default function CmsPage() {
         }
 
         @media (min-width: 1025px) {
-          .cms-chat-root.panel-open {
-            margin-right: ${NOTES_PANEL_WIDTH + NOTES_PANEL_GAP}px;
-          }
-
           .cms-chat-root.panel-open .cms-chat-shell {
             width: calc(100% - ${NOTES_PANEL_WIDTH + NOTES_PANEL_GAP}px);
           }
