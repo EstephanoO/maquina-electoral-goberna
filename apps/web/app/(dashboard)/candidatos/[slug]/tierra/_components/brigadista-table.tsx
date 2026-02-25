@@ -86,19 +86,19 @@ export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, 
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* ── Dark toolbar ── */}
-      <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-900 shrink-0">
-        <div className="flex items-center gap-2 flex-1 py-1.5 px-3 rounded-lg bg-white/10 border border-white/10 focus-within:bg-white/15 transition-colors">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" role="img" aria-label="Buscar"><title>Buscar</title><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+      {/* ── Toolbar (light) ── */}
+      <div className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-slate-200/80 shrink-0">
+        <div className="flex items-center gap-2 flex-1 py-1.5 px-3 rounded-lg bg-slate-50 border border-slate-200 focus-within:border-slate-300 transition-colors">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" role="img" aria-label="Buscar"><title>Buscar</title><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar brigadista..."
-            className="flex-1 border-none outline-none bg-transparent text-[13px] text-white placeholder:text-white/30"
+            className="flex-1 border-none outline-none bg-transparent text-[13px] text-slate-700 placeholder:text-slate-400"
           />
           {search && (
-            <button type="button" onClick={() => setSearch("")} className="w-5 h-5 rounded-full border-none bg-white/20 text-white cursor-pointer text-[10px] flex items-center justify-center hover:bg-white/30 transition-colors" aria-label="Limpiar">x</button>
+            <button type="button" onClick={() => setSearch("")} className="w-5 h-5 rounded-full border-none bg-slate-200 text-slate-500 cursor-pointer text-[10px] flex items-center justify-center hover:bg-slate-300 transition-colors" aria-label="Limpiar">x</button>
           )}
         </div>
 
@@ -110,22 +110,22 @@ export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, 
           {summary.behind > 0 && <Pill count={summary.behind} color="#ef4444" label="Atras" />}
         </div>
 
-        <span className="text-[11px] text-white/40 shrink-0 tabular-nums font-semibold">
+        <span className="text-[11px] text-slate-400 shrink-0 tabular-nums font-semibold">
           {filtered.length} brigadista{filtered.length !== 1 ? "s" : ""}
         </span>
       </div>
 
-      {/* ── Goal reference strip ── */}
+      {/* ── Goal reference strip (light) ── */}
       {periodGoalPerBrig > 0 && (
-        <div className="flex items-center gap-4 px-4 py-1.5 bg-slate-800 shrink-0">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-white/40">{PERIOD_LABELS[period]}:</span>
-          <span className="text-[12px] font-extrabold text-white tabular-nums">{periodGoalPerBrig.toLocaleString()}<span className="text-white/40 font-semibold text-[10px]"> datos/brig</span></span>
-          <span className="text-white/15">|</span>
-          <span className="text-[9px] font-bold uppercase tracking-wider text-white/40">Ritmo:</span>
-          <span className="text-[12px] font-extrabold text-white tabular-nums">{goalPerBrigadistaPerDay.toLocaleString()}<span className="text-white/40 font-semibold text-[10px]">/dia</span></span>
-          <span className="text-white/15">|</span>
-          <span className={`text-[12px] font-extrabold tabular-nums ${daysRemaining <= 7 ? "text-red-400" : daysRemaining <= 14 ? "text-amber-400" : "text-emerald-400"}`}>
-            {daysRemaining}d <span className="text-white/40 font-semibold text-[10px]">restantes</span>
+        <div className="flex items-center gap-4 px-4 py-1.5 bg-slate-50 border-b border-slate-200/80 shrink-0">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{PERIOD_LABELS[period]}:</span>
+          <span className="text-[12px] font-extrabold text-slate-700 tabular-nums">{periodGoalPerBrig.toLocaleString()}<span className="text-slate-400 font-semibold text-[10px]"> datos/brig</span></span>
+          <span className="text-slate-200">|</span>
+          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Ritmo:</span>
+          <span className="text-[12px] font-extrabold text-slate-700 tabular-nums">{goalPerBrigadistaPerDay.toLocaleString()}<span className="text-slate-400 font-semibold text-[10px]">/dia</span></span>
+          <span className="text-slate-200">|</span>
+          <span className={`text-[12px] font-extrabold tabular-nums ${daysRemaining <= 7 ? "text-red-500" : daysRemaining <= 14 ? "text-amber-500" : "text-emerald-500"}`}>
+            {daysRemaining}d <span className="text-slate-400 font-semibold text-[10px]">restantes</span>
           </span>
         </div>
       )}
