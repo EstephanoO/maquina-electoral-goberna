@@ -223,9 +223,13 @@ export async function handleTwilioWebhook(params: {
 }
 
 // ── Validate Twilio webhook signature ────────────────────────────────
-// Uses the auth token from the campaign that owns the incoming number.
-// For the webhook we don't know the campaign yet (inbound correlates later),
-// so we validate against ANY configured campaign that has a matching number.
+// Uses the auth token from the campaign that owns the Twilio number.
+//
+// For INBOUND messages:   To = Twilio number, From = citizen
+// For STATUS callbacks:   To = citizen,       From = Twilio number
+//
+// We try To first (inbound), then From (status callbacks) to find the
+// campaign's auth token. Last resort: look up the MessageSid in our DB.
 //
 // SECURITY: All failure paths return false (reject). Only an explicit
 // successful Twilio.validateRequest returns true. In dev environments
@@ -242,22 +246,43 @@ export async function validateTwilioWebhookSignature(
 
   if (!signature) return false; // No signature header → reject
 
-  // Find the auth token for the campaign whose whatsapp_from matches the To param
-  const toNumber = params.To ?? "";
-  if (!toNumber) return false; // No To param → reject
+  // Try To first (inbound: To = Twilio number), then From (status: From = Twilio number)
+  const candidates = [params.To, params.From].filter(Boolean);
 
-  const res = await pool.query<{ config: Record<string, unknown> }>(
-    `SELECT config FROM campaigns
-     WHERE config->'twilio'->>'whatsapp_from' = $1
-     LIMIT 1`,
-    [toNumber],
-  );
+  let encryptedToken = "";
 
-  const row = res.rows[0];
-  if (!row) return false; // No campaign with this number → reject
+  for (const candidate of candidates) {
+    const res = await pool.query<{ config: Record<string, unknown> }>(
+      `SELECT config FROM campaigns
+       WHERE config->'twilio'->>'whatsapp_from' = $1
+       LIMIT 1`,
+      [candidate],
+    );
+    const row = res.rows[0];
+    if (row) {
+      encryptedToken = (row.config?.twilio as { auth_token?: string })?.auth_token ?? "";
+      if (encryptedToken) break;
+    }
+  }
 
-  const encryptedToken = (row.config?.twilio as { auth_token?: string })?.auth_token ?? "";
-  if (!encryptedToken) return false; // No auth token configured → reject
+  // Last resort: look up the MessageSid in our messages table to find the campaign
+  if (!encryptedToken && params.MessageSid) {
+    const msgRes = await pool.query<{ campaign_id: string }>(
+      `SELECT campaign_id FROM cms_twilio_messages WHERE twilio_sid = $1 LIMIT 1`,
+      [params.MessageSid],
+    );
+    if (msgRes.rows[0]) {
+      const campRes = await pool.query<{ config: Record<string, unknown> }>(
+        `SELECT config FROM campaigns WHERE id = $1`,
+        [msgRes.rows[0].campaign_id],
+      );
+      if (campRes.rows[0]) {
+        encryptedToken = (campRes.rows[0].config?.twilio as { auth_token?: string })?.auth_token ?? "";
+      }
+    }
+  }
+
+  if (!encryptedToken) return false; // No campaign found → reject
 
   try {
     const authToken = decrypt(encryptedToken);
