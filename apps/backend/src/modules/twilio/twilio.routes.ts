@@ -140,15 +140,30 @@ export function buildTwilioRoutes(_env: AppEnv): FastifyPluginAsync {
         const requestId = String(request.id);
 
         // ── Signature validation ───────────────────────────────────────
+        // Cloudflare proxying can alter headers, so we try multiple URL
+        // variants to match what Twilio used when computing the signature.
         const signature = (request.headers["x-twilio-signature"] as string) ?? "";
         const proto = (request.headers["x-forwarded-proto"] as string) ?? "https";
         const host = request.headers.host ?? "";
-        const url = `${proto}://${host}/api/webhooks/twilio/whatsapp`;
         const params = request.body as Record<string, string>;
 
-        const valid = await validateTwilioWebhookSignature(signature, url, params);
+        // Build candidate URLs: the reconstructed one + the canonical public URL
+        const reconstructedUrl = `${proto}://${host}/api/webhooks/twilio/whatsapp`;
+        const canonicalUrl = "https://api.goberna.us/api/webhooks/twilio/whatsapp";
+        const urlCandidates = [reconstructedUrl];
+        if (reconstructedUrl !== canonicalUrl) urlCandidates.push(canonicalUrl);
+
+        let valid = false;
+        for (const url of urlCandidates) {
+          valid = await validateTwilioWebhookSignature(signature, url, params);
+          if (valid) break;
+        }
+
         if (!valid) {
-          app.log.warn({ request_id: requestId, url }, "twilio webhook: invalid signature");
+          app.log.warn(
+            { request_id: requestId, reconstructedUrl, proto, host, hasSignature: !!signature, paramsKeys: Object.keys(params) },
+            "twilio webhook: invalid signature — all URL candidates failed",
+          );
           return reply.code(403).send(errorPayload(requestId, "FORBIDDEN", "firma inválida"));
         }
 

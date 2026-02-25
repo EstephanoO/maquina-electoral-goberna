@@ -241,6 +241,10 @@ export async function validateTwilioWebhookSignature(
   url: string,
   params: Record<string, string>,
 ): Promise<boolean> {
+  // Sandbox/dev bypass — Cloudflare proxying breaks Twilio signature validation.
+  // Remove this when using a production WABA number with proper signature flow.
+  if (process.env.TWILIO_SKIP_SIGNATURE_VALIDATION === "true") return true;
+
   const encryptionKey = process.env.TWILIO_ENCRYPTION_KEY?.trim() ?? "";
   if (!encryptionKey) return false; // No encryption key → reject webhook
 
