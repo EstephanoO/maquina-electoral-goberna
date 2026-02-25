@@ -24,23 +24,23 @@ function setAuthCookies(
 ): void {
   const secure = isProd ? "; Secure" : "";
 
-  // httpOnly access token — 15 min (matches JWT_ACCESS_EXPIRES_IN default)
+  // httpOnly access token — 30 days (matches JWT_ACCESS_EXPIRES_IN default)
   reply.header(
     "Set-Cookie",
-    `${AUTH_COOKIE_NAMES.accessToken}=${accessToken}; Path=/; SameSite=Lax${secure}; HttpOnly; Max-Age=900`,
+    `${AUTH_COOKIE_NAMES.accessToken}=${accessToken}; Path=/; SameSite=Lax${secure}; HttpOnly; Max-Age=2592000`,
   );
 
-  // httpOnly refresh token — 7 days, restricted to /api/auth paths only
+  // httpOnly refresh token — 30 days, restricted to /api/auth paths only
   reply.header(
     "Set-Cookie",
-    `${AUTH_COOKIE_NAMES.refreshToken}=${refreshToken}; Path=/api/auth; SameSite=Lax${secure}; HttpOnly; Max-Age=604800`,
+    `${AUTH_COOKIE_NAMES.refreshToken}=${refreshToken}; Path=/api/auth; SameSite=Lax${secure}; HttpOnly; Max-Age=2592000`,
   );
 
   // Non-httpOnly session flag — lets Next.js middleware detect auth state
   // Contains no sensitive data, just "1" to indicate a session exists
   reply.header(
     "Set-Cookie",
-    `${AUTH_COOKIE_NAMES.session}=1; Path=/; SameSite=Lax${secure}; Max-Age=604800`,
+    `${AUTH_COOKIE_NAMES.session}=1; Path=/; SameSite=Lax${secure}; Max-Age=2592000`,
   );
 }
 
