@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -937,6 +938,40 @@ export default function CmsPage() {
                     fontFamily: FONT,
                   }}
                 />
+              </div>
+
+              <div
+                style={{
+                  marginTop: 10,
+                  display: "flex",
+                  justifyContent: "flex-end",
+                }}
+              >
+                <Link
+                  href="/cms/pipeline"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    textDecoration: "none",
+                    borderRadius: 999,
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
+                    color: "#0f172a",
+                    padding: "6px 10px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <title>Pipeline</title>
+                    <rect x="3" y="3" width="5" height="18" rx="1" />
+                    <rect x="10" y="7" width="5" height="14" rx="1" />
+                    <rect x="17" y="11" width="4" height="10" rx="1" />
+                  </svg>
+                  Vista pipeline
+                </Link>
               </div>
 
               <div
