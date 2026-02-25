@@ -106,7 +106,9 @@ export default function CmsPage() {
   const sseRef = useRef<{ close: () => void } | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeTabRef = useRef(activeTab);
+  const selectedContactIdRef = useRef<string | null>(selectedContactId);
   activeTabRef.current = activeTab;
+  selectedContactIdRef.current = selectedContactId;
 
   const selectedContact = useMemo(
     () => contacts.find((contact) => contact.id === selectedContactId) ?? null,
@@ -284,6 +286,24 @@ export default function CmsPage() {
       }
     }
 
+    async function syncSelectedContactMessages(contactId: string): Promise<void> {
+      if (!contactId) return;
+      if (selectedContactIdRef.current !== contactId) return;
+
+      const res = await getContactWhatsAppMessages(campaignId, contactId);
+      if (selectedContactIdRef.current !== contactId) return;
+
+      if (res.ok) {
+        setMessagesByContact((prev) => ({ ...prev, [contactId]: res.messages }));
+        setMessagesErrorByContact((prev) => ({ ...prev, [contactId]: null }));
+      } else {
+        setMessagesErrorByContact((prev) => ({
+          ...prev,
+          [contactId]: res.error ?? "No se pudieron cargar los mensajes",
+        }));
+      }
+    }
+
     async function connect() {
       const controller = new AbortController();
       sseRef.current = { close: () => controller.abort() };
@@ -377,6 +397,10 @@ export default function CmsPage() {
         if (event === "connected") {
           setSseConnected(true);
           attempt = 0;
+          const selectedId = selectedContactIdRef.current;
+          if (selectedId) {
+            void syncSelectedContactMessages(selectedId);
+          }
           return;
         }
 
@@ -389,6 +413,10 @@ export default function CmsPage() {
           const active = activeTabRef.current;
 
           setContacts((prev) => mergeContactForActiveTab(prev, contact, previousStatus, active));
+
+          if (selectedContactIdRef.current === contact.id) {
+            void syncSelectedContactMessages(contact.id);
+          }
 
           if (payload.stats) {
             setStats(payload.stats);
@@ -455,14 +483,6 @@ export default function CmsPage() {
   useEffect(() => {
     if (!selectedContactId) return;
     loadMessages(selectedContactId);
-  }, [selectedContactId, loadMessages]);
-
-  useEffect(() => {
-    if (!selectedContactId) return;
-    const interval = setInterval(() => {
-      loadMessages(selectedContactId, { silent: true });
-    }, 5000);
-    return () => clearInterval(interval);
   }, [selectedContactId, loadMessages]);
 
   const handleDraftChange = useCallback(
