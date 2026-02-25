@@ -388,6 +388,43 @@ export const ActivityCharts = memo(function ActivityCharts({
     return Math.floor(len / 8);
   }, [timeSeriesData]);
 
+  /* ── Adaptive YAxis domain for compare chart ── */
+  const compareYDomain = useMemo((): [number, number] | undefined => {
+    if (!compareData) return undefined;
+    let max = 0;
+    for (const pt of compareData.series) {
+      if (pt.agentA > max) max = pt.agentA;
+      if (pt.agentB > max) max = pt.agentB;
+      if (pt.ideal > max) max = pt.ideal;
+    }
+    if (compareData.goal > max) max = compareData.goal;
+    if (max === 0) return [0, 10]; // empty data — show a small range
+    // Round up to a nice ceiling with ~20% headroom
+    const padded = Math.ceil(max * 1.2);
+    // Pick a nice step: 1, 2, 5, 10, 20, 50, 100, 200, 500...
+    const mag = Math.pow(10, Math.floor(Math.log10(padded)));
+    const steps = [1, 2, 5, 10].map((s) => s * mag);
+    const nice = steps.find((s) => s >= padded) ?? padded;
+    return [0, nice];
+  }, [compareData]);
+
+  /* ── Adaptive YAxis domain for drill-down chart ── */
+  const drillYDomain = useMemo((): [number, number] | undefined => {
+    if (!agentDrillData) return undefined;
+    let max = 0;
+    for (const pt of agentDrillData.series) {
+      if (pt.actual > max) max = pt.actual;
+      if (pt.ideal > max) max = pt.ideal;
+    }
+    if (agentDrillData.goal > max) max = agentDrillData.goal;
+    if (max === 0) return [0, 10];
+    const padded = Math.ceil(max * 1.2);
+    const mag = Math.pow(10, Math.floor(Math.log10(padded)));
+    const steps = [1, 2, 5, 10].map((s) => s * mag);
+    const nice = steps.find((s) => s >= padded) ?? padded;
+    return [0, nice];
+  }, [agentDrillData]);
+
   return (
     <div className="flex flex-col gap-2.5 px-4 py-3">
       {/* ═══ KPI strip ═══ */}
@@ -432,7 +469,7 @@ export const ActivityCharts = memo(function ActivityCharts({
                 <LineChart data={compareData.series} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval={xInterval} />
-                  <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} domain={compareYDomain} />
                   <Tooltip contentStyle={tooltipStyle} formatter={(value, name) => [String(value ?? 0), name === "agentA" ? compareNames.a : name === "agentB" ? compareNames.b : "Meta"]} />
                   {compareData.goal > 0 && (
                     <>
@@ -489,7 +526,7 @@ export const ActivityCharts = memo(function ActivityCharts({
                 <LineChart data={agentDrillData.series} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval={xInterval} />
-                  <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} domain={drillYDomain} />
                   <Tooltip contentStyle={tooltipStyle} formatter={(value, name) => [String(value ?? 0), name === "actual" ? "Real" : "Ideal"]} />
                   {agentDrillData.goal > 0 && (
                     <>
