@@ -91,220 +91,296 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
 
   return (
     <div
-      style={{
-        position: "fixed",
-        top: 0,
-        right: 0,
-        width: `min(${PANEL_WIDTH}px, 100vw)`,
-        height: "100vh",
-        background: "var(--color-surface)",
-        borderLeft: "1px solid var(--color-border)",
-        boxShadow: "-4px 0 24px rgba(0,0,0,0.08)",
-        zIndex: 50,
-        display: "flex",
-        flexDirection: "column",
-        fontFamily: FONT,
-        animation: "goberna-slide-in .2s ease-out",
-      }}
+      className="cms-notes-overlay"
+      onClick={onClose}
     >
-      <style>{`@keyframes goberna-slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }`}</style>
-      {/* Header */}
       <div
+        className="cms-notes-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Ver o editar ${nombre}`}
+        onClick={(event) => event.stopPropagation()}
         style={{
-          padding: "16px 20px",
-          borderBottom: "1px solid var(--color-border)",
           display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 12,
+          flexDirection: "column",
+          fontFamily: FONT,
         }}
       >
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {nombre}
-            </div>
-            <span
-              style={{
-                display: "inline-block",
-                padding: "2px 7px",
-                fontSize: 9,
-                fontWeight: 800,
-                letterSpacing: "0.04em",
-                borderRadius: 4,
-                background: statusCfg.bg,
-                color: statusCfg.color,
-                flexShrink: 0,
-              }}
-            >
-              {statusCfg.label}
-            </span>
-          </div>
-          <div style={{ fontSize: 13, color: "#25D366", fontFamily: "monospace", fontWeight: 600 }}>
-            {contact.telefono}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
+        <style>{`
+          .cms-notes-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 60;
+            display: flex;
+            justify-content: flex-end;
+            align-items: stretch;
+            background: transparent;
+          }
+
+          .cms-notes-panel {
+            width: min(${PANEL_WIDTH}px, 100vw);
+            height: 100dvh;
+            background: var(--color-surface);
+            border-left: 1px solid var(--color-border);
+            box-shadow: -6px 0 28px rgba(15, 23, 42, 0.22);
+            animation: goberna-slide-in 0.2s ease-out;
+          }
+
+          @keyframes goberna-slide-in {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+          }
+
+          @keyframes goberna-slide-up {
+            from { transform: translateY(28px); opacity: 0.92; }
+            to { transform: translateY(0); opacity: 1; }
+          }
+
+          @media (max-width: 1024px) {
+            .cms-notes-overlay {
+              justify-content: center;
+              align-items: flex-end;
+              padding: 8px;
+              background: rgba(15, 23, 42, 0.34);
+              backdrop-filter: blur(1px);
+              -webkit-backdrop-filter: blur(1px);
+            }
+
+            .cms-notes-panel {
+              width: min(720px, 100%);
+              height: min(90dvh, 820px);
+              border-left: none;
+              border: 1px solid var(--color-border);
+              border-radius: 16px 16px 10px 10px;
+              box-shadow: 0 -8px 34px rgba(15, 23, 42, 0.24);
+              overflow: hidden;
+              animation: goberna-slide-up 0.2s ease-out;
+            }
+          }
+
+          @media (max-width: 640px) {
+            .cms-notes-overlay {
+              padding: 0;
+            }
+
+            .cms-notes-panel {
+              width: 100%;
+              height: 100dvh;
+              border: none;
+              border-radius: 0;
+              box-shadow: none;
+            }
+          }
+        `}</style>
+
+        {/* Header */}
+        <div
           style={{
-            width: 28,
-            height: 28,
+            padding: "16px 20px",
+            borderBottom: "1px solid var(--color-border)",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            border: "1px solid var(--color-border)",
-            borderRadius: 6,
-            background: "var(--color-surface)",
-            cursor: "pointer",
-            flexShrink: 0,
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 12,
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="2" strokeLinecap="round">
-            <title>Cerrar</title>
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Scrollable content */}
-      <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
-        {/* Context card */}
-        {contextItems.length > 0 && (
-          <div
-            style={{
-              marginBottom: 20,
-              padding: 14,
-              background: "var(--goberna-blue-50)",
-              borderRadius: 8,
-              border: "1px solid var(--goberna-blue-200, #bfdbfe)",
-            }}
-          >
-            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--goberna-blue-900)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
-              Contexto del contacto
-            </div>
-            {contextItems.map((item) => (
-              <div
-                key={item.label}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {nombre}
+              </div>
+              <span
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "4px 0",
-                  borderBottom: "1px solid rgba(0,0,0,0.04)",
+                  display: "inline-block",
+                  padding: "2px 7px",
+                  fontSize: 9,
+                  fontWeight: 800,
+                  letterSpacing: "0.04em",
+                  borderRadius: 4,
+                  background: statusCfg.bg,
+                  color: statusCfg.color,
+                  flexShrink: 0,
                 }}
               >
-                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", fontWeight: 600 }}>
-                  {item.label}
-                </span>
-                <span style={{ fontSize: 12, color: "var(--color-text-primary)", fontWeight: 500, textAlign: "right", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {item.value}
-                </span>
-              </div>
-            ))}
+                {statusCfg.label}
+              </span>
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: "#25D366",
+                fontFamily: "monospace",
+                fontWeight: 600,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {contact.telefono}
+            </div>
           </div>
-        )}
-
-        {/* Editable notes */}
-        <div style={{ fontSize: 10, fontWeight: 800, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
-          {isReadOnly ? "Notas del operador" : "Editar notas"}
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <label htmlFor="local_votacion" style={LABEL_STYLE}>
-            Local de Votación
-          </label>
-          <input
-            id="local_votacion"
-            type="text"
-            value={localVotacion}
-            onChange={(e) => setLocalVotacion(e.target.value)}
-            placeholder="Ej: IE San Juan"
-            readOnly={isReadOnly}
-            style={{ ...INPUT_STYLE, opacity: isReadOnly ? 0.6 : 1 }}
-          />
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <label htmlFor="domicilio" style={LABEL_STYLE}>
-            Domicilio
-          </label>
-          <input
-            id="domicilio"
-            type="text"
-            value={domicilio}
-            onChange={(e) => setDomicilio(e.target.value)}
-            placeholder="Dirección del contacto"
-            readOnly={isReadOnly}
-            style={{ ...INPUT_STYLE, opacity: isReadOnly ? 0.6 : 1 }}
-          />
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <label htmlFor="comentarios" style={LABEL_STYLE}>
-            Comentarios
-          </label>
-          <textarea
-            id="comentarios"
-            value={comentarios}
-            onChange={(e) => setComentarios(e.target.value)}
-            placeholder="Notas sobre la conversación..."
-            rows={4}
-            readOnly={isReadOnly}
-            style={{ ...INPUT_STYLE, resize: "vertical", opacity: isReadOnly ? 0.6 : 1 }}
-          />
-        </div>
-      </div>
-
-      {/* Footer */}
-      {!isReadOnly && (
-        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--color-border)", display: "flex", gap: 10 }}>
           <button
             type="button"
             onClick={onClose}
             style={{
-              flex: 1,
-              padding: "10px",
-              fontSize: 13,
-              fontWeight: 600,
-              fontFamily: FONT,
-              color: "var(--color-text-secondary)",
-              background: "var(--color-surface)",
+              width: 28,
+              height: 28,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
               border: "1px solid var(--color-border)",
-              borderRadius: 8,
+              borderRadius: 6,
+              background: "var(--color-surface)",
               cursor: "pointer",
+              flexShrink: 0,
             }}
           >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() =>
-              onSave(contact.id, {
-                local_votacion: localVotacion,
-                domicilio,
-                comentarios,
-              })
-            }
-            style={{
-              flex: 2,
-              padding: "10px",
-              fontSize: 13,
-              fontWeight: 700,
-              fontFamily: FONT,
-              color: "#fff",
-              background: saving ? "#93c5fd" : "var(--goberna-blue-900)",
-              border: "none",
-              borderRadius: 8,
-              cursor: saving ? "not-allowed" : "pointer",
-            }}
-          >
-            {saving ? "Guardando..." : "Guardar"}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="2" strokeLinecap="round">
+              <title>Cerrar</title>
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
           </button>
         </div>
-      )}
+
+        {/* Scrollable content */}
+        <div style={{ flex: 1, overflow: "auto", padding: 20 }}>
+          {/* Context card */}
+          {contextItems.length > 0 && (
+            <div
+              style={{
+                marginBottom: 20,
+                padding: 14,
+                background: "var(--goberna-blue-50)",
+                borderRadius: 8,
+                border: "1px solid var(--goberna-blue-200, #bfdbfe)",
+              }}
+            >
+              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--goberna-blue-900)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+                Contexto del contacto
+              </div>
+              {contextItems.map((item) => (
+                <div
+                  key={item.label}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "4px 0",
+                    borderBottom: "1px solid rgba(0,0,0,0.04)",
+                  }}
+                >
+                  <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", fontWeight: 600 }}>
+                    {item.label}
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--color-text-primary)", fontWeight: 500, textAlign: "right", maxWidth: "58%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {item.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Editable notes */}
+          <div style={{ fontSize: 10, fontWeight: 800, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
+            {isReadOnly ? "Notas del operador" : "Editar notas"}
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor="local_votacion" style={LABEL_STYLE}>
+              Local de Votación
+            </label>
+            <input
+              id="local_votacion"
+              type="text"
+              value={localVotacion}
+              onChange={(e) => setLocalVotacion(e.target.value)}
+              placeholder="Ej: IE San Juan"
+              readOnly={isReadOnly}
+              style={{ ...INPUT_STYLE, opacity: isReadOnly ? 0.6 : 1 }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor="domicilio" style={LABEL_STYLE}>
+              Domicilio
+            </label>
+            <input
+              id="domicilio"
+              type="text"
+              value={domicilio}
+              onChange={(e) => setDomicilio(e.target.value)}
+              placeholder="Dirección del contacto"
+              readOnly={isReadOnly}
+              style={{ ...INPUT_STYLE, opacity: isReadOnly ? 0.6 : 1 }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor="comentarios" style={LABEL_STYLE}>
+              Comentarios
+            </label>
+            <textarea
+              id="comentarios"
+              value={comentarios}
+              onChange={(e) => setComentarios(e.target.value)}
+              placeholder="Notas sobre la conversación..."
+              rows={4}
+              readOnly={isReadOnly}
+              style={{ ...INPUT_STYLE, resize: "vertical", opacity: isReadOnly ? 0.6 : 1 }}
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        {!isReadOnly && (
+          <div style={{ padding: "14px 20px", borderTop: "1px solid var(--color-border)", display: "flex", gap: 10 }}>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                flex: 1,
+                padding: "10px",
+                fontSize: 13,
+                fontWeight: 600,
+                fontFamily: FONT,
+                color: "var(--color-text-secondary)",
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                borderRadius: 8,
+                cursor: "pointer",
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() =>
+                onSave(contact.id, {
+                  local_votacion: localVotacion,
+                  domicilio,
+                  comentarios,
+                })
+              }
+              style={{
+                flex: 2,
+                padding: "10px",
+                fontSize: 13,
+                fontWeight: 700,
+                fontFamily: FONT,
+                color: "#fff",
+                background: saving ? "#93c5fd" : "var(--goberna-blue-900)",
+                border: "none",
+                borderRadius: 8,
+                cursor: saving ? "not-allowed" : "pointer",
+              }}
+            >
+              {saving ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -728,7 +728,7 @@ export default function CmsPage() {
               </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: "auto", background: "#ffffff" }}>
+            <div className="cms-chat-contact-list">
               {loading ? (
                 <div style={{ padding: 22, textAlign: "center", color: "#64748b", fontSize: 13 }}>
                   Cargando contactos...
@@ -858,13 +858,15 @@ export default function CmsPage() {
       <style>{`
         .cms-chat-root {
           flex: 1;
-          min-height: calc(100vh - 190px);
+          min-height: 0;
+          height: clamp(360px, calc(100dvh - 190px), 900px);
           transition: margin-right 240ms ease;
+          overflow: hidden;
         }
 
         .cms-chat-shell {
           height: 100%;
-          min-height: calc(100vh - 190px);
+          min-height: 0;
           border: 1px solid #d6dde6;
           border-radius: 16px;
           overflow: hidden;
@@ -876,28 +878,44 @@ export default function CmsPage() {
         .cms-chat-sidebar {
           width: min(380px, 100%);
           min-width: 320px;
+          min-height: 0;
           display: flex;
           flex-direction: column;
           background: #ffffff;
           border-right: 1px solid #d6dde6;
         }
 
+        .cms-chat-contact-list {
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          scrollbar-gutter: stable;
+          background: #ffffff;
+        }
+
         .cms-chat-main {
           flex: 1;
           min-width: 0;
+          min-height: 0;
           display: flex;
+          overflow: hidden;
         }
 
-        @media (min-width: 1180px) {
+        @media (min-width: 1025px) {
           .cms-chat-root.panel-open {
             margin-right: 400px;
           }
         }
 
         @media (max-width: 1024px) {
+          .cms-chat-root {
+            height: calc(100dvh - 220px);
+          }
+
           .cms-chat-shell {
             flex-direction: column;
-            min-height: calc(100vh - 180px);
+            min-height: 0;
           }
 
           .cms-chat-sidebar {
@@ -905,11 +923,21 @@ export default function CmsPage() {
             min-width: 0;
             border-right: none;
             border-bottom: 1px solid #d6dde6;
-            max-height: 52dvh;
+            max-height: min(48dvh, 420px);
           }
 
           .cms-chat-main {
-            min-height: 48dvh;
+            min-height: 0;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .cms-chat-root {
+            height: calc(100dvh - 200px);
+          }
+
+          .cms-chat-sidebar {
+            max-height: min(46dvh, 360px);
           }
         }
       `}</style>

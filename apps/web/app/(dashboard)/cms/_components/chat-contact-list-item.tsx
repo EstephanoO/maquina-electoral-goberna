@@ -11,7 +11,7 @@ type Props = {
   onSelect: (contactId: string) => void;
   onOpenProfile: (contact: CmsContact) => void;
 };
-
+ 
 type StatusBadge = {
   label: string;
   color: string;
