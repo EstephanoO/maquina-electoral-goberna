@@ -20,6 +20,7 @@ import {
   type CmsSseNotesUpdated,
   type CmsTwilioMessage,
 } from "@/lib/services/cms";
+import { useChatWs } from "@/lib/hooks";
 import {
   ChatContactListItem,
   ChatConversationPane,
@@ -154,6 +155,30 @@ export default function CmsPage() {
   const selectedDraft = selectedContactId ? (draftByContact[selectedContactId] ?? "") : "";
   const selectedSending = selectedContactId ? Boolean(sendingByContact[selectedContactId]) : false;
   const selectedContactTags = selectedContactId ? (contactTagsById[selectedContactId] ?? []) : [];
+
+  // ── WebSocket for real-time WhatsApp messages ───────────────────
+  const handleChatWsEvent = useCallback(
+    (event: { type: string; contactId: string }) => {
+      // Reload messages for the affected contact if it's currently selected
+      if (!activeCampaignId) return;
+      if (selectedContactIdRef.current !== event.contactId) return;
+      getContactWhatsAppMessages(activeCampaignId, event.contactId).then((res) => {
+        if (selectedContactIdRef.current !== event.contactId) return;
+        if (res.ok) {
+          setMessagesByContact((prev) => ({ ...prev, [event.contactId]: res.messages }));
+          setMessagesErrorByContact((prev) => ({ ...prev, [event.contactId]: null }));
+        }
+      });
+    },
+    [activeCampaignId],
+  );
+
+  const { connected: chatWsConnected } = useChatWs({
+    campaignId: activeCampaignId,
+    contactId: selectedContactId,
+    onMessageEvent: handleChatWsEvent,
+  });
+
   const filteredContacts = useMemo(() => {
     const query = debouncedSearch.trim().toLowerCase();
     return contacts.filter((contact) => {

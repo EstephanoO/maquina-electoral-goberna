@@ -9,6 +9,7 @@ import { errorPayload } from "../../infra/http";
 import { cmsEvents, type CmsMessageEvent, type CmsStatusUpdateEvent } from "../../infra/cms-events";
 import { pool } from "../../db";
 import * as repo from "./repository";
+import { buildCmsChatWsRoutes } from "./ws-chat";
 
 // ── Schemas ─────────────────────────────────────────────────────────
 
@@ -85,7 +86,7 @@ async function resolveOperatorEmail(userId: string): Promise<string> {
 
 // ── Routes ──────────────────────────────────────────────────────────
 
-export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
+export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
   // Heartbeat for SSE
   const heartbeatTimer = setInterval(() => {
     for (const [id, client] of clients.entries()) {
@@ -118,6 +119,9 @@ export function buildCmsRoutes(_env: AppEnv): FastifyPluginAsync {
   });
 
   return async (app) => {
+    // Register WebSocket chat routes for real-time WhatsApp messages
+    app.register(buildCmsChatWsRoutes(env));
+
     // ── GET /api/cms/contacts ───────────────────────────────────────
     app.get(
       "/api/cms/contacts",
