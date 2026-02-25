@@ -46,7 +46,7 @@ export function buildApp(env: AppEnv) {
       "SECURITY: FRONTEND_ORIGINS=* with credentials:true in production allows any site to use victim cookies. Set explicit origins!",
     );
   }
-  app.register(cors, {
+   app.register(cors, {
     origin: (origin, callback) => {
       if (!origin) {
         callback(null, true);
@@ -60,6 +60,17 @@ export function buildApp(env: AppEnv) {
       }
 
       if (env.frontendOrigins.includes("*") || env.frontendOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      // Support suffix-wildcard patterns like *.vercel.app for preview deployments
+      const hasWildcardMatch = env.frontendOrigins.some((allowed) => {
+        if (!allowed.startsWith("https://*.")) return false;
+        const suffix = allowed.slice("https://*".length); // e.g. ".vercel.app"
+        return origin.startsWith("https://") && origin.endsWith(suffix);
+      });
+      if (hasWildcardMatch) {
         callback(null, true);
         return;
       }
