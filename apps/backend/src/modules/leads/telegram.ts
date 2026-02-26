@@ -1,24 +1,10 @@
-import type { AppEnv } from "../../config/env";
-
 /**
- * Send a Telegram notification when a new lead arrives.
- * Fire-and-forget — never blocks the HTTP response.
+ * @deprecated Use `import { tgLead } from "../../infra/telegram"` instead.
+ * This file is kept for backwards compatibility but delegates to the central service.
  */
-export function notifyTelegram(env: AppEnv, nombre: string, correo: string, plataforma: string) {
-  if (!env.telegramBotToken || !env.telegramChatId) return;
+import type { AppEnv } from "../../config/env";
+import { tgLead } from "../../infra/telegram";
 
-  const text = `📲 *Nuevo lead TestFlight*\n\n👤 ${nombre}\n📧 ${correo}\n📱 ${plataforma}`;
-  const url = `https://api.telegram.org/bot${env.telegramBotToken}/sendMessage`;
-
-  fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: env.telegramChatId,
-      text,
-      parse_mode: "Markdown",
-    }),
-  }).catch(() => {
-    // Silently ignore — Telegram is best-effort
-  });
+export function notifyTelegram(_env: AppEnv, nombre: string, correo: string, plataforma: string) {
+  tgLead(nombre, correo, plataforma);
 }

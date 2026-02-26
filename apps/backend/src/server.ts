@@ -4,6 +4,9 @@ import { pool } from "./db";
 import { buildApp } from "./app";
 import { getEnv } from "./config/env";
 import { connectRedis, disconnectRedis } from "./infra/redis";
+import { initTelegram } from "./infra/telegram";
+import { startHealthPoller, stopHealthPoller } from "./infra/health-poller";
+import { initSupportTelegramBridge } from "./infra/support-telegram-bridge";
 import { ensureAgentLocationsLiveTable, cleanupLocationHistory } from "./modules/agents/repository";
 import { ensureFormsTable } from "./modules/forms/repository";
 import { AuthRepository } from "./modules/auth/repository";
@@ -11,11 +14,20 @@ import { AuthRepository } from "./modules/auth/repository";
 const env = getEnv();
 const app = buildApp(env);
 
+// ── Telegram notifications ────────────────────────────────────────────
+initTelegram(env);
+
 await connectRedis();
 await ensureFormsTable();
 await ensureAgentLocationsLiveTable();
 
 await app.listen({ host: "0.0.0.0", port: env.port });
+
+// ── Health poller (DB/Redis/Tegola + CPU/RAM/Disk) ────────────────────
+startHealthPoller(env);
+
+// ── Support → Telegram bridge ─────────────────────────────────────────
+initSupportTelegramBridge();
 
 // ── Periodic cleanup cron ─────────────────────────────────────────────
 const authRepo = new AuthRepository(pool);
@@ -48,6 +60,7 @@ cleanupTimer = setInterval(() => void runCleanup(), env.refreshTokenCleanupInter
 // ── Shutdown ──────────────────────────────────────────────────────────
 const shutdown = async () => {
   if (cleanupTimer) clearInterval(cleanupTimer);
+  stopHealthPoller();
   await app.close();
   await disconnectRedis();
   await pool.end();

@@ -95,6 +95,8 @@ export class FormsWriteBehindQueue {
 
     if (currentDepth >= this.maxQueue) {
       metricsRegistry.incCounter("forms_queue_enqueue_total", "queue_full");
+      const { tgQueueBackpressure } = await import("../../infra/telegram");
+      tgQueueBackpressure("forms");
       return { queued: false, deduped: false, queueFull: true };
     }
 
@@ -235,6 +237,8 @@ export class FormsWriteBehindQueue {
           await redisClient.xAck(this.streamKey, this.streamGroup, item.id);
           await redisClient.hDel(this.retryHashKey, item.id);
           metricsRegistry.incCounter("forms_queue_rows_total", "dlq");
+          const { tgDlq } = await import("../../infra/telegram");
+          tgDlq("forms", message);
         }
       }
 
