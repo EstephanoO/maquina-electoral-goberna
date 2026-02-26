@@ -7,6 +7,7 @@ export { AgentsTab } from "./agents-tab";
 export { LogTab } from "./log-tab";
 export { TierraHeader } from "./tierra-header";
 export { PipelineView } from "./pipeline-view";
+export { DatosView } from "./datos-view";
 export { PipelineFilters } from "./pipeline-filters";
 export { CampoOverlay } from "./campo-overlay";
 

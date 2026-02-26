@@ -11,7 +11,7 @@ import { useCampaignStats, useRecentForms, useAgentLocationsSnapshot } from "@/l
 import { useAuth } from "@/lib/auth-context";
 
 import {
-  TierraHeader, MapControls, PipelineView, CampoOverlay,
+  TierraHeader, MapControls, PipelineView, DatosView, CampoOverlay,
   INITIAL_DRILL,
   type TierraMapHandle, type DrillState, type ActiveLayer, type LogEntry,
 } from "./_components";
@@ -149,7 +149,7 @@ export default function TierraPage() {
           </div>
           <CampoOverlay agents={enrichedAgents} connectedCount={connectedCount} logEntries={logEntries} formCount={forms.length} primaryColor={campaign.color_primario} selectedAgentId={selectedAgentId} onAgentClick={handleAgentListClick} onLogEntryClick={handleLogEntryClick} userRole={user?.role} onDeleteForm={handleDeleteForm} onUpdateForm={handleUpdateForm} />
         </div>
-      ) : (
+      ) : viewMode === "pipeline" ? (
         <PipelineView
           brigadistas={pipeline.brigadistaMetrics ?? []}
           prevBrigadistas={pipeline.prevBrigadistaMetrics ?? []}
@@ -169,6 +169,18 @@ export default function TierraPage() {
           totalDatos={stats.totals.forms_count}
           agentesCampoCount={enrichedAgents.length}
           metaDatos={stats.metas.datos}
+        />
+      ) : (
+        <DatosView
+          forms={forms}
+          isLoading={!forms.length && statsLoading}
+          primaryColor={campaign.color_primario}
+          campaignName={campaign.name}
+          campaignId={campaign.id}
+          userRole={user?.role ?? "agente"}
+          onUpdateForm={handleUpdateForm}
+          onDeleteForm={handleDeleteForm}
+          onFormsChanged={() => { queryClient.invalidateQueries({ queryKey: ["recent-forms"] }); queryClient.invalidateQueries({ queryKey: ["campaign-stats"] }); }}
         />
       )}
     </div>
