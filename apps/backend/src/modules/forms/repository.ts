@@ -299,9 +299,12 @@ export async function getRecentForms(
         AND fs.synced_at IS NULL
         AND fs.deleted_at IS NULL${submissionsDateFilter}
     )
-    SELECT DISTINCT ON (client_id) *
-    FROM combined
-    ORDER BY client_id, created_at DESC
+    SELECT * FROM (
+      SELECT DISTINCT ON (client_id) *
+      FROM combined
+      ORDER BY client_id, created_at DESC
+    ) deduped
+    ORDER BY created_at DESC
     LIMIT ${limitParam}`,
     params,
   );
