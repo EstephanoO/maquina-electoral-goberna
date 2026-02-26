@@ -86,7 +86,7 @@ async function poll(env: AppEnv) {
     resourceAlertCooldown--;
   } else {
     const { cpu, mem, disk } = getSystemResources();
-    if (cpu > 80 || mem > 85 || (disk !== null && disk > 90)) {
+    if (cpu > 80 || mem > 85 || (disk !== null && disk > 70)) {
       tgSystemResources(cpu, mem, disk);
       resourceAlertCooldown = RESOURCE_COOLDOWN_CYCLES;
     }

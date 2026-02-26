@@ -42,7 +42,7 @@ export function tgSystemResources(cpu: number, mem: number, disk: number | null)
   const lines: string[] = [];
   if (cpu > 80) lines.push(`🔥 CPU: ${cpu.toFixed(1)}%`);
   if (mem > 85) lines.push(`🔥 RAM: ${mem.toFixed(1)}%`);
-  if (disk !== null && disk > 90) lines.push(`🔥 Disco: ${disk.toFixed(1)}%`);
+  if (disk !== null && disk > 70) lines.push(`🔥 Disco: ${disk.toFixed(1)}%`);
   if (lines.length === 0) return;
   send(`⚠️ *Recursos criticos VPS*\n\n${lines.join("\n")}`);
 }
