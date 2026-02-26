@@ -56,3 +56,10 @@ export async function listConversations() {
 export async function getAdminIds() {
   return apiRequest<{ adminIds: string[] }>("/api/support/admins");
 }
+
+/** Get a short-lived JWT for WebSocket authentication.
+ *  Called via Next.js proxy (same-origin) where httpOnly cookies travel,
+ *  then the token is passed as ?token= to the cross-origin WS URL. */
+export async function getWsToken() {
+  return apiRequest<{ token: string }>("/api/support/ws-token");
+}

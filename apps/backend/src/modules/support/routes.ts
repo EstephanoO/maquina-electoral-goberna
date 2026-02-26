@@ -6,6 +6,7 @@
  */
 
 import type { FastifyPluginAsync } from "fastify";
+import { SignJWT } from "jose";
 import type { AppEnv } from "../../config/env";
 import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
@@ -82,6 +83,29 @@ export function buildSupportRoutes(env: AppEnv): FastifyPluginAsync {
         const requestId = String(request.id);
         const adminIds = await repo.getAdminIds();
         return reply.send({ ok: true, request_id: requestId, adminIds });
+      },
+    );
+
+    // ── GET /api/support/ws-token ── Short-lived JWT for WebSocket auth
+    // The browser can't send httpOnly cookies cross-origin to wss://api.goberna.us,
+    // so the frontend calls this endpoint through the Next.js proxy (same-origin,
+    // cookies travel), gets a 30-second token, then passes it as ?token= to the WS.
+    app.get(
+      "/api/support/ws-token",
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const userId = (request as unknown as { userId: string }).userId;
+        const userRole = (request as unknown as { userRole: string }).userRole;
+
+        const secret = new TextEncoder().encode(env.jwtSecret);
+        const token = await new SignJWT({ sub: userId, role: userRole })
+          .setProtectedHeader({ alg: "HS256" })
+          .setIssuedAt()
+          .setExpirationTime("30s")
+          .sign(secret);
+
+        return reply.send({ ok: true, request_id: requestId, token });
       },
     );
   };

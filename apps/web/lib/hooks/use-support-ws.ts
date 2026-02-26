@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from "react";
+import { getWsToken } from "@/lib/services/support";
 
 // ─── Types (exported for consumers) ──────────────────────────
 
@@ -43,7 +44,7 @@ const BASE_RECONNECT_DELAY_MS = 1_000;
 
 // ─── WS URL resolver (hoisted, no deps) ─────────────────────
 
-function getWsUrl(): string {
+function getWsBaseUrl(): string {
   if (typeof window === "undefined") return "";
   return window.location.hostname === "localhost"
     ? "ws://localhost:3001/ws/support/chat"
@@ -95,11 +96,33 @@ export function useSupportWs({ enabled, onMessage, onRead }: UseSupportWsOptions
     let attempt = 0;
     let disposed = false;
 
-    function connect() {
+    async function connect() {
       if (disposed) return;
-      const url = getWsUrl();
-      if (!url) return;
+      const baseUrl = getWsBaseUrl();
+      if (!baseUrl) return;
 
+      // Fetch a short-lived JWT via the Next.js proxy (same-origin, cookies travel).
+      // The token is then passed as ?token= to the cross-origin WS URL.
+      let token: string;
+      try {
+        const res = await getWsToken();
+        if (!res.ok || !res.data?.token) {
+          throw new Error("No token returned");
+        }
+        token = res.data.token;
+      } catch {
+        // Token fetch failed — schedule reconnect with backoff
+        if (!disposed) {
+          const delay = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** attempt, MAX_RECONNECT_DELAY_MS);
+          attempt++;
+          reconnectTimer = setTimeout(connect, delay);
+        }
+        return;
+      }
+
+      if (disposed) return;
+
+      const url = `${baseUrl}?token=${encodeURIComponent(token)}`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
