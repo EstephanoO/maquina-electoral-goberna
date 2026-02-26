@@ -38,6 +38,8 @@ type Props = {
   onToggleCompare: (id: string) => void;
   /** Clear all compare selections */
   onClearCompare: () => void;
+  /** Server-side authoritative count for the current period (overrides forms.length for KPI) */
+  serverPeriodCount?: number;
 };
 
 type TimeSeriesPoint = { label: string; forms: number; agents: number };
@@ -109,7 +111,7 @@ const tooltipStyle: React.CSSProperties = {
 
 export const ActivityCharts = memo(function ActivityCharts({
   forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges, periodGoalPerBrig,
-  compareIds, onToggleCompare, onClearCompare,
+  compareIds, onToggleCompare, onClearCompare, serverPeriodCount,
 }: Props) {
   const accentColor = secondaryColor || "#0d9488";
   const compareColorB = "#f59e0b"; // amber for second agent
@@ -229,7 +231,7 @@ export const ActivityCharts = memo(function ActivityCharts({
 
   /* ── Stats ── */
   const stats = useMemo(() => {
-    const totalForms = forms.length;
+    const totalForms = serverPeriodCount ?? forms.length;
     const prevTotal = prevForms.length;
 
     const uniqueAgents = new Set<string>();
@@ -255,7 +257,7 @@ export const ActivityCharts = memo(function ActivityCharts({
       formsDelta: pctChange(totalForms, prevTotal),
       agentsDelta: pctChange(uniqueAgents.size, prevUniqueAgents.size),
     };
-  }, [forms, prevForms, timeSeriesData]);
+  }, [forms, prevForms, timeSeriesData, serverPeriodCount]);
 
   /* ── Ranking colors ── */
   const rankingColors = useMemo(() => [

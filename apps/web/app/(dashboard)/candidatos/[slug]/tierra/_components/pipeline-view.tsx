@@ -56,6 +56,8 @@ type Props = {
   periodLabel: string;
   dateRanges: PipelineDateRanges;
   totalDatos: number;
+  /** Server-side totals from campaign stats (authoritative counts) */
+  serverTotals: { forms_count: number; forms_today: number; forms_week: number };
   agentesCampoCount: number;
   metaDatos: number;
 };
@@ -65,7 +67,7 @@ type Props = {
 export const PipelineView = memo(function PipelineView({
   brigadistas, prevBrigadistas, isLoading, isPending, primaryColor, secondaryColor,
   forms, prevForms, agents, period, onPeriodChange, offset, onOffsetChange, periodLabel, dateRanges,
-  totalDatos, agentesCampoCount, metaDatos,
+  totalDatos, serverTotals, agentesCampoCount, metaDatos,
 }: Props) {
   // ── Compare / drill-down state (max 2 selected) ──
   const [compareIds, setCompareIds] = useState<string[]>([]);
@@ -197,7 +199,14 @@ export const PipelineView = memo(function PipelineView({
             <PipelineFunnel
               primaryColor={primaryColor}
               totalDatos={agentDrill ? agentDrill.totalCaptures : totalDatos}
-              periodDatos={agentDrill ? agentDrill.periodDatos : forms.length}
+              periodDatos={agentDrill ? agentDrill.periodDatos : (
+                offset === 0
+                  ? (period === "today" ? serverTotals.forms_today
+                    : period === "week" ? serverTotals.forms_week
+                    : period === "all" ? serverTotals.forms_count
+                    : forms.length)
+                  : forms.length
+              )}
               agentesCampoCount={agentesCampoCount}
               metaDatos={metaDatos}
               period={period}
@@ -220,6 +229,14 @@ export const PipelineView = memo(function PipelineView({
               compareIds={compareIds}
               onToggleCompare={handleToggleCompare}
               onClearCompare={handleClearCompare}
+              serverPeriodCount={
+                offset === 0
+                  ? (period === "today" ? serverTotals.forms_today
+                    : period === "week" ? serverTotals.forms_week
+                    : period === "all" ? serverTotals.forms_count
+                    : undefined)
+                  : undefined
+              }
             />
           )}
 
@@ -247,10 +264,11 @@ export const PipelineView = memo(function PipelineView({
 
 /* ========== Collapsible Charts Section ========== */
 
-function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges, periodGoalPerBrig, compareIds, onToggleCompare, onClearCompare }: {
+function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges, periodGoalPerBrig, compareIds, onToggleCompare, onClearCompare, serverPeriodCount }: {
   forms: FormRecord[]; prevForms: FormRecord[]; primaryColor: string; secondaryColor?: string;
   periodLabel: string; period: PipelinePeriod; dateRanges: PipelineDateRanges; periodGoalPerBrig?: number;
   compareIds: string[]; onToggleCompare: (id: string) => void; onClearCompare: () => void;
+  serverPeriodCount?: number;
 }) {
   const [open, setOpen] = useState(true);
   return (
@@ -284,6 +302,7 @@ function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodL
               compareIds={compareIds}
               onToggleCompare={onToggleCompare}
               onClearCompare={onClearCompare}
+              serverPeriodCount={serverPeriodCount}
             />
       )}
     </div>

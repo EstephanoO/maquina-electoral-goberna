@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { useEffect, useMemo, useState, useCallback, memo } from "react";
+import { SupportChat } from "./_components/support-chat";
 
 // ── Nav items ───────────────────────────────────────────────────────
 
@@ -668,6 +669,11 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
               </Link>
             );
           })()}
+
+          {/* Support chat — candidato+ and admin */}
+          {(uiRole === "admin" || uiRole === "candidato" || uiRole === "consultor") && user && (
+            <SupportChat userId={user.id} isAdmin={isAdmin} collapsed={showCollapsed} />
+          )}
 
           {/* Campaign selector — admin always sees it (with "Admin" global option) */}
           {showLabel && (isAdmin || campaigns.length > 1) && (
