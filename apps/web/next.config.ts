@@ -50,6 +50,15 @@ const nextConfig: NextConfig = {
 
     return {
       beforeFiles: [
+        // Astro landing: proxy / to VPS static files
+        {
+          source: "/",
+          destination: `${target}/landing/`,
+        },
+        {
+          source: "/landing/:path*",
+          destination: `${target}/landing/:path*`,
+        },
         {
           source: "/api/:path*",
           destination: `${target}/api/:path*`,
