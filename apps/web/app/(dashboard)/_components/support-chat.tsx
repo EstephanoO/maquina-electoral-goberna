@@ -5,12 +5,20 @@
  * - Candidato/Consultor: single chat with admin
  * - Admin: conversation list + individual chats
  *
- * Positioned at the bottom of the sidebar, opens a floating panel.
+ * Performance:
+ *   - memo'd sub-components to isolate rerenders
+ *   - Stable callbacks via useCallback with minimal deps
+ *   - WS callbacks stored in refs (no effect re-runs)
+ *   - Styles hoisted as constants (no object allocation per render)
+ *   - Input changes only rerender ChatInput, not the full tree
  */
 
 "use client";
 
-import { useState, useEffect, useRef, useCallback, type CSSProperties } from "react";
+import {
+  useState, useEffect, useRef, useCallback, useMemo, memo,
+  type CSSProperties, type FormEvent, type KeyboardEvent,
+} from "react";
 import { useSupportWs, type SupportWsMessage } from "../../../lib/hooks/use-support-ws";
 import {
   getMessages,
@@ -30,96 +38,367 @@ type SupportChatProps = {
   collapsed: boolean;
 };
 
-// ─── Icons ────────────────────────────────────────────────────
+// ─── Hoisted Styles (created once, never reallocated) ─────────
 
-function SupportIcon() {
+const PANEL_STYLE: CSSProperties = {
+  position: "fixed",
+  bottom: 16,
+  width: 380,
+  height: 520,
+  background: "#ffffff",
+  borderRadius: 12,
+  boxShadow: "0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.1)",
+  display: "flex",
+  flexDirection: "column",
+  zIndex: 1100,
+  fontFamily: FONT_STACK,
+  overflow: "hidden",
+  animation: "goberna-fade-in 0.2s ease-out",
+};
+
+const HEADER_STYLE: CSSProperties = {
+  padding: "14px 16px",
+  background: "var(--goberna-blue-950, #0c1f38)",
+  color: "#ffffff",
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  flexShrink: 0,
+};
+
+const MESSAGES_CONTAINER: CSSProperties = {
+  flex: 1, overflowY: "auto", padding: "12px 16px", background: "#f8fafc",
+};
+
+const INPUT_BAR: CSSProperties = {
+  padding: "10px 12px",
+  borderTop: "1px solid #e2e8f0",
+  display: "flex",
+  gap: 8,
+  alignItems: "center",
+  flexShrink: 0,
+  background: "#ffffff",
+};
+
+const INPUT_STYLE: CSSProperties = {
+  flex: 1, padding: "8px 12px", border: "1px solid #e2e8f0", borderRadius: 8,
+  fontSize: 13, fontFamily: FONT_STACK, outline: "none", background: "#f8fafc",
+  color: "#1e293b", transition: "border-color 0.15s",
+};
+
+const ICON_BTN: CSSProperties = {
+  background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 4, display: "flex",
+};
+
+const CLOSE_BTN: CSSProperties = {
+  background: "none", border: "none", color: "rgba(255,255,255,0.6)", cursor: "pointer", padding: 4,
+};
+
+const CENTERED_TEXT: CSSProperties = {
+  padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13,
+};
+
+const BADGE_STYLE: CSSProperties = {
+  position: "absolute", top: -6, right: -8, background: "#ef4444", color: "#fff",
+  fontSize: 9, fontWeight: 700, borderRadius: 99, minWidth: 16, height: 16,
+  display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px", lineHeight: 1,
+};
+
+const AVATAR_STYLE: CSSProperties = {
+  width: 36, height: 36, borderRadius: "50%", background: "var(--goberna-blue-100, #dbeafe)",
+  color: "var(--goberna-blue-700, #1d4ed8)", display: "flex", alignItems: "center",
+  justifyContent: "center", fontSize: 14, fontWeight: 700, flexShrink: 0,
+};
+
+const ICON_WRAP: CSSProperties = {
+  flexShrink: 0, display: "flex", alignItems: "center", width: 20, justifyContent: "center", position: "relative",
+};
+
+// ─── Icons (memo'd — zero rerender cost) ──────────────────────
+
+const SupportIcon = memo(function SupportIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <title>Soporte</title>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
-}
+});
 
-function SendIcon() {
+const SendIcon = memo(function SendIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <title>Enviar</title>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <line x1="22" y1="2" x2="11" y2="13" />
       <polygon points="22 2 15 22 11 13 2 9 22 2" />
     </svg>
   );
-}
+});
 
-function BackIcon() {
+const BackIcon = memo(function BackIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <title>Volver</title>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="15 18 9 12 15 6" />
     </svg>
   );
-}
+});
+
+const CloseIcon = memo(function CloseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+});
 
 // ─── Helpers ──────────────────────────────────────────────────
+
+// Cached Intl formatters — created once, reused forever
+const timeFormatter = typeof Intl !== "undefined"
+  ? new Intl.DateTimeFormat("es-PE", { hour: "2-digit", minute: "2-digit" })
+  : null;
+const dateTimeFormatter = typeof Intl !== "undefined"
+  ? new Intl.DateTimeFormat("es-PE", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+  : null;
 
 function formatTime(iso: string): string {
   try {
     const d = new Date(iso);
     const now = new Date();
-    const isToday = d.toDateString() === now.toDateString();
-    if (isToday) {
-      return d.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
+    if (d.toDateString() === now.toDateString()) {
+      return timeFormatter?.format(d) ?? "";
     }
-    return d.toLocaleDateString("es-PE", { day: "2-digit", month: "short" }) +
-      " " + d.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
+    return dateTimeFormatter?.format(d) ?? "";
   } catch {
     return "";
   }
 }
 
+// ─── MessageBubble (memo'd — only rerenders if its own msg changes) ──
+
+type BubbleProps = { msg: SupportMessage; isMine: boolean };
+
+const MessageBubble = memo(function MessageBubble({ msg, isMine }: BubbleProps) {
+  const bubbleStyle = useMemo<CSSProperties>(() => ({
+    maxWidth: "75%",
+    padding: "8px 12px",
+    borderRadius: 12,
+    borderBottomRightRadius: isMine ? 4 : 12,
+    borderBottomLeftRadius: isMine ? 12 : 4,
+    background: isMine ? "var(--goberna-blue-950, #0c1f38)" : "#ffffff",
+    color: isMine ? "#ffffff" : "#1e293b",
+    fontSize: 13,
+    lineHeight: 1.4,
+    boxShadow: isMine ? "none" : "0 1px 3px rgba(0,0,0,0.08)",
+    wordBreak: "break-word" as const,
+  }), [isMine]);
+
+  const timeStyle = useMemo<CSSProperties>(() => ({
+    fontSize: 10,
+    color: isMine ? "rgba(255,255,255,0.5)" : "#94a3b8",
+    marginTop: 4,
+    textAlign: "right" as const,
+  }), [isMine]);
+
+  return (
+    <div style={{ display: "flex", justifyContent: isMine ? "flex-end" : "flex-start", marginBottom: 8 }}>
+      <div style={bubbleStyle}>
+        <div>{msg.body}</div>
+        <div style={timeStyle}>{formatTime(msg.created_at)}</div>
+      </div>
+    </div>
+  );
+});
+
+// ─── ConversationRow (memo'd — only rerenders if its data changes) ──
+
+type ConvRowProps = {
+  conv: ConversationSummary;
+  onSelect: (id: string) => void;
+};
+
+const ConversationRow = memo(function ConversationRow({ conv, onSelect }: ConvRowProps) {
+  const handleClick = useCallback(() => onSelect(conv.user_id), [onSelect, conv.user_id]);
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      className="support-conv-row"
+      style={{
+        width: "100%", padding: "12px 16px", background: "transparent", border: "none",
+        borderBottom: "1px solid #f1f5f9", cursor: "pointer", textAlign: "left",
+        display: "flex", alignItems: "center", gap: 10, fontFamily: FONT_STACK,
+      }}
+    >
+      <div style={AVATAR_STYLE}>
+        {conv.full_name.charAt(0).toUpperCase()}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{conv.full_name}</span>
+          <span style={{ fontSize: 10, color: "#94a3b8" }}>{formatTime(conv.last_message_at)}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
+          <span style={{ fontSize: 12, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>
+            {conv.last_message}
+          </span>
+          {conv.unread_count > 0 && (
+            <span style={{
+              background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 700,
+              borderRadius: 99, minWidth: 18, height: 18, display: "flex",
+              alignItems: "center", justifyContent: "center", padding: "0 5px", flexShrink: 0,
+            }}>
+              {conv.unread_count}
+            </span>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+});
+
+// ─── ChatInput (isolated — typing only rerenders this component) ──
+
+type ChatInputProps = {
+  onSend: (body: string) => void;
+  disabled: boolean;
+};
+
+const ChatInput = memo(function ChatInput({ onSend, disabled }: ChatInputProps) {
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleSubmit = useCallback(() => {
+    const body = value.trim();
+    if (!body || disabled) return;
+    onSend(body);
+    setValue("");
+    // Re-focus after send
+    inputRef.current?.focus();
+  }, [value, disabled, onSend]);
+
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  }, [handleSubmit]);
+
+  const hasText = value.trim().length > 0;
+
+  return (
+    <div style={INPUT_BAR}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder="Escribe un mensaje..."
+        style={INPUT_STYLE}
+        aria-label="Mensaje de soporte"
+      />
+      <button
+        type="button"
+        onClick={handleSubmit}
+        disabled={!hasText || disabled}
+        style={{
+          width: 36, height: 36, borderRadius: 8,
+          background: hasText && !disabled ? "var(--goberna-blue-950, #0c1f38)" : "#e2e8f0",
+          color: hasText && !disabled ? "#ffffff" : "#94a3b8",
+          border: "none",
+          cursor: hasText && !disabled ? "pointer" : "default",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          flexShrink: 0, transition: "all 0.15s",
+        }}
+        aria-label="Enviar mensaje"
+      >
+        <SendIcon />
+      </button>
+    </div>
+  );
+});
+
+// ─── MessageList (memo'd — only rerenders when messages array changes) ──
+
+type MessageListProps = {
+  messages: SupportMessage[];
+  userId: string;
+  loading: boolean;
+};
+
+const MessageList = memo(function MessageList({ messages, userId, loading }: MessageListProps) {
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length]); // Only scroll on new message count, not on identity change
+
+  if (loading) {
+    return (
+      <div style={MESSAGES_CONTAINER}>
+        <div style={{ ...CENTERED_TEXT, paddingTop: 40 }}>Cargando mensajes...</div>
+      </div>
+    );
+  }
+
+  if (messages.length === 0) {
+    return (
+      <div style={MESSAGES_CONTAINER}>
+        <div style={{ ...CENTERED_TEXT, paddingTop: 40 }}>Envia un mensaje para iniciar la conversacion.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={MESSAGES_CONTAINER}>
+      {messages.map((msg) => (
+        <MessageBubble key={msg.id} msg={msg} isMine={msg.sender_id === userId} />
+      ))}
+      <div ref={endRef} />
+    </div>
+  );
+});
+
 // ─── Main Component ───────────────────────────────────────────
 
-export function SupportChat({ userId, isAdmin, collapsed }: SupportChatProps) {
+export const SupportChat = memo(function SupportChat({ userId, isAdmin, collapsed }: SupportChatProps) {
   const [open, setOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-
-  // Admin: conversation list state
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-
-  // Candidato: target admin ID
   const [adminId, setAdminId] = useState<string | null>(null);
-
-  // Chat state
   const [messages, setMessages] = useState<SupportMessage[]>([]);
-  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const chatPartnerId = isAdmin ? selectedUserId : adminId;
 
+  // Ref for chatPartnerId so WS callback doesn't need it as a dep
+  const chatPartnerRef = useRef(chatPartnerId);
+  chatPartnerRef.current = chatPartnerId;
+
   // ── Fetch unread count on mount ──
   useEffect(() => {
-    let mounted = true;
+    let stale = false;
     getUnreadCount().then((res) => {
-      if (mounted && res.ok && res.data) setUnreadCount(res.data.count);
+      if (!stale && res.ok && res.data) setUnreadCount(res.data.count);
     });
-    return () => { mounted = false; };
+    return () => { stale = true; };
   }, []);
 
-  // ── Fetch admin ID (for candidato) ──
+  // ── Fetch admin ID once (candidato only) ──
   useEffect(() => {
     if (isAdmin) return;
-    let mounted = true;
+    let stale = false;
     getAdminIds().then((res) => {
-      if (mounted && res.ok && res.data && res.data.adminIds.length > 0) {
+      if (!stale && res.ok && res.data?.adminIds.length) {
         setAdminId(res.data.adminIds[0]);
       }
     });
-    return () => { mounted = false; };
+    return () => { stale = true; };
   }, [isAdmin]);
 
-  // ── WebSocket ──
+  // ── WS message handler (stable — uses refs, no deps that change) ──
   const handleWsMessage = useCallback((msg: SupportWsMessage) => {
     const newMsg: SupportMessage = {
       id: msg.id,
@@ -130,91 +409,91 @@ export function SupportChat({ userId, isAdmin, collapsed }: SupportChatProps) {
       created_at: msg.createdAt,
     };
 
-    // If chat is open and it's from/to current partner, add to messages
+    // Add to messages only if it's from/to current chat partner
     setMessages((prev) => {
-      const partner = chatPartnerId;
-      if (partner && (msg.senderId === partner || msg.receiverId === partner)) {
-        // Dedupe by id
-        if (prev.some((m) => m.id === msg.id)) return prev;
-        return [...prev, newMsg];
-      }
-      return prev;
+      const partner = chatPartnerRef.current;
+      if (!partner || (msg.senderId !== partner && msg.receiverId !== partner)) return prev;
+      if (prev.some((m) => m.id === msg.id)) return prev; // dedupe
+      return [...prev, newMsg];
     });
 
-    // Update unread if message is for us and chat is not open with that sender
+    // Increment unread if it's for us
     if (msg.receiverId === userId) {
       setUnreadCount((c) => c + 1);
-      // Refresh conversations for admin
-      if (isAdmin) {
-        listConversations().then((res) => {
-          if (res.ok && res.data) setConversations(res.data.conversations);
-        });
-      }
     }
-  }, [userId, isAdmin, chatPartnerId]);
+  }, [userId]); // userId is stable for the session
 
   const { connected, send, markRead: wsMarkRead } = useSupportWs({
     enabled: open,
     onMessage: handleWsMessage,
   });
 
-  // ── Load conversations (admin) ──
+  // ── Load conversations when admin opens panel ──
   useEffect(() => {
     if (!isAdmin || !open) return;
+    let stale = false;
     setLoading(true);
     listConversations().then((res) => {
-      if (res.ok && res.data) setConversations(res.data.conversations);
-      setLoading(false);
+      if (!stale && res.ok && res.data) setConversations(res.data.conversations);
+      if (!stale) setLoading(false);
     });
+    return () => { stale = true; };
   }, [isAdmin, open]);
 
   // ── Load messages when chat partner changes ──
   useEffect(() => {
     if (!chatPartnerId) return;
+    let stale = false;
     setLoading(true);
     getMessages(chatPartnerId).then((res) => {
+      if (stale) return;
       if (res.ok && res.data) {
         setMessages(res.data.messages);
-        // Mark as read
         wsMarkRead(chatPartnerId);
         setUnreadCount((c) => Math.max(0, c - 1));
       }
       setLoading(false);
     });
+    return () => { stale = true; };
   }, [chatPartnerId, wsMarkRead]);
 
-  // ── Auto-scroll to bottom ──
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // ── Send message ──
-  const handleSend = useCallback(() => {
-    const body = input.trim();
-    if (!body || !chatPartnerId) return;
-    send(chatPartnerId, body);
-    setInput("");
-  }, [input, chatPartnerId, send]);
-
-  // ── Toggle panel ──
+  // ── Stable callbacks ──
   const toggleOpen = useCallback(() => {
     setOpen((o) => {
-      if (!o && !isAdmin && adminId) {
-        // Opening as candidato — go directly to chat
-      }
       if (o) {
-        // Closing — reset admin selection
-        if (isAdmin) setSelectedUserId(null);
+        // Closing — reset state
+        setSelectedUserId(null);
         setMessages([]);
       }
       return !o;
     });
-  }, [isAdmin, adminId]);
+  }, []);
 
-  // ── Styles ──
+  const handleBack = useCallback(() => {
+    setSelectedUserId(null);
+    setMessages([]);
+  }, []);
+
+  const handleSelectConv = useCallback((id: string) => {
+    setSelectedUserId(id);
+  }, []);
+
+  const handleSend = useCallback((body: string) => {
+    const partner = chatPartnerRef.current;
+    if (!partner) return;
+    send(partner, body);
+  }, [send]);
+
+  // ── Derived values ──
   const showLabel = !collapsed;
+  const isInChat = isAdmin ? !!selectedUserId : !!adminId;
+  const selectedConv = useMemo(
+    () => conversations.find((c) => c.user_id === selectedUserId),
+    [conversations, selectedUserId],
+  );
 
-  const buttonStyle: CSSProperties = {
+  // ── Dynamic styles (memoized, only recalculated when deps change) ──
+  const buttonStyle = useMemo<CSSProperties>(() => ({
     width: "100%",
     padding: showLabel ? "11px 20px" : "11px 0",
     justifyContent: showLabel ? "flex-start" : "center",
@@ -233,70 +512,29 @@ export function SupportChat({ userId, isAdmin, collapsed }: SupportChatProps) {
     transition: "all 0.15s ease",
     textDecoration: "none",
     position: "relative",
-  };
+  }), [showLabel, open]);
 
-  const panelStyle: CSSProperties = {
-    position: "fixed",
-    bottom: 16,
-    left: collapsed ? 76 : 250,
-    width: 380,
-    height: 520,
-    background: "#ffffff",
-    borderRadius: 12,
-    boxShadow: "0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.1)",
-    display: "flex",
-    flexDirection: "column",
-    zIndex: 1100,
-    fontFamily: FONT_STACK,
-    overflow: "hidden",
-    animation: "goberna-fade-in 0.2s ease-out",
-  };
+  const panelLeft = collapsed ? 76 : 250;
+  const panelStyleFinal = useMemo<CSSProperties>(
+    () => ({ ...PANEL_STYLE, left: panelLeft }),
+    [panelLeft],
+  );
 
-  const headerStyle: CSSProperties = {
-    padding: "14px 16px",
-    background: "var(--goberna-blue-950, #0c1f38)",
-    color: "#ffffff",
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    flexShrink: 0,
-  };
-
-  const isInChat = isAdmin ? !!selectedUserId : !!adminId;
-  const selectedConv = conversations.find((c) => c.user_id === selectedUserId);
+  // ── Header title ──
+  const headerTitle = isAdmin
+    ? selectedUserId
+      ? selectedConv?.full_name ?? "Chat"
+      : "Soporte — Conversaciones"
+    : "Soporte";
 
   return (
     <>
       {/* ── Sidebar Button ── */}
-      <button
-        type="button"
-        onClick={toggleOpen}
-        style={buttonStyle}
-        title={showLabel ? undefined : "Soporte"}
-        aria-label="Soporte"
-      >
-        <span style={{ flexShrink: 0, display: "flex", alignItems: "center", width: 20, justifyContent: "center", position: "relative" }}>
+      <button type="button" onClick={toggleOpen} style={buttonStyle} title={showLabel ? undefined : "Soporte"} aria-label="Soporte">
+        <span style={ICON_WRAP}>
           <SupportIcon />
           {unreadCount > 0 && (
-            <span style={{
-              position: "absolute",
-              top: -6,
-              right: -8,
-              background: "#ef4444",
-              color: "#fff",
-              fontSize: 9,
-              fontWeight: 700,
-              borderRadius: 99,
-              minWidth: 16,
-              height: 16,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "0 4px",
-              lineHeight: 1,
-            }}>
-              {unreadCount > 99 ? "99+" : unreadCount}
-            </span>
+            <span style={BADGE_STYLE}>{unreadCount > 99 ? "99+" : unreadCount}</span>
           )}
         </span>
         {showLabel && <span>Soporte</span>}
@@ -304,260 +542,52 @@ export function SupportChat({ userId, isAdmin, collapsed }: SupportChatProps) {
 
       {/* ── Chat Panel ── */}
       {open && (
-        <div style={panelStyle}>
+        <div style={panelStyleFinal}>
           {/* Header */}
-          <div style={headerStyle}>
+          <div style={HEADER_STYLE}>
             {isAdmin && selectedUserId && (
-              <button
-                type="button"
-                onClick={() => { setSelectedUserId(null); setMessages([]); }}
-                style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 4, display: "flex" }}
-                aria-label="Volver"
-              >
+              <button type="button" onClick={handleBack} style={ICON_BTN} aria-label="Volver">
                 <BackIcon />
               </button>
             )}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700 }}>
-                {isAdmin
-                  ? selectedUserId
-                    ? selectedConv?.full_name ?? "Chat"
-                    : "Soporte — Conversaciones"
-                  : "Soporte"
-                }
-              </div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>{headerTitle}</div>
               {isInChat && (
                 <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", marginTop: 2 }}>
                   {connected ? "Conectado" : "Reconectando..."}
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={toggleOpen}
-              style={{ background: "none", border: "none", color: "rgba(255,255,255,0.6)", cursor: "pointer", padding: 4 }}
-              aria-label="Cerrar"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <title>Cerrar</title>
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
+            <button type="button" onClick={toggleOpen} style={CLOSE_BTN} aria-label="Cerrar">
+              <CloseIcon />
             </button>
           </div>
 
           {/* Body */}
           {isAdmin && !selectedUserId ? (
-            // ── Admin: Conversation List ──
             <div style={{ flex: 1, overflowY: "auto" }}>
               {loading ? (
-                <div style={{ padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
-                  Cargando...
-                </div>
+                <div style={CENTERED_TEXT}>Cargando...</div>
               ) : conversations.length === 0 ? (
-                <div style={{ padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
-                  Sin conversaciones
-                </div>
+                <div style={CENTERED_TEXT}>Sin conversaciones</div>
               ) : (
                 conversations.map((conv) => (
-                  <button
-                    key={conv.user_id}
-                    type="button"
-                    onClick={() => setSelectedUserId(conv.user_id)}
-                    style={{
-                      width: "100%",
-                      padding: "12px 16px",
-                      background: "transparent",
-                      border: "none",
-                      borderBottom: "1px solid #f1f5f9",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      fontFamily: FONT_STACK,
-                      transition: "background 0.1s",
-                    }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = "#f8fafc"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-                  >
-                    {/* Avatar */}
-                    <div style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: "50%",
-                      background: "var(--goberna-blue-100, #dbeafe)",
-                      color: "var(--goberna-blue-700, #1d4ed8)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 14,
-                      fontWeight: 700,
-                      flexShrink: 0,
-                    }}>
-                      {conv.full_name.charAt(0).toUpperCase()}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: "#1e293b" }}>
-                          {conv.full_name}
-                        </span>
-                        <span style={{ fontSize: 10, color: "#94a3b8" }}>
-                          {formatTime(conv.last_message_at)}
-                        </span>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
-                        <span style={{
-                          fontSize: 12,
-                          color: "#64748b",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          maxWidth: 220,
-                        }}>
-                          {conv.last_message}
-                        </span>
-                        {conv.unread_count > 0 && (
-                          <span style={{
-                            background: "#ef4444",
-                            color: "#fff",
-                            fontSize: 10,
-                            fontWeight: 700,
-                            borderRadius: 99,
-                            minWidth: 18,
-                            height: 18,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            padding: "0 5px",
-                            flexShrink: 0,
-                          }}>
-                            {conv.unread_count}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </button>
+                  <ConversationRow key={conv.user_id} conv={conv} onSelect={handleSelectConv} />
                 ))
               )}
             </div>
           ) : !isAdmin && !adminId ? (
-            // ── No admin available ──
-            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", ...CENTERED_TEXT }}>
               No hay administrador disponible. Intenta mas tarde.
             </div>
           ) : (
-            // ── Chat Messages ──
             <>
-              <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", background: "#f8fafc" }}>
-                {loading ? (
-                  <div style={{ textAlign: "center", color: "#94a3b8", fontSize: 13, paddingTop: 40 }}>
-                    Cargando mensajes...
-                  </div>
-                ) : messages.length === 0 ? (
-                  <div style={{ textAlign: "center", color: "#94a3b8", fontSize: 13, paddingTop: 40 }}>
-                    Envia un mensaje para iniciar la conversacion.
-                  </div>
-                ) : (
-                  messages.map((msg) => {
-                    const isMine = msg.sender_id === userId;
-                    return (
-                      <div
-                        key={msg.id}
-                        style={{
-                          display: "flex",
-                          justifyContent: isMine ? "flex-end" : "flex-start",
-                          marginBottom: 8,
-                        }}
-                      >
-                        <div style={{
-                          maxWidth: "75%",
-                          padding: "8px 12px",
-                          borderRadius: 12,
-                          borderBottomRightRadius: isMine ? 4 : 12,
-                          borderBottomLeftRadius: isMine ? 12 : 4,
-                          background: isMine ? "var(--goberna-blue-950, #0c1f38)" : "#ffffff",
-                          color: isMine ? "#ffffff" : "#1e293b",
-                          fontSize: 13,
-                          lineHeight: 1.4,
-                          boxShadow: isMine ? "none" : "0 1px 3px rgba(0,0,0,0.08)",
-                          wordBreak: "break-word",
-                        }}>
-                          <div>{msg.body}</div>
-                          <div style={{
-                            fontSize: 10,
-                            color: isMine ? "rgba(255,255,255,0.5)" : "#94a3b8",
-                            marginTop: 4,
-                            textAlign: "right",
-                          }}>
-                            {formatTime(msg.created_at)}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Input */}
-              <div style={{
-                padding: "10px 12px",
-                borderTop: "1px solid #e2e8f0",
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                flexShrink: 0,
-                background: "#ffffff",
-              }}>
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                  placeholder="Escribe un mensaje..."
-                  style={{
-                    flex: 1,
-                    padding: "8px 12px",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 8,
-                    fontSize: 13,
-                    fontFamily: FONT_STACK,
-                    outline: "none",
-                    background: "#f8fafc",
-                    color: "#1e293b",
-                    transition: "border-color 0.15s",
-                  }}
-                  onFocus={(e) => { e.currentTarget.style.borderColor = "#3b82f6"; }}
-                  onBlur={(e) => { e.currentTarget.style.borderColor = "#e2e8f0"; }}
-                />
-                <button
-                  type="button"
-                  onClick={handleSend}
-                  disabled={!input.trim() || !chatPartnerId}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 8,
-                    background: input.trim() ? "var(--goberna-blue-950, #0c1f38)" : "#e2e8f0",
-                    color: input.trim() ? "#ffffff" : "#94a3b8",
-                    border: "none",
-                    cursor: input.trim() ? "pointer" : "default",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    transition: "all 0.15s",
-                  }}
-                  aria-label="Enviar mensaje"
-                >
-                  <SendIcon />
-                </button>
-              </div>
+              <MessageList messages={messages} userId={userId} loading={loading} />
+              <ChatInput onSend={handleSend} disabled={!chatPartnerId} />
             </>
           )}
         </div>
       )}
     </>
   );
-}
+});

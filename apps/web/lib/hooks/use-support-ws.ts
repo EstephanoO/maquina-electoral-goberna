@@ -1,13 +1,19 @@
 /**
  * GOBERNA — WebSocket hook for real-time support chat.
  *
- * Connects to wss://api.goberna.us/ws/support/chat (or localhost in dev),
- * handles sending messages, receiving new messages, and read receipts.
+ * Connects to wss://api.goberna.us/ws/support/chat (or localhost in dev).
+ * Only connects when `enabled` is true (panel open).
  *
- * Auth: sends the access token cookie automatically via the WS handshake.
+ * Best practices:
+ *   - Callbacks stored in refs to avoid effect re-runs
+ *   - Stable return references via useCallback with empty deps
+ *   - Clean teardown on disable/unmount
+ *   - Exponential backoff reconnection (max 30s)
  */
 
 import { useEffect, useRef, useCallback, useState } from "react";
+
+// ─── Types (exported for consumers) ──────────────────────────
 
 export type SupportWsMessage = {
   id: string;
@@ -29,39 +35,63 @@ type UseSupportWsOptions = {
   onRead?: (readerId: string, otherUserId: string) => void;
 };
 
+// ─── Constants ───────────────────────────────────────────────
+
+const PING_INTERVAL_MS = 20_000;
+const MAX_RECONNECT_DELAY_MS = 30_000;
+const BASE_RECONNECT_DELAY_MS = 1_000;
+
+// ─── WS URL resolver (hoisted, no deps) ─────────────────────
+
 function getWsUrl(): string {
   if (typeof window === "undefined") return "";
-  if (window.location.hostname === "localhost") {
-    return "ws://localhost:3001/ws/support/chat";
-  }
-  return "wss://api.goberna.us/ws/support/chat";
+  return window.location.hostname === "localhost"
+    ? "ws://localhost:3001/ws/support/chat"
+    : "wss://api.goberna.us/ws/support/chat";
 }
+
+// ─── Hook ────────────────────────────────────────────────────
 
 export function useSupportWs({ enabled, onMessage, onRead }: UseSupportWsOptions) {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
-  const onMessageRef = useRef(onMessage);
-  onMessageRef.current = onMessage;
-  const onReadRef = useRef(onRead);
-  onReadRef.current = onRead;
 
+  // Store callbacks in refs so the WS effect never re-runs due to callback identity changes
+  const onMessageRef = useRef(onMessage);
+  const onReadRef = useRef(onRead);
+  useEffect(() => { onMessageRef.current = onMessage; });
+  useEffect(() => { onReadRef.current = onRead; });
+
+  // Stable send — never changes identity, safe to pass as prop
   const send = useCallback((receiverId: string, body: string) => {
     const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: "send", receiverId, body }));
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "send", receiverId, body }));
+    }
   }, []);
 
+  // Stable markRead — never changes identity
   const markRead = useCallback((otherUserId: string) => {
     const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: "read", otherUserId }));
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "read", otherUserId }));
+    }
   }, []);
 
+  // Connection effect — only depends on `enabled`
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      // Ensure clean state when disabled
+      if (wsRef.current) {
+        wsRef.current.close(1000, "disabled");
+        wsRef.current = null;
+      }
+      setConnected(false);
+      return;
+    }
 
-    let ws: WebSocket;
     let reconnectTimer: ReturnType<typeof setTimeout>;
+    let pingTimer: ReturnType<typeof setInterval>;
     let attempt = 0;
     let disposed = false;
 
@@ -70,10 +100,11 @@ export function useSupportWs({ enabled, onMessage, onRead }: UseSupportWsOptions
       const url = getWsUrl();
       if (!url) return;
 
-      ws = new WebSocket(url);
+      const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => {
+        if (disposed) { ws.close(); return; }
         setConnected(true);
         attempt = 0;
       };
@@ -81,14 +112,13 @@ export function useSupportWs({ enabled, onMessage, onRead }: UseSupportWsOptions
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data as string) as SupportWsEvent;
-
           if (data.type === "message.new") {
             onMessageRef.current(data.message);
           } else if (data.type === "messages.read") {
             onReadRef.current?.(data.readerId, data.otherUserId);
           }
         } catch {
-          // Ignore malformed messages
+          // Ignore malformed
         }
       };
 
@@ -96,25 +126,24 @@ export function useSupportWs({ enabled, onMessage, onRead }: UseSupportWsOptions
         setConnected(false);
         wsRef.current = null;
         if (!disposed) {
-          const delay = Math.min(1000 * 2 ** attempt, 30_000);
+          const delay = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** attempt, MAX_RECONNECT_DELAY_MS);
           attempt++;
           reconnectTimer = setTimeout(connect, delay);
         }
       };
 
       ws.onerror = () => {
-        // onclose will fire — reconnect handled there
+        // onclose fires after — reconnect handled there
       };
     }
 
     connect();
 
-    // Keep-alive ping every 20s
-    const pingTimer = setInterval(() => {
+    pingTimer = setInterval(() => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: "ping" }));
       }
-    }, 20_000);
+    }, PING_INTERVAL_MS);
 
     return () => {
       disposed = true;
@@ -128,5 +157,5 @@ export function useSupportWs({ enabled, onMessage, onRead }: UseSupportWsOptions
     };
   }, [enabled]);
 
-  return { connected, send, markRead };
+  return { connected, send, markRead } as const;
 }
