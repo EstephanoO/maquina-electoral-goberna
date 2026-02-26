@@ -172,6 +172,8 @@ export default function CmsPage() {
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [selectedTagFilter, setSelectedTagFilter] = useState<string>("__all");
   const [tagSearchSidebar, setTagSearchSidebar] = useState("");
+  const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const tagDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const sseRef = useRef<{ close: () => void } | null>(null);
   const contactListRef = useRef<HTMLDivElement | null>(null);
@@ -182,6 +184,19 @@ export default function CmsPage() {
   const selectedContactIdRef = useRef<string | null>(selectedContactId);
   activeTabRef.current = activeTab;
   selectedContactIdRef.current = selectedContactId;
+
+  // Close tag dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (tagDropdownRef.current && !tagDropdownRef.current.contains(e.target as Node)) {
+        setShowTagDropdown(false);
+      }
+    }
+    if (showTagDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showTagDropdown]);
 
   const selectedContact = useMemo(
     () => contacts.find((contact) => contact.id === selectedContactId) ?? null,
@@ -994,7 +1009,7 @@ export default function CmsPage() {
                 })}
               </div>
 
-              <div style={{ marginTop: 8, position: "relative" }}>
+              <div style={{ marginTop: 8, position: "relative" }} ref={tagDropdownRef}>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                   {selectedTagFilter !== "__all" && (
                     <span
@@ -1051,9 +1066,12 @@ export default function CmsPage() {
                     placeholder={selectedTagFilter === "__all" ? "Filtrar por etiqueta..." : "Cambiar etiqueta..."}
                     value={tagSearchSidebar}
                     onChange={(e) => setTagSearchSidebar(e.target.value)}
+                    onFocus={() => setShowTagDropdown(true)}
                     onKeyDown={(e) => {
                       if (e.key === "Escape") {
                         setTagSearchSidebar("");
+                        setShowTagDropdown(false);
+                        (e.target as HTMLInputElement).blur();
                       }
                       if (e.key === "Enter" && tagSearchSidebar.trim()) {
                         const query = tagSearchSidebar.trim().toLowerCase();
@@ -1061,12 +1079,13 @@ export default function CmsPage() {
                         if (match) {
                           setSelectedTagFilter(match);
                           setTagSearchSidebar("");
+                          setShowTagDropdown(false);
                         } else {
-                          // Create new tag and set as filter
                           const created = handleCreateTag(tagSearchSidebar);
                           if (created) {
                             setSelectedTagFilter(created);
                             setTagSearchSidebar("");
+                            setShowTagDropdown(false);
                           }
                         }
                       }
@@ -1074,7 +1093,7 @@ export default function CmsPage() {
                     style={{
                       flex: 1,
                       minWidth: 0,
-                      border: "1px solid #d6dde6",
+                      border: showTagDropdown ? "1px solid #93c5fd" : "1px solid #d6dde6",
                       borderRadius: 8,
                       padding: "8px 10px",
                       fontSize: 12,
@@ -1082,10 +1101,13 @@ export default function CmsPage() {
                       background: "#ffffff",
                       color: "#0f172a",
                       outline: "none",
+                      boxShadow: showTagDropdown ? "0 0 0 3px rgba(59, 130, 246, 0.1)" : "none",
+                      transition: "border-color 0.2s, box-shadow 0.2s",
                     }}
                   />
                 </div>
-                {tagSearchSidebar.trim() && (
+
+                {showTagDropdown && (
                   <div
                     style={{
                       position: "absolute",
@@ -1098,56 +1120,99 @@ export default function CmsPage() {
                       borderRadius: 10,
                       boxShadow: "0 8px 24px rgba(15, 23, 42, 0.12)",
                       zIndex: 50,
-                      maxHeight: 180,
+                      maxHeight: 220,
                       overflowY: "auto",
+                      animation: "tagDropdownIn 0.15s ease-out",
                     }}
                   >
+                    {/* "Todas" option */}
+                    {!tagSearchSidebar.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedTagFilter("__all");
+                          setTagSearchSidebar("");
+                          setShowTagDropdown(false);
+                        }}
+                        style={{
+                          display: "flex",
+                          width: "100%",
+                          alignItems: "center",
+                          gap: 8,
+                          textAlign: "left",
+                          padding: "9px 12px",
+                          fontSize: 12,
+                          fontFamily: FONT,
+                          border: "none",
+                          borderBottom: availableTags.length > 0 ? "1px solid #f1f5f9" : "none",
+                          background: selectedTagFilter === "__all" ? "#f0f7ff" : "transparent",
+                          color: "#3b82f6",
+                          cursor: "pointer",
+                          fontWeight: 700,
+                          transition: "background 0.15s",
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "#f0f7ff"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = selectedTagFilter === "__all" ? "#f0f7ff" : "transparent"; }}
+                      >
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#3b82f6", flexShrink: 0 }} />
+                        Todas las etiquetas
+                        {selectedTagFilter === "__all" && (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2.5" style={{ marginLeft: "auto" }}>
+                            <title>Seleccionado</title>
+                            <path d="M20 6L9 17l-5-5" />
+                          </svg>
+                        )}
+                      </button>
+                    )}
+
+                    {/* Filtered tag list */}
                     {availableTags
-                      .filter((t) => t.toLowerCase().includes(tagSearchSidebar.trim().toLowerCase()))
-                      .map((tag) => (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() => {
-                            setSelectedTagFilter(tag);
-                            setTagSearchSidebar("");
-                          }}
-                          style={{
-                            display: "block",
-                            width: "100%",
-                            textAlign: "left",
-                            padding: "8px 12px",
-                            fontSize: 12,
-                            fontFamily: FONT,
-                            border: "none",
-                            background: "transparent",
-                            color: getTagColor(tag),
-                            cursor: "pointer",
-                            fontWeight: 600,
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "#f1f5f9";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "transparent";
-                          }}
-                        >
-                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                            <span
-                              aria-hidden
-                              style={{
-                                width: 8,
-                                height: 8,
-                                borderRadius: "50%",
-                                background: getTagColor(tag),
-                                flexShrink: 0,
-                              }}
-                            />
-                            <span>{tag}</span>
-                          </span>
-                        </button>
-                      ))}
-                    {!availableTags.some((t) =>
+                      .filter((t) => !tagSearchSidebar.trim() || t.toLowerCase().includes(tagSearchSidebar.trim().toLowerCase()))
+                      .map((tag) => {
+                        const isActive = selectedTagFilter.toLowerCase() === tag.toLowerCase();
+                        const tagColor = getTagColor(tag);
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => {
+                              setSelectedTagFilter(tag);
+                              setTagSearchSidebar("");
+                              setShowTagDropdown(false);
+                            }}
+                            style={{
+                              display: "flex",
+                              width: "100%",
+                              alignItems: "center",
+                              gap: 8,
+                              textAlign: "left",
+                              padding: "9px 12px",
+                              fontSize: 12,
+                              fontFamily: FONT,
+                              border: "none",
+                              background: isActive ? withAlpha(tagColor, 0.08) : "transparent",
+                              color: tagColor,
+                              cursor: "pointer",
+                              fontWeight: 600,
+                              transition: "background 0.15s",
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = withAlpha(tagColor, 0.08); }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = isActive ? withAlpha(tagColor, 0.08) : "transparent"; }}
+                          >
+                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: tagColor, flexShrink: 0 }} />
+                            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tag}</span>
+                            {isActive && (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={tagColor} strokeWidth="2.5" style={{ flexShrink: 0 }}>
+                                <title>Seleccionado</title>
+                                <path d="M20 6L9 17l-5-5" />
+                              </svg>
+                            )}
+                          </button>
+                        );
+                      })}
+
+                    {/* Create new tag option */}
+                    {tagSearchSidebar.trim() && !availableTags.some((t) =>
                       t.toLowerCase() === tagSearchSidebar.trim().toLowerCase(),
                     ) && (
                       <button
@@ -1157,51 +1222,39 @@ export default function CmsPage() {
                           if (created) {
                             setSelectedTagFilter(created);
                             setTagSearchSidebar("");
+                            setShowTagDropdown(false);
                           }
                         }}
                         style={{
-                          display: "block",
+                          display: "flex",
                           width: "100%",
+                          alignItems: "center",
+                          gap: 8,
                           textAlign: "left",
-                          padding: "8px 12px",
+                          padding: "9px 12px",
                           fontSize: 12,
                           fontFamily: FONT,
                           border: "none",
-                          borderTop: "1px solid #eef2f7",
+                          borderTop: "1px solid #f1f5f9",
                           background: "transparent",
                           color: getTagColor(tagSearchSidebar),
                           cursor: "pointer",
                           fontWeight: 600,
+                          transition: "background 0.15s",
                         }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.background = "#eff6ff";
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.background = "transparent";
-                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "#f8fafc"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                       >
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                          <span
-                            aria-hidden
-                            style={{
-                              width: 8,
-                              height: 8,
-                              borderRadius: "50%",
-                              background: getTagColor(tagSearchSidebar),
-                              flexShrink: 0,
-                            }}
-                          />
-                          <span>+ Crear &ldquo;{tagSearchSidebar.trim()}&rdquo;</span>
-                        </span>
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: getTagColor(tagSearchSidebar), flexShrink: 0 }} />
+                        <span>+ Crear &ldquo;{tagSearchSidebar.trim()}&rdquo;</span>
                       </button>
                     )}
-                    {availableTags.filter((t) =>
-                      t.toLowerCase().includes(tagSearchSidebar.trim().toLowerCase()),
-                    ).length === 0 &&
-                      availableTags.some((t) =>
-                        t.toLowerCase() === tagSearchSidebar.trim().toLowerCase(),
-                      ) && (
-                        <div style={{ padding: "8px 12px", fontSize: 12, color: "#64748b" }}>
+
+                    {/* No results */}
+                    {tagSearchSidebar.trim() &&
+                      availableTags.filter((t) => t.toLowerCase().includes(tagSearchSidebar.trim().toLowerCase())).length === 0 &&
+                      availableTags.some((t) => t.toLowerCase() === tagSearchSidebar.trim().toLowerCase()) && (
+                        <div style={{ padding: "9px 12px", fontSize: 12, color: "#94a3b8", fontStyle: "italic" }}>
                           No hay mas resultados
                         </div>
                       )}
@@ -1398,6 +1451,17 @@ export default function CmsPage() {
 
           .cms-chat-main {
             min-height: 0;
+          }
+        }
+
+        @keyframes tagDropdownIn {
+          from {
+            opacity: 0;
+            transform: translateY(-4px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
           }
         }
       `}</style>
