@@ -212,6 +212,15 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Map load ───
   const handleLoad = useCallback(() => {
     mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
+
+    // Sandwich top: add label layer above all data layers.
+    // The "carto-labels" source is pre-defined in MAP_STYLE so tiles start
+    // downloading immediately on map init — no late mount delay.
+    const map = mapRef.current?.getMap();
+    if (map && !map.getLayer("carto-labels")) {
+      map.addLayer({ id: "carto-labels", type: "raster", source: "carto-labels" });
+    }
+
     if (tileUrl) {
       if (typeof requestIdleCallback === "function") {
         requestIdleCallback(() => prewarmTiles(tileUrl), { timeout: 3000 });
@@ -330,6 +339,14 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
       }
     }
   }, [selectedAgentId, agents]);
+
+  // ─── Keep carto-labels on top after React reconciles data layers ───
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (map && map.getLayer("carto-labels")) {
+      map.moveLayer("carto-labels");          // no 2nd arg → moves to top
+    }
+  });
 
   // ─── Cleanup ───
   useEffect(() => () => {

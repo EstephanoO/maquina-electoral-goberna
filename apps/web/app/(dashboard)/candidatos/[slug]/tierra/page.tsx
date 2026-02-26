@@ -86,6 +86,7 @@ export default function TierraPage() {
   enrichedAgentsRef.current = enrichedAgents;
 
   const flyToPoint = useCallback((lng: number, lat: number, zoom: number) => { mapHandleRef.current?.flyToPoint(lng, lat, zoom); }, []);
+  const flyToFromDatos = useCallback((lng: number, lat: number) => { setViewMode("campo"); setTimeout(() => mapHandleRef.current?.flyToPoint(lng, lat, 16), 120); }, []);
   const { logEntries, handleLogEntryClick } = useActivityLog(forms, stats, flyToPoint, sseEvents);
 
   // ─── Handlers ───
@@ -200,6 +201,7 @@ export default function TierraPage() {
           onUpdateForm={handleUpdateForm}
           onDeleteForm={handleDeleteForm}
           onFormsChanged={() => { queryClient.invalidateQueries({ queryKey: ["recent-forms"] }); queryClient.invalidateQueries({ queryKey: ["campaign-stats"] }); }}
+          onFlyTo={flyToFromDatos}
         />
       )}
     </div>

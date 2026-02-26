@@ -3,11 +3,12 @@
 import { useState, useMemo, useCallback } from "react";
 import type { FormRecord } from "@/lib/services";
 import { deleteFormsBatch } from "@/lib/services";
+import { formCoordsToLatLng } from "@/lib/utils";
 import { DatosEditModal } from "./datos-edit-modal";
 
 /* ========== Types ========== */
 
-type SortKey = "created_at" | "nombre" | "encuestador" | "zona";
+type SortKey = "created_at" | "nombre" | "encuestador";
 type Props = {
   forms: FormRecord[];
   isLoading: boolean;
@@ -18,6 +19,8 @@ type Props = {
   onUpdateForm: (formId: string, campaignId: string, updates: Record<string, string>) => Promise<boolean>;
   onDeleteForm: (formId: string, campaignId: string) => Promise<boolean>;
   onFormsChanged: () => void;
+  /** Fly to a point on the map (switches to campo view) */
+  onFlyTo?: (lng: number, lat: number) => void;
 };
 
 const PAGE_SIZE = 25;
@@ -45,7 +48,7 @@ function downloadCSV(csv: string, filename: string) {
 
 /* ========== Component ========== */
 
-export function DatosView({ forms, isLoading, primaryColor, campaignName, campaignId, userRole, onUpdateForm, onDeleteForm, onFormsChanged }: Props) {
+export function DatosView({ forms, isLoading, primaryColor, campaignName, campaignId, userRole, onUpdateForm, onDeleteForm, onFormsChanged, onFlyTo }: Props) {
   const canEdit = EDITABLE_ROLES.has(userRole);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
@@ -187,18 +190,15 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
       </div>
 
       {/* ── Table header ── */}
-      <div className="grid gap-2 px-4 py-2 border-b border-slate-200/80 bg-slate-50 shrink-0 items-center" style={{ gridTemplateColumns: canEdit ? "36px 1fr 110px 110px 130px 130px 100px 150px 70px" : "1fr 110px 110px 130px 130px 100px 150px" }}>
+      <div className="grid gap-2 px-4 py-2 border-b border-slate-200/80 bg-slate-50 shrink-0 items-center" style={{ gridTemplateColumns: canEdit ? "36px 1fr 110px 160px 150px 90px" : "1fr 110px 160px 150px 36px" }}>
         {canEdit && (
           <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === pageSlice.length} onChange={toggleAll} className="w-4 h-4 cursor-pointer accent-blue-600" aria-label="Seleccionar todo" />
         )}
         <SortBtn label="Nombre" sortKey="nombre" current={sortKey} arrow={arrow} onSort={handleSort} />
         <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 text-center">Telefono</span>
-        <SortBtn label="Zona" sortKey="zona" current={sortKey} arrow={arrow} onSort={handleSort} align="center" />
         <SortBtn label="Encuestador" sortKey="encuestador" current={sortKey} arrow={arrow} onSort={handleSort} />
-        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Cand. Preferido</span>
-        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 text-center">Coords</span>
         <SortBtn label="Fecha" sortKey="created_at" current={sortKey} arrow={arrow} onSort={handleSort} align="right" />
-        {canEdit && <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 text-center">Acciones</span>}
+        {canEdit ? <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 text-center">Acciones</span> : <span />}
       </div>
 
       {/* ── Rows ── */}
@@ -208,28 +208,41 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
             <span className="text-[14px] font-bold text-slate-500">Sin registros</span>
             <span className="text-[12px] text-slate-400">{search ? "Intenta con otra busqueda" : "Los datos apareceran cuando los brigadistas capturen informacion"}</span>
           </div>
-        ) : pageSlice.map((f, i) => (
-          <div key={f.id} className={`grid gap-2 px-4 items-center min-h-[44px] border-b border-slate-100/80 transition-colors hover:bg-slate-50/80 ${selectedIds.has(f.id) ? "bg-blue-50/40" : i % 2 === 1 ? "bg-slate-50/40" : "bg-white"}`} style={{ gridTemplateColumns: canEdit ? "36px 1fr 110px 110px 130px 130px 100px 150px 70px" : "1fr 110px 110px 130px 130px 100px 150px" }}>
-            {canEdit && <input type="checkbox" checked={selectedIds.has(f.id)} onChange={() => toggleSelect(f.id)} className="w-4 h-4 cursor-pointer accent-blue-600" aria-label={`Seleccionar ${f.nombre}`} />}
-            <div className="min-w-0 py-1.5"><span className="text-[13px] font-semibold text-slate-800 truncate block">{f.nombre || "\u2014"}</span></div>
-            <span className="text-[12px] text-slate-600 tabular-nums text-center font-mono">{f.telefono || "\u2014"}</span>
-            <span className="text-[11px] text-slate-500 text-center truncate" title={f.zona}>{f.zona || "\u2014"}</span>
-            <span className="text-[11px] text-slate-600 truncate" title={f.encuestador}>{f.encuestador || "\u2014"}</span>
-            <span className="text-[11px] text-slate-500 truncate" title={f.candidato_preferido}>{f.candidato_preferido || "\u2014"}</span>
-            <span className="text-[10px] text-slate-400 tabular-nums text-center font-mono">{f.y != null && f.x != null ? `${f.y.toFixed(2)}, ${f.x.toFixed(2)}` : "\u2014"}</span>
-            <span className="text-[11px] text-slate-400 tabular-nums text-right">{fmtDate(f.created_at)}</span>
-            {canEdit && (
-              <div className="flex items-center justify-center gap-1">
-                <button type="button" onClick={() => setEditingForm(f)} className="w-7 h-7 rounded-md border border-slate-200 bg-white text-slate-500 cursor-pointer flex items-center justify-center hover:bg-slate-50 hover:text-slate-700 transition-colors" title="Editar">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Editar</title><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                </button>
-                <button type="button" onClick={() => handleSingleDelete(f)} className="w-7 h-7 rounded-md border border-red-200 bg-white text-red-400 cursor-pointer flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors" title="Eliminar">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Eliminar</title><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
+        ) : pageSlice.map((f, i) => {
+          const coords = (f.x != null && f.y != null) ? formCoordsToLatLng(f.x, f.y, f.zona) : null;
+          return (
+            <div key={f.id} className={`grid gap-2 px-4 items-center min-h-[44px] border-b border-slate-100/80 transition-colors hover:bg-slate-50/80 ${selectedIds.has(f.id) ? "bg-blue-50/40" : i % 2 === 1 ? "bg-slate-50/40" : "bg-white"}`} style={{ gridTemplateColumns: canEdit ? "36px 1fr 110px 160px 150px 90px" : "1fr 110px 160px 150px 36px" }}>
+              {canEdit && <input type="checkbox" checked={selectedIds.has(f.id)} onChange={() => toggleSelect(f.id)} className="w-4 h-4 cursor-pointer accent-blue-600" aria-label={`Seleccionar ${f.nombre}`} />}
+              <div className="min-w-0 py-1.5"><span className="text-[13px] font-semibold text-slate-800 truncate block">{f.nombre || "\u2014"}</span></div>
+              <span className="text-[12px] text-slate-600 tabular-nums text-center font-mono">{f.telefono || "\u2014"}</span>
+              <span className="text-[11px] text-slate-600 truncate" title={f.encuestador}>{f.encuestador || "\u2014"}</span>
+              <span className="text-[11px] text-slate-400 tabular-nums text-right">{fmtDate(f.created_at)}</span>
+              {canEdit ? (
+                <div className="flex items-center justify-center gap-1">
+                  {coords && onFlyTo && (
+                    <button type="button" onClick={() => onFlyTo(coords.lng, coords.lat)} className="w-7 h-7 rounded-md border border-slate-200 bg-white cursor-pointer flex items-center justify-center hover:bg-slate-50 transition-colors" style={{ color: primaryColor }} title="Ver en mapa">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Ver en mapa</title><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                    </button>
+                  )}
+                  <button type="button" onClick={() => setEditingForm(f)} className="w-7 h-7 rounded-md border border-slate-200 bg-white text-slate-500 cursor-pointer flex items-center justify-center hover:bg-slate-50 hover:text-slate-700 transition-colors" title="Editar">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Editar</title><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                  </button>
+                  <button type="button" onClick={() => handleSingleDelete(f)} className="w-7 h-7 rounded-md border border-red-200 bg-white text-red-400 cursor-pointer flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors" title="Eliminar">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Eliminar</title><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center">
+                  {coords && onFlyTo && (
+                    <button type="button" onClick={() => onFlyTo(coords.lng, coords.lat)} className="w-7 h-7 rounded-md border border-slate-200 bg-white cursor-pointer flex items-center justify-center hover:bg-slate-50 transition-colors" style={{ color: primaryColor }} title="Ver en mapa">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Ver en mapa</title><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* ── Pagination ── */}
