@@ -229,7 +229,9 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
 
         try {
           const query = request.query as { limit?: string; from?: string; to?: string };
-          const limit = Math.min(Number(query.limit) || 20, 1000);
+          const rawLimit = Number(query.limit) || 20;
+          // limit=0 means "no limit" (return all); otherwise cap at 50 000
+          const limit = rawLimit === 0 ? 0 : Math.min(rawLimit, 50_000);
 
           // Validate ISO date strings (optional)
           const from = query.from && !isNaN(Date.parse(query.from)) ? query.from : undefined;
