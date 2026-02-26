@@ -91,6 +91,7 @@ export type TierraMapProps = {
   onSelectAgent: (agentId: string | null) => void;
   showTracking: boolean;
   showDatos: boolean;
+  showRoutes: boolean;
   drillState: DrillState;
   onDrillChange: (state: DrillState) => void;
 };

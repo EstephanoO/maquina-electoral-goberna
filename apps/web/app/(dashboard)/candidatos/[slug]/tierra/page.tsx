@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -60,9 +60,23 @@ export default function TierraPage() {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
   const [drillState, setDrillState] = useState<DrillState>(INITIAL_DRILL);
+  const [showRoutes, setShowRoutes] = useState(false);
 
   const showTracking = activeLayer === "agentes";
   const showDatos = activeLayer === "datos" || selectedAgentId !== null;
+
+  // ─── Count unique surveyors with routes (2+ geolocated forms) ───
+  const routeSurveyorCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const f of forms) {
+      if (f.encuestador && f.x && f.y) {
+        counts.set(f.encuestador, (counts.get(f.encuestador) ?? 0) + 1);
+      }
+    }
+    let n = 0;
+    for (const c of counts.values()) if (c >= 2) n++;
+    return n;
+  }, [forms]);
 
   // ─── Geo bounds & derived data ───
   const drillBounds = useDrillBounds(drillState);
@@ -78,6 +92,10 @@ export default function TierraPage() {
   const handleLayerChange = useCallback((layer: ActiveLayer) => {
     setActiveLayer(layer);
     if (layer !== "agentes") { setSelectedAgentId(null); setSelectedAgentIds(new Set()); }
+  }, []);
+
+  const handleRoutesToggle = useCallback(() => {
+    setShowRoutes((prev) => !prev);
   }, []);
 
   const handleSelectAgent = useCallback((agentId: string | null) => {
@@ -143,9 +161,9 @@ export default function TierraPage() {
 
       {viewMode === "campo" ? (
         <div className="flex-1 min-h-0 relative">
-          <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} drillState={drillState} onDrillChange={setDrillState} />
+          <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} showRoutes={showRoutes} drillState={drillState} onDrillChange={setDrillState} />
           <div className="absolute top-3 left-3 z-10">
-            <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} />
+            <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
           </div>
           <CampoOverlay agents={enrichedAgents} connectedCount={connectedCount} logEntries={logEntries} formCount={stats.totals.forms_count} primaryColor={campaign.color_primario} selectedAgentId={selectedAgentId} onAgentClick={handleAgentListClick} onLogEntryClick={handleLogEntryClick} userRole={user?.role} onDeleteForm={handleDeleteForm} onUpdateForm={handleUpdateForm} />
         </div>

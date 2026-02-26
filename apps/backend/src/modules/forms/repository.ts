@@ -260,8 +260,12 @@ export async function getRecentForms(
     paramIdx++;
   }
 
-  params.push(limit);
-  const limitParam = `$${paramIdx}`;
+  // limit=0 → no cap (return everything)
+  let limitClause = "";
+  if (limit > 0) {
+    params.push(limit);
+    limitClause = `LIMIT $${paramIdx}`;
+  }
 
   const result = await pool.query<FormRecord>(
     `WITH combined AS (
@@ -296,7 +300,6 @@ export async function getRecentForms(
       FROM form_submissions fs
       LEFT JOIN users u ON u.id = fs.submitted_by
       WHERE fs.campaign_id = $1
-        AND fs.synced_at IS NULL
         AND fs.deleted_at IS NULL${submissionsDateFilter}
     )
     SELECT * FROM (
@@ -305,7 +308,7 @@ export async function getRecentForms(
       ORDER BY client_id, created_at DESC
     ) deduped
     ORDER BY created_at DESC
-    LIMIT ${limitParam}`,
+    ${limitClause}`,
     params,
   );
 

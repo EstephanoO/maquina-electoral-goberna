@@ -221,6 +221,19 @@ export function formCoordsToLatLng(
     } catch { /* fall through */ }
   }
 
+  // Detect native lat/lng coordinates (from form_submissions where x=lng, y=lat).
+  // UTM eastings are 100k–900k, so if |x| < 360 the values are already geographic.
+  // Peru bounds: lat [-25, 5], lng [-85, -65].
+  if (Math.abs(x) < 360 && Math.abs(y) < 360) {
+    // x = lng, y = lat (mapped from form_submissions.lng / .lat)
+    const lat = y;
+    const lng = x;
+    if (lat >= -25 && lat <= 5 && lng >= -85 && lng <= -65) {
+      return { lat, lng };
+    }
+    return null;
+  }
+
   // Parse zone number and hemisphere from "18S", "18L", etc.
   const match = zona.match(/(\d+)\s*([A-Za-z])?/);
   

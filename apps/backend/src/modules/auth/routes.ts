@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync, FastifyReply } from "fastify";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 
 import type { AppEnv } from "../../config/env";
 import { pool } from "../../db";
@@ -24,23 +24,23 @@ function setAuthCookies(
 ): void {
   const secure = isProd ? "; Secure" : "";
 
-  // httpOnly access token — 30 days (matches JWT_ACCESS_EXPIRES_IN default)
+  // httpOnly access token — 1 year (matches JWT_ACCESS_EXPIRES_IN default)
   reply.header(
     "Set-Cookie",
-    `${AUTH_COOKIE_NAMES.accessToken}=${accessToken}; Path=/; SameSite=Lax${secure}; HttpOnly; Max-Age=2592000`,
+    `${AUTH_COOKIE_NAMES.accessToken}=${accessToken}; Path=/; SameSite=Lax${secure}; HttpOnly; Max-Age=31536000`,
   );
 
-  // httpOnly refresh token — 30 days, restricted to /api/auth paths only
+  // httpOnly refresh token — 1 year, restricted to /api/auth paths only
   reply.header(
     "Set-Cookie",
-    `${AUTH_COOKIE_NAMES.refreshToken}=${refreshToken}; Path=/api/auth; SameSite=Lax${secure}; HttpOnly; Max-Age=2592000`,
+    `${AUTH_COOKIE_NAMES.refreshToken}=${refreshToken}; Path=/api/auth; SameSite=Lax${secure}; HttpOnly; Max-Age=31536000`,
   );
 
   // Non-httpOnly session flag — lets Next.js middleware detect auth state
   // Contains no sensitive data, just "1" to indicate a session exists
   reply.header(
     "Set-Cookie",
-    `${AUTH_COOKIE_NAMES.session}=1; Path=/; SameSite=Lax${secure}; Max-Age=2592000`,
+    `${AUTH_COOKIE_NAMES.session}=1; Path=/; SameSite=Lax${secure}; Max-Age=31536000`,
   );
 }
 
@@ -349,15 +349,17 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
     // For users who were marked for password reset (password_reset_required = true)
     // User provides their identifier (phone/email), current password, and new password
     // This clears the password_reset_required flag
-    app.post("/api/auth/reset-password", {
+    const resetPasswordOpts = {
       config: {
         rateLimit: {
           max: env.rateLimitAuthPerMinute,
           timeWindow: "1 minute",
-          keyGenerator: (request) => request.ip,
+          keyGenerator: (request: FastifyRequest) => request.ip,
         },
       },
-    }, async (request, reply) => {
+    } as const;
+
+    const resetPasswordHandler = async (request: FastifyRequest, reply: FastifyReply) => {
       const requestId = String(request.id);
 
       const parsed = resetPasswordSchema.safeParse(request.body);
@@ -399,7 +401,11 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
         }
         throw error;
       }
-    });
+    };
+
+    app.post("/api/auth/reset-password", resetPasswordOpts, resetPasswordHandler);
+    // Compat alias: mobile app sends /api/api/auth/reset-password (API_BASE already includes /api)
+    app.post("/api/api/auth/reset-password", resetPasswordOpts, resetPasswordHandler);
 
     // ── POST /api/users/:userId/require-password-reset ─────────────────
     // Admin/Consultor marks a user as requiring password reset on next login

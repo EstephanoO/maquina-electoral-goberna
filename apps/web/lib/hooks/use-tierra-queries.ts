@@ -74,7 +74,7 @@ export function useRecentForms(campaignId: string | undefined, from?: string, to
   return useQuery({
     queryKey: tierraKeys.forms(campaignId ?? "", from, to),
     queryFn: async (): Promise<FormRecord[]> => {
-      const res = await getRecentForms(campaignId!, 500, from, to);
+      const res = await getRecentForms(campaignId!, 0, from, to);
       if (!res.ok || !res.data?.forms) {
         throw new Error("Error cargando formularios");
       }

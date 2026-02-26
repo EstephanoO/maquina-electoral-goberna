@@ -9,23 +9,28 @@ type ActiveLayer = "datos" | "agentes" | null;
 type Props = {
   activeLayer: ActiveLayer;
   onLayerChange: (layer: ActiveLayer) => void;
+  showRoutes: boolean;
+  onRoutesToggle: () => void;
   agentCount: number;
   formCount: number;
+  routeSurveyorCount?: number;
 };
 
 type LegendProps = {
   activeLayer: ActiveLayer;
+  showRoutes: boolean;
 };
 
 /* ========== Professional colors ========== */
 const C = {
   datos: "#2563eb",
   agents: "#0d9488",
+  routes: "#6a4c93",
 };
 
 /* ========== Layer Controls ========== */
 
-export function MapControls({ activeLayer, onLayerChange, agentCount, formCount }: Props) {
+export function MapControls({ activeLayer, onLayerChange, showRoutes, onRoutesToggle, agentCount, formCount, routeSurveyorCount }: Props) {
   return (
     <div className="bg-white/95 backdrop-blur-sm rounded-[10px] p-2 flex flex-col gap-0.5 border border-slate-200 shadow-sm">
       <LayerBtn
@@ -41,6 +46,13 @@ export function MapControls({ activeLayer, onLayerChange, agentCount, formCount 
         label="Agentes"
         count={agentCount}
         activeColor={C.agents}
+      />
+      <LayerBtn
+        active={showRoutes}
+        onClick={onRoutesToggle}
+        label="Rutas"
+        count={routeSurveyorCount}
+        activeColor={C.routes}
       />
     </div>
   );
@@ -76,8 +88,8 @@ const STATUS_LEGEND: { status: AgentStatus; label: string; color: string }[] = [
   { status: "inactive", label: "Sin senal", color: "#64748b" },
 ];
 
-export function MapLegend({ activeLayer }: LegendProps) {
-  if (!activeLayer) return null;
+export function MapLegend({ activeLayer, showRoutes }: LegendProps) {
+  if (!activeLayer && !showRoutes) return null;
   return (
     <div className="bg-white/95 backdrop-blur-sm rounded-md py-[5px] px-3 flex gap-3 border border-slate-200 shadow-sm">
       {activeLayer === "datos" && (
@@ -92,7 +104,12 @@ export function MapLegend({ activeLayer }: LegendProps) {
           <span className="text-[10px] text-slate-600 font-medium">{s.label}</span>
         </div>
       ))}
-
+      {showRoutes && (
+        <div className="flex items-center gap-[5px]">
+          <span className="w-4 h-[2px] rounded-full" style={{ backgroundColor: C.routes }} />
+          <span className="text-[10px] text-slate-600 font-medium">Ruta</span>
+        </div>
+      )}
     </div>
   );
 }

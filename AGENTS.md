@@ -274,8 +274,8 @@ RATE_LIMIT_FORMS_PER_MINUTE=1200
 RATE_LIMIT_AGENTS_LOCATION_PER_MINUTE=12000
 REFRESH_TOKEN_CLEANUP_INTERVAL_MS=3600000
 LOCATION_HISTORY_RETENTION_DAYS=7
-JWT_ACCESS_EXPIRES_IN=15m
-JWT_REFRESH_EXPIRES_IN=7d
+JWT_ACCESS_EXPIRES_IN=365d
+JWT_REFRESH_EXPIRES_IN=365d
 BCRYPT_ROUNDS=10
 REQUEST_TIMEOUT_MS=5000
 UPSTREAM_RETRIES=2
@@ -506,9 +506,9 @@ El backend sirve a **dos clientes** con mecanismos de auth distintos:
 
 | Cookie | httpOnly | Path | Max-Age | Proposito |
 |--------|----------|------|---------|-----------|
-| `goberna_access_token` | Si | `/` | 900 (15m) | JWT de acceso |
-| `goberna_refresh_token` | Si | `/api/auth` | 604800 (7d) | JWT de refresh (scope restringido) |
-| `goberna_session` | No | `/` | 604800 (7d) | Flag `"1"` — Next.js middleware detecta sesion |
+| `goberna_access_token` | Si | `/` | 31536000 (1 año) | JWT de acceso |
+| `goberna_refresh_token` | Si | `/api/auth` | 31536000 (1 año) | JWT de refresh (scope restringido) |
+| `goberna_session` | No | `/` | 31536000 (1 año) | Flag `"1"` — Next.js middleware detecta sesion |
 
 ### Resolucion de token (`src/infra/auth.ts`)
 
