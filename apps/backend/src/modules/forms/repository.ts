@@ -296,7 +296,6 @@ export async function getRecentForms(
       FROM form_submissions fs
       LEFT JOIN users u ON u.id = fs.submitted_by
       WHERE fs.campaign_id = $1
-        AND fs.synced_at IS NULL
         AND fs.deleted_at IS NULL${submissionsDateFilter}
     )
     SELECT * FROM (

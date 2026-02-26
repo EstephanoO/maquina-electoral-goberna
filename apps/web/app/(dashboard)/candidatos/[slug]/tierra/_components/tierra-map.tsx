@@ -51,10 +51,14 @@ import {
   FORM_POINTS_PAINT,
   AGENT_SELECTED_FILTER, AGENT_CONNECTED_FILTER, AGENT_PULSE_PAINT,
   AGENT_LABELS_LAYOUT, AGENT_LABELS_PAINT, AGENT_COUNT_LAYOUT, AGENT_COUNT_PAINT,
+  ROUTE_LINE_PAINT, ROUTE_LINE_LAYOUT, ROUTE_CASING_PAINT,
+  ROUTE_WAYPOINT_PAINT, ROUTE_WAYPOINT_START_PAINT, ROUTE_WAYPOINT_START_FILTER, ROUTE_WAYPOINT_MID_FILTER,
+  ROUTE_SEQ_LAYOUT, ROUTE_SEQ_PAINT,
 } from "./map-paint-constants";
 
 import { useDrillFilters } from "./hooks/use-drill-filters";
 import { useAgentsSource, useFormSources } from "./hooks/use-map-sources";
+import { useSurveyorRoutes } from "./hooks/use-surveyor-routes";
 import { useAutoFit } from "./hooks/use-auto-fit";
 import { useZoneTooltip } from "./hooks/use-zone-tooltip";
 import { useFormTooltip } from "./hooks/use-form-tooltip";
@@ -65,7 +69,7 @@ import { reverseGeocode } from "@/lib/services/geo";
 /* ========== Component (P6 — wrapped with memo) ========== */
 
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
-  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, drillState, onDrillChange },
+  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, showRoutes, drillState, onDrillChange },
   ref,
 ) {
   const mapRef = useRef<MapRef | null>(null);
@@ -89,6 +93,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const filters = useDrillFilters(drillState, campaignId);
   const agentsGeoJson = useAgentsSource(agents, selectedAgentId);
   const { formsGeoJson } = useFormSources(forms, selectedAgentId);
+  const { routesGeoJson, waypointsGeoJson } = useSurveyorRoutes(forms, selectedAgentId);
 
   useAutoFit(mapRef, drillState, skipNextFitRef);
   const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef);
@@ -162,6 +167,17 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── P1: Visibility layout objects for always-mounted Sources ───
   const datosVisibility = useMemo(() => showDatos ? VIS_VISIBLE : VIS_NONE, [showDatos]);
   const trackingVisibility = useMemo(() => showTracking ? VIS_VISIBLE : VIS_NONE, [showTracking]);
+  const routesVisibility = useMemo(() => showRoutes ? VIS_VISIBLE : VIS_NONE, [showRoutes]);
+
+  // ─── Route line layout merged with visibility ───
+  const routeLineLayoutWithVis = useMemo(() => ({
+    ...ROUTE_LINE_LAYOUT,
+    ...(showRoutes ? {} : { visibility: "none" as const }),
+  }), [showRoutes]);
+  const routeSeqLayoutWithVis = useMemo(() => ({
+    ...ROUTE_SEQ_LAYOUT,
+    ...(showRoutes ? {} : { visibility: "none" as const }),
+  }), [showRoutes]);
 
   // ─── Cluster count layout merged with visibility ───
   const clusterCountLayoutWithVis = useMemo(() => ({
@@ -364,6 +380,17 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
           <Layer id="priority-dist-line" type="line" source-layer="priority_distritos" filter={filters.priorityDistFilter} paint={PRIORITY_DIST_LINE_PAINT} />
           <Layer id="sector-fill" type="fill" source-layer="campaign_sectors" filter={filters.sectorFilter} paint={SECTOR_FILL_PAINT} />
           <Layer id="sector-line" type="line" source-layer="campaign_sectors" filter={filters.sectorFilter} paint={SECTOR_LINE_PAINT} />
+        </Source>
+
+        {/* ── Surveyor routes — always mounted, visibility controlled via layout ── */}
+        <Source id="surveyor-routes" type="geojson" data={routesGeoJson}>
+          <Layer id="routes-casing" type="line" layout={routeLineLayoutWithVis} paint={ROUTE_CASING_PAINT} />
+          <Layer id="routes-line" type="line" layout={routeLineLayoutWithVis} paint={ROUTE_LINE_PAINT} />
+        </Source>
+        <Source id="surveyor-waypoints" type="geojson" data={waypointsGeoJson}>
+          <Layer id="routes-waypoints-mid" type="circle" filter={ROUTE_WAYPOINT_MID_FILTER} layout={routesVisibility} paint={ROUTE_WAYPOINT_PAINT} />
+          <Layer id="routes-waypoints-start" type="circle" filter={ROUTE_WAYPOINT_START_FILTER} layout={routesVisibility} paint={ROUTE_WAYPOINT_START_PAINT} />
+          <Layer id="routes-seq" type="symbol" minzoom={10} layout={routeSeqLayoutWithVis} paint={ROUTE_SEQ_PAINT} />
         </Source>
 
         {/* ── Clustered form data — always mounted, visibility controlled via layout ── */}

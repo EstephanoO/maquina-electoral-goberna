@@ -88,6 +88,63 @@ export const AGENT_LABELS_PAINT: SymbolLayerSpecification["paint"] = { "text-col
 export const AGENT_COUNT_LAYOUT: SymbolLayerSpecification["layout"] = { "text-field": ["to-string", ["get", "forms_count"]], "text-size": 9, "text-allow-overlap": true, "text-font": ["Open Sans Bold"] };
 export const AGENT_COUNT_PAINT: SymbolLayerSpecification["paint"] = { "text-color": "#ffffff" };
 
+/* ─── Surveyor route paints (static) ─── */
+
+export const ROUTE_LINE_PAINT: LineLayerSpecification["paint"] = {
+  "line-color": ["get", "color"],
+  "line-width": ["interpolate", ["linear"], ["zoom"], 5, 1.5, 10, 2.5, 14, 3.5],
+  "line-opacity": 0.75,
+};
+
+export const ROUTE_LINE_LAYOUT: LineLayerSpecification["layout"] = {
+  "line-cap": "round",
+  "line-join": "round",
+};
+
+export const ROUTE_CASING_PAINT: LineLayerSpecification["paint"] = {
+  "line-color": "#ffffff",
+  "line-width": ["interpolate", ["linear"], ["zoom"], 5, 3.5, 10, 5, 14, 7],
+  "line-opacity": 0.4,
+};
+
+export const ROUTE_WAYPOINT_PAINT: CircleLayerSpecification["paint"] = {
+  "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 2, 10, 3.5, 14, 5],
+  "circle-color": ["get", "color"],
+  "circle-stroke-width": 1.5,
+  "circle-stroke-color": "#ffffff",
+  "circle-opacity": 0.9,
+  "circle-stroke-opacity": 0.8,
+};
+
+export const ROUTE_WAYPOINT_START_PAINT: CircleLayerSpecification["paint"] = {
+  "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 4, 10, 6, 14, 8],
+  "circle-color": ["get", "color"],
+  "circle-stroke-width": 2.5,
+  "circle-stroke-color": "#ffffff",
+  "circle-opacity": 1,
+  "circle-stroke-opacity": 1,
+};
+
+export const ROUTE_SEQ_LAYOUT: SymbolLayerSpecification["layout"] = {
+  "text-field": ["to-string", ["get", "seq"]],
+  "text-size": ["interpolate", ["linear"], ["zoom"], 8, 0, 10, 8, 14, 10],
+  "text-font": ["Open Sans Bold"],
+  "text-allow-overlap": true,
+};
+
+export const ROUTE_SEQ_PAINT: SymbolLayerSpecification["paint"] = {
+  "text-color": "#ffffff",
+  "text-halo-color": ["get", "color"],
+  "text-halo-width": 1,
+};
+
+/** Filter: first waypoint only */
+export const ROUTE_WAYPOINT_START_FILTER: FilterSpecification = ["==", ["get", "is_first"], 1];
+/** Filter: last waypoint only */
+export const ROUTE_WAYPOINT_END_FILTER: FilterSpecification = ["==", ["get", "is_last"], 1];
+/** Filter: not first waypoint (mid + last) */
+export const ROUTE_WAYPOINT_MID_FILTER: FilterSpecification = ["==", ["get", "is_first"], 0];
+
 /* ─── Source promoteId (P5 — static) ─── */
 
 export const PROMOTE_ID = { departamentos: "coddep", provincias: "codprov_full", distritos: "ubigeo" };
