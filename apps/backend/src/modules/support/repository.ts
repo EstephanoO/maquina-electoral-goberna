@@ -20,6 +20,7 @@ export type ConversationSummary = {
   full_name: string;
   email: string;
   role: string;
+  foto_url: string | null;
   last_message: string;
   last_message_at: string;
   unread_count: number;
@@ -123,12 +124,15 @@ export async function listConversations(adminId: string): Promise<ConversationSu
        u.full_name,
        u.email,
        u.role,
+       c.foto_url,
        lm.last_message,
        lm.last_message_at,
        COALESCE(uc.unread_count, 0)::int AS unread_count
      FROM last_msgs lm
      JOIN users u ON u.id = lm.other_id
      LEFT JOIN unread_counts uc ON uc.other_id = lm.other_id
+     LEFT JOIN user_campaigns uc2 ON uc2.user_id = u.id
+     LEFT JOIN campaigns c ON c.id = uc2.campaign_id
      ORDER BY lm.last_message_at DESC`,
     [adminId],
   );

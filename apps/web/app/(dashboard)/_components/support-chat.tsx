@@ -1,9 +1,12 @@
 /**
- * GOBERNA — Support Chat Component
+ * GOBERNA — Support Chat Component (Floating)
  *
- * Floating support chat for candidato+ and admin users.
- * - Candidato/Consultor: single chat with admin
- * - Admin: conversation list + individual chats
+ * Floating bottom-right chat for candidato+ ↔ admin messaging.
+ * - Renders a chat icon with unread badge (always visible)
+ * - Opens a panel above the icon when clicked
+ * - WS stays connected even when panel is closed (for real-time notifications)
+ * - Candidato: auto-connects to admin (single conversation)
+ * - Admin: sees conversation list with candidate photos, then opens individual chat
  *
  * Performance:
  *   - memo'd sub-components to isolate rerenders
@@ -17,8 +20,9 @@
 
 import {
   useState, useEffect, useRef, useCallback, useMemo, memo,
-  type CSSProperties, type FormEvent, type KeyboardEvent,
+  type CSSProperties, type KeyboardEvent,
 } from "react";
+import Image from "next/image";
 import { useSupportWs, type SupportWsMessage } from "../../../lib/hooks/use-support-ws";
 import {
   getMessages,
@@ -35,14 +39,54 @@ import { FONT_STACK } from "../../../lib/constants";
 type SupportChatProps = {
   userId: string;
   isAdmin: boolean;
-  collapsed: boolean;
 };
 
 // ─── Hoisted Styles (created once, never reallocated) ─────────
 
+const FAB_SIZE = 52;
+
+const FAB_STYLE: CSSProperties = {
+  position: "fixed",
+  bottom: 20,
+  right: 20,
+  width: FAB_SIZE,
+  height: FAB_SIZE,
+  borderRadius: "50%",
+  background: "var(--goberna-blue-950, #0c1f38)",
+  color: "#ffffff",
+  border: "none",
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  boxShadow: "0 4px 16px rgba(0,0,0,0.22), 0 2px 6px rgba(0,0,0,0.12)",
+  zIndex: 1100,
+  transition: "transform 0.15s ease, box-shadow 0.15s ease",
+};
+
+const FAB_BADGE: CSSProperties = {
+  position: "absolute",
+  top: -4,
+  right: -4,
+  background: "#ef4444",
+  color: "#fff",
+  fontSize: 10,
+  fontWeight: 700,
+  borderRadius: 99,
+  minWidth: 20,
+  height: 20,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "0 5px",
+  lineHeight: 1,
+  border: "2px solid #ffffff",
+};
+
 const PANEL_STYLE: CSSProperties = {
   position: "fixed",
-  bottom: 16,
+  bottom: 20 + FAB_SIZE + 12,
+  right: 20,
   width: 380,
   height: 520,
   background: "#ffffff",
@@ -53,7 +97,7 @@ const PANEL_STYLE: CSSProperties = {
   zIndex: 1100,
   fontFamily: FONT_STACK,
   overflow: "hidden",
-  animation: "goberna-fade-in 0.2s ease-out",
+  animation: "goberna-support-in 0.2s ease-out",
 };
 
 const HEADER_STYLE: CSSProperties = {
@@ -98,27 +142,18 @@ const CENTERED_TEXT: CSSProperties = {
   padding: 24, textAlign: "center", color: "#94a3b8", fontSize: 13,
 };
 
-const BADGE_STYLE: CSSProperties = {
-  position: "absolute", top: -6, right: -8, background: "#ef4444", color: "#fff",
-  fontSize: 9, fontWeight: 700, borderRadius: 99, minWidth: 16, height: 16,
-  display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px", lineHeight: 1,
-};
-
-const AVATAR_STYLE: CSSProperties = {
-  width: 36, height: 36, borderRadius: "50%", background: "var(--goberna-blue-100, #dbeafe)",
-  color: "var(--goberna-blue-700, #1d4ed8)", display: "flex", alignItems: "center",
-  justifyContent: "center", fontSize: 14, fontWeight: 700, flexShrink: 0,
-};
-
-const ICON_WRAP: CSSProperties = {
-  flexShrink: 0, display: "flex", alignItems: "center", width: 20, justifyContent: "center", position: "relative",
+const CONV_AVATAR: CSSProperties = {
+  width: 40, height: 40, borderRadius: "50%", overflow: "hidden",
+  background: "var(--goberna-blue-100, #dbeafe)", color: "var(--goberna-blue-700, #1d4ed8)",
+  display: "flex", alignItems: "center", justifyContent: "center",
+  fontSize: 15, fontWeight: 700, flexShrink: 0, position: "relative",
 };
 
 // ─── Icons (memo'd — zero rerender cost) ──────────────────────
 
-const SupportIcon = memo(function SupportIcon() {
+const ChatBubbleIcon = memo(function ChatBubbleIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
@@ -152,7 +187,6 @@ const CloseIcon = memo(function CloseIcon() {
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-// Cached Intl formatters — created once, reused forever
 const timeFormatter = typeof Intl !== "undefined"
   ? new Intl.DateTimeFormat("es-PE", { hour: "2-digit", minute: "2-digit" })
   : null;
@@ -209,7 +243,7 @@ const MessageBubble = memo(function MessageBubble({ msg, isMine }: BubbleProps) 
   );
 });
 
-// ─── ConversationRow (memo'd — only rerenders if its data changes) ──
+// ─── ConversationRow with candidate photo (memo'd) ──────────
 
 type ConvRowProps = {
   conv: ConversationSummary;
@@ -230,8 +264,20 @@ const ConversationRow = memo(function ConversationRow({ conv, onSelect }: ConvRo
         display: "flex", alignItems: "center", gap: 10, fontFamily: FONT_STACK,
       }}
     >
-      <div style={AVATAR_STYLE}>
-        {conv.full_name.charAt(0).toUpperCase()}
+      {/* Avatar — show candidate photo if available */}
+      <div style={CONV_AVATAR}>
+        {conv.foto_url ? (
+          <Image
+            src={conv.foto_url}
+            alt={conv.full_name}
+            width={40}
+            height={40}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            unoptimized
+          />
+        ) : (
+          conv.full_name.charAt(0).toUpperCase()
+        )}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -273,7 +319,6 @@ const ChatInput = memo(function ChatInput({ onSend, disabled }: ChatInputProps) 
     if (!body || disabled) return;
     onSend(body);
     setValue("");
-    // Re-focus after send
     inputRef.current?.focus();
   }, [value, disabled, onSend]);
 
@@ -319,7 +364,7 @@ const ChatInput = memo(function ChatInput({ onSend, disabled }: ChatInputProps) 
   );
 });
 
-// ─── MessageList (memo'd — only rerenders when messages array changes) ──
+// ─── MessageList (memo'd) ─────────────────────────────────────
 
 type MessageListProps = {
   messages: SupportMessage[];
@@ -332,7 +377,7 @@ const MessageList = memo(function MessageList({ messages, userId, loading }: Mes
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]); // Only scroll on new message count, not on identity change
+  }, [messages.length]);
 
   if (loading) {
     return (
@@ -362,7 +407,7 @@ const MessageList = memo(function MessageList({ messages, userId, loading }: Mes
 
 // ─── Main Component ───────────────────────────────────────────
 
-export const SupportChat = memo(function SupportChat({ userId, isAdmin, collapsed }: SupportChatProps) {
+export const SupportChat = memo(function SupportChat({ userId, isAdmin }: SupportChatProps) {
   const [open, setOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -376,6 +421,10 @@ export const SupportChat = memo(function SupportChat({ userId, isAdmin, collapse
   // Ref for chatPartnerId so WS callback doesn't need it as a dep
   const chatPartnerRef = useRef(chatPartnerId);
   chatPartnerRef.current = chatPartnerId;
+
+  // Ref to know if panel is open without re-running WS effect
+  const openRef = useRef(open);
+  openRef.current = open;
 
   // ── Fetch unread count on mount ──
   useEffect(() => {
@@ -398,7 +447,7 @@ export const SupportChat = memo(function SupportChat({ userId, isAdmin, collapse
     return () => { stale = true; };
   }, [isAdmin]);
 
-  // ── WS message handler (stable — uses refs, no deps that change) ──
+  // ── WS message handler — always active for notifications ──
   const handleWsMessage = useCallback((msg: SupportWsMessage) => {
     const newMsg: SupportMessage = {
       id: msg.id,
@@ -409,22 +458,47 @@ export const SupportChat = memo(function SupportChat({ userId, isAdmin, collapse
       created_at: msg.createdAt,
     };
 
-    // Add to messages only if it's from/to current chat partner
+    // Add to messages if it's from/to current chat partner AND panel is open
     setMessages((prev) => {
       const partner = chatPartnerRef.current;
-      if (!partner || (msg.senderId !== partner && msg.receiverId !== partner)) return prev;
+      if (!openRef.current || !partner) return prev;
+      if (msg.senderId !== partner && msg.receiverId !== partner) return prev;
       if (prev.some((m) => m.id === msg.id)) return prev; // dedupe
       return [...prev, newMsg];
     });
 
-    // Increment unread if it's for us
+    // Increment unread if it's for us and panel is closed or different conversation
     if (msg.receiverId === userId) {
-      setUnreadCount((c) => c + 1);
+      const partner = chatPartnerRef.current;
+      const isViewingThisConv = openRef.current && partner === msg.senderId;
+      if (!isViewingThisConv) {
+        setUnreadCount((c) => c + 1);
+      }
     }
-  }, [userId]); // userId is stable for the session
 
+    // Update conversation list for admin (update last_message, bump unread)
+    if (isAdmin) {
+      setConversations((prev) => {
+        const otherId = msg.senderId === userId ? msg.receiverId : msg.senderId;
+        return prev.map((c) =>
+          c.user_id === otherId
+            ? {
+                ...c,
+                last_message: msg.body,
+                last_message_at: msg.createdAt,
+                unread_count: msg.receiverId === userId && !(openRef.current && chatPartnerRef.current === otherId)
+                  ? c.unread_count + 1
+                  : c.unread_count,
+              }
+            : c,
+        );
+      });
+    }
+  }, [userId, isAdmin]);
+
+  // WS always connected (enabled: true) so we get real-time notifications
   const { connected, send, markRead: wsMarkRead } = useSupportWs({
-    enabled: open,
+    enabled: true,
     onMessage: handleWsMessage,
   });
 
@@ -442,7 +516,7 @@ export const SupportChat = memo(function SupportChat({ userId, isAdmin, collapse
 
   // ── Load messages when chat partner changes ──
   useEffect(() => {
-    if (!chatPartnerId) return;
+    if (!chatPartnerId || !open) return;
     let stale = false;
     setLoading(true);
     getMessages(chatPartnerId).then((res) => {
@@ -450,18 +524,19 @@ export const SupportChat = memo(function SupportChat({ userId, isAdmin, collapse
       if (res.ok && res.data) {
         setMessages(res.data.messages);
         wsMarkRead(chatPartnerId);
+        // Clear unread for this conversation
         setUnreadCount((c) => Math.max(0, c - 1));
       }
       setLoading(false);
     });
     return () => { stale = true; };
-  }, [chatPartnerId, wsMarkRead]);
+  }, [chatPartnerId, open, wsMarkRead]);
 
   // ── Stable callbacks ──
   const toggleOpen = useCallback(() => {
     setOpen((o) => {
       if (o) {
-        // Closing — reset state
+        // Closing — reset selection
         setSelectedUserId(null);
         setMessages([]);
       }
@@ -484,43 +559,13 @@ export const SupportChat = memo(function SupportChat({ userId, isAdmin, collapse
     send(partner, body);
   }, [send]);
 
-  // ── Derived values ──
-  const showLabel = !collapsed;
+  // ── Derived ──
   const isInChat = isAdmin ? !!selectedUserId : !!adminId;
   const selectedConv = useMemo(
     () => conversations.find((c) => c.user_id === selectedUserId),
     [conversations, selectedUserId],
   );
 
-  // ── Dynamic styles (memoized, only recalculated when deps change) ──
-  const buttonStyle = useMemo<CSSProperties>(() => ({
-    width: "100%",
-    padding: showLabel ? "11px 20px" : "11px 0",
-    justifyContent: showLabel ? "flex-start" : "center",
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    background: open ? "rgba(255,255,255,0.12)" : "transparent",
-    border: "none",
-    borderTop: "1px solid rgba(255,255,255,0.08)",
-    borderLeft: open ? "3px solid var(--goberna-gold)" : "3px solid transparent",
-    color: open ? "var(--goberna-gold)" : "rgba(255,255,255,0.5)",
-    fontWeight: open ? 600 : 400,
-    fontSize: 13,
-    fontFamily: FONT_STACK,
-    cursor: "pointer",
-    transition: "all 0.15s ease",
-    textDecoration: "none",
-    position: "relative",
-  }), [showLabel, open]);
-
-  const panelLeft = collapsed ? 76 : 250;
-  const panelStyleFinal = useMemo<CSSProperties>(
-    () => ({ ...PANEL_STYLE, left: panelLeft }),
-    [panelLeft],
-  );
-
-  // ── Header title ──
   const headerTitle = isAdmin
     ? selectedUserId
       ? selectedConv?.full_name ?? "Chat"
@@ -529,20 +574,22 @@ export const SupportChat = memo(function SupportChat({ userId, isAdmin, collapse
 
   return (
     <>
-      {/* ── Sidebar Button ── */}
-      <button type="button" onClick={toggleOpen} style={buttonStyle} title={showLabel ? undefined : "Soporte"} aria-label="Soporte">
-        <span style={ICON_WRAP}>
-          <SupportIcon />
-          {unreadCount > 0 && (
-            <span style={BADGE_STYLE}>{unreadCount > 99 ? "99+" : unreadCount}</span>
-          )}
-        </span>
-        {showLabel && <span>Soporte</span>}
+      {/* ── Floating Action Button (bottom-right) ── */}
+      <button
+        type="button"
+        onClick={toggleOpen}
+        style={FAB_STYLE}
+        aria-label={open ? "Cerrar soporte" : "Abrir soporte"}
+      >
+        {open ? <CloseIcon /> : <ChatBubbleIcon />}
+        {!open && unreadCount > 0 && (
+          <span style={FAB_BADGE}>{unreadCount > 99 ? "99+" : unreadCount}</span>
+        )}
       </button>
 
       {/* ── Chat Panel ── */}
       {open && (
-        <div style={panelStyleFinal}>
+        <div style={PANEL_STYLE}>
           {/* Header */}
           <div style={HEADER_STYLE}>
             {isAdmin && selectedUserId && (
@@ -588,6 +635,17 @@ export const SupportChat = memo(function SupportChat({ userId, isAdmin, collapse
           )}
         </div>
       )}
+
+      {/* ── Animation keyframes ── */}
+      <style>{`
+        @keyframes goberna-support-in {
+          from { opacity: 0; transform: translateY(12px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .support-conv-row:hover {
+          background: #f8fafc !important;
+        }
+      `}</style>
     </>
   );
 });

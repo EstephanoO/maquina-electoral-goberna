@@ -670,10 +670,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             );
           })()}
 
-          {/* Support chat — candidato+ and admin */}
-          {(uiRole === "admin" || uiRole === "candidato" || uiRole === "consultor") && user && (
-            <SupportChat userId={user.id} isAdmin={isAdmin} collapsed={showCollapsed} />
-          )}
+          {/* Support chat moved to floating position — see below */}
 
           {/* Campaign selector — admin always sees it (with "Admin" global option) */}
           {showLabel && (isAdmin || campaigns.length > 1) && (
@@ -1004,6 +1001,11 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
       >
         {children}
       </main>
+
+      {/* ── Floating Support Chat (bottom-right) ─────────────── */}
+      {(uiRole === "admin" || uiRole === "candidato" || uiRole === "consultor") && user && (
+        <SupportChat userId={user.id} isAdmin={isAdmin} />
+      )}
 
       {/* ── Sidebar CSS (hover, edge zone) ───────────────────── */}
       <style>{`

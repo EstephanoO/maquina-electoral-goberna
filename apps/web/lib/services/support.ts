@@ -19,6 +19,7 @@ export type ConversationSummary = {
   full_name: string;
   email: string;
   role: string;
+  foto_url: string | null;
   last_message: string;
   last_message_at: string;
   unread_count: number;
