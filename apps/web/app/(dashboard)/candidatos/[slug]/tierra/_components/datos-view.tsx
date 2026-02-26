@@ -54,15 +54,33 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editingForm, setEditingForm] = useState<FormRecord | null>(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [showDuplicates, setShowDuplicates] = useState(false);
+
+  // Pre-compute set of duplicate phone numbers
+  const duplicatePhones = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const f of forms) {
+      const phone = f.telefono?.trim();
+      if (phone) counts.set(phone, (counts.get(phone) ?? 0) + 1);
+    }
+    const dupes = new Set<string>();
+    for (const [phone, count] of counts) {
+      if (count > 1) dupes.add(phone);
+    }
+    return dupes;
+  }, [forms]);
 
   const filtered = useMemo(() => {
     let list = forms;
+    if (showDuplicates) {
+      list = list.filter((f) => f.telefono?.trim() && duplicatePhones.has(f.telefono.trim()));
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter((f) => f.nombre.toLowerCase().includes(q) || f.telefono.includes(q) || f.encuestador.toLowerCase().includes(q) || f.zona.toLowerCase().includes(q) || (f.candidato_preferido && f.candidato_preferido.toLowerCase().includes(q)));
     }
     return [...list].sort((a, b) => { const cmp = String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? "")); return sortAsc ? cmp : -cmp; });
-  }, [forms, search, sortKey, sortAsc]);
+  }, [forms, search, sortKey, sortAsc, showDuplicates, duplicatePhones]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -129,6 +147,28 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
         </div>
 
         <span className="text-[11px] text-slate-400 tabular-nums font-semibold shrink-0">{filtered.length.toLocaleString()} registros</span>
+
+        {/* Duplicates filter */}
+        <button
+          type="button"
+          onClick={() => { setShowDuplicates((v) => !v); setPage(0); }}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer border transition-colors shrink-0 ${
+            showDuplicates
+              ? "bg-amber-50 border-amber-300 text-amber-700"
+              : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
+          }`}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="8" y="2" width="13" height="13" rx="2" />
+            <path d="M5 8H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1" />
+          </svg>
+          Duplicados
+          {duplicatePhones.size > 0 && (
+            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${showDuplicates ? "bg-amber-200 text-amber-800" : "bg-slate-100 text-slate-500"}`}>
+              {duplicatePhones.size}
+            </span>
+          )}
+        </button>
 
         {/* Bulk actions (canEdit only) */}
         {canEdit && selectedIds.size > 0 && (
