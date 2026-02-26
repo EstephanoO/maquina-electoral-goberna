@@ -61,6 +61,9 @@ export type AppEnv = {
   trackingHealthMaxLag: number;
   // Twilio — clave maestra para cifrar auth_tokens en DB (obligatoria si se usa Twilio)
   twilioEncryptionKey: string;
+  // Telegram — notificaciones de leads (opcional)
+  telegramBotToken: string;
+  telegramChatId: string;
 };
 
 function toNumber(value: string | undefined, fallback: number): number {
@@ -174,5 +177,7 @@ export function getEnv(): AppEnv {
     trackingDefaultDistanceM: toNumber(process.env.TRACKING_DEFAULT_DISTANCE_M, 5),
     trackingHealthMaxLag: toNumber(process.env.TRACKING_HEALTH_MAX_LAG, 1000),
     twilioEncryptionKey: (process.env.TWILIO_ENCRYPTION_KEY ?? "").trim(),
+    telegramBotToken: (process.env.TELEGRAM_BOT_TOKEN ?? "").trim(),
+    telegramChatId: (process.env.TELEGRAM_CHAT_ID ?? "").trim(),
   };
 }

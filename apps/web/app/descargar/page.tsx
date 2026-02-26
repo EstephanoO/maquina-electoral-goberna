@@ -15,11 +15,23 @@ export default function DescargarPage() {
   const [nombre, setNombre] = useState("");
   const [correo, setCorreo] = useState("");
   const [enviado, setEnviado] = useState(false);
+  const [enviando, setEnviando] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!nombre.trim() || !correo.trim()) return;
+    if (!nombre.trim() || !correo.trim() || enviando) return;
+    setEnviando(true);
+    try {
+      await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nombre: nombre.trim(), correo: correo.trim(), plataforma: "iphone" }),
+      });
+    } catch {
+      // Best-effort — show success even if backend is down
+    }
     setEnviado(true);
+    setEnviando(false);
     setNombre("");
     setCorreo("");
   }
@@ -98,8 +110,8 @@ export default function DescargarPage() {
                   <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     <input type="text" placeholder="Nombre completo" value={nombre} onChange={(e) => setNombre(e.target.value)} required style={inputStyle} />
                     <input type="email" placeholder="Correo (el de tu Apple ID)" value={correo} onChange={(e) => setCorreo(e.target.value)} required style={inputStyle} />
-                    <button type="submit" style={{ padding: "12px 24px", fontSize: 14, fontWeight: 700, color: "#0f172a", background: "var(--goberna-gold)", border: "none", borderRadius: 10, cursor: "pointer", fontFamily: FONT_STACK, boxShadow: "0 4px 24px rgba(255,200,0,0.25)", marginTop: 2 }}>
-                      Enviar solicitud
+                    <button type="submit" disabled={enviando} style={{ padding: "12px 24px", fontSize: 14, fontWeight: 700, color: "#0f172a", background: "var(--goberna-gold)", border: "none", borderRadius: 10, cursor: enviando ? "wait" : "pointer", fontFamily: FONT_STACK, boxShadow: "0 4px 24px rgba(255,200,0,0.25)", marginTop: 2, opacity: enviando ? 0.7 : 1 }}>
+                      {enviando ? "Enviando..." : "Enviar solicitud"}
                     </button>
                   </form>
                 ) : (

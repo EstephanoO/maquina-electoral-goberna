@@ -9,3 +9,4 @@ export * from "./access-requests";
 export * from "./forms";
 export * from "./geo";
 export * from "./cms";
+export * from "./leads";
