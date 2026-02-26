@@ -6,6 +6,7 @@ import { getEnv } from "./config/env";
 import { connectRedis, disconnectRedis } from "./infra/redis";
 import { initTelegram } from "./infra/telegram";
 import { startHealthPoller, stopHealthPoller } from "./infra/health-poller";
+import { startTelegramCommands, stopTelegramCommands } from "./infra/telegram-commands";
 import { initSupportTelegramBridge } from "./infra/support-telegram-bridge";
 import { ensureAgentLocationsLiveTable, cleanupLocationHistory } from "./modules/agents/repository";
 import { ensureFormsTable } from "./modules/forms/repository";
@@ -25,6 +26,9 @@ await app.listen({ host: "0.0.0.0", port: env.port });
 
 // ── Health poller (DB/Redis/Tegola + CPU/RAM/Disk) ────────────────────
 startHealthPoller(env);
+
+// ── Telegram bot commands (long-polling for /health etc.) ─────────────
+startTelegramCommands(env);
 
 // ── Support → Telegram bridge ─────────────────────────────────────────
 initSupportTelegramBridge();
@@ -61,6 +65,7 @@ cleanupTimer = setInterval(() => void runCleanup(), env.refreshTokenCleanupInter
 const shutdown = async () => {
   if (cleanupTimer) clearInterval(cleanupTimer);
   stopHealthPoller();
+  stopTelegramCommands();
   await app.close();
   await disconnectRedis();
   await pool.end();
