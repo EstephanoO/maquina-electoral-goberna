@@ -154,7 +154,7 @@ export function SupportChat({ userId, isAdmin, collapsed }: SupportChatProps) {
   }, [userId, isAdmin, chatPartnerId]);
 
   const { connected, send, markRead: wsMarkRead } = useSupportWs({
-    enabled: true,
+    enabled: open,
     onMessage: handleWsMessage,
   });
 
