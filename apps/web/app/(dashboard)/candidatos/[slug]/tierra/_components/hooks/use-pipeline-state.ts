@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition, useCallback } from "react";
 import type { FormRecord } from "@/lib/services";
-import { useBrigadistaMetrics } from "@/lib/hooks";
+import { useBrigadistaMetrics, useRecentForms } from "@/lib/hooks";
 import { type PipelinePeriod, type PipelineDateRanges, getDateRanges } from "../pipeline-filters";
 
 /* ========== Types ========== */
@@ -25,11 +25,13 @@ export type PipelineState = {
 
 /* ========== Hook ========== */
 
+const EMPTY_FORMS: FormRecord[] = [];
+
 /**
  * Encapsulates all Pipeline-specific state:
  * - Period filter + startTransition for non-urgent switches
  * - Date range computation (current + previous)
- * - Client-side form filtering
+ * - Server-side period-scoped forms queries (avoids 500-record cap issues)
  * - Dual brigadista metrics queries (current + previous period)
  */
 export function usePipelineState(
@@ -60,26 +62,25 @@ export function usePipelineState(
     period !== "all" ? campaignId : undefined, prevFrom, prevTo,
   );
 
-  // Client-side date filtering on already-fetched forms
-  const filteredForms = useMemo(() => {
-    if (!periodFrom) return forms; // "all" → no filter
-    const fromTs = new Date(periodFrom).getTime();
-    const toTs = periodTo ? new Date(periodTo).getTime() : Infinity;
-    return forms.filter((f) => {
-      const ts = new Date(f.created_at).getTime();
-      return ts >= fromTs && ts < toTs;
-    });
-  }, [forms, periodFrom, periodTo]);
+  // ── Server-side period-scoped forms queries ──
+  // Instead of filtering the unscoped 500-record forms array client-side,
+  // we fetch forms directly from the API with from/to params. This ensures
+  // "today"/"week"/"month" get the actual forms for that period.
+  const { data: periodForms } = useRecentForms(
+    period !== "all" ? campaignId : undefined,
+    periodFrom,
+    periodTo,
+  );
 
-  const prevFilteredForms = useMemo(() => {
-    if (!prevFrom) return [];
-    const fromTs = new Date(prevFrom).getTime();
-    const toTs = prevTo ? new Date(prevTo).getTime() : Infinity;
-    return forms.filter((f) => {
-      const ts = new Date(f.created_at).getTime();
-      return ts >= fromTs && ts < toTs;
-    });
-  }, [forms, prevFrom, prevTo]);
+  const { data: prevPeriodForms } = useRecentForms(
+    period !== "all" ? campaignId : undefined,
+    prevFrom,
+    prevTo,
+  );
+
+  // For "all" period, use the unfiltered forms array from the parent
+  const filteredForms = period === "all" ? forms : (periodForms ?? EMPTY_FORMS);
+  const prevFilteredForms = period === "all" ? EMPTY_FORMS : (prevPeriodForms ?? EMPTY_FORMS);
 
   return {
     period,
