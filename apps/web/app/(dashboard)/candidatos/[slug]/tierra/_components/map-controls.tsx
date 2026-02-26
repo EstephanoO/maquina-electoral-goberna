@@ -30,7 +30,7 @@ const C = {
 
 /* ========== Layer Controls ========== */
 
-export function MapControls({ activeLayer, onLayerChange, showRoutes, onRoutesToggle, agentCount, formCount, routeSurveyorCount }: Props) {
+export function MapControls({ activeLayer, onLayerChange, agentCount, formCount }: Props) {
   return (
     <div className="bg-white/95 backdrop-blur-sm rounded-[10px] p-2 flex flex-col gap-0.5 border border-slate-200 shadow-sm">
       <LayerBtn
@@ -46,13 +46,6 @@ export function MapControls({ activeLayer, onLayerChange, showRoutes, onRoutesTo
         label="Agentes"
         count={agentCount}
         activeColor={C.agents}
-      />
-      <LayerBtn
-        active={showRoutes}
-        onClick={onRoutesToggle}
-        label="Rutas"
-        count={routeSurveyorCount}
-        activeColor={C.routes}
       />
     </div>
   );
