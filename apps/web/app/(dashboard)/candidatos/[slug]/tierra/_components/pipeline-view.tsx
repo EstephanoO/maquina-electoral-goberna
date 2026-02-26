@@ -130,7 +130,15 @@ export const PipelineView = memo(function PipelineView({
     );
   }
 
-  const hasForms = forms.length > 0;
+  // Use server-side counts when available (current period) — forms array may be empty
+  // due to client-side filtering on a limited (500-record) API response
+  const serverPeriodCount = offset === 0
+    ? (period === "today" ? serverTotals.forms_today
+      : period === "week" ? serverTotals.forms_week
+      : period === "all" ? serverTotals.forms_count
+      : undefined)
+    : undefined;
+  const hasForms = forms.length > 0 || (serverPeriodCount != null && serverPeriodCount > 0);
   const hasBrigadistas = brigadistas.length > 0;
   const isEmpty = !hasForms && !hasBrigadistas;
 
@@ -199,14 +207,7 @@ export const PipelineView = memo(function PipelineView({
             <PipelineFunnel
               primaryColor={primaryColor}
               totalDatos={agentDrill ? agentDrill.totalCaptures : totalDatos}
-              periodDatos={agentDrill ? agentDrill.periodDatos : (
-                offset === 0
-                  ? (period === "today" ? serverTotals.forms_today
-                    : period === "week" ? serverTotals.forms_week
-                    : period === "all" ? serverTotals.forms_count
-                    : forms.length)
-                  : forms.length
-              )}
+              periodDatos={agentDrill ? agentDrill.periodDatos : (serverPeriodCount ?? forms.length)}
               agentesCampoCount={agentesCampoCount}
               metaDatos={metaDatos}
               period={period}
@@ -229,14 +230,7 @@ export const PipelineView = memo(function PipelineView({
               compareIds={compareIds}
               onToggleCompare={handleToggleCompare}
               onClearCompare={handleClearCompare}
-              serverPeriodCount={
-                offset === 0
-                  ? (period === "today" ? serverTotals.forms_today
-                    : period === "week" ? serverTotals.forms_week
-                    : period === "all" ? serverTotals.forms_count
-                    : undefined)
-                  : undefined
-              }
+              serverPeriodCount={serverPeriodCount}
             />
           )}
 
