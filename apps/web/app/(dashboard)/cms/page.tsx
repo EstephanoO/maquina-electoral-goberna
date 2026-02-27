@@ -454,6 +454,10 @@ export default function CmsPage() {
   }, [selectedContactId]);
 
   useEffect(() => {
+    if (pendingOpenContactRef.current) {
+      setMobileActivePane("chat");
+      return;
+    }
     setMobileActivePane("list");
   }, [activeCampaignId]);
 

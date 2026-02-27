@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type { CmsContact } from "@/lib/services/cms";
 import { AnimatedList } from "@/registry/magicui/animated-list";
 import { ContactCard } from "./contact-card";
@@ -20,6 +21,9 @@ type Props = {
   onOpenChat?: (contact: CmsContact) => void;
   getLockLabel?: (contactId: string) => string | null;
   isLockedByOther?: (contactId: string) => boolean;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
 };
 
 export function PipelineColumn({
@@ -29,7 +33,36 @@ export function PipelineColumn({
   onOpenChat,
   getLockLabel,
   isLockedByOther,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
 }: Props) {
+  const scrollRootRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!hasMore || !onLoadMore) return;
+    const root = scrollRootRef.current;
+    const target = loadMoreRef.current;
+    if (!root || !target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry?.isIntersecting || loadingMore) return;
+        onLoadMore();
+      },
+      {
+        root,
+        rootMargin: "120px 0px",
+        threshold: 0.01,
+      },
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMore, loadingMore, onLoadMore, contacts.length]);
+
   return (
     <section className="min-h-0 flex flex-col border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/80 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       {/* Header */}
@@ -47,7 +80,7 @@ export function PipelineColumn({
       <div className="h-[3px] mx-3 rounded-full" style={{ background: level.accent }} />
 
       {/* Body */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+      <div ref={scrollRootRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         {contacts.length === 0 ? (
           <div className="m-3 p-4 rounded-xl border border-dashed border-slate-300 text-center text-[12px] text-slate-400 font-medium">
             {level.emptyLabel}
@@ -78,6 +111,12 @@ export function PipelineColumn({
               />
             ))}
           </AnimatedList>
+        )}
+
+        {hasMore && (
+          <div ref={loadMoreRef} className="px-3 pb-3 pt-1 text-center text-[11px] font-semibold text-slate-400">
+            {loadingMore ? "Cargando mas..." : "Desliza para cargar mas"}
+          </div>
         )}
       </div>
     </section>

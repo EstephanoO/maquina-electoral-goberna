@@ -427,39 +427,71 @@ export function ChatConversationPane({
             type="button"
             onClick={onGoPipeline}
             style={{
+              ...iconButtonStyle,
               border: "1px solid #cbd5e1",
               background: "#ffffff",
               color: "#334155",
-              borderRadius: 999,
-              padding: "6px 10px",
-              fontSize: 11,
-              fontWeight: 700,
-              whiteSpace: "nowrap",
+              borderRadius: 10,
+              width: 34,
+              height: 34,
               cursor: "pointer",
             }}
             title="Ir a pipeline"
             aria-label="Ir a pipeline"
           >
-            Pipeline
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M4 19h16" />
+              <path d="M7 15V9" />
+              <path d="M12 15V5" />
+              <path d="M17 15v-3" />
+            </svg>
           </button>
 
           <button
             type="button"
             onClick={() => setTagsPanelOpen((prev) => !prev)}
             style={{
+              ...iconButtonStyle,
               border: "1px solid #cbd5e1",
               background: tagsPanelOpen ? "#e2e8f0" : "#ffffff",
               color: "#334155",
-              borderRadius: 999,
-              padding: "6px 10px",
-              fontSize: 11,
-              fontWeight: 700,
-              whiteSpace: "nowrap",
+              borderRadius: 10,
+              width: 34,
+              height: 34,
+              position: "relative",
               cursor: "pointer",
             }}
-            title="Etiquetas del contacto"
+            title={`Etiquetas del contacto (${contactTags.length})`}
+            aria-label={`Etiquetas del contacto (${contactTags.length})`}
           >
-            Etiquetas ({contactTags.length})
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="m20 13-7 7H4v-9l7-7 9 9Z" />
+              <path d="M7 7h.01" />
+            </svg>
+            {contactTags.length > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: -4,
+                  right: -4,
+                  minWidth: 16,
+                  height: 16,
+                  borderRadius: 999,
+                  border: "1px solid #ffffff",
+                  background: "#1d4ed8",
+                  color: "#ffffff",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "0 4px",
+                  fontSize: 9,
+                  fontWeight: 800,
+                  lineHeight: 1,
+                }}
+              >
+                {contactTags.length > 99 ? "99+" : contactTags.length}
+              </span>
+            )}
           </button>
 
           <button
