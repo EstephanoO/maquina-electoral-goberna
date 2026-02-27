@@ -8,6 +8,7 @@ import {
   claimPipelineContact,
   listCmsContacts,
   type CmsContact,
+  type CmsVoteTier,
   type CmsVoteTierFilter,
 } from "@/lib/services/cms";
 import { setPendingOpenContact } from "@/lib/cms-chat-lock";
@@ -61,7 +62,9 @@ type LevelData = {
   contacts: CmsContact[];
   total: number;
   nextOffset: number;
+  sourceTotal: number;
   loadingMore: boolean;
+  backendFilterApplied: boolean;
 };
 
 type LevelDataMap = Record<string, LevelData>;
@@ -69,6 +72,7 @@ type LevelDataMap = Record<string, LevelData>;
 const PAGE_LIMIT = 50;
 const SCROLL_LOAD_THRESHOLD_PX = 120;
 const CLAIM_LOCK_TTL_MS = 20 * 60 * 1000;
+const VOTE_TIERS: readonly CmsVoteTier[] = ["contacto_basura", "voto_blando", "voto_duro"];
 
 function createInitialLevelData(): LevelDataMap {
   const next: LevelDataMap = {};
@@ -77,7 +81,9 @@ function createInitialLevelData(): LevelDataMap {
       contacts: [],
       total: 0,
       nextOffset: 0,
+      sourceTotal: 0,
       loadingMore: false,
+      backendFilterApplied: true,
     };
   }
   return next;
@@ -104,6 +110,20 @@ function toOperatorName(emailOrName: string): string {
   if (!value) return "otro operador";
   const at = value.indexOf("@");
   return at > 0 ? value.slice(0, at) : value;
+}
+
+function getVoteTier(contact: CmsContact): CmsVoteTier | null {
+  const tier = contact.cms_operator_notes?.vote_tier;
+  if (!tier) return null;
+  return VOTE_TIERS.includes(tier) ? tier : null;
+}
+
+function contactMatchesLevel(levelKey: string, contact: CmsContact): boolean {
+  const expected = LEVEL_VOTE_TIER[levelKey];
+  if (!expected) return false;
+  const contactTier = getVoteTier(contact);
+  if (expected === "sin_clasificar") return !contactTier;
+  return contactTier === expected;
 }
 
 export default function CmsPipelinePage() {
@@ -156,11 +176,18 @@ export default function CmsPipelinePage() {
       }
 
       next[key] = {
-        contacts: result.contacts,
+        contacts: result.contacts.filter((contact) => contactMatchesLevel(key, contact)),
         total: result.total,
         nextOffset: result.contacts.length,
+        sourceTotal: result.total,
         loadingMore: false,
+        backendFilterApplied: result.contacts.every((contact) => contactMatchesLevel(key, contact)),
       };
+
+      if (!next[key].backendFilterApplied) {
+        // Fallback when backend filter is not applied (e.g. stale backend build).
+        next[key].total = next[key].contacts.length;
+      }
     }
 
     setLevelData(next);
@@ -179,7 +206,7 @@ export default function CmsPipelinePage() {
     const current = levelData[levelKey];
     if (!current) return;
     if (loading) return;
-    if (current.nextOffset >= current.total) return;
+    if (current.nextOffset >= current.sourceTotal) return;
     if (loadingMoreRef.current[levelKey]) return;
 
     loadingMoreRef.current[levelKey] = true;
@@ -207,15 +234,26 @@ export default function CmsPipelinePage() {
 
     setLevelData((prev) => {
       const latest = prev[levelKey];
-      const contacts = mergeContacts(latest.contacts, result.contacts);
-      const consumed = result.contacts.length > 0 ? latest.nextOffset + result.contacts.length : result.total;
+      const filtered = result.contacts.filter((contact) => contactMatchesLevel(levelKey, contact));
+      const contacts = mergeContacts(latest.contacts, filtered);
+      const consumed = latest.nextOffset + result.contacts.length;
+      const backendFilterApplied = latest.backendFilterApplied
+        && result.contacts.every((contact) => contactMatchesLevel(levelKey, contact));
+      const reachedEnd = consumed >= result.total || result.contacts.length === 0;
+
+      const total = backendFilterApplied
+        ? result.total
+        : (reachedEnd ? contacts.length : Math.max(latest.total, contacts.length));
+
       return {
         ...prev,
         [levelKey]: {
           contacts,
-          total: result.total,
+          total,
           nextOffset: consumed,
+          sourceTotal: result.total,
           loadingMore: false,
+          backendFilterApplied,
         },
       };
     });
@@ -321,7 +359,7 @@ export default function CmsPipelinePage() {
   const hasMoreForLevel = useCallback((levelKey: string) => {
     const current = levelData[levelKey];
     if (!current) return false;
-    return current.nextOffset < current.total;
+    return current.nextOffset < current.sourceTotal;
   }, [levelData]);
 
   const getEmptyLabel = useCallback((level: LevelConfig): string => {
@@ -337,7 +375,9 @@ export default function CmsPipelinePage() {
     const claimed = await claimPipelineContact(activeCampaignId, contact.id);
     if (!claimed.ok) {
       setError(claimed.error ?? "Este lead ya esta atendido por otro operador.");
-      void loadPipeline();
+      if (claimed.code === "ALREADY_CLAIMED") {
+        void loadPipeline();
+      }
       return;
     }
 
@@ -385,7 +425,7 @@ export default function CmsPipelinePage() {
   }
 
   return (
-    <div className="flex flex-col gap-3 h-[calc(100dvh-64px)] min-h-0">
+    <div className="flex flex-col gap-3 h-[calc(100dvh-64px)] min-h-0 px-2.5 pt-2 pb-2 sm:px-3 sm:pt-3 sm:pb-3">
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <Link

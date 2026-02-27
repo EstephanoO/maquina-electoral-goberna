@@ -233,10 +233,27 @@ export async function claimPipelineContact(
     {},
     { campaignId },
   );
-  if (!res.ok) {
-    return { ok: false, error: res.error?.message, code: res.error?.code };
+  if (res.ok) {
+    return { ok: true, contact: res.data?.contact };
   }
-  return { ok: true, contact: res.data?.contact };
+
+  // Backwards compatibility while some environments still expose only the legacy endpoint.
+  const message = res.error?.message ?? "";
+  const shouldFallbackToLegacyClaim = res.status === 404
+    || (res.error?.code === "UNKNOWN" && /pipeline-lock/i.test(message) && /not found/i.test(message));
+  if (shouldFallbackToLegacyClaim) {
+    const legacyRes = await api.put<CmsContactResponse>(
+      `/api/cms/contacts/${contactId}/claim`,
+      {},
+      { campaignId },
+    );
+    if (!legacyRes.ok) {
+      return { ok: false, error: legacyRes.error?.message, code: legacyRes.error?.code };
+    }
+    return { ok: true, contact: legacyRes.data?.contact };
+  }
+
+  return { ok: false, error: res.error?.message, code: res.error?.code };
 }
 
 export async function markHablado(

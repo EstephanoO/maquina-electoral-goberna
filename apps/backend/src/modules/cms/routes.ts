@@ -142,13 +142,14 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
             search?: string;
             tag?: string;
             vote_tier?: string;
+            voteTier?: string;
           };
           const status = query.status ?? "nuevo";
           const limit = Math.min(Number(query.limit) || 100, 500);
           const offset = Number(query.offset) || 0;
           const search = query.search ?? "";
           const tag = query.tag ?? "";
-          const voteTier = query.vote_tier ?? "";
+          const voteTier = query.vote_tier ?? query.voteTier ?? "";
 
           const result = await repo.listContacts(campaignId, status, limit, offset, search, tag, voteTier);
           return reply.code(200).send({ ok: true, request_id: requestId, ...result });
