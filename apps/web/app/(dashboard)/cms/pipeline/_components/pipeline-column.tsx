@@ -17,6 +17,7 @@ export type LevelConfig = {
 type Props = {
   level: LevelConfig;
   contacts: CmsContact[];
+  count?: number;
   compact?: boolean;
   onOpenChat?: (contact: CmsContact) => void;
   getLockLabel?: (contactId: string) => string | null;
@@ -29,6 +30,7 @@ type Props = {
 export function PipelineColumn({
   level,
   contacts,
+  count,
   compact,
   onOpenChat,
   getLockLabel,
@@ -72,7 +74,7 @@ export function PipelineColumn({
           <div className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">{level.subtitle}</div>
         </div>
         <span className="min-w-[28px] px-2 py-1 rounded-full text-center text-[12px] font-bold text-slate-800 border border-slate-200 bg-white tabular-nums">
-          {contacts.length}
+          {count ?? contacts.length}
         </span>
       </header>
 

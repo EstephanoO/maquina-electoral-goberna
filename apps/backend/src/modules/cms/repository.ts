@@ -48,6 +48,7 @@ export async function listContacts(
   offset = 0,
   search = "",
   tag = "",
+  voteTier = "",
 ): Promise<{ contacts: CmsContactRow[]; total: number }> {
   // Build WHERE clause based on status filter
   let statusClause: string;
@@ -116,6 +117,24 @@ export async function listContacts(
     countParamIdx++;
   }
 
+  let dataVoteTierClause = "";
+  let countVoteTierClause = "";
+  const voteTierFilter = voteTier.trim();
+  if (voteTierFilter) {
+    if (voteTierFilter === "sin_clasificar") {
+      dataVoteTierClause = ` AND COALESCE(NULLIF(fs.cms_operator_notes->>'vote_tier', ''), '') = ''`;
+      countVoteTierClause = ` AND COALESCE(NULLIF(fs.cms_operator_notes->>'vote_tier', ''), '') = ''`;
+    } else {
+      dataVoteTierClause = ` AND fs.cms_operator_notes->>'vote_tier' = $${dataParamIdx}`;
+      dataParams.push(voteTierFilter);
+      dataParamIdx++;
+
+      countVoteTierClause = ` AND fs.cms_operator_notes->>'vote_tier' = $${countParamIdx}`;
+      countParams.push(voteTierFilter);
+      countParamIdx++;
+    }
+  }
+
   dataParams.push(limit, offset);
 
   // Keep pagination stable by always sorting from most recent interaction.
@@ -144,6 +163,7 @@ export async function listContacts(
          AND COALESCE(fs.data->>'telefono', '') != ''
          ${dataSearchClause}
          ${dataTagClause}
+         ${dataVoteTierClause}
        ORDER BY ${orderClause}
        LIMIT $${dataParamIdx} OFFSET $${dataParamIdx + 1}`,
       dataParams,
@@ -156,7 +176,8 @@ export async function listContacts(
          AND ${statusClause}
          AND COALESCE(fs.data->>'telefono', '') != ''
          ${countSearchClause}
-         ${countTagClause}`,
+         ${countTagClause}
+         ${countVoteTierClause}`,
       countParams,
     ),
   ]);
@@ -164,6 +185,73 @@ export async function listContacts(
   return {
     contacts: dataResult.rows,
     total: Number(countResult.rows[0]?.count ?? 0),
+  };
+}
+
+const CLAIM_LOCK_TTL_MINUTES = 20;
+
+export type ClaimPipelineLockResult =
+  | { status: "claimed"; contact: CmsContactRow }
+  | { status: "locked"; claimed_by: string; claimed_by_name: string }
+  | { status: "not_found" };
+
+export async function claimPipelineLock(
+  submissionId: string,
+  operatorId: string,
+): Promise<ClaimPipelineLockResult> {
+  const { rows } = await pool.query<CmsContactRow>(
+    `UPDATE form_submissions fs
+     SET cms_claimed_by = $2,
+         cms_claimed_at = now()
+     WHERE fs.id = $1
+       AND fs.deleted_at IS NULL
+       AND (
+         fs.cms_claimed_by IS NULL
+         OR fs.cms_claimed_by = $2
+         OR fs.cms_claimed_at IS NULL
+         OR fs.cms_claimed_at < now() - make_interval(mins => $3)
+       )
+     RETURNING fs.id, fs.campaign_id, fs.data, fs.client_id, fs.created_at,
+               fs.cms_status, fs.cms_claimed_by, fs.cms_claimed_at, fs.cms_hablado_at,
+               fs.cms_respondieron_at, fs.cms_operator_notes, fs.cms_tags,
+               COALESCE(fs.data->>'nombre', '') AS nombre,
+               COALESCE(fs.data->>'telefono', '') AS telefono,
+               COALESCE(fs.data->>'encuestador', '') AS encuestador,
+               COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
+               COALESCE(fs.data->>'distrito', '') AS distrito,
+               COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido,
+               (SELECT u.email FROM users u WHERE u.id = fs.cms_claimed_by) AS claimed_by_email,
+               (SELECT su.email FROM users su WHERE su.id = fs.submitted_by) AS submitted_by_email`,
+    [submissionId, operatorId, CLAIM_LOCK_TTL_MINUTES],
+  );
+
+  const contact = rows[0];
+  if (contact) {
+    return { status: "claimed", contact };
+  }
+
+  const { rows: lockRows } = await pool.query<{
+    claimed_by: string | null;
+    claimed_by_name: string | null;
+  }>(
+    `SELECT
+       fs.cms_claimed_by AS claimed_by,
+       COALESCE(NULLIF(u.full_name, ''), u.email, 'Operador') AS claimed_by_name
+     FROM form_submissions fs
+     LEFT JOIN users u ON u.id = fs.cms_claimed_by
+     WHERE fs.id = $1
+       AND fs.deleted_at IS NULL`,
+    [submissionId],
+  );
+
+  const lock = lockRows[0];
+  if (!lock) return { status: "not_found" };
+  if (!lock.claimed_by) return { status: "not_found" };
+
+  return {
+    status: "locked",
+    claimed_by: lock.claimed_by,
+    claimed_by_name: lock.claimed_by_name ?? "Operador",
   };
 }
 

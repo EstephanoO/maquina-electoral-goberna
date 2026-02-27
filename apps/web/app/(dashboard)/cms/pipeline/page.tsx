@@ -4,18 +4,16 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { listCmsContacts, type CmsContact } from "@/lib/services/cms";
 import {
-  claimContactLock,
-  getCampaignLocks,
-  type CmsChatLockEntry,
-  setPendingOpenContact,
-} from "@/lib/cms-chat-lock";
+  claimPipelineContact,
+  listCmsContacts,
+  type CmsContact,
+  type CmsVoteTierFilter,
+} from "@/lib/services/cms";
+import { setPendingOpenContact } from "@/lib/cms-chat-lock";
 import { PipelineColumn, type LevelConfig } from "./_components/pipeline-column";
 import { ContactRow } from "./_components/contact-row";
 import { getLastInteractionMs } from "./_components/pipeline-utils";
-
-/* ─── Level definitions (4 columns, left → right) ─── */
 
 const LEVELS: LevelConfig[] = [
   {
@@ -48,44 +46,47 @@ const LEVELS: LevelConfig[] = [
   },
 ];
 
+const LEVEL_VOTE_TIER: Record<string, CmsVoteTierFilter> = {
+  leads_recibidos: "sin_clasificar",
+  contacto_basura: "contacto_basura",
+  voto_blando: "voto_blando",
+  voto_duro: "voto_duro",
+};
+
 type GroupedContacts = Record<string, CmsContact[]>;
 type ViewMode = "board" | "compact";
 type LockFilter = "all" | "free" | "blocked";
 
-const PAGE_LIMIT = 50;
-const LOCK_POLL_MS = 15_000;
-const SCROLL_LOAD_THRESHOLD_PX = 120;
-
-const EMPTY_GROUPED: GroupedContacts = {
-  leads_recibidos: [],
-  contacto_basura: [],
-  voto_blando: [],
-  voto_duro: [],
+type LevelData = {
+  contacts: CmsContact[];
+  total: number;
+  nextOffset: number;
+  loadingMore: boolean;
 };
 
-function buildGroupedContacts(contacts: CmsContact[]): GroupedContacts {
-  const grouped: GroupedContacts = {
-    leads_recibidos: [],
-    contacto_basura: [],
-    voto_blando: [],
-    voto_duro: [],
-  };
+type LevelDataMap = Record<string, LevelData>;
 
-  for (const contact of contacts) {
-    const tier = contact.cms_operator_notes?.vote_tier;
-    if (tier === "contacto_basura" || tier === "voto_blando" || tier === "voto_duro") {
-      grouped[tier].push(contact);
-    } else {
-      grouped.leads_recibidos.push(contact);
-    }
+const PAGE_LIMIT = 50;
+const SCROLL_LOAD_THRESHOLD_PX = 120;
+const CLAIM_LOCK_TTL_MS = 20 * 60 * 1000;
+
+function createInitialLevelData(): LevelDataMap {
+  const next: LevelDataMap = {};
+  for (const level of LEVELS) {
+    next[level.key] = {
+      contacts: [],
+      total: 0,
+      nextOffset: 0,
+      loadingMore: false,
+    };
   }
+  return next;
+}
 
-  const sortByActivity = (a: CmsContact, b: CmsContact) => getLastInteractionMs(b) - getLastInteractionMs(a);
-  for (const key of Object.keys(grouped)) {
-    grouped[key].sort(sortByActivity);
-  }
-
-  return grouped;
+function createInitialLoadingFlags(): Record<string, boolean> {
+  const next: Record<string, boolean> = {};
+  for (const level of LEVELS) next[level.key] = false;
+  return next;
 }
 
 function mergeContacts(existing: CmsContact[], incoming: CmsContact[]): CmsContact[] {
@@ -93,10 +94,17 @@ function mergeContacts(existing: CmsContact[], incoming: CmsContact[]): CmsConta
   const byId = new Map<string, CmsContact>();
   for (const contact of existing) byId.set(contact.id, contact);
   for (const contact of incoming) byId.set(contact.id, contact);
-  return Array.from(byId.values());
+  const merged = Array.from(byId.values());
+  merged.sort((a, b) => getLastInteractionMs(b) - getLastInteractionMs(a));
+  return merged;
 }
 
-/* ========== Page ========== */
+function toOperatorName(emailOrName: string): string {
+  const value = emailOrName.trim();
+  if (!value) return "otro operador";
+  const at = value.indexOf("@");
+  return at > 0 ? value.slice(0, at) : value;
+}
 
 export default function CmsPipelinePage() {
   const router = useRouter();
@@ -106,108 +114,155 @@ export default function CmsPipelinePage() {
   const [viewMode, setViewMode] = useState<ViewMode>("board");
   const [lockFilter, setLockFilter] = useState<LockFilter>("all");
   const [mobileOpenLevelKey, setMobileOpenLevelKey] = useState<string>(LEVELS[0].key);
-  const [locksByContact, setLocksByContact] = useState<Record<string, CmsChatLockEntry>>({});
-  const [contacts, setContacts] = useState<CmsContact[]>([]);
-  const [totalContacts, setTotalContacts] = useState(0);
-  const [nextOffset, setNextOffset] = useState(0);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const loadingMoreRef = useRef(false);
+  const [levelData, setLevelData] = useState<LevelDataMap>(() => createInitialLevelData());
+  const loadingMoreRef = useRef<Record<string, boolean>>(createInitialLoadingFlags());
 
   const currentUserId = user?.id ?? "";
-  const currentUserName = user?.full_name?.trim() || user?.email?.trim() || "Operador";
+
+  const fetchLevelPage = useCallback(async (levelKey: string, offset: number) => {
+    if (!activeCampaignId) {
+      return { ok: false as const, contacts: [] as CmsContact[], total: 0, error: "MISSING_CAMPAIGN" };
+    }
+    return listCmsContacts(
+      activeCampaignId,
+      "todos",
+      PAGE_LIMIT,
+      offset,
+      "",
+      { voteTier: LEVEL_VOTE_TIER[levelKey] },
+    );
+  }, [activeCampaignId]);
 
   const loadPipeline = useCallback(async () => {
     if (!activeCampaignId) return;
     setLoading(true);
-    setLoadingMore(false);
-    loadingMoreRef.current = false;
     setError(null);
+    loadingMoreRef.current = createInitialLoadingFlags();
 
-    const res = await listCmsContacts(activeCampaignId, "todos", PAGE_LIMIT, 0, "");
-    if (!res.ok) {
-      setContacts([]);
-      setTotalContacts(0);
-      setNextOffset(0);
-      setError("No se pudieron cargar los contactos del pipeline.");
-      setLoading(false);
-      return;
-    }
+    const responses = await Promise.all(
+      LEVELS.map(async (level) => ({
+        key: level.key,
+        result: await fetchLevelPage(level.key, 0),
+      })),
+    );
 
-    setContacts(res.contacts);
-    setTotalContacts(res.total);
-    setNextOffset(res.contacts.length);
-    setLoading(false);
-  }, [activeCampaignId]);
+    const next = createInitialLevelData();
+    let hasFailure = false;
 
-  useEffect(() => { void loadPipeline(); }, [loadPipeline]);
+    for (const { key, result } of responses) {
+      if (!result.ok) {
+        hasFailure = true;
+        continue;
+      }
 
-  const hasMore = nextOffset < totalContacts;
-
-  const loadMorePipeline = useCallback(async () => {
-    if (!activeCampaignId || loading || loadingMoreRef.current || !hasMore) return;
-    loadingMoreRef.current = true;
-    setLoadingMore(true);
-
-    const res = await listCmsContacts(activeCampaignId, "todos", PAGE_LIMIT, nextOffset, "");
-    if (!res.ok) {
-      setError(res.error ?? "No se pudieron cargar mas contactos del pipeline.");
-      setLoadingMore(false);
-      loadingMoreRef.current = false;
-      return;
-    }
-
-    setContacts((prev) => mergeContacts(prev, res.contacts));
-    setTotalContacts(res.total);
-    setNextOffset(res.contacts.length > 0 ? nextOffset + res.contacts.length : res.total);
-    setLoadingMore(false);
-    loadingMoreRef.current = false;
-  }, [activeCampaignId, hasMore, loading, nextOffset]);
-
-  const refreshLocks = useCallback(() => {
-    if (!activeCampaignId) {
-      setLocksByContact({});
-      return;
-    }
-    setLocksByContact(getCampaignLocks(activeCampaignId));
-  }, [activeCampaignId]);
-
-  useEffect(() => {
-    refreshLocks();
-  }, [refreshLocks]);
-
-  useEffect(() => {
-    function handleStorage(event: StorageEvent) {
-      if (event.key && event.key !== "goberna:cms-chat-locks:v1") return;
-      refreshLocks();
-    }
-
-    const timer = window.setInterval(refreshLocks, LOCK_POLL_MS);
-    window.addEventListener("storage", handleStorage);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, [refreshLocks]);
-
-  const getLockInfo = useCallback((contactId: string) => {
-    const lock = locksByContact[contactId];
-    if (!lock) {
-      return {
-        lockedByOther: false,
-        lockLabel: null as string | null,
+      next[key] = {
+        contacts: result.contacts,
+        total: result.total,
+        nextOffset: result.contacts.length,
+        loadingMore: false,
       };
     }
-    const lockedByOther = lock.lockedByUserId !== currentUserId;
-    return {
-      lockedByOther,
-      lockLabel: lockedByOther ? `Atendido por ${lock.lockedByName}` : null,
-    };
-  }, [locksByContact, currentUserId]);
 
-  const grouped = useMemo(() => {
-    if (contacts.length === 0) return EMPTY_GROUPED;
-    return buildGroupedContacts(contacts);
-  }, [contacts]);
+    setLevelData(next);
+    if (hasFailure) {
+      setError("No se pudieron cargar todos los niveles del pipeline.");
+    }
+    setLoading(false);
+  }, [activeCampaignId, fetchLevelPage]);
+
+  useEffect(() => {
+    void loadPipeline();
+  }, [loadPipeline]);
+
+  const loadMoreLevel = useCallback(async (levelKey: string) => {
+    if (!activeCampaignId) return;
+    const current = levelData[levelKey];
+    if (!current) return;
+    if (loading) return;
+    if (current.nextOffset >= current.total) return;
+    if (loadingMoreRef.current[levelKey]) return;
+
+    loadingMoreRef.current[levelKey] = true;
+    setLevelData((prev) => ({
+      ...prev,
+      [levelKey]: {
+        ...prev[levelKey],
+        loadingMore: true,
+      },
+    }));
+
+    const result = await fetchLevelPage(levelKey, current.nextOffset);
+    if (!result.ok) {
+      setError(result.error ?? "No se pudieron cargar mas contactos.");
+      loadingMoreRef.current[levelKey] = false;
+      setLevelData((prev) => ({
+        ...prev,
+        [levelKey]: {
+          ...prev[levelKey],
+          loadingMore: false,
+        },
+      }));
+      return;
+    }
+
+    setLevelData((prev) => {
+      const latest = prev[levelKey];
+      const contacts = mergeContacts(latest.contacts, result.contacts);
+      const consumed = result.contacts.length > 0 ? latest.nextOffset + result.contacts.length : result.total;
+      return {
+        ...prev,
+        [levelKey]: {
+          contacts,
+          total: result.total,
+          nextOffset: consumed,
+          loadingMore: false,
+        },
+      };
+    });
+    loadingMoreRef.current[levelKey] = false;
+  }, [activeCampaignId, fetchLevelPage, levelData, loading]);
+
+  const grouped = useMemo<GroupedContacts>(() => {
+    const next: GroupedContacts = {
+      leads_recibidos: [],
+      contacto_basura: [],
+      voto_blando: [],
+      voto_duro: [],
+    };
+    for (const level of LEVELS) {
+      next[level.key] = levelData[level.key]?.contacts ?? [];
+    }
+    return next;
+  }, [levelData]);
+
+  const contactById = useMemo(() => {
+    const map = new Map<string, CmsContact>();
+    for (const level of LEVELS) {
+      for (const contact of grouped[level.key] ?? []) {
+        map.set(contact.id, contact);
+      }
+    }
+    return map;
+  }, [grouped]);
+
+  const getLockInfo = useCallback((contactId: string) => {
+    const contact = contactById.get(contactId);
+    if (!contact?.cms_claimed_by || contact.cms_claimed_by === currentUserId) {
+      return { lockedByOther: false, lockLabel: null as string | null };
+    }
+    const claimedAtMs = contact.cms_claimed_at ? Date.parse(contact.cms_claimed_at) : 0;
+    if (claimedAtMs <= 0) {
+      return { lockedByOther: false, lockLabel: null as string | null };
+    }
+    if (Date.now() - claimedAtMs >= CLAIM_LOCK_TTL_MS) {
+      return { lockedByOther: false, lockLabel: null as string | null };
+    }
+    const owner = toOperatorName(contact.claimed_by_email ?? "");
+    return {
+      lockedByOther: true,
+      lockLabel: `Atendido por ${owner}`,
+    };
+  }, [contactById, currentUserId]);
 
   const filteredGrouped = useMemo<GroupedContacts>(() => {
     const next: GroupedContacts = {
@@ -221,51 +276,53 @@ export default function CmsPipelinePage() {
       const source = grouped[level.key] ?? [];
       if (lockFilter === "all") {
         next[level.key] = source;
-        continue;
+      } else {
+        next[level.key] = source.filter((contact) => {
+          const blocked = getLockInfo(contact.id).lockedByOther;
+          return lockFilter === "blocked" ? blocked : !blocked;
+        });
       }
-
-      next[level.key] = source.filter((contact) => {
-        const blockedByOther = getLockInfo(contact.id).lockedByOther;
-        return lockFilter === "blocked" ? blockedByOther : !blockedByOther;
-      });
     }
-
     return next;
   }, [grouped, lockFilter, getLockInfo]);
 
-  const totalClassified = useMemo(
-    () => filteredGrouped.contacto_basura.length + filteredGrouped.voto_blando.length + filteredGrouped.voto_duro.length,
+  const totalContacts = useMemo(
+    () => LEVELS.reduce((sum, level) => sum + (levelData[level.key]?.total ?? 0), 0),
+    [levelData],
+  );
+  const loadedContacts = useMemo(
+    () => LEVELS.reduce((sum, level) => sum + (levelData[level.key]?.contacts.length ?? 0), 0),
+    [levelData],
+  );
+  const filteredTotal = useMemo(
+    () => LEVELS.reduce((sum, level) => sum + (filteredGrouped[level.key]?.length ?? 0), 0),
     [filteredGrouped],
   );
-  const totalAll = totalClassified + filteredGrouped.leads_recibidos.length;
+  const summaryTotal = lockFilter === "all" ? totalContacts : filteredTotal;
 
   const lockTotals = useMemo(() => {
     let blocked = 0;
     let free = 0;
-
     for (const level of LEVELS) {
-      const list = grouped[level.key] ?? [];
-      for (const contact of list) {
-        if (getLockInfo(contact.id).lockedByOther) {
-          blocked += 1;
-        } else {
-          free += 1;
-        }
+      for (const contact of grouped[level.key] ?? []) {
+        if (getLockInfo(contact.id).lockedByOther) blocked += 1;
+        else free += 1;
       }
     }
-
-    return {
-      blocked,
-      free,
-      all: blocked + free,
-    };
+    return { blocked, free };
   }, [grouped, getLockInfo]);
 
   const getFilterCount = useCallback((filter: LockFilter): number => {
-    if (filter === "all") return lockTotals.all;
+    if (filter === "all") return totalContacts;
     if (filter === "blocked") return lockTotals.blocked;
     return lockTotals.free;
-  }, [lockTotals]);
+  }, [lockTotals, totalContacts]);
+
+  const hasMoreForLevel = useCallback((levelKey: string) => {
+    const current = levelData[levelKey];
+    if (!current) return false;
+    return current.nextOffset < current.total;
+  }, [levelData]);
 
   const getEmptyLabel = useCallback((level: LevelConfig): string => {
     if (lockFilter === "blocked") return "No hay contactos bloqueados en este nivel";
@@ -273,31 +330,35 @@ export default function CmsPipelinePage() {
     return level.emptyLabel;
   }, [lockFilter]);
 
-  const handleOpenChatFromPipeline = useCallback((contact: CmsContact) => {
+  const handleOpenChatFromPipeline = useCallback(async (contact: CmsContact) => {
     if (!activeCampaignId || !currentUserId) return;
-    const claim = claimContactLock({
-      campaignId: activeCampaignId,
-      contactId: contact.id,
-      userId: currentUserId,
-      userName: currentUserName,
-    });
+    setError(null);
 
-    if (!claim.ok && claim.lock) {
-      setError(`Este lead ya esta atendido por ${claim.lock.lockedByName}.`);
-      refreshLocks();
+    const claimed = await claimPipelineContact(activeCampaignId, contact.id);
+    if (!claimed.ok) {
+      setError(claimed.error ?? "Este lead ya esta atendido por otro operador.");
+      void loadPipeline();
       return;
     }
 
+    if (claimed.contact) {
+      setLevelData((prev) => {
+        const next = { ...prev };
+        for (const level of LEVELS) {
+          const list = next[level.key]?.contacts ?? [];
+          const idx = list.findIndex((item) => item.id === claimed.contact!.id);
+          if (idx < 0) continue;
+          const updated = [...list];
+          updated[idx] = claimed.contact!;
+          next[level.key] = { ...next[level.key], contacts: updated };
+        }
+        return next;
+      });
+    }
+
     setPendingOpenContact(activeCampaignId, contact.id);
-    refreshLocks();
     router.push("/cms");
-  }, [
-    activeCampaignId,
-    currentUserId,
-    currentUserName,
-    refreshLocks,
-    router,
-  ]);
+  }, [activeCampaignId, currentUserId, loadPipeline, router]);
 
   useEffect(() => {
     const preferred = LEVELS.find((level) => (filteredGrouped[level.key] ?? []).length > 0)?.key ?? LEVELS[0].key;
@@ -310,14 +371,21 @@ export default function CmsPipelinePage() {
     }
   }, [filteredGrouped, mobileOpenLevelKey]);
 
-  /* ─── No campaign ─── */
+  const isAnyLoadingMore = useMemo(
+    () => LEVELS.some((level) => levelData[level.key]?.loadingMore),
+    [levelData],
+  );
+
+  const leadsCount = lockFilter === "all"
+    ? (levelData.leads_recibidos?.total ?? 0)
+    : (filteredGrouped.leads_recibidos?.length ?? 0);
+
   if (!activeCampaignId) {
     return <div className="p-10 text-center text-slate-500 text-sm font-medium">Selecciona una campana para ver el pipeline.</div>;
   }
 
   return (
     <div className="flex flex-col gap-3 h-[calc(100dvh-64px)] min-h-0">
-      {/* ── Toolbar ── */}
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
           <Link
@@ -329,7 +397,6 @@ export default function CmsPipelinePage() {
           </Link>
 
           <div className="inline-flex items-center gap-2">
-            {/* View mode toggle */}
             <div className="hidden md:inline-flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
               <button
                 type="button"
@@ -349,14 +416,13 @@ export default function CmsPipelinePage() {
               </button>
             </div>
 
-            {/* Reload */}
             <button
               type="button"
               onClick={() => { void loadPipeline(); }}
-              disabled={loading || loadingMore}
+              disabled={loading || isAnyLoadingMore}
               className="border border-slate-200 bg-white text-slate-700 rounded-xl px-2.5 py-2 text-[12px] font-bold cursor-pointer hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading || loadingMore ? "Cargando..." : "Recargar"}
+              {loading || isAnyLoadingMore ? "Cargando..." : "Recargar"}
             </button>
           </div>
         </div>
@@ -364,21 +430,20 @@ export default function CmsPipelinePage() {
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex flex-col items-start justify-center text-left pl-0.5">
             <span className="text-[13px] font-extrabold text-slate-800 leading-tight">Pipeline de 4 niveles</span>
-            <span className="text-[12px] font-bold text-slate-500 leading-tight tabular-nums">{totalAll} contactos</span>
+            <span className="text-[12px] font-bold text-slate-500 leading-tight tabular-nums">{summaryTotal} contactos</span>
           </div>
 
           <div className="inline-flex items-center gap-2 flex-wrap">
-            {/* Leads badge */}
-            {filteredGrouped.leads_recibidos.length > 0 && (
+            {leadsCount > 0 && (
               <span className="hidden sm:inline-flex items-center gap-1.5 border border-indigo-200 bg-indigo-50 text-indigo-700 rounded-full px-2.5 py-1.5 text-[12px] font-bold tabular-nums">
                 <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-                {filteredGrouped.leads_recibidos.length} leads nuevos
+                {leadsCount} leads nuevos
               </span>
             )}
 
             {totalContacts > 0 && (
               <span className="hidden sm:inline-flex items-center gap-1.5 border border-slate-200 bg-white text-slate-600 rounded-full px-2.5 py-1.5 text-[12px] font-bold tabular-nums">
-                {Math.min(nextOffset, totalContacts)} / {totalContacts} cargados
+                {loadedContacts} / {totalContacts} cargados
               </span>
             )}
           </div>
@@ -415,12 +480,10 @@ export default function CmsPipelinePage() {
         </div>
       </div>
 
-      {/* ── Error ── */}
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 text-red-700 px-3 py-2.5 text-[13px] font-semibold">{error}</div>
       )}
 
-      {/* ── Grid ── */}
       {loading ? (
         <div className="flex-1 min-h-0 border border-slate-200 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 font-semibold text-sm">
           Cargando pipeline...
@@ -430,6 +493,12 @@ export default function CmsPipelinePage() {
           <div className="lg:hidden h-full min-h-0 overflow-y-auto pr-1 space-y-2">
             {LEVELS.map((level) => {
               const isOpen = mobileOpenLevelKey === level.key;
+              const visibleCount = lockFilter === "all"
+                ? (levelData[level.key]?.total ?? 0)
+                : (filteredGrouped[level.key] ?? []).length;
+              const levelHasMore = hasMoreForLevel(level.key);
+              const levelLoadingMore = levelData[level.key]?.loadingMore ?? false;
+
               return (
                 <section key={level.key} className="border border-slate-200 rounded-2xl bg-white overflow-hidden">
                   <button
@@ -442,10 +511,8 @@ export default function CmsPipelinePage() {
                       <div className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">{level.subtitle}</div>
                     </div>
                     <div className="inline-flex items-center gap-2 shrink-0">
-                      <span
-                        className="min-w-[26px] px-2 py-1 rounded-full text-center text-[11px] font-bold text-slate-800 border border-slate-200 bg-white tabular-nums"
-                      >
-                        {(filteredGrouped[level.key] ?? []).length}
+                      <span className="min-w-[26px] px-2 py-1 rounded-full text-center text-[11px] font-bold text-slate-800 border border-slate-200 bg-white tabular-nums">
+                        {visibleCount}
                       </span>
                       <svg
                         width="14"
@@ -462,21 +529,15 @@ export default function CmsPipelinePage() {
                     </div>
                   </button>
 
-                  <div
-                    className={`grid transition-[grid-template-rows] duration-300 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)] ${
-                      isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-                    }`}
-                  >
+                  <div className={`grid transition-[grid-template-rows] duration-300 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)] ${isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
                     <div className="overflow-hidden">
                       <div
                         className="border-t border-slate-100 max-h-[52dvh] overflow-y-auto p-1.5"
                         onScroll={(event) => {
-                          if (!hasMore || loadingMore) return;
+                          if (!levelHasMore || levelLoadingMore) return;
                           const node = event.currentTarget;
                           const reachedBottom = node.scrollTop + node.clientHeight >= node.scrollHeight - SCROLL_LOAD_THRESHOLD_PX;
-                          if (reachedBottom) {
-                            void loadMorePipeline();
-                          }
+                          if (reachedBottom) void loadMoreLevel(level.key);
                         }}
                       >
                         {(filteredGrouped[level.key] ?? []).length === 0 ? (
@@ -501,9 +562,9 @@ export default function CmsPipelinePage() {
                           </div>
                         )}
 
-                        {hasMore && (
+                        {levelHasMore && (
                           <div className="px-2 py-2 text-center text-[11px] font-semibold text-slate-400">
-                            {loadingMore ? "Cargando mas..." : "Desliza para cargar mas"}
+                            {levelLoadingMore ? "Cargando mas..." : "Desliza para cargar mas"}
                           </div>
                         )}
                       </div>
@@ -521,13 +582,14 @@ export default function CmsPipelinePage() {
                   key={level.key}
                   level={{ ...level, emptyLabel: getEmptyLabel(level) }}
                   contacts={filteredGrouped[level.key] ?? []}
+                  count={lockFilter === "all" ? (levelData[level.key]?.total ?? 0) : (filteredGrouped[level.key] ?? []).length}
                   compact={viewMode === "compact"}
                   onOpenChat={handleOpenChatFromPipeline}
                   isLockedByOther={(contactId) => getLockInfo(contactId).lockedByOther}
                   getLockLabel={(contactId) => getLockInfo(contactId).lockLabel}
-                  hasMore={hasMore}
-                  loadingMore={loadingMore}
-                  onLoadMore={() => { void loadMorePipeline(); }}
+                  hasMore={hasMoreForLevel(level.key)}
+                  loadingMore={levelData[level.key]?.loadingMore ?? false}
+                  onLoadMore={() => { void loadMoreLevel(level.key); }}
                 />
               ))}
             </div>

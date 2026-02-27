@@ -10,6 +10,7 @@ import { api } from "./api";
 export type CmsStatus = "nuevo" | "hablado" | "respondieron" | "archivado";
 
 export type CmsVoteTier = "contacto_basura" | "voto_blando" | "voto_duro";
+export type CmsVoteTierFilter = CmsVoteTier | "sin_clasificar";
 
 export type CmsSignalFlags = {
   responde?: boolean;
@@ -204,6 +205,7 @@ export async function listCmsContacts(
   limit = 100,
   offset = 0,
   search = "",
+  opts?: { tag?: string; voteTier?: CmsVoteTierFilter },
 ): Promise<{ ok: boolean; contacts: CmsContact[]; total: number; error?: string }> {
   const params = new URLSearchParams({
     status,
@@ -211,6 +213,8 @@ export async function listCmsContacts(
     offset: String(offset),
   });
   if (search.trim()) params.set("search", search.trim());
+  if (opts?.tag?.trim()) params.set("tag", opts.tag.trim());
+  if (opts?.voteTier?.trim()) params.set("vote_tier", opts.voteTier.trim());
 
   const res = await api.get<CmsContactsResponse>(
     `/api/cms/contacts?${params.toString()}`,
@@ -218,6 +222,21 @@ export async function listCmsContacts(
   );
   if (!res.ok) return { ok: false, contacts: [], total: 0, error: res.error?.message };
   return { ok: true, contacts: res.data?.contacts ?? [], total: res.data?.total ?? 0 };
+}
+
+export async function claimPipelineContact(
+  campaignId: string,
+  contactId: string,
+): Promise<{ ok: boolean; contact?: CmsContact; error?: string; code?: string }> {
+  const res = await api.put<CmsContactResponse>(
+    `/api/cms/contacts/${contactId}/pipeline-lock`,
+    {},
+    { campaignId },
+  );
+  if (!res.ok) {
+    return { ok: false, error: res.error?.message, code: res.error?.code };
+  }
+  return { ok: true, contact: res.data?.contact };
 }
 
 export async function markHablado(

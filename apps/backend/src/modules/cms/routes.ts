@@ -135,18 +135,69 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         }
 
         try {
-          const query = request.query as { status?: string; limit?: string; offset?: string; search?: string; tag?: string };
+          const query = request.query as {
+            status?: string;
+            limit?: string;
+            offset?: string;
+            search?: string;
+            tag?: string;
+            vote_tier?: string;
+          };
           const status = query.status ?? "nuevo";
           const limit = Math.min(Number(query.limit) || 100, 500);
           const offset = Number(query.offset) || 0;
           const search = query.search ?? "";
           const tag = query.tag ?? "";
+          const voteTier = query.vote_tier ?? "";
 
-          const result = await repo.listContacts(campaignId, status, limit, offset, search, tag);
+          const result = await repo.listContacts(campaignId, status, limit, offset, search, tag, voteTier);
           return reply.code(200).send({ ok: true, request_id: requestId, ...result });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "cms contacts list failed");
           return reply.code(500).send(errorPayload(requestId, "CMS_LIST_ERROR", "error listando contactos"));
+        }
+      },
+    );
+
+    // ── PUT /api/cms/contacts/:id/pipeline-lock ─────────────────────
+    app.put(
+      "/api/cms/contacts/:id/pipeline-lock",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
+        const { id } = request.params as { id: string };
+
+        try {
+          const result = await repo.claimPipelineLock(id, authed.userId);
+          if (result.status === "not_found") {
+            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado"));
+          }
+          if (result.status === "locked") {
+            return reply.code(409).send(
+              errorPayload(
+                requestId,
+                "ALREADY_CLAIMED",
+                `contacto ya tomado por ${result.claimed_by_name}`,
+              ),
+            );
+          }
+
+          // Broadcast the lock refresh as a contact update to keep clients aligned.
+          broadcastToCampaign(result.contact.campaign_id, "contact.updated", {
+            contact: {
+              ...result.contact,
+              claimed_by_email: result.contact.claimed_by_email ?? authed.userEmail,
+            },
+            previous_status: result.contact.cms_status,
+            operator_id: authed.userId,
+            operator_email: authed.userEmail,
+          });
+
+          return reply.code(200).send({ ok: true, request_id: requestId, contact: result.contact });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "cms pipeline lock failed");
+          return reply.code(500).send(errorPayload(requestId, "CMS_PIPELINE_LOCK_ERROR", "error bloqueando contacto"));
         }
       },
     );
