@@ -33,6 +33,7 @@ const FONT = "var(--font-montserrat), system-ui, sans-serif";
 const NOTES_PANEL_WIDTH = 400;
 const NOTES_PANEL_GAP = 32;
 const PAGE_LIMIT = 25;
+const MOBILE_CHAT_BREAKPOINT_PX = 768;
 const TAG_COLOR_PALETTE = [
   "#0ea5e9",
   "#10b981",
@@ -173,6 +174,8 @@ export default function CmsPage() {
   const [selectedTagFilter, setSelectedTagFilter] = useState<string>("__all");
   const [tagSearchSidebar, setTagSearchSidebar] = useState("");
   const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const [isMobileChatLayout, setIsMobileChatLayout] = useState(false);
+  const [mobileActivePane, setMobileActivePane] = useState<"list" | "chat">("list");
   const tagDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const sseRef = useRef<{ close: () => void } | null>(null);
@@ -198,10 +201,27 @@ export default function CmsPage() {
     }
   }, [showTagDropdown]);
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px)`);
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsMobileChatLayout(event.matches);
+    };
+
+    setIsMobileChatLayout(mediaQuery.matches);
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", handleChange);
+      return () => mediaQuery.removeEventListener("change", handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
+
   const selectedContact = useMemo(
     () => contacts.find((contact) => contact.id === selectedContactId) ?? null,
     [contacts, selectedContactId],
   );
+  const mobileChatOpen = isMobileChatLayout && mobileActivePane === "chat" && selectedContact !== null;
   const panelOpen = notesContact !== null;
   const latestMessageByContact = useMemo<Record<string, CmsTwilioMessage | undefined>>(() => {
     const next: Record<string, CmsTwilioMessage | undefined> = {};
@@ -410,6 +430,17 @@ export default function CmsPage() {
       return filteredContacts[0]?.id ?? null;
     });
   }, [filteredContacts]);
+
+  useEffect(() => {
+    if (!isMobileChatLayout) return;
+    if (selectedContactId) return;
+    setMobileActivePane("list");
+  }, [isMobileChatLayout, selectedContactId]);
+
+  useEffect(() => {
+    if (!isMobileChatLayout) return;
+    setMobileActivePane("list");
+  }, [activeCampaignId, isMobileChatLayout]);
 
   useEffect(() => {
     if (!notesContact) return;
@@ -700,6 +731,17 @@ export default function CmsPage() {
     loadMessages(selectedContactId);
   }, [selectedContactId, loadMessages]);
 
+  const handleSelectContact = useCallback((contactId: string) => {
+    setSelectedContactId(contactId);
+    if (isMobileChatLayout) {
+      setMobileActivePane("chat");
+    }
+  }, [isMobileChatLayout]);
+
+  const handleBackToContactList = useCallback(() => {
+    setMobileActivePane("list");
+  }, []);
+
   const handleCreateTag = useCallback((rawName: string): string | null => {
     const normalized = normalizeTagName(rawName);
     if (!normalized) return null;
@@ -918,8 +960,8 @@ export default function CmsPage() {
       }}
     >
       <div className={`cms-chat-root ${panelOpen ? "panel-open" : ""}`}>
-        <div className="cms-chat-shell">
-          <aside className="cms-chat-sidebar">
+        <div className={`cms-chat-shell ${isMobileChatLayout ? (mobileChatOpen ? "mobile-chat-mode" : "mobile-list-mode") : ""}`}>
+          <aside className={`cms-chat-sidebar ${mobileChatOpen ? "is-hidden-mobile" : ""}`}>
             <div style={{ padding: "12px 12px 10px", borderBottom: "1px solid #eef2f7" }}>
               <div style={{ position: "relative" }}>
                 <svg
@@ -1288,7 +1330,7 @@ export default function CmsPage() {
                     contact={contact}
                     selected={selectedContactId === contact.id}
                     lastMessage={latestMessageByContact[contact.id]}
-                    onSelect={setSelectedContactId}
+                    onSelect={handleSelectContact}
                     onOpenProfile={setNotesContact}
                   />
                 ))
@@ -1322,7 +1364,7 @@ export default function CmsPage() {
             </div>
           </aside>
 
-          <section className="cms-chat-main">
+          <section className={`cms-chat-main ${isMobileChatLayout && !mobileChatOpen ? "is-hidden-mobile" : ""}`}>
             <ChatConversationPane
               contact={selectedContact}
               messages={selectedMessages}
@@ -1341,6 +1383,8 @@ export default function CmsPage() {
               onCreateTag={handleCreateTag}
               onAssignTag={handleAssignTag}
               onRemoveTag={handleRemoveTag}
+              showMobileBackButton={mobileChatOpen}
+              onBackToList={handleBackToContactList}
             />
           </section>
         </div>
@@ -1451,6 +1495,19 @@ export default function CmsPage() {
 
           .cms-chat-main {
             min-height: 0;
+          }
+        }
+
+        @media (max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px) {
+          .cms-chat-sidebar.is-hidden-mobile,
+          .cms-chat-main.is-hidden-mobile {
+            display: none;
+          }
+
+          .cms-chat-shell.mobile-list-mode .cms-chat-sidebar {
+            max-height: none;
+            height: 100%;
+            border-bottom: none;
           }
         }
 
