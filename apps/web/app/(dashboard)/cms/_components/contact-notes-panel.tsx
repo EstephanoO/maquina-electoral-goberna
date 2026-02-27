@@ -248,6 +248,12 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
               box-shadow: none;
             }
           }
+
+          @media (max-width: 768px) {
+            .cms-notes-header-main {
+              padding-left: calc(env(safe-area-inset-left, 0px) + 56px);
+            }
+          }
         `}</style>
 
         {/* Header */}
@@ -261,7 +267,7 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
             gap: 12,
           }}
         >
-          <div style={{ minWidth: 0 }}>
+          <div className="cms-notes-header-main" style={{ minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
               <div style={{ fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {nombre}
