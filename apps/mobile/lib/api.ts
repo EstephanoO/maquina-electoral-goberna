@@ -51,13 +51,10 @@ const API_BASE =
   Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_API_URL ??
   'https://api.goberna.us/api';
 
-const AGENT_INGEST_TOKEN =
-  Constants.expoConfig?.extra?.EXPO_PUBLIC_AGENT_INGEST_TOKEN ?? '';
-
 // Timeout for API calls (Peru has intermittent connectivity)
 const API_TIMEOUT_MS = 30_000; // 30 seconds
 
-export { API_BASE, AGENT_INGEST_TOKEN };
+export { API_BASE };
 
 // ─── HTTP helpers ───────────────────────────────────────────
 
@@ -193,6 +190,11 @@ export async function login(body: LoginRequest): Promise<ApiResult<LoginResponse
 
 export async function register(body: RegisterRequest): Promise<ApiResult<RegisterResponse>> {
   return request<RegisterResponse>('POST', '/auth/register', body, false);
+}
+
+/** POST /api/auth/logout — notify backend to revoke tokens + mark offline */
+export async function logout(): Promise<ApiResult<{ ok: boolean }>> {
+  return request<{ ok: boolean }>('POST', '/auth/logout');
 }
 
 /** GET /api/auth/me — returns { user, campaigns } */
@@ -336,7 +338,7 @@ export async function updateMemberRole(
 
 // ─── GPS Tracking ───────────────────────────────────────────
 
-/** POST /api/agents/location — uses x-agent-token header (NOT JWT) */
+/** POST /api/agents/location — uses JWT Bearer auth */
 export async function sendLocation(payload: {
   agent_id: string;
   ts: string;
@@ -353,11 +355,16 @@ export async function sendLocation(payload: {
   const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
+    const token = await getAccessToken();
+    if (!token) {
+      return { ok: false, error: 'No hay sesion activa', code: 'AUTH_REQUIRED', status: 401 };
+    }
+
     const response = await fetch(`${API_BASE}/agents/location`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-agent-token': AGENT_INGEST_TOKEN,
+        'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify(payload),
       signal: controller.signal,

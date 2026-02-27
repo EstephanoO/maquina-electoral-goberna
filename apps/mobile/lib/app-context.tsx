@@ -245,6 +245,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Logout ────────────────────────────────────────────────
   const logout = useCallback(async () => {
+    // Notify backend first (marks offline + revokes tokens), then clear local data.
+    // Best-effort: if the call fails (offline, expired token), we still clear locally.
+    await api.logout().catch(() => {});
     await authStore.clearAuthData();
     setAuth({ status: 'unauthenticated' });
   }, []);
