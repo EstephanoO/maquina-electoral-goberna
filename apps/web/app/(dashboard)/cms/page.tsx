@@ -175,7 +175,6 @@ export default function CmsPage() {
   const [selectedTagFilter, setSelectedTagFilter] = useState<string>("__all");
   const [tagSearchSidebar, setTagSearchSidebar] = useState("");
   const [showTagDropdown, setShowTagDropdown] = useState(false);
-  const [isMobileChatLayout, setIsMobileChatLayout] = useState(false);
   const [mobileActivePane, setMobileActivePane] = useState<"list" | "chat">("list");
   const tagDropdownRef = useRef<HTMLDivElement | null>(null);
 
@@ -202,28 +201,11 @@ export default function CmsPage() {
     }
   }, [showTagDropdown]);
 
-  useEffect(() => {
-    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px)`);
-    const handleChange = (event: MediaQueryListEvent) => {
-      setIsMobileChatLayout(event.matches);
-    };
-
-    setIsMobileChatLayout(mediaQuery.matches);
-    if (typeof mediaQuery.addEventListener === "function") {
-      mediaQuery.addEventListener("change", handleChange);
-      return () => mediaQuery.removeEventListener("change", handleChange);
-    }
-
-    mediaQuery.addListener(handleChange);
-    return () => mediaQuery.removeListener(handleChange);
-  }, []);
-
   const selectedContact = useMemo(
     () => contacts.find((contact) => contact.id === selectedContactId) ?? null,
     [contacts, selectedContactId],
   );
-  const mobileChatOpen = isMobileChatLayout && mobileActivePane === "chat" && selectedContact !== null;
-  const chatViewportHeight = isMobileChatLayout ? "100dvh" : "calc(100dvh - 64px)";
+  const mobileChatOpen = mobileActivePane === "chat" && selectedContact !== null;
   const panelOpen = notesContact !== null;
   const latestMessageByContact = useMemo<Record<string, CmsTwilioMessage | undefined>>(() => {
     const next: Record<string, CmsTwilioMessage | undefined> = {};
@@ -434,15 +416,13 @@ export default function CmsPage() {
   }, [filteredContacts]);
 
   useEffect(() => {
-    if (!isMobileChatLayout) return;
     if (selectedContactId) return;
     setMobileActivePane("list");
-  }, [isMobileChatLayout, selectedContactId]);
+  }, [selectedContactId]);
 
   useEffect(() => {
-    if (!isMobileChatLayout) return;
     setMobileActivePane("list");
-  }, [activeCampaignId, isMobileChatLayout]);
+  }, [activeCampaignId]);
 
   useEffect(() => {
     if (!notesContact) return;
@@ -735,10 +715,8 @@ export default function CmsPage() {
 
   const handleSelectContact = useCallback((contactId: string) => {
     setSelectedContactId(contactId);
-    if (isMobileChatLayout) {
-      setMobileActivePane("chat");
-    }
-  }, [isMobileChatLayout]);
+    setMobileActivePane("chat");
+  }, []);
 
   const handleBackToContactList = useCallback(() => {
     setMobileActivePane("list");
@@ -957,50 +935,50 @@ export default function CmsPage() {
 
   return (
     <div
+      className="cms-page-root"
       style={{
         fontFamily: FONT,
         display: "flex",
         flexDirection: "column",
-        minHeight: chatViewportHeight,
-        height: chatViewportHeight,
+        minHeight: "calc(100dvh - 64px)",
+        height: "calc(100dvh - 64px)",
       }}
     >
       <div className={`cms-chat-root ${panelOpen ? "panel-open" : ""}`}>
-        <div className={`cms-chat-shell ${isMobileChatLayout ? (mobileChatOpen ? "mobile-chat-mode" : "mobile-list-mode") : ""}`}>
+        <div className={`cms-chat-shell ${mobileChatOpen ? "mobile-chat-mode" : "mobile-list-mode"}`}>
           <aside className={`cms-chat-sidebar ${mobileChatOpen ? "is-hidden-mobile" : ""}`}>
             <div style={{ padding: "12px 12px 10px", borderBottom: "1px solid #eef2f7" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {isMobileChatLayout && (
-                  <button
-                    type="button"
-                    onClick={handleOpenMobileSidebar}
-                    aria-label="Abrir menu"
-                    title="Abrir menu"
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 10,
-                      border: "none",
-                      background: "var(--goberna-blue-900)",
-                      color: "#ffffff",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: "pointer",
-                      flexShrink: 0,
-                      boxShadow: "0 2px 10px rgba(15, 23, 42, 0.22)",
-                    }}
-                  >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round">
-                      <title>Menu</title>
-                      <line x1="3" y1="6" x2="21" y2="6" />
-                      <line x1="3" y1="12" x2="21" y2="12" />
-                      <line x1="3" y1="18" x2="21" y2="18" />
-                    </svg>
-                  </button>
-                )}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                <button
+                  type="button"
+                  className="cms-mobile-menu-btn"
+                  onClick={handleOpenMobileSidebar}
+                  aria-label="Abrir menu"
+                  title="Abrir menu"
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    border: "none",
+                    background: "var(--goberna-blue-900)",
+                    color: "#ffffff",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                    boxShadow: "0 2px 10px rgba(15, 23, 42, 0.22)",
+                  }}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round">
+                    <title>Menu</title>
+                    <line x1="3" y1="6" x2="21" y2="6" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                    <line x1="3" y1="18" x2="21" y2="18" />
+                  </svg>
+                </button>
 
-                <div style={{ position: "relative", flex: 1 }}>
+                <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
                   <svg
                     width="15"
                     height="15"
@@ -1041,7 +1019,10 @@ export default function CmsPage() {
                   alignItems: "center",
                   gap: 8,
                   overflowX: "auto",
+                  overflowY: "hidden",
                   paddingBottom: 2,
+                  WebkitOverflowScrolling: "touch",
+                  scrollbarWidth: "none",
                 }}
               >
                 {TABS.map((tab) => {
@@ -1402,7 +1383,7 @@ export default function CmsPage() {
             </div>
           </aside>
 
-          <section className={`cms-chat-main ${isMobileChatLayout && !mobileChatOpen ? "is-hidden-mobile" : ""}`}>
+          <section className={`cms-chat-main ${!mobileChatOpen ? "is-hidden-mobile" : ""}`}>
             <ChatConversationPane
               contact={selectedContact}
               messages={selectedMessages}
@@ -1537,15 +1518,25 @@ export default function CmsPage() {
         }
 
         @media (max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px) {
+          .cms-page-root {
+            min-height: 100dvh !important;
+            height: 100dvh !important;
+          }
+
           .cms-chat-root {
             height: 100%;
           }
 
           .cms-chat-shell {
+            height: 100%;
             border: none;
             border-radius: 0;
             box-shadow: none;
             background: #ffffff;
+          }
+
+          .cms-mobile-menu-btn {
+            display: inline-flex !important;
           }
 
           .cms-chat-sidebar.is-hidden-mobile,
@@ -1561,6 +1552,16 @@ export default function CmsPage() {
 
           .cms-chat-shell.mobile-chat-mode {
             height: 100%;
+          }
+
+          .cms-chat-shell.mobile-chat-mode .cms-chat-main {
+            height: 100%;
+          }
+        }
+
+        @media (min-width: ${MOBILE_CHAT_BREAKPOINT_PX + 1}px) {
+          .cms-mobile-menu-btn {
+            display: none !important;
           }
         }
 
