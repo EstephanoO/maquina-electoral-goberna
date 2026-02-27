@@ -942,12 +942,15 @@ export default function CmsPage() {
         flexDirection: "column",
         minHeight: "calc(100dvh - 64px)",
         height: "calc(100dvh - 64px)",
+        width: "100%",
+        maxWidth: "100vw",
+        overflowX: "hidden",
       }}
     >
       <div className={`cms-chat-root ${panelOpen ? "panel-open" : ""}`}>
         <div className={`cms-chat-shell ${mobileChatOpen ? "mobile-chat-mode" : "mobile-list-mode"}`}>
           <aside className={`cms-chat-sidebar ${mobileChatOpen ? "is-hidden-mobile" : ""}`}>
-            <div style={{ padding: "12px 12px 10px", borderBottom: "1px solid #eef2f7" }}>
+            <div className="cms-chat-sidebar-head" style={{ padding: "12px 12px 10px", borderBottom: "1px solid #eef2f7" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                 <button
                   type="button"
@@ -1013,6 +1016,7 @@ export default function CmsPage() {
               </div>
 
               <div
+                className="cms-chat-tabs-row"
                 style={{
                   marginTop: 10,
                   display: "flex",
@@ -1031,6 +1035,7 @@ export default function CmsPage() {
 
                   return (
                     <button
+                      className="cms-chat-tab-btn"
                       key={tab.key}
                       type="button"
                       onClick={() => setActiveTab(tab.key)}
@@ -1367,6 +1372,7 @@ export default function CmsPage() {
             </div>
 
             <div
+              className="cms-chat-sidebar-footer"
               style={{
                 padding: "10px 12px",
                 borderTop: "1px solid #eef2f7",
@@ -1450,10 +1456,12 @@ export default function CmsPage() {
           height: 100%;
           transition: margin-right 240ms ease;
           overflow: hidden;
+          max-width: 100vw;
         }
 
         .cms-chat-shell {
           width: 100%;
+          max-width: 100vw;
           height: 100%;
           min-height: 0;
           border: 1px solid #d6dde6;
@@ -1468,17 +1476,20 @@ export default function CmsPage() {
         .cms-chat-sidebar {
           width: min(380px, 100%);
           min-width: 320px;
+          max-width: 100%;
           min-height: 0;
           display: flex;
           flex-direction: column;
           background: #ffffff;
           border-right: 1px solid #d6dde6;
+          overflow-x: hidden;
         }
 
         .cms-chat-contact-list {
           flex: 1;
           min-height: 0;
           overflow-y: auto;
+          overflow-x: hidden;
           overscroll-behavior: contain;
           scrollbar-gutter: stable;
           background: #ffffff;
@@ -1487,6 +1498,7 @@ export default function CmsPage() {
         .cms-chat-main {
           flex: 1;
           min-width: 0;
+          max-width: 100%;
           min-height: 0;
           display: flex;
           overflow: hidden;
@@ -1507,6 +1519,7 @@ export default function CmsPage() {
           .cms-chat-sidebar {
             width: 100%;
             min-width: 0;
+            max-width: 100%;
             border-right: none;
             border-bottom: 1px solid #d6dde6;
             max-height: min(48dvh, 420px);
@@ -1529,6 +1542,8 @@ export default function CmsPage() {
 
           .cms-chat-shell {
             height: 100%;
+            width: 100%;
+            max-width: 100vw;
             border: none;
             border-radius: 0;
             box-shadow: none;
@@ -1548,6 +1563,29 @@ export default function CmsPage() {
             max-height: none;
             height: 100%;
             border-bottom: none;
+          }
+
+          .cms-chat-sidebar-head {
+            padding: 10px 10px 8px !important;
+          }
+
+          .cms-chat-tabs-row {
+            gap: 6px !important;
+            padding-bottom: 4px !important;
+            scrollbar-width: none;
+          }
+
+          .cms-chat-tabs-row::-webkit-scrollbar {
+            display: none;
+          }
+
+          .cms-chat-tab-btn {
+            padding: 6px 10px !important;
+            font-size: 11px !important;
+          }
+
+          .cms-chat-sidebar-footer {
+            display: none !important;
           }
 
           .cms-chat-shell.mobile-chat-mode {

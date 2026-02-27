@@ -322,6 +322,7 @@ export function ChatConversationPane({
           alignItems: "flex-start",
           justifyContent: "space-between",
           gap: 12,
+          minWidth: 0,
         }}
       >
         <div
@@ -330,6 +331,7 @@ export function ChatConversationPane({
             alignItems: "center",
             gap: 10,
             minWidth: 0,
+            flex: 1,
           }}
         >
           {showMobileBackButton && onBackToList && (
