@@ -1016,7 +1016,8 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
       {/* ── Floating Support Chat (bottom-right) ─────────────── */}
       {(uiRole === "admin" || uiRole === "candidato" || uiRole === "consultor")
         && user
-        && !(isMobile && isCmsRoute) && (
+        && !(isMobile && isCmsRoute)
+        && !(isMobile && isImmersiveRoute) && (
         <SupportChat userId={user.id} isAdmin={isAdmin} />
       )}
 

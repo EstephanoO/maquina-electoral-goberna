@@ -79,19 +79,39 @@ export const PERU_MAX_BOUNDS: [[number, number], [number, number]] = [[-90, -25]
 
 export const DEFAULT_TILE_TEMPLATE = "/api/tiles/{z}/{x}/{y}.vector.pbf";
 
+/* ─── CARTO tile URLs ─── */
+
+/** Base map: roads/terrain without ANY text labels */
+const LIGHT_TILES = "https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png";
+/** Labels-only overlay: street/city names rendered on a transparent background */
+const LABEL_TILES = "https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}@2x.png";
+
 /**
- * MAP_STYLE — label-free base map.
+ * MAP_STYLE — roads visible, labels only at street-level zoom.
  *
- * Uses a solid background (#f1f5f9 = slate-100) instead of CARTO raster tiles.
- * CARTO "light_nolabels" still renders city/country names — the only way to
- * guarantee zero text is to drop the raster entirely and rely on Tegola vector
- * boundaries drawn at runtime by react-maplibre.
+ * Three-layer sandwich:
+ *   1. "light-base"   — CARTO light_nolabels raster (roads, terrain, no text)
+ *   2. …data layers…  — Tegola boundaries + clusters + agents (added at runtime)
+ *   3. "carto-labels"  — CARTO labels-only raster, minzoom 15 (street names
+ *                         appear only when zoomed into a neighbourhood)
  */
 export const MAP_STYLE: StyleSpecification = {
   version: 8,
-  sources: {},
+  sources: {
+    "light-base": {
+      type: "raster",
+      tiles: [LIGHT_TILES],
+      tileSize: 256,
+    },
+    "carto-labels": {
+      type: "raster",
+      tiles: [LABEL_TILES],
+      tileSize: 256,
+    },
+  },
   layers: [
     { id: "background", type: "background", paint: { "background-color": "#f1f5f9" } },
+    { id: "light-base", type: "raster", source: "light-base" },
   ],
   /** Instant paint transitions — mask/fill changes must sync with flyTo, not lag behind */
   transition: { duration: 0, delay: 0 },

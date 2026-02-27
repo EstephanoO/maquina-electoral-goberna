@@ -69,6 +69,16 @@ export default function CandidatoSlugLayout({ children }: { children: React.Reac
         @media (max-width: 767px) {
           .candidato-tabbar-tierra {
             left: 0 !important;
+            padding-left: 56px !important;
+          }
+          .candidato-tabbar-tierra button {
+            font-size: 11px !important;
+            padding: 8px 10px !important;
+            gap: 4px !important;
+          }
+          .candidato-tabbar-tierra svg {
+            width: 13px !important;
+            height: 13px !important;
           }
         }
       `}</style>

@@ -213,6 +213,19 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const handleLoad = useCallback(() => {
     mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
 
+    // Sandwich top: street-name labels above all data layers, visible only at
+    // street-level zoom (≥15).  The "carto-labels" source is pre-defined in
+    // MAP_STYLE so tiles start downloading ahead of time.
+    const map = mapRef.current?.getMap();
+    if (map && !map.getLayer("carto-labels")) {
+      map.addLayer({
+        id: "carto-labels",
+        type: "raster",
+        source: "carto-labels",
+        minzoom: 15,
+      });
+    }
+
     if (tileUrl) {
       if (typeof requestIdleCallback === "function") {
         requestIdleCallback(() => prewarmTiles(tileUrl), { timeout: 3000 });
@@ -332,6 +345,14 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     }
   }, [selectedAgentId, agents]);
 
+  // ─── Keep carto-labels on top after React reconciles data layers ───
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (map && map.getLayer("carto-labels")) {
+      map.moveLayer("carto-labels");          // no 2nd arg → moves to top
+    }
+  });
+
   // ─── Cleanup ───
   useEffect(() => () => {
     if (zoomEndTimer.current) clearTimeout(zoomEndTimer.current);
@@ -340,7 +361,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Loading ───
   if (!ready || !tileUrl) {
     return (
-      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#e6e5e3" }}>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f1f5f9" }}>
         <span style={{ color: "#64748b", fontSize: 13 }}>Cargando mapa...</span>
       </div>
     );
