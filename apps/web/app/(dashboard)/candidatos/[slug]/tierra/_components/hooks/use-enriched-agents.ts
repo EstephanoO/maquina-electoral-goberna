@@ -7,7 +7,7 @@ import type { AgentLocation } from "@/lib/hooks";
 import type { GeoBounds } from "@/lib/services/geo";
 import { formCoordsToLatLng } from "@/lib/utils";
 import type { AgentStatus, EnrichedAgent, FormPoint } from "../types";
-import { getAgentStatus } from "../utils";
+import { GPS_CONNECTED_MS, FORM_CONNECTED_MS } from "../utils";
 
 /** Default coords (Lima) for agents with no location data at all */
 const DEFAULT_LAT = -12.046;
@@ -59,20 +59,19 @@ export function useEnrichedAgents(
     const agentMap = new Map<string, EnrichedAgent>();
 
     /**
-     * Session-based status derivation:
-     * - "connected" = user has active session (in onlineAgentIds set)
-     * - "idle"      = online but no recent GPS data (GPS-stale)
-     * - "inactive"  = user logged out (not in onlineAgentIds set)
+     * Session-based status derivation with dual thresholds:
+     * - GPS recent (<15s) → "connected"
+     * - Form recent (<2min) → "connected" (field agent actively surveying)
+     * - Online but both stale → "idle"
+     * - Logged out → "inactive"
      */
-    const deriveStatus = (agentId: string, bestTs: number): AgentStatus => {
-      const isOnline = onlineAgentIds.has(agentId);
-      if (!isOnline) return "inactive";
-      // Online agent with stale GPS or backend-reported GPS-idle → "idle"
+    const deriveStatus = (agentId: string, gpsTs: number, formTs: number): AgentStatus => {
+      if (!onlineAgentIds.has(agentId)) return "inactive";
       if (idleAgentIds.has(agentId)) return "idle";
-      // Online agent with recent GPS → "connected"
-      const gpsStatus = getAgentStatus(new Date(bestTs).toISOString(), now);
-      if (gpsStatus === "connected") return "connected";
-      // Online but GPS is stale → "idle" (has session but no recent location)
+      const gpsAge = now - gpsTs;
+      const formAge = now - formTs;
+      if (gpsAge < GPS_CONNECTED_MS) return "connected";
+      if (formTs > 0 && formAge < FORM_CONNECTED_MS) return "connected";
       return "idle";
     };
 
@@ -84,11 +83,10 @@ export function useEnrichedAgents(
       if (loc) {
         const locTs = new Date(loc.ts).getTime();
         const bestTs = Math.max(locTs, formTs);
-        const bestDate = new Date(bestTs);
         agentMap.set(agent.id, {
           id: agent.id, name: agent.name,
-          status: deriveStatus(agent.id, bestTs),
-          lastSeen: bestDate,
+          status: deriveStatus(agent.id, locTs, formTs),
+          lastSeen: new Date(bestTs),
           forms_count: agent.forms_count,
           lat: loc.lat, lng: loc.lng,
         });
@@ -96,7 +94,7 @@ export function useEnrichedAgents(
         const lastCoords = formEntry?.coords ?? null;
         agentMap.set(agent.id, {
           id: agent.id, name: agent.name,
-          status: deriveStatus(agent.id, formTs),
+          status: deriveStatus(agent.id, 0, formTs),
           lastSeen: formTs > 0 ? new Date(formTs) : new Date(0),
           forms_count: agent.forms_count,
           lat: lastCoords?.lat ?? DEFAULT_LAT,
@@ -113,7 +111,7 @@ export function useEnrichedAgents(
       agentMap.set(loc.agent_id, {
         id: loc.agent_id,
         name: loc.agent_name || `Agente ${loc.agent_id.slice(0, 6)}`,
-        status: deriveStatus(loc.agent_id, locTs),
+        status: deriveStatus(loc.agent_id, locTs, 0),
         lastSeen: new Date(loc.ts),
         forms_count: 0,
         lat: loc.lat, lng: loc.lng,

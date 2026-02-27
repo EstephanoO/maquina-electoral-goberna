@@ -30,13 +30,16 @@ export function getTimeAgo(date: Date): string {
 
 /* ─── Agent status ─── */
 
-const CONNECTED_THRESHOLD_MS = 15_000; // 15s — matches backend agentStaleAfterMs
+/** GPS threshold: 15s without GPS → idle */
+export const GPS_CONNECTED_MS = 15_000;
+/** Form threshold: 2min after submitting a form → still connected */
+export const FORM_CONNECTED_MS = 2 * 60_000;
 const IDLE_THRESHOLD_MS = 10 * 60_000;
 
-/** Derive agent connection status from its last-seen timestamp */
+/** Derive agent connection status from its last-seen timestamp (GPS-only, legacy) */
 export function getAgentStatus(ts: string, now: number): AgentStatus {
   const age = now - new Date(ts).getTime();
-  if (age < CONNECTED_THRESHOLD_MS) return "connected";
+  if (age < GPS_CONNECTED_MS) return "connected";
   if (age < IDLE_THRESHOLD_MS) return "idle";
   return "inactive";
 }
