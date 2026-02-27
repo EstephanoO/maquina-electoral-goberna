@@ -6,16 +6,30 @@ import { getInitials, formatPhone, formatDateShort, getLastInteractionMs, format
 type Props = {
   contact: CmsContact;
   accent: string;
+  onOpenChat?: (contact: CmsContact) => void;
+  lockLabel?: string | null;
+  lockedByOther?: boolean;
 };
 
-export function ContactCard({ contact, accent }: Props) {
+export function ContactCard({
+  contact,
+  accent,
+  onOpenChat,
+  lockLabel,
+  lockedByOther = false,
+}: Props) {
   const name = contact.nombre?.trim() || "Sin nombre";
   const zone = contact.zona || contact.distrito || "Sin zona";
   const lastMs = getLastInteractionMs(contact);
   const tags = (contact.cms_tags ?? []).slice(0, 3);
+  const clickable = Boolean(onOpenChat) && !lockedByOther;
 
   return (
-    <article className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_2px_8px_rgba(15,23,42,0.05)]">
+    <article
+      className={`relative rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_2px_8px_rgba(15,23,42,0.05)] ${clickable ? "cursor-pointer transition-colors hover:bg-slate-50" : ""}`}
+      onClick={clickable ? () => onOpenChat?.(contact) : undefined}
+      aria-disabled={lockedByOther}
+    >
       {/* Row 1: avatar + name + date */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -60,6 +74,18 @@ export function ContactCard({ contact, accent }: Props) {
           {formatRelative(lastMs)}
         </span>
       </div>
+
+      {lockedByOther && (
+        <div className="absolute inset-0 rounded-xl bg-slate-900/45 border border-slate-700/40 pointer-events-none flex items-center justify-center px-3">
+          <div className="inline-flex items-center gap-2 rounded-full bg-slate-950/80 text-white text-[11px] font-bold px-3 py-1.5 max-w-full">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M7 11V8a5 5 0 0 1 10 0v3" />
+              <rect x="5" y="11" width="14" height="10" rx="2" />
+            </svg>
+            <span className="truncate">{lockLabel ?? "Atendido"}</span>
+          </div>
+        </div>
+      )}
     </article>
   );
 }

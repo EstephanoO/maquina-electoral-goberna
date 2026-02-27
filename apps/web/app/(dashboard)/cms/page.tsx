@@ -2,6 +2,11 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { useRouter } from "next/navigation";
+import {
+  consumePendingOpenContact,
+  markContactLockAsContacted,
+} from "@/lib/cms-chat-lock";
 import {
   listCmsContacts,
   updateContactNotes,
@@ -151,6 +156,7 @@ function getContactLastInteractionMs(contact: CmsContact): number {
 
 export default function CmsPage() {
   const { user, activeCampaignId } = useAuth();
+  const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<CmsTabFilter>("todos");
   const [contacts, setContacts] = useState<CmsContact[]>([]);
@@ -185,6 +191,7 @@ export default function CmsPage() {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeTabRef = useRef(activeTab);
   const selectedContactIdRef = useRef<string | null>(selectedContactId);
+  const pendingOpenContactRef = useRef<string | null>(null);
   activeTabRef.current = activeTab;
   selectedContactIdRef.current = selectedContactId;
 
@@ -283,9 +290,10 @@ export default function CmsPage() {
     setLoading(true);
     setOffset(0);
     setUiError(null);
+    const initialLimit = pendingOpenContactRef.current ? 300 : PAGE_LIMIT;
 
     const [contactsRes, statsRes] = await Promise.all([
-      listCmsContacts(activeCampaignId, activeTab, PAGE_LIMIT, 0, ""),
+      listCmsContacts(activeCampaignId, activeTab, initialLimit, 0, ""),
       getCmsStats(activeCampaignId),
     ]);
 
@@ -402,12 +410,37 @@ export default function CmsPage() {
   }, [selectedTagFilter, availableTags]);
 
   useEffect(() => {
+    if (!activeCampaignId) {
+      pendingOpenContactRef.current = null;
+      return;
+    }
+
+    const pendingContactId = consumePendingOpenContact(activeCampaignId);
+    pendingOpenContactRef.current = pendingContactId;
+
+    if (pendingContactId) {
+      setSearch("");
+      setDebouncedSearch("");
+      setSelectedTagFilter("__all");
+      setActiveTab("todos");
+      setMobileActivePane("chat");
+      void fetchContacts();
+    }
+  }, [activeCampaignId, fetchContacts]);
+
+  useEffect(() => {
     if (!filteredContacts.length) {
       setSelectedContactId(null);
       return;
     }
 
     setSelectedContactId((prev) => {
+      const pendingContactId = pendingOpenContactRef.current;
+      if (pendingContactId && filteredContacts.some((contact) => contact.id === pendingContactId)) {
+        pendingOpenContactRef.current = null;
+        return pendingContactId;
+      }
+
       if (prev && filteredContacts.some((contact) => contact.id === prev)) {
         return prev;
       }
@@ -700,6 +733,21 @@ export default function CmsPage() {
     loadMessages(selectedContactId);
   }, [selectedContactId, loadMessages]);
 
+  useEffect(() => {
+    if (!activeCampaignId || !selectedContactId || !user?.id) return;
+    const messages = messagesByContact[selectedContactId] ?? [];
+    const contactedByMe = messages.some(
+      (message) => message.direction === "outbound" && message.sent_by === user.id,
+    );
+    if (!contactedByMe) return;
+
+    markContactLockAsContacted({
+      campaignId: activeCampaignId,
+      contactId: selectedContactId,
+      userId: user.id,
+    });
+  }, [activeCampaignId, messagesByContact, selectedContactId, user?.id]);
+
   const handleDraftChange = useCallback(
     (value: string) => {
       if (!selectedContactId) return;
@@ -725,6 +773,10 @@ export default function CmsPage() {
   const handleOpenMobileSidebar = useCallback(() => {
     window.dispatchEvent(new Event(OPEN_MOBILE_SIDEBAR_EVENT));
   }, []);
+
+  const handleGoPipeline = useCallback(() => {
+    router.push("/cms/pipeline");
+  }, [router]);
 
   const handleCreateTag = useCallback((rawName: string): string | null => {
     const normalized = normalizeTagName(rawName);
@@ -847,6 +899,14 @@ export default function CmsPage() {
       }));
       setSendingByContact((prev) => ({ ...prev, [selectedContactId]: false }));
       return;
+    }
+
+    if (user?.id) {
+      markContactLockAsContacted({
+        campaignId: activeCampaignId,
+        contactId: selectedContactId,
+        userId: user.id,
+      });
     }
 
     if (selectedContact?.cms_status === "nuevo") {
@@ -1408,6 +1468,7 @@ export default function CmsPage() {
               onCreateTag={handleCreateTag}
               onAssignTag={handleAssignTag}
               onRemoveTag={handleRemoveTag}
+              onGoPipeline={handleGoPipeline}
               showMobileBackButton={mobileChatOpen}
               onBackToList={handleBackToContactList}
             />

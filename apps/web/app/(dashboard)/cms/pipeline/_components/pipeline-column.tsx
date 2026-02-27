@@ -17,9 +17,19 @@ type Props = {
   level: LevelConfig;
   contacts: CmsContact[];
   compact?: boolean;
+  onOpenChat?: (contact: CmsContact) => void;
+  getLockLabel?: (contactId: string) => string | null;
+  isLockedByOther?: (contactId: string) => boolean;
 };
 
-export function PipelineColumn({ level, contacts, compact }: Props) {
+export function PipelineColumn({
+  level,
+  contacts,
+  compact,
+  onOpenChat,
+  getLockLabel,
+  isLockedByOther,
+}: Props) {
   return (
     <section className="min-h-0 flex flex-col border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/80 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       {/* Header */}
@@ -45,13 +55,27 @@ export function PipelineColumn({ level, contacts, compact }: Props) {
         ) : compact ? (
           <div className="flex flex-col gap-0.5 p-1.5">
             {contacts.map((c) => (
-              <ContactRow key={c.id} contact={c} accent={level.accent} />
+              <ContactRow
+                key={c.id}
+                contact={c}
+                accent={level.accent}
+                onOpenChat={onOpenChat}
+                lockLabel={getLockLabel?.(c.id) ?? null}
+                lockedByOther={Boolean(isLockedByOther?.(c.id))}
+              />
             ))}
           </div>
         ) : (
           <AnimatedList className="flex flex-col gap-2.5 p-3" delay={90}>
             {contacts.map((c) => (
-              <ContactCard key={c.id} contact={c} accent={level.accent} />
+              <ContactCard
+                key={c.id}
+                contact={c}
+                accent={level.accent}
+                onOpenChat={onOpenChat}
+                lockLabel={getLockLabel?.(c.id) ?? null}
+                lockedByOther={Boolean(isLockedByOther?.(c.id))}
+              />
             ))}
           </AnimatedList>
         )}

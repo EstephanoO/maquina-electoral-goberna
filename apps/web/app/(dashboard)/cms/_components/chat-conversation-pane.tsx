@@ -35,6 +35,7 @@ type Props = {
   onCreateTag: (name: string) => string | null;
   onAssignTag: (contactId: string, tagName: string) => boolean;
   onRemoveTag: (contactId: string, tagName: string) => void;
+  onGoPipeline: () => void;
   showMobileBackButton?: boolean;
   onBackToList?: () => void;
 };
@@ -229,6 +230,7 @@ export function ChatConversationPane({
   onCreateTag,
   onAssignTag,
   onRemoveTag,
+  onGoPipeline,
   showMobileBackButton = false,
   onBackToList,
 }: Props) {
@@ -421,6 +423,26 @@ export function ChatConversationPane({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button
+            type="button"
+            onClick={onGoPipeline}
+            style={{
+              border: "1px solid #cbd5e1",
+              background: "#ffffff",
+              color: "#334155",
+              borderRadius: 999,
+              padding: "6px 10px",
+              fontSize: 11,
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+              cursor: "pointer",
+            }}
+            title="Ir a pipeline"
+            aria-label="Ir a pipeline"
+          >
+            Pipeline
+          </button>
+
           <button
             type="button"
             onClick={() => setTagsPanelOpen((prev) => !prev)}
