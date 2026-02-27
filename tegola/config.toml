@@ -19,26 +19,25 @@ uri = "${DATABASE_URL}"
 
   # ── Base map layers ──
   # Use geom_3857 column (pre-projected, GIST-indexed) to avoid on-the-fly ST_Transform.
-  # ST_SimplifyPreserveTopology reduces vertex count at low zooms (2-5x smaller tiles).
-  # Tolerance is in EPSG:3857 meters: ~5000m at z3-7, ~1000m at z8-9, full detail at z10+.
+  # Full geometry at all zoom levels — no simplification.
 
   [[providers.layers]]
   name = "departamentos"
   geometry_type = "MultiPolygon"
   id_fieldname = "gid"
-  sql = "SELECT gid, coddep, nomdep AS departamento, ST_AsMVTGeom(CASE WHEN !ZOOM! < 8 THEN ST_SimplifyPreserveTopology(geom_3857, 5000) WHEN !ZOOM! < 10 THEN ST_SimplifyPreserveTopology(geom_3857, 1000) ELSE geom_3857 END, !BBOX!) AS geom FROM public.peru_departamentos WHERE geom_3857 && !BBOX!"
+  sql = "SELECT gid, coddep, nomdep AS departamento, ST_AsMVTGeom(geom_3857, !BBOX!) AS geom FROM public.peru_departamentos WHERE geom_3857 && !BBOX!"
 
   [[providers.layers]]
   name = "provincias"
   geometry_type = "MultiPolygon"
   id_fieldname = "gid"
-  sql = "SELECT gid, coddep, codprov, (coddep || codprov) AS codprov_full, nomprov AS provincia, ST_AsMVTGeom(CASE WHEN !ZOOM! < 8 THEN ST_SimplifyPreserveTopology(geom_3857, 3000) WHEN !ZOOM! < 10 THEN ST_SimplifyPreserveTopology(geom_3857, 800) ELSE geom_3857 END, !BBOX!) AS geom FROM public.peru_provincias WHERE geom_3857 && !BBOX!"
+  sql = "SELECT gid, coddep, codprov, (coddep || codprov) AS codprov_full, nomprov AS provincia, ST_AsMVTGeom(geom_3857, !BBOX!) AS geom FROM public.peru_provincias WHERE geom_3857 && !BBOX!"
 
   [[providers.layers]]
   name = "distritos"
   geometry_type = "MultiPolygon"
   id_fieldname = "gid"
-  sql = "SELECT gid, ubigeo, coddep, codprov, (coddep || codprov) AS codprov_full, right(ubigeo, 2) AS coddist, nomdist AS distrito, ST_AsMVTGeom(CASE WHEN !ZOOM! < 10 THEN ST_SimplifyPreserveTopology(geom_3857, 500) WHEN !ZOOM! < 12 THEN ST_SimplifyPreserveTopology(geom_3857, 100) ELSE geom_3857 END, !BBOX!) AS geom FROM public.peru_distritos WHERE geom_3857 && !BBOX!"
+  sql = "SELECT gid, ubigeo, coddep, codprov, (coddep || codprov) AS codprov_full, right(ubigeo, 2) AS coddist, nomdist AS distrito, ST_AsMVTGeom(geom_3857, !BBOX!) AS geom FROM public.peru_distritos WHERE geom_3857 && !BBOX!"
 
   # ── Priority zones: base map JOINed with campaign_priority_zones ──
 
