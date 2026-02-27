@@ -318,17 +318,73 @@ export default function CmsPipelinePage() {
   return (
     <div className="flex flex-col gap-3 h-[calc(100dvh-64px)] min-h-0">
       {/* ── Toolbar ── */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <Link
-          href="/cms"
-          className="inline-flex items-center gap-2 border border-slate-200 bg-white text-slate-800 no-underline rounded-xl px-3 py-2 text-[12px] font-bold whitespace-nowrap hover:bg-slate-50 transition-colors"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><title>Volver</title><path d="M15 18l-6-6 6-6" /></svg>
-          Volver al chat CMS
-        </Link>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <Link
+            href="/cms"
+            className="inline-flex items-center gap-2 border border-slate-200 bg-white text-slate-800 no-underline rounded-xl px-3 py-2 text-[12px] font-bold whitespace-nowrap hover:bg-slate-50 transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><title>Volver</title><path d="M15 18l-6-6 6-6" /></svg>
+            Volver al chat CMS
+          </Link>
 
-        <div className="inline-flex items-center gap-2 flex-wrap justify-end">
-          {/* Lock filter */}
+          <div className="inline-flex items-center gap-2">
+            {/* View mode toggle */}
+            <div className="hidden md:inline-flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setViewMode("board")}
+                className={`inline-flex items-center justify-center w-8 h-8 transition-colors ${viewMode === "board" ? "bg-slate-900 text-white" : "bg-white text-slate-400 hover:text-slate-700"}`}
+                title="Vista tarjetas"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Board</title><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("compact")}
+                className={`inline-flex items-center justify-center w-8 h-8 transition-colors ${viewMode === "compact" ? "bg-slate-900 text-white" : "bg-white text-slate-400 hover:text-slate-700"}`}
+                title="Vista compacta"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Lista</title><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+              </button>
+            </div>
+
+            {/* Reload */}
+            <button
+              type="button"
+              onClick={() => { void loadPipeline(); }}
+              disabled={loading || loadingMore}
+              className="border border-slate-200 bg-white text-slate-700 rounded-xl px-2.5 py-2 text-[12px] font-bold cursor-pointer hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading || loadingMore ? "Cargando..." : "Recargar"}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex flex-col items-start justify-center text-left pl-0.5">
+            <span className="text-[13px] font-extrabold text-slate-800 leading-tight">Pipeline de 4 niveles</span>
+            <span className="text-[12px] font-bold text-slate-500 leading-tight tabular-nums">{totalAll} contactos</span>
+          </div>
+
+          <div className="inline-flex items-center gap-2 flex-wrap">
+            {/* Leads badge */}
+            {filteredGrouped.leads_recibidos.length > 0 && (
+              <span className="hidden sm:inline-flex items-center gap-1.5 border border-indigo-200 bg-indigo-50 text-indigo-700 rounded-full px-2.5 py-1.5 text-[12px] font-bold tabular-nums">
+                <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                {filteredGrouped.leads_recibidos.length} leads nuevos
+              </span>
+            )}
+
+            {totalContacts > 0 && (
+              <span className="hidden sm:inline-flex items-center gap-1.5 border border-slate-200 bg-white text-slate-600 rounded-full px-2.5 py-1.5 text-[12px] font-bold tabular-nums">
+                {Math.min(nextOffset, totalContacts)} / {totalContacts} cargados
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex w-full justify-center">
           <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
             {([
               { key: "all", label: "Todos" },
@@ -356,57 +412,6 @@ export default function CmsPipelinePage() {
               );
             })}
           </div>
-
-          {/* View mode toggle */}
-          <div className="hidden md:inline-flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setViewMode("board")}
-              className={`inline-flex items-center justify-center w-8 h-8 transition-colors ${viewMode === "board" ? "bg-slate-900 text-white" : "bg-white text-slate-400 hover:text-slate-700"}`}
-              title="Vista tarjetas"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Board</title><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("compact")}
-              className={`inline-flex items-center justify-center w-8 h-8 transition-colors ${viewMode === "compact" ? "bg-slate-900 text-white" : "bg-white text-slate-400 hover:text-slate-700"}`}
-              title="Vista compacta"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Lista</title><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
-            </button>
-          </div>
-
-          {/* Summary pill */}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 bg-white text-slate-700 text-[12px] font-semibold">
-            <span>Pipeline de 4 niveles</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
-            <span className="tabular-nums">{totalAll} contactos</span>
-          </div>
-
-          {/* Leads badge */}
-          {filteredGrouped.leads_recibidos.length > 0 && (
-            <span className="hidden sm:inline-flex items-center gap-1.5 border border-indigo-200 bg-indigo-50 text-indigo-700 rounded-full px-2.5 py-1.5 text-[12px] font-bold tabular-nums">
-              <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-              {filteredGrouped.leads_recibidos.length} leads nuevos
-            </span>
-          )}
-
-          {totalContacts > 0 && (
-            <span className="hidden sm:inline-flex items-center gap-1.5 border border-slate-200 bg-white text-slate-600 rounded-full px-2.5 py-1.5 text-[12px] font-bold tabular-nums">
-              {Math.min(nextOffset, totalContacts)} / {totalContacts} cargados
-            </span>
-          )}
-
-          {/* Reload */}
-          <button
-            type="button"
-            onClick={() => { void loadPipeline(); }}
-            disabled={loading || loadingMore}
-            className="border border-slate-200 bg-white text-slate-700 rounded-xl px-2.5 py-2 text-[12px] font-bold cursor-pointer hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading || loadingMore ? "Cargando..." : "Recargar"}
-          </button>
         </div>
       </div>
 
