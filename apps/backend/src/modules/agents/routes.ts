@@ -7,7 +7,7 @@ import { errorPayload } from "../../infra/http";
 import type { IngestOutcome } from "../../infra/metrics";
 import { metricsRegistry } from "../../infra/metrics";
 import { onAgentLogin, onAgentLogout } from "../../infra/presence-events";
-import { getOnlineAgentIds } from "../../infra/redis";
+import { countOnlineAgents, getOnlineAgentIds } from "../../infra/redis";
 import { resolveTrackingAuth } from "../../infra/tracking-auth";
 import { emitCampaignEvent } from "../campaigns/routes";
 import { toState } from "./helpers";
@@ -147,7 +147,10 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       const queueStats = queue.getStats();
       metricsRegistry.setGauge("tracking_queue_depth", queueStats.depth);
       metricsRegistry.setGauge("tracking_sse_clients", clients.size);
-      metricsRegistry.setGauge("tracking_online_agents", store.countLive());
+      // Session-based: online = agents with active login session in Redis (fallback to store size)
+      countOnlineAgents()
+        .then((n) => metricsRegistry.setGauge("tracking_online_agents", n))
+        .catch(() => metricsRegistry.setGauge("tracking_online_agents", store.countLive()));
       if (queueStats.lastFlushAtMs) {
         metricsRegistry.setGauge("tracking_last_flush_age_ms", Date.now() - queueStats.lastFlushAtMs);
       }
@@ -252,7 +255,8 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       reply.header("Cache-Control", "no-store");
 
       const now = Date.now();
-      const onlineAgents = store.countLive();
+      // Session-based: online = agents with active login session in Redis
+      const onlineAgents = await countOnlineAgents().catch(() => store.countLive());
       const queueStats = queue.getStats();
 
       // Degrade health when queue lag exceeds threshold (stuck consumer, Redis issues, etc.)
@@ -269,6 +273,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
         ts: new Date().toISOString(),
         degraded: lagDegraded ? "queue_lag_exceeded" : null,
         online_agents: onlineAgents,
+        store_agents: store.countLive(),
         ws_identified_agents: store.wsAgentCount,
         sse_clients: clients.size,
         stale_after_ms: env.agentStaleAfterMs,
@@ -484,7 +489,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
     // Agents that haven't been seen for 24h are removed from previouslyOnlineAgents
     // and lastStatusByAgent.
     const STALE_MAP_CLEANUP_MS = 24 * 60 * 60 * 1000; // 24 hours
-    const auxMapCleanupTimer = setInterval(() => {
+    const auxMapCleanupTimer = setInterval(async () => {
       const now = Date.now();
 
       // Clean previouslyOnlineAgents for agents no longer in the live store
@@ -500,6 +505,27 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
         if (now - entry.ts > STALE_MAP_CLEANUP_MS) {
           lastStatusByAgent.delete(agentId);
         }
+      }
+
+      // Prune in-memory store: remove agents that are (a) logged out AND (b) GPS stale >24h.
+      // This prevents unbounded growth since sweepGpsIdle() no longer removes agents.
+      try {
+        const onlineIds = new Set(await getOnlineAgentIds());
+        let pruned = 0;
+        for (const agentId of Array.from(store.agentIds())) {
+          if (onlineIds.has(agentId)) continue; // still logged in — keep
+          const agent = store.get(agentId);
+          if (!agent) continue;
+          if (now - agent.lastSeenAtMs > STALE_MAP_CLEANUP_MS) {
+            store.remove(agentId);
+            pruned++;
+          }
+        }
+        if (pruned > 0) {
+          app.log.info({ pruned, remaining: store.size }, "store cleanup: removed logged-out stale agents");
+        }
+      } catch (err) {
+        app.log.warn({ err }, "store cleanup: failed to fetch online set from Redis");
       }
     }, 60 * 60 * 1000); // Run every hour
     auxMapCleanupTimer.unref();

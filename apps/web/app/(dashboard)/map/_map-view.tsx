@@ -623,6 +623,7 @@ export default function Home() {
 
         eventSource.addEventListener("agent.offline", (event) => {
           try {
+            // Session-based: agent.offline = explicit logout → remove from map
             const payload = JSON.parse((event as MessageEvent).data) as { agent_id?: string };
             if (!payload.agent_id) return;
             setAgentLocations((prev) => {
@@ -648,6 +649,16 @@ export default function Home() {
           } catch {
             setAgentFeedState("error");
           }
+        });
+
+        // Session-based: agent.online = login → agent will appear when GPS arrives
+        eventSource.addEventListener("agent.online", () => {
+          // No-op: agent will appear on map when first location arrives
+        });
+
+        // Session-based: agent.idle = GPS stale but session active → keep on map
+        eventSource.addEventListener("agent.idle", () => {
+          // No-op: agent stays on map at last known position
         });
 
         eventSource.onerror = () => {

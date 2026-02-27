@@ -37,6 +37,17 @@ export class AgentsStore {
     }
   }
 
+  /** Remove an agent from the store (used by periodic cleanup). */
+  remove(agentId: string): boolean {
+    this.wsConnectedAgents.delete(agentId);
+    return this.agents.delete(agentId);
+  }
+
+  /** Get all agent IDs in the store. */
+  agentIds(): IterableIterator<string> {
+    return this.agents.keys();
+  }
+
   upsert(next: AgentLiveState): { accepted: boolean; deduped: boolean } {
     const previous = this.agents.get(next.agentId);
     if (previous && next.seq <= previous.seq) {
