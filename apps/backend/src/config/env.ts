@@ -152,7 +152,7 @@ export function getEnv(): AppEnv {
     formsWriteBehindFlushMs: toNumber(process.env.FORMS_WB_FLUSH_MS, 300),
     formsWriteBehindMaxQueue: toNumber(process.env.FORMS_WB_MAX_QUEUE, 10000),
     agentIngestToken,
-    agentStaleAfterMs: toNumber(process.env.AGENT_STALE_AFTER_MS, 120000),
+    agentStaleAfterMs: toNumber(process.env.AGENT_STALE_AFTER_MS, 15000),
     agentStreamHeartbeatMs: toNumber(process.env.AGENT_STREAM_HEARTBEAT_MS, 25000),
     agentStreamBatchFlushMs: toNumber(process.env.AGENT_STREAM_BATCH_FLUSH_MS, 120),
     trackingWriteBehindBatchSize: toNumber(process.env.TRACKING_WB_BATCH_SIZE, 300),

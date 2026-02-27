@@ -30,14 +30,14 @@ export function getTimeAgo(date: Date): string {
 
 /* ─── Agent status ─── */
 
-const TWO_MIN = 2 * 60_000;
-const TEN_MIN = 10 * 60_000;
+const CONNECTED_THRESHOLD_MS = 15_000; // 15s — matches backend agentStaleAfterMs
+const IDLE_THRESHOLD_MS = 10 * 60_000;
 
 /** Derive agent connection status from its last-seen timestamp */
 export function getAgentStatus(ts: string, now: number): AgentStatus {
   const age = now - new Date(ts).getTime();
-  if (age < TWO_MIN) return "connected";
-  if (age < TEN_MIN) return "idle";
+  if (age < CONNECTED_THRESHOLD_MS) return "connected";
+  if (age < IDLE_THRESHOLD_MS) return "idle";
   return "inactive";
 }
 
