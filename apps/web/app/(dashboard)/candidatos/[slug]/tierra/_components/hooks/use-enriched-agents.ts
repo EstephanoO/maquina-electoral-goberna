@@ -35,6 +35,7 @@ export function useEnrichedAgents(
   backgroundAgentIds: Set<string> = new Set(),
   idleAgentIds: Set<string> = new Set(),
   onlineAgentIds: Set<string> = new Set(),
+  campaignId?: string,
 ) {
   // ── Pre-index: forms by agent_id → most recent form with coords (O(forms)) ──
   const agentFormIndex = useMemo(() => {
@@ -105,17 +106,18 @@ export function useEnrichedAgents(
     }
 
     for (const loc of locations) {
-      if (!agentMap.has(loc.agent_id)) {
-        const locTs = new Date(loc.ts).getTime();
-        agentMap.set(loc.agent_id, {
-          id: loc.agent_id,
-          name: loc.agent_name || `Agente ${loc.agent_id.slice(0, 6)}`,
-          status: deriveStatus(loc.agent_id, locTs),
-          lastSeen: new Date(loc.ts),
-          forms_count: 0,
-          lat: loc.lat, lng: loc.lng,
-        });
-      }
+      if (agentMap.has(loc.agent_id)) continue;
+      // Skip agents from other campaigns (admins receive all via SSE)
+      if (campaignId && loc.campaign_id && loc.campaign_id !== campaignId) continue;
+      const locTs = new Date(loc.ts).getTime();
+      agentMap.set(loc.agent_id, {
+        id: loc.agent_id,
+        name: loc.agent_name || `Agente ${loc.agent_id.slice(0, 6)}`,
+        status: deriveStatus(loc.agent_id, locTs),
+        lastSeen: new Date(loc.ts),
+        forms_count: 0,
+        lat: loc.lat, lng: loc.lng,
+      });
     }
 
     const agents = Array.from(agentMap.values());
@@ -133,7 +135,7 @@ export function useEnrichedAgents(
       const o = { connected: 0, idle: 1, inactive: 2 };
       return o[a.status] !== o[b.status] ? o[a.status] - o[b.status] : b.forms_count - a.forms_count;
     });
-  }, [stats, locations, agentFormIndex, backgroundAgentIds, idleAgentIds, onlineAgentIds]);
+  }, [stats, locations, agentFormIndex, backgroundAgentIds, idleAgentIds, onlineAgentIds, campaignId]);
 
   const formPoints = useMemo(
     (): FormPoint[] =>

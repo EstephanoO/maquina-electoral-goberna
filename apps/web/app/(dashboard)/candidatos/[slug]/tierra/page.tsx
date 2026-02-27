@@ -81,7 +81,7 @@ export default function TierraPage() {
   // ─── Geo bounds & derived data ───
   const drillBounds = useDrillBounds(drillState);
   const { enrichedAgents, formPoints, connectedCount } =
-    useEnrichedAgents(stats, locations, forms, selectedAgentId, selectedAgentIds, drillBounds, backgroundAgentIds, idleAgentIds, onlineAgentIds);
+    useEnrichedAgents(stats, locations, forms, selectedAgentId, selectedAgentIds, drillBounds, backgroundAgentIds, idleAgentIds, onlineAgentIds, campaignId);
   const enrichedAgentsRef = useRef(enrichedAgents);
   enrichedAgentsRef.current = enrichedAgents;
 

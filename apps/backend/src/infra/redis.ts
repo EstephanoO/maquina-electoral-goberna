@@ -318,6 +318,26 @@ export async function countOnlineAgents(): Promise<number> {
   return redisClient.sCard(PRESENCE_SET_KEY);
 }
 
+/**
+ * Seed the agents:online set from the database on backend startup.
+ * Adds all user_ids that have at least one non-revoked, non-expired refresh token.
+ * This ensures agents who were already logged in before a deploy/restart
+ * appear as "connected" without needing to re-login.
+ */
+export async function seedOnlineAgentsFromDb(pool: { query: (sql: string) => Promise<{ rows: Array<{ user_id: string }> }> }): Promise<number> {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT user_id::text AS user_id
+     FROM refresh_tokens
+     WHERE revoked_at IS NULL AND expires_at > now()`,
+  );
+
+  if (rows.length === 0) return 0;
+
+  const userIds = rows.map((r) => r.user_id);
+  await redisClient.sAdd(PRESENCE_SET_KEY, userIds);
+  return userIds.length;
+}
+
 export async function getStreamLag(streamKey: string, group: string): Promise<number> {
   const raw = (await redisClient.sendCommand(["XINFO", "GROUPS", streamKey])) as unknown;
   if (!Array.isArray(raw)) return 0;

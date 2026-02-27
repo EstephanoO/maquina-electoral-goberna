@@ -3,7 +3,7 @@ import "dotenv/config";
 import { pool } from "./db";
 import { buildApp } from "./app";
 import { getEnv } from "./config/env";
-import { connectRedis, disconnectRedis } from "./infra/redis";
+import { connectRedis, disconnectRedis, seedOnlineAgentsFromDb } from "./infra/redis";
 import { initTelegram } from "./infra/telegram";
 import { startHealthPoller, stopHealthPoller } from "./infra/health-poller";
 import { startTelegramCommands, stopTelegramCommands } from "./infra/telegram-commands";
@@ -21,6 +21,17 @@ initTelegram(env);
 await connectRedis();
 await ensureFormsTable();
 await ensureAgentLocationsLiveTable();
+
+// Seed agents:online Redis SET from active sessions in DB.
+// Agents logged in before a deploy/restart appear as "connected" immediately.
+try {
+  const seeded = await seedOnlineAgentsFromDb(pool);
+  if (seeded > 0) {
+    app.log.info({ seeded }, "presence: seeded agents:online from active refresh tokens");
+  }
+} catch (err) {
+  app.log.warn({ err }, "presence: failed to seed agents:online from DB (non-fatal)");
+}
 
 await app.listen({ host: "0.0.0.0", port: env.port });
 

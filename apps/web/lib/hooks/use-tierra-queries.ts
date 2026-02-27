@@ -26,6 +26,7 @@ export type AgentLocation = {
   ts: string;
   lat: number;
   lng: number;
+  campaign_id?: string;
 };
 
 // ── Query Keys (colocated for easy invalidation) ───────────────────
