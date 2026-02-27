@@ -125,13 +125,16 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
     heartbeatTimer.unref();
 
     const staleSweepTimer = setInterval(() => {
-      const removed = store.removeStale();
-      for (const agentId of removed) {
+      const { offline, idle } = store.removeStale();
+      const ts = new Date().toISOString();
+
+      // Truly offline agents: no WS, no recent GPS → remove from dashboard
+      for (const agentId of offline) {
         const agentInfo = previouslyOnlineAgents.get(agentId);
         broadcastAll("agent.offline", {
           agent_id: agentId,
           agent_name: agentInfo?.agentName ?? `Agente ${agentId.slice(0, 8)}`,
-          ts: new Date().toISOString(),
+          ts,
         });
         
         // Emit disconnect event for campaign dashboard
@@ -144,6 +147,17 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
           });
         }
         previouslyOnlineAgents.delete(agentId);
+      }
+
+      // Idle agents: WS active but no recent GPS → mark as idle on dashboard
+      for (const agentId of idle) {
+        const agentInfo = previouslyOnlineAgents.get(agentId);
+        broadcastAll("agent.idle", {
+          agent_id: agentId,
+          agent_name: agentInfo?.agentName ?? `Agente ${agentId.slice(0, 8)}`,
+          campaign_id: agentInfo?.campaignId ?? null,
+          ts,
+        });
       }
 
       const queueStats = queue.getStats();
@@ -227,6 +241,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
         ts: new Date().toISOString(),
         degraded: lagDegraded ? "queue_lag_exceeded" : null,
         online_agents: onlineAgents,
+        ws_identified_agents: store.wsAgentCount,
         sse_clients: clients.size,
         stale_after_ms: env.agentStaleAfterMs,
         heartbeat_ms: env.agentStreamHeartbeatMs,
@@ -324,7 +339,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
         }
 
         try {
-          const next = toState(request.body);
+          const next = toState(request.body, "http");
           const current = store.get(next.agentId);
           if (current && next.seq <= current.seq) {
             markOutcome("deduped");
@@ -552,7 +567,7 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
 
           for (const loc of locations) {
             try {
-              const next = toState(loc);
+              const next = toState(loc, "http");
               const current = store.get(next.agentId);
 
               // Dedupe check

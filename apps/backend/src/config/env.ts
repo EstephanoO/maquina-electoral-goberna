@@ -53,6 +53,7 @@ export type AppEnv = {
   uploadsDir: string;
   rateLimitAuthPerMinute: number;
   refreshTokenCleanupIntervalMs: number;
+  locationHistoryCleanupIntervalMs: number;
   locationHistoryRetentionDays: number;
   // Default tracking config pushed to mobile clients via WS welcome message
   trackingDefaultIntervalMs: number;
@@ -172,6 +173,7 @@ export function getEnv(): AppEnv {
     uploadsDir: (process.env.UPLOADS_DIR ?? "/srv/uploads").trim(),
     rateLimitAuthPerMinute: toNumber(process.env.RATE_LIMIT_AUTH_PER_MINUTE, 10),
     refreshTokenCleanupIntervalMs: toNumber(process.env.REFRESH_TOKEN_CLEANUP_INTERVAL_MS, 3600000),
+    locationHistoryCleanupIntervalMs: toNumber(process.env.LOCATION_HISTORY_CLEANUP_INTERVAL_MS, 3600000),
     locationHistoryRetentionDays: toNumber(process.env.LOCATION_HISTORY_RETENTION_DAYS, 7),
     trackingDefaultIntervalMs: toNumber(process.env.TRACKING_DEFAULT_INTERVAL_MS, 15000),
     trackingDefaultDistanceM: toNumber(process.env.TRACKING_DEFAULT_DISTANCE_M, 5),

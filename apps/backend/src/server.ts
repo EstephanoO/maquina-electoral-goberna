@@ -33,11 +33,12 @@ startTelegramCommands(env);
 // ── Support → Telegram bridge ─────────────────────────────────────────
 initSupportTelegramBridge();
 
-// ── Periodic cleanup cron ─────────────────────────────────────────────
+// ── Periodic cleanup crons ────────────────────────────────────────────
 const authRepo = new AuthRepository(pool);
-let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+let tokenCleanupTimer: ReturnType<typeof setInterval> | null = null;
+let historyCleanupTimer: ReturnType<typeof setInterval> | null = null;
 
-async function runCleanup() {
+async function runTokenCleanup() {
   try {
     const deletedTokens = await authRepo.cleanExpiredTokens();
     if (deletedTokens > 0) {
@@ -46,7 +47,9 @@ async function runCleanup() {
   } catch (err) {
     app.log.error({ err }, "cleanup: refresh token cleanup failed");
   }
+}
 
+async function runHistoryCleanup() {
   try {
     const deletedLocations = await cleanupLocationHistory(env.locationHistoryRetentionDays);
     if (deletedLocations > 0) {
@@ -57,13 +60,16 @@ async function runCleanup() {
   }
 }
 
-// Run once at startup (non-blocking), then periodically
-void runCleanup();
-cleanupTimer = setInterval(() => void runCleanup(), env.refreshTokenCleanupIntervalMs);
+// Run once at startup (non-blocking), then periodically with dedicated intervals
+void runTokenCleanup();
+void runHistoryCleanup();
+tokenCleanupTimer = setInterval(() => void runTokenCleanup(), env.refreshTokenCleanupIntervalMs);
+historyCleanupTimer = setInterval(() => void runHistoryCleanup(), env.locationHistoryCleanupIntervalMs);
 
 // ── Shutdown ──────────────────────────────────────────────────────────
 const shutdown = async () => {
-  if (cleanupTimer) clearInterval(cleanupTimer);
+  if (tokenCleanupTimer) clearInterval(tokenCleanupTimer);
+  if (historyCleanupTimer) clearInterval(historyCleanupTimer);
   stopHealthPoller();
   stopTelegramCommands();
   await app.close();

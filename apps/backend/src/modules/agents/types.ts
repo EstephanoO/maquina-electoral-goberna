@@ -12,6 +12,8 @@ export type AgentLocationInput = {
   campaign_id?: string;
 };
 
+export type AgentConnectionType = "ws" | "http" | null;
+
 export type AgentLiveState = {
   agentId: string;
   agentName: string | null;
@@ -26,4 +28,6 @@ export type AgentLiveState = {
   campaignId: string | null;
   receivedAt: string;
   lastSeenAtMs: number;
+  /** How this agent last connected — "ws" if via WebSocket, "http" if via REST, null if unknown */
+  connectionType: AgentConnectionType;
 };

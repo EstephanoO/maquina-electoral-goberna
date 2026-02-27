@@ -66,22 +66,22 @@ async function ingestSingle(
   data: unknown,
   ctx: IngestContext,
   logger: { info: (obj: Record<string, unknown>, msg: string) => void; warn: (obj: Record<string, unknown>, msg: string) => void },
-): Promise<{ accepted: boolean; deduped: boolean; seq: number }> {
-  const next = toState(data);
+): Promise<{ accepted: boolean; deduped: boolean; seq: number; agentId: string }> {
+  const next = toState(data, "ws");
   const current = ctx.store.get(next.agentId);
 
   if (current && next.seq <= current.seq) {
     metricsRegistry.incCounter("tracking_dedupe_total", "live_seq");
-    return { accepted: false, deduped: true, seq: next.seq };
+    return { accepted: false, deduped: true, seq: next.seq, agentId: next.agentId };
   }
 
   const queueResult = await ctx.queue.enqueue(next);
   if (queueResult.queueFull) {
-    return { accepted: false, deduped: false, seq: next.seq };
+    return { accepted: false, deduped: false, seq: next.seq, agentId: next.agentId };
   }
   if (queueResult.deduped) {
     metricsRegistry.incCounter("tracking_dedupe_total", "pending_seq");
-    return { accepted: false, deduped: true, seq: next.seq };
+    return { accepted: false, deduped: true, seq: next.seq, agentId: next.agentId };
   }
 
   // Update in-memory store
@@ -114,7 +114,7 @@ async function ingestSingle(
   ctx.pendingBatchByAgent.set(agent.agent_id, agent);
   metricsRegistry.incCounter("tracking_ingest_total", "202");
 
-  return { accepted: true, deduped: false, seq: next.seq };
+  return { accepted: true, deduped: false, seq: next.seq, agentId: next.agentId };
 }
 
 // ─── Plugin ───────────────────────────────────────────────────
@@ -179,11 +179,14 @@ export function buildAgentsWsRoutes(env: AppEnv, ctx: IngestContext): FastifyPlu
         let messageCount = 0;
         let windowStartMs = Date.now();
 
+        // Track which agent is behind this socket (resolved from first location message)
+        let identifiedAgentId: string | null = null;
+
         // Pong tracking for dead connection detection
         let lastPongMs = Date.now();
         const pongCheckTimer = setInterval(() => {
           if (Date.now() - lastPongMs > WS_PING_INTERVAL_MS + WS_PONG_TIMEOUT_MS) {
-            app.log.info({ ip: request.ip }, "ws tracking pong timeout");
+            app.log.info({ ip: request.ip, agent_id: identifiedAgentId }, "ws tracking pong timeout");
             socket.terminate();
           }
         }, WS_PONG_TIMEOUT_MS);
@@ -191,6 +194,13 @@ export function buildAgentsWsRoutes(env: AppEnv, ctx: IngestContext): FastifyPlu
 
         socket.on("pong", () => {
           lastPongMs = Date.now();
+          // Keep the agent alive in the store while WS is active (resolves 8.2).
+          // This prevents a stationary agent from being marked as stale
+          // just because no GPS updates are coming.
+          const pongAgent = identifiedAgentId;
+          if (pongAgent) {
+            ctx.store.touchLastSeen(pongAgent);
+          }
         });
 
         // Send welcome with current config (values from env, not hardcoded)
@@ -231,13 +241,25 @@ export function buildAgentsWsRoutes(env: AppEnv, ctx: IngestContext): FastifyPlu
             }
 
             if (msg.type === "pong") {
-              // Application-level pong — just update timestamp
+              // Application-level pong — update timestamps
               lastPongMs = Date.now();
+              const pongAgent2 = identifiedAgentId;
+              if (pongAgent2) {
+                ctx.store.touchLastSeen(pongAgent2);
+              }
               return;
             }
 
             if (msg.type === "location") {
               const result = await ingestSingle(msg.data, ctx, app.log);
+
+              // Identify this socket's agent from the first successful ingest
+              if (!identifiedAgentId && result.agentId) {
+                identifiedAgentId = result.agentId;
+                ctx.store.addWsAgent(result.agentId);
+                app.log.info({ agent_id: result.agentId, ip: request.ip }, "ws agent identified");
+              }
+
               sendJson(socket, {
                 type: "ack",
                 seq: result.seq,
@@ -275,6 +297,13 @@ export function buildAgentsWsRoutes(env: AppEnv, ctx: IngestContext): FastifyPlu
                     if (result.value.accepted) accepted++;
                     else if (result.value.deduped) deduped++;
                     else failed++;
+
+                    // Identify this socket's agent from the first successful ingest
+                    if (!identifiedAgentId && result.value.agentId) {
+                      identifiedAgentId = result.value.agentId;
+                      ctx.store.addWsAgent(result.value.agentId);
+                      app.log.info({ agent_id: result.value.agentId, ip: request.ip }, "ws agent identified (batch)");
+                    }
                   } else {
                     failed++;
                   }
@@ -301,16 +330,24 @@ export function buildAgentsWsRoutes(env: AppEnv, ctx: IngestContext): FastifyPlu
         });
 
         // ─── Cleanup ─────────────────────────────────
-        socket.on("close", () => {
+        const cleanupWs = () => {
           clearInterval(pongCheckTimer);
           wsClients.delete(socket);
+          const agentToRemove = identifiedAgentId;
+          if (agentToRemove) {
+            ctx.store.removeWsAgent(agentToRemove);
+            app.log.info({ agent_id: agentToRemove }, "ws agent disconnected");
+          }
+        };
+
+        socket.on("close", () => {
+          cleanupWs();
           metricsRegistry.incCounter("ws_connections", "close");
         });
 
         socket.on("error", (err: Error) => {
-          app.log.warn({ err }, "ws tracking socket error");
-          clearInterval(pongCheckTimer);
-          wsClients.delete(socket);
+          app.log.warn({ err, agent_id: identifiedAgentId }, "ws tracking socket error");
+          cleanupWs();
         });
       },
     );
@@ -323,6 +360,7 @@ export function buildAgentsWsRoutes(env: AppEnv, ctx: IngestContext): FastifyPlu
         service: "ws-tracking",
         ts: new Date().toISOString(),
         ws_clients: wsClients.size,
+        ws_identified_agents: ctx.store.wsAgentCount,
       };
     });
   };

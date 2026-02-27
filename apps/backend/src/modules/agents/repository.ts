@@ -70,6 +70,7 @@ export async function loadAllLiveAgentLocations(): Promise<AgentLiveState[]> {
     campaignId: row.campaign_id,
     receivedAt: new Date(row.updated_at).toISOString(),
     lastSeenAtMs: new Date(row.updated_at).getTime(),
+    connectionType: null,
   }));
 }
 
@@ -168,6 +169,9 @@ export async function upsertLatestAgentLocationsBatch(states: AgentLiveState[]):
 /**
  * Insert location data into the history table (append-only, 7-day rolling).
  * This is best-effort and should not block the live tracking pipeline.
+ *
+ * Uses ON CONFLICT (agent_id, seq) DO NOTHING to deduplicate retries
+ * from the write-behind consumer (resolves audit issue 8.4).
  */
 async function insertLocationHistory(states: AgentLiveState[]): Promise<void> {
   const payload = JSON.stringify(
@@ -181,12 +185,13 @@ async function insertLocationHistory(states: AgentLiveState[]): Promise<void> {
       speed: s.speed,
       heading: s.heading,
       battery: s.battery,
+      seq: s.seq,
     })),
   );
 
   await pool.query(
-    `INSERT INTO agent_location_history (agent_id, campaign_id, ts, lat, lng, accuracy, speed, heading, battery)
-     SELECT x.agent_id, x.campaign_id, x.ts, x.lat, x.lng, x.accuracy, x.speed, x.heading, x.battery
+    `INSERT INTO agent_location_history (agent_id, campaign_id, ts, lat, lng, accuracy, speed, heading, battery, seq)
+     SELECT x.agent_id, x.campaign_id, x.ts, x.lat, x.lng, x.accuracy, x.speed, x.heading, x.battery, x.seq
      FROM jsonb_to_recordset($1::jsonb) AS x(
        agent_id text,
        campaign_id uuid,
@@ -196,8 +201,10 @@ async function insertLocationHistory(states: AgentLiveState[]): Promise<void> {
        accuracy double precision,
        speed double precision,
        heading double precision,
-       battery double precision
-     )`,
+       battery double precision,
+       seq bigint
+     )
+     ON CONFLICT (agent_id, seq) DO NOTHING`,
     [payload],
   );
 }

@@ -1,9 +1,22 @@
 import type { AppEnv } from "../../config/env";
 import type { AgentLiveState, AgentLocationInput } from "./types";
 
+export type StaleResult = {
+  /** Agents that are truly offline (no WS, no GPS) — should be removed */
+  offline: string[];
+  /** Agents that have WS active but no recent GPS — should be marked idle */
+  idle: string[];
+};
+
 export class AgentsStore {
   private readonly env: AppEnv;
   private readonly agents = new Map<string, AgentLiveState>();
+
+  /**
+   * Set of agent IDs known to have an active WebSocket connection.
+   * Managed externally by ws-routes.ts via addWsAgent() / removeWsAgent().
+   */
+  private readonly wsConnectedAgents = new Set<string>();
 
   constructor(env: AppEnv) {
     this.env = env;
@@ -34,26 +47,71 @@ export class AgentsStore {
     return { accepted: true, deduped: false };
   }
 
-  removeStale(): string[] {
+  // ─── WebSocket presence tracking ───────────────────────────
+
+  /** Register that an agent has an active WebSocket connection */
+  addWsAgent(agentId: string): void {
+    this.wsConnectedAgents.add(agentId);
+  }
+
+  /** Unregister an agent's WebSocket connection */
+  removeWsAgent(agentId: string): void {
+    this.wsConnectedAgents.delete(agentId);
+  }
+
+  /** Check if an agent has an active WebSocket connection */
+  hasWsConnection(agentId: string): boolean {
+    return this.wsConnectedAgents.has(agentId);
+  }
+
+  /** Count of agents with active WebSocket connections */
+  get wsAgentCount(): number {
+    return this.wsConnectedAgents.size;
+  }
+
+  /**
+   * Touch an agent's lastSeenAtMs without requiring a location update.
+   * Used by WS pong to keep the agent alive while connected but stationary.
+   */
+  touchLastSeen(agentId: string): void {
+    const state = this.agents.get(agentId);
+    if (state) {
+      state.lastSeenAtMs = Date.now();
+    }
+  }
+
+  /**
+   * Remove stale agents, distinguishing between truly offline and idle (WS-connected but no GPS).
+   *
+   * - Agents with an active WebSocket are NOT removed; they're returned in `idle`.
+   * - Agents without WS that exceed stale time are removed and returned in `offline`.
+   */
+  removeStale(): StaleResult {
     const now = Date.now();
-    const removed: string[] = [];
+    const result: StaleResult = { offline: [], idle: [] };
 
     for (const [agentId, state] of this.agents.entries()) {
       if (now - state.lastSeenAtMs > this.env.agentStaleAfterMs) {
-        this.agents.delete(agentId);
-        removed.push(agentId);
+        if (this.wsConnectedAgents.has(agentId)) {
+          // WS is active — agent is idle (connected but not moving), don't remove
+          result.idle.push(agentId);
+        } else {
+          // No WS, no recent GPS — truly offline
+          this.agents.delete(agentId);
+          result.offline.push(agentId);
+        }
       }
     }
 
-    return removed;
+    return result;
   }
 
   /** Count of live (non-stale) agents without allocating an array. */
   countLive(): number {
     const now = Date.now();
     let count = 0;
-    for (const state of this.agents.values()) {
-      if (now - state.lastSeenAtMs <= this.env.agentStaleAfterMs) {
+    for (const [agentId, state] of this.agents.entries()) {
+      if (now - state.lastSeenAtMs <= this.env.agentStaleAfterMs || this.wsConnectedAgents.has(agentId)) {
         count++;
       }
     }
@@ -64,8 +122,9 @@ export class AgentsStore {
     const now = Date.now();
     const output: AgentLocationInput[] = [];
 
-    for (const state of this.agents.values()) {
-      if (now - state.lastSeenAtMs > this.env.agentStaleAfterMs) {
+    for (const [agentId, state] of this.agents.entries()) {
+      // Include if either: recent GPS data, or active WS connection
+      if (now - state.lastSeenAtMs > this.env.agentStaleAfterMs && !this.wsConnectedAgents.has(agentId)) {
         continue;
       }
       output.push(this.serialize(state));

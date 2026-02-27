@@ -1,8 +1,8 @@
 import { agentLocationSchema } from "./schema";
-import type { AgentLiveState } from "./types";
+import type { AgentConnectionType, AgentLiveState } from "./types";
 
 /** Parse raw input into an AgentLiveState (shared by HTTP and WS ingest). */
-export function toState(value: unknown): AgentLiveState {
+export function toState(value: unknown, connectionType: AgentConnectionType = null): AgentLiveState {
   const parsed = agentLocationSchema.safeParse(value);
   if (!parsed.success) {
     throw new Error("payload invalido");
@@ -22,5 +22,6 @@ export function toState(value: unknown): AgentLiveState {
     campaignId: parsed.data.campaign_id ?? null,
     receivedAt: new Date().toISOString(),
     lastSeenAtMs: Date.now(),
+    connectionType,
   };
 }
