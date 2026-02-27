@@ -5,5 +5,5 @@
 ALTER TABLE form_submissions
   ADD COLUMN IF NOT EXISTS cms_tags text[] NOT NULL DEFAULT '{}';
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_form_submissions_cms_tags
+CREATE INDEX IF NOT EXISTS idx_form_submissions_cms_tags
   ON form_submissions USING GIN (cms_tags);

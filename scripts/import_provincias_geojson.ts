@@ -1,6 +1,20 @@
+/**
+ * Re-import peru_provincias from provincias.geojson
+ *
+ * Usage:
+ *   DATABASE_URL=postgresql://user:pass@host:5432/db bun scripts/import_provincias_geojson.ts
+ *
+ * The GeoJSON is CRS:84 (= EPSG:4326 WGS84).
+ * We store geom as 4326 (source of truth) and geom_3857 as pre-projected for Tegola.
+ */
+
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { SQL } from "bun";
+import pg from "pg";
+
+const { Client } = pg;
+
+/* ─── Types ─── */
 
 type ProvinciaFeature = {
   type: "Feature";
@@ -21,94 +35,109 @@ type GeoJson = {
   features: ProvinciaFeature[];
 };
 
-function getDatabaseUrlFromEnvFile(): string {
-  const envPath = join(process.cwd(), "backend", ".env.local");
-  const content = readFileSync(envPath, "utf8");
-  const line = content
-    .split("\n")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith("DATABASE_URL="));
+/* ─── DB connection ─── */
 
-  if (!line) {
-    throw new Error("No se encontro DATABASE_URL en backend/.env.local");
+function getDatabaseUrl(): string {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+
+  // Try apps/backend/.env
+  const paths = [
+    join(process.cwd(), "apps", "backend", ".env"),
+    join(process.cwd(), "backend", ".env.local"),
+  ];
+
+  for (const envPath of paths) {
+    try {
+      const content = readFileSync(envPath, "utf8");
+      const line = content
+        .split("\n")
+        .map((l) => l.trim())
+        .find((l) => l.startsWith("DATABASE_URL="));
+      if (line) return line.slice("DATABASE_URL=".length);
+    } catch {
+      // try next path
+    }
   }
 
-  return line.slice("DATABASE_URL=".length);
+  throw new Error("DATABASE_URL not found in env or .env files");
 }
 
-const dbUrl = process.env.DATABASE_URL ?? getDatabaseUrlFromEnvFile();
-const db = new SQL(dbUrl);
+/* ─── Main ─── */
 
-const geoJsonPath = join(process.cwd(), "geojsons", "provincias.geojson");
+const dbUrl = getDatabaseUrl();
+const client = new Client({ connectionString: dbUrl });
+await client.connect();
+
+console.log("Connected to database");
+
+// Load GeoJSON
+const geoJsonPath = join(process.cwd(), "provincias.geojson");
 const raw = readFileSync(geoJsonPath, "utf8");
 const data = JSON.parse(raw) as GeoJson;
 
 if (data.type !== "FeatureCollection") {
-  throw new Error("El archivo no es un FeatureCollection");
+  throw new Error("File is not a FeatureCollection");
 }
 
-await db`CREATE EXTENSION IF NOT EXISTS postgis;`;
+console.log(`Loaded ${data.features.length} features from provincias.geojson`);
 
-await db`
-  CREATE TABLE IF NOT EXISTS public.provincias (
-    id BIGSERIAL PRIMARY KEY,
-    objectid INTEGER,
-    coddep TEXT NOT NULL,
-    departamento TEXT,
-    codprov TEXT NOT NULL,
-    codprov_full TEXT NOT NULL,
-    provincia TEXT,
-    capital TEXT,
-    fuente TEXT,
-    geom geometry(MultiPolygon, 3857) NOT NULL
-  );
-`;
+// Ensure PostGIS
+await client.query("CREATE EXTENSION IF NOT EXISTS postgis;");
 
-await db`TRUNCATE TABLE public.provincias;`;
+// Delete existing data
+const before = await client.query("SELECT COUNT(*)::int AS total FROM public.peru_provincias;");
+console.log(`Existing rows in peru_provincias: ${before.rows[0].total}`);
 
+await client.query("DELETE FROM public.peru_provincias;");
+console.log("Deleted all existing rows");
+
+// Insert features — gid is plain bigint (no serial), so we generate it
+let inserted = 0;
 for (const feature of data.features) {
+  const gid = inserted + 1;
   const geometryJson = JSON.stringify(feature.geometry);
-  const objectId = feature.properties.OBJECTID ?? null;
   const coddep = feature.properties.CODDEP ?? "";
-  const departamento = feature.properties.DEPARTAMEN ?? null;
   const codprov = feature.properties.CODPROV ?? "";
-  const codprovFull = `${coddep}${codprov}`;
-  const provincia = feature.properties.PROVINCIA ?? null;
-  const capital = feature.properties.CAPITAL ?? null;
-  const fuente = feature.properties.FUENTE ?? null;
+  const nomprov = feature.properties.PROVINCIA ?? "";
 
-  await db`
-    INSERT INTO public.provincias (
-      objectid,
-      coddep,
-      departamento,
-      codprov,
-      codprov_full,
-      provincia,
-      capital,
-      fuente,
-      geom
-    )
-    VALUES (
-      ${objectId},
-      ${coddep},
-      ${departamento},
-      ${codprov},
-      ${codprovFull},
-      ${provincia},
-      ${capital},
-      ${fuente},
-      ST_Multi(ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON(${geometryJson}), 4326), 3857))
-    );
-  `;
+  await client.query(
+    `INSERT INTO public.peru_provincias (gid, coddep, codprov, nomprov, geom, geom_3857)
+     VALUES ($1, $2, $3, $4,
+       ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON($5), 4326)),
+       ST_Multi(ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON($5), 4326), 3857))
+     )`,
+    [gid, coddep, codprov, nomprov, geometryJson],
+  );
+
+  inserted++;
+  if (inserted % 20 === 0) {
+    console.log(`  inserted ${inserted}/${data.features.length}...`);
+  }
 }
 
-await db`CREATE INDEX IF NOT EXISTS provincias_geom_gix ON public.provincias USING GIST (geom);`;
-await db`CREATE INDEX IF NOT EXISTS provincias_coddep_idx ON public.provincias (coddep);`;
-await db`CREATE INDEX IF NOT EXISTS provincias_codprov_full_idx ON public.provincias (codprov_full);`;
-await db`ANALYZE public.provincias;`;
+// Rebuild indexes
+console.log("Rebuilding indexes...");
+await client.query("REINDEX TABLE public.peru_provincias;");
 
-const count = await db`SELECT COUNT(*)::int AS total FROM public.provincias;`;
-console.log(`Importacion completada. Provincias cargadas: ${count[0].total}`);
+// Update stats
+await client.query("ANALYZE public.peru_provincias;");
 
-await db.close();
+// Verify
+const after = await client.query(
+  `SELECT COUNT(*)::int AS total,
+          COUNT(DISTINCT coddep) AS departamentos,
+          MIN(ST_SRID(geom)) AS min_srid_4326,
+          MAX(ST_SRID(geom)) AS max_srid_4326,
+          MIN(ST_SRID(geom_3857)) AS min_srid_3857,
+          MAX(ST_SRID(geom_3857)) AS max_srid_3857
+   FROM public.peru_provincias;`,
+);
+
+const r = after.rows[0];
+console.log(`\nImport complete:`);
+console.log(`  Provincias: ${r.total}`);
+console.log(`  Departamentos: ${r.departamentos}`);
+console.log(`  geom SRID: ${r.min_srid_4326}-${r.max_srid_4326} (should be 4326)`);
+console.log(`  geom_3857 SRID: ${r.min_srid_3857}-${r.max_srid_3857} (should be 3857)`);
+
+await client.end();

@@ -181,9 +181,9 @@ export function PublicMap() {
 
     // Tooltip
     const name =
-      f.properties?.nombdep ??
-      f.properties?.nombprov ??
-      f.properties?.nombdist ??
+      f.properties?.departamento ??
+      f.properties?.provincia ??
+      f.properties?.distrito ??
       "";
     if (name) {
       setTooltip({ x: e.point.x, y: e.point.y, name });
@@ -233,7 +233,7 @@ export function PublicMap() {
       setDrill({
         level: 1,
         depCode: props.coddep,
-        depName: props.nombdep,
+        depName: props.departamento,
       });
     } else if (layerId === "prov-fill" && drill.level === 1) {
       // Drill into province
@@ -244,7 +244,7 @@ export function PublicMap() {
         depCode: drill.depCode,
         depName: drill.depName,
         provCode: props.codprov_full,
-        provName: props.nombprov,
+        provName: props.provincia,
       });
     } else if (layerId === "dist-fill" && drill.level === 2) {
       // Drill into district
@@ -257,7 +257,7 @@ export function PublicMap() {
         provCode: drill.provCode,
         provName: drill.provName,
         distCode: props.ubigeo,
-        distName: props.nombdist,
+        distName: props.distrito,
       });
     } else {
       // Click on a layer that doesn't match current level → drill up
