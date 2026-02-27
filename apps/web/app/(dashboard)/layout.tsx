@@ -298,6 +298,7 @@ function writeSidebarPref(collapsed: boolean) {
 const SIDEBAR_W_EXPANDED = 260;
 const SIDEBAR_W_COLLAPSED = 72;
 const MOBILE_BREAKPOINT = 768;
+const OPEN_MOBILE_SIDEBAR_EVENT = "goberna:open-mobile-sidebar";
 
 // ── Shared nav link styles ──────────────────────────────────────────
 
@@ -337,6 +338,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
   const showCollapsed = isMobile ? true : collapsed;
   const showLabel = !showCollapsed || mobileOpen;
   const sidebarWidth = showCollapsed ? SIDEBAR_W_COLLAPSED : SIDEBAR_W_EXPANDED;
+  const isCmsRoute = pathname === "/cms" || pathname.startsWith("/cms/");
   const isImmersiveRoute = pathname.includes("/tierra");
 
   // Persist preference (only for non-immersive toggling)
@@ -368,6 +370,15 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
     setMobileOpen(false);
     setCampaignDropdownOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    const handleOpenMobileSidebar = () => {
+      if (isMobile) setMobileOpen(true);
+    };
+
+    window.addEventListener(OPEN_MOBILE_SIDEBAR_EVENT, handleOpenMobileSidebar);
+    return () => window.removeEventListener(OPEN_MOBILE_SIDEBAR_EVENT, handleOpenMobileSidebar);
+  }, [isMobile]);
 
   const handleLogout = useCallback(async () => {
     await logout();
@@ -961,7 +972,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
       )}
 
       {/* ── Mobile hamburger (only visible on mobile) ──────────── */}
-      {isMobile && !mobileOpen && (
+      {isMobile && !mobileOpen && !isCmsRoute && (
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
@@ -993,7 +1004,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
         style={{
           flex: 1,
           marginLeft: "var(--sidebar-current-width)",
-          padding: isImmersiveRoute ? 0 : isMobile ? "68px 16px 16px" : 24,
+          padding: isImmersiveRoute ? 0 : isMobile ? (isCmsRoute ? 0 : "68px 16px 16px") : 24,
           transition: "margin-left 0.2s cubic-bezier(0.4,0,0.2,1)",
           minHeight: "100vh",
           overflow: isImmersiveRoute ? "hidden" : undefined,
