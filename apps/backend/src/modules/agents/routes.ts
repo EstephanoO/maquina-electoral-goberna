@@ -6,6 +6,7 @@ import type { AuthenticatedRequest } from "../../infra/auth";
 import { errorPayload } from "../../infra/http";
 import type { IngestOutcome } from "../../infra/metrics";
 import { metricsRegistry } from "../../infra/metrics";
+import { resolveTrackingAuth } from "../../infra/tracking-auth";
 import { emitCampaignEvent } from "../campaigns/routes";
 import { toState } from "./helpers";
 import { loadAllLiveAgentLocations } from "./repository";
@@ -319,27 +320,39 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
           (request as unknown as { __ingestOutcome?: IngestOutcome }).__ingestOutcome = outcome;
         };
 
-        if (env.agentIngestToken) {
-          const provided = String(request.headers["x-agent-token"] ?? "").trim();
-          if (!provided || provided !== env.agentIngestToken) {
-            markOutcome("auth_failed");
-            metricsRegistry.incCounter("tracking_ingest_total", "401");
-            metricsRegistry.incCounter("tracking_invalid_token_total", "invalid");
-            app.log.warn(
-              {
-                request_id: requestId,
-                ip: request.ip,
-                agent_id_header: String(request.headers["x-agent-id"] ?? ""),
-                has_token: provided.length > 0,
-              },
-              "tracking invalid token",
-            );
-            return reply.code(401).send(errorPayload(requestId, "INVALID_TOKEN", "token invalido"));
-          }
+        // Dual-mode auth: JWT Bearer (new) or x-agent-token (legacy)
+        const auth = await resolveTrackingAuth(request, env.jwtSecret, env.agentIngestToken);
+        if (!auth.ok) {
+          markOutcome("auth_failed");
+          metricsRegistry.incCounter("tracking_ingest_total", "401");
+          metricsRegistry.incCounter("tracking_invalid_token_total", "invalid");
+          app.log.warn(
+            { request_id: requestId, ip: request.ip, auth_code: auth.code },
+            "tracking auth failed",
+          );
+          return reply.code(auth.httpStatus).send(errorPayload(requestId, auth.code, auth.message));
         }
 
         try {
           const next = toState(request.body, "http");
+
+          // When JWT is used, the server overrides the client-provided agent_id
+          // with the JWT's sub claim. This prevents agent spoofing.
+          if (auth.method === "jwt") {
+            next.agentId = auth.agentId;
+            // Also override agent_name if not provided but we have JWT email
+            if (!next.agentName && auth.agentName) next.agentName = auth.agentName;
+            // Validate campaign_id if provided — JWT agents can only report for their campaigns
+            if (next.campaignId && !auth.campaignIds.includes(next.campaignId)) {
+              app.log.warn(
+                { request_id: requestId, agent_id: auth.agentId, campaign_id: next.campaignId },
+                "tracking campaign_id not in JWT claims",
+              );
+              // Don't reject — just clear the campaign_id to prevent attribution to wrong campaign
+              next.campaignId = null;
+            }
+          }
+
           const current = store.get(next.agentId);
           if (current && next.seq <= current.seq) {
             markOutcome("deduped");
@@ -475,13 +488,11 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       async (request, reply) => {
         const requestId = String(request.id);
 
-        // Validate token (same as location ingest)
-        if (env.agentIngestToken) {
-          const provided = String(request.headers["x-agent-token"] ?? "").trim();
-          if (!provided || provided !== env.agentIngestToken) {
-            metricsRegistry.incCounter("tracking_ingest_total", "401");
-            return reply.code(401).send(errorPayload(requestId, "INVALID_TOKEN", "token invalido"));
-          }
+        // Dual-mode auth: JWT Bearer (new) or x-agent-token (legacy)
+        const auth = await resolveTrackingAuth(request, env.jwtSecret, env.agentIngestToken);
+        if (!auth.ok) {
+          metricsRegistry.incCounter("tracking_ingest_total", "401");
+          return reply.code(auth.httpStatus).send(errorPayload(requestId, auth.code, auth.message));
         }
 
         const parsed = agentStatusSchema.safeParse(request.body);
@@ -490,7 +501,9 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
           return reply.code(400).send(errorPayload(requestId, "INVALID_PAYLOAD", message));
         }
 
-        const { agent_id: agentId, status: agentStatus, agent_name, campaign_id } = parsed.data;
+        // When JWT is used, override agent_id with server-authoritative identity
+        const { agent_id: rawAgentId, status: agentStatus, agent_name, campaign_id } = parsed.data;
+        const agentId = auth.method === "jwt" ? auth.agentId : rawAgentId;
 
         const ts = new Date().toISOString();
         const now = Date.now();
@@ -539,18 +552,16 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       async (request, reply) => {
         const requestId = String(request.id);
 
-        // Validate token
-        if (env.agentIngestToken) {
-          const provided = String(request.headers["x-agent-token"] ?? "").trim();
-          if (!provided || provided !== env.agentIngestToken) {
-            metricsRegistry.incCounter("tracking_ingest_total", "401");
-            metricsRegistry.incCounter("tracking_invalid_token_total", "invalid");
-            app.log.warn(
-              { request_id: requestId, ip: request.ip, has_token: provided.length > 0 },
-              "tracking batch invalid token",
-            );
-            return reply.code(401).send(errorPayload(requestId, "INVALID_TOKEN", "token invalido"));
-          }
+        // Dual-mode auth: JWT Bearer (new) or x-agent-token (legacy)
+        const auth = await resolveTrackingAuth(request, env.jwtSecret, env.agentIngestToken);
+        if (!auth.ok) {
+          metricsRegistry.incCounter("tracking_ingest_total", "401");
+          metricsRegistry.incCounter("tracking_invalid_token_total", "invalid");
+          app.log.warn(
+            { request_id: requestId, ip: request.ip, auth_code: auth.code },
+            "tracking batch auth failed",
+          );
+          return reply.code(auth.httpStatus).send(errorPayload(requestId, auth.code, auth.message));
         }
 
         try {
@@ -568,6 +579,15 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
           for (const loc of locations) {
             try {
               const next = toState(loc, "http");
+
+              // When JWT is used, override agent_id with server-authoritative identity
+              if (auth.method === "jwt") {
+                next.agentId = auth.agentId;
+                if (!next.agentName && auth.agentName) next.agentName = auth.agentName;
+                if (next.campaignId && !auth.campaignIds.includes(next.campaignId)) {
+                  next.campaignId = null;
+                }
+              }
               const current = store.get(next.agentId);
 
               // Dedupe check

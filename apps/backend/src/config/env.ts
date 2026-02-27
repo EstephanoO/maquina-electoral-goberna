@@ -118,6 +118,13 @@ export function getEnv(): AppEnv {
     throw new Error("JWT_SECRET no configurada o demasiado corta (minimo 32 chars)");
   }
 
+  // Warn if AGENT_INGEST_TOKEN is empty — tracking auth falls through to JWT-only mode
+  const agentIngestToken = (process.env.AGENT_INGEST_TOKEN ?? "").trim();
+  const nodeEnv = process.env.NODE_ENV ?? "development";
+  if (!agentIngestToken && nodeEnv === "production") {
+    console.warn("[ENV] AGENT_INGEST_TOKEN no configurada — tracking solo acepta JWT Bearer (legacy mobile no podra conectar)");
+  }
+
   return {
     nodeEnv: process.env.NODE_ENV ?? "development",
     port: toNumber(process.env.BACKEND_PORT ?? process.env.PORT, 3001),
@@ -144,7 +151,7 @@ export function getEnv(): AppEnv {
     formsWriteBehindBatchSize: toNumber(process.env.FORMS_WB_BATCH_SIZE, 200),
     formsWriteBehindFlushMs: toNumber(process.env.FORMS_WB_FLUSH_MS, 300),
     formsWriteBehindMaxQueue: toNumber(process.env.FORMS_WB_MAX_QUEUE, 10000),
-    agentIngestToken: (process.env.AGENT_INGEST_TOKEN ?? "").trim(),
+    agentIngestToken,
     agentStaleAfterMs: toNumber(process.env.AGENT_STALE_AFTER_MS, 120000),
     agentStreamHeartbeatMs: toNumber(process.env.AGENT_STREAM_HEARTBEAT_MS, 25000),
     agentStreamBatchFlushMs: toNumber(process.env.AGENT_STREAM_BATCH_FLUSH_MS, 120),

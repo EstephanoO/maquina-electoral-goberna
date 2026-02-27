@@ -27,6 +27,7 @@ import type { WebSocket } from "@fastify/websocket";
 
 import type { AppEnv } from "../../config/env";
 import { metricsRegistry } from "../../infra/metrics";
+import { resolveWsTrackingAuth, type TrackingAuthResult } from "../../infra/tracking-auth";
 import { emitCampaignEvent } from "../campaigns/routes";
 import { toState } from "./helpers";
 import { agentLocationBatchSchema } from "./schema";
@@ -158,29 +159,47 @@ export function buildAgentsWsRoutes(env: AppEnv, ctx: IngestContext): FastifyPlu
     app.get(
       "/ws/tracking",
       { websocket: true },
-      (socket, request) => {
-        // ─── Auth check ──────────────────────────────
+      async (socket, request) => {
+        // ─── Dual-mode auth ──────────────────────────
+        // New mobile sends JWT as ?token=<jwt> (has dots)
+        // Old mobile sends shared secret as ?token=<legacy_token>
         const urlParams = new URL(request.url, "http://localhost").searchParams;
         const token = urlParams.get("token") ?? "";
 
-        if (env.agentIngestToken && token !== env.agentIngestToken) {
-          metricsRegistry.incCounter("ws_auth_failed", "invalid_token");
-          app.log.warn({ ip: request.ip }, "ws tracking invalid token");
-          sendJson(socket, { type: "error", code: "INVALID_TOKEN", message: "token invalido" });
-          socket.close(4001, "invalid token");
+        const auth = await resolveWsTrackingAuth(token, env.jwtSecret, env.agentIngestToken);
+        if (!auth.ok) {
+          metricsRegistry.incCounter("ws_auth_failed", auth.code);
+          app.log.warn({ ip: request.ip, auth_code: auth.code }, "ws tracking auth failed");
+          sendJson(socket, { type: "error", code: auth.code, message: auth.message });
+          socket.close(4001, "auth failed");
           return;
         }
+
+        const authMethod = auth.method; // "jwt" or "legacy_token"
 
         // ─── Connection setup ────────────────────────
         wsClients.add(socket);
         metricsRegistry.incCounter("ws_connections", "open");
+        if (authMethod === "jwt") {
+          metricsRegistry.incCounter("ws_auth_method", "jwt");
+        } else {
+          metricsRegistry.incCounter("ws_auth_method", "legacy_token");
+        }
 
         // Rate limiting: sliding window per second
         let messageCount = 0;
         let windowStartMs = Date.now();
 
-        // Track which agent is behind this socket (resolved from first location message)
-        let identifiedAgentId: string | null = null;
+        // Track which agent is behind this socket.
+        // For JWT auth, the agent is known immediately from the token.
+        // For legacy auth, it's resolved from the first location message.
+        let identifiedAgentId: string | null = auth.method === "jwt" ? auth.agentId : null;
+
+        // If JWT auth, register agent immediately (don't wait for first location)
+        if (identifiedAgentId) {
+          ctx.store.addWsAgent(identifiedAgentId);
+          app.log.info({ agent_id: identifiedAgentId, ip: request.ip, auth: "jwt" }, "ws agent identified (jwt)");
+        }
 
         // Pong tracking for dead connection detection
         let lastPongMs = Date.now();
@@ -251,13 +270,17 @@ export function buildAgentsWsRoutes(env: AppEnv, ctx: IngestContext): FastifyPlu
             }
 
             if (msg.type === "location") {
-              const result = await ingestSingle(msg.data, ctx, app.log);
+              // When JWT auth, override agent_id in payload with server-authoritative identity
+              const locationData = authMethod === "jwt" && auth.agentId
+                ? { ...(msg.data as Record<string, unknown>), agent_id: auth.agentId }
+                : msg.data;
+              const result = await ingestSingle(locationData, ctx, app.log);
 
-              // Identify this socket's agent from the first successful ingest
+              // Identify this socket's agent from the first successful ingest (legacy only)
               if (!identifiedAgentId && result.agentId) {
                 identifiedAgentId = result.agentId;
                 ctx.store.addWsAgent(result.agentId);
-                app.log.info({ agent_id: result.agentId, ip: request.ip }, "ws agent identified");
+                app.log.info({ agent_id: result.agentId, ip: request.ip, auth: authMethod }, "ws agent identified");
               }
 
               sendJson(socket, {
@@ -272,7 +295,12 @@ export function buildAgentsWsRoutes(env: AppEnv, ctx: IngestContext): FastifyPlu
             }
 
             if (msg.type === "location.batch") {
-              const parsed = agentLocationBatchSchema.safeParse({ locations: msg.data });
+              // When JWT auth, override agent_id in all batch payloads
+              const batchData = authMethod === "jwt" && auth.agentId
+                ? (msg.data as Array<Record<string, unknown>>).map((loc) => ({ ...loc, agent_id: auth.agentId }))
+                : msg.data;
+
+              const parsed = agentLocationBatchSchema.safeParse({ locations: batchData });
               if (!parsed.success) {
                 sendJson(socket, { type: "error", code: "INVALID_PAYLOAD", message: "batch invalido" });
                 return;
