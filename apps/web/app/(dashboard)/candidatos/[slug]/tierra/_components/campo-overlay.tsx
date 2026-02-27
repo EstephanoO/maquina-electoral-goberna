@@ -7,6 +7,7 @@ import {
   Glass, Kpi, CardHeader, AgentRow, RankingRow, LogRow, MoreBtn, SCROLL_MAX,
 } from "./campo-overlay-parts";
 import { LogModal } from "./log-modal";
+import type { ScreenTier } from "./hooks/use-breakpoint";
 
 /* ========== Types ========== */
 
@@ -25,11 +26,14 @@ type Props = {
   onDeleteForm?: (formId: string, campaignId: string) => Promise<boolean>;
   /** Update handler — called from modal */
   onUpdateForm?: (formId: string, campaignId: string, updates: Record<string, string>) => Promise<boolean>;
+  /** Responsive tier */
+  tier?: ScreenTier;
 };
 
 /* ========== Constants ========== */
 
 const PANEL_W = 300;
+const PANEL_W_TV = 420;
 const LOG_COLLAPSED = 3;
 const LOG_EXPANDED = 12;
 const AGENTS_COLLAPSED = 4;
@@ -41,8 +45,12 @@ const RANKING_EXPANDED = 15;
 export function CampoOverlay({
   agents, connectedCount, logEntries, formCount,
   primaryColor, selectedAgentId, onAgentClick, onLogEntryClick,
-  userRole, onDeleteForm, onUpdateForm,
+  userRole, onDeleteForm, onUpdateForm, tier = "desktop",
 }: Props) {
+  const isMobile = tier === "mobile";
+  const isTV = tier === "tv";
+  const panelW = isTV ? PANEL_W_TV : PANEL_W;
+
   const [visible, setVisible] = useState(true);
   const [agentsOpen, setAgentsOpen] = useState(false);
   const [rankingOpen, setRankingOpen] = useState(false);
@@ -82,10 +90,142 @@ export function CampoOverlay({
 
   const selectedAgent = selectedAgentId ? agents.find((a) => a.id === selectedAgentId) : null;
 
+  /* ── Shared panel cards (reused by mobile fullscreen & desktop/TV floating) ── */
+  const panelCards = (
+    <>
+      {/* ═══ Active filter banner ═══ */}
+      {selectedAgent && (
+        <div
+          className="flex items-center gap-2 px-3 py-2 rounded-2xl shadow-sm"
+          style={{ background: `${primaryColor}18`, border: `1px solid ${primaryColor}30` }}
+        >
+          <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: primaryColor }} />
+          <span className="text-[11px] font-semibold text-slate-700 truncate flex-1">
+            Puntos de <span style={{ color: primaryColor }}>{selectedAgent.name.split(" ")[0]}</span>
+          </span>
+          <span className="text-[10px] font-bold tabular-nums" style={{ color: primaryColor }}>{selectedAgent.forms_count}</span>
+          <button
+            type="button"
+            onClick={() => onAgentClick(selectedAgentId!)}
+            className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] cursor-pointer transition-colors hover:bg-white/50"
+            style={{ color: primaryColor }}
+            aria-label="Limpiar filtro"
+            title="Limpiar filtro"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* ═══ KPI row ═══ */}
+      <div className="flex gap-2">
+        <Kpi dotColor="#22c55e" pulse value={connectedCount} label="En linea" />
+        <Kpi color={primaryColor} value={formCount} label="Capturas" />
+        <Kpi color="#64748b" value={agents.length} label="Agentes" sub={
+          <span className="flex gap-1.5 mt-0.5">
+            {(["connected", "idle", "inactive"] as const).map((s) => (
+              <span key={s} className="flex items-center gap-0.5">
+                <span className="w-1 h-1 rounded-full" style={{ backgroundColor: STATUS_CFG[s].color }} />
+                <span className="text-[8px] tabular-nums opacity-70">{statusCounts[s]}</span>
+              </span>
+            ))}
+          </span>
+        } />
+      </div>
+
+      {/* ═══ Agents card ═══ */}
+      <Glass>
+        <CardHeader onClick={() => setAgentsOpen(!agentsOpen)} open={agentsOpen}>
+          <span className="font-semibold text-[12px] text-slate-700">Agentes</span>
+          <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: primaryColor }}>{agents.length}</span>
+          <span className="ml-auto mr-2 flex items-center gap-1 text-[9px] font-bold text-emerald-500">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            LIVE
+          </span>
+        </CardHeader>
+        <div className={agentsOpen ? SCROLL_MAX : ""}>
+          {visibleAgents.length === 0 ? (
+            <p className="px-3 py-3 text-center text-[11px] text-slate-400/80">Sin agentes</p>
+          ) : (
+            visibleAgents.map((a) => (
+              <AgentRow key={a.id} agent={a} primaryColor={primaryColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
+            ))
+          )}
+        </div>
+        {!agentsOpen && sortedAgents.length > AGENTS_COLLAPSED && (
+          <MoreBtn count={sortedAgents.length - AGENTS_COLLAPSED} color={primaryColor} onClick={() => setAgentsOpen(true)} />
+        )}
+      </Glass>
+
+      {/* ═══ Ranking card ═══ */}
+      {rankedAgents.length > 0 && (
+        <Glass>
+          <CardHeader onClick={() => setRankingOpen(!rankingOpen)} open={rankingOpen}>
+            <span className="font-semibold text-[12px] text-slate-700">Ranking</span>
+            <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: primaryColor }}>{rankedAgents.length}</span>
+            <span className="ml-auto mr-2 text-[9px] font-bold text-amber-500">TOP</span>
+          </CardHeader>
+          <div className={rankingOpen ? SCROLL_MAX : ""}>
+            {visibleRanking.map((a, idx) => (
+              <RankingRow key={a.id} agent={a} rank={idx + 1} primaryColor={primaryColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
+            ))}
+          </div>
+          {!rankingOpen && rankedAgents.length > RANKING_COLLAPSED && (
+            <MoreBtn count={rankedAgents.length - RANKING_COLLAPSED} color={primaryColor} onClick={() => setRankingOpen(true)} />
+          )}
+        </Glass>
+      )}
+
+      {/* ═══ Log card — datos subidos ═══ */}
+      <Glass>
+        <div className="flex items-center">
+          <CardHeader onClick={() => setLogOpen(!logOpen)} open={logOpen}>
+            <span className="font-semibold text-[12px] text-slate-700">Datos</span>
+            <span className="ml-1.5 text-[11px] font-bold tabular-nums mr-auto" style={{ color: primaryColor }}>{formLogEntries.length}</span>
+          </CardHeader>
+          <button
+            type="button"
+            onClick={() => setLogModalOpen(true)}
+            className="shrink-0 mr-3 text-[9px] font-semibold uppercase tracking-wider cursor-pointer transition-colors hover:opacity-80"
+            style={{ color: primaryColor }}
+            title="Ver registro completo"
+          >
+            Ver todos
+          </button>
+        </div>
+        <div ref={logListRef} className={logOpen ? "max-h-[340px] overflow-y-auto" : ""}>
+          {visibleLogs.length === 0 ? (
+            <p className="px-3 py-3 text-center text-[11px] text-slate-400/80 italic">Sin registros</p>
+          ) : (
+            visibleLogs.map((e) => (
+              <LogRow key={e.id} entry={e} onLogEntryClick={onLogEntryClick} />
+            ))
+          )}
+        </div>
+        {!logOpen && formLogEntries.length > LOG_COLLAPSED && (
+          <MoreBtn count={formLogEntries.length - LOG_COLLAPSED} color={primaryColor} onClick={() => setLogOpen(true)} />
+        )}
+      </Glass>
+    </>
+  );
+
+  /* ── Mobile: fullscreen panel ── */
+  if (isMobile) {
+    return (
+      <>
+        <div className="absolute inset-0 z-10 bg-slate-50/95 backdrop-blur-sm overflow-y-auto p-3 flex flex-col gap-2.5">
+          {panelCards}
+        </div>
+        <LogModal open={logModalOpen} onClose={() => setLogModalOpen(false)} entries={logEntries} onEntryClick={(entry) => { setLogModalOpen(false); onLogEntryClick(entry); }} userRole={userRole} onDelete={onDeleteForm} onUpdate={onUpdateForm} />
+      </>
+    );
+  }
+
+  /* ── Desktop / TV: floating panel ── */
   return (
     <div
       className="absolute top-3 bottom-3 z-10 flex items-start transition-[right] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-      style={{ right: visible ? 12 : -(PANEL_W + 4) }}
+      style={{ right: visible ? 12 : -(panelW + 4) }}
     >
       {/* ─── Toggle tab ─── */}
       <button
@@ -102,126 +242,8 @@ export function CampoOverlay({
       </button>
 
       {/* ─── Panel body ─── */}
-      <div className="flex flex-col gap-2.5 overflow-y-auto overflow-x-hidden max-h-full" style={{ width: PANEL_W }}>
-        {/* ═══ Active filter banner ═══ */}
-        {selectedAgent && (
-          <div
-            className="flex items-center gap-2 px-3 py-2 rounded-2xl shadow-sm"
-            style={{ background: `${primaryColor}18`, border: `1px solid ${primaryColor}30` }}
-          >
-            <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: primaryColor }} />
-            <span className="text-[11px] font-semibold text-slate-700 truncate flex-1">
-              Puntos de <span style={{ color: primaryColor }}>{selectedAgent.name.split(" ")[0]}</span>
-            </span>
-            <span className="text-[10px] font-bold tabular-nums" style={{ color: primaryColor }}>{selectedAgent.forms_count}</span>
-            <button
-              type="button"
-              onClick={() => onAgentClick(selectedAgentId!)}
-              className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] cursor-pointer transition-colors hover:bg-white/50"
-              style={{ color: primaryColor }}
-              aria-label="Limpiar filtro"
-              title="Limpiar filtro"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-
-        {/* ═══ KPI row ═══ */}
-        <div className="flex gap-2">
-          <Kpi dotColor="#22c55e" pulse value={connectedCount} label="En linea" />
-          <Kpi color={primaryColor} value={formCount} label="Capturas" />
-          <Kpi color="#64748b" value={agents.length} label="Agentes" sub={
-            <span className="flex gap-1.5 mt-0.5">
-              {(["connected", "idle", "inactive"] as const).map((s) => (
-                <span key={s} className="flex items-center gap-0.5">
-                  <span className="w-1 h-1 rounded-full" style={{ backgroundColor: STATUS_CFG[s].color }} />
-                  <span className="text-[8px] tabular-nums opacity-70">{statusCounts[s]}</span>
-                </span>
-              ))}
-            </span>
-          } />
-        </div>
-
-        {/* ═══ Agents card ═══ */}
-        <Glass>
-          <CardHeader onClick={() => setAgentsOpen(!agentsOpen)} open={agentsOpen}>
-            <span className="font-semibold text-[12px] text-slate-700">Agentes</span>
-            <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: primaryColor }}>{agents.length}</span>
-            <span className="ml-auto mr-2 flex items-center gap-1 text-[9px] font-bold text-emerald-500">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              LIVE
-            </span>
-          </CardHeader>
-
-          <div className={agentsOpen ? SCROLL_MAX : ""}>
-            {visibleAgents.length === 0 ? (
-              <p className="px-3 py-3 text-center text-[11px] text-slate-400/80">Sin agentes</p>
-            ) : (
-              visibleAgents.map((a) => (
-                <AgentRow key={a.id} agent={a} primaryColor={primaryColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
-              ))
-            )}
-          </div>
-
-          {!agentsOpen && sortedAgents.length > AGENTS_COLLAPSED && (
-            <MoreBtn count={sortedAgents.length - AGENTS_COLLAPSED} color={primaryColor} onClick={() => setAgentsOpen(true)} />
-          )}
-        </Glass>
-
-        {/* ═══ Ranking card ═══ */}
-        {rankedAgents.length > 0 && (
-          <Glass>
-            <CardHeader onClick={() => setRankingOpen(!rankingOpen)} open={rankingOpen}>
-              <span className="font-semibold text-[12px] text-slate-700">Ranking</span>
-              <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: primaryColor }}>{rankedAgents.length}</span>
-              <span className="ml-auto mr-2 text-[9px] font-bold text-amber-500">TOP</span>
-            </CardHeader>
-
-            <div className={rankingOpen ? SCROLL_MAX : ""}>
-              {visibleRanking.map((a, idx) => (
-                <RankingRow key={a.id} agent={a} rank={idx + 1} primaryColor={primaryColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
-              ))}
-            </div>
-
-            {!rankingOpen && rankedAgents.length > RANKING_COLLAPSED && (
-              <MoreBtn count={rankedAgents.length - RANKING_COLLAPSED} color={primaryColor} onClick={() => setRankingOpen(true)} />
-            )}
-          </Glass>
-        )}
-
-        {/* ═══ Log card — datos subidos ═══ */}
-        <Glass>
-          <div className="flex items-center">
-            <CardHeader onClick={() => setLogOpen(!logOpen)} open={logOpen}>
-              <span className="font-semibold text-[12px] text-slate-700">Datos</span>
-              <span className="ml-1.5 text-[11px] font-bold tabular-nums mr-auto" style={{ color: primaryColor }}>{formLogEntries.length}</span>
-            </CardHeader>
-            <button
-              type="button"
-              onClick={() => setLogModalOpen(true)}
-              className="shrink-0 mr-3 text-[9px] font-semibold uppercase tracking-wider cursor-pointer transition-colors hover:opacity-80"
-              style={{ color: primaryColor }}
-              title="Ver registro completo"
-            >
-              Ver todos
-            </button>
-          </div>
-
-          <div ref={logListRef} className={logOpen ? "max-h-[340px] overflow-y-auto" : ""}>
-            {visibleLogs.length === 0 ? (
-              <p className="px-3 py-3 text-center text-[11px] text-slate-400/80 italic">Sin registros</p>
-            ) : (
-              visibleLogs.map((e) => (
-                <LogRow key={e.id} entry={e} onLogEntryClick={onLogEntryClick} />
-              ))
-            )}
-          </div>
-
-          {!logOpen && formLogEntries.length > LOG_COLLAPSED && (
-            <MoreBtn count={formLogEntries.length - LOG_COLLAPSED} color={primaryColor} onClick={() => setLogOpen(true)} />
-          )}
-        </Glass>
+      <div className="flex flex-col gap-2.5 overflow-y-auto overflow-x-hidden max-h-full" style={{ width: panelW }}>
+        {panelCards}
       </div>
 
       {/* ═══ Full log modal ═══ */}

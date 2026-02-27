@@ -77,31 +77,21 @@ export const PERU_MAX_BOUNDS: [[number, number], [number, number]] = [[-90, -25]
 
 /* ─── Tile config ─── */
 
-const LIGHT_TILES = "https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png";
-const LABEL_TILES = "https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}@2x.png";
 export const DEFAULT_TILE_TEMPLATE = "/api/tiles/{z}/{x}/{y}.vector.pbf";
 
 /**
- * MAP_STYLE uses the "sandwich" technique:
- *   1. light_nolabels raster (base — no text)
- *   2. ... all data layers added by react-maplibre at runtime ...
- *   3. light_only_labels raster (top — street/city names ON TOP of data)
+ * MAP_STYLE — label-free base map.
  *
- * The labels source is defined here so MapLibre loads tiles eagerly.
- * The label layer is added in tierra-map.tsx as the last <Layer> to ensure
- * it renders above all data Sources.
+ * Uses a solid background (#f1f5f9 = slate-100) instead of CARTO raster tiles.
+ * CARTO "light_nolabels" still renders city/country names — the only way to
+ * guarantee zero text is to drop the raster entirely and rely on Tegola vector
+ * boundaries drawn at runtime by react-maplibre.
  */
 export const MAP_STYLE: StyleSpecification = {
   version: 8,
-  sources: {
-    "light-base": { type: "raster", tiles: [LIGHT_TILES], tileSize: 256, attribution: "&copy; CARTO", maxzoom: 19 },
-    "carto-labels": { type: "raster", tiles: [LABEL_TILES], tileSize: 256, maxzoom: 19 },
-  },
+  sources: {},
   layers: [
-    /** Background layer — visible while raster tiles load. Color matches CARTO light_nolabels
-     *  basemap background (#e6e5e3). Without this, unloaded tiles show as pure white squares. */
-    { id: "background", type: "background", paint: { "background-color": "#e6e5e3" } },
-    { id: "light-base", type: "raster", source: "light-base" },
+    { id: "background", type: "background", paint: { "background-color": "#f1f5f9" } },
   ],
   /** Instant paint transitions — mask/fill changes must sync with flyTo, not lag behind */
   transition: { duration: 0, delay: 0 },
