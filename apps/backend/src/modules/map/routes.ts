@@ -1,7 +1,11 @@
 import type { FastifyPluginAsync } from "fastify";
 
 import type { AppEnv } from "../../config/env";
+import type { AuthenticatedRequest } from "../../infra/auth";
+import { errorPayload } from "../../infra/http";
+import { redisClient } from "../../infra/redis";
 import { fetchWithRetry } from "../../infra/upstream";
+import { filterMvtByCampaign } from "./tile-filter";
 import { parseTileParam } from "./tiles";
 import {
   getDepartamentos,
@@ -16,6 +20,16 @@ const layersContract = [
   { id: "provincias", sourceLayer: "provincias", minZoom: 5, maxZoom: 14 },
   { id: "distritos", sourceLayer: "distritos", minZoom: 8, maxZoom: 14 },
 ];
+
+/**
+ * Near-realtime Cache-Control — reduced TTLs for quick propagation
+ * of QGIS edits to the dashboard map.
+ */
+function tileCacheControl(z: number): string {
+  if (z <= 7) return "public, max-age=60, stale-while-revalidate=30";
+  if (z <= 12) return "public, max-age=30, stale-while-revalidate=30";
+  return "public, max-age=10, stale-while-revalidate=10";
+}
 
 export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
   return async (app) => {
@@ -182,6 +196,130 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
       // Fallback for runtimes without ReadableStream body
       const body = Buffer.from(await response.arrayBuffer());
       return reply.send(body);
+    });
+
+    /* ========== Authenticated Tile Proxy (campaign-filtered MVT) ========== */
+    // Resolves GAP 1 (data leak) + GAP 4 (no auth on tiles):
+    // - Verifies JWT + campaign membership
+    // - Fetches raw tile from Tegola (all campaigns)
+    // - Filters MVT features so only the requested campaign's data is returned
+    // - Uses near-realtime Cache-Control + ETag with geo version
+
+    app.get<{
+      Params: { campaignId: string; z: string; x: string; y: string };
+    }>("/api/tiles/:campaignId/:z/:x/:y.vector.pbf", {
+      preHandler: [app.authenticate],
+      handler: async (request, reply) => {
+        const req = request as AuthenticatedRequest;
+        const { campaignId, z: zStr, x: xStr, y: yStr } = request.params;
+        const requestId = String(request.id);
+
+        // Verify campaign membership (admin bypasses)
+        if (req.userRole !== "admin" && !req.campaignIds.includes(campaignId)) {
+          return reply.code(403).send(errorPayload(requestId, "FORBIDDEN", "sin acceso a esta campaña"));
+        }
+
+        // Validate z/x/y
+        const z = parseTileParam(zStr, 0, 22);
+        if (z === null) {
+          return reply.code(400).send(errorPayload(requestId, "INVALID_PARAM", "z inválido"));
+        }
+        if (z < 3) {
+          reply.header("Cache-Control", "public, max-age=86400");
+          return reply.code(204).send();
+        }
+
+        const maxXY = 2 ** z - 1;
+        const x = parseTileParam(xStr, 0, maxXY);
+        const y = parseTileParam(yStr, 0, maxXY);
+        if (x === null || y === null) {
+          return reply.code(400).send(errorPayload(requestId, "INVALID_PARAM", "x o y inválido"));
+        }
+
+        // Fetch raw tile from Tegola (contains ALL campaigns)
+        const targetUrl = `${env.tegolaBaseUrl}/maps/${env.tegolaMap}/${z}/${x}/${y}.vector.pbf`;
+        const upstreamResponse = await fetchWithRetry(targetUrl, env);
+
+        if (!upstreamResponse.ok) {
+          if (upstreamResponse.status === 204) {
+            return reply.code(204).send();
+          }
+          return reply.code(upstreamResponse.status).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "error obteniendo tile de Tegola"),
+          );
+        }
+
+        // Buffer the full tile (needed for decode/filter/encode — tiles are 10-100KB)
+        const rawBuffer = Buffer.from(await upstreamResponse.arrayBuffer());
+
+        // Filter MVT features: only this campaign's data in campaign-scoped layers
+        const filtered = filterMvtByCampaign(rawBuffer, campaignId);
+
+        // Geo version for ETag — bumped by geo-listener on QGIS edits
+        let version = "0";
+        try {
+          version = (await redisClient.get(`geo:version:${campaignId}`)) ?? "0";
+        } catch {
+          // Redis unavailable — use fallback version (tiles still work, just no cache invalidation)
+        }
+
+        reply
+          .header("Content-Type", "application/x-protobuf")
+          .header("Cache-Control", tileCacheControl(z))
+          .header("ETag", `"t-${z}-${x}-${y}-${version}"`)
+          .header("X-Tile-Zoom", z.toString())
+          .send(filtered);
+      },
+    });
+
+    /* ========== SSE: Geo Change Notifications ========== */
+    // When the geographer edits in QGIS, pg_notify → geo-listener → Redis pub/sub.
+    // This SSE endpoint delivers those events to connected dashboard clients
+    // so they can bust their tile cache in near-realtime.
+
+    app.get("/api/geo/stream", {
+      preHandler: [app.authenticate],
+      handler: async (request, reply) => {
+        const req = request as AuthenticatedRequest;
+
+        reply.raw.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no", // Nginx: disable proxy buffering for SSE
+        });
+
+        // Duplicate the Redis client for this subscription
+        const subscriber = redisClient.duplicate();
+        await subscriber.connect();
+
+        await subscriber.subscribe("geo:updated", (message) => {
+          try {
+            const data = JSON.parse(message) as { campaignId?: string };
+            // Only send if user belongs to the campaign (or is admin)
+            if (
+              req.userRole === "admin" ||
+              (data.campaignId && req.campaignIds.includes(data.campaignId))
+            ) {
+              reply.raw.write(`event: geo_updated\ndata: ${message}\n\n`);
+            }
+          } catch {
+            // Malformed message — skip
+          }
+        });
+
+        // Heartbeat every 30s to keep connection alive through proxies
+        const heartbeat = setInterval(() => {
+          reply.raw.write(": heartbeat\n\n");
+        }, 30_000);
+
+        // Cleanup on client disconnect
+        request.raw.on("close", () => {
+          clearInterval(heartbeat);
+          void subscriber.unsubscribe("geo:updated").catch(() => {});
+          void subscriber.disconnect().catch(() => {});
+        });
+      },
     });
   };
 }

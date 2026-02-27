@@ -11,6 +11,7 @@ import { initSupportTelegramBridge } from "./infra/support-telegram-bridge";
 import { ensureAgentLocationsLiveTable, cleanupLocationHistory } from "./modules/agents/repository";
 import { ensureFormsTable } from "./modules/forms/repository";
 import { AuthRepository } from "./modules/auth/repository";
+import { startGeoListener, stopGeoListener } from "./modules/map/geo-listener";
 
 const env = getEnv();
 const app = buildApp(env);
@@ -23,6 +24,9 @@ await ensureFormsTable();
 await ensureAgentLocationsLiveTable();
 
 await app.listen({ host: "0.0.0.0", port: env.port });
+
+// ── Geo LISTEN (QGIS → PostGIS pg_notify → Redis version bump → SSE) ─
+void startGeoListener(env.databaseUrl, app.log);
 
 // ── Health poller (DB/Redis/Tegola + CPU/RAM/Disk) ────────────────────
 startHealthPoller(env);
@@ -66,6 +70,7 @@ const shutdown = async () => {
   if (cleanupTimer) clearInterval(cleanupTimer);
   stopHealthPoller();
   stopTelegramCommands();
+  await stopGeoListener();
   await app.close();
   await disconnectRedis();
   await pool.end();

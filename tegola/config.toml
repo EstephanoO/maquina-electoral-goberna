@@ -6,11 +6,13 @@ port = ":8080"
   Access-Control-Allow-Methods = "GET, OPTIONS"
   Cache-Control = "public, max-age=3600, stale-while-revalidate=600"
 
-# Tegola internal Redis cache — geographic data is static, cache aggressively
-[cache]
-type = "redis"
-uri = "redis://:${REDIS_PASSWORD}@redis:6379/0"
-max_zoom = 14
+# Tegola internal Redis cache — DISABLED for near-realtime QGIS → dashboard propagation.
+# With 1-3 active campaigns and low traffic, Tegola can query PostGIS directly on each
+# tile request. Caching is handled by Nginx (30s disk cache) and browser (Cache-Control).
+# [cache]
+# type = "redis"
+# uri = "redis://:${REDIS_PASSWORD}@redis:6379/0"
+# max_zoom = 14
 
 [[providers]]
 name = "neon"
@@ -69,6 +71,34 @@ uri = "${DATABASE_URL}"
   id_fieldname = "id"
   sql = "SELECT id, campaign_id::text, zone_level, zone_code, zone_name, sector, subsector, parent_code, population, ST_AsMVTGeom(geom_3857, !BBOX!) AS geom FROM public.campaign_custom_zones WHERE geom_3857 && !BBOX!"
 
+  # ── Brigadista locations: QGIS-managed point markers ──
+  # 4 layers split by agent_role × location_type for distinct styling on the dashboard.
+  # geom_3857 auto-projected via trigger in migration 032_brigadista_locations.sql
+
+  [[providers.layers]]
+  name = "brigadista_domicilio_campo"
+  geometry_type = "Point"
+  id_fieldname = "id"
+  sql = "SELECT id, campaign_id::text, agent_name, notes, ST_AsMVTGeom(geom_3857, !BBOX!) AS geom FROM public.brigadista_locations WHERE agent_role = 'agente_campo' AND location_type = 'domicilio' AND geom_3857 && !BBOX!"
+
+  [[providers.layers]]
+  name = "brigadista_trabajo_campo"
+  geometry_type = "Point"
+  id_fieldname = "id"
+  sql = "SELECT id, campaign_id::text, agent_name, notes, ST_AsMVTGeom(geom_3857, !BBOX!) AS geom FROM public.brigadista_locations WHERE agent_role = 'agente_campo' AND location_type = 'centro_trabajo' AND geom_3857 && !BBOX!"
+
+  [[providers.layers]]
+  name = "brigadista_domicilio_digital"
+  geometry_type = "Point"
+  id_fieldname = "id"
+  sql = "SELECT id, campaign_id::text, agent_name, notes, ST_AsMVTGeom(geom_3857, !BBOX!) AS geom FROM public.brigadista_locations WHERE agent_role = 'agente_digital' AND location_type = 'domicilio' AND geom_3857 && !BBOX!"
+
+  [[providers.layers]]
+  name = "brigadista_trabajo_digital"
+  geometry_type = "Point"
+  id_fieldname = "id"
+  sql = "SELECT id, campaign_id::text, agent_name, notes, ST_AsMVTGeom(geom_3857, !BBOX!) AS geom FROM public.brigadista_locations WHERE agent_role = 'agente_digital' AND location_type = 'centro_trabajo' AND geom_3857 && !BBOX!"
+
 [[maps]]
 name = "peru"
 center = [-75.0152, -9.1899, 5.0]
@@ -108,4 +138,25 @@ center = [-75.0152, -9.1899, 5.0]
   [[maps.layers]]
   provider_layer = "neon.campaign_sectors"
   min_zoom = 10
+  max_zoom = 14
+
+  # Brigadista location points (QGIS-managed)
+  [[maps.layers]]
+  provider_layer = "neon.brigadista_domicilio_campo"
+  min_zoom = 8
+  max_zoom = 14
+
+  [[maps.layers]]
+  provider_layer = "neon.brigadista_trabajo_campo"
+  min_zoom = 8
+  max_zoom = 14
+
+  [[maps.layers]]
+  provider_layer = "neon.brigadista_domicilio_digital"
+  min_zoom = 8
+  max_zoom = 14
+
+  [[maps.layers]]
+  provider_layer = "neon.brigadista_trabajo_digital"
+  min_zoom = 8
   max_zoom = 14

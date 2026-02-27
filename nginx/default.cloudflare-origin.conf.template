@@ -70,12 +70,13 @@ server {
         proxy_read_timeout 30s;
         proxy_connect_timeout 5s;
 
-        # Cache config
+        # Cache config — reduced TTLs for near-realtime QGIS → dashboard propagation
+        # URI already includes campaignId for filtered tiles (/api/tiles/{campaignId}/{z}/{x}/{y})
         proxy_cache tiles_cache;
         proxy_cache_key $uri;
-        proxy_cache_valid 200 2h;
-        proxy_cache_valid 204 1m;
-        proxy_cache_valid 404 1m;
+        proxy_cache_valid 200 30s;
+        proxy_cache_valid 204 10s;
+        proxy_cache_valid 404 10s;
         proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
         proxy_cache_lock on;
         proxy_cache_lock_timeout 5s;
@@ -115,6 +116,23 @@ server {
         proxy_set_header Connection "upgrade";
         proxy_buffering off;
         proxy_cache off;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 300s;
+        proxy_pass http://backend:${BACKEND_PORT};
+    }
+
+    # SSE for geo change notifications (QGIS → dashboard near-realtime)
+    location /api/geo/stream {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection '';
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding off;
         proxy_read_timeout 300s;
         proxy_connect_timeout 10s;
         proxy_send_timeout 300s;

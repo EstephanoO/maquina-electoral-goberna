@@ -18,6 +18,17 @@ export const CLUSTER_STEPS = [5, 15, 50, 150] as const;
 export const CLUSTER_SIZES = [12, 16, 20, 26, 32] as const;
 export const DATA_POINT = "#2563eb";
 
+/* ─── Brigadista location point colors ─── */
+/* Agente campo: warm tones (orange/amber) — Agente digital: cool tones (violet/indigo) */
+/* Domicilio = solid fill — Centro de trabajo = lighter variant */
+
+export const BRIGADISTA_COLORS = {
+  domicilio_campo:  "#d97706",  // amber-600 — home of field agent
+  trabajo_campo:    "#f59e0b",  // amber-500 — workplace of field agent
+  domicilio_digital: "#7c3aed", // violet-600 — home of digital agent
+  trabajo_digital:   "#a78bfa", // violet-400 — workplace of digital agent
+} as const;
+
 /* ─── Non-priority zone colors (neutral grey, outline-only feel) ─── */
 
 export const ZONE_FILL = "rgba(148, 163, 184, 0.06)";
@@ -78,7 +89,12 @@ export const PERU_MAX_BOUNDS: [[number, number], [number, number]] = [[-90, -25]
 /* ─── Tile config ─── */
 
 const LIGHT_TILES = "https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png";
+/** Legacy tile template (no campaign filtering — public, all campaigns visible) */
 export const DEFAULT_TILE_TEMPLATE = "/api/tiles/{z}/{x}/{y}.vector.pbf";
+
+/** Campaign-scoped tile template — server filters MVT features by campaign_id */
+export const CAMPAIGN_TILE_TEMPLATE = (campaignId: string) =>
+  `/api/tiles/${campaignId}/{z}/{x}/{y}.vector.pbf`;
 
 /**
  * MAP_STYLE — clean base map without street/city labels.

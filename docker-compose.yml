@@ -12,6 +12,11 @@ services:
       TZ: ${TZ}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    # Expose PostgreSQL for direct QGIS connection from the geographer's machine.
+    # SECURITY: UFW firewall MUST restrict port 5432 to allowed IPs only.
+    # See docs/qgis-connection-guide.md for UFW setup instructions.
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s

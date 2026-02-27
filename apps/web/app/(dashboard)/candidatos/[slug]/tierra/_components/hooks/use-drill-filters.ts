@@ -73,10 +73,34 @@ export function useDrillFilters(
     return HIDE_FILTER;
   }, [drillState.level, drillState.provCode, drillState.distCode]);
 
-  // ─── PRIORITY LAYERS — disabled (no priority zones configured for current campaigns) ───
-  const priorityDepFilter: FilterSpecification = HIDE_FILTER;
-  const priorityProvFilter: FilterSpecification = HIDE_FILTER;
-  const priorityDistFilter: FilterSpecification = HIDE_FILTER;
+  // ─── PRIORITY LAYERS — filtered by campaign_id (tiles are already filtered server-side,
+  //     but we add client-side filter too for defense-in-depth) ───
+  const priorityDepFilter: FilterSpecification = useMemo(() => {
+    if (!campaignId) return HIDE_FILTER;
+    // Show priority departments whenever we have a campaign
+    return campaignFilter;
+  }, [campaignId, campaignFilter]);
+
+  const priorityProvFilter: FilterSpecification = useMemo(() => {
+    if (!campaignId) return HIDE_FILTER;
+    // Show priority provinces scoped to the drilled departamento (or all if at dept level)
+    if (drillState.depCode) {
+      return ["all", campaignFilter, ["==", ["get", "coddep"], drillState.depCode]] as FilterSpecification;
+    }
+    return campaignFilter;
+  }, [campaignId, campaignFilter, drillState.depCode]);
+
+  const priorityDistFilter: FilterSpecification = useMemo(() => {
+    if (!campaignId) return HIDE_FILTER;
+    // Show priority districts scoped to the drilled provincia (or dep, or all)
+    if (drillState.provCode) {
+      return ["all", campaignFilter, ["==", ["get", "codprov_full"], drillState.provCode]] as FilterSpecification;
+    }
+    if (drillState.depCode) {
+      return ["all", campaignFilter, ["==", ["get", "coddep"], drillState.depCode]] as FilterSpecification;
+    }
+    return campaignFilter;
+  }, [campaignId, campaignFilter, drillState.depCode, drillState.provCode]);
 
   // ─── SECTORS / SUBSECTORS ───
   const sectorFilter: FilterSpecification = useMemo(() => {
@@ -90,6 +114,12 @@ export function useDrillFilters(
     return ["all", campaignFilter, ["==", ["get", "parent_code"], drillState.distCode]] as FilterSpecification;
   }, [campaignFilter, drillState.level, drillState.distCode, drillState.sector]);
 
+  // ─── BRIGADISTA LOCATIONS — always visible when campaign is set (points filtered server-side by campaign_id) ───
+  const brigadistaFilter: FilterSpecification = useMemo(() => {
+    if (!campaignId) return HIDE_FILTER;
+    return campaignFilter;
+  }, [campaignId, campaignFilter]);
+
   return {
     depFillFilter,
     depLineFilter,
@@ -101,5 +131,6 @@ export function useDrillFilters(
     priorityProvFilter,
     priorityDistFilter,
     sectorFilter,
+    brigadistaFilter,
   };
 }

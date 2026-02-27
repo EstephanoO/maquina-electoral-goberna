@@ -77,6 +77,8 @@ export type DrillFilters = {
   priorityProvFilter: FilterSpecification;
   priorityDistFilter: FilterSpecification;
   sectorFilter: FilterSpecification;
+  /** Brigadista location points — campaign_id filter (tiles already filtered server-side, defense-in-depth) */
+  brigadistaFilter: FilterSpecification;
 };
 
 /* ─── Map Props ─── */

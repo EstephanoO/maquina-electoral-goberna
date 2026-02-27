@@ -6,7 +6,7 @@ import type {
 } from "maplibre-gl";
 import {
   STATUS_COLORS, CLUSTER_COLORS, CLUSTER_STEPS, CLUSTER_SIZES, DATA_POINT,
-  PRIORITY_FILL, PRIORITY_LINE, SECTOR_FILL, SECTOR_LINE,
+  PRIORITY_FILL, PRIORITY_LINE, SECTOR_FILL, SECTOR_LINE, BRIGADISTA_COLORS,
 } from "./constants";
 
 /* ─── Visibility helpers ─── */
@@ -144,6 +144,62 @@ export const ROUTE_WAYPOINT_START_FILTER: FilterSpecification = ["==", ["get", "
 export const ROUTE_WAYPOINT_END_FILTER: FilterSpecification = ["==", ["get", "is_last"], 1];
 /** Filter: not first waypoint (mid + last) */
 export const ROUTE_WAYPOINT_MID_FILTER: FilterSpecification = ["==", ["get", "is_first"], 0];
+
+/* ─── Brigadista location point paints (static) ─── */
+
+const BRIGADISTA_RADIUS: CircleLayerSpecification["paint"] = {
+  "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 4, 12, 7, 14, 9],
+};
+
+export const BRIGADISTA_DOMICILIO_CAMPO_PAINT: CircleLayerSpecification["paint"] = {
+  ...BRIGADISTA_RADIUS,
+  "circle-color": BRIGADISTA_COLORS.domicilio_campo,
+  "circle-opacity": 0.9,
+  "circle-stroke-width": 2,
+  "circle-stroke-color": "#ffffff",
+  "circle-stroke-opacity": 0.85,
+};
+
+export const BRIGADISTA_TRABAJO_CAMPO_PAINT: CircleLayerSpecification["paint"] = {
+  ...BRIGADISTA_RADIUS,
+  "circle-color": BRIGADISTA_COLORS.trabajo_campo,
+  "circle-opacity": 0.9,
+  "circle-stroke-width": 2,
+  "circle-stroke-color": "#ffffff",
+  "circle-stroke-opacity": 0.85,
+};
+
+export const BRIGADISTA_DOMICILIO_DIGITAL_PAINT: CircleLayerSpecification["paint"] = {
+  ...BRIGADISTA_RADIUS,
+  "circle-color": BRIGADISTA_COLORS.domicilio_digital,
+  "circle-opacity": 0.9,
+  "circle-stroke-width": 2,
+  "circle-stroke-color": "#ffffff",
+  "circle-stroke-opacity": 0.85,
+};
+
+export const BRIGADISTA_TRABAJO_DIGITAL_PAINT: CircleLayerSpecification["paint"] = {
+  ...BRIGADISTA_RADIUS,
+  "circle-color": BRIGADISTA_COLORS.trabajo_digital,
+  "circle-opacity": 0.9,
+  "circle-stroke-width": 2,
+  "circle-stroke-color": "#ffffff",
+  "circle-stroke-opacity": 0.85,
+};
+
+export const BRIGADISTA_LABEL_LAYOUT: SymbolLayerSpecification["layout"] = {
+  "text-field": ["get", "agent_name"],
+  "text-size": 10,
+  "text-offset": [0, 1.6],
+  "text-allow-overlap": false,
+  "text-font": ["Open Sans Bold"],
+};
+
+export const BRIGADISTA_LABEL_PAINT: SymbolLayerSpecification["paint"] = {
+  "text-color": "#1e293b",
+  "text-halo-color": "rgba(255,255,255,0.92)",
+  "text-halo-width": 1.5,
+};
 
 /* ─── Source promoteId (P5 — static) ─── */
 

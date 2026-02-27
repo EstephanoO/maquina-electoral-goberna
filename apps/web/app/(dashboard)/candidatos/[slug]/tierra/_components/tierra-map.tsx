@@ -38,7 +38,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { TierraMapHandle, TierraMapProps } from "./types";
 import {
   STATUS_COLORS, ZONE_FILL, ZONE_HOVER, ZONE_LINE, ZONE_LINE_GHOST, MASK_FILL, HOVER_LAYERS,
-  PERU_VIEW, PERU_BOUNDS, PERU_BOUNDS_FLAT, PERU_MAX_BOUNDS, MAP_STYLE, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
+  PERU_VIEW, PERU_BOUNDS, PERU_BOUNDS_FLAT, PERU_MAX_BOUNDS, MAP_STYLE, CAMPAIGN_TILE_TEMPLATE, INTERACTIVE_LAYERS,
   FLY_DURATION,
 } from "./constants";
 import { prewarmTiles } from "./utils";
@@ -54,6 +54,9 @@ import {
   ROUTE_LINE_PAINT, ROUTE_LINE_LAYOUT, ROUTE_CASING_PAINT,
   ROUTE_WAYPOINT_PAINT, ROUTE_WAYPOINT_START_PAINT, ROUTE_WAYPOINT_START_FILTER, ROUTE_WAYPOINT_MID_FILTER,
   ROUTE_SEQ_LAYOUT, ROUTE_SEQ_PAINT,
+  BRIGADISTA_DOMICILIO_CAMPO_PAINT, BRIGADISTA_TRABAJO_CAMPO_PAINT,
+  BRIGADISTA_DOMICILIO_DIGITAL_PAINT, BRIGADISTA_TRABAJO_DIGITAL_PAINT,
+  BRIGADISTA_LABEL_LAYOUT, BRIGADISTA_LABEL_PAINT,
 } from "./map-paint-constants";
 
 import { useDrillFilters } from "./hooks/use-drill-filters";
@@ -203,11 +206,11 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     getDrillState() { return drillStateRef.current; },
   }), []);
 
-  // ─── Init (SSR guard) ───
+  // ─── Init (SSR guard) — use campaign-scoped tile URL for server-side filtering ───
   useEffect(() => {
-    setTileUrl(`${window.location.origin}${DEFAULT_TILE_TEMPLATE}`);
+    setTileUrl(`${window.location.origin}${CAMPAIGN_TILE_TEMPLATE(campaignId)}`);
     setReady(true);
-  }, []);
+  }, [campaignId]);
 
   // ─── Map load ───
   const handleLoad = useCallback(() => {
@@ -317,6 +320,78 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     onFormMouseLeave();
   }, [tooltipMouseLeave, onFormMouseLeave, clearHover]);
 
+  // ─── SSE: Geo invalidation listener (QGIS edits → near-realtime tile refresh) ───
+  useEffect(() => {
+    if (!campaignId || !tileUrl) return;
+
+    const controller = new AbortController();
+    let backoffMs = 1000;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = async () => {
+      try {
+        const res = await fetch("/api/geo/stream", {
+          credentials: "same-origin",
+          signal: controller.signal,
+          headers: { Accept: "text/event-stream" },
+        });
+
+        if (res.status === 401) {
+          // Try refresh once, then reconnect
+          try {
+            await fetch("/api/auth/refresh", { method: "POST", credentials: "same-origin" });
+          } catch { /* ignore */ }
+          reconnectTimer = setTimeout(connect, backoffMs);
+          return;
+        }
+
+        if (!res.ok || !res.body) {
+          reconnectTimer = setTimeout(connect, backoffMs);
+          backoffMs = Math.min(backoffMs * 2, 30000);
+          return;
+        }
+
+        // Reset backoff on successful connection
+        backoffMs = 1000;
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const text = decoder.decode(value, { stream: true });
+          if (text.includes("geo_updated")) {
+            // Force refetch of visible tiles by appending cache-bust param
+            const map = mapRef.current;
+            const source = map?.getSource("peru");
+            if (source && "setTiles" in source) {
+              const bustUrl = `${window.location.origin}${CAMPAIGN_TILE_TEMPLATE(campaignId)}?_=${Date.now()}`;
+              (source as { setTiles: (tiles: string[]) => void }).setTiles([bustUrl]);
+            }
+          }
+        }
+
+        // Stream ended — reconnect
+        if (!controller.signal.aborted) {
+          reconnectTimer = setTimeout(connect, backoffMs);
+        }
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          reconnectTimer = setTimeout(connect, backoffMs);
+          backoffMs = Math.min(backoffMs * 2, 30000);
+        }
+      }
+    };
+
+    void connect();
+
+    return () => {
+      controller.abort();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+    };
+  }, [campaignId, tileUrl]);
+
   // ─── FlyTo on agent selection (NOT on agents array change) ───
   const prevSelectedRef = useRef(selectedAgentId);
   useEffect(() => {
@@ -383,6 +458,17 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
           <Layer id="priority-dist-line" type="line" source-layer="priority_distritos" filter={filters.priorityDistFilter} paint={PRIORITY_DIST_LINE_PAINT} />
           <Layer id="sector-fill" type="fill" source-layer="campaign_sectors" filter={filters.sectorFilter} paint={SECTOR_FILL_PAINT} />
           <Layer id="sector-line" type="line" source-layer="campaign_sectors" filter={filters.sectorFilter} paint={SECTOR_LINE_PAINT} />
+
+          {/* ── Brigadista location points (QGIS-managed) ── */}
+          <Layer id="brigadista-dom-campo" type="circle" source-layer="brigadista_domicilio_campo" filter={filters.brigadistaFilter} paint={BRIGADISTA_DOMICILIO_CAMPO_PAINT} />
+          <Layer id="brigadista-trab-campo" type="circle" source-layer="brigadista_trabajo_campo" filter={filters.brigadistaFilter} paint={BRIGADISTA_TRABAJO_CAMPO_PAINT} />
+          <Layer id="brigadista-dom-digital" type="circle" source-layer="brigadista_domicilio_digital" filter={filters.brigadistaFilter} paint={BRIGADISTA_DOMICILIO_DIGITAL_PAINT} />
+          <Layer id="brigadista-trab-digital" type="circle" source-layer="brigadista_trabajo_digital" filter={filters.brigadistaFilter} paint={BRIGADISTA_TRABAJO_DIGITAL_PAINT} />
+          {/* Brigadista name labels — only visible at higher zoom */}
+          <Layer id="brigadista-labels-campo-dom" type="symbol" source-layer="brigadista_domicilio_campo" minzoom={11} filter={filters.brigadistaFilter} layout={BRIGADISTA_LABEL_LAYOUT} paint={BRIGADISTA_LABEL_PAINT} />
+          <Layer id="brigadista-labels-campo-trab" type="symbol" source-layer="brigadista_trabajo_campo" minzoom={11} filter={filters.brigadistaFilter} layout={BRIGADISTA_LABEL_LAYOUT} paint={BRIGADISTA_LABEL_PAINT} />
+          <Layer id="brigadista-labels-digital-dom" type="symbol" source-layer="brigadista_domicilio_digital" minzoom={11} filter={filters.brigadistaFilter} layout={BRIGADISTA_LABEL_LAYOUT} paint={BRIGADISTA_LABEL_PAINT} />
+          <Layer id="brigadista-labels-digital-trab" type="symbol" source-layer="brigadista_trabajo_digital" minzoom={11} filter={filters.brigadistaFilter} layout={BRIGADISTA_LABEL_LAYOUT} paint={BRIGADISTA_LABEL_PAINT} />
         </Source>
 
         {/* ── Surveyor routes — always mounted, visibility controlled via layout ── */}
