@@ -22,7 +22,7 @@ export function ContactRow({
   const zone = contact.zona || contact.distrito || null;
   const phone = contact.telefono ? formatPhone(contact.telefono) : null;
   const lastMs = getLastInteractionMs(contact);
-  const clickable = Boolean(onOpenChat) && !lockedByOther;
+  const clickable = Boolean(onOpenChat);
 
   return (
     <button

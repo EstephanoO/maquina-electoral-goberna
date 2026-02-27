@@ -248,6 +248,11 @@ export async function claimPipelineContact(
       { campaignId },
     );
     if (!legacyRes.ok) {
+      // Legacy claim endpoint has no lock TTL logic and can reject stale claims forever.
+      // In fallback mode, avoid blocking navigation to chat for that legacy behavior.
+      if (legacyRes.error?.code === "ALREADY_CLAIMED") {
+        return { ok: true, code: "LEGACY_ALREADY_CLAIMED" };
+      }
       return { ok: false, error: legacyRes.error?.message, code: legacyRes.error?.code };
     }
     return { ok: true, contact: legacyRes.data?.contact };
