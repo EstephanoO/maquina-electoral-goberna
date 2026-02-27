@@ -34,6 +34,7 @@ const NOTES_PANEL_WIDTH = 400;
 const NOTES_PANEL_GAP = 32;
 const PAGE_LIMIT = 25;
 const MOBILE_CHAT_BREAKPOINT_PX = 768;
+const OPEN_MOBILE_SIDEBAR_EVENT = "goberna:open-mobile-sidebar";
 const TAG_COLOR_PALETTE = [
   "#0ea5e9",
   "#10b981",
@@ -222,6 +223,7 @@ export default function CmsPage() {
     [contacts, selectedContactId],
   );
   const mobileChatOpen = isMobileChatLayout && mobileActivePane === "chat" && selectedContact !== null;
+  const chatViewportHeight = isMobileChatLayout ? "100dvh" : "calc(100dvh - 64px)";
   const panelOpen = notesContact !== null;
   const latestMessageByContact = useMemo<Record<string, CmsTwilioMessage | undefined>>(() => {
     const next: Record<string, CmsTwilioMessage | undefined> = {};
@@ -742,6 +744,10 @@ export default function CmsPage() {
     setMobileActivePane("list");
   }, []);
 
+  const handleOpenMobileSidebar = useCallback(() => {
+    window.dispatchEvent(new Event(OPEN_MOBILE_SIDEBAR_EVENT));
+  }, []);
+
   const handleCreateTag = useCallback((rawName: string): string | null => {
     const normalized = normalizeTagName(rawName);
     if (!normalized) return null;
@@ -955,45 +961,77 @@ export default function CmsPage() {
         fontFamily: FONT,
         display: "flex",
         flexDirection: "column",
-        minHeight: "calc(100dvh - 64px)",
-        height: "calc(100dvh - 64px)",
+        minHeight: chatViewportHeight,
+        height: chatViewportHeight,
       }}
     >
       <div className={`cms-chat-root ${panelOpen ? "panel-open" : ""}`}>
         <div className={`cms-chat-shell ${isMobileChatLayout ? (mobileChatOpen ? "mobile-chat-mode" : "mobile-list-mode") : ""}`}>
           <aside className={`cms-chat-sidebar ${mobileChatOpen ? "is-hidden-mobile" : ""}`}>
             <div style={{ padding: "12px 12px 10px", borderBottom: "1px solid #eef2f7" }}>
-              <div style={{ position: "relative" }}>
-                <svg
-                  width="15"
-                  height="15"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#64748b"
-                  strokeWidth="2"
-                  style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}
-                >
-                  <title>Buscar</title>
-                  <circle cx="11" cy="11" r="8" />
-                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Buscar o iniciar chat"
-                  value={search}
-                  onChange={(event) => handleSearchChange(event.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px 10px 34px",
-                    borderRadius: 10,
-                    border: "1px solid #d6dde6",
-                    background: "#f8fafc",
-                    color: "#0f172a",
-                    fontSize: 14,
-                    outline: "none",
-                    fontFamily: FONT,
-                  }}
-                />
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {isMobileChatLayout && (
+                  <button
+                    type="button"
+                    onClick={handleOpenMobileSidebar}
+                    aria-label="Abrir menu"
+                    title="Abrir menu"
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 10,
+                      border: "none",
+                      background: "var(--goberna-blue-900)",
+                      color: "#ffffff",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                      flexShrink: 0,
+                      boxShadow: "0 2px 10px rgba(15, 23, 42, 0.22)",
+                    }}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round">
+                      <title>Menu</title>
+                      <line x1="3" y1="6" x2="21" y2="6" />
+                      <line x1="3" y1="12" x2="21" y2="12" />
+                      <line x1="3" y1="18" x2="21" y2="18" />
+                    </svg>
+                  </button>
+                )}
+
+                <div style={{ position: "relative", flex: 1 }}>
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#64748b"
+                    strokeWidth="2"
+                    style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}
+                  >
+                    <title>Buscar</title>
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Buscar o iniciar chat"
+                    value={search}
+                    onChange={(event) => handleSearchChange(event.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px 10px 34px",
+                      borderRadius: 10,
+                      border: "1px solid #d6dde6",
+                      background: "#f8fafc",
+                      color: "#0f172a",
+                      fontSize: 14,
+                      outline: "none",
+                      fontFamily: FONT,
+                    }}
+                  />
+                </div>
               </div>
 
               <div
@@ -1499,6 +1537,17 @@ export default function CmsPage() {
         }
 
         @media (max-width: ${MOBILE_CHAT_BREAKPOINT_PX}px) {
+          .cms-chat-root {
+            height: 100%;
+          }
+
+          .cms-chat-shell {
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+            background: #ffffff;
+          }
+
           .cms-chat-sidebar.is-hidden-mobile,
           .cms-chat-main.is-hidden-mobile {
             display: none;
@@ -1508,6 +1557,10 @@ export default function CmsPage() {
             max-height: none;
             height: 100%;
             border-bottom: none;
+          }
+
+          .cms-chat-shell.mobile-chat-mode {
+            height: 100%;
           }
         }
 
