@@ -85,6 +85,8 @@ export class AgentsStore {
    *
    * - Agents with an active WebSocket are NOT removed; they're returned in `idle`.
    * - Agents without WS that exceed stale time are removed and returned in `offline`.
+   *
+   * @deprecated Use sweepGpsIdle() for session-based presence paradigm.
    */
   removeStale(): StaleResult {
     const now = Date.now();
@@ -93,10 +95,8 @@ export class AgentsStore {
     for (const [agentId, state] of this.agents.entries()) {
       if (now - state.lastSeenAtMs > this.env.agentStaleAfterMs) {
         if (this.wsConnectedAgents.has(agentId)) {
-          // WS is active — agent is idle (connected but not moving), don't remove
           result.idle.push(agentId);
         } else {
-          // No WS, no recent GPS — truly offline
           this.agents.delete(agentId);
           result.offline.push(agentId);
         }
@@ -106,30 +106,47 @@ export class AgentsStore {
     return result;
   }
 
-  /** Count of live (non-stale) agents without allocating an array. */
-  countLive(): number {
+  /**
+   * Identify GPS-idle agents without removing them from the store.
+   *
+   * Session-based paradigm: agents go offline ONLY on explicit logout.
+   * This method only finds agents whose GPS data is stale (no recent location
+   * updates), regardless of WS connection state.
+   * Agents are NEVER removed from the store by the sweep — only by explicit cleanup.
+   */
+  sweepGpsIdle(): { idle: string[] } {
     const now = Date.now();
-    let count = 0;
+    const idle: string[] = [];
+
     for (const [agentId, state] of this.agents.entries()) {
-      if (now - state.lastSeenAtMs <= this.env.agentStaleAfterMs || this.wsConnectedAgents.has(agentId)) {
-        count++;
+      if (now - state.lastSeenAtMs > this.env.agentStaleAfterMs) {
+        idle.push(agentId);
       }
     }
-    return count;
+
+    return { idle };
   }
 
-  listLive(): AgentLocationInput[] {
-    const now = Date.now();
-    const output: AgentLocationInput[] = [];
+  /**
+   * Count of agents in the store.
+   * Session-based paradigm: all agents in the store are considered relevant
+   * (they have sent at least one location since login).
+   */
+  countLive(): number {
+    return this.agents.size;
+  }
 
-    for (const [agentId, state] of this.agents.entries()) {
-      // Include if either: recent GPS data, or active WS connection
-      if (now - state.lastSeenAtMs > this.env.agentStaleAfterMs && !this.wsConnectedAgents.has(agentId)) {
-        continue;
-      }
+  /**
+   * List all agents in the store.
+   * Session-based paradigm: returns all agents that have ever reported a location
+   * during their current session. The dashboard uses `online_agent_ids` from Redis
+   * to determine which are actually connected (session active).
+   */
+  listLive(): AgentLocationInput[] {
+    const output: AgentLocationInput[] = [];
+    for (const state of this.agents.values()) {
       output.push(this.serialize(state));
     }
-
     return output;
   }
 

@@ -6,6 +6,8 @@ import type { AuthenticatedRequest } from "../../infra/auth";
 import { errorPayload } from "../../infra/http";
 import type { IngestOutcome } from "../../infra/metrics";
 import { metricsRegistry } from "../../infra/metrics";
+import { onAgentLogin, onAgentLogout } from "../../infra/presence-events";
+import { getOnlineAgentIds } from "../../infra/redis";
 import { resolveTrackingAuth } from "../../infra/tracking-auth";
 import { emitCampaignEvent } from "../campaigns/routes";
 import { toState } from "./helpers";
@@ -126,31 +128,12 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
     heartbeatTimer.unref();
 
     const staleSweepTimer = setInterval(() => {
-      const { offline, idle } = store.removeStale();
+      // Session-based paradigm: agents go offline ONLY on logout.
+      // The stale sweep now only marks GPS-idle agents (no removal, no "offline" broadcast).
+      const { idle } = store.sweepGpsIdle();
       const ts = new Date().toISOString();
 
-      // Truly offline agents: no WS, no recent GPS → remove from dashboard
-      for (const agentId of offline) {
-        const agentInfo = previouslyOnlineAgents.get(agentId);
-        broadcastAll("agent.offline", {
-          agent_id: agentId,
-          agent_name: agentInfo?.agentName ?? `Agente ${agentId.slice(0, 8)}`,
-          ts,
-        });
-        
-        // Emit disconnect event for campaign dashboard
-        if (agentInfo?.campaignId) {
-          emitCampaignEvent(agentInfo.campaignId, {
-            type: "agent_disconnected",
-            agent_id: agentId,
-            agent_name: agentInfo.agentName,
-            message: `${agentInfo.agentName} se desconecto`,
-          });
-        }
-        previouslyOnlineAgents.delete(agentId);
-      }
-
-      // Idle agents: WS active but no recent GPS → mark as idle on dashboard
+      // Idle agents: session active but no recent GPS → mark as idle on dashboard
       for (const agentId of idle) {
         const agentInfo = previouslyOnlineAgents.get(agentId);
         broadcastAll("agent.idle", {
@@ -170,6 +153,46 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       }
     }, Math.max(5000, Math.floor(env.agentStaleAfterMs / 2)));
     staleSweepTimer.unref();
+
+    // ─── Session-based presence events (login/logout → SSE broadcast) ──
+    onAgentLogin((event) => {
+      const ts = new Date().toISOString();
+      broadcastAll("agent.online", {
+        agent_id: event.userId,
+        agent_name: event.userName,
+        campaign_ids: event.campaignIds,
+        ts,
+      });
+
+      // Track as previously online so name is available for future events
+      if (!previouslyOnlineAgents.has(event.userId) && event.campaignIds.length > 0) {
+        previouslyOnlineAgents.set(event.userId, {
+          campaignId: event.campaignIds[0]!,
+          agentName: event.userName,
+        });
+      }
+    });
+
+    onAgentLogout((event) => {
+      const ts = new Date().toISOString();
+      broadcastAll("agent.offline", {
+        agent_id: event.userId,
+        agent_name: event.userName,
+        ts,
+      });
+
+      // Emit disconnect event for each campaign
+      for (const campaignId of event.campaignIds) {
+        emitCampaignEvent(campaignId, {
+          type: "agent_disconnected",
+          agent_id: event.userId,
+          agent_name: event.userName,
+          message: `${event.userName} cerro sesion`,
+        });
+      }
+
+      previouslyOnlineAgents.delete(event.userId);
+    });
 
     app.addHook("onClose", async () => {
       clearInterval(batchFlushTimer);
@@ -217,7 +240,11 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
           authed.userRole === "admin"
             ? allAgents
             : allAgents.filter((a) => a.campaign_id && campaignIds.includes(a.campaign_id));
-        return { ok: true, ts: new Date().toISOString(), agents };
+
+        // Session-based online set (connected = has active session via login)
+        const onlineAgentIds = await getOnlineAgentIds().catch(() => [] as string[]);
+
+        return { ok: true, ts: new Date().toISOString(), agents, online_agent_ids: onlineAgentIds };
       },
     );
 
@@ -288,7 +315,9 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
           isAdmin ? list : list.filter((a) => a.campaign_id && campaignIds.includes(a.campaign_id));
 
         reply.raw.write("retry: 5000\n\n");
-        writeSseEvent(reply.raw, "snapshot", { ts: new Date().toISOString(), agents: filterAgents(store.listLive()) });
+        // Include session-based online set in snapshot
+        const onlineIds = await getOnlineAgentIds().catch(() => [] as string[]);
+        writeSseEvent(reply.raw, "snapshot", { ts: new Date().toISOString(), agents: filterAgents(store.listLive()), online_agent_ids: onlineIds });
 
         const cleanup = () => {
           clients.delete(clientId);

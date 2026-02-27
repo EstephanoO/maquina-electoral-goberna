@@ -4,6 +4,8 @@ import type { AppEnv } from "../../config/env";
 import { pool } from "../../db";
 import { errorPayload } from "../../infra/http";
 import { AUTH_COOKIE_NAMES, parseCookies, type AuthenticatedRequest } from "../../infra/auth";
+import { markAgentOnline, markAgentOffline } from "../../infra/redis";
+import { emitAgentLogin, emitAgentLogout } from "../../infra/presence-events";
 import { AuthRepository } from "./repository";
 import { changePasswordSchema, loginSchema, refreshSchema, registerSchema, resetPasswordSchema } from "./schemas";
 import { authorize } from "../../infra/authorize";
@@ -95,6 +97,15 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
 
         const result = await service.loginWithUser(user, password);
         setAuthCookies(reply, result.access_token, result.refresh_token, isProd);
+
+        // Mark user as online (session-based presence — persists until logout)
+        await markAgentOnline(user.id).catch(() => {});
+        emitAgentLogin({
+          userId: user.id,
+          userName: user.full_name,
+          campaignIds: result.campaigns.map((c) => c.id),
+        });
+
         return reply.code(200).send({ ok: true, request_id: requestId, ...result });
       } catch (error) {
         if (error instanceof AppError) {
@@ -153,10 +164,26 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
       { preHandler: [app.authenticate] },
       async (request, reply) => {
         const requestId = String(request.id);
-        const userId = (request as AuthenticatedRequest).userId;
+        const authed = request as AuthenticatedRequest;
+        const userId = authed.userId;
+
+        // Fetch user info for presence event before revoking tokens
+        const userForPresence = await repo.findUserById(userId);
+        const campaigns = userForPresence?.role === "admin"
+          ? await repo.getAllActiveCampaigns()
+          : userForPresence ? await repo.getUserCampaigns(userId) : [];
 
         await service.logout(userId);
         clearAuthCookies(reply, isProd);
+
+        // Mark user as offline (session-based presence)
+        await markAgentOffline(userId).catch(() => {});
+        emitAgentLogout({
+          userId,
+          userName: userForPresence?.full_name ?? "Unknown",
+          campaignIds: campaigns.map((c) => c.campaign_id),
+        });
+
         return reply.code(200).send({ ok: true, request_id: requestId });
       },
     );

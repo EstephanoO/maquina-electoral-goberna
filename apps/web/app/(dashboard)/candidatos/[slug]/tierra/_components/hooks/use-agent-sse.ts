@@ -9,6 +9,20 @@ type AgentOfflinePayload = {
   ts: string;
 };
 
+type AgentOnlinePayload = {
+  agent_id: string;
+  agent_name?: string;
+  campaign_ids?: string[];
+  ts: string;
+};
+
+export type AgentIdlePayload = {
+  agent_id: string;
+  agent_name?: string;
+  campaign_id?: string | null;
+  ts: string;
+};
+
 export type AgentStatusPayload = {
   agent_id: string;
   agent_name?: string;
@@ -54,6 +68,9 @@ export function useAgentSSE(
   onUpdate: (agents: AgentLocation[]) => void,
   onOffline?: (payload: AgentOfflinePayload) => void,
   onStatusChange?: (payload: AgentStatusPayload) => void,
+  onIdle?: (payload: AgentIdlePayload) => void,
+  onOnline?: (payload: AgentOnlinePayload) => void,
+  onSnapshotOnlineIds?: (ids: string[]) => void,
 ) {
   const updateRef = useRef(onUpdate);
   updateRef.current = onUpdate;
@@ -61,6 +78,12 @@ export function useAgentSSE(
   offlineRef.current = onOffline;
   const statusRef = useRef(onStatusChange);
   statusRef.current = onStatusChange;
+  const idleRef = useRef(onIdle);
+  idleRef.current = onIdle;
+  const onlineRef = useRef(onOnline);
+  onlineRef.current = onOnline;
+  const snapshotOnlineIdsRef = useRef(onSnapshotOnlineIds);
+  snapshotOnlineIdsRef.current = onSnapshotOnlineIds;
 
   useEffect(() => {
     if (!campaignId) return;
@@ -90,11 +113,19 @@ export function useAgentSSE(
 
         if (event === "snapshot") {
           if (parsed.agents) updateRef.current(parsed.agents);
+          // Seed session-based online IDs from snapshot
+          if (Array.isArray(parsed.online_agent_ids)) {
+            snapshotOnlineIdsRef.current?.(parsed.online_agent_ids as string[]);
+          }
           attempt = 0; // successful connection
         } else if (event === "location.batch") {
           if (parsed.agents) updateRef.current(parsed.agents);
         } else if (event === "agent.offline") {
           offlineRef.current?.(parsed as AgentOfflinePayload);
+        } else if (event === "agent.online") {
+          onlineRef.current?.(parsed as AgentOnlinePayload);
+        } else if (event === "agent.idle") {
+          idleRef.current?.(parsed as AgentIdlePayload);
         } else if (event === "agent.status") {
           statusRef.current?.(parsed as AgentStatusPayload);
         }

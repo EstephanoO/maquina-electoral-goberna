@@ -49,10 +49,10 @@ export default function TierraPage() {
   // ─── Pipeline state (period filter, metrics, form filtering) ───
   const pipeline = usePipelineState(campaignId, forms);
 
-  // ─── SSE: live agent locations, offline events, background status ───
-  const { locations, sseEvents, backgroundAgentIds, handleSSEUpdate, handleAgentOffline, handleAgentStatus } =
+  // ─── SSE: live agent locations, offline events, idle events, background status, session presence ───
+  const { locations, sseEvents, backgroundAgentIds, idleAgentIds, onlineAgentIds, handleSSEUpdate, handleSnapshotOnlineIds, handleAgentOffline, handleAgentOnline, handleAgentIdle, handleAgentStatus } =
     useSSELocations(initialLocations);
-  useAgentSSE(campaignId ?? null, handleSSEUpdate, handleAgentOffline, handleAgentStatus);
+  useAgentSSE(campaignId ?? null, handleSSEUpdate, handleAgentOffline, handleAgentStatus, handleAgentIdle, handleAgentOnline, handleSnapshotOnlineIds);
 
   // ─── UI state ───
   const [viewMode, setViewMode] = useState<TierraViewMode>("campo");
@@ -81,7 +81,7 @@ export default function TierraPage() {
   // ─── Geo bounds & derived data ───
   const drillBounds = useDrillBounds(drillState);
   const { enrichedAgents, formPoints, connectedCount } =
-    useEnrichedAgents(stats, locations, forms, selectedAgentId, selectedAgentIds, drillBounds, backgroundAgentIds);
+    useEnrichedAgents(stats, locations, forms, selectedAgentId, selectedAgentIds, drillBounds, backgroundAgentIds, idleAgentIds, onlineAgentIds);
   const enrichedAgentsRef = useRef(enrichedAgents);
   enrichedAgentsRef.current = enrichedAgents;
 

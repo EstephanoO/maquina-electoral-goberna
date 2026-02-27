@@ -6,7 +6,7 @@ import type { CampaignStats } from "@/lib/types";
 import type { AgentLocation } from "@/lib/hooks";
 import type { GeoBounds } from "@/lib/services/geo";
 import { formCoordsToLatLng } from "@/lib/utils";
-import type { EnrichedAgent, FormPoint } from "../types";
+import type { AgentStatus, EnrichedAgent, FormPoint } from "../types";
 import { getAgentStatus } from "../utils";
 
 /** Default coords (Lima) for agents with no location data at all */
@@ -33,6 +33,8 @@ export function useEnrichedAgents(
   selectedAgentIds: Set<string>,
   drillBounds: GeoBounds | null = null,
   backgroundAgentIds: Set<string> = new Set(),
+  idleAgentIds: Set<string> = new Set(),
+  onlineAgentIds: Set<string> = new Set(),
 ) {
   // ── Pre-index: forms by agent_id → most recent form with coords (O(forms)) ──
   const agentFormIndex = useMemo(() => {
@@ -55,30 +57,45 @@ export function useEnrichedAgents(
     const locMap = new Map(locations.map((l) => [l.agent_id, l]));
     const agentMap = new Map<string, EnrichedAgent>();
 
+    /**
+     * Session-based status derivation:
+     * - "connected" = user has active session (in onlineAgentIds set)
+     * - "idle"      = online but no recent GPS data (GPS-stale)
+     * - "inactive"  = user logged out (not in onlineAgentIds set)
+     */
+    const deriveStatus = (agentId: string, bestTs: number): AgentStatus => {
+      const isOnline = onlineAgentIds.has(agentId);
+      if (!isOnline) return "inactive";
+      // Online agent with stale GPS or backend-reported GPS-idle → "idle"
+      if (idleAgentIds.has(agentId)) return "idle";
+      // Online agent with recent GPS → "connected"
+      const gpsStatus = getAgentStatus(new Date(bestTs).toISOString(), now);
+      if (gpsStatus === "connected") return "connected";
+      // Online but GPS is stale → "idle" (has session but no recent location)
+      return "idle";
+    };
+
     for (const agent of stats.top_agents) {
       const loc = locMap.get(agent.id);
       const formEntry = agentFormIndex.get(agent.id);
       const formTs = formEntry ? new Date(formEntry.last.created_at).getTime() : 0;
 
       if (loc) {
-        // Use the MOST RECENT timestamp between GPS location and last form submission.
-        // An agent may have old GPS data but submitted a form seconds ago.
         const locTs = new Date(loc.ts).getTime();
         const bestTs = Math.max(locTs, formTs);
         const bestDate = new Date(bestTs);
         agentMap.set(agent.id, {
           id: agent.id, name: agent.name,
-          status: getAgentStatus(bestDate.toISOString(), now),
+          status: deriveStatus(agent.id, bestTs),
           lastSeen: bestDate,
           forms_count: agent.forms_count,
           lat: loc.lat, lng: loc.lng,
         });
       } else {
-        // No GPS — use pre-indexed form coords (O(1) lookup)
         const lastCoords = formEntry?.coords ?? null;
         agentMap.set(agent.id, {
           id: agent.id, name: agent.name,
-          status: formTs > 0 ? getAgentStatus(new Date(formTs).toISOString(), now) : "inactive",
+          status: deriveStatus(agent.id, formTs),
           lastSeen: formTs > 0 ? new Date(formTs) : new Date(0),
           forms_count: agent.forms_count,
           lat: lastCoords?.lat ?? DEFAULT_LAT,
@@ -89,10 +106,11 @@ export function useEnrichedAgents(
 
     for (const loc of locations) {
       if (!agentMap.has(loc.agent_id)) {
+        const locTs = new Date(loc.ts).getTime();
         agentMap.set(loc.agent_id, {
           id: loc.agent_id,
           name: loc.agent_name || `Agente ${loc.agent_id.slice(0, 6)}`,
-          status: getAgentStatus(loc.ts, now),
+          status: deriveStatus(loc.agent_id, locTs),
           lastSeen: new Date(loc.ts),
           forms_count: 0,
           lat: loc.lat, lng: loc.lng,
@@ -102,12 +120,11 @@ export function useEnrichedAgents(
 
     const agents = Array.from(agentMap.values());
 
-    // Override status for agents that sent a "background" status message.
-    // They may still have a recent GPS timestamp but are known to be inactive.
+    // Override: background status from mobile app → show as "idle" if online
     if (backgroundAgentIds.size > 0) {
       for (const agent of agents) {
-        if (backgroundAgentIds.has(agent.id) && agent.status !== "inactive") {
-          agent.status = "inactive";
+        if (backgroundAgentIds.has(agent.id) && agent.status === "connected") {
+          agent.status = "idle";
         }
       }
     }
@@ -116,7 +133,7 @@ export function useEnrichedAgents(
       const o = { connected: 0, idle: 1, inactive: 2 };
       return o[a.status] !== o[b.status] ? o[a.status] - o[b.status] : b.forms_count - a.forms_count;
     });
-  }, [stats, locations, agentFormIndex, backgroundAgentIds]);
+  }, [stats, locations, agentFormIndex, backgroundAgentIds, idleAgentIds, onlineAgentIds]);
 
   const formPoints = useMemo(
     (): FormPoint[] =>

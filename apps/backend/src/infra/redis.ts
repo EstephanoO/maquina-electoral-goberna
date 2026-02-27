@@ -289,6 +289,35 @@ export async function xAddDlq(params: {
   );
 }
 
+// ─── Session-based agent presence (login/logout only) ──────────────
+
+const PRESENCE_SET_KEY = "agents:online";
+
+/** Mark a user as online (called on login). No TTL — persists until explicit logout. */
+export async function markAgentOnline(userId: string): Promise<void> {
+  await redisClient.sAdd(PRESENCE_SET_KEY, userId);
+}
+
+/** Mark a user as offline (called on logout). */
+export async function markAgentOffline(userId: string): Promise<void> {
+  await redisClient.sRem(PRESENCE_SET_KEY, userId);
+}
+
+/** Check if a user has an active session. */
+export async function isAgentOnline(userId: string): Promise<boolean> {
+  return redisClient.sIsMember(PRESENCE_SET_KEY, userId);
+}
+
+/** Get all online user IDs. */
+export async function getOnlineAgentIds(): Promise<string[]> {
+  return redisClient.sMembers(PRESENCE_SET_KEY);
+}
+
+/** Count of users with active sessions. */
+export async function countOnlineAgents(): Promise<number> {
+  return redisClient.sCard(PRESENCE_SET_KEY);
+}
+
 export async function getStreamLag(streamKey: string, group: string): Promise<number> {
   const raw = (await redisClient.sendCommand(["XINFO", "GROUPS", streamKey])) as unknown;
   if (!Array.isArray(raw)) return 0;
