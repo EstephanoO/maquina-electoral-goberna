@@ -313,19 +313,37 @@ export async function getRecentForms(
       ) d
       ORDER BY created_at DESC
       ${limitClause}
+    ),
+    with_geom AS (
+      SELECT d.*,
+        CASE
+          -- Already WGS84 lat/lng
+          WHEN d.x IS NOT NULL AND d.y IS NOT NULL
+               AND abs(d.x) < 360 AND abs(d.y) < 360
+          THEN ST_SetSRID(ST_Point(d.x, d.y), 4326)
+          -- UTM Zone 18S: x=easting(100K-900K), y=northing(>1M)
+          WHEN d.x IS NOT NULL AND d.y IS NOT NULL
+               AND d.x > 100000 AND d.x < 900000 AND d.y > 1000000
+          THEN ST_Transform(ST_SetSRID(ST_Point(d.x, d.y), 32718), 4326)
+          -- UTM Zone 18S swapped: x=northing(>1M), y=easting(100K-900K)
+          WHEN d.x IS NOT NULL AND d.y IS NOT NULL
+               AND d.y > 100000 AND d.y < 900000 AND d.x > 1000000
+          THEN ST_Transform(ST_SetSRID(ST_Point(d.y, d.x), 32718), 4326)
+          ELSE NULL
+        END AS wgs84_point
+      FROM deduped d
     )
     SELECT
       d.id, d.client_id, d.nombre, d.telefono, d.fecha, d.x, d.y, d.zona,
       d.encuestador, d.encuestador_id, d.candidato_preferido, d.comentarios,
       d.campaign_id, d.created_at, d.agent_id,
       COALESCE(d._fs_distrito, dist.nomdist) as distrito
-    FROM deduped d
+    FROM with_geom d
     LEFT JOIN LATERAL (
       SELECT pd.nomdist
       FROM peru_distritos pd
-      WHERE d.x IS NOT NULL AND d.y IS NOT NULL
-        AND abs(d.x) < 360 AND abs(d.y) < 360
-        AND ST_Contains(pd.geom, ST_SetSRID(ST_Point(d.x, d.y), 4326))
+      WHERE d.wgs84_point IS NOT NULL
+        AND ST_Contains(pd.geom, d.wgs84_point)
       LIMIT 1
     ) dist ON true`,
     params,
