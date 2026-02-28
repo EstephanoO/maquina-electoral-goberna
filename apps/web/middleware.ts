@@ -5,7 +5,7 @@
  * Runs at the edge BEFORE any page content is served.
  *
  * - Dashboard routes require the `goberna_session` cookie (set by backend on login)
- * - Public routes (/, /login, /register, /onboarding, /mapa) are open
+ * - Public routes (/, /login, /register, /onboarding, /descargar, /mapa) are open
  * - Security headers are added to all responses
  */
 import { NextRequest, NextResponse } from "next/server";
