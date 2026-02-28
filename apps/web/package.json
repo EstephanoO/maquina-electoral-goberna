@@ -12,6 +12,8 @@
     "@tanstack/react-query": "^5.90.21",
     "@vis.gl/react-maplibre": "^8.1.0",
     "maplibre-gl": "^5.18.0",
+    "mathjs": "^14.6.0",
+    "motion": "^12.23.12",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -24,6 +26,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "jsrepo": "^3.6.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   },
