@@ -109,7 +109,11 @@ export function useAgentSSE(
       resetHeartbeatTimer();
 
       try {
-        let res = await fetch("/api/agents/stream", {
+        // Pass campaign_id to scope the SSE stream to the current campaign
+        // campaignId is guaranteed non-null here (guarded by `if (!campaignId) return` above)
+        const streamUrl = `/api/agents/stream?campaign_id=${encodeURIComponent(campaignId!)}`;
+
+        let res = await fetch(streamUrl, {
           headers: { Accept: "text/event-stream" },
           signal: abortController.signal,
           credentials: "same-origin",
@@ -121,7 +125,7 @@ export function useAgentSSE(
           if (refreshed && !disposed) {
             // Re-create abort controller since the previous fetch completed
             abortController = new AbortController();
-            res = await fetch("/api/agents/stream", {
+            res = await fetch(streamUrl, {
               headers: { Accept: "text/event-stream" },
               signal: abortController.signal,
               credentials: "same-origin",

@@ -98,9 +98,9 @@ export function useAgentLocationsSnapshot(campaignId: string | undefined) {
   return useQuery({
     queryKey: tierraKeys.locations(campaignId ?? ""),
     queryFn: async (): Promise<AgentLocation[]> => {
-      const res = await api.get<{ agents: AgentLocation[] }>("/api/agents/live", {
-        headers: campaignId ? { "x-campaign-id": campaignId } : undefined,
-      });
+      // Pass campaign_id as query param to scope results to the current campaign
+      const url = campaignId ? `/api/agents/live?campaign_id=${encodeURIComponent(campaignId)}` : "/api/agents/live";
+      const res = await api.get<{ agents: AgentLocation[] }>(url);
       if (!res.ok || !res.data?.agents) return [];
       return res.data.agents;
     },

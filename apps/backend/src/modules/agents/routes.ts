@@ -54,6 +54,8 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       res: ServerResponse;
       campaignIds: string[];
       isAdmin: boolean;
+      /** When set, scope this client to a single campaign (tierra page view) */
+      requestedCampaignId: string | null;
     };
 
     const clients = new Map<number, SSEClient>();
@@ -94,10 +96,14 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
       const ts = new Date().toISOString();
 
       for (const [clientId, client] of clients.entries()) {
-        // Admins get all agents; others get only their campaigns
-        const filtered = client.isAdmin
-          ? agents
-          : agents.filter((a) => a.campaign_id && client.campaignIds.includes(a.campaign_id));
+        // If client requested a specific campaign, scope to that single campaign.
+        // Otherwise: admins get all agents; others get only their campaigns.
+        const filtered = agents.filter((a) => {
+          if (!a.campaign_id) return false;
+          if (client.requestedCampaignId) return a.campaign_id === client.requestedCampaignId;
+          if (client.isAdmin) return true;
+          return client.campaignIds.includes(a.campaign_id);
+        });
 
         if (filtered.length === 0) continue;
 
@@ -197,11 +203,23 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
         const authed = request as AuthenticatedRequest;
         const campaignIds = authed.campaignIds;
         const allAgents = store.listLive();
-        // Admins see everything; others are scoped to their campaigns
-        const agents =
-          authed.userRole === "admin"
-            ? allAgents
-            : allAgents.filter((a) => a.campaign_id && campaignIds.includes(a.campaign_id));
+
+        // If a specific campaign_id is requested (via query or header), scope to that single campaign.
+        // This prevents cross-campaign leakage when viewing a specific campaign's tierra page.
+        const requestedCampaignId =
+          (request.query as Record<string, string>)?.campaign_id ??
+          (request.headers["x-campaign-id"] as string | undefined) ??
+          null;
+
+        const agents = allAgents.filter((a) => {
+          if (!a.campaign_id) return false;
+          // If a specific campaign was requested, only return agents for that campaign
+          if (requestedCampaignId) return a.campaign_id === requestedCampaignId;
+          // Otherwise fall back to user's campaign scope (admins see all)
+          if (authed.userRole === "admin") return true;
+          return campaignIds.includes(a.campaign_id);
+        });
+
         return { ok: true, ts: new Date().toISOString(), agents };
       },
     );
@@ -265,11 +283,21 @@ export function buildAgentsRoutes(env: AppEnv): FastifyPluginAsync {
         const campaignIds = authed.campaignIds;
         const isAdmin = authed.userRole === "admin";
 
+        // If a specific campaign_id is requested, scope the SSE stream to that single campaign.
+        // This prevents cross-campaign leakage when viewing a specific campaign's tierra page.
+        const requestedCampaignId =
+          (request.query as Record<string, string>)?.campaign_id ?? null;
+
         const clientId = ++clientSeq;
-        clients.set(clientId, { res: reply.raw, campaignIds, isAdmin });
+        clients.set(clientId, { res: reply.raw, campaignIds, isAdmin, requestedCampaignId });
 
         const filterAgents = (list: AgentLocationInput[]) =>
-          isAdmin ? list : list.filter((a) => a.campaign_id && campaignIds.includes(a.campaign_id));
+          list.filter((a) => {
+            if (!a.campaign_id) return false;
+            if (requestedCampaignId) return a.campaign_id === requestedCampaignId;
+            if (isAdmin) return true;
+            return campaignIds.includes(a.campaign_id);
+          });
 
         reply.raw.write("retry: 5000\n\n");
         writeSseEvent(reply.raw, "snapshot", { ts: new Date().toISOString(), agents: filterAgents(store.listLive()) });
