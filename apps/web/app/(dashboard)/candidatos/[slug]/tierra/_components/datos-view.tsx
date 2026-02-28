@@ -28,14 +28,14 @@ const EDITABLE_ROLES = new Set(["admin", "consultor", "candidato"]);
 
 /* ========== CSV helpers ========== */
 
-const CSV_HEADERS = ["Nombre", "Telefono", "Zona", "Encuestador", "Candidato Preferido", "Comentarios", "Latitud", "Longitud", "Fecha Registro", "Fecha Captura"] as const;
+const CSV_HEADERS = ["Nombre", "Telefono", "Zona", "Distrito", "Encuestador", "Candidato Preferido", "Comentarios", "Latitud", "Longitud", "Fecha Registro", "Fecha Captura"] as const;
 
 function esc(v: string | null | undefined): string { if (v == null) return ""; const s = String(v); return (s.includes(",") || s.includes('"') || s.includes("\n")) ? `"${s.replace(/"/g, '""')}"` : s; }
 function fmtDate(iso: string): string { try { return new Date(iso).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }); } catch { return iso; } }
 
 function buildCSV(forms: FormRecord[]): string {
   const rows = [CSV_HEADERS.join(",")];
-  for (const f of forms) rows.push([esc(f.nombre), esc(f.telefono), esc(f.zona), esc(f.encuestador), esc(f.candidato_preferido), esc(f.comentarios), String(f.y ?? ""), String(f.x ?? ""), esc(fmtDate(f.created_at)), esc(f.fecha)].join(","));
+  for (const f of forms) rows.push([esc(f.nombre), esc(f.telefono), esc(f.zona), esc(f.distrito), esc(f.encuestador), esc(f.candidato_preferido), esc(f.comentarios), String(f.y ?? ""), String(f.x ?? ""), esc(fmtDate(f.created_at)), esc(f.fecha)].join(","));
   return "\uFEFF" + rows.join("\n");
 }
 
@@ -58,6 +58,30 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
   const [editingForm, setEditingForm] = useState<FormRecord | null>(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
+  // Track IDs currently being deleted for optimistic UI
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  // Filters
+  const [filterEncuestador, setFilterEncuestador] = useState<string>("all");
+  const [filterDistrito, setFilterDistrito] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+
+  // Unique encuestadores for filter dropdown
+  const encuestadorOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of forms) {
+      const key = f.encuestador_id || f.encuestador;
+      if (key && !map.has(key)) map.set(key, f.encuestador || key);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [forms]);
+
+  // Unique distritos for filter dropdown
+  const distritoOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of forms) { if (f.distrito?.trim()) set.add(f.distrito.trim()); }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [forms]);
 
   // Pre-compute set of duplicate phone numbers
   const duplicatePhones = useMemo(() => {
@@ -73,7 +97,17 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
     return dupes;
   }, [forms]);
 
+  const hasActiveFilters = search || showDuplicates || filterEncuestador !== "all" || filterDistrito !== "all" || dateFrom || dateTo;
+
+  const clearFilters = useCallback(() => {
+    setSearch(""); setFilterEncuestador("all"); setFilterDistrito("all"); setDateFrom(""); setDateTo(""); setShowDuplicates(false); setPage(0);
+  }, []);
+
   const filtered = useMemo(() => {
+    // Pre-parse date bounds once (not per row)
+    const fromMs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : 0;
+    const toMs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : 0;
+
     let list = forms;
     if (showDuplicates) {
       list = list.filter((f) => f.telefono?.trim() && duplicatePhones.has(f.telefono.trim()));
@@ -82,8 +116,20 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
       const q = search.toLowerCase();
       list = list.filter((f) => f.nombre.toLowerCase().includes(q) || f.telefono.includes(q) || f.encuestador.toLowerCase().includes(q) || f.zona.toLowerCase().includes(q) || (f.candidato_preferido && f.candidato_preferido.toLowerCase().includes(q)));
     }
+    if (filterEncuestador !== "all") {
+      list = list.filter((f) => (f.encuestador_id || f.encuestador) === filterEncuestador);
+    }
+    if (filterDistrito !== "all") {
+      list = list.filter((f) => f.distrito?.trim() === filterDistrito);
+    }
+    if (fromMs) {
+      list = list.filter((f) => new Date(f.created_at).getTime() >= fromMs);
+    }
+    if (toMs) {
+      list = list.filter((f) => new Date(f.created_at).getTime() <= toMs);
+    }
     return [...list].sort((a, b) => { const cmp = String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? "")); return sortAsc ? cmp : -cmp; });
-  }, [forms, search, sortKey, sortAsc, showDuplicates, duplicatePhones]);
+  }, [forms, search, sortKey, sortAsc, showDuplicates, duplicatePhones, filterEncuestador, filterDistrito, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -114,19 +160,33 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
     if (selectedIds.size === 0) return;
     const ok = window.confirm(`Eliminar ${selectedIds.size} registro${selectedIds.size > 1 ? "s" : ""}?`);
     if (!ok) return;
+    const ids = Array.from(selectedIds);
     setBulkDeleting(true);
-    await deleteFormsBatch(Array.from(selectedIds), campaignId);
-    setSelectedIds(new Set());
-    setBulkDeleting(false);
-    onFormsChanged();
+    setDeletingIds(new Set(ids));
+    try {
+      const res = await deleteFormsBatch(ids, campaignId);
+      if (res.ok) {
+        setSelectedIds(new Set());
+        onFormsChanged();
+      }
+    } finally {
+      setBulkDeleting(false);
+      setDeletingIds(new Set());
+    }
   }, [selectedIds, campaignId, onFormsChanged]);
 
   const handleSingleDelete = useCallback(async (f: FormRecord) => {
+    if (deletingIds.has(f.id)) return; // prevent double-click
     const ok = window.confirm(`Eliminar "${f.nombre || "Sin nombre"}"?`);
     if (!ok) return;
-    await onDeleteForm(f.id, campaignId);
-    onFormsChanged();
-  }, [campaignId, onDeleteForm, onFormsChanged]);
+    setDeletingIds((prev) => new Set(prev).add(f.id));
+    try {
+      await onDeleteForm(f.id, campaignId);
+      // onDeleteForm already invalidates queries — no need for onFormsChanged
+    } finally {
+      setDeletingIds((prev) => { const next = new Set(prev); next.delete(f.id); return next; });
+    }
+  }, [campaignId, onDeleteForm, deletingIds]);
 
   const handleEditSave = useCallback(async (updates: Record<string, string>) => {
     if (!editingForm) return false;
@@ -189,14 +249,36 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
         </button>
       </div>
 
+      {/* ── Filters row ── */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-200/80 bg-slate-50/50 shrink-0 flex-wrap">
+        <select value={filterEncuestador} onChange={(e) => { setFilterEncuestador(e.target.value); setPage(0); }} className="text-[11px] text-slate-600 px-2.5 py-1.5 rounded-md border border-slate-200 bg-white cursor-pointer outline-none font-medium min-w-[140px] max-w-[200px] truncate">
+          <option value="all">Todos los agentes</option>
+          {encuestadorOptions.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
+        </select>
+        <select value={filterDistrito} onChange={(e) => { setFilterDistrito(e.target.value); setPage(0); }} className="text-[11px] text-slate-600 px-2.5 py-1.5 rounded-md border border-slate-200 bg-white cursor-pointer outline-none font-medium min-w-[130px] max-w-[200px] truncate">
+          <option value="all">Todos los distritos</option>
+          {distritoOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <span className="text-[10px] text-slate-400 font-medium shrink-0">Desde</span>
+        <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} max={dateTo || undefined} className="text-[11px] text-slate-600 px-2 py-1.5 rounded-md border border-slate-200 bg-white outline-none font-medium cursor-pointer" />
+        <span className="text-[10px] text-slate-400 font-medium shrink-0">Hasta</span>
+        <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0); }} min={dateFrom || undefined} className="text-[11px] text-slate-600 px-2 py-1.5 rounded-md border border-slate-200 bg-white outline-none font-medium cursor-pointer" />
+        {hasActiveFilters && (
+          <button type="button" onClick={clearFilters} className="text-[11px] font-semibold border-none bg-transparent cursor-pointer px-2 py-1 rounded-md hover:bg-slate-100 transition-colors whitespace-nowrap shrink-0" style={{ color: primaryColor }}>
+            Limpiar filtros
+          </button>
+        )}
+      </div>
+
       {/* ── Table header ── */}
-      <div className="grid gap-2 px-4 py-2 border-b border-slate-200/80 bg-slate-50 shrink-0 items-center" style={{ gridTemplateColumns: canEdit ? "36px 1fr 110px 160px 150px 90px" : "1fr 110px 160px 150px 36px" }}>
+      <div className="grid gap-2 px-4 py-2 border-b border-slate-200/80 bg-slate-50 shrink-0 items-center" style={{ gridTemplateColumns: canEdit ? "36px 1fr 110px 130px 130px 150px 90px" : "1fr 110px 130px 130px 150px 36px" }}>
         {canEdit && (
           <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === pageSlice.length} onChange={toggleAll} className="w-4 h-4 cursor-pointer accent-blue-600" aria-label="Seleccionar todo" />
         )}
         <SortBtn label="Nombre" sortKey="nombre" current={sortKey} arrow={arrow} onSort={handleSort} />
         <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 text-center">Telefono</span>
         <SortBtn label="Encuestador" sortKey="encuestador" current={sortKey} arrow={arrow} onSort={handleSort} />
+        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Distrito</span>
         <SortBtn label="Fecha" sortKey="created_at" current={sortKey} arrow={arrow} onSort={handleSort} align="right" />
         {canEdit ? <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 text-center">Acciones</span> : <span />}
       </div>
@@ -205,17 +287,22 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
       <div className="flex-1 overflow-y-auto">
         {pageSlice.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 p-16 text-center">
-            <span className="text-[14px] font-bold text-slate-500">Sin registros</span>
-            <span className="text-[12px] text-slate-400">{search ? "Intenta con otra busqueda" : "Los datos apareceran cuando los brigadistas capturen informacion"}</span>
+            <span className="text-[14px] font-bold text-slate-500">{hasActiveFilters ? "Sin resultados" : "Sin registros"}</span>
+            <span className="text-[12px] text-slate-400">{hasActiveFilters ? "Intenta con otros filtros o busqueda" : "Los datos apareceran cuando los brigadistas capturen informacion"}</span>
+            {hasActiveFilters && (
+              <button type="button" onClick={clearFilters} className="text-[12px] font-semibold border bg-transparent cursor-pointer px-5 py-2 rounded-lg mt-2 transition-colors" style={{ color: primaryColor, borderColor: `${primaryColor}30` }}>Limpiar filtros</button>
+            )}
           </div>
         ) : pageSlice.map((f, i) => {
           const coords = (f.x != null && f.y != null) ? formCoordsToLatLng(f.x, f.y, f.zona) : null;
+          const isRowDeleting = deletingIds.has(f.id);
           return (
-            <div key={f.id} className={`grid gap-2 px-4 items-center min-h-[44px] border-b border-slate-100/80 transition-colors hover:bg-slate-50/80 ${selectedIds.has(f.id) ? "bg-blue-50/40" : i % 2 === 1 ? "bg-slate-50/40" : "bg-white"}`} style={{ gridTemplateColumns: canEdit ? "36px 1fr 110px 160px 150px 90px" : "1fr 110px 160px 150px 36px" }}>
-              {canEdit && <input type="checkbox" checked={selectedIds.has(f.id)} onChange={() => toggleSelect(f.id)} className="w-4 h-4 cursor-pointer accent-blue-600" aria-label={`Seleccionar ${f.nombre}`} />}
+            <div key={f.id} className={`grid gap-2 px-4 items-center min-h-[44px] border-b border-slate-100/80 transition-all hover:bg-slate-50/80 ${isRowDeleting ? "opacity-40 pointer-events-none" : ""} ${selectedIds.has(f.id) ? "bg-blue-50/40" : i % 2 === 1 ? "bg-slate-50/40" : "bg-white"}`} style={{ gridTemplateColumns: canEdit ? "36px 1fr 110px 130px 130px 150px 90px" : "1fr 110px 130px 130px 150px 36px" }}>
+              {canEdit && <input type="checkbox" checked={selectedIds.has(f.id)} onChange={() => toggleSelect(f.id)} disabled={isRowDeleting} className="w-4 h-4 cursor-pointer accent-blue-600" aria-label={`Seleccionar ${f.nombre}`} />}
               <div className="min-w-0 py-1.5"><span className="text-[13px] font-semibold text-slate-800 truncate block">{f.nombre || "\u2014"}</span></div>
               <span className="text-[12px] text-slate-600 tabular-nums text-center font-mono">{f.telefono || "\u2014"}</span>
               <span className="text-[11px] text-slate-600 truncate" title={f.encuestador}>{f.encuestador || "\u2014"}</span>
+              <span className="text-[11px] text-slate-600 truncate" title={f.distrito || ""}>{f.distrito || "\u2014"}</span>
               <span className="text-[11px] text-slate-400 tabular-nums text-right">{fmtDate(f.created_at)}</span>
               {canEdit ? (
                 <div className="flex items-center justify-center gap-1">
@@ -224,11 +311,14 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Ver en mapa</title><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
                     </button>
                   )}
-                  <button type="button" onClick={() => setEditingForm(f)} className="w-7 h-7 rounded-md border border-slate-200 bg-white text-slate-500 cursor-pointer flex items-center justify-center hover:bg-slate-50 hover:text-slate-700 transition-colors" title="Editar">
+                  <button type="button" onClick={() => setEditingForm(f)} disabled={isRowDeleting} className="w-7 h-7 rounded-md border border-slate-200 bg-white text-slate-500 cursor-pointer flex items-center justify-center hover:bg-slate-50 hover:text-slate-700 transition-colors disabled:opacity-30" title="Editar">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Editar</title><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                   </button>
-                  <button type="button" onClick={() => handleSingleDelete(f)} className="w-7 h-7 rounded-md border border-red-200 bg-white text-red-400 cursor-pointer flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors" title="Eliminar">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Eliminar</title><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                  <button type="button" onClick={() => handleSingleDelete(f)} disabled={isRowDeleting} className="w-7 h-7 rounded-md border border-red-200 bg-white text-red-400 cursor-pointer flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-30" title="Eliminar">
+                    {isRowDeleting
+                      ? <span className="w-3 h-3 border-2 border-red-200 border-t-red-500 rounded-full animate-spin" />
+                      : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Eliminar</title><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                    }
                   </button>
                 </div>
               ) : (

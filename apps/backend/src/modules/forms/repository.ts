@@ -18,6 +18,7 @@ export interface FormRecord {
   comentarios: string | null;
   campaign_id: string | null;
   created_at: string;
+  distrito: string | null;
 }
 
 export async function ensureFormsTable() {
@@ -274,7 +275,8 @@ export async function getRecentForms(
         id, client_id, nombre, telefono, fecha, x, y, zona,
         encuestador, encuestador_id, candidato_preferido, 
         comentarios, campaign_id, created_at,
-        NULL::uuid as agent_id
+        NULL::uuid as agent_id,
+        NULL::text as _fs_distrito
       FROM public.forms 
       WHERE campaign_id = $1 AND deleted_at IS NULL${legacyDateFilter}
       
@@ -296,19 +298,36 @@ export async function getRecentForms(
         fs.data->>'comentarios' as comentarios,
         fs.campaign_id,
         fs.created_at,
-        fs.submitted_by as agent_id
+        fs.submitted_by as agent_id,
+        fs.data->>'distrito' as _fs_distrito
       FROM form_submissions fs
       LEFT JOIN users u ON u.id = fs.submitted_by
       WHERE fs.campaign_id = $1
         AND fs.deleted_at IS NULL${submissionsDateFilter}
+    ),
+    deduped AS (
+      SELECT * FROM (
+        SELECT DISTINCT ON (client_id) *
+        FROM combined
+        ORDER BY client_id, created_at DESC
+      ) d
+      ORDER BY created_at DESC
+      ${limitClause}
     )
-    SELECT * FROM (
-      SELECT DISTINCT ON (client_id) *
-      FROM combined
-      ORDER BY client_id, created_at DESC
-    ) deduped
-    ORDER BY created_at DESC
-    ${limitClause}`,
+    SELECT
+      d.id, d.client_id, d.nombre, d.telefono, d.fecha, d.x, d.y, d.zona,
+      d.encuestador, d.encuestador_id, d.candidato_preferido, d.comentarios,
+      d.campaign_id, d.created_at, d.agent_id,
+      COALESCE(d._fs_distrito, dist.nomdist) as distrito
+    FROM deduped d
+    LEFT JOIN LATERAL (
+      SELECT pd.nomdist
+      FROM peru_distritos pd
+      WHERE d.x IS NOT NULL AND d.y IS NOT NULL
+        AND abs(d.x) < 360 AND abs(d.y) < 360
+        AND ST_Contains(pd.geom, ST_SetSRID(ST_Point(d.x, d.y), 4326))
+      LIMIT 1
+    ) dist ON true`,
     params,
   );
 
@@ -497,4 +516,47 @@ export async function getPendingDeletions(campaignId: string) {
     [campaignId],
   );
   return result.rows;
+}
+
+/**
+ * Hard-delete multiple forms by IDs in a single query (admin only).
+ * Tries legacy forms table first, then form_submissions.
+ * Returns total number of deleted rows.
+ */
+export async function batchHardDeleteForms(
+  ids: string[],
+  campaignId: string,
+): Promise<number> {
+  const r1 = await pool.query(
+    `DELETE FROM public.forms WHERE id = ANY($1::uuid[]) AND campaign_id = $2 RETURNING id`,
+    [ids, campaignId],
+  );
+  const r2 = await pool.query(
+    `DELETE FROM form_submissions WHERE id = ANY($1::uuid[]) AND campaign_id = $2 RETURNING id`,
+    [ids, campaignId],
+  );
+  return (r1.rowCount ?? 0) + (r2.rowCount ?? 0);
+}
+
+/**
+ * Soft-delete multiple forms by IDs in a single query (non-admin).
+ * Sets deleted_at + deleted_by instead of removing the rows.
+ * Returns total number of soft-deleted rows.
+ */
+export async function batchSoftDeleteForms(
+  ids: string[],
+  campaignId: string,
+  deletedBy: string,
+): Promise<number> {
+  const r1 = await pool.query(
+    `UPDATE public.forms SET deleted_at = now(), deleted_by = $3
+     WHERE id = ANY($1::uuid[]) AND campaign_id = $2 AND deleted_at IS NULL RETURNING id`,
+    [ids, campaignId, deletedBy],
+  );
+  const r2 = await pool.query(
+    `UPDATE form_submissions SET deleted_at = now(), deleted_by = $3
+     WHERE id = ANY($1::uuid[]) AND campaign_id = $2 AND deleted_at IS NULL RETURNING id`,
+    [ids, campaignId, deletedBy],
+  );
+  return (r1.rowCount ?? 0) + (r2.rowCount ?? 0);
 }

@@ -15,6 +15,7 @@ import {
   INITIAL_DRILL,
   type TierraMapHandle, type DrillState, type ActiveLayer, type LogEntry,
 } from "./_components";
+import { tierraKeys } from "@/lib/hooks";
 import type { TierraViewMode } from "./_components/tierra-header";
 import { useAgentSSE } from "./_components/hooks/use-agent-sse";
 import { usePipelineState } from "./_components/hooks/use-pipeline-state";
@@ -112,20 +113,19 @@ export default function TierraPage() {
     });
   }, []);
 
-  const handleDeleteForm = useCallback(async (formId: string, campaignId: string): Promise<boolean> => {
-    const res = await deleteForm(formId, campaignId);
+  const handleDeleteForm = useCallback(async (formId: string, cId: string): Promise<boolean> => {
+    const res = await deleteForm(formId, cId);
     if (res.ok) {
-      queryClient.invalidateQueries({ queryKey: ["recent-forms"] });
-      queryClient.invalidateQueries({ queryKey: ["campaign-stats"] });
+      queryClient.invalidateQueries({ queryKey: tierraKeys.all });
       return true;
     }
     return false;
   }, [queryClient]);
 
-  const handleUpdateForm = useCallback(async (formId: string, campaignId: string, updates: Record<string, string>): Promise<boolean> => {
-    const res = await updateForm(formId, campaignId, updates);
+  const handleUpdateForm = useCallback(async (formId: string, cId: string, updates: Record<string, string>): Promise<boolean> => {
+    const res = await updateForm(formId, cId, updates);
     if (res.ok) {
-      queryClient.invalidateQueries({ queryKey: ["recent-forms"] });
+      queryClient.invalidateQueries({ queryKey: tierraKeys.all });
       return true;
     }
     return false;
@@ -200,7 +200,7 @@ export default function TierraPage() {
           userRole={user?.role ?? "agente"}
           onUpdateForm={handleUpdateForm}
           onDeleteForm={handleDeleteForm}
-          onFormsChanged={() => { queryClient.invalidateQueries({ queryKey: ["recent-forms"] }); queryClient.invalidateQueries({ queryKey: ["campaign-stats"] }); }}
+          onFormsChanged={() => { queryClient.invalidateQueries({ queryKey: tierraKeys.all }); }}
           onFlyTo={flyToFromDatos}
         />
       )}

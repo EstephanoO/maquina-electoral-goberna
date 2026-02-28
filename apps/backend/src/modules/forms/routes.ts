@@ -10,7 +10,7 @@ import { consumeDualWeightedRateLimit } from "../../infra/redis";
 import { emitCampaignEvent } from "../campaigns/routes";
 import { formSchema, type FormInput } from "./schema";
 import { FormsWriteBehindQueue } from "./write-behind-queue";
-import { getFormsByCampaign, getRecentForms, deleteFormById, softDeleteFormById, restoreFormById, getPendingDeletions, updateFormById } from "./repository";
+import { getFormsByCampaign, getRecentForms, deleteFormById, softDeleteFormById, restoreFormById, getPendingDeletions, updateFormById, batchHardDeleteForms, batchSoftDeleteForms } from "./repository";
 
 function parseFormsPayload(body: unknown): FormInput[] {
   const items = Array.isArray(body) ? body : [body];
@@ -359,13 +359,9 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
         }
 
         try {
-          let deleted = 0;
-          for (const id of ids) {
-            const result = isAdmin
-              ? await deleteFormById(id, campaignId)
-              : await softDeleteFormById(id, campaignId, req.userId);
-            if (result.deleted) deleted++;
-          }
+          const deleted = isAdmin
+            ? await batchHardDeleteForms(ids, campaignId)
+            : await batchSoftDeleteForms(ids, campaignId, req.userId);
 
           return reply.code(200).send({
             ok: true,
