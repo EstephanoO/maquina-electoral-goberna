@@ -19,6 +19,8 @@ export interface FormRecord {
   campaign_id: string | null;
   created_at: string;
   distrito: string | null;
+  departamento: string | null;
+  provincia: string | null;
 }
 
 export async function ensureFormsTable() {
@@ -337,15 +339,19 @@ export async function getRecentForms(
       d.id, d.client_id, d.nombre, d.telefono, d.fecha, d.x, d.y, d.zona,
       d.encuestador, d.encuestador_id, d.candidato_preferido, d.comentarios,
       d.campaign_id, d.created_at, d.agent_id,
-      COALESCE(d._fs_distrito, dist.nomdist) as distrito
+      COALESCE(d._fs_distrito, geo.nomdist) as distrito,
+      geo.nomdep as departamento,
+      geo.nomprov as provincia
     FROM with_geom d
     LEFT JOIN LATERAL (
-      SELECT pd.nomdist
+      SELECT pd.nomdist, dep.nomdep, prov.nomprov
       FROM peru_distritos pd
+      JOIN peru_departamentos dep ON dep.coddep = pd.coddep
+      JOIN peru_provincias prov ON prov.coddep = pd.coddep AND prov.codprov = pd.codprov
       WHERE d.wgs84_point IS NOT NULL
         AND ST_Contains(pd.geom, d.wgs84_point)
       LIMIT 1
-    ) dist ON true`,
+    ) geo ON true`,
     params,
   );
 

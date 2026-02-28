@@ -19,7 +19,6 @@ type Props = {
   onUpdateForm: (formId: string, campaignId: string, updates: Record<string, string>) => Promise<boolean>;
   onDeleteForm: (formId: string, campaignId: string) => Promise<boolean>;
   onFormsChanged: () => void;
-  /** Fly to a point on the map (switches to campo view) */
   onFlyTo?: (lng: number, lat: number) => void;
 };
 
@@ -28,23 +27,53 @@ const EDITABLE_ROLES = new Set(["admin", "consultor", "candidato"]);
 
 /* ========== CSV helpers ========== */
 
-const CSV_HEADERS = ["Nombre", "Telefono", "Zona", "Distrito", "Encuestador", "Candidato Preferido", "Comentarios", "Latitud", "Longitud", "Fecha Registro", "Fecha Captura"] as const;
+const CSV_HEADERS = ["Nombre", "Telefono", "Zona", "Departamento", "Provincia", "Distrito", "Encuestador", "Candidato Preferido", "Comentarios", "Latitud", "Longitud", "Fecha Registro", "Fecha Captura"] as const;
 
-function esc(v: string | null | undefined): string { if (v == null) return ""; const s = String(v); return (s.includes(",") || s.includes('"') || s.includes("\n")) ? `"${s.replace(/"/g, '""')}"` : s; }
-function fmtDate(iso: string): string { try { return new Date(iso).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }); } catch { return iso; } }
+function esc(v: string | null | undefined): string {
+  if (v == null) return "";
+  const s = String(v);
+  return (s.includes(",") || s.includes('"') || s.includes("\n")) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function fmtDate(iso: string): string {
+  try { return new Date(iso).toLocaleString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }); }
+  catch { return iso; }
+}
 
 function buildCSV(forms: FormRecord[]): string {
   const rows = [CSV_HEADERS.join(",")];
-  for (const f of forms) rows.push([esc(f.nombre), esc(f.telefono), esc(f.zona), esc(f.distrito), esc(f.encuestador), esc(f.candidato_preferido), esc(f.comentarios), String(f.y ?? ""), String(f.x ?? ""), esc(fmtDate(f.created_at)), esc(f.fecha)].join(","));
+  for (const f of forms) {
+    rows.push([
+      esc(f.nombre), esc(f.telefono), esc(f.zona), esc(f.departamento), esc(f.provincia), esc(f.distrito),
+      esc(f.encuestador), esc(f.candidato_preferido), esc(f.comentarios),
+      String(f.y ?? ""), String(f.x ?? ""), esc(fmtDate(f.created_at)), esc(f.fecha),
+    ].join(","));
+  }
   return "\uFEFF" + rows.join("\n");
 }
 
 function downloadCSV(csv: string, filename: string) {
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }
+
+/* ========== Inline icons ========== */
+
+const SearchIcon = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>;
+const DownloadIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>;
+const TrashIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
+const EditIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>;
+const MapPinIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>;
+const CopyIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="8" y="2" width="13" height="13" rx="2" /><path d="M5 8H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1" /></svg>;
+const FilterIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>;
+const XIcon = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>;
+
+/* ========== Shared select styles ========== */
+
+const selectClass = "text-[11px] text-slate-700 pl-2.5 pr-7 py-[7px] rounded-lg border border-slate-200 bg-white cursor-pointer outline-none font-semibold appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E')] bg-[position:right_6px_center] bg-no-repeat hover:border-slate-300 focus:border-slate-400 transition-colors truncate";
 
 /* ========== Component ========== */
 
@@ -58,15 +87,19 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
   const [editingForm, setEditingForm] = useState<FormRecord | null>(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [showDuplicates, setShowDuplicates] = useState(false);
-  // Track IDs currently being deleted for optimistic UI
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [showFilters, setShowFilters] = useState(false);
+
   // Filters
   const [filterEncuestador, setFilterEncuestador] = useState<string>("all");
+  const [filterDepartamento, setFilterDepartamento] = useState<string>("all");
+  const [filterProvincia, setFilterProvincia] = useState<string>("all");
   const [filterDistrito, setFilterDistrito] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
 
-  // Unique encuestadores for filter dropdown
+  // ── Derived filter options (cascading: dept → prov → dist) ──
+
   const encuestadorOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const f of forms) {
@@ -76,14 +109,33 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [forms]);
 
-  // Unique distritos for filter dropdown
-  const distritoOptions = useMemo(() => {
+  const departamentoOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const f of forms) { if (f.distrito?.trim()) set.add(f.distrito.trim()); }
+    for (const f of forms) { if (f.departamento?.trim()) set.add(f.departamento.trim()); }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [forms]);
 
-  // Pre-compute set of duplicate phone numbers
+  const provinciaOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of forms) {
+      if (f.provincia?.trim() && (filterDepartamento === "all" || f.departamento?.trim() === filterDepartamento)) {
+        set.add(f.provincia.trim());
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [forms, filterDepartamento]);
+
+  const distritoOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of forms) {
+      if (!f.distrito?.trim()) continue;
+      if (filterDepartamento !== "all" && f.departamento?.trim() !== filterDepartamento) continue;
+      if (filterProvincia !== "all" && f.provincia?.trim() !== filterProvincia) continue;
+      set.add(f.distrito.trim());
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [forms, filterDepartamento, filterProvincia]);
+
   const duplicatePhones = useMemo(() => {
     const counts = new Map<string, number>();
     for (const f of forms) {
@@ -97,43 +149,66 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
     return dupes;
   }, [forms]);
 
-  const hasActiveFilters = search || showDuplicates || filterEncuestador !== "all" || filterDistrito !== "all" || dateFrom || dateTo;
+  const activeFilterCount = [
+    filterEncuestador !== "all",
+    filterDepartamento !== "all",
+    filterProvincia !== "all",
+    filterDistrito !== "all",
+    !!dateFrom,
+    !!dateTo,
+    showDuplicates,
+  ].filter(Boolean).length;
+
+  const hasActiveFilters = !!search || activeFilterCount > 0;
 
   const clearFilters = useCallback(() => {
-    setSearch(""); setFilterEncuestador("all"); setFilterDistrito("all"); setDateFrom(""); setDateTo(""); setShowDuplicates(false); setPage(0);
+    setSearch(""); setFilterEncuestador("all"); setFilterDepartamento("all");
+    setFilterProvincia("all"); setFilterDistrito("all");
+    setDateFrom(""); setDateTo(""); setShowDuplicates(false); setPage(0);
   }, []);
 
+  // Cascade reset: when dept changes, reset prov + dist
+  const handleDeptChange = useCallback((v: string) => {
+    setFilterDepartamento(v); setFilterProvincia("all"); setFilterDistrito("all"); setPage(0);
+  }, []);
+
+  const handleProvChange = useCallback((v: string) => {
+    setFilterProvincia(v); setFilterDistrito("all"); setPage(0);
+  }, []);
+
+  // ── Filtering + sorting ──
+
   const filtered = useMemo(() => {
-    // Pre-parse date bounds once (not per row)
     const fromMs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : 0;
     const toMs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : 0;
 
     let list = forms;
-    if (showDuplicates) {
-      list = list.filter((f) => f.telefono?.trim() && duplicatePhones.has(f.telefono.trim()));
-    }
+    if (showDuplicates) list = list.filter((f) => f.telefono?.trim() && duplicatePhones.has(f.telefono.trim()));
     if (search.trim()) {
       const q = search.toLowerCase();
-      list = list.filter((f) => f.nombre.toLowerCase().includes(q) || f.telefono.includes(q) || f.encuestador.toLowerCase().includes(q) || f.zona.toLowerCase().includes(q) || (f.candidato_preferido && f.candidato_preferido.toLowerCase().includes(q)));
+      list = list.filter((f) =>
+        f.nombre.toLowerCase().includes(q) || f.telefono.includes(q) ||
+        f.encuestador.toLowerCase().includes(q) || f.zona.toLowerCase().includes(q) ||
+        (f.distrito && f.distrito.toLowerCase().includes(q)) ||
+        (f.candidato_preferido && f.candidato_preferido.toLowerCase().includes(q)));
     }
-    if (filterEncuestador !== "all") {
-      list = list.filter((f) => (f.encuestador_id || f.encuestador) === filterEncuestador);
-    }
-    if (filterDistrito !== "all") {
-      list = list.filter((f) => f.distrito?.trim() === filterDistrito);
-    }
-    if (fromMs) {
-      list = list.filter((f) => new Date(f.created_at).getTime() >= fromMs);
-    }
-    if (toMs) {
-      list = list.filter((f) => new Date(f.created_at).getTime() <= toMs);
-    }
-    return [...list].sort((a, b) => { const cmp = String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? "")); return sortAsc ? cmp : -cmp; });
-  }, [forms, search, sortKey, sortAsc, showDuplicates, duplicatePhones, filterEncuestador, filterDistrito, dateFrom, dateTo]);
+    if (filterEncuestador !== "all") list = list.filter((f) => (f.encuestador_id || f.encuestador) === filterEncuestador);
+    if (filterDepartamento !== "all") list = list.filter((f) => f.departamento?.trim() === filterDepartamento);
+    if (filterProvincia !== "all") list = list.filter((f) => f.provincia?.trim() === filterProvincia);
+    if (filterDistrito !== "all") list = list.filter((f) => f.distrito?.trim() === filterDistrito);
+    if (fromMs) list = list.filter((f) => new Date(f.created_at).getTime() >= fromMs);
+    if (toMs) list = list.filter((f) => new Date(f.created_at).getTime() <= toMs);
+    return [...list].sort((a, b) => {
+      const cmp = String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? ""));
+      return sortAsc ? cmp : -cmp;
+    });
+  }, [forms, search, sortKey, sortAsc, showDuplicates, duplicatePhones, filterEncuestador, filterDepartamento, filterProvincia, filterDistrito, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
   const pageSlice = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+
+  // ── Handlers ──
 
   const handleSort = useCallback((key: SortKey) => {
     setSortKey((prev) => { if (prev === key) { setSortAsc((a) => !a); return key; } setSortAsc(false); return key; });
@@ -165,27 +240,17 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
     setDeletingIds(new Set(ids));
     try {
       const res = await deleteFormsBatch(ids, campaignId);
-      if (res.ok) {
-        setSelectedIds(new Set());
-        onFormsChanged();
-      }
-    } finally {
-      setBulkDeleting(false);
-      setDeletingIds(new Set());
-    }
+      if (res.ok) { setSelectedIds(new Set()); onFormsChanged(); }
+    } finally { setBulkDeleting(false); setDeletingIds(new Set()); }
   }, [selectedIds, campaignId, onFormsChanged]);
 
   const handleSingleDelete = useCallback(async (f: FormRecord) => {
-    if (deletingIds.has(f.id)) return; // prevent double-click
+    if (deletingIds.has(f.id)) return;
     const ok = window.confirm(`Eliminar "${f.nombre || "Sin nombre"}"?`);
     if (!ok) return;
     setDeletingIds((prev) => new Set(prev).add(f.id));
-    try {
-      await onDeleteForm(f.id, campaignId);
-      // onDeleteForm already invalidates queries — no need for onFormsChanged
-    } finally {
-      setDeletingIds((prev) => { const next = new Set(prev); next.delete(f.id); return next; });
-    }
+    try { await onDeleteForm(f.id, campaignId); }
+    finally { setDeletingIds((prev) => { const next = new Set(prev); next.delete(f.id); return next; }); }
   }, [campaignId, onDeleteForm, deletingIds]);
 
   const handleEditSave = useCallback(async (updates: Record<string, string>) => {
@@ -195,90 +260,193 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
     return ok;
   }, [editingForm, campaignId, onUpdateForm, onFormsChanged]);
 
+  // ── Grid columns ──
+  const cols = canEdit
+    ? "36px 1.2fr 100px 0.8fr 0.8fr 130px 84px"
+    : "1.2fr 100px 0.8fr 0.8fr 130px 36px";
+
+  // ── Loading state ──
   if (isLoading) {
-    return (<div className="flex items-center justify-center flex-1 gap-3"><div className="w-5 h-5 border-2 border-slate-200 border-t-slate-600 rounded-full animate-spin" /><span className="text-sm text-slate-400 font-medium">Cargando datos...</span></div>);
+    return (
+      <div className="flex items-center justify-center flex-1 gap-3">
+        <div className="w-5 h-5 border-2 border-slate-200 border-t-slate-600 rounded-full animate-spin" />
+        <span className="text-sm text-slate-400 font-medium">Cargando datos...</span>
+      </div>
+    );
   }
 
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-white">
+
       {/* ── Toolbar ── */}
-      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-200/80 shrink-0 flex-wrap">
-        <div className="flex items-center gap-2 flex-1 py-1.5 px-3 rounded-lg bg-slate-50 border border-slate-200 focus-within:border-slate-300 transition-colors max-w-sm min-w-[200px]">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" aria-hidden="true"><title>Buscar</title><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-          <input type="text" value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} placeholder="Buscar nombre, telefono, zona..." className="flex-1 border-none outline-none bg-transparent text-[13px] text-slate-700 placeholder:text-slate-400" />
-          {search && <button type="button" onClick={() => { setSearch(""); setPage(0); }} className="w-5 h-5 rounded-full border-none bg-slate-200 text-slate-500 cursor-pointer text-[10px] flex items-center justify-center hover:bg-slate-300" aria-label="Limpiar">x</button>}
+      <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-slate-200/80 shrink-0">
+        {/* Search */}
+        <div className="flex items-center gap-2 flex-1 py-[7px] px-3 rounded-lg bg-slate-50/80 border border-slate-200 focus-within:border-slate-400 focus-within:bg-white transition-all max-w-xs min-w-[180px]">
+          <span className="text-slate-400 shrink-0"><SearchIcon /></span>
+          <input
+            type="text" value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            placeholder="Buscar..."
+            className="flex-1 border-none outline-none bg-transparent text-[13px] text-slate-700 placeholder:text-slate-400 font-medium"
+          />
+          {search && (
+            <button type="button" onClick={() => { setSearch(""); setPage(0); }}
+              className="w-5 h-5 rounded-full bg-slate-200/80 text-slate-500 cursor-pointer flex items-center justify-center hover:bg-slate-300 transition-colors border-none"
+              aria-label="Limpiar"><XIcon /></button>
+          )}
         </div>
 
-        <span className="text-[11px] text-slate-400 tabular-nums font-semibold shrink-0">{filtered.length.toLocaleString()} registros</span>
+        {/* Record count */}
+        <span className="text-[11px] text-slate-400 tabular-nums font-semibold shrink-0 hidden sm:inline">
+          {filtered.length.toLocaleString()} registros
+        </span>
 
-        {/* Duplicates filter */}
-        <button
-          type="button"
-          onClick={() => { setShowDuplicates((v) => !v); setPage(0); }}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer border transition-colors shrink-0 ${
-            showDuplicates
-              ? "bg-amber-50 border-amber-300 text-amber-700"
-              : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-          }`}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <rect x="8" y="2" width="13" height="13" rx="2" />
-            <path d="M5 8H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1" />
-          </svg>
-          Duplicados
-          {duplicatePhones.size > 0 && (
-            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${showDuplicates ? "bg-amber-200 text-amber-800" : "bg-slate-100 text-slate-500"}`}>
-              {duplicatePhones.size}
+        {/* Filters toggle */}
+        <button type="button" onClick={() => setShowFilters((v) => !v)}
+          className={`flex items-center gap-1.5 px-3 py-[7px] rounded-lg text-[11px] font-semibold cursor-pointer border transition-colors shrink-0 ${
+            showFilters || activeFilterCount > 0
+              ? "border-slate-300 bg-slate-100 text-slate-700"
+              : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:border-slate-300"
+          }`}>
+          <FilterIcon />
+          Filtros
+          {activeFilterCount > 0 && (
+            <span className="text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center text-white" style={{ backgroundColor: primaryColor }}>
+              {activeFilterCount}
             </span>
           )}
         </button>
 
-        {/* Bulk actions (canEdit only) */}
+        {/* Duplicates */}
+        <button type="button" onClick={() => { setShowDuplicates((v) => !v); setPage(0); }}
+          className={`flex items-center gap-1.5 px-3 py-[7px] rounded-lg text-[11px] font-semibold cursor-pointer border transition-colors shrink-0 ${
+            showDuplicates
+              ? "bg-amber-50 border-amber-300 text-amber-700"
+              : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300"
+          }`}>
+          <CopyIcon />
+          Duplicados
+          {duplicatePhones.size > 0 && (
+            <span className={`text-[9px] font-black min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center ${
+              showDuplicates ? "bg-amber-200 text-amber-800" : "bg-slate-100 text-slate-500"
+            }`}>{duplicatePhones.size}</span>
+          )}
+        </button>
+
+        {/* Bulk delete */}
         {canEdit && selectedIds.size > 0 && (
-          <button type="button" onClick={handleBulkDelete} disabled={bulkDeleting} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-[12px] font-semibold cursor-pointer border-none bg-red-500 hover:bg-red-600 disabled:opacity-50 transition-colors">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Eliminar</title><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+          <button type="button" onClick={handleBulkDelete} disabled={bulkDeleting}
+            className="flex items-center gap-1.5 px-3 py-[7px] rounded-lg text-white text-[11px] font-bold cursor-pointer border-none bg-red-500 hover:bg-red-600 disabled:opacity-50 transition-colors">
+            <TrashIcon />
             {bulkDeleting ? "Eliminando..." : `Eliminar ${selectedIds.size}`}
+          </button>
+        )}
+
+        {/* Clear filters */}
+        {hasActiveFilters && (
+          <button type="button" onClick={clearFilters}
+            className="text-[11px] font-semibold border-none bg-transparent cursor-pointer px-2 py-1 rounded-md hover:bg-slate-100 transition-colors whitespace-nowrap shrink-0"
+            style={{ color: primaryColor }}>
+            Limpiar
           </button>
         )}
 
         <div className="flex-1" />
 
-        <button type="button" onClick={handleDownload} disabled={filtered.length === 0} className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-[12px] font-semibold cursor-pointer border-none transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90" style={{ backgroundColor: primaryColor }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Descargar</title><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-          CSV
+        {/* CSV download */}
+        <button type="button" onClick={handleDownload} disabled={filtered.length === 0}
+          className="flex items-center gap-2 px-4 py-[7px] rounded-lg text-white text-[12px] font-bold cursor-pointer border-none transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 hover:shadow-md"
+          style={{ backgroundColor: primaryColor }}>
+          <DownloadIcon />
+          <span className="hidden sm:inline">Exportar</span> CSV
         </button>
       </div>
 
-      {/* ── Filters row ── */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-200/80 bg-slate-50/50 shrink-0 flex-wrap">
-        <select value={filterEncuestador} onChange={(e) => { setFilterEncuestador(e.target.value); setPage(0); }} className="text-[11px] text-slate-600 px-2.5 py-1.5 rounded-md border border-slate-200 bg-white cursor-pointer outline-none font-medium min-w-[140px] max-w-[200px] truncate">
-          <option value="all">Todos los agentes</option>
-          {encuestadorOptions.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
-        </select>
-        <select value={filterDistrito} onChange={(e) => { setFilterDistrito(e.target.value); setPage(0); }} className="text-[11px] text-slate-600 px-2.5 py-1.5 rounded-md border border-slate-200 bg-white cursor-pointer outline-none font-medium min-w-[130px] max-w-[200px] truncate">
-          <option value="all">Todos los distritos</option>
-          {distritoOptions.map((d) => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <span className="text-[10px] text-slate-400 font-medium shrink-0">Desde</span>
-        <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} max={dateTo || undefined} className="text-[11px] text-slate-600 px-2 py-1.5 rounded-md border border-slate-200 bg-white outline-none font-medium cursor-pointer" />
-        <span className="text-[10px] text-slate-400 font-medium shrink-0">Hasta</span>
-        <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0); }} min={dateFrom || undefined} className="text-[11px] text-slate-600 px-2 py-1.5 rounded-md border border-slate-200 bg-white outline-none font-medium cursor-pointer" />
-        {hasActiveFilters && (
-          <button type="button" onClick={clearFilters} className="text-[11px] font-semibold border-none bg-transparent cursor-pointer px-2 py-1 rounded-md hover:bg-slate-100 transition-colors whitespace-nowrap shrink-0" style={{ color: primaryColor }}>
-            Limpiar filtros
-          </button>
-        )}
+      {/* ── Collapsible filters panel ── */}
+      <div className={`grid transition-[grid-template-rows] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] ${showFilters || activeFilterCount > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+        <div className="overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-100 bg-slate-50/60 flex-wrap">
+            {/* Agente */}
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 pl-0.5">Agente</span>
+              <select value={filterEncuestador} onChange={(e) => { setFilterEncuestador(e.target.value); setPage(0); }}
+                className={`${selectClass} min-w-[140px] max-w-[180px]`}>
+                <option value="all">Todos</option>
+                {encuestadorOptions.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
+              </select>
+            </div>
+
+            {/* Separator */}
+            <div className="w-px h-8 bg-slate-200 mx-1 shrink-0" />
+
+            {/* Departamento */}
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 pl-0.5">Departamento</span>
+              <select value={filterDepartamento} onChange={(e) => handleDeptChange(e.target.value)}
+                className={`${selectClass} min-w-[130px] max-w-[170px]`}>
+                <option value="all">Todos</option>
+                {departamentoOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+
+            {/* Provincia */}
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 pl-0.5">Provincia</span>
+              <select value={filterProvincia} onChange={(e) => handleProvChange(e.target.value)}
+                disabled={filterDepartamento === "all"}
+                className={`${selectClass} min-w-[130px] max-w-[170px] disabled:opacity-40 disabled:cursor-not-allowed`}>
+                <option value="all">Todas</option>
+                {provinciaOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+
+            {/* Distrito */}
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 pl-0.5">Distrito</span>
+              <select value={filterDistrito} onChange={(e) => { setFilterDistrito(e.target.value); setPage(0); }}
+                disabled={filterDepartamento === "all" && filterProvincia === "all"}
+                className={`${selectClass} min-w-[130px] max-w-[170px] disabled:opacity-40 disabled:cursor-not-allowed`}>
+                <option value="all">Todos</option>
+                {distritoOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+
+            {/* Separator */}
+            <div className="w-px h-8 bg-slate-200 mx-1 shrink-0" />
+
+            {/* Date range */}
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 pl-0.5">Desde</span>
+              <input type="date" value={dateFrom}
+                onChange={(e) => { setDateFrom(e.target.value); setPage(0); }}
+                max={dateTo || undefined}
+                className="text-[11px] text-slate-700 px-2.5 py-[7px] rounded-lg border border-slate-200 bg-white outline-none font-semibold cursor-pointer hover:border-slate-300 focus:border-slate-400 transition-colors" />
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 pl-0.5">Hasta</span>
+              <input type="date" value={dateTo}
+                onChange={(e) => { setDateTo(e.target.value); setPage(0); }}
+                min={dateFrom || undefined}
+                className="text-[11px] text-slate-700 px-2.5 py-[7px] rounded-lg border border-slate-200 bg-white outline-none font-semibold cursor-pointer hover:border-slate-300 focus:border-slate-400 transition-colors" />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ── Table header ── */}
-      <div className="grid gap-2 px-4 py-2 border-b border-slate-200/80 bg-slate-50 shrink-0 items-center" style={{ gridTemplateColumns: canEdit ? "36px 1fr 110px 130px 130px 150px 90px" : "1fr 110px 130px 130px 150px 36px" }}>
+      <div className="grid gap-2 px-4 py-2 border-b border-slate-200/80 bg-slate-50/80 shrink-0 items-center"
+        style={{ gridTemplateColumns: cols }}>
         {canEdit && (
-          <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === pageSlice.length} onChange={toggleAll} className="w-4 h-4 cursor-pointer accent-blue-600" aria-label="Seleccionar todo" />
+          <input type="checkbox"
+            checked={selectedIds.size > 0 && selectedIds.size === pageSlice.length}
+            onChange={toggleAll}
+            className="w-3.5 h-3.5 cursor-pointer accent-blue-600 rounded"
+            aria-label="Seleccionar todo" />
         )}
         <SortBtn label="Nombre" sortKey="nombre" current={sortKey} arrow={arrow} onSort={handleSort} />
         <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 text-center">Telefono</span>
         <SortBtn label="Encuestador" sortKey="encuestador" current={sortKey} arrow={arrow} onSort={handleSort} />
-        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Distrito</span>
+        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Ubicacion</span>
         <SortBtn label="Fecha" sortKey="created_at" current={sortKey} arrow={arrow} onSort={handleSort} align="right" />
         {canEdit ? <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 text-center">Acciones</span> : <span />}
       </div>
@@ -286,47 +454,75 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
       {/* ── Rows ── */}
       <div className="flex-1 overflow-y-auto">
         {pageSlice.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 p-16 text-center">
-            <span className="text-[14px] font-bold text-slate-500">{hasActiveFilters ? "Sin resultados" : "Sin registros"}</span>
-            <span className="text-[12px] text-slate-400">{hasActiveFilters ? "Intenta con otros filtros o busqueda" : "Los datos apareceran cuando los brigadistas capturen informacion"}</span>
+          <div className="flex flex-col items-center justify-center gap-3 py-20 px-8 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-300">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+            </div>
+            <div>
+              <p className="text-[14px] font-bold text-slate-600">{hasActiveFilters ? "Sin resultados" : "Sin registros"}</p>
+              <p className="text-[12px] text-slate-400 mt-0.5">{hasActiveFilters ? "Intenta con otros filtros o busqueda" : "Los datos apareceran cuando los brigadistas capturen informacion"}</p>
+            </div>
             {hasActiveFilters && (
-              <button type="button" onClick={clearFilters} className="text-[12px] font-semibold border bg-transparent cursor-pointer px-5 py-2 rounded-lg mt-2 transition-colors" style={{ color: primaryColor, borderColor: `${primaryColor}30` }}>Limpiar filtros</button>
+              <button type="button" onClick={clearFilters}
+                className="text-[12px] font-bold border cursor-pointer px-5 py-2 rounded-lg transition-all hover:shadow-sm bg-white"
+                style={{ color: primaryColor, borderColor: `${primaryColor}30` }}>
+                Limpiar filtros
+              </button>
             )}
           </div>
         ) : pageSlice.map((f, i) => {
           const coords = (f.x != null && f.y != null) ? formCoordsToLatLng(f.x, f.y, f.zona) : null;
           const isRowDeleting = deletingIds.has(f.id);
+          const isSelected = selectedIds.has(f.id);
+          // Build location string: "Distrito, Provincia" or just distrito
+          const locationParts: string[] = [];
+          if (f.distrito) locationParts.push(f.distrito);
+          if (f.provincia) locationParts.push(f.provincia);
+          const locationStr = locationParts.join(", ") || "\u2014";
+          const locationTitle = [f.distrito, f.provincia, f.departamento].filter(Boolean).join(", ");
+
           return (
-            <div key={f.id} className={`grid gap-2 px-4 items-center min-h-[44px] border-b border-slate-100/80 transition-all hover:bg-slate-50/80 ${isRowDeleting ? "opacity-40 pointer-events-none" : ""} ${selectedIds.has(f.id) ? "bg-blue-50/40" : i % 2 === 1 ? "bg-slate-50/40" : "bg-white"}`} style={{ gridTemplateColumns: canEdit ? "36px 1fr 110px 130px 130px 150px 90px" : "1fr 110px 130px 130px 150px 36px" }}>
-              {canEdit && <input type="checkbox" checked={selectedIds.has(f.id)} onChange={() => toggleSelect(f.id)} disabled={isRowDeleting} className="w-4 h-4 cursor-pointer accent-blue-600" aria-label={`Seleccionar ${f.nombre}`} />}
-              <div className="min-w-0 py-1.5"><span className="text-[13px] font-semibold text-slate-800 truncate block">{f.nombre || "\u2014"}</span></div>
-              <span className="text-[12px] text-slate-600 tabular-nums text-center font-mono">{f.telefono || "\u2014"}</span>
-              <span className="text-[11px] text-slate-600 truncate" title={f.encuestador}>{f.encuestador || "\u2014"}</span>
-              <span className="text-[11px] text-slate-600 truncate" title={f.distrito || ""}>{f.distrito || "\u2014"}</span>
-              <span className="text-[11px] text-slate-400 tabular-nums text-right">{fmtDate(f.created_at)}</span>
+            <div key={f.id}
+              className={`grid gap-2 px-4 items-center min-h-[46px] border-b transition-colors ${
+                isRowDeleting ? "opacity-40 pointer-events-none" : ""
+              } ${isSelected ? "bg-blue-50/50 border-blue-100" : i % 2 === 1 ? "bg-slate-50/30 border-slate-100/60" : "bg-white border-slate-100/60"
+              } hover:bg-slate-50/80`}
+              style={{ gridTemplateColumns: cols }}>
+              {canEdit && (
+                <input type="checkbox" checked={isSelected}
+                  onChange={() => toggleSelect(f.id)} disabled={isRowDeleting}
+                  className="w-3.5 h-3.5 cursor-pointer accent-blue-600 rounded"
+                  aria-label={`Seleccionar ${f.nombre}`} />
+              )}
+              <div className="min-w-0 py-1.5">
+                <span className="text-[13px] font-semibold text-slate-800 truncate block leading-tight">{f.nombre || "\u2014"}</span>
+              </div>
+              <span className="text-[12px] text-slate-500 tabular-nums text-center font-mono tracking-tight">{f.telefono || "\u2014"}</span>
+              <span className="text-[11px] text-slate-500 truncate" title={f.encuestador}>{f.encuestador || "\u2014"}</span>
+              <span className="text-[11px] text-slate-500 truncate" title={locationTitle}>{locationStr}</span>
+              <span className="text-[11px] text-slate-400 tabular-nums text-right tracking-tight">{fmtDate(f.created_at)}</span>
               {canEdit ? (
-                <div className="flex items-center justify-center gap-1">
+                <div className="flex items-center justify-center gap-0.5">
                   {coords && onFlyTo && (
-                    <button type="button" onClick={() => onFlyTo(coords.lng, coords.lat)} className="w-7 h-7 rounded-md border border-slate-200 bg-white cursor-pointer flex items-center justify-center hover:bg-slate-50 transition-colors" style={{ color: primaryColor }} title="Ver en mapa">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Ver en mapa</title><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
-                    </button>
+                    <ActionBtn onClick={() => onFlyTo(coords.lng, coords.lat)} title="Ver en mapa" style={{ color: primaryColor }}>
+                      <MapPinIcon />
+                    </ActionBtn>
                   )}
-                  <button type="button" onClick={() => setEditingForm(f)} disabled={isRowDeleting} className="w-7 h-7 rounded-md border border-slate-200 bg-white text-slate-500 cursor-pointer flex items-center justify-center hover:bg-slate-50 hover:text-slate-700 transition-colors disabled:opacity-30" title="Editar">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Editar</title><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                  </button>
-                  <button type="button" onClick={() => handleSingleDelete(f)} disabled={isRowDeleting} className="w-7 h-7 rounded-md border border-red-200 bg-white text-red-400 cursor-pointer flex items-center justify-center hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-30" title="Eliminar">
+                  <ActionBtn onClick={() => setEditingForm(f)} disabled={isRowDeleting} title="Editar">
+                    <EditIcon />
+                  </ActionBtn>
+                  <ActionBtn onClick={() => handleSingleDelete(f)} disabled={isRowDeleting} title="Eliminar" variant="danger">
                     {isRowDeleting
                       ? <span className="w-3 h-3 border-2 border-red-200 border-t-red-500 rounded-full animate-spin" />
-                      : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Eliminar</title><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                    }
-                  </button>
+                      : <TrashIcon />}
+                  </ActionBtn>
                 </div>
               ) : (
                 <div className="flex items-center justify-center">
                   {coords && onFlyTo && (
-                    <button type="button" onClick={() => onFlyTo(coords.lng, coords.lat)} className="w-7 h-7 rounded-md border border-slate-200 bg-white cursor-pointer flex items-center justify-center hover:bg-slate-50 transition-colors" style={{ color: primaryColor }} title="Ver en mapa">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Ver en mapa</title><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
-                    </button>
+                    <ActionBtn onClick={() => onFlyTo(coords.lng, coords.lat)} title="Ver en mapa" style={{ color: primaryColor }}>
+                      <MapPinIcon />
+                    </ActionBtn>
                   )}
                 </div>
               )}
@@ -336,14 +532,17 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
       </div>
 
       {/* ── Pagination ── */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-200/80 bg-slate-50/80 shrink-0">
+      <div className="flex items-center justify-between px-4 py-2 border-t border-slate-200/80 bg-slate-50/60 shrink-0">
         <span className="text-[11px] text-slate-500 font-medium tabular-nums">
-          {(safePage * PAGE_SIZE + 1).toLocaleString()}\u2013{Math.min((safePage + 1) * PAGE_SIZE, filtered.length).toLocaleString()} de {filtered.length.toLocaleString()}
+          {filtered.length > 0
+            ? `${(safePage * PAGE_SIZE + 1).toLocaleString()}\u2013${Math.min((safePage + 1) * PAGE_SIZE, filtered.length).toLocaleString()} de ${filtered.length.toLocaleString()}`
+            : "0 registros"
+          }
         </span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           <PagBtn onClick={() => setPage(0)} disabled={safePage === 0} label="Primera">{"\u00AB"}</PagBtn>
           <PagBtn onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0} label="Anterior">{"\u2039"}</PagBtn>
-          <span className="text-[11px] font-semibold text-slate-600 px-2 tabular-nums">{safePage + 1} / {totalPages}</span>
+          <span className="text-[11px] font-semibold text-slate-600 px-2.5 tabular-nums">{safePage + 1} / {totalPages}</span>
           <PagBtn onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={safePage >= totalPages - 1} label="Siguiente">{"\u203A"}</PagBtn>
           <PagBtn onClick={() => setPage(totalPages - 1)} disabled={safePage >= totalPages - 1} label="Ultima">{"\u00BB"}</PagBtn>
         </div>
@@ -359,7 +558,10 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
 
 function SortBtn({ label, sortKey, current, arrow, onSort, align }: { label: string; sortKey: SortKey; current: SortKey; arrow: (k: SortKey) => string; onSort: (k: SortKey) => void; align?: "center" | "right" }) {
   return (
-    <button type="button" onClick={() => onSort(sortKey)} className={`text-[9px] font-bold uppercase tracking-wider cursor-pointer bg-transparent border-none transition-colors hover:text-slate-800 p-0 ${current === sortKey ? "text-slate-700" : "text-slate-400"} ${align === "center" ? "text-center" : align === "right" ? "text-right" : "text-left"}`}>
+    <button type="button" onClick={() => onSort(sortKey)}
+      className={`text-[9px] font-bold uppercase tracking-wider cursor-pointer bg-transparent border-none transition-colors hover:text-slate-700 p-0 ${
+        current === sortKey ? "text-slate-700" : "text-slate-400"
+      } ${align === "center" ? "text-center" : align === "right" ? "text-right" : "text-left"}`}>
       {label}{arrow(sortKey)}
     </button>
   );
@@ -367,7 +569,24 @@ function SortBtn({ label, sortKey, current, arrow, onSort, align }: { label: str
 
 function PagBtn({ onClick, disabled, label, children }: { onClick: () => void; disabled: boolean; label: string; children: React.ReactNode }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label} className="w-7 h-7 rounded-md border border-slate-200 bg-white text-slate-600 text-[13px] font-bold cursor-pointer flex items-center justify-center hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+    <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label}
+      className="w-7 h-7 rounded-lg border border-slate-200 bg-white text-slate-500 text-[13px] font-bold cursor-pointer flex items-center justify-center hover:bg-slate-50 hover:text-slate-700 disabled:opacity-25 disabled:cursor-not-allowed transition-colors">
+      {children}
+    </button>
+  );
+}
+
+function ActionBtn({ onClick, disabled, title, children, variant, style }: {
+  onClick: () => void; disabled?: boolean; title: string; children: React.ReactNode;
+  variant?: "danger"; style?: React.CSSProperties;
+}) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} title={title} style={style}
+      className={`w-7 h-7 rounded-lg border cursor-pointer flex items-center justify-center transition-colors disabled:opacity-25 ${
+        variant === "danger"
+          ? "border-red-200/80 bg-white text-red-400 hover:bg-red-50 hover:text-red-600"
+          : "border-slate-200/80 bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-700"
+      }`}>
       {children}
     </button>
   );
