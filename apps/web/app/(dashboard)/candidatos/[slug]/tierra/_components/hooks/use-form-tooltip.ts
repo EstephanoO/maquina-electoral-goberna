@@ -1,5 +1,5 @@
 /**
- * useFormTooltip — Glassmorphism tooltip for form data points and clusters.
+ * useFormTooltip — Glassmorphism tooltip for form data points, clusters, and agents.
  *
  * Architecture (zero React re-renders):
  * - Direct DOM manipulation via refs
@@ -8,11 +8,17 @@
  *
  * Clusters use getClusterLeaves() to build a mini-ranking by encuestador.
  * Results are cached per cluster_id to avoid repeated async calls on re-hover.
+ *
+ * Pinned tooltip: showPinnedTooltip() projects a lng/lat to screen coordinates
+ * and displays a tooltip that persists until user hovers another feature.
+ *
+ * Agent tooltip: shows agent name, status, and forms count on hover.
  */
 
 import { useCallback, useRef, type RefObject } from "react";
 import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
 import type { GeoJSONSource } from "maplibre-gl";
+import type { PinnedTooltipData } from "../types";
 
 /* ─── Types ─── */
 
@@ -21,6 +27,8 @@ type TooltipState = {
   y: number;
   currentId: string | null;
   rafPending: boolean;
+  /** Whether the tooltip is pinned (from datos "ver en mapa"). Cleared on next real hover. */
+  pinned: boolean;
 };
 
 type RankEntry = { name: string; count: number };
@@ -29,7 +37,7 @@ const OFFSET_X = 14;
 const OFFSET_Y = -12;
 const MAX_LEAVES = 200;
 const MAX_RANKING = 3;
-const MEDAL = ["🥇", "🥈", "🥉"];
+const MEDAL = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
 
 /* ─── Helpers ─── */
 
@@ -38,7 +46,7 @@ function fmtDate(iso: string): string {
   try {
     const d = new Date(iso);
     const M = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-    return `${d.getDate()} ${M[d.getMonth()]} · ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return `${d.getDate()} ${M[d.getMonth()]} \u00b7 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
   } catch { return iso; }
 }
 
@@ -61,8 +69,30 @@ function rankingHtml(entries: RankEntry[]): string {
   ).join("");
 }
 
+/** Render form point HTML */
+function renderFormPoint(nombre: string, telefono: string, encuestador: string, createdAt: string): string {
+  return (
+    `<div style="font-weight:700;font-size:12px;color:#1e293b;line-height:1.3;margin-bottom:2px">${nombre}</div>` +
+    (telefono
+      ? `<div style="font-size:11px;color:#475569;line-height:1.3;letter-spacing:0.3px;font-variant-numeric:tabular-nums">${fmtPhone(telefono)}</div>`
+      : "") +
+    `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-top:4px;border-top:1px solid rgba(148,163,184,0.15)">` +
+      (encuestador ? `<span style="font-size:10px;color:#64748b;font-weight:500">${encuestador.split(" ")[0]}</span>` : "") +
+      (createdAt ? `<span style="font-size:9px;color:#94a3b8;margin-left:auto">${fmtDate(createdAt)}</span>` : "") +
+    `</div>`
+  );
+}
+
 /** Layers that trigger tooltip */
 const FORM_LAYERS = new Set(["forms-points", "forms-clusters", "forms-cluster-ring"]);
+const AGENT_LAYERS = new Set(["agents-circles", "agents-selected-ring"]);
+
+/** Agent status display config */
+const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  connected: { label: "Conectado", color: "#0d9488" },
+  idle: { label: "Inactivo", color: "#d97706" },
+  inactive: { label: "Sin se\u00f1al", color: "#64748b" },
+};
 
 /* ─── Hook ─── */
 
@@ -74,7 +104,7 @@ export function useFormTooltip(
   const clusterCache = useRef<Map<number, RankEntry[]>>(new Map());
 
   const state = useRef<TooltipState>({
-    x: 0, y: 0, currentId: null, rafPending: false,
+    x: 0, y: 0, currentId: null, rafPending: false, pinned: false,
   });
 
   const flushPosition = useCallback(() => {
@@ -150,6 +180,7 @@ export function useFormTooltip(
       if (state.current.currentId !== null) {
         el.style.opacity = "0";
         state.current.currentId = null;
+        state.current.pinned = false;
       }
       return;
     }
@@ -158,7 +189,13 @@ export function useFormTooltip(
     const f = features?.[0];
     const layerId = f?.layer?.id ?? "";
 
-    if (!FORM_LAYERS.has(layerId) || !f?.properties) {
+    // Check if hovering a form point, cluster, or agent
+    const isFormLayer = FORM_LAYERS.has(layerId);
+    const isAgentLayer = AGENT_LAYERS.has(layerId);
+
+    if (!isFormLayer && !isAgentLayer) {
+      // Not hovering any tooltipable feature — but if pinned, keep showing
+      if (state.current.pinned) return;
       if (state.current.currentId !== null) {
         el.style.opacity = "0";
         state.current.currentId = null;
@@ -166,7 +203,49 @@ export function useFormTooltip(
       return;
     }
 
+    if (!f?.properties) return;
+
     const props = f.properties;
+
+    // ─── Agent tooltip ───
+    if (isAgentLayer) {
+      const agentId = `agent-${props.agent_id}`;
+      if (agentId !== state.current.currentId) {
+        state.current.currentId = agentId;
+        state.current.pinned = false;
+
+        const name = String(props.name ?? "Agente");
+        const status = String(props.status ?? "inactive");
+        const formsCount = Number(props.forms_count ?? 0);
+        const cfg = STATUS_LABELS[status] ?? STATUS_LABELS.inactive;
+
+        el.innerHTML =
+          `<div style="display:flex;align-items:center;gap:8px">` +
+            `<div style="width:8px;height:8px;border-radius:50%;background:${cfg.color};flex-shrink:0"></div>` +
+            `<div>` +
+              `<div style="font-weight:700;font-size:12px;color:#1e293b;line-height:1.3">${name}</div>` +
+              `<div style="display:flex;align-items:center;gap:6px;margin-top:2px">` +
+                `<span style="font-size:10px;color:${cfg.color};font-weight:600">${cfg.label}</span>` +
+                `<span style="font-size:10px;color:#94a3b8">\u00b7</span>` +
+                `<span style="font-size:10px;color:#64748b;font-weight:500">${formsCount} dato${formsCount !== 1 ? "s" : ""}</span>` +
+              `</div>` +
+            `</div>` +
+          `</div>`;
+
+        el.style.opacity = "1";
+      }
+
+      state.current.x = e.point.x;
+      state.current.y = e.point.y;
+
+      if (!state.current.rafPending) {
+        state.current.rafPending = true;
+        requestAnimationFrame(flushPosition);
+      }
+      return;
+    }
+
+    // ─── Form tooltip ───
     const isCluster = layerId === "forms-clusters" || layerId === "forms-cluster-ring";
     const featureId = isCluster
       ? `cluster-${props.cluster_id}`
@@ -174,24 +253,17 @@ export function useFormTooltip(
 
     if (featureId !== state.current.currentId) {
       state.current.currentId = featureId;
+      state.current.pinned = false;
 
       if (isCluster) {
         renderCluster(el, Number(props.cluster_id), Number(props.point_count ?? 0));
       } else {
-        const nombre = String(props.nombre ?? "—");
-        const telefono = String(props.telefono ?? "");
-        const encuestador = String(props.encuestador ?? "");
-        const createdAt = String(props.created_at ?? "");
-
-        el.innerHTML =
-          `<div style="font-weight:700;font-size:12px;color:#1e293b;line-height:1.3;margin-bottom:2px">${nombre}</div>` +
-          (telefono
-            ? `<div style="font-size:11px;color:#475569;line-height:1.3;letter-spacing:0.3px;font-variant-numeric:tabular-nums">${fmtPhone(telefono)}</div>`
-            : "") +
-          `<div style="display:flex;align-items:center;gap:6px;margin-top:4px;padding-top:4px;border-top:1px solid rgba(148,163,184,0.15)">` +
-            (encuestador ? `<span style="font-size:10px;color:#64748b;font-weight:500">${encuestador.split(" ")[0]}</span>` : "") +
-            (createdAt ? `<span style="font-size:9px;color:#94a3b8;margin-left:auto">${fmtDate(createdAt)}</span>` : "") +
-          `</div>`;
+        el.innerHTML = renderFormPoint(
+          String(props.nombre ?? "\u2014"),
+          String(props.telefono ?? ""),
+          String(props.encuestador ?? ""),
+          String(props.created_at ?? ""),
+        );
       }
 
       el.style.opacity = "1";
@@ -208,11 +280,54 @@ export function useFormTooltip(
 
   const onMouseLeave = useCallback(() => {
     const el = tooltipRef.current;
+    // Don't hide if pinned
+    if (state.current.pinned) return;
     if (el && state.current.currentId !== null) {
       el.style.opacity = "0";
       state.current.currentId = null;
     }
   }, []);
 
-  return { formTooltipRef: tooltipRef, onFormMouseMove: onMouseMove, onFormMouseLeave: onMouseLeave } as const;
+  /**
+   * Show a pinned tooltip at a specific lng/lat after flyTo from datos.
+   * The tooltip stays until user hovers over a different feature.
+   * Called after the flyTo animation completes.
+   */
+  const showPinnedTooltip = useCallback((data: PinnedTooltipData) => {
+    const el = tooltipRef.current;
+    const map = mapRef.current;
+    if (!el || !map) return;
+
+    // Wait for the fly animation to finish, then project and show
+    const show = () => {
+      const m = mapRef.current;
+      if (!m || !tooltipRef.current) return;
+
+      const point = m.project([data.lng, data.lat]);
+      const pinnedId = `pinned-${data.nombre}-${data.created_at}`;
+      state.current.currentId = pinnedId;
+      state.current.pinned = true;
+      state.current.x = point.x;
+      state.current.y = point.y;
+
+      tooltipRef.current.innerHTML = renderFormPoint(
+        data.nombre || "\u2014",
+        data.telefono,
+        data.encuestador,
+        data.created_at,
+      );
+      tooltipRef.current.style.opacity = "1";
+      tooltipRef.current.style.transform = `translate(${point.x + OFFSET_X}px, ${point.y + OFFSET_Y}px)`;
+    };
+
+    // Schedule after flyTo animation (600ms FLY_DURATION + 100ms buffer)
+    setTimeout(show, 750);
+  }, [mapRef]);
+
+  return {
+    formTooltipRef: tooltipRef,
+    onFormMouseMove: onMouseMove,
+    onFormMouseLeave: onMouseLeave,
+    showPinnedTooltip,
+  } as const;
 }

@@ -97,7 +97,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   useAutoFit(mapRef, drillState, skipNextFitRef);
   const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef);
-  const { formTooltipRef, onFormMouseMove, onFormMouseLeave } = useFormTooltip(isZoomingRef, mapRef);
+  const { formTooltipRef, onFormMouseMove, onFormMouseLeave, showPinnedTooltip } = useFormTooltip(isZoomingRef, mapRef);
   const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent);
   const containerRef = useMapResize(mapRef, drillStateRef);
 
@@ -201,7 +201,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
       mapRef.current?.flyTo({ center: [lng, lat], zoom, duration: FLY_DURATION, essential: true });
     },
     getDrillState() { return drillStateRef.current; },
-  }), []);
+    showPinnedTooltip,
+  }), [showPinnedTooltip]);
 
   // ─── Init (SSR guard) ───
   useEffect(() => {

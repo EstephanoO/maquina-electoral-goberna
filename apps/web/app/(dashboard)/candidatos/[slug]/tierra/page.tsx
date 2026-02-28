@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/auth-context";
 import {
   TierraHeader, MapControls, PipelineView, DatosView, CampoOverlay,
   INITIAL_DRILL,
-  type TierraMapHandle, type DrillState, type ActiveLayer, type LogEntry,
+  type TierraMapHandle, type DrillState, type ActiveLayer, type LogEntry, type PinnedTooltipData,
 } from "./_components";
 import { tierraKeys } from "@/lib/hooks";
 import type { TierraViewMode } from "./_components/tierra-header";
@@ -87,7 +87,14 @@ export default function TierraPage() {
   enrichedAgentsRef.current = enrichedAgents;
 
   const flyToPoint = useCallback((lng: number, lat: number, zoom: number) => { mapHandleRef.current?.flyToPoint(lng, lat, zoom); }, []);
-  const flyToFromDatos = useCallback((lng: number, lat: number) => { setViewMode("campo"); setTimeout(() => mapHandleRef.current?.flyToPoint(lng, lat, 16), 120); }, []);
+  const flyToFromDatos = useCallback((lng: number, lat: number, tooltipData?: PinnedTooltipData) => {
+    setViewMode("campo");
+    setActiveLayer("datos");
+    setTimeout(() => {
+      mapHandleRef.current?.flyToPoint(lng, lat, 16);
+      if (tooltipData) mapHandleRef.current?.showPinnedTooltip(tooltipData);
+    }, 120);
+  }, []);
   const { logEntries, handleLogEntryClick } = useActivityLog(forms, stats, flyToPoint, sseEvents);
 
   // ─── Handlers ───

@@ -5,6 +5,7 @@ import type { FormRecord } from "@/lib/services";
 import { deleteFormsBatch } from "@/lib/services";
 import { formCoordsToLatLng } from "@/lib/utils";
 import { DatosEditModal } from "./datos-edit-modal";
+import type { PinnedTooltipData } from "./types";
 
 /* ========== Types ========== */
 
@@ -19,7 +20,7 @@ type Props = {
   onUpdateForm: (formId: string, campaignId: string, updates: Record<string, string>) => Promise<boolean>;
   onDeleteForm: (formId: string, campaignId: string) => Promise<boolean>;
   onFormsChanged: () => void;
-  onFlyTo?: (lng: number, lat: number) => void;
+  onFlyTo?: (lng: number, lat: number, tooltipData?: PinnedTooltipData) => void;
 };
 
 const PAGE_SIZE = 25;
@@ -504,7 +505,7 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
               {canEdit ? (
                 <div className="flex items-center justify-center gap-0.5">
                   {coords && onFlyTo && (
-                    <ActionBtn onClick={() => onFlyTo(coords.lng, coords.lat)} title="Ver en mapa" style={{ color: primaryColor }}>
+                    <ActionBtn onClick={() => onFlyTo(coords.lng, coords.lat, { lng: coords.lng, lat: coords.lat, nombre: f.nombre, telefono: f.telefono ?? "", encuestador: f.encuestador ?? "", created_at: f.created_at })} title="Ver en mapa" style={{ color: primaryColor }}>
                       <MapPinIcon />
                     </ActionBtn>
                   )}
@@ -520,7 +521,7 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
               ) : (
                 <div className="flex items-center justify-center">
                   {coords && onFlyTo && (
-                    <ActionBtn onClick={() => onFlyTo(coords.lng, coords.lat)} title="Ver en mapa" style={{ color: primaryColor }}>
+                    <ActionBtn onClick={() => onFlyTo(coords.lng, coords.lat, { lng: coords.lng, lat: coords.lat, nombre: f.nombre, telefono: f.telefono ?? "", encuestador: f.encuestador ?? "", created_at: f.created_at })} title="Ver en mapa" style={{ color: primaryColor }}>
                       <MapPinIcon />
                     </ActionBtn>
                   )}

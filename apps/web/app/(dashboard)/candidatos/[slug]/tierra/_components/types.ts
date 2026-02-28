@@ -57,11 +57,24 @@ export const INITIAL_DRILL: DrillState = {
   sector: null, sectorName: null,
 };
 
+/* ─── Pinned tooltip data (passed from datos → map) ─── */
+
+export type PinnedTooltipData = {
+  lng: number;
+  lat: number;
+  nombre: string;
+  telefono: string;
+  encuestador: string;
+  created_at: string;
+};
+
 /* ─── Map Handle (imperative API) ─── */
 
 export type TierraMapHandle = {
   flyToPoint: (lng: number, lat: number, zoom?: number) => void;
   getDrillState: () => DrillState;
+  /** Show a pinned tooltip for a specific form point after flyTo completes */
+  showPinnedTooltip: (data: PinnedTooltipData) => void;
 };
 
 /* ─── Drill Filters (output of useDrillFilters) ─── */
