@@ -62,10 +62,16 @@ export async function syncValidations(campaignId: string): Promise<number> {
       LEFT JOIN users u ON u.id = fs.submitted_by
       WHERE fs.campaign_id = $1 AND fs.deleted_at IS NULL
         AND COALESCE(fs.data->>'telefono', fs.data->>'Numero de Telefono', '') != ''
+    ),
+    deduped AS (
+      SELECT DISTINCT ON (form_id, campaign_id)
+        form_id, campaign_id, nombre, telefono, encuestador, zona, form_created_at
+      FROM source
+      ORDER BY form_id, campaign_id, form_created_at DESC
     )
     INSERT INTO form_validations (form_id, campaign_id, nombre, telefono, encuestador, zona, form_created_at)
     SELECT form_id, campaign_id, nombre, telefono, encuestador, zona, form_created_at
-    FROM source
+    FROM deduped
     ON CONFLICT (form_id, campaign_id) DO UPDATE SET
       nombre = EXCLUDED.nombre,
       telefono = EXCLUDED.telefono,
