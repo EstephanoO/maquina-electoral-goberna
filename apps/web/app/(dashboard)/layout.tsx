@@ -52,7 +52,6 @@ const NAV_ITEMS: NavItem[] = [
   { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["admin", "candidato"], section: "main", visibility: "always" },
   { icon: <DashboardIcon />, label: "Dashboard", href: (slug) => `/candidatos/${slug}/tierra`, roles: ["admin", "candidato", "consultor"], section: "main", visibility: "campaign" },
   { icon: <ValidacionIcon />, label: "Validacion", href: (slug) => `/candidatos/${slug}/validacion`, roles: ["admin", "candidato", "consultor"], section: "main", visibility: "campaign" },
-  { icon: <DigitalIcon />, label: "Analytics", href: (slug) => `/candidatos/${slug}/analytics`, roles: ["admin", "candidato", "consultor"], section: "main", visibility: "campaign" },
   // Admin-only: visible only in Admin General mode
   { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin", visibility: "global" },
   { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin"], section: "admin", visibility: "global" },
@@ -115,16 +114,6 @@ function ValidacionIcon() {
   );
 }
 
-
-function DigitalIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-      <line x1="8" y1="21" x2="16" y2="21" />
-      <line x1="12" y1="17" x2="12" y2="21" />
-    </svg>
-  );
-}
 
 function SettingsIcon() {
   return (
