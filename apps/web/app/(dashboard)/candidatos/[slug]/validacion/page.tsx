@@ -7,6 +7,9 @@ import {
   listValidations,
   updateValidationStatus,
   claimValidation,
+  computeScore,
+  classifyVote,
+  SCORING_TAGS,
   type ValidationItem,
   type ValidationStatus,
   type ValidationStats,
@@ -17,9 +20,16 @@ import {
 
 const COLUMNS: { key: ValidationStatus; label: string; color: string; bg: string; icon: string }[] = [
   { key: "pendiente", label: "Pendiente", color: "#64748b", bg: "#f8fafc", icon: "\u23f3" },
-  { key: "contactado", label: "Contactado", color: "#16a34a", bg: "#f0fdf4", icon: "\u2705" },
+  { key: "contactado", label: "Contactado", color: "#2563eb", bg: "#eff6ff", icon: "\ud83d\udce9" },
+  { key: "respondido", label: "Respondido", color: "#16a34a", bg: "#f0fdf4", icon: "\u2705" },
   { key: "invalido", label: "Inv\u00e1lido", color: "#dc2626", bg: "#fef2f2", icon: "\u274c" },
 ];
+
+const VOTE_BADGES: Record<string, { label: string; color: string; bg: string }> = {
+  duro: { label: "VOTO DURO", color: "#15803d", bg: "#dcfce7" },
+  blando: { label: "VOTO BLANDO", color: "#ca8a04", bg: "#fef9c3" },
+  tibio: { label: "TIBIO", color: "#64748b", bg: "#f1f5f9" },
+};
 
 /* ========== Page ========== */
 
@@ -31,12 +41,12 @@ export default function ValidacionPage() {
   const campaignId = campaign?.id ?? "";
 
   const [items, setItems] = useState<ValidationItem[]>([]);
-  const [stats, setStats] = useState<ValidationStats>({ pendiente: 0, contactado: 0, validado: 0, invalido: 0 });
+  const [stats, setStats] = useState<ValidationStats>({ pendiente: 0, contactado: 0, respondido: 0, invalido: 0 });
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [scoringId, setScoringId] = useState<string | null>(null);
 
-  // Fetch data
   const fetchData = useCallback(async () => {
     if (!campaignId) return;
     const [itemsRes, statsRes] = await Promise.all([
@@ -51,25 +61,26 @@ export default function ValidacionPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // Update status
-  const handleStatusChange = useCallback(async (id: string, newStatus: ValidationStatus) => {
+  const handleStatusChange = useCallback(async (id: string, newStatus: ValidationStatus, tags?: string[]) => {
     setUpdatingId(id);
-    const res = await updateValidationStatus(id, campaignId, newStatus);
+    const res = await updateValidationStatus(id, campaignId, newStatus, undefined, tags);
     if (res.ok && res.data) {
-      setItems((prev) => prev.map((item) => item.id === id ? { ...item, status: newStatus } : item));
+      const updated = res.data.item;
+      setItems((prev) => prev.map((item) => item.id === id ? { ...item, ...updated } : item));
       setStats((prev) => {
         const old = items.find((i) => i.id === id)?.status;
         if (!old || old === newStatus) return prev;
-        return { ...prev, [old]: Math.max(0, prev[old] - 1), [newStatus]: prev[newStatus] + 1 };
+        return { ...prev, [old]: Math.max(0, (prev[old] ?? 0) - 1), [newStatus]: (prev[newStatus] ?? 0) + 1 };
       });
     }
     setUpdatingId(null);
+    setScoringId(null);
   }, [campaignId, items]);
 
   // Claim + move to contactado when WhatsApp is clicked
   const handleWhatsAppClick = useCallback(async (item: ValidationItem) => {
     if (item.status !== "pendiente") return;
     setUpdatingId(item.id);
-    // Claim first, then update status
     await claimValidation(item.id, campaignId);
     const res = await updateValidationStatus(item.id, campaignId, "contactado");
     if (res.ok) {
@@ -89,13 +100,17 @@ export default function ValidacionPage() {
     const filtered = q
       ? items.filter((i) => i.nombre.toLowerCase().includes(q) || i.telefono.includes(q) || i.encuestador.toLowerCase().includes(q))
       : items;
-    const groups: Record<ValidationStatus, ValidationItem[]> = { pendiente: [], contactado: [], validado: [], invalido: [] };
-    for (const item of filtered) groups[item.status]?.push(item);
+    const groups: Record<ValidationStatus, ValidationItem[]> = { pendiente: [], contactado: [], respondido: [], invalido: [] };
+    for (const item of filtered) {
+      // Map legacy 'validado' to 'respondido'
+      const status = item.status === "validado" as string ? "respondido" : item.status;
+      groups[status as ValidationStatus]?.push(item);
+    }
     return groups;
   }, [items, search]);
 
   const totalItems = items.length;
-  const processed = stats.contactado + stats.invalido + stats.validado;
+  const processed = stats.contactado + stats.respondido + stats.invalido;
 
   if (!campaign) return <div className="flex items-center justify-center h-64 text-slate-400">Campa\u00f1a no encontrada</div>;
 
@@ -105,16 +120,14 @@ export default function ValidacionPage() {
       <div className="flex items-center gap-3 px-6 py-4 bg-white border-b border-slate-200 shrink-0">
         <div className="flex-1">
           <h1 className="text-lg font-bold text-slate-800">Validaci\u00f3n de Datos</h1>
-          <p className="text-xs text-slate-400 mt-0.5">Haz click en el n\u00famero de WhatsApp para contactar y reclamar el lead</p>
+          <p className="text-xs text-slate-400 mt-0.5">Contacta por WhatsApp, clasifica la respuesta</p>
         </div>
-        {/* Search */}
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 focus-within:border-slate-400 focus-within:bg-white transition-all w-64">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+          <SearchIcon />
           <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar nombre, telefono..."
             className="flex-1 border-none outline-none bg-transparent text-sm text-slate-700 placeholder:text-slate-400" />
         </div>
-        {/* Total */}
         <div className="text-xs text-slate-500 font-semibold tabular-nums">{totalItems} registros</div>
       </div>
 
@@ -123,7 +136,7 @@ export default function ValidacionPage() {
         {COLUMNS.map((col) => (
           <div key={col.key} className="flex items-center gap-2">
             <span className="text-sm">{col.icon}</span>
-            <span className="text-xs font-bold" style={{ color: col.color }}>{stats[col.key]}</span>
+            <span className="text-xs font-bold" style={{ color: col.color }}>{stats[col.key] ?? 0}</span>
             <span className="text-[10px] text-slate-400 uppercase font-semibold tracking-wide">{col.label}</span>
           </div>
         ))}
@@ -141,10 +154,9 @@ export default function ValidacionPage() {
           <span className="text-sm text-slate-400 font-medium">Cargando datos...</span>
         </div>
       ) : (
-        /* Pipeline columns */
         <div className="flex-1 flex gap-4 px-6 py-4 overflow-x-auto min-h-0">
           {COLUMNS.map((col) => (
-            <div key={col.key} className="flex flex-col min-w-[300px] w-full rounded-xl border border-slate-200 bg-white overflow-hidden">
+            <div key={col.key} className="flex flex-col min-w-[280px] w-full rounded-xl border border-slate-200 bg-white overflow-hidden">
               {/* Column header */}
               <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: `${col.color}20`, background: col.bg }}>
                 <span className="text-sm">{col.icon}</span>
@@ -161,9 +173,13 @@ export default function ValidacionPage() {
                   <ValidationCard
                     key={item.id}
                     item={item}
+                    column={col.key}
                     isUpdating={updatingId === item.id}
+                    isScoring={scoringId === item.id}
                     onStatusChange={handleStatusChange}
                     onWhatsAppClick={handleWhatsAppClick}
+                    onOpenScoring={() => setScoringId(item.id)}
+                    onCancelScoring={() => setScoringId(null)}
                     columnColor={col.color}
                   />
                 ))}
@@ -179,56 +195,71 @@ export default function ValidacionPage() {
 /* ========== Card Component ========== */
 
 function ValidationCard({
-  item, isUpdating, onStatusChange, onWhatsAppClick, columnColor,
+  item, column, isUpdating, isScoring, onStatusChange, onWhatsAppClick, onOpenScoring, onCancelScoring, columnColor,
 }: {
   item: ValidationItem;
+  column: ValidationStatus;
   isUpdating: boolean;
-  onStatusChange: (id: string, status: ValidationStatus) => void;
+  isScoring: boolean;
+  onStatusChange: (id: string, status: ValidationStatus, tags?: string[]) => void;
   onWhatsAppClick: (item: ValidationItem) => void;
+  onOpenScoring: () => void;
+  onCancelScoring: () => void;
   columnColor: string;
 }) {
   const phone = item.telefono.replace(/\D/g, "");
   const fmtPhone = phone.length === 9 ? `${phone.slice(0, 3)} ${phone.slice(3, 6)} ${phone.slice(6)}` : item.telefono;
-  const waLink = `https://wa.me/51${phone}`;
+  const waMessage = encodeURIComponent(`Hola, ${item.nombre || ""}`);
+  const waLink = `https://wa.me/51${phone}?text=${waMessage}`;
 
-  const isPendiente = item.status === "pendiente";
-  const isInvalido = item.status === "invalido";
+  const isPendiente = column === "pendiente";
+  const isContactado = column === "contactado";
+  const isRespondido = column === "respondido";
+  const isInvalido = column === "invalido";
+
+  // Vote class badge for respondido cards
+  const voteBadge = isRespondido && item.vote_class ? VOTE_BADGES[item.vote_class] : null;
 
   return (
     <div className={`relative rounded-lg border border-slate-100 p-3 transition-all hover:shadow-sm ${isUpdating ? "opacity-50 pointer-events-none" : ""}`}
       style={{ borderLeftWidth: 3, borderLeftColor: columnColor }}>
 
-      {/* X button to invalidate (only in Pendiente) */}
-      {isPendiente && (
-        <button
-          type="button"
-          onClick={() => onStatusChange(item.id, "invalido")}
-          disabled={isUpdating}
+      {/* X button to invalidate (Pendiente + Respondido) */}
+      {(isPendiente || isRespondido) && (
+        <button type="button" onClick={() => onStatusChange(item.id, "invalido")} disabled={isUpdating}
           className="absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer border-none bg-transparent disabled:opacity-40"
-          title="Marcar como inv\u00e1lido"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
+          title="Marcar como inv\u00e1lido">
+          <XSmallIcon />
         </button>
       )}
 
-      {/* Name */}
-      <div className="font-semibold text-sm text-slate-800 truncate leading-tight pr-6">{item.nombre || "\u2014"}</div>
+      {/* Name + vote badge */}
+      <div className="flex items-center gap-2 pr-6">
+        <span className="font-semibold text-sm text-slate-800 truncate leading-tight">{item.nombre || "\u2014"}</span>
+        {voteBadge && (
+          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full shrink-0 tracking-wide"
+            style={{ color: voteBadge.color, background: voteBadge.bg }}>
+            {voteBadge.label}
+          </span>
+        )}
+      </div>
+
+      {/* Score badge for respondido */}
+      {isRespondido && item.score > 0 && (
+        <div className="flex items-center gap-1 mt-1">
+          <span className="text-[10px] font-bold text-slate-500">Score:</span>
+          <span className="text-[10px] font-black" style={{ color: columnColor }}>{item.score}</span>
+        </div>
+      )}
 
       {/* Phone + WhatsApp */}
       <div className="flex items-center gap-2 mt-1.5">
         {isPendiente ? (
-          <button
-            type="button"
-            onClick={() => {
-              window.open(waLink, "_blank", "noopener,noreferrer");
-              onWhatsAppClick(item);
-            }}
+          <button type="button"
+            onClick={() => { window.open(waLink, "_blank", "noopener,noreferrer"); onWhatsAppClick(item); }}
             disabled={isUpdating}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-green-50 text-green-700 text-xs font-bold hover:bg-green-100 transition-colors cursor-pointer border-none disabled:opacity-40"
-            title="Contactar por WhatsApp (reclama el lead)"
-          >
+            title="Contactar por WhatsApp (reclama el lead)">
             <WhatsAppIcon />
             {fmtPhone}
           </button>
@@ -241,6 +272,20 @@ function ValidationCard({
         )}
       </div>
 
+      {/* Tags display for respondido */}
+      {isRespondido && item.tags && item.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-2">
+          {item.tags.map((tagKey) => {
+            const tagDef = SCORING_TAGS.find((t) => t.key === tagKey);
+            return tagDef ? (
+              <span key={tagKey} className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                {tagDef.label} +{tagDef.points}
+              </span>
+            ) : null;
+          })}
+        </div>
+      )}
+
       {/* Encuestador + date */}
       <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-400">
         <span className="font-medium text-slate-500">{item.encuestador?.split(" ")[0] || "\u2014"}</span>
@@ -248,15 +293,39 @@ function ValidationCard({
         <span>{fmtDateShort(item.created_at)}</span>
       </div>
 
-      {/* Reabrir action (only in Inv\u00e1lido) */}
+      {/* ── Actions ── */}
+
+      {/* Contactado: "Respondió" button opens scoring */}
+      {isContactado && !isScoring && (
+        <div className="flex items-center gap-1.5 mt-2.5 pt-2.5 border-t border-slate-100">
+          <button type="button" onClick={onOpenScoring} disabled={isUpdating}
+            className="flex-1 text-[11px] font-bold py-1.5 rounded-md border cursor-pointer transition-all hover:shadow-sm disabled:opacity-40"
+            style={{ color: "#16a34a", borderColor: "#16a34a30", background: "#16a34a08" }}>
+            Respondi\u00f3
+          </button>
+          <button type="button" onClick={() => onStatusChange(item.id, "invalido")} disabled={isUpdating}
+            className="text-[11px] font-bold py-1.5 px-3 rounded-md border cursor-pointer transition-all hover:shadow-sm disabled:opacity-40"
+            style={{ color: "#dc2626", borderColor: "#dc262630", background: "#dc262608" }}>
+            \u2717
+          </button>
+        </div>
+      )}
+
+      {/* Scoring panel (inline, when "Respondió" clicked) */}
+      {isContactado && isScoring && (
+        <ScoringPanel
+          onConfirm={(tags) => onStatusChange(item.id, "respondido", tags)}
+          onCancel={onCancelScoring}
+        />
+      )}
+
+      {/* Inválido: Reabrir */}
       {isInvalido && (
         <div className="flex items-center gap-1.5 mt-2.5 pt-2.5 border-t border-slate-100">
-          <button type="button"
-            onClick={() => onStatusChange(item.id, "pendiente")}
-            disabled={isUpdating}
+          <button type="button" onClick={() => onStatusChange(item.id, "pendiente")} disabled={isUpdating}
             className="flex-1 text-[11px] font-bold py-1.5 rounded-md border cursor-pointer transition-all hover:shadow-sm disabled:opacity-40"
             style={{ color: "#64748b", borderColor: "#64748b30", background: "#64748b08" }}>
-            {isUpdating ? "\u2022\u2022\u2022" : "Reabrir"}
+            Reabrir
           </button>
         </div>
       )}
@@ -264,7 +333,75 @@ function ValidationCard({
   );
 }
 
+/* ========== Scoring Panel ========== */
+
+function ScoringPanel({ onConfirm, onCancel }: { onConfirm: (tags: string[]) => void; onCancel: () => void }) {
+  const [selected, setSelected] = useState<Set<string>>(new Set(["respondio"])); // "respondio" on by default
+
+  const toggle = (key: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const tags = Array.from(selected);
+  const score = computeScore(tags);
+  const voteClass = classifyVote(score);
+  const badge = VOTE_BADGES[voteClass];
+
+  return (
+    <div className="mt-2.5 pt-2.5 border-t border-slate-100">
+      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Clasificar respuesta</div>
+      <div className="flex flex-wrap gap-1.5">
+        {SCORING_TAGS.map((tag) => {
+          const isOn = selected.has(tag.key);
+          return (
+            <button key={tag.key} type="button" onClick={() => toggle(tag.key)}
+              className={`text-[10px] font-semibold px-2 py-1 rounded-full border cursor-pointer transition-all ${
+                isOn
+                  ? "bg-emerald-50 border-emerald-300 text-emerald-700"
+                  : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
+              }`}>
+              {tag.label} <span className="opacity-60">+{tag.points}</span>
+            </button>
+          );
+        })}
+      </div>
+      {/* Score preview */}
+      <div className="flex items-center gap-2 mt-2">
+        <span className="text-[10px] font-bold text-slate-500">Score: {score}</span>
+        {badge && (
+          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full" style={{ color: badge.color, background: badge.bg }}>
+            {badge.label}
+          </span>
+        )}
+      </div>
+      {/* Confirm / cancel */}
+      <div className="flex items-center gap-1.5 mt-2">
+        <button type="button" onClick={() => onConfirm(tags)}
+          className="flex-1 text-[11px] font-bold py-1.5 rounded-md border-none cursor-pointer transition-all hover:opacity-90 text-white bg-emerald-600">
+          Confirmar
+        </button>
+        <button type="button" onClick={onCancel}
+          className="text-[11px] font-bold py-1.5 px-3 rounded-md border border-slate-200 cursor-pointer transition-all hover:bg-slate-50 text-slate-500 bg-white">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ========== Sub-components ========== */
+
+function SearchIcon() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>;
+}
+
+function XSmallIcon() {
+  return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>;
+}
 
 function WhatsAppIcon() {
   return (

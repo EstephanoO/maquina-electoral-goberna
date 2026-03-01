@@ -1,5 +1,6 @@
 import { pool } from "../../db";
 import type { ValidationRow, ValidationStatus } from "./schemas";
+import { computeScore, classifyVote } from "./schemas";
 
 /* ─── Ensure table ─── */
 
@@ -16,11 +17,18 @@ export async function ensureValidacionTable(): Promise<void> {
       form_created_at timestamptz NOT NULL DEFAULT now(),
       status text NOT NULL DEFAULT 'pendiente',
       notes text,
+      tags text[] NOT NULL DEFAULT '{}',
+      score int NOT NULL DEFAULT 0,
+      vote_class text NOT NULL DEFAULT '',
       claimed_by uuid REFERENCES users(id),
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  // Add columns if table already existed without them
+  await pool.query(`ALTER TABLE form_validations ADD COLUMN IF NOT EXISTS tags text[] NOT NULL DEFAULT '{}'`);
+  await pool.query(`ALTER TABLE form_validations ADD COLUMN IF NOT EXISTS score int NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE form_validations ADD COLUMN IF NOT EXISTS vote_class text NOT NULL DEFAULT ''`);
   // Unique per phone per campaign (dedup across forms + form_submissions)
   await pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_form_validations_phone_campaign
@@ -98,6 +106,9 @@ export async function listByCampaign(
       fv.nombre, fv.telefono, fv.encuestador, fv.zona,
       fv.form_created_at as created_at,
       fv.status, fv.notes,
+      COALESCE(fv.tags, '{}') as tags,
+      COALESCE(fv.score, 0) as score,
+      COALESCE(fv.vote_class, '') as vote_class,
       fv.claimed_by::text,
       cu.full_name as claimed_by_name,
       fv.updated_at
@@ -128,8 +139,10 @@ export async function statsByCampaign(campaignId: string) {
     GROUP BY status
   `, [campaignId]);
 
-  const stats: Record<string, number> = { pendiente: 0, contactado: 0, validado: 0, invalido: 0 };
+  const stats: Record<string, number> = { pendiente: 0, contactado: 0, respondido: 0, invalido: 0 };
   for (const r of rows) stats[r.status] = Number(r.count);
+  // Merge legacy 'validado' into 'respondido'
+  if (stats.validado) { stats.respondido = (stats.respondido ?? 0) + stats.validado; delete stats.validado; }
   return stats;
 }
 
@@ -141,16 +154,27 @@ export async function updateStatus(
   status: ValidationStatus,
   notes: string | null,
   userId: string,
+  tags?: string[],
 ): Promise<ValidationRow | null> {
+  const finalTags = tags ?? [];
+  const score = computeScore(finalTags);
+  const voteClass = finalTags.length > 0 ? classifyVote(score) : "";
+
   const { rows } = await pool.query<ValidationRow>(`
     UPDATE form_validations
-    SET status = $3, notes = COALESCE($4, notes), claimed_by = $5, updated_at = now()
+    SET status = $3,
+        notes = COALESCE($4, notes),
+        claimed_by = $5,
+        tags = $6,
+        score = $7,
+        vote_class = $8,
+        updated_at = now()
     WHERE id = $1 AND campaign_id = $2
     RETURNING
       id, form_id, campaign_id::text, nombre, telefono, encuestador, zona,
-      form_created_at as created_at, status, notes, claimed_by::text,
-      NULL::text as claimed_by_name, updated_at
-  `, [id, campaignId, status, notes, userId]);
+      form_created_at as created_at, status, notes, tags, score, vote_class,
+      claimed_by::text, NULL::text as claimed_by_name, updated_at
+  `, [id, campaignId, status, notes, userId, finalTags, score, voteClass]);
   return rows[0] ?? null;
 }
 
@@ -168,8 +192,10 @@ export async function claim(
       AND (claimed_by IS NULL OR claimed_by = $3)
     RETURNING
       id, form_id, campaign_id::text, nombre, telefono, encuestador, zona,
-      form_created_at as created_at, status, notes, claimed_by::text,
-      NULL::text as claimed_by_name, updated_at
+      form_created_at as created_at, status, notes,
+      COALESCE(tags, '{}') as tags, COALESCE(score, 0) as score,
+      COALESCE(vote_class, '') as vote_class,
+      claimed_by::text, NULL::text as claimed_by_name, updated_at
   `, [id, campaignId, userId]);
   return rows[0] ?? null;
 }

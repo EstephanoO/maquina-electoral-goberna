@@ -7,7 +7,7 @@ import { api } from "./api";
 
 /* ─── Types ─── */
 
-export type ValidationStatus = "pendiente" | "contactado" | "validado" | "invalido";
+export type ValidationStatus = "pendiente" | "contactado" | "respondido" | "invalido";
 
 export interface ValidationItem {
   id: string;
@@ -20,12 +20,40 @@ export interface ValidationItem {
   created_at: string;
   status: ValidationStatus;
   notes: string | null;
+  tags: string[];
+  score: number;
+  vote_class: string; // "duro" | "blando" | "tibio" | ""
   claimed_by: string | null;
   claimed_by_name: string | null;
   updated_at: string;
 }
 
 export type ValidationStats = Record<ValidationStatus, number>;
+
+/* ─── Scoring tags (mirror backend) ─── */
+
+export const SCORING_TAGS = [
+  { key: "respondio", label: "Respondió", points: 1 },
+  { key: "amable", label: "Amable", points: 1 },
+  { key: "conoce_candidato", label: "Conoce al candidato", points: 1 },
+  { key: "interesado", label: "Interesado", points: 2 },
+  { key: "voluntario", label: "Voluntario", points: 3 },
+  { key: "voto_seguro", label: "Voto seguro", points: 3 },
+] as const;
+
+export function computeScore(tags: string[]): number {
+  let score = 0;
+  for (const t of SCORING_TAGS) {
+    if (tags.includes(t.key)) score += t.points;
+  }
+  return score;
+}
+
+export function classifyVote(score: number): "duro" | "blando" | "tibio" {
+  if (score >= 5) return "duro";
+  if (score >= 2) return "blando";
+  return "tibio";
+}
 
 /* ─── API ─── */
 
@@ -49,8 +77,9 @@ export async function updateValidationStatus(
   campaignId: string,
   status: ValidationStatus,
   notes?: string,
+  tags?: string[],
 ) {
-  return api.put<{ item: ValidationItem }>(`/api/validacion/${id}/status`, { status, notes }, {
+  return api.put<{ item: ValidationItem }>(`/api/validacion/${id}/status`, { status, notes, tags }, {
     headers: { "x-campaign-id": campaignId },
   });
 }
