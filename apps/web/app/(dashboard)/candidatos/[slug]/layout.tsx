@@ -6,6 +6,7 @@ import { useParams, usePathname, useRouter } from "next/navigation";
 
 const TABS = [
   { key: "tierra", label: "TERRITORIO", icon: MapPinIcon },
+  { key: "validacion", label: "VALIDACION", icon: CheckCircleIcon },
   { key: "analytics", label: "ANALYTICS", icon: MonitorIcon },
   { key: "cms-metrics", label: "DIGITAL", icon: CmsIcon },
 ] as const;
@@ -114,6 +115,25 @@ function MonitorIcon({ size = 16, active = false }: { size?: number; active?: bo
       <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
       <line x1="8" y1="21" x2="16" y2="21" />
       <line x1="12" y1="17" x2="12" y2="21" />
+    </svg>
+  );
+}
+
+function CheckCircleIcon({ size = 16, active = false }: { size?: number; active?: boolean }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={active ? "var(--goberna-blue-900)" : "#64748b"}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
     </svg>
   );
 }

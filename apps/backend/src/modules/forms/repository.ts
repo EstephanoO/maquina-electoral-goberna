@@ -18,9 +18,6 @@ export interface FormRecord {
   comentarios: string | null;
   campaign_id: string | null;
   created_at: string;
-  distrito: string | null;
-  departamento: string | null;
-  provincia: string | null;
 }
 
 export async function ensureFormsTable() {
@@ -277,8 +274,7 @@ export async function getRecentForms(
         id, client_id, nombre, telefono, fecha, x, y, zona,
         encuestador, encuestador_id, candidato_preferido, 
         comentarios, campaign_id, created_at,
-        NULL::uuid as agent_id,
-        NULL::text as _fs_distrito
+        NULL::uuid as agent_id
       FROM public.forms 
       WHERE campaign_id = $1 AND deleted_at IS NULL${legacyDateFilter}
       
@@ -300,8 +296,7 @@ export async function getRecentForms(
         fs.data->>'comentarios' as comentarios,
         fs.campaign_id,
         fs.created_at,
-        fs.submitted_by as agent_id,
-        fs.data->>'distrito' as _fs_distrito
+        fs.submitted_by as agent_id
       FROM form_submissions fs
       LEFT JOIN users u ON u.id = fs.submitted_by
       WHERE fs.campaign_id = $1
@@ -315,43 +310,12 @@ export async function getRecentForms(
       ) d
       ORDER BY created_at DESC
       ${limitClause}
-    ),
-    with_geom AS (
-      SELECT d.*,
-        CASE
-          -- Already WGS84 lat/lng
-          WHEN d.x IS NOT NULL AND d.y IS NOT NULL
-               AND abs(d.x) < 360 AND abs(d.y) < 360
-          THEN ST_SetSRID(ST_Point(d.x, d.y), 4326)
-          -- UTM Zone 18S: x=easting(100K-900K), y=northing(>1M)
-          WHEN d.x IS NOT NULL AND d.y IS NOT NULL
-               AND d.x > 100000 AND d.x < 900000 AND d.y > 1000000
-          THEN ST_Transform(ST_SetSRID(ST_Point(d.x, d.y), 32718), 4326)
-          -- UTM Zone 18S swapped: x=northing(>1M), y=easting(100K-900K)
-          WHEN d.x IS NOT NULL AND d.y IS NOT NULL
-               AND d.y > 100000 AND d.y < 900000 AND d.x > 1000000
-          THEN ST_Transform(ST_SetSRID(ST_Point(d.y, d.x), 32718), 4326)
-          ELSE NULL
-        END AS wgs84_point
-      FROM deduped d
     )
     SELECT
-      d.id, d.client_id, d.nombre, d.telefono, d.fecha, d.x, d.y, d.zona,
-      d.encuestador, d.encuestador_id, d.candidato_preferido, d.comentarios,
-      d.campaign_id, d.created_at, d.agent_id,
-      COALESCE(d._fs_distrito, geo.nomdist) as distrito,
-      geo.nomdep as departamento,
-      geo.nomprov as provincia
-    FROM with_geom d
-    LEFT JOIN LATERAL (
-      SELECT pd.nomdist, dep.nomdep, prov.nomprov
-      FROM peru_distritos pd
-      JOIN peru_departamentos dep ON dep.coddep = pd.coddep
-      JOIN peru_provincias prov ON prov.coddep = pd.coddep AND prov.codprov = pd.codprov
-      WHERE d.wgs84_point IS NOT NULL
-        AND ST_Contains(pd.geom, d.wgs84_point)
-      LIMIT 1
-    ) geo ON true`,
+      id, client_id, nombre, telefono, fecha, x, y, zona,
+      encuestador, encuestador_id, candidato_preferido, comentarios,
+      campaign_id, created_at, agent_id
+    FROM deduped`,
     params,
   );
 

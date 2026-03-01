@@ -11,3 +11,4 @@ export * from "./geo";
 export * from "./cms";
 export * from "./leads";
 export * from "./support";
+export * from "./validacion";

@@ -23,9 +23,6 @@ export interface FormRecord {
   comentarios: string | null;
   campaign_id: string | null;
   created_at: string;
-  distrito: string | null;
-  departamento: string | null;
-  provincia: string | null;
 }
 
 // ── API Responses ──────────────────────────────────────────────────
