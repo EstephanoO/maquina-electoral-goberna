@@ -190,6 +190,7 @@ export function buildApp(env: AppEnv) {
     const isTimeout = message.includes("aborted") || message.includes("timeout");
     const status = isTimeout ? 504 : statusCode >= 400 && statusCode < 600 ? statusCode : 502;
     const code = status >= 500 ? "UPSTREAM_ERROR" : "REQUEST_ERROR";
+    if (status >= 500) request.log.error({ err: error, requestId }, "unhandled error");
     reply.code(status).send(errorPayload(requestId, code, status >= 500 ? "error consultando servicio" : message));
   });
 
