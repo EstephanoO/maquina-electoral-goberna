@@ -51,8 +51,7 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["admin", "candidato"], section: "main", visibility: "always" },
   { icon: <DashboardIcon />, label: "Dashboard", href: (slug) => `/candidatos/${slug}/tierra`, roles: ["admin", "candidato", "consultor"], section: "main", visibility: "campaign" },
-  { icon: <CMSIcon />, label: "CMS", href: "/cms", roles: ["admin", "candidato", "consultor"], section: "main", visibility: "always" },
-  { icon: <PipelineIcon />, label: "Pipeline", href: "/cms/pipeline", roles: ["admin", "candidato", "consultor"], section: "main", visibility: "always" },
+  { icon: <ValidacionIcon />, label: "Validacion", href: (slug) => `/candidatos/${slug}/validacion`, roles: ["admin", "candidato", "consultor"], section: "main", visibility: "campaign" },
   { icon: <DigitalIcon />, label: "Analytics", href: (slug) => `/candidatos/${slug}/analytics`, roles: ["admin", "candidato", "consultor"], section: "main", visibility: "campaign" },
   // Admin-only: visible only in Admin General mode
   { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin", visibility: "global" },
@@ -107,22 +106,11 @@ function FormulariosIcon() {
   );
 }
 
-function CMSIcon() {
+function ValidacionIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      <line x1="9" y1="9" x2="15" y2="9" />
-      <line x1="9" y1="13" x2="13" y2="13" />
-    </svg>
-  );
-}
-
-function PipelineIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="4" width="5" height="16" rx="1" />
-      <rect x="10" y="8" width="5" height="12" rx="1" />
-      <rect x="17" y="12" width="4" height="8" rx="1" />
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
     </svg>
   );
 }
