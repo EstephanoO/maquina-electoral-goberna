@@ -18,9 +18,13 @@ export async function ensureValidacionTable(): Promise<void> {
       notes text,
       claimed_by uuid REFERENCES users(id),
       created_at timestamptz NOT NULL DEFAULT now(),
-      updated_at timestamptz NOT NULL DEFAULT now(),
-      UNIQUE(form_id, campaign_id)
+      updated_at timestamptz NOT NULL DEFAULT now()
     )
+  `);
+  // Unique per phone per campaign (dedup across forms + form_submissions)
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_form_validations_phone_campaign
+    ON form_validations(telefono, campaign_id)
   `);
   // Index for fast campaign queries
   await pool.query(`
@@ -64,17 +68,17 @@ export async function syncValidations(campaignId: string): Promise<number> {
         AND COALESCE(fs.data->>'telefono', fs.data->>'Numero de Telefono', '') != ''
     ),
     deduped AS (
-      SELECT DISTINCT ON (form_id, campaign_id)
+      SELECT DISTINCT ON (telefono, campaign_id)
         form_id, campaign_id, nombre, telefono, encuestador, zona, form_created_at
       FROM source
-      ORDER BY form_id, campaign_id, form_created_at DESC
+      ORDER BY telefono, campaign_id, form_created_at DESC
     )
     INSERT INTO form_validations (form_id, campaign_id, nombre, telefono, encuestador, zona, form_created_at)
     SELECT form_id, campaign_id, nombre, telefono, encuestador, zona, form_created_at
     FROM deduped
-    ON CONFLICT (form_id, campaign_id) DO UPDATE SET
+    ON CONFLICT (telefono, campaign_id) DO UPDATE SET
+      form_id = EXCLUDED.form_id,
       nombre = EXCLUDED.nombre,
-      telefono = EXCLUDED.telefono,
       encuestador = EXCLUDED.encuestador,
       zona = EXCLUDED.zona
     RETURNING id
