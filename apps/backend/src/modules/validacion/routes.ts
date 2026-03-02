@@ -72,7 +72,7 @@ export function buildValidacionRoutes(_env: AppEnv): FastifyPluginAsync {
       if (!parsed.success) return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "datos invalidos"));
 
       const authed = request as unknown as AuthenticatedRequest;
-      const result = await repo.updateStatus(request.params.id, campaignId, parsed.data.status, parsed.data.notes ?? null, authed.userId, parsed.data.tags);
+      const result = await repo.updateStatus(request.params.id, campaignId, parsed.data.status, parsed.data.notes ?? null, authed.userId, parsed.data.vote_class);
       if (!result) return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "validacion no encontrada"));
       return reply.send({ ok: true, request_id: requestId, item: result });
     });

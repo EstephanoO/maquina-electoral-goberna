@@ -89,10 +89,9 @@ export async function updateValidationStatus(
   id: string,
   campaignId: string,
   status: ValidationStatus,
-  notes?: string,
-  tags?: string[],
+  vote_class?: string,
 ) {
-  return api.put<{ item: ValidationItem }>(`/api/validacion/${id}/status`, { status, notes, tags }, {
+  return api.put<{ item: ValidationItem }>(`/api/validacion/${id}/status`, { status, vote_class }, {
     headers: { "x-campaign-id": campaignId },
   });
 }

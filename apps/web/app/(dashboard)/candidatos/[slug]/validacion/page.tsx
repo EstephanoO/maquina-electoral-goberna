@@ -258,7 +258,6 @@ function ValidacionBoard() {
       item.id, campaignId,
       newStatus as Parameters<typeof updateValidationStatus>[2],
       voteClass,
-      undefined,
     );
     if (res.ok && res.data) {
       setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, ...res.data!.item } : i));
@@ -313,25 +312,18 @@ function ValidacionBoard() {
   /* ── Card action handler ── */
   const handleCardAction = useCallback(async (
     item: ValidationItem,
-    action: { type: "status"; status: string; tags?: string[] } | { type: "tags"; tags: string[] },
+    action: { type: "status"; status: string },
   ) => {
     setUpdatingId(item.id);
     if (action.type === "status") {
       const newStatus = action.status as Parameters<typeof updateValidationStatus>[2];
-      const res = await updateValidationStatus(item.id, campaignId, newStatus, undefined, action.tags);
+      const res = await updateValidationStatus(item.id, campaignId, newStatus);
       if (res.ok && res.data) {
         setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, ...res.data!.item } : i));
         const statsRes = await getValidationStats(campaignId);
         if (statsRes.ok && statsRes.data) setStats(statsRes.data.stats);
       } else {
         toast("Error al actualizar estado", "error");
-      }
-    } else {
-      const res = await updateValidationStatus(item.id, campaignId, "respondido", undefined, action.tags);
-      if (res.ok && res.data) {
-        setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, ...res.data!.item } : i));
-      } else {
-        toast("Error al guardar etiquetas", "error");
       }
     }
     setUpdatingId(null);

@@ -1,6 +1,6 @@
 import { pool } from "../../db";
 import type { ValidationRow, ValidationStatus } from "./schemas";
-import { computeScore, classifyVote } from "./schemas";
+
 
 /* ─── Ensure table ─── */
 
@@ -181,11 +181,9 @@ export async function updateStatus(
   status: ValidationStatus,
   notes: string | null,
   userId: string,
-  tags?: string[],
+  vote_class?: string | null,
 ): Promise<ValidationRow | null> {
-  const finalTags = tags ?? [];
-  const score = computeScore(finalTags);
-  const voteClass = finalTags.length > 0 ? classifyVote(score) : "";
+  const finalVoteClass = vote_class ?? "";
 
   const { rows } = await pool.query<ValidationRow>(`
     UPDATE form_validations
@@ -201,7 +199,7 @@ export async function updateStatus(
       id, form_id, campaign_id::text, nombre, telefono, encuestador, zona,
       form_created_at as created_at, status, notes, tags, score, vote_class,
       claimed_by::text, NULL::text as claimed_by_name, updated_at
-  `, [id, campaignId, status, notes, userId, finalTags, score, voteClass]);
+  `, [id, campaignId, status, notes, userId, "[]", 0, finalVoteClass]);
   return rows[0] ?? null;
 }
 
