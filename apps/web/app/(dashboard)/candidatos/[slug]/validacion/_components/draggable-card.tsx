@@ -120,6 +120,7 @@ export function DraggableCard({
   column,
   isUpdating,
   columnColor,
+  compact = false,
   onWhatsAppClick,
   onAction,
 }: {
@@ -127,6 +128,7 @@ export function DraggableCard({
   column: VisualColumn;
   isUpdating: boolean;
   columnColor: string;
+  compact?: boolean;
   onWhatsAppClick: (item: ValidationItem) => void;
   onAction: (item: ValidationItem, action: CardAction) => Promise<void> | void;
 }) {
@@ -204,18 +206,21 @@ export function DraggableCard({
         style={style}
         role="article"
         aria-label={item.nombre || "Contacto"}
+        {...(compact ? { ...listeners, ...attributes } : {})}
         className={`relative rounded-lg border border-slate-100 bg-white p-2.5 transition-all group ${isDragging ? "opacity-30 shadow-lg z-50 rotate-1" : "hover:shadow-sm"
-          } ${isUpdating ? "opacity-50 pointer-events-none" : ""}`}
+          } ${isUpdating ? "opacity-50 pointer-events-none" : ""} ${compact ? "cursor-grab active:cursor-grabbing" : ""}`}
       >
-        {/* Drag handle */}
-        <div
-          {...listeners}
-          {...attributes}
-          className="absolute top-2 right-2 w-5 h-5 rounded flex items-center justify-center cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-          title="Arrastrar"
-        >
-          <GripIcon />
-        </div>
+        {/* Drag handle — hidden in compact mode (whole card is draggable) */}
+        {!compact && (
+          <div
+            {...listeners}
+            {...attributes}
+            className="absolute top-2 right-2 w-5 h-5 rounded flex items-center justify-center cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            title="Arrastrar"
+          >
+            <GripIcon />
+          </div>
+        )}
 
         {/* Name + vote badge */}
         <div className="flex items-center gap-1.5 pr-6">
@@ -267,26 +272,28 @@ export function DraggableCard({
         </div>
 
         {/* Zona + claimed_by row */}
-        <div className="flex items-center gap-2 mt-1 flex-wrap">
-          {item.zona && item.zona !== "Sin zona" && (
-            <span className="flex items-center gap-1 text-[10px] text-slate-500 bg-slate-50 rounded-full px-1.5 py-0.5">
-              <MapPinIcon />
-              {item.zona}
-            </span>
-          )}
-          {claimedInitials && (
-            <span
-              className="flex items-center gap-1 text-[10px] text-indigo-600 bg-indigo-50 rounded-full px-1.5 py-0.5"
-              title={`Tomado por ${item.claimed_by_name}`}
-            >
-              <UserIcon />
-              {item.claimed_by_name?.split(" ")[0]}
-            </span>
-          )}
-        </div>
+        {!compact && (
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            {item.zona && item.zona !== "Sin zona" && (
+              <span className="flex items-center gap-1 text-[10px] text-slate-500 bg-slate-50 rounded-full px-1.5 py-0.5">
+                <MapPinIcon />
+                {item.zona}
+              </span>
+            )}
+            {claimedInitials && (
+              <span
+                className="flex items-center gap-1 text-[10px] text-indigo-600 bg-indigo-50 rounded-full px-1.5 py-0.5"
+                title={`Tomado por ${item.claimed_by_name}`}
+              >
+                <UserIcon />
+                {item.claimed_by_name?.split(" ")[0]}
+              </span>
+            )}
+          </div>
+        )}
 
-        {/* ── Active tags (always visible, compact) ── */}
-        {(isContactado || isRespondido) && currentTags.length > 0 && !tagsOpen && (
+        {/* ── Active tags (always visible) ── */}
+        {!compact && (isContactado || isRespondido) && currentTags.length > 0 && !tagsOpen && (
           <div className="flex flex-wrap gap-1 mt-1.5">
             {currentTags.map((tagKey) => {
               const tagDef = SCORING_TAGS.find((t) => t.key === tagKey);
@@ -303,12 +310,12 @@ export function DraggableCard({
         )}
 
         {/* ── Score bar ── */}
-        {(isContactado || isRespondido) && liveScore > 0 && !tagsOpen && (
+        {!compact && (isContactado || isRespondido) && liveScore > 0 && !tagsOpen && (
           <ScoreBar score={liveScore} voteClass={liveClass} />
         )}
 
         {/* ── Tag scoring panel ── */}
-        {(isContactado || isRespondido) && (
+        {!compact && (isContactado || isRespondido) && (
           <div className="mt-2">
             <button
               type="button"
@@ -332,8 +339,8 @@ export function DraggableCard({
                       onClick={() => handleTagToggle(tag.key)}
                       disabled={isUpdating}
                       className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border transition-all cursor-pointer disabled:opacity-40 ${active
-                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                          : "bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100 hover:text-slate-600"
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : "bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100 hover:text-slate-600"
                         }`}
                       title={`${tag.label} (+${tag.points} pts)`}
                     >
@@ -348,19 +355,34 @@ export function DraggableCard({
         )}
 
         {/* ── Action buttons ── */}
-        <div className="flex items-center gap-1.5 mt-2">
-          {isContactado && (
-            <>
-              <button
-                type="button"
-                onClick={() => { onAction(item, { type: "status", status: "respondido", tags: ["respondio"] }); toast("Marcado como respondido", "success"); }}
-                disabled={isUpdating}
-                className="flex items-center gap-1 px-2 py-1 rounded-md bg-cyan-50 text-cyan-700 text-[10px] font-bold hover:bg-cyan-100 transition-colors cursor-pointer border-none disabled:opacity-40"
-                title="Marcar como respondido"
-              >
-                <CheckIcon />
-                {"Respondió"}
-              </button>
+        {!compact && (
+          <div className="flex items-center gap-1.5 mt-2">
+            {isContactado && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => { onAction(item, { type: "status", status: "respondido", tags: ["respondio"] }); toast("Marcado como respondido", "success"); }}
+                  disabled={isUpdating}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md bg-cyan-50 text-cyan-700 text-[10px] font-bold hover:bg-cyan-100 transition-colors cursor-pointer border-none disabled:opacity-40"
+                  title="Marcar como respondido"
+                >
+                  <CheckIcon />
+                  {"Respondió"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => requestInvalido({ type: "status", status: "invalido" })}
+                  disabled={isUpdating}
+                  className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-50 text-red-600 text-[10px] font-bold hover:bg-red-100 transition-colors cursor-pointer border-none disabled:opacity-40"
+                  title="Marcar como inválido"
+                >
+                  <BanIcon />
+                  {"Inválido"}
+                </button>
+              </>
+            )}
+
+            {isPendiente && (
               <button
                 type="button"
                 onClick={() => requestInvalido({ type: "status", status: "invalido" })}
@@ -371,57 +393,46 @@ export function DraggableCard({
                 <BanIcon />
                 {"Inválido"}
               </button>
-            </>
-          )}
+            )}
 
-          {isPendiente && (
-            <button
-              type="button"
-              onClick={() => requestInvalido({ type: "status", status: "invalido" })}
-              disabled={isUpdating}
-              className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-50 text-red-600 text-[10px] font-bold hover:bg-red-100 transition-colors cursor-pointer border-none disabled:opacity-40"
-              title="Marcar como inválido"
-            >
-              <BanIcon />
-              {"Inválido"}
-            </button>
-          )}
+            {isRespondido && (
+              <button
+                type="button"
+                onClick={() => requestInvalido({ type: "status", status: "invalido" })}
+                disabled={isUpdating}
+                className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-50 text-red-600 text-[10px] font-bold hover:bg-red-100 transition-colors cursor-pointer border-none disabled:opacity-40"
+                title="Marcar como inválido"
+              >
+                <BanIcon />
+                {"Inválido"}
+              </button>
+            )}
 
-          {isRespondido && (
-            <button
-              type="button"
-              onClick={() => requestInvalido({ type: "status", status: "invalido" })}
-              disabled={isUpdating}
-              className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-50 text-red-600 text-[10px] font-bold hover:bg-red-100 transition-colors cursor-pointer border-none disabled:opacity-40"
-              title="Marcar como inválido"
-            >
-              <BanIcon />
-              {"Inválido"}
-            </button>
-          )}
-
-          {isInvalido && (
-            <button
-              type="button"
-              onClick={() => { onAction(item, { type: "status", status: "pendiente" }); toast("Devuelto a pendiente", "info"); }}
-              disabled={isUpdating}
-              className="flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 transition-colors cursor-pointer border-none disabled:opacity-40"
-              title="Devolver a pendiente"
-            >
-              <UndoIcon />
-              {"Devolver"}
-            </button>
-          )}
-        </div>
+            {isInvalido && (
+              <button
+                type="button"
+                onClick={() => { onAction(item, { type: "status", status: "pendiente" }); toast("Devuelto a pendiente", "info"); }}
+                disabled={isUpdating}
+                className="flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 transition-colors cursor-pointer border-none disabled:opacity-40"
+                title="Devolver a pendiente"
+              >
+                <UndoIcon />
+                {"Devolver"}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Encuestador + date */}
-        <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-slate-400">
-          <span className="font-medium text-slate-500">
-            {item.encuestador?.split(" ")[0] || "—"}
-          </span>
-          <span>{"·"}</span>
-          <span>{fmtDateShort(item.created_at)}</span>
-        </div>
+        {!compact && (
+          <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-slate-400">
+            <span className="font-medium text-slate-500">
+              {item.encuestador?.split(" ")[0] || "—"}
+            </span>
+            <span>{"·"}</span>
+            <span>{fmtDateShort(item.created_at)}</span>
+          </div>
+        )}
       </div>
     </>
   );

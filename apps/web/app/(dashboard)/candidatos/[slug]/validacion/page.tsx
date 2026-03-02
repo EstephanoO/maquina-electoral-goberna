@@ -151,6 +151,7 @@ function ValidacionBoard() {
   const [overColumn, setOverColumn] = useState<VisualColumn | null>(null);
   const [activeColumn, setActiveColumn] = useState<VisualColumn | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
+  const [compact, setCompact] = useState(false);
 
   /* ── Pending DnD inválido confirm ── */
   const [confirmDndInvalido, setConfirmDndInvalido] = useState<null | {
@@ -419,6 +420,24 @@ function ValidacionBoard() {
             />
           </div>
 
+          {/* Compact toggle */}
+          <button
+            type="button"
+            onClick={() => setCompact((v: boolean) => !v)}
+            title={compact ? "Vista detallada" : "Vista compacta"}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${compact
+              ? "bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100"
+              : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"
+              }`}
+          >
+            {compact ? (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>
+            ) : (
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
+            )}
+            {compact ? "Detallado" : "Compacto"}
+          </button>
+
           {/* Stats counter + toggle */}
           <div className="relative flex items-center gap-2 shrink-0">
             <span className="text-xs text-slate-500 font-semibold tabular-nums">
@@ -465,6 +484,7 @@ function ValidacionBoard() {
                       column={col.key}
                       isUpdating={updatingId === item.id}
                       columnColor={col.accent}
+                      compact={compact}
                       onWhatsAppClick={handleWhatsAppClick}
                       onAction={handleCardAction}
                     />
