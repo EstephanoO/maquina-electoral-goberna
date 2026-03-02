@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WhatsApp Goberna Helper",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Gestiona una sola pestaña de WhatsApp Web — no abre pestañas duplicadas",
   "permissions": [
     "tabs",
@@ -25,10 +25,13 @@
     {
       "matches": [
         "https://dashboard.grupogoberna.com/*",
-        "http://localhost:3000/*"
+        "https://*.vercel.app/*",
+        "http://localhost:3000/*",
+        "http://localhost:3001/*"
       ],
       "js": ["dashboard-bridge.js"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true
     },
     {
       "matches": ["https://web.whatsapp.com/*"],
