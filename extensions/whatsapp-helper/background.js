@@ -1,74 +1,49 @@
 /**
- * WhatsApp Goberna Helper - Background Script
- * Gestiona una sola pestaña de WhatsApp Web
+ * WhatsApp Goberna Helper — Background Script
+ * Manages a single WhatsApp Web tab. Never opens duplicates.
  */
 
-const WHATSAPP_URL = "https://web.whatsapp.com";
-let waTabId = null;
+const WA_BASE = "https://web.whatsapp.com";
 
-// Buscar pestaña existente de WhatsApp
-async function findWhatsAppTab() {
-  const tabs = await chrome.tabs.query({ url: `${WHATSAPP_URL}/*` });
+// Find existing WhatsApp Web tab
+async function findWaTab() {
+  const tabs = await chrome.tabs.query({ url: `${WA_BASE}/*` });
   return tabs.length > 0 ? tabs[0] : null;
 }
 
-// Abrir o reutilizar pestaña de WhatsApp
-async function openWhatsApp(phone) {
-  // Buscar pestaña existente
-  let tab = await findWhatsAppTab();
+// Open or reuse WhatsApp Web tab
+async function openChat(phone, text) {
+  const encoded = text ? encodeURIComponent(text) : "";
+  const sendUrl = `${WA_BASE}/send?phone=${phone}${encoded ? `&text=${encoded}` : ""}`;
 
-  if (tab) {
-    // Reutilizar pestaña existente
-    waTabId = tab.id;
-    const url = phone 
-      ? `${WHATSAPP_URL}/send?phone=${phone}`
-      : WHATSAPP_URL;
-    
-    await chrome.tabs.update(tab.id, { active: true, url });
-    return { reused: true, tabId: tab.id };
-  } else {
-    // Crear nueva pestaña
-    const url = phone 
-      ? `${WHATSAPP_URL}/send?phone=${phone}`
-      : WHATSAPP_URL;
-    
-    const newTab = await chrome.tabs.create({ url, active: true });
-    waTabId = newTab.id;
-    return { reused: false, tabId: newTab.id };
+  const existing = await findWaTab();
+
+  if (existing) {
+    // Reuse: update URL in existing tab and focus it
+    await chrome.tabs.update(existing.id, { url: sendUrl, active: true });
+    // Bring window to front
+    await chrome.windows.update(existing.windowId, { focused: true });
+    return { reused: true, tabId: existing.id };
   }
+
+  // No existing tab — create one
+  const newTab = await chrome.tabs.create({ url: sendUrl, active: true });
+  return { reused: false, tabId: newTab.id };
 }
 
-// Escuchar mensajes desde la página web
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === "openChat") {
-    openWhatsApp(message.phone)
-      .then(result => sendResponse(result))
-      .catch(err => sendResponse({ error: err.message }));
-    return true; // Async response
+// Listen for messages from content scripts and popup
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.action === "openChat") {
+    openChat(msg.phone, msg.text)
+      .then(sendResponse)
+      .catch((err) => sendResponse({ error: err.message }));
+    return true; // async
   }
 
-  if (message.action === "getStatus") {
-    findWhatsAppTab().then(tab => {
-      sendResponse({ 
-        open: !!tab, 
-        tabId: tab?.id,
-        waTabId 
-      });
+  if (msg.action === "getStatus") {
+    findWaTab().then((tab) => {
+      sendResponse({ open: !!tab, tabId: tab?.id ?? null });
     });
     return true;
-  }
-});
-
-// Cleanup cuando se cierra la pestaña de WhatsApp
-chrome.tabs.onRemoved.addListener((tabId) => {
-  if (tabId === waTabId) {
-    waTabId = null;
-  }
-});
-
-// Cleanup cuando se navega fuera de WhatsApp
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (tabId === waTabId && changeInfo.url && !changeInfo.url.startsWith(WHATSAPP_URL)) {
-    waTabId = null;
   }
 });

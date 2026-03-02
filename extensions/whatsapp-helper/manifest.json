@@ -1,16 +1,14 @@
 {
   "manifest_version": 3,
   "name": "WhatsApp Goberna Helper",
-  "version": "1.0.0",
-  "description": "Gestiona una sola pestaña de WhatsApp Web y detecta respuestas automáticas",
+  "version": "1.1.0",
+  "description": "Gestiona una sola pestaña de WhatsApp Web — no abre pestañas duplicadas",
   "permissions": [
     "tabs",
-    "scripting",
     "storage"
   ],
   "host_permissions": [
-    "https://web.whatsapp.com/*",
-    "https://api.goberna.us/*"
+    "https://web.whatsapp.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -24,6 +22,14 @@
     "service_worker": "background.js"
   },
   "content_scripts": [
+    {
+      "matches": [
+        "https://dashboard.grupogoberna.com/*",
+        "http://localhost:3000/*"
+      ],
+      "js": ["dashboard-bridge.js"],
+      "run_at": "document_idle"
+    },
     {
       "matches": ["https://web.whatsapp.com/*"],
       "js": ["content.js"],

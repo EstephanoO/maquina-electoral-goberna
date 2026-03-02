@@ -150,13 +150,28 @@ export function waLink(tel: string, nombre: string): string {
 
 /* ─── Single-tab WhatsApp opener ─── */
 
-const WA_WINDOW_NAME = "goberna_whatsapp";
-
 /**
- * Opens WhatsApp Web reusing the same browser window/tab.
- * Uses window.open with a fixed name so the browser reuses it.
+ * Opens WhatsApp Web reusing the SAME tab via the Goberna Chrome extension.
+ *
+ * Flow:
+ *   1. Dispatch custom event → extension bridge catches it → background reuses tab
+ *   2. Fallback: if extension not installed, open with named window (best effort)
  */
 export function openWhatsApp(tel: string, nombre: string): void {
-  const url = waLink(tel, nombre);
-  window.open(url, WA_WINDOW_NAME, "noopener");
+  const phone = `51${tel.replace(/\D/g, "")}`;
+  const text = `Hola, ${nombre || ""}`;
+
+  // Check if extension is installed (it sets a data attribute on <html>)
+  const hasExtension = document.documentElement.getAttribute("data-goberna-wa-ext") === "true";
+
+  if (hasExtension) {
+    // Extension path: fire custom event, the bridge content script forwards to background
+    window.dispatchEvent(
+      new CustomEvent("goberna:open-whatsapp", { detail: { phone, text } }),
+    );
+  } else {
+    // Fallback: named window reuse (works partially — WhatsApp redirects may break it)
+    const url = `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
+    window.open(url, "goberna_whatsapp");
+  }
 }
