@@ -470,8 +470,9 @@ function ValidacionBoard() {
         {!loading && (
           <div className="flex items-center gap-4 px-4 py-1.5 border-b border-slate-100 bg-white text-[11px] shrink-0">
             {COLUMNS.map((col) => (
-              <span key={col.key} className="flex items-center gap-1.5 font-semibold" style={{ color: col.accent }}>
-                <span className="text-slate-400 font-normal">{col.label}</span>
+              <span key={col.key} className="flex items-center gap-1 font-semibold" style={{ color: col.accent }}>
+                <span style={{ color: col.accent }}>{col.icon()}</span>
+                <span className="text-slate-500 font-normal">{col.label}</span>
                 <span className="tabular-nums">{grouped[col.key]?.length ?? 0}{col.key === "pendiente" && hasMore ? "+" : ""}</span>
               </span>
             ))}
