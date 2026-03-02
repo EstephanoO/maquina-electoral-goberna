@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "WhatsApp Goberna Helper",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Una sola pestaña de WhatsApp Web — nunca abre duplicados",
   "permissions": [
     "tabs",
-    "storage"
+    "storage",
+    "activeTab"
   ],
   "host_permissions": [
-    "https://web.whatsapp.com/*"
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",
