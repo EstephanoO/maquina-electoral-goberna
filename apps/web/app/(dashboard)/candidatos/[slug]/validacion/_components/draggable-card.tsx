@@ -204,7 +204,6 @@ export function DraggableCard({
       <div
         ref={setNodeRef}
         style={style}
-        role="article"
         aria-label={item.nombre || "Contacto"}
         {...(compact ? { ...listeners, ...attributes } : {})}
         className={`relative rounded-lg border border-slate-100 bg-white p-2.5 transition-all group ${isDragging ? "opacity-30 shadow-lg z-50 rotate-1" : "hover:shadow-sm"
@@ -382,18 +381,7 @@ export function DraggableCard({
               </>
             )}
 
-            {isPendiente && (
-              <button
-                type="button"
-                onClick={() => requestInvalido({ type: "status", status: "invalido" })}
-                disabled={isUpdating}
-                className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-50 text-red-600 text-[10px] font-bold hover:bg-red-100 transition-colors cursor-pointer border-none disabled:opacity-40"
-                title="Marcar como inválido"
-              >
-                <BanIcon />
-                {"Inválido"}
-              </button>
-            )}
+
 
             {isRespondido && (
               <button
