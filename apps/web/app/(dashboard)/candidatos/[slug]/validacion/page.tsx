@@ -152,6 +152,15 @@ function ValidacionBoard() {
   const [activeColumn, setActiveColumn] = useState<VisualColumn | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
   const [compact, setCompact] = useState(false);
+  const [collapsedCols, setCollapsedCols] = useState<Set<VisualColumn>>(new Set());
+
+  function toggleColCollapse(key: VisualColumn) {
+    setCollapsedCols((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
 
   /* ── Pending DnD inválido confirm ── */
   const [confirmDndInvalido, setConfirmDndInvalido] = useState<null | {
@@ -493,6 +502,8 @@ function ValidacionBoard() {
                   totalItems={grouped[col.key].length}
                   hasMoreGlobal={hasMore}
                   loadingMore={loadingMore}
+                  collapsed={collapsedCols.has(col.key)}
+                  onToggleCollapse={() => toggleColCollapse(col.key)}
                   onLoadMore={fetchMore}
                   renderCard={(item) => (
                     <DraggableCard

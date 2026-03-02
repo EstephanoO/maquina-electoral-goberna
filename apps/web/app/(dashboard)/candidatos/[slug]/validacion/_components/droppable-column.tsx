@@ -11,6 +11,19 @@ function SpinnerIcon() {
   return <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin opacity-40" />;
 }
 
+function CollapseIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg
+      width="11" height="11" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true"
+      className={`transition-transform duration-200 ${collapsed ? "rotate-180" : ""}`}
+    >
+      <polyline points="15 18 9 12 15 6" />
+    </svg>
+  );
+}
+
 const FLOW_HINTS: Partial<Record<VisualColumn, string>> = {
   contactado: "Arrastra desde Pendiente para iniciar contacto",
   respondido: "Arrastra desde Contactado cuando respondan",
@@ -27,6 +40,8 @@ export function DroppableColumn({
   totalItems,
   hasMoreGlobal,
   loadingMore,
+  collapsed,
+  onToggleCollapse,
   onLoadMore,
   renderCard,
 }: {
@@ -37,6 +52,8 @@ export function DroppableColumn({
   totalItems: number;
   hasMoreGlobal: boolean;
   loadingMore: boolean;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
   onLoadMore: () => void;
   renderCard: (item: ValidationItem) => ReactNode;
 }) {
@@ -74,7 +91,39 @@ export function DroppableColumn({
   const hiddenCount = count - visibleCount;
   const showSentinel = visibleCount < count || (visibleCount >= count && hasMoreGlobal);
 
-  /* ── Collapse empty columns (except pendiente/invalido) ── */
+  /* ── Collapsed view — narrow vertical strip ── */
+  if (collapsed) {
+    return (
+      <div
+        ref={setNodeRef}
+        onClick={onToggleCollapse}
+        className={`flex flex-col min-w-[44px] w-11 rounded-xl border bg-white overflow-hidden transition-all duration-300 cursor-pointer select-none ${isBlocked ? "opacity-30" : "border-slate-200 hover:border-slate-300"
+          }`}
+        title={`Expandir ${col.label}`}
+      >
+        <div
+          className="flex flex-col items-center gap-2 py-3 flex-1"
+          style={{ borderLeft: `3px solid ${col.accent}30`, background: col.bg }}
+        >
+          <span style={{ color: col.accent }}>{col.icon()}</span>
+          <span
+            className="text-[9px] font-bold uppercase tracking-widest flex-1"
+            style={{ color: col.accent, writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+          >
+            {col.label}
+          </span>
+          <span
+            className="text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center"
+            style={{ background: `${col.accent}15`, color: col.accent }}
+          >
+            {count}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Auto-collapse empty columns (except pendiente/invalido) ── */
   if (count === 0 && !isOver && col.key !== "pendiente" && col.key !== "invalido") {
     return (
       <div
@@ -109,10 +158,10 @@ export function DroppableColumn({
     <div
       ref={setNodeRef}
       className={`flex flex-col min-w-[220px] w-full rounded-xl border bg-white overflow-hidden transition-all duration-200 ${isBlocked
-          ? "opacity-40 saturate-50"
-          : isOver
-            ? "scale-[1.01] shadow-md"
-            : "border-slate-200"
+        ? "opacity-40 saturate-50"
+        : isOver
+          ? "scale-[1.01] shadow-md"
+          : "border-slate-200"
         }`}
       style={{
         borderColor: isOver ? col.accent : undefined,
@@ -134,6 +183,17 @@ export function DroppableColumn({
         >
           {totalItems > 0 && totalItems !== count ? totalItems : count}
         </span>
+        {/* Collapse button */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
+          className="ml-1 w-5 h-5 flex items-center justify-center rounded hover:bg-black/5 transition-colors cursor-pointer border-none bg-transparent shrink-0"
+          title="Colapsar columna"
+          aria-label={`Colapsar ${col.label}`}
+          style={{ color: col.accent }}
+        >
+          <CollapseIcon collapsed={false} />
+        </button>
       </div>
 
       {/* Cards area */}
