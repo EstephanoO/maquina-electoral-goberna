@@ -1,6 +1,7 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ColumnDef, VisualColumn } from "./constants";
 import type { ValidationItem } from "@/lib/services/validacion";
@@ -8,7 +9,7 @@ import type { ValidationItem } from "@/lib/services/validacion";
 const PAGE_SIZE = 20;
 
 function SpinnerIcon() {
-  return <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin opacity-40" />;
+  return <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin opacity-40" />;
 }
 
 function CollapseIcon({ collapsed }: { collapsed: boolean }) {
@@ -25,11 +26,12 @@ function CollapseIcon({ collapsed }: { collapsed: boolean }) {
 }
 
 const FLOW_HINTS: Partial<Record<VisualColumn, string>> = {
-  contactado: "Arrastra desde Pendiente para iniciar contacto",
-  respondido: "Arrastra desde Contactado cuando respondan",
-  voto_blando: "Arrastra desde Respondido cuando califiquen",
-  voto_duro: "Arrastra desde Respondido — votos seguros",
-  imposible: "Arrastra contactos que no pudieron verificarse",
+  contactado: "Arrastra desde Pendiente",
+  respondido: "Arrastra desde Contactado",
+  voto_blando: "Clasifica como Voto Blando",
+  voto_duro: "Clasifica como Voto Duro",
+  voto_flotante: "Clasifica como Voto Flotante",
+  imposible: "Contactos no verificables",
 };
 
 export function DroppableColumn({
@@ -91,29 +93,37 @@ export function DroppableColumn({
   const hiddenCount = count - visibleCount;
   const showSentinel = visibleCount < count || (visibleCount >= count && hasMoreGlobal);
 
-  /* ── Collapsed view — narrow vertical strip ── */
+  const itemIds = visibleItems.map((i) => i.id);
+
+  /* ── Collapsed view ── */
   if (collapsed) {
     return (
       <div
         ref={setNodeRef}
+        role="button"
+        tabIndex={0}
         onClick={onToggleCollapse}
-        className={`flex flex-col min-w-[44px] w-11 rounded-xl border bg-white overflow-hidden transition-all duration-300 cursor-pointer select-none ${isBlocked ? "opacity-30" : "border-slate-200 hover:border-slate-300"
-          }`}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onToggleCollapse(); }}
+        className={`
+          flex flex-col min-w-[40px] w-10 rounded-xl bg-white overflow-hidden
+          transition-all duration-300 cursor-pointer select-none border
+          ${isBlocked ? "opacity-20 border-slate-100" : "border-slate-200 hover:border-slate-300 hover:shadow-sm"}
+        `}
         title={`Expandir ${col.label}`}
       >
         <div
           className="flex flex-col items-center gap-2 py-3 flex-1"
-          style={{ borderLeft: `3px solid ${col.accent}30`, background: col.bg }}
+          style={{ borderLeft: `3px solid ${col.accent}`, background: col.bg }}
         >
           <span style={{ color: col.accent }}>{col.icon()}</span>
           <span
-            className="text-[9px] font-bold uppercase tracking-widest flex-1"
+            className="text-[8px] font-bold uppercase tracking-widest flex-1"
             style={{ color: col.accent, writingMode: "vertical-rl", transform: "rotate(180deg)" }}
           >
             {col.label}
           </span>
           <span
-            className="text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center"
+            className="text-[10px] font-black rounded-full min-w-[20px] h-5 flex items-center justify-center px-1"
             style={{ background: `${col.accent}15`, color: col.accent }}
           >
             {count}
@@ -123,29 +133,32 @@ export function DroppableColumn({
     );
   }
 
-  /* ── Auto-collapse empty columns (except pendiente/invalido) ── */
+  /* ── Auto-collapse empty non-essential columns ── */
   if (count === 0 && !isOver && col.key !== "pendiente" && col.key !== "imposible") {
     return (
       <div
         ref={setNodeRef}
-        className={`flex flex-col min-w-[48px] w-12 rounded-xl border bg-white overflow-hidden transition-all duration-300 ${isBlocked ? "opacity-30" : "border-slate-200 opacity-60"
-          }`}
+        className={`
+          flex flex-col min-w-[44px] w-11 rounded-xl bg-white overflow-hidden
+          transition-all duration-300 border
+          ${isBlocked ? "opacity-20 border-slate-100" : "border-slate-200 opacity-50 hover:opacity-70"}
+        `}
         title={col.label}
       >
         <div
-          className="flex flex-col items-center gap-1 py-3 flex-1 border-b"
-          style={{ borderColor: `${col.accent}20`, background: col.bg }}
+          className="flex flex-col items-center gap-1 py-3 flex-1"
+          style={{ borderLeft: `3px solid ${col.accent}30`, background: col.bg }}
         >
-          <span style={{ color: col.accent }}>{col.icon()}</span>
+          <span style={{ color: col.accent }} className="opacity-60">{col.icon()}</span>
           <span
-            className="text-[9px] font-bold uppercase tracking-widest"
-            style={{ color: col.accent, writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+            className="text-[8px] font-bold uppercase tracking-widest"
+            style={{ color: col.accent, writingMode: "vertical-rl", transform: "rotate(180deg)", opacity: 0.6 }}
           >
             {col.label}
           </span>
           <span
             className="text-[8px] font-black rounded-full w-4 h-4 flex items-center justify-center mt-1"
-            style={{ background: `${col.accent}15`, color: col.accent }}
+            style={{ background: `${col.accent}10`, color: col.accent, opacity: 0.5 }}
           >
             0
           </span>
@@ -157,37 +170,41 @@ export function DroppableColumn({
   return (
     <div
       ref={setNodeRef}
-      className={`flex flex-col min-w-[220px] w-full rounded-xl border bg-white overflow-hidden transition-all duration-200 ${isBlocked
-        ? "opacity-40 saturate-50"
-        : isOver
-          ? "scale-[1.01] shadow-md"
-          : "border-slate-200"
-        }`}
+      className={`
+        flex flex-col min-w-[220px] w-full rounded-xl bg-white overflow-hidden
+        transition-all duration-200 border
+        ${isBlocked
+          ? "opacity-30 saturate-0 border-slate-100 scale-[0.98]"
+          : isOver
+            ? "border-transparent shadow-lg scale-[1.01]"
+            : "border-slate-200 hover:border-slate-300"
+        }
+      `}
       style={{
-        borderColor: isOver ? col.accent : undefined,
-        boxShadow: isOver ? `0 0 0 2px ${col.accent}40` : undefined,
+        boxShadow: isOver
+          ? `0 0 0 2px ${col.accent}, 0 8px 24px ${col.accent}20`
+          : undefined,
       }}
     >
       {/* Column header */}
       <div
-        className="flex items-center gap-2 px-3 py-2.5 border-b shrink-0"
-        style={{ borderColor: `${col.accent}20`, background: col.bg }}
+        className="flex items-center gap-2 px-3 py-2 border-b shrink-0"
+        style={{ borderColor: `${col.accent}15`, background: col.bg }}
       >
         <span style={{ color: col.accent }}>{col.icon()}</span>
-        <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: col.accent }}>
+        <span className="text-[11px] font-bold uppercase tracking-wider flex-1" style={{ color: col.accent }}>
           {col.label}
         </span>
         <span
-          className="ml-auto text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center shrink-0"
+          className="text-[10px] font-black rounded-full min-w-[20px] h-5 flex items-center justify-center px-1 shrink-0"
           style={{ background: `${col.accent}15`, color: col.accent }}
         >
           {totalItems > 0 && totalItems !== count ? totalItems : count}
         </span>
-        {/* Collapse button */}
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
-          className="ml-1 w-5 h-5 flex items-center justify-center rounded hover:bg-black/5 transition-colors cursor-pointer border-none bg-transparent shrink-0"
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-black/5 transition-colors cursor-pointer border-none bg-transparent shrink-0"
           title="Colapsar columna"
           aria-label={`Colapsar ${col.label}`}
           style={{ color: col.accent }}
@@ -200,16 +217,29 @@ export function DroppableColumn({
       <div className="flex-1 overflow-y-auto p-1.5 flex flex-col gap-1.5 min-h-[60px]">
         {count === 0 ? (
           <div
-            className={`flex flex-col items-center justify-center py-8 text-center gap-1.5 px-3 transition-colors ${isOver ? "text-slate-600" : "text-slate-300"
-              }`}
+            className={`
+              flex flex-col items-center justify-center py-10 text-center gap-2 px-4
+              transition-all duration-200
+              ${isOver ? "scale-105" : ""}
+            `}
           >
             {isOver ? (
-              <span className="text-[12px] font-semibold text-slate-500">Soltar aquí</span>
+              <>
+                <div
+                  className="w-10 h-10 rounded-full flex items-center justify-center"
+                  style={{ background: `${col.accent}15`, color: col.accent }}
+                >
+                  {col.icon()}
+                </div>
+                <span className="text-[12px] font-bold" style={{ color: col.accent }}>
+                  Soltar aqui
+                </span>
+              </>
             ) : (
               <>
-                <span className="text-[11px] font-medium">Sin registros</span>
+                <span className="text-[11px] font-medium text-slate-300">Sin registros</span>
                 {FLOW_HINTS[col.key] && (
-                  <span className="text-[10px] leading-tight text-slate-400">
+                  <span className="text-[10px] leading-tight text-slate-300">
                     {FLOW_HINTS[col.key]}
                   </span>
                 )}
@@ -217,22 +247,22 @@ export function DroppableColumn({
             )}
           </div>
         ) : (
-          <>
+          <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
             {visibleItems.map((item: ValidationItem) => renderCard(item))}
+          </SortableContext>
+        )}
 
-            {showSentinel && (
-              <div ref={sentinelRef} className="flex items-center justify-center gap-1.5 py-2">
-                {loadingMore && visibleCount >= count ? (
-                  <>
-                    <SpinnerIcon />
-                    <span className="text-[10px] text-slate-400">Cargando más…</span>
-                  </>
-                ) : hiddenCount > 0 ? (
-                  <span className="text-[10px] text-slate-400">+{hiddenCount} más</span>
-                ) : null}
-              </div>
-            )}
-          </>
+        {showSentinel && (
+          <div ref={sentinelRef} className="flex items-center justify-center gap-1.5 py-2">
+            {loadingMore && visibleCount >= count ? (
+              <>
+                <SpinnerIcon />
+                <span className="text-[10px] text-slate-400">Cargando...</span>
+              </>
+            ) : hiddenCount > 0 ? (
+              <span className="text-[10px] text-slate-300">+{hiddenCount} mas</span>
+            ) : null}
+          </div>
         )}
       </div>
     </div>

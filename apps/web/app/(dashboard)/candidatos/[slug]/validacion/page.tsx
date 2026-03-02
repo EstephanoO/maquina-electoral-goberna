@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  TouchSensor,
   KeyboardSensor,
   useSensor,
   useSensors,
+  closestCenter,
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
@@ -40,13 +42,11 @@ import { ToastProvider, useToast } from "./_components/toast";
 /* ── Pagination config ── */
 const PAGE_LIMIT = 100;
 
-
 /* ── Stats expandable panel ── */
 function StatsPanel({ stats, items, total }: { stats: ValidationStats; items: ValidationItem[]; total: number }) {
   const processed = stats.contactado + stats.respondido + stats.invalido;
   const conversion = stats.contactado > 0 ? Math.round((stats.respondido / (stats.contactado + stats.respondido)) * 100) : 0;
 
-  // Top encuestadores
   const byEncuestador: Record<string, number> = {};
   for (const item of items) {
     const name = item.encuestador?.split(" ")[0] || "Desconocido";
@@ -56,10 +56,8 @@ function StatsPanel({ stats, items, total }: { stats: ValidationStats; items: Va
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
 
-  // Vote distribution (from items in memory)
   const voteDuro = items.filter((i) => i.vote_class === "duro").length;
   const voteBlando = items.filter((i) => i.vote_class === "blando").length;
-  const voteTibio = items.filter((i) => i.status === "respondido" && i.vote_class !== "duro" && i.vote_class !== "blando").length;
 
   return (
     <div className="absolute top-full right-0 mt-2 z-50 w-80 bg-white rounded-xl border border-slate-200 shadow-xl p-4 flex flex-col gap-3">
@@ -69,7 +67,7 @@ function StatsPanel({ stats, items, total }: { stats: ValidationStats; items: Va
           <div className="text-lg font-black text-slate-700">{processed}<span className="text-[11px] font-medium text-slate-400">/{total}</span></div>
         </div>
         <div className="rounded-lg bg-slate-50 p-2.5">
-          <div className="text-[10px] text-slate-400 font-medium">Conversión</div>
+          <div className="text-[10px] text-slate-400 font-medium">Conversion</div>
           <div className="text-lg font-black text-cyan-600">{conversion}%</div>
         </div>
         <div className="rounded-lg bg-emerald-50 p-2.5">
@@ -154,6 +152,8 @@ function ValidacionBoard() {
   const [compact, setCompact] = useState(false);
   const [collapsedCols, setCollapsedCols] = useState<Set<VisualColumn>>(new Set(["imposible"]));
 
+  /* ── Ref to prevent fetchMore from overwriting optimistic updates ── */
+  const pendingUpdateIds = useRef<Set<string>>(new Set());
 
   function toggleColCollapse(key: VisualColumn) {
     setCollapsedCols((prev) => {
@@ -163,7 +163,7 @@ function ValidacionBoard() {
     });
   }
 
-  /* ── Pending DnD inválido confirm ── */
+  /* ── Pending DnD invalido confirm ── */
   const [confirmDndInvalido, setConfirmDndInvalido] = useState<null | {
     item: ValidationItem;
     fromCol: VisualColumn;
@@ -189,13 +189,11 @@ function ValidacionBoard() {
   /* ── Fetch ── */
   const fetchData = useCallback(async () => {
     if (!campaignId) return;
-    console.log("[fetchData] full reload triggered");
     const [itemsRes, statsRes] = await Promise.all([
       listValidations(campaignId, undefined, 1, PAGE_LIMIT),
       getValidationStats(campaignId),
     ]);
     if (itemsRes.ok && itemsRes.data) {
-      console.log("[fetchData] loaded", itemsRes.data.items.length, "items, total:", itemsRes.data.total);
       setItems(itemsRes.data.items);
       setTotalRecords(itemsRes.data.total);
       setCurrentPage(1);
@@ -210,20 +208,11 @@ function ValidacionBoard() {
     if (!campaignId || loadingMore || !hasMore) return;
     setLoadingMore(true);
     const nextPage = currentPage + 1;
-    console.log("[fetchMore] loading page", nextPage);
     const res = await listValidations(campaignId, undefined, nextPage, PAGE_LIMIT);
     if (res.ok && res.data) {
       setItems((prev) => {
         const existingIds = new Set(prev.map((i) => i.id));
         const newItems = res.data!.items.filter((i) => !existingIds.has(i.id));
-        // Check if any returned items have different status than what we already have
-        for (const returnedItem of res.data!.items) {
-          const existing = prev.find((i) => i.id === returnedItem.id);
-          if (existing && (existing.status !== returnedItem.status || existing.vote_class !== returnedItem.vote_class)) {
-            console.log("[fetchMore] STALE DATA from page", nextPage, "— item", returnedItem.id.slice(0, 8), "local:", existing.status, existing.vote_class, "server:", returnedItem.status, returnedItem.vote_class);
-          }
-        }
-        console.log("[fetchMore] page", nextPage, "added", newItems.length, "new items");
         return [...prev, ...newItems];
       });
       setTotalRecords(res.data.total);
@@ -234,19 +223,41 @@ function ValidacionBoard() {
 
   /* ── DnD sensors ── */
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 10 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
     useSensor(KeyboardSensor),
   );
+
+  /* ── Resolve which column an item/droppable belongs to ── */
+  const findColumnForId = useCallback((id: string | number): VisualColumn | null => {
+    const colKey = COLUMNS.find((c) => c.key === id)?.key;
+    if (colKey) return colKey;
+    // It's a card ID — find which column it's in
+    const item = items.find((i) => i.id === id);
+    if (!item) return null;
+    const st = item.status === ("validado" as string) ? "respondido" : item.status;
+    return toVisualColumn(st, item.vote_class);
+  }, [items]);
 
   /* ── DnD handlers ── */
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const data = event.active.data.current as { item: ValidationItem; column: VisualColumn } | undefined;
-    if (data) { setActiveItem(data.item); setActiveColumn(data.column); }
+    if (data) {
+      setActiveItem(data.item);
+      setActiveColumn(data.column);
+    }
   }, []);
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
-    setOverColumn(event.over?.id as VisualColumn | null);
-  }, []);
+    if (!event.over) {
+      setOverColumn(null);
+      return;
+    }
+    // The over target could be a column or a card inside a column
+    const overId = event.over.id as string;
+    const col = findColumnForId(overId);
+    setOverColumn(col);
+  }, [findColumnForId]);
 
   const executeDrop = useCallback(async (
     item: ValidationItem,
@@ -257,9 +268,14 @@ function ValidacionBoard() {
     const voteClass = voteClassForColumn(targetCol);
 
     setUpdatingId(item.id);
+    pendingUpdateIds.current.add(item.id);
 
     // Optimistic update
-    setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, status: newStatus as any, vote_class: voteClass ?? "" } : i));
+    setItems((prev) => prev.map((i) =>
+      i.id === item.id
+        ? { ...i, status: newStatus as ValidationItem["status"], vote_class: voteClass ?? "" }
+        : i
+    ));
 
     if (fromCol === "pendiente" && targetCol === "contactado") {
       await claimValidation(item.id, campaignId);
@@ -274,60 +290,67 @@ function ValidacionBoard() {
       newStatus as Parameters<typeof updateValidationStatus>[2],
       voteClass,
     );
-    console.log("[executeDrop] PUT response:", JSON.stringify({ ok: res.ok, status: res.status, data: res.data, error: res.error }));
+
     if (res.ok && res.data) {
-      const returnedItem = res.data.item;
-      console.log("[executeDrop] returned item status:", returnedItem?.status, "vote_class:", returnedItem?.vote_class, "visual:", returnedItem ? toVisualColumn(returnedItem.status, returnedItem.vote_class) : "N/A");
-      setItems((prev) => {
-        const updated = prev.map((i) => i.id === item.id ? { ...i, ...returnedItem } : i);
-        const found = updated.find((i) => i.id === item.id);
-        console.log("[executeDrop] after merge — status:", found?.status, "vote_class:", found?.vote_class, "visual:", found ? toVisualColumn(found.status, found.vote_class) : "N/A");
-        return updated;
-      });
+      // Apply server response
+      setItems((prev) => prev.map((i) =>
+        i.id === item.id ? { ...i, ...res.data!.item } : i
+      ));
       const statsRes = await getValidationStats(campaignId);
       if (statsRes.ok && statsRes.data) setStats(statsRes.data.stats);
       toast(`Movido a ${COLUMNS.find((c) => c.key === targetCol)?.label ?? targetCol}`, "success");
     } else {
-      console.log("[executeDrop] FAILED — reverting. Error:", res.error);
       // Revert on failure
-      setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, status: item.status, vote_class: item.vote_class } : i));
+      setItems((prev) => prev.map((i) =>
+        i.id === item.id
+          ? { ...i, status: item.status, vote_class: item.vote_class }
+          : i
+      ));
       toast("Error al mover la tarjeta", "error");
     }
+
+    pendingUpdateIds.current.delete(item.id);
     setUpdatingId(null);
   }, [campaignId, toast]);
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    const dragItem = activeItem;
+    const dragFromCol = activeColumn;
+
     setActiveItem(null);
     setActiveColumn(null);
     setOverColumn(null);
 
-    const data = event.active.data.current as { item: ValidationItem; column: VisualColumn } | undefined;
-    const targetCol = event.over?.id as VisualColumn | undefined;
-    if (!data || !targetCol || data.column === targetCol) return;
+    if (!dragItem || !dragFromCol) return;
 
-    const allowed = getAllowedTargets(data.column);
+    const overId = event.over?.id as string | undefined;
+    if (!overId) return;
+
+    // Determine target column
+    const targetCol = findColumnForId(overId);
+    if (!targetCol || targetCol === dragFromCol) return;
+
+    const allowed = getAllowedTargets(dragFromCol);
     if (!allowed.includes(targetCol)) return;
 
     // Confirm before moving to imposible
     if (targetCol === "imposible") {
-      setConfirmDndInvalido({ item: data.item, fromCol: data.column, targetCol });
+      setConfirmDndInvalido({ item: dragItem, fromCol: dragFromCol, targetCol });
       return;
     }
 
-    await executeDrop(data.item, data.column, targetCol);
-  }, [executeDrop]);
+    await executeDrop(dragItem, dragFromCol, targetCol);
+  }, [activeItem, activeColumn, findColumnForId, executeDrop]);
 
   /* ── WhatsApp click ── */
   const handleWhatsAppClick = useCallback(async (item: ValidationItem) => {
     if (item.status !== "pendiente") return;
     setUpdatingId(item.id);
-    // Optimistic update
     setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, status: "contactado" } : i));
     setStats((prev) => ({ ...prev, pendiente: Math.max(0, prev.pendiente - 1), contactado: prev.contactado + 1 }));
     await claimValidation(item.id, campaignId);
     const res = await updateValidationStatus(item.id, campaignId, "contactado");
     if (!res.ok) {
-      // Revert on failure
       setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, status: "pendiente" } : i));
       setStats((prev) => ({ ...prev, pendiente: prev.pendiente + 1, contactado: Math.max(0, prev.contactado - 1) }));
       toast("Error al contactar", "error");
@@ -342,13 +365,14 @@ function ValidacionBoard() {
   ) => {
     setUpdatingId(item.id);
     if (action.type === "status") {
-      // Convert visual status → backend status (e.g. "imposible" → "invalido")
       const backendStatus = toBackendStatus(action.status as VisualColumn) as Parameters<typeof updateValidationStatus>[2];
-      // Derive vote_class from target visual column
       const voteClass = voteClassForColumn(action.status as VisualColumn);
 
-      // Optimistic update
-      setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, status: backendStatus as any, vote_class: voteClass ?? i.vote_class } : i));
+      setItems((prev) => prev.map((i) =>
+        i.id === item.id
+          ? { ...i, status: backendStatus as ValidationItem["status"], vote_class: voteClass ?? i.vote_class }
+          : i
+      ));
 
       const res = await updateValidationStatus(item.id, campaignId, backendStatus, voteClass);
       if (res.ok && res.data) {
@@ -356,8 +380,11 @@ function ValidacionBoard() {
         const statsRes = await getValidationStats(campaignId);
         if (statsRes.ok && statsRes.data) setStats(statsRes.data.stats);
       } else {
-        // Revert on failure
-        setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, status: item.status, vote_class: item.vote_class } : i));
+        setItems((prev) => prev.map((i) =>
+          i.id === item.id
+            ? { ...i, status: item.status, vote_class: item.vote_class }
+            : i
+        ));
         toast("Error al actualizar estado", "error");
       }
     }
@@ -382,23 +409,23 @@ function ValidacionBoard() {
   const blockedCols = useMemo((): Set<VisualColumn> => {
     if (!activeColumn) return new Set();
     const allowed = new Set(getAllowedTargets(activeColumn));
-    allowed.add(activeColumn); // own column never blocked
+    allowed.add(activeColumn);
     return new Set(COLUMNS.map((c) => c.key).filter((k) => !allowed.has(k as VisualColumn))) as Set<VisualColumn>;
   }, [activeColumn]);
 
   const totalItems = items.length;
   const processed = stats.contactado + stats.respondido + stats.invalido;
 
-  if (!campaign) return <div className="flex items-center justify-center h-64 text-slate-400">{"Campaña no encontrada"}</div>;
+  if (!campaign) return <div className="flex items-center justify-center h-64 text-slate-400">Campana no encontrada</div>;
 
   return (
     <>
       {/* DnD Imposible confirm */}
       <ConfirmModal
         open={confirmDndInvalido !== null}
-        title="¿Mover a Imposible?"
-        description="Esta tarjeta pasará a la columna Imposible. Puedes devolverla a pendiente después."
-        confirmLabel="Sí, mover a Imposible"
+        title="Mover a Imposible?"
+        description="Esta tarjeta pasara a la columna Imposible. Puedes devolverla a pendiente despues."
+        confirmLabel="Si, mover a Imposible"
         onConfirm={async () => {
           if (!confirmDndInvalido) return;
           setConfirmDndInvalido(null);
@@ -411,7 +438,7 @@ function ValidacionBoard() {
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-3 bg-white border-b border-slate-200 shrink-0 flex-wrap gap-y-2">
           <div className="flex-1 min-w-0">
-            <h1 className="text-base font-bold text-slate-800">{"Validación de Datos"}</h1>
+            <h1 className="text-base font-bold text-slate-800">Validacion de Datos</h1>
             <p className="text-[11px] text-slate-400 mt-0.5">Arrastra las tarjetas entre columnas para clasificar</p>
           </div>
 
@@ -485,7 +512,7 @@ function ValidacionBoard() {
               type="button"
               onClick={() => setStatsOpen((v: boolean) => !v)}
               className="text-xs text-slate-400 font-medium hover:text-slate-600 transition-colors border-none bg-transparent cursor-pointer tabular-nums"
-              title="Ver estadísticas detalladas"
+              title="Ver estadisticas detalladas"
             >
               {totalRecords > 0 ? `${Math.round((processed / totalRecords) * 100)}%` : "0%"}
             </button>
@@ -495,7 +522,7 @@ function ValidacionBoard() {
           </div>
         </div>
 
-        {/* ── Stats mini‑bar ── */}
+        {/* Stats mini-bar */}
         {!loading && (
           <div className="flex items-center gap-4 px-4 py-1.5 border-b border-slate-100 bg-white text-[11px] shrink-0">
             {COLUMNS.map((col) => (
@@ -520,8 +547,19 @@ function ValidacionBoard() {
             <span className="text-sm text-slate-400 font-medium">Cargando datos...</span>
           </div>
         ) : (
-          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
-            <div className="flex-1 flex gap-3 px-4 py-3 overflow-x-auto min-h-0" onClick={() => setStatsOpen(false)}>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+          >
+            <div
+              className="flex-1 flex gap-3 px-4 py-3 overflow-x-auto min-h-0"
+              onClick={() => setStatsOpen(false)}
+              onKeyDown={(e) => { if (e.key === "Escape") setStatsOpen(false); }}
+              role="presentation"
+            >
               {COLUMNS.map((col) => (
                 <DroppableColumn
                   key={col.key}
@@ -550,8 +588,16 @@ function ValidacionBoard() {
                 />
               ))}
             </div>
-            <DragOverlay dropAnimation={null}>
-              {activeItem ? <DragOverlayCard item={activeItem} /> : null}
+
+            <DragOverlay
+              dropAnimation={{
+                duration: 200,
+                easing: "cubic-bezier(0.18, 0.67, 0.6, 1.22)",
+              }}
+            >
+              {activeItem ? (
+                <DragOverlayCard item={activeItem} targetColumn={overColumn} />
+              ) : null}
             </DragOverlay>
           </DndContext>
         )}
