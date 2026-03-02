@@ -22,12 +22,13 @@ import {
   type ValidationStats,
   getValidationStats,
 } from "@/lib/services/validacion";
+import { ConfirmModal } from "./_components/confirm-modal";
 import {
   COLUMNS,
   SearchIcon,
   toVisualColumn,
   toBackendStatus,
-  defaultTagsForColumn,
+  voteClassForColumn,
   getAllowedTargets,
   type VisualColumn,
 } from "./_components";
@@ -35,8 +36,6 @@ import { DroppableColumn } from "./_components/droppable-column";
 import { DraggableCard } from "./_components/draggable-card";
 import { DragOverlayCard } from "./_components/drag-overlay-card";
 import { ToastProvider, useToast } from "./_components/toast";
-import { ConfirmModal } from "./_components/confirm-modal";
-import { ClassifyModal } from "./_components/classify-modal";
 
 /* ── Pagination config ── */
 const PAGE_LIMIT = 100;
@@ -153,14 +152,8 @@ function ValidacionBoard() {
   const [activeColumn, setActiveColumn] = useState<VisualColumn | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
   const [compact, setCompact] = useState(false);
-  const [collapsedCols, setCollapsedCols] = useState<Set<VisualColumn>>(new Set(["invalido"]));
+  const [collapsedCols, setCollapsedCols] = useState<Set<VisualColumn>>(new Set(["imposible"]));
 
-  /* ── Pending classify-on-drag (contactado → score column) ── */
-  const [pendingClassify, setPendingClassify] = useState<null | {
-    item: ValidationItem;
-    fromCol: VisualColumn;
-    targetCol: VisualColumn;
-  }>(null);
 
   function toggleColCollapse(key: VisualColumn) {
     setCollapsedCols((prev) => {
@@ -250,7 +243,7 @@ function ValidacionBoard() {
     targetCol: VisualColumn,
   ) => {
     const newStatus = toBackendStatus(targetCol);
-    const tags = defaultTagsForColumn(targetCol);
+    const voteClass = voteClassForColumn(targetCol);
 
     setUpdatingId(item.id);
     if (fromCol === "pendiente" && targetCol === "contactado") {
@@ -264,8 +257,8 @@ function ValidacionBoard() {
     const res = await updateValidationStatus(
       item.id, campaignId,
       newStatus as Parameters<typeof updateValidationStatus>[2],
+      voteClass,
       undefined,
-      tags.length > 0 ? tags : undefined,
     );
     if (res.ok && res.data) {
       setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, ...res.data!.item } : i));
@@ -290,16 +283,9 @@ function ValidacionBoard() {
     const allowed = getAllowedTargets(data.column);
     if (!allowed.includes(targetCol)) return;
 
-    // Confirm before moving to invalido
-    if (targetCol === "invalido") {
+    // Confirm before moving to imposible
+    if (targetCol === "imposible") {
       setConfirmDndInvalido({ item: data.item, fromCol: data.column, targetCol });
-      return;
-    }
-
-    // Intercept drag from contactado → score columns to classify
-    const scoreColumns: VisualColumn[] = ["respondido", "voto_blando", "voto_duro"];
-    if (data.column === "contactado" && scoreColumns.includes(targetCol)) {
-      setPendingClassify({ item: data.item, fromCol: data.column, targetCol });
       return;
     }
 
@@ -351,15 +337,22 @@ function ValidacionBoard() {
     setUpdatingId(null);
   }, [campaignId, toast]);
 
-  /* ── Group by visual column ── */
+  /* ── Group by visual column ──
+     respondido shows ALL answered contacts regardless of vote sub-class.
+     Sub-classification columns (voto_blando, voto_duro, voto_flotante) are ALSO shown there. */
   const grouped = useMemo(() => {
     const groups: Record<VisualColumn, ValidationItem[]> = {
-      pendiente: [], contactado: [], respondido: [], voto_blando: [], voto_duro: [], invalido: [],
+      pendiente: [], contactado: [], respondido: [],
+      voto_blando: [], voto_duro: [], voto_flotante: [], imposible: [],
     };
     for (const item of filteredItems) {
       const st = item.status === ("validado" as string) ? "respondido" : item.status;
       const col = toVisualColumn(st, item.vote_class);
       groups[col]?.push(item);
+      // Mirror sub-classified items into the respondido column
+      if (col === "voto_blando" || col === "voto_duro" || col === "voto_flotante") {
+        groups.respondido.push(item);
+      }
     }
     return groups;
   }, [filteredItems]);
@@ -379,30 +372,16 @@ function ValidacionBoard() {
 
   return (
     <>
-      {/* Classify-on-drag modal (contactado → score columns) */}
-      {pendingClassify && (
-        <ClassifyModal
-          item={pendingClassify.item}
-          targetCol={pendingClassify.targetCol}
-          onConfirm={async (tags, resolvedCol) => {
-            const pending = pendingClassify;
-            setPendingClassify(null);
-            await executeDrop({ ...pending.item, tags }, pending.fromCol, resolvedCol);
-          }}
-          onCancel={() => setPendingClassify(null)}
-        />
-      )}
-
-      {/* DnD Inválido confirm */}
+      {/* DnD Imposible confirm */}
       <ConfirmModal
         open={confirmDndInvalido !== null}
-        title="¿Mover a Inválido?"
-        description="Esta tarjeta pasará a la columna Inválido. Puedes devolverla a pendiente después."
-        confirmLabel="Sí, mover a Inválido"
+        title="¿Mover a Imposible?"
+        description="Esta tarjeta pasará a la columna Imposible. Puedes devolverla a pendiente después."
+        confirmLabel="Sí, mover a Imposible"
         onConfirm={async () => {
           if (!confirmDndInvalido) return;
           setConfirmDndInvalido(null);
-          await executeDrop(confirmDndInvalido.item, confirmDndInvalido.fromCol, "invalido");
+          await executeDrop(confirmDndInvalido.item, confirmDndInvalido.fromCol, "imposible");
         }}
         onCancel={() => setConfirmDndInvalido(null)}
       />

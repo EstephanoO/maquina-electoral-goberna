@@ -9,7 +9,7 @@ export {
   SearchIcon,
   toVisualColumn,
   toBackendStatus,
-  defaultTagsForColumn,
+  voteClassForColumn,
   getAllowedTargets,
   type VisualColumn,
   type ColumnDef,

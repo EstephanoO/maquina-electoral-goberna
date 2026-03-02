@@ -29,7 +29,7 @@ const FLOW_HINTS: Partial<Record<VisualColumn, string>> = {
   respondido: "Arrastra desde Contactado cuando respondan",
   voto_blando: "Arrastra desde Respondido cuando califiquen",
   voto_duro: "Arrastra desde Respondido — votos seguros",
-  invalido: "Arrastra contactos que no pudieron verificarse",
+  imposible: "Arrastra contactos que no pudieron verificarse",
 };
 
 export function DroppableColumn({
@@ -124,7 +124,7 @@ export function DroppableColumn({
   }
 
   /* ── Auto-collapse empty columns (except pendiente/invalido) ── */
-  if (count === 0 && !isOver && col.key !== "pendiente" && col.key !== "invalido") {
+  if (count === 0 && !isOver && col.key !== "pendiente" && col.key !== "imposible") {
     return (
       <div
         ref={setNodeRef}

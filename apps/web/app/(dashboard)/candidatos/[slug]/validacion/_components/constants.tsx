@@ -5,10 +5,11 @@ import type { ReactNode } from "react";
 export type VisualColumn =
   | "pendiente"
   | "contactado"
-  | "respondido"   // tibio / unscored respondido
+  | "respondido"    // shows ALL who responded (regardless of vote sub-class)
   | "voto_blando"
   | "voto_duro"
-  | "invalido";
+  | "voto_flotante" // NEW: floating/undecided vote
+  | "imposible";    // replaces "invalido"
 
 export type ColumnDef = {
   key: VisualColumn;
@@ -19,60 +20,80 @@ export type ColumnDef = {
 };
 
 export const COLUMNS: ColumnDef[] = [
-  { key: "pendiente",   label: "Pendiente",   accent: "#64748b", bg: "#f8fafc", icon: ClockIcon },
-  { key: "contactado",  label: "Contactado",  accent: "#2563eb", bg: "#eff6ff", icon: SendIcon },
-  { key: "respondido",  label: "Respondido",  accent: "#0891b2", bg: "#ecfeff", icon: ChatIcon },
+  { key: "pendiente", label: "Pendiente", accent: "#64748b", bg: "#f8fafc", icon: ClockIcon },
+  { key: "contactado", label: "Contactado", accent: "#2563eb", bg: "#eff6ff", icon: SendIcon },
+  { key: "respondido", label: "Respondido", accent: "#0891b2", bg: "#ecfeff", icon: ChatIcon },
   { key: "voto_blando", label: "Voto Blando", accent: "#ca8a04", bg: "#fefce8", icon: StarHalfIcon },
-  { key: "voto_duro",   label: "Voto Duro",   accent: "#15803d", bg: "#f0fdf4", icon: StarIcon },
-  { key: "invalido",    label: "Inválido",    accent: "#dc2626", bg: "#fef2f2", icon: BanIcon },
+  { key: "voto_duro", label: "Voto Duro", accent: "#15803d", bg: "#f0fdf4", icon: StarIcon },
+  { key: "voto_flotante", label: "Voto Flotante", accent: "#7c3aed", bg: "#f5f3ff", icon: WaveIcon },
+  { key: "imposible", label: "Imposible", accent: "#dc2626", bg: "#fef2f2", icon: BanIcon },
 ];
 
 /* ─── Mapping helpers ─── */
 
 /** Map a backend item (status + vote_class) to a visual column */
 export function toVisualColumn(status: string, voteClass: string): VisualColumn {
-  if (status === "invalido") return "invalido";
+  if (status === "invalido" || status === "imposible") return "imposible";
   if (status === "pendiente") return "pendiente";
   if (status === "contactado") return "contactado";
-  // respondido or validado
+  // respondido / validado — sub-classify by vote_class
   if (voteClass === "duro") return "voto_duro";
   if (voteClass === "blando") return "voto_blando";
+  if (voteClass === "flotante") return "voto_flotante";
   return "respondido";
 }
 
-/** Map a visual column back to backend status */
+/** Map a visual column back to backend status + vote_class */
 export function toBackendStatus(col: VisualColumn): string {
-  if (col === "voto_blando" || col === "voto_duro" || col === "respondido") return "respondido";
+  if (col === "voto_blando" || col === "voto_duro" || col === "voto_flotante" || col === "respondido")
+    return "respondido";
+  if (col === "imposible") return "invalido"; // keep backend compat
   return col;
 }
 
-/** Default tags when dropping into a vote column */
-export function defaultTagsForColumn(col: VisualColumn): string[] {
-  if (col === "voto_duro") return ["respondio", "amable", "conoce_candidato", "interesado", "voto_seguro"];
-  if (col === "voto_blando") return ["respondio", "amable"];
-  if (col === "respondido") return ["respondio"];
+/** vote_class to send when dropping into a vote column */
+export function voteClassForColumn(col: VisualColumn): string | undefined {
+  if (col === "voto_duro") return "duro";
+  if (col === "voto_blando") return "blando";
+  if (col === "voto_flotante") return "flotante";
+  if (col === "respondido") return "tibio";
+  return undefined;
+}
+
+/** Default tags when dropping – now empty (no scoring) */
+export function defaultTagsForColumn(_col: VisualColumn): string[] {
   return [];
 }
 
 /* ─── Vote badges ─── */
 
 export const VOTE_BADGES: Record<string, { label: string; color: string; bg: string }> = {
-  duro:   { label: "VOTO DURO",   color: "#15803d", bg: "#dcfce7" },
+  duro: { label: "VOTO DURO", color: "#15803d", bg: "#dcfce7" },
   blando: { label: "VOTO BLANDO", color: "#ca8a04", bg: "#fef9c3" },
-  tibio:  { label: "TIBIO",       color: "#64748b", bg: "#f1f5f9" },
+  flotante: { label: "VOTO FLOTANTE", color: "#7c3aed", bg: "#ede9fe" },
+  tibio: { label: "TIBIO", color: "#64748b", bg: "#f1f5f9" },
 };
 
 /* ─── Allowed drop targets per column ─── */
 
 export function getAllowedTargets(from: VisualColumn): VisualColumn[] {
   switch (from) {
-    case "pendiente":   return ["contactado", "invalido"];
-    case "contactado":  return ["respondido", "voto_blando", "voto_duro", "invalido"];
-    case "respondido":  return ["voto_blando", "voto_duro", "invalido", "contactado"];
-    case "voto_blando": return ["voto_duro", "respondido", "invalido"];
-    case "voto_duro":   return ["voto_blando", "respondido", "invalido"];
-    case "invalido":    return ["pendiente"];
-    default:            return [];
+    case "pendiente":
+      return ["contactado", "imposible"];
+    case "contactado":
+      return ["respondido", "voto_blando", "voto_duro", "voto_flotante", "imposible"];
+    case "respondido":
+      return ["voto_blando", "voto_duro", "voto_flotante", "imposible", "contactado"];
+    case "voto_blando":
+      return ["voto_duro", "voto_flotante", "respondido", "imposible"];
+    case "voto_duro":
+      return ["voto_blando", "voto_flotante", "respondido", "imposible"];
+    case "voto_flotante":
+      return ["voto_blando", "voto_duro", "respondido", "imposible"];
+    case "imposible":
+      return ["pendiente"];
+    default:
+      return [];
   }
 }
 
@@ -96,6 +117,10 @@ export function StarHalfIcon() {
 
 export function StarIcon() {
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" /></svg>;
+}
+
+export function WaveIcon() {
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2 12c1.5-2 3-3 4.5-3s3 1 4.5 3 3 3 4.5 3 3-1 4.5-3" /></svg>;
 }
 
 export function BanIcon() {

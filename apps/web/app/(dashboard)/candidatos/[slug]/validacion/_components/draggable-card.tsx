@@ -83,11 +83,7 @@ function UserIcon() {
 
 type CardAction = {
   type: "status";
-  status: "contactado" | "respondido" | "invalido" | "pendiente";
-  tags?: string[];
-} | {
-  type: "tags";
-  tags: string[];
+  status: "contactado" | "respondido" | "imposible" | "pendiente";
 };
 
 /* ─── Score bar ─── */
@@ -139,10 +135,7 @@ export function DraggableCard({
   });
 
   const { toast } = useToast();
-  const [tagsOpen, setTagsOpen] = useState(false);
-  const [respondioOpen, setRespondioOpen] = useState(false);
-  const [localTags, setLocalTags] = useState<string[]>(item.tags ?? []);
-  const [confirmInvalido, setConfirmInvalido] = useState(false);
+  const [confirmImposible, setConfirmImposible] = useState(false);
   const [pendingAction, setPendingAction] = useState<CardAction | null>(null);
 
   const style = {
@@ -155,49 +148,19 @@ export function DraggableCard({
   const link = waLink(item.telefono, item.nombre);
   const isPendiente = column === "pendiente";
   const isContactado = column === "contactado";
-  const isRespondido = column === "respondido" || column === "voto_blando" || column === "voto_duro";
-  const isInvalido = column === "invalido";
+  const isRespondido = column === "respondido" || column === "voto_blando" || column === "voto_duro" || column === "voto_flotante";
+  const isImposible = column === "imposible";
   const voteBadge = isRespondido && item.vote_class ? VOTE_BADGES[item.vote_class] : null;
 
-  /* ── Tags ── */
-  const currentTags = item.tags ?? [];
-
-  function handleTagToggle(tagKey: string) {
-    const next = currentTags.includes(tagKey)
-      ? currentTags.filter((t) => t !== tagKey)
-      : [...currentTags, tagKey];
-    onAction(item, { type: "tags", tags: next });
-  }
-
-  // Local tag toggle (for inline classification panel, not persisted until Confirmar)
-  function handleLocalTagToggle(tagKey: string) {
-    setLocalTags((prev) =>
-      prev.includes(tagKey) ? prev.filter((t) => t !== tagKey) : [...prev, tagKey]
-    );
-  }
-
-  async function confirmRespondio() {
-    await onAction(item, { type: "status", status: "respondido", tags: localTags });
-    toast("Marcado como respondido", "success");
-    setRespondioOpen(false);
-  }
-
-  /* ── Score ── */
-  const liveScore = computeScore(localTags.length > 0 && respondioOpen ? localTags : currentTags);
-  const liveClass = classifyVote(liveScore);
-  const liveLabel = liveClass === "duro" ? "VOTO DURO" : liveClass === "blando" ? "VOTO BLANDO" : "TIBIO";
-
-  /* ── Confirm before inválido ── */
-  function requestInvalido(action: CardAction) {
+  /* ── Confirm before imposible ── */
+  function requestImposible(action: CardAction) {
     setPendingAction(action);
-    setConfirmInvalido(true);
+    setConfirmImposible(true);
   }
 
-  async function confirmInvalidoAction() {
-    setConfirmInvalido(false);
-    if (!pendingAction) return;
-    await onAction(item, pendingAction);
-    toast("Marcado como inválido", "error");
+  async function confirmImposibleAction() {
+    if (pendingAction) await onAction(item, pendingAction);
+    setConfirmImposible(false);
     setPendingAction(null);
   }
 
@@ -209,12 +172,12 @@ export function DraggableCard({
   return (
     <>
       <ConfirmModal
-        open={confirmInvalido}
-        title="¿Marcar como inválido?"
-        description="Esta tarjeta pasará a la columna Inválido. Puedes devolverla a pendiente después."
-        confirmLabel="Sí, marcar inválido"
-        onConfirm={confirmInvalidoAction}
-        onCancel={() => { setConfirmInvalido(false); setPendingAction(null); }}
+        open={confirmImposible}
+        title="¿Marcar como Imposible?"
+        description="Esta tarjeta pasará a la columna Imposible. Puedes devolverla a pendiente después."
+        confirmLabel="Sí, marcar como Imposible"
+        onConfirm={confirmImposibleAction}
+        onCancel={() => { setConfirmImposible(false); setPendingAction(null); }}
       />
 
       <div
@@ -307,151 +270,50 @@ export function DraggableCard({
           </div>
         )}
 
-        {/* ── Active tags (always visible) ── */}
-        {!compact && (isContactado || isRespondido) && currentTags.length > 0 && !tagsOpen && (
-          <div className="flex flex-wrap gap-1 mt-1.5">
-            {currentTags.map((tagKey) => {
-              const tagDef = SCORING_TAGS.find((t) => t.key === tagKey);
-              return tagDef ? (
-                <span
-                  key={tagKey}
-                  className="text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700"
-                >
-                  {tagDef.label}
-                </span>
-              ) : null;
-            })}
-          </div>
-        )}
-
-
-
-        {/* ── Tag scoring panel (respondido, editable) ── */}
-        {!compact && isRespondido && (
-          <div className="mt-2">
-            <button
-              type="button"
-              onClick={() => setTagsOpen(!tagsOpen)}
-              className="flex items-center gap-1.5 w-full text-left px-1.5 py-1 rounded-md hover:bg-slate-50 transition-colors cursor-pointer border-none bg-transparent"
-            >
-              <ChevronDownIcon open={tagsOpen} />
-              <span className="text-[10px] font-bold text-slate-500">
-                {tagsOpen ? "Cerrar puntaje" : "Editar puntaje"}
-              </span>
-            </button>
-            {tagsOpen && (
-              <div className="flex flex-wrap gap-1 mt-1.5 px-1">
-                {SCORING_TAGS.map((tag) => {
-                  const active = currentTags.includes(tag.key);
-                  return (
-                    <button
-                      key={tag.key}
-                      type="button"
-                      onClick={() => handleTagToggle(tag.key)}
-                      disabled={isUpdating}
-                      className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border transition-all cursor-pointer disabled:opacity-40 ${active
-                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                          : "bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100 hover:text-slate-600"
-                        }`}
-                    >
-                      {tag.label} <span className="font-black">+{tag.points}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
         {/* ── Action buttons ── */}
         {!compact && (
           <>
-            {/* CONTACTADO: Respondió (big) + X inválido (small), + inline classification */}
-            {isContactado && !respondioOpen && (
+            {/* CONTACTADO: Respondió (big) + X imposible (small) */}
+            {isContactado && (
               <div className="flex items-center gap-2 mt-3 pt-2.5 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => { setLocalTags(currentTags); setRespondioOpen(true); }}
+                  onClick={() => { onAction(item, { type: "status", status: "respondido" }); toast("Marcado como respondido", "success"); }}
                   disabled={isUpdating}
-                  className="flex-1 py-2 rounded-lg border border-emerald-300 bg-white text-emerald-600 text-[12px] font-bold hover:bg-emerald-50 transition-colors cursor-pointer disabled:opacity-40"
+                  className="flex-1 py-1.5 rounded-lg border border-emerald-300 bg-white text-emerald-600 text-[11px] font-bold hover:bg-emerald-50 transition-colors cursor-pointer disabled:opacity-40"
                 >
                   Respondió
                 </button>
                 <button
                   type="button"
-                  onClick={() => requestInvalido({ type: "status", status: "invalido" })}
+                  onClick={() => requestImposible({ type: "status", status: "imposible" })}
                   disabled={isUpdating}
-                  className="w-9 h-9 flex items-center justify-center rounded-lg border border-red-200 bg-white text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer disabled:opacity-40"
-                  title="Marcar como inválido"
-                  aria-label="Inválido"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-red-200 bg-white text-red-500 hover:bg-red-50 hover:text-red-700 transition-colors cursor-pointer disabled:opacity-40"
+                  title="Marcar como imposible"
+                  aria-label="Imposible"
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                  <BanIcon />
                 </button>
               </div>
             )}
 
-            {/* Inline classification panel (open after clicking Respondió) */}
-            {isContactado && respondioOpen && (
-              <div className="mt-3 pt-2.5 border-t border-slate-100">
-                <p className="text-[9px] font-black text-slate-400 tracking-widest mb-2">CLASIFICAR RESPUESTA</p>
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {SCORING_TAGS.map((tag) => {
-                    const active = localTags.includes(tag.key);
-                    return (
-                      <button
-                        key={tag.key}
-                        type="button"
-                        onClick={() => handleLocalTagToggle(tag.key)}
-                        className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border transition-all cursor-pointer ${active
-                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                            : "bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100"
-                          }`}
-                      >
-                        {tag.label} <span className="font-black">+{tag.points}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="text-[10px] font-bold text-slate-500 mb-2">
-                  Score: {liveScore} <span className="text-slate-700">{liveLabel}</span>
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={confirmRespondio}
-                    disabled={isUpdating}
-                    className="flex-1 py-1.5 rounded-lg bg-emerald-500 text-white text-[11px] font-bold hover:bg-emerald-600 transition-colors cursor-pointer disabled:opacity-40 border-none"
-                  >
-                    Confirmar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRespondioOpen(false)}
-                    className="flex-1 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-semibold hover:bg-slate-200 transition-colors cursor-pointer border-none"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* RESPONDIDO: inválido button */}
+            {/* RESPONDIDO: imposible button */}
             {isRespondido && (
               <div className="mt-2">
                 <button
                   type="button"
-                  onClick={() => requestInvalido({ type: "status", status: "invalido" })}
+                  onClick={() => requestImposible({ type: "status", status: "imposible" })}
                   disabled={isUpdating}
                   className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-50 text-red-600 text-[10px] font-bold hover:bg-red-100 transition-colors cursor-pointer border-none disabled:opacity-40"
                 >
                   <BanIcon />
-                  Inválido
+                  Imposible
                 </button>
               </div>
             )}
 
-            {/* INVÁLIDO: reabrir */}
-            {isInvalido && (
+            {/* IMPOSIBLE: reabrir */}
+            {isImposible && (
               <div className="mt-3 pt-2.5 border-t border-slate-100">
                 <button
                   type="button"
