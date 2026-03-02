@@ -152,7 +152,7 @@ function ValidacionBoard() {
   const [activeColumn, setActiveColumn] = useState<VisualColumn | null>(null);
   const [statsOpen, setStatsOpen] = useState(false);
   const [compact, setCompact] = useState(false);
-  const [collapsedCols, setCollapsedCols] = useState<Set<VisualColumn>>(new Set());
+  const [collapsedCols, setCollapsedCols] = useState<Set<VisualColumn>>(new Set(["invalido"]));
 
   function toggleColCollapse(key: VisualColumn) {
     setCollapsedCols((prev) => {
