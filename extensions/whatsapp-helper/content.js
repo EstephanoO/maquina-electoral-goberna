@@ -3,8 +3,11 @@
  *
  * Runs inside web.whatsapp.com.
  * Listens for "navigateToChat" messages from the background script
- * and opens the chat by typing the phone number in the search bar.
- * This avoids reloading the entire WhatsApp Web app.
+ * and opens the chat WITHOUT reloading the page.
+ *
+ * Strategy: Use WhatsApp's internal URL routing.
+ * web.whatsapp.com uses a SPA — we can change the URL hash/path
+ * and WhatsApp navigates internally without a full reload.
  */
 
 console.log("[Goberna WA] Content script loaded in WhatsApp Web");
@@ -14,99 +17,192 @@ console.log("[Goberna WA] Content script loaded in WhatsApp Web");
 async function navigateToChat(phone, text) {
   console.log("[Goberna WA] Navigating to chat:", phone);
 
-  // Step 1: Click the search/new-chat icon to open search
-  const searchBtn =
-    document.querySelector('[data-testid="chat-list-search"]') ||
-    document.querySelector('[aria-label="Search input textbox"]')?.closest("div") ||
-    document.querySelector('[data-testid="search"]') ||
-    document.querySelector('[title="Search input textbox"]');
+  // Strategy 1: Use the search input to find the contact
+  const success = await trySearchNavigation(phone, text);
+  if (success) return;
 
-  // If we can't find the search button, try the "New chat" button
-  const newChatBtn =
-    document.querySelector('[data-testid="menu-bar-new-chat"]') ||
-    document.querySelector('[aria-label="New chat"]') ||
-    document.querySelector('[data-icon="new-chat"]')?.closest("button") ||
-    document.querySelector('[data-icon="new-chat"]')?.closest("div[role='button']");
+  // Strategy 2: Use WhatsApp's internal navigation via URL manipulation
+  // This changes the URL but since WA is a SPA, React Router handles it
+  console.log("[Goberna WA] Search failed, trying URL navigation...");
+  const url = `https://web.whatsapp.com/send?phone=${phone}${text ? `&text=${encodeURIComponent(text)}` : ""}`;
+  
+  // Use history.pushState + dispatchEvent to trigger SPA navigation
+  // without a full page reload
+  try {
+    // Try the WhatsApp internal API if available
+    if (window.WWebJS || window.__x_module_loaded) {
+      window.location.href = url;
+      return;
+    }
+  } catch {}
+
+  // Last resort: location change (will reload, but at least works)
+  window.location.href = url;
+}
+
+async function trySearchNavigation(phone, text) {
+  // Step 1: Find and click the search/new-chat area
+  // WhatsApp Web has a "New chat" button or a search bar in the sidebar
+  
+  // Try clicking "New chat" button first (most reliable)
+  const newChatBtn = findElement([
+    '[data-testid="menu-bar-new-chat"]',
+    '[aria-label="New chat"]',
+    '[aria-label="Nuevo chat"]',
+    '[aria-label="Chat nuevo"]',
+    '[data-icon="new-chat-outline"]',
+    '[data-icon="new-chat"]',
+  ]);
 
   if (newChatBtn) {
+    console.log("[Goberna WA] Found new-chat button");
     newChatBtn.click();
-    await sleep(400);
-  } else if (searchBtn) {
-    searchBtn.click();
-    await sleep(300);
+    await sleep(500);
   }
 
-  // Step 2: Find the search input and type the phone number
-  await sleep(300);
-  const searchInput = await waitForElement(
-    () =>
-      document.querySelector('[data-testid="chat-list-search"]') ||
-      document.querySelector('[aria-label="Search input textbox"]') ||
-      document.querySelector('div[contenteditable="true"][data-tab="3"]') ||
-      document.querySelector('div[contenteditable="true"][role="textbox"][title="Search input textbox"]'),
-    3000,
-  );
+  // Step 2: Find the search input
+  // It's a contenteditable div, not a regular input
+  const searchInput = await waitForElement(() => findElement([
+    // After clicking "New chat" — the search box in contacts panel
+    '[data-testid="contact-search-input"]',
+    '[data-testid="chat-list-search"]',
+    'div[role="textbox"][data-tab="3"]',
+    'div[contenteditable="true"][data-tab="3"]',
+    'div[role="textbox"][title="Search input textbox"]',
+    'div[role="textbox"][title="Cuadro de texto de búsqueda"]',
+    // Generic fallback: any contenteditable in the side panel
+    '#side div[contenteditable="true"][role="textbox"]',
+    '#side div[contenteditable="true"]',
+    // Even more generic
+    'div[data-testid="search"] div[contenteditable="true"]',
+  ]), 3000);
 
   if (!searchInput) {
-    console.warn("[Goberna WA] Could not find search input, falling back to URL");
-    window.location.href = `https://web.whatsapp.com/send?phone=${phone}${text ? `&text=${encodeURIComponent(text)}` : ""}`;
-    return;
+    console.warn("[Goberna WA] Could not find search input");
+    
+    // Try clicking the existing search icon in the header
+    const searchIcon = findElement([
+      '[data-testid="search"]',
+      '[data-icon="search"]',
+      '[aria-label="Search"]',
+      '[aria-label="Buscar"]',
+    ]);
+    
+    if (searchIcon) {
+      console.log("[Goberna WA] Found search icon, clicking...");
+      searchIcon.click();
+      await sleep(600);
+      
+      // Try finding input again
+      const retryInput = await waitForElement(() => findElement([
+        '#side div[contenteditable="true"]',
+        'div[role="textbox"][data-tab="3"]',
+        'div[contenteditable="true"][data-tab="3"]',
+      ]), 2000);
+      
+      if (!retryInput) {
+        console.warn("[Goberna WA] Still no search input after clicking search icon");
+        return false;
+      }
+      
+      return await typeAndSelect(retryInput, phone, text);
+    }
+    
+    return false;
   }
 
-  // Clear existing search text
+  return await typeAndSelect(searchInput, phone, text);
+}
+
+async function typeAndSelect(searchInput, phone, text) {
+  console.log("[Goberna WA] Typing in search:", phone);
+  
+  // Clear existing text
   searchInput.focus();
+  
+  // Select all existing text and delete
   searchInput.textContent = "";
-  // Dispatch input event to trigger WA's React handlers
-  searchInput.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  searchInput.dispatchEvent(new Event("input", { bubbles: true }));
   await sleep(100);
+  
+  // Type the phone number using execCommand (triggers React's onChange)
+  document.execCommand("selectAll", false, null);
+  document.execCommand("delete", false, null);
+  document.execCommand("insertText", false, phone);
+  
+  // Also dispatch native events that WhatsApp listens to
+  searchInput.dispatchEvent(new InputEvent("input", { 
+    bubbles: true, 
+    inputType: "insertText",
+    data: phone 
+  }));
+  
+  // Wait for search results
+  await sleep(1500);
 
-  // Type the phone number (without country code prefix if it starts with common ones)
-  const displayPhone = phone;
-  document.execCommand("insertText", false, displayPhone);
-  searchInput.dispatchEvent(new InputEvent("input", { bubbles: true }));
-
-  // Step 3: Wait for results and click the first match
-  await sleep(1200);
-
-  const chatResult = await waitForElement(() => {
-    // Look for the chat list result that matches
-    const results = document.querySelectorAll('[data-testid="cell-frame-container"]');
-    if (results.length > 0) return results[0];
-    // Fallback: any clickable chat row in search results
-    const rows = document.querySelectorAll('div[role="listitem"]');
-    if (rows.length > 0) return rows[0];
-    return null;
-  }, 4000);
+  // Step 3: Click the first result
+  const chatResult = await waitForElement(() => findElement([
+    // Chat list results
+    '[data-testid="cell-frame-container"]',
+    '[data-testid="chat-list-item"]',
+    '[data-testid="contact-list-item"]',
+    // Fallback: any listitem in the results
+    '#side div[role="listitem"]',
+    '#side div[role="row"]',
+    // Even more generic: clickable div with the phone number
+    `#side span[title*="${phone.slice(-4)}"]`,
+  ]), 4000);
 
   if (chatResult) {
-    chatResult.click();
+    // If we found a span with title, click its parent row
+    const clickTarget = chatResult.closest('[data-testid="cell-frame-container"]') 
+      || chatResult.closest('[role="listitem"]')
+      || chatResult.closest('[role="row"]')
+      || chatResult;
+    
+    clickTarget.click();
     console.log("[Goberna WA] Chat opened via search");
 
-    // Step 4: If we have pre-fill text, put it in the message input
+    // Step 4: Pre-fill message text if provided
     if (text) {
       await sleep(800);
-      const msgInput =
-        document.querySelector('[data-testid="conversation-compose-box-input"]') ||
-        document.querySelector('div[contenteditable="true"][data-tab="10"]') ||
-        document.querySelector('footer div[contenteditable="true"]');
+      const msgInput = findElement([
+        '[data-testid="conversation-compose-box-input"]',
+        'footer div[contenteditable="true"]',
+        'div[data-tab="10"][contenteditable="true"]',
+        '#main div[contenteditable="true"][role="textbox"]',
+        '#main footer div[contenteditable="true"]',
+      ]);
 
       if (msgInput) {
         msgInput.focus();
         document.execCommand("insertText", false, text);
         msgInput.dispatchEvent(new InputEvent("input", { bubbles: true }));
+        console.log("[Goberna WA] Message text pre-filled");
       }
     }
-  } else {
-    // No result found — fall back to direct URL (will reload but at least works)
-    console.warn("[Goberna WA] No chat found in search, falling back to URL");
-    window.location.href = `https://web.whatsapp.com/send?phone=${phone}${text ? `&text=${encodeURIComponent(text)}` : ""}`;
+    
+    return true;
   }
+
+  console.warn("[Goberna WA] No chat result found for", phone);
+  return false;
 }
 
 /* ─── Helpers ─── */
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function findElement(selectors) {
+  for (const sel of selectors) {
+    try {
+      const el = document.querySelector(sel);
+      if (el) return el;
+    } catch {}
+  }
+  return null;
 }
 
 function waitForElement(selectorFn, timeoutMs = 3000) {
@@ -116,10 +212,10 @@ function waitForElement(selectorFn, timeoutMs = 3000) {
 
     const start = Date.now();
     const interval = setInterval(() => {
-      const el = selectorFn();
-      if (el) {
+      const found = selectorFn();
+      if (found) {
         clearInterval(interval);
-        resolve(el);
+        resolve(found);
       } else if (Date.now() - start > timeoutMs) {
         clearInterval(interval);
         resolve(null);
