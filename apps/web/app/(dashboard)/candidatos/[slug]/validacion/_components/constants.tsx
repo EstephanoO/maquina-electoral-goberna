@@ -56,7 +56,7 @@ export function voteClassForColumn(col: VisualColumn): string | undefined {
   if (col === "voto_duro") return "duro";
   if (col === "voto_blando") return "blando";
   if (col === "voto_flotante") return "flotante";
-  if (col === "respondido") return "tibio";
+  if (col === "respondido") return "";
   return undefined;
 }
 

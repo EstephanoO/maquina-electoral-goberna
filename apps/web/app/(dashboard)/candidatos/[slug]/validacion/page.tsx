@@ -246,6 +246,10 @@ function ValidacionBoard() {
     const voteClass = voteClassForColumn(targetCol);
 
     setUpdatingId(item.id);
+
+    // Optimistic update
+    setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, status: newStatus as any, vote_class: voteClass ?? "" } : i));
+
     if (fromCol === "pendiente" && targetCol === "contactado") {
       await claimValidation(item.id, campaignId);
       window.open(
@@ -265,6 +269,8 @@ function ValidacionBoard() {
       if (statsRes.ok && statsRes.data) setStats(statsRes.data.stats);
       toast(`Movido a ${COLUMNS.find((c) => c.key === targetCol)?.label ?? targetCol}`, "success");
     } else {
+      // Revert on failure
+      setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, status: item.status, vote_class: item.vote_class } : i));
       toast("Error al mover la tarjeta", "error");
     }
     setUpdatingId(null);
