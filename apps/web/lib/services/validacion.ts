@@ -30,31 +30,6 @@ export interface ValidationItem {
 
 export type ValidationStats = Record<ValidationStatus, number>;
 
-/* ─── Scoring tags (mirror backend) ─── */
-
-export const SCORING_TAGS = [
-  { key: "respondio", label: "Respondió", points: 1 },
-  { key: "amable", label: "Amable", points: 1 },
-  { key: "conoce_candidato", label: "Conoce al candidato", points: 1 },
-  { key: "interesado", label: "Interesado", points: 2 },
-  { key: "voluntario", label: "Voluntario", points: 3 },
-  { key: "voto_seguro", label: "Voto seguro", points: 3 },
-] as const;
-
-export function computeScore(tags: string[]): number {
-  let score = 0;
-  for (const t of SCORING_TAGS) {
-    if (tags.includes(t.key)) score += t.points;
-  }
-  return score;
-}
-
-export function classifyVote(score: number): "duro" | "blando" | "tibio" {
-  if (score >= 5) return "duro";
-  if (score >= 2) return "blando";
-  return "tibio";
-}
-
 /* ─── API ─── */
 
 export interface PaginatedValidations {
@@ -89,10 +64,9 @@ export async function updateValidationStatus(
   id: string,
   campaignId: string,
   status: ValidationStatus,
-  notes?: string,
-  tags?: string[],
+  vote_class?: string,
 ) {
-  return api.put<{ item: ValidationItem }>(`/api/validacion/${id}/status`, { status, notes, tags }, {
+  return api.put<{ item: ValidationItem }>(`/api/validacion/${id}/status`, { status, vote_class }, {
     headers: { "x-campaign-id": campaignId },
   });
 }
