@@ -457,6 +457,23 @@ function ValidacionBoard() {
           </div>
         </div>
 
+        {/* ── Stats mini‑bar ── */}
+        {!loading && (
+          <div className="flex items-center gap-4 px-4 py-1.5 border-b border-slate-100 bg-white text-[11px] shrink-0">
+            {COLUMNS.map((col) => (
+              <span key={col.key} className="flex items-center gap-1.5 font-semibold" style={{ color: col.accent }}>
+                <span className="text-slate-400 font-normal">{col.label}</span>
+                <span className="tabular-nums">{grouped[col.key]?.length ?? 0}{col.key === "pendiente" && hasMore ? "+" : ""}</span>
+              </span>
+            ))}
+            <span className="ml-auto text-slate-400 tabular-nums">
+              {totalRecords > 0
+                ? `${Math.round(((stats.contactado + stats.respondido + stats.invalido) / totalRecords) * 100)}%`
+                : "0%"}{" "}procesado
+            </span>
+          </div>
+        )}
+
         {/* Board */}
         {loading ? (
           <div className="flex items-center justify-center flex-1 gap-3">
