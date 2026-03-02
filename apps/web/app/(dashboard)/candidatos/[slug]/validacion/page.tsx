@@ -189,11 +189,13 @@ function ValidacionBoard() {
   /* ── Fetch ── */
   const fetchData = useCallback(async () => {
     if (!campaignId) return;
+    console.log("[fetchData] full reload triggered");
     const [itemsRes, statsRes] = await Promise.all([
       listValidations(campaignId, undefined, 1, PAGE_LIMIT),
       getValidationStats(campaignId),
     ]);
     if (itemsRes.ok && itemsRes.data) {
+      console.log("[fetchData] loaded", itemsRes.data.items.length, "items, total:", itemsRes.data.total);
       setItems(itemsRes.data.items);
       setTotalRecords(itemsRes.data.total);
       setCurrentPage(1);
@@ -208,11 +210,20 @@ function ValidacionBoard() {
     if (!campaignId || loadingMore || !hasMore) return;
     setLoadingMore(true);
     const nextPage = currentPage + 1;
+    console.log("[fetchMore] loading page", nextPage);
     const res = await listValidations(campaignId, undefined, nextPage, PAGE_LIMIT);
     if (res.ok && res.data) {
       setItems((prev) => {
         const existingIds = new Set(prev.map((i) => i.id));
         const newItems = res.data!.items.filter((i) => !existingIds.has(i.id));
+        // Check if any returned items have different status than what we already have
+        for (const returnedItem of res.data!.items) {
+          const existing = prev.find((i) => i.id === returnedItem.id);
+          if (existing && (existing.status !== returnedItem.status || existing.vote_class !== returnedItem.vote_class)) {
+            console.log("[fetchMore] STALE DATA from page", nextPage, "— item", returnedItem.id.slice(0, 8), "local:", existing.status, existing.vote_class, "server:", returnedItem.status, returnedItem.vote_class);
+          }
+        }
+        console.log("[fetchMore] page", nextPage, "added", newItems.length, "new items");
         return [...prev, ...newItems];
       });
       setTotalRecords(res.data.total);
@@ -263,12 +274,21 @@ function ValidacionBoard() {
       newStatus as Parameters<typeof updateValidationStatus>[2],
       voteClass,
     );
+    console.log("[executeDrop] PUT response:", JSON.stringify({ ok: res.ok, status: res.status, data: res.data, error: res.error }));
     if (res.ok && res.data) {
-      setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, ...res.data!.item } : i));
+      const returnedItem = res.data.item;
+      console.log("[executeDrop] returned item status:", returnedItem?.status, "vote_class:", returnedItem?.vote_class, "visual:", returnedItem ? toVisualColumn(returnedItem.status, returnedItem.vote_class) : "N/A");
+      setItems((prev) => {
+        const updated = prev.map((i) => i.id === item.id ? { ...i, ...returnedItem } : i);
+        const found = updated.find((i) => i.id === item.id);
+        console.log("[executeDrop] after merge — status:", found?.status, "vote_class:", found?.vote_class, "visual:", found ? toVisualColumn(found.status, found.vote_class) : "N/A");
+        return updated;
+      });
       const statsRes = await getValidationStats(campaignId);
       if (statsRes.ok && statsRes.data) setStats(statsRes.data.stats);
       toast(`Movido a ${COLUMNS.find((c) => c.key === targetCol)?.label ?? targetCol}`, "success");
     } else {
+      console.log("[executeDrop] FAILED — reverting. Error:", res.error);
       // Revert on failure
       setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, status: item.status, vote_class: item.vote_class } : i));
       toast("Error al mover la tarjeta", "error");
