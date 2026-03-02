@@ -1,9 +1,11 @@
 /**
  * GOBERNA -- Field Team Chat REST Routes
  *
- * HTTP endpoints for chat history, unread counts, conversation list, and team members.
- * Real-time messaging goes through WebSocket (ws-chat.ts).
+ * HTTP endpoints for:
+ *   - 1-to-1 direct messages (chat history, unread counts, conversations, team members)
+ *   - Campaign channel (group messages, unread count, read cursor)
  *
+ * Real-time messaging goes through WebSocket (ws-chat.ts).
  * All endpoints are campaign-scoped and require brigadista_zonal or agente_campo role.
  */
 
@@ -149,6 +151,86 @@ export function buildChatRoutes(env: AppEnv): FastifyPluginAsync {
           .sign(secret);
 
         return reply.send({ ok: true, request_id: requestId, token });
+      },
+    );
+
+    // ══════════════════════════════════════════════════════════
+    // ── Channel (Group) Endpoints ────────────────────────────
+    // ══════════════════════════════════════════════════════════
+
+    // ── GET /api/chat/channel/messages ── Channel message history
+    app.get(
+      "/api/chat/channel/messages",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["agente_campo"], requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId!;
+        const { limit, before } = request.query as { limit?: string; before?: string };
+
+        const messages = await repo.getChannelMessages(
+          campaignId,
+          Math.min(Number(limit) || 50, 100),
+          before || undefined,
+        );
+        return reply.send({ ok: true, request_id: requestId, messages });
+      },
+    );
+
+    // ── GET /api/chat/channel/unread ── Channel unread count
+    app.get(
+      "/api/chat/channel/unread",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["agente_campo"], requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const userId = (request as unknown as { userId: string }).userId;
+        const campaignId = request.activeCampaignId!;
+        const count = await repo.getChannelUnreadCount(campaignId, userId);
+        return reply.send({ ok: true, request_id: requestId, count });
+      },
+    );
+
+    // ── POST /api/chat/channel/read ── Update channel read cursor
+    app.post(
+      "/api/chat/channel/read",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["agente_campo"], requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const userId = (request as unknown as { userId: string }).userId;
+        const campaignId = request.activeCampaignId!;
+        const lastReadAt = await repo.updateChannelReadCursor(campaignId, userId);
+        return reply.send({ ok: true, request_id: requestId, last_read_at: lastReadAt });
+      },
+    );
+
+    // ── GET /api/chat/channel/info ── Channel metadata (member count)
+    app.get(
+      "/api/chat/channel/info",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["agente_campo"], requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId!;
+        const memberCount = await repo.getChannelMemberCount(campaignId);
+        return reply.send({ ok: true, request_id: requestId, member_count: memberCount });
       },
     );
   };

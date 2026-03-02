@@ -20,8 +20,8 @@ import * as Location from 'expo-location';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import { queueLocation, startAutoSync, stopAutoSync, forceSyncNow } from '../offline-queue';
-import { getActiveCampaignId, getStoredUser } from '../auth-store';
-import { API_BASE, AGENT_INGEST_TOKEN } from '../api';
+import { getAccessToken, getActiveCampaignId, getStoredUser } from '../auth-store';
+import { API_BASE } from '../api';
 import {
   connect as wsConnect,
   disconnect as wsDisconnect,
@@ -73,28 +73,31 @@ let cachedCampaignId: string | null = null;
 
 /**
  * Send agent status via HTTP POST.
- * Uses pre-cached values to avoid async SecureStore reads in the
- * background transition path (iOS gives ~5s before suspension).
+ * Uses JWT Bearer auth (same as all tracking endpoints).
  * Timeout of 5s to not waste the background execution window.
  */
 function sendStatusHttp(agentId: string, status: 'background' | 'foreground'): void {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 5_000);
 
-  fetch(`${API_BASE}/agents/status`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-agent-token': AGENT_INGEST_TOKEN,
-    },
-    body: JSON.stringify({
-      agent_id: agentId,
-      agent_name: currentAgentName ?? undefined,
-      status,
-      campaign_id: cachedCampaignId ?? undefined,
-    }),
-    signal: controller.signal,
-  })
+  getAccessToken()
+    .then((token) => {
+      if (!token) return; // No JWT, best-effort skip
+      return fetch(`${API_BASE}/agents/status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          agent_id: agentId,
+          agent_name: currentAgentName ?? undefined,
+          status,
+          campaign_id: cachedCampaignId ?? undefined,
+        }),
+        signal: controller.signal,
+      });
+    })
     .catch(() => { /* best-effort */ })
     .finally(() => clearTimeout(timeoutId));
 }
@@ -107,30 +110,48 @@ function handleAppStateChange(nextAppState: AppStateStatus): void {
   const prev = previousAppState;
   previousAppState = nextAppState;
 
+  // ── RETURNING TO FOREGROUND ──
+  // Lightweight resume: only restart GPS subscription + WS.
+  // Do NOT call startForegroundTracking (which does a full stop→start cycle
+  // and kills the WS before it can connect on rapid transitions).
   if (nextAppState === 'active' && currentAgentId) {
-    // Only send foreground status if we were truly in background (not just 'inactive')
     if (prev === 'background') {
-      console.log('[Tracking] App returned to foreground, restarting GPS watch');
+      console.log('[Tracking] Resuming from background (lightweight)');
       sendStatusHttp(currentAgentId, 'foreground');
     }
 
-    // Restart GPS watch regardless (OS may have killed the subscription)
+    // Restart GPS subscription — OS may have killed it while in background.
     if (foregroundSubscription) {
       foregroundSubscription.remove();
       foregroundSubscription = null;
     }
-    const agentId = currentAgentId;
-    currentState = 'stopped';
-
-    startForegroundTracking(agentId).catch((err) => {
-      console.warn('[Tracking] Failed to resume after foreground:', err);
+    Location.watchPositionAsync(FOREGROUND_OPTIONS, async (location) => {
+      await processLocation(location);
+    }).then((sub) => {
+      foregroundSubscription = sub;
+      console.log('[Tracking] GPS subscription resumed');
+    }).catch((err) => {
+      console.warn('[Tracking] Failed to resume GPS:', err);
     });
+
+    // Reconnect WS if it was closed (background disconnect or network loss).
+    // wsConnect() is a no-op if already connected/connecting.
+    wsConnect();
+
+    // Restart auto-sync in case the OS killed the timer.
+    startAutoSync();
+
+    currentState = 'foreground';
   }
 
-  // Only trigger on real background — NOT 'inactive' (iOS Control Center, notifications)
+  // ── GOING TO BACKGROUND ──
+  // Only close WS so the backend immediately marks the agent as offline.
+  // Don't touch GPS, sync, or appState listener — the OS handles cleanup,
+  // and touching them causes race conditions on rapid transitions.
   if (nextAppState === 'background' && currentAgentId) {
-    console.log('[Tracking] App going to background');
+    console.log('[Tracking] App going to background, closing WS');
     sendStatusHttp(currentAgentId, 'background');
+    wsDisconnect();
   }
 }
 

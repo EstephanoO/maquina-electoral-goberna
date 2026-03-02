@@ -28,7 +28,8 @@
  * No additional dependencies needed.
  */
 
-import { API_BASE, AGENT_INGEST_TOKEN } from '../api';
+import { API_BASE } from '../api';
+import { getAccessToken } from '../auth-store';
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -90,11 +91,11 @@ let pendingBatchAck: BatchAckCallback | null = null;
 
 // ─── URL Builder ──────────────────────────────────────────────
 
-function buildWsUrl(): string {
+function buildWsUrl(token: string): string {
   // API_BASE is like "https://api.goberna.us/api"
-  // We need "wss://api.goberna.us/ws/tracking?token=<token>"
+  // We need "wss://api.goberna.us/ws/tracking?token=<jwt>"
   const base = API_BASE.replace(/\/api\/?$/, '').replace(/^http/, 'ws');
-  return `${base}/ws/tracking?token=${encodeURIComponent(AGENT_INGEST_TOKEN)}`;
+  return `${base}/ws/tracking?token=${encodeURIComponent(token)}`;
 }
 
 // ─── Core ─────────────────────────────────────────────────────
@@ -104,7 +105,30 @@ export function connect(opts?: { onConfig?: ConfigCallback }): void {
   if (opts?.onConfig) onConfigChange = opts.onConfig;
 
   state = reconnectAttempts > 0 ? 'reconnecting' : 'connecting';
-  const url = buildWsUrl();
+
+  // Get JWT from SecureStore (async) then open WebSocket
+  getAccessToken()
+    .then((token) => {
+      if (!token) {
+        console.warn('[WS] No JWT available, cannot connect');
+        state = 'disconnected';
+        scheduleReconnect();
+        return;
+      }
+      openSocket(token);
+    })
+    .catch((err) => {
+      console.warn('[WS] Failed to get JWT:', err);
+      state = 'disconnected';
+      scheduleReconnect();
+    });
+}
+
+function openSocket(token: string): void {
+  // State may have changed while we were awaiting the token
+  if (state === 'disconnected') return;
+
+  const url = buildWsUrl(token);
 
   try {
     ws = new WebSocket(url);

@@ -1,8 +1,8 @@
 /**
  * GOBERNA -- Field Team Chat WebSocket
  *
- * Real-time 1-to-1 messaging between brigadista_zonal and agente_campo
- * within the same campaign. Offline-first with client_id dedup.
+ * Real-time messaging: 1-to-1 direct messages AND campaign channel (group).
+ * Same WebSocket connection handles both message types.
  *
  * Protocol:
  *   - Auth: JWT via Bearer token query param `?token=<jwt>`
@@ -10,12 +10,17 @@
  *   - Client->Server:
  *       { type: "send", receiverId: string, body: string, clientId?: string }
  *       { type: "read", otherUserId: string }
+ *       { type: "channel.send", body: string, clientId?: string }
+ *       { type: "channel.read" }
  *       { type: "ping" }
  *   - Server->Client:
  *       { type: "connected", userId: string, campaignId: string, ts: string }
  *       { type: "message.new", message: ChatMessage }
  *       { type: "message.deduped", clientId: string, messageId: string }
  *       { type: "messages.read", readerId: string, otherUserId: string }
+ *       { type: "channel.message.new", message: ChannelMessage }
+ *       { type: "channel.message.deduped", clientId: string, messageId: string }
+ *       { type: "channel.read", userId: string, lastReadAt: string }
  *       { type: "pong", ts: string }
  *       { type: "error", code: string, message: string }
  */
@@ -40,6 +45,8 @@ type ChatClient = {
 type ClientMessage =
   | { type: "send"; receiverId: string; body: string; clientId?: string }
   | { type: "read"; otherUserId: string }
+  | { type: "channel.send"; body: string; clientId?: string }
+  | { type: "channel.read" }
   | { type: "ping" };
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -152,6 +159,40 @@ export function buildChatWsRoutes(env: AppEnv): FastifyPluginAsync {
             type: "messages.read",
             readerId: payload.readerId,
             otherUserId: payload.otherUserId,
+          });
+        }
+      }
+    });
+
+    // ── Channel event listeners ──────────────────────────────
+
+    chatEvents.onChat("channel.message.new", (payload) => {
+      for (const client of wsClients) {
+        // Broadcast to ALL clients in the same campaign (group message)
+        if (client.campaignId === payload.campaignId) {
+          sendJson(client.ws, {
+            type: "channel.message.new",
+            message: {
+              id: payload.id,
+              campaign_id: payload.campaignId,
+              sender_id: payload.senderId,
+              sender_name: payload.senderName,
+              body: payload.body,
+              client_id: payload.clientId,
+              created_at: payload.createdAt,
+            },
+          });
+        }
+      }
+    });
+
+    chatEvents.onChat("channel.read", (payload) => {
+      for (const client of wsClients) {
+        if (client.campaignId === payload.campaignId) {
+          sendJson(client.ws, {
+            type: "channel.read",
+            userId: payload.userId,
+            lastReadAt: payload.lastReadAt,
           });
         }
       }
@@ -314,6 +355,65 @@ export function buildChatWsRoutes(env: AppEnv): FastifyPluginAsync {
               });
             } catch (err) {
               app.log.error({ err, userId: auth.userId, campaignId }, "chat mark read error");
+            }
+            return;
+          }
+
+          // ── Channel (group) messages ───────────────
+          if (msg.type === "channel.send") {
+            const body = msg.body?.trim();
+            if (!body) {
+              sendJson(socket, { type: "error", code: "INVALID_MESSAGE", message: "body requerido" });
+              return;
+            }
+
+            if (body.length > 2000) {
+              sendJson(socket, { type: "error", code: "MESSAGE_TOO_LONG", message: "maximo 2000 caracteres" });
+              return;
+            }
+
+            try {
+              const { message, deduped } = await repo.createChannelMessage(
+                campaignId,
+                auth.userId,
+                body,
+                msg.clientId ?? null,
+              );
+
+              if (deduped) {
+                sendJson(socket, {
+                  type: "channel.message.deduped",
+                  clientId: msg.clientId ?? null,
+                  messageId: message.id,
+                });
+              } else {
+                chatEvents.emitChat("channel.message.new", {
+                  id: message.id,
+                  campaignId: message.campaign_id,
+                  senderId: message.sender_id,
+                  senderName: message.sender_name,
+                  body: message.body,
+                  clientId: message.client_id,
+                  createdAt: message.created_at,
+                });
+              }
+            } catch (err) {
+              app.log.error({ err, userId: auth.userId, campaignId }, "channel send error");
+              sendJson(socket, { type: "error", code: "SEND_FAILED", message: "error enviando mensaje al canal" });
+            }
+            return;
+          }
+
+          if (msg.type === "channel.read") {
+            try {
+              const lastReadAt = await repo.updateChannelReadCursor(campaignId, auth.userId);
+              chatEvents.emitChat("channel.read", {
+                campaignId,
+                userId: auth.userId,
+                lastReadAt,
+              });
+            } catch (err) {
+              app.log.error({ err, userId: auth.userId, campaignId }, "channel read cursor error");
             }
             return;
           }

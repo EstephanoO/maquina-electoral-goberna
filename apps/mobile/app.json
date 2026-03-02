@@ -46,6 +46,7 @@
       "expo-router",
       "expo-sqlite",
       "expo-secure-store",
+      "expo-notifications",
       [
         "expo-location",
         {
@@ -84,7 +85,6 @@
 
     "extra": {
       "EXPO_PUBLIC_BACKEND_API_URL": "https://api.goberna.us/api",
-      "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "JPVK6a0xrV-FYVFWRgn_1ruofUhPcxkY5proTSBEmULYrActHJaU_8a99p2pf8Bq",
 
       "eas": {
         "projectId": "17429ec1-1da2-430f-9f52-efc82919c219"

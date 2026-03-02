@@ -2,14 +2,17 @@
  * GOBERNA -- Field Team Chat Event Bus
  *
  * In-process event emitter for chat WebSocket broadcasting.
- * Allows the WS handler to notify other connected clients about new messages.
+ * Supports both 1-to-1 direct messages and campaign channel (group) messages.
  *
  * Usage:
  *   - Publisher:  chatEvents.emitChat("message.new", { ... })
  *   - Subscriber: chatEvents.onChat("message.new", (payload) => ...)
+ *   - Channel:    chatEvents.emitChat("channel.message.new", { ... })
  */
 
 import { EventEmitter } from "node:events";
+
+// ── 1-to-1 Direct Messages ──────────────────────────────────
 
 export type ChatMessageEvent = {
   id: string;
@@ -27,9 +30,31 @@ export type ChatReadEvent = {
   otherUserId: string;
 };
 
+// ── Channel (Group) Messages ─────────────────────────────────
+
+export type ChannelMessageEvent = {
+  id: string;
+  campaignId: string;
+  senderId: string;
+  senderName: string;
+  body: string;
+  clientId: string | null;
+  createdAt: string;
+};
+
+export type ChannelReadEvent = {
+  campaignId: string;
+  userId: string;
+  lastReadAt: string;
+};
+
+// ── Event Map ────────────────────────────────────────────────
+
 export interface ChatEventMap {
   "message.new": ChatMessageEvent;
   "messages.read": ChatReadEvent;
+  "channel.message.new": ChannelMessageEvent;
+  "channel.read": ChannelReadEvent;
 }
 
 class ChatEventBus extends EventEmitter {
@@ -42,5 +67,5 @@ class ChatEventBus extends EventEmitter {
   }
 }
 
-/** Singleton event bus for field team chat */
+/** Singleton event bus for field team chat (direct + channel) */
 export const chatEvents = new ChatEventBus();

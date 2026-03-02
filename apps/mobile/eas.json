@@ -6,16 +6,10 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal",
-      "env": {
-        "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "JPVK6a0xrV-FYVFWRgn_1ruofUhPcxkY5proTSBEmULYrActHJaU_8a99p2pf8Bq"
-      }
+      "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal",
-      "env": {
-        "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "JPVK6a0xrV-FYVFWRgn_1ruofUhPcxkY5proTSBEmULYrActHJaU_8a99p2pf8Bq"
-      }
+      "distribution": "internal"
     },
     "ios-ipa": {
       "distribution": "internal",
@@ -23,9 +17,6 @@
     },
     "production": {
       "autoIncrement": true,
-      "env": {
-        "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "JPVK6a0xrV-FYVFWRgn_1ruofUhPcxkY5proTSBEmULYrActHJaU_8a99p2pf8Bq"
-      },
       "ios": {},
       "android": {
         "buildType": "app-bundle"
@@ -33,9 +24,6 @@
     },
     "production2": {
       "autoIncrement": true,
-      "env": {
-        "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "JPVK6a0xrV-FYVFWRgn_1ruofUhPcxkY5proTSBEmULYrActHJaU_8a99p2pf8Bq"
-      },
       "ios": {},
       "android": {
         "buildType": "app-bundle"

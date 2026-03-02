@@ -16,7 +16,7 @@
 
 import * as Network from 'expo-network';
 
-import { API_BASE, AGENT_INGEST_TOKEN } from '../api';
+import { API_BASE } from '../api';
 import {
   isConnected as wsIsConnected,
   sendLocationBatch as wsSendLocationBatch,
@@ -157,13 +157,19 @@ async function syncLocations(): Promise<{ synced: number; failed: number }> {
     return { synced: pending.length, failed: 0 };
   }
 
-  // Fallback to HTTP batch
+  // Fallback to HTTP batch (uses JWT Bearer auth)
   try {
+    const token = await getAccessToken();
+    if (!token) {
+      await markAsFailed(ids, 'No JWT available for batch sync');
+      return { synced: 0, failed: pending.length };
+    }
+
     const response = await fetch(`${API_BASE}/agents/locations/batch`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-agent-token': AGENT_INGEST_TOKEN,
+        'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({ locations }),
     });
