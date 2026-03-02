@@ -502,7 +502,7 @@ function ValidacionBoard() {
                   totalItems={grouped[col.key].length}
                   hasMoreGlobal={hasMore}
                   loadingMore={loadingMore}
-                  collapsed={collapsedCols.has(col.key)}
+                  collapsed={collapsedCols.has(col.key) || (activeColumn !== null && blockedCols.has(col.key))}
                   onToggleCollapse={() => toggleColCollapse(col.key)}
                   onLoadMore={fetchMore}
                   renderCard={(item) => (
