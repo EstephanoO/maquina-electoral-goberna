@@ -76,7 +76,7 @@ export function getAllowedTargets(from: VisualColumn): VisualColumn[] {
     case "pendiente":
       return ["contactado", "imposible"];
     case "contactado":
-      return ["respondido", "voto_blando", "voto_duro", "voto_flotante", "imposible"];
+      return ["pendiente", "respondido", "voto_blando", "voto_duro", "voto_flotante", "imposible"];
     case "respondido":
       return ["voto_blando", "voto_duro", "voto_flotante", "imposible", "contactado"];
     case "voto_blando":
