@@ -57,11 +57,24 @@ export function classifyVote(score: number): "duro" | "blando" | "tibio" {
 
 /* ─── API ─── */
 
-export async function listValidations(campaignId: string, status?: ValidationStatus) {
+export interface PaginatedValidations {
+  items: ValidationItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export async function listValidations(
+  campaignId: string,
+  status?: ValidationStatus,
+  page = 1,
+  limit = 100,
+) {
   const params = new URLSearchParams();
   if (status) params.set("status", status);
-  const qs = params.toString() ? `?${params}` : "";
-  return api.get<{ items: ValidationItem[] }>(`/api/validacion${qs}`, {
+  params.set("page", String(page));
+  params.set("limit", String(limit));
+  return api.get<PaginatedValidations>(`/api/validacion?${params}`, {
     headers: { "x-campaign-id": campaignId },
   });
 }

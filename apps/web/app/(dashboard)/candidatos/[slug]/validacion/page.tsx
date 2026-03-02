@@ -34,6 +34,9 @@ import { DroppableColumn } from "./_components/droppable-column";
 import { DraggableCard } from "./_components/draggable-card";
 import { DragOverlayCard } from "./_components/drag-overlay-card";
 
+/* ── Pagination config ── */
+const PAGE_LIMIT = 100;
+
 /* ========== Page ========== */
 
 export default function ValidacionPage() {
@@ -51,19 +54,47 @@ export default function ValidacionPage() {
   const [activeItem, setActiveItem] = useState<ValidationItem | null>(null);
   const [overColumn, setOverColumn] = useState<VisualColumn | null>(null);
 
-  /* ── Fetch ── */
+  /* ── Pagination state ── */
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const hasMore = items.length < totalRecords;
+
+  /* ── Fetch initial page ── */
   const fetchData = useCallback(async () => {
     if (!campaignId) return;
     const [itemsRes, statsRes] = await Promise.all([
-      listValidations(campaignId),
+      listValidations(campaignId, undefined, 1, PAGE_LIMIT),
       getValidationStats(campaignId),
     ]);
-    if (itemsRes.ok && itemsRes.data) setItems(itemsRes.data.items);
+    if (itemsRes.ok && itemsRes.data) {
+      setItems(itemsRes.data.items);
+      setTotalRecords(itemsRes.data.total);
+      setCurrentPage(1);
+    }
     if (statsRes.ok && statsRes.data) setStats(statsRes.data.stats);
     setLoading(false);
   }, [campaignId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  /* ── Fetch next page (appends to items) ── */
+  const fetchMore = useCallback(async () => {
+    if (!campaignId || loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const nextPage = currentPage + 1;
+    const res = await listValidations(campaignId, undefined, nextPage, PAGE_LIMIT);
+    if (res.ok && res.data) {
+      setItems((prev) => {
+        const existingIds = new Set(prev.map((i) => i.id));
+        const newItems = res.data!.items.filter((i) => !existingIds.has(i.id));
+        return [...prev, ...newItems];
+      });
+      setTotalRecords(res.data.total);
+      setCurrentPage(nextPage);
+    }
+    setLoadingMore(false);
+  }, [campaignId, loadingMore, hasMore, currentPage]);
 
   /* ── DnD sensors (require 8px movement to start dragging) ── */
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -191,9 +222,11 @@ export default function ValidacionPage() {
             placeholder="Buscar nombre, tel..."
             className="flex-1 border-none outline-none bg-transparent text-sm text-slate-700 placeholder:text-slate-400" />
         </div>
-        <div className="text-xs text-slate-500 font-semibold tabular-nums shrink-0">{totalItems} registros</div>
-        {totalItems > 0 && (
-          <div className="text-xs text-slate-400 font-medium shrink-0">{Math.round((processed / totalItems) * 100)}%</div>
+        <div className="text-xs text-slate-500 font-semibold tabular-nums shrink-0">
+          {totalItems}{hasMore ? `/${totalRecords}` : ""} registros
+        </div>
+        {totalRecords > 0 && (
+          <div className="text-xs text-slate-400 font-medium shrink-0">{Math.round((processed / totalRecords) * 100)}%</div>
         )}
       </div>
 
@@ -207,7 +240,16 @@ export default function ValidacionPage() {
         <DndContext sensors={sensors} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
           <div className="flex-1 flex gap-3 px-4 py-3 overflow-x-auto min-h-0">
             {COLUMNS.map((col) => (
-              <DroppableColumn key={col.key} col={col} count={grouped[col.key].length} isOver={overColumn === col.key}>
+              <DroppableColumn
+                key={col.key}
+                col={col}
+                count={grouped[col.key].length}
+                isOver={overColumn === col.key}
+                totalItems={grouped[col.key].length}
+                hasMoreGlobal={hasMore}
+                loadingMore={loadingMore}
+                onLoadMore={fetchMore}
+              >
                 {grouped[col.key].map((item) => (
                   <DraggableCard
                     key={item.id}

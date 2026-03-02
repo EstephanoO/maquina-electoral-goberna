@@ -31,15 +31,22 @@ export function buildValidacionRoutes(_env: AppEnv): FastifyPluginAsync {
       const campaignId = request.headers["x-campaign-id"] as string;
       if (!campaignId) return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "x-campaign-id header requerido"));
 
-      const query = request.query as { status?: string };
+      const query = request.query as { status?: string; page?: string; limit?: string };
       const status = query.status && VALIDATION_STATUSES.includes(query.status as never)
         ? query.status as typeof VALIDATION_STATUSES[number]
         : undefined;
 
+      const limit = Math.min(Math.max(Number(query.limit) || 100, 1), 500);
+      const page = Math.max(Number(query.page) || 1, 1);
+      const offset = (page - 1) * limit;
+
       // Auto-sync on first list call
       await repo.syncValidations(campaignId);
-      const items = await repo.listByCampaign(campaignId, status);
-      return reply.send({ ok: true, request_id: requestId, items });
+      const [items, total] = await Promise.all([
+        repo.listByCampaign(campaignId, status, limit, offset),
+        repo.countByCampaign(campaignId, status),
+      ]);
+      return reply.send({ ok: true, request_id: requestId, items, total, page, limit });
     });
 
     // ── GET /api/validacion/stats — counts by status ──

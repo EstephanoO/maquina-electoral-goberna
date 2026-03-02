@@ -99,8 +99,22 @@ export async function syncValidations(campaignId: string): Promise<number> {
 export async function listByCampaign(
   campaignId: string,
   status?: ValidationStatus,
+  limit = 100,
+  offset = 0,
 ): Promise<ValidationRow[]> {
-  let query = `
+  const params: unknown[] = [campaignId];
+  let where = "WHERE fv.campaign_id = $1";
+
+  if (status) {
+    params.push(status);
+    where += ` AND fv.status = $${params.length}`;
+  }
+
+  params.push(limit, offset);
+  const limitIdx = params.length - 1;
+  const offsetIdx = params.length;
+
+  const query = `
     SELECT
       fv.id, fv.form_id, fv.campaign_id::text,
       fv.nombre, fv.telefono, fv.encuestador, fv.zona,
@@ -114,19 +128,32 @@ export async function listByCampaign(
       fv.updated_at
     FROM form_validations fv
     LEFT JOIN users cu ON cu.id = fv.claimed_by
-    WHERE fv.campaign_id = $1
+    ${where}
+    ORDER BY fv.form_created_at DESC
+    LIMIT $${limitIdx} OFFSET $${offsetIdx}
   `;
-  const params: unknown[] = [campaignId];
-
-  if (status) {
-    query += ` AND fv.status = $2`;
-    params.push(status);
-  }
-
-  query += ` ORDER BY fv.form_created_at DESC`;
 
   const { rows } = await pool.query<ValidationRow>(query, params);
   return rows;
+}
+
+export async function countByCampaign(
+  campaignId: string,
+  status?: ValidationStatus,
+): Promise<number> {
+  const params: unknown[] = [campaignId];
+  let where = "WHERE campaign_id = $1";
+
+  if (status) {
+    params.push(status);
+    where += ` AND status = $${params.length}`;
+  }
+
+  const { rows } = await pool.query<{ cnt: string }>(
+    `SELECT COUNT(*)::text AS cnt FROM form_validations ${where}`,
+    params,
+  );
+  return Number(rows[0]?.cnt ?? 0);
 }
 
 /* ─── Stats ─── */
