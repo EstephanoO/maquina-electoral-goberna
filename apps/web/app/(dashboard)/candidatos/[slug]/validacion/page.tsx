@@ -40,39 +40,6 @@ import { ConfirmModal } from "./_components/confirm-modal";
 /* ── Pagination config ── */
 const PAGE_LIMIT = 100;
 
-/* ── Stacked progress bar ── */
-const BAR_COLORS: Record<string, string> = {
-  pendiente: "#94a3b8",
-  contactado: "#2563eb",
-  respondido: "#0891b2",
-  invalido: "#dc2626",
-};
-// voto_blando + voto_duro are folded into respondido for stats
-
-function StackedBar({ stats, total }: { stats: ValidationStats; total: number }) {
-  if (total === 0) return null;
-  const segments = [
-    { key: "pendiente", value: stats.pendiente },
-    { key: "contactado", value: stats.contactado },
-    { key: "respondido", value: stats.respondido },
-    { key: "invalido", value: stats.invalido },
-  ];
-  return (
-    <div className="flex h-1.5 rounded-full overflow-hidden w-24 bg-slate-100 shrink-0" title="Progreso total">
-      {segments.map(({ key, value }) => {
-        const pct = (value / total) * 100;
-        if (pct === 0) return null;
-        return (
-          <div
-            key={key}
-            style={{ width: `${pct}%`, background: BAR_COLORS[key] }}
-            className="transition-all duration-700"
-          />
-        );
-      })}
-    </div>
-  );
-}
 
 /* ── Stats expandable panel ── */
 function StatsPanel({ stats, items, total }: { stats: ValidationStats; items: ValidationItem[]; total: number }) {
@@ -452,15 +419,14 @@ function ValidacionBoard() {
             />
           </div>
 
-          {/* Stacked bar + stats toggle */}
+          {/* Stats counter + toggle */}
           <div className="relative flex items-center gap-2 shrink-0">
             <span className="text-xs text-slate-500 font-semibold tabular-nums">
-              {totalItems}{hasMore ? `/${totalRecords}` : ""}
+              {totalItems}{hasMore ? `/${totalRecords}` : ""} registros
             </span>
-            <StackedBar stats={stats} total={totalRecords || totalItems} />
             <button
               type="button"
-              onClick={() => setStatsOpen((v) => !v)}
+              onClick={() => setStatsOpen((v: boolean) => !v)}
               className="text-xs text-slate-400 font-medium hover:text-slate-600 transition-colors border-none bg-transparent cursor-pointer tabular-nums"
               title="Ver estadísticas detalladas"
             >
