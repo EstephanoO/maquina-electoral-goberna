@@ -165,5 +165,27 @@ export function fmtPhone(tel: string): string {
 
 export function waLink(tel: string, nombre: string): string {
   const phone = tel.replace(/\D/g, "");
-  return `https://wa.me/51${phone}?text=${encodeURIComponent(`Hola, ${nombre || ""}`)}`;
+  return `https://web.whatsapp.com/send?phone=51${phone}&text=${encodeURIComponent(`Hola, ${nombre || ""}`)}`;
+}
+
+/* ─── WhatsApp opener ─── */
+
+/**
+ * Opens WhatsApp Web via a real <a> click.
+ *
+ * Why not window.open()? Because content scripts patch window.open on the
+ * page's main world, but React may hold a reference to the ORIGINAL
+ * window.open captured before the patch runs. A programmatic <a> click
+ * always goes through the DOM event system where the interceptor listens.
+ */
+export function openWhatsApp(tel: string, nombre: string): void {
+  const url = waLink(tel, nombre);
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }

@@ -11,6 +11,7 @@ export {
   toBackendStatus,
   voteClassForColumn,
   getAllowedTargets,
+  openWhatsApp,
   type VisualColumn,
   type ColumnDef,
 } from "./constants";

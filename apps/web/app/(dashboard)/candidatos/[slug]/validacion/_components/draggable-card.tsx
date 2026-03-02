@@ -194,7 +194,9 @@ export function DraggableCard({
                 {isPendiente ? (
                   <button
                     type="button"
-                    onClick={() => {
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
                       window.open(link, "_blank", "noopener,noreferrer");
                       onWhatsAppClick(item);
                     }}
@@ -267,7 +269,8 @@ export function DraggableCard({
                 <div className="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-slate-100/80">
                   <button
                     type="button"
-                    onClick={() => { onAction(item, { type: "status", status: "respondido" }); toast("Marcado como respondido", "success"); }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onAction(item, { type: "status", status: "respondido" }); toast("Marcado como respondido", "success"); }}
                     disabled={isUpdating}
                     className="flex-1 py-1.5 rounded-md bg-emerald-50 text-emerald-600 text-[11px] font-bold hover:bg-emerald-100 active:bg-emerald-200 transition-colors cursor-pointer border-none disabled:opacity-40"
                   >
@@ -275,7 +278,8 @@ export function DraggableCard({
                   </button>
                   <button
                     type="button"
-                    onClick={() => requestImposible({ type: "status", status: "imposible" })}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); requestImposible({ type: "status", status: "imposible" }); }}
                     disabled={isUpdating}
                     className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors cursor-pointer border-none disabled:opacity-40"
                     title="Marcar como imposible"
@@ -291,7 +295,8 @@ export function DraggableCard({
                 <div className="mt-2 pt-2 border-t border-slate-100/80">
                   <button
                     type="button"
-                    onClick={() => requestImposible({ type: "status", status: "imposible" })}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); requestImposible({ type: "status", status: "imposible" }); }}
                     disabled={isUpdating}
                     className="flex items-center gap-1 px-2 py-1 rounded-md text-red-400 text-[10px] font-semibold hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer border-none disabled:opacity-40"
                   >
@@ -306,7 +311,8 @@ export function DraggableCard({
                 <div className="mt-2.5 pt-2 border-t border-slate-100/80">
                   <button
                     type="button"
-                    onClick={() => { onAction(item, { type: "status", status: "pendiente" }); toast("Devuelto a pendiente", "info"); }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onAction(item, { type: "status", status: "pendiente" }); toast("Devuelto a pendiente", "info"); }}
                     disabled={isUpdating}
                     className="w-full py-1.5 rounded-md bg-slate-50 text-slate-500 text-[11px] font-semibold hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer border-none disabled:opacity-40 flex items-center justify-center gap-1"
                   >

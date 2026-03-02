@@ -24,7 +24,7 @@ const PROTECTED_PREFIXES = [
 ];
 
 // ── Public routes (no auth required) ────────────────────────────────
-const PUBLIC_PATHS = new Set(["/", "/login", "/register", "/onboarding", "/descargar"]);
+const PUBLIC_PATHS = new Set(["/", "/login", "/register", "/onboarding", "/descargar", "/extension"]);
 
 function isProtectedRoute(pathname: string): boolean {
   // Exact public paths
