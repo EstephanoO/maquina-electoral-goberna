@@ -9,6 +9,7 @@ export {
   toBackendStatus,
   defaultTagsForColumn,
   getAllowedTargets,
+  openWhatsApp,
   type VisualColumn,
   type ColumnDef,
 } from "./constants";

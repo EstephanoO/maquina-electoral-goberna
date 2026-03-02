@@ -145,5 +145,18 @@ export function fmtPhone(tel: string): string {
 
 export function waLink(tel: string, nombre: string): string {
   const phone = tel.replace(/\D/g, "");
-  return `https://wa.me/51${phone}?text=${encodeURIComponent(`Hola, ${nombre || ""}`)}`;
+  return `https://web.whatsapp.com/send?phone=51${phone}&text=${encodeURIComponent(`Hola, ${nombre || ""}`)}`;
+}
+
+/* ─── Single-tab WhatsApp opener ─── */
+
+const WA_WINDOW_NAME = "goberna_whatsapp";
+
+/**
+ * Opens WhatsApp Web reusing the same browser window/tab.
+ * Uses window.open with a fixed name so the browser reuses it.
+ */
+export function openWhatsApp(tel: string, nombre: string): void {
+  const url = waLink(tel, nombre);
+  window.open(url, WA_WINDOW_NAME, "noopener");
 }

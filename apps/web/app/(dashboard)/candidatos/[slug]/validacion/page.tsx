@@ -28,6 +28,7 @@ import {
   toBackendStatus,
   defaultTagsForColumn,
   getAllowedTargets,
+  openWhatsApp,
   type VisualColumn,
 } from "./_components";
 import { DroppableColumn } from "./_components/droppable-column";
@@ -130,11 +131,7 @@ export default function ValidacionPage() {
     // If moving from pendiente, claim first then open WhatsApp
     if (data.column === "pendiente" && targetCol === "contactado") {
       await claimValidation(item.id, campaignId);
-      window.open(
-        `https://wa.me/51${item.telefono.replace(/\D/g, "")}?text=${encodeURIComponent(`Hola, ${item.nombre || ""}`)}`,
-        "_blank",
-        "noopener,noreferrer",
-      );
+      openWhatsApp(item.telefono, item.nombre);
     }
 
     const res = await updateValidationStatus(item.id, campaignId, newStatus as Parameters<typeof updateValidationStatus>[2], undefined, tags.length > 0 ? tags : undefined);

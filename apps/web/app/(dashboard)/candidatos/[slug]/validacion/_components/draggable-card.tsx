@@ -15,6 +15,7 @@ import {
   ClockIcon,
   fmtDateShort,
   fmtPhone,
+  openWhatsApp,
   waLink,
 } from "./constants";
 
@@ -152,7 +153,7 @@ export function DraggableCard({
           <button
             type="button"
             onClick={() => {
-              window.open(link, "_blank", "noopener,noreferrer");
+              openWhatsApp(item.telefono, item.nombre);
               onWhatsAppClick(item);
             }}
             disabled={isUpdating}
@@ -163,15 +164,14 @@ export function DraggableCard({
             {phone}
           </button>
         ) : (
-          <a
-            href={link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-green-50 text-green-700 text-[11px] font-bold hover:bg-green-100 transition-colors no-underline"
+          <button
+            type="button"
+            onClick={() => openWhatsApp(item.telefono, item.nombre)}
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-green-50 text-green-700 text-[11px] font-bold hover:bg-green-100 transition-colors cursor-pointer border-none no-underline"
           >
             <WhatsAppIcon />
             {phone}
-          </a>
+          </button>
         )}
       </div>
 
