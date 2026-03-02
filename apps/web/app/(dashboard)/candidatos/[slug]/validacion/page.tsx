@@ -36,6 +36,7 @@ import { DraggableCard } from "./_components/draggable-card";
 import { DragOverlayCard } from "./_components/drag-overlay-card";
 import { ToastProvider, useToast } from "./_components/toast";
 import { ConfirmModal } from "./_components/confirm-modal";
+import { ClassifyModal } from "./_components/classify-modal";
 
 /* ── Pagination config ── */
 const PAGE_LIMIT = 100;
@@ -153,6 +154,13 @@ function ValidacionBoard() {
   const [statsOpen, setStatsOpen] = useState(false);
   const [compact, setCompact] = useState(false);
   const [collapsedCols, setCollapsedCols] = useState<Set<VisualColumn>>(new Set(["invalido"]));
+
+  /* ── Pending classify-on-drag (contactado → score column) ── */
+  const [pendingClassify, setPendingClassify] = useState<null | {
+    item: ValidationItem;
+    fromCol: VisualColumn;
+    targetCol: VisualColumn;
+  }>(null);
 
   function toggleColCollapse(key: VisualColumn) {
     setCollapsedCols((prev) => {
@@ -288,6 +296,13 @@ function ValidacionBoard() {
       return;
     }
 
+    // Intercept drag from contactado → score columns to classify
+    const scoreColumns: VisualColumn[] = ["respondido", "voto_blando", "voto_duro"];
+    if (data.column === "contactado" && scoreColumns.includes(targetCol)) {
+      setPendingClassify({ item: data.item, fromCol: data.column, targetCol });
+      return;
+    }
+
     await executeDrop(data.item, data.column, targetCol);
   }, [executeDrop]);
 
@@ -364,6 +379,20 @@ function ValidacionBoard() {
 
   return (
     <>
+      {/* Classify-on-drag modal (contactado → score columns) */}
+      {pendingClassify && (
+        <ClassifyModal
+          item={pendingClassify.item}
+          targetCol={pendingClassify.targetCol}
+          onConfirm={async (tags, resolvedCol) => {
+            const pending = pendingClassify;
+            setPendingClassify(null);
+            await executeDrop({ ...pending.item, tags }, pending.fromCol, resolvedCol);
+          }}
+          onCancel={() => setPendingClassify(null)}
+        />
+      )}
+
       {/* DnD Inválido confirm */}
       <ConfirmModal
         open={confirmDndInvalido !== null}
