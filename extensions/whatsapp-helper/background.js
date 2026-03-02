@@ -209,10 +209,16 @@ function stepTypePhone(phone) {
  * this function is fire-and-forget. We validate success in a separate
  * ISOLATED-world step afterward.
  *
- * SCOPING: We search ONLY within the "Nuevo chat" panel, NOT #side.
- * The panel is identified by the presence of the "Buscar un nombre o número"
- * search input. We walk UP from that input to find the panel container,
- * then search within it for result buttons.
+ * DOM STRUCTURE (confirmed via live DevTools 2026):
+ *   The "Nuevo chat" panel is a sibling of #side under #app.
+ *   It contains the search input (aria-label="Buscar un nombre o número").
+ *   Search results are <button> elements within the same panel.
+ *   For non-contacts: "Usuarios que no están en tus contactos" heading
+ *   followed by button "+51 941 146 026 +51 941 146 026".
+ *   For contacts: "Contactos en WhatsApp" heading followed by buttons.
+ *
+ * KEY: Walk UP from the search input to find the panel root, then search
+ * only buttons WITHIN that panel. NEVER search #side or #app directly.
  */
 function stepClickResult(phone) {
   const TAG = "[Goberna WA]";
@@ -231,127 +237,76 @@ function stepClickResult(phone) {
     if (searchInput) break;
   }
 
-  // Walk up from the search input to find the panel container.
-  // The panel is typically a direct child of #app or a sibling of #side.
-  // We go up until we find a large container (the panel root).
-  let panelRoot = null;
-  if (searchInput) {
-    let el = searchInput;
-    for (let i = 0; i < 15; i++) {
-      el = el.parentElement;
-      if (!el) break;
-      // The panel is a large div that covers the sidebar area.
-      // It usually has a height > 400px and isn't #app itself.
-      if (el.id === "app" || el.id === "side") break;
-      const rect = el.getBoundingClientRect();
-      if (rect.height > 400 && rect.width > 200) {
-        panelRoot = el;
-        // Don't break — keep going up to find the largest reasonable container
-        // that isn't #app itself
-      }
-    }
+  if (!searchInput) {
+    console.warn(TAG, "Search input not found — cannot find results");
+    return;
   }
 
-  // If we couldn't isolate the panel, search all of #app but EXCLUDE #side
-  const searchArea = panelRoot || document.querySelector("#app");
-  if (!searchArea) {
-    console.warn(TAG, "No search area found");
+  // Walk up from the search input to the panel root.
+  // The panel root is the topmost ancestor that is NOT #app, #side, or body.
+  // From the snapshot: searchInput is inside uid=8_0 (generic), which is
+  // a direct child of uid=1_2 (generic) alongside #side.
+  let panelRoot = searchInput.parentElement;
+  while (panelRoot) {
+    const parent = panelRoot.parentElement;
+    if (
+      !parent ||
+      parent.id === "app" ||
+      parent === document.body ||
+      parent === document.documentElement
+    ) {
+      break; // panelRoot is now the correct container
+    }
+    panelRoot = parent;
+  }
+
+  if (!panelRoot || panelRoot.id === "side") {
+    console.warn(TAG, "Could not isolate Nuevo chat panel");
     return;
   }
 
   const phoneSuffix = phone.slice(-6); // Last 6 digits for matching
   console.log(TAG, `Looking for result with suffix: ${phoneSuffix} in panel`);
 
-  // ── Strategy 1: Find "Usuarios que no están en tus contactos" section ──
-  // This section heading is a reliable anchor. Results are buttons AFTER it.
-  const nonContactTexts = [
-    "Usuarios que no están en tus contactos",
-    "Users not in your contacts",
-    "Pessoas fora dos seus contatos",
-  ];
-  let nonContactSection = null;
-  const allElements = searchArea.querySelectorAll("*");
-  for (const el of allElements) {
-    // Skip #side elements to avoid matching chat list items
-    if (el.closest("#side")) continue;
-    const txt = el.textContent?.trim() || "";
-    for (const heading of nonContactTexts) {
-      if (txt === heading) {
-        nonContactSection = el;
-        break;
-      }
-    }
-    if (nonContactSection) break;
-  }
-
-  if (nonContactSection) {
-    // The search result buttons are siblings or nearby descendants
-    // Walk up to the parent container and find buttons there
-    let container = nonContactSection.parentElement;
-    for (let i = 0; i < 5; i++) {
-      if (!container) break;
-      const buttons = container.querySelectorAll("button");
-      for (const btn of buttons) {
-        if (btn.closest("#side")) continue; // Skip sidebar
-        const digitsInBtn = (btn.textContent || "").replace(/\D/g, "");
-        if (digitsInBtn.includes(phoneSuffix) && btn.offsetParent !== null) {
-          console.log(
-            TAG,
-            "✓ Clicking non-contact result:",
-            (btn.textContent || "").slice(0, 60)
-          );
-          btn.click();
-          return; // MAIN world — no return value
-        }
-      }
-      container = container.parentElement;
-    }
-    console.log(TAG, "Found non-contact section but no matching button");
-  }
-
-  // ── Strategy 2: Find ANY button with matching digits NOT inside #side ──
-  const allButtons = searchArea.querySelectorAll("button");
-  for (const btn of allButtons) {
-    // CRITICAL: Skip buttons inside #side (existing chat list)
-    if (btn.closest("#side")) continue;
-
+  // ── Strategy 1: Find buttons within the panel that match phone digits ──
+  // The search results are always <button> elements inside the panel.
+  const panelButtons = panelRoot.querySelectorAll("button");
+  for (const btn of panelButtons) {
     const text = btn.textContent || "";
     const ariaLabel = btn.getAttribute("aria-label") || "";
     const combined = text + " " + ariaLabel;
     const digitsInText = combined.replace(/\D/g, "");
 
-    if (digitsInText.includes(phoneSuffix) && btn.offsetParent !== null) {
-      // Extra check: skip known non-result buttons
-      const lower = combined.toLowerCase();
-      if (
-        lower.includes("nuevo chat") ||
-        lower.includes("new chat") ||
-        lower.includes("cerrar") ||
-        lower.includes("close")
-      ) {
-        continue;
-      }
-      console.log(TAG, "✓ Clicking matching button:", combined.slice(0, 60));
-      btn.click();
-      return; // MAIN world — no return value
+    // Must contain our phone suffix AND be visible
+    if (!digitsInText.includes(phoneSuffix)) continue;
+    if (btn.offsetParent === null) continue;
+
+    // Skip known non-result buttons (navigation, cancel, etc.)
+    const lower = combined.toLowerCase();
+    if (
+      lower.includes("nuevo chat") ||
+      lower.includes("new chat") ||
+      lower.includes("atrás") ||
+      lower.includes("back") ||
+      lower.includes("cancelar") ||
+      lower.includes("cancel") ||
+      lower.includes("cerrar") ||
+      lower.includes("close") ||
+      lower.includes("número de teléfono")
+    ) {
+      continue;
     }
+
+    console.log(
+      TAG,
+      "✓ Clicking matching panel button:",
+      combined.slice(0, 80)
+    );
+    btn.click();
+    return; // MAIN world — no return value
   }
 
-  // ── Strategy 3: Look for listitem/row/option NOT inside #side ──
-  const listItems = searchArea.querySelectorAll(
-    'div[role="listitem"], div[role="row"], div[role="option"]'
-  );
-  for (const item of listItems) {
-    if (item.closest("#side")) continue;
-    const digitsInItem = (item.textContent || "").replace(/\D/g, "");
-    if (digitsInItem.includes(phoneSuffix) && item.offsetParent !== null) {
-      console.log(TAG, "✓ Clicking matching list item");
-      item.click();
-      return;
-    }
-  }
-
-  console.warn(TAG, "✗ No search result found for", phone);
+  console.warn(TAG, "✗ No search result button found in panel for", phone);
 }
 
 /**
@@ -381,18 +336,23 @@ function stepValidateChatOpened(phone) {
   }
 
   // Check if the compose box exists (chat is open and interactive)
-  const composeLabels = [
-    "Escribe un mensaje",
-    "Type a message",
-    "Digite uma mensagem",
+  // NOTE: The compose box label is dynamic — "Escribe a +51 XXX XXX XXX."
+  // or "Escribe un mensaje" depending on context. Use prefix matching.
+  const composePrefixes = [
+    "Escribe",   // Spanish: "Escribe un mensaje" or "Escribe a +51..."
+    "Type",      // English: "Type a message"
+    "Digite",    // Portuguese: "Digite uma mensagem"
   ];
-  for (const label of composeLabels) {
-    const box = document.querySelector(
-      `div[role="textbox"][aria-label="${label}"]`
-    );
-    if (box) {
-      console.log(TAG, "✓ Chat opened — compose box found");
-      return { opened: true, method: "compose-box" };
+  const allTextboxes = document.querySelectorAll(
+    '#main div[role="textbox"][contenteditable="true"]'
+  );
+  for (const box of allTextboxes) {
+    const label = box.getAttribute("aria-label") || "";
+    for (const prefix of composePrefixes) {
+      if (label.startsWith(prefix)) {
+        console.log(TAG, "✓ Chat opened — compose box found:", label.slice(0, 40));
+        return { opened: true, method: "compose-box" };
+      }
     }
   }
 
@@ -410,18 +370,32 @@ function stepTypeMessage(text) {
 
   if (!text) return;
 
-  // The compose box in the chat area
-  const composeLabels = [
-    "Escribe un mensaje",
-    "Type a message",
-    "Digite uma mensagem",
+  // The compose box in the chat area.
+  // NOTE: The aria-label is dynamic — "Escribe a +51 XXX XXX XXX."
+  // or "Escribe un mensaje", so we use prefix matching.
+  const composePrefixes = [
+    "Escribe",   // Spanish: "Escribe un mensaje" or "Escribe a +51..."
+    "Type",      // English: "Type a message"
+    "Digite",    // Portuguese: "Digite uma mensagem"
   ];
 
   let input = null;
-  for (const label of composeLabels) {
-    input = document.querySelector(
-      `div[role="textbox"][aria-label="${label}"]`
-    );
+
+  // Primary: find by aria-label prefix inside #main or footer
+  const allTextboxes = document.querySelectorAll(
+    'div[role="textbox"][contenteditable="true"]'
+  );
+  for (const box of allTextboxes) {
+    const label = box.getAttribute("aria-label") || "";
+    for (const prefix of composePrefixes) {
+      if (label.startsWith(prefix)) {
+        // Make sure it's NOT the search input (which starts with "Buscar")
+        if (!label.includes("Buscar") && !label.includes("Search")) {
+          input = box;
+          break;
+        }
+      }
+    }
     if (input) break;
   }
 
