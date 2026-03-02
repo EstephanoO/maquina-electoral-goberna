@@ -60,11 +60,6 @@ export function voteClassForColumn(col: VisualColumn): string | undefined {
   return undefined;
 }
 
-/** Default tags when dropping – now empty (no scoring) */
-export function defaultTagsForColumn(_col: VisualColumn): string[] {
-  return [];
-}
-
 /* ─── Vote badges ─── */
 
 export const VOTE_BADGES: Record<string, { label: string; color: string; bg: string }> = {

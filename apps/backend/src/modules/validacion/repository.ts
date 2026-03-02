@@ -199,7 +199,7 @@ export async function updateStatus(
       id, form_id, campaign_id::text, nombre, telefono, encuestador, zona,
       form_created_at as created_at, status, notes, tags, score, vote_class,
       claimed_by::text, NULL::text as claimed_by_name, updated_at
-  `, [id, campaignId, status, notes, userId, "[]", 0, finalVoteClass]);
+  `, [id, campaignId, status, notes, userId, [], 0, finalVoteClass]);
   return rows[0] ?? null;
 }
 

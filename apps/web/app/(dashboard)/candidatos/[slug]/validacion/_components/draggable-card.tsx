@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import type { ValidationItem } from "@/lib/services/validacion";
-import { SCORING_TAGS, computeScore, classifyVote } from "@/lib/services/validacion";
+
 import {
   type VisualColumn,
   VOTE_BADGES,
@@ -85,29 +85,6 @@ type CardAction = {
   type: "status";
   status: "contactado" | "respondido" | "imposible" | "pendiente";
 };
-
-/* ─── Score bar ─── */
-const MAX_SCORE = 11; // sum of all tag points
-
-function ScoreBar({ score, voteClass }: { score: number; voteClass: string }) {
-  const pct = Math.min((score / MAX_SCORE) * 100, 100);
-  const color = voteClass === "duro" ? "#15803d" : voteClass === "blando" ? "#ca8a04" : "#94a3b8";
-  const label = voteClass === "duro" ? "Voto Duro" : voteClass === "blando" ? "Voto Blando" : "Tibio";
-  return (
-    <div className="mt-1.5">
-      <div className="flex items-center justify-between mb-0.5">
-        <span className="text-[9px] font-semibold text-slate-400">Puntaje</span>
-        <span className="text-[9px] font-black" style={{ color }}>{score} pts · {label}</span>
-      </div>
-      <div className="h-1 w-full rounded-full bg-slate-100 overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-500"
-          style={{ width: `${pct}%`, background: color }}
-        />
-      </div>
-    </div>
-  );
-}
 
 /* ─── Main component ─── */
 

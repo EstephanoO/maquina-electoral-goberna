@@ -322,13 +322,22 @@ function ValidacionBoard() {
   ) => {
     setUpdatingId(item.id);
     if (action.type === "status") {
-      const newStatus = action.status as Parameters<typeof updateValidationStatus>[2];
-      const res = await updateValidationStatus(item.id, campaignId, newStatus);
+      // Convert visual status → backend status (e.g. "imposible" → "invalido")
+      const backendStatus = toBackendStatus(action.status as VisualColumn) as Parameters<typeof updateValidationStatus>[2];
+      // Derive vote_class from target visual column
+      const voteClass = voteClassForColumn(action.status as VisualColumn);
+
+      // Optimistic update
+      setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, status: backendStatus as any, vote_class: voteClass ?? i.vote_class } : i));
+
+      const res = await updateValidationStatus(item.id, campaignId, backendStatus, voteClass);
       if (res.ok && res.data) {
         setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, ...res.data!.item } : i));
         const statsRes = await getValidationStats(campaignId);
         if (statsRes.ok && statsRes.data) setStats(statsRes.data.stats);
       } else {
+        // Revert on failure
+        setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, status: item.status, vote_class: item.vote_class } : i));
         toast("Error al actualizar estado", "error");
       }
     }
