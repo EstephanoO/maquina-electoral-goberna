@@ -329,9 +329,7 @@ function ValidacionBoard() {
     setUpdatingId(null);
   }, [campaignId, toast]);
 
-  /* ── Group by visual column ──
-     respondido shows ALL answered contacts regardless of vote sub-class.
-     Sub-classification columns (voto_blando, voto_duro, voto_flotante) are ALSO shown there. */
+  /* ── Group by visual column ── */
   const grouped = useMemo(() => {
     const groups: Record<VisualColumn, ValidationItem[]> = {
       pendiente: [], contactado: [], respondido: [],
@@ -341,10 +339,6 @@ function ValidacionBoard() {
       const st = item.status === ("validado" as string) ? "respondido" : item.status;
       const col = toVisualColumn(st, item.vote_class);
       groups[col]?.push(item);
-      // Mirror sub-classified items into the respondido column
-      if (col === "voto_blando" || col === "voto_duro" || col === "voto_flotante") {
-        groups.respondido.push(item);
-      }
     }
     return groups;
   }, [filteredItems]);
