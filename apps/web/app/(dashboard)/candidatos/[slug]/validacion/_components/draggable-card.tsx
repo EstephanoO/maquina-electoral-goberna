@@ -152,13 +152,15 @@ export function DraggableCard({
         {isPendiente ? (
           <button
             type="button"
-            onClick={() => {
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
               openWhatsApp(item.telefono, item.nombre);
               onWhatsAppClick(item);
             }}
             disabled={isUpdating}
             className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-green-50 text-green-700 text-[11px] font-bold hover:bg-green-100 transition-colors cursor-pointer border-none disabled:opacity-40"
-            title="Contactar por WhatsApp (reclama el lead)"
+            title="Contactar por WhatsApp (reclama el lead, se mueve al enviar mensaje)"
           >
             <WhatsAppIcon />
             {phone}
@@ -166,7 +168,8 @@ export function DraggableCard({
         ) : (
           <button
             type="button"
-            onClick={() => openWhatsApp(item.telefono, item.nombre)}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); openWhatsApp(item.telefono, item.nombre); }}
             className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-green-50 text-green-700 text-[11px] font-bold hover:bg-green-100 transition-colors cursor-pointer border-none no-underline"
           >
             <WhatsAppIcon />
@@ -182,7 +185,8 @@ export function DraggableCard({
           <>
             <button
               type="button"
-              onClick={() => onAction(item, { type: "status", status: "respondido", tags: ["respondio"] })}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onAction(item, { type: "status", status: "respondido", tags: ["respondio"] }); }}
               disabled={isUpdating}
               className="flex items-center gap-1 px-2 py-1 rounded-md bg-cyan-50 text-cyan-700 text-[10px] font-bold hover:bg-cyan-100 transition-colors cursor-pointer border-none disabled:opacity-40"
               title="Marcar como respondido"
@@ -192,7 +196,8 @@ export function DraggableCard({
             </button>
             <button
               type="button"
-              onClick={() => onAction(item, { type: "status", status: "invalido" })}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onAction(item, { type: "status", status: "invalido" }); }}
               disabled={isUpdating}
               className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-50 text-red-600 text-[10px] font-bold hover:bg-red-100 transition-colors cursor-pointer border-none disabled:opacity-40"
               title="Marcar como inválido"
@@ -207,7 +212,8 @@ export function DraggableCard({
         {isPendiente && (
           <button
             type="button"
-            onClick={() => onAction(item, { type: "status", status: "invalido" })}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onAction(item, { type: "status", status: "invalido" }); }}
             disabled={isUpdating}
             className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-50 text-red-600 text-[10px] font-bold hover:bg-red-100 transition-colors cursor-pointer border-none disabled:opacity-40"
             title="Marcar como inválido"
@@ -221,7 +227,8 @@ export function DraggableCard({
         {isRespondido && (
           <button
             type="button"
-            onClick={() => onAction(item, { type: "status", status: "invalido" })}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onAction(item, { type: "status", status: "invalido" }); }}
             disabled={isUpdating}
             className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-50 text-red-600 text-[10px] font-bold hover:bg-red-100 transition-colors cursor-pointer border-none disabled:opacity-40"
             title="Marcar como inválido"
@@ -235,7 +242,8 @@ export function DraggableCard({
         {isInvalido && (
           <button
             type="button"
-            onClick={() => onAction(item, { type: "status", status: "pendiente" })}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onAction(item, { type: "status", status: "pendiente" }); }}
             disabled={isUpdating}
             className="flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold hover:bg-slate-200 transition-colors cursor-pointer border-none disabled:opacity-40"
             title="Devolver a pendiente"
@@ -252,7 +260,8 @@ export function DraggableCard({
           {/* Toggle button */}
           <button
             type="button"
-            onClick={() => setTagsOpen(!tagsOpen)}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); setTagsOpen(!tagsOpen); }}
             className="flex items-center gap-1.5 w-full text-left px-1.5 py-1 rounded-md hover:bg-slate-50 transition-colors cursor-pointer border-none bg-transparent"
           >
             <ChevronDownIcon open={tagsOpen} />
@@ -273,7 +282,8 @@ export function DraggableCard({
                   <button
                     key={tag.key}
                     type="button"
-                    onClick={() => handleTagToggle(tag.key)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); handleTagToggle(tag.key); }}
                     disabled={isUpdating}
                     className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border transition-all cursor-pointer disabled:opacity-40 ${
                       active

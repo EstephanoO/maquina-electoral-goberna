@@ -1,5 +1,5 @@
 /**
- * WhatsApp Goberna Helper — Background Script (v4.0)
+ * WhatsApp Goberna Helper — Background Script (v7.0)
  *
  * Multi-step sequential executeScript approach.
  *
@@ -11,8 +11,7 @@
  *   Step 2 (wait 800ms)
  *   Step 3 (MAIN):     Focus + type phone into contenteditable search
  *   Step 4 (wait 2500ms for search results)
- *   Step 5 (MAIN):     Find and click the search result button (MUST be MAIN
- *                       to see DOM rendered by React after MAIN-world typing)
+ *   Step 5 (MAIN):     Press Enter on search input to select first result
  *   Step 6 (wait 800ms)
  *   Step 7 (ISOLATED):  Validate chat opened (check #main header changed)
  *   Step 8 (MAIN):     Pre-fill message text if provided
@@ -22,9 +21,23 @@
  * MAIN world: execCommand works for React contenteditable, but
  *   async returns come back as undefined (no Promise support).
  *
- * BUG FIX (v4.0): stepClickResult now runs in MAIN world and scopes
- * button search to the "Nuevo chat" panel only (avoids matching
- * existing chat list items in #side). Also added chat-switch validation.
+ * BUG FIX (v5.1): stepClickResult rewritten with panel-scoped search.
+ * Root cause: The "Nuevo chat" panel is INSIDE #side in the real HTML DOM.
+ *
+ * BUG FIX (v5.2): SKIP_LABELS was too aggressive.
+ * Root cause: WA Web 2026 embeds icon names like "default-contact-refreshed"
+ * as invisible text inside search result elements.
+ *
+ * BUG FIX (v6.0): .click() / dispatchEvent mouse events don't open chat.
+ * Root cause: JavaScript dispatchEvent() creates UNTRUSTED events
+ * (isTrusted: false). WhatsApp Web's React event delegation ignores
+ * untrusted mouse/pointer events on search result buttons.
+ *
+ * BUG FIX (v7.0): Use Enter key instead of clicking search results.
+ * After typing the phone number in the "Nuevo chat" search box,
+ * pressing Enter selects the first search result and opens the chat.
+ * This was confirmed via live DevTools testing — Enter from the search
+ * input works reliably, bypassing the untrusted event problem entirely.
  */
 
 const WA_BASE = "https://web.whatsapp.com";
@@ -198,115 +211,73 @@ function stepTypePhone(phone) {
 }
 
 /**
- * Step 5: Find and click the first contact result from the search.
+ * Step 5: Select the first search result by pressing Enter in the search box.
  *
  * *** RUNS IN MAIN WORLD ***
- * This MUST run in MAIN world because the search results are rendered by
+ * This MUST run in MAIN world because the search results were rendered by
  * React in response to execCommand("insertText") input from MAIN world.
- * ISOLATED world may not see these results or may have stale DOM.
+ *
+ * KEY DISCOVERY (v7.0 — confirmed via live DevTools testing, March 2026):
+ *   JavaScript dispatchEvent() creates UNTRUSTED events (isTrusted: false).
+ *   WhatsApp Web's React event delegation IGNORES untrusted mouse/pointer
+ *   events on search result <div role="button"> elements. This means:
+ *   - element.click() does NOT work
+ *   - Full pointer/mouse event sequence does NOT work
+ *   - Only CDP-level events (from DevTools / chrome.debugger) are trusted
+ *
+ *   HOWEVER, pressing Enter while the search textbox has focus DOES select
+ *   the first search result and opens the chat. This works because WhatsApp
+ *   handles the Enter keydown on the contenteditable search input via its
+ *   own keydown handler (not React delegation on a button element).
+ *
+ *   The approach: find the search input, ensure it has focus, then dispatch
+ *   Enter keydown/keyup events on it. Even if isTrusted is false, WhatsApp's
+ *   keydown handler on the contenteditable input processes it.
  *
  * Since MAIN world cannot return Promises (results come back as undefined),
  * this function is fire-and-forget. We validate success in a separate
  * ISOLATED-world step afterward.
- *
- * DOM STRUCTURE (confirmed via live DevTools 2026):
- *   The "Nuevo chat" panel is a sibling of #side under #app.
- *   It contains the search input (aria-label="Buscar un nombre o número").
- *   Search results are <button> elements within the same panel.
- *   For non-contacts: "Usuarios que no están en tus contactos" heading
- *   followed by button "+51 941 146 026 +51 941 146 026".
- *   For contacts: "Contactos en WhatsApp" heading followed by buttons.
- *
- * KEY: Walk UP from the search input to find the panel root, then search
- * only buttons WITHIN that panel. NEVER search #side or #app directly.
  */
-function stepClickResult(phone) {
+function stepSelectResult() {
   const TAG = "[Goberna WA]";
+  console.log(TAG, "stepSelectResult: pressing Enter to select first search result");
 
-  // ── Locate the "Nuevo chat" panel by finding its search input ──
+  // Find the search input in the "Nuevo chat" panel
   const searchLabels = [
     "Buscar un nombre o número",
     "Search name or number",
     "Pesquisar nome ou número",
   ];
-  let searchInput = null;
+
+  let input = null;
   for (const label of searchLabels) {
-    searchInput = document.querySelector(
-      `div[role="textbox"][aria-label="${label}"]`
-    );
-    if (searchInput) break;
+    input = document.querySelector(`div[role="textbox"][aria-label="${label}"]`);
+    if (input) break;
   }
 
-  if (!searchInput) {
-    console.warn(TAG, "Search input not found — cannot find results");
+  if (!input) {
+    console.warn(TAG, "Search input not found — cannot press Enter");
     return;
   }
 
-  // Walk up from the search input to the panel root.
-  // The panel root is the topmost ancestor that is NOT #app, #side, or body.
-  // From the snapshot: searchInput is inside uid=8_0 (generic), which is
-  // a direct child of uid=1_2 (generic) alongside #side.
-  let panelRoot = searchInput.parentElement;
-  while (panelRoot) {
-    const parent = panelRoot.parentElement;
-    if (
-      !parent ||
-      parent.id === "app" ||
-      parent === document.body ||
-      parent === document.documentElement
-    ) {
-      break; // panelRoot is now the correct container
-    }
-    panelRoot = parent;
-  }
+  // Ensure focus is on the search input
+  input.focus();
 
-  if (!panelRoot || panelRoot.id === "side") {
-    console.warn(TAG, "Could not isolate Nuevo chat panel");
-    return;
-  }
+  // Dispatch Enter key events
+  const enterProps = {
+    key: "Enter",
+    code: "Enter",
+    keyCode: 13,
+    which: 13,
+    bubbles: true,
+    cancelable: true,
+  };
 
-  const phoneSuffix = phone.slice(-6); // Last 6 digits for matching
-  console.log(TAG, `Looking for result with suffix: ${phoneSuffix} in panel`);
+  input.dispatchEvent(new KeyboardEvent("keydown", enterProps));
+  input.dispatchEvent(new KeyboardEvent("keypress", enterProps));
+  input.dispatchEvent(new KeyboardEvent("keyup", enterProps));
 
-  // ── Strategy 1: Find buttons within the panel that match phone digits ──
-  // The search results are always <button> elements inside the panel.
-  const panelButtons = panelRoot.querySelectorAll("button");
-  for (const btn of panelButtons) {
-    const text = btn.textContent || "";
-    const ariaLabel = btn.getAttribute("aria-label") || "";
-    const combined = text + " " + ariaLabel;
-    const digitsInText = combined.replace(/\D/g, "");
-
-    // Must contain our phone suffix AND be visible
-    if (!digitsInText.includes(phoneSuffix)) continue;
-    if (btn.offsetParent === null) continue;
-
-    // Skip known non-result buttons (navigation, cancel, etc.)
-    const lower = combined.toLowerCase();
-    if (
-      lower.includes("nuevo chat") ||
-      lower.includes("new chat") ||
-      lower.includes("atrás") ||
-      lower.includes("back") ||
-      lower.includes("cancelar") ||
-      lower.includes("cancel") ||
-      lower.includes("cerrar") ||
-      lower.includes("close") ||
-      lower.includes("número de teléfono")
-    ) {
-      continue;
-    }
-
-    console.log(
-      TAG,
-      "✓ Clicking matching panel button:",
-      combined.slice(0, 80)
-    );
-    btn.click();
-    return; // MAIN world — no return value
-  }
-
-  console.warn(TAG, "✗ No search result button found in panel for", phone);
+  console.log(TAG, "Enter key dispatched on search input");
 }
 
 /**
@@ -492,10 +463,13 @@ async function navigateInPlace(tabId, rawPhone, text) {
   // ── Step 4: Wait for search results to populate ──
   await sleep(2500);
 
-  // ── Step 5: Click the search result (MAIN world) ──
-  // MUST be MAIN world so we see the same DOM that React rendered
-  // after our MAIN-world typing in Step 3.
-  await execStep(tabId, stepClickResult, [phone], "MAIN");
+  // ── Step 5: Press Enter to select the first search result (MAIN world) ──
+  // MUST be MAIN world so we can interact with the same DOM that React
+  // rendered after our MAIN-world typing in Step 3.
+  // KEY INSIGHT (v7.0): Pressing Enter on the search input selects the
+  // first result. Mouse clicks via dispatchEvent are UNTRUSTED and ignored
+  // by WhatsApp's React event delegation, but Enter key works.
+  await execStep(tabId, stepSelectResult, [], "MAIN");
   // No return value from MAIN world — validate in next step
 
   // ── Step 6: Wait for chat to open ──
@@ -512,7 +486,7 @@ async function navigateInPlace(tabId, rawPhone, text) {
       // Re-type with full number
       await execStep(tabId, stepTypePhone, [fullDigits], "MAIN");
       await sleep(2500);
-      await execStep(tabId, stepClickResult, [fullDigits], "MAIN");
+      await execStep(tabId, stepSelectResult, [], "MAIN");
       await sleep(800);
       validation = await execStep(tabId, stepValidateChatOpened, [fullDigits]);
 
@@ -532,7 +506,7 @@ async function navigateInPlace(tabId, rawPhone, text) {
     const withPlus = `+${rawPhone.replace(/\D/g, "")}`;
     await execStep(tabId, stepTypePhone, [withPlus], "MAIN");
     await sleep(2500);
-    await execStep(tabId, stepClickResult, [withPlus.replace(/\D/g, "")], "MAIN");
+    await execStep(tabId, stepSelectResult, [], "MAIN");
     await sleep(800);
     validation = await execStep(tabId, stepValidateChatOpened, [phone]);
 
@@ -585,6 +559,48 @@ async function openChat(phone, text) {
   return { reused: false, tabId: newTab.id, method: "new-tab" };
 }
 
+// ── Dashboard tab tracking ──
+// Track which tabs have the Goberna dashboard open.
+// We relay messageSent events to these tabs.
+
+const DASHBOARD_PATTERNS = [
+  "dashboard.grupogoberna.com",
+  "localhost:3000",
+  "localhost:3001",
+];
+
+function isDashboardUrl(url) {
+  if (!url) return false;
+  return DASHBOARD_PATTERNS.some((p) => url.includes(p));
+}
+
+async function findDashboardTabs() {
+  const allTabs = await chrome.tabs.query({});
+  return allTabs.filter((t) => isDashboardUrl(t.url));
+}
+
+/**
+ * Relay a messageSent event to all open dashboard tabs.
+ * The interceptor.js running on those tabs will dispatch it
+ * as a CustomEvent for React to pick up.
+ */
+async function relayMessageSentToDashboard(phone) {
+  const tabs = await findDashboardTabs();
+  console.log(`[Goberna WA] Relaying messageSent (${phone}) to ${tabs.length} dashboard tab(s)`);
+
+  for (const tab of tabs) {
+    try {
+      await chrome.tabs.sendMessage(tab.id, {
+        action: "gobernaMessageSent",
+        phone: phone,
+      });
+    } catch (err) {
+      // Tab might not have the content script loaded yet — ignore
+      console.warn(`[Goberna WA] Failed to relay to tab ${tab.id}:`, err.message);
+    }
+  }
+}
+
 // ── Message handler ──
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -602,6 +618,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     findWaTab().then((tab) => {
       sendResponse({ open: !!tab, tabId: tab?.id ?? null });
     });
+    return true;
+  }
+
+  if (msg.action === "messageSent") {
+    // Received from content.js on WhatsApp Web
+    console.log("[Goberna WA] messageSent received from WA tab:", msg.phone);
+    relayMessageSentToDashboard(msg.phone)
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ error: err.message }));
     return true;
   }
 });

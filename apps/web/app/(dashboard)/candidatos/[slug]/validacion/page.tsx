@@ -144,17 +144,76 @@ export default function ValidacionPage() {
     setUpdatingId(null);
   }, [campaignId]);
 
-  /* ── WhatsApp click (pendiente only) ── */
+  /* ── WhatsApp click (pendiente only — claims lead but does NOT move to contactado) ── */
+  /* The card moves to contactado ONLY when the extension detects a message was actually sent */
   const handleWhatsAppClick = useCallback(async (item: ValidationItem) => {
     if (item.status !== "pendiente") return;
     setUpdatingId(item.id);
     await claimValidation(item.id, campaignId);
-    const res = await updateValidationStatus(item.id, campaignId, "contactado");
-    if (res.ok) {
-      setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, status: "contactado" } : i));
-      setStats((prev) => ({ ...prev, pendiente: Math.max(0, prev.pendiente - 1), contactado: prev.contactado + 1 }));
-    }
     setUpdatingId(null);
+  }, [campaignId]);
+
+  /* ── Listen for messageSent events from the Chrome extension ── */
+  /* Extension content.js on WA Web detects send → background.js → interceptor.js on dashboard → CustomEvent */
+  useEffect(() => {
+    function handleMessageSent(e: Event) {
+      const detail = (e as CustomEvent<{ phone: string }>).detail;
+      if (!detail?.phone) return;
+
+      const sentPhone = detail.phone.replace(/\D/g, "");
+      // Strip Peru country code for matching (51XXXXXXXXX → XXXXXXXXX)
+      const sentLocal = sentPhone.length === 11 && sentPhone.startsWith("51")
+        ? sentPhone.slice(2)
+        : sentPhone;
+
+      console.log("[Validacion] messageSent event received for phone:", sentLocal);
+
+      // Find the matching pendiente item by phone number
+      setItems((prev) => {
+        const match = prev.find((i) => {
+          if (i.status !== "pendiente") return false;
+          const itemPhone = i.telefono.replace(/\D/g, "");
+          return itemPhone === sentLocal || itemPhone === sentPhone;
+        });
+
+        if (!match) {
+          console.log("[Validacion] No matching pendiente item for phone:", sentLocal);
+          return prev;
+        }
+
+        console.log("[Validacion] Moving item to contactado:", match.id, match.nombre);
+
+        // Optimistic UI update
+        const updated = prev.map((i) =>
+          i.id === match.id ? { ...i, status: "contactado" as const } : i,
+        );
+
+        // Fire the API call (non-blocking)
+        updateValidationStatus(match.id, campaignId, "contactado").then((res) => {
+          if (res.ok && res.data) {
+            setItems((curr) =>
+              curr.map((i) => (i.id === match.id ? { ...i, ...res.data!.item } : i)),
+            );
+          }
+          // Refresh stats
+          getValidationStats(campaignId).then((statsRes) => {
+            if (statsRes.ok && statsRes.data) setStats(statsRes.data.stats);
+          });
+        });
+
+        // Optimistic stats update
+        setStats((s) => ({
+          ...s,
+          pendiente: Math.max(0, s.pendiente - 1),
+          contactado: s.contactado + 1,
+        }));
+
+        return updated;
+      });
+    }
+
+    window.addEventListener("goberna:messageSent", handleMessageSent);
+    return () => window.removeEventListener("goberna:messageSent", handleMessageSent);
   }, [campaignId]);
 
   /* ── Card action handler (buttons + tag toggles) ── */

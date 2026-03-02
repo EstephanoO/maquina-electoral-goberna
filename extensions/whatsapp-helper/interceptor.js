@@ -100,3 +100,20 @@ document.addEventListener(
   },
   true,
 );
+
+// ── 4. Listen for messageSent relay from background script ──
+// When the extension detects a message was sent in WhatsApp Web,
+// background.js sends a "gobernaMessageSent" message to all dashboard tabs.
+// We dispatch it as a CustomEvent so the React app can listen for it.
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.action === "gobernaMessageSent") {
+    console.log("[Goberna WA] Dispatching messageSent event for phone:", msg.phone);
+    window.dispatchEvent(
+      new CustomEvent("goberna:messageSent", {
+        detail: { phone: msg.phone },
+      }),
+    );
+    sendResponse({ ok: true });
+    return true;
+  }
+});
