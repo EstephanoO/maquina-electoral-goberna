@@ -14,6 +14,8 @@
  *   - window.open("https://api.whatsapp.com/...")
  */
 
+console.log("[Goberna WA] Interceptor loaded on", location.hostname);
+
 const WA_PATTERNS = ["wa.me", "web.whatsapp.com", "api.whatsapp.com"];
 
 function isWhatsAppUrl(url) {
@@ -48,6 +50,7 @@ function routeToExtension(url) {
   const phone = extractPhone(url);
   if (!phone) return false;
   const text = extractText(url);
+  console.log("[Goberna WA] Intercepted →", phone, text);
   chrome.runtime.sendMessage({ action: "openChat", phone, text });
   return true;
 }

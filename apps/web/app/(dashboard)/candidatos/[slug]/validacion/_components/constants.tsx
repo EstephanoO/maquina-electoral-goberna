@@ -151,15 +151,21 @@ export function waLink(tel: string, nombre: string): string {
 /* ─── WhatsApp opener ─── */
 
 /**
- * Opens WhatsApp Web.
+ * Opens WhatsApp Web via a real <a> click.
  *
- * If the Goberna extension is installed, the interceptor.js content script
- * catches the window.open call automatically and routes it to the single
- * WhatsApp tab via chrome.tabs API. No special code needed here.
- *
- * If the extension is NOT installed, window.open fires normally (new tab).
+ * Why not window.open()? Because content scripts patch window.open on the
+ * page's main world, but React may hold a reference to the ORIGINAL
+ * window.open captured before the patch runs. A programmatic <a> click
+ * always goes through the DOM event system where the interceptor listens.
  */
 export function openWhatsApp(tel: string, nombre: string): void {
   const url = waLink(tel, nombre);
-  window.open(url, "_blank");
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
