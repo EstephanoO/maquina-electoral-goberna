@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Layer, Map as MapLibre, Source } from "@vis.gl/react-maplibre";
+import { Layer, Map as MapLibre, NavigationControl, Source } from "@vis.gl/react-maplibre";
 import type { MapRef } from "@vis.gl/react-maplibre";
-import type { FilterSpecification, MapGeoJSONFeature, MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
+import type { DragPanOptions, FilterSpecification, Map as NativeMap, MapGeoJSONFeature, MapLayerMouseEvent, StyleSpecification } from "maplibre-gl";
 
 type HealthResponse = {
   ok?: boolean;
@@ -179,6 +179,32 @@ const peruView = {
   zoom: 5,
 };
 
+const MAP_DRAG_PAN_OPTIONS: DragPanOptions = {
+  linearity: 0.24,
+  maxSpeed: 1800,
+  deceleration: 2600,
+};
+
+const TRACKPAD_ZOOM_RATE = 1 / 130;
+const WHEEL_ZOOM_RATE = 1 / 680;
+
+function applyFluidMapInteractions(map: NativeMap) {
+  map.dragPan.enable(MAP_DRAG_PAN_OPTIONS);
+  map.scrollZoom.enable();
+  map.scrollZoom.setZoomRate(TRACKPAD_ZOOM_RATE);
+  map.scrollZoom.setWheelZoomRate(WHEEL_ZOOM_RATE);
+  map.dragRotate.disable();
+  map.touchPitch.disable();
+  map.keyboard.disableRotation();
+  map.touchZoomRotate.enable({ around: "center" });
+  map.touchZoomRotate.disableRotation();
+
+  const canvas = map.getCanvas();
+  canvas.style.cursor = "grab";
+  map.on("dragstart", () => { canvas.style.cursor = "grabbing"; });
+  map.on("dragend", () => { canvas.style.cursor = "grab"; });
+}
+
 const mapStyle: StyleSpecification = {
   version: 8,
   sources: {},
@@ -320,7 +346,7 @@ export default function Home() {
     hoveredFeatureRef.current = null;
 
     if (map) {
-      map.getCanvas().style.cursor = "";
+      map.getCanvas().style.cursor = "grab";
     }
   }, []);
 
@@ -375,7 +401,7 @@ export default function Home() {
       }
 
       hoveredFeatureRef.current = next;
-      map.getCanvas().style.cursor = next ? "pointer" : "";
+      map.getCanvas().style.cursor = next ? "pointer" : "grab";
     },
     [getHoveredFeature],
   );
@@ -714,6 +740,12 @@ export default function Home() {
     };
   }, [clearHoverState]);
 
+  const handleMapLoad = useCallback(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    applyFluidMapInteractions(map);
+  }, []);
+
   return (
     <main
       style={{
@@ -728,11 +760,24 @@ export default function Home() {
         initialViewState={peruView}
         mapStyle={mapStyle}
         style={{ width: "100vw", height: "100vh" }}
+        dragPan={MAP_DRAG_PAN_OPTIONS}
+        dragRotate={false}
+        pitchWithRotate={false}
+        touchPitch={false}
+        touchZoomRotate={{ around: "center" }}
+        scrollZoom
+        doubleClickZoom
+        minPitch={0}
+        maxPitch={0}
+        clickTolerance={4}
         interactiveLayerIds={["departamentos-hit", "provincias-hit", "distritos-hit"]}
+        onLoad={handleMapLoad}
         onMouseMove={handleMapMove}
         onMouseLeave={resetHover}
         onClick={handleMapClick}
       >
+        <NavigationControl position="bottom-left" showCompass={false} visualizePitch={false} />
+
         {tileUrl ? (
           <Source
             id="peru-admin"

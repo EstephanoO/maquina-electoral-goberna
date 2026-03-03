@@ -4,10 +4,12 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import { Map as MapLibre, Source, Layer, NavigationControl } from "@vis.gl/react-maplibre";
 import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
 import type {
+  DragPanOptions,
   StyleSpecification,
   FillLayerSpecification,
   LineLayerSpecification,
   FilterSpecification,
+  Map as NativeMap,
 } from "maplibre-gl";
 
 /* ─── Constants ─── */
@@ -56,6 +58,32 @@ const HOVER_LAYERS: Record<string, string> = {
 };
 
 const INTERACTIVE_LAYERS = ["dep-fill", "prov-fill", "dist-fill"];
+
+const MAP_DRAG_PAN_OPTIONS: DragPanOptions = {
+  linearity: 0.24,
+  maxSpeed: 1800,
+  deceleration: 2600,
+};
+
+const TRACKPAD_ZOOM_RATE = 1 / 130;
+const WHEEL_ZOOM_RATE = 1 / 680;
+
+function applyFluidMapInteractions(map: NativeMap) {
+  map.dragPan.enable(MAP_DRAG_PAN_OPTIONS);
+  map.scrollZoom.enable();
+  map.scrollZoom.setZoomRate(TRACKPAD_ZOOM_RATE);
+  map.scrollZoom.setWheelZoomRate(WHEEL_ZOOM_RATE);
+  map.dragRotate.disable();
+  map.touchPitch.disable();
+  map.keyboard.disableRotation();
+  map.touchZoomRotate.enable({ around: "center" });
+  map.touchZoomRotate.disableRotation();
+
+  const canvas = map.getCanvas();
+  canvas.style.cursor = "grab";
+  map.on("dragstart", () => { canvas.style.cursor = "grabbing"; });
+  map.on("dragend", () => { canvas.style.cursor = "grab"; });
+}
 
 /* ─── Types ─── */
 
@@ -160,7 +188,7 @@ export function PublicMap() {
 
     const f = e.features?.[0];
     if (!f || !f.id) {
-      map.getCanvas().style.cursor = "";
+      map.getCanvas().style.cursor = "grab";
       setTooltip(null);
       return;
     }
@@ -200,7 +228,7 @@ export function PublicMap() {
       );
       hoveredRef.current = null;
     }
-    map.getCanvas().style.cursor = "";
+    map.getCanvas().style.cursor = "grab";
     setTooltip(null);
   }, []);
 
@@ -271,7 +299,10 @@ export function PublicMap() {
   }, [drill]);
 
   const handleLoad = useCallback(() => {
-    mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: 0 });
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    applyFluidMapInteractions(map);
+    map.fitBounds(PERU_BOUNDS, { padding: 40, duration: 0 });
   }, []);
 
   /* ─── Breadcrumb ─── */
@@ -323,6 +354,16 @@ export function PublicMap() {
         initialViewState={PERU_VIEW}
         style={{ width: "100%", height: "100%" }}
         mapStyle={MAP_STYLE}
+        dragPan={MAP_DRAG_PAN_OPTIONS}
+        dragRotate={false}
+        pitchWithRotate={false}
+        touchPitch={false}
+        touchZoomRotate={{ around: "center" }}
+        scrollZoom
+        doubleClickZoom
+        minPitch={0}
+        maxPitch={0}
+        clickTolerance={4}
         maxTileCacheZoomLevels={10}
         fadeDuration={0}
         onLoad={handleLoad}

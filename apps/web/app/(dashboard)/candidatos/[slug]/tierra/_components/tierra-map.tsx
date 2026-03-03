@@ -31,9 +31,9 @@
  */
 
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Layer, Map as MapLibre, Source } from "@vis.gl/react-maplibre";
+import { Layer, Map as MapLibre, NavigationControl, Source } from "@vis.gl/react-maplibre";
 import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
-import type { FillLayerSpecification, LineLayerSpecification, CircleLayerSpecification } from "maplibre-gl";
+import type { CircleLayerSpecification, DragPanOptions, FillLayerSpecification, LineLayerSpecification, Map as NativeMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { TierraMapHandle, TierraMapProps } from "./types";
 import {
@@ -67,6 +67,32 @@ import { useMapResize } from "./hooks/use-map-resize";
 import { reverseGeocode } from "@/lib/services/geo";
 
 /* ========== Component (P6 — wrapped with memo) ========== */
+
+const MAP_DRAG_PAN_OPTIONS: DragPanOptions = {
+  linearity: 0.24,
+  maxSpeed: 1800,
+  deceleration: 2600,
+};
+
+const TRACKPAD_ZOOM_RATE = 1 / 130;
+const WHEEL_ZOOM_RATE = 1 / 680;
+
+function applyFluidMapInteractions(map: NativeMap) {
+  map.dragPan.enable(MAP_DRAG_PAN_OPTIONS);
+  map.scrollZoom.enable();
+  map.scrollZoom.setZoomRate(TRACKPAD_ZOOM_RATE);
+  map.scrollZoom.setWheelZoomRate(WHEEL_ZOOM_RATE);
+  map.dragRotate.disable();
+  map.touchPitch.disable();
+  map.keyboard.disableRotation();
+  map.touchZoomRotate.enable({ around: "center" });
+  map.touchZoomRotate.disableRotation();
+
+  const canvas = map.getCanvas();
+  canvas.style.cursor = "grab";
+  map.on("dragstart", () => { canvas.style.cursor = "grabbing"; });
+  map.on("dragend", () => { canvas.style.cursor = "grab"; });
+}
 
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
   { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, showRoutes, drillState, onDrillChange },
@@ -212,7 +238,11 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   // ─── Map load ───
   const handleLoad = useCallback(() => {
-    mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+
+    applyFluidMapInteractions(map);
+    map.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
 
     if (tileUrl) {
       if (typeof requestIdleCallback === "function") {
@@ -286,7 +316,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const handleMouseMove = useCallback((e: MapLayerMouseEvent) => {
     const features = e.features;
     if (mapRef.current) {
-      mapRef.current.getCanvas().style.cursor = features?.length ? "pointer" : "";
+      mapRef.current.getCanvas().style.cursor = features?.length ? "pointer" : "grab";
     }
 
     const f = features?.[0];
@@ -312,7 +342,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   }, [tooltipMouseMove, onFormMouseMove, clearHover]);
 
   const handleMouseLeave = useCallback(() => {
-    if (mapRef.current) mapRef.current.getCanvas().style.cursor = "";
+    if (mapRef.current) mapRef.current.getCanvas().style.cursor = "grab";
     clearHover();
     tooltipMouseLeave();
     onFormMouseLeave();
@@ -356,6 +386,16 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         initialViewState={PERU_VIEW}
         style={{ width: "100%", height: "100%" }}
         mapStyle={MAP_STYLE}
+        dragPan={MAP_DRAG_PAN_OPTIONS}
+        dragRotate={false}
+        pitchWithRotate={false}
+        touchPitch={false}
+        touchZoomRotate={{ around: "center" }}
+        scrollZoom
+        doubleClickZoom
+        minPitch={0}
+        maxPitch={0}
+        clickTolerance={4}
         minZoom={1}
         maxBounds={PERU_MAX_BOUNDS}
         maxTileCacheZoomLevels={10}
@@ -368,6 +408,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         onMouseLeave={handleMouseLeave}
         interactiveLayerIds={INTERACTIVE_LAYERS as unknown as string[]}
       >
+        <NavigationControl position="bottom-left" showCompass={false} visualizePitch={false} />
+
         {/* ── Tegola vector tiles ── */}
         <Source id="peru" type="vector" tiles={tilesArray} minzoom={3} maxzoom={14} bounds={PERU_BOUNDS_FLAT} promoteId={PROMOTE_ID}>
           <Layer id="dep-fill" type="fill" source-layer="departamentos" filter={filters.depFillFilter} paint={depFillPaint} />
