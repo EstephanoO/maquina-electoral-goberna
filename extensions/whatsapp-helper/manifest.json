@@ -7,8 +7,7 @@
     "tabs",
     "storage",
     "activeTab",
-    "scripting",
-    "debugger"
+    "scripting"
   ],
   "host_permissions": [
     "https://web.whatsapp.com/*",

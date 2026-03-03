@@ -237,43 +237,54 @@ function stepCheckSearchInput() {
 }
 
 /**
- * Step 3: Focus the "Nuevo chat" search input.
- * Runs in ISOLATED world — returns { found, label, nodeId? }.
+ * Step 3: Clear + type phone into the search input.
+ * Runs in MAIN world — returns void (MAIN limitation).
  *
- * Used before typePhoneViaDebugger to get the element into focus
- * so Input.insertText lands in the right place.
+ * Strategy: bulk execCommand for N-1 digits, then full keystroke sequence
+ * for the last digit. Playwright confirmed this triggers WA/Lexical search
+ * correctly (bulk alone returns generic list; last keystroke fires debounce).
  */
-function stepFocusSearchInput() {
-  const searchLabels = [
+function stepTypePhone(phone) {
+  const LABELS = [
     "Buscar un nombre o número",
     "Search name or number",
     "Pesquisar nome ou número",
   ];
 
-  for (const label of searchLabels) {
-    const input = document.querySelector(`div[contenteditable="true"][aria-label="${label}"]`);
-    if (input) {
-      input.focus();
-      // Clear any existing content
-      const range = document.createRange();
-      range.selectNodeContents(input);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-      input.dispatchEvent(new InputEvent("beforeinput", {
-        inputType: "deleteContentBackward",
-        bubbles: true,
-        cancelable: true,
-      }));
-      document.execCommand("delete", false, null);
-      const remaining = (input.textContent || "").trim();
-      console.log("[Goberna BG] stepFocusSearchInput: focused, cleared, remaining:", remaining || "(empty)");
-      return { found: true, label, remaining };
-    }
+  let input = null;
+  for (const label of LABELS) {
+    input = document.querySelector(`div[contenteditable="true"][aria-label="${label}"]`);
+    if (input) break;
   }
 
-  console.log("[Goberna BG] stepFocusSearchInput: input NOT found");
-  return { found: false };
+  if (!input) {
+    console.log("[Goberna BG] stepTypePhone: input NOT found");
+    return;
+  }
+
+  // ── 1. Clear ──
+  input.focus();
+  const range = document.createRange();
+  range.selectNodeContents(input);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  input.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteContentBackward", bubbles: true, cancelable: true }));
+  document.execCommand("delete", false, null);
+  console.log("[Goberna BG] stepTypePhone: cleared, remaining:", (input.textContent || "").trim() || "(empty)");
+
+  // ── 2. Bulk insert N-1 digits ──
+  const bulk = phone.slice(0, -1);
+  const last = phone.slice(-1);
+  document.execCommand("insertText", false, bulk);
+  console.log("[Goberna BG] stepTypePhone: bulk inserted, field now:", (input.textContent || "").trim());
+
+  // ── 3. Last digit via full keystroke sequence — triggers Lexical search debounce ──
+  input.dispatchEvent(new KeyboardEvent("keydown", { key: last, bubbles: true, cancelable: true }));
+  input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: last, bubbles: true, cancelable: true }));
+  document.execCommand("insertText", false, last);
+  input.dispatchEvent(new KeyboardEvent("keyup", { key: last, bubbles: true }));
+  console.log("[Goberna BG] stepTypePhone: done, field now:", (input.textContent || "").trim());
 }
 
 /**
@@ -281,92 +292,16 @@ function stepFocusSearchInput() {
  * Runs in ISOLATED world — used to verify text was inserted.
  */
 function stepReadSearchInput() {
-  const searchLabels = [
+  const LABELS = [
     "Buscar un nombre o número",
     "Search name or number",
     "Pesquisar nome ou número",
   ];
-  for (const label of searchLabels) {
+  for (const label of LABELS) {
     const input = document.querySelector(`div[contenteditable="true"][aria-label="${label}"]`);
-    if (input) {
-      return { found: true, text: (input.textContent || "").trim() };
-    }
+    if (input) return { found: true, text: (input.textContent || "").trim() };
   }
   return { found: false, text: "" };
-}
-
-/**
- * Type a phone number into the focused search input using chrome.debugger
- * Input.insertText — a trusted OS-level text insertion that bypasses the
- * execCommand/focus limitations of extension MAIN world scripts.
- *
- * Strategy (Playwright-verified 2026-03-03):
- *   bulk text (N-1 digits) via Input.insertText → last digit via Input.dispatchKeyEvent
- *   This combination triggers WA/Lexical's search debounce and returns the exact
- *   phone result (vs char-by-char which returns 11 generic contacts).
- */
-async function typePhoneViaDebugger(tabId, phone) {
-  const debugTarget = { tabId };
-
-  try {
-    await chrome.debugger.attach(debugTarget, "1.3");
-    console.log("[Goberna BG] typePhoneViaDebugger: debugger attached");
-  } catch (e) {
-    console.warn("[Goberna BG] typePhoneViaDebugger: attach failed:", e.message);
-    return { ok: false, reason: "attach-failed", error: e.message };
-  }
-
-  try {
-    const bulk = phone.slice(0, -1);
-    const lastChar = phone.slice(-1);
-
-    // Insert all-but-last as a single trusted text insertion
-    console.log("[Goberna BG] typePhoneViaDebugger: inserting bulk:", bulk);
-    await chrome.debugger.sendCommand(debugTarget, "Input.insertText", { text: bulk });
-
-    // Small pause so Lexical registers the bulk text
-    await sleep(80);
-
-    // Insert last char as a proper keypress — this triggers WA's search debounce
-    console.log("[Goberna BG] typePhoneViaDebugger: inserting last char:", lastChar);
-    await chrome.debugger.sendCommand(debugTarget, "Input.dispatchKeyEvent", {
-      type: "keyDown",
-      key: lastChar,
-      text: lastChar,
-      unmodifiedText: lastChar,
-      windowsVirtualKeyCode: lastChar.charCodeAt(0),
-      nativeVirtualKeyCode: lastChar.charCodeAt(0),
-    });
-    await sleep(20);
-    await chrome.debugger.sendCommand(debugTarget, "Input.dispatchKeyEvent", {
-      type: "char",
-      key: lastChar,
-      text: lastChar,
-      unmodifiedText: lastChar,
-      windowsVirtualKeyCode: lastChar.charCodeAt(0),
-      nativeVirtualKeyCode: lastChar.charCodeAt(0),
-    });
-    await sleep(20);
-    await chrome.debugger.sendCommand(debugTarget, "Input.dispatchKeyEvent", {
-      type: "keyUp",
-      key: lastChar,
-      text: lastChar,
-      unmodifiedText: lastChar,
-      windowsVirtualKeyCode: lastChar.charCodeAt(0),
-      nativeVirtualKeyCode: lastChar.charCodeAt(0),
-    });
-
-    console.log("[Goberna BG] typePhoneViaDebugger: keystrokes sent");
-    return { ok: true };
-  } catch (e) {
-    console.warn("[Goberna BG] typePhoneViaDebugger: sendCommand failed:", e.message);
-    return { ok: false, reason: "sendCommand-failed", error: e.message };
-  } finally {
-    try {
-      await chrome.debugger.detach(debugTarget);
-      console.log("[Goberna BG] typePhoneViaDebugger: debugger detached");
-    } catch (_) {}
-  }
 }
 
 /**
@@ -708,24 +643,17 @@ async function attemptNavigation(tabId, phone, text, isRetry) {
     }
   }
 
-  // ── v8.9: Focus + clear input (ISOLATED), then type via debugger (trusted OS events) ──
-  const focused = await execStep(tabId, stepFocusSearchInput);
-  console.log("[Goberna BG] attemptNavigation: stepFocusSearchInput →", JSON.stringify(focused));
-  if (!focused?.found) {
-    return { success: false, reason: "search-input-not-found" };
-  }
-  await sleep(100);
+  // ── Step 3: Type phone number (MAIN world) ──
+  await execStep(tabId, stepTypePhone, [phone], "MAIN");
 
-  const typed = await typePhoneViaDebugger(tabId, phone);
-  console.log("[Goberna BG] attemptNavigation: typePhoneViaDebugger →", JSON.stringify(typed));
-  if (!typed?.ok) {
-    return { success: false, reason: "type-failed", detail: typed };
-  }
-
-  // Verify text landed
+  // Verify text actually landed in the field before proceeding
   await sleep(150);
   const inputState = await execStep(tabId, stepReadSearchInput);
-  console.log("[Goberna BG] attemptNavigation: input after typing →", JSON.stringify(inputState));
+  console.log("[Goberna BG] attemptNavigation: field after typing →", JSON.stringify(inputState));
+  if (!inputState?.text) {
+    console.log("[Goberna BG] attemptNavigation: field is empty — aborting");
+    return { success: false, reason: "field-empty-after-type" };
+  }
 
   // Poll for search results
   const results = await pollCondition(
