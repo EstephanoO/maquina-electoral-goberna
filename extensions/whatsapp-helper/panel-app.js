@@ -521,6 +521,18 @@ function waCheckResults() {
     }
   }
   
+  // DEBUG: Log ALL buttons in the app to see what's there
+  if (GDEBUG && count === 0 && hasSearchText) {
+    const allButtons = Array.from(app.querySelectorAll("button")).slice(0, 10).map(btn => ({
+      ariaLabel: btn.getAttribute("aria-label"),
+      text: (btn.textContent || "").trim().slice(0, 40),
+      hasImg: !!btn.querySelector("img"),
+      tagName: btn.tagName,
+      role: btn.getAttribute("role"),
+    }));
+    console.log("[Goberna WA] waCheckResults: ALL buttons in DOM:", JSON.stringify(allButtons));
+  }
+  
   if (GDEBUG) console.log("[Goberna WA] waCheckResults: found", count, "results, input has text:", hasSearchText, "buttons:", resultBtns.slice(0, 3));
   return count > 0 ? { found: true, count } : null;
 }
