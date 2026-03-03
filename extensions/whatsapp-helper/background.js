@@ -29,9 +29,11 @@
  *         debug logging, scoped permissions, retry logic improvements
  *   v8.1: Fix search results detection — use <button> elements instead of
  *         wrong role="listitem"/role="option" selectors. Detect "Buscando"
- *         loading state for server-side search. Dispatch InputEvent after
- *         execCommand to reinforce React state update. Bump search timeout
+ *         loading state for server-side search. Bump search timeout
  *         from 5s to 8s.
+ *   v8.2: Remove synthetic Enter/InputEvent dispatches from stepTypePhone —
+ *         execCommand in MAIN world already triggers React search. The extra
+ *         Enter was prematurely selecting results before search completed.
  */
 
 // ── Configuration ──
@@ -39,7 +41,7 @@
 const WA_BASE = "https://web.whatsapp.com";
 
 /** Set to true to enable verbose console logging */
-const DEBUG = true;
+const DEBUG = false;
 
 /** Polling configuration */
 const POLL_INTERVAL_MS = 250;
@@ -262,18 +264,10 @@ function stepTypePhone(phone) {
   document.execCommand("insertText", false, phone);
   console.log("[Goberna BG] stepTypePhone: after insert, content:", (input.textContent || "").slice(0, 20));
 
-  // Trigger React's search by dispatching keyboard events after execCommand
-  // This helps React recognize the DOM change and trigger the search
-  const keyEventProps = {
-    key: "Enter",
-    code: "Enter",
-    keyCode: 13,
-    which: 13,
-    bubbles: true,
-    cancelable: true,
-  };
-  input.dispatchEvent(new KeyboardEvent("keydown", keyEventProps));
-  input.dispatchEvent(new KeyboardEvent("keyup", keyEventProps));
+  // NOTE: Do NOT dispatch synthetic InputEvent or KeyboardEvent here.
+  // execCommand in MAIN world already triggers React's internal onChange
+  // handler which initiates the search. Dispatching Enter here would
+  // prematurely select a result before the search completes.
 }
 
 /**

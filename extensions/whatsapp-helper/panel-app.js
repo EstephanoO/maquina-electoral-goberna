@@ -360,254 +360,59 @@ function disconnectSSE() {
 }
 
 // ── WhatsApp Integration ──
-// The panel runs INSIDE web.whatsapp.com, so we manipulate the DOM directly
-// instead of going through background.js → scripting.executeScript (which would
-// inject scripts into the SAME tab, causing double-type and race conditions).
-
-/** Labels for "Nuevo chat" button across locales */
-const NUEVO_CHAT_LABELS = ["Nuevo chat", "New chat", "Chat nuevo", "Nova conversa"];
-/** Labels for the search input inside "Nuevo chat" panel */
-const SEARCH_INPUT_LABELS = ["Buscar un nombre o número", "Search name or number", "Pesquisar nome ou número"];
-/** Non-result buttons to skip when checking search results */
-const SKIP_RESULT_LABELS = new Set([
-  "Nuevo chat", "Nuevo grupo", "Nuevo contacto", "Nueva comunidad",
-  "Cancelar búsqueda", "Atrás", "Número de teléfono",
-  "New chat", "New group", "New contact", "New community",
-  "Cancel search", "Back", "Phone number",
-  "Chat novo", "Novo grupo", "Novo contato", "Nova comunidade",
-  "Cancelar pesquisa", "Voltar", "Número de telefone",
-]);
-
-/** Strip Peru country code for local search */
-function waToLocalPhone(phone) {
-  if (!phone) return "";
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length === 11 && digits.startsWith("51") && digits[2] === "9") return digits.slice(2);
-  return digits;
-}
-
-/** Small async delay */
-function waDelay(ms) { return new Promise((r) => setTimeout(r, ms)); }
-
-/** Poll a DOM condition with timeout. Returns first truthy result or null. */
-async function waPoll(checkFn, timeoutMs, intervalMs = 200) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const result = checkFn();
-    if (result) return result;
-    await waDelay(intervalMs);
-  }
-  return null;
-}
-
-/** Find and click the "Nuevo chat" button */
-function waClickNuevoChat() {
-  for (const label of NUEVO_CHAT_LABELS) {
-    const btn = document.querySelector(`button[aria-label="${label}"]`);
-    if (btn) { btn.click(); return true; }
-  }
-  const icon = document.querySelector('span[data-icon="new-chat-outline"]');
-  if (icon) {
-    let el = icon;
-    for (let i = 0; i < 6; i++) {
-      el = el.parentElement;
-      if (!el) break;
-      if (el.tagName === "BUTTON" || el.getAttribute("role") === "button") { el.click(); return true; }
-    }
-    icon.click();
-    return true;
-  }
-  return false;
-}
-
-/** Find the search input inside "Nuevo chat" panel */
-function waFindSearchInput() {
-  for (const label of SEARCH_INPUT_LABELS) {
-    const input = document.querySelector(`div[role="textbox"][aria-label="${label}"]`);
-    if (input) return input;
-  }
-  // Fallback: data-tab="3"
-  const candidates = document.querySelectorAll('div[role="textbox"][contenteditable="true"][data-tab="3"]');
-  for (const c of candidates) {
-    const label = c.getAttribute("aria-label") || "";
-    if (!label.includes("búsqueda") && !label.includes("search")) return c;
-  }
-  return null;
-}
-
-/** Type text into the search input (direct DOM, same page) */
-function waTypeInSearch(input, text) {
-  input.focus();
-  // Clear existing text
-  document.execCommand("selectAll", false, null);
-  document.execCommand("delete", false, null);
-  // Insert new text — execCommand triggers React's internal event handlers
-  // directly when running in the same page context (content script).
-  // Do NOT dispatch a synthetic InputEvent here — it would cause double-insertion
-  // because React processes both the execCommand mutation and the InputEvent.
-  document.execCommand("insertText", false, text);
-}
-
-/** Check if search results exist */
-function waCheckResults() {
-  const app = document.getElementById("app");
-  if (!app) return null;
-  
-  // First: Check for the search input - if it exists and has content, we're in search mode
-  let searchInput = null;
-  for (const label of SEARCH_INPUT_LABELS) {
-    searchInput = document.querySelector(`div[role="textbox"][aria-label="${label}"]`);
-    if (searchInput) break;
-  }
-  
-  // Check if search input has text typed in it
-  const hasSearchText = searchInput && (searchInput.textContent || "").trim().length > 0;
-  
-  // No results icon
-  if (app.querySelector('span[data-icon="search-no-results"], span[data-icon="no-results"]')) {
-    if (GDEBUG) console.log("[Goberna WA] waCheckResults: no results icon found");
-    return { noResults: true };
-  }
-  
-  // Still searching (loading indicator)
-  for (const s of app.querySelectorAll('[role="status"]')) {
-    const txt = (s.textContent || "").toLowerCase();
-    if (txt.includes("buscando") || txt.includes("searching") || txt.includes("procurando")) return null;
-  }
-  
-  // Check for cancel button OR check if search input has text (either means search is active)
-  let inSearch = false;
-  for (const label of ["Cancelar búsqueda", "Cancel search", "Cancelar pesquisa"]) {
-    if (app.querySelector(`button[aria-label="${label}"]`)) { inSearch = true; break; }
-  }
-  // Consider it "in search" if the search input has text
-  if (!inSearch && hasSearchText) {
-    inSearch = true; // Search is active even without cancel button
-  }
-  
-  if (!inSearch) {
-    if (GDEBUG) console.log("[Goberna WA] waCheckResults: not in search mode");
-    return null;
-  }
-  
-  // Count result buttons - look for contact items in the list
-  let count = 0;
-  const resultBtns = [];
-  
-  // Method 1: Look for buttons with images (typical contact result)
-  for (const btn of app.querySelectorAll("button")) {
-    const ariaLabel = (btn.getAttribute("aria-label") || "").trim();
-    const text = (btn.textContent || "").trim();
-    if (ariaLabel && SKIP_RESULT_LABELS.has(ariaLabel)) continue;
-    if (text.length < 3 || SKIP_RESULT_LABELS.has(text)) continue;
-    
-    // Contact results typically have an image OR have a phone number pattern
-    const hasImg = !!btn.querySelector("img");
-    const hasDigits = /\d{3,}/.test(text);
-    const isContactResult = hasImg || hasDigits;
-    
-    if (isContactResult) {
-      count++;
-      if (count <= 5) resultBtns.push({ ariaLabel, text: text.slice(0, 30), hasImg, hasDigits });
-    }
-  }
-  
-  // Method 2: If no buttons found, look for list items with contacts
-  if (count === 0) {
-    const listItems = app.querySelectorAll('[role="listitem"], li');
-    for (const li of listItems) {
-      const text = (li.textContent || "").trim();
-      if (text.length >= 3 && /\d{9,}/.test(text.replace(/\s/g, ""))) {
-        count++;
-        if (count <= 5) resultBtns.push({ text: text.slice(0, 30) });
-      }
-    }
-  }
-  
-  // DEBUG: Log ALL buttons in the app to see what's there
-  if (GDEBUG && count === 0 && hasSearchText) {
-    // First, let's find the search results panel
-    // It's likely in a specific container - let's find all divs that might contain results
-    const potentialPanels = app.querySelectorAll('div[role="dialog"], div[aria-modal="true"], div[class*="panel"], div[class*="list"]');
-    console.log("[Goberna WA] waCheckResults: potential panels:", potentialPanels.length);
-    
-    // Also check for _a1w5 or other WA-specific classes
-    const searchResultsContainers = app.querySelectorAll('div[class*="_a1"], div[class*="list"]');
-    console.log("[Goberna WA] waCheckResults: search result containers:", searchResultsContainers.length);
-    
-    // Look for any element containing the search text or phone number
-    const allDivs = Array.from(app.querySelectorAll("div")).slice(0, 20).map(d => ({
-      className: d.className?.slice(0, 30),
-      role: d.getAttribute("role"),
-      ariaLabel: d.getAttribute("aria-label"),
-      text: (d.textContent || "").trim().slice(0, 25),
-    }));
-    console.log("[Goberna WA] waCheckResults: sample divs:", JSON.stringify(allDivs.slice(0, 8)));
-  }
-  
-  if (GDEBUG) console.log("[Goberna WA] waCheckResults: found", count, "results, input has text:", hasSearchText, "buttons:", resultBtns.slice(0, 3));
-  return count > 0 ? { found: true, count } : null;
-}
+// All chat navigation is delegated to background.js which executes
+// DOM steps in MAIN world via chrome.scripting.executeScript.
+// Content scripts run in ISOLATED world where execCommand doesn't
+// trigger React, so direct DOM manipulation from here doesn't work.
 
 /**
- * Select the first search result by pressing Enter on the search input.
+ * Open a WhatsApp chat by phone number — NO page reload.
  *
- * Content scripts run in ISOLATED world — both .click() and synthetic
- * KeyboardEvents are untrusted and ignored by WA's React handlers.
- * Instead, we delegate to background.js which executes stepSelectResult()
- * in MAIN world via chrome.scripting.executeScript. MAIN-world dispatched
- * events are trusted by WA's React.
+ * Delegates the entire navigation flow to background.js openChat handler
+ * which orchestrates: click "Nuevo chat" → type phone → wait for results →
+ * press Enter → validate chat opened. All DOM steps execute in MAIN world
+ * where execCommand triggers React's internal handlers.
  *
- * Returns a Promise that resolves to true if the message was sent
- * successfully, false otherwise.
- */
-function waSelectFirstResult() {
-  if (GDEBUG) console.log("[Goberna WA] waSelectFirstResult: sending selectSearchResult to background");
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ action: "selectSearchResult" }, (resp) => {
-      if (chrome.runtime.lastError) {
-        if (GDEBUG) console.warn("[Goberna WA] selectSearchResult failed:", chrome.runtime.lastError.message);
-        resolve(false);
-        return;
-      }
-      if (GDEBUG) console.log("[Goberna WA] selectSearchResult response:", resp);
-      resolve(resp?.ok === true);
-    });
-  });
-}
-
-/**
- * Open a WhatsApp chat by phone number.
- *
- * Uses URL-based navigation which is the most reliable method.
- * WhatsApp Web supports: https://web.whatsapp.com/send?phone=51929172568
- * This opens the chat directly without DOM manipulation issues.
+ * Falls back to URL navigation (which causes reload) only if all DOM
+ * attempts fail.
  */
 async function openWhatsAppChat(phone) {
   if (!phone) return;
   const digits = phone.replace(/\D/g, "");
   if (!digits || digits.length < 7) return;
 
-  // Convert to proper format for WhatsApp URL
-  // Peru: 9 digits (e.g., 929172568) -> 51929172568
-  // Already has country code: 11 digits starting with 51
+  // Normalize to full Peru phone number with country code
   let waPhone = digits;
   if (digits.length === 9 && digits[0] === "9") {
     waPhone = "51" + digits;
   } else if (digits.startsWith("51") && digits.length === 11) {
     waPhone = digits;
-  } else {
-    // Unknown format, just use digits
-    waPhone = digits;
   }
 
-  if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: opening", waPhone);
+  if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: delegating to background.js, phone:", waPhone);
 
-  // Use history API to navigate without full page reload
-  // First change the URL, then let WA handle the navigation
-  history.pushState(null, "", `/send?phone=${encodeURIComponent(waPhone)}`);
-  // Trigger a hashchange or popstate to make WA react
-  window.dispatchEvent(new PopStateEvent("popstate"));
+  try {
+    const result = await new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(
+        { action: "openChat", phone: waPhone, text: "" },
+        (resp) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(resp);
+        }
+      );
+    });
+
+    if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: result:", JSON.stringify(result));
+
+    if (result?.error) {
+      console.warn("[Goberna WA] openWhatsAppChat: background error:", result.error);
+    }
+  } catch (err) {
+    console.error("[Goberna WA] openWhatsAppChat: failed:", err.message);
+  }
 }
 
 // ── Reminders (local chrome.storage) ──

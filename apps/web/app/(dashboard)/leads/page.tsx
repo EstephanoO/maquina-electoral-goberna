@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { listLeads, type Lead } from "@/lib/services/leads";
+import { PageHeader, SkeletonTable } from "@/lib/ui";
 
 export default function LeadsPage() {
   const { user } = useAuth();
@@ -26,7 +27,7 @@ export default function LeadsPage() {
 
   if (user?.role !== "admin") {
     return (
-      <div style={{ padding: 40, textAlign: "center", color: "#64748b" }}>
+      <div style={{ padding: 40, textAlign: "center", color: "var(--color-text-tertiary)" }}>
         <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Acceso restringido</h2>
         <p>Solo administradores pueden ver los leads.</p>
       </div>
@@ -36,27 +37,26 @@ export default function LeadsPage() {
   const totalPages = Math.ceil(total / limit);
 
   return (
-    <div style={{ padding: "24px 32px", maxWidth: 900 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", margin: 0 }}>Leads TestFlight</h1>
-          <p style={{ fontSize: 13, color: "#94a3b8", margin: "4px 0 0" }}>{total} solicitudes de acceso</p>
-        </div>
-      </div>
+    <div style={{ maxWidth: 900 }}>
+      <PageHeader
+        title="Leads TestFlight"
+        description={`${total} solicitudes de acceso`}
+        breadcrumbs={[{ label: "Dashboard", href: "/home" }, { label: "Leads" }]}
+      />
 
       {loading ? (
-        <p style={{ color: "#94a3b8", fontSize: 14 }}>Cargando...</p>
+        <SkeletonTable rows={5} />
       ) : leads.length === 0 ? (
-        <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", background: "#f8fafc", borderRadius: 12, border: "1px solid #e2e8f0" }}>
+        <div style={{ padding: 40, textAlign: "center", color: "var(--color-text-tertiary)", background: "var(--color-surface)", borderRadius: "var(--radius-lg)", border: "1px solid var(--color-border)" }}>
           <p style={{ fontSize: 15, fontWeight: 600, margin: "0 0 4px" }}>Sin leads todavia</p>
           <p style={{ fontSize: 13, margin: 0 }}>Cuando alguien solicite acceso en /descargar, aparecera aqui.</p>
         </div>
       ) : (
         <>
-          <div style={{ borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden" }}>
+          <div style={{ borderRadius: "var(--radius-lg)", border: "1px solid var(--color-border)", overflow: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
-                <tr style={{ background: "#f8fafc" }}>
+                <tr style={{ background: "var(--goberna-blue-50)" }}>
                   <th style={thStyle}>Nombre</th>
                   <th style={thStyle}>Correo</th>
                   <th style={thStyle}>Plataforma</th>
@@ -65,7 +65,7 @@ export default function LeadsPage() {
               </thead>
               <tbody>
                 {leads.map((l) => (
-                  <tr key={l.id} style={{ borderTop: "1px solid #e2e8f0" }}>
+                  <tr key={l.id} className="table-row-hover" style={{ borderTop: "1px solid var(--color-border)" }}>
                     <td style={tdStyle}>{l.nombre}</td>
                     <td style={tdStyle}>
                       <a href={`mailto:${l.correo}`} style={{ color: "#2563eb", textDecoration: "none" }}>{l.correo}</a>
@@ -102,14 +102,16 @@ export default function LeadsPage() {
 }
 
 const thStyle: React.CSSProperties = {
-  padding: "10px 16px", textAlign: "left", fontWeight: 600, fontSize: 12, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.5,
+  padding: "10px 16px", textAlign: "left", fontWeight: 600, fontSize: 12,
+  color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: 0.5,
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: "12px 16px", fontWeight: 500,
+  padding: "12px 16px", fontWeight: 500, color: "var(--color-text-primary)",
 };
 
 const paginationBtn: React.CSSProperties = {
-  padding: "6px 14px", fontSize: 13, fontWeight: 600, borderRadius: 8,
-  border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer", color: "#334155",
+  padding: "6px 14px", fontSize: 13, fontWeight: 600, borderRadius: "var(--radius-md)",
+  border: "1px solid var(--color-border)", background: "var(--color-surface)", cursor: "pointer",
+  color: "var(--color-text-primary)",
 };
