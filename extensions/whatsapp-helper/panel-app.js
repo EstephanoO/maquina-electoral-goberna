@@ -33,8 +33,7 @@ const TABS = [
 
 // ── Debug ──
 
-const GDEBUG = true; // Set to true for verbose console logging
-console.log("[Goberna WA] panel-app.js loaded, GDEBUG:", GDEBUG);
+const GDEBUG = false; // Set to true for verbose console logging
 
 // ── State ──
 
@@ -44,8 +43,6 @@ const state = {
   user: null,
   campaigns: [],
   activeCampaignId: null,
-  // Prevent multiple simultaneous WA navigations
-  waNavigating: false,
   // UI
   view: "login", // "login" | "list" | "detail"
   collapsed: false,
@@ -582,53 +579,32 @@ function waSelectFirstResult() {
 /**
  * Open a WhatsApp chat by phone number.
  *
- * IMPORTANT: Content scripts run in ISOLATED world. In this world:
- *  - document.execCommand("insertText") does NOT trigger React's search
- *  - synthetic KeyboardEvents are untrusted and ignored by WA
- *  - .click() on buttons is also ignored by WA's React handlers
- *
- * Therefore we delegate the ENTIRE navigation flow to background.js,
- * which uses chrome.scripting.executeScript with world: "MAIN" for the
- * steps that need trusted events (typing and Enter key).
- *
- * background.js openChat flow:
- *  Step 0: Check WA Web is loaded (ISOLATED)
- *  Step 1: Click "Nuevo chat" (ISOLATED)
- *  Step 2: Poll search input (ISOLATED)
- *  Step 3: Type phone number (MAIN) — execCommand works in MAIN
- *  Step 4: Poll search results (ISOLATED)
- *  Step 5: Press Enter to select result (MAIN)
- *  Step 6: Poll chat open (ISOLATED)
- *  Step 7: Pre-fill message if provided (MAIN)
+ * Uses URL-based navigation which is the most reliable method.
+ * WhatsApp Web supports: https://web.whatsapp.com/send?phone=51929172568
+ * This opens the chat directly without DOM manipulation issues.
  */
 async function openWhatsAppChat(phone) {
   if (!phone) return;
   const digits = phone.replace(/\D/g, "");
   if (!digits || digits.length < 7) return;
 
-  // Prevent double-clicks
-  if (state.waNavigating) {
-    if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: already navigating, ignoring");
-    return;
+  // Convert to proper format for WhatsApp URL
+  // Peru: 9 digits (e.g., 929172568) -> 51929172568
+  // Already has country code: 11 digits starting with 51
+  let waPhone = digits;
+  if (digits.length === 9 && digits[0] === "9") {
+    waPhone = "51" + digits;
+  } else if (digits.startsWith("51") && digits.length === 11) {
+    waPhone = digits;
+  } else {
+    // Unknown format, just use digits
+    waPhone = digits;
   }
-  state.waNavigating = true;
 
-  if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: delegating to background.js openChat, phone:", phone);
+  if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: opening", waPhone);
 
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(
-      { action: "openChat", phone: phone, text: "" },
-      (resp) => {
-        state.waNavigating = false;
-        if (chrome.runtime.lastError) {
-          if (GDEBUG) console.warn("[Goberna WA] openChat error:", chrome.runtime.lastError.message);
-        } else {
-          if (GDEBUG) console.log("[Goberna WA] openChat response:", resp);
-        }
-        resolve();
-      }
-    );
-  });
+  // Direct URL navigation - most reliable method
+  window.location.href = `https://web.whatsapp.com/send?phone=${encodeURIComponent(waPhone)}`;
 }
 
 // ── Reminders (local chrome.storage) ──
