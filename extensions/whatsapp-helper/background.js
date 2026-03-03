@@ -262,21 +262,10 @@ function stepTypePhone(phone) {
   document.execCommand("insertText", false, phone);
   console.log("[Goberna BG] stepTypePhone: after insert, content:", (input.textContent || "").slice(0, 20));
 
-  // Reinforce with synthetic InputEvent — React's event system may not
-  // pick up execCommand alone on contenteditable divs. This ensures the
-  // internal state updates and triggers the search query.
-  try {
-    input.dispatchEvent(
-      new InputEvent("input", {
-        bubbles: true,
-        cancelable: true,
-        inputType: "insertText",
-        data: phone,
-      })
-    );
-  } catch (_) {
-    // InputEvent constructor not available in very old browsers — safe to ignore
-  }
+  // NOTE: Do NOT dispatch synthetic InputEvent after execCommand.
+  // In WhatsApp Web 2026, React processes BOTH execCommand mutation AND
+  // synthetic InputEvent, resulting in doubled text in the input field.
+  // execCommand alone is sufficient in MAIN world.
 }
 
 /**
