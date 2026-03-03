@@ -34,12 +34,13 @@
  *   v8.2: Remove synthetic Enter/InputEvent dispatches from stepTypePhone —
  *         execCommand in MAIN world already triggers React search. The extra
  *         Enter was prematurely selecting results before search completed.
- *   v8.3: [SUPERSEDED by v8.4 — space was a symptom workaround, not the fix]
- *   v8.4: Fix clear+insert via Playwright testing on live WA Web DOM:
- *         - execCommand('selectAll'+'delete') does NOT clear WA contenteditable
- *         - Correct sequence: selectNodeContents + beforeinput event + execCommand('delete')
- *         - execCommand('insertText') in MAIN world triggers React search correctly
- *         - Removed trailing space hack (was masking the real clear failure)
+ *   v8.3: [SUPERSEDED] trailing space workaround — masked the real issue
+ *   v8.4: Fix clear via selectNodeContents + beforeinput + execCommand('delete')
+ *   v8.5: Fix result selection — Playwright testing revealed WA renders results
+ *         as DIV[role="button"], not <button>. stepCheckSearchResults now detects
+ *         these divs. Replace stepSelectResult (Enter key, unreliable) with
+ *         stepClickFirstResult (clicks the DIV[role="button"] directly, confirmed
+ *         working via Playwright mouse.click on live DOM).
  */
 
 // ── Configuration ──
@@ -303,20 +304,17 @@ function stepTypePhone(phone) {
  * Check if search results have appeared after typing.
  * Runs in ISOLATED world — used for polling.
  *
- * WhatsApp Web 2026 DOM structure for "Nuevo chat" panel:
- *   - The panel contains a search textbox + result buttons as siblings
- *   - Results are native <button> elements (NOT div[role="listitem/option"])
- *   - A [role="status"] element shows "Buscando fuera de tus contactos…"
- *     while the server search is in progress
- *   - "Cancelar búsqueda" button appears when search text is typed
- *   - Non-contact buttons exist: "Nuevo grupo", "Nuevo contacto", etc.
- *   - Contact result buttons contain phone digits or profile images
+ * Playwright testing on live WA Web 2026 DOM revealed:
+ *   - Contact results are DIV[role="button"] elements, NOT native <button>
+ *   - The first result div contains the phone number as text content
+ *   - "Cancelar búsqueda" <button> appears when search text is registered
+ *   - [role="status"] shows "Buscando…" while server search is in progress
  *
  * Returns:
- *   { found: true, count, method }  — results ready, proceed to Enter
+ *   { found: true, count }        — results ready, proceed to click
  *   { found: false, noResults: true } — confirmed no match
  *   { found: false, searching: true } — still searching, keep polling
- *   { found: false }                  — unknown state, keep polling
+ *   { found: false }              — not yet in search mode, keep polling
  */
 function stepCheckSearchResults() {
   const app = document.querySelector("#app");
@@ -330,8 +328,7 @@ function stepCheckSearchResults() {
     return { found: false, noResults: true };
   }
 
-  // ── Detect "Buscando fuera de tus contactos…" loading state ──
-  // This is a [role="status"] element with live="polite"
+  // ── Detect "Buscando…" loading state ──
   const statusEls = app.querySelectorAll('[role="status"]');
   for (const s of statusEls) {
     const txt = (s.textContent || "").toLowerCase();
@@ -340,8 +337,7 @@ function stepCheckSearchResults() {
     }
   }
 
-  // ── Check for "Cancelar búsqueda" to confirm we're in search mode ──
-  // This is reliable evidence that the search input has text
+  // ── Confirm we're in search mode via "Cancelar búsqueda" button ──
   const cancelLabels = ["Cancelar búsqueda", "Cancel search", "Cancelar pesquisa"];
   let inSearchMode = false;
   for (const label of cancelLabels) {
@@ -351,120 +347,78 @@ function stepCheckSearchResults() {
     }
   }
   if (!inSearchMode) {
-    // Search may not have registered yet — keep polling
     return { found: false };
   }
 
-  // ── Look for result <button> elements ──
-  // After "Cancelar búsqueda" exists, any button that isn't a known
-  // system button ("Nuevo grupo", "Nuevo contacto", "Nueva comunidad",
-  // "Cancelar búsqueda", "Atrás", "Número de teléfono") is a result.
-  const SKIP_LABELS = new Set([
-    // Spanish
-    "Nuevo chat", "Nuevo grupo", "Nuevo contacto", "Nueva comunidad",
-    "Cancelar búsqueda", "Atrás", "Número de teléfono",
-    // English
-    "New chat", "New group", "New contact", "New community",
-    "Cancel search", "Back", "Phone number",
-    // Portuguese
-    "Chat novo", "Novo grupo", "Novo contato", "Nova comunidade",
-    "Cancelar pesquisa", "Voltar", "Número de telefone",
+  // ── Look for result DIV[role="button"] elements with phone digits ──
+  // Playwright confirmed: WA renders results as DIV[role="button"], not <button>.
+  // The result element's textContent is the formatted phone (e.g. "+51 929 172 568").
+  const SKIP_TEXT = new Set([
+    "Nuevo grupo", "Nueva comunidad", "Nuevo contacto",
+    "New group", "New community", "New contact",
+    "Novo grupo", "Nova comunidade", "Novo contato",
   ]);
 
-  // We scope to all buttons in the app — the "Nuevo chat" panel puts
-  // result buttons as direct descendants of the panel container.
-  const allButtons = app.querySelectorAll("button");
+  const resultDivs = app.querySelectorAll('div[role="button"]');
   let resultCount = 0;
-  for (const btn of allButtons) {
-    const ariaLabel = (btn.getAttribute("aria-label") || "").trim();
-    const textContent = (btn.textContent || "").trim();
-
-    // Skip known non-result buttons by aria-label
-    if (ariaLabel && SKIP_LABELS.has(ariaLabel)) continue;
-
-    // Skip buttons with very short or empty text (icon-only buttons)
-    if (textContent.length < 3) continue;
-
-    // Skip buttons whose full text matches a skip label
-    if (SKIP_LABELS.has(textContent)) continue;
-
-    // A contact/phone result button will either:
-    //   a) Contain digits (phone number), or
-    //   b) Have an <img> child (profile photo), or
-    //   c) Have a "Usuarios que no están en tus contactos" section nearby
-    const hasDigits = /\d{3,}/.test(textContent);
-    const hasImg = btn.querySelector("img") !== null;
-
+  for (const div of resultDivs) {
+    const text = (div.textContent || "").trim();
+    if (text.length < 2) continue;
+    if (SKIP_TEXT.has(text)) continue;
+    // Contact result: has phone digits or has a profile image
+    const hasDigits = /\d{4,}/.test(text);
+    const hasImg = div.querySelector("img") !== null;
     if (hasDigits || hasImg) {
       resultCount++;
     }
   }
 
   if (resultCount > 0) {
-    return { found: true, count: resultCount, method: "button-search" };
+    return { found: true, count: resultCount };
   }
 
-  // In search mode, cancel exists, no loading indicator, but no results yet.
-  // Could be an empty result about to show "no results" icon, or results
-  // haven't rendered yet. Keep polling briefly.
   return { found: false };
 }
 
 /**
- * Step 5: Press Enter on the search input to select first result.
- * Runs in MAIN world — fire-and-forget.
+ * Step 5: Click the first result DIV[role="button"] in the search panel.
+ * Runs in ISOLATED world — uses element.click() which WA accepts here
+ * because we're clicking a result item (not a compose box).
  *
- * Enter on the contenteditable search input selects the first result.
- * This works because WA handles keydown on the input directly,
- * unlike mouse clicks which are filtered by isTrusted checks.
+ * Playwright testing confirmed:
+ *   - Results are DIV[role="button"] elements with phone text content
+ *   - element.click() on these divs successfully opens the chat
+ *   - Enter on the search input does NOT reliably select results
  */
-function stepSelectResult() {
-  console.log("[Goberna BG] stepSelectResult: pressing Enter on search input");
-  // Try multiple selectors to find the search input in "Nuevo chat" panel
-  const selectors = [
-    'div[role="textbox"][aria-label="Buscar un nombre o número"]',
-    'div[role="textbox"][aria-label="Search name or number"]',
-    'div[role="textbox"][aria-label="Pesquisar nome ou número"]',
-    'div[role="textbox"][contenteditable="true"][aria-label]',
-    'div._akav[data-tab]',
-    'div[aria-label*="Buscar"]',
-    'input[placeholder*="Buscar"]',
-    'input[placeholder*="Search"]',
-  ];
+function stepClickFirstResult() {
+  const app = document.querySelector("#app");
+  if (!app) {
+    console.log("[Goberna BG] stepClickFirstResult: no #app");
+    return { clicked: false, reason: "no-app" };
+  }
 
-  let input = null;
-  for (const sel of selectors) {
-    input = document.querySelector(sel);
-    if (input) {
-      console.log("[Goberna BG] stepSelectResult: found input with selector:", sel);
-      break;
+  const SKIP_TEXT = new Set([
+    "Nuevo grupo", "Nueva comunidad", "Nuevo contacto",
+    "New group", "New community", "New contact",
+    "Novo grupo", "Nova comunidade", "Novo contato",
+  ]);
+
+  const resultDivs = app.querySelectorAll('div[role="button"]');
+  for (const div of resultDivs) {
+    const text = (div.textContent || "").trim();
+    if (text.length < 2) continue;
+    if (SKIP_TEXT.has(text)) continue;
+    const hasDigits = /\d{4,}/.test(text);
+    const hasImg = div.querySelector("img") !== null;
+    if (hasDigits || hasImg) {
+      console.log("[Goberna BG] stepClickFirstResult: clicking result:", text.slice(0, 30));
+      div.click();
+      return { clicked: true, text: text.slice(0, 30) };
     }
   }
 
-  if (!input) {
-    console.log("[Goberna BG] stepSelectResult: input not found, checking what's in DOM");
-    // Log what's in the DOM for debugging
-    const textboxes = document.querySelectorAll('div[role="textbox"]');
-    console.log("[Goberna BG] Found textboxes:", textboxes.length);
-    return;
-  }
-
-  input.focus();
-  console.log("[Goberna BG] stepSelectResult: dispatching Enter key");
-
-  const enterProps = {
-    key: "Enter",
-    code: "Enter",
-    keyCode: 13,
-    which: 13,
-    bubbles: true,
-    cancelable: true,
-  };
-
-  input.dispatchEvent(new KeyboardEvent("keydown", enterProps));
-  input.dispatchEvent(new KeyboardEvent("keypress", enterProps));
-  input.dispatchEvent(new KeyboardEvent("keyup", enterProps));
-  console.log("[Goberna BG] stepSelectResult: Enter dispatched");
+  console.log("[Goberna BG] stepClickFirstResult: no clickable result found");
+  return { clicked: false, reason: "no-result-div" };
 }
 
 /**
@@ -666,8 +620,8 @@ async function attemptNavigation(tabId, phone, text, isRetry) {
     return { success: false, reason: "no-results" };
   }
 
-  // Press Enter to select first result (MAIN world)
-  await execStep(tabId, stepSelectResult, [], "MAIN");
+  // Click the first result DIV[role="button"] (ISOLATED world)
+  await execStep(tabId, stepClickFirstResult);
 
   // Poll for chat to open
   const validation = await pollCondition(
@@ -964,9 +918,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
 
     case "selectSearchResult":
-      // CMS panel asks us to press Enter on the WA search input in MAIN world.
-      // Content scripts run in ISOLATED world where synthetic keyboard events are
-      // untrusted and ignored by WA's React. MAIN world events work.
+      // CMS panel asks us to click the first search result.
+      // Now uses stepClickFirstResult (ISOLATED world) instead of Enter key.
       (async () => {
         try {
           const tabId = sender?.tab?.id;
@@ -974,8 +927,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ ok: false, error: "no sender tab" });
             return;
           }
-          await execStep(tabId, stepSelectResult, [], "MAIN");
-          sendResponse({ ok: true });
+          const result = await execStep(tabId, stepClickFirstResult);
+          sendResponse({ ok: result?.clicked ?? false, result });
         } catch (err) {
           error("selectSearchResult error:", err);
           sendResponse({ ok: false, error: err.message });
