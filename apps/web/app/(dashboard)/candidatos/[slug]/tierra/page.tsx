@@ -253,44 +253,42 @@ export default function TierraPage() {
         <div className="flex-1 min-h-0 relative">
           <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} datosVizMode={datosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} mapTheme={mapTheme} showRoutes={showRoutes} drillState={drillState} onDrillChange={setDrillState} />
           <div className="absolute top-3 left-3 z-20 flex items-start gap-2">
-            <div className="flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={() => setIsFullscreen((prev) => !prev)}
-                className={`cursor-pointer rounded-md border px-3 py-1.5 text-[11px] font-semibold flex items-center gap-2 backdrop-blur-sm transition-colors ${
-                  mapTheme === "dark"
-                    ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
-                    : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
-                }`}
-                title={isFullscreen ? "Salir de pantalla completa (Esc)" : "Pantalla completa"}
-              >
-                {isFullscreen ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <polyline points="9 3 3 3 3 9" />
-                    <polyline points="15 3 21 3 21 9" />
-                    <polyline points="3 15 3 21 9 21" />
-                    <polyline points="21 15 21 21 15 21" />
-                  </svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <polyline points="15 3 21 3 21 9" />
-                    <polyline points="9 21 3 21 3 15" />
-                    <line x1="21" y1="3" x2="14" y2="10" />
-                    <line x1="3" y1="21" x2="10" y2="14" />
-                  </svg>
-                )}
-                <span>{isFullscreen ? "Salir fullscreen" : "Pantalla completa"}</span>
-              </button>
-
-              <CameraPanel
-                mapTheme={mapTheme}
-                onNudge={handleCameraNudge}
-                onResetPosition={handleCameraResetPosition}
-                onResetOrientation={handleCameraResetOrientation}
-              />
-            </div>
-
+            <button
+              type="button"
+              onClick={() => setIsFullscreen((prev) => !prev)}
+              className={`cursor-pointer rounded-md border px-3 py-1.5 text-[11px] font-semibold flex items-center gap-2 backdrop-blur-sm transition-colors ${
+                mapTheme === "dark"
+                  ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
+                  : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
+              }`}
+              title={isFullscreen ? "Salir de pantalla completa (Esc)" : "Pantalla completa"}
+            >
+              {isFullscreen ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <polyline points="9 3 3 3 3 9" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <polyline points="3 15 3 21 9 21" />
+                  <polyline points="21 15 21 21 15 21" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <polyline points="15 3 21 3 21 9" />
+                  <polyline points="9 21 3 21 3 15" />
+                  <line x1="21" y1="3" x2="14" y2="10" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+              )}
+              <span>{isFullscreen ? "Salir fullscreen" : "Pantalla completa"}</span>
+            </button>
             <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
+          </div>
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20">
+            <CameraPanel
+              mapTheme={mapTheme}
+              onNudge={handleCameraNudge}
+              onResetPosition={handleCameraResetPosition}
+              onResetOrientation={handleCameraResetOrientation}
+            />
           </div>
           <CampoOverlay agents={enrichedAgents} connectedCount={connectedCount} logEntries={logEntries} formCount={stats.totals.forms_count} primaryColor={campaign.color_primario} selectedAgentId={selectedAgentId} onAgentClick={handleAgentListClick} onLogEntryClick={handleLogEntryClick} userRole={user?.role} onDeleteForm={handleDeleteForm} onUpdateForm={handleUpdateForm} mapTheme={mapTheme} />
         </div>
