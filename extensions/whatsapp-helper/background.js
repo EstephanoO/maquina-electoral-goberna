@@ -307,14 +307,29 @@ function stepTypePhone(phone) {
   }));
   console.log("[Goberna BG] stepTypePhone: bulk set, field now:", (input.textContent || "").trim());
 
-  // ── 3. Last digit: append to text node + fire InputEvent ──
-  // This single InputEvent is what triggers Lexical's search debounce.
+  // ── 3. Last digit: TYPE it (keydown+keyup) — this triggers WA's search debounce ──
+  // Bulk alone doesn't fire search. The last keystroke is what WA's Lexical watches.
+  input.dispatchEvent(new KeyboardEvent("keydown", {
+    key: last,
+    code: "Digit" + last,
+    keyCode: last.charCodeAt(0),
+    bubbles: true,
+    cancelable: true,
+  }));
+  // Append last digit to text node
   tNode.nodeValue = bulk + last;
+  // Fire InputEvent so Lexical registers the final digit AND triggers search
   input.dispatchEvent(new InputEvent("input", {
     inputType: "insertText",
     data: last,
     bubbles: true,
     cancelable: false,
+  }));
+  input.dispatchEvent(new KeyboardEvent("keyup", {
+    key: last,
+    code: "Digit" + last,
+    keyCode: last.charCodeAt(0),
+    bubbles: true,
   }));
   console.log("[Goberna BG] stepTypePhone: done, field now:", (input.textContent || "").trim());
 }
