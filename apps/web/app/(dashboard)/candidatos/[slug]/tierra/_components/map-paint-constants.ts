@@ -47,15 +47,20 @@ export const BARS_EXTRUSION_PAINT: FillExtrusionLayerSpecification["paint"] = {
     "step", ["get", "count"],
     "#38bdf8", 3, "#22d3ee", 8, "#14b8a6", 15, "#f59e0b", 30, "#ef4444",
   ],
-  "fill-extrusion-height": ["get", "height"],
+  // Zoom-responsive scale: far = shorter bars, near = taller bars.
+  "fill-extrusion-height": [
+    "*",
+    ["get", "height"],
+    ["interpolate", ["linear"], ["zoom"], 4, 0.2, 6, 0.32, 8, 0.48, 10, 0.7, 12, 0.95, 14, 1.35, 16, 1.85],
+  ],
   "fill-extrusion-base": 0,
-  "fill-extrusion-opacity": 0.82,
+  "fill-extrusion-opacity": ["interpolate", ["linear"], ["zoom"], 4, 0.35, 8, 0.55, 12, 0.78, 16, 0.9],
 };
 
 export const BARS_LINE_PAINT: LineLayerSpecification["paint"] = {
   "line-color": "rgba(241,245,249,0.35)",
   "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.2, 10, 0.5, 14, 1],
-  "line-opacity": 0.7,
+  "line-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.35, 10, 0.55, 14, 0.78],
 };
 
 /* ─── Cluster filters (static) ─── */
@@ -77,6 +82,21 @@ export const CLUSTER_CIRCLE_PAINT: CircleLayerSpecification["paint"] = {
   "circle-stroke-width": 2, "circle-stroke-color": "#ffffff", "circle-stroke-opacity": 0.7,
 };
 
+export const CLUSTER_RING_DARK_PAINT: CircleLayerSpecification["paint"] = {
+  "circle-color": ["step", ["get", "point_count"], "#34d399", CLUSTER_STEPS[0], "#10b981", CLUSTER_STEPS[1], "#f59e0b", CLUSTER_STEPS[2], "#f97316", CLUSTER_STEPS[3], "#ef4444"],
+  "circle-radius": ["step", ["get", "point_count"], CLUSTER_SIZES[0] + 4, CLUSTER_STEPS[0], CLUSTER_SIZES[1] + 4, CLUSTER_STEPS[1], CLUSTER_SIZES[2] + 4, CLUSTER_STEPS[2], CLUSTER_SIZES[3] + 4, CLUSTER_STEPS[3], CLUSTER_SIZES[4] + 4],
+  "circle-opacity": 0.24,
+  "circle-blur": 0.25,
+};
+
+export const CLUSTER_CIRCLE_DARK_PAINT: CircleLayerSpecification["paint"] = {
+  "circle-color": ["step", ["get", "point_count"], "#34f5a4", CLUSTER_STEPS[0], "#22c55e", CLUSTER_STEPS[1], "#fbbf24", CLUSTER_STEPS[2], "#fb923c", CLUSTER_STEPS[3], "#f87171"],
+  "circle-radius": ["step", ["get", "point_count"], CLUSTER_SIZES[0], CLUSTER_STEPS[0], CLUSTER_SIZES[1], CLUSTER_STEPS[1], CLUSTER_SIZES[2], CLUSTER_STEPS[2], CLUSTER_SIZES[3], CLUSTER_STEPS[3], CLUSTER_SIZES[4]],
+  "circle-stroke-width": 1.5,
+  "circle-stroke-color": "rgba(241,245,249,0.95)",
+  "circle-stroke-opacity": 0.85,
+};
+
 /* ─── Cluster count text (static) ─── */
 
 export const CLUSTER_COUNT_LAYOUT: SymbolLayerSpecification["layout"] = {
@@ -94,6 +114,22 @@ export const FORM_POINTS_PAINT: CircleLayerSpecification["paint"] = {
   "circle-opacity": 0.8,
   "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 5, 1, 14, 2],
   "circle-stroke-color": "#ffffff", "circle-stroke-opacity": 0.85,
+};
+
+export const FORM_POINTS_DARK_GLOW_PAINT: CircleLayerSpecification["paint"] = {
+  "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 6, 10, 10, 14, 14, 18, 18],
+  "circle-color": ["coalesce", ["get", "point_glow"], "rgba(52,245,164,0.45)"],
+  "circle-opacity": 0.7,
+  "circle-blur": 0.85,
+};
+
+export const FORM_POINTS_DARK_PAINT: CircleLayerSpecification["paint"] = {
+  "circle-radius": ["interpolate", ["linear"], ["zoom"], 5, 2.8, 10, 4.4, 14, 6.2, 18, 8.6],
+  "circle-color": ["coalesce", ["get", "point_color"], "#34f5a4"],
+  "circle-opacity": 0.95,
+  "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 5, 0.8, 14, 1.6],
+  "circle-stroke-color": "rgba(241,245,249,0.9)",
+  "circle-stroke-opacity": 0.9,
 };
 
 /* ─── Agent paints (static) ─── */

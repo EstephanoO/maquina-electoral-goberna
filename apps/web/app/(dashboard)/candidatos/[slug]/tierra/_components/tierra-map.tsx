@@ -38,7 +38,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { TierraMapHandle, TierraMapProps } from "./types";
 import {
   STATUS_COLORS, ZONE_FILL, ZONE_HOVER, ZONE_LINE, ZONE_LINE_GHOST, MASK_FILL, HOVER_LAYERS,
-  PERU_VIEW, PERU_BOUNDS, PERU_BOUNDS_FLAT, PERU_MAX_BOUNDS, MAP_STYLE, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
+  PERU_VIEW, PERU_BOUNDS, PERU_BOUNDS_FLAT, PERU_MAX_BOUNDS, MAP_STYLES, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
   FLY_DURATION,
 } from "./constants";
 import { prewarmTiles } from "./utils";
@@ -48,8 +48,9 @@ import {
   SECTOR_FILL_PAINT, SECTOR_LINE_PAINT,
   HEATMAP_PAINT, BARS_EXTRUSION_PAINT, BARS_LINE_PAINT,
   HAS_POINT_COUNT, NOT_HAS_POINT_COUNT,
-  CLUSTER_RING_PAINT, CLUSTER_CIRCLE_PAINT, CLUSTER_COUNT_LAYOUT, CLUSTER_COUNT_PAINT,
-  FORM_POINTS_PAINT,
+  CLUSTER_RING_PAINT, CLUSTER_CIRCLE_PAINT, CLUSTER_RING_DARK_PAINT, CLUSTER_CIRCLE_DARK_PAINT,
+  CLUSTER_COUNT_LAYOUT, CLUSTER_COUNT_PAINT,
+  FORM_POINTS_PAINT, FORM_POINTS_DARK_PAINT, FORM_POINTS_DARK_GLOW_PAINT,
   AGENT_SELECTED_FILTER, AGENT_CONNECTED_FILTER, AGENT_PULSE_PAINT,
   AGENT_LABELS_LAYOUT, AGENT_LABELS_PAINT, AGENT_COUNT_LAYOUT, AGENT_COUNT_PAINT,
   ROUTE_LINE_PAINT, ROUTE_LINE_LAYOUT, ROUTE_CASING_PAINT,
@@ -96,7 +97,7 @@ function applyFluidMapInteractions(map: NativeMap) {
 }
 
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
-  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, showRoutes, drillState, onDrillChange },
+  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, mapTheme, showRoutes, drillState, onDrillChange },
   ref,
 ) {
   const mapRef = useRef<MapRef | null>(null);
@@ -132,51 +133,81 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const tilesArray = useMemo(() => tileUrl ? [tileUrl] : [], [tileUrl]);
 
   // ─── P2: Memoize dynamic paint objects that depend on drillState ───
+  const zonePalette = useMemo(() => (
+    mapTheme === "dark"
+      ? {
+          fill: "rgba(148, 163, 184, 0.2)",
+          hover: "rgba(148, 163, 184, 0.42)",
+          line: "#e2e8f0",
+          ghost: "#94a3b8",
+          mask: "rgba(2, 6, 23, 0.54)",
+        }
+      : {
+          fill: ZONE_FILL,
+          hover: ZONE_HOVER,
+          line: ZONE_LINE,
+          ghost: ZONE_LINE_GHOST,
+          mask: MASK_FILL,
+        }
+  ), [mapTheme]);
+
+  const clusterRingPaint = useMemo(
+    () => (mapTheme === "dark" ? CLUSTER_RING_DARK_PAINT : CLUSTER_RING_PAINT),
+    [mapTheme],
+  );
+  const clusterCirclePaint = useMemo(
+    () => (mapTheme === "dark" ? CLUSTER_CIRCLE_DARK_PAINT : CLUSTER_CIRCLE_PAINT),
+    [mapTheme],
+  );
+  const formPointsPaint = useMemo(
+    () => (mapTheme === "dark" ? FORM_POINTS_DARK_PAINT : FORM_POINTS_PAINT),
+    [mapTheme],
+  );
 
   const depFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
     "fill-color": drillState.level === 0
-      ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+      ? ["case", ["boolean", ["feature-state", "hover"], false], zonePalette.hover, zonePalette.fill]
       : drillState.depCode
-        ? ["case", ["==", ["get", "coddep"], drillState.depCode], ZONE_FILL, MASK_FILL]
-        : ZONE_FILL,
+        ? ["case", ["==", ["get", "coddep"], drillState.depCode], zonePalette.fill, zonePalette.mask]
+        : zonePalette.fill,
     "fill-opacity": 1,
-  }), [drillState.level, drillState.depCode]);
+  }), [drillState.level, drillState.depCode, zonePalette]);
 
   const depLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
-    "line-color": drillState.level === 0 ? ZONE_LINE : ZONE_LINE_GHOST,
+    "line-color": drillState.level === 0 ? zonePalette.line : zonePalette.ghost,
     "line-width": drillState.level === 0 ? 1.2 : 0.6,
-    "line-opacity": drillState.level === 0 ? 0.7 : 0.3,
-  }), [drillState.level]);
+    "line-opacity": drillState.level === 0 ? 0.82 : 0.45,
+  }), [drillState.level, zonePalette]);
 
   const provFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
     "fill-color": drillState.level === 1
-      ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+      ? ["case", ["boolean", ["feature-state", "hover"], false], zonePalette.hover, zonePalette.fill]
       : drillState.provCode
-        ? ["case", ["==", ["get", "codprov_full"], drillState.provCode], ZONE_FILL, MASK_FILL]
-        : ZONE_FILL,
+        ? ["case", ["==", ["get", "codprov_full"], drillState.provCode], zonePalette.fill, zonePalette.mask]
+        : zonePalette.fill,
     "fill-opacity": 1,
-  }), [drillState.level, drillState.provCode]);
+  }), [drillState.level, drillState.provCode, zonePalette]);
 
   const provLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
-    "line-color": drillState.level === 1 ? ZONE_LINE : ZONE_LINE_GHOST,
+    "line-color": drillState.level === 1 ? zonePalette.line : zonePalette.ghost,
     "line-width": drillState.level === 1 ? 1 : 0.5,
-    "line-opacity": drillState.level === 1 ? 0.7 : 0.2,
-  }), [drillState.level]);
+    "line-opacity": drillState.level === 1 ? 0.8 : 0.38,
+  }), [drillState.level, zonePalette]);
 
   const distFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
     "fill-color": drillState.level === 2
-      ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+      ? ["case", ["boolean", ["feature-state", "hover"], false], zonePalette.hover, zonePalette.fill]
       : drillState.distCode
-        ? ["case", ["==", ["get", "ubigeo"], drillState.distCode], ZONE_FILL, MASK_FILL]
-        : ZONE_FILL,
+        ? ["case", ["==", ["get", "ubigeo"], drillState.distCode], zonePalette.fill, zonePalette.mask]
+        : zonePalette.fill,
     "fill-opacity": 1,
-  }), [drillState.level, drillState.distCode]);
+  }), [drillState.level, drillState.distCode, zonePalette]);
 
   const distLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
-    "line-color": ZONE_LINE,
+    "line-color": zonePalette.line,
     "line-width": drillState.level >= 3 ? 1.2 : 0.8,
-    "line-opacity": 0.6,
-  }), [drillState.level]);
+    "line-opacity": mapTheme === "dark" ? 0.78 : 0.62,
+  }), [drillState.level, mapTheme, zonePalette]);
 
   // ─── P2: Agent paint objects that depend on primaryColor ───
   const agentSelectedRingPaint = useMemo((): CircleLayerSpecification["paint"] => ({
@@ -193,6 +224,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   // ─── P1: Visibility layout objects for always-mounted Sources ───
   const pointsVisibility = useMemo(() => showDatos && datosVizMode === "points" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
+  const pointsGlowVisibility = useMemo(() => showDatos && datosVizMode === "points" && mapTheme === "dark" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode, mapTheme]);
   const heatmapVisibility = useMemo(() => showDatos && datosVizMode === "heatmap" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
   const barsVisibility = useMemo(() => showDatos && datosVizMode === "bars3d" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
   const trackingVisibility = useMemo(() => showTracking ? VIS_VISIBLE : VIS_NONE, [showTracking]);
@@ -385,19 +417,28 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Loading ───
   if (!ready || !tileUrl) {
     return (
-      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#0b1220" }}>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: mapTheme === "dark" ? "#0b1220" : "#e5e7eb",
+        }}
+      >
         <span style={{ color: "#64748b", fontSize: 13 }}>Cargando mapa...</span>
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} style={{ position: "absolute", inset: 0, backgroundColor: "#0b1220" }}>
+    <div ref={containerRef} style={{ position: "absolute", inset: 0, backgroundColor: mapTheme === "dark" ? "#0b1220" : "#e5e7eb" }}>
       <MapLibre
         ref={mapRef}
         initialViewState={PERU_VIEW}
         style={{ width: "100%", height: "100%" }}
-        mapStyle={MAP_STYLE}
+        mapStyle={MAP_STYLES[mapTheme]}
         dragPan={MAP_DRAG_PAN_OPTIONS}
         dragRotate={false}
         pitchWithRotate={false}
@@ -453,10 +494,11 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
         {/* ── Clustered form data — always mounted, visibility controlled via layout ── */}
         <Source id="forms-clustered" type="geojson" data={formsGeoJson} cluster clusterRadius={40} clusterMaxZoom={16}>
-          <Layer id="forms-cluster-ring" type="circle" filter={HAS_POINT_COUNT} layout={pointsVisibility} paint={CLUSTER_RING_PAINT} />
-          <Layer id="forms-clusters" type="circle" filter={HAS_POINT_COUNT} layout={pointsVisibility} paint={CLUSTER_CIRCLE_PAINT} />
+          <Layer id="forms-cluster-ring" type="circle" filter={HAS_POINT_COUNT} layout={pointsVisibility} paint={clusterRingPaint} />
+          <Layer id="forms-clusters" type="circle" filter={HAS_POINT_COUNT} layout={pointsVisibility} paint={clusterCirclePaint} />
           <Layer id="forms-cluster-count" type="symbol" filter={HAS_POINT_COUNT} layout={clusterCountLayoutWithVis} paint={CLUSTER_COUNT_PAINT} />
-          <Layer id="forms-points" type="circle" filter={NOT_HAS_POINT_COUNT} layout={pointsVisibility} paint={FORM_POINTS_PAINT} />
+          <Layer id="forms-points-glow" type="circle" filter={NOT_HAS_POINT_COUNT} layout={pointsGlowVisibility} paint={FORM_POINTS_DARK_GLOW_PAINT} />
+          <Layer id="forms-points" type="circle" filter={NOT_HAS_POINT_COUNT} layout={pointsVisibility} paint={formPointsPaint} />
         </Source>
         <Source id="forms-heatmap" type="geojson" data={formsGeoJson}>
           <Layer id="forms-heatmap-layer" type="heatmap" layout={heatmapVisibility} paint={HEATMAP_PAINT} />

@@ -2,6 +2,7 @@
 
 import type { AgentStatus } from "./types";
 import type { DatosVizMode } from "./types";
+import type { MapTheme } from "./types";
 
 /* ========== Types ========== */
 
@@ -14,6 +15,8 @@ type Props = {
   onRoutesToggle: () => void;
   datosVizMode: DatosVizMode;
   onDatosVizModeChange: (mode: DatosVizMode) => void;
+  mapTheme: MapTheme;
+  onMapThemeChange: (theme: MapTheme) => void;
   agentCount: number;
   formCount: number;
   routeSurveyorCount?: number;
@@ -39,6 +42,11 @@ const VIZ_MODES: Array<{ id: DatosVizMode; label: string }> = [
   { id: "bars3d", label: "Barras 3D" },
 ];
 
+const THEME_MODES: Array<{ id: MapTheme; label: string }> = [
+  { id: "dark", label: "Oscuro" },
+  { id: "light", label: "Claro" },
+];
+
 export function MapControls({
   activeLayer,
   onLayerChange,
@@ -46,6 +54,8 @@ export function MapControls({
   onRoutesToggle,
   datosVizMode,
   onDatosVizModeChange,
+  mapTheme,
+  onMapThemeChange,
   agentCount,
   formCount,
   routeSurveyorCount,
@@ -73,6 +83,27 @@ export function MapControls({
         count={routeSurveyorCount}
         activeColor={C.routes}
       />
+
+      <div className="mt-1 rounded-md border border-slate-200 bg-slate-50 p-1.5">
+        <div className="text-[10px] font-semibold tracking-wide text-slate-500 uppercase px-1 pb-1">Tema</div>
+        <div className="grid grid-cols-2 gap-1">
+          {THEME_MODES.map((mode) => (
+            <button
+              key={mode.id}
+              type="button"
+              onClick={() => onMapThemeChange(mode.id)}
+              className="cursor-pointer rounded-md border px-2 py-1 text-[10px] font-semibold transition-all duration-150"
+              style={{
+                backgroundColor: mapTheme === mode.id ? "#0f172a" : "#ffffff",
+                color: mapTheme === mode.id ? "#ffffff" : "#475569",
+                borderColor: mapTheme === mode.id ? "#0f172a" : "#e2e8f0",
+              }}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {activeLayer === "datos" && (
         <div className="mt-1 rounded-md border border-slate-200 bg-slate-50 p-1.5">

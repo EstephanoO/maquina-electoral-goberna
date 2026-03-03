@@ -11,6 +11,18 @@
 import { useMemo } from "react";
 import type { EnrichedAgent, FormPoint } from "../types";
 
+const NEON_COLORS = ["#34f5a4", "#ff9f43"] as const;
+const NEON_GLOW_COLORS = ["rgba(52,245,164,0.45)", "rgba(255,159,67,0.45)"] as const;
+
+function stableHash(input: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    h ^= input.charCodeAt(i);
+    h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
+  }
+  return h >>> 0;
+}
+
 /* ─── Agent source ─── */
 
 export function useAgentsSource(agents: EnrichedAgent[], selectedAgentId: string | null) {
@@ -54,17 +66,23 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
 
   const formsGeoJson = useMemo(() => ({
     type: "FeatureCollection" as const,
-    features: visibleForms.map((f) => ({
-      type: "Feature" as const,
-      properties: {
-        nombre: f.nombre,
-        telefono: f.telefono ?? "",
-        encuestador: f.encuestador ?? "",
-        agent_id: f.agent_id ?? "",
-        created_at: f.created_at,
-      },
-      geometry: { type: "Point" as const, coordinates: [f.lng, f.lat] },
-    })),
+    features: visibleForms.map((f) => {
+      const colorKey = `${f.agent_id ?? ""}:${f.encuestador ?? ""}:${f.telefono ?? ""}`;
+      const idx = stableHash(colorKey) % NEON_COLORS.length;
+      return {
+        type: "Feature" as const,
+        properties: {
+          nombre: f.nombre,
+          telefono: f.telefono ?? "",
+          encuestador: f.encuestador ?? "",
+          agent_id: f.agent_id ?? "",
+          created_at: f.created_at,
+          point_color: NEON_COLORS[idx],
+          point_glow: NEON_GLOW_COLORS[idx],
+        },
+        geometry: { type: "Point" as const, coordinates: [f.lng, f.lat] },
+      };
+    }),
   }), [visibleForms]);
 
   const barsGeoJson = useMemo(() => {
@@ -112,4 +130,3 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
 
   return { formsGeoJson, barsGeoJson };
 }
-

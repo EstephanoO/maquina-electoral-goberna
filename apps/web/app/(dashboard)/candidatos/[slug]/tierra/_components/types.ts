@@ -30,6 +30,7 @@ export type FormPoint = {
 };
 
 export type DatosVizMode = "points" | "heatmap" | "bars3d";
+export type MapTheme = "dark" | "light";
 
 /* ─── Drill Navigation ─── */
 
@@ -107,6 +108,7 @@ export type TierraMapProps = {
   showTracking: boolean;
   showDatos: boolean;
   datosVizMode: DatosVizMode;
+  mapTheme: MapTheme;
   showRoutes: boolean;
   drillState: DrillState;
   onDrillChange: (state: DrillState) => void;
