@@ -34,6 +34,9 @@
  *   v8.2: Remove synthetic Enter/InputEvent dispatches from stepTypePhone —
  *         execCommand in MAIN world already triggers React search. The extra
  *         Enter was prematurely selecting results before search completed.
+ *   v8.3: Fix search not triggering — append a trailing space after inserting
+ *         the phone number. WA React's search handler requires a second input
+ *         event to fire the query (user-observed: "when I press space it works").
  */
 
 // ── Configuration ──
@@ -264,10 +267,13 @@ function stepTypePhone(phone) {
   document.execCommand("insertText", false, phone);
   console.log("[Goberna BG] stepTypePhone: after insert, content:", (input.textContent || "").slice(0, 20));
 
-  // NOTE: Do NOT dispatch synthetic InputEvent or KeyboardEvent here.
-  // execCommand in MAIN world already triggers React's internal onChange
-  // handler which initiates the search. Dispatching Enter here would
-  // prematurely select a result before the search completes.
+  // WhatsApp Web's React search handler requires an additional input event
+  // after the text is inserted to actually kick off the search query.
+  // A trailing space is the minimal trigger — this mirrors what the user does
+  // manually ("cuando yo doy espacio recien lo busca").
+  // The space is harmless: WA normalizes/trims the query before searching.
+  document.execCommand("insertText", false, " ");
+  console.log("[Goberna BG] stepTypePhone: after space trigger, content:", (input.textContent || "").slice(0, 25));
 }
 
 /**
