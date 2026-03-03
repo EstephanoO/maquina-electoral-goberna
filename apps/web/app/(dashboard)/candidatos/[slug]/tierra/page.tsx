@@ -386,13 +386,17 @@ function CameraPanel({
   onResetOrientation: () => void;
 }) {
   const isDark = mapTheme === "dark";
-  const shellClass = isDark
-    ? "border-slate-600 bg-slate-950/88 text-slate-100"
-    : "border-slate-200 bg-white/95 text-slate-700";
   const sectionLabelClass = isDark ? "text-slate-300" : "text-slate-500";
+  const panelStyle = {
+    background: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.38)",
+    backdropFilter: "blur(20px)",
+    WebkitBackdropFilter: "blur(20px)",
+    borderColor: isDark ? "rgba(148,163,184,0.25)" : "rgba(226,232,240,0.7)",
+    boxShadow: isDark ? "0 8px 32px rgba(2,6,23,0.45)" : "0 2px 24px rgba(0,0,0,0.08)",
+  };
 
   return (
-    <div className={`rounded-md border p-2 backdrop-blur-sm w-[172px] ${shellClass}`}>
+    <div className="rounded-2xl border p-2 w-[172px] overflow-hidden" style={panelStyle}>
       <div className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${sectionLabelClass}`}>Camara</div>
 
       <div className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${sectionLabelClass}`}>Posicion</div>

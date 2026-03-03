@@ -69,18 +69,26 @@ export function MapControls({
   routeSurveyorCount,
 }: Props) {
   const isDark = mapTheme === "dark";
-  const panelClass = isDark
-    ? "bg-slate-950/88 border-slate-700 shadow-[0_10px_28px_rgba(2,6,23,0.55)]"
-    : "bg-white/95 border-slate-200 shadow-sm";
-  const sectionClass = isDark
-    ? "border-slate-700 bg-slate-900/85"
-    : "border-slate-200 bg-slate-50";
   const sectionTitleClass = isDark
     ? "text-slate-300"
     : "text-slate-500";
+  const panelStyle = {
+    background: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.38)",
+    backdropFilter: "blur(20px)",
+    WebkitBackdropFilter: "blur(20px)",
+    borderColor: isDark ? "rgba(148,163,184,0.25)" : "rgba(226,232,240,0.7)",
+    boxShadow: isDark ? "0 8px 32px rgba(2,6,23,0.45)" : "0 2px 24px rgba(0,0,0,0.08)",
+  };
+  const sectionStyle = {
+    background: isDark ? "rgba(15,23,42,0.74)" : "rgba(255,255,255,0.38)",
+    backdropFilter: "blur(20px)",
+    WebkitBackdropFilter: "blur(20px)",
+    borderColor: isDark ? "rgba(148,163,184,0.24)" : "rgba(226,232,240,0.75)",
+    boxShadow: isDark ? "0 6px 20px rgba(2,6,23,0.4)" : "0 2px 16px rgba(0,0,0,0.06)",
+  };
 
   return (
-    <div className={`backdrop-blur-sm rounded-[10px] p-2 flex flex-col gap-1 border ${panelClass}`}>
+    <div className="rounded-2xl p-2 flex flex-col gap-1 border overflow-hidden" style={panelStyle}>
       <LayerBtn
         active={activeLayer === "datos"}
         onClick={() => onLayerChange(activeLayer === "datos" ? null : "datos")}
@@ -106,7 +114,7 @@ export function MapControls({
         mapTheme={mapTheme}
       />
 
-      <div className={`mt-1 rounded-md border p-1.5 ${sectionClass}`}>
+      <div className="mt-1 rounded-2xl border p-1.5" style={sectionStyle}>
         <div className={`text-[10px] font-semibold tracking-wide uppercase px-1 pb-1 ${sectionTitleClass}`}>Tema</div>
         <div className="grid grid-cols-2 gap-1">
           {THEME_MODES.map((mode) => (
@@ -134,7 +142,7 @@ export function MapControls({
       </div>
 
       {activeLayer === "datos" && (
-        <div className={`mt-1 rounded-md border p-1.5 ${sectionClass}`}>
+        <div className="mt-1 rounded-2xl border p-1.5" style={sectionStyle}>
           <div className={`text-[10px] font-semibold tracking-wide uppercase px-1 pb-1 ${sectionTitleClass}`}>Visualizacion</div>
           <div className="grid grid-cols-3 gap-1">
             {VIZ_MODES.map((mode) => (
@@ -157,7 +165,7 @@ export function MapControls({
           </div>
 
           {datosVizMode === "heatmap" && (
-            <div className={`mt-2 rounded-md border p-2 ${isDark ? "border-slate-700 bg-slate-950/85" : "border-slate-200 bg-white"}`}>
+            <div className="mt-2 rounded-2xl border p-2" style={sectionStyle}>
               <div className={`text-[10px] font-semibold tracking-wide uppercase mb-2 ${sectionTitleClass}`}>Heatmap</div>
 
               <div className="grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-1 mb-2">
