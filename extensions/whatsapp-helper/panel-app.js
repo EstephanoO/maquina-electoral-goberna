@@ -453,41 +453,75 @@ function waTypeInSearch(input, text) {
 function waCheckResults() {
   const app = document.getElementById("app");
   if (!app) return null;
+  
+  // First: Check for the search input - if it exists and has content, we're in search mode
+  let searchInput = null;
+  for (const label of SEARCH_INPUT_LABELS) {
+    searchInput = document.querySelector(`div[role="textbox"][aria-label="${label}"]`);
+    if (searchInput) break;
+  }
+  
+  // Check if search input has text typed in it
+  const hasSearchText = searchInput && (searchInput.textContent || "").trim().length > 0;
+  
   // No results icon
   if (app.querySelector('span[data-icon="search-no-results"], span[data-icon="no-results"]')) {
     if (GDEBUG) console.log("[Goberna WA] waCheckResults: no results icon found");
     return { noResults: true };
   }
-  // Still searching
+  
+  // Still searching (loading indicator)
   for (const s of app.querySelectorAll('[role="status"]')) {
     const txt = (s.textContent || "").toLowerCase();
     if (txt.includes("buscando") || txt.includes("searching") || txt.includes("procurando")) return null;
   }
-  // Check for cancel button (means search is active)
+  
+  // Check for cancel button OR check if search input has text (either means search is active)
   let inSearch = false;
   for (const label of ["Cancelar búsqueda", "Cancel search", "Cancelar pesquisa"]) {
     if (app.querySelector(`button[aria-label="${label}"]`)) { inSearch = true; break; }
   }
-  if (!inSearch) {
-    if (GDEBUG) console.log("[Goberna WA] waCheckResults: not in search mode (no cancel button)");
+  // Also consider it "in search" if the search input has text
+  if (!inSearch && !hasSearchText) {
+    if (GDEBUG) console.log("[Goberna WA] waCheckResults: not in search mode");
     return null;
   }
-  // Count result buttons
+  
+  // Count result buttons - look for contact items in the list
   let count = 0;
   const resultBtns = [];
+  
+  // Method 1: Look for buttons with images (typical contact result)
   for (const btn of app.querySelectorAll("button")) {
     const ariaLabel = (btn.getAttribute("aria-label") || "").trim();
     const text = (btn.textContent || "").trim();
     if (ariaLabel && SKIP_RESULT_LABELS.has(ariaLabel)) continue;
     if (text.length < 3 || SKIP_RESULT_LABELS.has(text)) continue;
+    
+    // Contact results typically have an image OR have a phone number pattern
     const hasImg = !!btn.querySelector("img");
     const hasDigits = /\d{3,}/.test(text);
-    if (hasDigits || hasImg) {
+    const isContactResult = hasImg || hasDigits;
+    
+    if (isContactResult) {
       count++;
-      resultBtns.push({ ariaLabel, text: text.slice(0, 30), hasImg, hasDigits });
+      if (count <= 5) resultBtns.push({ ariaLabel, text: text.slice(0, 30), hasImg, hasDigits });
     }
   }
-  if (GDEBUG) console.log("[Goberna WA] waCheckResults: found", count, "buttons:", resultBtns.slice(0, 3));
+  
+  // Method 2: If no buttons found, look for list items with contacts
+  if (count === 0) {
+    const listItems = app.querySelectorAll('[role="listitem"], li');
+    for (const li of listItems) {
+      const text = (li.textContent || "").trim();
+      if (text.length >= 3 && /\d{9,}/.test(text.replace(/\s/g, ""))) {
+        count++;
+        if (count <= 5) resultBtns.push({ text: text.slice(0, 30) });
+      }
+    }
+  }
+  
+  if (GDEBUG) console.log("[Goberna WA] waCheckResults: found", count, "results, input has text:", hasSearchText, "buttons:", resultBtns.slice(0, 3));
   return count > 0 ? { found: true, count } : null;
 }
 
