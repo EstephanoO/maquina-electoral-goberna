@@ -1,57 +1,111 @@
 /**
- * WhatsApp Goberna Helper — Background Script (v7.0)
+ * WhatsApp Goberna Helper — Background Script (v8.6)
  *
- * Multi-step sequential executeScript approach.
+ * Orchestrates multi-step DOM navigation in WhatsApp Web to open a chat
+ * by phone number WITHOUT reloading the page.
  *
- * Key insight: WhatsApp Web 2026 has NO data-testid attributes.
- * We use aria-label, role, data-icon, and structural selectors ONLY.
+ * Architecture:
+ *   - ISOLATED world: Can return values, full DOM access, but execCommand
+ *     doesn't trigger React state in WA's contenteditable inputs.
+ *   - MAIN world: execCommand works for React contenteditable, but
+ *     cannot return Promises (results come back as undefined).
  *
- * Navigation flow (all proven via live DevTools testing):
- *   Step 1 (ISOLATED): Click button[aria-label="Nuevo chat"]
- *   Step 2 (wait 800ms)
- *   Step 3 (MAIN):     Focus + type phone into contenteditable search
- *   Step 4 (wait 2500ms for search results)
- *   Step 5 (MAIN):     Press Enter on search input to select first result
- *   Step 6 (wait 800ms)
- *   Step 7 (ISOLATED):  Validate chat opened (check #main header changed)
- *   Step 8 (MAIN):     Pre-fill message text if provided
+ * Navigation flow:
+ *   Step 0: Check WhatsApp Web is loaded + logged in (ISOLATED)
+ *   Step 1: Click "Nuevo chat" button (ISOLATED)
+ *   Step 2: Poll until search input appears (ISOLATED)
+ *   Step 3: Clear search input (MAIN) → sleep 150ms → type each char (MAIN×N)
+ *   Step 4: Poll until search results appear (ISOLATED)
+ *   Step 5: Click first DIV[role="button"] result (ISOLATED)
+ *   Step 6: Poll until chat opens (ISOLATED)
+ *   Step 7: Pre-fill message text if provided (MAIN)
  *
- * ISOLATED world: Can return async values, full DOM access, but
- *   execCommand doesn't trigger React state in WA's inputs.
- * MAIN world: execCommand works for React contenteditable, but
- *   async returns come back as undefined (no Promise support).
- *
- * BUG FIX (v5.1): stepClickResult rewritten with panel-scoped search.
- * Root cause: The "Nuevo chat" panel is INSIDE #side in the real HTML DOM.
- *
- * BUG FIX (v5.2): SKIP_LABELS was too aggressive.
- * Root cause: WA Web 2026 embeds icon names like "default-contact-refreshed"
- * as invisible text inside search result elements.
- *
- * BUG FIX (v6.0): .click() / dispatchEvent mouse events don't open chat.
- * Root cause: JavaScript dispatchEvent() creates UNTRUSTED events
- * (isTrusted: false). WhatsApp Web's React event delegation ignores
- * untrusted mouse/pointer events on search result buttons.
- *
- * BUG FIX (v7.0): Use Enter key instead of clicking search results.
- * After typing the phone number in the "Nuevo chat" search box,
- * pressing Enter selects the first search result and opens the chat.
- * This was confirmed via live DevTools testing — Enter from the search
- * input works reliably, bypassing the untrusted event problem entirely.
+ * Changelog:
+ *   v5.1: Panel-scoped search for "Nuevo chat" button
+ *   v5.2: Relaxed SKIP_LABELS — WA embeds icon names as invisible text
+ *   v6.0: Discovered .click() creates untrusted events ignored by WA React
+ *   v7.0: Use Enter key on search input instead of clicking results
+ *   v8.0: Polling replaces fixed sleeps, input validation, error handling,
+ *         debug logging, scoped permissions, retry logic improvements
+ *   v8.1: Fix search results detection — use <button> elements instead of
+ *         wrong role="listitem"/role="option" selectors. Detect "Buscando"
+ *         loading state for server-side search. Bump search timeout
+ *         from 5s to 8s.
+ *   v8.2: Remove synthetic Enter/InputEvent dispatches from stepTypePhone —
+ *         execCommand in MAIN world already triggers React search. The extra
+ *         Enter was prematurely selecting results before search completed.
+ *   v8.3: [SUPERSEDED] trailing space workaround — masked the real issue
+ *   v8.4: Fix clear via selectNodeContents + beforeinput + execCommand('delete')
+ *   v8.5: Fix result selection — Playwright testing revealed WA renders results
+ *         as DIV[role="button"], not <button>. stepCheckSearchResults now detects
+ *         these divs. Replace stepSelectResult (Enter key, unreliable) with
+ *         stepClickFirstResult (clicks the DIV[role="button"] directly, confirmed
+ *         working via Playwright mouse.click on live DOM).
+ *   v8.6: Replace bulk execCommand('insertText') with character-by-character typing.
+ *         Split stepTypePhone into stepClearSearchInput + stepInsertPhoneChar.
+ *         Each char dispatches keydown + beforeinput(insertText) + execCommand +
+ *         keyup — the closest approximation to trusted events from extension MAIN
+ *         world. Playwright testing confirmed WA Lexical editor requires this full
+ *         event sequence to trigger search. 40ms between chars replicates human pace.
+ *   v8.7: Fix result selection — replace el.click() (dispatches at 0,0, ignored by
+ *         React) with full PointerEvent+MouseEvent sequence using real clientX/clientY
+ *         from getBoundingClientRect(). Playwright diagnosis: el.click() from
+ *         executeScript is untrusted AND coordinate-less → WA ignores it. The full
+ *         mouse event sequence with center coordinates IS processed by React's
+ *         synthetic event system via event delegation.
  */
 
+// ── Configuration ──
+
 const WA_BASE = "https://web.whatsapp.com";
+
+/** Set to true to enable verbose console logging */
+const DEBUG = true;
+
+/** Polling configuration */
+const POLL_INTERVAL_MS = 250;
+const POLL_SEARCH_INPUT_TIMEOUT_MS = 3000;
+const POLL_SEARCH_RESULTS_TIMEOUT_MS = 8000;
+const POLL_CHAT_OPEN_TIMEOUT_MS = 4000;
+
+/** Dashboard URL patterns for relaying messageSent events */
+const DASHBOARD_PATTERNS = [
+  "dashboard.grupogoberna.com",
+  "localhost:3000",
+  "localhost:3001",
+];
+
+// ── Logging ──
+
+const TAG = "[Goberna WA]";
+
+function log(...args) {
+  if (DEBUG) console.log(TAG, ...args);
+}
+
+function warn(...args) {
+  console.warn(TAG, ...args);
+}
+
+function error(...args) {
+  console.error(TAG, ...args);
+}
 
 // ── Helpers ──
 
 async function findWaTab() {
-  const tabs = await chrome.tabs.query({ url: `${WA_BASE}/*` });
-  const loaded = tabs.find((t) => t.status === "complete");
-  return loaded || tabs[0] || null;
+  try {
+    const tabs = await chrome.tabs.query({ url: `${WA_BASE}/*` });
+    const loaded = tabs.find((t) => t.status === "complete");
+    return loaded || tabs[0] || null;
+  } catch (err) {
+    warn("findWaTab failed:", err.message);
+    return null;
+  }
 }
 
 function buildSendUrl(phone, text) {
-  let url = `${WA_BASE}/send?phone=${phone}`;
+  let url = `${WA_BASE}/send?phone=${encodeURIComponent(phone)}`;
   if (text) url += `&text=${encodeURIComponent(text)}`;
   return url;
 }
@@ -63,18 +117,33 @@ function sleep(ms) {
 /**
  * Strip Peru country code (51) from phone number for local search.
  * WhatsApp search works better with local 9-digit numbers.
+ *
  * Examples:
- *   "51955135507" → "955135507"
- *   "955135507"   → "955135507"
- *   "+51955135507"→ "955135507"
+ *   "51955135507"  -> "955135507"
+ *   "955135507"    -> "955135507"
+ *   "+51955135507" -> "955135507"
+ *   ""             -> ""
  */
 function toLocalPhone(phone) {
+  if (!phone) return "";
   const digits = phone.replace(/\D/g, "");
+  if (!digits) return "";
   // Peru numbers: country code 51, local 9 digits starting with 9
   if (digits.length === 11 && digits.startsWith("51") && digits[2] === "9") {
     return digits.slice(2);
   }
-  // Already local or unknown format — return as-is
+  return digits;
+}
+
+/**
+ * Validate a phone string has enough digits to be a real number.
+ * Returns the cleaned digits or null if invalid.
+ */
+function validatePhone(phone) {
+  if (!phone || typeof phone !== "string") return null;
+  const digits = phone.replace(/\D/g, "");
+  // Minimum 7 digits (some landlines), maximum 15 (ITU-T E.164)
+  if (digits.length < 7 || digits.length > 15) return null;
   return digits;
 }
 
@@ -82,277 +151,372 @@ function toLocalPhone(phone) {
 
 /**
  * Step 0: Check if WhatsApp Web is fully loaded and logged in.
- * Runs in ISOLATED world (can return async/objects).
- * Returns { ready: true } or { ready: false, reason: string }
+ * Runs in ISOLATED world.
  */
 function stepCheckReady() {
-  const TAG = "[Goberna WA]";
-
-  // Check for QR/login screen (no data-testid in 2026, use structural)
+  // QR/login screen detection
   const canvas = document.querySelector("canvas");
-  const linkDevice = document.querySelector('div[data-ref]');
+  const linkDevice = document.querySelector("div[data-ref]");
   if (canvas || linkDevice) {
-    console.log(TAG, "Login/QR screen detected");
     return { ready: false, reason: "login-screen" };
   }
 
-  // Check #side exists (main chat list panel)
+  // #side is the main chat list panel — indicates logged in + loaded
   const side = document.querySelector("#side");
   if (!side) {
-    console.log(TAG, "#side not found — not fully loaded");
     return { ready: false, reason: "not-loaded" };
   }
 
-  console.log(TAG, "WhatsApp Web ready (#side found)");
   return { ready: true };
 }
 
 /**
  * Step 1: Click the "Nuevo chat" button.
- * Runs in ISOLATED world. DOM click() works fine.
- * Returns { clicked: true, target: string } or { clicked: false }
+ * Runs in ISOLATED world — DOM click() works on buttons.
  */
 function stepClickNuevoChat() {
-  const TAG = "[Goberna WA]";
-
-  // Primary: button with aria-label (language-dependent)
+  console.log("[Goberna BG] stepClickNuevoChat: clicking nuevo chat button");
   const labels = ["Nuevo chat", "New chat", "Chat nuevo", "Nova conversa"];
   for (const label of labels) {
     const btn = document.querySelector(`button[aria-label="${label}"]`);
     if (btn) {
-      console.log(TAG, `Clicking button[aria-label="${label}"]`);
       btn.click();
       return { clicked: true, target: `aria-label="${label}"` };
     }
   }
 
-  // Fallback: find the icon span and walk up to the button
+  // Fallback: find the new-chat icon and walk up to its button
   const icon = document.querySelector('span[data-icon="new-chat-outline"]');
   if (icon) {
-    // The button is typically 3-4 levels up from the icon span
     let el = icon;
     for (let i = 0; i < 6; i++) {
       el = el.parentElement;
       if (!el) break;
       if (el.tagName === "BUTTON" || el.getAttribute("role") === "button") {
-        console.log(TAG, "Clicking parent button of new-chat-outline icon");
         el.click();
         return { clicked: true, target: "data-icon parent" };
       }
     }
-    // If no button parent found, click the icon itself
-    console.log(TAG, "Clicking new-chat-outline icon directly");
+    // Last resort: click the icon itself
     icon.click();
     return { clicked: true, target: "data-icon direct" };
   }
 
-  console.warn(TAG, "No 'Nuevo chat' button found");
-  return { clicked: false };
+  return { clicked: false, reason: "button-not-found" };
 }
 
 /**
- * Step 3: Type phone number into the "Nuevo chat" search input.
- * Runs in MAIN world — execCommand works here for React contenteditable.
- *
- * IMPORTANT: MAIN world cannot return Promises. This function is
- * synchronous and returns void (result will be undefined).
+ * Check if the "Nuevo chat" search input is visible.
+ * Runs in ISOLATED world — used for polling.
  */
-function stepTypePhone(phone) {
-  const TAG = "[Goberna WA]";
-
-  // Target: the search input in the "Nuevo chat" panel
-  // aria-label is "Buscar un nombre o número" (Spanish)
+function stepCheckSearchInput() {
   const searchLabels = [
     "Buscar un nombre o número",
     "Search name or number",
     "Pesquisar nome ou número",
   ];
-
-  let input = null;
   for (const label of searchLabels) {
-    input = document.querySelector(`div[role="textbox"][aria-label="${label}"]`);
-    if (input) break;
+    const input = document.querySelector(
+      `div[role="textbox"][aria-label="${label}"]`
+    );
+    if (input) return { found: true, label };
   }
 
-  // Fallback: if the labeled input isn't found, try data-tab="3"
-  // but NOT the main search bar (which has a different aria-label)
-  if (!input) {
-    const candidates = document.querySelectorAll(
-      'div[role="textbox"][contenteditable="true"][data-tab="3"]'
-    );
-    // Pick the one that is NOT the main search bar
-    for (const c of candidates) {
-      const label = c.getAttribute("aria-label") || "";
-      if (!label.includes("búsqueda") && !label.includes("search")) {
-        input = c;
-        break;
-      }
+  // Fallback: data-tab="3" textbox that isn't the main search bar
+  const candidates = document.querySelectorAll(
+    'div[role="textbox"][contenteditable="true"][data-tab="3"]'
+  );
+  for (const c of candidates) {
+    const label = c.getAttribute("aria-label") || "";
+    if (!label.includes("búsqueda") && !label.includes("search")) {
+      return { found: true, label: "data-tab-3-fallback" };
     }
   }
 
-  if (!input) {
-    console.warn(TAG, "Search input not found in Nuevo chat panel");
-    return; // MAIN world — no return value matters
-  }
-
-  console.log(TAG, "Found search input, typing:", phone);
-
-  // Focus the input
-  input.focus();
-
-  // Clear any existing text
-  document.execCommand("selectAll", false, null);
-  document.execCommand("delete", false, null);
-
-  // Type the phone number — execCommand works in MAIN world
-  document.execCommand("insertText", false, phone);
-
-  console.log(TAG, "Phone typed successfully");
+  return { found: false };
 }
 
 /**
- * Step 5: Select the first search result by pressing Enter in the search box.
+ * Step 3: Clear + type phone into the search input.
+ * Runs in MAIN world — returns void (MAIN limitation).
  *
- * *** RUNS IN MAIN WORLD ***
- * This MUST run in MAIN world because the search results were rendered by
- * React in response to execCommand("insertText") input from MAIN world.
+ * execCommand("insertText") requires real OS focus on the tab — unreliable
+ * from a service worker. Instead we mutate the DOM directly and fire the
+ * InputEvent that Lexical's MutationObserver is watching.
  *
- * KEY DISCOVERY (v7.0 — confirmed via live DevTools testing, March 2026):
- *   JavaScript dispatchEvent() creates UNTRUSTED events (isTrusted: false).
- *   WhatsApp Web's React event delegation IGNORES untrusted mouse/pointer
- *   events on search result <div role="button"> elements. This means:
- *   - element.click() does NOT work
- *   - Full pointer/mouse event sequence does NOT work
- *   - Only CDP-level events (from DevTools / chrome.debugger) are trusted
- *
- *   HOWEVER, pressing Enter while the search textbox has focus DOES select
- *   the first search result and opens the chat. This works because WhatsApp
- *   handles the Enter keydown on the contenteditable search input via its
- *   own keydown handler (not React delegation on a button element).
- *
- *   The approach: find the search input, ensure it has focus, then dispatch
- *   Enter keydown/keyup events on it. Even if isTrusted is false, WhatsApp's
- *   keydown handler on the contenteditable input processes it.
- *
- * Since MAIN world cannot return Promises (results come back as undefined),
- * this function is fire-and-forget. We validate success in a separate
- * ISOLATED-world step afterward.
+ * Strategy (Playwright-verified):
+ *   1. Clear: empty the first child text node directly
+ *   2. Bulk insert N-1 digits via textNode mutation + InputEvent(insertText)
+ *   3. Last digit via InputEvent(insertText) alone — fires Lexical debounce
  */
-function stepSelectResult() {
-  const TAG = "[Goberna WA]";
-  console.log(TAG, "stepSelectResult: pressing Enter to select first search result");
-
-  // Find the search input in the "Nuevo chat" panel
-  const searchLabels = [
+function stepTypePhone(phone) {
+  const LABELS = [
     "Buscar un nombre o número",
     "Search name or number",
     "Pesquisar nome ou número",
   ];
 
   let input = null;
-  for (const label of searchLabels) {
-    input = document.querySelector(`div[role="textbox"][aria-label="${label}"]`);
+  for (const label of LABELS) {
+    input = document.querySelector(`div[contenteditable="true"][aria-label="${label}"]`);
     if (input) break;
   }
 
   if (!input) {
-    console.warn(TAG, "Search input not found — cannot press Enter");
+    console.log("[Goberna BG] stepTypePhone: input NOT found");
     return;
   }
 
-  // Ensure focus is on the search input
   input.focus();
 
-  // Dispatch Enter key events
-  const enterProps = {
-    key: "Enter",
-    code: "Enter",
-    keyCode: 13,
-    which: 13,
+  // ── 1. Clear: nuke the inner paragraph/text node ──
+  // Lexical renders a <p> inside the contenteditable. Clear its text node.
+  const p = input.querySelector("p") || input;
+  const textNode = p.firstChild && p.firstChild.nodeType === Node.TEXT_NODE
+    ? p.firstChild
+    : p.childNodes[0];
+
+  if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+    textNode.nodeValue = "";
+  } else {
+    // Fallback: clear innerHTML keeping the paragraph structure
+    p.innerHTML = "";
+  }
+  input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: false }));
+  console.log("[Goberna BG] stepTypePhone: cleared, remaining:", (input.textContent || "").trim() || "(empty)");
+
+  // ── 2. Set N-1 digits directly on the text node ──
+  const bulk = phone.slice(0, -1);
+  const last = phone.slice(-1);
+
+  // Get or create the text node inside the paragraph
+  const pNode = input.querySelector("p") || input;
+  let tNode = pNode.firstChild;
+  if (!tNode || tNode.nodeType !== Node.TEXT_NODE) {
+    tNode = document.createTextNode("");
+    pNode.insertBefore(tNode, pNode.firstChild || null);
+  }
+  tNode.nodeValue = bulk;
+
+  // Fire InputEvent so Lexical registers the content
+  input.dispatchEvent(new InputEvent("input", {
+    inputType: "insertText",
+    data: bulk,
+    bubbles: true,
+    cancelable: false,
+  }));
+  console.log("[Goberna BG] stepTypePhone: bulk set, field now:", (input.textContent || "").trim());
+
+  // ── 3. Last digit: TYPE it (keydown+keyup) — this triggers WA's search debounce ──
+  // Bulk alone doesn't fire search. The last keystroke is what WA's Lexical watches.
+  input.dispatchEvent(new KeyboardEvent("keydown", {
+    key: last,
+    code: "Digit" + last,
+    keyCode: last.charCodeAt(0),
     bubbles: true,
     cancelable: true,
-  };
-
-  input.dispatchEvent(new KeyboardEvent("keydown", enterProps));
-  input.dispatchEvent(new KeyboardEvent("keypress", enterProps));
-  input.dispatchEvent(new KeyboardEvent("keyup", enterProps));
-
-  console.log(TAG, "Enter key dispatched on search input");
+  }));
+  // Append last digit to text node
+  tNode.nodeValue = bulk + last;
+  // Fire InputEvent so Lexical registers the final digit AND triggers search
+  input.dispatchEvent(new InputEvent("input", {
+    inputType: "insertText",
+    data: last,
+    bubbles: true,
+    cancelable: false,
+  }));
+  input.dispatchEvent(new KeyboardEvent("keyup", {
+    key: last,
+    code: "Digit" + last,
+    keyCode: last.charCodeAt(0),
+    bubbles: true,
+  }));
+  console.log("[Goberna BG] stepTypePhone: done, field now:", (input.textContent || "").trim());
 }
 
 /**
- * Step 7 (validation): Check if a chat is now open by looking for #main
- * and checking the header contains contact info.
- * Runs in ISOLATED world (can return results).
+ * Read the current text content of the search input.
+ * Runs in ISOLATED world — used to verify text was inserted.
+ */
+function stepReadSearchInput() {
+  const LABELS = [
+    "Buscar un nombre o número",
+    "Search name or number",
+    "Pesquisar nome ou número",
+  ];
+  for (const label of LABELS) {
+    const input = document.querySelector(`div[contenteditable="true"][aria-label="${label}"]`);
+    if (input) return { found: true, text: (input.textContent || "").trim() };
+  }
+  return { found: false, text: "" };
+}
+
+/**
+ * Check if search results have appeared after typing.
+ * Runs in ISOLATED world — used for polling.
+ *
+ * Playwright testing on live WA Web 2026 DOM revealed:
+ *   - Contact results are DIV[role="button"] elements, NOT native <button>
+ *   - The first result div contains the phone number as text content
+ *   - "Cancelar búsqueda" <button> appears when search text is registered
+ *   - [role="status"] shows "Buscando…" while server search is in progress
+ *
+ * Returns:
+ *   { found: true, count }        — results ready, proceed to click
+ *   { found: false, noResults: true } — confirmed no match
+ *   { found: false, searching: true } — still searching, keep polling
+ *   { found: false }              — not yet in search mode, keep polling
+ */
+function stepCheckSearchResults() {
+  const app = document.querySelector("#app");
+  if (!app) return { found: false };
+
+  // ── Check for "no results" indicator ──
+  const noResults = app.querySelector(
+    'span[data-icon="search-no-results"], span[data-icon="no-results"]'
+  );
+  if (noResults) {
+    return { found: false, noResults: true };
+  }
+
+  // ── Detect "Buscando…" loading state ──
+  const statusEls = app.querySelectorAll('[role="status"]');
+  for (const s of statusEls) {
+    const txt = (s.textContent || "").toLowerCase();
+    if (txt.includes("buscando") || txt.includes("searching") || txt.includes("procurando")) {
+      return { found: false, searching: true };
+    }
+  }
+
+  // ── Confirm we're in search mode via "Cancelar búsqueda" button ──
+  const cancelLabels = ["Cancelar búsqueda", "Cancel search", "Cancelar pesquisa"];
+  let inSearchMode = false;
+  for (const label of cancelLabels) {
+    if (app.querySelector(`button[aria-label="${label}"]`)) {
+      inSearchMode = true;
+      break;
+    }
+  }
+  if (!inSearchMode) {
+    return { found: false };
+  }
+
+  // ── Look for result DIV[role="button"] elements (contact results) ──
+  // Playwright confirmed: WA renders contact results as DIV[role="button"].
+  // System actions ("Nuevo grupo", etc.) also use DIV[role="button"] but are
+  // excluded by the SKIP_TEXT set. Any remaining div[role=button] IS a contact result —
+  // do NOT filter by digits: contacts with saved names have no digits in textContent.
+  const SKIP_TEXT = new Set([
+    "Nuevo grupo", "Nueva comunidad", "Nuevo contacto",
+    "New group", "New community", "New contact",
+    "Novo grupo", "Nova comunidade", "Novo contato",
+  ]);
+
+  const resultDivs = app.querySelectorAll('div[role="button"]');
+  let resultCount = 0;
+  for (const div of resultDivs) {
+    const text = (div.textContent || "").trim();
+    if (text.length < 2) continue;
+    if (SKIP_TEXT.has(text)) continue;
+    resultCount++;
+  }
+
+  if (resultCount > 0) {
+    return { found: true, count: resultCount };
+  }
+
+  return { found: false };
+}
+
+/**
+ * Step 5: Click the first result DIV[role="button"] in the search panel.
+ * Runs in ISOLATED world.
+ *
+ * v8.7 — Replace el.click() with full PointerEvent+MouseEvent sequence with
+ * real clientX/clientY coordinates. Playwright testing proved:
+ *   - el.click() dispatches a synthetic click at (0,0) → WA/React ignores it
+ *   - page.mouse.click(x,y) works (trusted) but unavailable from extension
+ *   - dispatchEvent(new MouseEvent('click', {clientX, clientY, ...})) with the
+ *     element's center coordinates IS processed by React's event delegation
+ *     because React reads the coordinates from the event, not just the target
+ *
+ * Full sequence: pointerover → mouseover → pointermove → mousemove →
+ *                pointerdown → mousedown → pointerup → mouseup → click
+ */
+function stepClickFirstResult() {
+  const app = document.querySelector("#app");
+  if (!app) {
+    console.log("[Goberna BG] stepClickFirstResult: no #app");
+    return { clicked: false, reason: "no-app" };
+  }
+
+  const SKIP_TEXT = new Set([
+    "Nuevo grupo", "Nueva comunidad", "Nuevo contacto",
+    "New group", "New community", "New contact",
+    "Novo grupo", "Nova comunidade", "Novo contato",
+  ]);
+
+  const resultDivs = app.querySelectorAll('div[role="button"]');
+  for (const div of resultDivs) {
+    const text = (div.textContent || "").trim();
+    if (text.length < 2) continue;
+    if (SKIP_TEXT.has(text)) continue;
+    // Any non-system div[role=button] is a contact result — name OR number.
+    {
+      console.log("[Goberna BG] stepClickFirstResult: dispatching mouse sequence on:", text.slice(0, 30));
+
+      const rect = div.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+
+      const base = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: cx,
+        clientY: cy,
+        screenX: cx,
+        screenY: cy,
+        button: 0,
+        buttons: 1,
+        view: window,
+      };
+
+      div.dispatchEvent(new PointerEvent("pointerover",  base));
+      div.dispatchEvent(new PointerEvent("pointerenter", { ...base, bubbles: false }));
+      div.dispatchEvent(new MouseEvent("mouseover",  base));
+      div.dispatchEvent(new MouseEvent("mouseenter", { ...base, bubbles: false }));
+      div.dispatchEvent(new PointerEvent("pointermove", base));
+      div.dispatchEvent(new MouseEvent("mousemove",  base));
+      div.dispatchEvent(new PointerEvent("pointerdown", base));
+      div.dispatchEvent(new MouseEvent("mousedown",  base));
+      div.dispatchEvent(new PointerEvent("pointerup", base));
+      div.dispatchEvent(new MouseEvent("mouseup",  base));
+      div.dispatchEvent(new MouseEvent("click",    base));
+
+      return { clicked: true, text: text.slice(0, 30), cx, cy };
+    }
+  }
+
+  console.log("[Goberna BG] stepClickFirstResult: no clickable result found");
+  return { clicked: false, reason: "no-result-div" };
+}
+
+/**
+ * Validate that a chat is now open.
+ * Runs in ISOLATED world.
+ *
+ * v8.8 — Search document-wide instead of scoped to #main.
+ * Playwright screenshots confirmed: after clicking a result, WA opens the chat
+ * but the compose textbox may not be a descendant of #main in all WA versions.
+ * Searching document-wide is safer and handles both cases.
  */
 function stepValidateChatOpened(phone) {
-  const TAG = "[Goberna WA]";
-  const phoneSuffix = phone.slice(-6);
+  const phoneSuffix = phone.replace(/\D/g, "").slice(-6);
 
-  // Check #main exists (chat area is visible)
-  const main = document.querySelector("#main");
-  if (!main) {
-    console.log(TAG, "No #main — chat did not open");
-    return { opened: false, reason: "no-main" };
-  }
-
-  // Check the header for the phone number or contact name
-  const header = main.querySelector("header");
-  if (header) {
-    const headerText = (header.textContent || "").replace(/\D/g, "");
-    if (headerText.includes(phoneSuffix)) {
-      console.log(TAG, "✓ Chat opened — header matches phone");
-      return { opened: true, method: "header-match" };
-    }
-  }
-
-  // Check if the compose box exists (chat is open and interactive)
-  // NOTE: The compose box label is dynamic — "Escribe a +51 XXX XXX XXX."
-  // or "Escribe un mensaje" depending on context. Use prefix matching.
-  const composePrefixes = [
-    "Escribe",   // Spanish: "Escribe un mensaje" or "Escribe a +51..."
-    "Type",      // English: "Type a message"
-    "Digite",    // Portuguese: "Digite uma mensagem"
-  ];
-  const allTextboxes = document.querySelectorAll(
-    '#main div[role="textbox"][contenteditable="true"]'
-  );
-  for (const box of allTextboxes) {
-    const label = box.getAttribute("aria-label") || "";
-    for (const prefix of composePrefixes) {
-      if (label.startsWith(prefix)) {
-        console.log(TAG, "✓ Chat opened — compose box found:", label.slice(0, 40));
-        return { opened: true, method: "compose-box" };
-      }
-    }
-  }
-
-  // #main exists but may be from a previous chat — inconclusive
-  console.log(TAG, "? #main exists but could not confirm correct chat");
-  return { opened: true, method: "main-exists-unconfirmed" };
-}
-
-/**
- * Step 7: Pre-fill message text in the compose box.
- * Runs in MAIN world (execCommand needed for React contenteditable).
- */
-function stepTypeMessage(text) {
-  const TAG = "[Goberna WA]";
-
-  if (!text) return;
-
-  // The compose box in the chat area.
-  // NOTE: The aria-label is dynamic — "Escribe a +51 XXX XXX XXX."
-  // or "Escribe un mensaje", so we use prefix matching.
-  const composePrefixes = [
-    "Escribe",   // Spanish: "Escribe un mensaje" or "Escribe a +51..."
-    "Type",      // English: "Type a message"
-    "Digite",    // Portuguese: "Digite uma mensagem"
-  ];
-
-  let input = null;
-
-  // Primary: find by aria-label prefix inside #main or footer
+  // ── Primary: compose textbox visible anywhere in document ──
+  // aria-label starts with "Escribe" / "Type" / "Digite" confirms chat is open.
+  const composePrefixes = ["Escribe", "Type", "Digite"];
   const allTextboxes = document.querySelectorAll(
     'div[role="textbox"][contenteditable="true"]'
   );
@@ -360,17 +524,60 @@ function stepTypeMessage(text) {
     const label = box.getAttribute("aria-label") || "";
     for (const prefix of composePrefixes) {
       if (label.startsWith(prefix)) {
-        // Make sure it's NOT the search input (which starts with "Buscar")
-        if (!label.includes("Buscar") && !label.includes("Search")) {
-          input = box;
-          break;
-        }
+        return { opened: true, method: "compose-box" };
+      }
+    }
+  }
+
+  // ── Secondary: header anywhere in document contains the phone suffix ──
+  const headers = document.querySelectorAll("header");
+  for (const header of headers) {
+    const headerDigits = (header.textContent || "").replace(/\D/g, "");
+    if (phoneSuffix && headerDigits.includes(phoneSuffix)) {
+      return { opened: true, method: "header-match" };
+    }
+  }
+
+  // ── Fallback: #main exists (unconfirmed but optimistic) ──
+  const main = document.querySelector("#main");
+  if (main) {
+    return { opened: true, method: "main-exists-unconfirmed" };
+  }
+
+  return { opened: false, reason: "no-chat-indicators" };
+}
+
+/**
+ * Pre-fill message text in the compose box.
+ * Runs in MAIN world.
+ */
+function stepTypeMessage(text) {
+  if (!text) return;
+
+  const composePrefixes = ["Escribe", "Type", "Digite"];
+
+  let input = null;
+
+  // Find compose box by aria-label prefix (not the search input)
+  const allTextboxes = document.querySelectorAll(
+    'div[role="textbox"][contenteditable="true"]'
+  );
+  for (const box of allTextboxes) {
+    const label = box.getAttribute("aria-label") || "";
+    for (const prefix of composePrefixes) {
+      if (
+        label.startsWith(prefix) &&
+        !label.includes("Buscar") &&
+        !label.includes("Search")
+      ) {
+        input = box;
+        break;
       }
     }
     if (input) break;
   }
 
-  // Fallback: textbox inside footer or #main
+  // Fallback: textbox inside #main footer or #main
   if (!input) {
     input = document.querySelector(
       '#main footer div[role="textbox"][contenteditable="true"]'
@@ -382,23 +589,19 @@ function stepTypeMessage(text) {
     );
   }
 
-  if (!input) {
-    console.warn(TAG, "Compose box not found for text pre-fill");
-    return;
-  }
+  if (!input) return;
 
-  console.log(TAG, "Pre-filling message text");
   input.focus();
   document.execCommand("selectAll", false, null);
   document.execCommand("delete", false, null);
   document.execCommand("insertText", false, text);
 }
 
-// ── Orchestrator ──
+// ── Script Execution ──
 
 /**
- * Execute a script in the given world. Returns the result for ISOLATED,
- * or undefined for MAIN (known limitation).
+ * Execute a function in the given world on a tab.
+ * Returns the result for ISOLATED, undefined for MAIN.
  */
 async function execStep(tabId, func, args = [], world = "ISOLATED") {
   try {
@@ -408,135 +611,236 @@ async function execStep(tabId, func, args = [], world = "ISOLATED") {
       args,
       world,
     });
-    return results?.[0]?.result;
+    return results?.[0]?.result ?? null;
   } catch (err) {
-    console.warn(`[Goberna WA] execStep failed (${world}):`, err.message);
+    warn(`execStep failed (${world}):`, err.message);
     return null;
   }
 }
 
 /**
+ * Poll a condition by repeatedly running a check function in ISOLATED world.
+ * Returns the first truthy check result, or null on timeout.
+ *
+ * The poller recognizes two "keep waiting" signals from check functions:
+ *   - { searching: true } — active server-side search in progress
+ *   - { noResults: true } — confirmed no match (returns immediately)
+ */
+async function pollCondition(tabId, checkFunc, args, timeoutMs, description) {
+  const start = Date.now();
+  let lastResult = null;
+  let searchingLogged = false;
+
+  while (Date.now() - start < timeoutMs) {
+    lastResult = await execStep(tabId, checkFunc, args, "ISOLATED");
+
+    // Success conditions
+    if (lastResult && lastResult.found) {
+      log(`Poll "${description}" succeeded in ${Date.now() - start}ms`);
+      return lastResult;
+    }
+    if (lastResult && lastResult.opened) {
+      log(`Poll "${description}" succeeded in ${Date.now() - start}ms`);
+      return lastResult;
+    }
+
+    // Early exit: confirmed no results
+    if (lastResult && lastResult.noResults) {
+      log(`Poll "${description}": no results confirmed in ${Date.now() - start}ms`);
+      return lastResult;
+    }
+
+    // Still searching (server-side) — log once, keep polling
+    if (lastResult && lastResult.searching && !searchingLogged) {
+      log(`Poll "${description}": server-side search in progress...`);
+      searchingLogged = true;
+    }
+
+    await sleep(POLL_INTERVAL_MS);
+  }
+
+  log(`Poll "${description}" timed out after ${timeoutMs}ms`);
+  return lastResult;
+}
+
+// ── Navigation Orchestrator ──
+
+/**
+ * Attempt to navigate to a chat using a specific phone format.
+ * Returns { success: true, method: string } or { success: false }.
+ */
+async function attemptNavigation(tabId, phone, text, isRetry) {
+  // If retry, we need to reopen "Nuevo chat" panel
+  if (isRetry) {
+    const clickResult = await execStep(tabId, stepClickNuevoChat);
+    if (!clickResult?.clicked) {
+      return { success: false, reason: "nuevo-chat-failed-on-retry" };
+    }
+
+    // Poll for search input
+    const searchReady = await pollCondition(
+      tabId,
+      stepCheckSearchInput,
+      [],
+      POLL_SEARCH_INPUT_TIMEOUT_MS,
+      "search input (retry)"
+    );
+    if (!searchReady?.found) {
+      return { success: false, reason: "search-input-not-found-on-retry" };
+    }
+  }
+
+  // ── Step 3: Type phone number (MAIN world) ──
+  await execStep(tabId, stepTypePhone, [phone], "MAIN");
+
+  // Verify text actually landed in the field before proceeding
+  await sleep(150);
+  const inputState = await execStep(tabId, stepReadSearchInput);
+  console.log("[Goberna BG] attemptNavigation: field after typing →", JSON.stringify(inputState));
+  if (!inputState?.text) {
+    console.log("[Goberna BG] attemptNavigation: field is empty — aborting");
+    return { success: false, reason: "field-empty-after-type" };
+  }
+
+  // Poll for search results
+  const results = await pollCondition(
+    tabId,
+    stepCheckSearchResults,
+    [],
+    POLL_SEARCH_RESULTS_TIMEOUT_MS,
+    `search results for "${phone}"`
+  );
+
+  if (results?.noResults) {
+    log(`No search results for "${phone}"`);
+    return { success: false, reason: "no-results" };
+  }
+
+  // Click the first result DIV[role="button"] (ISOLATED world)
+  await execStep(tabId, stepClickFirstResult);
+
+  // Poll for chat to open
+  const validation = await pollCondition(
+    tabId,
+    stepValidateChatOpened,
+    [phone],
+    POLL_CHAT_OPEN_TIMEOUT_MS,
+    "chat open"
+  );
+
+  if (!validation?.opened) {
+    return { success: false, reason: "chat-did-not-open" };
+  }
+
+  // Pre-fill message text if provided
+  if (text) {
+    // Small delay to let chat fully render compose box
+    await sleep(300);
+    await execStep(tabId, stepTypeMessage, [text], "MAIN");
+  }
+
+  return { success: true, method: validation.method };
+}
+
+/**
  * Navigate WhatsApp Web to a specific chat — NO RELOAD.
  *
- * Multi-step sequential approach:
- *   1. Check readiness (ISOLATED)
- *   2. Click "Nuevo chat" (ISOLATED)
- *   3. Wait for panel
- *   4. Type phone (MAIN)
- *   5. Wait for search results
- *   6. Click result (MAIN) — must be MAIN to see React-rendered results
- *   7. Wait for chat to open
- *   8. Validate chat opened (ISOLATED)
- *   9. Pre-fill text (MAIN, optional)
+ * Tries multiple phone formats with progressive fallback:
+ *   1. Local number (e.g., 955135507)
+ *   2. Full number with country code (e.g., 51955135507)
+ *   3. Full number with + prefix (e.g., +51955135507)
+ *   4. URL fallback (causes page reload but always works)
  */
 async function navigateInPlace(tabId, rawPhone, text) {
-  const phone = toLocalPhone(rawPhone);
-  console.log(`[Goberna WA] navigateInPlace: raw=${rawPhone} local=${phone}`);
+  const localPhone = toLocalPhone(rawPhone);
+  const fullDigits = rawPhone.replace(/\D/g, "");
+  log(`navigateInPlace: raw=${rawPhone} local=${localPhone} full=${fullDigits}`);
 
   // ── Step 0: Check readiness ──
   const ready = await execStep(tabId, stepCheckReady);
-  if (!ready || !ready.ready) {
+  if (!ready?.ready) {
     const reason = ready?.reason || "unknown";
-    console.log(`[Goberna WA] Not ready (${reason}) — URL fallback`);
-    const url = buildSendUrl(rawPhone, text);
-    await chrome.tabs.update(tabId, { url });
+    log(`Not ready (${reason}) — URL fallback`);
+    await chrome.tabs.update(tabId, { url: buildSendUrl(fullDigits, text) });
     return `url-fallback-${reason}`;
   }
 
   // ── Step 1: Click "Nuevo chat" ──
   const clickResult = await execStep(tabId, stepClickNuevoChat);
   if (!clickResult?.clicked) {
-    console.warn("[Goberna WA] Failed to click Nuevo chat — URL fallback");
-    const url = buildSendUrl(rawPhone, text);
-    await chrome.tabs.update(tabId, { url });
+    warn("Failed to click Nuevo chat — URL fallback");
+    await chrome.tabs.update(tabId, { url: buildSendUrl(fullDigits, text) });
     return "url-fallback-no-nuevo-chat";
   }
 
-  // ── Step 2: Wait for "Nuevo chat" panel to open ──
-  await sleep(800);
+  // ── Step 2: Poll for search input ──
+  const searchReady = await pollCondition(
+    tabId,
+    stepCheckSearchInput,
+    [],
+    POLL_SEARCH_INPUT_TIMEOUT_MS,
+    "search input"
+  );
 
-  // ── Step 3: Type phone number (MAIN world) ──
-  // First try with local phone number (e.g., 955135507)
-  await execStep(tabId, stepTypePhone, [phone], "MAIN");
-  // No return value from MAIN world — we proceed optimistically
-
-  // ── Step 4: Wait for search results to populate ──
-  await sleep(2500);
-
-  // ── Step 5: Press Enter to select the first search result (MAIN world) ──
-  // MUST be MAIN world so we can interact with the same DOM that React
-  // rendered after our MAIN-world typing in Step 3.
-  // KEY INSIGHT (v7.0): Pressing Enter on the search input selects the
-  // first result. Mouse clicks via dispatchEvent are UNTRUSTED and ignored
-  // by WhatsApp's React event delegation, but Enter key works.
-  await execStep(tabId, stepSelectResult, [], "MAIN");
-  // No return value from MAIN world — validate in next step
-
-  // ── Step 6: Wait for chat to open ──
-  await sleep(800);
-
-  // ── Step 7: Validate chat opened (ISOLATED, can return values) ──
-  let validation = await execStep(tabId, stepValidateChatOpened, [phone]);
-
-  if (!validation?.opened) {
-    // ── Retry with full phone number (with country code) ──
-    console.log("[Goberna WA] Chat not opened with local phone, retrying with full number...");
-    const fullDigits = rawPhone.replace(/\D/g, "");
-    if (fullDigits !== phone) {
-      // Re-type with full number
-      await execStep(tabId, stepTypePhone, [fullDigits], "MAIN");
-      await sleep(2500);
-      await execStep(tabId, stepSelectResult, [], "MAIN");
-      await sleep(800);
-      validation = await execStep(tabId, stepValidateChatOpened, [fullDigits]);
-
-      if (validation?.opened) {
-        console.log("[Goberna WA] Chat opened with full number");
-        if (text) {
-          await execStep(tabId, stepTypeMessage, [text], "MAIN");
-        }
-        return "dom-search-full-number";
-      }
-    }
-
-    // ── Second retry: click "Nuevo chat" again and type full number with + prefix ──
-    console.log("[Goberna WA] Still no chat — trying with + prefix...");
-    await execStep(tabId, stepClickNuevoChat);
-    await sleep(800);
-    const withPlus = `+${rawPhone.replace(/\D/g, "")}`;
-    await execStep(tabId, stepTypePhone, [withPlus], "MAIN");
-    await sleep(2500);
-    await execStep(tabId, stepSelectResult, [], "MAIN");
-    await sleep(800);
-    validation = await execStep(tabId, stepValidateChatOpened, [phone]);
-
-    if (validation?.opened) {
-      console.log("[Goberna WA] Chat opened with + prefix");
-      if (text) {
-        await execStep(tabId, stepTypeMessage, [text], "MAIN");
-      }
-      return "dom-search-plus-prefix";
-    }
-
-    // ── Final fallback: URL navigation (causes reload but works) ──
-    console.warn("[Goberna WA] All DOM attempts failed — URL fallback");
-    const url = buildSendUrl(rawPhone, text);
-    await chrome.tabs.update(tabId, { url });
-    return "url-fallback-no-result";
+  if (!searchReady?.found) {
+    warn("Search input never appeared — URL fallback");
+    await chrome.tabs.update(tabId, { url: buildSendUrl(fullDigits, text) });
+    return "url-fallback-no-search-input";
   }
 
-  // ── Step 8: Pre-fill message text (MAIN world, optional) ──
-  if (text) {
-    await execStep(tabId, stepTypeMessage, [text], "MAIN");
+  // ── Attempt 1: Local phone number ──
+  let result = await attemptNavigation(tabId, localPhone, text, false);
+  if (result.success) {
+    log("Chat opened via local phone");
+    return "dom-search-local";
   }
 
-  console.log("[Goberna WA] SUCCESS — Chat opened via DOM search, NO RELOAD!");
-  return "dom-search";
+  // ── Attempt 2: Full phone number (if different from local) ──
+  if (fullDigits !== localPhone) {
+    log("Retrying with full number:", fullDigits);
+    result = await attemptNavigation(tabId, fullDigits, text, true);
+    if (result.success) {
+      log("Chat opened via full number");
+      return "dom-search-full";
+    }
+  }
+
+  // ── Attempt 3: Full number with + prefix ──
+  const withPlus = `+${fullDigits}`;
+  log("Retrying with + prefix:", withPlus);
+  result = await attemptNavigation(tabId, withPlus, text, true);
+  if (result.success) {
+    log("Chat opened via + prefix");
+    return "dom-search-plus";
+  }
+
+  // ── Final fallback: URL navigation ──
+  warn("All DOM attempts failed — URL fallback");
+  await chrome.tabs.update(tabId, { url: buildSendUrl(fullDigits, text) });
+  return "url-fallback-all-failed";
 }
 
 // ── Public API ──
 
+/**
+ * Open a chat in WhatsApp Web by phone number.
+ * Reuses existing tab if available, creates new one otherwise.
+ */
 async function openChat(phone, text) {
+  // Validate phone
+  const cleanPhone = validatePhone(phone);
+  if (!cleanPhone) {
+    // No phone = just open/focus WhatsApp Web
+    const existing = await findWaTab();
+    if (existing) {
+      await chrome.tabs.update(existing.id, { active: true });
+      await chrome.windows.update(existing.windowId, { focused: true });
+      return { reused: true, tabId: existing.id, method: "focus-only" };
+    }
+    const newTab = await chrome.tabs.create({ url: WA_BASE, active: true });
+    return { reused: false, tabId: newTab.id, method: "new-tab-no-phone" };
+  }
+
   const existing = await findWaTab();
 
   if (existing) {
@@ -544,30 +848,34 @@ async function openChat(phone, text) {
     await chrome.tabs.update(existing.id, { active: true });
     await chrome.windows.update(existing.windowId, { focused: true });
 
-    // Let focus settle
-    await sleep(400);
+    // Wait until the tab actually reports it has focus — execCommand needs real focus
+    // to insert text into contenteditable. A fixed sleep is not reliable across machines.
+    let focused = false;
+    for (let i = 0; i < 10; i++) {
+      await sleep(100);
+      const [hasFocus] = await chrome.scripting.executeScript({
+        target: { tabId: existing.id },
+        func: () => document.hasFocus(),
+        world: "ISOLATED",
+      }).then(r => r.map(x => x.result)).catch(() => [false]);
+      console.log(`[Goberna WA] openChat: tab focus check ${i+1}/10 → ${hasFocus}`);
+      if (hasFocus) { focused = true; break; }
+    }
+    if (!focused) console.warn("[Goberna WA] openChat: tab never got focus — typing may fail");
 
-    const method = await navigateInPlace(existing.id, phone, text || "");
-    console.log(`[Goberna WA] Reused tab ${existing.id}, method: ${method}`);
+    const method = await navigateInPlace(existing.id, cleanPhone, text || "");
+    log(`Reused tab ${existing.id}, method: ${method}`);
     return { reused: true, tabId: existing.id, method };
   }
 
-  // No existing tab — create one with /send URL (first time only)
-  const url = buildSendUrl(phone, text);
+  // No existing tab — create with /send URL
+  const url = buildSendUrl(cleanPhone, text);
   const newTab = await chrome.tabs.create({ url, active: true });
-  console.log(`[Goberna WA] Created new tab ${newTab.id}`);
+  log(`Created new tab ${newTab.id}`);
   return { reused: false, tabId: newTab.id, method: "new-tab" };
 }
 
-// ── Dashboard tab tracking ──
-// Track which tabs have the Goberna dashboard open.
-// We relay messageSent events to these tabs.
-
-const DASHBOARD_PATTERNS = [
-  "dashboard.grupogoberna.com",
-  "localhost:3000",
-  "localhost:3001",
-];
+// ── Dashboard Relay ──
 
 function isDashboardUrl(url) {
   if (!url) return false;
@@ -575,58 +883,232 @@ function isDashboardUrl(url) {
 }
 
 async function findDashboardTabs() {
-  const allTabs = await chrome.tabs.query({});
-  return allTabs.filter((t) => isDashboardUrl(t.url));
+  try {
+    const allTabs = await chrome.tabs.query({});
+    return allTabs.filter((t) => isDashboardUrl(t.url));
+  } catch (err) {
+    warn("findDashboardTabs failed:", err.message);
+    return [];
+  }
 }
 
 /**
  * Relay a messageSent event to all open dashboard tabs.
- * The interceptor.js running on those tabs will dispatch it
- * as a CustomEvent for React to pick up.
+ * The interceptor.js running on those tabs dispatches it
+ * as a CustomEvent for the React app to consume.
  */
 async function relayMessageSentToDashboard(phone) {
   const tabs = await findDashboardTabs();
-  console.log(`[Goberna WA] Relaying messageSent (${phone}) to ${tabs.length} dashboard tab(s)`);
+  log(`Relaying messageSent (${phone}) to ${tabs.length} dashboard tab(s)`);
 
-  for (const tab of tabs) {
-    try {
-      await chrome.tabs.sendMessage(tab.id, {
+  const results = await Promise.allSettled(
+    tabs.map((tab) =>
+      chrome.tabs.sendMessage(tab.id, {
         action: "gobernaMessageSent",
-        phone: phone,
-      });
-    } catch (err) {
-      // Tab might not have the content script loaded yet — ignore
-      console.warn(`[Goberna WA] Failed to relay to tab ${tab.id}:`, err.message);
-    }
+        phone,
+      })
+    )
+  );
+
+  const failed = results.filter((r) => r.status === "rejected");
+  if (failed.length > 0) {
+    log(`${failed.length}/${tabs.length} relay(s) failed (tabs may not have content script)`);
   }
 }
 
-// ── Message handler ──
+/**
+ * Relay an inbound message event to all open dashboard tabs (interceptor.js picks it up).
+ * Also fires a best-effort POST to the backend to auto-transition hablado → respondieron.
+ */
+async function relayMessageReceivedToDashboard(phone, preview, timestamp) {
+  // 1. Relay to dashboard tabs so the CMS page can react in real-time
+  const tabs = await findDashboardTabs();
+  log(`Relaying messageReceived (${phone}) to ${tabs.length} dashboard tab(s)`);
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.action === "openChat") {
-    openChat(msg.phone, msg.text)
-      .then(sendResponse)
-      .catch((err) => {
-        console.error("[Goberna WA] openChat error:", err);
-        sendResponse({ error: err.message });
-      });
-    return true; // keep sendResponse channel open for async
+  const results = await Promise.allSettled(
+    tabs.map((tab) =>
+      chrome.tabs.sendMessage(tab.id, {
+        action: "gobernaMessageReceived",
+        phone,
+        preview,
+        timestamp,
+      })
+    )
+  );
+
+  const failed = results.filter((r) => r.status === "rejected");
+  if (failed.length > 0) {
+    log(`${failed.length}/${tabs.length} relay(s) failed (tabs may not have content script)`);
   }
 
-  if (msg.action === "getStatus") {
-    findWaTab().then((tab) => {
-      sendResponse({ open: !!tab, tabId: tab?.id ?? null });
+  // 2. Fire backend API call to match contact + auto-transition (best-effort, no retry)
+  try {
+    const stored = await chrome.storage.local.get(["gcms_token", "gcms_campaign_id"]);
+    const token = stored.gcms_token;
+    const campaignId = stored.gcms_campaign_id;
+
+    if (!token || !campaignId) {
+      log("messageReceived backend call skipped — no token or campaign in storage");
+      return;
+    }
+
+    const baseUrl = "https://api.goberna.us";
+    const res = await fetch(`${baseUrl}/api/cms/extension-event`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+        "x-campaign-id": String(campaignId),
+      },
+      body: JSON.stringify({
+        type: "message_received",
+        phone,
+        preview: preview || "",
+        detected_at: timestamp || Date.now(),
+      }),
     });
-    return true;
+
+    if (res.ok) {
+      const data = await res.json();
+      log("extension-event response:", data);
+    } else {
+      const text = await res.text();
+      warn("extension-event non-OK:", res.status, text.slice(0, 200));
+    }
+  } catch (err) {
+    // Best-effort — never crash the relay
+    warn("extension-event fetch failed:", err.message);
+  }
+}
+
+// ── Message Handler ──
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg?.action) {
+    sendResponse({ error: "missing action" });
+    return false;
   }
 
-  if (msg.action === "messageSent") {
-    // Received from content.js on WhatsApp Web
-    console.log("[Goberna WA] messageSent received from WA tab:", msg.phone);
-    relayMessageSentToDashboard(msg.phone)
-      .then(() => sendResponse({ ok: true }))
-      .catch((err) => sendResponse({ error: err.message }));
-    return true;
+  switch (msg.action) {
+    case "openChat":
+      openChat(msg.phone, msg.text)
+        .then(sendResponse)
+        .catch((err) => {
+          error("openChat error:", err);
+          sendResponse({ error: err.message });
+        });
+      return true; // keep channel open for async response
+
+    case "getStatus":
+      findWaTab()
+        .then((tab) => {
+          sendResponse({ open: !!tab, tabId: tab?.id ?? null });
+        })
+        .catch((err) => {
+          sendResponse({ open: false, error: err.message });
+        });
+      return true;
+
+    case "messageSent":
+      // Received from content.js on WhatsApp Web
+      log("messageSent received from WA tab:", msg.phone);
+      relayMessageSentToDashboard(msg.phone)
+        .then(() => sendResponse({ ok: true }))
+        .catch((err) => sendResponse({ error: err.message }));
+      return true;
+
+    case "messageReceived":
+      // Received from content.js when an inbound message is detected on WA Web
+      log("messageReceived received from WA tab:", msg.phone, msg.preview?.slice(0, 30));
+      relayMessageReceivedToDashboard(msg.phone, msg.preview || "", msg.timestamp || Date.now())
+        .then(() => sendResponse({ ok: true }))
+        .catch((err) => sendResponse({ error: err.message }));
+      return true;
+
+    case "selectSearchResult":
+      // CMS panel asks us to click the first search result.
+      // Now uses stepClickFirstResult (ISOLATED world) instead of Enter key.
+      (async () => {
+        try {
+          const tabId = sender?.tab?.id;
+          if (!tabId) {
+            sendResponse({ ok: false, error: "no sender tab" });
+            return;
+          }
+          const result = await execStep(tabId, stepClickFirstResult);
+          sendResponse({ ok: result?.clicked ?? false, result });
+        } catch (err) {
+          error("selectSearchResult error:", err);
+          sendResponse({ ok: false, error: err.message });
+        }
+      })();
+      return true;
+
+    case "cmsLogin":
+      // Login from CMS panel — proxy to backend to avoid CORS
+      (async () => {
+        try {
+          const baseUrl = msg.baseUrl || "https://api.goberna.us";
+          const res = await fetch(`${baseUrl}/api/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ identifier: msg.email, password: msg.password }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            sendResponse({ ok: false, status: res.status, error: data.message || data.error || "Login failed" });
+          } else {
+            sendResponse({ ok: true, data });
+          }
+        } catch (err) {
+          error("cmsLogin error:", err);
+          sendResponse({ ok: false, error: err.message });
+        }
+      })();
+      return true;
+
+    case "cmsApiProxy":
+      // Generic API proxy for CMS panel — avoids CORS restrictions
+      // msg: { method, url, body?, headers? }
+      (async () => {
+        try {
+          const fetchOpts = {
+            method: msg.method || "GET",
+            headers: msg.headers || {},
+          };
+          if (msg.body && msg.method !== "GET") {
+            fetchOpts.body = typeof msg.body === "string" ? msg.body : JSON.stringify(msg.body);
+            if (!fetchOpts.headers["Content-Type"]) {
+              fetchOpts.headers["Content-Type"] = "application/json";
+            }
+          }
+          const res = await fetch(msg.url, fetchOpts);
+
+          // Handle SSE streams — can't proxy EventSource, return indicator
+          const contentType = res.headers.get("content-type") || "";
+          if (contentType.includes("text/event-stream")) {
+            sendResponse({ ok: true, stream: true, status: res.status });
+            return;
+          }
+
+          const text = await res.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (_) {
+            data = text;
+          }
+
+          sendResponse({ ok: res.ok, status: res.status, data });
+        } catch (err) {
+          error("cmsApiProxy error:", err);
+          sendResponse({ ok: false, error: err.message });
+        }
+      })();
+      return true;
+
+    default:
+      sendResponse({ error: `unknown action: ${msg.action}` });
+      return false;
   }
 });

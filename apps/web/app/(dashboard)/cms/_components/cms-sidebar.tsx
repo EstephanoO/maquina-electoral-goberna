@@ -1,0 +1,237 @@
+"use client";
+
+/**
+ * CMS Sidebar — Left panel with search, status tabs, tag filter, and contact list.
+ * Supports infinite scroll and keyboard navigation.
+ */
+
+import { useState, useRef, useCallback, useEffect } from "react";
+import type { CmsContact, CmsStats, CmsTabFilter } from "@/lib/services/cms";
+import { CmsContactCard } from "./cms-contact-card";
+import { CmsTagManager } from "./cms-tag-manager";
+import { CmsEmptyState } from "./cms-empty-state";
+
+type CmsSidebarProps = {
+  contacts: CmsContact[];
+  total: number;
+  loading: boolean;
+  loadingMore: boolean;
+  stats: CmsStats | null;
+  activeTab: CmsTabFilter;
+  searchQuery: string;
+  selectedContactId: string | null;
+  availableTags: string[];
+  selectedTag: string | null;
+  onTabChange: (tab: CmsTabFilter) => void;
+  onSearchChange: (query: string) => void;
+  onSelectContact: (id: string) => void;
+  onOpenProfile: (contact: CmsContact) => void;
+  onLoadMore: () => void;
+  onSelectTag: (tag: string | null) => void;
+  onCreateTag: (name: string) => void;
+  onOpenTwilioConfig: () => void;
+  error: string | null;
+  onRetry: () => void;
+};
+
+type Tab = { key: CmsTabFilter; label: string; statKey: keyof CmsStats | null };
+
+const TABS: Tab[] = [
+  { key: "todos", label: "Todos", statKey: "total" },
+  { key: "nuevo", label: "Nuevos", statKey: "nuevos" },
+  { key: "hablado", label: "Hablados", statKey: "hablados" },
+  { key: "respondieron", label: "Contestaron", statKey: "respondieron" },
+  { key: "archivado", label: "Archivados", statKey: "archivados" },
+];
+
+export function CmsSidebar({
+  contacts,
+  total,
+  loading,
+  loadingMore,
+  stats,
+  activeTab,
+  searchQuery,
+  selectedContactId,
+  availableTags,
+  selectedTag,
+  onTabChange,
+  onSearchChange,
+  onSelectContact,
+  onOpenProfile,
+  onLoadMore,
+  onSelectTag,
+  onCreateTag,
+  onOpenTwilioConfig,
+  error,
+  onRetry,
+}: CmsSidebarProps) {
+  const [searchFocused, setSearchFocused] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // Infinite scroll via IntersectionObserver
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !loading && !loadingMore && contacts.length < total) {
+          onLoadMore();
+        }
+      },
+      { root: scrollRef.current, threshold: 0.1 },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loading, loadingMore, contacts.length, total, onLoadMore]);
+
+  // Scroll to top on tab change
+  const handleTabChange = useCallback(
+    (tab: CmsTabFilter) => {
+      onTabChange(tab);
+      scrollRef.current?.scrollTo({ top: 0 });
+    },
+    [onTabChange],
+  );
+
+  return (
+    <div className="flex flex-col h-full bg-white border-r border-slate-200/80">
+      {/* Header */}
+      <div className="shrink-0 px-4 pt-3 pb-2 border-b border-slate-100">
+        <div className="flex items-center justify-between mb-2.5">
+          <h2 className="text-sm font-bold text-slate-800">Contactos CMS</h2>
+          <div className="flex items-center gap-1.5">
+            <CmsTagManager
+              availableTags={availableTags}
+              selectedTag={selectedTag}
+              onSelectTag={onSelectTag}
+              onCreateTag={onCreateTag}
+            />
+            <button
+              type="button"
+              onClick={onOpenTwilioConfig}
+              className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+              title="Configurar Twilio"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <title>Configuracion</title>
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-colors ${
+          searchFocused ? "border-[var(--goberna-blue-400)] bg-white" : "border-slate-200 bg-slate-50"
+        }`}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-400 shrink-0" aria-hidden="true">
+            <title>Buscar</title>
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.35-4.35" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => onSearchChange(e.target.value)}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
+            placeholder="Buscar nombre, telefono..."
+            className="flex-1 text-[12px] bg-transparent outline-none placeholder:text-slate-300 text-slate-700"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => onSearchChange("")}
+              className="text-[10px] text-slate-400 hover:text-slate-600"
+            >
+              x
+            </button>
+          )}
+        </div>
+
+        {/* Tabs */}
+        <div className="flex items-center gap-1 mt-2.5 overflow-x-auto pb-0.5">
+          {TABS.map((tab) => {
+            const count = tab.statKey && stats ? stats[tab.statKey] : null;
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                type="button"
+                key={tab.key}
+                onClick={() => handleTabChange(tab.key)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium whitespace-nowrap transition-colors ${
+                  isActive
+                    ? "bg-[var(--goberna-blue-900)] text-white"
+                    : "text-slate-500 hover:bg-slate-100"
+                }`}
+              >
+                {tab.label}
+                {count !== null && count !== undefined && (
+                  <span className={`text-[10px] tabular-nums ${isActive ? "text-white/70" : "text-slate-400"}`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Contact list */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        {error && !loading && (
+          <CmsEmptyState variant="error" message={error} onRetry={onRetry} />
+        )}
+
+        {!error && loading && contacts.length === 0 && (
+          <div className="flex flex-col gap-3 p-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={`skeleton-${String(i)}`} className="flex items-start gap-3 animate-pulse">
+                <div className="w-10 h-10 rounded-full bg-slate-100 shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 bg-slate-100 rounded w-3/4" />
+                  <div className="h-2.5 bg-slate-100 rounded w-1/2" />
+                  <div className="h-2 bg-slate-50 rounded w-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!error && !loading && contacts.length === 0 && (
+          <CmsEmptyState
+            variant={searchQuery ? "no-results" : "no-contacts"}
+          />
+        )}
+
+        {contacts.map((contact) => (
+          <CmsContactCard
+            key={contact.id}
+            contact={contact}
+            selected={contact.id === selectedContactId}
+            onSelect={onSelectContact}
+            onOpenProfile={onOpenProfile}
+          />
+        ))}
+
+        {/* Infinite scroll sentinel */}
+        {contacts.length > 0 && contacts.length < total && (
+          <div ref={sentinelRef} className="py-3 text-center">
+            {loadingMore ? (
+              <div className="inline-block w-4 h-4 border-2 border-slate-200 border-t-[var(--goberna-blue-500)] rounded-full animate-spin" />
+            ) : (
+              <span className="text-[11px] text-slate-300">
+                {contacts.length} de {total}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

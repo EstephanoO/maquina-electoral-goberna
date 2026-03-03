@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { useAuth } from "../../../lib/auth-context";
-import { Spinner } from "../../../lib/ui";
+import { Spinner, PageHeader, SkeletonList, Button } from "../../../lib/ui";
 import { useInjectStyles } from "../../../lib/hooks";
 import { FONT_STACK } from "../../../lib/constants";
 
@@ -43,36 +43,25 @@ export default function EquipoPage() {
   // ── Render ─────────────────────────────────────────────────────────
 
   return (
-    <div style={{ fontFamily: FONT_STACK, animation: "goberna-fade-in .4s ease-out" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 24 }}>
-        <div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: "var(--color-text-primary)", margin: "0 0 4px", letterSpacing: "0.02em" }}>
-            EQUIPO DE CAMPAÑA
-          </h1>
-          <p style={{ fontSize: 13, color: "var(--color-text-tertiary)", margin: 0 }}>
-            {eq.canManage
-              ? "Gestiona tu equipo y asigna roles según la jerarquía de mando."
-              : "Miembros de la campaña."}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowHierarchy((v) => !v)}
-          style={{
-            padding: "8px 16px",
-            fontSize: 12,
-            fontWeight: 700,
-            color: "var(--goberna-blue-700)",
-            background: "var(--goberna-blue-50)",
-            border: "1px solid var(--goberna-blue-200)",
-            borderRadius: 8,
-            cursor: "pointer",
-          }}
-        >
-          {showHierarchy ? "Ocultar Jerarquía" : "Ver Jerarquía"}
-        </button>
-      </div>
+    <div style={{ fontFamily: FONT_STACK }}>
+      <PageHeader
+        title="Equipo de Campaña"
+        description={
+          eq.canManage
+            ? "Gestiona tu equipo y asigna roles según la jerarquía de mando."
+            : "Miembros de la campaña."
+        }
+        breadcrumbs={[{ label: "Dashboard", href: "/home" }, { label: "Equipo" }]}
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowHierarchy((v) => !v)}
+          >
+            {showHierarchy ? "Ocultar Jerarquía" : "Ver Jerarquía"}
+          </Button>
+        }
+      />
 
       {showHierarchy && (
         <div style={{ marginBottom: 24 }}>
@@ -81,8 +70,8 @@ export default function EquipoPage() {
       )}
 
       {eq.loading ? (
-        <div style={{ padding: "40px 0", textAlign: "center" }}>
-          <Spinner size={28} />
+        <div style={{ padding: "24px 0" }}>
+          <SkeletonList items={6} />
         </div>
       ) : (
         <>

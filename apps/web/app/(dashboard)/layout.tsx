@@ -52,6 +52,7 @@ const NAV_ITEMS: NavItem[] = [
   { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["admin", "candidato"], section: "main", visibility: "always" },
   { icon: <DashboardIcon />, label: "Dashboard", href: (slug) => `/candidatos/${slug}/tierra`, roles: ["admin", "candidato", "consultor"], section: "main", visibility: "campaign" },
   { icon: <ValidacionIcon />, label: "Validacion", href: (slug) => `/candidatos/${slug}/validacion`, roles: ["admin", "candidato", "consultor"], section: "main", visibility: "campaign" },
+  { icon: <CmsIcon />, label: "CMS", href: "/cms", roles: ["admin", "candidato"], section: "main", visibility: "campaign" },
   // Admin-only: visible only in Admin General mode
   { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin", visibility: "global" },
   { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin"], section: "admin", visibility: "global" },
@@ -110,6 +111,15 @@ function ValidacionIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
       <polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
+  );
+}
+
+function CmsIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <line x1="9" y1="10" x2="15" y2="10" />
     </svg>
   );
 }
@@ -208,41 +218,40 @@ function LoadingScreen() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        background: "#ffffff",
+        background: "var(--color-background)",
         zIndex: 9999,
-        gap: "24px",
+        gap: 20,
       }}
     >
       <Image
         src="/isotipo_2_-removebg-preview.png"
         alt="GOBERNA"
-        width={64}
-        height={64}
+        width={56}
+        height={56}
         style={{ borderRadius: "var(--radius-md)" }}
         priority
       />
       <div
         style={{
-          width: "36px",
-          height: "36px",
-          border: "3px solid var(--goberna-blue-100)",
-          borderTopColor: "var(--goberna-blue-900)",
+          width: 28,
+          height: 28,
+          border: "2.5px solid var(--goberna-blue-100)",
+          borderTopColor: "var(--goberna-blue-800)",
           borderRadius: "50%",
-          animation: "spin 0.8s linear infinite",
+          animation: "spin 0.75s linear infinite",
         }}
       />
       <span
         style={{
           fontFamily: "var(--font-montserrat), system-ui, sans-serif",
-          fontSize: "13px",
+          fontSize: 12,
           fontWeight: 600,
-          letterSpacing: "2px",
-          color: "var(--goberna-gold)",
+          letterSpacing: 3,
+          color: "var(--color-text-tertiary)",
         }}
       >
         GOBERNA
       </span>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
@@ -416,18 +425,22 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
         className={`sidebar-nav-link${isActive ? " sidebar-nav-active" : ""}`}
         style={{
           ...navLinkBase,
-          padding: showLabel ? "11px 20px" : "11px 0",
+          position: "relative",
+          padding: showLabel ? "10px 20px" : "10px 0",
           justifyContent: showLabel ? "flex-start" : "center",
-          background: isActive ? "rgba(255,255,255,0.12)" : "transparent",
+          background: isActive ? "var(--sidebar-active-bg)" : "transparent",
           borderLeft: isActive ? "3px solid var(--goberna-gold)" : "3px solid transparent",
-          color: isActive ? "var(--goberna-gold)" : "rgba(255,255,255,0.7)",
+          color: isActive ? "var(--sidebar-text-active)" : "var(--sidebar-text)",
           fontWeight: isActive ? 600 : 500,
+          borderRadius: 0,
         }}
       >
         <span style={{ flexShrink: 0, display: "flex", alignItems: "center", width: 20, justifyContent: "center" }}>
           {item.icon}
         </span>
         {showLabel && <span>{item.label}</span>}
+        {/* Tooltip for collapsed sidebar */}
+        {!showLabel && <span className="sidebar-tooltip">{item.label}</span>}
       </Link>
     );
   };
@@ -471,13 +484,13 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
           left: 0,
           bottom: 0,
           width: mobileOpen ? SIDEBAR_W_EXPANDED : sidebarWidth,
-          background: "var(--goberna-blue-900)",
+          background: "var(--sidebar-bg)",
           color: "#ffffff",
           display: isMobile && !mobileOpen ? "none" : "flex",
           flexDirection: "column",
-          transition: "width 0.2s cubic-bezier(0.4,0,0.2,1)",
+          transition: "width var(--duration-normal) var(--ease-in-out)",
           zIndex: 999,
-          boxShadow: mobileOpen ? "4px 0 24px rgba(0,0,0,0.25)" : "2px 0 8px rgba(0,0,0,0.1)",
+          boxShadow: mobileOpen ? "4px 0 24px rgba(0,0,0,0.3)" : "1px 0 0 rgba(255,255,255,0.04)",
           overflow: "hidden",
         }}
       >
@@ -487,9 +500,9 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             display: "flex",
             alignItems: "center",
             gap: showLabel ? 14 : 0,
-            padding: showLabel ? "14px 20px" : "14px 0",
+            padding: showLabel ? "16px 20px" : "16px 0",
             justifyContent: showLabel ? "flex-start" : "center",
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
+            borderBottom: "1px solid var(--sidebar-border)",
             minHeight: 64,
             flexShrink: 0,
           }}
@@ -497,26 +510,26 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
           <Image
             src="/isotipo_2_-removebg-preview.png"
             alt="GOBERNA"
-            width={36}
-            height={36}
-            style={{ flexShrink: 0 }}
+            width={34}
+            height={34}
+            style={{ flexShrink: 0, borderRadius: 6 }}
           />
           {showLabel && (
             <>
               <span
                 style={{
                   width: 1.5,
-                  height: 28,
+                  height: 24,
                   backgroundColor: "var(--goberna-gold)",
                   borderRadius: 1,
                   flexShrink: 0,
-                  opacity: 0.6,
+                  opacity: 0.4,
                 }}
               />
               <span
                 style={{
                   fontWeight: 700,
-                  fontSize: 15,
+                  fontSize: 14,
                   letterSpacing: 4,
                   color: "var(--goberna-gold)",
                   whiteSpace: "nowrap",
@@ -536,16 +549,16 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
               onClick={() => setMobileOpen(false)}
               style={{
                 marginLeft: "auto",
-                background: "rgba(255,255,255,0.08)",
+                background: "rgba(255,255,255,0.06)",
                 border: "none",
-                borderRadius: 6,
-                color: "rgba(255,255,255,0.7)",
+                borderRadius: "var(--radius-sm)",
+                color: "rgba(255,255,255,0.6)",
                 cursor: "pointer",
                 padding: 6,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                transition: "background 0.15s ease",
+                transition: "background var(--duration-fast) ease",
               }}
               aria-label="Cerrar menu"
             >
@@ -558,19 +571,19 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
         {showLabel && (
           <div
             style={{
-              padding: "10px 20px",
-              borderBottom: "1px solid rgba(255,255,255,0.08)",
+              padding: "10px 20px 12px",
+              borderBottom: "1px solid var(--sidebar-border)",
               flexShrink: 0,
             }}
           >
-            <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, color: "rgba(255,255,255,0.35)", marginBottom: 4 }}>
+            <div style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.5, color: "rgba(255,255,255,0.3)", marginBottom: 4 }}>
               {activeCampaign ? "Campaña activa" : "Vista"}
             </div>
             <div
               style={{
                 fontSize: 13,
                 fontWeight: 700,
-                color: activeCampaign ? "var(--goberna-gold)" : "rgba(255,255,255,0.6)",
+                color: activeCampaign ? "var(--goberna-gold)" : "rgba(255,255,255,0.5)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
@@ -597,12 +610,12 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             <div
               style={{
                 margin: "8px 0 4px",
-                borderTop: "1px solid rgba(255,255,255,0.08)",
+                borderTop: "1px solid var(--sidebar-border)",
                 padding: showLabel ? "10px 20px 0" : "10px 0 0",
               }}
             >
               {showLabel && (
-                <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.5, color: "rgba(255,255,255,0.3)" }}>
+                <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.5, color: "rgba(255,255,255,0.25)" }}>
                   Administración
                 </span>
               )}
@@ -625,16 +638,17 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                 href={href}
                 prefetch={true}
                 onClick={() => { if (isMobile) setMobileOpen(false); }}
-                 title={showLabel ? undefined : "Configuración"}
+                title={showLabel ? undefined : "Configuración"}
                 className={`sidebar-nav-link${isActive ? " sidebar-nav-active" : ""}`}
                 style={{
                   ...navLinkBase,
-                  padding: showLabel ? "11px 20px" : "11px 0",
+                  position: "relative",
+                  padding: showLabel ? "10px 20px" : "10px 0",
                   justifyContent: showLabel ? "flex-start" : "center",
-                  background: isActive ? "rgba(255,255,255,0.12)" : "transparent",
-                  borderTop: "1px solid rgba(255,255,255,0.08)",
+                  background: isActive ? "var(--sidebar-active-bg)" : "transparent",
+                  borderTop: "1px solid var(--sidebar-border)",
                   borderLeft: isActive ? "3px solid var(--goberna-gold)" : "3px solid transparent",
-                  color: isActive ? "var(--goberna-gold)" : "rgba(255,255,255,0.5)",
+                  color: isActive ? "var(--sidebar-text-active)" : "rgba(255,255,255,0.45)",
                   fontWeight: isActive ? 600 : 400,
                 }}
                 aria-label="Configuración"
@@ -643,6 +657,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                   <SettingsIcon />
                 </span>
                 {showLabel && <span>Configuración</span>}
+                {!showLabel && <span className="sidebar-tooltip">Configuración</span>}
               </Link>
             );
           })()}
@@ -654,7 +669,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             <div
               style={{
                 padding: "10px 16px",
-                borderTop: "1px solid rgba(255,255,255,0.08)",
+                borderTop: "1px solid var(--sidebar-border)",
                 position: "relative",
               }}
             >
@@ -664,8 +679,8 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                 style={{
                   width: "100%",
                   padding: "8px 12px",
-                  background: activeCampaignId ? "rgba(255,255,255,0.07)" : "rgba(255,200,0,0.08)",
-                  border: activeCampaignId ? "1px solid rgba(255,255,255,0.12)" : "1px solid rgba(255,200,0,0.25)",
+                  background: activeCampaignId ? "rgba(255,255,255,0.05)" : "rgba(255,200,0,0.06)",
+                  border: activeCampaignId ? "1px solid rgba(255,255,255,0.08)" : "1px solid rgba(255,200,0,0.15)",
                   borderRadius: "var(--radius-sm)",
                   color: "#ffffff",
                   fontSize: 12,
@@ -675,7 +690,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  transition: "background 0.15s ease",
+                  transition: "background var(--duration-fast) ease, border-color var(--duration-fast) ease",
                 }}
               >
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -691,13 +706,14 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                     bottom: "100%",
                     left: 16,
                     right: 16,
-                    background: "var(--goberna-blue-800)",
-                    borderRadius: "var(--radius-sm)",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    boxShadow: "0 -4px 12px rgba(0,0,0,0.3)",
-                    maxHeight: 200,
+                    background: "var(--goberna-blue-900)",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    boxShadow: "0 -8px 24px rgba(0,0,0,0.35)",
+                    maxHeight: 220,
                     overflowY: "auto",
                     zIndex: 10,
+                    marginBottom: 4,
                   }}
                 >
                   {/* Admin global option */}
@@ -711,22 +727,22 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                       style={{
                         width: "100%",
                         padding: "10px 12px",
-                        background: !activeCampaignId ? "rgba(255,200,0,0.1)" : "transparent",
+                        background: !activeCampaignId ? "rgba(255,200,0,0.08)" : "transparent",
                         border: "none",
-                        borderBottom: "1px solid rgba(255,255,255,0.08)",
-                        color: !activeCampaignId ? "var(--goberna-gold)" : "rgba(255,255,255,0.8)",
+                        borderBottom: "1px solid rgba(255,255,255,0.06)",
+                        color: !activeCampaignId ? "var(--goberna-gold)" : "rgba(255,255,255,0.7)",
                         fontSize: 12,
                         fontWeight: !activeCampaignId ? 700 : 400,
                         fontFamily: "inherit",
                         cursor: "pointer",
                         textAlign: "left",
-                        transition: "background 0.1s ease",
+                        transition: "background var(--duration-fast) ease",
                         display: "flex",
                         alignItems: "center",
                         gap: 6,
                       }}
                     >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, opacity: 0.7 }}>
                         <circle cx="12" cy="12" r="3" />
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
                       </svg>
@@ -750,15 +766,15 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                       style={{
                         width: "100%",
                         padding: "10px 12px",
-                        background: c.id === activeCampaignId ? "rgba(255,200,0,0.1)" : "transparent",
+                        background: c.id === activeCampaignId ? "rgba(255,200,0,0.08)" : "transparent",
                         border: "none",
-                        color: c.id === activeCampaignId ? "var(--goberna-gold)" : "rgba(255,255,255,0.8)",
+                        color: c.id === activeCampaignId ? "var(--goberna-gold)" : "rgba(255,255,255,0.7)",
                         fontSize: 12,
                         fontWeight: c.id === activeCampaignId ? 600 : 400,
                         fontFamily: "inherit",
                         cursor: "pointer",
                         textAlign: "left",
-                        transition: "background 0.1s ease",
+                        transition: "background var(--duration-fast) ease",
                       }}
                     >
                       {c.name}
@@ -772,10 +788,10 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
           {/* User info */}
           <div
             style={{
-              padding: showLabel ? "12px 20px" : "12px 0",
-              borderTop: "1px solid rgba(255,255,255,0.08)",
+              padding: showLabel ? "12px 20px 14px" : "12px 0 14px",
+              borderTop: "1px solid var(--sidebar-border)",
               display: "flex",
-              alignItems: showLabel ? "flex-start" : "center",
+              alignItems: showLabel ? "center" : "center",
               flexDirection: showLabel ? "row" : "column",
               gap: 10,
               justifyContent: showLabel ? "flex-start" : "center",
@@ -787,14 +803,15 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                 width: 32,
                 height: 32,
                 borderRadius: "50%",
-                background: "var(--goberna-blue-700)",
+                background: "linear-gradient(135deg, var(--goberna-blue-700), var(--goberna-blue-600))",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: 700,
-                color: "var(--goberna-gold)",
+                color: "#ffffff",
                 flexShrink: 0,
+                border: "2px solid rgba(255,255,255,0.1)",
               }}
             >
               {user?.full_name?.charAt(0)?.toUpperCase() ?? "?"}
@@ -804,27 +821,28 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div
                   style={{
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: 600,
-                    color: "#ffffff",
+                    color: "rgba(255,255,255,0.9)",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
+                    lineHeight: 1.3,
                   }}
                 >
                   {user?.full_name ?? "Usuario"}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
                   <span
                     style={{
-                      fontSize: 10,
+                      fontSize: 9,
                       fontWeight: 700,
                       textTransform: "uppercase",
-                      letterSpacing: 1,
+                      letterSpacing: 0.8,
                       padding: "2px 6px",
-                      borderRadius: 3,
-                      background: isAdmin ? "var(--goberna-gold)" : "rgba(255,255,255,0.15)",
-                      color: isAdmin ? "var(--goberna-blue-950)" : "rgba(255,255,255,0.7)",
+                      borderRadius: "var(--radius-xs)",
+                      background: isAdmin ? "var(--goberna-gold)" : "rgba(255,255,255,0.1)",
+                      color: isAdmin ? "var(--goberna-blue-950)" : "rgba(255,255,255,0.55)",
                     }}
                   >
                     {uiRole}
@@ -835,12 +853,12 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                     style={{
                       background: "none",
                       border: "none",
-                      color: "rgba(255,255,255,0.4)",
+                      color: "rgba(255,255,255,0.35)",
                       cursor: "pointer",
                       padding: 2,
                       display: "flex",
                       alignItems: "center",
-                      transition: "color 0.15s ease",
+                      transition: "color var(--duration-fast) ease",
                     }}
                     title="Cerrar sesión"
                     aria-label="Cerrar sesión"
@@ -868,28 +886,12 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             width: 20,
             zIndex: 1000,
             cursor: "pointer",
-            transition: "left 0.2s cubic-bezier(0.4,0,0.2,1)",
+            transition: "left var(--duration-normal) var(--ease-in-out)",
           }}
           onClick={handleToggleCollapse}
           role="presentation"
         >
-          {/* Visible edge line on hover */}
-          <div
-            className="sidebar-edge-line"
-            style={{
-              position: "absolute",
-              top: 0,
-              bottom: 0,
-              left: 9,
-              width: 2,
-              borderRadius: 1,
-              background: "var(--goberna-gold)",
-              opacity: edgeHover ? 0.7 : 0,
-              transition: "opacity 0.2s ease",
-              pointerEvents: "none",
-            }}
-          />
-          {/* Toggle pill centered on edge — always partially visible */}
+          {/* Toggle pill centered on edge */}
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); handleToggleCollapse(); }}
@@ -900,20 +902,20 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
               top: "50%",
               left: "50%",
               transform: "translate(-50%, -50%)",
-              width: 20,
-              height: 40,
-              borderRadius: 10,
-              background: edgeHover ? "var(--goberna-blue-700)" : "var(--goberna-blue-800)",
+              width: 18,
+              height: 36,
+              borderRadius: 9,
+              background: edgeHover ? "var(--goberna-blue-800)" : "var(--goberna-blue-900)",
               border: "2px solid var(--color-background)",
-              color: edgeHover ? "#ffffff" : "rgba(255,255,255,0.45)",
+              color: edgeHover ? "#ffffff" : "rgba(255,255,255,0.4)",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               padding: 0,
-              opacity: edgeHover ? 1 : 0.5,
-              transition: "opacity 0.2s ease, background 0.15s ease, color 0.15s ease, transform 0.15s ease",
-              boxShadow: edgeHover ? "0 2px 8px rgba(0,0,0,0.25)" : "0 1px 3px rgba(0,0,0,0.15)",
+              opacity: edgeHover ? 1 : 0.35,
+              transition: "opacity var(--duration-normal) ease, background var(--duration-fast) ease, color var(--duration-fast) ease",
+              boxShadow: edgeHover ? "var(--shadow-md)" : "var(--shadow-xs)",
             }}
           >
             <svg
@@ -928,7 +930,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
               aria-hidden="true"
               style={{
                 transform: showCollapsed ? "rotate(180deg)" : "rotate(0deg)",
-                transition: "transform 0.2s ease",
+                transition: "transform var(--duration-normal) ease",
               }}
             >
               <polyline points="15 18 9 12 15 6" />
@@ -970,8 +972,8 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
         style={{
           flex: 1,
           marginLeft: "var(--sidebar-current-width)",
-          padding: isImmersiveRoute ? 0 : isMobile ? "68px 16px 16px" : 24,
-          transition: "margin-left 0.2s cubic-bezier(0.4,0,0.2,1)",
+          padding: isImmersiveRoute ? 0 : isMobile ? "68px 16px 24px" : "28px 32px",
+          transition: "margin-left var(--duration-normal) var(--ease-in-out)",
           minHeight: "100vh",
           overflow: isImmersiveRoute ? "hidden" : undefined,
         } as React.CSSProperties}
@@ -984,22 +986,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
         <SupportChat userId={user.id} isAdmin={isAdmin} />
       )}
 
-      {/* ── Sidebar CSS (hover, edge zone) ───────────────────── */}
-      <style>{`
-        .sidebar-nav-link:hover:not(.sidebar-nav-active) {
-          background: rgba(255,255,255,0.07) !important;
-          color: rgba(255,255,255,0.95) !important;
-        }
-        .sidebar-nav-link:active {
-          background: rgba(255,255,255,0.14) !important;
-        }
-        .sidebar-nav-active:hover {
-          background: rgba(255,255,255,0.16) !important;
-        }
-        .sidebar-edge-zone:hover .sidebar-edge-btn {
-          opacity: 1 !important;
-        }
-      `}</style>
+      {/* Sidebar hover CSS is now in globals.css */}
     </div>
   );
 });

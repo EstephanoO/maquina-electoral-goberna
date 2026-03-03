@@ -1,5 +1,5 @@
 /**
- * GOBERNA — Spinner Component
+ * GOBERNA — Spinner Component v2
  * Loading indicator with customizable size and color.
  */
 
@@ -16,12 +16,13 @@ export function Spinner({ size = 20, color = "var(--goberna-blue-500)" }: Spinne
     display: "inline-block",
     width: size,
     height: size,
-    border: `2.5px solid ${color}`,
+    border: `${Math.max(2, size * 0.12)}px solid ${color}`,
     borderTopColor: "transparent",
     borderRadius: "50%",
-    animation: "goberna-spin .65s linear infinite",
+    animation: "spin 0.7s linear infinite",
     verticalAlign: "middle",
+    flexShrink: 0,
   };
 
-  return <span style={style} aria-label="Cargando" />;
+  return <span style={style} role="status" aria-label="Cargando" />;
 }

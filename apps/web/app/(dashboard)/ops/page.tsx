@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { PageHeader, Button } from "../../../lib/ui";
 import {
   Bar,
   BarChart,
@@ -478,17 +479,18 @@ export default function OpsDashboardPage() {
   const formsWindow4xxRate = formsWindowTotal > 0 ? ((window5m.forms4xx / formsWindowTotal) * 100).toFixed(2) : "0.00";
 
   return (
-    <main style={{ minHeight: "100vh", background: "linear-gradient(135deg, #e8f0ff 0%, #f6fbf2 45%, #fff4e8 100%)", color: "#0f172a" }}>
+    <main style={{ minHeight: "100vh", color: "var(--color-text-primary)" }}>
       <div style={{ maxWidth: "1240px", margin: "0 auto", padding: "24px 16px 32px" }}>
-        <header style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "10px", marginBottom: "16px" }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: "30px", letterSpacing: "0.4px" }}>Ops Dashboard</h1>
-            <p style={{ margin: "8px 0 0", color: "#334155" }}>Tracking Expo + Backend + cola write-behind en una sola vista.</p>
-          </div>
-          <a href="/home" style={{ alignSelf: "center", textDecoration: "none", color: "#0f172a", border: "1px solid #94a3b8", borderRadius: "10px", padding: "8px 12px", background: "#ffffff" }}>
-            Volver al mapa
-          </a>
-        </header>
+        <PageHeader
+          title="Ops Dashboard"
+          description="Tracking Expo + Backend + cola write-behind en una sola vista."
+          breadcrumbs={[{ label: "Dashboard", href: "/home" }, { label: "Operaciones" }]}
+          actions={
+            <a href="/home" style={{ textDecoration: "none" }}>
+              <Button variant="secondary" size="sm">Volver al mapa</Button>
+            </a>
+          }
+        />
 
         {lastError ? (
           <p style={{ margin: "0 0 14px", padding: "10px 12px", borderRadius: "10px", background: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca" }}>

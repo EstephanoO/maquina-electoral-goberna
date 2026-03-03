@@ -4,46 +4,11 @@ import { useAuth } from "../../../lib/auth-context";
 import { api } from "../../../lib/api-client";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import { Spinner, PageHeader } from "../../../lib/ui";
 
 /* ═══════════════════════════════════════════════════════════════════════
    GOBERNA — Settings: Change Password
    ═══════════════════════════════════════════════════════════════════════ */
-
-const INJECTED_STYLES = `
-@keyframes goberna-fade-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-@keyframes goberna-spin {
-  to { transform: rotate(360deg); }
-}
-`;
-
-function injectStyles() {
-  if (typeof document === "undefined") return;
-  if (document.getElementById("goberna-settings-styles")) return;
-  const el = document.createElement("style");
-  el.id = "goberna-settings-styles";
-  el.textContent = INJECTED_STYLES;
-  document.head.appendChild(el);
-}
-
-function Spinner({ size = 20, color = "var(--goberna-blue-500)" }: { size?: number; color?: string }) {
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        width: size,
-        height: size,
-        border: `2.5px solid ${color}`,
-        borderTopColor: "transparent",
-        borderRadius: "50%",
-        animation: "goberna-spin .65s linear infinite",
-        verticalAlign: "middle",
-      }}
-    />
-  );
-}
 
 function IconEye() {
   return (
@@ -89,8 +54,6 @@ export default function SettingsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
-
-  useEffect(injectStyles, []);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -192,25 +155,13 @@ export default function SettingsPage() {
       style={{
         fontFamily: fontStack,
         maxWidth: 480,
-        animation: "goberna-fade-in .4s ease-out",
       }}
     >
-      {/* Header */}
-      <div style={{ marginBottom: 32 }}>
-        <h1
-          style={{
-            fontSize: 24,
-            fontWeight: 800,
-            color: "var(--color-text-primary)",
-            margin: "0 0 4px",
-          }}
-        >
-          Configuracion
-        </h1>
-        <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>
-          Gestione su cuenta y preferencias.
-        </p>
-      </div>
+      <PageHeader
+        title="Configuracion"
+        description="Gestione su cuenta y preferencias."
+        breadcrumbs={[{ label: "Dashboard", href: "/home" }, { label: "Configuracion" }]}
+      />
 
       {/* User info card */}
       <div
@@ -281,8 +232,8 @@ export default function SettingsPage() {
               borderRadius: "var(--radius-md)",
               padding: "12px 16px",
               marginBottom: 20,
-              animation: "goberna-fade-in .3s ease-out",
             }}
+            className="animate-fade-in"
           >
             <IconSuccess />
             <span style={{ fontSize: 14, fontWeight: 500, color: "var(--color-success)" }}>
@@ -293,13 +244,13 @@ export default function SettingsPage() {
 
         {error && (
           <div
+            className="animate-fade-in"
             style={{
-              background: "#fef2f2",
-              border: "1px solid #fecaca",
+              background: "var(--color-error-bg)",
+              border: "1px solid var(--color-error-border)",
               borderRadius: "var(--radius-md)",
               padding: "12px 16px",
               marginBottom: 20,
-              animation: "goberna-fade-in .3s ease-out",
             }}
           >
             <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-error)" }}>{error}</span>
