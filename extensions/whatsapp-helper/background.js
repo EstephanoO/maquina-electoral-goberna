@@ -1,5 +1,5 @@
 /**
- * WhatsApp Goberna Helper — Background Script (v8.1)
+ * WhatsApp Goberna Helper — Background Script (v8.6)
  *
  * Orchestrates multi-step DOM navigation in WhatsApp Web to open a chat
  * by phone number WITHOUT reloading the page.
@@ -14,9 +14,9 @@
  *   Step 0: Check WhatsApp Web is loaded + logged in (ISOLATED)
  *   Step 1: Click "Nuevo chat" button (ISOLATED)
  *   Step 2: Poll until search input appears (ISOLATED)
- *   Step 3: Type phone number into search (MAIN)
+ *   Step 3: Clear search input (MAIN) → sleep 150ms → type each char (MAIN×N)
  *   Step 4: Poll until search results appear (ISOLATED)
- *   Step 5: Press Enter to select first result (MAIN)
+ *   Step 5: Click first DIV[role="button"] result (ISOLATED)
  *   Step 6: Poll until chat opens (ISOLATED)
  *   Step 7: Pre-fill message text if provided (MAIN)
  *
@@ -41,6 +41,12 @@
  *         these divs. Replace stepSelectResult (Enter key, unreliable) with
  *         stepClickFirstResult (clicks the DIV[role="button"] directly, confirmed
  *         working via Playwright mouse.click on live DOM).
+ *   v8.6: Replace bulk execCommand('insertText') with character-by-character typing.
+ *         Split stepTypePhone into stepClearSearchInput + stepInsertPhoneChar.
+ *         Each char dispatches keydown + beforeinput(insertText) + execCommand +
+ *         keyup — the closest approximation to trusted events from extension MAIN
+ *         world. Playwright testing confirmed WA Lexical editor requires this full
+ *         event sequence to trigger search. 40ms between chars replicates human pace.
  */
 
 // ── Configuration ──
@@ -226,17 +232,25 @@ function stepCheckSearchInput() {
 
 /**
  * Step 3: Type phone number into the "Nuevo chat" search input.
- * Runs in MAIN world — execCommand needed for React contenteditable.
+ * Runs in MAIN world.
  * Returns void (MAIN world limitation).
  *
- * Playwright testing revealed the correct clear+insert sequence:
- *   1. selectNodeContents() + beforeinput(deleteContentBackward) + execCommand('delete')
- *      — execCommand('selectAll'+'delete') alone does NOT clear WA's contenteditable
- *   2. execCommand('insertText') — inserts text AND triggers React's onChange handler
- *      (React listens to the input event that execCommand fires in MAIN world)
+ * v8.6 — Split into two functions:
+ *   stepClearSearchInput(): clears existing content via selectNodeContents + beforeinput + delete
+ *   stepInsertPhoneChar(char): inserts ONE character via keydown + beforeinput + insertText + keyup
+ *
+ * Rationale: chrome.scripting.executeScript (MAIN world) does NOT generate
+ * trusted events. Typing character-by-character with full keyboard event sequence
+ * is the closest approximation to real user input that Lexical/React will process.
+ * Verified with Playwright: char-by-char with KeyboardEvent + InputEvent(beforeinput) +
+ * execCommand('insertText') + KeyboardEvent(keyup) triggers WA search reliably.
  */
-function stepTypePhone(phone) {
-  console.log("[Goberna BG] stepTypePhone: typing phone:", phone);
+
+/**
+ * Clear the Nuevo Chat search input.
+ * Runs in MAIN world — returns void.
+ */
+function stepClearSearchInput() {
   const searchLabels = [
     "Buscar un nombre o número",
     "Search name or number",
@@ -249,34 +263,15 @@ function stepTypePhone(phone) {
     if (input) break;
   }
 
-  // Fallback: data-tab="3" contenteditable that is NOT the compose box
   if (!input) {
-    const candidates = document.querySelectorAll(
-      'div[contenteditable="true"][data-tab="3"]'
-    );
-    for (const c of candidates) {
-      const label = c.getAttribute("aria-label") || "";
-      // Exclude compose box ("Escribe un mensaje", "Type a message", etc.)
-      if (!label.toLowerCase().includes("mensaje") && !label.toLowerCase().includes("message")) {
-        input = c;
-        break;
-      }
-    }
-  }
-
-  if (!input) {
-    console.log("[Goberna BG] stepTypePhone: input NOT found!");
+    console.log("[Goberna BG] stepClearSearchInput: input NOT found!");
     return;
   }
 
-  console.log("[Goberna BG] stepTypePhone: found input, aria-label:", input.getAttribute("aria-label"), "content:", (input.textContent || "").slice(0, 20));
-
   input.focus();
 
-  // ── Step 1: Clear existing content ──
-  // execCommand('selectAll'+'delete') does NOT reliably clear WA's contenteditable.
-  // The correct sequence: select all content via Range API, dispatch beforeinput
-  // event (so React's event handler runs), then execCommand('delete').
+  // selectNodeContents + beforeinput(deleteContentBackward) + execCommand('delete')
+  // is the only reliable way to clear WA's Lexical-based contenteditable.
   const range = document.createRange();
   range.selectNodeContents(input);
   const sel = window.getSelection();
@@ -290,14 +285,51 @@ function stepTypePhone(phone) {
   }));
   document.execCommand("delete", false, null);
 
-  console.log("[Goberna BG] stepTypePhone: after clear, content:", (input.textContent || "").slice(0, 20));
+  console.log("[Goberna BG] stepClearSearchInput: cleared, remaining:", (input.textContent || "").slice(0, 20));
+}
 
-  // ── Step 2: Insert phone number ──
-  // execCommand('insertText') in MAIN world fires a trusted input event that
-  // React's synthetic event system picks up, triggering the search query.
-  document.execCommand("insertText", false, phone);
+/**
+ * Insert a single character into the Nuevo Chat search input.
+ * Uses full keyboard event sequence (keydown + beforeinput + insertText + keyup)
+ * to best approximate trusted user input for Lexical/React event handlers.
+ * Runs in MAIN world — returns void.
+ */
+function stepInsertPhoneChar(char) {
+  const searchLabels = [
+    "Buscar un nombre o número",
+    "Search name or number",
+    "Pesquisar nome ou número",
+  ];
 
-  console.log("[Goberna BG] stepTypePhone: after insert, content:", (input.textContent || "").slice(0, 25));
+  let input = null;
+  for (const label of searchLabels) {
+    input = document.querySelector(`div[contenteditable="true"][aria-label="${label}"]`);
+    if (input) break;
+  }
+
+  if (!input) return;
+
+  input.focus();
+
+  input.dispatchEvent(new KeyboardEvent("keydown", {
+    key: char,
+    bubbles: true,
+    cancelable: true,
+  }));
+
+  input.dispatchEvent(new InputEvent("beforeinput", {
+    inputType: "insertText",
+    data: char,
+    bubbles: true,
+    cancelable: true,
+  }));
+
+  document.execCommand("insertText", false, char);
+
+  input.dispatchEvent(new KeyboardEvent("keyup", {
+    key: char,
+    bubbles: true,
+  }));
 }
 
 /**
@@ -603,8 +635,15 @@ async function attemptNavigation(tabId, phone, text, isRetry) {
     }
   }
 
-  // Type the phone number (MAIN world)
-  await execStep(tabId, stepTypePhone, [phone], "MAIN");
+  // ── v8.6: Type phone number character-by-character (MAIN world) ──
+  // Clear first, then insert each char with full keyboard event sequence.
+  // This is the most trusted-event-like approach available from an extension.
+  await execStep(tabId, stepClearSearchInput, [], "MAIN");
+  await sleep(150); // let Lexical process the clear before typing
+  for (const char of phone) {
+    await execStep(tabId, stepInsertPhoneChar, [char], "MAIN");
+    await sleep(40); // ~25 chars/sec — human-like pace that triggers React debounce
+  }
 
   // Poll for search results
   const results = await pollCondition(
