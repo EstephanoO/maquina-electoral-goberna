@@ -46,7 +46,7 @@ import {
   VIS_VISIBLE, VIS_NONE, PROMOTE_ID,
   PRIORITY_FILL_PAINT, PRIORITY_DEP_LINE_PAINT, PRIORITY_PROV_LINE_PAINT, PRIORITY_DIST_LINE_PAINT,
   SECTOR_FILL_PAINT, SECTOR_LINE_PAINT,
-  HEATMAP_PAINT, BARS_EXTRUSION_PAINT, BARS_LINE_PAINT,
+  HEATMAP_PAINT, HEATMAP_DARK_PAINT, BARS_EXTRUSION_PAINT, BARS_LINE_PAINT,
   HAS_POINT_COUNT, NOT_HAS_POINT_COUNT,
   CLUSTER_RING_PAINT, CLUSTER_CIRCLE_PAINT, CLUSTER_RING_DARK_PAINT, CLUSTER_CIRCLE_DARK_PAINT,
   CLUSTER_COUNT_LAYOUT, CLUSTER_COUNT_PAINT,
@@ -162,6 +162,10 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   );
   const formPointsPaint = useMemo(
     () => (mapTheme === "dark" ? FORM_POINTS_DARK_PAINT : FORM_POINTS_PAINT),
+    [mapTheme],
+  );
+  const heatmapPaint = useMemo(
+    () => (mapTheme === "dark" ? HEATMAP_DARK_PAINT : HEATMAP_PAINT),
     [mapTheme],
   );
 
@@ -520,7 +524,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
           <Layer id="forms-points" type="circle" filter={NOT_HAS_POINT_COUNT} layout={pointsVisibility} paint={formPointsPaint} />
         </Source>
         <Source id="forms-heatmap" type="geojson" data={formsGeoJson}>
-          <Layer id="forms-heatmap-layer" type="heatmap" layout={heatmapVisibility} paint={HEATMAP_PAINT} />
+          <Layer id="forms-heatmap-layer" type="heatmap" layout={heatmapVisibility} paint={heatmapPaint} />
         </Source>
         <Source id="forms-bars" type="geojson" data={barsGeoJson}>
           <Layer id="forms-bars-3d" type="fill-extrusion" layout={barsVisibility} paint={BARS_EXTRUSION_PAINT} />

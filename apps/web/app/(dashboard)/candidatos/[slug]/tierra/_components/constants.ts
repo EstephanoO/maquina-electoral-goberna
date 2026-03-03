@@ -119,6 +119,7 @@ export const MAP_STYLE = MAP_STYLES.dark;
 export const INTERACTIVE_LAYERS = [
   "agents-circles", "agents-selected-ring",
   "forms-clusters", "forms-cluster-ring", "forms-points",
+  "forms-bars-3d", "forms-bars-outline",
   "dep-fill", "prov-fill", "dist-fill",
   "sector-fill",
 ] as const;

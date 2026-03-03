@@ -40,6 +40,27 @@ export const HEATMAP_PAINT: HeatmapLayerSpecification["paint"] = {
   ],
 };
 
+export const HEATMAP_DARK_PAINT: HeatmapLayerSpecification["paint"] = {
+  "heatmap-weight": 1,
+  "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 5, 1.3, 10, 2.8, 14, 4.6],
+  "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 5, 18, 10, 30, 14, 42],
+  "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.92, 10, 0.85, 14, 0.68, 17, 0.45],
+  "heatmap-color": [
+    "interpolate",
+    ["linear"],
+    ["heatmap-density"],
+    0, "rgba(0,0,0,0)",
+    0.12, "rgba(34,211,238,0.3)",
+    0.25, "rgba(6,182,212,0.5)",
+    0.4, "rgba(52,211,153,0.65)",
+    0.55, "rgba(163,230,53,0.78)",
+    0.7, "rgba(250,204,21,0.86)",
+    0.82, "rgba(249,115,22,0.9)",
+    0.92, "rgba(236,72,153,0.92)",
+    1, "rgba(244,114,182,0.96)",
+  ],
+};
+
 /* ─── 3D bars paint (static) ─── */
 
 export const BARS_EXTRUSION_PAINT: FillExtrusionLayerSpecification["paint"] = {
