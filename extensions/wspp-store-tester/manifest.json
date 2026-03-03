@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "WSPP CRM",
+  "version": "3.0.0",
+  "description": "CRM integrado en WhatsApp Web — leads de Goberna",
+  "permissions": ["storage", "tabs", "windows", "debugger"],
+  "action": {
+    "default_title": "WSPP CRM"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://web.whatsapp.com/*"],
+      "js": ["inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["*://web.whatsapp.com/*"],
+      "js": ["sidebar.js"],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
+    },
+    {
+      "matches": ["*://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["crm.html", "crm.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

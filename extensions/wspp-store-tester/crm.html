@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>WSPP CRM</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #111b21;
+      --surface:   #1f2c34;
+      --surface2:  #2a3942;
+      --border:    #2a3942;
+      --green:     #00a884;
+      --green-dim: #005c4b;
+      --text:      #e9edef;
+      --text-sub:  #8696a0;
+      --unread:    #00a884;
+      --danger:    #ef5350;
+      --mine-bg:   #005c4b;
+      --their-bg:  #1f2c34;
+    }
+
+    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+    /* ── Layout ── */
+    .app { display: flex; height: 100vh; overflow: hidden; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 360px; min-width: 300px; max-width: 420px;
+      display: flex; flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .sidebar-header {
+      padding: 16px; display: flex; align-items: center; gap: 10px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    .avatar-me {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: var(--green); display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 16px; color: #fff; flex-shrink: 0;
+    }
+    .sidebar-header .name { font-weight: 600; font-size: 15px; }
+    .sidebar-header .sub  { font-size: 11px; color: var(--text-sub); }
+    .sidebar-header .dot  { width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-left: auto; flex-shrink: 0; }
+
+    /* ── Search ── */
+    .search-bar { padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .search-bar input {
+      width: 100%; padding: 8px 12px;
+      background: var(--surface2); border: none; border-radius: 8px;
+      color: var(--text); font-size: 13px; outline: none;
+    }
+    .search-bar input::placeholder { color: var(--text-sub); }
+
+    /* ── Tabs ── */
+    .tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--surface); }
+    .tab {
+      flex: 1; padding: 10px; text-align: center; font-size: 12px; font-weight: 600;
+      color: var(--text-sub); cursor: pointer; border-bottom: 2px solid transparent;
+      transition: all 0.15s; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .tab.active { color: var(--green); border-bottom-color: var(--green); }
+
+    /* ── Chat list ── */
+    .chat-list { flex: 1; overflow-y: auto; }
+    .chat-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+    .chat-item:hover { background: var(--surface); }
+    .chat-item.active { background: var(--surface2); }
+
+    .avatar {
+      width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0;
+      background: var(--surface2); display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 18px; color: var(--text-sub);
+    }
+    .avatar.group { background: var(--green-dim); color: var(--green); }
+
+    .chat-info { flex: 1; min-width: 0; }
+    .chat-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chat-preview { font-size: 12px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .chat-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+    .chat-time { font-size: 11px; color: var(--text-sub); }
+    .unread-badge {
+      background: var(--unread); color: #fff; font-size: 11px; font-weight: 700;
+      border-radius: 9999px; padding: 1px 6px; min-width: 20px; text-align: center;
+    }
+
+    /* ── Main panel ── */
+    .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── Chat header ── */
+    .chat-header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px; background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .chat-header .info { flex: 1; min-width: 0; }
+    .chat-header .chat-name { font-weight: 600; font-size: 15px; }
+    .chat-header .chat-sub  { font-size: 12px; color: var(--text-sub); }
+    .stats-bar {
+      display: flex; gap: 8px; padding: 8px 16px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+    }
+    .stat-pill {
+      background: var(--surface2); border-radius: 6px;
+      padding: 4px 10px; font-size: 11px; color: var(--text-sub);
+    }
+    .stat-pill span { color: var(--text); font-weight: 700; }
+
+    /* ── Messages ── */
+    .messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+    .msg-bubble {
+      max-width: 70%; padding: 8px 12px; border-radius: 10px;
+      font-size: 13px; line-height: 1.4; position: relative;
+    }
+    .msg-bubble.mine  { background: var(--mine-bg); align-self: flex-end; border-bottom-right-radius: 2px; }
+    .msg-bubble.their { background: var(--their-bg); align-self: flex-start; border-bottom-left-radius: 2px; }
+    .msg-time { font-size: 10px; color: var(--text-sub); margin-top: 3px; text-align: right; }
+    .msg-from { font-size: 11px; color: var(--green); font-weight: 600; margin-bottom: 2px; }
+
+    /* ── Empty state ── */
+    .empty {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 12px;
+      color: var(--text-sub); text-align: center; padding: 40px;
+    }
+    .empty .icon { font-size: 48px; opacity: 0.4; }
+    .empty .title { font-size: 18px; font-weight: 600; color: var(--text); }
+    .empty .sub { font-size: 13px; }
+
+    /* ── Loading ── */
+    .loading { display: flex; align-items: center; justify-content: center; flex: 1; }
+    .spinner {
+      width: 32px; height: 32px; border: 3px solid var(--surface2);
+      border-top-color: var(--green); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Live badge ── */
+    .live-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: var(--green-dim); color: var(--green);
+      font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 9999px;
+      text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .live-dot {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── Contacts tab ── */
+    .contact-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 16px; border-bottom: 1px solid var(--border);
+      cursor: pointer; transition: background 0.1s;
+    }
+    .contact-item:hover { background: var(--surface); }
+    .contact-name { font-weight: 500; font-size: 13px; }
+    .contact-id   { font-size: 11px; color: var(--text-sub); }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 2px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="avatar-me" id="me-avatar">?</div>
+        <div>
+          <div class="name" id="me-name">Conectando...</div>
+          <div class="sub" id="me-platform"></div>
+        </div>
+        <div class="dot" id="conn-dot" style="background:#ef5350"></div>
+      </div>
+
+      <div class="search-bar">
+        <input type="text" id="search-input" placeholder="Buscar chats o contactos..." />
+      </div>
+
+      <div class="tabs">
+        <div class="tab active" data-tab="chats">Chats</div>
+        <div class="tab" data-tab="contacts">Contactos</div>
+        <div class="tab" data-tab="stats">Stats</div>
+      </div>
+
+      <div class="chat-list" id="chat-list">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main" id="main-panel">
+      <div class="empty">
+        <div class="icon">💬</div>
+        <div class="title">WSPP CRM</div>
+        <div class="sub">Selecciona un chat para comenzar</div>
+      </div>
+    </main>
+  </div>
+
+  <script src="crm.js"></script>
+</body>
+</html>

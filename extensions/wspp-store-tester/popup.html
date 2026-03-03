@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #111b21;
+      color: #e9edef;
+    }
+    .header {
+      background: #25D366;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header .icon { font-size: 24px; }
+    .header .title { font-size: 15px; font-weight: 700; }
+    .header .sub { font-size: 11px; opacity: 0.85; }
+    .body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+    .row {
+      background: #202c33;
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+    .row .label { color: #8696a0; font-size: 11px; }
+    .row .val { font-weight: 600; }
+    .val.ok  { color: #25D366; }
+    .val.err { color: #ef5350; }
+    .val.warn { color: #ffa726; }
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      background: #25D366;
+      color: #111b21;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.4; cursor: default; }
+    .log {
+      background: #0d1418;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 11px;
+      font-family: monospace;
+      color: #8696a0;
+      max-height: 120px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .log .line { margin-bottom: 3px; }
+    .log .line.ok  { color: #25D366; }
+    .log .line.err { color: #ef5350; }
+    .log .line.info { color: #e9edef; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="icon">📱</div>
+    <div>
+      <div class="title">WSPP Store Tester</div>
+      <div class="sub">Detección del Store interno</div>
+    </div>
+  </div>
+  <div class="body">
+    <div class="row">
+      <span class="label">Estado</span>
+      <span class="val ok" id="status">✅ Conectado</span>
+    </div>
+    <div class="row">
+      <span class="label">Store encontrado</span>
+      <span class="val warn" id="store-found">Escaneando...</span>
+    </div>
+    <div class="row">
+      <span class="label">Módulo ID</span>
+      <span class="val" id="mod-id" style="font-size:10px;color:#8696a0">—</span>
+    </div>
+    <div class="row">
+      <span class="label">Keys detectadas</span>
+      <span class="val" id="store-keys" style="font-size:10px;color:#8696a0">—</span>
+    </div>
+    <div class="row">
+      <span class="label">Conectado como</span>
+      <span class="val" id="me-name" style="font-size:12px;color:#25D366">—</span>
+    </div>
+    <button class="btn" id="scan-btn">Escanear Store ahora</button>
+    <div class="log" id="log">Abre WhatsApp Web y pulsa Escanear...</div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
