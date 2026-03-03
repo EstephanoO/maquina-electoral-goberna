@@ -603,6 +603,14 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
         reply.raw.setHeader("Connection", "keep-alive");
         reply.raw.setHeader("X-Accel-Buffering", "no");
+
+        // CORS headers for SSE — reply.raw bypasses @fastify/cors plugin
+        const origin = request.headers.origin;
+        if (origin) {
+          reply.raw.setHeader("Access-Control-Allow-Origin", origin);
+          reply.raw.setHeader("Access-Control-Allow-Credentials", "true");
+        }
+
         reply.raw.flushHeaders?.();
 
         const clientId = ++clientSeq;
