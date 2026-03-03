@@ -434,6 +434,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
 
   return (
     <div
+      data-dashboard-shell-root
       style={{
         display: "flex",
         minHeight: "100vh",
@@ -465,6 +466,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
 
       {/* ── Sidebar ────────────────────────────────────────────── */}
       <aside
+        className="dashboard-shell-sidebar"
         style={{
           position: "fixed",
           top: 0,
@@ -857,7 +859,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
       {/* ── Sidebar edge hover zone + toggle (desktop only) ──── */}
       {!isMobile && (
         <div
-          className="sidebar-edge-zone"
+          className="sidebar-edge-zone dashboard-sidebar-edge-zone"
           onMouseEnter={() => setEdgeHover(true)}
           onMouseLeave={() => setEdgeHover(false)}
           style={{
@@ -940,6 +942,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
       {/* ── Mobile hamburger (only visible on mobile) ──────────── */}
       {isMobile && !mobileOpen && (
         <button
+          className="dashboard-mobile-menu-btn"
           type="button"
           onClick={() => setMobileOpen(true)}
           style={{
@@ -967,6 +970,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
 
       {/* ── Main content ───────────────────────────────────────── */}
       <main
+        className="dashboard-shell-main"
         style={{
           flex: 1,
           marginLeft: "var(--sidebar-current-width)",
