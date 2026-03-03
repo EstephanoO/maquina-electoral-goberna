@@ -26,40 +26,66 @@ export const PRIORITY_DIST_LINE_PAINT: LineLayerSpecification["paint"] = { "line
 export const SECTOR_FILL_PAINT: FillLayerSpecification["paint"] = { "fill-color": SECTOR_FILL, "fill-opacity": 0.8 };
 export const SECTOR_LINE_PAINT: LineLayerSpecification["paint"] = { "line-color": SECTOR_LINE, "line-width": 0.5, "line-opacity": 0.4 };
 
-/* ─── Heatmap paint (static) ─── */
+/* ─── Heatmap paint (theme-aware + runtime tunable) ─── */
 
-export const HEATMAP_PAINT: HeatmapLayerSpecification["paint"] = {
-  "heatmap-weight": 1,
-  "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 5, 1, 12, 3],
-  "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 5, 15, 12, 25],
-  "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.6, 14, 0.25],
-  "heatmap-color": [
-    "interpolate", ["linear"], ["heatmap-density"],
-    0, "rgba(0,0,0,0)", 0.2, "rgba(30,58,95,0.35)", 0.4, "rgba(13,148,136,0.5)",
-    0.6, "rgba(217,119,6,0.6)", 0.8, "rgba(180,83,9,0.7)", 1, "rgba(127,29,29,0.8)",
-  ],
+type HeatmapPaintOptions = {
+  radius: number;
+  opacity: number;
 };
 
-export const HEATMAP_DARK_PAINT: HeatmapLayerSpecification["paint"] = {
-  "heatmap-weight": 1,
-  "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 5, 1.3, 10, 2.8, 14, 4.6],
-  "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 5, 18, 10, 30, 14, 42],
-  "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 5, 0.92, 10, 0.85, 14, 0.68, 17, 0.45],
-  "heatmap-color": [
-    "interpolate",
-    ["linear"],
-    ["heatmap-density"],
-    0, "rgba(0,0,0,0)",
-    0.12, "rgba(34,211,238,0.3)",
-    0.25, "rgba(6,182,212,0.5)",
-    0.4, "rgba(52,211,153,0.65)",
-    0.55, "rgba(163,230,53,0.78)",
-    0.7, "rgba(250,204,21,0.86)",
-    0.82, "rgba(249,115,22,0.9)",
-    0.92, "rgba(236,72,153,0.92)",
-    1, "rgba(244,114,182,0.96)",
-  ],
-};
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+export function getHeatmapPaint({ radius, opacity }: HeatmapPaintOptions): HeatmapLayerSpecification["paint"] {
+  const r = clamp(radius, 5, 50);
+  const o = clamp(opacity, 0, 1);
+  return {
+    "heatmap-weight": 1,
+    "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 5, 0.9, 10, 1.9, 14, 3.2],
+    "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 5, r * 0.62, 10, r, 14, r * 1.45],
+    "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 5, Math.min(1, o), 12, o * 0.92, 16, o * 0.58],
+    "heatmap-color": [
+      "interpolate",
+      ["linear"],
+      ["heatmap-density"],
+      0, "rgba(0,0,0,0)",
+      0.2, "rgba(56,189,248,0.22)",
+      0.4, "rgba(14,165,233,0.36)",
+      0.55, "rgba(16,185,129,0.5)",
+      0.7, "rgba(234,179,8,0.62)",
+      0.85, "rgba(249,115,22,0.76)",
+      1, "rgba(220,38,38,0.85)",
+    ],
+  };
+}
+
+export function getHeatmapDarkPaint({ radius, opacity }: HeatmapPaintOptions): HeatmapLayerSpecification["paint"] {
+  const r = clamp(radius, 5, 50);
+  const o = clamp(opacity, 0, 1);
+  return {
+    "heatmap-weight": 1,
+    "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 5, 1.2, 10, 2.8, 14, 4.8],
+    "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 5, r * 0.78, 10, r * 1.2, 14, r * 1.75],
+    "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 5, Math.min(1, o), 11, o * 0.93, 14, o * 0.76, 17, o * 0.52],
+    "heatmap-color": [
+      "interpolate",
+      ["linear"],
+      ["heatmap-density"],
+      0, "rgba(0,0,0,0)",
+      0.12, "rgba(52,255,102,0.2)",
+      0.28, "rgba(78,255,0,0.42)",
+      0.46, "rgba(126,255,0,0.62)",
+      0.62, "rgba(188,255,0,0.78)",
+      0.78, "rgba(255,220,0,0.9)",
+      0.9, "rgba(255,128,0,0.95)",
+      1, "rgba(255,24,0,0.99)",
+    ],
+  };
+}
+
+export const HEATMAP_PAINT = getHeatmapPaint({ radius: 26, opacity: 0.8 });
+export const HEATMAP_DARK_PAINT = getHeatmapDarkPaint({ radius: 26, opacity: 0.88 });
 
 /* ─── 3D bars paint (static) ─── */
 

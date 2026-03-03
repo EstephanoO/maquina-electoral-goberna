@@ -108,6 +108,8 @@ export type TierraMapProps = {
   showTracking: boolean;
   showDatos: boolean;
   datosVizMode: DatosVizMode;
+  heatmapRadius: number;
+  heatmapOpacity: number;
   mapTheme: MapTheme;
   showRoutes: boolean;
   drillState: DrillState;

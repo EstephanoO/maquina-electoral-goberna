@@ -46,7 +46,7 @@ import {
   VIS_VISIBLE, VIS_NONE, PROMOTE_ID,
   PRIORITY_FILL_PAINT, PRIORITY_DEP_LINE_PAINT, PRIORITY_PROV_LINE_PAINT, PRIORITY_DIST_LINE_PAINT,
   SECTOR_FILL_PAINT, SECTOR_LINE_PAINT,
-  HEATMAP_PAINT, HEATMAP_DARK_PAINT, BARS_EXTRUSION_PAINT, BARS_LINE_PAINT,
+  getHeatmapPaint, getHeatmapDarkPaint, BARS_EXTRUSION_PAINT, BARS_LINE_PAINT,
   HAS_POINT_COUNT, NOT_HAS_POINT_COUNT,
   CLUSTER_RING_PAINT, CLUSTER_CIRCLE_PAINT, CLUSTER_RING_DARK_PAINT, CLUSTER_CIRCLE_DARK_PAINT,
   CLUSTER_COUNT_LAYOUT, CLUSTER_COUNT_PAINT,
@@ -97,7 +97,7 @@ function applyFluidMapInteractions(map: NativeMap) {
 }
 
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
-  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, mapTheme, showRoutes, drillState, onDrillChange },
+  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange },
   ref,
 ) {
   const mapRef = useRef<MapRef | null>(null);
@@ -165,8 +165,12 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     [mapTheme],
   );
   const heatmapPaint = useMemo(
-    () => (mapTheme === "dark" ? HEATMAP_DARK_PAINT : HEATMAP_PAINT),
-    [mapTheme],
+    () => (
+      mapTheme === "dark"
+        ? getHeatmapDarkPaint({ radius: heatmapRadius, opacity: heatmapOpacity })
+        : getHeatmapPaint({ radius: heatmapRadius, opacity: heatmapOpacity })
+    ),
+    [mapTheme, heatmapRadius, heatmapOpacity],
   );
 
   const depFillPaint = useMemo((): FillLayerSpecification["paint"] => ({

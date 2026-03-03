@@ -15,6 +15,10 @@ type Props = {
   onRoutesToggle: () => void;
   datosVizMode: DatosVizMode;
   onDatosVizModeChange: (mode: DatosVizMode) => void;
+  heatmapRadius: number;
+  heatmapOpacity: number;
+  onHeatmapRadiusChange: (radius: number) => void;
+  onHeatmapOpacityChange: (opacity: number) => void;
   mapTheme: MapTheme;
   onMapThemeChange: (theme: MapTheme) => void;
   agentCount: number;
@@ -54,6 +58,10 @@ export function MapControls({
   onRoutesToggle,
   datosVizMode,
   onDatosVizModeChange,
+  heatmapRadius,
+  heatmapOpacity,
+  onHeatmapRadiusChange,
+  onHeatmapOpacityChange,
   mapTheme,
   onMapThemeChange,
   agentCount,
@@ -125,6 +133,69 @@ export function MapControls({
               </button>
             ))}
           </div>
+
+          {datosVizMode === "heatmap" && (
+            <div className="mt-2 rounded-md border border-slate-200 bg-white p-2">
+              <div className="text-[10px] font-semibold tracking-wide text-slate-500 uppercase mb-2">Heatmap</div>
+
+              <div className="grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-1 mb-2">
+                <label className="text-[10px] font-semibold text-slate-600" htmlFor="heatmap-radius">
+                  Radio
+                </label>
+                <input
+                  id="heatmap-radius"
+                  type="number"
+                  min={5}
+                  max={50}
+                  value={heatmapRadius}
+                  onChange={(e) => {
+                    const next = Number(e.target.value);
+                    if (Number.isFinite(next)) onHeatmapRadiusChange(Math.max(5, Math.min(50, next)));
+                  }}
+                  className="w-[58px] rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <input
+                type="range"
+                min={5}
+                max={50}
+                step={1}
+                value={heatmapRadius}
+                onChange={(e) => onHeatmapRadiusChange(Number(e.target.value))}
+                className="w-full accent-blue-600"
+              />
+
+              <div className="grid grid-cols-[1fr_auto] items-center gap-x-2 gap-y-1 mt-2 mb-2">
+                <label className="text-[10px] font-semibold text-slate-600" htmlFor="heatmap-opacity">
+                  Opacidad
+                </label>
+                <input
+                  id="heatmap-opacity"
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={heatmapOpacity}
+                  onChange={(e) => {
+                    const next = Number(e.target.value);
+                    if (Number.isFinite(next)) onHeatmapOpacityChange(Math.max(0, Math.min(1, next)));
+                  }}
+                  className="w-[58px] rounded border border-slate-300 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={heatmapOpacity}
+                onChange={(e) => onHeatmapOpacityChange(Number(e.target.value))}
+                className="w-full accent-blue-600"
+              />
+            </div>
+          )}
         </div>
       )}
     </div>

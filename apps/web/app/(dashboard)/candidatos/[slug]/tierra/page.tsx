@@ -59,6 +59,8 @@ export default function TierraPage() {
   const [viewMode, setViewMode] = useState<TierraViewMode>("campo");
   const [activeLayer, setActiveLayer] = useState<ActiveLayer>("datos");
   const [datosVizMode, setDatosVizMode] = useState<DatosVizMode>("points");
+  const [heatmapRadius, setHeatmapRadius] = useState(26);
+  const [heatmapOpacity, setHeatmapOpacity] = useState(0.88);
   const [mapTheme, setMapTheme] = useState<MapTheme>("dark");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
@@ -171,9 +173,9 @@ export default function TierraPage() {
 
       {viewMode === "campo" ? (
         <div className="flex-1 min-h-0 relative">
-          <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} datosVizMode={datosVizMode} mapTheme={mapTheme} showRoutes={showRoutes} drillState={drillState} onDrillChange={setDrillState} />
+          <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} datosVizMode={datosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} mapTheme={mapTheme} showRoutes={showRoutes} drillState={drillState} onDrillChange={setDrillState} />
           <div className="absolute top-3 left-3 z-10">
-            <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
+            <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
           </div>
           <CampoOverlay agents={enrichedAgents} connectedCount={connectedCount} logEntries={logEntries} formCount={stats.totals.forms_count} primaryColor={campaign.color_primario} selectedAgentId={selectedAgentId} onAgentClick={handleAgentListClick} onLogEntryClick={handleLogEntryClick} userRole={user?.role} onDeleteForm={handleDeleteForm} onUpdateForm={handleUpdateForm} mapTheme={mapTheme} />
         </div>
