@@ -33,7 +33,7 @@ const TABS = [
 
 // ── Debug ──
 
-const DEBUG = false; // Set to true for verbose console logging
+const GDEBUG = false; // Set to true for verbose console logging
 
 // ── State ──
 
@@ -495,7 +495,7 @@ function waSelectFirstResult() {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({ action: "selectSearchResult" }, (resp) => {
       if (chrome.runtime.lastError) {
-        if (DEBUG) console.warn("[Goberna WA] selectSearchResult failed:", chrome.runtime.lastError.message);
+        if (GDEBUG) console.warn("[Goberna WA] selectSearchResult failed:", chrome.runtime.lastError.message);
         resolve(false);
         return;
       }
