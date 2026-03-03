@@ -952,6 +952,37 @@ export async function getContactTagsBulk(
   return result;
 }
 
+// ── Find contact by phone within a campaign ─────────────────────────
+
+/**
+ * Find a CMS contact by phone number in a campaign.
+ * Matches last 9 digits to handle +51/51 prefix variations.
+ */
+export async function findContactByPhone(
+  campaignId: string,
+  phone: string,
+): Promise<CmsContactRow | null> {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 7) return null;
+
+  // Try exact match first, then last-9-digit suffix match
+  const last9 = digits.slice(-9);
+  const { rows } = await pool.query<CmsContactRow>(
+    `SELECT ${CMS_SELECT}
+     FROM form_submissions fs
+     WHERE fs.campaign_id = $1
+       AND fs.deleted_at IS NULL
+       AND (
+         COALESCE(fs.data->>'telefono', '') = $2
+         OR RIGHT(COALESCE(fs.data->>'telefono', ''), 9) = $3
+       )
+     ORDER BY fs.created_at DESC
+     LIMIT 1`,
+    [campaignId, digits, last9],
+  );
+  return rows[0] ?? null;
+}
+
 // ── Snapshot of currently claimed contacts (for SSE init) ───────────
 
 export async function getClaimedSnapshot(

@@ -1,16 +1,18 @@
 /**
- * WhatsApp Goberna Helper — WhatsApp Web Content Script (v5)
+ * WhatsApp Goberna Helper — WhatsApp Web Content Script (v6)
  *
  * Runs inside web.whatsapp.com only.
  *
  * Responsibilities:
  *   1. Detect when the operator SENDS a message in the active chat
- *   2. Notify background.js, which relays to dashboard tabs
- *   3. Fallback listener for navigateToChat messages
+ *   2. Detect when the contact RECEIVES a message (inbound message detection)
+ *   3. Notify background.js, which relays to dashboard tabs and backend
+ *   4. Fallback listener for navigateToChat messages
  *
- * Message-sent detection:
+ * Message detection:
  *   - MutationObserver on #main's subtree
- *   - Watches for new outgoing messages ("Tú:" prefix or delivery status icons)
+ *   - Outgoing: "Tú:" prefix or delivery status icons (msg-check/msg-dblcheck)
+ *   - Incoming: new [role="row"] without outgoing indicators = incoming message
  *   - Extracts current chat phone from compose box label or header
  *   - Chat-open cooldown prevents false positives from initial message load
  *   - Row count baseline ensures only genuinely NEW messages trigger events
@@ -20,6 +22,8 @@
  *   v4: Added chat-open cooldown to prevent false positives (BUG #2)
  *   v5: Actually use baselineRowCount for double-check, periodic cleanup
  *       of debounce map, runtime error handling, debug logging
+ *   v6: Added inbound message detection — extracts text preview from incoming
+ *       messages and notifies background.js with { action: "messageReceived" }
  */
 
 // ── Configuration ──
@@ -54,7 +58,7 @@ function warn(...args) {
 
 // ── Initialization ──
 
-log("Content script v5 loaded");
+log("Content script v6 loaded");
 
 // ── Fallback listener (for navigateToChat from background) ──
 
@@ -162,6 +166,68 @@ function isOutgoingMessage(node) {
   return false;
 }
 
+// ── Incoming Message Detection ──
+
+/**
+ * Extract visible text from a message row DOM node.
+ * Targets the message bubble's text span; falls back to full textContent.
+ * Returns at most 500 characters.
+ */
+function extractMessageText(node) {
+  // WA message text lives in span[dir="ltr"] or span[class*="selectable-text"]
+  const textSpan =
+    node.querySelector('span[dir="ltr"]') ||
+    node.querySelector('span.selectable-text') ||
+    node.querySelector('[class*="message-text"]');
+
+  const raw = textSpan
+    ? (textSpan.textContent || "").trim()
+    : (node.textContent || "").trim();
+
+  return raw.slice(0, 500);
+}
+
+/**
+ * Determine if a DOM node represents a new INCOMING message.
+ * Incoming messages do NOT have outgoing indicators (delivery icons or "Tú:" prefix).
+ * They also must have some meaningful text/media content.
+ */
+function isIncomingMessage(node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+
+  const role = node.getAttribute?.("role");
+
+  // Direct row check
+  if (role === "row") {
+    // Must not be outgoing
+    if (hasOutgoingIndicator(node)) return false;
+    // Must contain some text content (exclude pure date separators / system messages)
+    const text = (node.textContent || "").trim();
+    if (text.length < 1) return false;
+    // Skip "date separator" rows — these typically contain only a date string
+    // WA renders them as [role="row"] with a specific data attribute
+    if (node.querySelector('[data-id*="false_"]') === null &&
+        node.querySelector('img, video, audio, [data-icon]') === null &&
+        text.length < 10) {
+      return false;
+    }
+    return true;
+  }
+
+  // The mutation might fire on a parent — check child rows
+  if (!role) {
+    const rows = node.querySelectorAll('[role="row"]');
+    for (const row of rows) {
+      if (!hasOutgoingIndicator(row)) {
+        const text = (row.textContent || "").trim();
+        if (text.length >= 1) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 // ── Debounce State ──
 
 /** Map of phone -> timestamp of last notification */
@@ -222,6 +288,38 @@ function notifyMessageSent(phone) {
   }
 }
 
+function notifyMessageReceived(phone, preview) {
+  // Suppress during chat-open cooldown — initial messages loading look like new incoming
+  if (isCoolingDown()) {
+    log("Suppressed incoming during cooldown for", phone);
+    return;
+  }
+
+  // Debounce — same phone+direction key, share the lastNotified map but prefix key
+  const key = `in:${phone}`;
+  const now = Date.now();
+  const lastTs = lastNotified.get(key);
+  if (lastTs && now - lastTs < DEBOUNCE_MS) {
+    log("Debounced incoming for", phone);
+    return;
+  }
+  lastNotified.set(key, now);
+
+  log("MESSAGE RECEIVED detected for phone:", phone, "preview:", preview.slice(0, 40));
+
+  try {
+    chrome.runtime.sendMessage({
+      action: "messageReceived",
+      phone,
+      preview,
+      timestamp: now,
+    });
+  } catch (err) {
+    // Service worker might be asleep — non-critical
+    warn("Failed to send messageReceived to background:", err.message);
+  }
+}
+
 // ── MutationObserver ──
 
 let observer = null;
@@ -272,6 +370,25 @@ function startObserving() {
             notifyMessageSent(phone);
           } else {
             warn("Outgoing message detected but no phone found");
+          }
+          return; // One notification per mutation batch
+        }
+
+        if (isIncomingMessage(node)) {
+          // Update baseline
+          baselineRowCount = currentRows;
+
+          const phone = getCurrentChatPhone();
+          if (phone) {
+            // Find the actual row node for text extraction
+            const rowNode =
+              node.getAttribute?.("role") === "row"
+                ? node
+                : node.querySelector('[role="row"]') || node;
+            const preview = extractMessageText(rowNode);
+            notifyMessageReceived(phone, preview);
+          } else {
+            warn("Incoming message detected but no phone found");
           }
           return; // One notification per mutation batch
         }

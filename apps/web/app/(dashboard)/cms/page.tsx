@@ -11,6 +11,7 @@
  * Integrations:
  *   - SSE real-time updates (contact status changes from other operators)
  *   - Chrome extension `goberna:messageSent` event (auto-mark hablado)
+ *   - Chrome extension `goberna:messageReceived` event (auto-mark respondieron)
  *   - Twilio WhatsApp API (send/receive messages)
  *   - WebSocket for live message updates
  */
@@ -289,6 +290,30 @@ export default function CmsPage() {
     window.addEventListener("goberna:messageSent", handleMessageSent);
     return () => window.removeEventListener("goberna:messageSent", handleMessageSent);
   }, [contacts, handleMarkHablado]);
+
+  // Listen for `goberna:messageReceived` from Chrome extension — auto-mark respondieron
+  useEffect(() => {
+    function handleMessageReceived(e: Event) {
+      const detail = (e as CustomEvent<{ phone: string; preview: string; timestamp: number }>).detail;
+      const phone = detail?.phone;
+      if (!phone) return;
+
+      // Find the contact matching this phone — transition hablado → respondieron
+      const match = contacts.find((c) => {
+        const digits = c.telefono?.replace(/\D/g, "") || "";
+        const eventDigits = String(phone).replace(/\D/g, "");
+        return digits.length >= 7 && eventDigits.length >= 7 &&
+          (digits.endsWith(eventDigits.slice(-9)) || eventDigits.endsWith(digits.slice(-9)));
+      });
+
+      if (match && match.cms_status === "hablado") {
+        handleMarkRespondieron(match.id);
+      }
+    }
+
+    window.addEventListener("goberna:messageReceived", handleMessageReceived);
+    return () => window.removeEventListener("goberna:messageReceived", handleMessageReceived);
+  }, [contacts, handleMarkRespondieron]);
 
   // ── SSE real-time ──
   useEffect(() => {

@@ -825,6 +825,71 @@ async function relayMessageSentToDashboard(phone) {
   }
 }
 
+/**
+ * Relay an inbound message event to all open dashboard tabs (interceptor.js picks it up).
+ * Also fires a best-effort POST to the backend to auto-transition hablado → respondieron.
+ */
+async function relayMessageReceivedToDashboard(phone, preview, timestamp) {
+  // 1. Relay to dashboard tabs so the CMS page can react in real-time
+  const tabs = await findDashboardTabs();
+  log(`Relaying messageReceived (${phone}) to ${tabs.length} dashboard tab(s)`);
+
+  const results = await Promise.allSettled(
+    tabs.map((tab) =>
+      chrome.tabs.sendMessage(tab.id, {
+        action: "gobernaMessageReceived",
+        phone,
+        preview,
+        timestamp,
+      })
+    )
+  );
+
+  const failed = results.filter((r) => r.status === "rejected");
+  if (failed.length > 0) {
+    log(`${failed.length}/${tabs.length} relay(s) failed (tabs may not have content script)`);
+  }
+
+  // 2. Fire backend API call to match contact + auto-transition (best-effort, no retry)
+  try {
+    const stored = await chrome.storage.local.get(["gcms_token", "gcms_campaign_id"]);
+    const token = stored.gcms_token;
+    const campaignId = stored.gcms_campaign_id;
+
+    if (!token || !campaignId) {
+      log("messageReceived backend call skipped — no token or campaign in storage");
+      return;
+    }
+
+    const baseUrl = "https://api.goberna.us";
+    const res = await fetch(`${baseUrl}/api/cms/extension-event`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+        "x-campaign-id": String(campaignId),
+      },
+      body: JSON.stringify({
+        type: "message_received",
+        phone,
+        preview: preview || "",
+        detected_at: timestamp || Date.now(),
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      log("extension-event response:", data);
+    } else {
+      const text = await res.text();
+      warn("extension-event non-OK:", res.status, text.slice(0, 200));
+    }
+  } catch (err) {
+    // Best-effort — never crash the relay
+    warn("extension-event fetch failed:", err.message);
+  }
+}
+
 // ── Message Handler ──
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -857,6 +922,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // Received from content.js on WhatsApp Web
       log("messageSent received from WA tab:", msg.phone);
       relayMessageSentToDashboard(msg.phone)
+        .then(() => sendResponse({ ok: true }))
+        .catch((err) => sendResponse({ error: err.message }));
+      return true;
+
+    case "messageReceived":
+      // Received from content.js when an inbound message is detected on WA Web
+      log("messageReceived received from WA tab:", msg.phone, msg.preview?.slice(0, 30));
+      relayMessageReceivedToDashboard(msg.phone, msg.preview || "", msg.timestamp || Date.now())
         .then(() => sendResponse({ ok: true }))
         .catch((err) => sendResponse({ error: err.message }));
       return true;

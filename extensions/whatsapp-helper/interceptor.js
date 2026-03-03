@@ -173,7 +173,7 @@ try {
   // Non-critical — some CSPs may block this
 }
 
-// ── 4. Listen for messageSent relay from background script ──
+// ── 4. Listen for message relays from background script ──
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.action === "gobernaMessageSent") {
@@ -187,6 +187,26 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true });
     } catch (err) {
       warn("Failed to dispatch CustomEvent:", err.message);
+      sendResponse({ ok: false, error: err.message });
+    }
+    return true;
+  }
+
+  if (msg.action === "gobernaMessageReceived") {
+    log("Dispatching messageReceived event for phone:", msg.phone);
+    try {
+      window.dispatchEvent(
+        new CustomEvent("goberna:messageReceived", {
+          detail: {
+            phone: msg.phone,
+            preview: msg.preview || "",
+            timestamp: msg.timestamp || Date.now(),
+          },
+        })
+      );
+      sendResponse({ ok: true });
+    } catch (err) {
+      warn("Failed to dispatch messageReceived CustomEvent:", err.message);
       sendResponse({ ok: false, error: err.message });
     }
     return true;
