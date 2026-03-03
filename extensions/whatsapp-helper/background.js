@@ -801,8 +801,20 @@ async function openChat(phone, text) {
     await chrome.tabs.update(existing.id, { active: true });
     await chrome.windows.update(existing.windowId, { focused: true });
 
-    // Brief pause to let focus settle before injecting scripts
-    await sleep(300);
+    // Wait until the tab actually reports it has focus — execCommand needs real focus
+    // to insert text into contenteditable. A fixed sleep is not reliable across machines.
+    let focused = false;
+    for (let i = 0; i < 10; i++) {
+      await sleep(100);
+      const [hasFocus] = await chrome.scripting.executeScript({
+        target: { tabId: existing.id },
+        func: () => document.hasFocus(),
+        world: "ISOLATED",
+      }).then(r => r.map(x => x.result)).catch(() => [false]);
+      console.log(`[Goberna WA] openChat: tab focus check ${i+1}/10 → ${hasFocus}`);
+      if (hasFocus) { focused = true; break; }
+    }
+    if (!focused) console.warn("[Goberna WA] openChat: tab never got focus — typing may fail");
 
     const method = await navigateInPlace(existing.id, cleanPhone, text || "");
     log(`Reused tab ${existing.id}, method: ${method}`);
