@@ -1,5 +1,5 @@
 /**
- * WhatsApp Goberna Helper — Background Script (v8.0)
+ * WhatsApp Goberna Helper — Background Script (v8.1)
  *
  * Orchestrates multi-step DOM navigation in WhatsApp Web to open a chat
  * by phone number WITHOUT reloading the page.
@@ -27,6 +27,11 @@
  *   v7.0: Use Enter key on search input instead of clicking results
  *   v8.0: Polling replaces fixed sleeps, input validation, error handling,
  *         debug logging, scoped permissions, retry logic improvements
+ *   v8.1: Fix search results detection — use <button> elements instead of
+ *         wrong role="listitem"/role="option" selectors. Detect "Buscando"
+ *         loading state for server-side search. Dispatch InputEvent after
+ *         execCommand to reinforce React state update. Bump search timeout
+ *         from 5s to 8s.
  */
 
 // ── Configuration ──
@@ -39,7 +44,7 @@ const DEBUG = false;
 /** Polling configuration */
 const POLL_INTERVAL_MS = 250;
 const POLL_SEARCH_INPUT_TIMEOUT_MS = 3000;
-const POLL_SEARCH_RESULTS_TIMEOUT_MS = 5000;
+const POLL_SEARCH_RESULTS_TIMEOUT_MS = 8000;
 const POLL_CHAT_OPEN_TIMEOUT_MS = 4000;
 
 /** Dashboard URL patterns for relaying messageSent events */
@@ -247,54 +252,132 @@ function stepTypePhone(phone) {
   document.execCommand("selectAll", false, null);
   document.execCommand("delete", false, null);
   document.execCommand("insertText", false, phone);
+
+  // Reinforce with synthetic InputEvent — React's event system may not
+  // pick up execCommand alone on contenteditable divs. This ensures the
+  // internal state updates and triggers the search query.
+  try {
+    input.dispatchEvent(
+      new InputEvent("input", {
+        bubbles: true,
+        cancelable: true,
+        inputType: "insertText",
+        data: phone,
+      })
+    );
+  } catch (_) {
+    // InputEvent constructor not available in very old browsers — safe to ignore
+  }
 }
 
 /**
  * Check if search results have appeared after typing.
  * Runs in ISOLATED world — used for polling.
  *
- * We look for listitem or button elements inside the "Nuevo chat" panel
- * that were NOT there before (i.e., search results populated).
+ * WhatsApp Web 2026 DOM structure for "Nuevo chat" panel:
+ *   - The panel contains a search textbox + result buttons as siblings
+ *   - Results are native <button> elements (NOT div[role="listitem/option"])
+ *   - A [role="status"] element shows "Buscando fuera de tus contactos…"
+ *     while the server search is in progress
+ *   - "Cancelar búsqueda" button appears when search text is typed
+ *   - Non-contact buttons exist: "Nuevo grupo", "Nuevo contacto", etc.
+ *   - Contact result buttons contain phone digits or profile images
+ *
+ * Returns:
+ *   { found: true, count, method }  — results ready, proceed to Enter
+ *   { found: false, noResults: true } — confirmed no match
+ *   { found: false, searching: true } — still searching, keep polling
+ *   { found: false }                  — unknown state, keep polling
  */
 function stepCheckSearchResults() {
-  const panel = document.querySelector("#app");
-  if (!panel) return { found: false };
+  const app = document.querySelector("#app");
+  if (!app) return { found: false };
 
-  // Check for "no results" indicator first
-  const noResults = panel.querySelector(
+  // ── Check for "no results" indicator ──
+  const noResults = app.querySelector(
     'span[data-icon="search-no-results"], span[data-icon="no-results"]'
   );
   if (noResults) {
     return { found: false, noResults: true };
   }
 
-  // Strategy 1: role="listitem" or role="option" (standard accessible results)
-  const listItems = panel.querySelectorAll(
-    'div[role="listitem"], div[role="option"]'
-  );
-  if (listItems.length > 0) {
-    return { found: true, count: listItems.length, method: "listitem" };
+  // ── Detect "Buscando fuera de tus contactos…" loading state ──
+  // This is a [role="status"] element with live="polite"
+  const statusEls = app.querySelectorAll('[role="status"]');
+  for (const s of statusEls) {
+    const txt = (s.textContent || "").toLowerCase();
+    if (txt.includes("buscando") || txt.includes("searching") || txt.includes("procurando")) {
+      return { found: false, searching: true };
+    }
   }
 
-  // Strategy 2: role="button" elements inside the search panel that
-  // contain contact-like content (spans with phone numbers or names).
-  // The "Nuevo chat" panel is inside #side or adjacent to it.
-  const resultButtons = panel.querySelectorAll(
-    '#side div[role="button"], #side + div div[role="button"]'
-  );
-  // Filter out known non-result buttons (the "Nuevo chat" button itself, etc.)
+  // ── Check for "Cancelar búsqueda" to confirm we're in search mode ──
+  // This is reliable evidence that the search input has text
+  const cancelLabels = ["Cancelar búsqueda", "Cancel search", "Cancelar pesquisa"];
+  let inSearchMode = false;
+  for (const label of cancelLabels) {
+    if (app.querySelector(`button[aria-label="${label}"]`)) {
+      inSearchMode = true;
+      break;
+    }
+  }
+  if (!inSearchMode) {
+    // Search may not have registered yet — keep polling
+    return { found: false };
+  }
+
+  // ── Look for result <button> elements ──
+  // After "Cancelar búsqueda" exists, any button that isn't a known
+  // system button ("Nuevo grupo", "Nuevo contacto", "Nueva comunidad",
+  // "Cancelar búsqueda", "Atrás", "Número de teléfono") is a result.
+  const SKIP_LABELS = new Set([
+    // Spanish
+    "Nuevo chat", "Nuevo grupo", "Nuevo contacto", "Nueva comunidad",
+    "Cancelar búsqueda", "Atrás", "Número de teléfono",
+    // English
+    "New chat", "New group", "New contact", "New community",
+    "Cancel search", "Back", "Phone number",
+    // Portuguese
+    "Chat novo", "Novo grupo", "Novo contato", "Nova comunidade",
+    "Cancelar pesquisa", "Voltar", "Número de telefone",
+  ]);
+
+  // We scope to all buttons in the app — the "Nuevo chat" panel puts
+  // result buttons as direct descendants of the panel container.
+  const allButtons = app.querySelectorAll("button");
   let resultCount = 0;
-  for (const btn of resultButtons) {
-    const text = (btn.textContent || "").trim();
-    // Result buttons typically have substantial text (contact name/number)
-    if (text.length > 3 && !text.includes("Nuevo chat") && !text.includes("New chat")) {
+  for (const btn of allButtons) {
+    const ariaLabel = (btn.getAttribute("aria-label") || "").trim();
+    const textContent = (btn.textContent || "").trim();
+
+    // Skip known non-result buttons by aria-label
+    if (ariaLabel && SKIP_LABELS.has(ariaLabel)) continue;
+
+    // Skip buttons with very short or empty text (icon-only buttons)
+    if (textContent.length < 3) continue;
+
+    // Skip buttons whose full text matches a skip label
+    if (SKIP_LABELS.has(textContent)) continue;
+
+    // A contact/phone result button will either:
+    //   a) Contain digits (phone number), or
+    //   b) Have an <img> child (profile photo), or
+    //   c) Have a "Usuarios que no están en tus contactos" section nearby
+    const hasDigits = /\d{3,}/.test(textContent);
+    const hasImg = btn.querySelector("img") !== null;
+
+    if (hasDigits || hasImg) {
       resultCount++;
     }
   }
+
   if (resultCount > 0) {
-    return { found: true, count: resultCount, method: "button" };
+    return { found: true, count: resultCount, method: "button-search" };
   }
 
+  // In search mode, cancel exists, no loading indicator, but no results yet.
+  // Could be an empty result about to show "no results" icon, or results
+  // haven't rendered yet. Keep polling briefly.
   return { found: false };
 }
 
@@ -450,22 +533,41 @@ async function execStep(tabId, func, args = [], world = "ISOLATED") {
 /**
  * Poll a condition by repeatedly running a check function in ISOLATED world.
  * Returns the first truthy check result, or null on timeout.
+ *
+ * The poller recognizes two "keep waiting" signals from check functions:
+ *   - { searching: true } — active server-side search in progress
+ *   - { noResults: true } — confirmed no match (returns immediately)
  */
 async function pollCondition(tabId, checkFunc, args, timeoutMs, description) {
   const start = Date.now();
   let lastResult = null;
+  let searchingLogged = false;
 
   while (Date.now() - start < timeoutMs) {
     lastResult = await execStep(tabId, checkFunc, args, "ISOLATED");
+
+    // Success conditions
     if (lastResult && lastResult.found) {
       log(`Poll "${description}" succeeded in ${Date.now() - start}ms`);
       return lastResult;
     }
-    // Special case: if check returns opened:true (for chat validation)
     if (lastResult && lastResult.opened) {
       log(`Poll "${description}" succeeded in ${Date.now() - start}ms`);
       return lastResult;
     }
+
+    // Early exit: confirmed no results
+    if (lastResult && lastResult.noResults) {
+      log(`Poll "${description}": no results confirmed in ${Date.now() - start}ms`);
+      return lastResult;
+    }
+
+    // Still searching (server-side) — log once, keep polling
+    if (lastResult && lastResult.searching && !searchingLogged) {
+      log(`Poll "${description}": server-side search in progress...`);
+      searchingLogged = true;
+    }
+
     await sleep(POLL_INTERVAL_MS);
   }
 
