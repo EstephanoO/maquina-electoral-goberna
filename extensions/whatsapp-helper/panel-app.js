@@ -176,18 +176,21 @@ async function validateSession() {
 
 // ── Data fetching ──
 
+let _fetchSeq = 0;
 async function fetchContacts(offset) {
   if (!state.activeCampaignId) return;
+  const seq = ++_fetchSeq;
   if (offset === 0) { state.loading = true; state.error = null; }
 
   const params = new URLSearchParams({
-    status: state.activeTab,
     limit: String(PAGE_LIMIT),
     offset: String(offset || 0),
   });
+  if (state.activeTab !== "todos") params.set("status", state.activeTab);
   if (state.searchQuery.trim()) params.set("search", state.searchQuery.trim());
 
   const res = await apiCall("GET", `/api/cms/contacts?${params}`);
+  if (seq !== _fetchSeq) return; // Stale response — discard
   if (res.ok && res.data) {
     if (offset === 0) {
       state.contacts = res.data.contacts || [];
@@ -296,6 +299,13 @@ function connectSSE() {
     signal: sseController.signal,
   })
     .then(async (res) => {
+      if (res.status === 401) {
+        // Token expired — force re-login
+        clearAuth();
+        state.view = "login";
+        render();
+        return;
+      }
       if (!res.ok || !res.body) throw new Error(`SSE ${res.status}`);
       state.sseConnected = true;
       sseAttempt = 0;
@@ -346,9 +356,202 @@ function disconnectSSE() {
 }
 
 // ── WhatsApp Integration ──
+// The panel runs INSIDE web.whatsapp.com, so we manipulate the DOM directly
+// instead of going through background.js → scripting.executeScript (which would
+// inject scripts into the SAME tab, causing double-type and race conditions).
 
-function openWhatsAppChat(phone) {
-  chrome.runtime.sendMessage({ action: "openChat", phone, text: "" });
+/** Labels for "Nuevo chat" button across locales */
+const NUEVO_CHAT_LABELS = ["Nuevo chat", "New chat", "Chat nuevo", "Nova conversa"];
+/** Labels for the search input inside "Nuevo chat" panel */
+const SEARCH_INPUT_LABELS = ["Buscar un nombre o número", "Search name or number", "Pesquisar nome ou número"];
+/** Non-result buttons to skip when checking search results */
+const SKIP_RESULT_LABELS = new Set([
+  "Nuevo chat", "Nuevo grupo", "Nuevo contacto", "Nueva comunidad",
+  "Cancelar búsqueda", "Atrás", "Número de teléfono",
+  "New chat", "New group", "New contact", "New community",
+  "Cancel search", "Back", "Phone number",
+  "Chat novo", "Novo grupo", "Novo contato", "Nova comunidade",
+  "Cancelar pesquisa", "Voltar", "Número de telefone",
+]);
+
+/** Strip Peru country code for local search */
+function waToLocalPhone(phone) {
+  if (!phone) return "";
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("51") && digits[2] === "9") return digits.slice(2);
+  return digits;
+}
+
+/** Small async delay */
+function waDelay(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+/** Poll a DOM condition with timeout. Returns first truthy result or null. */
+async function waPoll(checkFn, timeoutMs, intervalMs = 200) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const result = checkFn();
+    if (result) return result;
+    await waDelay(intervalMs);
+  }
+  return null;
+}
+
+/** Find and click the "Nuevo chat" button */
+function waClickNuevoChat() {
+  for (const label of NUEVO_CHAT_LABELS) {
+    const btn = document.querySelector(`button[aria-label="${label}"]`);
+    if (btn) { btn.click(); return true; }
+  }
+  const icon = document.querySelector('span[data-icon="new-chat-outline"]');
+  if (icon) {
+    let el = icon;
+    for (let i = 0; i < 6; i++) {
+      el = el.parentElement;
+      if (!el) break;
+      if (el.tagName === "BUTTON" || el.getAttribute("role") === "button") { el.click(); return true; }
+    }
+    icon.click();
+    return true;
+  }
+  return false;
+}
+
+/** Find the search input inside "Nuevo chat" panel */
+function waFindSearchInput() {
+  for (const label of SEARCH_INPUT_LABELS) {
+    const input = document.querySelector(`div[role="textbox"][aria-label="${label}"]`);
+    if (input) return input;
+  }
+  // Fallback: data-tab="3"
+  const candidates = document.querySelectorAll('div[role="textbox"][contenteditable="true"][data-tab="3"]');
+  for (const c of candidates) {
+    const label = c.getAttribute("aria-label") || "";
+    if (!label.includes("búsqueda") && !label.includes("search")) return c;
+  }
+  return null;
+}
+
+/** Type text into the search input (direct DOM, same page) */
+function waTypeInSearch(input, text) {
+  input.focus();
+  // Clear first
+  document.execCommand("selectAll", false, null);
+  document.execCommand("delete", false, null);
+  // Type
+  document.execCommand("insertText", false, text);
+  // Reinforce React state
+  try {
+    input.dispatchEvent(new InputEvent("input", {
+      bubbles: true, cancelable: true, inputType: "insertText", data: text,
+    }));
+  } catch (_) {}
+}
+
+/** Check if search results exist */
+function waCheckResults() {
+  const app = document.getElementById("app");
+  if (!app) return null;
+  // No results icon
+  if (app.querySelector('span[data-icon="search-no-results"], span[data-icon="no-results"]')) {
+    return { noResults: true };
+  }
+  // Still searching
+  for (const s of app.querySelectorAll('[role="status"]')) {
+    const txt = (s.textContent || "").toLowerCase();
+    if (txt.includes("buscando") || txt.includes("searching") || txt.includes("procurando")) return null;
+  }
+  // Check for cancel button (means search is active)
+  let inSearch = false;
+  for (const label of ["Cancelar búsqueda", "Cancel search", "Cancelar pesquisa"]) {
+    if (app.querySelector(`button[aria-label="${label}"]`)) { inSearch = true; break; }
+  }
+  if (!inSearch) return null;
+  // Count result buttons
+  let count = 0;
+  for (const btn of app.querySelectorAll("button")) {
+    const ariaLabel = (btn.getAttribute("aria-label") || "").trim();
+    const text = (btn.textContent || "").trim();
+    if (ariaLabel && SKIP_RESULT_LABELS.has(ariaLabel)) continue;
+    if (text.length < 3 || SKIP_RESULT_LABELS.has(text)) continue;
+    if (/\d{3,}/.test(text) || btn.querySelector("img")) count++;
+  }
+  return count > 0 ? { found: true, count } : null;
+}
+
+/** Press Enter on the search input to select first result */
+function waPressEnter(input) {
+  input.focus();
+  const props = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
+  input.dispatchEvent(new KeyboardEvent("keydown", props));
+  input.dispatchEvent(new KeyboardEvent("keypress", props));
+  input.dispatchEvent(new KeyboardEvent("keyup", props));
+}
+
+/**
+ * Open a WhatsApp chat by phone number — direct DOM manipulation.
+ * This runs in the same page as WA Web (content script), so no need
+ * for background.js scripting injection.
+ */
+async function openWhatsAppChat(phone) {
+  if (!phone) return;
+  const localPhone = waToLocalPhone(phone);
+  const fullDigits = phone.replace(/\D/g, "");
+
+  // Step 1: Click "Nuevo chat"
+  if (!waClickNuevoChat()) {
+    // Fallback: URL navigation
+    window.location.assign(`https://web.whatsapp.com/send?phone=${encodeURIComponent(fullDigits)}`);
+    return;
+  }
+
+  // Step 2: Wait for search input
+  const input = await waPoll(() => waFindSearchInput(), 3000);
+  if (!input) {
+    window.location.assign(`https://web.whatsapp.com/send?phone=${encodeURIComponent(fullDigits)}`);
+    return;
+  }
+
+  // Step 3: Try local phone first, then full number
+  const phonesToTry = [localPhone];
+  if (fullDigits !== localPhone) phonesToTry.push(fullDigits);
+  phonesToTry.push(`+${fullDigits}`);
+
+  for (let i = 0; i < phonesToTry.length; i++) {
+    const num = phonesToTry[i];
+
+    // On retry (i > 0), reopen Nuevo chat panel
+    if (i > 0) {
+      // Press Escape to close current search, then reopen
+      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+      await waDelay(300);
+      if (!waClickNuevoChat()) break;
+      const retryInput = await waPoll(() => waFindSearchInput(), 3000);
+      if (!retryInput) break;
+    }
+
+    // Get fresh reference to search input
+    const searchInput = waFindSearchInput();
+    if (!searchInput) break;
+
+    // Type the number
+    waTypeInSearch(searchInput, num);
+
+    // Wait for results (8s timeout)
+    const results = await waPoll(() => waCheckResults(), 8000);
+    if (results?.noResults) continue; // Try next format
+    if (!results?.found) continue;
+
+    // Press Enter to open the chat
+    const currentInput = waFindSearchInput();
+    if (currentInput) waPressEnter(currentInput);
+
+    // Wait briefly for chat to open
+    await waDelay(500);
+    return; // Success
+  }
+
+  // All attempts failed — URL fallback
+  window.location.assign(`https://web.whatsapp.com/send?phone=${encodeURIComponent(fullDigits)}`);
 }
 
 // ── Reminders (local chrome.storage) ──
@@ -505,8 +708,8 @@ function renderTabs() {
   );
 }
 
+let _searchTimer = null;
 function renderSearch() {
-  let timer = null;
   const input = h("input", {
     className: "gcms-search-input",
     type: "text",
@@ -514,8 +717,8 @@ function renderSearch() {
     value: state.searchQuery,
     onInput: (e) => {
       state.searchQuery = e.target.value;
-      clearTimeout(timer);
-      timer = setTimeout(() => fetchContacts(0), SEARCH_DEBOUNCE_MS);
+      clearTimeout(_searchTimer);
+      _searchTimer = setTimeout(() => fetchContacts(0), SEARCH_DEBOUNCE_MS);
     },
   });
   return h("div", { className: "gcms-search-wrap" }, input);
@@ -791,9 +994,12 @@ function render() {
 
 // ── Initialization ──
 
+let _panelInitialized = false;
 async function initPanel() {
-  // Create root container
+  // Guard against multiple runs
+  if (_panelInitialized) return;
   if (document.getElementById("goberna-cms-root")) return;
+  _panelInitialized = true;
 
   const root = document.createElement("div");
   root.id = "goberna-cms-root";
