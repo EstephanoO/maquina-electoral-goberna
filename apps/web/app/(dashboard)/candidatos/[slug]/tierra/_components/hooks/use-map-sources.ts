@@ -33,6 +33,10 @@ export function useAgentsSource(agents: EnrichedAgent[], selectedAgentId: string
 /* ─── Form sources (clustered) ─── */
 
 export function useFormSources(forms: FormPoint[], selectedAgentId: string | null) {
+  const GRID_SIZE_DEG = 0.015;
+  const MIN_BAR_HEIGHT = 140;
+  const MAX_BAR_HEIGHT = 2600;
+
   // Base filtered forms — only valid coordinates
   const validForms = useMemo(
     () => forms.filter((f) => f.lat && f.lng && !isNaN(f.lat) && !isNaN(f.lng)),
@@ -63,7 +67,49 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
     })),
   }), [visibleForms]);
 
-  return { formsGeoJson };
-}
+  const barsGeoJson = useMemo(() => {
+    type GridCell = { lngIndex: number; latIndex: number; count: number };
+    const grid = new Map<string, GridCell>();
 
+    for (const f of visibleForms) {
+      const lngIndex = Math.floor(f.lng / GRID_SIZE_DEG);
+      const latIndex = Math.floor(f.lat / GRID_SIZE_DEG);
+      const key = `${lngIndex}:${latIndex}`;
+      const prev = grid.get(key);
+      if (prev) prev.count += 1;
+      else grid.set(key, { lngIndex, latIndex, count: 1 });
+    }
+
+    return {
+      type: "FeatureCollection" as const,
+      features: Array.from(grid.values()).map((cell) => {
+        const lng0 = cell.lngIndex * GRID_SIZE_DEG;
+        const lat0 = cell.latIndex * GRID_SIZE_DEG;
+        const lng1 = lng0 + GRID_SIZE_DEG;
+        const lat1 = lat0 + GRID_SIZE_DEG;
+        const height = Math.min(MAX_BAR_HEIGHT, Math.max(MIN_BAR_HEIGHT, Math.round(Math.sqrt(cell.count) * 280)));
+
+        return {
+          type: "Feature" as const,
+          properties: {
+            count: cell.count,
+            height,
+          },
+          geometry: {
+            type: "Polygon" as const,
+            coordinates: [[
+              [lng0, lat0],
+              [lng1, lat0],
+              [lng1, lat1],
+              [lng0, lat1],
+              [lng0, lat0],
+            ]],
+          },
+        };
+      }),
+    };
+  }, [visibleForms]);
+
+  return { formsGeoJson, barsGeoJson };
+}
 

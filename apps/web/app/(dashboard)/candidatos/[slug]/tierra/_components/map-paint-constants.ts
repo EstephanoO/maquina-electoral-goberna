@@ -2,7 +2,7 @@
 
 import type {
   FillLayerSpecification, LineLayerSpecification, CircleLayerSpecification,
-  HeatmapLayerSpecification, SymbolLayerSpecification, FilterSpecification,
+  HeatmapLayerSpecification, SymbolLayerSpecification, FillExtrusionLayerSpecification, FilterSpecification,
 } from "maplibre-gl";
 import {
   STATUS_COLORS, CLUSTER_COLORS, CLUSTER_STEPS, CLUSTER_SIZES, DATA_POINT,
@@ -38,6 +38,24 @@ export const HEATMAP_PAINT: HeatmapLayerSpecification["paint"] = {
     0, "rgba(0,0,0,0)", 0.2, "rgba(30,58,95,0.35)", 0.4, "rgba(13,148,136,0.5)",
     0.6, "rgba(217,119,6,0.6)", 0.8, "rgba(180,83,9,0.7)", 1, "rgba(127,29,29,0.8)",
   ],
+};
+
+/* ─── 3D bars paint (static) ─── */
+
+export const BARS_EXTRUSION_PAINT: FillExtrusionLayerSpecification["paint"] = {
+  "fill-extrusion-color": [
+    "step", ["get", "count"],
+    "#38bdf8", 3, "#22d3ee", 8, "#14b8a6", 15, "#f59e0b", 30, "#ef4444",
+  ],
+  "fill-extrusion-height": ["get", "height"],
+  "fill-extrusion-base": 0,
+  "fill-extrusion-opacity": 0.82,
+};
+
+export const BARS_LINE_PAINT: LineLayerSpecification["paint"] = {
+  "line-color": "rgba(241,245,249,0.35)",
+  "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.2, 10, 0.5, 14, 1],
+  "line-opacity": 0.7,
 };
 
 /* ─── Cluster filters (static) ─── */

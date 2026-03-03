@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/auth-context";
 import {
   TierraHeader, MapControls, PipelineView, DatosView, CampoOverlay,
   INITIAL_DRILL,
-  type TierraMapHandle, type DrillState, type ActiveLayer, type LogEntry, type PinnedTooltipData,
+  type TierraMapHandle, type DrillState, type ActiveLayer, type DatosVizMode, type LogEntry, type PinnedTooltipData,
 } from "./_components";
 import { tierraKeys } from "@/lib/hooks";
 import type { TierraViewMode } from "./_components/tierra-header";
@@ -58,6 +58,7 @@ export default function TierraPage() {
   // ─── UI state ───
   const [viewMode, setViewMode] = useState<TierraViewMode>("campo");
   const [activeLayer, setActiveLayer] = useState<ActiveLayer>("datos");
+  const [datosVizMode, setDatosVizMode] = useState<DatosVizMode>("points");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
   const [drillState, setDrillState] = useState<DrillState>(INITIAL_DRILL);
@@ -169,9 +170,9 @@ export default function TierraPage() {
 
       {viewMode === "campo" ? (
         <div className="flex-1 min-h-0 relative">
-          <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} showRoutes={showRoutes} drillState={drillState} onDrillChange={setDrillState} />
+          <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} datosVizMode={datosVizMode} showRoutes={showRoutes} drillState={drillState} onDrillChange={setDrillState} />
           <div className="absolute top-3 left-3 z-10">
-            <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
+            <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
           </div>
           <CampoOverlay agents={enrichedAgents} connectedCount={connectedCount} logEntries={logEntries} formCount={stats.totals.forms_count} primaryColor={campaign.color_primario} selectedAgentId={selectedAgentId} onAgentClick={handleAgentListClick} onLogEntryClick={handleLogEntryClick} userRole={user?.role} onDeleteForm={handleDeleteForm} onUpdateForm={handleUpdateForm} />
         </div>

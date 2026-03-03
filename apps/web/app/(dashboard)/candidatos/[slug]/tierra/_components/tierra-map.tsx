@@ -46,6 +46,7 @@ import {
   VIS_VISIBLE, VIS_NONE, PROMOTE_ID,
   PRIORITY_FILL_PAINT, PRIORITY_DEP_LINE_PAINT, PRIORITY_PROV_LINE_PAINT, PRIORITY_DIST_LINE_PAINT,
   SECTOR_FILL_PAINT, SECTOR_LINE_PAINT,
+  HEATMAP_PAINT, BARS_EXTRUSION_PAINT, BARS_LINE_PAINT,
   HAS_POINT_COUNT, NOT_HAS_POINT_COUNT,
   CLUSTER_RING_PAINT, CLUSTER_CIRCLE_PAINT, CLUSTER_COUNT_LAYOUT, CLUSTER_COUNT_PAINT,
   FORM_POINTS_PAINT,
@@ -95,7 +96,7 @@ function applyFluidMapInteractions(map: NativeMap) {
 }
 
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
-  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, showRoutes, drillState, onDrillChange },
+  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, showRoutes, drillState, onDrillChange },
   ref,
 ) {
   const mapRef = useRef<MapRef | null>(null);
@@ -118,7 +119,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Hooks ───
   const filters = useDrillFilters(drillState, campaignId);
   const agentsGeoJson = useAgentsSource(agents, selectedAgentId);
-  const { formsGeoJson } = useFormSources(forms, selectedAgentId);
+  const { formsGeoJson, barsGeoJson } = useFormSources(forms, selectedAgentId);
   const { routesGeoJson, waypointsGeoJson } = useSurveyorRoutes(forms, selectedAgentId);
 
   useAutoFit(mapRef, drillState, skipNextFitRef);
@@ -191,7 +192,9 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   }), [primaryColor]);
 
   // ─── P1: Visibility layout objects for always-mounted Sources ───
-  const datosVisibility = useMemo(() => showDatos ? VIS_VISIBLE : VIS_NONE, [showDatos]);
+  const pointsVisibility = useMemo(() => showDatos && datosVizMode === "points" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
+  const heatmapVisibility = useMemo(() => showDatos && datosVizMode === "heatmap" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
+  const barsVisibility = useMemo(() => showDatos && datosVizMode === "bars3d" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
   const trackingVisibility = useMemo(() => showTracking ? VIS_VISIBLE : VIS_NONE, [showTracking]);
   const routesVisibility = useMemo(() => showRoutes ? VIS_VISIBLE : VIS_NONE, [showRoutes]);
 
@@ -208,8 +211,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Cluster count layout merged with visibility ───
   const clusterCountLayoutWithVis = useMemo(() => ({
     ...CLUSTER_COUNT_LAYOUT,
-    ...(showDatos ? {} : { visibility: "none" as const }),
-  }), [showDatos]);
+    ...(showDatos && datosVizMode === "points" ? {} : { visibility: "none" as const }),
+  }), [showDatos, datosVizMode]);
   const agentLabelsLayoutWithVis = useMemo(() => ({
     ...AGENT_LABELS_LAYOUT,
     ...(showTracking ? {} : { visibility: "none" as const }),
@@ -363,6 +366,15 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     }
   }, [selectedAgentId, agents]);
 
+  // ─── 3D mode camera pitch ───
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    const targetPitch = showDatos && datosVizMode === "bars3d" ? 48 : 0;
+    if (Math.abs(map.getPitch() - targetPitch) < 1) return;
+    map.easeTo({ pitch: targetPitch, duration: targetPitch > 0 ? 480 : 320, essential: true });
+  }, [showDatos, datosVizMode]);
+
 
 
   // ─── Cleanup ───
@@ -373,14 +385,14 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Loading ───
   if (!ready || !tileUrl) {
     return (
-      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#e6e5e3" }}>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#0b1220" }}>
         <span style={{ color: "#64748b", fontSize: 13 }}>Cargando mapa...</span>
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} style={{ position: "absolute", inset: 0, backgroundColor: "#e6e5e3" }}>
+    <div ref={containerRef} style={{ position: "absolute", inset: 0, backgroundColor: "#0b1220" }}>
       <MapLibre
         ref={mapRef}
         initialViewState={PERU_VIEW}
@@ -394,7 +406,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         scrollZoom
         doubleClickZoom
         minPitch={0}
-        maxPitch={0}
+        maxPitch={60}
         clickTolerance={4}
         minZoom={1}
         maxBounds={PERU_MAX_BOUNDS}
@@ -441,10 +453,17 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
         {/* ── Clustered form data — always mounted, visibility controlled via layout ── */}
         <Source id="forms-clustered" type="geojson" data={formsGeoJson} cluster clusterRadius={40} clusterMaxZoom={16}>
-          <Layer id="forms-cluster-ring" type="circle" filter={HAS_POINT_COUNT} layout={datosVisibility} paint={CLUSTER_RING_PAINT} />
-          <Layer id="forms-clusters" type="circle" filter={HAS_POINT_COUNT} layout={datosVisibility} paint={CLUSTER_CIRCLE_PAINT} />
+          <Layer id="forms-cluster-ring" type="circle" filter={HAS_POINT_COUNT} layout={pointsVisibility} paint={CLUSTER_RING_PAINT} />
+          <Layer id="forms-clusters" type="circle" filter={HAS_POINT_COUNT} layout={pointsVisibility} paint={CLUSTER_CIRCLE_PAINT} />
           <Layer id="forms-cluster-count" type="symbol" filter={HAS_POINT_COUNT} layout={clusterCountLayoutWithVis} paint={CLUSTER_COUNT_PAINT} />
-          <Layer id="forms-points" type="circle" filter={NOT_HAS_POINT_COUNT} layout={datosVisibility} paint={FORM_POINTS_PAINT} />
+          <Layer id="forms-points" type="circle" filter={NOT_HAS_POINT_COUNT} layout={pointsVisibility} paint={FORM_POINTS_PAINT} />
+        </Source>
+        <Source id="forms-heatmap" type="geojson" data={formsGeoJson}>
+          <Layer id="forms-heatmap-layer" type="heatmap" layout={heatmapVisibility} paint={HEATMAP_PAINT} />
+        </Source>
+        <Source id="forms-bars" type="geojson" data={barsGeoJson}>
+          <Layer id="forms-bars-3d" type="fill-extrusion" layout={barsVisibility} paint={BARS_EXTRUSION_PAINT} />
+          <Layer id="forms-bars-outline" type="line" layout={barsVisibility} paint={BARS_LINE_PAINT} />
         </Source>
 
         {/* ── Agent markers — always mounted, visibility controlled via layout ── */}

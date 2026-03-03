@@ -29,6 +29,8 @@ export type FormPoint = {
   agent_id?: string;
 };
 
+export type DatosVizMode = "points" | "heatmap" | "bars3d";
+
 /* ─── Drill Navigation ─── */
 
 export type DrillLevel = 0 | 1 | 2 | 3 | 4;
@@ -104,6 +106,7 @@ export type TierraMapProps = {
   onSelectAgent: (agentId: string | null) => void;
   showTracking: boolean;
   showDatos: boolean;
+  datosVizMode: DatosVizMode;
   showRoutes: boolean;
   drillState: DrillState;
   onDrillChange: (state: DrillState) => void;

@@ -1,6 +1,7 @@
 "use client";
 
 import type { AgentStatus } from "./types";
+import type { DatosVizMode } from "./types";
 
 /* ========== Types ========== */
 
@@ -11,6 +12,8 @@ type Props = {
   onLayerChange: (layer: ActiveLayer) => void;
   showRoutes: boolean;
   onRoutesToggle: () => void;
+  datosVizMode: DatosVizMode;
+  onDatosVizModeChange: (mode: DatosVizMode) => void;
   agentCount: number;
   formCount: number;
   routeSurveyorCount?: number;
@@ -30,9 +33,25 @@ const C = {
 
 /* ========== Layer Controls ========== */
 
-export function MapControls({ activeLayer, onLayerChange, agentCount, formCount }: Props) {
+const VIZ_MODES: Array<{ id: DatosVizMode; label: string }> = [
+  { id: "points", label: "Puntos" },
+  { id: "heatmap", label: "Calor" },
+  { id: "bars3d", label: "Barras 3D" },
+];
+
+export function MapControls({
+  activeLayer,
+  onLayerChange,
+  showRoutes,
+  onRoutesToggle,
+  datosVizMode,
+  onDatosVizModeChange,
+  agentCount,
+  formCount,
+  routeSurveyorCount,
+}: Props) {
   return (
-    <div className="bg-white/95 backdrop-blur-sm rounded-[10px] p-2 flex flex-col gap-0.5 border border-slate-200 shadow-sm">
+    <div className="bg-white/95 backdrop-blur-sm rounded-[10px] p-2 flex flex-col gap-1 border border-slate-200 shadow-sm">
       <LayerBtn
         active={activeLayer === "datos"}
         onClick={() => onLayerChange(activeLayer === "datos" ? null : "datos")}
@@ -47,6 +66,36 @@ export function MapControls({ activeLayer, onLayerChange, agentCount, formCount 
         count={agentCount}
         activeColor={C.agents}
       />
+      <LayerBtn
+        active={showRoutes}
+        onClick={onRoutesToggle}
+        label="Rutas"
+        count={routeSurveyorCount}
+        activeColor={C.routes}
+      />
+
+      {activeLayer === "datos" && (
+        <div className="mt-1 rounded-md border border-slate-200 bg-slate-50 p-1.5">
+          <div className="text-[10px] font-semibold tracking-wide text-slate-500 uppercase px-1 pb-1">Visualizacion</div>
+          <div className="grid grid-cols-3 gap-1">
+            {VIZ_MODES.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => onDatosVizModeChange(mode.id)}
+                className="cursor-pointer rounded-md border px-2 py-1 text-[10px] font-semibold transition-all duration-150"
+                style={{
+                  backgroundColor: datosVizMode === mode.id ? C.datos : "#ffffff",
+                  color: datosVizMode === mode.id ? "#ffffff" : "#475569",
+                  borderColor: datosVizMode === mode.id ? C.datos : "#e2e8f0",
+                }}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

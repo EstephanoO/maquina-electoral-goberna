@@ -15,6 +15,6 @@ export { CampoOverlay } from "./campo-overlay";
 export { INITIAL_DRILL } from "./types";
 
 /* ─── Types ─── */
-export type { EnrichedAgent, AgentStatus, FormPoint, TierraMapHandle, DrillLevel, DrillState, LogEntry, PinnedTooltipData } from "./types";
+export type { EnrichedAgent, AgentStatus, FormPoint, DatosVizMode, TierraMapHandle, DrillLevel, DrillState, LogEntry, PinnedTooltipData } from "./types";
 export type { ActiveLayer } from "./map-controls";
 export type { PanelTab } from "./data-panel";
