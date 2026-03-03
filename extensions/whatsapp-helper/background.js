@@ -34,9 +34,12 @@
  *   v8.2: Remove synthetic Enter/InputEvent dispatches from stepTypePhone —
  *         execCommand in MAIN world already triggers React search. The extra
  *         Enter was prematurely selecting results before search completed.
- *   v8.3: Fix search not triggering — append a trailing space after inserting
- *         the phone number. WA React's search handler requires a second input
- *         event to fire the query (user-observed: "when I press space it works").
+ *   v8.3: [SUPERSEDED by v8.4 — space was a symptom workaround, not the fix]
+ *   v8.4: Fix clear+insert via Playwright testing on live WA Web DOM:
+ *         - execCommand('selectAll'+'delete') does NOT clear WA contenteditable
+ *         - Correct sequence: selectNodeContents + beforeinput event + execCommand('delete')
+ *         - execCommand('insertText') in MAIN world triggers React search correctly
+ *         - Removed trailing space hack (was masking the real clear failure)
  */
 
 // ── Configuration ──
@@ -224,6 +227,12 @@ function stepCheckSearchInput() {
  * Step 3: Type phone number into the "Nuevo chat" search input.
  * Runs in MAIN world — execCommand needed for React contenteditable.
  * Returns void (MAIN world limitation).
+ *
+ * Playwright testing revealed the correct clear+insert sequence:
+ *   1. selectNodeContents() + beforeinput(deleteContentBackward) + execCommand('delete')
+ *      — execCommand('selectAll'+'delete') alone does NOT clear WA's contenteditable
+ *   2. execCommand('insertText') — inserts text AND triggers React's onChange handler
+ *      (React listens to the input event that execCommand fires in MAIN world)
  */
 function stepTypePhone(phone) {
   console.log("[Goberna BG] stepTypePhone: typing phone:", phone);
@@ -235,18 +244,19 @@ function stepTypePhone(phone) {
 
   let input = null;
   for (const label of searchLabels) {
-    input = document.querySelector(`div[role="textbox"][aria-label="${label}"]`);
+    input = document.querySelector(`div[contenteditable="true"][aria-label="${label}"]`);
     if (input) break;
   }
 
-  // Fallback: data-tab="3" textbox
+  // Fallback: data-tab="3" contenteditable that is NOT the compose box
   if (!input) {
     const candidates = document.querySelectorAll(
-      'div[role="textbox"][contenteditable="true"][data-tab="3"]'
+      'div[contenteditable="true"][data-tab="3"]'
     );
     for (const c of candidates) {
       const label = c.getAttribute("aria-label") || "";
-      if (!label.includes("búsqueda") && !label.includes("search")) {
+      // Exclude compose box ("Escribe un mensaje", "Type a message", etc.)
+      if (!label.toLowerCase().includes("mensaje") && !label.toLowerCase().includes("message")) {
         input = c;
         break;
       }
@@ -261,19 +271,32 @@ function stepTypePhone(phone) {
   console.log("[Goberna BG] stepTypePhone: found input, aria-label:", input.getAttribute("aria-label"), "content:", (input.textContent || "").slice(0, 20));
 
   input.focus();
-  document.execCommand("selectAll", false, null);
-  document.execCommand("delete", false, null);
-  console.log("[Goberna BG] stepTypePhone: after clear, content:", (input.textContent || "").slice(0, 20));
-  document.execCommand("insertText", false, phone);
-  console.log("[Goberna BG] stepTypePhone: after insert, content:", (input.textContent || "").slice(0, 20));
 
-  // WhatsApp Web's React search handler requires an additional input event
-  // after the text is inserted to actually kick off the search query.
-  // A trailing space is the minimal trigger — this mirrors what the user does
-  // manually ("cuando yo doy espacio recien lo busca").
-  // The space is harmless: WA normalizes/trims the query before searching.
-  document.execCommand("insertText", false, " ");
-  console.log("[Goberna BG] stepTypePhone: after space trigger, content:", (input.textContent || "").slice(0, 25));
+  // ── Step 1: Clear existing content ──
+  // execCommand('selectAll'+'delete') does NOT reliably clear WA's contenteditable.
+  // The correct sequence: select all content via Range API, dispatch beforeinput
+  // event (so React's event handler runs), then execCommand('delete').
+  const range = document.createRange();
+  range.selectNodeContents(input);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  input.dispatchEvent(new InputEvent("beforeinput", {
+    inputType: "deleteContentBackward",
+    bubbles: true,
+    cancelable: true,
+  }));
+  document.execCommand("delete", false, null);
+
+  console.log("[Goberna BG] stepTypePhone: after clear, content:", (input.textContent || "").slice(0, 20));
+
+  // ── Step 2: Insert phone number ──
+  // execCommand('insertText') in MAIN world fires a trusted input event that
+  // React's synthetic event system picks up, triggering the search query.
+  document.execCommand("insertText", false, phone);
+
+  console.log("[Goberna BG] stepTypePhone: after insert, content:", (input.textContent || "").slice(0, 25));
 }
 
 /**
