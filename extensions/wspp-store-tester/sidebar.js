@@ -47,9 +47,11 @@
       view:             'login',   // login | leads | lead-detail | metrics | messages
       activeLead:       null,
       stats:            null,
+      extMetrics:       null,      // métricas por número de celular
       messages:         [],        // mensajes entrantes recientes
       wasSent:          0,         // mensajes WA enviados esta sesión
       sseSource:        null,
+      waNumber:         null,      // número WA propio de este celular (detectado de inject.js)
     };
 
     // ── CSS ─────────────────────────────────────────────────────────
@@ -305,6 +307,47 @@
       }
       .wp-progress-fill { height:100%; background:#00a884; border-radius:99px; transition:width .4s; }
 
+      /* Métricas — global banner */
+      .wp-metric-global {
+        background:linear-gradient(135deg,#0d2e24,#1a4a36);
+        border-radius:12px; padding:14px 16px; margin-bottom:12px;
+        border:1px solid #1a4a36;
+      }
+      .wp-metric-global-title { font-size:10px; color:#00a884; text-transform:uppercase; font-weight:700; margin-bottom:10px; letter-spacing:.8px; }
+      .wp-metric-global-nums { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+      .wp-metric-global-item { display:flex; flex-direction:column; align-items:center; gap:2px; }
+      .wp-metric-global-val { font-size:26px; font-weight:800; color:#e9edef; line-height:1; }
+      .wp-metric-global-val.green { color:#00a884; }
+      .wp-metric-global-val.orange { color:#ffa726; }
+      .wp-metric-global-val.red { color:#ef5350; }
+      .wp-metric-global-lbl { font-size:9px; color:#8696a0; text-transform:uppercase; }
+
+      /* Métricas — tarjeta de celular */
+      .wp-phone-card {
+        background:#1f2c34; border-radius:10px; padding:10px 12px;
+        margin-bottom:8px; border:1px solid #2a3942;
+        display:flex; align-items:center; gap:10px;
+      }
+      .wp-phone-icon { font-size:20px; flex-shrink:0; }
+      .wp-phone-info { flex:1; min-width:0; }
+      .wp-phone-num { font-size:12px; font-weight:700; color:#e9edef; font-family:monospace; }
+      .wp-phone-stats { display:flex; gap:8px; margin-top:5px; flex-wrap:wrap; }
+      .wp-phone-stat { display:flex; flex-direction:column; align-items:center; }
+      .wp-phone-stat-val { font-size:16px; font-weight:700; }
+      .wp-phone-stat-val.green { color:#00a884; }
+      .wp-phone-stat-val.orange { color:#ffa726; }
+      .wp-phone-stat-val.red { color:#ef5350; }
+      .wp-phone-stat-lbl { font-size:9px; color:#8696a0; }
+      .wp-phone-bar { width:100%; height:3px; background:#2a3942; border-radius:99px; overflow:hidden; margin-top:6px; }
+      .wp-phone-bar-fill { height:100%; background:#00a884; border-radius:99px; }
+
+      /* badge "este celular" */
+      .wp-phone-me {
+        font-size:9px; padding:2px 6px; border-radius:99px;
+        background:#0d2e24; color:#00a884; border:1px solid #1a4a36;
+        margin-left:4px;
+      }
+
       /* Mensajes */
       .wp-msgs { flex:1; overflow-y:auto; }
       .wp-msg-item {
@@ -381,7 +424,7 @@
           const nav = btn.dataset.nav;
           if (nav === 'metrics') {
             S.view = 'metrics';
-            await loadStats();
+            await Promise.all([loadStats(), loadExtMetrics()]);
             render();
           } else if (nav === 'messages') {
             S.view = 'messages';
@@ -716,7 +759,51 @@
 
     // ── MÉTRICAS ─────────────────────────────────────────────────────
     function renderMetrics() {
-      const st = S.stats;
+      const st   = S.stats;
+      const ext  = S.extMetrics;
+      const g    = ext?.global;  // totales de celulares con x-wa-number
+      const phones = ext?.phones || [];
+
+      // Contador general: preferimos los totals del stats (incluye toda la campaña)
+      // El banner usa stats para Total/Nuevos, y g (extension) para Hablados/Respondieron
+      const totalContacted = (st?.hablados||0) + (st?.respondieron||0);
+      const contactPct     = st?.total ? Math.round((totalContacted / st.total) * 100) : 0;
+      const responsePct    = totalContacted > 0 ? Math.round(((st?.respondieron||0) / totalContacted) * 100) : 0;
+
+      function phoneCard(p) {
+        const isMe = S.waNumber && p.wa_number === S.waNumber;
+        const contacted = p.hablados + p.respondieron;
+        const pct = p.total_interactions > 0 ? Math.round((contacted / p.total_interactions) * 100) : 0;
+        const label = fmtPhone(p.wa_number);
+        return `
+          <div class="wp-phone-card">
+            <div class="wp-phone-icon">📱</div>
+            <div class="wp-phone-info">
+              <div class="wp-phone-num">
+                ${escHtml(label)}${isMe ? '<span class="wp-phone-me">este celular</span>' : ''}
+              </div>
+              <div class="wp-phone-stats">
+                <div class="wp-phone-stat">
+                  <span class="wp-phone-stat-val orange">${p.hablados}</span>
+                  <span class="wp-phone-stat-lbl">Hablados</span>
+                </div>
+                <div class="wp-phone-stat">
+                  <span class="wp-phone-stat-val green">${p.respondieron}</span>
+                  <span class="wp-phone-stat-lbl">Respond.</span>
+                </div>
+                <div class="wp-phone-stat">
+                  <span class="wp-phone-stat-val red">${p.archivados}</span>
+                  <span class="wp-phone-stat-lbl">Archiv.</span>
+                </div>
+                <div class="wp-phone-stat">
+                  <span class="wp-phone-stat-val">${pct}%</span>
+                  <span class="wp-phone-stat-lbl">Contactado</span>
+                </div>
+              </div>
+              <div class="wp-phone-bar"><div class="wp-phone-bar-fill" style="width:${pct}%"></div></div>
+            </div>
+          </div>`;
+      }
 
       panel.innerHTML = `
         <div class="wp-hdr">
@@ -728,66 +815,68 @@
         <div class="wp-metrics">
           ${!st ? '<div class="wp-spin-wrap"><div class="wp-spin"></div></div>' : `
 
-          <!-- Stats generales -->
-          <div class="wp-metric-card">
-            <div class="wp-metric-card-title">Pipeline de contactos</div>
-            <div class="wp-metric-grid">
-              <div class="wp-metric-item">
-                <span class="wp-metric-val">${st.total||0}</span>
-                <span class="wp-metric-lbl">Total leads</span>
+          <!-- ① Contador General (suma de toda la campaña) -->
+          <div class="wp-metric-global">
+            <div class="wp-metric-global-title">General — toda la campaña</div>
+            <div class="wp-metric-global-nums">
+              <div class="wp-metric-global-item">
+                <span class="wp-metric-global-val">${st.total||0}</span>
+                <span class="wp-metric-global-lbl">Total</span>
               </div>
-              <div class="wp-metric-item">
-                <span class="wp-metric-val orange">${st.nuevos||0}</span>
-                <span class="wp-metric-lbl">Pendientes</span>
+              <div class="wp-metric-global-item">
+                <span class="wp-metric-global-val orange">${st.hablados||0}</span>
+                <span class="wp-metric-global-lbl">Hablados</span>
               </div>
-              <div class="wp-metric-item">
-                <span class="wp-metric-val green">${st.hablados||0}</span>
-                <span class="wp-metric-lbl">Contactados</span>
+              <div class="wp-metric-global-item">
+                <span class="wp-metric-global-val green">${st.respondieron||0}</span>
+                <span class="wp-metric-global-lbl">Respond.</span>
               </div>
-              <div class="wp-metric-item">
-                <span class="wp-metric-val green">${st.respondieron||0}</span>
-                <span class="wp-metric-lbl">Respondieron</span>
+              <div class="wp-metric-global-item">
+                <span class="wp-metric-global-val">${contactPct}%</span>
+                <span class="wp-metric-global-lbl">Contactado</span>
               </div>
             </div>
             <div class="wp-progress-bar" style="margin-top:10px">
-              <div class="wp-progress-fill" style="width:${st.total?Math.round(((st.hablados+st.respondieron)/st.total)*100):0}%"></div>
+              <div class="wp-progress-fill" style="width:${contactPct}%"></div>
             </div>
-            <div style="font-size:10px;color:#8696a0;margin-top:4px;text-align:right">
-              ${st.total?Math.round(((st.hablados+st.respondieron)/st.total)*100):0}% contactado
+            <div style="font-size:10px;color:#8696a0;margin-top:4px;display:flex;justify-content:space-between">
+              <span>Tasa respuesta: <strong style="color:#00a884">${responsePct}%</strong></span>
+              <span>${st.archivados||0} archivados</span>
             </div>
           </div>
 
-          <!-- Tasa de respuesta -->
-          <div class="wp-metric-card">
-            <div class="wp-metric-card-title">Eficiencia</div>
+          <!-- ② Tarjetas por celular -->
+          ${phones.length === 0 ? `
+            <div class="wp-metric-card">
+              <div class="wp-metric-card-title">Celulares registrados</div>
+              <div style="font-size:12px;color:#8696a0;text-align:center;padding:10px 0">
+                Aún no hay datos por celular.<br>
+                <span style="font-size:10px">Se registran automáticamente al usar el botón WA.</span>
+              </div>
+            </div>
+          ` : `
+            <div style="font-size:10px;color:#8696a0;text-transform:uppercase;font-weight:700;margin-bottom:6px;letter-spacing:.6px">
+              Por celular (${phones.length})
+            </div>
+            ${phones.map(phoneCard).join('')}
+          `}
+
+          <!-- ③ Sesión actual -->
+          <div class="wp-metric-card" style="margin-top:4px">
+            <div class="wp-metric-card-title">Esta sesión</div>
             <div class="wp-metric-grid">
               <div class="wp-metric-item">
-                <span class="wp-metric-val green">${st.hablados+st.respondieron>0?Math.round((st.respondieron/(st.hablados+st.respondieron))*100):0}%</span>
-                <span class="wp-metric-lbl">Tasa respuesta</span>
-              </div>
-              <div class="wp-metric-item">
                 <span class="wp-metric-val">${S.wasSent}</span>
-                <span class="wp-metric-lbl">WA enviados (sesión)</span>
-              </div>
-              <div class="wp-metric-item">
-                <span class="wp-metric-val orange">${st.archivados||0}</span>
-                <span class="wp-metric-lbl">Archivados</span>
+                <span class="wp-metric-lbl">WA abiertos</span>
               </div>
               <div class="wp-metric-item">
                 <span class="wp-metric-val">${S.messages.length}</span>
                 <span class="wp-metric-lbl">Msgs recibidos</span>
               </div>
-            </div>
-          </div>
-
-          <!-- Mensajes de esta sesión -->
-          <div class="wp-metric-card">
-            <div class="wp-metric-card-title">Esta sesión</div>
-            <div style="font-size:12px;color:#8696a0">
-              ${S.messages.length === 0
-                ? 'Sin mensajes recibidos aún'
-                : `${S.messages.filter(m=>!m.fromMe).length} entrantes · ${S.messages.filter(m=>m.fromMe).length} salientes detectados`
-              }
+              <div class="wp-metric-item">
+                <span class="wp-metric-val" style="font-size:11px;color:#00a884">${S.waNumber ? fmtPhone(S.waNumber) : '—'}</span>
+                <span class="wp-metric-lbl">Mi número</span>
+              </div>
             </div>
           </div>
           `}
@@ -795,10 +884,18 @@
 
       wireNav();
 
-      // Refrescar stats
-      loadStats().then(() => {
+      // Refrescar stats + métricas de extensión
+      Promise.all([loadStats(), loadExtMetrics()]).then(() => {
         if (S.view === 'metrics') render();
       });
+    }
+
+    // ── Formato número de teléfono ────────────────────────────────────
+    function fmtPhone(num) {
+      const s = String(num || '');
+      if (s.length === 11 && s.startsWith('51')) return '+51 ' + s.slice(2, 5) + ' ' + s.slice(5, 8) + ' ' + s.slice(8);
+      if (s.length === 9) return s.slice(0,3) + ' ' + s.slice(3,6) + ' ' + s.slice(6);
+      return s;
     }
 
     // ── MENSAJES ─────────────────────────────────────────────────────
@@ -840,7 +937,12 @@
             payload: {
               url: `${API_BASE}/api/cms/contacts/${leadId}/hablado`,
               method: 'PUT',
-              headers: { 'Authorization': `Bearer ${S.token}`, 'x-campaign-id': S.activeCampaignId, 'Content-Type': 'application/json' },
+              headers: {
+                'Authorization': `Bearer ${S.token}`,
+                'x-campaign-id': S.activeCampaignId,
+                'Content-Type': 'application/json',
+                ...(S.waNumber ? { 'x-wa-number': S.waNumber } : {}),
+              },
             },
           });
           const lead = S.leads.find(l => l.id === leadId);
@@ -864,9 +966,10 @@
     // ── LOGOUT ───────────────────────────────────────────────────────
     function doLogout() {
       S.token = null; S.user = null; S.campaigns = []; S.activeCampaignId = null;
-      S.leads = []; S.stats = null; S.messages = []; S.wasSent = 0;
+      S.leads = []; S.stats = null; S.extMetrics = null; S.messages = []; S.wasSent = 0;
+      S.waNumber = null;
       if (S.sseSource) { S.sseSource.close(); S.sseSource = null; }
-      storageRemove(['wspp_token','wspp_user','wspp_campaigns']);
+      storageRemove(['wspp_token','wspp_user','wspp_campaigns','wspp_wa_number']);
       S.view = 'login'; render();
     }
 
@@ -879,6 +982,7 @@
           'Content-Type': 'application/json',
           ...(S.token ? { 'Authorization': `Bearer ${S.token}` } : {}),
           ...(S.activeCampaignId ? { 'x-campaign-id': S.activeCampaignId } : {}),
+          ...(S.waNumber ? { 'x-wa-number': S.waNumber } : {}),
           ...headers,
         },
         ...(body ? { body: JSON.stringify(body) } : {}),
@@ -922,6 +1026,14 @@
       } catch(e) {}
     }
 
+    async function loadExtMetrics() {
+      if (!S.token || !S.activeCampaignId) return;
+      try {
+        const data = await apiFetch('/api/cms/metrics/extension');
+        S.extMetrics = data || null;
+      } catch(e) {}
+    }
+
     // ── SSE ──────────────────────────────────────────────────────────
     function startSSE() {
       if (!S.token || !S.activeCampaignId) return;
@@ -955,10 +1067,12 @@
       };
     }
 
-    // ── Mensajes de WA (via inject.js) ──────────────────────────────
+    // ── Mensajes y eventos de WA (via inject.js) ────────────────────
     window.addEventListener('message', e => {
-      if (e.data?.type === 'WSPP_NEW_MSG') {
-        const msg = e.data.payload;
+      const { type, payload } = e.data || {};
+
+      if (type === 'WSPP_NEW_MSG') {
+        const msg = payload;
         S.messages.push({ ...msg, seen: S.view === 'messages', fromMe: msg.fromMe || false });
         if (S.messages.length > 100) S.messages.shift();
         // Badge en nav
@@ -970,6 +1084,19 @@
             const btn = panel.querySelector('.wp-nav-btn[data-nav="messages"]');
             if (btn && unread) btn.innerHTML = `Mensajes<span class="wp-badge">${unread}</span>`;
           }
+        }
+        return;
+      }
+
+      // Detectar el número de este celular cuando WA se conecta
+      if (type === 'WSPP_ME' && payload) {
+        // payload.id tiene formato "51XXXXXXXXX@c.us" o similar
+        const rawId = payload.id || payload.wid?.user || '';
+        const digits = String(rawId).replace(/\D/g, '').replace(/@.+$/, '');
+        if (digits.length >= 9) {
+          S.waNumber = digits;
+          storageSet({ wspp_wa_number: digits });
+          console.log('[WSPP CRM] WA number detectado:', digits);
         }
       }
     });
@@ -989,7 +1116,10 @@
     }
 
     // ── Init ─────────────────────────────────────────────────────────
-    storageGet(['wspp_token','wspp_user','wspp_campaigns']).then(async saved => {
+    storageGet(['wspp_token','wspp_user','wspp_campaigns','wspp_wa_number']).then(async saved => {
+      // Restaurar número WA de sesión previa
+      if (saved.wspp_wa_number) S.waNumber = saved.wspp_wa_number;
+
       if (saved.wspp_token) {
         S.token     = saved.wspp_token;
         S.user      = JSON.parse(saved.wspp_user || 'null');
@@ -997,7 +1127,7 @@
         S.view      = 'leads';
         if (S.campaigns.length === 1) {
           S.activeCampaignId = S.campaigns[0].id;
-          await Promise.all([loadLeads(), loadTags(), loadStats()]);
+          await Promise.all([loadLeads(), loadTags(), loadStats(), loadExtMetrics()]);
           startSSE();
         }
       }

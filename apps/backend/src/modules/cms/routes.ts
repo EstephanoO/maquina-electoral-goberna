@@ -226,8 +226,15 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         const authed = request as AuthenticatedRequest;
         const { id } = request.params as { id: string };
 
+        // Capture the WA number of the phone/device used to send this action.
+        // The extension sends `x-wa-number` with the operator's own WhatsApp number.
+        const waNumber =
+          typeof request.headers["x-wa-number"] === "string" && request.headers["x-wa-number"].length > 0
+            ? request.headers["x-wa-number"].replace(/\D/g, "")
+            : null;
+
         try {
-          const result = await repo.markHablado(id, authed.userId);
+          const result = await repo.markHablado(id, authed.userId, waNumber);
           if (!result) {
             return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado"));
           }
@@ -244,6 +251,7 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
             previous_status: "nuevo",
             operator_id: authed.userId,
             operator_email: operatorEmail,
+            wa_number: waNumber,
             stats,
           });
 
@@ -561,6 +569,56 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "cms metrics failed");
           return reply.code(500).send(errorPayload(requestId, "CMS_METRICS_ERROR", "error obteniendo metricas CMS"));
+        }
+      },
+    );
+
+    // ── GET /api/cms/metrics/extension ────────────────────────────────
+    // Per-WA-phone metrics for the extension. Each of the 5 phones using the
+    // extension is identified by the `x-wa-number` header it sends, stored in
+    // cms_operator_notes->>'wa_number'. Returns individual phone metrics plus
+    // an aggregated global total.
+    app.get(
+      "/api/cms/metrics/extension",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        try {
+          const [phones, stats] = await Promise.all([
+            repo.getMetricsByWaNumber(campaignId),
+            repo.getCmsStats(campaignId),
+          ]);
+
+          // Aggregate totals across all phones
+          const global = phones.reduce(
+            (acc, p) => ({
+              hablados: acc.hablados + p.hablados,
+              respondieron: acc.respondieron + p.respondieron,
+              archivados: acc.archivados + p.archivados,
+              total_interactions: acc.total_interactions + p.total_interactions,
+            }),
+            { hablados: 0, respondieron: 0, archivados: 0, total_interactions: 0 },
+          );
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            global: {
+              ...global,
+              total: stats.total,
+              nuevos: stats.nuevos,
+            },
+            phones,
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "cms extension metrics failed");
+          return reply.code(500).send(errorPayload(requestId, "CMS_EXT_METRICS_ERROR", "error obteniendo metricas de extension"));
         }
       },
     );
