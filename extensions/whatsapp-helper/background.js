@@ -248,12 +248,19 @@ function stepTypePhone(phone) {
     }
   }
 
-  if (!input) return;
+  if (!input) {
+    console.log("[Goberna BG] stepTypePhone: input NOT found!");
+    return;
+  }
+
+  console.log("[Goberna BG] stepTypePhone: found input, aria-label:", input.getAttribute("aria-label"), "content:", (input.textContent || "").slice(0, 20));
 
   input.focus();
   document.execCommand("selectAll", false, null);
   document.execCommand("delete", false, null);
+  console.log("[Goberna BG] stepTypePhone: after clear, content:", (input.textContent || "").slice(0, 20));
   document.execCommand("insertText", false, phone);
+  console.log("[Goberna BG] stepTypePhone: after insert, content:", (input.textContent || "").slice(0, 20));
 
   // Reinforce with synthetic InputEvent — React's event system may not
   // pick up execCommand alone on contenteditable divs. This ensures the
