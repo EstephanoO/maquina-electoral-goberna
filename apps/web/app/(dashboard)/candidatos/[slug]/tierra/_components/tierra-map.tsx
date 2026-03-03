@@ -31,7 +31,7 @@
  */
 
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Layer, Map as MapLibre, NavigationControl, Source } from "@vis.gl/react-maplibre";
+import { Layer, Map as MapLibre, Source } from "@vis.gl/react-maplibre";
 import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
 import type { CircleLayerSpecification, DragPanOptions, FillLayerSpecification, LineLayerSpecification, Map as NativeMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -548,8 +548,6 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         onMouseLeave={handleMouseLeave}
         interactiveLayerIds={INTERACTIVE_LAYERS as unknown as string[]}
       >
-        <NavigationControl position="bottom-left" showCompass visualizePitch />
-
         {/* ── Tegola vector tiles ── */}
         <Source id="peru" type="vector" tiles={tilesArray} minzoom={3} maxzoom={14} bounds={PERU_BOUNDS_FLAT} promoteId={PROMOTE_ID}>
           <Layer id="dep-fill" type="fill" source-layer="departamentos" filter={filters.depFillFilter} paint={depFillPaint} />
