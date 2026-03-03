@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WhatsApp Goberna Helper",
-  "version": "8.0.0",
+  "version": "8.1.0",
   "description": "Una sola pestaña de WhatsApp Web — nunca abre duplicados. Integración con el dashboard de Goberna.",
   "permissions": [
     "tabs",
@@ -14,6 +14,7 @@
     "https://wa.me/*",
     "https://api.whatsapp.com/*",
     "https://dashboard.grupogoberna.com/*",
+    "https://api.goberna.us/*",
     "http://localhost:3000/*",
     "http://localhost:3001/*"
   ],
@@ -43,6 +44,18 @@
       "matches": ["https://web.whatsapp.com/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["panel-app.js"],
+      "css": ["panel-styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["panel-styles.css", "icons/*.png"],
+      "matches": ["https://web.whatsapp.com/*"]
     }
   ],
   "icons": {

@@ -843,6 +843,69 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         .catch((err) => sendResponse({ error: err.message }));
       return true;
 
+    case "cmsLogin":
+      // Login from CMS panel — proxy to backend to avoid CORS
+      (async () => {
+        try {
+          const baseUrl = msg.baseUrl || "https://api.goberna.us";
+          const res = await fetch(`${baseUrl}/api/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: msg.email, password: msg.password }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            sendResponse({ ok: false, status: res.status, error: data.message || data.error || "Login failed" });
+          } else {
+            sendResponse({ ok: true, data });
+          }
+        } catch (err) {
+          error("cmsLogin error:", err);
+          sendResponse({ ok: false, error: err.message });
+        }
+      })();
+      return true;
+
+    case "cmsApiProxy":
+      // Generic API proxy for CMS panel — avoids CORS restrictions
+      // msg: { method, url, body?, headers? }
+      (async () => {
+        try {
+          const fetchOpts = {
+            method: msg.method || "GET",
+            headers: msg.headers || {},
+          };
+          if (msg.body && msg.method !== "GET") {
+            fetchOpts.body = typeof msg.body === "string" ? msg.body : JSON.stringify(msg.body);
+            if (!fetchOpts.headers["Content-Type"]) {
+              fetchOpts.headers["Content-Type"] = "application/json";
+            }
+          }
+          const res = await fetch(msg.url, fetchOpts);
+
+          // Handle SSE streams — can't proxy EventSource, return indicator
+          const contentType = res.headers.get("content-type") || "";
+          if (contentType.includes("text/event-stream")) {
+            sendResponse({ ok: true, stream: true, status: res.status });
+            return;
+          }
+
+          const text = await res.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (_) {
+            data = text;
+          }
+
+          sendResponse({ ok: res.ok, status: res.status, data });
+        } catch (err) {
+          error("cmsApiProxy error:", err);
+          sendResponse({ ok: false, error: err.message });
+        }
+      })();
+      return true;
+
     default:
       sendResponse({ error: `unknown action: ${msg.action}` });
       return false;
