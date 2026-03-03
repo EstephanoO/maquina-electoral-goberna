@@ -455,6 +455,7 @@ function waCheckResults() {
   if (!app) return null;
   // No results icon
   if (app.querySelector('span[data-icon="search-no-results"], span[data-icon="no-results"]')) {
+    if (GDEBUG) console.log("[Goberna WA] waCheckResults: no results icon found");
     return { noResults: true };
   }
   // Still searching
@@ -467,16 +468,26 @@ function waCheckResults() {
   for (const label of ["Cancelar búsqueda", "Cancel search", "Cancelar pesquisa"]) {
     if (app.querySelector(`button[aria-label="${label}"]`)) { inSearch = true; break; }
   }
-  if (!inSearch) return null;
+  if (!inSearch) {
+    if (GDEBUG) console.log("[Goberna WA] waCheckResults: not in search mode (no cancel button)");
+    return null;
+  }
   // Count result buttons
   let count = 0;
+  const resultBtns = [];
   for (const btn of app.querySelectorAll("button")) {
     const ariaLabel = (btn.getAttribute("aria-label") || "").trim();
     const text = (btn.textContent || "").trim();
     if (ariaLabel && SKIP_RESULT_LABELS.has(ariaLabel)) continue;
     if (text.length < 3 || SKIP_RESULT_LABELS.has(text)) continue;
-    if (/\d{3,}/.test(text) || btn.querySelector("img")) count++;
+    const hasImg = !!btn.querySelector("img");
+    const hasDigits = /\d{3,}/.test(text);
+    if (hasDigits || hasImg) {
+      count++;
+      resultBtns.push({ ariaLabel, text: text.slice(0, 30), hasImg, hasDigits });
+    }
   }
+  if (GDEBUG) console.log("[Goberna WA] waCheckResults: found", count, "buttons:", resultBtns.slice(0, 3));
   return count > 0 ? { found: true, count } : null;
 }
 
