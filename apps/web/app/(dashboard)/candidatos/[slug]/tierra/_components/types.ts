@@ -71,6 +71,14 @@ export type PinnedTooltipData = {
   created_at: string;
 };
 
+export type CameraNudge = {
+  panX?: number;
+  panY?: number;
+  zoomDelta?: number;
+  bearingDelta?: number;
+  pitchDelta?: number;
+};
+
 /* ─── Map Handle (imperative API) ─── */
 
 export type TierraMapHandle = {
@@ -78,6 +86,12 @@ export type TierraMapHandle = {
   getDrillState: () => DrillState;
   /** Show a pinned tooltip for a specific form point after flyTo completes */
   showPinnedTooltip: (data: PinnedTooltipData) => void;
+  /** Small camera step (pan/zoom/rotate/pitch) for external UI controls */
+  nudgeCamera: (delta: CameraNudge) => void;
+  /** Reset angle only (north-up + flat) */
+  resetCameraOrientation: () => void;
+  /** Reset to Perú default position */
+  resetCameraPosition: () => void;
 };
 
 /* ─── Drill Filters (output of useDrillFilters) ─── */

@@ -35,7 +35,7 @@ import { Layer, Map as MapLibre, NavigationControl, Source } from "@vis.gl/react
 import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
 import type { CircleLayerSpecification, DragPanOptions, FillLayerSpecification, LineLayerSpecification, Map as NativeMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { TierraMapHandle, TierraMapProps } from "./types";
+import type { CameraNudge, TierraMapHandle, TierraMapProps } from "./types";
 import {
   STATUS_COLORS, ZONE_FILL, ZONE_HOVER, ZONE_LINE, ZONE_LINE_GHOST, MASK_FILL, HOVER_LAYERS,
   PERU_VIEW, PERU_BOUNDS, PERU_BOUNDS_FLAT, PERU_MAX_BOUNDS, MAP_STYLES, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
@@ -78,17 +78,22 @@ const MAP_DRAG_PAN_OPTIONS: DragPanOptions = {
 
 const TRACKPAD_ZOOM_RATE = 1 / 130;
 const WHEEL_ZOOM_RATE = 1 / 680;
+const CAMERA_PITCH_MIN = 0;
+const CAMERA_PITCH_MAX = 60;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
 
 function applyFluidMapInteractions(map: NativeMap) {
   map.dragPan.enable(MAP_DRAG_PAN_OPTIONS);
   map.scrollZoom.enable();
   map.scrollZoom.setZoomRate(TRACKPAD_ZOOM_RATE);
   map.scrollZoom.setWheelZoomRate(WHEEL_ZOOM_RATE);
-  map.dragRotate.disable();
-  map.touchPitch.disable();
-  map.keyboard.disableRotation();
+  map.dragRotate.enable();
+  map.touchPitch.enable();
+  map.keyboard.enableRotation();
   map.touchZoomRotate.enable({ around: "center" });
-  map.touchZoomRotate.disableRotation();
 
   const canvas = map.getCanvas();
   canvas.style.cursor = "grab";
@@ -263,6 +268,58 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     ...(showTracking ? {} : { visibility: "none" as const }),
   }), [showTracking]);
 
+  const nudgeCamera = useCallback((delta: CameraNudge) => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+
+    const panX = delta.panX ?? 0;
+    const panY = delta.panY ?? 0;
+    const hasPan = panX !== 0 || panY !== 0;
+    const hasTransform = !!(delta.zoomDelta || delta.bearingDelta || delta.pitchDelta);
+
+    if (hasPan && !hasTransform) {
+      map.panBy([panX, panY], { duration: 220, essential: true });
+      return;
+    }
+
+    const currentZoom = map.getZoom();
+    const currentBearing = map.getBearing();
+    const currentPitch = map.getPitch();
+    const currentCenter = map.getCenter();
+    const centerPx = map.project(currentCenter);
+    const nextCenter = hasPan
+      ? map.unproject([centerPx.x + panX, centerPx.y + panY])
+      : currentCenter;
+
+    map.easeTo({
+      center: nextCenter,
+      zoom: currentZoom + (delta.zoomDelta ?? 0),
+      bearing: currentBearing + (delta.bearingDelta ?? 0),
+      pitch: clamp(currentPitch + (delta.pitchDelta ?? 0), CAMERA_PITCH_MIN, CAMERA_PITCH_MAX),
+      duration: 260,
+      essential: true,
+    });
+  }, []);
+
+  const resetCameraOrientation = useCallback(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    map.easeTo({ bearing: 0, pitch: 0, duration: 320, essential: true });
+  }, []);
+
+  const resetCameraPosition = useCallback(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    map.easeTo({
+      center: [PERU_VIEW.longitude, PERU_VIEW.latitude],
+      zoom: PERU_VIEW.zoom,
+      bearing: 0,
+      pitch: 0,
+      duration: 520,
+      essential: true,
+    });
+  }, []);
+
   // ─── Imperative handle ───
   useImperativeHandle(ref, () => ({
     flyToPoint(lng: number, lat: number, zoom = 17) {
@@ -272,7 +329,10 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     },
     getDrillState() { return drillStateRef.current; },
     showPinnedTooltip,
-  }), [showPinnedTooltip]);
+    nudgeCamera,
+    resetCameraOrientation,
+    resetCameraPosition,
+  }), [showPinnedTooltip, nudgeCamera, resetCameraOrientation, resetCameraPosition]);
 
   // ─── Init (SSR guard) ───
   useEffect(() => {
@@ -466,9 +526,9 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         style={{ width: "100%", height: "100%" }}
         mapStyle={MAP_STYLES[mapTheme]}
         dragPan={MAP_DRAG_PAN_OPTIONS}
-        dragRotate={false}
-        pitchWithRotate={false}
-        touchPitch={false}
+        dragRotate
+        pitchWithRotate
+        touchPitch
         touchZoomRotate={{ around: "center" }}
         scrollZoom
         doubleClickZoom
@@ -488,7 +548,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         onMouseLeave={handleMouseLeave}
         interactiveLayerIds={INTERACTIVE_LAYERS as unknown as string[]}
       >
-        <NavigationControl position="bottom-left" showCompass={false} visualizePitch={false} />
+        <NavigationControl position="bottom-left" showCompass visualizePitch />
 
         {/* ── Tegola vector tiles ── */}
         <Source id="peru" type="vector" tiles={tilesArray} minzoom={3} maxzoom={14} bounds={PERU_BOUNDS_FLAT} promoteId={PROMOTE_ID}>

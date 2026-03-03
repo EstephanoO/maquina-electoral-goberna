@@ -153,6 +153,24 @@ export default function TierraPage() {
     return false;
   }, [queryClient]);
 
+  const handleCameraNudge = useCallback((delta: {
+    panX?: number;
+    panY?: number;
+    zoomDelta?: number;
+    bearingDelta?: number;
+    pitchDelta?: number;
+  }) => {
+    mapHandleRef.current?.nudgeCamera(delta);
+  }, []);
+
+  const handleCameraResetPosition = useCallback(() => {
+    mapHandleRef.current?.resetCameraPosition();
+  }, []);
+
+  const handleCameraResetOrientation = useCallback(() => {
+    mapHandleRef.current?.resetCameraOrientation();
+  }, []);
+
   // Sync candidato slug tabbar theme (top white bar) with map theme while Tierra is mounted.
   useEffect(() => {
     const root = document.documentElement;
@@ -234,34 +252,44 @@ export default function TierraPage() {
       {viewMode === "campo" ? (
         <div className="flex-1 min-h-0 relative">
           <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} datosVizMode={datosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} mapTheme={mapTheme} showRoutes={showRoutes} drillState={drillState} onDrillChange={setDrillState} />
-          <div className="absolute top-3 left-3 z-20 flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={() => setIsFullscreen((prev) => !prev)}
-              className={`cursor-pointer rounded-md border px-3 py-1.5 text-[11px] font-semibold flex items-center gap-2 backdrop-blur-sm transition-colors ${
-                mapTheme === "dark"
-                  ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
-                  : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
-              }`}
-              title={isFullscreen ? "Salir de pantalla completa (Esc)" : "Pantalla completa"}
-            >
-              {isFullscreen ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <polyline points="9 3 3 3 3 9" />
-                  <polyline points="15 3 21 3 21 9" />
-                  <polyline points="3 15 3 21 9 21" />
-                  <polyline points="21 15 21 21 15 21" />
-                </svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <polyline points="15 3 21 3 21 9" />
-                  <polyline points="9 21 3 21 3 15" />
-                  <line x1="21" y1="3" x2="14" y2="10" />
-                  <line x1="3" y1="21" x2="10" y2="14" />
-                </svg>
-              )}
-              <span>{isFullscreen ? "Salir fullscreen" : "Pantalla completa"}</span>
-            </button>
+          <div className="absolute top-3 left-3 z-20 flex items-start gap-2">
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setIsFullscreen((prev) => !prev)}
+                className={`cursor-pointer rounded-md border px-3 py-1.5 text-[11px] font-semibold flex items-center gap-2 backdrop-blur-sm transition-colors ${
+                  mapTheme === "dark"
+                    ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
+                    : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
+                }`}
+                title={isFullscreen ? "Salir de pantalla completa (Esc)" : "Pantalla completa"}
+              >
+                {isFullscreen ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <polyline points="9 3 3 3 3 9" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <polyline points="3 15 3 21 9 21" />
+                    <polyline points="21 15 21 21 15 21" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <polyline points="15 3 21 3 21 9" />
+                    <polyline points="9 21 3 21 3 15" />
+                    <line x1="21" y1="3" x2="14" y2="10" />
+                    <line x1="3" y1="21" x2="10" y2="14" />
+                  </svg>
+                )}
+                <span>{isFullscreen ? "Salir fullscreen" : "Pantalla completa"}</span>
+              </button>
+
+              <CameraPanel
+                mapTheme={mapTheme}
+                onNudge={handleCameraNudge}
+                onResetPosition={handleCameraResetPosition}
+                onResetOrientation={handleCameraResetOrientation}
+              />
+            </div>
+
             <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
           </div>
           <CampoOverlay agents={enrichedAgents} connectedCount={connectedCount} logEntries={logEntries} formCount={stats.totals.forms_count} primaryColor={campaign.color_primario} selectedAgentId={selectedAgentId} onAgentClick={handleAgentListClick} onLogEntryClick={handleLogEntryClick} userRole={user?.role} onDeleteForm={handleDeleteForm} onUpdateForm={handleUpdateForm} mapTheme={mapTheme} />
@@ -318,5 +346,86 @@ export default function TierraPage() {
         }
       `}</style>
     </div>
+  );
+}
+
+function CameraPanel({
+  mapTheme,
+  onNudge,
+  onResetPosition,
+  onResetOrientation,
+}: {
+  mapTheme: MapTheme;
+  onNudge: (delta: { panX?: number; panY?: number; zoomDelta?: number; bearingDelta?: number; pitchDelta?: number }) => void;
+  onResetPosition: () => void;
+  onResetOrientation: () => void;
+}) {
+  const isDark = mapTheme === "dark";
+  const shellClass = isDark
+    ? "border-slate-600 bg-slate-950/88 text-slate-100"
+    : "border-slate-200 bg-white/95 text-slate-700";
+  const sectionLabelClass = isDark ? "text-slate-300" : "text-slate-500";
+
+  return (
+    <div className={`rounded-md border p-2 backdrop-blur-sm w-[172px] ${shellClass}`}>
+      <div className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${sectionLabelClass}`}>Camara</div>
+
+      <div className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${sectionLabelClass}`}>Posicion</div>
+      <div className="grid grid-cols-3 gap-1 mb-2">
+        <span />
+        <CameraControlButton mapTheme={mapTheme} label="↑" title="Mover arriba" onClick={() => onNudge({ panY: -80 })} />
+        <span />
+        <CameraControlButton mapTheme={mapTheme} label="←" title="Mover izquierda" onClick={() => onNudge({ panX: -80 })} />
+        <CameraControlButton mapTheme={mapTheme} label="Inicio" title="Volver a vista Perú" onClick={onResetPosition} />
+        <CameraControlButton mapTheme={mapTheme} label="→" title="Mover derecha" onClick={() => onNudge({ panX: 80 })} />
+        <span />
+        <CameraControlButton mapTheme={mapTheme} label="↓" title="Mover abajo" onClick={() => onNudge({ panY: 80 })} />
+        <span />
+      </div>
+
+      <div className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${sectionLabelClass}`}>Angulo</div>
+      <div className="grid grid-cols-2 gap-1 mb-1">
+        <CameraControlButton mapTheme={mapTheme} label="↺ Giro" title="Rotar izquierda" onClick={() => onNudge({ bearingDelta: -15 })} />
+        <CameraControlButton mapTheme={mapTheme} label="Giro ↻" title="Rotar derecha" onClick={() => onNudge({ bearingDelta: 15 })} />
+        <CameraControlButton mapTheme={mapTheme} label="Inclinar +" title="Aumentar inclinacion" onClick={() => onNudge({ pitchDelta: 8 })} />
+        <CameraControlButton mapTheme={mapTheme} label="Inclinar -" title="Reducir inclinacion" onClick={() => onNudge({ pitchDelta: -8 })} />
+        <CameraControlButton mapTheme={mapTheme} label="Zoom +" title="Acercar" onClick={() => onNudge({ zoomDelta: 0.5 })} />
+        <CameraControlButton mapTheme={mapTheme} label="Zoom -" title="Alejar" onClick={() => onNudge({ zoomDelta: -0.5 })} />
+      </div>
+
+      <CameraControlButton mapTheme={mapTheme} label="Reset angulo" title="Norte arriba + vista plana" onClick={onResetOrientation} full />
+    </div>
+  );
+}
+
+function CameraControlButton({
+  mapTheme,
+  label,
+  title,
+  onClick,
+  full = false,
+}: {
+  mapTheme: MapTheme;
+  label: string;
+  title: string;
+  onClick: () => void;
+  full?: boolean;
+}) {
+  const isDark = mapTheme === "dark";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`cursor-pointer rounded border px-2 py-1 text-[10px] font-semibold transition-colors ${
+        full ? "w-full mt-1" : "w-full"
+      } ${
+        isDark
+          ? "border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+          : "border-slate-300 bg-slate-50 text-slate-700 hover:bg-white"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
