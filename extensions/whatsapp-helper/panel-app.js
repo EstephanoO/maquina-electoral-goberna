@@ -578,58 +578,47 @@ function waSelectFirstResult() {
 }
 
 /**
- * Open a WhatsApp chat by phone number — direct DOM manipulation.
- * This runs in the same page as WA Web (content script), so no need
- * for background.js scripting injection.
+ * Open a WhatsApp chat by phone number.
+ *
+ * IMPORTANT: Content scripts run in ISOLATED world. In this world:
+ *  - document.execCommand("insertText") does NOT trigger React's search
+ *  - synthetic KeyboardEvents are untrusted and ignored by WA
+ *  - .click() on buttons is also ignored by WA's React handlers
+ *
+ * Therefore we delegate the ENTIRE navigation flow to background.js,
+ * which uses chrome.scripting.executeScript with world: "MAIN" for the
+ * steps that need trusted events (typing and Enter key).
+ *
+ * background.js openChat flow:
+ *  Step 0: Check WA Web is loaded (ISOLATED)
+ *  Step 1: Click "Nuevo chat" (ISOLATED)
+ *  Step 2: Poll search input (ISOLATED)
+ *  Step 3: Type phone number (MAIN) — execCommand works in MAIN
+ *  Step 4: Poll search results (ISOLATED)
+ *  Step 5: Press Enter to select result (MAIN)
+ *  Step 6: Poll chat open (ISOLATED)
+ *  Step 7: Pre-fill message if provided (MAIN)
  */
 async function openWhatsAppChat(phone) {
   if (!phone) return;
   const digits = phone.replace(/\D/g, "");
   if (!digits || digits.length < 7) return;
 
-  // Always format as +51XXXXXXXXX for Peru numbers
-  // If already has country code (11 digits starting with 51), use as-is
-  // If 9-digit local number, prepend 51
-  let searchPhone;
-  if (digits.length === 9 && digits[0] === "9") {
-    searchPhone = `+51${digits}`;
-  } else if (digits.length === 11 && digits.startsWith("51")) {
-    searchPhone = `+${digits}`;
-  } else {
-    searchPhone = `+${digits}`;
-  }
-  const fallbackDigits = digits.length === 9 ? `51${digits}` : digits;
+  if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: delegating to background.js openChat, phone:", phone);
 
-  // Step 1: Click "Nuevo chat"
-  if (!waClickNuevoChat()) {
-    window.location.assign(`https://web.whatsapp.com/send?phone=${encodeURIComponent(fallbackDigits)}`);
-    return;
-  }
-
-  // Step 2: Wait for search input
-  const input = await waPoll(() => waFindSearchInput(), 3000);
-  if (!input) {
-    window.location.assign(`https://web.whatsapp.com/send?phone=${encodeURIComponent(fallbackDigits)}`);
-    return;
-  }
-
-  // Step 3: Type +51XXXXXXXXX and wait for results
-  waTypeInSearch(input, searchPhone);
-
-  if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: waiting for search results...");
-  const results = await waPoll(() => waCheckResults(), 8000);
-  if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: results:", results);
-  
-  if (results?.found) {
-    if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: calling waSelectFirstResult...");
-    // Delegate Enter key to background.js (MAIN world) — ISOLATED world clicks don't work
-    await waSelectFirstResult();
-    await waDelay(500);
-    return;
-  }
-
-  // Fallback: URL navigation (always works, causes reload)
-  window.location.assign(`https://web.whatsapp.com/send?phone=${encodeURIComponent(fallbackDigits)}`);
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { action: "openChat", phone: phone, text: "" },
+      (resp) => {
+        if (chrome.runtime.lastError) {
+          if (GDEBUG) console.warn("[Goberna WA] openChat error:", chrome.runtime.lastError.message);
+        } else {
+          if (GDEBUG) console.log("[Goberna WA] openChat response:", resp);
+        }
+        resolve();
+      }
+    );
+  });
 }
 
 // ── Reminders (local chrome.storage) ──
