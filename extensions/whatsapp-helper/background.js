@@ -39,7 +39,7 @@
 const WA_BASE = "https://web.whatsapp.com";
 
 /** Set to true to enable verbose console logging */
-const DEBUG = false;
+const DEBUG = true;
 
 /** Polling configuration */
 const POLL_INTERVAL_MS = 250;
@@ -390,21 +390,39 @@ function stepCheckSearchResults() {
  * unlike mouse clicks which are filtered by isTrusted checks.
  */
 function stepSelectResult() {
-  const searchLabels = [
-    "Buscar un nombre o número",
-    "Search name or number",
-    "Pesquisar nome ou número",
+  console.log("[Goberna BG] stepSelectResult: searching for search input");
+
+  // Try multiple selectors to find the search input in "Nuevo chat" panel
+  const selectors = [
+    'div[role="textbox"][aria-label="Buscar un nombre o número"]',
+    'div[role="textbox"][aria-label="Search name or number"]',
+    'div[role="textbox"][aria-label="Pesquisar nome ou número"]',
+    'div[role="textbox"][contenteditable="true"][aria-label]',
+    'div._akav[data-tab]',
+    'div[aria-label*="Buscar"]',
+    'input[placeholder*="Buscar"]',
+    'input[placeholder*="Search"]',
   ];
 
   let input = null;
-  for (const label of searchLabels) {
-    input = document.querySelector(`div[role="textbox"][aria-label="${label}"]`);
-    if (input) break;
+  for (const sel of selectors) {
+    input = document.querySelector(sel);
+    if (input) {
+      console.log("[Goberna BG] stepSelectResult: found input with selector:", sel);
+      break;
+    }
   }
 
-  if (!input) return;
+  if (!input) {
+    console.log("[Goberna BG] stepSelectResult: input not found, checking what's in DOM");
+    // Log what's in the DOM for debugging
+    const textboxes = document.querySelectorAll('div[role="textbox"]');
+    console.log("[Goberna BG] Found textboxes:", textboxes.length);
+    return;
+  }
 
   input.focus();
+  console.log("[Goberna BG] stepSelectResult: dispatching Enter key");
 
   const enterProps = {
     key: "Enter",
@@ -418,6 +436,7 @@ function stepSelectResult() {
   input.dispatchEvent(new KeyboardEvent("keydown", enterProps));
   input.dispatchEvent(new KeyboardEvent("keypress", enterProps));
   input.dispatchEvent(new KeyboardEvent("keyup", enterProps));
+  console.log("[Goberna BG] stepSelectResult: Enter dispatched");
 }
 
 /**
