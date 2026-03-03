@@ -491,64 +491,48 @@ function waPressEnter(input) {
  */
 async function openWhatsAppChat(phone) {
   if (!phone) return;
-  const localPhone = waToLocalPhone(phone);
-  const fullDigits = phone.replace(/\D/g, "");
+  const digits = phone.replace(/\D/g, "");
+  if (!digits || digits.length < 7) return;
+
+  // Always format as +51XXXXXXXXX for Peru numbers
+  // If already has country code (11 digits starting with 51), use as-is
+  // If 9-digit local number, prepend 51
+  let searchPhone;
+  if (digits.length === 9 && digits[0] === "9") {
+    searchPhone = `+51${digits}`;
+  } else if (digits.length === 11 && digits.startsWith("51")) {
+    searchPhone = `+${digits}`;
+  } else {
+    searchPhone = `+${digits}`;
+  }
+  const fallbackDigits = digits.length === 9 ? `51${digits}` : digits;
 
   // Step 1: Click "Nuevo chat"
   if (!waClickNuevoChat()) {
-    // Fallback: URL navigation
-    window.location.assign(`https://web.whatsapp.com/send?phone=${encodeURIComponent(fullDigits)}`);
+    window.location.assign(`https://web.whatsapp.com/send?phone=${encodeURIComponent(fallbackDigits)}`);
     return;
   }
 
   // Step 2: Wait for search input
   const input = await waPoll(() => waFindSearchInput(), 3000);
   if (!input) {
-    window.location.assign(`https://web.whatsapp.com/send?phone=${encodeURIComponent(fullDigits)}`);
+    window.location.assign(`https://web.whatsapp.com/send?phone=${encodeURIComponent(fallbackDigits)}`);
     return;
   }
 
-  // Step 3: Try local phone first, then full number
-  const phonesToTry = [localPhone];
-  if (fullDigits !== localPhone) phonesToTry.push(fullDigits);
-  phonesToTry.push(`+${fullDigits}`);
+  // Step 3: Type +51XXXXXXXXX and wait for results
+  waTypeInSearch(input, searchPhone);
 
-  for (let i = 0; i < phonesToTry.length; i++) {
-    const num = phonesToTry[i];
-
-    // On retry (i > 0), reopen Nuevo chat panel
-    if (i > 0) {
-      // Press Escape to close current search, then reopen
-      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
-      await waDelay(300);
-      if (!waClickNuevoChat()) break;
-      const retryInput = await waPoll(() => waFindSearchInput(), 3000);
-      if (!retryInput) break;
-    }
-
-    // Get fresh reference to search input
-    const searchInput = waFindSearchInput();
-    if (!searchInput) break;
-
-    // Type the number
-    waTypeInSearch(searchInput, num);
-
-    // Wait for results (8s timeout)
-    const results = await waPoll(() => waCheckResults(), 8000);
-    if (results?.noResults) continue; // Try next format
-    if (!results?.found) continue;
-
-    // Press Enter to open the chat
+  const results = await waPoll(() => waCheckResults(), 8000);
+  if (results?.found) {
     const currentInput = waFindSearchInput();
     if (currentInput) waPressEnter(currentInput);
-
-    // Wait briefly for chat to open
     await waDelay(500);
-    return; // Success
+    return;
   }
 
-  // All attempts failed — URL fallback
-  window.location.assign(`https://web.whatsapp.com/send?phone=${encodeURIComponent(fullDigits)}`);
+  // Fallback: URL navigation (always works, causes reload)
+  window.location.assign(`https://web.whatsapp.com/send?phone=${encodeURIComponent(fallbackDigits)}`);
 }
 
 // ── Reminders (local chrome.storage) ──
