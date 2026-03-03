@@ -179,6 +179,8 @@ const peruView = {
   zoom: 5,
 };
 
+const DARK_TILES = "https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}@2x.png";
+
 const MAP_DRAG_PAN_OPTIONS: DragPanOptions = {
   linearity: 0.24,
   maxSpeed: 1800,
@@ -207,14 +209,27 @@ function applyFluidMapInteractions(map: NativeMap) {
 
 const mapStyle: StyleSpecification = {
   version: 8,
-  sources: {},
+  sources: {
+    "dark-base": {
+      type: "raster",
+      tiles: [DARK_TILES],
+      tileSize: 256,
+      attribution: "&copy; CARTO",
+      maxzoom: 19,
+    },
+  },
   layers: [
     {
       id: "background",
       type: "background",
       paint: {
-        "background-color": "#d9e7f2",
+        "background-color": "#0b1220",
       },
+    },
+    {
+      id: "dark-base",
+      type: "raster",
+      source: "dark-base",
     },
   ],
 };
@@ -805,7 +820,7 @@ export default function Home() {
               source-layer="departamentos"
               filter={departamentosFilter}
               paint={{
-                "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#dc2626", "#0f172a"],
+                "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#f43f5e", "#f1f5f9"],
                 "line-width": 2,
               }}
             />
@@ -830,7 +845,7 @@ export default function Home() {
               filter={provinciasFilter}
               minzoom={5}
               paint={{
-                "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#dc2626", "#334155"],
+                "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#f43f5e", "#cbd5e1"],
                 "line-width": 1.4,
               }}
             />
@@ -842,7 +857,7 @@ export default function Home() {
               filter={distritosFilter}
               minzoom={8}
               paint={{
-                "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#dc2626", "#0f172a"],
+                "line-color": ["case", ["boolean", ["feature-state", "hover"], false], "#f43f5e", "#94a3b8"],
                 "line-width": 1.1,
               }}
             />
@@ -940,8 +955,8 @@ export default function Home() {
               "text-anchor": "top",
             }}
             paint={{
-              "text-color": "#0f172a",
-              "text-halo-color": "#ffffff",
+              "text-color": "#f8fafc",
+              "text-halo-color": "rgba(15,23,42,0.95)",
               "text-halo-width": 1,
             }}
           />

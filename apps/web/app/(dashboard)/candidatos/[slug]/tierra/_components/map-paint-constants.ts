@@ -84,7 +84,7 @@ export const AGENT_SELECTED_FILTER: FilterSpecification = ["==", ["get", "is_sel
 export const AGENT_CONNECTED_FILTER: FilterSpecification = ["==", ["get", "status"], "connected"];
 export const AGENT_PULSE_PAINT: CircleLayerSpecification["paint"] = { "circle-radius": 18, "circle-color": STATUS_COLORS.connected, "circle-opacity": 0.12 };
 export const AGENT_LABELS_LAYOUT: SymbolLayerSpecification["layout"] = { "text-field": ["get", "name"], "text-size": 11, "text-offset": [0, 1.8], "text-allow-overlap": false, "text-font": ["Open Sans Bold"] };
-export const AGENT_LABELS_PAINT: SymbolLayerSpecification["paint"] = { "text-color": "#1e293b", "text-halo-color": "rgba(255,255,255,0.92)", "text-halo-width": 1.5 };
+export const AGENT_LABELS_PAINT: SymbolLayerSpecification["paint"] = { "text-color": "#f8fafc", "text-halo-color": "rgba(15,23,42,0.9)", "text-halo-width": 1.6 };
 export const AGENT_COUNT_LAYOUT: SymbolLayerSpecification["layout"] = { "text-field": ["to-string", ["get", "forms_count"]], "text-size": 9, "text-allow-overlap": true, "text-font": ["Open Sans Bold"] };
 export const AGENT_COUNT_PAINT: SymbolLayerSpecification["paint"] = { "text-color": "#ffffff" };
 

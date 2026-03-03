@@ -14,7 +14,7 @@ import type {
 
 /* ─── Constants ─── */
 
-const LIGHT_TILES = "https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png";
+const DARK_TILES = "https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}@2x.png";
 const TILE_TEMPLATE = "/api/tiles/{z}/{x}/{y}.vector.pbf";
 
 const PERU_VIEW = { longitude: -75.0152, latitude: -9.1899, zoom: 5 } as const;
@@ -30,11 +30,11 @@ const PROMOTE_ID = {
 const MAP_STYLE: StyleSpecification = {
   version: 8,
   sources: {
-    "light-base": { type: "raster", tiles: [LIGHT_TILES], tileSize: 256, attribution: "&copy; CARTO", maxzoom: 19 },
+    "dark-base": { type: "raster", tiles: [DARK_TILES], tileSize: 256, attribution: "&copy; CARTO", maxzoom: 19 },
   },
   layers: [
-    { id: "background", type: "background", paint: { "background-color": "#e6e5e3" } },
-    { id: "light-base", type: "raster", source: "light-base" },
+    { id: "background", type: "background", paint: { "background-color": "#0b1220" } },
+    { id: "dark-base", type: "raster", source: "dark-base" },
   ],
   transition: { duration: 0, delay: 0 },
 };
@@ -42,8 +42,8 @@ const MAP_STYLE: StyleSpecification = {
 const HIDE: FilterSpecification = ["==", "1", "0"];
 const SHOW_ALL: FilterSpecification = ["all"];
 
-const ZONE_FILL = "rgba(148, 163, 184, 0.06)";
-const ZONE_LINE = "#334155";
+const ZONE_FILL = "rgba(148, 163, 184, 0.14)";
+const ZONE_LINE = "#cbd5e1";
 const MASK_COLOR = "#0f172a";
 const MASK_OPACITY_ACTIVE = 0.06;
 const MASK_OPACITY_HOVER = 0.14;
