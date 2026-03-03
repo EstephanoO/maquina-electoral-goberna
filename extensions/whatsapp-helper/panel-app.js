@@ -434,17 +434,14 @@ function waFindSearchInput() {
 /** Type text into the search input (direct DOM, same page) */
 function waTypeInSearch(input, text) {
   input.focus();
-  // Clear first
+  // Clear existing text
   document.execCommand("selectAll", false, null);
   document.execCommand("delete", false, null);
-  // Type
+  // Insert new text — execCommand triggers React's internal event handlers
+  // directly when running in the same page context (content script).
+  // Do NOT dispatch a synthetic InputEvent here — it would cause double-insertion
+  // because React processes both the execCommand mutation and the InputEvent.
   document.execCommand("insertText", false, text);
-  // Reinforce React state
-  try {
-    input.dispatchEvent(new InputEvent("input", {
-      bubbles: true, cancelable: true, inputType: "insertText", data: text,
-    }));
-  } catch (_) {}
 }
 
 /** Check if search results exist */
