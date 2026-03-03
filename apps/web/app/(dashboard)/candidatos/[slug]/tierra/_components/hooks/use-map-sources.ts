@@ -44,10 +44,16 @@ export function useAgentsSource(agents: EnrichedAgent[], selectedAgentId: string
 
 /* ─── Form sources (clustered) ─── */
 
-export function useFormSources(forms: FormPoint[], selectedAgentId: string | null) {
-  const GRID_SIZE_DEG = 0.015;
+export function useFormSources(forms: FormPoint[], selectedAgentId: string | null, barsZoom = 8) {
   const MIN_BAR_HEIGHT = 140;
   const MAX_BAR_HEIGHT = 2600;
+
+  // Dynamic grid: zoom in => smaller cells (bars split), zoom out => larger cells (bars merge).
+  const barsGridSizeDeg = useMemo(() => {
+    const z = Math.max(4, Math.min(17, barsZoom));
+    const size = 0.45 / Math.pow(2, z - 5);
+    return Math.max(0.0025, Math.min(0.8, size));
+  }, [barsZoom]);
 
   // Base filtered forms — only valid coordinates
   const validForms = useMemo(
@@ -90,8 +96,8 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
     const grid = new Map<string, GridCell>();
 
     for (const f of visibleForms) {
-      const lngIndex = Math.floor(f.lng / GRID_SIZE_DEG);
-      const latIndex = Math.floor(f.lat / GRID_SIZE_DEG);
+      const lngIndex = Math.floor(f.lng / barsGridSizeDeg);
+      const latIndex = Math.floor(f.lat / barsGridSizeDeg);
       const key = `${lngIndex}:${latIndex}`;
       const prev = grid.get(key);
       if (prev) prev.count += 1;
@@ -101,10 +107,10 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
     return {
       type: "FeatureCollection" as const,
       features: Array.from(grid.values()).map((cell) => {
-        const lng0 = cell.lngIndex * GRID_SIZE_DEG;
-        const lat0 = cell.latIndex * GRID_SIZE_DEG;
-        const lng1 = lng0 + GRID_SIZE_DEG;
-        const lat1 = lat0 + GRID_SIZE_DEG;
+        const lng0 = cell.lngIndex * barsGridSizeDeg;
+        const lat0 = cell.latIndex * barsGridSizeDeg;
+        const lng1 = lng0 + barsGridSizeDeg;
+        const lat1 = lat0 + barsGridSizeDeg;
         const height = Math.min(MAX_BAR_HEIGHT, Math.max(MIN_BAR_HEIGHT, Math.round(Math.sqrt(cell.count) * 280)));
 
         return {
@@ -126,7 +132,7 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
         };
       }),
     };
-  }, [visibleForms]);
+  }, [visibleForms, barsGridSizeDeg]);
 
   return { formsGeoJson, barsGeoJson };
 }

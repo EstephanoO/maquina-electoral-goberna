@@ -103,6 +103,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const mapRef = useRef<MapRef | null>(null);
   const [tileUrl, setTileUrl] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [barsZoom, setBarsZoom] = useState<number>(PERU_VIEW.zoom);
   const skipNextFitRef = useRef(false);
   const isZoomingRef = useRef(false);
   const zoomEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -120,7 +121,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Hooks ───
   const filters = useDrillFilters(drillState, campaignId);
   const agentsGeoJson = useAgentsSource(agents, selectedAgentId);
-  const { formsGeoJson, barsGeoJson } = useFormSources(forms, selectedAgentId);
+  const { formsGeoJson, barsGeoJson } = useFormSources(forms, selectedAgentId, barsZoom);
   const { routesGeoJson, waypointsGeoJson } = useSurveyorRoutes(forms, selectedAgentId);
 
   useAutoFit(mapRef, drillState, skipNextFitRef);
@@ -296,6 +297,9 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   const handleMoveEnd = useCallback(() => {
     zoomEndTimer.current = setTimeout(() => { isZoomingRef.current = false; }, 300);
+    if (mapRef.current && showDatos && datosVizMode === "bars3d") {
+      setBarsZoom(mapRef.current.getZoom());
+    }
 
     // After cluster flyTo lands, reverse-geocode the map center and drill
     // to the appropriate level based on how far we zoomed in.
@@ -333,7 +337,15 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         }
       }).catch(() => {});
     }
-  }, [onDrillChange]);
+  }, [onDrillChange, showDatos, datosVizMode]);
+
+  // Live zoom updates while camera moves in bars mode (for smooth split/merge behavior).
+  const handleMove = useCallback((evt: { viewState?: { zoom?: number } }) => {
+    if (!showDatos || datosVizMode !== "bars3d") return;
+    const z = evt.viewState?.zoom;
+    if (typeof z !== "number") return;
+    setBarsZoom((prev) => (Math.abs(prev - z) >= 0.1 ? z : prev));
+  }, [showDatos, datosVizMode]);
 
   // ─── Feature-state hover tracking (zero React re-renders) ───
   const hoveredRef = useRef<{ source: string; sourceLayer: string; id: string | number } | null>(null);
@@ -407,6 +419,12 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     map.easeTo({ pitch: targetPitch, duration: targetPitch > 0 ? 480 : 320, essential: true });
   }, [showDatos, datosVizMode]);
 
+  useEffect(() => {
+    if (!showDatos || datosVizMode !== "bars3d") return;
+    const z = mapRef.current?.getZoom();
+    if (typeof z === "number") setBarsZoom(z);
+  }, [showDatos, datosVizMode]);
+
 
 
   // ─── Cleanup ───
@@ -454,6 +472,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         maxTileCacheZoomLevels={10}
         fadeDuration={0}
         onLoad={handleLoad}
+        onMove={handleMove}
         onMoveStart={handleMoveStart}
         onMoveEnd={handleMoveEnd}
         onClick={handleClick}

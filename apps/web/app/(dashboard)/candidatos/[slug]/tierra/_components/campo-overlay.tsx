@@ -83,6 +83,7 @@ export function CampoOverlay({
 
   const selectedAgent = selectedAgentId ? agents.find((a) => a.id === selectedAgentId) : null;
   const isDark = mapTheme === "dark";
+  const accentColor = isDark ? "#60a5fa" : primaryColor;
 
   return (
     <div
@@ -93,7 +94,7 @@ export function CampoOverlay({
       <button
         type="button"
         onClick={() => setVisible(!visible)}
-        className="shrink-0 mt-1 -mr-px w-7 h-14 rounded-l-xl flex items-center justify-center cursor-pointer shadow-lg transition-colors"
+        className="shrink-0 mt-2 -mr-0.5 w-8 h-16 rounded-l-2xl flex items-center justify-center cursor-pointer shadow-lg transition-colors"
         style={{
           background: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.35)",
           backdropFilter: "blur(16px)",
@@ -140,13 +141,13 @@ export function CampoOverlay({
         {/* ═══ KPI row ═══ */}
         <div className="flex gap-2">
           <Kpi mapTheme={mapTheme} dotColor="#22c55e" pulse value={connectedCount} label="En linea" />
-          <Kpi mapTheme={mapTheme} color={primaryColor} value={formCount} label="Capturas" />
+          <Kpi mapTheme={mapTheme} color={accentColor} value={formCount} label="Capturas" />
           <Kpi mapTheme={mapTheme} color={isDark ? "#cbd5e1" : "#64748b"} value={agents.length} label="Agentes" sub={
             <span className="flex gap-1.5 mt-0.5">
               {(["connected", "idle", "inactive"] as const).map((s) => (
                 <span key={s} className="flex items-center gap-0.5">
                   <span className="w-1 h-1 rounded-full" style={{ backgroundColor: STATUS_CFG[s].color }} />
-                  <span className="text-[8px] tabular-nums opacity-70">{statusCounts[s]}</span>
+                  <span className={`text-[8px] tabular-nums ${isDark ? "text-slate-200/85" : "opacity-70"}`}>{statusCounts[s]}</span>
                 </span>
               ))}
             </span>
@@ -157,7 +158,7 @@ export function CampoOverlay({
         <Glass mapTheme={mapTheme}>
           <CardHeader onClick={() => setAgentsOpen(!agentsOpen)} open={agentsOpen} mapTheme={mapTheme}>
             <span className={`font-semibold text-[12px] ${isDark ? "text-slate-100" : "text-slate-700"}`}>Agentes</span>
-            <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: primaryColor }}>{agents.length}</span>
+            <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: accentColor }}>{agents.length}</span>
             <span className="ml-auto mr-2 flex items-center gap-1 text-[9px] font-bold text-emerald-500">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               LIVE
@@ -169,13 +170,13 @@ export function CampoOverlay({
               <p className={`px-3 py-3 text-center text-[11px] ${isDark ? "text-slate-400/90" : "text-slate-400/80"}`}>Sin agentes</p>
             ) : (
               visibleAgents.map((a) => (
-                <AgentRow key={a.id} mapTheme={mapTheme} agent={a} primaryColor={primaryColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
+                <AgentRow key={a.id} mapTheme={mapTheme} agent={a} primaryColor={accentColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
               ))
             )}
           </div>
 
           {!agentsOpen && sortedAgents.length > AGENTS_COLLAPSED && (
-            <MoreBtn mapTheme={mapTheme} count={sortedAgents.length - AGENTS_COLLAPSED} color={primaryColor} onClick={() => setAgentsOpen(true)} />
+            <MoreBtn mapTheme={mapTheme} count={sortedAgents.length - AGENTS_COLLAPSED} color={accentColor} onClick={() => setAgentsOpen(true)} />
           )}
         </Glass>
 
@@ -184,18 +185,18 @@ export function CampoOverlay({
           <Glass mapTheme={mapTheme}>
             <CardHeader onClick={() => setRankingOpen(!rankingOpen)} open={rankingOpen} mapTheme={mapTheme}>
               <span className={`font-semibold text-[12px] ${isDark ? "text-slate-100" : "text-slate-700"}`}>Ranking</span>
-              <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: primaryColor }}>{rankedAgents.length}</span>
+              <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: accentColor }}>{rankedAgents.length}</span>
               <span className="ml-auto mr-2 text-[9px] font-bold text-amber-500">TOP</span>
             </CardHeader>
 
             <div className={rankingOpen ? SCROLL_MAX : ""}>
               {visibleRanking.map((a, idx) => (
-                <RankingRow key={a.id} mapTheme={mapTheme} agent={a} rank={idx + 1} primaryColor={primaryColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
+                <RankingRow key={a.id} mapTheme={mapTheme} agent={a} rank={idx + 1} primaryColor={accentColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
               ))}
             </div>
 
             {!rankingOpen && rankedAgents.length > RANKING_COLLAPSED && (
-              <MoreBtn mapTheme={mapTheme} count={rankedAgents.length - RANKING_COLLAPSED} color={primaryColor} onClick={() => setRankingOpen(true)} />
+              <MoreBtn mapTheme={mapTheme} count={rankedAgents.length - RANKING_COLLAPSED} color={accentColor} onClick={() => setRankingOpen(true)} />
             )}
           </Glass>
         )}
@@ -205,13 +206,13 @@ export function CampoOverlay({
           <div className="flex items-center">
             <CardHeader onClick={() => setLogOpen(!logOpen)} open={logOpen} mapTheme={mapTheme}>
               <span className={`font-semibold text-[12px] ${isDark ? "text-slate-100" : "text-slate-700"}`}>Datos</span>
-              <span className="ml-1.5 text-[11px] font-bold tabular-nums mr-auto" style={{ color: primaryColor }}>{formLogEntries.length}</span>
+              <span className="ml-1.5 text-[11px] font-bold tabular-nums mr-auto" style={{ color: accentColor }}>{formLogEntries.length}</span>
             </CardHeader>
             <button
               type="button"
               onClick={() => setLogModalOpen(true)}
               className="shrink-0 mr-3 text-[9px] font-semibold uppercase tracking-wider cursor-pointer transition-colors hover:opacity-80"
-              style={{ color: primaryColor }}
+              style={{ color: accentColor }}
               title="Ver registro completo"
             >
               Ver todos
@@ -229,7 +230,7 @@ export function CampoOverlay({
           </div>
 
           {!logOpen && formLogEntries.length > LOG_COLLAPSED && (
-            <MoreBtn mapTheme={mapTheme} count={formLogEntries.length - LOG_COLLAPSED} color={primaryColor} onClick={() => setLogOpen(true)} />
+            <MoreBtn mapTheme={mapTheme} count={formLogEntries.length - LOG_COLLAPSED} color={accentColor} onClick={() => setLogOpen(true)} />
           )}
         </Glass>
       </div>
