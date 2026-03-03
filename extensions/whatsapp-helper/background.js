@@ -240,9 +240,14 @@ function stepCheckSearchInput() {
  * Step 3: Clear + type phone into the search input.
  * Runs in MAIN world — returns void (MAIN limitation).
  *
- * Strategy: bulk execCommand for N-1 digits, then full keystroke sequence
- * for the last digit. Playwright confirmed this triggers WA/Lexical search
- * correctly (bulk alone returns generic list; last keystroke fires debounce).
+ * execCommand("insertText") requires real OS focus on the tab — unreliable
+ * from a service worker. Instead we mutate the DOM directly and fire the
+ * InputEvent that Lexical's MutationObserver is watching.
+ *
+ * Strategy (Playwright-verified):
+ *   1. Clear: empty the first child text node directly
+ *   2. Bulk insert N-1 digits via textNode mutation + InputEvent(insertText)
+ *   3. Last digit via InputEvent(insertText) alone — fires Lexical debounce
  */
 function stepTypePhone(phone) {
   const LABELS = [
@@ -262,28 +267,55 @@ function stepTypePhone(phone) {
     return;
   }
 
-  // ── 1. Clear ──
   input.focus();
-  const range = document.createRange();
-  range.selectNodeContents(input);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-  input.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteContentBackward", bubbles: true, cancelable: true }));
-  document.execCommand("delete", false, null);
+
+  // ── 1. Clear: nuke the inner paragraph/text node ──
+  // Lexical renders a <p> inside the contenteditable. Clear its text node.
+  const p = input.querySelector("p") || input;
+  const textNode = p.firstChild && p.firstChild.nodeType === Node.TEXT_NODE
+    ? p.firstChild
+    : p.childNodes[0];
+
+  if (textNode && textNode.nodeType === Node.TEXT_NODE) {
+    textNode.nodeValue = "";
+  } else {
+    // Fallback: clear innerHTML keeping the paragraph structure
+    p.innerHTML = "";
+  }
+  input.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: false }));
   console.log("[Goberna BG] stepTypePhone: cleared, remaining:", (input.textContent || "").trim() || "(empty)");
 
-  // ── 2. Bulk insert N-1 digits ──
+  // ── 2. Set N-1 digits directly on the text node ──
   const bulk = phone.slice(0, -1);
   const last = phone.slice(-1);
-  document.execCommand("insertText", false, bulk);
-  console.log("[Goberna BG] stepTypePhone: bulk inserted, field now:", (input.textContent || "").trim());
 
-  // ── 3. Last digit via full keystroke sequence — triggers Lexical search debounce ──
-  input.dispatchEvent(new KeyboardEvent("keydown", { key: last, bubbles: true, cancelable: true }));
-  input.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: last, bubbles: true, cancelable: true }));
-  document.execCommand("insertText", false, last);
-  input.dispatchEvent(new KeyboardEvent("keyup", { key: last, bubbles: true }));
+  // Get or create the text node inside the paragraph
+  const pNode = input.querySelector("p") || input;
+  let tNode = pNode.firstChild;
+  if (!tNode || tNode.nodeType !== Node.TEXT_NODE) {
+    tNode = document.createTextNode("");
+    pNode.insertBefore(tNode, pNode.firstChild || null);
+  }
+  tNode.nodeValue = bulk;
+
+  // Fire InputEvent so Lexical registers the content
+  input.dispatchEvent(new InputEvent("input", {
+    inputType: "insertText",
+    data: bulk,
+    bubbles: true,
+    cancelable: false,
+  }));
+  console.log("[Goberna BG] stepTypePhone: bulk set, field now:", (input.textContent || "").trim());
+
+  // ── 3. Last digit: append to text node + fire InputEvent ──
+  // This single InputEvent is what triggers Lexical's search debounce.
+  tNode.nodeValue = bulk + last;
+  input.dispatchEvent(new InputEvent("input", {
+    inputType: "insertText",
+    data: last,
+    bubbles: true,
+    cancelable: false,
+  }));
   console.log("[Goberna BG] stepTypePhone: done, field now:", (input.textContent || "").trim());
 }
 
