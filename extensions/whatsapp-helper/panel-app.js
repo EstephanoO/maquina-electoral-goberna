@@ -34,6 +34,7 @@ const TABS = [
 // ── Debug ──
 
 const GDEBUG = true; // Set to true for verbose console logging
+console.log("[Goberna WA] panel-app.js loaded, GDEBUG:", GDEBUG);
 
 // ── State ──
 
@@ -545,8 +546,12 @@ async function openWhatsAppChat(phone) {
   // Step 3: Type +51XXXXXXXXX and wait for results
   waTypeInSearch(input, searchPhone);
 
+  if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: waiting for search results...");
   const results = await waPoll(() => waCheckResults(), 8000);
+  if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: results:", results);
+  
   if (results?.found) {
+    if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: calling waSelectFirstResult...");
     // Delegate Enter key to background.js (MAIN world) — ISOLATED world clicks don't work
     await waSelectFirstResult();
     await waDelay(500);
