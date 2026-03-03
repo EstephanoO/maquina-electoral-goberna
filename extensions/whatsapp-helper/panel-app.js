@@ -475,13 +475,31 @@ function waCheckResults() {
   return count > 0 ? { found: true, count } : null;
 }
 
-/** Press Enter on the search input to select first result */
-function waPressEnter(input) {
-  input.focus();
-  const props = { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true };
-  input.dispatchEvent(new KeyboardEvent("keydown", props));
-  input.dispatchEvent(new KeyboardEvent("keypress", props));
-  input.dispatchEvent(new KeyboardEvent("keyup", props));
+/**
+ * Select the first search result.
+ * Strategy 1: Click the first result <button> directly.
+ * Strategy 2: If click doesn't work (isTrusted check), try Enter key.
+ * 
+ * Note: Content scripts run in ISOLATED world, so synthetic events are
+ * untrusted. However, .click() on a button works because WA's React
+ * handlers on buttons don't check isTrusted for click events.
+ */
+function waSelectFirstResult() {
+  const app = document.getElementById("app");
+  if (!app) return false;
+
+  // Find first result button (same logic as waCheckResults but pick the first)
+  for (const btn of app.querySelectorAll("button")) {
+    const ariaLabel = (btn.getAttribute("aria-label") || "").trim();
+    const text = (btn.textContent || "").trim();
+    if (ariaLabel && SKIP_RESULT_LABELS.has(ariaLabel)) continue;
+    if (text.length < 3 || SKIP_RESULT_LABELS.has(text)) continue;
+    if (/\d{3,}/.test(text) || btn.querySelector("img")) {
+      btn.click();
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -525,8 +543,7 @@ async function openWhatsAppChat(phone) {
 
   const results = await waPoll(() => waCheckResults(), 8000);
   if (results?.found) {
-    const currentInput = waFindSearchInput();
-    if (currentInput) waPressEnter(currentInput);
+    waSelectFirstResult();
     await waDelay(500);
     return;
   }
