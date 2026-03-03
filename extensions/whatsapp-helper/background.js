@@ -262,10 +262,18 @@ function stepTypePhone(phone) {
   document.execCommand("insertText", false, phone);
   console.log("[Goberna BG] stepTypePhone: after insert, content:", (input.textContent || "").slice(0, 20));
 
-  // NOTE: Do NOT dispatch synthetic InputEvent after execCommand.
-  // In WhatsApp Web 2026, React processes BOTH execCommand mutation AND
-  // synthetic InputEvent, resulting in doubled text in the input field.
-  // execCommand alone is sufficient in MAIN world.
+  // Trigger React's search by dispatching keyboard events after execCommand
+  // This helps React recognize the DOM change and trigger the search
+  const keyEventProps = {
+    key: "Enter",
+    code: "Enter",
+    keyCode: 13,
+    which: 13,
+    bubbles: true,
+    cancelable: true,
+  };
+  input.dispatchEvent(new KeyboardEvent("keydown", keyEventProps));
+  input.dispatchEvent(new KeyboardEvent("keyup", keyEventProps));
 }
 
 /**
