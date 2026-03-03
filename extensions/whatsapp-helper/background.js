@@ -60,7 +60,7 @@
 const WA_BASE = "https://web.whatsapp.com";
 
 /** Set to true to enable verbose console logging */
-const DEBUG = false;
+const DEBUG = true;
 
 /** Polling configuration */
 const POLL_INTERVAL_MS = 250;
@@ -237,135 +237,136 @@ function stepCheckSearchInput() {
 }
 
 /**
- * Step 3: Type phone number into the "Nuevo chat" search input.
- * Runs in MAIN world.
- * Returns void (MAIN world limitation).
+ * Step 3: Focus the "Nuevo chat" search input.
+ * Runs in ISOLATED world — returns { found, label, nodeId? }.
  *
- * v8.8 — Three functions:
- *   stepClearSearchInput(): clears existing content via selectNodeContents + beforeinput + delete
- *   stepInsertPhoneBulk(text): bulk insert via execCommand (fast, no keyboard events)
- *   stepInsertPhoneChar(char): inserts ONE character via keydown + beforeinput + insertText + keyup
- *
- * Rationale (Playwright-verified, 2026-03-03):
- *   - char-by-char for ALL digits → WA returns 11 generic contact results, NOT the phone search
- *   - bulk insert of N-1 digits + one stepInsertPhoneChar for the last digit → WA returns
- *     exactly 1 result with the formatted phone number (e.g. "+51 929 172 568")
- *   - The last individual keystroke is what triggers WA/Lexical's search debounce correctly.
+ * Used before typePhoneViaDebugger to get the element into focus
+ * so Input.insertText lands in the right place.
  */
-
-/**
- * Clear the Nuevo Chat search input.
- * Runs in MAIN world — returns void.
- */
-function stepClearSearchInput() {
+function stepFocusSearchInput() {
   const searchLabels = [
     "Buscar un nombre o número",
     "Search name or number",
     "Pesquisar nome ou número",
   ];
 
-  let input = null;
   for (const label of searchLabels) {
-    input = document.querySelector(`div[contenteditable="true"][aria-label="${label}"]`);
-    if (input) break;
+    const input = document.querySelector(`div[contenteditable="true"][aria-label="${label}"]`);
+    if (input) {
+      input.focus();
+      // Clear any existing content
+      const range = document.createRange();
+      range.selectNodeContents(input);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      input.dispatchEvent(new InputEvent("beforeinput", {
+        inputType: "deleteContentBackward",
+        bubbles: true,
+        cancelable: true,
+      }));
+      document.execCommand("delete", false, null);
+      const remaining = (input.textContent || "").trim();
+      console.log("[Goberna BG] stepFocusSearchInput: focused, cleared, remaining:", remaining || "(empty)");
+      return { found: true, label, remaining };
+    }
   }
 
-  if (!input) {
-    console.log("[Goberna BG] stepClearSearchInput: input NOT found!");
-    return;
-  }
-
-  input.focus();
-
-  // selectNodeContents + beforeinput(deleteContentBackward) + execCommand('delete')
-  // is the only reliable way to clear WA's Lexical-based contenteditable.
-  const range = document.createRange();
-  range.selectNodeContents(input);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-
-  input.dispatchEvent(new InputEvent("beforeinput", {
-    inputType: "deleteContentBackward",
-    bubbles: true,
-    cancelable: true,
-  }));
-  document.execCommand("delete", false, null);
-
-  console.log("[Goberna BG] stepClearSearchInput: cleared, remaining:", (input.textContent || "").slice(0, 20));
+  console.log("[Goberna BG] stepFocusSearchInput: input NOT found");
+  return { found: false };
 }
 
 /**
- * Bulk insert a string into the Nuevo Chat search input via execCommand.
- * No per-character keyboard events — fast, but does NOT trigger WA's search alone.
- * Used together with stepInsertPhoneChar for the last digit to trigger search.
- * Runs in MAIN world — returns void.
- *
- * v8.8: Playwright confirmed this combination (bulk + last char) correctly fires
- * WA search and returns a precise result (vs char-by-char which returns generic list).
+ * Read the current text content of the search input.
+ * Runs in ISOLATED world — used to verify text was inserted.
  */
-function stepInsertPhoneBulk(text) {
+function stepReadSearchInput() {
   const searchLabels = [
     "Buscar un nombre o número",
     "Search name or number",
     "Pesquisar nome ou número",
   ];
-
-  let input = null;
   for (const label of searchLabels) {
-    input = document.querySelector(`div[contenteditable="true"][aria-label="${label}"]`);
-    if (input) break;
+    const input = document.querySelector(`div[contenteditable="true"][aria-label="${label}"]`);
+    if (input) {
+      return { found: true, text: (input.textContent || "").trim() };
+    }
   }
-
-  if (!input) return;
-
-  input.focus();
-  document.execCommand("insertText", false, text);
-  console.log("[Goberna BG] stepInsertPhoneBulk: inserted:", (input.textContent || "").slice(0, 20));
+  return { found: false, text: "" };
 }
 
 /**
- * Insert a single character into the Nuevo Chat search input.
- * Uses full keyboard event sequence (keydown + beforeinput + insertText + keyup)
- * to best approximate trusted user input for Lexical/React event handlers.
- * Runs in MAIN world — returns void.
+ * Type a phone number into the focused search input using chrome.debugger
+ * Input.insertText — a trusted OS-level text insertion that bypasses the
+ * execCommand/focus limitations of extension MAIN world scripts.
+ *
+ * Strategy (Playwright-verified 2026-03-03):
+ *   bulk text (N-1 digits) via Input.insertText → last digit via Input.dispatchKeyEvent
+ *   This combination triggers WA/Lexical's search debounce and returns the exact
+ *   phone result (vs char-by-char which returns 11 generic contacts).
  */
-function stepInsertPhoneChar(char) {
-  const searchLabels = [
-    "Buscar un nombre o número",
-    "Search name or number",
-    "Pesquisar nome ou número",
-  ];
+async function typePhoneViaDebugger(tabId, phone) {
+  const debugTarget = { tabId };
 
-  let input = null;
-  for (const label of searchLabels) {
-    input = document.querySelector(`div[contenteditable="true"][aria-label="${label}"]`);
-    if (input) break;
+  try {
+    await chrome.debugger.attach(debugTarget, "1.3");
+    console.log("[Goberna BG] typePhoneViaDebugger: debugger attached");
+  } catch (e) {
+    console.warn("[Goberna BG] typePhoneViaDebugger: attach failed:", e.message);
+    return { ok: false, reason: "attach-failed", error: e.message };
   }
 
-  if (!input) return;
+  try {
+    const bulk = phone.slice(0, -1);
+    const lastChar = phone.slice(-1);
 
-  input.focus();
+    // Insert all-but-last as a single trusted text insertion
+    console.log("[Goberna BG] typePhoneViaDebugger: inserting bulk:", bulk);
+    await chrome.debugger.sendCommand(debugTarget, "Input.insertText", { text: bulk });
 
-  input.dispatchEvent(new KeyboardEvent("keydown", {
-    key: char,
-    bubbles: true,
-    cancelable: true,
-  }));
+    // Small pause so Lexical registers the bulk text
+    await sleep(80);
 
-  input.dispatchEvent(new InputEvent("beforeinput", {
-    inputType: "insertText",
-    data: char,
-    bubbles: true,
-    cancelable: true,
-  }));
+    // Insert last char as a proper keypress — this triggers WA's search debounce
+    console.log("[Goberna BG] typePhoneViaDebugger: inserting last char:", lastChar);
+    await chrome.debugger.sendCommand(debugTarget, "Input.dispatchKeyEvent", {
+      type: "keyDown",
+      key: lastChar,
+      text: lastChar,
+      unmodifiedText: lastChar,
+      windowsVirtualKeyCode: lastChar.charCodeAt(0),
+      nativeVirtualKeyCode: lastChar.charCodeAt(0),
+    });
+    await sleep(20);
+    await chrome.debugger.sendCommand(debugTarget, "Input.dispatchKeyEvent", {
+      type: "char",
+      key: lastChar,
+      text: lastChar,
+      unmodifiedText: lastChar,
+      windowsVirtualKeyCode: lastChar.charCodeAt(0),
+      nativeVirtualKeyCode: lastChar.charCodeAt(0),
+    });
+    await sleep(20);
+    await chrome.debugger.sendCommand(debugTarget, "Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: lastChar,
+      text: lastChar,
+      unmodifiedText: lastChar,
+      windowsVirtualKeyCode: lastChar.charCodeAt(0),
+      nativeVirtualKeyCode: lastChar.charCodeAt(0),
+    });
 
-  document.execCommand("insertText", false, char);
-
-  input.dispatchEvent(new KeyboardEvent("keyup", {
-    key: char,
-    bubbles: true,
-  }));
+    console.log("[Goberna BG] typePhoneViaDebugger: keystrokes sent");
+    return { ok: true };
+  } catch (e) {
+    console.warn("[Goberna BG] typePhoneViaDebugger: sendCommand failed:", e.message);
+    return { ok: false, reason: "sendCommand-failed", error: e.message };
+  } finally {
+    try {
+      await chrome.debugger.detach(debugTarget);
+      console.log("[Goberna BG] typePhoneViaDebugger: debugger detached");
+    } catch (_) {}
+  }
 }
 
 /**
@@ -707,18 +708,24 @@ async function attemptNavigation(tabId, phone, text, isRetry) {
     }
   }
 
-  // ── v8.8: Bulk insert all-but-last-digit, then type last digit individually ──
-  // Playwright confirmed: execCommand bulk insert fills the Lexical field,
-  // then a single char-by-char keystroke for the last digit triggers WA's
-  // search and returns the exact phone result (1 result vs 11 generic contacts
-  // that char-by-char alone produces). The result stabilizes in ~150ms after
-  // the last digit — no extra sleep needed before polling.
-  const phoneBulk = phone.slice(0, -1);
-  const phoneLastChar = phone.slice(-1);
-  await execStep(tabId, stepClearSearchInput, [], "MAIN");
-  await sleep(150); // let Lexical process the clear
-  await execStep(tabId, stepInsertPhoneBulk, [phoneBulk], "MAIN");
-  await execStep(tabId, stepInsertPhoneChar, [phoneLastChar], "MAIN");
+  // ── v8.9: Focus + clear input (ISOLATED), then type via debugger (trusted OS events) ──
+  const focused = await execStep(tabId, stepFocusSearchInput);
+  console.log("[Goberna BG] attemptNavigation: stepFocusSearchInput →", JSON.stringify(focused));
+  if (!focused?.found) {
+    return { success: false, reason: "search-input-not-found" };
+  }
+  await sleep(100);
+
+  const typed = await typePhoneViaDebugger(tabId, phone);
+  console.log("[Goberna BG] attemptNavigation: typePhoneViaDebugger →", JSON.stringify(typed));
+  if (!typed?.ok) {
+    return { success: false, reason: "type-failed", detail: typed };
+  }
+
+  // Verify text landed
+  await sleep(150);
+  const inputState = await execStep(tabId, stepReadSearchInput);
+  console.log("[Goberna BG] attemptNavigation: input after typing →", JSON.stringify(inputState));
 
   // Poll for search results
   const results = await pollCondition(
