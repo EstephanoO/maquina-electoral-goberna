@@ -603,8 +603,11 @@ async function openWhatsAppChat(phone) {
 
   if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: opening", waPhone);
 
-  // Open in new tab to preserve current page state
-  window.open(`https://web.whatsapp.com/send?phone=${encodeURIComponent(waPhone)}`, "_blank");
+  // Use history API to navigate without full page reload
+  // First change the URL, then let WA handle the navigation
+  history.pushState(null, "", `/send?phone=${encodeURIComponent(waPhone)}`);
+  // Trigger a hashchange or popstate to make WA react
+  window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
 // ── Reminders (local chrome.storage) ──
