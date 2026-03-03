@@ -481,8 +481,12 @@ function waCheckResults() {
   for (const label of ["Cancelar búsqueda", "Cancel search", "Cancelar pesquisa"]) {
     if (app.querySelector(`button[aria-label="${label}"]`)) { inSearch = true; break; }
   }
-  // Also consider it "in search" if the search input has text
-  if (!inSearch && !hasSearchText) {
+  // Consider it "in search" if the search input has text
+  if (!inSearch && hasSearchText) {
+    inSearch = true; // Search is active even without cancel button
+  }
+  
+  if (!inSearch) {
     if (GDEBUG) console.log("[Goberna WA] waCheckResults: not in search mode");
     return null;
   }
@@ -523,14 +527,23 @@ function waCheckResults() {
   
   // DEBUG: Log ALL buttons in the app to see what's there
   if (GDEBUG && count === 0 && hasSearchText) {
-    const allButtons = Array.from(app.querySelectorAll("button")).slice(0, 10).map(btn => ({
-      ariaLabel: btn.getAttribute("aria-label"),
-      text: (btn.textContent || "").trim().slice(0, 40),
-      hasImg: !!btn.querySelector("img"),
-      tagName: btn.tagName,
-      role: btn.getAttribute("role"),
+    // First, let's find the search results panel
+    // It's likely in a specific container - let's find all divs that might contain results
+    const potentialPanels = app.querySelectorAll('div[role="dialog"], div[aria-modal="true"], div[class*="panel"], div[class*="list"]');
+    console.log("[Goberna WA] waCheckResults: potential panels:", potentialPanels.length);
+    
+    // Also check for _a1w5 or other WA-specific classes
+    const searchResultsContainers = app.querySelectorAll('div[class*="_a1"], div[class*="list"]');
+    console.log("[Goberna WA] waCheckResults: search result containers:", searchResultsContainers.length);
+    
+    // Look for any element containing the search text or phone number
+    const allDivs = Array.from(app.querySelectorAll("div")).slice(0, 20).map(d => ({
+      className: d.className?.slice(0, 30),
+      role: d.getAttribute("role"),
+      ariaLabel: d.getAttribute("aria-label"),
+      text: (d.textContent || "").trim().slice(0, 25),
     }));
-    console.log("[Goberna WA] waCheckResults: ALL buttons in DOM:", JSON.stringify(allButtons));
+    console.log("[Goberna WA] waCheckResults: sample divs:", JSON.stringify(allDivs.slice(0, 8)));
   }
   
   if (GDEBUG) console.log("[Goberna WA] waCheckResults: found", count, "results, input has text:", hasSearchText, "buttons:", resultBtns.slice(0, 3));
