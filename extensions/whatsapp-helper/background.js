@@ -47,6 +47,12 @@
  *         keyup — the closest approximation to trusted events from extension MAIN
  *         world. Playwright testing confirmed WA Lexical editor requires this full
  *         event sequence to trigger search. 40ms between chars replicates human pace.
+ *   v8.7: Fix result selection — replace el.click() (dispatches at 0,0, ignored by
+ *         React) with full PointerEvent+MouseEvent sequence using real clientX/clientY
+ *         from getBoundingClientRect(). Playwright diagnosis: el.click() from
+ *         executeScript is untrusted AND coordinate-less → WA ignores it. The full
+ *         mouse event sequence with center coordinates IS processed by React's
+ *         synthetic event system via event delegation.
  */
 
 // ── Configuration ──
@@ -414,13 +420,18 @@ function stepCheckSearchResults() {
 
 /**
  * Step 5: Click the first result DIV[role="button"] in the search panel.
- * Runs in ISOLATED world — uses element.click() which WA accepts here
- * because we're clicking a result item (not a compose box).
+ * Runs in ISOLATED world.
  *
- * Playwright testing confirmed:
- *   - Results are DIV[role="button"] elements with phone text content
- *   - element.click() on these divs successfully opens the chat
- *   - Enter on the search input does NOT reliably select results
+ * v8.7 — Replace el.click() with full PointerEvent+MouseEvent sequence with
+ * real clientX/clientY coordinates. Playwright testing proved:
+ *   - el.click() dispatches a synthetic click at (0,0) → WA/React ignores it
+ *   - page.mouse.click(x,y) works (trusted) but unavailable from extension
+ *   - dispatchEvent(new MouseEvent('click', {clientX, clientY, ...})) with the
+ *     element's center coordinates IS processed by React's event delegation
+ *     because React reads the coordinates from the event, not just the target
+ *
+ * Full sequence: pointerover → mouseover → pointermove → mousemove →
+ *                pointerdown → mousedown → pointerup → mouseup → click
  */
 function stepClickFirstResult() {
   const app = document.querySelector("#app");
@@ -443,9 +454,38 @@ function stepClickFirstResult() {
     const hasDigits = /\d{4,}/.test(text);
     const hasImg = div.querySelector("img") !== null;
     if (hasDigits || hasImg) {
-      console.log("[Goberna BG] stepClickFirstResult: clicking result:", text.slice(0, 30));
-      div.click();
-      return { clicked: true, text: text.slice(0, 30) };
+      console.log("[Goberna BG] stepClickFirstResult: dispatching mouse sequence on:", text.slice(0, 30));
+
+      const rect = div.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+
+      const base = {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clientX: cx,
+        clientY: cy,
+        screenX: cx,
+        screenY: cy,
+        button: 0,
+        buttons: 1,
+        view: window,
+      };
+
+      div.dispatchEvent(new PointerEvent("pointerover",  base));
+      div.dispatchEvent(new PointerEvent("pointerenter", { ...base, bubbles: false }));
+      div.dispatchEvent(new MouseEvent("mouseover",  base));
+      div.dispatchEvent(new MouseEvent("mouseenter", { ...base, bubbles: false }));
+      div.dispatchEvent(new PointerEvent("pointermove", base));
+      div.dispatchEvent(new MouseEvent("mousemove",  base));
+      div.dispatchEvent(new PointerEvent("pointerdown", base));
+      div.dispatchEvent(new MouseEvent("mousedown",  base));
+      div.dispatchEvent(new PointerEvent("pointerup", base));
+      div.dispatchEvent(new MouseEvent("mouseup",  base));
+      div.dispatchEvent(new MouseEvent("click",    base));
+
+      return { clicked: true, text: text.slice(0, 30), cx, cy };
     }
   }
 
