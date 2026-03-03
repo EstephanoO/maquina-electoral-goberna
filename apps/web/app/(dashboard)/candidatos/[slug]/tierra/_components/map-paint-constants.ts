@@ -79,7 +79,7 @@ export function getHeatmapDarkPaint({ radius, opacity }: HeatmapPaintOptions): H
       0.62, "rgba(188,255,0,0.78)",
       0.78, "rgba(255,220,0,0.9)",
       0.9, "rgba(255,128,0,0.95)",
-      1, "rgba(255,24,0,0.99)",
+      1, "rgba(255,64,0,0.99)",
     ],
   };
 }
