@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WhatsApp Goberna Helper",
-  "version": "8.1.0",
+  "version": "8.8.0",
   "description": "Una sola pestaña de WhatsApp Web — nunca abre duplicados. Integración con el dashboard de Goberna.",
   "permissions": [
     "tabs",

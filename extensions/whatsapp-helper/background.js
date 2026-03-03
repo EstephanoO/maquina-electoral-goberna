@@ -241,15 +241,16 @@ function stepCheckSearchInput() {
  * Runs in MAIN world.
  * Returns void (MAIN world limitation).
  *
- * v8.6 — Split into two functions:
+ * v8.8 — Three functions:
  *   stepClearSearchInput(): clears existing content via selectNodeContents + beforeinput + delete
+ *   stepInsertPhoneBulk(text): bulk insert via execCommand (fast, no keyboard events)
  *   stepInsertPhoneChar(char): inserts ONE character via keydown + beforeinput + insertText + keyup
  *
- * Rationale: chrome.scripting.executeScript (MAIN world) does NOT generate
- * trusted events. Typing character-by-character with full keyboard event sequence
- * is the closest approximation to real user input that Lexical/React will process.
- * Verified with Playwright: char-by-char with KeyboardEvent + InputEvent(beforeinput) +
- * execCommand('insertText') + KeyboardEvent(keyup) triggers WA search reliably.
+ * Rationale (Playwright-verified, 2026-03-03):
+ *   - char-by-char for ALL digits → WA returns 11 generic contact results, NOT the phone search
+ *   - bulk insert of N-1 digits + one stepInsertPhoneChar for the last digit → WA returns
+ *     exactly 1 result with the formatted phone number (e.g. "+51 929 172 568")
+ *   - The last individual keystroke is what triggers WA/Lexical's search debounce correctly.
  */
 
 /**
@@ -292,6 +293,35 @@ function stepClearSearchInput() {
   document.execCommand("delete", false, null);
 
   console.log("[Goberna BG] stepClearSearchInput: cleared, remaining:", (input.textContent || "").slice(0, 20));
+}
+
+/**
+ * Bulk insert a string into the Nuevo Chat search input via execCommand.
+ * No per-character keyboard events — fast, but does NOT trigger WA's search alone.
+ * Used together with stepInsertPhoneChar for the last digit to trigger search.
+ * Runs in MAIN world — returns void.
+ *
+ * v8.8: Playwright confirmed this combination (bulk + last char) correctly fires
+ * WA search and returns a precise result (vs char-by-char which returns generic list).
+ */
+function stepInsertPhoneBulk(text) {
+  const searchLabels = [
+    "Buscar un nombre o número",
+    "Search name or number",
+    "Pesquisar nome ou número",
+  ];
+
+  let input = null;
+  for (const label of searchLabels) {
+    input = document.querySelector(`div[contenteditable="true"][aria-label="${label}"]`);
+    if (input) break;
+  }
+
+  if (!input) return;
+
+  input.focus();
+  document.execCommand("insertText", false, text);
+  console.log("[Goberna BG] stepInsertPhoneBulk: inserted:", (input.textContent || "").slice(0, 20));
 }
 
 /**
@@ -388,9 +418,11 @@ function stepCheckSearchResults() {
     return { found: false };
   }
 
-  // ── Look for result DIV[role="button"] elements with phone digits ──
-  // Playwright confirmed: WA renders results as DIV[role="button"], not <button>.
-  // The result element's textContent is the formatted phone (e.g. "+51 929 172 568").
+  // ── Look for result DIV[role="button"] elements (contact results) ──
+  // Playwright confirmed: WA renders contact results as DIV[role="button"].
+  // System actions ("Nuevo grupo", etc.) also use DIV[role="button"] but are
+  // excluded by the SKIP_TEXT set. Any remaining div[role=button] IS a contact result —
+  // do NOT filter by digits: contacts with saved names have no digits in textContent.
   const SKIP_TEXT = new Set([
     "Nuevo grupo", "Nueva comunidad", "Nuevo contacto",
     "New group", "New community", "New contact",
@@ -403,12 +435,7 @@ function stepCheckSearchResults() {
     const text = (div.textContent || "").trim();
     if (text.length < 2) continue;
     if (SKIP_TEXT.has(text)) continue;
-    // Contact result: has phone digits or has a profile image
-    const hasDigits = /\d{4,}/.test(text);
-    const hasImg = div.querySelector("img") !== null;
-    if (hasDigits || hasImg) {
-      resultCount++;
-    }
+    resultCount++;
   }
 
   if (resultCount > 0) {
@@ -451,9 +478,8 @@ function stepClickFirstResult() {
     const text = (div.textContent || "").trim();
     if (text.length < 2) continue;
     if (SKIP_TEXT.has(text)) continue;
-    const hasDigits = /\d{4,}/.test(text);
-    const hasImg = div.querySelector("img") !== null;
-    if (hasDigits || hasImg) {
+    // Any non-system div[role=button] is a contact result — name OR number.
+    {
       console.log("[Goberna BG] stepClickFirstResult: dispatching mouse sequence on:", text.slice(0, 30));
 
       const rect = div.getBoundingClientRect();
@@ -496,27 +522,19 @@ function stepClickFirstResult() {
 /**
  * Validate that a chat is now open.
  * Runs in ISOLATED world.
+ *
+ * v8.8 — Search document-wide instead of scoped to #main.
+ * Playwright screenshots confirmed: after clicking a result, WA opens the chat
+ * but the compose textbox may not be a descendant of #main in all WA versions.
+ * Searching document-wide is safer and handles both cases.
  */
 function stepValidateChatOpened(phone) {
-  const phoneSuffix = phone.slice(-6);
+  const phoneSuffix = phone.replace(/\D/g, "").slice(-6);
 
-  const main = document.querySelector("#main");
-  if (!main) {
-    return { opened: false, reason: "no-main" };
-  }
-
-  // Check header for the phone number
-  const header = main.querySelector("header");
-  if (header) {
-    const headerDigits = (header.textContent || "").replace(/\D/g, "");
-    if (headerDigits.includes(phoneSuffix)) {
-      return { opened: true, method: "header-match" };
-    }
-  }
-
-  // Check for compose box (indicates chat is open and interactive)
+  // ── Primary: compose textbox visible anywhere in document ──
+  // aria-label starts with "Escribe" / "Type" / "Digite" confirms chat is open.
   const composePrefixes = ["Escribe", "Type", "Digite"];
-  const allTextboxes = main.querySelectorAll(
+  const allTextboxes = document.querySelectorAll(
     'div[role="textbox"][contenteditable="true"]'
   );
   for (const box of allTextboxes) {
@@ -528,8 +546,22 @@ function stepValidateChatOpened(phone) {
     }
   }
 
-  // #main exists but could be from a previous chat — cautious success
-  return { opened: true, method: "main-exists-unconfirmed" };
+  // ── Secondary: header anywhere in document contains the phone suffix ──
+  const headers = document.querySelectorAll("header");
+  for (const header of headers) {
+    const headerDigits = (header.textContent || "").replace(/\D/g, "");
+    if (phoneSuffix && headerDigits.includes(phoneSuffix)) {
+      return { opened: true, method: "header-match" };
+    }
+  }
+
+  // ── Fallback: #main exists (unconfirmed but optimistic) ──
+  const main = document.querySelector("#main");
+  if (main) {
+    return { opened: true, method: "main-exists-unconfirmed" };
+  }
+
+  return { opened: false, reason: "no-chat-indicators" };
 }
 
 /**
@@ -675,15 +707,18 @@ async function attemptNavigation(tabId, phone, text, isRetry) {
     }
   }
 
-  // ── v8.6: Type phone number character-by-character (MAIN world) ──
-  // Clear first, then insert each char with full keyboard event sequence.
-  // This is the most trusted-event-like approach available from an extension.
+  // ── v8.8: Bulk insert all-but-last-digit, then type last digit individually ──
+  // Playwright confirmed: execCommand bulk insert fills the Lexical field,
+  // then a single char-by-char keystroke for the last digit triggers WA's
+  // search and returns the exact phone result (1 result vs 11 generic contacts
+  // that char-by-char alone produces). The result stabilizes in ~150ms after
+  // the last digit — no extra sleep needed before polling.
+  const phoneBulk = phone.slice(0, -1);
+  const phoneLastChar = phone.slice(-1);
   await execStep(tabId, stepClearSearchInput, [], "MAIN");
-  await sleep(150); // let Lexical process the clear before typing
-  for (const char of phone) {
-    await execStep(tabId, stepInsertPhoneChar, [char], "MAIN");
-    await sleep(40); // ~25 chars/sec — human-like pace that triggers React debounce
-  }
+  await sleep(150); // let Lexical process the clear
+  await execStep(tabId, stepInsertPhoneBulk, [phoneBulk], "MAIN");
+  await execStep(tabId, stepInsertPhoneChar, [phoneLastChar], "MAIN");
 
   // Poll for search results
   const results = await pollCondition(
