@@ -31,6 +31,10 @@ const TABS = [
   { key: "archivado",    label: "Archivados",statKey: "archivados" },
 ];
 
+// ── Debug ──
+
+const DEBUG = false; // Set to true for verbose console logging
+
 // ── State ──
 
 const state = {
@@ -476,30 +480,28 @@ function waCheckResults() {
 }
 
 /**
- * Select the first search result.
- * Strategy 1: Click the first result <button> directly.
- * Strategy 2: If click doesn't work (isTrusted check), try Enter key.
- * 
- * Note: Content scripts run in ISOLATED world, so synthetic events are
- * untrusted. However, .click() on a button works because WA's React
- * handlers on buttons don't check isTrusted for click events.
+ * Select the first search result by pressing Enter on the search input.
+ *
+ * Content scripts run in ISOLATED world — both .click() and synthetic
+ * KeyboardEvents are untrusted and ignored by WA's React handlers.
+ * Instead, we delegate to background.js which executes stepSelectResult()
+ * in MAIN world via chrome.scripting.executeScript. MAIN-world dispatched
+ * events are trusted by WA's React.
+ *
+ * Returns a Promise that resolves to true if the message was sent
+ * successfully, false otherwise.
  */
 function waSelectFirstResult() {
-  const app = document.getElementById("app");
-  if (!app) return false;
-
-  // Find first result button (same logic as waCheckResults but pick the first)
-  for (const btn of app.querySelectorAll("button")) {
-    const ariaLabel = (btn.getAttribute("aria-label") || "").trim();
-    const text = (btn.textContent || "").trim();
-    if (ariaLabel && SKIP_RESULT_LABELS.has(ariaLabel)) continue;
-    if (text.length < 3 || SKIP_RESULT_LABELS.has(text)) continue;
-    if (/\d{3,}/.test(text) || btn.querySelector("img")) {
-      btn.click();
-      return true;
-    }
-  }
-  return false;
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ action: "selectSearchResult" }, (resp) => {
+      if (chrome.runtime.lastError) {
+        if (DEBUG) console.warn("[Goberna WA] selectSearchResult failed:", chrome.runtime.lastError.message);
+        resolve(false);
+        return;
+      }
+      resolve(resp?.ok === true);
+    });
+  });
 }
 
 /**
@@ -543,7 +545,8 @@ async function openWhatsAppChat(phone) {
 
   const results = await waPoll(() => waCheckResults(), 8000);
   if (results?.found) {
-    waSelectFirstResult();
+    // Delegate Enter key to background.js (MAIN world) — ISOLATED world clicks don't work
+    await waSelectFirstResult();
     await waDelay(500);
     return;
   }

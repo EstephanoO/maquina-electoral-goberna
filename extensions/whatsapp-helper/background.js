@@ -843,6 +843,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         .catch((err) => sendResponse({ error: err.message }));
       return true;
 
+    case "selectSearchResult":
+      // CMS panel asks us to press Enter on the WA search input in MAIN world.
+      // Content scripts run in ISOLATED world where synthetic keyboard events are
+      // untrusted and ignored by WA's React. MAIN world events work.
+      (async () => {
+        try {
+          const tabId = sender?.tab?.id;
+          if (!tabId) {
+            sendResponse({ ok: false, error: "no sender tab" });
+            return;
+          }
+          await execStep(tabId, stepSelectResult, [], "MAIN");
+          sendResponse({ ok: true });
+        } catch (err) {
+          error("selectSearchResult error:", err);
+          sendResponse({ ok: false, error: err.message });
+        }
+      })();
+      return true;
+
     case "cmsLogin":
       // Login from CMS panel — proxy to backend to avoid CORS
       (async () => {
