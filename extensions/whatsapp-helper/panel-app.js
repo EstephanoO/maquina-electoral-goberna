@@ -44,6 +44,8 @@ const state = {
   user: null,
   campaigns: [],
   activeCampaignId: null,
+  // Prevent multiple simultaneous WA navigations
+  waNavigating: false,
   // UI
   view: "login", // "login" | "list" | "detail"
   collapsed: false,
@@ -604,12 +606,20 @@ async function openWhatsAppChat(phone) {
   const digits = phone.replace(/\D/g, "");
   if (!digits || digits.length < 7) return;
 
+  // Prevent double-clicks
+  if (state.waNavigating) {
+    if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: already navigating, ignoring");
+    return;
+  }
+  state.waNavigating = true;
+
   if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: delegating to background.js openChat, phone:", phone);
 
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(
       { action: "openChat", phone: phone, text: "" },
       (resp) => {
+        state.waNavigating = false;
         if (chrome.runtime.lastError) {
           if (GDEBUG) console.warn("[Goberna WA] openChat error:", chrome.runtime.lastError.message);
         } else {
