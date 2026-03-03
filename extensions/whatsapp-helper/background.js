@@ -154,6 +154,7 @@ function stepCheckReady() {
  * Runs in ISOLATED world — DOM click() works on buttons.
  */
 function stepClickNuevoChat() {
+  console.log("[Goberna BG] stepClickNuevoChat: clicking nuevo chat button");
   const labels = ["Nuevo chat", "New chat", "Chat nuevo", "Nova conversa"];
   for (const label of labels) {
     const btn = document.querySelector(`button[aria-label="${label}"]`);
@@ -220,6 +221,7 @@ function stepCheckSearchInput() {
  * Returns void (MAIN world limitation).
  */
 function stepTypePhone(phone) {
+  console.log("[Goberna BG] stepTypePhone: typing phone:", phone);
   const searchLabels = [
     "Buscar un nombre o número",
     "Search name or number",
@@ -390,8 +392,7 @@ function stepCheckSearchResults() {
  * unlike mouse clicks which are filtered by isTrusted checks.
  */
 function stepSelectResult() {
-  console.log("[Goberna BG] stepSelectResult: searching for search input");
-
+  console.log("[Goberna BG] stepSelectResult: pressing Enter on search input");
   // Try multiple selectors to find the search input in "Nuevo chat" panel
   const selectors = [
     'div[role="textbox"][aria-label="Buscar un nombre o número"]',
