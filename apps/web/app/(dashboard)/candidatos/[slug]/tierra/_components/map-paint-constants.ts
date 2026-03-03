@@ -47,14 +47,21 @@ export const BARS_EXTRUSION_PAINT: FillExtrusionLayerSpecification["paint"] = {
     "step", ["get", "count"],
     "#38bdf8", 3, "#22d3ee", 8, "#14b8a6", 15, "#f59e0b", 30, "#ef4444",
   ],
-  // Zoom-responsive scale: far = shorter bars, near = taller bars.
+  // Composite expression (zoom + feature property). `zoom` must be top-level.
   "fill-extrusion-height": [
-    "*",
-    ["get", "height"],
-    ["interpolate", ["linear"], ["zoom"], 4, 0.2, 6, 0.32, 8, 0.48, 10, 0.7, 12, 0.95, 14, 1.35, 16, 1.85],
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    4, ["*", ["get", "height"], 0.7],
+    6, ["*", ["get", "height"], 0.85],
+    8, ["*", ["get", "height"], 1.0],
+    10, ["*", ["get", "height"], 1.2],
+    12, ["*", ["get", "height"], 1.45],
+    14, ["*", ["get", "height"], 1.8],
+    16, ["*", ["get", "height"], 2.2],
   ],
   "fill-extrusion-base": 0,
-  "fill-extrusion-opacity": ["interpolate", ["linear"], ["zoom"], 4, 0.35, 8, 0.55, 12, 0.78, 16, 0.9],
+  "fill-extrusion-opacity": ["interpolate", ["linear"], ["zoom"], 4, 0.5, 8, 0.62, 12, 0.78, 16, 0.9],
 };
 
 export const BARS_LINE_PAINT: LineLayerSpecification["paint"] = {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import type { EnrichedAgent, LogEntry, AgentStatus } from "./types";
+import type { EnrichedAgent, LogEntry, AgentStatus, MapTheme } from "./types";
 import { STATUS_CFG } from "./constants";
 import {
   Glass, Kpi, CardHeader, AgentRow, RankingRow, LogRow, MoreBtn, SCROLL_MAX,
@@ -25,6 +25,7 @@ type Props = {
   onDeleteForm?: (formId: string, campaignId: string) => Promise<boolean>;
   /** Update handler — called from modal */
   onUpdateForm?: (formId: string, campaignId: string, updates: Record<string, string>) => Promise<boolean>;
+  mapTheme?: MapTheme;
 };
 
 /* ========== Constants ========== */
@@ -41,7 +42,7 @@ const RANKING_EXPANDED = 15;
 export function CampoOverlay({
   agents, connectedCount, logEntries, formCount,
   primaryColor, selectedAgentId, onAgentClick, onLogEntryClick,
-  userRole, onDeleteForm, onUpdateForm,
+  userRole, onDeleteForm, onUpdateForm, mapTheme = "dark",
 }: Props) {
   const [visible, setVisible] = useState(true);
   const [agentsOpen, setAgentsOpen] = useState(false);
@@ -81,6 +82,7 @@ export function CampoOverlay({
   const visibleLogs = logOpen ? formLogEntries.slice(0, LOG_EXPANDED) : formLogEntries.slice(0, LOG_COLLAPSED);
 
   const selectedAgent = selectedAgentId ? agents.find((a) => a.id === selectedAgentId) : null;
+  const isDark = mapTheme === "dark";
 
   return (
     <div
@@ -92,11 +94,16 @@ export function CampoOverlay({
         type="button"
         onClick={() => setVisible(!visible)}
         className="shrink-0 mt-1 -mr-px w-7 h-14 rounded-l-xl flex items-center justify-center cursor-pointer shadow-lg transition-colors"
-        style={{ background: "rgba(255,255,255,0.35)", backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)" }}
+        style={{
+          background: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.35)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          border: isDark ? "1px solid rgba(148,163,184,0.26)" : "1px solid rgba(226,232,240,0.6)",
+        }}
         title={visible ? "Ocultar panel" : "Mostrar panel"}
         aria-label={visible ? "Ocultar panel" : "Mostrar panel"}
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`transition-transform duration-300 ${visible ? "" : "rotate-180"}`}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#cbd5e1" : "#475569"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`transition-transform duration-300 ${visible ? "" : "rotate-180"}`}>
           <polyline points="9 18 15 12 9 6" />
         </svg>
       </button>
@@ -107,10 +114,13 @@ export function CampoOverlay({
         {selectedAgent && (
           <div
             className="flex items-center gap-2 px-3 py-2 rounded-2xl shadow-sm"
-            style={{ background: `${primaryColor}18`, border: `1px solid ${primaryColor}30` }}
+            style={{
+              background: isDark ? "rgba(15,23,42,0.74)" : `${primaryColor}18`,
+              border: isDark ? "1px solid rgba(148,163,184,0.24)" : `1px solid ${primaryColor}30`,
+            }}
           >
             <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: primaryColor }} />
-            <span className="text-[11px] font-semibold text-slate-700 truncate flex-1">
+            <span className={`text-[11px] font-semibold truncate flex-1 ${isDark ? "text-slate-200" : "text-slate-700"}`}>
               Puntos de <span style={{ color: primaryColor }}>{selectedAgent.name.split(" ")[0]}</span>
             </span>
             <span className="text-[10px] font-bold tabular-nums" style={{ color: primaryColor }}>{selectedAgent.forms_count}</span>
@@ -129,9 +139,9 @@ export function CampoOverlay({
 
         {/* ═══ KPI row ═══ */}
         <div className="flex gap-2">
-          <Kpi dotColor="#22c55e" pulse value={connectedCount} label="En linea" />
-          <Kpi color={primaryColor} value={formCount} label="Capturas" />
-          <Kpi color="#64748b" value={agents.length} label="Agentes" sub={
+          <Kpi mapTheme={mapTheme} dotColor="#22c55e" pulse value={connectedCount} label="En linea" />
+          <Kpi mapTheme={mapTheme} color={primaryColor} value={formCount} label="Capturas" />
+          <Kpi mapTheme={mapTheme} color={isDark ? "#cbd5e1" : "#64748b"} value={agents.length} label="Agentes" sub={
             <span className="flex gap-1.5 mt-0.5">
               {(["connected", "idle", "inactive"] as const).map((s) => (
                 <span key={s} className="flex items-center gap-0.5">
@@ -144,9 +154,9 @@ export function CampoOverlay({
         </div>
 
         {/* ═══ Agents card ═══ */}
-        <Glass>
-          <CardHeader onClick={() => setAgentsOpen(!agentsOpen)} open={agentsOpen}>
-            <span className="font-semibold text-[12px] text-slate-700">Agentes</span>
+        <Glass mapTheme={mapTheme}>
+          <CardHeader onClick={() => setAgentsOpen(!agentsOpen)} open={agentsOpen} mapTheme={mapTheme}>
+            <span className={`font-semibold text-[12px] ${isDark ? "text-slate-100" : "text-slate-700"}`}>Agentes</span>
             <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: primaryColor }}>{agents.length}</span>
             <span className="ml-auto mr-2 flex items-center gap-1 text-[9px] font-bold text-emerald-500">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -156,45 +166,45 @@ export function CampoOverlay({
 
           <div className={agentsOpen ? SCROLL_MAX : ""}>
             {visibleAgents.length === 0 ? (
-              <p className="px-3 py-3 text-center text-[11px] text-slate-400/80">Sin agentes</p>
+              <p className={`px-3 py-3 text-center text-[11px] ${isDark ? "text-slate-400/90" : "text-slate-400/80"}`}>Sin agentes</p>
             ) : (
               visibleAgents.map((a) => (
-                <AgentRow key={a.id} agent={a} primaryColor={primaryColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
+                <AgentRow key={a.id} mapTheme={mapTheme} agent={a} primaryColor={primaryColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
               ))
             )}
           </div>
 
           {!agentsOpen && sortedAgents.length > AGENTS_COLLAPSED && (
-            <MoreBtn count={sortedAgents.length - AGENTS_COLLAPSED} color={primaryColor} onClick={() => setAgentsOpen(true)} />
+            <MoreBtn mapTheme={mapTheme} count={sortedAgents.length - AGENTS_COLLAPSED} color={primaryColor} onClick={() => setAgentsOpen(true)} />
           )}
         </Glass>
 
         {/* ═══ Ranking card ═══ */}
         {rankedAgents.length > 0 && (
-          <Glass>
-            <CardHeader onClick={() => setRankingOpen(!rankingOpen)} open={rankingOpen}>
-              <span className="font-semibold text-[12px] text-slate-700">Ranking</span>
+          <Glass mapTheme={mapTheme}>
+            <CardHeader onClick={() => setRankingOpen(!rankingOpen)} open={rankingOpen} mapTheme={mapTheme}>
+              <span className={`font-semibold text-[12px] ${isDark ? "text-slate-100" : "text-slate-700"}`}>Ranking</span>
               <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: primaryColor }}>{rankedAgents.length}</span>
               <span className="ml-auto mr-2 text-[9px] font-bold text-amber-500">TOP</span>
             </CardHeader>
 
             <div className={rankingOpen ? SCROLL_MAX : ""}>
               {visibleRanking.map((a, idx) => (
-                <RankingRow key={a.id} agent={a} rank={idx + 1} primaryColor={primaryColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
+                <RankingRow key={a.id} mapTheme={mapTheme} agent={a} rank={idx + 1} primaryColor={primaryColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
               ))}
             </div>
 
             {!rankingOpen && rankedAgents.length > RANKING_COLLAPSED && (
-              <MoreBtn count={rankedAgents.length - RANKING_COLLAPSED} color={primaryColor} onClick={() => setRankingOpen(true)} />
+              <MoreBtn mapTheme={mapTheme} count={rankedAgents.length - RANKING_COLLAPSED} color={primaryColor} onClick={() => setRankingOpen(true)} />
             )}
           </Glass>
         )}
 
         {/* ═══ Log card — datos subidos ═══ */}
-        <Glass>
+        <Glass mapTheme={mapTheme}>
           <div className="flex items-center">
-            <CardHeader onClick={() => setLogOpen(!logOpen)} open={logOpen}>
-              <span className="font-semibold text-[12px] text-slate-700">Datos</span>
+            <CardHeader onClick={() => setLogOpen(!logOpen)} open={logOpen} mapTheme={mapTheme}>
+              <span className={`font-semibold text-[12px] ${isDark ? "text-slate-100" : "text-slate-700"}`}>Datos</span>
               <span className="ml-1.5 text-[11px] font-bold tabular-nums mr-auto" style={{ color: primaryColor }}>{formLogEntries.length}</span>
             </CardHeader>
             <button
@@ -210,16 +220,16 @@ export function CampoOverlay({
 
           <div ref={logListRef} className={logOpen ? "max-h-[340px] overflow-y-auto" : ""}>
             {visibleLogs.length === 0 ? (
-              <p className="px-3 py-3 text-center text-[11px] text-slate-400/80 italic">Sin registros</p>
+              <p className={`px-3 py-3 text-center text-[11px] italic ${isDark ? "text-slate-400/90" : "text-slate-400/80"}`}>Sin registros</p>
             ) : (
               visibleLogs.map((e) => (
-                <LogRow key={e.id} entry={e} onLogEntryClick={onLogEntryClick} />
+                <LogRow key={e.id} mapTheme={mapTheme} entry={e} onLogEntryClick={onLogEntryClick} />
               ))
             )}
           </div>
 
           {!logOpen && formLogEntries.length > LOG_COLLAPSED && (
-            <MoreBtn count={formLogEntries.length - LOG_COLLAPSED} color={primaryColor} onClick={() => setLogOpen(true)} />
+            <MoreBtn mapTheme={mapTheme} count={formLogEntries.length - LOG_COLLAPSED} color={primaryColor} onClick={() => setLogOpen(true)} />
           )}
         </Glass>
       </div>
