@@ -603,8 +603,8 @@ async function openWhatsAppChat(phone) {
 
   if (GDEBUG) console.log("[Goberna WA] openWhatsAppChat: opening", waPhone);
 
-  // Direct URL navigation - most reliable method
-  window.location.href = `https://web.whatsapp.com/send?phone=${encodeURIComponent(waPhone)}`;
+  // Open in new tab to preserve current page state
+  window.open(`https://web.whatsapp.com/send?phone=${encodeURIComponent(waPhone)}`, "_blank");
 }
 
 // ── Reminders (local chrome.storage) ──
