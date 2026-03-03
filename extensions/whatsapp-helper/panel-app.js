@@ -137,7 +137,7 @@ function clearAuth() {
 // ── Auth ──
 
 async function doLogin(email, password) {
-  const res = await apiCall("POST", "/api/auth/login", { email, password });
+  const res = await apiCall("POST", "/api/auth/login", { identifier: email, password });
   if (!res.ok) return { ok: false, error: res.error || "Login failed" };
 
   const data = res.data;

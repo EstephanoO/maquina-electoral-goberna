@@ -851,7 +851,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const res = await fetch(`${baseUrl}/api/auth/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: msg.email, password: msg.password }),
+            body: JSON.stringify({ identifier: msg.email, password: msg.password }),
           });
           const data = await res.json();
           if (!res.ok) {
