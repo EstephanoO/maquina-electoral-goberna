@@ -56,6 +56,7 @@ const NAV_ITEMS: NavItem[] = [
   // Admin-only: visible only in Admin General mode
   { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin", visibility: "global" },
   { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin"], section: "admin", visibility: "global" },
+  { icon: <BrigadistasIcon />, label: "Brigadistas", href: "/brigadistas", roles: ["admin"], section: "admin", visibility: "global" },
   // Configuracion se renderiza como item fijo al fondo del sidebar (fuera del nav scrolleable)
 ];
 
@@ -124,6 +125,17 @@ function CmsIcon() {
   );
 }
 
+
+function BrigadistasIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <line x1="23" y1="11" x2="17" y2="11" />
+      <line x1="20" y1="8" x2="20" y2="14" />
+    </svg>
+  );
+}
 
 function SettingsIcon() {
   return (
