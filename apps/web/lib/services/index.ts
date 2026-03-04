@@ -12,3 +12,4 @@ export * from "./cms";
 export * from "./leads";
 export * from "./support";
 export * from "./validacion";
+export * from "./voluntarios";

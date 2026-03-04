@@ -33,6 +33,7 @@ import { buildTwilioRoutes } from "./modules/twilio/twilio.routes";
 import { buildLeadsRoutes } from "./modules/leads/routes";
 import { buildSupportRoutes } from "./modules/support/routes";
 import { buildValidacionRoutes } from "./modules/validacion/routes";
+import { buildVoluntariosRoutes } from "./modules/voluntarios/routes";
 
 export function buildApp(env: AppEnv) {
   const app = Fastify({
@@ -176,6 +177,7 @@ export function buildApp(env: AppEnv) {
   app.register(buildLeadsRoutes(env));
   app.register(buildSupportRoutes(env));
   app.register(buildValidacionRoutes(env));
+  app.register(buildVoluntariosRoutes(env));
 
   app.get("/api/metrics", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
