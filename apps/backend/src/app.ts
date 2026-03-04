@@ -33,6 +33,7 @@ import { buildTwilioRoutes } from "./modules/twilio/twilio.routes";
 import { buildLeadsRoutes } from "./modules/leads/routes";
 import { buildSupportRoutes } from "./modules/support/routes";
 import { buildValidacionRoutes } from "./modules/validacion/routes";
+import { buildMetaRoutes } from "./modules/meta/routes";
 
 export function buildApp(env: AppEnv) {
   const app = Fastify({
@@ -52,6 +53,7 @@ export function buildApp(env: AppEnv) {
     );
   }
    app.register(cors, {
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     origin: (origin, callback) => {
       if (!origin) {
         callback(null, true);
@@ -176,6 +178,7 @@ export function buildApp(env: AppEnv) {
   app.register(buildLeadsRoutes(env));
   app.register(buildSupportRoutes(env));
   app.register(buildValidacionRoutes(env));
+  app.register(buildMetaRoutes(env));
 
   app.get("/api/metrics", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, async (_request, reply) => {
     reply.header("Cache-Control", "no-store");

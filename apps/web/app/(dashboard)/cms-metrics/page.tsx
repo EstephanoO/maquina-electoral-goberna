@@ -3,7 +3,21 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import { getCmsMetrics, type CmsMetrics } from "@/lib/services/cms";
+import {
+  getCmsMetrics,
+  getCmsExtensionMetrics,
+  getBrigadistaMetrics,
+  getDeviceMetrics,
+  getSourceMetrics,
+  type CmsMetrics,
+  type CmsExtensionMetricsGlobal,
+  type CmsWaPhoneMetrics,
+  type CmsDeviceMetrics,
+  type CmsDeviceMetricsGlobal,
+  type CmsSourceMetrics,
+  type CmsSourceMetricsGlobal,
+} from "@/lib/services/cms";
+import type { CmsBrigadistaMetrics } from "@/lib/types";
 import { MetricsBody, FONT } from "./_components";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -11,9 +25,28 @@ import { MetricsBody, FONT } from "./_components";
    Standalone route: /cms-metrics (scoped by activeCampaignId)
    ═══════════════════════════════════════════════════════════════════ */
 
+type ExtensionMetrics = {
+  global: CmsExtensionMetricsGlobal;
+  phones: CmsWaPhoneMetrics[];
+};
+
+type DeviceData = {
+  devices: CmsDeviceMetrics[];
+  global: CmsDeviceMetricsGlobal;
+};
+
+type SourceData = {
+  sources: CmsSourceMetrics[];
+  global: CmsSourceMetricsGlobal;
+};
+
 export default function CmsMetricsPage() {
   const { activeCampaignId, campaigns } = useAuth();
   const [metrics, setMetrics] = useState<CmsMetrics | null>(null);
+  const [extensionMetrics, setExtensionMetrics] = useState<ExtensionMetrics | null>(null);
+  const [brigadistas, setBrigadistas] = useState<CmsBrigadistaMetrics[] | null>(null);
+  const [deviceData, setDeviceData] = useState<DeviceData | null>(null);
+  const [sourceData, setSourceData] = useState<SourceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -25,9 +58,27 @@ export default function CmsMetricsPage() {
     if (!metrics) setLoading(true);
     setError(null);
     try {
-      const res = await getCmsMetrics(activeCampaignId);
-      if (!res.ok) { setError(res.error ?? "Error cargando metricas"); return; }
-      setMetrics(res.metrics ?? null);
+      const [cmsRes, extRes, brigRes, devRes, srcRes] = await Promise.all([
+        getCmsMetrics(activeCampaignId),
+        getCmsExtensionMetrics(activeCampaignId),
+        getBrigadistaMetrics(activeCampaignId),
+        getDeviceMetrics(activeCampaignId),
+        getSourceMetrics(activeCampaignId),
+      ]);
+      if (!cmsRes.ok) { setError(cmsRes.error ?? "Error cargando metricas"); return; }
+      setMetrics(cmsRes.metrics ?? null);
+      if (extRes.ok && extRes.global && extRes.phones) {
+        setExtensionMetrics({ global: extRes.global, phones: extRes.phones });
+      }
+      if (brigRes.ok && brigRes.brigadistas) {
+        setBrigadistas(brigRes.brigadistas);
+      }
+      if (devRes.ok && devRes.devices && devRes.global) {
+        setDeviceData({ devices: devRes.devices, global: devRes.global });
+      }
+      if (srcRes.ok && srcRes.sources && srcRes.global) {
+        setSourceData({ sources: srcRes.sources, global: srcRes.global });
+      }
     } catch {
       setError("Error de conexion");
     } finally {
@@ -121,7 +172,13 @@ export default function CmsMetricsPage() {
         </div>
       </div>
 
-      <MetricsBody metrics={metrics} />
+      <MetricsBody
+        metrics={metrics}
+        extensionMetrics={extensionMetrics}
+        brigadistas={brigadistas}
+        deviceData={deviceData}
+        sourceData={sourceData}
+      />
     </div>
   );
 }

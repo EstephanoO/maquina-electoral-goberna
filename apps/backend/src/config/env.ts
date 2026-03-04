@@ -64,6 +64,11 @@ export type AppEnv = {
   // Telegram — notificaciones de leads (opcional)
   telegramBotToken: string;
   telegramChatId: string;
+  // Meta (Facebook) Lead Ads webhook (opcional)
+  metaWebhookVerifyToken: string;
+  metaAppSecret: string;
+  /** JSON map: { "<form_id_or_page_id>": "<campaign_uuid>" } */
+  metaLeadCampaignMap: string;
 };
 
 function toNumber(value: string | undefined, fallback: number): number {
@@ -179,5 +184,8 @@ export function getEnv(): AppEnv {
     twilioEncryptionKey: (process.env.TWILIO_ENCRYPTION_KEY ?? "").trim(),
     telegramBotToken: (process.env.TELEGRAM_BOT_TOKEN ?? "").trim(),
     telegramChatId: (process.env.TELEGRAM_CHAT_ID ?? "").trim(),
+    metaWebhookVerifyToken: (process.env.META_WEBHOOK_VERIFY_TOKEN ?? "").trim(),
+    metaAppSecret: (process.env.META_APP_SECRET ?? "").trim(),
+    metaLeadCampaignMap: (process.env.META_LEAD_CAMPAIGN_MAP ?? "{}").trim(),
   };
 }

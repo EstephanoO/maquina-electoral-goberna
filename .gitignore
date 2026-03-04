@@ -119,6 +119,11 @@ apps/web/public/geo/distritos*.geojson
 # ── Security audits (NEVER commit) ──────────────────────────────────
 SECURITY-AUDIT*.md
 
+# ── Production DB dumps (local dev only, never commit) ──────────────
+goberna_schema_prod.sql
+goberna_data_*.sql
+*.dump
+
 # ── Misc ────────────────────────────────────────────────────────────
 *.bak
 *.tmp

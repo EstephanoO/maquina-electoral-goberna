@@ -6,7 +6,7 @@ import type { AppEnv } from "../../config/env";
 import type { AuthenticatedRequest } from "../../infra/auth";
 import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
-import { cmsEvents, type CmsMessageEvent, type CmsStatusUpdateEvent, type CmsExtensionMessageEvent } from "../../infra/cms-events";
+import { cmsEvents, type CmsMessageEvent, type CmsStatusUpdateEvent, type CmsExtensionMessageEvent, type CmsContactCreatedEvent } from "../../infra/cms-events";
 import { pool } from "../../db";
 import * as repo from "./repository";
 import { buildCmsChatWsRoutes } from "./ws-chat";
@@ -125,6 +125,18 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
       preview: payload.preview,
       detected_at: payload.detectedAt,
       operator_id: payload.operatorId,
+    });
+  });
+
+  // New contact created by external source (e.g. Meta Lead Ads)
+  // Notify all operators in the campaign so their lead list refreshes.
+  cmsEvents.onCms("contact.created", (payload: CmsContactCreatedEvent) => {
+    broadcastToCampaign(payload.campaignId, "contact.created", {
+      contact_id: payload.contactId,
+      nombre: payload.nombre,
+      telefono: payload.telefono,
+      contact_source: payload.contact_source,
+      created_at: payload.created_at,
     });
   });
 
@@ -795,6 +807,141 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
           contact_status: updatedContact.cms_status,
           auto_transitioned: autoTransitioned,
         });
+      },
+    );
+
+    // ── POST /api/cms/device-heartbeat ─────────────────────────────────
+    // Called by the Chrome extension every ~5 minutes to maintain an active
+    // device session. Tracks which operator is using which WA phone number.
+    // Enables per-device metrics and operator ↔ phone attribution over time.
+    const deviceHeartbeatSchema = z.object({
+      wa_number: z.string().min(7).max(20),
+    });
+
+    app.post(
+      "/api/cms/device-heartbeat",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
+        const campaignId = authed.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        const parsed = deviceHeartbeatSchema.safeParse(request.body);
+        if (!parsed.success) {
+          const msg = parsed.error.issues.map((e) => e.message).join("; ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", msg));
+        }
+
+        try {
+          const { wa_number } = parsed.data;
+          const result = await repo.upsertDeviceSession(campaignId, wa_number, authed.userId);
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            session_id: result.session_id,
+            is_new_session: result.is_new,
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "device heartbeat failed");
+          return reply.code(500).send(errorPayload(requestId, "HEARTBEAT_ERROR", "error registrando sesion de dispositivo"));
+        }
+      },
+    );
+
+    // ── GET /api/cms/metrics/by-source ──────────────────────────────────
+    // Returns CMS pipeline metrics broken down by contact_source:
+    //   - territorio: captured by field brigadistas via mobile app
+    //   - meta: imported from Meta/Facebook Lead Ads
+    //   - manual: created manually by an operator
+    // Enables comparing conversion rates across acquisition channels.
+    app.get(
+      "/api/cms/metrics/by-source",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        try {
+          const sources = await repo.getMetricsBySource(campaignId);
+
+          // Compute global totals across all sources
+          const global = sources.reduce(
+            (acc, s) => ({
+              total: acc.total + s.total,
+              nuevos: acc.nuevos + s.nuevos,
+              hablados: acc.hablados + s.hablados,
+              respondieron: acc.respondieron + s.respondieron,
+              archivados: acc.archivados + s.archivados,
+            }),
+            { total: 0, nuevos: 0, hablados: 0, respondieron: 0, archivados: 0 },
+          );
+
+          const contacted = global.hablados + global.respondieron;
+          const global_rates = {
+            contact_rate: global.total > 0 ? Math.round((contacted / global.total) * 100) / 100 : 0,
+            response_rate: contacted > 0 ? Math.round((global.respondieron / contacted) * 100) / 100 : 0,
+          };
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            sources,
+            global: { ...global, ...global_rates },
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "metrics by-source failed");
+          return reply.code(500).send(errorPayload(requestId, "CMS_SOURCE_METRICS_ERROR", "error obteniendo metricas por origen"));
+        }
+      },
+    );
+
+    // ── GET /api/cms/metrics/devices ────────────────────────────────────
+    // Returns per-WhatsApp-phone metrics (Celular 1, Celular 2, ...).
+    // Each entry includes pipeline stats + active operator (if any) from
+    // cms_device_sessions heartbeats. Enables the "sala de operaciones" view
+    // showing which device is active and what it's contributing.
+    app.get(
+      "/api/cms/metrics/devices",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        try {
+          const devices = await repo.getMetricsByDevice(campaignId);
+
+          const global = devices.reduce(
+            (acc, d) => ({
+              hablados: acc.hablados + d.hablados,
+              respondieron: acc.respondieron + d.respondieron,
+              archivados: acc.archivados + d.archivados,
+              active_devices: acc.active_devices + (d.active_operator_id ? 1 : 0),
+            }),
+            { hablados: 0, respondieron: 0, archivados: 0, active_devices: 0 },
+          );
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            devices,
+            global,
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "metrics devices failed");
+          return reply.code(500).send(errorPayload(requestId, "CMS_DEVICE_METRICS_ERROR", "error obteniendo metricas por dispositivo"));
+        }
       },
     );
 

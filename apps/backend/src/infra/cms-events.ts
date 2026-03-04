@@ -40,10 +40,25 @@ export type CmsExtensionMessageEvent = {
   operatorId: string;
 };
 
+/**
+ * Event emitted when a new contact is created from an external source
+ * (e.g. Meta Lead Ads webhook). Allows CMS SSE to notify operators in
+ * real time without the meta module importing cms/routes directly.
+ */
+export type CmsContactCreatedEvent = {
+  campaignId: string;
+  contactId: string;
+  nombre: string;
+  telefono: string | null;
+  contact_source: "territorio" | "meta" | "manual";
+  created_at: string;
+};
+
 export interface CmsEventMap {
   "message.new": CmsMessageEvent;
   "message.status": CmsStatusUpdateEvent;
   "extension.message_received": CmsExtensionMessageEvent;
+  "contact.created": CmsContactCreatedEvent;
 }
 
 class CmsEventBus extends EventEmitter {

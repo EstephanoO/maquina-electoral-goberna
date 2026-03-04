@@ -213,7 +213,15 @@ nexus6.0/
 | `GET /api/cms/stats` | Stats CMS por campana |
 | `GET /api/cms/metrics` | Metricas CMS global (candidato+) |
 | `GET /api/cms/metrics/brigadistas` | Metricas por brigadista con dedup telefono |
+| `GET /api/cms/metrics/by-source` | Metricas por origen de contacto (territorio/meta/manual) |
+| `GET /api/cms/metrics/devices` | Metricas por dispositivo WA (Celular N) + operador activo |
+| `POST /api/cms/device-heartbeat` | Heartbeat sesion operador+dispositivo (extension, cada 5 min) |
+| `POST /api/cms/extension-event` | Evento de extension (mensaje entrante detectado en WA Web) |
+| `POST /api/cms/contacts/public` | Crear contacto publico por campaign_slug (sin auth) |
 | `GET /api/cms/stream` | SSE eventos realtime del CMS |
+| **Meta Lead Ads** | |
+| `GET /api/webhooks/meta/leads` | Verificacion de webhook Meta (challenge) |
+| `POST /api/webhooks/meta/leads` | Ingesta de leads desde Meta Lead Ads (contact_source=meta) |
 | **Objectives** | |
 | `GET /api/objectives/zones` | Objetivos por zona |
 | `PUT /api/objectives/zones/:region` | Crear/actualizar objetivo zona |

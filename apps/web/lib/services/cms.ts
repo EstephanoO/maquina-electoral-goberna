@@ -372,6 +372,134 @@ export async function setContactTags(
   return { ok: true, contact: res.data?.contact };
 }
 
+// ── Device (WA hardware) Metrics ────────────────────────────────────
+
+/** Per-WhatsApp-device metrics with active operator attribution */
+export type CmsDeviceMetrics = {
+  wa_number: string;
+  /** Human-readable label derived by backend position, e.g. "Celular 1" */
+  label: string;
+  hablados: number;
+  respondieron: number;
+  archivados: number;
+  active_operator_id: string | null;
+  active_operator_email: string | null;
+  /** ISO string or null */
+  active_since: string | null;
+  total_operators: number;
+};
+
+export type CmsDeviceMetricsGlobal = {
+  hablados: number;
+  respondieron: number;
+  archivados: number;
+  active_devices: number;
+};
+
+type CmsDeviceMetricsResponse = {
+  ok: boolean;
+  devices: CmsDeviceMetrics[];
+  global: CmsDeviceMetricsGlobal;
+};
+
+export async function getDeviceMetrics(campaignId: string): Promise<{
+  ok: boolean;
+  devices?: CmsDeviceMetrics[];
+  global?: CmsDeviceMetricsGlobal;
+  error?: string;
+}> {
+  const res = await api.get<CmsDeviceMetricsResponse>(
+    "/api/cms/metrics/devices",
+    { campaignId },
+  );
+  if (!res.ok) return { ok: false, error: res.error?.message };
+  return { ok: true, devices: res.data?.devices ?? [], global: res.data?.global };
+}
+
+// ── Source (contact origin) Metrics ─────────────────────────────────
+
+/** Pipeline breakdown by contact acquisition channel */
+export type CmsSourceMetrics = {
+  source: "territorio" | "meta" | "manual";
+  total: number;
+  nuevos: number;
+  hablados: number;
+  respondieron: number;
+  archivados: number;
+  contact_rate: number;
+  response_rate: number;
+};
+
+export type CmsSourceMetricsGlobal = {
+  total: number;
+  nuevos: number;
+  hablados: number;
+  respondieron: number;
+  archivados: number;
+  contact_rate: number;
+  response_rate: number;
+};
+
+type CmsSourceMetricsResponse = {
+  ok: boolean;
+  sources: CmsSourceMetrics[];
+  global: CmsSourceMetricsGlobal;
+};
+
+export async function getSourceMetrics(campaignId: string): Promise<{
+  ok: boolean;
+  sources?: CmsSourceMetrics[];
+  global?: CmsSourceMetricsGlobal;
+  error?: string;
+}> {
+  const res = await api.get<CmsSourceMetricsResponse>(
+    "/api/cms/metrics/by-source",
+    { campaignId },
+  );
+  if (!res.ok) return { ok: false, error: res.error?.message };
+  return { ok: true, sources: res.data?.sources ?? [], global: res.data?.global };
+}
+
+// ── Extension (per-WA-phone) Metrics ───────────────────────────────
+
+/** Per-WhatsApp-phone metrics tracked by the Chrome extension */
+export type CmsWaPhoneMetrics = {
+  wa_number: string;
+  hablados: number;
+  respondieron: number;
+  archivados: number;
+  total_interactions: number;
+};
+
+export type CmsExtensionMetricsGlobal = {
+  hablados: number;
+  respondieron: number;
+  archivados: number;
+  total_interactions: number;
+  total: number;
+  nuevos: number;
+};
+
+type CmsExtensionMetricsResponse = {
+  ok: boolean;
+  global: CmsExtensionMetricsGlobal;
+  phones: CmsWaPhoneMetrics[];
+};
+
+export async function getCmsExtensionMetrics(campaignId: string): Promise<{
+  ok: boolean;
+  global?: CmsExtensionMetricsGlobal;
+  phones?: CmsWaPhoneMetrics[];
+  error?: string;
+}> {
+  const res = await api.get<CmsExtensionMetricsResponse>(
+    "/api/cms/metrics/extension",
+    { campaignId },
+  );
+  if (!res.ok) return { ok: false, error: res.error?.message };
+  return { ok: true, global: res.data?.global, phones: res.data?.phones ?? [] };
+}
+
 // ── Brigadista Metrics ──────────────────────────────────────────────
 
 export type CmsBrigadistaMetricsResponse = {

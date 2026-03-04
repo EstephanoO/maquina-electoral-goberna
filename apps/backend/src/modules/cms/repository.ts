@@ -13,6 +13,11 @@ export type CmsContactRow = {
   cms_respondieron_at: Date | null;
   cms_operator_notes: Record<string, unknown>;
   cms_tags: string[];
+  // Phase 2: explicit attribution columns (migration 032)
+  cms_wa_number: string | null;
+  cms_operator_id: string | null;
+  // Phase 2: contact origin (migration 031)
+  contact_source: "territorio" | "meta" | "manual";
   // Derived from data JSONB
   nombre: string;
   telefono: string;
@@ -277,7 +282,7 @@ export async function markHablado(
   waNumber: string | null = null,
 ): Promise<CmsContactRow | null> {
   // Merge wa_number into cms_operator_notes without overwriting existing fields.
-  // If waNumber is provided, patch the JSONB field atomically.
+  // Also write to dedicated cms_wa_number and cms_operator_id columns (migration 032).
   const waNumberPatch = waNumber
     ? `jsonb_set(COALESCE(fs.cms_operator_notes, '{}'::jsonb), '{wa_number}', $3::jsonb)`
     : `COALESCE(fs.cms_operator_notes, '{}'::jsonb)`;
@@ -291,7 +296,9 @@ export async function markHablado(
          cms_claimed_at = COALESCE(cms_claimed_at, now()),
          cms_hablado_at = now(),
          cms_respondieron_at = NULL,
-         cms_operator_notes = ${waNumberPatch}
+         cms_operator_notes = ${waNumberPatch},
+         cms_operator_id = $2::uuid,
+         cms_wa_number = ${waNumber ? "$3::text" : "cms_wa_number"}
      WHERE fs.id = $1
        AND fs.deleted_at IS NULL
        AND fs.cms_status IN ('nuevo', 'claimed', 'hablado')
@@ -321,7 +328,8 @@ export async function markRespondieron(
          cms_claimed_by = COALESCE(fs.cms_claimed_by, $2),
          cms_claimed_at = COALESCE(fs.cms_claimed_at, now()),
          cms_hablado_at = COALESCE(fs.cms_hablado_at, now()),
-         cms_respondieron_at = now()
+         cms_respondieron_at = now(),
+         cms_operator_id = COALESCE(fs.cms_operator_id, $2::uuid)
      WHERE fs.id = $1
        AND fs.deleted_at IS NULL
        AND fs.cms_status IN ('hablado', 'respondieron')
@@ -1066,4 +1074,231 @@ export async function getClaimedSnapshot(
     [campaignId],
   );
   return rows;
+}
+
+// ── Device session tracking (migration 032) ──────────────────────────
+
+export type CmsDeviceSession = {
+  id: string;
+  campaign_id: string;
+  wa_number: string;
+  operator_id: string;
+  operator_email: string;
+  operator_name: string;
+  started_at: Date;
+  last_heartbeat: Date;
+  ended_at: Date | null;
+};
+
+/**
+ * Upsert a device session: if there's an active session for this operator+wa_number
+ * (ended_at IS NULL, last_heartbeat within 10 min), update last_heartbeat.
+ * Otherwise, close any dangling active session for this wa_number (different operator)
+ * and create a new session.
+ *
+ * Returns the session id and whether it was newly created.
+ */
+export async function upsertDeviceSession(
+  campaignId: string,
+  waNumber: string,
+  operatorId: string,
+): Promise<{ session_id: string; is_new: boolean }> {
+  // Try to renew existing active session for this exact operator+number (heartbeat window: 10 min)
+  const { rows: existing } = await pool.query<{ id: string }>(
+    `UPDATE cms_device_sessions
+     SET last_heartbeat = now()
+     WHERE campaign_id = $1
+       AND wa_number = $2
+       AND operator_id = $3
+       AND ended_at IS NULL
+       AND last_heartbeat > now() - INTERVAL '10 minutes'
+     RETURNING id`,
+    [campaignId, waNumber, operatorId],
+  );
+
+  if (existing[0]) {
+    return { session_id: existing[0].id, is_new: false };
+  }
+
+  // Close any dangling active sessions for this wa_number (different operator or stale)
+  await pool.query(
+    `UPDATE cms_device_sessions
+     SET ended_at = now()
+     WHERE campaign_id = $1
+       AND wa_number = $2
+       AND ended_at IS NULL`,
+    [campaignId, waNumber],
+  );
+
+  // Create new session
+  const { rows: created } = await pool.query<{ id: string }>(
+    `INSERT INTO cms_device_sessions (campaign_id, wa_number, operator_id)
+     VALUES ($1, $2, $3)
+     RETURNING id`,
+    [campaignId, waNumber, operatorId],
+  );
+
+  return { session_id: created[0]!.id, is_new: true };
+}
+
+// ── Metrics: by contact source (territorio vs meta vs manual) ────────
+
+export type CmsSourceMetrics = {
+  source: "territorio" | "meta" | "manual";
+  total: number;
+  nuevos: number;
+  hablados: number;
+  respondieron: number;
+  archivados: number;
+  contact_rate: number;
+  response_rate: number;
+};
+
+/**
+ * Get CMS pipeline metrics grouped by contact_source for a campaign.
+ * Enables comparing Meta lead performance vs territory-captured contacts.
+ */
+export async function getMetricsBySource(
+  campaignId: string,
+): Promise<CmsSourceMetrics[]> {
+  const { rows } = await pool.query<{
+    source: string;
+    total: string;
+    nuevos: string;
+    hablados: string;
+    respondieron: string;
+    archivados: string;
+  }>(
+    `SELECT
+       COALESCE(contact_source, 'territorio') AS source,
+       COUNT(*) FILTER (WHERE COALESCE(data->>'telefono', '') != '')::text AS total,
+       COUNT(*) FILTER (WHERE cms_status = 'nuevo' AND COALESCE(data->>'telefono', '') != '')::text AS nuevos,
+       COUNT(*) FILTER (WHERE cms_status = 'hablado')::text AS hablados,
+       COUNT(*) FILTER (WHERE cms_status = 'respondieron')::text AS respondieron,
+       COUNT(*) FILTER (WHERE cms_status = 'archivado')::text AS archivados
+     FROM form_submissions
+     WHERE campaign_id = $1
+       AND deleted_at IS NULL
+     GROUP BY COALESCE(contact_source, 'territorio')
+     ORDER BY COUNT(*) DESC`,
+    [campaignId],
+  );
+
+  return rows.map((r) => {
+    const total = parseInt(r.total, 10);
+    const hablados = parseInt(r.hablados, 10);
+    const respondieron = parseInt(r.respondieron, 10);
+    const contacted = hablados + respondieron;
+    return {
+      source: r.source as CmsSourceMetrics["source"],
+      total,
+      nuevos: parseInt(r.nuevos, 10),
+      hablados,
+      respondieron,
+      archivados: parseInt(r.archivados, 10),
+      contact_rate: total > 0 ? Math.round((contacted / total) * 100) / 100 : 0,
+      response_rate: contacted > 0 ? Math.round((respondieron / contacted) * 100) / 100 : 0,
+    };
+  });
+}
+
+// ── Metrics: by device (WA phone hardware) ───────────────────────────
+
+export type CmsDeviceMetrics = {
+  wa_number: string;
+  /** Human-readable label, e.g. "Celular 1" — derived from position in sorted list */
+  label: string;
+  hablados: number;
+  respondieron: number;
+  archivados: number;
+  /** Active session info (operator currently using this device) */
+  active_operator_id: string | null;
+  active_operator_email: string | null;
+  active_since: Date | null;
+  /** Total unique operators who used this device (session history) */
+  total_operators: number;
+};
+
+/**
+ * Get per-device (WhatsApp phone hardware) metrics.
+ *
+ * Uses cms_wa_number column (migration 032) as primary source.
+ * Falls back to cms_operator_notes->>'wa_number' for contacts recorded
+ * before the migration (backwards compat).
+ *
+ * Joins against cms_device_sessions to enrich with active operator info.
+ */
+export async function getMetricsByDevice(
+  campaignId: string,
+): Promise<CmsDeviceMetrics[]> {
+  const { rows } = await pool.query<{
+    wa_number: string;
+    hablados: string;
+    respondieron: string;
+    archivados: string;
+    active_operator_id: string | null;
+    active_operator_email: string | null;
+    active_since: Date | null;
+    total_operators: string;
+  }>(
+    `WITH device_stats AS (
+       SELECT
+         -- Prefer explicit column, fall back to JSONB for historical data
+         COALESCE(cms_wa_number, cms_operator_notes->>'wa_number') AS wa_number,
+         COUNT(*) FILTER (WHERE cms_status = 'hablado')       AS hablados,
+         COUNT(*) FILTER (WHERE cms_status = 'respondieron')  AS respondieron,
+         COUNT(*) FILTER (WHERE cms_status = 'archivado')     AS archivados
+       FROM form_submissions
+       WHERE campaign_id = $1
+         AND deleted_at IS NULL
+         AND COALESCE(cms_wa_number, cms_operator_notes->>'wa_number') IS NOT NULL
+         AND cms_status IN ('hablado', 'respondieron', 'archivado')
+       GROUP BY COALESCE(cms_wa_number, cms_operator_notes->>'wa_number')
+     ),
+     active_sessions AS (
+       SELECT DISTINCT ON (s.wa_number)
+         s.wa_number,
+         s.operator_id   AS active_operator_id,
+         u.email         AS active_operator_email,
+         s.started_at    AS active_since
+       FROM cms_device_sessions s
+       JOIN users u ON u.id = s.operator_id
+       WHERE s.campaign_id = $1
+         AND s.ended_at IS NULL
+         AND s.last_heartbeat > now() - INTERVAL '10 minutes'
+       ORDER BY s.wa_number, s.last_heartbeat DESC
+     ),
+     operator_counts AS (
+       SELECT wa_number, COUNT(DISTINCT operator_id)::text AS total_operators
+       FROM cms_device_sessions
+       WHERE campaign_id = $1
+       GROUP BY wa_number
+     )
+     SELECT
+       ds.wa_number,
+       ds.hablados::text,
+       ds.respondieron::text,
+       ds.archivados::text,
+       acts.active_operator_id,
+       acts.active_operator_email,
+       acts.active_since,
+       COALESCE(oc.total_operators, '1') AS total_operators
+     FROM device_stats ds
+     LEFT JOIN active_sessions acts ON acts.wa_number = ds.wa_number
+     LEFT JOIN operator_counts oc   ON oc.wa_number = ds.wa_number
+     ORDER BY ds.hablados DESC`,
+    [campaignId],
+  );
+
+  return rows.map((r, idx) => ({
+    wa_number: r.wa_number,
+    label: `Celular ${idx + 1}`,
+    hablados: parseInt(r.hablados, 10),
+    respondieron: parseInt(r.respondieron, 10),
+    archivados: parseInt(r.archivados, 10),
+    active_operator_id: r.active_operator_id ?? null,
+    active_operator_email: r.active_operator_email ?? null,
+    active_since: r.active_since ?? null,
+    total_operators: parseInt(r.total_operators, 10),
+  }));
 }
