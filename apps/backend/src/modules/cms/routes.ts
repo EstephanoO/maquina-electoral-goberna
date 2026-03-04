@@ -6,7 +6,7 @@ import type { AppEnv } from "../../config/env";
 import type { AuthenticatedRequest } from "../../infra/auth";
 import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
-import { cmsEvents, type CmsMessageEvent, type CmsStatusUpdateEvent } from "../../infra/cms-events";
+import { cmsEvents, type CmsMessageEvent, type CmsStatusUpdateEvent, type CmsExtensionMessageEvent } from "../../infra/cms-events";
 import { pool } from "../../db";
 import * as repo from "./repository";
 import { buildCmsChatWsRoutes } from "./ws-chat";
@@ -118,6 +118,16 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
     });
   });
 
+  cmsEvents.onCms("extension.message_received", (payload: CmsExtensionMessageEvent) => {
+    broadcastToCampaign(payload.campaignId, "extension.message_received", {
+      contact_id: payload.contactId,
+      phone: payload.phone,
+      preview: payload.preview,
+      detected_at: payload.detectedAt,
+      operator_id: payload.operatorId,
+    });
+  });
+
   return async (app) => {
     // Register WebSocket chat routes for real-time WhatsApp messages
     app.register(buildCmsChatWsRoutes(env));
@@ -216,8 +226,15 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         const authed = request as AuthenticatedRequest;
         const { id } = request.params as { id: string };
 
+        // Capture the WA number of the phone/device used to send this action.
+        // The extension sends `x-wa-number` with the operator's own WhatsApp number.
+        const waNumber =
+          typeof request.headers["x-wa-number"] === "string" && request.headers["x-wa-number"].length > 0
+            ? request.headers["x-wa-number"].replace(/\D/g, "")
+            : null;
+
         try {
-          const result = await repo.markHablado(id, authed.userId);
+          const result = await repo.markHablado(id, authed.userId, waNumber);
           if (!result) {
             return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "contacto no encontrado"));
           }
@@ -234,6 +251,7 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
             previous_status: "nuevo",
             operator_id: authed.userId,
             operator_email: operatorEmail,
+            wa_number: waNumber,
             stats,
           });
 
@@ -555,6 +573,56 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── GET /api/cms/metrics/extension ────────────────────────────────
+    // Per-WA-phone metrics for the extension. Each of the 5 phones using the
+    // extension is identified by the `x-wa-number` header it sends, stored in
+    // cms_operator_notes->>'wa_number'. Returns individual phone metrics plus
+    // an aggregated global total.
+    app.get(
+      "/api/cms/metrics/extension",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        try {
+          const [phones, stats] = await Promise.all([
+            repo.getMetricsByWaNumber(campaignId),
+            repo.getCmsStats(campaignId),
+          ]);
+
+          // Aggregate totals across all phones
+          const global = phones.reduce(
+            (acc, p) => ({
+              hablados: acc.hablados + p.hablados,
+              respondieron: acc.respondieron + p.respondieron,
+              archivados: acc.archivados + p.archivados,
+              total_interactions: acc.total_interactions + p.total_interactions,
+            }),
+            { hablados: 0, respondieron: 0, archivados: 0, total_interactions: 0 },
+          );
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            global: {
+              ...global,
+              total: stats.total,
+              nuevos: stats.nuevos,
+            },
+            phones,
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "cms extension metrics failed");
+          return reply.code(500).send(errorPayload(requestId, "CMS_EXT_METRICS_ERROR", "error obteniendo metricas de extension"));
+        }
+      },
+    );
+
     // ── GET /api/cms/metrics/brigadistas ──────────────────────────────
     // Per-brigadista (field agent) capture metrics with CMS pipeline progression.
     // Used by the tierra dashboard to show how each agent's captured data
@@ -603,6 +671,14 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         reply.raw.setHeader("Cache-Control", "no-cache, no-transform");
         reply.raw.setHeader("Connection", "keep-alive");
         reply.raw.setHeader("X-Accel-Buffering", "no");
+
+        // CORS headers for SSE — reply.raw bypasses @fastify/cors plugin
+        const origin = request.headers.origin;
+        if (origin) {
+          reply.raw.setHeader("Access-Control-Allow-Origin", origin);
+          reply.raw.setHeader("Access-Control-Allow-Credentials", "true");
+        }
+
         reply.raw.flushHeaders?.();
 
         const clientId = ++clientSeq;
@@ -623,6 +699,102 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         request.raw.on("error", cleanup);
 
         return reply;
+      },
+    );
+
+    // ── POST /api/cms/extension-event ──────────────────────────────────
+    // Receives inbound-message events detected by the Chrome extension
+    // via DOM observation on WhatsApp Web. Matches phone → contact,
+    // optionally auto-transitions hablado → respondieron, and broadcasts
+    // the event via SSE to all campaign operators.
+    const extensionEventSchema = z.object({
+      type: z.enum(["message_received"]),
+      phone: z.string().min(7).max(20),
+      preview: z.string().max(500).optional().default(""),
+      detected_at: z.number().optional(),
+    });
+
+    app.post(
+      "/api/cms/extension-event",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { userId } = request as AuthenticatedRequest;
+        const campaignId = (request as AuthenticatedRequest).activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        const parsed = extensionEventSchema.safeParse(request.body);
+        if (!parsed.success) {
+          const msg = parsed.error.issues.map((e) => e.message).join("; ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", msg));
+        }
+
+        const { type, phone, preview, detected_at } = parsed.data;
+
+        // Find the contact by phone
+        const contact = await repo.findContactByPhone(campaignId, phone);
+        if (!contact) {
+          // Not an error — the contact might not exist in this campaign
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            matched: false,
+            message: "No contact found for this phone in campaign",
+          });
+        }
+
+        app.log.info(
+          { contact_id: contact.id, phone, type, preview: preview.slice(0, 50), operator: userId },
+          "extension event received",
+        );
+
+        // Auto-transition: if contact is "hablado" and we detect an incoming reply,
+        // automatically mark as "respondieron"
+        let autoTransitioned = false;
+        let updatedContact = contact;
+        if (type === "message_received" && contact.cms_status === "hablado") {
+          const transitioned = await repo.markRespondieron(contact.id, userId);
+          if (transitioned) {
+            autoTransitioned = true;
+            updatedContact = transitioned;
+
+            // Broadcast contact.updated SSE (same as manual respondieron)
+            const operatorEmail = await resolveOperatorEmail(userId);
+            const stats = await repo.getCmsStats(campaignId);
+            broadcastToCampaign(campaignId, "contact.updated", {
+              contact: updatedContact,
+              previous_status: "hablado",
+              operator_id: userId,
+              operator_email: operatorEmail,
+              stats,
+              auto_transition: true,
+              source: "extension",
+            });
+          }
+        }
+
+        // Broadcast the extension event for real-time dashboard updates
+        cmsEvents.emitCms("extension.message_received", {
+          campaignId,
+          contactId: contact.id,
+          phone,
+          preview,
+          detectedAt: detected_at ?? Date.now(),
+          operatorId: userId,
+        });
+
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          matched: true,
+          contact_id: contact.id,
+          contact_name: contact.nombre,
+          contact_status: updatedContact.cms_status,
+          auto_transitioned: autoTransitioned,
+        });
       },
     );
 

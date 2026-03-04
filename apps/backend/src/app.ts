@@ -69,6 +69,12 @@ export function buildApp(env: AppEnv) {
         return;
       }
 
+      // Allow Chrome/browser extensions (they use Bearer auth, not cookies)
+      if (origin.startsWith("chrome-extension://") || origin.startsWith("moz-extension://")) {
+        callback(null, true);
+        return;
+      }
+
       // Support suffix-wildcard patterns like *.vercel.app for preview deployments
       const hasWildcardMatch = env.frontendOrigins.some((allowed) => {
         if (!allowed.startsWith("https://*.")) return false;

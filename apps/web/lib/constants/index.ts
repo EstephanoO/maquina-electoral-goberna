@@ -22,13 +22,13 @@ export type CargoOption = (typeof CARGO_OPTIONS)[number];
 // ── Status Configurations ──────────────────────────────────────────
 
 export const STATUS_CONFIG = {
-  pending: { bg: "var(--goberna-gold-100)", color: "var(--goberna-gold-600)", label: "Pendiente" },
-  approved: { bg: "rgba(22,163,74,.08)", color: "var(--color-success)", label: "Aprobada" },
-  rejected: { bg: "rgba(220,38,38,.08)", color: "var(--color-error)", label: "Rechazada" },
-  active: { bg: "rgba(22,163,74,.08)", color: "var(--color-success)", label: "Activo" },
-  paused: { bg: "var(--goberna-gold-100)", color: "var(--goberna-gold-600)", label: "Pausado" },
-  archived: { bg: "rgba(148,163,184,.12)", color: "var(--color-text-tertiary)", label: "Archivado" },
-  draft: { bg: "rgba(148,163,184,.12)", color: "var(--color-text-tertiary)", label: "Borrador" },
+  pending: { bg: "var(--color-warning-bg)", color: "var(--color-warning)", label: "Pendiente" },
+  approved: { bg: "var(--color-success-bg)", color: "var(--color-success)", label: "Aprobada" },
+  rejected: { bg: "var(--color-error-bg)", color: "var(--color-error)", label: "Rechazada" },
+  active: { bg: "var(--color-success-bg)", color: "var(--color-success)", label: "Activo" },
+  paused: { bg: "var(--color-warning-bg)", color: "var(--color-warning)", label: "Pausado" },
+  archived: { bg: "var(--color-surface-active)", color: "var(--color-text-tertiary)", label: "Archivado" },
+  draft: { bg: "var(--color-surface-active)", color: "var(--color-text-tertiary)", label: "Borrador" },
 } as const;
 
 // ── Default Colors ─────────────────────────────────────────────────
@@ -53,6 +53,7 @@ export const FONT_STACK = "var(--font-montserrat), system-ui, sans-serif";
 
 // ── Animation Keyframes (for injection) ────────────────────────────
 
+/** @deprecated — animations are now defined in globals.css. Keep for backward compat. */
 export const GOBERNA_KEYFRAMES = `
 @keyframes goberna-fade-in {
   from { opacity: 0; transform: translateY(8px); }

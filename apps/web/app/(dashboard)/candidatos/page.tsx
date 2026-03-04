@@ -12,7 +12,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../../../lib/auth-context";
 
 // UI Components
-import { Tabs, SlideOver, Spinner, Button } from "../../../lib/ui";
+import { Tabs, SlideOver, Spinner, Button, PageHeader, SkeletonList } from "../../../lib/ui";
 
 // Hooks
 import { useInjectStyles } from "../../../lib/hooks";
@@ -94,44 +94,35 @@ export default function CandidatosPage() {
   ];
 
   return (
-    <div style={{ fontFamily: FONT_STACK, animation: "goberna-fade-in .4s ease-out" }}>
-      {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: 12,
-          }}
-        >
-          <div>
-            <h1
-              style={{
-                fontSize: 24,
-                fontWeight: 800,
-                color: "var(--color-text-primary)",
-                margin: "0 0 4px",
-                textTransform: "uppercase",
-                letterSpacing: "0.02em",
-              }}
-            >
-              Candidatos & Solicitudes
-            </h1>
-            <p style={{ fontSize: 14, color: "var(--color-text-tertiary)", margin: 0 }}>
-              Gestione candidatos y apruebe solicitudes de acceso de usuarios.
-            </p>
-          </div>
-          <Button variant="primary" onClick={() => setShowCreatePanel(true)}>
+    <div style={{ fontFamily: FONT_STACK }}>
+      <PageHeader
+        title="Candidatos & Solicitudes"
+        description="Gestione candidatos y apruebe solicitudes de acceso de usuarios."
+        breadcrumbs={[{ label: "Dashboard", href: "/home" }, { label: "Candidatos" }]}
+        badge={
+          pendingCount > 0 ? (
+            <span style={{
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "2px 8px",
+              borderRadius: "var(--radius-full)",
+              background: "var(--color-warning-bg)",
+              color: "var(--color-warning)",
+            }}>
+              {pendingCount} pendientes
+            </span>
+          ) : undefined
+        }
+        actions={
+          <Button variant="primary" size="sm" onClick={() => setShowCreatePanel(true)}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: 6 }}>
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
             Nuevo Candidato
           </Button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Tabs */}
       <Tabs
@@ -142,8 +133,8 @@ export default function CandidatosPage() {
 
       {/* Loading */}
       {loading && (
-        <div style={{ padding: "40px 0", textAlign: "center" }}>
-          <Spinner size={28} />
+        <div style={{ padding: "24px 0" }}>
+          <SkeletonList items={5} />
         </div>
       )}
 

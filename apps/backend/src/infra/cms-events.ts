@@ -26,9 +26,24 @@ export type CmsStatusUpdateEvent = {
   status: string;
 };
 
+/**
+ * Event emitted when the Chrome extension detects an inbound message
+ * in WhatsApp Web via DOM observation. Not a Twilio webhook — this
+ * is a "best effort" signal from the operator's browser.
+ */
+export type CmsExtensionMessageEvent = {
+  campaignId: string;
+  contactId: string;
+  phone: string;
+  preview: string;
+  detectedAt: number;
+  operatorId: string;
+};
+
 export interface CmsEventMap {
   "message.new": CmsMessageEvent;
   "message.status": CmsStatusUpdateEvent;
+  "extension.message_received": CmsExtensionMessageEvent;
 }
 
 class CmsEventBus extends EventEmitter {

@@ -274,14 +274,24 @@ export async function releaseContact(
 export async function markHablado(
   submissionId: string,
   operatorId: string,
+  waNumber: string | null = null,
 ): Promise<CmsContactRow | null> {
+  // Merge wa_number into cms_operator_notes without overwriting existing fields.
+  // If waNumber is provided, patch the JSONB field atomically.
+  const waNumberPatch = waNumber
+    ? `jsonb_set(COALESCE(fs.cms_operator_notes, '{}'::jsonb), '{wa_number}', $3::jsonb)`
+    : `COALESCE(fs.cms_operator_notes, '{}'::jsonb)`;
+
+  const params = waNumber ? [submissionId, operatorId, JSON.stringify(waNumber)] : [submissionId, operatorId];
+
   const { rows } = await pool.query<CmsContactRow>(
     `UPDATE form_submissions fs
      SET cms_status = 'hablado',
          cms_claimed_by = $2,
          cms_claimed_at = COALESCE(cms_claimed_at, now()),
          cms_hablado_at = now(),
-         cms_respondieron_at = NULL
+         cms_respondieron_at = NULL,
+         cms_operator_notes = ${waNumberPatch}
      WHERE fs.id = $1
        AND fs.deleted_at IS NULL
        AND fs.cms_status IN ('nuevo', 'claimed', 'hablado')
@@ -294,7 +304,7 @@ export async function markHablado(
                COALESCE(fs.data->>'zona', fs.data->>'distrito', '') AS zona,
                COALESCE(fs.data->>'distrito', '') AS distrito,
                COALESCE(fs.data->>'candidato_preferido', '') AS candidato_preferido`,
-    [submissionId, operatorId],
+    params,
   );
   return rows[0] ?? null;
 }
@@ -950,6 +960,91 @@ export async function getContactTagsBulk(
     result[row.id] = row.cms_tags ?? [];
   }
   return result;
+}
+
+// ── Find contact by phone within a campaign ─────────────────────────
+
+/**
+ * Find a CMS contact by phone number in a campaign.
+ * Matches last 9 digits to handle +51/51 prefix variations.
+ */
+export async function findContactByPhone(
+  campaignId: string,
+  phone: string,
+): Promise<CmsContactRow | null> {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length < 7) return null;
+
+  // Try exact match first, then last-9-digit suffix match
+  const last9 = digits.slice(-9);
+  const { rows } = await pool.query<CmsContactRow>(
+    `SELECT ${CMS_SELECT}
+     FROM form_submissions fs
+     WHERE fs.campaign_id = $1
+       AND fs.deleted_at IS NULL
+       AND (
+         COALESCE(fs.data->>'telefono', '') = $2
+         OR RIGHT(COALESCE(fs.data->>'telefono', ''), 9) = $3
+       )
+     ORDER BY fs.created_at DESC
+     LIMIT 1`,
+    [campaignId, digits, last9],
+  );
+  return rows[0] ?? null;
+}
+
+// ── Metrics: per-WA-phone (extension celular) ───────────────────────
+
+export type CmsWaPhoneMetrics = {
+  wa_number: string;       // número del celular que usó la extensión (sin +)
+  hablados: number;        // contactos marcados como hablado desde este número
+  respondieron: number;    // contactos en respondieron atribuidos a este número
+  archivados: number;      // archivados
+  total_interactions: number; // total de eventos de extensión registrados
+};
+
+/**
+ * Get CMS metrics grouped by WhatsApp phone number used in the extension.
+ *
+ * The extension sends `x-wa-number` (the operator's own WA number) when marking
+ * contacts as hablado. This is stored in `cms_operator_notes->>'wa_number'`.
+ * We aggregate pipeline progression per source phone.
+ *
+ * @param campaignId — single campaign scope
+ */
+export async function getMetricsByWaNumber(
+  campaignId: string,
+): Promise<CmsWaPhoneMetrics[]> {
+  const { rows } = await pool.query<{
+    wa_number: string;
+    hablados: string;
+    respondieron: string;
+    archivados: string;
+    total_interactions: string;
+  }>(
+    `SELECT
+       COALESCE(fs.cms_operator_notes->>'wa_number', 'desconocido') AS wa_number,
+       COUNT(*) FILTER (WHERE fs.cms_status = 'hablado')::text AS hablados,
+       COUNT(*) FILTER (WHERE fs.cms_status = 'respondieron')::text AS respondieron,
+       COUNT(*) FILTER (WHERE fs.cms_status = 'archivado')::text AS archivados,
+       COUNT(*)::text AS total_interactions
+     FROM form_submissions fs
+     WHERE fs.campaign_id = $1
+       AND fs.deleted_at IS NULL
+       AND fs.cms_operator_notes->>'wa_number' IS NOT NULL
+       AND fs.cms_status IN ('hablado', 'respondieron', 'archivado')
+     GROUP BY fs.cms_operator_notes->>'wa_number'
+     ORDER BY COUNT(*) DESC`,
+    [campaignId],
+  );
+
+  return rows.map((r) => ({
+    wa_number: r.wa_number,
+    hablados: parseInt(r.hablados, 10),
+    respondieron: parseInt(r.respondieron, 10),
+    archivados: parseInt(r.archivados, 10),
+    total_interactions: parseInt(r.total_interactions, 10),
+  }));
 }
 
 // ── Snapshot of currently claimed contacts (for SSE init) ───────────
