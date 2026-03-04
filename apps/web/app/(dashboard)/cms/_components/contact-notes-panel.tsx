@@ -248,6 +248,7 @@ export function ContactNotesPanel({ contact, onSave, onClose, saving }: ContactN
               box-shadow: none;
             }
           }
+
         `}</style>
 
         {/* Header */}

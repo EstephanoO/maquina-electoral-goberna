@@ -33,12 +33,12 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Layer, Map as MapLibre, Source } from "@vis.gl/react-maplibre";
 import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
-import type { FillLayerSpecification, LineLayerSpecification, CircleLayerSpecification } from "maplibre-gl";
+import type { CircleLayerSpecification, DragPanOptions, FillLayerSpecification, LineLayerSpecification, Map as NativeMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { TierraMapHandle, TierraMapProps } from "./types";
+import type { CameraNudge, TierraMapHandle, TierraMapProps } from "./types";
 import {
   STATUS_COLORS, ZONE_FILL, ZONE_HOVER, ZONE_LINE, ZONE_LINE_GHOST, MASK_FILL, HOVER_LAYERS,
-  PERU_VIEW, PERU_BOUNDS, PERU_BOUNDS_FLAT, PERU_MAX_BOUNDS, MAP_STYLE, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
+  PERU_VIEW, PERU_BOUNDS, PERU_BOUNDS_FLAT, PERU_MAX_BOUNDS, MAP_STYLES, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
   FLY_DURATION,
 } from "./constants";
 import { prewarmTiles } from "./utils";
@@ -46,9 +46,11 @@ import {
   VIS_VISIBLE, VIS_NONE, PROMOTE_ID,
   PRIORITY_FILL_PAINT, PRIORITY_DEP_LINE_PAINT, PRIORITY_PROV_LINE_PAINT, PRIORITY_DIST_LINE_PAINT,
   SECTOR_FILL_PAINT, SECTOR_LINE_PAINT,
+  getHeatmapPaint, getHeatmapDarkPaint, BARS_EXTRUSION_PAINT, BARS_LINE_PAINT,
   HAS_POINT_COUNT, NOT_HAS_POINT_COUNT,
-  CLUSTER_RING_PAINT, CLUSTER_CIRCLE_PAINT, CLUSTER_COUNT_LAYOUT, CLUSTER_COUNT_PAINT,
-  FORM_POINTS_PAINT,
+  CLUSTER_RING_PAINT, CLUSTER_CIRCLE_PAINT, CLUSTER_RING_DARK_PAINT, CLUSTER_CIRCLE_DARK_PAINT,
+  CLUSTER_COUNT_LAYOUT, CLUSTER_COUNT_PAINT,
+  FORM_POINTS_PAINT, FORM_POINTS_DARK_PAINT, FORM_POINTS_DARK_GLOW_PAINT,
   AGENT_SELECTED_FILTER, AGENT_CONNECTED_FILTER, AGENT_PULSE_PAINT,
   AGENT_LABELS_LAYOUT, AGENT_LABELS_PAINT, AGENT_COUNT_LAYOUT, AGENT_COUNT_PAINT,
   ROUTE_LINE_PAINT, ROUTE_LINE_LAYOUT, ROUTE_CASING_PAINT,
@@ -68,13 +70,45 @@ import { reverseGeocode } from "@/lib/services/geo";
 
 /* ========== Component (P6 — wrapped with memo) ========== */
 
+const MAP_DRAG_PAN_OPTIONS: DragPanOptions = {
+  linearity: 0.24,
+  maxSpeed: 1800,
+  deceleration: 2600,
+};
+
+const TRACKPAD_ZOOM_RATE = 1 / 130;
+const WHEEL_ZOOM_RATE = 1 / 680;
+const CAMERA_PITCH_MIN = 0;
+const CAMERA_PITCH_MAX = 60;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function applyFluidMapInteractions(map: NativeMap) {
+  map.dragPan.enable(MAP_DRAG_PAN_OPTIONS);
+  map.scrollZoom.enable();
+  map.scrollZoom.setZoomRate(TRACKPAD_ZOOM_RATE);
+  map.scrollZoom.setWheelZoomRate(WHEEL_ZOOM_RATE);
+  map.dragRotate.enable();
+  map.touchPitch.enable();
+  map.keyboard.enableRotation();
+  map.touchZoomRotate.enable({ around: "center" });
+
+  const canvas = map.getCanvas();
+  canvas.style.cursor = "grab";
+  map.on("dragstart", () => { canvas.style.cursor = "grabbing"; });
+  map.on("dragend", () => { canvas.style.cursor = "grab"; });
+}
+
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
-  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, showRoutes, drillState, onDrillChange },
+  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange },
   ref,
 ) {
   const mapRef = useRef<MapRef | null>(null);
   const [tileUrl, setTileUrl] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [barsZoom, setBarsZoom] = useState<number>(PERU_VIEW.zoom);
   const skipNextFitRef = useRef(false);
   const isZoomingRef = useRef(false);
   const zoomEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -92,7 +126,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Hooks ───
   const filters = useDrillFilters(drillState, campaignId);
   const agentsGeoJson = useAgentsSource(agents, selectedAgentId);
-  const { formsGeoJson } = useFormSources(forms, selectedAgentId);
+  const { formsGeoJson, barsGeoJson } = useFormSources(forms, selectedAgentId, barsZoom);
   const { routesGeoJson, waypointsGeoJson } = useSurveyorRoutes(forms, selectedAgentId);
 
   useAutoFit(mapRef, drillState, skipNextFitRef);
@@ -105,51 +139,89 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const tilesArray = useMemo(() => tileUrl ? [tileUrl] : [], [tileUrl]);
 
   // ─── P2: Memoize dynamic paint objects that depend on drillState ───
+  const zonePalette = useMemo(() => (
+    mapTheme === "dark"
+      ? {
+          fill: "rgba(148, 163, 184, 0.2)",
+          hover: "rgba(148, 163, 184, 0.42)",
+          line: "#e2e8f0",
+          ghost: "#94a3b8",
+          mask: "rgba(2, 6, 23, 0.54)",
+        }
+      : {
+          fill: ZONE_FILL,
+          hover: ZONE_HOVER,
+          line: ZONE_LINE,
+          ghost: ZONE_LINE_GHOST,
+          mask: MASK_FILL,
+        }
+  ), [mapTheme]);
+
+  const clusterRingPaint = useMemo(
+    () => (mapTheme === "dark" ? CLUSTER_RING_DARK_PAINT : CLUSTER_RING_PAINT),
+    [mapTheme],
+  );
+  const clusterCirclePaint = useMemo(
+    () => (mapTheme === "dark" ? CLUSTER_CIRCLE_DARK_PAINT : CLUSTER_CIRCLE_PAINT),
+    [mapTheme],
+  );
+  const formPointsPaint = useMemo(
+    () => (mapTheme === "dark" ? FORM_POINTS_DARK_PAINT : FORM_POINTS_PAINT),
+    [mapTheme],
+  );
+  const heatmapPaint = useMemo(
+    () => (
+      mapTheme === "dark"
+        ? getHeatmapDarkPaint({ radius: heatmapRadius, opacity: heatmapOpacity })
+        : getHeatmapPaint({ radius: heatmapRadius, opacity: heatmapOpacity })
+    ),
+    [mapTheme, heatmapRadius, heatmapOpacity],
+  );
 
   const depFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
     "fill-color": drillState.level === 0
-      ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+      ? ["case", ["boolean", ["feature-state", "hover"], false], zonePalette.hover, zonePalette.fill]
       : drillState.depCode
-        ? ["case", ["==", ["get", "coddep"], drillState.depCode], ZONE_FILL, MASK_FILL]
-        : ZONE_FILL,
+        ? ["case", ["==", ["get", "coddep"], drillState.depCode], zonePalette.fill, zonePalette.mask]
+        : zonePalette.fill,
     "fill-opacity": 1,
-  }), [drillState.level, drillState.depCode]);
+  }), [drillState.level, drillState.depCode, zonePalette]);
 
   const depLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
-    "line-color": drillState.level === 0 ? ZONE_LINE : ZONE_LINE_GHOST,
+    "line-color": drillState.level === 0 ? zonePalette.line : zonePalette.ghost,
     "line-width": drillState.level === 0 ? 1.2 : 0.6,
-    "line-opacity": drillState.level === 0 ? 0.7 : 0.3,
-  }), [drillState.level]);
+    "line-opacity": drillState.level === 0 ? 0.82 : 0.45,
+  }), [drillState.level, zonePalette]);
 
   const provFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
     "fill-color": drillState.level === 1
-      ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+      ? ["case", ["boolean", ["feature-state", "hover"], false], zonePalette.hover, zonePalette.fill]
       : drillState.provCode
-        ? ["case", ["==", ["get", "codprov_full"], drillState.provCode], ZONE_FILL, MASK_FILL]
-        : ZONE_FILL,
+        ? ["case", ["==", ["get", "codprov_full"], drillState.provCode], zonePalette.fill, zonePalette.mask]
+        : zonePalette.fill,
     "fill-opacity": 1,
-  }), [drillState.level, drillState.provCode]);
+  }), [drillState.level, drillState.provCode, zonePalette]);
 
   const provLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
-    "line-color": drillState.level === 1 ? ZONE_LINE : ZONE_LINE_GHOST,
+    "line-color": drillState.level === 1 ? zonePalette.line : zonePalette.ghost,
     "line-width": drillState.level === 1 ? 1 : 0.5,
-    "line-opacity": drillState.level === 1 ? 0.7 : 0.2,
-  }), [drillState.level]);
+    "line-opacity": drillState.level === 1 ? 0.8 : 0.38,
+  }), [drillState.level, zonePalette]);
 
   const distFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
     "fill-color": drillState.level === 2
-      ? ["case", ["boolean", ["feature-state", "hover"], false], ZONE_HOVER, ZONE_FILL]
+      ? ["case", ["boolean", ["feature-state", "hover"], false], zonePalette.hover, zonePalette.fill]
       : drillState.distCode
-        ? ["case", ["==", ["get", "ubigeo"], drillState.distCode], ZONE_FILL, MASK_FILL]
-        : ZONE_FILL,
+        ? ["case", ["==", ["get", "ubigeo"], drillState.distCode], zonePalette.fill, zonePalette.mask]
+        : zonePalette.fill,
     "fill-opacity": 1,
-  }), [drillState.level, drillState.distCode]);
+  }), [drillState.level, drillState.distCode, zonePalette]);
 
   const distLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
-    "line-color": ZONE_LINE,
+    "line-color": zonePalette.line,
     "line-width": drillState.level >= 3 ? 1.2 : 0.8,
-    "line-opacity": 0.6,
-  }), [drillState.level]);
+    "line-opacity": mapTheme === "dark" ? 0.78 : 0.62,
+  }), [drillState.level, mapTheme, zonePalette]);
 
   // ─── P2: Agent paint objects that depend on primaryColor ───
   const agentSelectedRingPaint = useMemo((): CircleLayerSpecification["paint"] => ({
@@ -165,7 +237,10 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   }), [primaryColor]);
 
   // ─── P1: Visibility layout objects for always-mounted Sources ───
-  const datosVisibility = useMemo(() => showDatos ? VIS_VISIBLE : VIS_NONE, [showDatos]);
+  const pointsVisibility = useMemo(() => showDatos && datosVizMode === "points" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
+  const pointsGlowVisibility = useMemo(() => showDatos && datosVizMode === "points" && mapTheme === "dark" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode, mapTheme]);
+  const heatmapVisibility = useMemo(() => showDatos && datosVizMode === "heatmap" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
+  const barsVisibility = useMemo(() => showDatos && datosVizMode === "bars3d" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
   const trackingVisibility = useMemo(() => showTracking ? VIS_VISIBLE : VIS_NONE, [showTracking]);
   const routesVisibility = useMemo(() => showRoutes ? VIS_VISIBLE : VIS_NONE, [showRoutes]);
 
@@ -182,8 +257,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Cluster count layout merged with visibility ───
   const clusterCountLayoutWithVis = useMemo(() => ({
     ...CLUSTER_COUNT_LAYOUT,
-    ...(showDatos ? {} : { visibility: "none" as const }),
-  }), [showDatos]);
+    ...(showDatos && datosVizMode === "points" ? {} : { visibility: "none" as const }),
+  }), [showDatos, datosVizMode]);
   const agentLabelsLayoutWithVis = useMemo(() => ({
     ...AGENT_LABELS_LAYOUT,
     ...(showTracking ? {} : { visibility: "none" as const }),
@@ -192,6 +267,58 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     ...AGENT_COUNT_LAYOUT,
     ...(showTracking ? {} : { visibility: "none" as const }),
   }), [showTracking]);
+
+  const nudgeCamera = useCallback((delta: CameraNudge) => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+
+    const panX = delta.panX ?? 0;
+    const panY = delta.panY ?? 0;
+    const hasPan = panX !== 0 || panY !== 0;
+    const hasTransform = !!(delta.zoomDelta || delta.bearingDelta || delta.pitchDelta);
+
+    if (hasPan && !hasTransform) {
+      map.panBy([panX, panY], { duration: 220, essential: true });
+      return;
+    }
+
+    const currentZoom = map.getZoom();
+    const currentBearing = map.getBearing();
+    const currentPitch = map.getPitch();
+    const currentCenter = map.getCenter();
+    const centerPx = map.project(currentCenter);
+    const nextCenter = hasPan
+      ? map.unproject([centerPx.x + panX, centerPx.y + panY])
+      : currentCenter;
+
+    map.easeTo({
+      center: nextCenter,
+      zoom: currentZoom + (delta.zoomDelta ?? 0),
+      bearing: currentBearing + (delta.bearingDelta ?? 0),
+      pitch: clamp(currentPitch + (delta.pitchDelta ?? 0), CAMERA_PITCH_MIN, CAMERA_PITCH_MAX),
+      duration: 260,
+      essential: true,
+    });
+  }, []);
+
+  const resetCameraOrientation = useCallback(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    map.easeTo({ bearing: 0, pitch: 0, duration: 320, essential: true });
+  }, []);
+
+  const resetCameraPosition = useCallback(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    map.easeTo({
+      center: [PERU_VIEW.longitude, PERU_VIEW.latitude],
+      zoom: PERU_VIEW.zoom,
+      bearing: 0,
+      pitch: 0,
+      duration: 520,
+      essential: true,
+    });
+  }, []);
 
   // ─── Imperative handle ───
   useImperativeHandle(ref, () => ({
@@ -202,7 +329,10 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     },
     getDrillState() { return drillStateRef.current; },
     showPinnedTooltip,
-  }), [showPinnedTooltip]);
+    nudgeCamera,
+    resetCameraOrientation,
+    resetCameraPosition,
+  }), [showPinnedTooltip, nudgeCamera, resetCameraOrientation, resetCameraPosition]);
 
   // ─── Init (SSR guard) ───
   useEffect(() => {
@@ -212,7 +342,11 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   // ─── Map load ───
   const handleLoad = useCallback(() => {
-    mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+
+    applyFluidMapInteractions(map);
+    map.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
 
     if (tileUrl) {
       if (typeof requestIdleCallback === "function") {
@@ -231,6 +365,9 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   const handleMoveEnd = useCallback(() => {
     zoomEndTimer.current = setTimeout(() => { isZoomingRef.current = false; }, 300);
+    if (mapRef.current && showDatos && datosVizMode === "bars3d") {
+      setBarsZoom(mapRef.current.getZoom());
+    }
 
     // After cluster flyTo lands, reverse-geocode the map center and drill
     // to the appropriate level based on how far we zoomed in.
@@ -268,7 +405,15 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         }
       }).catch(() => {});
     }
-  }, [onDrillChange]);
+  }, [onDrillChange, showDatos, datosVizMode]);
+
+  // Live zoom updates while camera moves in bars mode (for smooth split/merge behavior).
+  const handleMove = useCallback((evt: { viewState?: { zoom?: number } }) => {
+    if (!showDatos || datosVizMode !== "bars3d") return;
+    const z = evt.viewState?.zoom;
+    if (typeof z !== "number") return;
+    setBarsZoom((prev) => (Math.abs(prev - z) >= 0.1 ? z : prev));
+  }, [showDatos, datosVizMode]);
 
   // ─── Feature-state hover tracking (zero React re-renders) ───
   const hoveredRef = useRef<{ source: string; sourceLayer: string; id: string | number } | null>(null);
@@ -286,7 +431,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const handleMouseMove = useCallback((e: MapLayerMouseEvent) => {
     const features = e.features;
     if (mapRef.current) {
-      mapRef.current.getCanvas().style.cursor = features?.length ? "pointer" : "";
+      mapRef.current.getCanvas().style.cursor = features?.length ? "pointer" : "grab";
     }
 
     const f = features?.[0];
@@ -312,7 +457,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   }, [tooltipMouseMove, onFormMouseMove, clearHover]);
 
   const handleMouseLeave = useCallback(() => {
-    if (mapRef.current) mapRef.current.getCanvas().style.cursor = "";
+    if (mapRef.current) mapRef.current.getCanvas().style.cursor = "grab";
     clearHover();
     tooltipMouseLeave();
     onFormMouseLeave();
@@ -333,6 +478,21 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     }
   }, [selectedAgentId, agents]);
 
+  // ─── 3D mode camera pitch ───
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    const targetPitch = showDatos && datosVizMode === "bars3d" ? 48 : 0;
+    if (Math.abs(map.getPitch() - targetPitch) < 1) return;
+    map.easeTo({ pitch: targetPitch, duration: targetPitch > 0 ? 480 : 320, essential: true });
+  }, [showDatos, datosVizMode]);
+
+  useEffect(() => {
+    if (!showDatos || datosVizMode !== "bars3d") return;
+    const z = mapRef.current?.getZoom();
+    if (typeof z === "number") setBarsZoom(z);
+  }, [showDatos, datosVizMode]);
+
 
 
   // ─── Cleanup ───
@@ -343,24 +503,44 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Loading ───
   if (!ready || !tileUrl) {
     return (
-      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#e6e5e3" }}>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: mapTheme === "dark" ? "#0b1220" : "#e5e7eb",
+        }}
+      >
         <span style={{ color: "#64748b", fontSize: 13 }}>Cargando mapa...</span>
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} style={{ position: "absolute", inset: 0, backgroundColor: "#e6e5e3" }}>
+    <div ref={containerRef} style={{ position: "absolute", inset: 0, backgroundColor: mapTheme === "dark" ? "#0b1220" : "#e5e7eb" }}>
       <MapLibre
         ref={mapRef}
         initialViewState={PERU_VIEW}
         style={{ width: "100%", height: "100%" }}
-        mapStyle={MAP_STYLE}
+        mapStyle={MAP_STYLES[mapTheme]}
+        dragPan={MAP_DRAG_PAN_OPTIONS}
+        dragRotate
+        pitchWithRotate
+        touchPitch
+        touchZoomRotate={{ around: "center" }}
+        scrollZoom
+        doubleClickZoom
+        minPitch={0}
+        maxPitch={60}
+        clickTolerance={4}
         minZoom={1}
         maxBounds={PERU_MAX_BOUNDS}
         maxTileCacheZoomLevels={10}
         fadeDuration={0}
         onLoad={handleLoad}
+        onMove={handleMove}
         onMoveStart={handleMoveStart}
         onMoveEnd={handleMoveEnd}
         onClick={handleClick}
@@ -399,10 +579,18 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
         {/* ── Clustered form data — always mounted, visibility controlled via layout ── */}
         <Source id="forms-clustered" type="geojson" data={formsGeoJson} cluster clusterRadius={40} clusterMaxZoom={16}>
-          <Layer id="forms-cluster-ring" type="circle" filter={HAS_POINT_COUNT} layout={datosVisibility} paint={CLUSTER_RING_PAINT} />
-          <Layer id="forms-clusters" type="circle" filter={HAS_POINT_COUNT} layout={datosVisibility} paint={CLUSTER_CIRCLE_PAINT} />
+          <Layer id="forms-cluster-ring" type="circle" filter={HAS_POINT_COUNT} layout={pointsVisibility} paint={clusterRingPaint} />
+          <Layer id="forms-clusters" type="circle" filter={HAS_POINT_COUNT} layout={pointsVisibility} paint={clusterCirclePaint} />
           <Layer id="forms-cluster-count" type="symbol" filter={HAS_POINT_COUNT} layout={clusterCountLayoutWithVis} paint={CLUSTER_COUNT_PAINT} />
-          <Layer id="forms-points" type="circle" filter={NOT_HAS_POINT_COUNT} layout={datosVisibility} paint={FORM_POINTS_PAINT} />
+          <Layer id="forms-points-glow" type="circle" filter={NOT_HAS_POINT_COUNT} layout={pointsGlowVisibility} paint={FORM_POINTS_DARK_GLOW_PAINT} />
+          <Layer id="forms-points" type="circle" filter={NOT_HAS_POINT_COUNT} layout={pointsVisibility} paint={formPointsPaint} />
+        </Source>
+        <Source id="forms-heatmap" type="geojson" data={formsGeoJson}>
+          <Layer id="forms-heatmap-layer" type="heatmap" layout={heatmapVisibility} paint={heatmapPaint} />
+        </Source>
+        <Source id="forms-bars" type="geojson" data={barsGeoJson}>
+          <Layer id="forms-bars-3d" type="fill-extrusion" layout={barsVisibility} paint={BARS_EXTRUSION_PAINT} />
+          <Layer id="forms-bars-outline" type="line" layout={barsVisibility} paint={BARS_LINE_PAINT} />
         </Source>
 
         {/* ── Agent markers — always mounted, visibility controlled via layout ── */}

@@ -35,6 +35,8 @@ type Props = {
   onCreateTag: (name: string) => string | null;
   onAssignTag: (contactId: string, tagName: string) => boolean;
   onRemoveTag: (contactId: string, tagName: string) => void;
+  showMobileBackButton?: boolean;
+  onBackToList?: () => void;
 };
 
 const CONTACT_STATUS_LABELS: Record<CmsContact["cms_status"], string> = {
@@ -227,6 +229,8 @@ export function ChatConversationPane({
   onCreateTag,
   onAssignTag,
   onRemoveTag,
+  showMobileBackButton = false,
+  onBackToList,
 }: Props) {
   const messagesContainerRef = useRef<HTMLDivElement | null>(null);
   const [tagsPanelOpen, setTagsPanelOpen] = useState(false);
@@ -318,6 +322,7 @@ export function ChatConversationPane({
           alignItems: "flex-start",
           justifyContent: "space-between",
           gap: 12,
+          minWidth: 0,
         }}
       >
         <div
@@ -326,8 +331,34 @@ export function ChatConversationPane({
             alignItems: "center",
             gap: 10,
             minWidth: 0,
+            flex: 1,
           }}
         >
+          {showMobileBackButton && onBackToList && (
+            <button
+              type="button"
+              onClick={onBackToList}
+              title="Volver a contactos"
+              aria-label="Volver a contactos"
+              style={{
+                ...iconButtonStyle,
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                border: "1px solid #cbd5e1",
+                background: "#ffffff",
+                color: "#334155",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <title>Volver</title>
+                <path d="M15 18 9 12l6-6" />
+              </svg>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => onOpenProfile(contact)}

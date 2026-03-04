@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,7 +13,7 @@ import { useAuth } from "@/lib/auth-context";
 import {
   TierraHeader, MapControls, PipelineView, DatosView, CampoOverlay,
   INITIAL_DRILL,
-  type TierraMapHandle, type DrillState, type ActiveLayer, type LogEntry, type PinnedTooltipData,
+  type TierraMapHandle, type DrillState, type ActiveLayer, type DatosVizMode, type MapTheme, type LogEntry, type PinnedTooltipData,
 } from "./_components";
 import { tierraKeys } from "@/lib/hooks";
 import type { TierraViewMode } from "./_components/tierra-header";
@@ -31,6 +31,16 @@ const TierraMap = dynamic(
 );
 
 const EMPTY_FORMS: FormRecord[] = [];
+const TIERRA_FULLSCREEN_CLASS = "tierra-fullscreen";
+const TABBAR_THEME_VARS = [
+  "--tierra-tabbar-bg",
+  "--tierra-tabbar-border",
+  "--tierra-tab-inactive-color",
+  "--tierra-tab-active-color",
+  "--tierra-tab-active-bg",
+  "--tierra-tab-hover-bg",
+  "--tierra-tab-indicator",
+] as const;
 
 /* ========== Page ========== */
 
@@ -58,6 +68,12 @@ export default function TierraPage() {
   // ─── UI state ───
   const [viewMode, setViewMode] = useState<TierraViewMode>("campo");
   const [activeLayer, setActiveLayer] = useState<ActiveLayer>("datos");
+  const [datosVizMode, setDatosVizMode] = useState<DatosVizMode>("points");
+  const [heatmapRadius, setHeatmapRadius] = useState(26);
+  const [heatmapOpacity, setHeatmapOpacity] = useState(0.88);
+  const [mapTheme, setMapTheme] = useState<MapTheme>("dark");
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showCameraPanel, setShowCameraPanel] = useState(true);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(new Set());
   const [drillState, setDrillState] = useState<DrillState>(INITIAL_DRILL);
@@ -138,10 +154,71 @@ export default function TierraPage() {
     return false;
   }, [queryClient]);
 
+  const handleCameraNudge = useCallback((delta: {
+    panX?: number;
+    panY?: number;
+    zoomDelta?: number;
+    bearingDelta?: number;
+    pitchDelta?: number;
+  }) => {
+    mapHandleRef.current?.nudgeCamera(delta);
+  }, []);
+
+  const handleCameraResetPosition = useCallback(() => {
+    mapHandleRef.current?.resetCameraPosition();
+  }, []);
+
+  const handleCameraResetOrientation = useCallback(() => {
+    mapHandleRef.current?.resetCameraOrientation();
+  }, []);
+
+  // Sync candidato slug tabbar theme (top white bar) with map theme while Tierra is mounted.
+  useEffect(() => {
+    const root = document.documentElement;
+    const isDark = mapTheme === "dark";
+    root.style.setProperty("--tierra-tabbar-bg", isDark ? "#020617" : "#ffffff");
+    root.style.setProperty("--tierra-tabbar-border", isDark ? "#1e293b" : "#e2e8f0");
+    root.style.setProperty("--tierra-tab-inactive-color", isDark ? "#94a3b8" : "#64748b");
+    root.style.setProperty("--tierra-tab-active-color", isDark ? "#f8fafc" : "var(--goberna-blue-900)");
+    root.style.setProperty("--tierra-tab-active-bg", isDark ? "rgba(30,41,59,0.72)" : "rgba(15,23,42,0.05)");
+    root.style.setProperty("--tierra-tab-hover-bg", isDark ? "rgba(148,163,184,0.14)" : "rgba(15,23,42,0.04)");
+    root.style.setProperty("--tierra-tab-indicator", isDark ? "#60a5fa" : "var(--goberna-blue-900)");
+  }, [mapTheme]);
+
+  // Fullscreen mode: hide global dashboard chrome (sidebar + top tabbar) while this page is visible.
+  useEffect(() => {
+    document.body.classList.toggle(TIERRA_FULLSCREEN_CLASS, isFullscreen);
+    return () => {
+      document.body.classList.remove(TIERRA_FULLSCREEN_CLASS);
+    };
+  }, [isFullscreen]);
+
+  // Escape exits fullscreen.
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") setIsFullscreen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isFullscreen]);
+
+  // Cleanup tabbar vars and fullscreen class when leaving Tierra route.
+  useEffect(() => {
+    return () => {
+      const root = document.documentElement;
+      for (const cssVar of TABBAR_THEME_VARS) root.style.removeProperty(cssVar);
+      document.body.classList.remove(TIERRA_FULLSCREEN_CLASS);
+    };
+  }, []);
+
   // ─── Loading / Error ───
   if (statsLoading) {
     return (
-      <div className="fixed top-12 right-0 bottom-0 z-50 flex flex-col bg-slate-50 overflow-hidden transition-[left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]" style={{ left: "var(--sidebar-current-width, 72px)" }}>
+      <div
+        className="fixed right-0 bottom-0 z-50 flex flex-col bg-slate-50 overflow-hidden transition-[left,top] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
+        style={{ top: isFullscreen ? 0 : 48, left: isFullscreen ? 0 : "var(--sidebar-current-width, 72px)" }}
+      >
         <div className="flex flex-col items-center justify-center flex-1 gap-3 bg-slate-50">
           <div className="w-8 h-8 border-[3px] border-slate-200 border-t-blue-700 rounded-full animate-spin" />
           <span className="text-sm text-slate-500">Cargando campaña...</span>
@@ -151,7 +228,10 @@ export default function TierraPage() {
   }
   if (statsError || !stats) {
     return (
-      <div className="fixed top-12 right-0 bottom-0 z-50 flex flex-col bg-slate-50 overflow-hidden transition-[left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]" style={{ left: "var(--sidebar-current-width, 72px)" }}>
+      <div
+        className="fixed right-0 bottom-0 z-50 flex flex-col bg-slate-50 overflow-hidden transition-[left,top] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
+        style={{ top: isFullscreen ? 0 : 48, left: isFullscreen ? 0 : "var(--sidebar-current-width, 72px)" }}
+      >
         <div className="flex flex-col items-center justify-center flex-1 gap-3 bg-slate-50">
           <div className="text-lg font-semibold text-slate-800">No se pudo cargar</div>
           <div className="text-sm text-slate-500">{statsError instanceof Error ? statsError.message : "Candidato no encontrado"}</div>
@@ -164,16 +244,80 @@ export default function TierraPage() {
   const { campaign } = stats;
 
   return (
-    <div className="fixed z-50 flex flex-col bg-slate-50 overflow-hidden top-12 right-0 bottom-0 transition-[left] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]" style={{ left: "var(--sidebar-current-width, 72px)" }}>
-      <TierraHeader stats={stats} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} connectedCount={connectedCount} viewMode={viewMode} onViewModeChange={setViewMode} />
+    <div
+      className="fixed z-50 flex flex-col bg-slate-50 overflow-hidden right-0 bottom-0 transition-[left,top] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
+      style={{ top: isFullscreen ? 0 : 48, left: isFullscreen ? 0 : "var(--sidebar-current-width, 72px)" }}
+    >
+      <TierraHeader stats={stats} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} connectedCount={connectedCount} mapTheme={mapTheme} viewMode={viewMode} onViewModeChange={setViewMode} />
 
       {viewMode === "campo" ? (
         <div className="flex-1 min-h-0 relative">
-          <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} showRoutes={showRoutes} drillState={drillState} onDrillChange={setDrillState} />
-          <div className="absolute top-3 left-3 z-10">
-            <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
+          <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} datosVizMode={datosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} mapTheme={mapTheme} showRoutes={showRoutes} drillState={drillState} onDrillChange={setDrillState} />
+          <div className="absolute top-3 left-3 z-20 flex items-start gap-2">
+            <button
+              type="button"
+              onClick={() => setIsFullscreen((prev) => !prev)}
+              aria-label={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
+              className={`cursor-pointer rounded-md border w-9 h-9 p-0 flex items-center justify-center backdrop-blur-sm transition-colors ${
+                mapTheme === "dark"
+                  ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
+                  : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
+              }`}
+              title={isFullscreen ? "Salir de pantalla completa (Esc)" : "Pantalla completa"}
+            >
+              {isFullscreen ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <polyline points="9 3 3 3 3 9" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <polyline points="3 15 3 21 9 21" />
+                  <polyline points="21 15 21 21 15 21" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <polyline points="15 3 21 3 21 9" />
+                  <polyline points="9 21 3 21 3 15" />
+                  <line x1="21" y1="3" x2="14" y2="10" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+              )}
+            </button>
+            <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
           </div>
-          <CampoOverlay agents={enrichedAgents} connectedCount={connectedCount} logEntries={logEntries} formCount={stats.totals.forms_count} primaryColor={campaign.color_primario} selectedAgentId={selectedAgentId} onAgentClick={handleAgentListClick} onLogEntryClick={handleLogEntryClick} userRole={user?.role} onDeleteForm={handleDeleteForm} onUpdateForm={handleUpdateForm} />
+          <div className="absolute bottom-3 left-3 z-20 flex flex-col-reverse items-start gap-2">
+            <button
+              type="button"
+              onClick={() => setShowCameraPanel((prev) => !prev)}
+              aria-label={showCameraPanel ? "Ocultar controles de camara" : "Mostrar controles de camara"}
+              className={`cursor-pointer rounded-md border w-9 h-9 p-0 flex items-center justify-center backdrop-blur-sm transition-colors ${
+                mapTheme === "dark"
+                  ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
+                  : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
+              }`}
+              title={showCameraPanel ? "Ocultar controles de camara" : "Mostrar controles de camara"}
+            >
+              {showCameraPanel ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="7" y1="7" x2="17" y2="17" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <line x1="12" y1="8" x2="12" y2="16" />
+                  <line x1="8" y1="12" x2="16" y2="12" />
+                </svg>
+              )}
+            </button>
+            {showCameraPanel && (
+              <CameraPanel
+                mapTheme={mapTheme}
+                onNudge={handleCameraNudge}
+                onResetPosition={handleCameraResetPosition}
+                onResetOrientation={handleCameraResetOrientation}
+              />
+            )}
+          </div>
+          <CampoOverlay agents={enrichedAgents} connectedCount={connectedCount} logEntries={logEntries} formCount={stats.totals.forms_count} primaryColor={campaign.color_primario} selectedAgentId={selectedAgentId} onAgentClick={handleAgentListClick} onLogEntryClick={handleLogEntryClick} userRole={user?.role} onDeleteForm={handleDeleteForm} onUpdateForm={handleUpdateForm} mapTheme={mapTheme} />
         </div>
       ) : viewMode === "pipeline" ? (
         <PipelineView
@@ -211,6 +355,106 @@ export default function TierraPage() {
           onFlyTo={flyToFromDatos}
         />
       )}
+
+      <style jsx global>{`
+        body.${TIERRA_FULLSCREEN_CLASS} .dashboard-shell-sidebar,
+        body.${TIERRA_FULLSCREEN_CLASS} .dashboard-sidebar-edge-zone,
+        body.${TIERRA_FULLSCREEN_CLASS} .dashboard-mobile-menu-btn,
+        body.${TIERRA_FULLSCREEN_CLASS} .candidato-tabbar-tierra {
+          display: none !important;
+        }
+        body.${TIERRA_FULLSCREEN_CLASS} [data-dashboard-shell-root] {
+          --sidebar-current-width: 0px !important;
+        }
+        body.${TIERRA_FULLSCREEN_CLASS} [data-dashboard-shell-root] .dashboard-shell-main {
+          margin-left: 0 !important;
+        }
+      `}</style>
     </div>
+  );
+}
+
+function CameraPanel({
+  mapTheme,
+  onNudge,
+  onResetPosition,
+  onResetOrientation,
+}: {
+  mapTheme: MapTheme;
+  onNudge: (delta: { panX?: number; panY?: number; zoomDelta?: number; bearingDelta?: number; pitchDelta?: number }) => void;
+  onResetPosition: () => void;
+  onResetOrientation: () => void;
+}) {
+  const isDark = mapTheme === "dark";
+  const sectionLabelClass = isDark ? "text-slate-300" : "text-slate-500";
+  const panelStyle = {
+    background: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.38)",
+    backdropFilter: "blur(20px)",
+    WebkitBackdropFilter: "blur(20px)",
+    borderColor: isDark ? "rgba(148,163,184,0.25)" : "rgba(226,232,240,0.7)",
+    boxShadow: isDark ? "0 8px 32px rgba(2,6,23,0.45)" : "0 2px 24px rgba(0,0,0,0.08)",
+  };
+
+  return (
+    <div className="rounded-2xl border p-2 w-[172px] overflow-hidden" style={panelStyle}>
+      <div className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${sectionLabelClass}`}>Camara</div>
+
+      <div className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${sectionLabelClass}`}>Posicion</div>
+      <div className="grid grid-cols-3 gap-1 mb-2">
+        <span />
+        <CameraControlButton mapTheme={mapTheme} label="↑" title="Mover arriba" onClick={() => onNudge({ panY: -80 })} />
+        <span />
+        <CameraControlButton mapTheme={mapTheme} label="←" title="Mover izquierda" onClick={() => onNudge({ panX: -80 })} />
+        <CameraControlButton mapTheme={mapTheme} label="Inicio" title="Volver a vista Perú" onClick={onResetPosition} />
+        <CameraControlButton mapTheme={mapTheme} label="→" title="Mover derecha" onClick={() => onNudge({ panX: 80 })} />
+        <span />
+        <CameraControlButton mapTheme={mapTheme} label="↓" title="Mover abajo" onClick={() => onNudge({ panY: 80 })} />
+        <span />
+      </div>
+
+      <div className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${sectionLabelClass}`}>Angulo</div>
+      <div className="grid grid-cols-2 gap-1 mb-1">
+        <CameraControlButton mapTheme={mapTheme} label="↺ Giro" title="Rotar izquierda" onClick={() => onNudge({ bearingDelta: -15 })} />
+        <CameraControlButton mapTheme={mapTheme} label="Giro ↻" title="Rotar derecha" onClick={() => onNudge({ bearingDelta: 15 })} />
+        <CameraControlButton mapTheme={mapTheme} label="Inclinar +" title="Aumentar inclinacion" onClick={() => onNudge({ pitchDelta: 8 })} />
+        <CameraControlButton mapTheme={mapTheme} label="Inclinar -" title="Reducir inclinacion" onClick={() => onNudge({ pitchDelta: -8 })} />
+        <CameraControlButton mapTheme={mapTheme} label="Zoom +" title="Acercar" onClick={() => onNudge({ zoomDelta: 0.5 })} />
+        <CameraControlButton mapTheme={mapTheme} label="Zoom -" title="Alejar" onClick={() => onNudge({ zoomDelta: -0.5 })} />
+      </div>
+
+      <CameraControlButton mapTheme={mapTheme} label="Reset angulo" title="Norte arriba + vista plana" onClick={onResetOrientation} full />
+    </div>
+  );
+}
+
+function CameraControlButton({
+  mapTheme,
+  label,
+  title,
+  onClick,
+  full = false,
+}: {
+  mapTheme: MapTheme;
+  label: string;
+  title: string;
+  onClick: () => void;
+  full?: boolean;
+}) {
+  const isDark = mapTheme === "dark";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`cursor-pointer rounded border px-2 py-1 text-[10px] font-semibold transition-colors ${
+        full ? "w-full mt-1" : "w-full"
+      } ${
+        isDark
+          ? "border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+          : "border-slate-300 bg-slate-50 text-slate-700 hover:bg-white"
+      }`}
+    >
+      {label}
+    </button>
   );
 }

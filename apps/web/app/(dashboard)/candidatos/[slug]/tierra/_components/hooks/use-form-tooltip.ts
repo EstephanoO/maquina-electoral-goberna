@@ -83,8 +83,33 @@ function renderFormPoint(nombre: string, telefono: string, encuestador: string, 
   );
 }
 
+/** Render 3D bars tooltip */
+function renderBarCell(count: number): string {
+  return (
+    `<div style="display:flex;align-items:center;gap:7px">` +
+      `<div style="width:22px;height:22px;border-radius:6px;background:#0ea5e9;display:flex;align-items:center;justify-content:center;flex-shrink:0">` +
+        `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">` +
+          `<rect x="3" y="10" width="4" height="10"></rect>` +
+          `<rect x="10" y="6" width="4" height="14"></rect>` +
+          `<rect x="17" y="3" width="4" height="17"></rect>` +
+        `</svg>` +
+      `</div>` +
+      `<div>` +
+        `<div style="font-weight:700;font-size:12px;color:#1e293b;line-height:1.2">${count} dato${count !== 1 ? "s" : ""}</div>` +
+        `<div style="font-size:10px;color:#64748b;line-height:1.3">Celda acumulada</div>` +
+      `</div>` +
+    `</div>`
+  );
+}
+
 /** Layers that trigger tooltip */
-const FORM_LAYERS = new Set(["forms-points", "forms-clusters", "forms-cluster-ring"]);
+const FORM_LAYERS = new Set([
+  "forms-points",
+  "forms-clusters",
+  "forms-cluster-ring",
+  "forms-bars-3d",
+  "forms-bars-outline",
+]);
 const AGENT_LAYERS = new Set(["agents-circles", "agents-selected-ring"]);
 
 /** Agent status display config */
@@ -247,9 +272,12 @@ export function useFormTooltip(
 
     // ─── Form tooltip ───
     const isCluster = layerId === "forms-clusters" || layerId === "forms-cluster-ring";
+    const isBarCell = layerId === "forms-bars-3d" || layerId === "forms-bars-outline";
     const featureId = isCluster
       ? `cluster-${props.cluster_id}`
-      : `pt-${props.nombre}-${props.created_at}`;
+      : isBarCell
+        ? `bar-${props.count}-${props.height ?? ""}`
+        : `pt-${props.nombre}-${props.created_at}`;
 
     if (featureId !== state.current.currentId) {
       state.current.currentId = featureId;
@@ -257,6 +285,8 @@ export function useFormTooltip(
 
       if (isCluster) {
         renderCluster(el, Number(props.cluster_id), Number(props.point_count ?? 0));
+      } else if (isBarCell) {
+        el.innerHTML = renderBarCell(Number(props.count ?? 0));
       } else {
         el.innerHTML = renderFormPoint(
           String(props.nombre ?? "\u2014"),

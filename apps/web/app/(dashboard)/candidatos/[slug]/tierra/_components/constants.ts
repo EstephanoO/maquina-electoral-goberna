@@ -1,7 +1,7 @@
 /* ========== Tierra Map — Constants ========== */
 
 import type { FilterSpecification, StyleSpecification } from "maplibre-gl";
-import type { AgentStatus, LogEntry } from "./types";
+import type { AgentStatus, LogEntry, MapTheme } from "./types";
 
 /* ─── Agent status colors ─── */
 
@@ -20,10 +20,10 @@ export const DATA_POINT = "#2563eb";
 
 /* ─── Non-priority zone colors (neutral grey, outline-only feel) ─── */
 
-export const ZONE_FILL = "rgba(148, 163, 184, 0.06)";
-export const ZONE_HOVER = "rgba(148, 163, 184, 0.18)";
-export const ZONE_LINE = "#334155";
-export const ZONE_LINE_GHOST = "#94a3b8";
+export const ZONE_FILL = "rgba(148, 163, 184, 0.14)";
+export const ZONE_HOVER = "rgba(148, 163, 184, 0.3)";
+export const ZONE_LINE = "#cbd5e1";
+export const ZONE_LINE_GHOST = "#64748b";
 
 /* ─── Mask system — opacity-based for instant GPU transitions ─── */
 
@@ -50,7 +50,7 @@ export const MASK_FILL = "rgba(0, 0, 0, 0.45)";
 export const PRIORITY_FILL = "rgba(239, 68, 68, 0.35)";
 export const PRIORITY_LINE = "#991b1b";
 export const SECTOR_FILL = "rgba(220, 38, 38, 0.13)";
-export const SECTOR_LINE = "#0a0a0a";
+export const SECTOR_LINE = "#fca5a5";
 
 /* ─── Reusable MapLibre filter constants ─── */
 
@@ -77,34 +77,49 @@ export const PERU_MAX_BOUNDS: [[number, number], [number, number]] = [[-90, -25]
 
 /* ─── Tile config ─── */
 
+const DARK_TILES = "https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}@2x.png";
 const LIGHT_TILES = "https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png";
 export const DEFAULT_TILE_TEMPLATE = "/api/tiles/{z}/{x}/{y}.vector.pbf";
 
 /**
- * MAP_STYLE — clean basemap without any text labels.
- * Only the CARTO light_nolabels raster for roads/terrain.
+ * MAP_STYLES — dark/light basemaps without any text labels.
+ * Uses CARTO light_nolabels/dark_nolabels raster for roads/terrain.
  * All geographic names come from Tegola tile properties shown via tooltips.
  */
-export const MAP_STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    "light-base": { type: "raster", tiles: [LIGHT_TILES], tileSize: 256, attribution: "&copy; CARTO", maxzoom: 19 },
+export const MAP_STYLES: Record<MapTheme, StyleSpecification> = {
+  dark: {
+    version: 8,
+    sources: {
+      "dark-base": { type: "raster", tiles: [DARK_TILES], tileSize: 256, attribution: "&copy; CARTO", maxzoom: 19 },
+    },
+    layers: [
+      { id: "background", type: "background", paint: { "background-color": "#0b1220" } },
+      { id: "dark-base", type: "raster", source: "dark-base" },
+    ],
+    transition: { duration: 0, delay: 0 },
   },
-  layers: [
-    /** Background layer — visible while raster tiles load. Color matches CARTO light_nolabels
-     *  basemap background (#e6e5e3). Without this, unloaded tiles show as pure white squares. */
-    { id: "background", type: "background", paint: { "background-color": "#e6e5e3" } },
-    { id: "light-base", type: "raster", source: "light-base" },
-  ],
-  /** Instant paint transitions — mask/fill changes must sync with flyTo, not lag behind */
-  transition: { duration: 0, delay: 0 },
+  light: {
+    version: 8,
+    sources: {
+      "light-base": { type: "raster", tiles: [LIGHT_TILES], tileSize: 256, attribution: "&copy; CARTO", maxzoom: 19 },
+    },
+    layers: [
+      { id: "background", type: "background", paint: { "background-color": "#e5e7eb" } },
+      { id: "light-base", type: "raster", source: "light-base" },
+    ],
+    transition: { duration: 0, delay: 0 },
+  },
 };
+
+/** Backward-compatible alias (default dark). */
+export const MAP_STYLE = MAP_STYLES.dark;
 
 /* ─── Interactive layer IDs (static — never changes at runtime) ─── */
 
 export const INTERACTIVE_LAYERS = [
   "agents-circles", "agents-selected-ring",
   "forms-clusters", "forms-cluster-ring", "forms-points",
+  "forms-bars-3d", "forms-bars-outline",
   "dep-fill", "prov-fill", "dist-fill",
   "sector-fill",
 ] as const;

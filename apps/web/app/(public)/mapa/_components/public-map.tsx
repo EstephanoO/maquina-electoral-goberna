@@ -4,15 +4,17 @@ import { useRef, useState, useEffect, useCallback } from "react";
 import { Map as MapLibre, Source, Layer, NavigationControl } from "@vis.gl/react-maplibre";
 import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
 import type {
+  DragPanOptions,
   StyleSpecification,
   FillLayerSpecification,
   LineLayerSpecification,
   FilterSpecification,
+  Map as NativeMap,
 } from "maplibre-gl";
 
 /* ─── Constants ─── */
 
-const LIGHT_TILES = "https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png";
+const DARK_TILES = "https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}@2x.png";
 const TILE_TEMPLATE = "/api/tiles/{z}/{x}/{y}.vector.pbf";
 
 const PERU_VIEW = { longitude: -75.0152, latitude: -9.1899, zoom: 5 } as const;
@@ -28,11 +30,11 @@ const PROMOTE_ID = {
 const MAP_STYLE: StyleSpecification = {
   version: 8,
   sources: {
-    "light-base": { type: "raster", tiles: [LIGHT_TILES], tileSize: 256, attribution: "&copy; CARTO", maxzoom: 19 },
+    "dark-base": { type: "raster", tiles: [DARK_TILES], tileSize: 256, attribution: "&copy; CARTO", maxzoom: 19 },
   },
   layers: [
-    { id: "background", type: "background", paint: { "background-color": "#e6e5e3" } },
-    { id: "light-base", type: "raster", source: "light-base" },
+    { id: "background", type: "background", paint: { "background-color": "#0b1220" } },
+    { id: "dark-base", type: "raster", source: "dark-base" },
   ],
   transition: { duration: 0, delay: 0 },
 };
@@ -40,8 +42,8 @@ const MAP_STYLE: StyleSpecification = {
 const HIDE: FilterSpecification = ["==", "1", "0"];
 const SHOW_ALL: FilterSpecification = ["all"];
 
-const ZONE_FILL = "rgba(148, 163, 184, 0.06)";
-const ZONE_LINE = "#334155";
+const ZONE_FILL = "rgba(148, 163, 184, 0.14)";
+const ZONE_LINE = "#cbd5e1";
 const MASK_COLOR = "#0f172a";
 const MASK_OPACITY_ACTIVE = 0.06;
 const MASK_OPACITY_HOVER = 0.14;
@@ -56,6 +58,32 @@ const HOVER_LAYERS: Record<string, string> = {
 };
 
 const INTERACTIVE_LAYERS = ["dep-fill", "prov-fill", "dist-fill"];
+
+const MAP_DRAG_PAN_OPTIONS: DragPanOptions = {
+  linearity: 0.24,
+  maxSpeed: 1800,
+  deceleration: 2600,
+};
+
+const TRACKPAD_ZOOM_RATE = 1 / 130;
+const WHEEL_ZOOM_RATE = 1 / 680;
+
+function applyFluidMapInteractions(map: NativeMap) {
+  map.dragPan.enable(MAP_DRAG_PAN_OPTIONS);
+  map.scrollZoom.enable();
+  map.scrollZoom.setZoomRate(TRACKPAD_ZOOM_RATE);
+  map.scrollZoom.setWheelZoomRate(WHEEL_ZOOM_RATE);
+  map.dragRotate.disable();
+  map.touchPitch.disable();
+  map.keyboard.disableRotation();
+  map.touchZoomRotate.enable({ around: "center" });
+  map.touchZoomRotate.disableRotation();
+
+  const canvas = map.getCanvas();
+  canvas.style.cursor = "grab";
+  map.on("dragstart", () => { canvas.style.cursor = "grabbing"; });
+  map.on("dragend", () => { canvas.style.cursor = "grab"; });
+}
 
 /* ─── Types ─── */
 
@@ -160,7 +188,7 @@ export function PublicMap() {
 
     const f = e.features?.[0];
     if (!f || !f.id) {
-      map.getCanvas().style.cursor = "";
+      map.getCanvas().style.cursor = "grab";
       setTooltip(null);
       return;
     }
@@ -200,7 +228,7 @@ export function PublicMap() {
       );
       hoveredRef.current = null;
     }
-    map.getCanvas().style.cursor = "";
+    map.getCanvas().style.cursor = "grab";
     setTooltip(null);
   }, []);
 
@@ -271,7 +299,10 @@ export function PublicMap() {
   }, [drill]);
 
   const handleLoad = useCallback(() => {
-    mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: 0 });
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    applyFluidMapInteractions(map);
+    map.fitBounds(PERU_BOUNDS, { padding: 40, duration: 0 });
   }, []);
 
   /* ─── Breadcrumb ─── */
@@ -323,6 +354,16 @@ export function PublicMap() {
         initialViewState={PERU_VIEW}
         style={{ width: "100%", height: "100%" }}
         mapStyle={MAP_STYLE}
+        dragPan={MAP_DRAG_PAN_OPTIONS}
+        dragRotate={false}
+        pitchWithRotate={false}
+        touchPitch={false}
+        touchZoomRotate={{ around: "center" }}
+        scrollZoom
+        doubleClickZoom
+        minPitch={0}
+        maxPitch={0}
+        clickTolerance={4}
         maxTileCacheZoomLevels={10}
         fadeDuration={0}
         onLoad={handleLoad}

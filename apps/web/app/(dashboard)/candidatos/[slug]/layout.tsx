@@ -46,7 +46,7 @@ export default function CandidatoSlugLayout({ children }: { children: React.Reac
                   ...(isActive ? styles.tabActive : {}),
                 }}
                 onMouseEnter={(e) => {
-                  if (!isActive) e.currentTarget.style.background = "rgba(15,23,42,0.04)";
+                  if (!isActive) e.currentTarget.style.background = "var(--tierra-tab-hover-bg, rgba(15,23,42,0.04))";
                 }}
                 onMouseLeave={(e) => {
                   if (!isActive) e.currentTarget.style.background = "transparent";
@@ -85,7 +85,7 @@ function MapPinIcon({ size = 16, active = false }: { size?: number; active?: boo
       height={size}
       viewBox="0 0 24 24"
       fill="none"
-      stroke={active ? "var(--goberna-blue-900)" : "#64748b"}
+      stroke={active ? "var(--tierra-tab-active-color, var(--goberna-blue-900))" : "var(--tierra-tab-inactive-color, #64748b)"}
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -105,7 +105,7 @@ function MonitorIcon({ size = 16, active = false }: { size?: number; active?: bo
       height={size}
       viewBox="0 0 24 24"
       fill="none"
-      stroke={active ? "var(--goberna-blue-900)" : "#64748b"}
+      stroke={active ? "var(--tierra-tab-active-color, var(--goberna-blue-900))" : "var(--tierra-tab-inactive-color, #64748b)"}
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -127,7 +127,7 @@ function CmsIcon({ size = 16, active = false }: { size?: number; active?: boolea
       height={size}
       viewBox="0 0 24 24"
       fill="none"
-      stroke={active ? "var(--goberna-blue-900)" : "#64748b"}
+      stroke={active ? "var(--tierra-tab-active-color, var(--goberna-blue-900))" : "var(--tierra-tab-inactive-color, #64748b)"}
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -163,8 +163,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     height: 48,
     padding: "0 16px",
-    background: "#ffffff",
-    borderBottom: "1px solid #e2e8f0",
+    background: "var(--tierra-tabbar-bg, #ffffff)",
+    borderBottom: "1px solid var(--tierra-tabbar-border, #e2e8f0)",
     flexShrink: 0,
     zIndex: 60,
     position: "relative",
@@ -174,8 +174,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     height: 48,
     padding: "0 16px",
-    background: "#ffffff",
-    borderBottom: "1px solid #e2e8f0",
+    background: "var(--tierra-tabbar-bg, #ffffff)",
+    borderBottom: "1px solid var(--tierra-tabbar-border, #e2e8f0)",
     flexShrink: 0,
     /* Fixed so it stays above the Tierra fixed container */
     position: "fixed",
@@ -197,7 +197,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "8px 16px",
     border: "none",
     background: "transparent",
-    color: "#64748b",
+    color: "var(--tierra-tab-inactive-color, #64748b)",
     fontSize: 13,
     fontWeight: 500,
     fontFamily: "inherit",
@@ -207,9 +207,9 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap" as const,
   },
   tabActive: {
-    color: "var(--goberna-blue-900)",
+    color: "var(--tierra-tab-active-color, var(--goberna-blue-900))",
     fontWeight: 600,
-    background: "rgba(15,23,42,0.05)",
+    background: "var(--tierra-tab-active-bg, rgba(15,23,42,0.05))",
   },
   activeIndicator: {
     position: "absolute" as const,
@@ -218,6 +218,6 @@ const styles: Record<string, React.CSSProperties> = {
     right: 12,
     height: 2,
     borderRadius: 1,
-    background: "var(--goberna-blue-900)",
+    background: "var(--tierra-tab-indicator, var(--goberna-blue-900))",
   },
 };

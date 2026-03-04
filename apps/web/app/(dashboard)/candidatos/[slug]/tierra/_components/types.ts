@@ -29,6 +29,9 @@ export type FormPoint = {
   agent_id?: string;
 };
 
+export type DatosVizMode = "points" | "heatmap" | "bars3d";
+export type MapTheme = "dark" | "light";
+
 /* ─── Drill Navigation ─── */
 
 export type DrillLevel = 0 | 1 | 2 | 3 | 4;
@@ -68,6 +71,14 @@ export type PinnedTooltipData = {
   created_at: string;
 };
 
+export type CameraNudge = {
+  panX?: number;
+  panY?: number;
+  zoomDelta?: number;
+  bearingDelta?: number;
+  pitchDelta?: number;
+};
+
 /* ─── Map Handle (imperative API) ─── */
 
 export type TierraMapHandle = {
@@ -75,6 +86,12 @@ export type TierraMapHandle = {
   getDrillState: () => DrillState;
   /** Show a pinned tooltip for a specific form point after flyTo completes */
   showPinnedTooltip: (data: PinnedTooltipData) => void;
+  /** Small camera step (pan/zoom/rotate/pitch) for external UI controls */
+  nudgeCamera: (delta: CameraNudge) => void;
+  /** Reset angle only (north-up + flat) */
+  resetCameraOrientation: () => void;
+  /** Reset to Perú default position */
+  resetCameraPosition: () => void;
 };
 
 /* ─── Drill Filters (output of useDrillFilters) ─── */
@@ -104,6 +121,10 @@ export type TierraMapProps = {
   onSelectAgent: (agentId: string | null) => void;
   showTracking: boolean;
   showDatos: boolean;
+  datosVizMode: DatosVizMode;
+  heatmapRadius: number;
+  heatmapOpacity: number;
+  mapTheme: MapTheme;
   showRoutes: boolean;
   drillState: DrillState;
   onDrillChange: (state: DrillState) => void;
