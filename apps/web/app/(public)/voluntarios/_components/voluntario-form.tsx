@@ -24,30 +24,33 @@ import {
 } from "@/lib/services/geo";
 import type { CandidatePublic } from "@/lib/types";
 
-// ── Design tokens (LandigGoberna) ────────────────────────────────────
+// ── Design tokens ─────────────────────────────────────────────────────
 const T = {
-  accent:       "#f4cc15",
-  accentDim:    "rgba(244,204,21,0.12)",
-  accentBorder: "rgba(244,204,21,0.28)",
-  accentShadow: "rgba(244,204,21,0.22)",
-  textMain:     "#f2f6ff",
-  textMuted:    "#c1ccdf",
-  cardBorder:   "rgba(255,255,255,0.1)",
-  inputBg:      "rgba(255,255,255,0.06)",
-  inputBorder:  "rgba(255,255,255,0.1)",
-  inputFocus:   "#f4cc15",
-  whiteLow:     "rgba(255,255,255,0.28)",
-  whiteMid:     "rgba(255,255,255,0.55)",
-  error:        "#f87171",
-  errorBg:      "rgba(239,68,68,0.1)",
-  errorBorder:  "rgba(239,68,68,0.28)",
-  dropdownBg:   "rgba(10,18,33,0.98)",
+  accent:        "#f4cc15",
+  accentDim:     "rgba(244,204,21,0.1)",
+  accentBorder:  "rgba(244,204,21,0.28)",
+  accentShadow:  "0 0 0 3px rgba(244,204,21,0.18)",
+  textMain:      "#f2f6ff",
+  textMuted:     "#c1ccdf",
+  textFaint:     "rgba(193,204,223,0.55)",  // placeholder — legible pero diferenciado
+  inputBg:       "rgba(8,16,32,0.7)",        // oscuro suficiente para contrastar con card
+  inputBorder:   "rgba(255,255,255,0.13)",
+  inputBorderFocus: "#f4cc15",
+  cardBorder:    "rgba(255,255,255,0.1)",
+  sectionLine:   "rgba(255,255,255,0.07)",
+  error:         "#f87171",
+  errorBg:       "rgba(239,68,68,0.1)",
+  errorBorder:   "rgba(239,68,68,0.3)",
+  dropdownBg:    "rgba(8,16,32,0.98)",
+  pillBg:        "rgba(255,255,255,0.05)",
+  pillBorder:    "rgba(255,255,255,0.1)",
+  labelColor:    "rgba(193,204,223,0.75)",   // más visible que antes
 } as const;
 
 const RANGOS: { value: RangoEdad; label: string }[] = [
-  { value: "18-25", label: "18 – 25" },
-  { value: "26-35", label: "26 – 35" },
-  { value: "36-45", label: "36 – 45" },
+  { value: "18-25", label: "18–25" },
+  { value: "26-35", label: "26–35" },
+  { value: "36-45", label: "36–45" },
 ];
 
 // ── Form state ────────────────────────────────────────────────────────
@@ -91,11 +94,11 @@ const labelStyle = (extra?: CSSProperties): CSSProperties => ({
   display: "flex",
   alignItems: "center",
   gap: 5,
-  fontSize: "0.66rem",
-  fontWeight: 600,
-  letterSpacing: "0.09em",
-  color: "#8fa4c2",
-  marginBottom: 7,
+  fontSize: "0.67rem",
+  fontWeight: 700,
+  letterSpacing: "0.1em",
+  color: T.labelColor,
+  marginBottom: 8,
   fontFamily: FONT_STACK,
   textTransform: "uppercase",
   ...extra,
@@ -103,22 +106,20 @@ const labelStyle = (extra?: CSSProperties): CSSProperties => ({
 
 const inputBase = (hasError = false, extra?: CSSProperties): CSSProperties => ({
   width: "100%",
-  padding: "13px 16px",
-  fontSize: 14,
+  padding: "12px 16px",
+  fontSize: 15,
   fontFamily: FONT_STACK,
   fontWeight: 500,
-  border: `1.5px solid ${hasError ? T.errorBorder : "rgba(255,255,255,0.08)"}`,
-  borderRadius: 12,
-  background: hasError
-    ? T.errorBg
-    : "linear-gradient(135deg, rgba(21,34,56,0.7) 0%, rgba(10,18,33,0.85) 100%)",
+  border: `1.5px solid ${hasError ? T.errorBorder : T.inputBorder}`,
+  borderRadius: 10,
+  background: hasError ? T.errorBg : T.inputBg,
   color: T.textMain,
   outline: "none",
   boxSizing: "border-box",
   boxShadow: hasError
-    ? `0 0 0 3px ${T.errorBorder}33, 0 2px 8px rgba(0,0,0,0.3)`
-    : "0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06)",
-  transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+    ? `0 0 0 3px ${T.errorBorder}44`
+    : "inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 4px rgba(0,0,0,0.4)",
+  transition: "border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease",
   ...extra,
 });
 
@@ -217,17 +218,35 @@ function SearchSelect({
     item?.scrollIntoView({ block: "nearest" });
   }, [highlighted]);
 
+  const borderColor = hasError ? T.errorBorder : open ? T.inputBorderFocus : T.inputBorder;
+  const shadow = open
+    ? T.accentShadow
+    : hasError
+    ? `0 0 0 3px ${T.errorBorder}44`
+    : "inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 4px rgba(0,0,0,0.4)";
+
   return (
     <div ref={wrapRef} style={{ position: "relative" }}>
-      <div
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={openDropdown}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDropdown(); } }}
         style={{
-          ...inputBase(hasError),
           display: "flex",
           alignItems: "center",
           padding: 0,
           overflow: "hidden",
-          opacity: disabled ? 0.45 : 1,
-          cursor: disabled ? "not-allowed" : undefined,
+          border: `1.5px solid ${borderColor}`,
+          borderRadius: 10,
+          background: hasError ? T.errorBg : T.inputBg,
+          boxShadow: shadow,
+          opacity: disabled ? 0.4 : 1,
+          cursor: disabled ? "not-allowed" : "pointer",
+          transition: "border-color 0.2s ease, box-shadow 0.2s ease",
+          width: "100%",
+          textAlign: "left",
         }}
       >
         <input
@@ -238,24 +257,25 @@ function SearchSelect({
           placeholder={open ? "Escribe para buscar..." : placeholder}
           value={open ? query : value}
           onFocus={openDropdown}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => { e.stopPropagation(); setQuery(e.target.value); }}
           onKeyDown={handleKeyDown}
           autoComplete="off"
           style={{
             flex: 1,
             padding: "12px 14px",
-            fontSize: 14,
+            fontSize: 15,
             fontFamily: FONT_STACK,
             fontWeight: value && !open ? 500 : 400,
             background: "transparent",
             border: "none",
             outline: "none",
-            color: value && !open ? T.textMain : T.textMuted,
+            color: value && !open ? T.textMain : T.textFaint,
             minWidth: 0,
             cursor: disabled ? "not-allowed" : "text",
           }}
+          className="vf-search-input"
         />
-        <div style={{ display: "flex", alignItems: "center", paddingRight: 12, gap: 4, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", paddingRight: 12, gap: 6, flexShrink: 0 }}>
           {loading && <SpinnerSmall />}
           {value && !open && onClear && (
             <button
@@ -264,29 +284,32 @@ function SearchSelect({
               aria-label="Limpiar selección"
               style={{
                 background: "none", border: "none", cursor: "pointer",
-                padding: 2, display: "flex", alignItems: "center", color: T.whiteLow,
+                padding: 3, display: "flex", alignItems: "center",
+                color: "rgba(193,204,223,0.45)",
+                borderRadius: 4,
               }}
             >
-              <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none"
-                stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           )}
           <svg
-            aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none"
-            stroke={T.whiteLow} strokeWidth="2.5" strokeLinecap="round"
+            aria-hidden="true" width="14" height="14" viewBox="0 0 24 24"
+            fill="none" stroke="rgba(193,204,223,0.5)" strokeWidth="2.5" strokeLinecap="round"
             style={{
               transition: "transform 0.18s ease",
               transform: open ? "rotate(180deg)" : "none",
               pointerEvents: "none",
+              flexShrink: 0,
             }}
           >
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </div>
-      </div>
+      </button>
 
       {/* Dropdown */}
       {open && (
@@ -294,28 +317,28 @@ function SearchSelect({
           ref={listRef}
           style={{
             position: "absolute",
-            top: "calc(100% + 5px)",
+            top: "calc(100% + 6px)",
             left: 0,
             right: 0,
-            zIndex: 100,
+            zIndex: 200,
             maxHeight: 220,
             overflowY: "auto",
             borderRadius: 10,
             background: T.dropdownBg,
-            border: `1px solid ${T.accentBorder}`,
-            boxShadow: "0 16px 48px rgba(0,0,0,0.6)",
+            border: `1.5px solid ${T.accentBorder}`,
+            boxShadow: "0 20px 56px rgba(0,0,0,0.7), 0 0 0 1px rgba(244,204,21,0.08)",
             padding: "4px 0",
           }}
         >
           {loading ? (
             <div style={{
-              padding: "14px 16px", color: T.whiteLow, fontSize: 13,
+              padding: "14px 16px", color: "rgba(193,204,223,0.5)", fontSize: 13,
               fontFamily: FONT_STACK, display: "flex", alignItems: "center", gap: 8,
             }}>
               <SpinnerSmall /> Cargando...
             </div>
           ) : filtered.length === 0 ? (
-            <div style={{ padding: "14px 16px", color: T.whiteLow, fontSize: 13, fontFamily: FONT_STACK }}>
+            <div style={{ padding: "14px 16px", color: "rgba(193,204,223,0.5)", fontSize: 13, fontFamily: FONT_STACK }}>
               {noOptionsText}
             </div>
           ) : (
@@ -331,7 +354,7 @@ function SearchSelect({
                   textAlign: "left",
                   padding: "9px 14px",
                   cursor: "pointer",
-                  background: highlighted === i ? T.accentDim : "transparent",
+                  background: highlighted === i ? "rgba(244,204,21,0.1)" : "transparent",
                   border: "none",
                   borderLeft: highlighted === i ? `3px solid ${T.accent}` : "3px solid transparent",
                   transition: "background 0.1s ease",
@@ -347,7 +370,7 @@ function SearchSelect({
                 </span>
                 {opt.sub && (
                   <span style={{
-                    display: "block", fontSize: 11, color: T.whiteLow,
+                    display: "block", fontSize: 11, color: "rgba(193,204,223,0.4)",
                     fontFamily: FONT_STACK, marginTop: 1,
                   }}>
                     {opt.sub}
@@ -406,9 +429,11 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
   ];
 
   async function handleSelectDep(opt: SelectOption) {
-    setForm((p) => ({ ...p, geo: { departamento: opt.label, coddep: opt.value, provincia: "", codprov_full: "", distrito: "" } }));
-    setProvincias([]);
-    setDistritos([]);
+    setForm((p) => ({
+      ...p,
+      geo: { departamento: opt.label, coddep: opt.value, provincia: "", codprov_full: "", distrito: "" },
+    }));
+    setProvincias([]); setDistritos([]);
     setErrors((p) => ({ ...p, departamento: undefined }));
     setLoadingProv(true);
     const res = await getProvincias(opt.value);
@@ -417,13 +442,18 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
   }
 
   function handleClearDep() {
-    setForm((p) => ({ ...p, geo: { departamento: "", coddep: "", provincia: "", codprov_full: "", distrito: "" } }));
-    setProvincias([]);
-    setDistritos([]);
+    setForm((p) => ({
+      ...p,
+      geo: { departamento: "", coddep: "", provincia: "", codprov_full: "", distrito: "" },
+    }));
+    setProvincias([]); setDistritos([]);
   }
 
   async function handleSelectProv(opt: SelectOption) {
-    setForm((p) => ({ ...p, geo: { ...p.geo, provincia: opt.label, codprov_full: opt.value, distrito: "" } }));
+    setForm((p) => ({
+      ...p,
+      geo: { ...p.geo, provincia: opt.label, codprov_full: opt.value, distrito: "" },
+    }));
     setDistritos([]);
     setErrors((p) => ({ ...p, provincia: undefined }));
     setLoadingDist(true);
@@ -433,7 +463,10 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
   }
 
   function handleClearProv() {
-    setForm((p) => ({ ...p, geo: { ...p.geo, provincia: "", codprov_full: "", distrito: "" } }));
+    setForm((p) => ({
+      ...p,
+      geo: { ...p.geo, provincia: "", codprov_full: "", distrito: "" },
+    }));
     setDistritos([]);
   }
 
@@ -497,109 +530,122 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
   return (
     <div style={{ fontFamily: FONT_STACK }}>
       <style>{`
-        /* inputs */
+        /* ── Input focus ── */
         .vf-input:focus {
           border-color: ${T.accent} !important;
-          box-shadow: 0 0 0 3px ${T.accentShadow}44, 0 2px 12px rgba(0,0,0,0.4) !important;
-          background: linear-gradient(135deg, rgba(30,48,76,0.85) 0%, rgba(15,26,48,0.95) 100%) !important;
+          box-shadow: ${T.accentShadow}, 0 1px 4px rgba(0,0,0,0.5) !important;
+          background: rgba(12,22,40,0.9) !important;
         }
-        .vf-input::placeholder { color: rgba(193,204,223,0.3); }
+        .vf-input::placeholder { color: ${T.textFaint}; }
+
+        /* ── icon prefix color on focus ── */
         .vf-input-wrap:focus-within .vf-input-icon { color: ${T.accent}; }
-        .vf-input-wrap:focus-within > div {
-          border-color: ${T.accent} !important;
-          box-shadow: 0 0 0 3px ${T.accentShadow}44, 0 2px 12px rgba(0,0,0,0.4) !important;
-          background: linear-gradient(135deg, rgba(30,48,76,0.85) 0%, rgba(15,26,48,0.95) 100%) !important;
-        }
-        /* pills rango edad */
+
+        /* ── pill hover ── */
         .vf-pill:hover {
           border-color: ${T.accentBorder} !important;
-          background: ${T.accentDim} !important;
+          background: rgba(244,204,21,0.07) !important;
         }
-        /* submit */
-        .vf-btn-primary:hover:not(:disabled) {
-          filter: brightness(1.08) !important;
-          transform: translateY(-2px) !important;
-          box-shadow: 0 8px 28px rgba(200,168,41,0.45) !important;
+
+        /* ── submit hover ── */
+        .vf-btn-submit:hover:not(:disabled) {
+          filter: brightness(1.1) saturate(1.1);
+          transform: translateY(-2px);
+          box-shadow: 0 10px 32px rgba(200,168,41,0.5) !important;
         }
-        .vf-btn-primary:active:not(:disabled) { transform: translateY(0) !important; }
+        .vf-btn-submit:active:not(:disabled) {
+          transform: translateY(0);
+          filter: brightness(0.98);
+        }
+
         @keyframes goberna-spin { to { transform: rotate(360deg); } }
 
-        /* geo row: 3 col desktop → 1 col mobile */
+        /* ── geo row: 3 col → 1 col mobile ── */
         .vf-geo-row {
           display: grid;
           grid-template-columns: 1fr 1fr 1fr;
-          gap: 12px;
-          margin-bottom: 16px;
+          gap: 10px;
+          margin-bottom: 20px;
         }
 
-        /* rangos: 3 col fijos siempre */
-        .vf-rangos { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+        /* ── rangos ── */
+        .vf-rangos {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 10px;
+        }
 
+        /* ── Mobile overrides ── */
         @media (max-width: 768px) {
-          /* geo: 1 col full en mobile */
-          .vf-geo-row {
-            grid-template-columns: 1fr;
-            gap: 12px;
-          }
-          /* inputs más altos, más fácil de tocar */
+          .vf-geo-row { grid-template-columns: 1fr; gap: 10px; }
+
+          /* inputs con ícono: paddingLeft fijo para no superponerse */
           .vf-input {
-            padding: 15px 16px 15px 44px !important;
-            font-size: 16px !important; /* evita zoom en iOS */
-            border-radius: 14px !important;
+            padding: 15px 16px 15px 46px !important;
+            font-size: 16px !important;
+            border-radius: 12px !important;
           }
-          /* searchselect inner input */
-          .vf-input-wrap input {
+          /* input interno de SearchSelect (sin ícono prefijo) */
+          .vf-search-input {
             font-size: 16px !important;
             padding: 15px 14px !important;
           }
-          /* rangos: más altos táctiles */
-          .vf-rangos label {
-            padding: 16px 8px !important;
-          }
-          /* submit: más alto */
-          .vf-btn-primary {
+          .vf-rangos label { padding: 15px 8px !important; }
+          .vf-btn-submit {
             padding: 16px 24px !important;
             font-size: 1rem !important;
             border-radius: 14px !important;
           }
-          /* header del form */
-          .vf-form-header h2 { font-size: 1.35rem !important; }
+          .vf-form-title { font-size: 1.4rem !important; }
         }
       `}</style>
 
       {/* ── Header ── */}
-      <div className="vf-form-header" style={{ marginBottom: 24 }}>
-        <h2 style={{
-          margin: "0 0 5px",
-          fontSize: "clamp(1.2rem, 4vw, 1.42rem)",
-          fontWeight: 800,
-          color: T.textMain,
-          letterSpacing: "-0.02em",
-          lineHeight: 1.1,
-        }}>
-          Regístrate ahora
+      <div style={{ marginBottom: 28 }}>
+        <h2
+          className="vf-form-title"
+          style={{
+            margin: "0 0 6px",
+            fontSize: "clamp(1.25rem,3.5vw,1.5rem)",
+            fontWeight: 800,
+            color: T.textMain,
+            letterSpacing: "-0.025em",
+            lineHeight: 1.1,
+          }}
+        >
+          Elegí tu candidato y sumáte
         </h2>
-        <p style={{ margin: 0, fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>
-          Un coordinador de tu zona te contactará en 48 h.
+        <p style={{ margin: 0, fontSize: 13.5, color: T.textMuted, lineHeight: 1.5 }}>
+          Completá el formulario y te asignamos a tu equipo de distrito.
         </p>
       </div>
 
-      {/* ── Sección: Tus datos ── */}
-      <SectionLabel icon={
-        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none"
-          stroke={T.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-          <circle cx="12" cy="7" r="4" />
-        </svg>
-      } text="Tus datos" />
+      {/* ── Divider ── */}
+      <div style={{ height: 1, background: "rgba(255,255,255,0.07)", marginBottom: 24 }} />
 
+      {/* ── Sección: Tus datos ── */}
+      <SectionLabel
+        icon={
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke={T.accent} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+        }
+        text="Tus datos"
+      />
+
+      {/* Nombre */}
       <Field labelText="Nombre completo" htmlFor="nombre_completo" error={errors.nombre_completo} required>
         <div className="vf-input-wrap" style={{ position: "relative" }}>
-          <span className="vf-input-icon" style={{
-            position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
-            color: "rgba(255,255,255,0.28)", pointerEvents: "none",
-            transition: "color 0.2s ease", display: "flex",
-          }}>
+          <span
+            className="vf-input-icon"
+            style={{
+              position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
+              color: "rgba(193,204,223,0.38)", pointerEvents: "none",
+              transition: "color 0.2s ease", display: "flex",
+            }}
+          >
             <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -613,19 +659,23 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
             placeholder="Juan Carlos Pérez López"
             value={form.nombre_completo}
             onChange={(e) => set("nombre_completo", e.target.value)}
-            style={{ ...inputBase(!!errors.nombre_completo), paddingLeft: 40 }}
+            style={{ ...inputBase(!!errors.nombre_completo), paddingLeft: 42 }}
             autoComplete="name"
           />
         </div>
       </Field>
 
+      {/* Teléfono */}
       <Field labelText="Número de teléfono" htmlFor="telefono" error={errors.telefono} required>
         <div className="vf-input-wrap" style={{ position: "relative" }}>
-          <span className="vf-input-icon" style={{
-            position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
-            color: "rgba(255,255,255,0.28)", pointerEvents: "none",
-            transition: "color 0.2s ease", display: "flex",
-          }}>
+          <span
+            className="vf-input-icon"
+            style={{
+              position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
+              color: "rgba(193,204,223,0.38)", pointerEvents: "none",
+              transition: "color 0.2s ease", display: "flex",
+            }}
+          >
             <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.27h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.82a16 16 0 0 0 6.29 6.29l1.62-1.62a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
@@ -638,22 +688,28 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
             placeholder="987 654 321"
             value={form.telefono}
             onChange={(e) => set("telefono", e.target.value)}
-            style={{ ...inputBase(!!errors.telefono), paddingLeft: 40 }}
+            style={{ ...inputBase(!!errors.telefono), paddingLeft: 42 }}
             autoComplete="tel"
           />
         </div>
       </Field>
 
-      {/* ── Sección: Tu zona ── */}
-      <SectionLabel icon={
-        <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none"
-          stroke={T.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-          <circle cx="12" cy="10" r="3" />
-        </svg>
-      } text="Tu zona" />
+      {/* ── Divider ── */}
+      <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "4px 0 20px" }} />
 
-      {/* Departamento · Provincia · Distrito — una fila (colapsa en mobile) */}
+      {/* ── Sección: Tu zona ── */}
+      <SectionLabel
+        icon={
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none"
+            stroke={T.accent} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+            <circle cx="12" cy="10" r="3" />
+          </svg>
+        }
+        text="Tu zona"
+      />
+
+      {/* Geo row */}
       <div className="vf-geo-row">
         <Field labelText="Departamento" htmlFor="dep-input" error={errors.departamento} required noMargin>
           <SearchSelect
@@ -668,7 +724,6 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
             noOptionsText="No se encontró"
           />
         </Field>
-
         <Field labelText="Provincia" htmlFor="prov-input" error={errors.provincia} required noMargin>
           <SearchSelect
             id="prov-input"
@@ -683,7 +738,6 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
             noOptionsText="No se encontró"
           />
         </Field>
-
         <Field labelText="Distrito" htmlFor="dist-input" error={errors.distrito} required noMargin>
           <SearchSelect
             id="dist-input"
@@ -700,11 +754,11 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
         </Field>
       </div>
 
-      {/* Rango de edad */}
-      <div style={{ marginBottom: 22 }}>
-        <p style={labelStyle({ marginBottom: 10 })}>
-          Rango de edad <span style={{ color: T.accent }}>*</span>
-        </p>
+      {/* ── Rango de edad ── */}
+      <fieldset style={{ border: "none", padding: 0, margin: "0 0 24px" }}>
+        <legend style={labelStyle({ marginBottom: 10, display: "flex" })}>
+          Rango de edad <span style={{ color: T.accent, marginLeft: 2 }}>*</span>
+        </legend>
         <div className="vf-rangos">
           {RANGOS.map((r) => {
             const active = form.rango_edad === r.value;
@@ -717,13 +771,17 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
                   flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
-                  padding: "12px 8px",
+                  padding: "13px 8px",
                   borderRadius: 10,
-                  border: `1px solid ${active ? T.accent : T.inputBorder}`,
-                  background: active ? T.accentDim : T.inputBg,
+                  border: `1.5px solid ${active ? T.accent : T.pillBorder}`,
+                  background: active
+                    ? "rgba(244,204,21,0.1)"
+                    : T.pillBg,
                   cursor: "pointer",
                   transition: "all 0.18s ease",
-                  boxShadow: active ? `0 0 0 3px ${T.accentShadow}33` : "none",
+                  boxShadow: active
+                    ? `0 0 0 3px rgba(244,204,21,0.15), inset 0 1px 0 rgba(244,204,21,0.12)`
+                    : "inset 0 1px 0 rgba(255,255,255,0.04)",
                   userSelect: "none",
                 }}
               >
@@ -747,9 +805,9 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
                   {r.label}
                 </span>
                 <span style={{
-                  fontSize: 9, fontWeight: 600,
-                  color: active ? T.accent : T.whiteLow,
-                  textTransform: "uppercase", letterSpacing: "0.1em", marginTop: 4,
+                  fontSize: 9, fontWeight: 700,
+                  color: active ? T.accent : "rgba(193,204,223,0.45)",
+                  textTransform: "uppercase", letterSpacing: "0.12em", marginTop: 4,
                 }}>
                   años
                 </span>
@@ -758,24 +816,31 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
           })}
         </div>
         {errors.rango_edad && (
-          <p style={{ fontSize: 11, color: T.error, marginTop: 6, fontFamily: FONT_STACK }}>
+          <p style={{ fontSize: 11.5, color: T.error, marginTop: 8, fontFamily: FONT_STACK }}>
             {errors.rango_edad}
           </p>
         )}
-      </div>
+      </fieldset>
 
       {/* ── Candidato (opcional) ── */}
       {candidates.length > 0 && (
         <>
-          <SectionLabel icon={
-            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none"
-              stroke={T.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 11l3 3L22 4" />
-              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-            </svg>
-          } text="¿A quién apoyas?" optional />
+          {/* ── Divider ── */}
+          <div style={{ height: 1, background: "rgba(255,255,255,0.07)", margin: "0 0 20px" }} />
 
-          <div style={{ marginBottom: 22 }}>
+          <SectionLabel
+            icon={
+              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke={T.accent} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 11l3 3L22 4" />
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+              </svg>
+            }
+            text="¿A quién querés apoyar?"
+            optional
+          />
+
+          <div style={{ marginBottom: 24 }}>
             <SearchSelect
               id="candidato-input"
               placeholder="Buscar candidato..."
@@ -791,35 +856,42 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
         </>
       )}
 
-      {/* ── Error de servidor ── */}
+      {/* ── Server error ── */}
       {serverError && (
         <div style={{
-          padding: "11px 14px", borderRadius: 10,
+          padding: "12px 16px", borderRadius: 10,
           background: T.errorBg, border: `1px solid ${T.errorBorder}`,
-          color: "#fca5a5", fontSize: 13, marginBottom: 18, fontFamily: FONT_STACK,
+          color: "#fca5a5", fontSize: 13, marginBottom: 20, fontFamily: FONT_STACK,
+          lineHeight: 1.5,
         }}>
           {serverError}
         </div>
       )}
 
-      {/* ── Submit — pill dorado, estilo .primary-btn de LandigGoberna ── */}
+      {/* ── Submit ── */}
       <button
         type="button"
         onClick={handleSubmit}
         disabled={status === "loading"}
-        className="vf-btn-primary"
+        className="vf-btn-submit"
         style={{
           width: "100%",
-          padding: "13px 24px",
-          fontSize: "0.9rem",
-          fontWeight: 600,
+          padding: "14px 24px",
+          fontSize: "0.92rem",
+          fontWeight: 700,
           fontFamily: FONT_STACK,
+          letterSpacing: "0.01em",
           color: status === "loading" ? "rgba(255,247,203,0.5)" : "#fff7cb",
-          background: status === "loading" ? "rgba(200,168,41,0.45)" : "#c8a829",
-          border: "1px solid rgba(255,255,255,0.24)",
+          background: status === "loading"
+            ? "rgba(200,168,41,0.4)"
+            : "linear-gradient(135deg, #d4a91e 0%, #c8a829 60%, #b89520 100%)",
+          border: "1px solid rgba(255,235,100,0.25)",
           borderRadius: 999,
           cursor: status === "loading" ? "not-allowed" : "pointer",
-          transition: "transform 250ms cubic-bezier(0.22,1,0.36,1), filter 250ms ease",
+          transition: "transform 200ms ease, filter 200ms ease, box-shadow 200ms ease",
+          boxShadow: status === "loading"
+            ? "none"
+            : "0 4px 20px rgba(200,168,41,0.35), inset 0 1px 0 rgba(255,255,255,0.2)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -833,7 +905,7 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
           </>
         ) : (
           <>
-            Quiero ser voluntario
+            Quiero ser brigadista
             <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="5" y1="12" x2="19" y2="12" />
@@ -844,10 +916,10 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
       </button>
 
       <p style={{
-        textAlign: "center", fontSize: 11, color: T.whiteLow,
-        marginTop: 12, fontFamily: FONT_STACK,
+        textAlign: "center", fontSize: 11.5, color: "rgba(193,204,223,0.4)",
+        marginTop: 14, fontFamily: FONT_STACK, lineHeight: 1.5,
       }}>
-        Tu información es confidencial y solo se usa para contactarte.
+        Tus datos son confidenciales y se usan solo para coordinar tu participación.
       </p>
     </div>
   );
@@ -857,26 +929,37 @@ export function VoluntarioForm({ candidates }: { candidates: CandidatePublic[] }
 function SectionLabel({ icon, text, optional }: { icon: ReactNode; text: string; optional?: boolean }) {
   return (
     <div style={{
-      display: "flex", alignItems: "center", gap: 8,
-      marginBottom: 14, paddingBottom: 10,
-      borderBottom: `1px solid rgba(255,255,255,0.07)`,
+      display: "flex",
+      alignItems: "center",
+      gap: 9,
+      marginBottom: 16,
     }}>
       <div style={{
-        width: 26, height: 26, borderRadius: 7,
-        background: "rgba(244,204,21,0.1)",
-        border: "1px solid rgba(244,204,21,0.22)",
-        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        width: 28, height: 28, borderRadius: 8,
+        background: "rgba(244,204,21,0.08)",
+        border: "1px solid rgba(244,204,21,0.2)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flexShrink: 0,
       }}>
         {icon}
       </div>
       <span style={{
-        fontSize: "0.7rem", fontWeight: 600, color: "rgba(255,255,255,0.65)",
-        letterSpacing: "0.06em", textTransform: "uppercase", fontFamily: FONT_STACK,
+        fontSize: "0.72rem",
+        fontWeight: 700,
+        color: "rgba(242,246,255,0.7)",
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        fontFamily: FONT_STACK,
       }}>
         {text}
       </span>
       {optional && (
-        <span style={{ fontSize: "0.65rem", color: "rgba(255,255,255,0.28)", fontFamily: FONT_STACK }}>
+        <span style={{
+          fontSize: "0.65rem",
+          color: "rgba(193,204,223,0.35)",
+          fontFamily: FONT_STACK,
+          marginLeft: 2,
+        }}>
           (opcional)
         </span>
       )}
@@ -884,7 +967,9 @@ function SectionLabel({ icon, text, optional }: { icon: ReactNode; text: string;
   );
 }
 
-function Field({ labelText, htmlFor, error, required, noMargin, children }: {
+function Field({
+  labelText, htmlFor, error, required, noMargin, children,
+}: {
   labelText: string;
   htmlFor?: string;
   error?: string;
@@ -893,14 +978,22 @@ function Field({ labelText, htmlFor, error, required, noMargin, children }: {
   children: ReactNode;
 }) {
   return (
-    <div style={{ marginBottom: noMargin ? 0 : 16 }}>
+    <div style={{ marginBottom: noMargin ? 0 : 18 }}>
       <label htmlFor={htmlFor} style={labelStyle()}>
         {labelText}
-        {required && <span style={{ color: T.accent, marginLeft: 3 }}>*</span>}
+        {required && <span style={{ color: T.accent, marginLeft: 2 }}>*</span>}
       </label>
       {children}
       {error && (
-        <p style={{ fontSize: 11, color: T.error, marginTop: 5, fontFamily: FONT_STACK }}>
+        <p style={{
+          fontSize: 11.5, color: T.error, marginTop: 6,
+          fontFamily: FONT_STACK, display: "flex", alignItems: "center", gap: 4,
+        }}>
+          <svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
           {error}
         </p>
       )}
@@ -911,7 +1004,7 @@ function Field({ labelText, htmlFor, error, required, noMargin, children }: {
 function SpinnerSmall() {
   return (
     <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24"
-      fill="none" stroke={T.whiteLow} strokeWidth="2.5"
+      fill="none" stroke="rgba(193,204,223,0.5)" strokeWidth="2.5"
       style={{ animation: "goberna-spin 0.8s linear infinite", flexShrink: 0 }}>
       <path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" />
     </svg>
@@ -920,7 +1013,7 @@ function SpinnerSmall() {
 
 function Spinner() {
   return (
-    <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24"
+    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24"
       fill="none" stroke="currentColor" strokeWidth="2.5"
       style={{ animation: "goberna-spin 0.8s linear infinite" }}>
       <path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round" />
@@ -930,68 +1023,72 @@ function Spinner() {
 
 function SuccessState({ name }: { name: string }) {
   return (
-    <div style={{ textAlign: "center", padding: "48px 24px", fontFamily: FONT_STACK }}>
+    <div style={{ textAlign: "center", padding: "52px 24px 40px", fontFamily: FONT_STACK }}>
       <style>{`
         @keyframes vf-in {
-          from { opacity: 0; transform: translateY(16px); }
+          from { opacity: 0; transform: translateY(20px); }
           to   { opacity: 1; transform: translateY(0); }
         }
         @keyframes vf-pulse-ring {
-          0%   { transform: scale(1);   opacity: 0.6; }
-          100% { transform: scale(1.5); opacity: 0; }
+          0%   { transform: scale(1);   opacity: 0.5; }
+          100% { transform: scale(1.6); opacity: 0; }
         }
       `}</style>
 
       <div style={{
-        position: "relative", width: 80, height: 80,
-        margin: "0 auto 24px", animation: "vf-in 0.4s ease",
+        position: "relative", width: 84, height: 84,
+        margin: "0 auto 28px",
+        animation: "vf-in 0.4s ease both",
       }}>
         {[1, 2].map((i) => (
           <div key={i} style={{
             position: "absolute", inset: 0, borderRadius: "50%",
             border: `2px solid ${T.accent}`,
-            animation: `vf-pulse-ring 1.6s ease-out ${i * 0.4}s infinite`,
+            animation: `vf-pulse-ring 1.8s ease-out ${i * 0.45}s infinite`,
           }} />
         ))}
         <div style={{
           position: "relative", width: "100%", height: "100%", borderRadius: "50%",
-          background: T.accentDim, border: `2px solid ${T.accent}`,
+          background: "rgba(244,204,21,0.1)",
+          border: `2px solid ${T.accent}`,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>
-          <svg aria-hidden="true" width="34" height="34" viewBox="0 0 24 24"
-            fill="none" stroke={T.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg aria-hidden="true" width="36" height="36" viewBox="0 0 24 24"
+            fill="none" stroke={T.accent} strokeWidth="2.5"
+            strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
           </svg>
         </div>
       </div>
 
       <h3 style={{
-        fontSize: "1.42rem", fontWeight: 800, color: "#f2f6ff",
-        margin: "0 0 8px", letterSpacing: "-0.02em",
+        fontSize: "1.5rem", fontWeight: 800, color: T.textMain,
+        margin: "0 0 10px", letterSpacing: "-0.025em",
+        animation: "vf-in 0.4s ease 0.1s both",
       }}>
-        ¡Bienvenido{name ? `, ${name}` : ""}!
+        ¡Ya sos brigadista{name ? `, ${name}` : ""}!
       </h3>
       <p style={{
-        fontSize: 14, lineHeight: 1.65, color: "#c1ccdf",
-        maxWidth: 320, margin: "0 auto 24px",
+        fontSize: 14.5, lineHeight: 1.65, color: T.textMuted,
+        maxWidth: 300, margin: "0 auto 28px",
+        animation: "vf-in 0.4s ease 0.2s both",
       }}>
-        Tu registro fue recibido. En menos de 48 h un coordinador de tu zona te contactará.
+        Tu registro fue recibido. Pronto te asignamos a tu equipo de distrito.
       </p>
 
-      {/* Pill — ghost-btn style */}
       <div style={{
-        display: "inline-flex", alignItems: "center", gap: 7,
-        padding: "9px 18px", borderRadius: 999,
-        border: "1px solid rgba(255,255,255,0.22)",
-        background: "rgba(8,16,30,0.4)",
+        display: "inline-flex", alignItems: "center", gap: 8,
+        padding: "10px 20px", borderRadius: 999,
+        border: "1px solid rgba(244,204,21,0.25)",
+        background: "rgba(244,204,21,0.07)",
+        animation: "vf-in 0.4s ease 0.3s both",
       }}>
         <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none"
           stroke={T.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <polyline points="12 6 12 12 16 14" />
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
         </svg>
         <span style={{ fontSize: 12.5, fontWeight: 600, color: T.accent }}>
-          Respuesta en menos de 48 h
+          Bienvenido al equipo
         </span>
       </div>
     </div>
