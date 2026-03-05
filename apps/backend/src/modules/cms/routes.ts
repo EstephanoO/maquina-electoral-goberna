@@ -738,6 +738,12 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         const { type, phone, own_number, preview, detected_at } = parsed.data;
         const ownNumber = own_number?.replace(/\D/g, "") || null;
 
+        // ── DEBUG LOG — ver qué número propio llega desde la extensión ──
+        app.log.warn(
+          { own_number_raw: own_number, own_number_parsed: ownNumber, phone, campaign_id: campaignId },
+          "extension-event DEBUG",
+        );
+
         // ── Whitelist check ─────────────────────────────────────────
         // If own_number is present, it must exist in wa_phones for this
         // campaign. Events from unregistered phones are silently ignored —
