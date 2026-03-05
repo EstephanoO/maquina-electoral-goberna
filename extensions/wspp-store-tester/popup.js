@@ -1,7 +1,7 @@
 'use strict';
 
 const API = 'https://api.goberna.us';
-const STORAGE_KEYS = ['wspp_token', 'wspp_user', 'wspp_count', 'wspp_campaign_id'];
+const STORAGE_KEYS = ['wspp_token', 'wspp_user', 'wspp_count', 'wspp_campaign_id', 'wspp_own_number'];
 
 function $(id) { return document.getElementById(id); }
 
@@ -25,6 +25,40 @@ function showErr(msg) {
 }
 function clearErr() { $('err').style.display = 'none'; }
 
+// ── Número propio ─────────────────────────────────────────────────────
+
+function renderPhone(ownNumber) {
+  if (ownNumber) {
+    $('phone-missing').style.display  = 'none';
+    $('phone-display').style.display  = 'flex';
+    $('phone-edit').style.display     = 'none';
+    $('phone-value').textContent      = '+' + ownNumber;
+  } else {
+    $('phone-missing').style.display  = 'block';
+    $('phone-display').style.display  = 'none';
+    $('phone-edit').style.display     = 'flex'; // mostrar form de inmediato si no hay número
+  }
+}
+
+function startPhoneEdit() {
+  $('phone-display').style.display = 'none';
+  $('phone-missing').style.display = 'none';
+  $('phone-edit').style.display    = 'flex';
+  $('inp-phone').focus();
+}
+
+function savePhone() {
+  const raw = $('inp-phone').value.replace(/\D/g, '');
+  if (raw.length < 10 || raw.length > 13) {
+    $('inp-phone').style.borderColor = '#ef5350';
+    $('inp-phone').focus();
+    return;
+  }
+  $('inp-phone').style.borderColor = '';
+  chrome.storage.local.set({ wspp_own_number: raw });
+  renderPhone(raw);
+}
+
 // ── Login ────────────────────────────────────────────────────────────
 async function doLogin() {
   const email = $('inp-email').value.trim();
@@ -47,7 +81,6 @@ async function doLogin() {
 
     const token      = data.access_token;
     const userName   = data.user?.full_name || data.user?.email || email;
-    // Usar la primera campaña disponible como scope activo
     const campaignId = data.campaigns?.[0]?.id ?? null;
 
     chrome.storage.local.set({
@@ -58,6 +91,9 @@ async function doLogin() {
     });
 
     showDash(userName, 0);
+
+    // Mostrar el estado del número (puede ya estar guardado de sesiones anteriores)
+    chrome.storage.local.get('wspp_own_number', (s) => renderPhone(s.wspp_own_number || null));
   } catch (e) {
     showErr(e.message);
     btn.disabled    = false;
@@ -67,7 +103,8 @@ async function doLogin() {
 
 // ── Logout ───────────────────────────────────────────────────────────
 function doLogout() {
-  chrome.storage.local.remove(STORAGE_KEYS);
+  // Preservar wspp_own_number al hacer logout — el número del celular no cambia
+  chrome.storage.local.remove(['wspp_token', 'wspp_user', 'wspp_count', 'wspp_campaign_id']);
   $('inp-email').value    = '';
   $('inp-password').value = '';
   clearErr();
@@ -85,6 +122,9 @@ chrome.storage.onChanged.addListener((changes) => {
       ? '✓ WhatsApp Web conectado'
       : 'Abre WhatsApp Web para empezar';
   }
+  if (changes.wspp_own_number !== undefined) {
+    renderPhone(changes.wspp_own_number.newValue || null);
+  }
 });
 
 // ── Init ─────────────────────────────────────────────────────────────
@@ -96,10 +136,14 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.local.set({ wspp_count: 0 });
     $('counter').textContent = 0;
   });
+  $('btn-phone-edit').addEventListener('click', startPhoneEdit);
+  $('btn-phone-save').addEventListener('click', savePhone);
+  $('inp-phone').addEventListener('keydown', (e) => { if (e.key === 'Enter') savePhone(); });
 
   chrome.storage.local.get([...STORAGE_KEYS, 'wspp_wa_active'], (saved) => {
     if (saved.wspp_token && saved.wspp_user) {
       showDash(saved.wspp_user, saved.wspp_count ?? 0);
+      renderPhone(saved.wspp_own_number || null);
     } else {
       showLogin();
     }

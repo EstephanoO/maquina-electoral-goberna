@@ -1,16 +1,22 @@
 // inject.js — MAIN world, document_start.
 // Detecta mensajes salientes hookenando el CLICK en el botón Send del DOM.
-// NO usa MsgCollection.on('add') porque dispara también para mensajes
-// sincronizados desde el celular/otros devices (fromMe:true ≠ "yo lo envié aquí").
+// own_number viene de content.js (storage-backed) — no depende del webpack hook.
 (function () {
 
-  // ─── webpack require hook ────────────────────────────────────────────────────
-  // WA Web usa webpackChunkwhatsapp_web_client para cargar módulos.
-  // Corriendo en document_start podemos hookear el push del array antes de que
-  // WA Web lo use, y así capturar el __webpack_require__ interno del runtime.
-  // Con ese handle podemos buscar el módulo que contiene el número propio (JID).
+  // ─── own_number desde storage (via content.js) ───────────────────────────────
+  // content.js envía WSPP_SET_OWN_NUMBER al arrancar y cuando el usuario lo cambia.
+  let _ownNumber = null;
 
-  let __wr = null; // __webpack_require__ interno de WA Web
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || e.data?.type !== 'WSPP_SET_OWN_NUMBER') return;
+    _ownNumber = e.data.number || null;
+    console.log('[WSPP] own_number actualizado:', _ownNumber ?? 'NULL');
+  });
+
+  // ─── webpack require hook (bonus) ────────────────────────────────────────────
+  // Si el webpack hook logra capturar el JID propio, lo usa como fallback
+  // adicional. No es crítico — storage es la fuente de verdad.
+  let __wr = null;
 
   (function installWebpackHook() {
     const CHUNK_KEY = 'webpackChunkwhatsapp_web_client';
@@ -19,24 +25,12 @@
       const origPush = arr.push.bind(arr);
       arr.push = function (...args) {
         const result = origPush(...args);
-        for (const entry of args) {
-          // Cada entry es [chunkIds, moduleMap, runtimeFn?]
-          // El runtime chunk tiene una función en el índice 2 que recibe __webpack_require__
-          if (Array.isArray(entry) && typeof entry[2] === 'function') {
-            // Interceptamos la llamada original: entry[2] ya fue llamada por webpack
-            // con __wr como argumento. Pero podemos extraerlo del cache.
-            // El moduleMap (entry[1]) nos da acceso a los módulos; el runtime
-            // también expone __webpack_require__ en el propio chunk array.
-            // Estrategia: buscar en el array la propiedad que webpack le agrega.
-            if (!__wr) {
-              // webpack agrega una propiedad al chunk array que ES __webpack_require__
-              for (const key of Object.keys(arr)) {
-                const val = arr[key];
-                if (typeof val === 'function' && val.m && val.c && val.n) {
-                  __wr = val;
-                  break;
-                }
-              }
+        if (!__wr) {
+          for (const key of Object.keys(arr)) {
+            const val = arr[key];
+            if (typeof val === 'function' && val.m && val.c && val.n) {
+              __wr = val;
+              break;
             }
           }
         }
@@ -44,11 +38,9 @@
       };
     }
 
-    // Si el array ya existe (raro en document_start pero posible), hookearlo
     if (window[CHUNK_KEY]) {
       hookChunkArray(window[CHUNK_KEY]);
     } else {
-      // Definir el array con un getter/setter para interceptar cuando WA Web lo cree
       let _arr;
       Object.defineProperty(window, CHUNK_KEY, {
         configurable: true,
@@ -71,11 +63,7 @@
     return (num.length >= 10 && num.length <= 13) ? num : null;
   }
 
-  /**
-   * Busca en el cache de módulos de webpack el JID del usuario propio.
-   * Itera wr.c (cache de módulos instanciados) buscando un objeto que tenga
-   * un campo con formato "51XXXXXXXXX@c.us".
-   */
+  /** Intenta obtener el JID propio desde el cache de webpack (bonus, no crítico). */
   function findOwnJidInCache() {
     if (!__wr || !__wr.c) return null;
     const jidRe = /^(\d{10,13})@c\.us$/;
@@ -83,12 +71,10 @@
       try {
         const exp = mod?.exports;
         if (!exp) continue;
-        // Revisar exports directo y exports.default
         for (const target of [exp, exp?.default]) {
           if (!target || typeof target !== 'object') continue;
           for (const val of Object.values(target)) {
             if (typeof val === 'string' && jidRe.test(val)) return val;
-            // Un nivel más: val puede ser un objeto {_serialized, user, ...}
             if (val && typeof val === 'object') {
               const s = val._serialized || val.user || '';
               if (jidRe.test(s)) return s;
@@ -100,86 +86,42 @@
     return null;
   }
 
-  // Cache del own_number para no escanear el cache en cada envío
-  let _cachedOwnNumber = null;
-  let _cacheAttempts = 0;
-
   /**
-   * Número propio del celular que está usando WA Web en este browser.
-   * Retorna solo dígitos (ej: "51987654321") o null.
+   * Número propio del celular.
+   * Fuente de verdad: storage (via content.js → WSPP_SET_OWN_NUMBER).
+   * Fallback: webpack cache scan.
    */
   function getOwnNumber() {
-    // Si ya lo resolvimos, devolver directo
-    if (_cachedOwnNumber) return _cachedOwnNumber;
+    if (_ownNumber) return _ownNumber;
 
-    // No intentar más de 20 veces si siempre falla (evitar trabajo inútil)
-    if (_cacheAttempts > 20) return null;
-    _cacheAttempts++;
-
-    // ── 1. webpack cache scan (principal) ─────────────────────────────────
+    // Fallback: webpack cache
     const jid = findOwnJidInCache();
     if (jid) {
       const n = jidToNumber(jid);
-      if (n) { _cachedOwnNumber = n; return n; }
+      if (n) return n;
     }
-
-    // ── 2. DOM: buscar spans con número peruano visible ────────────────────
-    // Solo funciona si el usuario abrió su perfil, pero vale intentarlo
-    try {
-      const spans = document.querySelectorAll('span');
-      for (const s of spans) {
-        const t = s.childElementCount === 0 ? s.textContent?.trim() : '';
-        if (t && /^\+?51\d{9}$/.test(t)) {
-          const n = t.replace(/\D/g, '');
-          _cachedOwnNumber = n;
-          return n;
-        }
-      }
-    } catch (_) {}
-
-    // ── 3. data-jid en el DOM ──────────────────────────────────────────────
-    try {
-      const els = document.querySelectorAll('[data-jid]');
-      for (const el of els) {
-        const n = jidToNumber(el.getAttribute('data-jid') || '');
-        if (n) { _cachedOwnNumber = n; return n; }
-      }
-    } catch (_) {}
-
-    // ── 4. URL params ──────────────────────────────────────────────────────
-    try {
-      const p = new URLSearchParams(window.location.search).get('phone');
-      if (p) {
-        const n = p.replace(/\D/g, '');
-        if (n.length >= 10 && n.length <= 13) { _cachedOwnNumber = n; return n; }
-      }
-    } catch (_) {}
 
     return null;
   }
 
   /**
    * Teléfono del contacto en el chat actualmente abierto.
-   * Retorna solo dígitos (ej: "51936628022") o null.
    * Filtra grupos y IDs internos (solo 10–13 dígitos).
    */
   function getActivePhone() {
     // ── 1. webpack cache: buscar el chat activo ────────────────────────────
     if (__wr && __wr.c) {
       try {
-        const jidRe = /^(\d{10,13})@c\.us$/;
         for (const mod of Object.values(__wr.c)) {
           try {
             const exp = mod?.exports;
             if (!exp) continue;
             for (const target of [exp, exp?.default]) {
               if (!target || typeof target !== 'object') continue;
-              // Buscar patrón de chat activo: objeto con id._serialized y isActive/active
               if ((target.active || target.isActive) && target.id?._serialized) {
                 const n = jidToNumber(target.id._serialized);
                 if (n) return n;
               }
-              // getActiveChat function
               if (typeof target.getActiveChat === 'function') {
                 const chat = target.getActiveChat();
                 const n = jidToNumber(chat?.id?._serialized || chat?.id?.user || '');
@@ -252,7 +194,7 @@
         timestamp: Math.floor(Date.now() / 1000),
       },
     }, '*');
-    console.log('[WSPP] ✓ enviado →', phone, '| celular:', own ?? 'NULL (__wr=' + !!__wr + ')');
+    console.log('[WSPP] ✓ enviado →', phone, '| celular:', own ?? 'NULL — configurá tu número en el popup');
   }
 
   // ─── listeners ───────────────────────────────────────────────────────────────
@@ -287,5 +229,5 @@
     emitSent(phone);
   }, true);
 
-  console.log('[WSPP] ✓ webpack hook instalado, listeners activos');
+  console.log('[WSPP] ✓ listeners activos — own_number viene del popup');
 })();

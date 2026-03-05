@@ -66,7 +66,7 @@
     .logout-btn:hover { color: #ef5350; }
 
     .counter-box {
-      padding: 24px 14px 20px;
+      padding: 20px 14px 16px;
       display: flex; flex-direction: column; align-items: center; gap: 4px;
     }
     .counter-num {
@@ -75,6 +75,52 @@
     }
     .counter-lbl {
       font-size: 11px; color: #8696a0; text-transform: uppercase; letter-spacing: .6px;
+    }
+
+    /* ── Número propio ── */
+    .phone-section {
+      margin: 0 14px 12px;
+      padding: 10px 12px;
+      background: #1f2c34;
+      border-radius: 8px;
+      border: 1px solid #2a3942;
+    }
+    .phone-label {
+      font-size: 10px; color: #8696a0;
+      text-transform: uppercase; letter-spacing: .6px;
+      margin-bottom: 6px;
+    }
+    /* Estado: mostrando número guardado */
+    .phone-display {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .phone-value {
+      font-size: 13px; font-weight: 700; color: #00a884; flex: 1;
+    }
+    .phone-edit-btn {
+      background: none; border: none; color: #8696a0;
+      font-size: 10px; cursor: pointer; padding: 2px 4px;
+      border-radius: 4px;
+    }
+    .phone-edit-btn:hover { color: #e9edef; background: #2a3942; }
+    /* Estado: editando */
+    .phone-edit {
+      display: none;
+      flex-direction: column; gap: 6px;
+    }
+    .phone-hint {
+      font-size: 10px; color: #8696a0; margin-top: 2px;
+    }
+    .phone-save-btn {
+      padding: 6px 10px; border-radius: 6px; border: none;
+      background: #00a884; color: #fff;
+      font-size: 11px; font-weight: 700; cursor: pointer;
+      align-self: flex-end;
+    }
+    .phone-save-btn:hover { background: #008f72; }
+    /* Sin número configurado */
+    .phone-missing {
+      font-size: 11px; color: #f0ad4e;
     }
 
     .reset-btn {
@@ -115,10 +161,36 @@
       <span id="user-name">—</span>
       <button class="logout-btn" id="btn-logout">Salir</button>
     </div>
+
     <div class="counter-box">
       <div class="counter-num" id="counter">0</div>
       <div class="counter-lbl">mensajes enviados</div>
     </div>
+
+    <!-- Número WA propio -->
+    <div class="phone-section">
+      <div class="phone-label">Tu número WhatsApp</div>
+
+      <!-- Sin número -->
+      <div id="phone-missing">
+        <div class="phone-missing">⚠ Sin número configurado</div>
+        <div class="phone-hint" style="margin-top:4px">Los envíos no se registrarán hasta que lo configures.</div>
+      </div>
+
+      <!-- Número guardado -->
+      <div class="phone-display" id="phone-display" style="display:none">
+        <span class="phone-value" id="phone-value">—</span>
+        <button class="phone-edit-btn" id="btn-phone-edit">Cambiar</button>
+      </div>
+
+      <!-- Formulario de edición -->
+      <div class="phone-edit" id="phone-edit">
+        <input class="inp" id="inp-phone" type="tel" placeholder="51987654321" style="font-size:12px" />
+        <div class="phone-hint">Solo dígitos, con código de país (ej: 51987654321)</div>
+        <button class="phone-save-btn" id="btn-phone-save">Guardar</button>
+      </div>
+    </div>
+
     <button class="reset-btn" id="btn-reset">Reiniciar contador</button>
     <div class="wa-status" id="wa-status">Abre WhatsApp Web para empezar</div>
   </div>
