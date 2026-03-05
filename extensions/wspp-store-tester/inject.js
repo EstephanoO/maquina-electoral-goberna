@@ -200,8 +200,23 @@
   // ─── listeners ───────────────────────────────────────────────────────────────
 
   document.addEventListener('click', (e) => {
+    // DEBUG: loguear todo click para ver qué atributos tiene el botón Send
+    const t = e.target;
+    const tag    = (t.tagName || '').toLowerCase();
+    const role   = t.getAttribute?.('role') || '';
+    const testid = t.getAttribute?.('data-testid') || '';
+    const icon   = t.getAttribute?.('data-icon') || '';
+    const aria   = t.getAttribute?.('aria-label') || '';
+    // Solo loguear si parece un botón o SVG (para no spamear con clicks en texto)
+    if (tag === 'button' || tag === 'span' || tag === 'svg' || tag === 'div' || role === 'button') {
+      console.log('[WSPP:click]', tag, { role, testid, icon, aria: aria.slice(0, 40) });
+    }
+
     if (!isSendButton(e.target)) return;
+
+    console.log('[WSPP] ✓ isSendButton detectado');
     const phone = getActivePhone();
+    console.log('[WSPP] activePhone:', phone);
     if (!phone) {
       console.warn('[WSPP] Send detectado pero no se pudo obtener el teléfono del contacto');
       return;
@@ -217,14 +232,21 @@
     const testid    = active.getAttribute('data-testid');
     const ariaLabel = active.getAttribute('aria-label') || '';
 
+    console.log('[WSPP:enter]', active.tagName?.toLowerCase(), { role, testid, ariaLabel: ariaLabel.slice(0, 40), contenteditable: active.getAttribute('contenteditable') });
+
     const isComposer =
       testid === 'conversation-compose-box-input' ||
       (role === 'textbox' && /escribe|message|type|escribir/i.test(ariaLabel)) ||
       (active.tagName?.toLowerCase() === 'p' && active.closest('[contenteditable="true"]') !== null) ||
       (active.getAttribute('contenteditable') === 'true');
 
-    if (!isComposer) return;
+    if (!isComposer) {
+      console.log('[WSPP:enter] no es composer, ignorado');
+      return;
+    }
+    console.log('[WSPP:enter] ✓ composer detectado');
     const phone = getActivePhone();
+    console.log('[WSPP:enter] activePhone:', phone);
     if (!phone) return;
     emitSent(phone);
   }, true);
