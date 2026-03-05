@@ -2,8 +2,8 @@
 
 /**
  * GOBERNA — Extension Monitor (Public)
- * Muestra actividad WhatsApp Web por celular físico y operadora.
- * Cards con forma de smartphone. Siempre muestra los 5 celulares registrados.
+ * Marca: #FFC800 (dorado) + #163960 (navy)
+ * Sin márgenes laterales. Phones grandes y vistosos.
  */
 
 import { useEffect, useState, useCallback } from "react";
@@ -14,111 +14,130 @@ import {
   type ExtensionMonitorTotals,
 } from "@/lib/services/cms";
 
-// ── Helpers ──────────────────────────────────────────────────────────
+// ── Paleta Goberna ────────────────────────────────────────────────────
+const G = {
+  gold:        "#FFC800",
+  goldDim:     "#CC9F00",
+  goldGlow:    "rgba(255,200,0,0.18)",
+  goldSoft:    "rgba(255,200,0,0.08)",
+  navy:        "#163960",
+  navyLight:   "#1e4d7a",
+  navyDark:    "#0e2640",
+  navyDeep:    "#09192b",
+  bg:          "#0b1622",
+  surface:     "#101f30",
+  surfaceUp:   "#152840",
+  border:      "rgba(255,255,255,0.07)",
+  borderActive:"rgba(255,200,0,0.30)",
+  text:        "#e9edef",
+  textMid:     "#8696a0",
+  textDim:     "#3d5570",
+  green:       "#00a884",
+  greenGlow:   "rgba(0,168,132,0.20)",
+} as const;
 
-function formatRelative(isoStr: string | null): string {
-  if (!isoStr) return "—";
-  const diff = Date.now() - new Date(isoStr).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "< 1 min";
-  if (mins < 60) return `${mins} min`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} h`;
-  return `${Math.floor(hrs / 24)} d`;
+// ── Helpers ───────────────────────────────────────────────────────────
+
+function formatRelative(iso: string | null): string {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return "< 1 min";
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} h`;
+  return `${Math.floor(h / 24)} d`;
 }
 
-function getFirstName(fullName: string, email: string): string {
-  return fullName.split(" ")[0] || email.split("@")[0] || "—";
+function firstName(full: string, email: string) {
+  return full.split(" ")[0] || email.split("@")[0] || "—";
 }
-
-function getInitial(fullName: string, email: string): string {
-  return (fullName.charAt(0) || email.charAt(0) || "?").toUpperCase();
+function initial(full: string, email: string) {
+  return (full[0] || email[0] || "?").toUpperCase();
 }
-
-function formatNumber(num: string): string {
-  if (num === "desconocido") return "Desconocido";
-  if (num.length >= 11) {
-    const cc = num.slice(0, 2);
-    const rest = num.slice(2);
-    return `+${cc} ${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6)}`.trim();
+function fmtNum(n: string) {
+  if (n === "desconocido") return "Desconocido";
+  if (n.length >= 11) {
+    const cc = n.slice(0, 2), r = n.slice(2);
+    return `+${cc} ${r.slice(0,3)} ${r.slice(3,6)} ${r.slice(6)}`.trim();
   }
-  return `+${num}`;
+  return `+${n}`;
 }
 
-// ── Sub-components ───────────────────────────────────────────────────
+// ── StatBadge ─────────────────────────────────────────────────────────
 
-function StatPill({ value, label, color }: { value: number | string; label: string; color: string }) {
+function StatBadge({ value, label, active }: { value: number; label: string; active: boolean }) {
   return (
     <div style={{
-      flex: 1,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      padding: "10px 4px 8px",
-      background: "rgba(0,0,0,0.2)",
-      borderRadius: 10,
+      flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+      padding: "12px 6px 10px",
+      background: active ? "rgba(255,200,0,0.06)" : "rgba(255,255,255,0.03)",
+      borderRadius: 12,
+      border: `1px solid ${active ? "rgba(255,200,0,0.15)" : "rgba(255,255,255,0.04)"}`,
     }}>
-      <span style={{ fontSize: 22, fontWeight: 900, color, lineHeight: 1, letterSpacing: "-0.5px" }}>
+      <span style={{
+        fontSize: 26, fontWeight: 900, lineHeight: 1, letterSpacing: "-1px",
+        color: active ? G.gold : G.textDim,
+      }}>
         {value}
       </span>
-      <span style={{ fontSize: 8, color: "#8696a0", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: 4 }}>
+      <span style={{
+        fontSize: 9, fontWeight: 700, marginTop: 5, letterSpacing: "0.8px",
+        textTransform: "uppercase", color: active ? G.goldDim : G.textDim,
+      }}>
         {label}
       </span>
     </div>
   );
 }
 
-function OperatorRow({ op, maxSent }: { op: ExtensionMonitorOperator; maxSent: number }) {
-  const firstName = getFirstName(op.full_name, op.email);
-  const initial = getInitial(op.full_name, op.email);
-  const barPct = maxSent > 0 ? (op.wa_sent / maxSent) * 100 : 0;
-  const isActive = op.wa_sent > 0;
+// ── OperatorRow ───────────────────────────────────────────────────────
 
+function OperatorRow({ op, maxSent }: { op: ExtensionMonitorOperator; maxSent: number }) {
+  const pct = maxSent > 0 ? (op.wa_sent / maxSent) * 100 : 0;
+  const active = op.wa_sent > 0;
   return (
     <div style={{
-      display: "flex",
-      alignItems: "center",
-      gap: 7,
-      padding: "6px 0",
-      borderBottom: "1px solid rgba(255,255,255,0.04)",
+      display: "flex", alignItems: "center", gap: 8,
+      padding: "7px 0",
+      borderBottom: `1px solid ${G.border}`,
     }}>
       {/* Avatar */}
       <div style={{
-        width: 24, height: 24, borderRadius: "50%", flexShrink: 0,
-        background: isActive ? "rgba(0,168,132,0.15)" : "rgba(255,255,255,0.05)",
-        border: `1px solid ${isActive ? "rgba(0,168,132,0.4)" : "transparent"}`,
-        color: isActive ? "#00a884" : "#3a4a52",
+        width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+        background: active ? "rgba(255,200,0,0.12)" : "rgba(255,255,255,0.04)",
+        border: `1.5px solid ${active ? "rgba(255,200,0,0.35)" : "transparent"}`,
+        color: active ? G.gold : G.textDim,
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 9, fontWeight: 900,
+        fontSize: 10, fontWeight: 900,
       }}>
-        {initial}
+        {initial(op.full_name, op.email)}
       </div>
-
       {/* Name + bar */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
-          fontSize: 11, fontWeight: 700,
-          color: isActive ? "#d1d7db" : "#4a5a62",
-          marginBottom: 3,
+          fontSize: 12, fontWeight: 700,
+          color: active ? G.text : G.textDim,
+          marginBottom: 4,
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
         }}>
-          {firstName}
+          {firstName(op.full_name, op.email)}
         </div>
-        <div style={{ height: 3, borderRadius: 2, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
+        <div style={{ height: 4, borderRadius: 3, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
           <div style={{
-            height: "100%", width: `${barPct}%`,
-            background: "linear-gradient(90deg, #00a884, #00c49a)",
-            borderRadius: 2, transition: "width 0.6s cubic-bezier(.4,0,.2,1)",
+            height: "100%", width: `${pct}%`, borderRadius: 3,
+            background: active
+              ? "linear-gradient(90deg, #FFC800, #FFD84D)"
+              : "transparent",
+            transition: "width 0.6s cubic-bezier(.4,0,.2,1)",
           }} />
         </div>
       </div>
-
       {/* Count */}
       <span style={{
-        flexShrink: 0,
-        fontSize: 13, fontWeight: 900,
-        color: isActive ? "#00a884" : "#3a4a52",
-        minWidth: 20, textAlign: "right",
+        flexShrink: 0, minWidth: 24, textAlign: "right",
+        fontSize: 15, fontWeight: 900,
+        color: active ? G.gold : G.textDim,
       }}>
         {op.wa_sent}
       </span>
@@ -126,286 +145,337 @@ function OperatorRow({ op, maxSent }: { op: ExtensionMonitorOperator; maxSent: n
   );
 }
 
+// ── PhoneCard ─────────────────────────────────────────────────────────
+
 function PhoneCard({ phone }: { phone: ExtensionMonitorPhone }) {
-  const displayName = phone.alias ?? formatNumber(phone.own_number);
-  const maxOpSent = phone.operators.reduce((m, op) => Math.max(m, op.wa_sent), 0);
-  const isActive = phone.wa_sent > 0;
-  const activeOps = phone.operators.filter(o => o.wa_sent > 0);
+  const name = phone.alias ?? fmtNum(phone.own_number);
+  const maxOp = phone.operators.reduce((m, o) => Math.max(m, o.wa_sent), 0);
+  const active = phone.wa_sent > 0;
+  const activeOps = phone.operators.filter(o => o.wa_sent > 0).sort((a, b) => b.wa_sent - a.wa_sent);
 
   return (
-    /* Outer "device" frame */
-    <div style={{
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      /* no fixed width — flex grid controls it */
-    }}>
-      {/* Phone body */}
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+
+      {/* ── Outer device shell ── */}
       <div style={{
         width: "100%",
-        aspectRatio: "9 / 17",
-        background: isActive
-          ? "linear-gradient(160deg, #1a2e28 0%, #162722 50%, #111f1c 100%)"
-          : "linear-gradient(160deg, #1a2530 0%, #141e27 50%, #101820 100%)",
-        border: `1.5px solid ${isActive ? "rgba(0,168,132,0.35)" : "rgba(255,255,255,0.07)"}`,
-        borderRadius: 28,
-        boxShadow: isActive
-          ? "0 0 0 1px rgba(0,168,132,0.1), 0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(0,168,132,0.08)"
-          : "0 4px 20px rgba(0,0,0,0.4)",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
+        aspectRatio: "9 / 18",
         position: "relative",
-        transition: "box-shadow 0.3s ease, border-color 0.3s ease",
+        borderRadius: 36,
+        /* Outer rim — physical frame */
+        background: active
+          ? `linear-gradient(145deg, ${G.gold} 0%, ${G.goldDim} 40%, #a07800 100%)`
+          : `linear-gradient(145deg, #1e3050 0%, #152438 60%, #0e1c2e 100%)`,
+        padding: "3px",
+        boxShadow: active
+          ? `0 0 0 1px rgba(255,200,0,0.5),
+             0 20px 60px rgba(0,0,0,0.7),
+             0 0 40px rgba(255,200,0,0.15),
+             inset 0 1px 0 rgba(255,255,255,0.2)`
+          : `0 8px 32px rgba(0,0,0,0.6),
+             0 0 0 1px rgba(255,255,255,0.05),
+             inset 0 1px 0 rgba(255,255,255,0.04)`,
+        transition: "box-shadow 0.4s ease",
       }}>
 
-        {/* Top notch bar */}
+        {/* ── Inner screen body ── */}
         <div style={{
-          height: 28,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          background: "rgba(0,0,0,0.25)",
-          borderBottom: "1px solid rgba(255,255,255,0.04)",
+          width: "100%", height: "100%",
+          borderRadius: 33,
+          background: active
+            ? `linear-gradient(175deg, #0f2a22 0%, #0a1e18 50%, #061410 100%)`
+            : `linear-gradient(175deg, #0f1e30 0%, #091525 50%, #050e1a 100%)`,
+          display: "flex", flexDirection: "column",
+          overflow: "hidden",
           position: "relative",
         }}>
-          {/* Notch pill */}
+
+          {/* Top status bar */}
           <div style={{
-            width: 48, height: 8, borderRadius: 4,
-            background: "rgba(0,0,0,0.6)",
-            border: "1px solid rgba(255,255,255,0.05)",
-          }} />
-
-          {/* Live dot */}
-          {isActive && (
+            height: 34, flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "rgba(0,0,0,0.3)",
+            borderBottom: `1px solid ${active ? "rgba(255,200,0,0.08)" : G.border}`,
+            position: "relative",
+          }}>
+            {/* Notch */}
             <div style={{
-              position: "absolute",
-              right: 12,
-              width: 7, height: 7, borderRadius: "50%",
-              background: "#00a884",
-              boxShadow: "0 0 8px rgba(0,168,132,0.8)",
-              animation: "pulse 2s ease-in-out infinite",
+              width: 56, height: 10, borderRadius: 5,
+              background: "rgba(0,0,0,0.7)",
+              border: "1px solid rgba(255,255,255,0.06)",
             }} />
-          )}
-        </div>
-
-        {/* Screen content */}
-        <div style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          padding: "10px 10px 8px",
-          gap: 8,
-          overflow: "hidden",
-        }}>
-          {/* Header: alias + number */}
-          <div>
-            <div style={{
-              fontSize: 14, fontWeight: 900, color: "#e9edef",
-              letterSpacing: "-0.3px", lineHeight: 1.2,
-              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-            }}>
-              {displayName}
-            </div>
-            {phone.alias && (
+            {/* Live indicator */}
+            {active ? (
               <div style={{
-                fontSize: 9, color: "#3d5060", fontWeight: 600, marginTop: 2,
+                position: "absolute", right: 14,
+                display: "flex", alignItems: "center", gap: 4,
+              }}>
+                <div style={{
+                  width: 8, height: 8, borderRadius: "50%",
+                  background: G.gold,
+                  boxShadow: `0 0 10px ${G.gold}, 0 0 20px rgba(255,200,0,0.4)`,
+                  animation: "gobPulse 2s ease-in-out infinite",
+                }} />
+              </div>
+            ) : (
+              <div style={{
+                position: "absolute", right: 14,
+                width: 8, height: 8, borderRadius: "50%",
+                background: G.textDim, opacity: 0.3,
+              }} />
+            )}
+          </div>
+
+          {/* Screen content */}
+          <div style={{
+            flex: 1, display: "flex", flexDirection: "column",
+            padding: "14px 14px 10px",
+            gap: 10, overflow: "hidden",
+          }}>
+
+            {/* Phone name */}
+            <div>
+              <div style={{
+                fontSize: 17, fontWeight: 900, lineHeight: 1.1,
+                letterSpacing: "-0.4px",
+                color: active ? G.gold : G.textDim,
                 whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
               }}>
-                {formatNumber(phone.own_number)}
+                {name}
               </div>
-            )}
-          </div>
-
-          {/* Stats row */}
-          <div style={{ display: "flex", gap: 5 }}>
-            <StatPill value={phone.wa_sent} label="env" color={isActive ? "#00a884" : "#3a4a52"} />
-            <StatPill value={phone.unique_contacts} label="ctcs" color={isActive ? "#7c9cf5" : "#3a4a52"} />
-            <StatPill value={activeOps.length} label="ops" color={isActive ? "#f0a030" : "#3a4a52"} />
-          </div>
-
-          {/* Separator */}
-          <div style={{
-            height: 1,
-            background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent)",
-          }} />
-
-          {/* Operator list */}
-          <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            {phone.operators.length === 0 ? (
-              <div style={{
-                flex: 1, display: "flex", flexDirection: "column",
-                alignItems: "center", justifyContent: "center", gap: 6,
-              }}>
-                <div style={{ fontSize: 22, opacity: 0.15 }}>📱</div>
-                <div style={{ fontSize: 10, color: "#2a3942", textAlign: "center", lineHeight: 1.4 }}>
-                  Sin actividad
+              {phone.alias && (
+                <div style={{
+                  fontSize: 10, marginTop: 3,
+                  color: active ? "rgba(255,200,0,0.4)" : G.textDim,
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  fontVariantNumeric: "tabular-nums",
+                }}>
+                  {fmtNum(phone.own_number)}
                 </div>
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                {activeOps
-                  .sort((a, b) => b.wa_sent - a.wa_sent)
-                  .slice(0, 6)
-                  .map((op) => (
-                    <OperatorRow key={op.operator_id} op={op} maxSent={maxOpSent} />
+              )}
+            </div>
+
+            {/* Stats row */}
+            <div style={{ display: "flex", gap: 6 }}>
+              <StatBadge value={phone.wa_sent}       label="Env"  active={active} />
+              <StatBadge value={phone.unique_contacts} label="Ctc" active={active} />
+              <StatBadge value={activeOps.length}    label="Ops"  active={active} />
+            </div>
+
+            {/* Divider */}
+            <div style={{
+              height: 1,
+              background: active
+                ? "linear-gradient(90deg, transparent, rgba(255,200,0,0.2), transparent)"
+                : "linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent)",
+            }} />
+
+            {/* Operators */}
+            <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              {activeOps.length === 0 ? (
+                <div style={{
+                  flex: 1, display: "flex", flexDirection: "column",
+                  alignItems: "center", justifyContent: "center", gap: 8,
+                }}>
+                  <div style={{ fontSize: 28, opacity: 0.12 }}>📵</div>
+                  <div style={{
+                    fontSize: 11, color: G.textDim,
+                    textAlign: "center", lineHeight: 1.5,
+                  }}>
+                    Esperando actividad
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  {activeOps.slice(0, 7).map(op => (
+                    <OperatorRow key={op.operator_id} op={op} maxSent={maxOp} />
                   ))}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
+
+            {/* Last event */}
+            <div style={{
+              paddingTop: 8,
+              borderTop: `1px solid ${G.border}`,
+              display: "flex", alignItems: "center",
+              justifyContent: active ? "space-between" : "center",
+            }}>
+              {active ? (
+                <>
+                  <span style={{ fontSize: 10, color: G.textDim }}>Último evento</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,200,0,0.5)" }}>
+                    {formatRelative(phone.last_event_at)}
+                  </span>
+                </>
+              ) : (
+                <span style={{ fontSize: 10, color: G.textDim }}>Sin actividad</span>
+              )}
+            </div>
           </div>
 
-          {/* Footer: last event */}
+          {/* Home bar */}
           <div style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: isActive ? "space-between" : "center",
-            marginTop: "auto",
-            paddingTop: 4,
-            borderTop: "1px solid rgba(255,255,255,0.04)",
+            height: 28, flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            background: "rgba(0,0,0,0.25)",
+            borderTop: `1px solid ${G.border}`,
           }}>
-            {isActive ? (
-              <>
-                <span style={{ fontSize: 9, color: "#3d5060" }}>Último:</span>
-                <span style={{ fontSize: 9, color: "#5c7080", fontWeight: 600 }}>
-                  {formatRelative(phone.last_event_at)}
-                </span>
-              </>
-            ) : (
-              <span style={{ fontSize: 9, color: "#2a3942" }}>Esperando actividad...</span>
-            )}
+            <div style={{
+              width: 44, height: 5, borderRadius: 3,
+              background: active
+                ? "rgba(255,200,0,0.25)"
+                : "rgba(255,255,255,0.10)",
+            }} />
           </div>
         </div>
-
-        {/* Bottom home bar */}
-        <div style={{
-          height: 22,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          background: "rgba(0,0,0,0.25)",
-          borderTop: "1px solid rgba(255,255,255,0.04)",
-          flexShrink: 0,
-        }}>
-          <div style={{
-            width: 36, height: 4, borderRadius: 2,
-            background: "rgba(255,255,255,0.12)",
-          }} />
-        </div>
       </div>
 
-      {/* Alias label below phone */}
+      {/* Label under phone */}
       <div style={{
-        marginTop: 10, fontSize: 11, fontWeight: 700,
-        color: isActive ? "#d1d7db" : "#3a4a52",
-        textAlign: "center", letterSpacing: "0.2px",
+        marginTop: 12,
+        fontSize: 12, fontWeight: 800,
+        color: active ? G.gold : G.textDim,
+        letterSpacing: "0.2px", textAlign: "center",
+        textTransform: "uppercase",
       }}>
-        {displayName}
+        {name}
       </div>
+      {active && (
+        <div style={{
+          marginTop: 4,
+          fontSize: 10, fontWeight: 600,
+          color: G.green,
+          letterSpacing: "0.5px",
+        }}>
+          ● ACTIVO
+        </div>
+      )}
     </div>
   );
 }
 
-function GlobalStatCard({ label, value, accent = "#00a884" }: {
-  label: string;
-  value: number | string;
-  accent?: string;
-}) {
+// ── Header stat card ──────────────────────────────────────────────────
+
+function TopStat({ label, value, gold }: { label: string; value: number | string; gold?: boolean }) {
   return (
     <div style={{
-      background: "linear-gradient(135deg, #1f2c34 0%, #1a2530 100%)",
-      border: "1px solid #2a3942",
-      borderRadius: 12,
-      padding: "16px 20px",
-      flex: "1 1 120px",
-      minWidth: 120,
+      flex: "1 1 0",
+      background: gold
+        ? `linear-gradient(135deg, rgba(255,200,0,0.10) 0%, rgba(255,200,0,0.04) 100%)`
+        : `linear-gradient(135deg, ${G.surfaceUp} 0%, ${G.surface} 100%)`,
+      border: `1px solid ${gold ? "rgba(255,200,0,0.25)" : G.border}`,
+      borderRadius: 16,
+      padding: "20px 24px",
     }}>
-      <div style={{ fontSize: 30, fontWeight: 900, color: accent, lineHeight: 1, letterSpacing: "-1px" }}>
+      <div style={{
+        fontSize: 38, fontWeight: 900, lineHeight: 1,
+        letterSpacing: "-2px",
+        color: gold ? G.gold : G.text,
+      }}>
         {value}
       </div>
-      <div style={{ fontSize: 10, color: "#8696a0", marginTop: 6, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.6px" }}>
+      <div style={{
+        fontSize: 11, fontWeight: 700, marginTop: 8,
+        textTransform: "uppercase", letterSpacing: "0.8px",
+        color: gold ? G.goldDim : G.textMid,
+      }}>
         {label}
       </div>
     </div>
   );
 }
 
-// ── Page ─────────────────────────────────────────────────────────────
+// ── Page ──────────────────────────────────────────────────────────────
 
 const CAMPAIGN_ID = "eece49d5-a315-4764-83f9-681cabae5c51";
-const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+const FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif";
 
 export default function ExtensionMonitorPage() {
-  const [phones, setPhones] = useState<ExtensionMonitorPhone[]>([]);
-  const [totals, setTotals] = useState<ExtensionMonitorTotals | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [phones, setPhones]     = useState<ExtensionMonitorPhone[]>([]);
+  const [totals, setTotals]     = useState<ExtensionMonitorTotals | null>(null);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const [lastAt, setLastAt]     = useState<Date | null>(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const result = await getExtensionMonitor(CAMPAIGN_ID);
+    setLoading(true); setError(null);
+    const r = await getExtensionMonitor(CAMPAIGN_ID);
     setLoading(false);
-    if (!result.ok) {
-      setError(result.error ?? "Error desconocido");
-      return;
-    }
-    setPhones(result.phones ?? []);
-    setTotals(result.totals ?? null);
-    setLastRefresh(new Date());
+    if (!r.ok) { setError(r.error ?? "Error"); return; }
+    setPhones(r.phones ?? []);
+    setTotals(r.totals ?? null);
+    setLastAt(new Date());
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  // Auto-refresh every 30s
   useEffect(() => {
-    const interval = setInterval(load, 30_000);
-    return () => clearInterval(interval);
+    const id = setInterval(load, 30_000);
+    return () => clearInterval(id);
   }, [load]);
+
+  const activeCount = phones.filter(p => p.wa_sent > 0).length;
 
   return (
     <>
-      {/* Keyframe for pulse animation — injected once */}
       <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50%       { opacity: 0.6; transform: scale(0.85); }
+        @keyframes gobPulse {
+          0%,100% { opacity:1; transform:scale(1); }
+          50%      { opacity:0.5; transform:scale(0.8); }
         }
+        * { box-sizing: border-box; }
       `}</style>
 
       <div style={{
         minHeight: "100vh",
-        background: "radial-gradient(ellipse at 20% 0%, #0d1f1a 0%, #111b21 60%)",
-        color: "#e9edef",
+        background: G.bg,
+        color: G.text,
         fontFamily: FONT,
-        padding: "28px 24px 64px",
       }}>
-        <div style={{ maxWidth: 1000, margin: "0 auto" }}>
 
-          {/* ── Header ── */}
+        {/* ── Top banner ── */}
+        <div style={{
+          background: `linear-gradient(135deg, ${G.navyDark} 0%, ${G.navy} 60%, ${G.navyLight} 100%)`,
+          borderBottom: `2px solid ${G.gold}`,
+          padding: "0 32px",
+        }}>
           <div style={{
-            display: "flex", alignItems: "flex-start", justifyContent: "space-between",
-            marginBottom: 28, flexWrap: "wrap", gap: 12,
+            maxWidth: "none",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            height: 64, gap: 16,
           }}>
-            <div>
+            {/* Logo area */}
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
               <div style={{
-                fontSize: 22, fontWeight: 900, letterSpacing: "-0.5px",
-                background: "linear-gradient(90deg, #00a884, #00c49a)",
-                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-                display: "inline-block",
+                width: 36, height: 36, borderRadius: 8,
+                background: G.gold,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 18, fontWeight: 900, color: G.navyDark,
+                letterSpacing: "-1px", flexShrink: 0,
               }}>
-                Monitor de Extensión
+                G
               </div>
-              <div style={{ fontSize: 12, color: "#5c7080", marginTop: 3, fontWeight: 500 }}>
-                WhatsApp Web · Celulares César Vásquez
+              <div>
+                <div style={{
+                  fontSize: 16, fontWeight: 900, color: G.gold,
+                  letterSpacing: "2px", textTransform: "uppercase",
+                }}>
+                  GOBERNA
+                </div>
+                <div style={{ fontSize: 10, color: "rgba(255,200,0,0.5)", fontWeight: 600, letterSpacing: "0.5px" }}>
+                  Monitor de Extensión
+                </div>
               </div>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              {lastRefresh && (
+            {/* Right: time + refresh */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {lastAt && (
                 <span style={{
-                  fontSize: 11, color: "#2a3942", fontVariantNumeric: "tabular-nums",
+                  fontSize: 11, color: "rgba(255,200,0,0.4)",
+                  fontVariantNumeric: "tabular-nums",
                 }}>
-                  {lastRefresh.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  {lastAt.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                 </span>
               )}
               <button
@@ -413,78 +483,114 @@ export default function ExtensionMonitorPage() {
                 onClick={load}
                 disabled={loading}
                 style={{
-                  padding: "6px 14px", borderRadius: 8,
-                  border: "1px solid #2a3942",
-                  background: loading ? "transparent" : "rgba(0,168,132,0.08)",
-                  color: loading ? "#2a3942" : "#00a884",
+                  padding: "7px 16px", borderRadius: 8,
+                  border: `1px solid rgba(255,200,0,0.35)`,
+                  background: loading ? "transparent" : "rgba(255,200,0,0.10)",
+                  color: loading ? "rgba(255,200,0,0.3)" : G.gold,
                   fontSize: 12, cursor: loading ? "default" : "pointer",
-                  fontWeight: 700, transition: "all 0.2s",
+                  fontWeight: 800, letterSpacing: "0.3px",
+                  transition: "all 0.2s",
                 }}
               >
-                {loading ? "Actualizando..." : "↻ Actualizar"}
+                {loading ? "Cargando..." : "↻ Actualizar"}
               </button>
             </div>
           </div>
+        </div>
 
-          {/* ── Error ── */}
+        {/* ── Subtitle bar ── */}
+        <div style={{
+          background: G.navyDeep,
+          padding: "10px 32px",
+          borderBottom: `1px solid rgba(255,200,0,0.08)`,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <span style={{ fontSize: 12, color: "rgba(255,200,0,0.5)", fontWeight: 600 }}>
+            WhatsApp Web · Celulares César Vásquez · Campaña activa
+          </span>
+          <span style={{
+            fontSize: 11, color: G.textDim,
+            fontVariantNumeric: "tabular-nums",
+          }}>
+            Auto-refresh 30s
+          </span>
+        </div>
+
+        {/* ── Content ── */}
+        <div style={{ padding: "28px 32px 64px" }}>
+
+          {/* Error */}
           {error && (
             <div style={{
               background: "rgba(239,83,80,0.08)", border: "1px solid rgba(239,83,80,0.3)",
-              borderRadius: 10, padding: "12px 16px", marginBottom: 24,
+              borderRadius: 10, padding: "12px 18px", marginBottom: 24,
               fontSize: 13, color: "#ef5350",
             }}>
               {error}
             </div>
           )}
 
-          {/* ── Global totals ── */}
+          {/* ── Totals row ── */}
           {totals && (
-            <div style={{ display: "flex", gap: 10, marginBottom: 32, flexWrap: "wrap" }}>
-              <GlobalStatCard label="Total enviados" value={totals.wa_sent} accent="#00a884" />
-              <GlobalStatCard label="Contactos únicos" value={totals.unique_contacts} accent="#7c9cf5" />
-              <GlobalStatCard label="Operadoras activas" value={totals.active_operators} accent="#f0a030" />
-              <GlobalStatCard label="Celulares activos" value={phones.filter(p => p.wa_sent > 0).length} accent="#e9edef" />
+            <div style={{ display: "flex", gap: 12, marginBottom: 36, flexWrap: "wrap" }}>
+              <TopStat label="Mensajes enviados"   value={totals.wa_sent}          gold />
+              <TopStat label="Contactos únicos"    value={totals.unique_contacts} />
+              <TopStat label="Operadoras activas"  value={totals.active_operators} />
+              <TopStat label="Celulares activos"   value={`${activeCount} / ${phones.length}`} />
             </div>
           )}
 
-          {/* ── Loading skeleton ── */}
+          {/* ── Loading ── */}
           {loading && phones.length === 0 && (
-            <div style={{ padding: "60px 0", textAlign: "center", color: "#2a3942", fontSize: 14 }}>
+            <div style={{ padding: "80px 0", textAlign: "center", color: G.textDim, fontSize: 14 }}>
               Cargando datos...
             </div>
           )}
 
-          {/* ── Phone cards grid ── */}
+          {/* ── Phone grid ── */}
           {phones.length > 0 && (
             <div style={{
               display: "grid",
               gridTemplateColumns: "repeat(5, 1fr)",
-              gap: 16,
+              gap: 20,
+              alignItems: "start",
             }}>
-              {phones.map((phone) => (
+              {phones.map(phone => (
                 <PhoneCard key={phone.own_number} phone={phone} />
               ))}
             </div>
           )}
 
-          {/* ── Empty state (no wa_phones registered at all) ── */}
+          {/* ── Empty state ── */}
           {!loading && phones.length === 0 && !error && (
             <div style={{
-              background: "rgba(31,44,52,0.6)", border: "1px solid #2a3942",
-              borderRadius: 16, padding: "48px 24px", textAlign: "center",
+              background: G.surface, border: `1px solid ${G.border}`,
+              borderRadius: 16, padding: "56px 24px", textAlign: "center",
             }}>
-              <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.4 }}>📭</div>
-              <div style={{ fontSize: 14, color: "#8696a0" }}>Sin celulares registrados.</div>
-              <div style={{ fontSize: 12, color: "#3a4a52", marginTop: 8 }}>
+              <div style={{ fontSize: 36, opacity: 0.3, marginBottom: 14 }}>📵</div>
+              <div style={{ fontSize: 14, color: G.textMid }}>Sin celulares registrados.</div>
+              <div style={{ fontSize: 12, color: G.textDim, marginTop: 8 }}>
                 Registra los celulares en Settings → Gestionar celulares WA.
               </div>
             </div>
           )}
 
-          {/* ── Footer ── */}
-          <div style={{ marginTop: 36, fontSize: 10, color: "#1f2c34", textAlign: "center" }}>
-            Actualización automática cada 30 s · Goberna
-          </div>
+        </div>
+
+        {/* ── Footer ── */}
+        <div style={{
+          borderTop: `1px solid ${G.border}`,
+          padding: "16px 32px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <span style={{ fontSize: 10, color: G.textDim }}>
+            Goberna · Plataforma de Operación Territorial
+          </span>
+          <span style={{ fontSize: 10, color: G.textDim }}>
+            {lastAt
+              ? `Última actualización: ${lastAt.toLocaleTimeString("es-PE")}`
+              : "—"}
+          </span>
         </div>
       </div>
     </>
