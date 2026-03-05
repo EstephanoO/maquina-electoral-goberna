@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import type { FormRecord } from "@/lib/services";
 import { deleteFormsBatch } from "@/lib/services";
 import { formCoordsToLatLng } from "@/lib/utils";
@@ -90,6 +90,9 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
+  // Optimistic removal: IDs eliminados exitosamente pero aun presentes en el array `forms`
+  // (mientras el refetch de React Query no haya llegado todavia).
+  const [optimisticDeletedIds, setOptimisticDeletedIds] = useState<Set<string>>(new Set());
 
   // Filters
   const [filterEncuestador, setFilterEncuestador] = useState<string>("all");
@@ -120,6 +123,21 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
     return dupes;
   }, [forms]);
 
+  // Limpiar IDs optimisticamente eliminados cuando el refetch de React Query
+  // ya no los incluye en `forms` (confirmacion de que la DB los removio).
+  useEffect(() => {
+    if (optimisticDeletedIds.size === 0) return;
+    const formIds = new Set(forms.map((f) => f.id));
+    const stillPresent = new Set<string>();
+    for (const id of optimisticDeletedIds) {
+      if (formIds.has(id)) stillPresent.add(id);
+    }
+    // Si el set cambio (algun ID ya no esta en forms), actualizamos
+    if (stillPresent.size !== optimisticDeletedIds.size) {
+      setOptimisticDeletedIds(stillPresent);
+    }
+  }, [forms, optimisticDeletedIds]);
+
   const activeFilterCount = [
     filterEncuestador !== "all",
     !!dateFrom,
@@ -140,7 +158,10 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
     const fromMs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : 0;
     const toMs = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : 0;
 
-    let list = forms;
+    // Excluir registros eliminados optimisticamente (aun presentes en `forms` por el refetch pendiente)
+    let list = optimisticDeletedIds.size > 0
+      ? forms.filter((f) => !optimisticDeletedIds.has(f.id))
+      : forms;
     if (showDuplicates) list = list.filter((f) => f.telefono?.trim() && duplicatePhones.has(f.telefono.trim()));
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -156,7 +177,7 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
       const cmp = String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? ""));
       return sortAsc ? cmp : -cmp;
     });
-  }, [forms, search, sortKey, sortAsc, showDuplicates, duplicatePhones, filterEncuestador, dateFrom, dateTo]);
+  }, [forms, optimisticDeletedIds, search, sortKey, sortAsc, showDuplicates, duplicatePhones, filterEncuestador, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -194,7 +215,12 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
     setDeletingIds(new Set(ids));
     try {
       const res = await deleteFormsBatch(ids, campaignId);
-      if (res.ok) { setSelectedIds(new Set()); onFormsChanged(); }
+      if (res.ok) {
+        // Remocion optimista: ocultar filas de inmediato sin esperar el refetch
+        setOptimisticDeletedIds((prev) => { const next = new Set(prev); for (const id of ids) next.add(id); return next; });
+        setSelectedIds(new Set());
+        onFormsChanged();
+      }
     } finally { setBulkDeleting(false); setDeletingIds(new Set()); }
   }, [selectedIds, campaignId, onFormsChanged]);
 
@@ -203,8 +229,15 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
     const ok = window.confirm(`Eliminar "${f.nombre || "Sin nombre"}"?`);
     if (!ok) return;
     setDeletingIds((prev) => new Set(prev).add(f.id));
-    try { await onDeleteForm(f.id, campaignId); }
-    finally { setDeletingIds((prev) => { const next = new Set(prev); next.delete(f.id); return next; }); }
+    try {
+      const deleted = await onDeleteForm(f.id, campaignId);
+      if (deleted) {
+        // Remocion optimista: ocultar la fila de inmediato sin esperar el refetch de React Query
+        setOptimisticDeletedIds((prev) => new Set(prev).add(f.id));
+      }
+    } finally {
+      setDeletingIds((prev) => { const next = new Set(prev); next.delete(f.id); return next; });
+    }
   }, [campaignId, onDeleteForm, deletingIds]);
 
   const handleEditSave = useCallback(async (updates: Record<string, string>) => {
