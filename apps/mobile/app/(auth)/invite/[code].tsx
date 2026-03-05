@@ -14,7 +14,7 @@
  * - Sin paso 2 separado — todo en una pantalla
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -67,6 +67,8 @@ export default function InviteScreen() {
 
   // ─── Screen phase ────────────────────────────────────────────
   const [state, setState] = useState<ScreenState>({ phase: 'validating' });
+  // Keep invitation data in a ref so it's accessible across all phases after validation
+  const invitationRef = useRef<InvitationInfo | null>(null);
 
   // ─── Form fields ─────────────────────────────────────────────
   const [fullName, setFullName] = useState('');
@@ -99,6 +101,7 @@ export default function InviteScreen() {
         return;
       }
 
+      invitationRef.current = result.data.invitation;
       setState({ phase: 'ready', invitation: result.data.invitation });
     })();
   }, [code]);
@@ -225,8 +228,12 @@ export default function InviteScreen() {
   }
 
   // ─── Render: ready / registering ─────────────────────────────
-  const { invitation } = state;
+  // Use ref so invitation data is accessible in both 'ready' and 'registering' phases
+  const invitation = invitationRef.current ?? (state.phase === 'ready' ? state.invitation : null);
   const isRegistering = state.phase === 'registering';
+
+  // Guard: invitation must be available to render this section
+  if (!invitation) return null;
 
   return (
     <SafeAreaView style={styles.safeArea}>

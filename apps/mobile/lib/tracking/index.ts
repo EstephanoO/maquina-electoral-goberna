@@ -205,6 +205,21 @@ async function processLocation(location: Location.LocationObject): Promise<void>
 
 // ─── Permission Helpers ───────────────────────────────────────
 
+/**
+ * CHECK ONLY — never shows the system dialog.
+ * Safe to call from useEffect / app start.
+ * Returns true if the user has already granted foreground location.
+ */
+export async function checkForegroundPermission(): Promise<boolean> {
+  const { status } = await Location.getForegroundPermissionsAsync();
+  return status === 'granted';
+}
+
+/**
+ * REQUEST — shows the iOS/Android system permission dialog.
+ * MUST be called only from a direct user interaction (button tap, etc.).
+ * Never call from useEffect or on app start.
+ */
 export async function requestForegroundPermission(): Promise<boolean> {
   const { status } = await Location.requestForegroundPermissionsAsync();
   const granted = status === 'granted';
@@ -279,10 +294,14 @@ export async function startForegroundTracking(
   }
 
   try {
-    const hasForeground = await requestForegroundPermission();
+    // Check only — never request here. The caller is responsible for
+    // requesting the permission via a direct user action before calling
+    // startForegroundTracking. Requesting inside a library function would
+    // violate Apple 5.1.1 (permission must come from a user-initiated action).
+    const hasForeground = await checkForegroundPermission();
     if (!hasForeground) {
       currentState = 'error';
-      return { success: false, error: 'Permiso de ubicación denegado' };
+      return { success: false, error: 'location_permission_denied' };
     }
 
     // Get initial location immediately
@@ -401,9 +420,10 @@ export async function sendSingleLocation(
   agentId: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const hasPermission = await requestForegroundPermission();
+    // Check only — caller must have requested permission via user action first.
+    const hasPermission = await checkForegroundPermission();
     if (!hasPermission) {
-      return { success: false, error: 'Permiso de ubicación denegado' };
+      return { success: false, error: 'location_permission_denied' };
     }
 
     const location = await Location.getCurrentPositionAsync({

@@ -156,8 +156,15 @@ function DynamicField({
       if (capturandoGps) return;
       setCapturandoGps(true);
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
+        // Check first — only request if not already granted.
+        // Apple 5.1.1: the system dialog must come from a user action (this is a tap handler, so compliant).
+        const existing = await Location.getForegroundPermissionsAsync();
+        let permStatus = existing.status;
+        if (permStatus !== 'granted') {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          permStatus = status;
+        }
+        if (permStatus !== 'granted') {
           Alert.alert(
             'Permiso denegado',
             'Se necesita acceso a la ubicacion para registrar coordenadas GPS.',

@@ -296,7 +296,9 @@ export default function DashboardScreen() {
   const { refreshConfig, logout, switchCampaign, availableCampaigns } = useApp();
 
   // Tracking state (with error handling)
-  const { trackingState } = useAgentTracking();
+  // needsPermission: true when GPS hasn't been granted yet.
+  // requestPermission: MUST only be called from a user tap (Apple 5.1.1).
+  const { trackingState, needsPermission, requestPermission } = useAgentTracking();
   const trackingActive = trackingState === 'foreground' || trackingState === 'background';
 
   const primary = candidate.color_primario;
@@ -423,6 +425,26 @@ export default function DashboardScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primary} />
         }
       />
+
+      {/* GPS Permission Banner — shown when permission not yet granted.
+          The requestPermission() call happens HERE, inside a user onPress,
+          so the iOS system dialog is triggered by a direct user action.
+          This satisfies Apple guideline 5.1.1. */}
+      {needsPermission && (
+        <View style={[styles.permissionBanner, { borderColor: primary }]}>
+          <MaterialIcons name="location-off" size={20} color={primary} />
+          <Text style={styles.permissionText}>
+            Activa el GPS para registrar tu ubicación durante el trabajo de campo.
+          </Text>
+          <Pressable
+            style={[styles.permissionButton, { backgroundColor: primary }]}
+            onPress={requestPermission}
+            accessibilityLabel="Activar GPS"
+          >
+            <Text style={styles.permissionButtonText}>Activar GPS</Text>
+          </Pressable>
+        </View>
+      )}
 
       {/* FAB */}
       <Pressable
@@ -786,6 +808,42 @@ const styles = StyleSheet.create({
   logoutText: {
     fontSize: 15,
     color: '#dc2626',
+    fontFamily: FONT,
+  },
+
+  // GPS Permission Banner
+  permissionBanner: {
+    position: 'absolute',
+    bottom: 88,
+    left: 16,
+    right: 16,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1.5,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.10,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  permissionText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#374151',
+    fontFamily: FONT,
+  },
+  permissionButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  permissionButtonText: {
+    fontSize: 13,
+    color: '#fff',
     fontFamily: FONT,
   },
 });

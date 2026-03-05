@@ -1,11 +1,11 @@
 /**
  * Hook that manages GPS tracking with offline queue support.
  *
- * Features:
- * - Auto-starts foreground tracking on mount
- * - Shows sync status and queue stats
- * - Stops tracking on unmount
- * - Optimized to avoid unnecessary re-renders
+ * Apple 5.1.1 compliance:
+ * - useEffect only CHECKS existing permission (getForegroundPermissionsAsync)
+ * - The system dialog is NEVER triggered automatically on mount
+ * - requestPermission() is exposed for the UI to call from a button tap
+ * - Only after the user grants permission does startForegroundTracking run
  */
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
@@ -15,6 +15,8 @@ import {
   startForegroundTracking,
   stopTracking,
   getTrackingState,
+  checkForegroundPermission,
+  requestForegroundPermission,
   type TrackingState,
 } from '@/lib/tracking';
 import {
@@ -30,6 +32,8 @@ export interface TrackingHookState {
   syncStatus: SyncStatus;
   pendingLocations: number;
   pendingForms: number;
+  /** True when the user hasn't granted location permission yet */
+  needsPermission: boolean;
 }
 
 export function useAgentTracking() {
@@ -45,6 +49,7 @@ export function useAgentTracking() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus);
   const [pendingLocations, setPendingLocations] = useState(0);
   const [pendingForms, setPendingForms] = useState(0);
+  const [needsPermission, setNeedsPermission] = useState(false);
 
   // Update stats - stable reference using ref
   const updateStats = useCallback(async () => {
@@ -67,24 +72,48 @@ export function useAgentTracking() {
     }
   }, []);
 
-  // Start tracking - runs once on mount
+  const startWithPermission = useCallback(async (agentId: string) => {
+    try {
+      const result = await startForegroundTracking(agentId);
+      if (!mountedRef.current) return;
+
+      const newState = getTrackingState();
+      setTrackingState((prev) => (prev !== newState ? newState : prev));
+
+      if (!result.success && result.error === 'location_permission_denied') {
+        // startForegroundTracking does a check-only; if denied, surface it to UI
+        setNeedsPermission(true);
+        setTrackingError(null);
+      } else {
+        setNeedsPermission(false);
+        setTrackingError(result.success ? null : (result.error ?? 'Error desconocido'));
+      }
+    } catch (err) {
+      console.warn('[useAgentTracking] Failed to start tracking:', err);
+      if (!mountedRef.current) return;
+      setTrackingState('error');
+      setTrackingError('GPS no disponible');
+    }
+  }, []);
+
+  // On mount: CHECK permission only — never request.
+  // Apple 5.1.1: the system dialog must come from a direct user action.
   useEffect(() => {
     mountedRef.current = true;
     let statsInterval: ReturnType<typeof setInterval> | null = null;
 
     const init = async () => {
-      try {
-        const result = await startForegroundTracking(agentIdRef.current);
-        if (!mountedRef.current) return;
+      const hasPermission = await checkForegroundPermission();
 
-        const newState = getTrackingState();
-        setTrackingState((prev) => (prev !== newState ? newState : prev));
-        setTrackingError(result.success ? null : (result.error ?? 'Error desconocido'));
-      } catch (err) {
-        console.warn('[useAgentTracking] Failed to start tracking:', err);
-        if (!mountedRef.current) return;
-        setTrackingState('error');
-        setTrackingError('GPS no disponible');
+      if (!mountedRef.current) return;
+
+      if (!hasPermission) {
+        // Permission not yet granted — surface the button to the UI.
+        // Do NOT call requestForegroundPermissionsAsync() here.
+        setNeedsPermission(true);
+      } else {
+        // Already granted — start tracking immediately.
+        await startWithPermission(agentIdRef.current);
       }
 
       // Initial stats update
@@ -109,23 +138,33 @@ export function useAgentTracking() {
   useEffect(() => {
     if (!mountedRef.current) return;
 
-    // Skip first render
     const currentState = getTrackingState();
     if (currentState === 'stopped' || currentState === 'error') return;
 
-    // Agent changed while tracking - restart with new ID
+    // Agent changed while tracking — restart with new ID
     const reinit = async () => {
       await stopTracking();
-      const result = await startForegroundTracking(agent.id);
-      if (!mountedRef.current) return;
-
-      const newState = getTrackingState();
-      setTrackingState((prev) => (prev !== newState ? newState : prev));
-      setTrackingError(result.success ? null : (result.error ?? 'Error desconocido'));
+      await startWithPermission(agent.id);
     };
 
     reinit();
-  }, [agent.id]);
+  }, [agent.id, startWithPermission]);
+
+  /**
+   * Call this ONLY from a button onPress handler.
+   * This is the only place in the app that triggers the iOS/Android system
+   * permission dialog. Apple 5.1.1 requires it to come from a user tap.
+   */
+  const requestPermission = useCallback(async () => {
+    const granted = await requestForegroundPermission();
+    if (!mountedRef.current) return;
+
+    if (granted) {
+      setNeedsPermission(false);
+      await startWithPermission(agentIdRef.current);
+    }
+    // If denied, needsPermission stays true — the UI can show a settings deeplink
+  }, [startWithPermission]);
 
   // Force sync now
   const syncNow = useCallback(async () => {
@@ -141,9 +180,10 @@ export function useAgentTracking() {
       syncStatus,
       pendingLocations,
       pendingForms,
+      needsPermission,
       canUseBackground: false, // Background disabled
     }),
-    [trackingState, trackingError, syncStatus, pendingLocations, pendingForms]
+    [trackingState, trackingError, syncStatus, pendingLocations, pendingForms, needsPermission]
   );
 
   return {
@@ -151,5 +191,6 @@ export function useAgentTracking() {
     enableBackgroundTracking: useCallback(async () => ({ success: false, error: 'Background deshabilitado' }), []),
     syncNow,
     refreshStats: updateStats,
+    requestPermission,
   };
 }
