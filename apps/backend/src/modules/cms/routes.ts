@@ -712,6 +712,7 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
     const extensionEventSchema = z.object({
       type: z.enum(["message_sent", "message_received"]),
       phone: z.string().min(7).max(20),
+      own_number: z.string().max(20).optional().default(""),
       preview: z.string().max(500).optional().default(""),
       detected_at: z.number().optional(),
     });
@@ -734,13 +735,14 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
           return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", msg));
         }
 
-        const { type, phone, preview, detected_at } = parsed.data;
+        const { type, phone, own_number, preview, detected_at } = parsed.data;
+        const ownNumber = own_number?.replace(/\D/g, "") || null;
 
         // Find the contact by phone
         const contact = await repo.findContactByPhone(campaignId, phone);
         if (!contact) {
           // Persist the event even if no contact matched — still counts as a message sent
-          await repo.insertExtensionEvent(campaignId, userId, phone, null, false);
+          await repo.insertExtensionEvent(campaignId, userId, phone, null, false, ownNumber);
           return reply.code(200).send({
             ok: true,
             request_id: requestId,
@@ -791,7 +793,7 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         });
 
         // Persist the extension event for operator metrics (wa_sent)
-        await repo.insertExtensionEvent(campaignId, userId, phone, contact.id, true);
+        await repo.insertExtensionEvent(campaignId, userId, phone, contact.id, true, ownNumber);
 
         return reply.code(200).send({
           ok: true,
@@ -891,12 +893,79 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── WA Phones CRUD (/api/cms/wa-phones) ───────────────────────────
+    // Manage aliases for the physical WA phones used by operators.
+    // Requires candidato+ role scoped to the campaign.
+
+    const waPhoneSchema = z.object({
+      number: z.string().min(7).max(20),
+      alias: z.string().min(1).max(100),
+    });
+
+    // GET /api/cms/wa-phones — list all phones for the campaign
+    app.get(
+      "/api/cms/wa-phones",
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = (request as AuthenticatedRequest).activeCampaignId;
+        if (!campaignId) return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        try {
+          const phones = await repo.listWaPhones(campaignId);
+          return reply.code(200).send({ ok: true, request_id: requestId, phones });
+        } catch (error) {
+          app.log.error({ err: error }, "wa-phones list failed");
+          return reply.code(500).send(errorPayload(requestId, "WA_PHONES_ERROR", "error listando celulares"));
+        }
+      },
+    );
+
+    // POST /api/cms/wa-phones — create or update a phone alias (upsert by number)
+    app.post(
+      "/api/cms/wa-phones",
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = (request as AuthenticatedRequest).activeCampaignId;
+        if (!campaignId) return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        const parsed = waPhoneSchema.safeParse(request.body);
+        if (!parsed.success) {
+          const msg = parsed.error.issues.map((e) => e.message).join("; ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", msg));
+        }
+        try {
+          const phone = await repo.upsertWaPhone(campaignId, parsed.data.number, parsed.data.alias);
+          return reply.code(200).send({ ok: true, request_id: requestId, phone });
+        } catch (error) {
+          app.log.error({ err: error }, "wa-phones upsert failed");
+          return reply.code(500).send(errorPayload(requestId, "WA_PHONES_ERROR", "error guardando celular"));
+        }
+      },
+    );
+
+    // DELETE /api/cms/wa-phones/:id — remove a phone alias
+    app.delete(
+      "/api/cms/wa-phones/:id",
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = (request as AuthenticatedRequest).activeCampaignId;
+        if (!campaignId) return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        const { id } = request.params as { id: string };
+        try {
+          const deleted = await repo.deleteWaPhone(campaignId, id);
+          if (!deleted) return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "celular no encontrado"));
+          return reply.code(200).send({ ok: true, request_id: requestId });
+        } catch (error) {
+          app.log.error({ err: error }, "wa-phones delete failed");
+          return reply.code(500).send(errorPayload(requestId, "WA_PHONES_ERROR", "error eliminando celular"));
+        }
+      },
+    );
+
     // ── GET /api/cms/extension-monitor ────────────────────────────────
-    // PUBLIC endpoint (no auth). Returns per-operator WA activity summary:
-    // total messages sent + unique phones contacted, scoped to a campaign.
+    // PUBLIC endpoint (no auth). Returns per-phone + per-operator breakdown.
     // Requires ?campaign_id=<uuid> query param.
-    // NOTE: This is intentionally public for development/testing. Move behind
-    // app.authenticate once monitoring is stable.
     const extensionMonitorQuerySchema = z.object({
       campaign_id: z.string().uuid("campaign_id debe ser un UUID válido"),
     });
@@ -915,14 +984,15 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         const { campaign_id } = parsed.data;
 
         try {
-          const operators = await repo.getExtensionMonitor(campaign_id);
+          const phones = await repo.getExtensionMonitorByPhone(campaign_id);
 
-          const totals = operators.reduce(
-            (acc, op) => ({
-              wa_sent: acc.wa_sent + op.wa_sent,
-              unique_phones: acc.unique_phones + op.unique_phones,
+          const totals = phones.reduce(
+            (acc, p) => ({
+              wa_sent: acc.wa_sent + p.wa_sent,
+              unique_contacts: acc.unique_contacts + p.unique_contacts,
+              active_operators: acc.active_operators + p.operators.length,
             }),
-            { wa_sent: 0, unique_phones: 0 },
+            { wa_sent: 0, unique_contacts: 0, active_operators: 0 },
           );
 
           return reply.code(200).send({
@@ -930,7 +1000,7 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
             request_id: requestId,
             campaign_id,
             totals,
-            operators,
+            phones,
           });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "extension monitor failed");

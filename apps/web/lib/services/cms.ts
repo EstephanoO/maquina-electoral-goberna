@@ -404,6 +404,58 @@ export async function getBrigadistaMetrics(
   return { ok: true, brigadistas: res.data?.brigadistas ?? [] };
 }
 
+// ── WA Phones (alias management) ───────────────────────────────────
+
+export type WaPhone = {
+  id: string;
+  campaign_id: string;
+  own_number: string;   // "51987654321"
+  alias: string | null; // "Vasquez 1"
+  created_at: string;
+  updated_at: string;
+};
+
+type WaPhonesListResponse = {
+  ok: boolean;
+  phones: WaPhone[];
+};
+
+type WaPhoneUpsertResponse = {
+  ok: boolean;
+  phone: WaPhone;
+};
+
+export async function listWaPhones(
+  campaignId: string,
+): Promise<{ ok: boolean; phones: WaPhone[]; error?: string }> {
+  const res = await api.get<WaPhonesListResponse>("/api/cms/wa-phones", { campaignId });
+  if (!res.ok) return { ok: false, phones: [], error: res.error?.message };
+  return { ok: true, phones: res.data?.phones ?? [] };
+}
+
+export async function upsertWaPhone(
+  campaignId: string,
+  own_number: string,
+  alias: string,
+): Promise<{ ok: boolean; phone?: WaPhone; error?: string }> {
+  const res = await api.post<WaPhoneUpsertResponse>(
+    "/api/cms/wa-phones",
+    { own_number, alias },
+    { campaignId },
+  );
+  if (!res.ok) return { ok: false, error: res.error?.message };
+  return { ok: true, phone: res.data?.phone };
+}
+
+export async function deleteWaPhone(
+  campaignId: string,
+  id: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await api.delete(`/api/cms/wa-phones/${id}`, { campaignId });
+  if (!res.ok) return { ok: false, error: res.error?.message };
+  return { ok: true };
+}
+
 // ── Extension monitor (public) ──────────────────────────────────────
 
 export type ExtensionMonitorOperator = {
@@ -415,25 +467,35 @@ export type ExtensionMonitorOperator = {
   last_event_at: string | null;
 };
 
+export type ExtensionMonitorPhone = {
+  own_number: string;
+  alias: string | null;
+  wa_sent: number;
+  unique_contacts: number;
+  last_event_at: string | null;
+  operators: ExtensionMonitorOperator[];
+};
+
 export type ExtensionMonitorTotals = {
   wa_sent: number;
-  unique_phones: number;
+  unique_contacts: number;
+  active_operators: number;
 };
 
 type ExtensionMonitorResponse = {
   ok: boolean;
   campaign_id: string;
   totals: ExtensionMonitorTotals;
-  operators: ExtensionMonitorOperator[];
+  phones: ExtensionMonitorPhone[];
 };
 
 /**
- * Public endpoint — no auth required. Fetches per-operator WA activity.
+ * Public endpoint — no auth required. Fetches per-phone WA activity.
  */
 export async function getExtensionMonitor(campaignId: string): Promise<{
   ok: boolean;
   totals?: ExtensionMonitorTotals;
-  operators?: ExtensionMonitorOperator[];
+  phones?: ExtensionMonitorPhone[];
   error?: string;
 }> {
   const res = await fetch(`/api/cms/extension-monitor?campaign_id=${encodeURIComponent(campaignId)}`, {
@@ -444,7 +506,7 @@ export async function getExtensionMonitor(campaignId: string): Promise<{
     return { ok: false, error: body.message ?? `Error ${res.status}` };
   }
   const data = await res.json() as ExtensionMonitorResponse;
-  return { ok: true, totals: data.totals, operators: data.operators };
+  return { ok: true, totals: data.totals, phones: data.phones };
 }
 
 // ── Twilio config per campaign ───────────────────────────────────────

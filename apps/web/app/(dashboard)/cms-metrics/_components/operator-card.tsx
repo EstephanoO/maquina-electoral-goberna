@@ -12,6 +12,8 @@ export function OperatorCard({
 }) {
   const totalWorked = op.hablados + op.respondieron + op.archivados;
 
+  const waSent = op.wa_sent ?? 0;
+
   const segments = [
     { count: op.respondieron, color: "#7c3aed", label: "Contestaron" },
     { count: op.hablados, color: "#16a34a", label: "Hablados" },
@@ -116,7 +118,7 @@ export function OperatorCard({
       </div>
 
       {/* Breakdown pills */}
-      <div style={{ display: "flex", gap: 12, fontSize: 11 }}>
+      <div style={{ display: "flex", gap: 12, fontSize: 11, flexWrap: "wrap" }}>
         {segments.map((s) => (
           <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <span
@@ -126,6 +128,13 @@ export function OperatorCard({
             <span style={{ fontWeight: 700, color: "var(--color-text-primary)" }}>{s.count}</span>
           </div>
         ))}
+        {waSent > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ fontSize: 10 }}>💬</span>
+            <span style={{ color: "var(--color-text-tertiary)", fontWeight: 500 }}>WA enviados</span>
+            <span style={{ fontWeight: 700, color: "#0ea5e9" }}>{waSent}</span>
+          </div>
+        )}
       </div>
     </div>
   );

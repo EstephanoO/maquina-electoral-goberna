@@ -1,198 +1,151 @@
-// inject.js - v12 CRM — devuelve datos estructurados para el CRM
-(function() {
-  console.log('[WSPP] Injector v12-CRM');
+// inject.js — MAIN world.
+// Detecta mensajes salientes hookenado el CLICK en el botón Send del DOM.
+// NO usa MsgCollection.on('add') porque dispara también para mensajes
+// sincronizados desde el celular/otros devices (fromMe:true ≠ "yo lo envié aquí").
+(function () {
 
-
+  // ─── helpers ────────────────────────────────────────────────────────────────
 
   function req(name) {
-    try { return window.require(name); } catch(e) { return {}; }
+    try { return window.require(name); } catch (_) { return null; }
   }
 
-  function getStore() {
-    return {
-      ChatCollection:    req('WAWebChatCollection').ChatCollection,
-      MsgCollection:     req('WAWebMsgCollection').MsgCollection,
-      ContactCollection: req('WAWebContactCollection').ContactCollection,
-      Conn:              req('WAWebConnModel').Conn,
-    };
-  }
-
-  // ── Serializar chat ──────────────────────────────────────────────
-  function serializeChat(chat) {
+  /**
+   * Número propio del celular que está usando WA Web en este browser.
+   * Identifica DESDE QUÉ celular físico opera la operadora.
+   * Retorna solo dígitos (ej: "51987654321") o null.
+   */
+  function getOwnNumber() {
     try {
-      return {
-        id:          chat.id?._serialized || chat.get?.('id')?._serialized || '',
-        name:        chat.get?.('name') || chat.name || null,
-        unread:      chat.get?.('unreadCount') ?? 0,
-        isGroup:     chat.get?.('isGroup') ?? false,
-        lastMsg:     chat.get?.('lastMessage')?.get?.('body') || null,
-        lastMsgTime: chat.get?.('t') || null,
-        muteExpiry:  chat.get?.('muteExpiry') || 0,
-        pinned:      chat.get?.('pin') || false,
-        archived:    chat.get?.('archive') || false,
-      };
-    } catch(e) { return null; }
-  }
-
-  // ── Serializar mensaje ───────────────────────────────────────────
-  function serializeMsg(msg) {
-    try {
-      const id = msg.get?.('id') || msg.id;
-      return {
-        id:        id?._serialized || '',
-        fromMe:    id?.fromMe ?? false,
-        from:      msg.get?.('from')?._serialized || msg.from?._serialized || '',
-        to:        msg.get?.('to')?._serialized || '',
-        body:      msg.get?.('body') || msg.body || '',
-        type:      msg.get?.('type') || msg.type || 'chat',
-        timestamp: msg.get?.('t') || msg.t || 0,
-        chatId:    msg.get?.('chatId')?._serialized || null,
-        author:    msg.get?.('author')?._serialized || null,
-      };
-    } catch(e) { return null; }
-  }
-
-  // ── Serializar contacto ──────────────────────────────────────────
-  function serializeContact(c) {
-    try {
-      return {
-        id:       c.get?.('id')?._serialized || c.id?._serialized || '',
-        name:     c.get?.('name') || c.name || null,
-        pushname: c.get?.('pushname') || null,
-        isUser:   c.get?.('isUser') ?? false,
-        isGroup:  c.get?.('isGroup') ?? false,
-      };
-    } catch(e) { return null; }
-  }
-
-  // ── Setup listeners tiempo real ──────────────────────────────────
-  let listenersSetup = false;
-  function setupListeners(S) {
-    if (listenersSetup) return;
-    listenersSetup = true;
-
-    // Mensajes nuevos
-    S.MsgCollection.on('add', (msg) => {
-      try {
-        const data = serializeMsg(msg);
-        if (!data || data.fromMe) return;
-        console.log('[WSPP] 📨', data.body?.slice(0, 40));
-        window.postMessage({ type: 'WSPP_NEW_MSG', payload: data }, '*');
-      } catch(e) {}
-    });
-
-    // Cambios en Conn (wid, estado)
-    S.Conn.on('change', () => {
-      const wid = S.Conn.get('wid');
-      if (wid) {
-        window.postMessage({ type: 'WSPP_ME', payload: {
-          pushname: S.Conn.get('pushname'),
-          wid:      wid._serialized,
-          phone:    S.Conn.get('phone'),
-          platform: S.Conn.get('platform'),
-        }}, '*');
+      const PhoneInfoStore = req('WAWebPhoneInfoStore');
+      if (PhoneInfoStore) {
+        const jid = PhoneInfoStore.phoneInfo?.wid?._serialized
+          || PhoneInfoStore.phoneInfo?.wid?.user
+          || PhoneInfoStore.wid?._serialized
+          || '';
+        if (jid) return jid.replace(/@.+$/, '').replace(/\D/g, '') || null;
       }
-    });
+    } catch (_) {}
 
-    console.log('[WSPP] ✓ Listeners CRM activos');
+    // Fallback: algunos builds exponen el número en el título de la página
+    try {
+      const match = document.title.match(/\+?(51\d{9})/);
+      if (match) return match[1] || null;
+    } catch (_) {}
+
+    return null;
   }
 
-  // ── Responder solicitudes ────────────────────────────────────────
-  window.addEventListener('message', (e) => {
-    const { type, payload } = e.data || {};
-
-    if (type === 'WSPP_SCAN') {
-      try {
-        const S = getStore();
-        setupListeners(S);
-
-        const chats    = (S.ChatCollection?._models || []).map(serializeChat).filter(Boolean);
-        const contacts = (S.ContactCollection?._models || []).map(serializeContact).filter(Boolean);
-        const conn     = S.Conn;
-
-        window.postMessage({
-          type: 'WSPP_RESULT',
-          payload: {
-            storeFound: true,
-            me: {
-              pushname: conn?.get('pushname'),
-              wid:      conn?.get('wid')?._serialized,
-              phone:    conn?.get('phone'),
-              platform: conn?.get('platform'),
-            },
-            chats,
-            contacts,
-          }
-        }, '*');
-      } catch(err) {
-        window.postMessage({ type: 'WSPP_RESULT', payload: { storeFound: false, error: err.message } }, '*');
-      }
-    }
-
-    if (type === 'WSPP_OPEN_CHAT') {
-      try {
-        const phone = String(payload?.phone || '').replace(/\D/g, '');
-        if (!phone) return;
-
-        const { ChatCollection } = window.require('WAWebChatCollection');
-
-        // Buscar chat existente por número
-        const chat = ChatCollection._models.find(c => {
-          const id = c.id?._serialized || c.get?.('id')?._serialized || '';
-          return id.startsWith(phone);
-        });
-
-        if (chat) {
-          chat.set('active', 1);
-          console.log('[WSPP] Chat existente abierto:', chat.get('name') || phone);
-          window.postMessage({ type: 'WSPP_OPEN_CHAT_RESULT', payload: { found: true, phone } }, '*');
-        } else {
-          console.log('[WSPP] Chat no encontrado, necesita CDP:', phone);
-          window.postMessage({ type: 'WSPP_OPEN_CHAT_RESULT', payload: { found: false, phone } }, '*');
+  /**
+   * Teléfono del contacto en el chat actualmente abierto.
+   * Orden de preferencia:
+   *   1. WAWebChatStore (WA internal) — más confiable
+   *   2. Atributo data-id en el panel de conversación
+   *   3. window.location search (links directos wa.me)
+   * Retorna solo dígitos (ej: "51936628022") o null.
+   */
+  function getActivePhone() {
+    try {
+      const ChatStore = req('WAWebChatStore') || req('WAWebSendMsgChatStore');
+      if (ChatStore) {
+        const chat = typeof ChatStore.getActiveChat === 'function'
+          ? ChatStore.getActiveChat()
+          : ChatStore.active;
+        const jid = chat?.id?._serialized || chat?.id?.user || '';
+        if (jid && !jid.includes('@g.us')) {
+          return jid.replace(/@.+$/, '').replace(/\D/g, '') || null;
         }
-      } catch(err) {
-        console.warn('[WSPP] WSPP_OPEN_CHAT error:', err);
-        window.postMessage({ type: 'WSPP_OPEN_CHAT_RESULT', payload: { found: false, phone: payload?.phone } }, '*');
       }
-    }
+    } catch (_) {}
 
-    if (type === 'WSPP_GET_MSGS') {
-      try {
-        const chatId = payload?.chatId;
-        const S      = getStore();
-        const msgs   = (S.MsgCollection?._models || [])
-          .filter(m => {
-            const id = m.get?.('chatId')?._serialized || m.get?.('from')?._serialized;
-            return id === chatId;
-          })
-          .map(serializeMsg)
-          .filter(Boolean)
-          .slice(-50);
-
-        window.postMessage({ type: 'WSPP_MSGS_RESULT', payload: { chatId, msgs } }, '*');
-      } catch(err) {
-        window.postMessage({ type: 'WSPP_MSGS_RESULT', payload: { chatId: payload?.chatId, msgs: [], error: err.message } }, '*');
-      }
-    }
-  });
-
-  // Auto-setup al cargar
-  setTimeout(() => {
     try {
-      const S = getStore();
-      setupListeners(S);
-      console.log('[WSPP] ✓ CRM listo. Chats:', S.ChatCollection?._models?.length);
-    } catch(e) {}
-  }, 5000);
+      const panel = document.querySelector('[data-id]');
+      if (panel) {
+        const raw = panel.getAttribute('data-id') || '';
+        if (raw && !raw.includes('@g.us')) {
+          return raw.replace(/@.+$/, '').replace(/\D/g, '') || null;
+        }
+      }
+    } catch (_) {}
 
-  window.__WSPP_detectStore__ = () => {
-    const S = getStore();
-    console.log('[WSPP] Store:', {
-      chats:    S.ChatCollection?._models?.length,
-      contacts: S.ContactCollection?._models?.length,
-      pushname: S.Conn?.get('pushname'),
-    });
-  };
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const p = params.get('phone');
+      if (p) return p.replace(/\D/g, '') || null;
+    } catch (_) {}
 
-  console.log('[WSPP] v12-CRM listo.');
+    return null;
+  }
+
+  /**
+   * Devuelve true si el elemento (o alguno de sus ancestros) es el botón Send.
+   */
+  function isSendButton(el) {
+    let node = el;
+    for (let i = 0; i < 5; i++) {
+      if (!node || node.tagName === 'BODY') break;
+      const tag    = node.tagName?.toLowerCase();
+      const role   = node.getAttribute?.('role');
+      const testid = node.getAttribute?.('data-testid');
+      const icon   = node.getAttribute?.('data-icon');
+      const aria   = node.getAttribute?.('aria-label') || '';
+
+      if (
+        testid === 'send' ||
+        icon === 'send' ||
+        /enviar/i.test(aria) ||
+        /^send$/i.test(aria) ||
+        ((tag === 'button' || role === 'button') && testid === 'send')
+      ) {
+        return true;
+      }
+      node = node.parentElement;
+    }
+    return false;
+  }
+
+  function emitSent(phone) {
+    window.postMessage({
+      type: 'WSPP_SENT',
+      payload: {
+        phone,
+        own_number: getOwnNumber(),   // ← celular físico activo
+        timestamp: Math.floor(Date.now() / 1000),
+      },
+    }, '*');
+  }
+
+  // ─── listeners ───────────────────────────────────────────────────────────────
+
+  document.addEventListener('click', (e) => {
+    if (!isSendButton(e.target)) return;
+    const phone = getActivePhone();
+    if (!phone) {
+      console.warn('[WSPP] Send detectado pero no se pudo obtener el teléfono');
+      return;
+    }
+    emitSent(phone);
+    console.log('[WSPP] ✓ enviado →', phone, '| celular:', getOwnNumber());
+  }, true);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.altKey) return;
+    const active = document.activeElement;
+    if (!active) return;
+    const role      = active.getAttribute('role');
+    const testid    = active.getAttribute('data-testid');
+    const ariaLabel = active.getAttribute('aria-label') || '';
+
+    const isComposer =
+      testid === 'conversation-compose-box-input' ||
+      (role === 'textbox' && /escribe|message|type/i.test(ariaLabel));
+
+    if (!isComposer) return;
+    const phone = getActivePhone();
+    if (!phone) return;
+    emitSent(phone);
+    console.log('[WSPP] ✓ enviado (Enter) →', phone, '| celular:', getOwnNumber());
+  }, true);
+
+  console.log('[WSPP] ✓ listeners DOM activos (click + Enter + own_number)');
 })();

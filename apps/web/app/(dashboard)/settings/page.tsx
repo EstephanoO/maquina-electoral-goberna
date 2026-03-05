@@ -5,6 +5,7 @@ import { api } from "../../../lib/api-client";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { Spinner, PageHeader } from "../../../lib/ui";
+import { WaPhonesSection } from "./_components/wa-phones-section";
 
 /* ═══════════════════════════════════════════════════════════════════════
    GOBERNA — Settings: Change Password
@@ -154,7 +155,7 @@ export default function SettingsPage() {
     <div
       style={{
         fontFamily: fontStack,
-        maxWidth: 480,
+        maxWidth: 600,
       }}
     >
       <PageHeader
@@ -200,6 +201,9 @@ export default function SettingsPage() {
           </span>
         </div>
       </div>
+
+      {/* WA Phones section */}
+      <WaPhonesSection />
 
       {/* Change password form */}
       <div

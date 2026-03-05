@@ -622,11 +622,12 @@ export async function insertExtensionEvent(
   phone: string,
   contactId: string | null,
   matched: boolean,
+  ownNumber?: string | null,
 ): Promise<void> {
   await pool.query(
-    `INSERT INTO cms_extension_events (campaign_id, operator_id, contact_id, phone, matched)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [campaignId, operatorId, contactId ?? null, phone, matched],
+    `INSERT INTO cms_extension_events (campaign_id, operator_id, contact_id, phone, matched, own_number)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [campaignId, operatorId, contactId ?? null, phone, matched, ownNumber ?? null],
   );
 }
 
@@ -1077,21 +1078,176 @@ export async function getMetricsByWaNumber(
   }));
 }
 
-// ── Extension monitor: per-operator summary (public endpoint) ────────
+// ── WA Phones CRUD ───────────────────────────────────────────────────
+
+export type WaPhone = {
+  id: string;
+  campaign_id: string;
+  number: string;
+  alias: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function listWaPhones(campaignId: string): Promise<WaPhone[]> {
+  const { rows } = await pool.query<WaPhone>(
+    `SELECT id, campaign_id, number, alias, created_at, updated_at
+     FROM wa_phones
+     WHERE campaign_id = $1
+     ORDER BY alias ASC`,
+    [campaignId],
+  );
+  return rows;
+}
+
+export async function upsertWaPhone(
+  campaignId: string,
+  number: string,
+  alias: string,
+): Promise<WaPhone> {
+  const { rows } = await pool.query<WaPhone>(
+    `INSERT INTO wa_phones (campaign_id, number, alias)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (campaign_id, number)
+     DO UPDATE SET alias = EXCLUDED.alias, updated_at = NOW()
+     RETURNING id, campaign_id, number, alias, created_at, updated_at`,
+    [campaignId, number.replace(/\D/g, ""), alias.trim()],
+  );
+  return rows[0]!;
+}
+
+export async function deleteWaPhone(
+  campaignId: string,
+  phoneId: string,
+): Promise<boolean> {
+  const { rowCount } = await pool.query(
+    `DELETE FROM wa_phones WHERE id = $1 AND campaign_id = $2`,
+    [phoneId, campaignId],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+// ── Extension monitor: per-phone + per-operator breakdown ────────────
 
 export type ExtensionMonitorOperator = {
   operator_id: string;
   full_name: string;
   email: string;
-  wa_sent: number;        // total events in cms_extension_events
-  unique_phones: number;  // COUNT DISTINCT phone
+  wa_sent: number;
+  unique_phones: number;
   last_event_at: string | null;
 };
 
+export type ExtensionMonitorPhone = {
+  own_number: string;             // "51987654321"
+  alias: string | null;           // "Vasquez 1" o null si no está configurado
+  wa_sent: number;                // total mensajes desde este celular
+  unique_contacts: number;        // contactos únicos contactados
+  last_event_at: string | null;
+  operators: ExtensionMonitorOperator[];  // operadoras activas en este celular
+};
+
 /**
- * Returns per-operator WA activity from cms_extension_events.
- * Scoped to a campaign. No auth required by the caller — the route
- * that calls this is public (temporary, for testing).
+ * Returns per-phone breakdown with nested operators.
+ * Phones without alias show the raw number.
+ * Only phones and operators with activity are returned.
+ */
+export async function getExtensionMonitorByPhone(
+  campaignId: string,
+): Promise<ExtensionMonitorPhone[]> {
+  // Query 1: per (own_number, operator) aggregation
+  const { rows: opRows } = await pool.query<{
+    own_number: string;
+    alias: string | null;
+    operator_id: string;
+    full_name: string;
+    email: string;
+    wa_sent: string;
+    unique_contacts: string;
+    last_event_at: string | null;
+  }>(
+    `SELECT
+       COALESCE(ee.own_number, 'desconocido')  AS own_number,
+       wp.alias                                AS alias,
+       ee.operator_id,
+       COALESCE(u.full_name, u.email)          AS full_name,
+       u.email,
+       COUNT(*)::text                          AS wa_sent,
+       COUNT(DISTINCT ee.phone)::text          AS unique_contacts,
+       MAX(ee.created_at)::text                AS last_event_at
+     FROM cms_extension_events ee
+     JOIN users u ON u.id = ee.operator_id
+     LEFT JOIN wa_phones wp
+       ON wp.campaign_id = ee.campaign_id
+       AND wp.number = COALESCE(ee.own_number, '')
+     WHERE ee.campaign_id = $1
+     GROUP BY ee.own_number, wp.alias, ee.operator_id, u.full_name, u.email
+     ORDER BY ee.own_number, COUNT(*) DESC`,
+    [campaignId],
+  );
+
+  // Group by own_number on the application side
+  const phoneMap = new Map<string, ExtensionMonitorPhone>();
+
+  for (const r of opRows) {
+    const key = r.own_number;
+    if (!phoneMap.has(key)) {
+      phoneMap.set(key, {
+        own_number: key,
+        alias: r.alias ?? null,
+        wa_sent: 0,
+        unique_contacts: 0,
+        last_event_at: null,
+        operators: [],
+      });
+    }
+    const phone = phoneMap.get(key)!;
+    const opSent = parseInt(r.wa_sent, 10);
+    const opContacts = parseInt(r.unique_contacts, 10);
+
+    phone.wa_sent += opSent;
+    // unique_contacts per phone is recalculated below with a separate query
+    phone.operators.push({
+      operator_id: r.operator_id,
+      full_name: r.full_name,
+      email: r.email,
+      wa_sent: opSent,
+      unique_phones: opContacts,
+      last_event_at: r.last_event_at ?? null,
+    });
+
+    // Track latest event across operators
+    if (r.last_event_at) {
+      if (!phone.last_event_at || r.last_event_at > phone.last_event_at) {
+        phone.last_event_at = r.last_event_at;
+      }
+    }
+  }
+
+  // Query 2: unique contacts per phone (can't sum operator-level counts due to overlap)
+  const { rows: contactRows } = await pool.query<{
+    own_number: string;
+    unique_contacts: string;
+  }>(
+    `SELECT
+       COALESCE(own_number, 'desconocido') AS own_number,
+       COUNT(DISTINCT phone)::text         AS unique_contacts
+     FROM cms_extension_events
+     WHERE campaign_id = $1
+     GROUP BY own_number`,
+    [campaignId],
+  );
+
+  for (const r of contactRows) {
+    const phone = phoneMap.get(r.own_number);
+    if (phone) phone.unique_contacts = parseInt(r.unique_contacts, 10);
+  }
+
+  return Array.from(phoneMap.values()).sort((a, b) => b.wa_sent - a.wa_sent);
+}
+
+/**
+ * Legacy: flat per-operator summary (still used by old monitor endpoint).
  */
 export async function getExtensionMonitor(
   campaignId: string,

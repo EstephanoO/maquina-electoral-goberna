@@ -1,103 +1,128 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
+  <meta charset="UTF-8" />
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
     body {
-      width: 320px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      width: 240px;
       background: #111b21;
       color: #e9edef;
-    }
-    .header {
-      background: #25D366;
-      padding: 14px 16px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .header .icon { font-size: 24px; }
-    .header .title { font-size: 15px; font-weight: 700; }
-    .header .sub { font-size: 11px; opacity: 0.85; }
-    .body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-    .row {
-      background: #202c33;
-      border-radius: 8px;
-      padding: 10px 12px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 13px;
     }
-    .row .label { color: #8696a0; font-size: 11px; }
-    .row .val { font-weight: 600; }
-    .val.ok  { color: #25D366; }
-    .val.err { color: #ef5350; }
-    .val.warn { color: #ffa726; }
+
+    /* ── Header ── */
+    .hdr {
+      background: #1f2c34;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #2a3942;
+    }
+    .hdr-title { font-weight: 700; font-size: 13px; flex: 1; }
+    .hdr-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #3a4a52;
+      transition: background .3s;
+    }
+    .hdr-dot.on { background: #00a884; }
+
+    /* ── Login ── */
+    #view-login { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .inp {
+      width: 100%; padding: 9px 11px; border-radius: 8px;
+      background: #1f2c34; border: 1px solid #2a3942;
+      color: #e9edef; font-size: 12px; outline: none;
+    }
+    .inp:focus { border-color: #00a884; }
     .btn {
-      width: 100%;
-      padding: 10px;
-      border: none;
-      border-radius: 8px;
-      background: #25D366;
-      color: #111b21;
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: opacity 0.15s;
+      width: 100%; padding: 10px; border-radius: 8px; border: none;
+      background: #00a884; color: #fff;
+      font-size: 13px; font-weight: 700; cursor: pointer;
     }
-    .btn:hover { opacity: 0.85; }
-    .btn:disabled { opacity: 0.4; cursor: default; }
-    .log {
-      background: #0d1418;
-      border-radius: 8px;
-      padding: 10px;
-      font-size: 11px;
-      font-family: monospace;
-      color: #8696a0;
-      max-height: 120px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      word-break: break-all;
+    .btn:hover { background: #008f72; }
+    .btn:disabled { opacity: .5; cursor: default; }
+    .err {
+      font-size: 11px; color: #ef5350;
+      background: #2d0d0d; border-radius: 6px;
+      padding: 7px 9px; display: none;
     }
-    .log .line { margin-bottom: 3px; }
-    .log .line.ok  { color: #25D366; }
-    .log .line.err { color: #ef5350; }
-    .log .line.info { color: #e9edef; }
+
+    /* ── Dashboard ── */
+    #view-dash { display: none; flex-direction: column; }
+    .user-row {
+      padding: 10px 14px;
+      font-size: 11px; color: #8696a0;
+      border-bottom: 1px solid #2a3942;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .logout-btn {
+      background: none; border: none; color: #8696a0;
+      font-size: 11px; cursor: pointer;
+    }
+    .logout-btn:hover { color: #ef5350; }
+
+    .counter-box {
+      padding: 24px 14px 20px;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+    }
+    .counter-num {
+      font-size: 56px; font-weight: 800; line-height: 1;
+      color: #00a884;
+    }
+    .counter-lbl {
+      font-size: 11px; color: #8696a0; text-transform: uppercase; letter-spacing: .6px;
+    }
+
+    .reset-btn {
+      margin: 0 14px 14px;
+      padding: 7px; border-radius: 8px; border: 1px solid #2a3942;
+      background: none; color: #8696a0;
+      font-size: 11px; cursor: pointer; width: calc(100% - 28px);
+    }
+    .reset-btn:hover { border-color: #ef5350; color: #ef5350; }
+
+    .wa-status {
+      padding: 8px 14px;
+      font-size: 10px; color: #8696a0;
+      border-top: 1px solid #2a3942;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div class="icon">📱</div>
-    <div>
-      <div class="title">WSPP Store Tester</div>
-      <div class="sub">Detección del Store interno</div>
-    </div>
+
+  <div class="hdr">
+    <span style="font-size:16px">💬</span>
+    <span class="hdr-title">Goberna</span>
+    <div class="hdr-dot" id="dot"></div>
   </div>
-  <div class="body">
-    <div class="row">
-      <span class="label">Estado</span>
-      <span class="val ok" id="status">✅ Conectado</span>
-    </div>
-    <div class="row">
-      <span class="label">Store encontrado</span>
-      <span class="val warn" id="store-found">Escaneando...</span>
-    </div>
-    <div class="row">
-      <span class="label">Módulo ID</span>
-      <span class="val" id="mod-id" style="font-size:10px;color:#8696a0">—</span>
-    </div>
-    <div class="row">
-      <span class="label">Keys detectadas</span>
-      <span class="val" id="store-keys" style="font-size:10px;color:#8696a0">—</span>
-    </div>
-    <div class="row">
-      <span class="label">Conectado como</span>
-      <span class="val" id="me-name" style="font-size:12px;color:#25D366">—</span>
-    </div>
-    <button class="btn" id="scan-btn">Escanear Store ahora</button>
-    <div class="log" id="log">Abre WhatsApp Web y pulsa Escanear...</div>
+
+  <!-- LOGIN -->
+  <div id="view-login">
+    <input class="inp" id="inp-email"    type="email"    placeholder="email@goberna.pe" />
+    <input class="inp" id="inp-password" type="password" placeholder="Contraseña" />
+    <div class="err" id="err"></div>
+    <button class="btn" id="btn-login">Entrar</button>
   </div>
+
+  <!-- DASHBOARD -->
+  <div id="view-dash">
+    <div class="user-row">
+      <span id="user-name">—</span>
+      <button class="logout-btn" id="btn-logout">Salir</button>
+    </div>
+    <div class="counter-box">
+      <div class="counter-num" id="counter">0</div>
+      <div class="counter-lbl">mensajes enviados</div>
+    </div>
+    <button class="reset-btn" id="btn-reset">Reiniciar contador</button>
+    <div class="wa-status" id="wa-status">Abre WhatsApp Web para empezar</div>
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html>
