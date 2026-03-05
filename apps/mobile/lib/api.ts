@@ -28,6 +28,8 @@ import type {
   LoginResponse,
   RegisterRequest,
   RegisterResponse,
+  RegisterWithCodeRequest,
+  ValidateInvitationResponse,
   RefreshResponse,
   CandidateInfo,
   CampaignConfig,
@@ -192,6 +194,33 @@ export async function login(body: LoginRequest): Promise<ApiResult<LoginResponse
 }
 
 export async function register(body: RegisterRequest): Promise<ApiResult<RegisterResponse>> {
+  return request<RegisterResponse>('POST', '/auth/register', body, false);
+}
+
+// ─── Invitations ────────────────────────────────────────────
+
+/**
+ * GET /api/invitations/validate/:code — public, no auth needed.
+ * Validates an invitation code and returns campaign info.
+ */
+export async function validateInvitation(
+  code: string,
+): Promise<ApiResult<ValidateInvitationResponse>> {
+  return request<ValidateInvitationResponse>(
+    'GET',
+    `/invitations/validate/${encodeURIComponent(code)}`,
+    undefined,
+    false,
+  );
+}
+
+/**
+ * POST /api/auth/register — register a new user with an invitation code.
+ * The invitation_code is validated and consumed server-side.
+ */
+export async function registerWithInvitation(
+  body: RegisterWithCodeRequest,
+): Promise<ApiResult<RegisterResponse>> {
   return request<RegisterResponse>('POST', '/auth/register', body, false);
 }
 

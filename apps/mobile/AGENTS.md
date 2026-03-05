@@ -2,7 +2,7 @@
 
 > **Hereda de:** `/AGENTS.md` (root)  
 > **Alcance:** Solo `apps/mobile/**`  
-> **Ultima actualizacion:** 2026-02-23
+> **Ultima actualizacion:** 2026-03-05
 
 ---
 
@@ -213,7 +213,7 @@ bunx tsc --noEmit   # Type check
 
 ### Auth Dual-Mode (compatibilidad con backend)
 
-El backend soporta auth dual-mode (ver seccion 13.1 del root `/AGENTS.md`):
+El backend soporta auth dual-mode (ver seccion 10.6 del root `/AGENTS.md`):
 
 - **Mobile usa `Authorization: Bearer`** header — el backend lo prioriza sobre cookies
 - **Web usa httpOnly cookies** — transparente, no afecta a mobile

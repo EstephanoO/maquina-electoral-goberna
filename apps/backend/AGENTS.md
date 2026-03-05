@@ -2,7 +2,7 @@
 
 > **Hereda de:** `/AGENTS.md` (root)  
 > **Alcance:** Solo `apps/backend/**`  
-> **Ultima actualizacion:** 2026-02-23
+> **Ultima actualizacion:** 2026-03-05
 
 ---
 
@@ -41,16 +41,16 @@ CMS de contactos con SSE realtime. Integracion WhatsApp via Twilio.
 | Upstream (Tegola) | `src/infra/upstream.ts` |
 | DB migrations | `src/infra/database/` |
 
-### Modulos por dominio (18 modulos)
+### Modulos por dominio (22 modulos)
 ```
 src/modules/
   health/           <- /api/health, /api/ready, /api/ops/system
   auth/             <- login, register, refresh, me, logout
-  agents/           <- tracking GPS + location history + SSE
+  agents/           <- tracking GPS + location history + SSE + WS
   forms/            <- formularios legacy (write-behind queue)
   form-submissions/ <- formularios nuevos (JSONB directo)
   form-definitions/ <- definiciones de formularios
-  campaigns/        <- configuracion de campanas + stats + members
+  campaigns/        <- campanas + stats + members + consultores + Twilio integration
   meets/            <- reuniones de campo
   zones/            <- zonas geograficas (centro + radio)
   org-hierarchy/    <- jerarquia organizacional
@@ -62,6 +62,10 @@ src/modules/
   cms/              <- CMS de contactos + SSE realtime
   objectives/       <- objetivos por zona y por usuario
   twilio/           <- WhatsApp via Twilio (send, webhook, history)
+  leads/            <- leads de campana con notificacion Telegram
+  support/          <- tickets de soporte interno + WebSocket bridge
+  validacion/       <- validacion de datos de campo
+  voluntarios/      <- registro de voluntarios
 ```
 
 ---
@@ -120,7 +124,7 @@ Cada modulo sigue esta estructura:
 
 ## Seguridad Auth (Dual-Mode)
 
-El backend soporta dos modos de auth simultaneamente (ver seccion 13.1 del root `/AGENTS.md`):
+El backend soporta dos modos de auth simultaneamente (ver seccion 10.6 del root `/AGENTS.md`):
 
 | Mecanismo | Cliente | Archivos clave |
 |-----------|---------|----------------|
@@ -145,19 +149,20 @@ El backend soporta dos modos de auth simultaneamente (ver seccion 13.1 del root 
 - El endpoint `/api/auth/refresh` tiene rate limit per-IP igual que login
 - `/api/config` NO debe exponer `tegolaBaseUrl` (URL interna de infraestructura)
 
-## Modelo de Roles (5 niveles)
+## Modelo de Roles (6 niveles)
 
 | Rol | Nivel | Descripcion |
 |-----|-------|-------------|
 | `admin` | 50 | Acceso total al sistema |
 | `consultor` | 40 | Consultores externos con acceso amplio |
-| `jefe_campana` | 30 | Jefes de campana, gestion operativa |
+| `candidato` | 30 | Candidato + gestion operativa de su campana |
 | `brigadista_zonal` | 20 | Coordinadores de zona |
 | `agente_campo` | 10 | Agentes de campo (mobile) |
+| `agente_digital` | 10 | Operadores digitales (mismo nivel que campo) |
 
 Jerarquia: un rol con nivel >= al requerido pasa el check.
 
-**Nota:** Algunos endpoints usan rol `candidato` como alias — equivale a nivel entre `jefe_campana` y `consultor` en el sistema de permisos.
+**IMPORTANTE:** `jefe_campana` fue eliminado del sistema. No usar en codigo nuevo. `ROLE_ALIASES` esta vacio intencionalmente. `candidato` es un rol de primera clase (nivel 30), no un alias.
 
 ---
 

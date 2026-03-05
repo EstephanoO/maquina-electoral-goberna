@@ -29,12 +29,18 @@ function RouterGuard({ children }: { children: React.ReactNode }) {
     const inAuthGroup = segments[0] === '(auth)';
     const inMainGroup = segments[0] === '(main)';
 
+    // Deep link invite flow: allow unauthenticated users to stay on /invite/[code]
+    // without being redirected to login. The invite screen handles its own auth.
+    const inInviteScreen = segments[0] === '(auth)' && segments[1] === 'invite';
+
     if (auth.status === 'unauthenticated') {
       if (!inAuthGroup) router.replace('/(auth)/login');
       return;
     }
 
     if (auth.status === 'pending' || auth.status === 'suspended') {
+      // Don't interrupt someone mid-invite even if they somehow have a pending session
+      if (inInviteScreen) return;
       if (segments[1] !== 'pending') router.replace('/(auth)/pending');
       return;
     }

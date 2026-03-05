@@ -1,7 +1,7 @@
 # AGENTS.md - Web App Routes
 
 > **Hereda de:** `/AGENTS.md` (root) y `apps/web/AGENTS.md`  
-> **Ultima actualizacion:** 2026-02-23
+> **Ultima actualizacion:** 2026-03-05
 
 ## Objetivo
 

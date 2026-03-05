@@ -321,6 +321,24 @@ export type ApiOk<T> = { ok: true; data: T };
 export type ApiErr = { ok: false; error: string; code?: string; status?: number; passwordResetRequired?: boolean };
 export type ApiResult<T> = ApiOk<T> | ApiErr;
 
+// ─── Invitations (GET /api/invitations/validate/:code — public) ─────
+
+export type InvitationInfo = {
+  campaign_id: string;
+  campaign_name: string;
+  campaign_slug: string;
+  role: string;
+};
+
+export type ValidateInvitationResponse = {
+  invitation: InvitationInfo;
+};
+
+/** Extended register payload that includes an invitation code */
+export type RegisterWithCodeRequest = RegisterRequest & {
+  invitation_code: string;
+};
+
 // ─── API Error codes ────────────────────────────────────────
 
 export const API_ERRORS = {

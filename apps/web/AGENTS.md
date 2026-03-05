@@ -2,7 +2,7 @@
 
 > **Hereda de:** `/AGENTS.md` (root)  
 > **Alcance:** Solo `apps/web/**`  
-> **Ultima actualizacion:** 2026-02-23
+> **Ultima actualizacion:** 2026-03-05
 
 ---
 
@@ -207,13 +207,13 @@ images: {
 
 ## Seguridad Web (Auth Cookie-Based)
 
-> Ver seccion 13.1 del root `/AGENTS.md` para la arquitectura completa.
+> Ver seccion 10.6 del root `/AGENTS.md` para la arquitectura completa.
 
 ### Middleware (`middleware.ts`)
 
 - Protege rutas server-side **ANTES** de renderizar contenido
 - **Fail-closed**: rutas no reconocidas se tratan como protegidas
-- Solo rutas publicas explicitas pasan sin auth: `/`, `/login`, `/register`, `/onboarding`, `/mapa`
+- Solo rutas publicas explicitas pasan sin auth: `/`, `/login`, `/register`, `/onboarding`, `/descargar`, `/extension`, `/voluntarios`
 - Revisa cookie `goberna_session` — si no existe, redirect a `/login?from=<path>`
 - Agrega security headers a todas las respuestas
 
@@ -241,7 +241,11 @@ Toda conexion SSE en el dashboard **DEBE**:
    - `use-agent-sse.ts` (tracking agents — incluye heartbeat timeout)
    - `cms/page.tsx` (CMS contacts)
 
-### Security Headers (next.config.ts)
+### Security Headers
+
+Headers aplicados en dos capas (cobertura completa — intencional):
+
+**`next.config.ts`** (rutas estaticas):
 
 | Header | Valor |
 |--------|-------|
@@ -249,6 +253,18 @@ Toda conexion SSE en el dashboard **DEBE**:
 | `X-Content-Type-Options` | `nosniff` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=(self)` |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` |
+
+**`middleware.ts`** (rutas dinamicas):
+
+| Header | Valor |
+|--------|-------|
+| `X-Frame-Options` | `DENY` |
+| `X-Content-Type-Options` | `nosniff` |
+| `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(self)` |
+| `X-DNS-Prefetch-Control` | `on` |
 
 ### Reglas de seguridad (No Negociables)
 

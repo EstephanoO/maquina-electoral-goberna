@@ -18,6 +18,7 @@ import {
   PendingRequestsSection,
   MembersList,
   ConsultorModal,
+  InvitationsPanel,
   useEquipo,
 } from "./_components";
 
@@ -82,6 +83,10 @@ export default function EquipoPage() {
           />
 
           <CampaignGoals agentesCampoCount={eq.statsByRole.agente_campo ?? 0} />
+
+          {eq.canManage && (
+            <InvitationsPanel campaignId={activeCampaignId} />
+          )}
 
           {eq.canManage && eq.pendingRequests.length > 0 && (
             <PendingRequestsSection

@@ -2,7 +2,7 @@
 
 > **Hereda de:** `/AGENTS.md` (root) y `apps/web/AGENTS.md`
 > **Estado:** ACTIVA — Landing publica en produccion
-> **Ultima actualizacion:** 2026-02-23
+> **Ultima actualizacion:** 2026-03-05
 
 ---
 

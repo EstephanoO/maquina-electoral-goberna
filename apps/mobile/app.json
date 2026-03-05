@@ -15,7 +15,7 @@
       "bundleIdentifier": "com.estephano.gobernaterritory02",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "Necesitamos tu ubicacion para registrar las coordenadas GPS del formulario.",
+        "NSLocationWhenInUseUsageDescription": "Goberna necesita tu ubicacion para registrar las coordenadas GPS al completar un formulario de campo. Tus datos de ubicacion no se comparten con terceros.",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false
         }
@@ -34,7 +34,21 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/letter-g.png",
         "backgroundColor": "#163960"
-      }
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "dashboard.grupogoberna.com",
+              "pathPrefix": "/invite"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
 
     "web": {
@@ -49,7 +63,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Necesitamos tu ubicacion para registrar las coordenadas GPS del formulario."
+          "locationWhenInUsePermission": "Goberna necesita tu ubicacion para registrar las coordenadas GPS al completar un formulario de campo. Tus datos de ubicacion no se comparten con terceros."
         }
       ],
       [

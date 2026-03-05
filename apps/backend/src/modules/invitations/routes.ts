@@ -7,6 +7,9 @@ import { errorPayload } from "../../infra/http";
 import * as repo from "./repository";
 import { createInvitationSchema } from "./schemas";
 
+// Re-exported for use in auth/routes.ts register flow
+export { repo as invitationsRepo };
+
 export function buildInvitationsRoutes(_env: AppEnv): FastifyPluginAsync {
   return async (app) => {
     // ── POST /api/invitations ───────────────────────────────────────
@@ -78,6 +81,7 @@ export function buildInvitationsRoutes(_env: AppEnv): FastifyPluginAsync {
             ok: true,
             request_id: requestId,
             invitation: {
+              campaign_id: invitation.campaign_id,
               campaign_name: invitation.campaign_name,
               campaign_slug: invitation.campaign_slug,
               role: invitation.role,

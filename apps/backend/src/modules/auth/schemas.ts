@@ -29,6 +29,8 @@ export const registerSchema = z.object({
   campaign_id: z.string().uuid("candidato requerido"),
   // Email is optional - if not provided, we generate {phone}@goberna.pe
   email: z.string().email("email invalido").transform((e) => e.toLowerCase().trim()).optional(),
+  // Invitation code - optional, validated and consumed during registration
+  invitation_code: z.string().trim().toUpperCase().optional(),
 });
 
 export const changePasswordSchema = z.object({

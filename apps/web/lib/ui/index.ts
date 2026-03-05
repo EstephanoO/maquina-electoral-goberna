@@ -40,4 +40,6 @@ export {
   IconAward,
   IconCompass,
   IconMonitor,
+  IconLink,
+  IconCopy,
 } from "./icons";

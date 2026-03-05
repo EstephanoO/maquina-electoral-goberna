@@ -8,6 +8,7 @@ import { AuthRepository } from "./repository";
 import { changePasswordSchema, loginSchema, refreshSchema, registerSchema, resetPasswordSchema } from "./schemas";
 import { authorize } from "../../infra/authorize";
 import { AppError, AuthService } from "./service";
+import * as invitationsRepo from "../invitations/repository";
 
 // ── Cookie helpers ──────────────────────────────────────────────────
 
@@ -208,8 +209,24 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
       }
 
       try {
-        const { phone, password, full_name, region, campaign_id, email: providedEmail } = parsed.data;
-        
+        const { phone, password, full_name, region, campaign_id, email: providedEmail, invitation_code } = parsed.data;
+
+        // ── Validate invitation code if provided ──────────────────────────
+        let invitationRow: Awaited<ReturnType<typeof invitationsRepo.findByCode>> = null;
+        if (invitation_code) {
+          invitationRow = await invitationsRepo.findByCode(invitation_code);
+          if (!invitationRow) {
+            return reply.code(400).send(errorPayload(requestId, "INVITATION_NOT_FOUND", "codigo de invitacion invalido"));
+          }
+          if (!invitationsRepo.isValid(invitationRow)) {
+            return reply.code(400).send(errorPayload(requestId, "INVITATION_EXPIRED", "codigo de invitacion expirado o agotado"));
+          }
+          // Code must match the campaign they're registering for
+          if (invitationRow.campaign_id !== campaign_id) {
+            return reply.code(400).send(errorPayload(requestId, "INVITATION_CAMPAIGN_MISMATCH", "codigo no corresponde a este candidato"));
+          }
+        }
+
         // Check if phone already registered
         const existingByPhone = await repo.findUserByPhone(phone);
         if (existingByPhone) {
@@ -227,13 +244,15 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
           }
         }
 
-        // Verify campaign exists
-        const { rows: campaignRows } = await pool.query(
-          "SELECT id FROM campaigns WHERE id = $1",
-          [campaign_id],
-        );
-        if (campaignRows.length === 0) {
-          return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "candidato no encontrado"));
+        // Verify campaign exists (skip if invitation already validated — it joined campaigns)
+        if (!invitationRow) {
+          const { rows: campaignRows } = await pool.query(
+            "SELECT id FROM campaigns WHERE id = $1",
+            [campaign_id],
+          );
+          if (campaignRows.length === 0) {
+            return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "candidato no encontrado"));
+          }
         }
 
         const passwordHash = await service.hashPassword(password);
@@ -276,11 +295,17 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
           client.release();
         }
 
+        // ── Consume invitation code (after successful registration) ───────
+        if (invitationRow) {
+          await invitationsRepo.incrementUsage(invitationRow.id);
+        }
+
         app.log.info({
           user_id: user.id,
           campaign_id,
           region,
           phone,
+          invitation_code: invitation_code ?? null,
           request_id: requestId,
         }, "user registered and auto-accepted as agente_campo (phone-based)");
 
