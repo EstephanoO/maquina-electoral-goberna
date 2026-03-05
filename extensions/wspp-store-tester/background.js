@@ -14,7 +14,10 @@ chrome.runtime.onMessage.addListener((msg) => {
     chrome.storage.local.set({ wspp_count: next });
 
     // 2. Reportar al backend si hay sesión activa
-    if (data.wspp_token && data.wspp_campaign_id && phone) {
+    // phone puede ser null (WA Web no expone el número de contactos guardados)
+    // en ese caso mandamos contact_name para que el backend haga lookup por nombre
+    const { contact_name } = msg.payload;
+    if (data.wspp_token && data.wspp_campaign_id && (phone || contact_name)) {
       fetch(`${API}/api/cms/extension-event`, {
         method:  'POST',
         headers: {
@@ -23,10 +26,11 @@ chrome.runtime.onMessage.addListener((msg) => {
           'x-campaign-id': data.wspp_campaign_id,
         },
         body: JSON.stringify({
-          type:        'message_sent',
-          phone,
-          own_number:  own_number || undefined,
-          detected_at: msg.payload.timestamp * 1000,
+          type:         'message_sent',
+          phone:        phone || undefined,
+          contact_name: contact_name || undefined,
+          own_number:   own_number || undefined,
+          detected_at:  msg.payload.timestamp * 1000,
         }),
       }).catch(() => {}); // fire and forget — no bloquear el contador local
     }

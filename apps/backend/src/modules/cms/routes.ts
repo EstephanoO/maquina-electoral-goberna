@@ -711,11 +711,17 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
     //                        Auto-transitions hablado → respondieron.
     const extensionEventSchema = z.object({
       type: z.enum(["message_sent", "message_received"]),
-      phone: z.string().min(7).max(20),
+      // phone is optional — WA Web does not expose the phone number for saved contacts.
+      // When absent, contact_name is used to look up the contact by name in the campaign.
+      phone: z.string().min(7).max(20).optional(),
+      contact_name: z.string().max(200).optional(),
       own_number: z.string().max(20).optional().default(""),
       preview: z.string().max(500).optional().default(""),
       detected_at: z.number().optional(),
-    });
+    }).refine(
+      (d) => d.phone || d.contact_name,
+      { message: "phone o contact_name es requerido" },
+    );
 
     app.post(
       "/api/cms/extension-event",
@@ -735,7 +741,7 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
           return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", msg));
         }
 
-        const { type, phone, own_number, preview, detected_at } = parsed.data;
+        const { type, phone, contact_name, own_number, preview, detected_at } = parsed.data;
         const ownNumber = own_number?.replace(/\D/g, "") || null;
 
         // ── Whitelist check ─────────────────────────────────────────
@@ -767,21 +773,30 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
           });
         }
 
-        // Find the contact by phone
-        const contact = await repo.findContactByPhone(campaignId, phone);
+        // ── Resolve contact ─────────────────────────────────────────
+        // WA Web does not expose phone numbers for saved contacts — only display name.
+        // Strategy: try phone first (exact), then contact_name lookup (unique match only).
+        let contact = phone ? await repo.findContactByPhone(campaignId, phone) : null;
+        if (!contact && contact_name) {
+          contact = await repo.findContactByName(campaignId, contact_name);
+        }
+
+        // Resolved phone for event persistence — use what we have
+        const resolvedPhone = phone ?? contact?.data?.telefono ?? contact_name ?? "unknown";
+
         if (!contact) {
           // Persist the event even if no contact matched — still counts as a message sent
-          await repo.insertExtensionEvent(campaignId, userId, phone, null, false, ownNumber);
+          await repo.insertExtensionEvent(campaignId, userId, resolvedPhone, null, false, ownNumber);
           return reply.code(200).send({
             ok: true,
             request_id: requestId,
             matched: false,
-            message: "No contact found for this phone in campaign",
+            message: "No contact found for this phone/name in campaign",
           });
         }
 
         app.log.info(
-          { contact_id: contact.id, phone, type, preview: preview.slice(0, 50), operator: userId },
+          { contact_id: contact.id, phone: resolvedPhone, contact_name, type, preview: preview.slice(0, 50), operator: userId },
           "extension event received",
         );
 
@@ -815,14 +830,14 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         cmsEvents.emitCms(`extension.${type}`, {
           campaignId,
           contactId: contact.id,
-          phone,
+          phone: resolvedPhone,
           preview,
           detectedAt: detected_at ?? Date.now(),
           operatorId: userId,
         });
 
         // Persist the extension event for operator metrics (wa_sent)
-        await repo.insertExtensionEvent(campaignId, userId, phone, contact.id, true, ownNumber);
+        await repo.insertExtensionEvent(campaignId, userId, resolvedPhone, contact.id, true, ownNumber);
 
         return reply.code(200).send({
           ok: true,

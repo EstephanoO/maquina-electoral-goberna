@@ -1024,6 +1024,36 @@ export async function findContactByPhone(
   return rows[0] ?? null;
 }
 
+/**
+ * Find a contact by name (case-insensitive, unaccented match) within a campaign.
+ * Used when the Chrome extension can only provide the WA display name (not the phone).
+ * Returns null if no match or if multiple contacts share the same name (ambiguous).
+ */
+export async function findContactByName(
+  campaignId: string,
+  name: string,
+): Promise<CmsContactRow | null> {
+  const cleaned = name.trim();
+  if (!cleaned || cleaned.length < 2) return null;
+
+  const { rows } = await pool.query<CmsContactRow & { total: string }>(
+    `SELECT ${CMS_SELECT}, COUNT(*) OVER() AS total
+     FROM form_submissions fs
+     WHERE fs.campaign_id = $1
+       AND fs.deleted_at IS NULL
+       AND LOWER(UNACCENT(COALESCE(fs.data->>'nombre', ''))) = LOWER(UNACCENT($2))
+     ORDER BY fs.created_at DESC
+     LIMIT 2`,
+    [campaignId, cleaned],
+  );
+
+  // Ambiguous — more than one contact with this name, can't attribute
+  if (!rows[0]) return null;
+  if (parseInt(rows[0].total, 10) > 1) return null;
+
+  return rows[0] ?? null;
+}
+
 // ── Metrics: per-WA-phone (extension celular) ───────────────────────
 
 export type CmsWaPhoneMetrics = {

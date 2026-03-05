@@ -65,20 +65,41 @@
   }
 
   /**
-   * Extrae el nombre del contacto del aria-label del composer.
-   * "Escribe a Estephano." → "Estephano"
-   * Usado como identificador de texto cuando no hay teléfono disponible.
+   * Extrae el nombre del contacto activo desde el item seleccionado en la lista de chats.
+   * El div con aria-selected="true" en #pane-side siempre tiene span[title] con el nombre.
+   * Fallback: aria-label del composer del chat (NO del buscador).
    */
   function getActiveContactName() {
+    // ── 1. aria-selected en la lista de chats (más confiable) ────────────────
     try {
-      const composer = document.querySelector('[contenteditable="true"][data-tab]') ||
-                       document.querySelector('[role="textbox"][contenteditable="true"]');
-      if (!composer) return null;
-      const aria = composer.getAttribute('aria-label') || '';
-      // "Escribe a Nombre." o "Type a message" o "Escribe un mensaje"
-      const m = aria.match(/^(?:Escribe a|Escribe un mensaje|Type a message to)\s+(.+?)\.?$/i);
-      return m ? m[1].trim() : null;
-    } catch (_) { return null; }
+      const selected = document.querySelector('#pane-side [aria-selected="true"]')
+        ?? document.querySelector('[aria-selected="true"]');
+      if (selected) {
+        const spans = selected.querySelectorAll('span[title]');
+        for (const s of spans) {
+          const t = (s.getAttribute('title') || '').trim();
+          // Ignorar strings vacíos, puntos invisibles y separadores
+          if (t && t.length > 1 && !/^[\u200e\u200f\u202a-\u202e\s.]+$/.test(t)) {
+            return t;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // ── 2. aria-label del composer del chat (NO del buscador) ────────────────
+    try {
+      // El composer del chat tiene data-tab o está dentro de #main / .two
+      // El buscador tiene aria-label que contiene "búsqueda" / "search"
+      const allComposers = document.querySelectorAll('[role="textbox"][contenteditable="true"]');
+      for (const composer of allComposers) {
+        const aria = composer.getAttribute('aria-label') || '';
+        if (/búsqueda|search|buscar/i.test(aria)) continue; // saltar buscador
+        const m = aria.match(/^(?:Escribe a|Type a message to)\s+(.+?)\.?$/i);
+        if (m) return m[1].trim();
+      }
+    } catch (_) {}
+
+    return null;
   }
 
   /** Intenta obtener el JID propio desde el cache de webpack (bonus, no crítico). */
@@ -135,58 +156,28 @@
   /**
    * Teléfono del contacto en el chat actualmente abierto.
    *
-   * Estrategia:
-   * 1. Header del chat (.two header): buscar span[title] con número de teléfono
-   * 2. Lista de chats: buscar el span[title=número] adyacente al span[title=nombre]
-   *    donde nombre coincide con el aria-label del composer ("Escribe a Nombre.")
-   * 3. Webpack cache (si __wr disponible)
+   * WA Web 2026 NO expone el número en el header ni en span[title] del chat activo.
+   * Solo expone el nombre. Estrategias en orden:
+   *
+   * 1. aria-selected en #pane-side → span[title] que sea un número de teléfono
+   *    (contactos no guardados muestran su número como nombre)
+   * 2. webpack cache: chat activo con JID válido (no @lid, no @g.us)
    */
   function getActivePhone() {
-    // ── 1. span[title] con número en el header del chat abierto ───────────
+    // ── 1. aria-selected en la lista → span[title] con número ─────────────
     try {
-      const main = document.querySelector('.two, #main, [data-testid="conversation-panel-wrapper"]');
-      if (main) {
-        const hdr = main.querySelector('header');
-        if (hdr) {
-          const spans = hdr.querySelectorAll('span[title]');
-          for (const s of spans) {
-            const n = normalizePhone(s.getAttribute('title'));
-            if (n) return n;
-          }
-        }
-        // También buscar en todo el panel principal (no solo header)
-        // pero solo spans con la clase de título (no preview de mensajes)
-        // Clase identificada: x1iyjqo2 (nombre/número), x78zum5 (preview — ignorar)
-        const spans = main.querySelectorAll('span[title]');
+      const selected = document.querySelector('#pane-side [aria-selected="true"]')
+        ?? document.querySelector('[aria-selected="true"]');
+      if (selected) {
+        const spans = selected.querySelectorAll('span[title]');
         for (const s of spans) {
-          if (s.classList.contains('x78zum5')) continue; // preview de mensaje
           const n = normalizePhone(s.getAttribute('title'));
           if (n) return n;
         }
       }
     } catch (_) {}
 
-    // ── 2. Cruzar nombre del composer con span[title] en la lista ─────────
-    try {
-      const contactName = getActiveContactName();
-      if (contactName) {
-        // Buscar el span con title=nombre, luego el span[title=número] adyacente
-        const allSpans = Array.from(document.querySelectorAll('span[title]'));
-        for (let i = 0; i < allSpans.length; i++) {
-          const t = allSpans[i].getAttribute('title') || '';
-          if (t.trim().toLowerCase() === contactName.trim().toLowerCase()) {
-            // Buscar en los siblings cercanos un span con número
-            for (let j = i - 2; j <= i + 2; j++) {
-              if (j < 0 || j >= allSpans.length || j === i) continue;
-              const n = normalizePhone(allSpans[j].getAttribute('title'));
-              if (n) return n;
-            }
-          }
-        }
-      }
-    } catch (_) {}
-
-    // ── 3. webpack cache: buscar el chat activo ────────────────────────────
+    // ── 2. webpack cache: chat activo con JID válido ───────────────────────
     if (__wr && __wr.c) {
       try {
         for (const mod of Object.values(__wr.c)) {
@@ -246,7 +237,7 @@
 
   function emitSent(phone) {
     const own  = getOwnNumber();
-    const name = phone ? null : getActiveContactName();
+    const name = getActiveContactName(); // siempre intentar — útil para logs y futuro lookup
     window.postMessage({
       type: 'WSPP_SENT',
       payload: {
