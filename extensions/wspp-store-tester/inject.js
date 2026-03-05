@@ -235,7 +235,13 @@
     return false;
   }
 
+  // Debounce para evitar doble disparo (click en Send + Enter simultáneos)
+  let _lastEmit = 0;
   function emitSent(phone) {
+    const now = Date.now();
+    if (now - _lastEmit < 300) return; // ignorar si ya emitimos hace menos de 300ms
+    _lastEmit = now;
+
     const own  = getOwnNumber();
     const name = getActiveContactName(); // siempre intentar — útil para logs y futuro lookup
     window.postMessage({
@@ -267,11 +273,13 @@
     const testid    = active.getAttribute('data-testid');
     const ariaLabel = active.getAttribute('aria-label') || '';
 
+    // Excluir explícitamente el buscador de WA y otros inputs que no son el composer del chat
+    if (/búsqueda|search|buscar/i.test(ariaLabel)) return;
+
     const isComposer =
       testid === 'conversation-compose-box-input' ||
       (role === 'textbox' && /escribe|message|type|escribir/i.test(ariaLabel)) ||
-      (active.tagName?.toLowerCase() === 'p' && active.closest('[contenteditable="true"]') !== null) ||
-      (active.getAttribute('contenteditable') === 'true');
+      (role === 'textbox' && active.getAttribute('contenteditable') === 'true' && !ariaLabel);
 
     if (!isComposer) return;
     const phone = getActivePhone();

@@ -18,6 +18,16 @@ chrome.runtime.onMessage.addListener((msg) => {
     // en ese caso mandamos contact_name para que el backend haga lookup por nombre
     const { contact_name } = msg.payload;
     if (data.wspp_token && data.wspp_campaign_id && (phone || contact_name)) {
+      const body = {
+        type:         'message_sent',
+        phone:        phone || undefined,
+        contact_name: contact_name || undefined,
+        own_number:   own_number || undefined,
+        detected_at:  msg.payload.timestamp * 1000,
+      };
+      console.log('[WSPP] → body enviado:', JSON.stringify(body));
+      console.log('[WSPP] → token:', data.wspp_token ? data.wspp_token.slice(0,20)+'...' : 'NULL');
+      console.log('[WSPP] → campaign:', data.wspp_campaign_id);
       fetch(`${API}/api/cms/extension-event`, {
         method:  'POST',
         headers: {
@@ -25,14 +35,8 @@ chrome.runtime.onMessage.addListener((msg) => {
           'Authorization': `Bearer ${data.wspp_token}`,
           'x-campaign-id': data.wspp_campaign_id,
         },
-        body: JSON.stringify({
-          type:         'message_sent',
-          phone:        phone || undefined,
-          contact_name: contact_name || undefined,
-          own_number:   own_number || undefined,
-          detected_at:  msg.payload.timestamp * 1000,
-        }),
-      }).catch(() => {}); // fire and forget — no bloquear el contador local
+        body: JSON.stringify(body),
+      }).then(r => r.json()).then(j => console.log('[WSPP backend]', JSON.stringify(j))).catch(e => console.error('[WSPP backend error]', e));
     }
   });
 });

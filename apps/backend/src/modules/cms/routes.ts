@@ -781,8 +781,10 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
           contact = await repo.findContactByName(campaignId, contact_name);
         }
 
-        // Resolved phone for event persistence — use what we have
-        const resolvedPhone = phone ?? contact?.data?.telefono ?? contact_name ?? "unknown";
+        // Resolved phone for event persistence.
+        // Priority: explicit phone > phone from matched contact > "unknown".
+        // NEVER use contact_name as phone — it's a display name, not a number.
+        const resolvedPhone = phone ?? (contact ? (contact.data?.telefono ?? "unknown") : "unknown");
 
         if (!contact) {
           // Persist the event even if no contact matched — still counts as a message sent
