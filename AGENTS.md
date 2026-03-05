@@ -270,6 +270,7 @@ Todo endpoint del backend responde en este formato:
 | `GET /api/cms/stats` | Stats CMS por campana |
 | `GET /api/cms/metrics` | Metricas CMS global (candidato+) |
 | `GET /api/cms/metrics/brigadistas` | Metricas por brigadista con dedup telefono |
+| `POST /api/cms/extension-event` | Evento desde extension Chrome (type: "message_sent" o "message_received"). Persiste en `cms_extension_events`, incrementa `wa_sent` en metricas de operadora. Solo `message_received` dispara auto-transicion hablado→respondieron. |
 | `GET /api/cms/stream` | SSE eventos realtime del CMS |
 | **Objectives** | |
 | `GET /api/objectives/zones` | Objetivos por zona |

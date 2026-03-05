@@ -78,24 +78,32 @@
   }
 
   /**
-   * Devuelve true si el elemento (o alguno de sus ancestros) es el botón Send.
+   * Devuelve true si el elemento (o alguno de sus ancestros hasta 8 niveles)
+   * es el botón Send de WA Web.
+   *
+   * WA Web cambia el markup frecuentemente. Estrategias en orden:
+   *   1. data-testid="send" o data-icon="send" (versiones anteriores)
+   *   2. aria-label exactamente "Enviar" o "Send" en button/role=button
+   *   3. Botón con aria-label que contenga "enviar" o "send"
    */
   function isSendButton(el) {
     let node = el;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
       if (!node || node.tagName === 'BODY') break;
-      const tag    = node.tagName?.toLowerCase();
-      const role   = node.getAttribute?.('role');
-      const testid = node.getAttribute?.('data-testid');
-      const icon   = node.getAttribute?.('data-icon');
+      const tag    = (node.tagName || '').toLowerCase();
+      const role   = node.getAttribute?.('role') || '';
+      const testid = node.getAttribute?.('data-testid') || '';
+      const icon   = node.getAttribute?.('data-icon') || '';
       const aria   = node.getAttribute?.('aria-label') || '';
+      const isBtn  = tag === 'button' || role === 'button';
 
       if (
         testid === 'send' ||
         icon === 'send' ||
-        /enviar/i.test(aria) ||
-        /^send$/i.test(aria) ||
-        ((tag === 'button' || role === 'button') && testid === 'send')
+        (isBtn && /^enviar$/i.test(aria.trim())) ||
+        (isBtn && /^send$/i.test(aria.trim())) ||
+        (isBtn && /\benviar\b/i.test(aria)) ||
+        (isBtn && /\bsend\b/i.test(aria))
       ) {
         return true;
       }
@@ -138,7 +146,9 @@
 
     const isComposer =
       testid === 'conversation-compose-box-input' ||
-      (role === 'textbox' && /escribe|message|type/i.test(ariaLabel));
+      (role === 'textbox' && /escribe|message|type|escribir/i.test(ariaLabel)) ||
+      (active.tagName?.toLowerCase() === 'p' && active.closest('[contenteditable="true"]') !== null) ||
+      (active.getAttribute('contenteditable') === 'true');
 
     if (!isComposer) return;
     const phone = getActivePhone();
