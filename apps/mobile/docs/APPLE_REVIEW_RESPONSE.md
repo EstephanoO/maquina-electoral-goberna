@@ -1,27 +1,64 @@
-# Apple App Review — Respuestas al Rechazo
-**Submission ID:** 45b2038a-2730-4ac2-a6aa-97c5b741d7e7  
-**Versión revisada:** 1.0  
-**Fecha de rechazo:** February 08, 2026
+# Apple App Review — Submission v1.0 (Build 2)
+
+> **Submission ID anterior (rechazado):** `45b2038a-2730-4ac2-a6aa-97c5b741d7e7`  
+> **Build anterior:** 1 — rechazado  
+> **Build actual:** 2 — con todos los fixes aplicados  
+> **Última actualización:** 2026-03-05
 
 ---
 
-## Cómo usar este documento
+## PASO 0 — Antes de hacer cualquier cosa
 
-Pegá cada respuesta en el campo de reply del thread correspondiente en App Store Connect.  
-Las secciones están separadas por guideline — podés responderlas en el mismo mensaje o individualmente.  
-El idioma es inglés. Apple Review procesa más rápido en inglés aunque la app esté en español.
+En orden estricto. No saltear.
 
-**Orden recomendado:** 3.2 primero (es el bloqueante). 5.1.2 ya (no requiere build). 5.1.1 junto con la resubmisión.
-
----
-
-## Guideline 3.2 — Distribución (PRIORIDAD MÁS ALTA)
-
-> Enviá esto primero. Es el bloqueante de todo. Sin unlisted aprobado, no resubmitir.
+- [ ] Recibiste confirmación del **Unlisted App Distribution** request por email de Apple
+- [ ] Corregiste **App Privacy** en App Store Connect: `Precise Location` → propósito `App Functionality` (no `Tracking`)
+- [ ] Respondiste los **3 threads** en App Store Connect con los textos de abajo
+- [ ] Hiciste `eas build --platform ios` con el build 2
+- [ ] El build nuevo aparece en **TestFlight** y está listo para submit
 
 ---
 
-**Texto para pegar en App Store Connect:**
+## PASO 1 — Cuenta demo para el reviewer
+
+Ingresá estas credenciales en **App Store Connect → App Review Information → Demo Account**.
+
+| Campo | Valor |
+|---|---|
+| **Username** | `appreviewer@goberna.pe` |
+| **Password** | `Review2024!` |
+
+**Notes (copiar y pegar en el campo "Notes" de App Review Information):**
+
+```
+The app requires a backend account. Use the demo credentials above to log in.
+
+After login, the reviewer will be assigned to the "Guillermo Aliaga" campaign
+as a field agent (agente_campo role). This role allows:
+  - Viewing the campaign dashboard with GPS tracking status
+  - Registering field forms with GPS coordinate capture
+  - Viewing the interactive territory map
+
+GPS permission flow (Guideline 5.1.1 compliance):
+  - On app launch, the system checks existing permission silently (no dialog shown)
+  - If permission was not previously granted, a banner appears on the dashboard
+    with an "Activar GPS" button
+  - The iOS system permission dialog is shown ONLY when the user taps that button
+  - No custom screen, alert, or modal appears before the system dialog
+
+Backend API: https://api.goberna.us (Peru-based VPS)
+The account is active and permanent — no expiry.
+```
+
+---
+
+## PASO 2 — Respuestas a los 3 threads (App Store Connect)
+
+Respondé en orden: 3.2 primero (es el bloqueante), luego 5.1.2, luego 5.1.1 junto con la resubmisión.
+
+---
+
+### Guideline 3.2 — Business — Other Business Model Issues
 
 ```
 Dear App Review Team,
@@ -37,19 +74,19 @@ administrators. Without a valid invitation code issued by a campaign manager, a 
 who downloads the app cannot register or access any functionality. There is no
 self-registration path for the general public.
 
-The app is never advertised publicly, and all distribution happens through private
-links shared directly by campaign managers to their own staff.
+The app is never advertised publicly. All distribution happens through private links
+shared directly by campaign managers to their own staff.
 
-We have already submitted a request for Unlisted App Distribution through the official
-Apple request form. We understand we should not resubmit the app until we receive
-confirmation, and we will comply with that requirement.
+We have submitted a request for Unlisted App Distribution through the official Apple
+request form. We understand we should not resubmit until we receive confirmation,
+and we are complying with that requirement.
 
 We believe Goberna fully meets the criteria for unlisted distribution:
 
 1. Defined closed audience: political campaign staff in Peru. No general consumer use.
 2. Invitation-only access: campaign administrators generate codes for their own staff.
-   An uninvited user who downloads the app cannot use it in any way.
-3. No public discoverability intended: distribution happens exclusively through
+   An uninvited user who downloads the app cannot access any functionality.
+3. No public discoverability intended: distribution is exclusively through
    direct private links, never through App Store search.
 4. No advertising use of data: location is used solely for internal field operations
    (campaign managers tracking their own agents on a private dashboard).
@@ -62,68 +99,10 @@ Thank you for your time and consideration.
 
 ---
 
-## Guideline 5.1.1 — Permisos de Ubicación
+### Guideline 5.1.2 — App Tracking Transparency
 
-> Verificación técnica previa antes de leer esta respuesta (importante):
->
-> Revisé el código en su totalidad. Los únicos dos call sites de `requestForegroundPermissionsAsync()` son:
-> - `lib/tracking/index.ts` línea 209 — llamada directa, sin Alert ni Modal previo
-> - `app/(main)/new-form.tsx` línea 159 — llamada directa, sin Alert ni Modal previo
->
-> El `Alert.alert("Permiso denegado", ...)` en `new-form.tsx` línea 161 aparece **después** de que el
-> usuario ya rechazó el diálogo del sistema — no antes. Eso es correcto según Apple.
->
-> **Conclusión:** Si Apple vio un pre-prompt con "Aceptar"/"No Permitir", no está en la versión
-> actual del código. Puede ser una versión anterior. La respuesta abajo es honesta sobre esto
-> pero tácticamente orientada a cerrar el issue sin reabrir debate. NO mentimos afirmando
-> que "removimos" algo que no existía — eso puede costar peor si Apple pide un diff.
-
----
-
-**Texto para pegar en App Store Connect:**
-
-```
-Dear App Review Team,
-
-Thank you for your feedback regarding Guideline 5.1.1.
-
-We have reviewed the location permission flow in detail and made the following changes
-to ensure full compliance:
-
-1. We confirmed that location permission is requested exclusively through
-   expo-location's requestForegroundPermissionsAsync(), which triggers the standard
-   iOS system dialog directly — no custom UI appears before the system prompt.
-
-2. We have updated the NSLocationWhenInUseUsageDescription string to be more explicit
-   about the operational and non-commercial nature of location access:
-
-   "Goberna needs your location to record GPS coordinates when completing a field form.
-   Your location data is not shared with third parties."
-
-3. We verified that the permission request is always reached — there is no exit path
-   in our UI that allows a user to permanently bypass the permission dialog.
-
-The only text we control is the usage description that appears inside the native iOS
-system dialog. We do not present any custom screen or message before that dialog.
-
-If the review observed a custom pre-permission message, we believe it may have been
-from a previous build. The current version does not contain any intermediate screen
-between the user action and the iOS system permission dialog.
-
-We are confident the updated build fully complies with Guideline 5.1.1.
-```
-
----
-
-## Guideline 5.1.2 — App Tracking Transparency
-
-> Acción inmediata (no requiere nuevo build): corregí el App Privacy en App Store Connect
-> antes de hacer cualquier otra cosa.
+> Acción previa requerida (no necesita nuevo build):
 > App Store Connect → tu app → App Privacy → Precise Location → cambiar propósito a "App Functionality".
-
----
-
-**Texto para pegar en App Store Connect:**
 
 ```
 Dear App Review Team,
@@ -144,37 +123,107 @@ During our initial submission we mistakenly configured the App Privacy label, ma
 Precise Location under "Tracking" instead of "App Functionality." This has now been
 corrected in App Store Connect.
 
-Because the app does not track users under Apple's definition, the AppTrackingTransparency
-framework does not apply and will not be implemented.
+Because the app does not track users under Apple's definition, the
+AppTrackingTransparency framework does not apply and will not be implemented.
 
 We will ensure the corrected privacy labels are in place before the next submission.
 ```
 
 ---
 
-## Checklist antes de resubmitir
+### Guideline 5.1.1 — Location Permission Flow
 
-En orden estricto — no saltear pasos:
+> Esta respuesta cubre los cambios reales que hicimos en el build 2.
 
-- [ ] **Recibiste** confirmación del unlisted app distribution request por email
-- [ ] **App Privacy corregido** en App Store Connect: Precise Location → App Functionality (no Tracking)
-- [ ] **Nuevo EAS build** con `app.json` actualizado (strings de permisos mejorados)
-- [ ] **Review Notes** de la nueva submission incluye: `"This app has been approved for Unlisted App Distribution (confirmation received [FECHA])."`
-- [ ] **Respondiste** los tres threads en App Store Connect (idealmente antes de resubmitir)
+```
+Dear App Review Team,
+
+Thank you for your feedback regarding Guideline 5.1.1.
+
+We have made the following code changes in build 2 to fully comply:
+
+1. PERMISSION IS NEVER REQUESTED AUTOMATICALLY ON APP START
+
+   Previously, startForegroundTracking() was called from a useEffect hook on
+   dashboard mount, which internally called requestForegroundPermissionsAsync().
+   This has been corrected.
+
+   In build 2:
+   - On mount, the app calls getForegroundPermissionsAsync() only (read-only check,
+     no system dialog is shown)
+   - If permission has not been granted, a banner is displayed on the dashboard
+     with an "Activar GPS" button
+   - The iOS system permission dialog is shown ONLY when the user taps that button
+   - No Alert, Modal, or custom screen appears before the system dialog at any point
+
+2. PERMISSION IS ONLY REQUESTED FROM A DIRECT USER ACTION
+
+   The only call site that invokes requestForegroundPermissionsAsync() in the UI
+   is the onPress handler of the "Activar GPS" button (dashboard.tsx).
+
+   The second call site is in the GPS capture button inside the field form
+   (new-form.tsx). This is also a direct user tap, and we added a pre-check:
+   if the user has already granted permission, the system dialog is not shown again.
+
+3. UPDATED USAGE DESCRIPTION STRING
+
+   NSLocationWhenInUseUsageDescription is now:
+   "Goberna needs your location to record GPS coordinates when completing a field
+   form. Your location data is not shared with third parties."
+
+   The same string is set in the expo-location plugin configuration.
+
+4. DEMO ACCOUNT PROVIDED
+
+   A demo account has been set up in the "Demo Account" field of App Review
+   Information so the reviewer can experience the full permission flow firsthand:
+     Username: appreviewer@goberna.pe
+     Password: Review2024!
+
+We are confident build 2 fully complies with Guideline 5.1.1.
+```
 
 ---
 
-## Contexto técnico de referencia
+## PASO 3 — Submit del build 2
 
-| Ítem | Detalle |
-|------|---------|
+En App Store Connect:
+
+1. Ir a la app → **TestFlight** → confirmar que el build 2 aparece procesado
+2. Ir a **App Store → [tu versión] → Build** → seleccionar build 2
+3. En **App Review Information**:
+   - Demo Account Username: `appreviewer@goberna.pe`
+   - Demo Account Password: `Review2024!`
+   - Notes: (copiar el bloque de notas del Paso 1)
+4. En **Review Notes** de la submission agregar:
+   ```
+   This app has been approved for Unlisted App Distribution
+   (confirmation received [FECHA DEL EMAIL DE APPLE]).
+   Demo account credentials are provided in the Demo Account fields above.
+   ```
+5. Submit for Review
+
+---
+
+## Referencia técnica
+
+| Ítem | Valor |
+|---|---|
 | Bundle ID iOS | `com.estephano.gobernaterritory02` |
 | Package Android | `com.estephano.gobernaterritory02` |
-| TestFlight URL actual | `https://testflight.apple.com/join/JAZ5smzy` |
-| EAS Project ID | `17429ec1-1da2-430f-9f52-efc82919c219` |
-| Submission ID rechazado | `45b2038a-2730-4ac2-a6aa-97c5b741d7e7` |
+| `buildNumber` iOS | `2` |
+| `versionCode` Android | `2` |
+| `version` | `1.0.0` |
+| TestFlight URL | `https://testflight.apple.com/join/JAZ5smzy` |
+| EAS Project ID | `17429ec1-1da2-410f-9f52-efc82919c219` |
+| Submission rechazada | `45b2038a-2730-4ac2-a6aa-97c5b741d7e7` |
+| Backend API | `https://api.goberna.us` |
+| Demo user | `appreviewer@goberna.pe` / `Review2024!` |
+| Campaña del reviewer | `Guillermo Aliaga` (`guillermo-aliaga`) |
+| Rol del reviewer | `agente_campo` (perm_tierra=true, perm_digital=true) |
 | Permiso iOS usado | `NSLocationWhenInUseUsageDescription` — foreground only, sin background |
-| Call sites de permission | `lib/tracking/index.ts:209` y `app/(main)/new-form.tsx:159` |
-| Pre-prompt custom | No existe en el código actual — ambos call sites son directos |
-| Tracking framework | ATTrackingManager no aplica — GPS es operativo interno |
-| Distribución solicitada | Unlisted App Distribution (request enviado, pendiente de respuesta) |
+| Call site del request | `dashboard.tsx` → botón "Activar GPS" → `requestPermission()` |
+| Call site secundario | `new-form.tsx` → botón GPS capture (tap directo, check-first) |
+| Pre-prompt custom | No existe — dialog del sistema es el primero y único |
+| ATT framework | No aplica — GPS es operativo interno, sin tracking de terceros |
+| Distribución | Unlisted App Distribution (pendiente de confirmación de Apple) |
