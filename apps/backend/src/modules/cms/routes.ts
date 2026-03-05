@@ -703,12 +703,14 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
     );
 
     // ── POST /api/cms/extension-event ──────────────────────────────────
-    // Receives inbound-message events detected by the Chrome extension
-    // via DOM observation on WhatsApp Web. Matches phone → contact,
-    // optionally auto-transitions hablado → respondieron, and broadcasts
-    // the event via SSE to all campaign operators.
+    // Receives message events detected by the Chrome extension via DOM
+    // observation on WhatsApp Web. Two event types:
+    //   "message_sent"     — operator sent a message (fromMe: true). Counts
+    //                        as wa_sent metric. No auto-transition.
+    //   "message_received" — contact replied back (reserved for future use).
+    //                        Auto-transitions hablado → respondieron.
     const extensionEventSchema = z.object({
-      type: z.enum(["message_received"]),
+      type: z.enum(["message_sent", "message_received"]),
       phone: z.string().min(7).max(20),
       preview: z.string().max(500).optional().default(""),
       detected_at: z.number().optional(),
@@ -737,7 +739,8 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         // Find the contact by phone
         const contact = await repo.findContactByPhone(campaignId, phone);
         if (!contact) {
-          // Not an error — the contact might not exist in this campaign
+          // Persist the event even if no contact matched — still counts as a message sent
+          await repo.insertExtensionEvent(campaignId, userId, phone, null, false);
           return reply.code(200).send({
             ok: true,
             request_id: requestId,
@@ -777,7 +780,8 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         }
 
         // Broadcast the extension event for real-time dashboard updates
-        cmsEvents.emitCms("extension.message_received", {
+        // Use type-specific SSE event name so clients can differentiate
+        cmsEvents.emitCms(`extension.${type}`, {
           campaignId,
           contactId: contact.id,
           phone,
@@ -785,6 +789,9 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
           detectedAt: detected_at ?? Date.now(),
           operatorId: userId,
         });
+
+        // Persist the extension event for operator metrics (wa_sent)
+        await repo.insertExtensionEvent(campaignId, userId, phone, contact.id, true);
 
         return reply.code(200).send({
           ok: true,
@@ -881,6 +888,54 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
             created_at: contact.created_at,
           },
         });
+      },
+    );
+
+    // ── GET /api/cms/extension-monitor ────────────────────────────────
+    // PUBLIC endpoint (no auth). Returns per-operator WA activity summary:
+    // total messages sent + unique phones contacted, scoped to a campaign.
+    // Requires ?campaign_id=<uuid> query param.
+    // NOTE: This is intentionally public for development/testing. Move behind
+    // app.authenticate once monitoring is stable.
+    const extensionMonitorQuerySchema = z.object({
+      campaign_id: z.string().uuid("campaign_id debe ser un UUID válido"),
+    });
+
+    app.get(
+      "/api/cms/extension-monitor",
+      async (request, reply) => {
+        const requestId = String(request.id);
+
+        const parsed = extensionMonitorQuerySchema.safeParse(request.query);
+        if (!parsed.success) {
+          const msg = parsed.error.issues.map((e) => e.message).join("; ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", msg));
+        }
+
+        const { campaign_id } = parsed.data;
+
+        try {
+          const operators = await repo.getExtensionMonitor(campaign_id);
+
+          const totals = operators.reduce(
+            (acc, op) => ({
+              wa_sent: acc.wa_sent + op.wa_sent,
+              unique_phones: acc.unique_phones + op.unique_phones,
+            }),
+            { wa_sent: 0, unique_phones: 0 },
+          );
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            campaign_id,
+            totals,
+            operators,
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "extension monitor failed");
+          return reply.code(500).send(errorPayload(requestId, "EXTENSION_MONITOR_ERROR", "error obteniendo datos del monitor"));
+        }
       },
     );
   };

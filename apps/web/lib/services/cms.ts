@@ -86,6 +86,7 @@ export type CmsMetricsOperator = {
   hablados: number;
   respondieron: number;
   archivados: number;
+  wa_sent: number;   // mensajes enviados desde la extensión de Chrome
 };
 
 export type CmsMetricsGlobalTotals = {
@@ -401,6 +402,49 @@ export async function getBrigadistaMetrics(
   const res = await api.get<CmsBrigadistaMetricsResponse>(path, { campaignId });
   if (!res.ok) return { ok: false, error: res.error?.message };
   return { ok: true, brigadistas: res.data?.brigadistas ?? [] };
+}
+
+// ── Extension monitor (public) ──────────────────────────────────────
+
+export type ExtensionMonitorOperator = {
+  operator_id: string;
+  full_name: string;
+  email: string;
+  wa_sent: number;
+  unique_phones: number;
+  last_event_at: string | null;
+};
+
+export type ExtensionMonitorTotals = {
+  wa_sent: number;
+  unique_phones: number;
+};
+
+type ExtensionMonitorResponse = {
+  ok: boolean;
+  campaign_id: string;
+  totals: ExtensionMonitorTotals;
+  operators: ExtensionMonitorOperator[];
+};
+
+/**
+ * Public endpoint — no auth required. Fetches per-operator WA activity.
+ */
+export async function getExtensionMonitor(campaignId: string): Promise<{
+  ok: boolean;
+  totals?: ExtensionMonitorTotals;
+  operators?: ExtensionMonitorOperator[];
+  error?: string;
+}> {
+  const res = await fetch(`/api/cms/extension-monitor?campaign_id=${encodeURIComponent(campaignId)}`, {
+    credentials: "same-origin",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { message?: string };
+    return { ok: false, error: body.message ?? `Error ${res.status}` };
+  }
+  const data = await res.json() as ExtensionMonitorResponse;
+  return { ok: true, totals: data.totals, operators: data.operators };
 }
 
 // ── Twilio config per campaign ───────────────────────────────────────

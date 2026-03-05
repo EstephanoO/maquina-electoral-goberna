@@ -483,6 +483,7 @@ export type CmsMetricsOperator = {
   hablados: number;
   respondieron: number;
   archivados: number;
+  wa_sent: number;   // mensajes enviados desde la extensión de Chrome
 };
 
 /**
@@ -557,6 +558,10 @@ export async function getCmsMetricsByOperator(
     ? `WHERE fs.campaign_id = ANY($1) AND fs.deleted_at IS NULL`
     : `WHERE fs.deleted_at IS NULL`;
 
+  const extWhereClause = hasFilter
+    ? `WHERE ee.campaign_id = ANY($1)`
+    : `WHERE 1=1`;
+
   const params = hasFilter ? [campaignIds] : [];
 
   const { rows } = await pool.query<{
@@ -568,6 +573,7 @@ export async function getCmsMetricsByOperator(
     hablados: string;
     respondieron: string;
     archivados: string;
+    wa_sent: string;
   }>(
     `SELECT
        fs.cms_claimed_by AS user_id,
@@ -577,13 +583,20 @@ export async function getCmsMetricsByOperator(
        COALESCE(c.name, 'Sin nombre') AS campaign_name,
        COUNT(*) FILTER (WHERE fs.cms_status = 'hablado')::text AS hablados,
        COUNT(*) FILTER (WHERE fs.cms_status = 'respondieron')::text AS respondieron,
-       COUNT(*) FILTER (WHERE fs.cms_status = 'archivado')::text AS archivados
+       COUNT(*) FILTER (WHERE fs.cms_status = 'archivado')::text AS archivados,
+       COALESCE(ext.wa_sent, 0)::text AS wa_sent
      FROM form_submissions fs
      JOIN users u ON u.id = fs.cms_claimed_by
      LEFT JOIN campaigns c ON c.id = fs.campaign_id
+     LEFT JOIN (
+       SELECT operator_id, campaign_id, COUNT(*)::bigint AS wa_sent
+       FROM cms_extension_events ee
+       ${extWhereClause}
+       GROUP BY operator_id, campaign_id
+     ) ext ON ext.operator_id = fs.cms_claimed_by AND ext.campaign_id = fs.campaign_id
      ${whereClause}
        AND fs.cms_claimed_by IS NOT NULL
-     GROUP BY fs.cms_claimed_by, u.email, u.full_name, fs.campaign_id, c.name
+     GROUP BY fs.cms_claimed_by, u.email, u.full_name, fs.campaign_id, c.name, ext.wa_sent
      ORDER BY (COUNT(*) FILTER (WHERE fs.cms_status IN ('hablado', 'respondieron'))) DESC`,
     params,
   );
@@ -597,7 +610,24 @@ export async function getCmsMetricsByOperator(
     hablados: parseInt(r.hablados, 10),
     respondieron: parseInt(r.respondieron, 10),
     archivados: parseInt(r.archivados, 10),
+    wa_sent: parseInt(r.wa_sent, 10),
   }));
+}
+
+// ── Insert extension event (mensajes enviados desde la extensión) ────
+
+export async function insertExtensionEvent(
+  campaignId: string,
+  operatorId: string,
+  phone: string,
+  contactId: string | null,
+  matched: boolean,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO cms_extension_events (campaign_id, operator_id, contact_id, phone, matched)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [campaignId, operatorId, contactId ?? null, phone, matched],
+  );
 }
 
 // ── Metrics: per-brigadista (field agent) captures + CMS pipeline ────
@@ -1044,6 +1074,58 @@ export async function getMetricsByWaNumber(
     respondieron: parseInt(r.respondieron, 10),
     archivados: parseInt(r.archivados, 10),
     total_interactions: parseInt(r.total_interactions, 10),
+  }));
+}
+
+// ── Extension monitor: per-operator summary (public endpoint) ────────
+
+export type ExtensionMonitorOperator = {
+  operator_id: string;
+  full_name: string;
+  email: string;
+  wa_sent: number;        // total events in cms_extension_events
+  unique_phones: number;  // COUNT DISTINCT phone
+  last_event_at: string | null;
+};
+
+/**
+ * Returns per-operator WA activity from cms_extension_events.
+ * Scoped to a campaign. No auth required by the caller — the route
+ * that calls this is public (temporary, for testing).
+ */
+export async function getExtensionMonitor(
+  campaignId: string,
+): Promise<ExtensionMonitorOperator[]> {
+  const { rows } = await pool.query<{
+    operator_id: string;
+    full_name: string;
+    email: string;
+    wa_sent: string;
+    unique_phones: string;
+    last_event_at: string | null;
+  }>(
+    `SELECT
+       ee.operator_id,
+       COALESCE(u.full_name, u.email) AS full_name,
+       u.email,
+       COUNT(*)::text                          AS wa_sent,
+       COUNT(DISTINCT ee.phone)::text          AS unique_phones,
+       MAX(ee.created_at)::text                AS last_event_at
+     FROM cms_extension_events ee
+     JOIN users u ON u.id = ee.operator_id
+     WHERE ee.campaign_id = $1
+     GROUP BY ee.operator_id, u.full_name, u.email
+     ORDER BY COUNT(*) DESC`,
+    [campaignId],
+  );
+
+  return rows.map((r) => ({
+    operator_id: r.operator_id,
+    full_name: r.full_name,
+    email: r.email,
+    wa_sent: parseInt(r.wa_sent, 10),
+    unique_phones: parseInt(r.unique_phones, 10),
+    last_event_at: r.last_event_at ?? null,
   }));
 }
 
