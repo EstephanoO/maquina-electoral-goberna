@@ -6,10 +6,11 @@ import { useEffect } from "react";
 
 /**
  * Dashboard home — redirige según rol:
- *   admin      → /candidatos       (gestión de campañas)
- *   candidato  → /equipo           (gestión de equipo de su campaña)
- *   consultor  → /candidatos/[slug]/tierra  (mapa de la campaña activa)
- *   otros      → /equipo           (vista de equipo)
+ *   admin          → /candidatos                        (gestión de campañas)
+ *   candidato      → /equipo                            (gestión de equipo de su campaña)
+ *   consultor      → /candidatos/[slug]/tierra          (mapa de la campaña activa)
+ *   agente_digital → /candidatos/[slug]/validacion      (única pantalla disponible)
+ *   otros          → /equipo                            (vista de equipo)
  *
  * Muestra un spinner mínimo mientras resuelve auth + campaña activa.
  */
@@ -44,7 +45,18 @@ export default function DashboardHomePage() {
       return;
     }
 
-    // Otros roles (brigadista, agente, etc.) → equipo
+    // Agente digital → validación de la campaña activa (única pantalla que les corresponde)
+    if (user.role === "agente_digital") {
+      const campaign =
+        campaigns.find((c) => c.id === activeCampaignId) ?? campaigns[0];
+      if (campaign?.slug) {
+        router.replace(`/candidatos/${campaign.slug}/validacion`);
+      }
+      // Si no hay campaña activa, se queda en el spinner (edge case: no debería ocurrir)
+      return;
+    }
+
+    // Otros roles (brigadista, agente_campo, etc.) → equipo
     router.replace("/equipo");
   }, [isLoading, user, campaigns, activeCampaignId, router]);
 
