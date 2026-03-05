@@ -123,11 +123,70 @@
   }
 
   /**
+   * Normaliza un string con número de teléfono a solo dígitos.
+   * "+51 980 493 473" → "51980493473"
+   */
+  function normalizePhone(raw) {
+    if (!raw) return null;
+    const n = raw.replace(/\D/g, '');
+    return (n.length >= 10 && n.length <= 13) ? n : null;
+  }
+
+  /**
    * Teléfono del contacto en el chat actualmente abierto.
-   * Filtra grupos y IDs internos (solo 10–13 dígitos).
+   *
+   * Estrategia:
+   * 1. Header del chat (.two header): buscar span[title] con número de teléfono
+   * 2. Lista de chats: buscar el span[title=número] adyacente al span[title=nombre]
+   *    donde nombre coincide con el aria-label del composer ("Escribe a Nombre.")
+   * 3. Webpack cache (si __wr disponible)
    */
   function getActivePhone() {
-    // ── 1. webpack cache: buscar el chat activo ────────────────────────────
+    // ── 1. span[title] con número en el header del chat abierto ───────────
+    try {
+      const main = document.querySelector('.two, #main, [data-testid="conversation-panel-wrapper"]');
+      if (main) {
+        const hdr = main.querySelector('header');
+        if (hdr) {
+          const spans = hdr.querySelectorAll('span[title]');
+          for (const s of spans) {
+            const n = normalizePhone(s.getAttribute('title'));
+            if (n) return n;
+          }
+        }
+        // También buscar en todo el panel principal (no solo header)
+        // pero solo spans con la clase de título (no preview de mensajes)
+        // Clase identificada: x1iyjqo2 (nombre/número), x78zum5 (preview — ignorar)
+        const spans = main.querySelectorAll('span[title]');
+        for (const s of spans) {
+          if (s.classList.contains('x78zum5')) continue; // preview de mensaje
+          const n = normalizePhone(s.getAttribute('title'));
+          if (n) return n;
+        }
+      }
+    } catch (_) {}
+
+    // ── 2. Cruzar nombre del composer con span[title] en la lista ─────────
+    try {
+      const contactName = getActiveContactName();
+      if (contactName) {
+        // Buscar el span con title=nombre, luego el span[title=número] adyacente
+        const allSpans = Array.from(document.querySelectorAll('span[title]'));
+        for (let i = 0; i < allSpans.length; i++) {
+          const t = allSpans[i].getAttribute('title') || '';
+          if (t.trim().toLowerCase() === contactName.trim().toLowerCase()) {
+            // Buscar en los siblings cercanos un span con número
+            for (let j = i - 2; j <= i + 2; j++) {
+              if (j < 0 || j >= allSpans.length || j === i) continue;
+              const n = normalizePhone(allSpans[j].getAttribute('title'));
+              if (n) return n;
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    // ── 3. webpack cache: buscar el chat activo ────────────────────────────
     if (__wr && __wr.c) {
       try {
         for (const mod of Object.values(__wr.c)) {
@@ -150,24 +209,6 @@
         }
       } catch (_) {}
     }
-
-    // ── 2. data-id en el panel de conversación ─────────────────────────────
-    try {
-      const panel = document.querySelector('[data-id]');
-      if (panel) {
-        const n = jidToNumber(panel.getAttribute('data-id') || '');
-        if (n) return n;
-      }
-    } catch (_) {}
-
-    // ── 3. URL params ──────────────────────────────────────────────────────
-    try {
-      const p = new URLSearchParams(window.location.search).get('phone');
-      if (p) {
-        const n = p.replace(/\D/g, '');
-        if (n.length >= 10 && n.length <= 13) return n;
-      }
-    } catch (_) {}
 
     return null;
   }
