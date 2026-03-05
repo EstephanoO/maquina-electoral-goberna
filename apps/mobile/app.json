@@ -13,6 +13,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.estephano.gobernaterritory02",
+      "buildNumber": "2",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "Goberna needs your location to record GPS coordinates when completing a field form. Your location data is not shared with third parties.",
@@ -24,6 +25,7 @@
 
     "android": {
       "package": "com.estephano.gobernaterritory02",
+      "versionCode": 2,
       "softwareKeyboardLayoutMode": "resize",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
