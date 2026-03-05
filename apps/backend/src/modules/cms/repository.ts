@@ -1179,13 +1179,35 @@ export type ExtensionMonitorPhone = {
 
 /**
  * Returns per-phone breakdown with nested operators.
+ * Always includes ALL registered wa_phones for the campaign (even with zero activity).
  * Phones without alias show the raw number.
- * Only phones and operators with activity are returned.
  */
 export async function getExtensionMonitorByPhone(
   campaignId: string,
 ): Promise<ExtensionMonitorPhone[]> {
-  // Query 1: per (own_number, operator) aggregation
+  // Query 0: fetch all registered wa_phones so empty ones always appear
+  const { rows: waRows } = await pool.query<{
+    number: string;
+    alias: string | null;
+  }>(
+    `SELECT number, alias FROM wa_phones WHERE campaign_id = $1 ORDER BY alias`,
+    [campaignId],
+  );
+
+  // Seed phoneMap with all registered phones (zero activity by default)
+  const phoneMap = new Map<string, ExtensionMonitorPhone>();
+  for (const w of waRows) {
+    phoneMap.set(w.number, {
+      own_number: w.number,
+      alias: w.alias ?? null,
+      wa_sent: 0,
+      unique_contacts: 0,
+      last_event_at: null,
+      operators: [],
+    });
+  }
+
+  // Query 1: per (own_number, operator) aggregation — only phones with events
   const { rows: opRows } = await pool.query<{
     own_number: string;
     alias: string | null;
@@ -1216,9 +1238,7 @@ export async function getExtensionMonitorByPhone(
     [campaignId],
   );
 
-  // Group by own_number on the application side
-  const phoneMap = new Map<string, ExtensionMonitorPhone>();
-
+  // Merge operator activity into phoneMap (create entry for unknowns not in wa_phones)
   for (const r of opRows) {
     const key = r.own_number;
     if (!phoneMap.has(key)) {
@@ -1273,7 +1293,11 @@ export async function getExtensionMonitorByPhone(
     if (phone) phone.unique_contacts = parseInt(r.unique_contacts, 10);
   }
 
-  return Array.from(phoneMap.values()).sort((a, b) => b.wa_sent - a.wa_sent);
+  // Sort: active phones first (by wa_sent desc), then inactive by alias
+  return Array.from(phoneMap.values()).sort((a, b) => {
+    if (b.wa_sent !== a.wa_sent) return b.wa_sent - a.wa_sent;
+    return (a.alias ?? a.own_number).localeCompare(b.alias ?? b.own_number);
+  });
 }
 
 /**
