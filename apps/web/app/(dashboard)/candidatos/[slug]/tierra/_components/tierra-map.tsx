@@ -102,7 +102,7 @@ function applyFluidMapInteractions(map: NativeMap) {
 }
 
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
-  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange },
+  { campaignId, slug, primaryColor, metaVotos, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange },
   ref,
 ) {
   const mapRef = useRef<MapRef | null>(null);
@@ -130,7 +130,12 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const { routesGeoJson, waypointsGeoJson } = useSurveyorRoutes(forms, selectedAgentId);
 
   useAutoFit(mapRef, drillState, skipNextFitRef);
-  const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef);
+  const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef, {
+    forms,
+    agents,
+    metaVotos,
+    primaryColor,
+  });
   const { formTooltipRef, onFormMouseMove, onFormMouseLeave, showPinnedTooltip } = useFormTooltip(isZoomingRef, mapRef);
   const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent);
   const containerRef = useMapResize(mapRef, drillStateRef);
@@ -604,15 +609,21 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
       </MapLibre>
 
-      {/* ── Zone name tooltip ── */}
+      {/* ── Zone tooltip ── */}
       <div
         ref={tooltipRef}
         style={{
           position: "absolute", top: 0, left: 0, pointerEvents: "none",
-          backgroundColor: "rgba(15, 23, 42, 0.88)", color: "#f8fafc",
-          fontSize: 12, fontWeight: 600, padding: "5px 10px", borderRadius: 6,
-          whiteSpace: "nowrap", zIndex: 20, opacity: 0, willChange: "transform",
-          transform: "translate(0px, 0px)", transition: "opacity 120ms ease-out",
+          backgroundColor: "rgba(8, 14, 32, 0.97)",
+          backdropFilter: "blur(14px)",
+          WebkitBackdropFilter: "blur(14px)",
+          border: "1px solid rgba(250, 204, 21, 0.35)",
+          color: "#fef08a",
+          padding: "10px 13px",
+          borderRadius: 8,
+          zIndex: 20, opacity: 0, willChange: "transform",
+          transform: "translate(0px, 0px)", transition: "opacity 100ms ease-out",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.3)",
         }}
       />
 
