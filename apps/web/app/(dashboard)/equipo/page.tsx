@@ -18,6 +18,7 @@ import {
   PendingRequestsSection,
   MembersList,
   ConsultorModal,
+  ResetPasswordModal,
   InvitationsPanel,
   useEquipo,
 } from "./_components";
@@ -133,6 +134,15 @@ export default function EquipoPage() {
           onSave={eq.saveConsultorAssignments}
           onClose={eq.closeConsultorModal}
           saving={eq.savingConsultorCampaigns}
+        />
+      )}
+
+      {eq.showResetPasswordModal && eq.resetPasswordTarget && (
+        <ResetPasswordModal
+          name={eq.resetPasswordTarget.name}
+          onSave={eq.handleSaveNewPassword}
+          onClose={eq.closeResetPasswordModal}
+          saving={eq.savingPassword}
         />
       )}
     </div>

@@ -34,6 +34,11 @@ export function useEquipo(activeCampaignId: string | null | undefined, userRoleR
   const [savingObjectives, setSavingObjectives] = useState(false);
   const [objectivesChanged, setObjectivesChanged] = useState(false);
 
+  // Reset password modal
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+  const [resetPasswordTarget, setResetPasswordTarget] = useState<{ userId: string; name: string } | null>(null);
+  const [savingPassword, setSavingPassword] = useState(false);
+
   // Consultor modal
   const [showConsultorModal, setShowConsultorModal] = useState(false);
   const [consultorToAssign, setConsultorToAssign] = useState<{ userId: string; name: string } | null>(null);
@@ -168,11 +173,28 @@ export function useEquipo(activeCampaignId: string | null | undefined, userRoleR
     if (res.ok) setMembers((prev) => prev.filter((m) => m.user_id !== userId));
   }, [activeCampaignId]);
 
-  const handleResetPassword = useCallback(async (userId: string, name: string) => {
-    if (!confirm(`¿Reiniciar la contraseña de ${name}? El usuario deberá crear una nueva contraseña la próxima vez que inicie sesión.`)) return;
-    const res = await api.post(`/api/users/${userId}/require-password-reset`, {});
-    if (res.ok) alert(`Contraseña reiniciada para ${name}. El usuario deberá crear una nueva contraseña.`);
-    else alert(res.error?.message ?? "Error reiniciando contraseña");
+  const handleResetPassword = useCallback((userId: string, name: string) => {
+    setResetPasswordTarget({ userId, name });
+    setShowResetPasswordModal(true);
+  }, []);
+
+  const handleSaveNewPassword = useCallback(async (newPassword: string) => {
+    if (!resetPasswordTarget) return;
+    setSavingPassword(true);
+    const res = await api.post(`/api/users/${resetPasswordTarget.userId}/set-password`, { password: newPassword });
+    if (res.ok) {
+      setShowResetPasswordModal(false);
+      setResetPasswordTarget(null);
+    } else {
+      // Re-throw so the modal can surface the error
+      throw new Error(res.error?.message ?? "Error cambiando la contraseña");
+    }
+    setSavingPassword(false);
+  }, [resetPasswordTarget]);
+
+  const closeResetPasswordModal = useCallback(() => {
+    setShowResetPasswordModal(false);
+    setResetPasswordTarget(null);
   }, []);
 
   const handleSaveObjectives = useCallback(async () => {
@@ -223,11 +245,13 @@ export function useEquipo(activeCampaignId: string | null | undefined, userRoleR
     selectedRequests, batchRole, batchProcessing,
     objectiveInputs, savingObjectives, objectivesChanged,
     showConsultorModal, consultorToAssign, allCampaigns, consultorCampaigns, savingConsultorCampaigns,
+    showResetPasswordModal, resetPasswordTarget, savingPassword,
     // Derived
     userRole, canManage, allowedRoles, statsByRole,
     // Handlers
     handleRoleChange, handleResolve, handleBatchApprove, handleBatchReject,
-    handleRemove, handleResetPassword, handleSaveObjectives, handleObjectiveChange,
+    handleRemove, handleResetPassword, handleSaveNewPassword, closeResetPasswordModal,
+    handleSaveObjectives, handleObjectiveChange,
     toggleRequestSelect, toggleSelectAll, setBatchRole,
     toggleConsultorCampaign, saveConsultorAssignments, closeConsultorModal,
   };

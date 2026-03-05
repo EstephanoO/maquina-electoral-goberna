@@ -432,6 +432,46 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
     // Compat alias: mobile app sends /api/api/auth/reset-password (API_BASE already includes /api)
     app.post("/api/api/auth/reset-password", resetPasswordOpts, resetPasswordHandler);
 
+    // ── POST /api/users/:userId/set-password ───────────────────────────
+    // Admin/Candidato sets a new password directly for a team member.
+    // Does NOT require the current password — admin-only operation.
+    // Cannot target admin accounts.
+    app.post(
+      "/api/users/:userId/set-password",
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { userId } = request.params as { userId: string };
+        const body = request.body as { password?: string };
+
+        if (!body.password || body.password.length < 6) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "la contraseña debe tener al menos 6 caracteres"));
+        }
+
+        const targetUser = await repo.findUserById(userId);
+        if (!targetUser) {
+          return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "usuario no encontrado"));
+        }
+
+        // Protect admin accounts
+        if (targetUser.role === "admin") {
+          return reply.code(403).send(errorPayload(requestId, "FORBIDDEN", "no se puede cambiar la contraseña de un admin"));
+        }
+
+        const newHash = await service.hashPassword(body.password);
+        await repo.updatePasswordHash(userId, newHash);
+        await repo.setPasswordResetRequired(userId, false);
+
+        app.log.info({
+          target_user_id: userId,
+          requester_id: (request as AuthenticatedRequest).userId,
+          request_id: requestId,
+        }, "admin set password for user");
+
+        return reply.code(200).send({ ok: true, request_id: requestId, message: "contraseña actualizada" });
+      },
+    );
+
     // ── POST /api/users/:userId/require-password-reset ─────────────────
     // Admin/Consultor marks a user as requiring password reset on next login
     // The user will see a "set new password" screen when they try to login

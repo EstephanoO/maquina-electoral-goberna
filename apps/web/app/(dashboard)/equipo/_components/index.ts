@@ -11,6 +11,7 @@ export { PendingRequestsSection } from "./pending-requests";
 export { MemberRow } from "./member-row";
 export { MembersList } from "./members-list";
 export { ConsultorModal } from "./consultor-modal";
+export { ResetPasswordModal } from "./reset-password-modal";
 export { useEquipo } from "./use-equipo";
 export { InvitationsPanel } from "./invitations-panel";
 
