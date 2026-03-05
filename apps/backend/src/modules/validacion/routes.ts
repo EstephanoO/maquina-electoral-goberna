@@ -25,7 +25,7 @@ export function buildValidacionRoutes(_env: AppEnv): FastifyPluginAsync {
 
     // ── GET /api/validacion — list validations for campaign ──
     app.get("/api/validacion", {
-      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor"] })],
+      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor", "agente_digital"] })],
     }, async (request, reply) => {
       const requestId = String(request.id);
       const campaignId = request.headers["x-campaign-id"] as string;
@@ -51,7 +51,7 @@ export function buildValidacionRoutes(_env: AppEnv): FastifyPluginAsync {
 
     // ── GET /api/validacion/stats — counts by status ──
     app.get("/api/validacion/stats", {
-      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor"] })],
+      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor", "agente_digital"] })],
     }, async (request, reply) => {
       const requestId = String(request.id);
       const campaignId = request.headers["x-campaign-id"] as string;
@@ -62,7 +62,7 @@ export function buildValidacionRoutes(_env: AppEnv): FastifyPluginAsync {
 
     // ── PUT /api/validacion/:id/status — update validation status ──
     app.put<{ Params: { id: string } }>("/api/validacion/:id/status", {
-      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor"] })],
+      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor", "agente_digital"] })],
     }, async (request, reply) => {
       const requestId = String(request.id);
       const campaignId = request.headers["x-campaign-id"] as string;
@@ -79,7 +79,7 @@ export function buildValidacionRoutes(_env: AppEnv): FastifyPluginAsync {
 
     // ── PUT /api/validacion/:id/claim — claim a contact ──
     app.put<{ Params: { id: string } }>("/api/validacion/:id/claim", {
-      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor"] })],
+      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor", "agente_digital"] })],
     }, async (request, reply) => {
       const requestId = String(request.id);
       const campaignId = request.headers["x-campaign-id"] as string;
