@@ -1,181 +1,197 @@
-// inject.js — MAIN world.
-// Detecta mensajes salientes hookenado el CLICK en el botón Send del DOM.
+// inject.js — MAIN world, document_start.
+// Detecta mensajes salientes hookenando el CLICK en el botón Send del DOM.
 // NO usa MsgCollection.on('add') porque dispara también para mensajes
 // sincronizados desde el celular/otros devices (fromMe:true ≠ "yo lo envié aquí").
 (function () {
 
+  // ─── webpack require hook ────────────────────────────────────────────────────
+  // WA Web usa webpackChunkwhatsapp_web_client para cargar módulos.
+  // Corriendo en document_start podemos hookear el push del array antes de que
+  // WA Web lo use, y así capturar el __webpack_require__ interno del runtime.
+  // Con ese handle podemos buscar el módulo que contiene el número propio (JID).
+
+  let __wr = null; // __webpack_require__ interno de WA Web
+
+  (function installWebpackHook() {
+    const CHUNK_KEY = 'webpackChunkwhatsapp_web_client';
+
+    function hookChunkArray(arr) {
+      const origPush = arr.push.bind(arr);
+      arr.push = function (...args) {
+        const result = origPush(...args);
+        for (const entry of args) {
+          // Cada entry es [chunkIds, moduleMap, runtimeFn?]
+          // El runtime chunk tiene una función en el índice 2 que recibe __webpack_require__
+          if (Array.isArray(entry) && typeof entry[2] === 'function') {
+            // Interceptamos la llamada original: entry[2] ya fue llamada por webpack
+            // con __wr como argumento. Pero podemos extraerlo del cache.
+            // El moduleMap (entry[1]) nos da acceso a los módulos; el runtime
+            // también expone __webpack_require__ en el propio chunk array.
+            // Estrategia: buscar en el array la propiedad que webpack le agrega.
+            if (!__wr) {
+              // webpack agrega una propiedad al chunk array que ES __webpack_require__
+              for (const key of Object.keys(arr)) {
+                const val = arr[key];
+                if (typeof val === 'function' && val.m && val.c && val.n) {
+                  __wr = val;
+                  break;
+                }
+              }
+            }
+          }
+        }
+        return result;
+      };
+    }
+
+    // Si el array ya existe (raro en document_start pero posible), hookearlo
+    if (window[CHUNK_KEY]) {
+      hookChunkArray(window[CHUNK_KEY]);
+    } else {
+      // Definir el array con un getter/setter para interceptar cuando WA Web lo cree
+      let _arr;
+      Object.defineProperty(window, CHUNK_KEY, {
+        configurable: true,
+        get() { return _arr; },
+        set(val) {
+          _arr = val;
+          if (Array.isArray(_arr)) hookChunkArray(_arr);
+        },
+      });
+    }
+  })();
+
   // ─── helpers ────────────────────────────────────────────────────────────────
 
-  function req(name) {
-    try { return window.require(name); } catch (_) { return null; }
-  }
-
-  /** Extrae número de un JID de WA ("5198765432@c.us" → "5198765432"). */
+  /** Extrae número de un JID de WA ("5198765432@c.us" → "5198765432"). Filtra grupos. */
   function jidToNumber(jid) {
     if (!jid || typeof jid !== 'string') return null;
-    if (jid.includes('@g.us') || jid.includes('@broadcast')) return null; // grupos
+    if (jid.includes('@g.us') || jid.includes('@broadcast') || jid.includes('@newsletter')) return null;
     const num = jid.replace(/@.+$/, '').replace(/\D/g, '');
-    // Números válidos: 10–13 dígitos (PE: 51 + 9 dígitos = 11)
     return (num.length >= 10 && num.length <= 13) ? num : null;
   }
 
   /**
+   * Busca en el cache de módulos de webpack el JID del usuario propio.
+   * Itera wr.c (cache de módulos instanciados) buscando un objeto que tenga
+   * un campo con formato "51XXXXXXXXX@c.us".
+   */
+  function findOwnJidInCache() {
+    if (!__wr || !__wr.c) return null;
+    const jidRe = /^(\d{10,13})@c\.us$/;
+    for (const mod of Object.values(__wr.c)) {
+      try {
+        const exp = mod?.exports;
+        if (!exp) continue;
+        // Revisar exports directo y exports.default
+        for (const target of [exp, exp?.default]) {
+          if (!target || typeof target !== 'object') continue;
+          for (const val of Object.values(target)) {
+            if (typeof val === 'string' && jidRe.test(val)) return val;
+            // Un nivel más: val puede ser un objeto {_serialized, user, ...}
+            if (val && typeof val === 'object') {
+              const s = val._serialized || val.user || '';
+              if (jidRe.test(s)) return s;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  // Cache del own_number para no escanear el cache en cada envío
+  let _cachedOwnNumber = null;
+  let _cacheAttempts = 0;
+
+  /**
    * Número propio del celular que está usando WA Web en este browser.
-   * Identifica DESDE QUÉ celular físico opera la operadora.
    * Retorna solo dígitos (ej: "51987654321") o null.
-   *
-   * WA Web cambia sus módulos internos frecuentemente.
-   * Se prueban múltiples estrategias en orden de confiabilidad.
    */
   function getOwnNumber() {
-    // ── 1. WAWebPhoneInfoStore (build antiguo) ─────────────────────────────
-    try {
-      const s = req('WAWebPhoneInfoStore');
-      if (s) {
-        const jid = s.phoneInfo?.wid?._serialized
-          || s.phoneInfo?.wid?.user
-          || s.wid?._serialized
-          || s.wid?.user
-          || '';
-        const n = jidToNumber(jid);
-        if (n) return n;
-      }
-    } catch (_) {}
+    // Si ya lo resolvimos, devolver directo
+    if (_cachedOwnNumber) return _cachedOwnNumber;
 
-    // ── 2. WAWebConnModel — expone conn.me en builds recientes ─────────────
-    try {
-      const s = req('WAWebConnModel');
-      const me = s?.default?.me || s?.me;
-      const n = jidToNumber(me?._serialized || me?.user || '');
-      if (n) return n;
-    } catch (_) {}
+    // No intentar más de 20 veces si siempre falla (evitar trabajo inútil)
+    if (_cacheAttempts > 20) return null;
+    _cacheAttempts++;
 
-    // ── 3. WAWebAuthModel ──────────────────────────────────────────────────
-    try {
-      const s = req('WAWebAuthModel');
-      const me = s?.default?.me || s?.me;
-      const n = jidToNumber(me?._serialized || me?.user || '');
-      if (n) return n;
-    } catch (_) {}
+    // ── 1. webpack cache scan (principal) ─────────────────────────────────
+    const jid = findOwnJidInCache();
+    if (jid) {
+      const n = jidToNumber(jid);
+      if (n) { _cachedOwnNumber = n; return n; }
+    }
 
-    // ── 4. WAWebContactsMeStore ────────────────────────────────────────────
+    // ── 2. DOM: buscar spans con número peruano visible ────────────────────
+    // Solo funciona si el usuario abrió su perfil, pero vale intentarlo
     try {
-      const s = req('WAWebContactsMeStore');
-      const me = s?.me || s?.getMaybeMeUser?.();
-      const n = jidToNumber(me?._serialized || me?.user || '');
-      if (n) return n;
-    } catch (_) {}
-
-    // ── 5. WAWebUserPrefsGeneral ───────────────────────────────────────────
-    try {
-      const s = req('WAWebUserPrefsGeneral');
-      const prefs = s?.default || s;
-      if (prefs) {
-        // buscar cualquier clave que parezca un JID propio
-        for (const key of ['me', 'meUser', 'myNumber', 'phone', 'wid']) {
-          const val = prefs[key];
-          const n = jidToNumber(
-            typeof val === 'string' ? val : (val?._serialized || val?.user || '')
-          );
-          if (n) return n;
+      const spans = document.querySelectorAll('span');
+      for (const s of spans) {
+        const t = s.childElementCount === 0 ? s.textContent?.trim() : '';
+        if (t && /^\+?51\d{9}$/.test(t)) {
+          const n = t.replace(/\D/g, '');
+          _cachedOwnNumber = n;
+          return n;
         }
       }
     } catch (_) {}
 
-    // ── 6. DOM: avatar del header de WA Web tiene data-jid del usuario ─────
+    // ── 3. data-jid en el DOM ──────────────────────────────────────────────
     try {
-      // El botón de perfil en el header superior izquierdo
-      const avatar = document.querySelector('header [data-jid], header [data-testid="avatar-contact"]');
-      if (avatar) {
-        const n = jidToNumber(avatar.getAttribute('data-jid') || '');
-        if (n) return n;
+      const els = document.querySelectorAll('[data-jid]');
+      for (const el of els) {
+        const n = jidToNumber(el.getAttribute('data-jid') || '');
+        if (n) { _cachedOwnNumber = n; return n; }
       }
     } catch (_) {}
 
-    // ── 7. URL del perfil propio (al hacer click en el avatar aparece ?phone=) ──
+    // ── 4. URL params ──────────────────────────────────────────────────────
     try {
-      const params = new URLSearchParams(window.location.search);
-      const p = params.get('phone') || params.get('number');
+      const p = new URLSearchParams(window.location.search).get('phone');
       if (p) {
-        const num = p.replace(/\D/g, '');
-        if (num.length >= 10 && num.length <= 13) return num;
+        const n = p.replace(/\D/g, '');
+        if (n.length >= 10 && n.length <= 13) { _cachedOwnNumber = n; return n; }
       }
-    } catch (_) {}
-
-    // ── 8. Título de la página (algunos builds lo incluyen) ────────────────
-    try {
-      // Formato: "+51 987 654 321" o "51987654321"
-      const match = document.title.match(/\+?(51\d{9})/);
-      if (match) return match[1];
     } catch (_) {}
 
     return null;
   }
 
   /**
-   * Diagnóstico al inicio: imprime en consola qué módulos de WA Web están
-   * disponibles y qué número propio encuentra cada uno.
-   * Solo corre la primera vez que se carga la extensión.
-   */
-  function runDiagnostics() {
-    const modules = [
-      'WAWebPhoneInfoStore',
-      'WAWebConnModel',
-      'WAWebAuthModel',
-      'WAWebContactsMeStore',
-      'WAWebUserPrefsGeneral',
-      'WAWebChatStore',
-      'WAWebSendMsgChatStore',
-    ];
-    console.group('[WSPP] Diagnóstico de módulos WA Web');
-    for (const name of modules) {
-      try {
-        const m = window.require(name);
-        if (m) {
-          // Intentar extraer el propio número de cada uno
-          const candidates = [
-            m?.phoneInfo?.wid?._serialized,
-            m?.default?.me?._serialized,
-            m?.default?.me?.user,
-            m?.me?._serialized,
-            m?.me?.user,
-            m?.wid?._serialized,
-          ].filter(Boolean);
-          console.log(`  ✓ ${name}:`, candidates.length ? candidates : '(cargado pero sin wid visible)');
-        } else {
-          console.log(`  ✗ ${name}: null`);
-        }
-      } catch (e) {
-        console.log(`  ✗ ${name}: error —`, e.message);
-      }
-    }
-    const own = getOwnNumber();
-    console.log('[WSPP] own_number resuelto:', own ?? 'NULL — ningún módulo funcionó');
-    console.groupEnd();
-  }
-
-  /**
    * Teléfono del contacto en el chat actualmente abierto.
-   * Orden de preferencia:
-   *   1. WAWebChatStore (WA internal) — más confiable
-   *   2. Atributo data-id en el panel de conversación
-   *   3. window.location search (links directos wa.me)
    * Retorna solo dígitos (ej: "51936628022") o null.
    * Filtra grupos y IDs internos (solo 10–13 dígitos).
    */
   function getActivePhone() {
-    try {
-      const ChatStore = req('WAWebChatStore') || req('WAWebSendMsgChatStore');
-      if (ChatStore) {
-        const chat = typeof ChatStore.getActiveChat === 'function'
-          ? ChatStore.getActiveChat()
-          : ChatStore.active;
-        const jid = chat?.id?._serialized || chat?.id?.user || '';
-        const n = jidToNumber(jid);
-        if (n) return n;
-      }
-    } catch (_) {}
+    // ── 1. webpack cache: buscar el chat activo ────────────────────────────
+    if (__wr && __wr.c) {
+      try {
+        const jidRe = /^(\d{10,13})@c\.us$/;
+        for (const mod of Object.values(__wr.c)) {
+          try {
+            const exp = mod?.exports;
+            if (!exp) continue;
+            for (const target of [exp, exp?.default]) {
+              if (!target || typeof target !== 'object') continue;
+              // Buscar patrón de chat activo: objeto con id._serialized y isActive/active
+              if ((target.active || target.isActive) && target.id?._serialized) {
+                const n = jidToNumber(target.id._serialized);
+                if (n) return n;
+              }
+              // getActiveChat function
+              if (typeof target.getActiveChat === 'function') {
+                const chat = target.getActiveChat();
+                const n = jidToNumber(chat?.id?._serialized || chat?.id?.user || '');
+                if (n) return n;
+              }
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
 
+    // ── 2. data-id en el panel de conversación ─────────────────────────────
     try {
       const panel = document.querySelector('[data-id]');
       if (panel) {
@@ -184,12 +200,12 @@
       }
     } catch (_) {}
 
+    // ── 3. URL params ──────────────────────────────────────────────────────
     try {
-      const params = new URLSearchParams(window.location.search);
-      const p = params.get('phone');
+      const p = new URLSearchParams(window.location.search).get('phone');
       if (p) {
-        const num = p.replace(/\D/g, '');
-        if (num.length >= 10 && num.length <= 13) return num;
+        const n = p.replace(/\D/g, '');
+        if (n.length >= 10 && n.length <= 13) return n;
       }
     } catch (_) {}
 
@@ -199,11 +215,6 @@
   /**
    * Devuelve true si el elemento (o alguno de sus ancestros hasta 8 niveles)
    * es el botón Send de WA Web.
-   *
-   * WA Web cambia el markup frecuentemente. Estrategias en orden:
-   *   1. data-testid="send" o data-icon="send" (versiones anteriores)
-   *   2. aria-label exactamente "Enviar" o "Send" en button/role=button
-   *   3. Botón con aria-label que contenga "enviar" o "send"
    */
   function isSendButton(el) {
     let node = el;
@@ -232,14 +243,16 @@
   }
 
   function emitSent(phone) {
+    const own = getOwnNumber();
     window.postMessage({
       type: 'WSPP_SENT',
       payload: {
         phone,
-        own_number: getOwnNumber(),   // ← celular físico activo
+        own_number: own,
         timestamp: Math.floor(Date.now() / 1000),
       },
     }, '*');
+    console.log('[WSPP] ✓ enviado →', phone, '| celular:', own ?? 'NULL (__wr=' + !!__wr + ')');
   }
 
   // ─── listeners ───────────────────────────────────────────────────────────────
@@ -252,7 +265,6 @@
       return;
     }
     emitSent(phone);
-    console.log('[WSPP] ✓ enviado →', phone, '| celular:', getOwnNumber());
   }, true);
 
   document.addEventListener('keydown', (e) => {
@@ -273,15 +285,7 @@
     const phone = getActivePhone();
     if (!phone) return;
     emitSent(phone);
-    console.log('[WSPP] ✓ enviado (Enter) →', phone, '| celular:', getOwnNumber());
   }, true);
 
-  // Correr diagnóstico después de que WA Web termine de cargar sus módulos
-  if (document.readyState === 'complete') {
-    runDiagnostics();
-  } else {
-    window.addEventListener('load', runDiagnostics, { once: true });
-  }
-
-  console.log('[WSPP] ✓ listeners DOM activos (click + Enter + own_number)');
+  console.log('[WSPP] ✓ webpack hook instalado, listeners activos');
 })();
