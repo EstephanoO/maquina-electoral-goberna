@@ -55,12 +55,30 @@
 
   // ─── helpers ────────────────────────────────────────────────────────────────
 
-  /** Extrae número de un JID de WA ("5198765432@c.us" → "5198765432"). Filtra grupos. */
+  /** Extrae número de un JID de WA ("5198765432@c.us" → "5198765432"). Filtra grupos y @lid. */
   function jidToNumber(jid) {
     if (!jid || typeof jid !== 'string') return null;
     if (jid.includes('@g.us') || jid.includes('@broadcast') || jid.includes('@newsletter')) return null;
+    if (jid.includes('@lid')) return null; // nuevo formato WA — no es un número de teléfono
     const num = jid.replace(/@.+$/, '').replace(/\D/g, '');
     return (num.length >= 10 && num.length <= 13) ? num : null;
+  }
+
+  /**
+   * Extrae el nombre del contacto del aria-label del composer.
+   * "Escribe a Estephano." → "Estephano"
+   * Usado como identificador de texto cuando no hay teléfono disponible.
+   */
+  function getActiveContactName() {
+    try {
+      const composer = document.querySelector('[contenteditable="true"][data-tab]') ||
+                       document.querySelector('[role="textbox"][contenteditable="true"]');
+      if (!composer) return null;
+      const aria = composer.getAttribute('aria-label') || '';
+      // "Escribe a Nombre." o "Type a message" o "Escribe un mensaje"
+      const m = aria.match(/^(?:Escribe a|Escribe un mensaje|Type a message to)\s+(.+?)\.?$/i);
+      return m ? m[1].trim() : null;
+    } catch (_) { return null; }
   }
 
   /** Intenta obtener el JID propio desde el cache de webpack (bonus, no crítico). */
@@ -172,6 +190,7 @@
       if (
         testid === 'send' ||
         icon === 'send' ||
+        icon === 'wds-ic-send-filled' ||   // WA Web nueva versión
         (isBtn && /^enviar$/i.test(aria.trim())) ||
         (isBtn && /^send$/i.test(aria.trim())) ||
         (isBtn && /\benviar\b/i.test(aria)) ||
@@ -185,42 +204,26 @@
   }
 
   function emitSent(phone) {
-    const own = getOwnNumber();
+    const own  = getOwnNumber();
+    const name = phone ? null : getActiveContactName();
     window.postMessage({
       type: 'WSPP_SENT',
       payload: {
-        phone,
+        phone,           // null si no se pudo resolver — el backend lo ignorará
+        contact_name: name,
         own_number: own,
         timestamp: Math.floor(Date.now() / 1000),
       },
     }, '*');
-    console.log('[WSPP] ✓ enviado →', phone, '| celular:', own ?? 'NULL — configurá tu número en el popup');
+    console.log('[WSPP] ✓ enviado → phone:', phone ?? '(sin teléfono)', '| nombre:', name ?? '-', '| celular:', own ?? 'NULL');
   }
 
   // ─── listeners ───────────────────────────────────────────────────────────────
 
   document.addEventListener('click', (e) => {
-    // DEBUG: loguear todo click para ver qué atributos tiene el botón Send
-    const t = e.target;
-    const tag    = (t.tagName || '').toLowerCase();
-    const role   = t.getAttribute?.('role') || '';
-    const testid = t.getAttribute?.('data-testid') || '';
-    const icon   = t.getAttribute?.('data-icon') || '';
-    const aria   = t.getAttribute?.('aria-label') || '';
-    // Solo loguear si parece un botón o SVG (para no spamear con clicks en texto)
-    if (tag === 'button' || tag === 'span' || tag === 'svg' || tag === 'div' || role === 'button') {
-      console.log('[WSPP:click]', tag, { role, testid, icon, aria: aria.slice(0, 40) });
-    }
-
     if (!isSendButton(e.target)) return;
-
-    console.log('[WSPP] ✓ isSendButton detectado');
     const phone = getActivePhone();
-    console.log('[WSPP] activePhone:', phone);
-    if (!phone) {
-      console.warn('[WSPP] Send detectado pero no se pudo obtener el teléfono del contacto');
-      return;
-    }
+    console.log('[WSPP] ✓ Send click | phone:', phone ?? '(sin teléfono)');
     emitSent(phone);
   }, true);
 
@@ -232,22 +235,15 @@
     const testid    = active.getAttribute('data-testid');
     const ariaLabel = active.getAttribute('aria-label') || '';
 
-    console.log('[WSPP:enter]', active.tagName?.toLowerCase(), { role, testid, ariaLabel: ariaLabel.slice(0, 40), contenteditable: active.getAttribute('contenteditable') });
-
     const isComposer =
       testid === 'conversation-compose-box-input' ||
       (role === 'textbox' && /escribe|message|type|escribir/i.test(ariaLabel)) ||
       (active.tagName?.toLowerCase() === 'p' && active.closest('[contenteditable="true"]') !== null) ||
       (active.getAttribute('contenteditable') === 'true');
 
-    if (!isComposer) {
-      console.log('[WSPP:enter] no es composer, ignorado');
-      return;
-    }
-    console.log('[WSPP:enter] ✓ composer detectado');
+    if (!isComposer) return;
     const phone = getActivePhone();
-    console.log('[WSPP:enter] activePhone:', phone);
-    if (!phone) return;
+    console.log('[WSPP] ✓ Send Enter | phone:', phone ?? '(sin teléfono)');
     emitSent(phone);
   }, true);
 
