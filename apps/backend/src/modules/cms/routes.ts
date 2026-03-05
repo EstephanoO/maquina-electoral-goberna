@@ -738,6 +738,35 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         const { type, phone, own_number, preview, detected_at } = parsed.data;
         const ownNumber = own_number?.replace(/\D/g, "") || null;
 
+        // ── Whitelist check ─────────────────────────────────────────
+        // If own_number is present, it must exist in wa_phones for this
+        // campaign. Events from unregistered phones are silently ignored —
+        // they won't count as metrics. If own_number is absent or empty,
+        // we also reject (can't attribute to any registered phone).
+        if (!ownNumber) {
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            filtered: true,
+            reason: "own_number not provided — event ignored",
+          });
+        }
+
+        const registeredPhones = await repo.listWaPhones(campaignId);
+        const isRegistered = registeredPhones.some((p) => p.number === ownNumber);
+        if (!isRegistered) {
+          app.log.info(
+            { own_number: ownNumber, campaign_id: campaignId },
+            "extension-event from unregistered phone — ignored",
+          );
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            filtered: true,
+            reason: "own_number not registered for this campaign",
+          });
+        }
+
         // Find the contact by phone
         const contact = await repo.findContactByPhone(campaignId, phone);
         if (!contact) {
