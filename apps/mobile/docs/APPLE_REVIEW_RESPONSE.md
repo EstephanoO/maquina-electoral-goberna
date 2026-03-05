@@ -23,15 +23,20 @@ En orden estricto. No saltear.
 
 Ingresá estas credenciales en **App Store Connect → App Review Information → Demo Account**.
 
-| Campo | Valor |
-|---|---|
-| **Username** | `appreviewer@goberna.pe` |
+| Campo        | Valor         |
+| ------------ | ------------- |
+| **Username** | `999000001`   |
 | **Password** | `Review2024!` |
+
+> ⚠️ El login usa **número de teléfono**, no email. Ingresá `999000001` en el campo de teléfono.
 
 **Notes (copiar y pegar en el campo "Notes" de App Review Information):**
 
 ```
-The app requires a backend account. Use the demo credentials above to log in.
+The app requires a backend account. Login uses PHONE NUMBER (not email).
+
+  Phone:    999000001
+  Password: Review2024!
 
 After login, the reviewer will be assigned to the "Guillermo Aliaga" campaign
 as a field agent (agente_campo role). This role allows:
@@ -196,34 +201,36 @@ En App Store Connect:
    - Demo Account Password: `Review2024!`
    - Notes: (copiar el bloque de notas del Paso 1)
 4. En **Review Notes** de la submission agregar:
+
    ```
    This app has been approved for Unlisted App Distribution
    (confirmation received [FECHA DEL EMAIL DE APPLE]).
    Demo account credentials are provided in the Demo Account fields above.
    ```
+
 5. Submit for Review
 
 ---
 
 ## Referencia técnica
 
-| Ítem | Valor |
-|---|---|
-| Bundle ID iOS | `com.estephano.gobernaterritory02` |
-| Package Android | `com.estephano.gobernaterritory02` |
-| `buildNumber` iOS | `2` |
-| `versionCode` Android | `2` |
-| `version` | `1.0.0` |
-| TestFlight URL | `https://testflight.apple.com/join/JAZ5smzy` |
-| EAS Project ID | `17429ec1-1da2-410f-9f52-efc82919c219` |
-| Submission rechazada | `45b2038a-2730-4ac2-a6aa-97c5b741d7e7` |
-| Backend API | `https://api.goberna.us` |
-| Demo user | `appreviewer@goberna.pe` / `Review2024!` |
-| Campaña del reviewer | `Guillermo Aliaga` (`guillermo-aliaga`) |
-| Rol del reviewer | `agente_campo` (perm_tierra=true, perm_digital=true) |
-| Permiso iOS usado | `NSLocationWhenInUseUsageDescription` — foreground only, sin background |
-| Call site del request | `dashboard.tsx` → botón "Activar GPS" → `requestPermission()` |
-| Call site secundario | `new-form.tsx` → botón GPS capture (tap directo, check-first) |
-| Pre-prompt custom | No existe — dialog del sistema es el primero y único |
-| ATT framework | No aplica — GPS es operativo interno, sin tracking de terceros |
-| Distribución | Unlisted App Distribution (pendiente de confirmación de Apple) |
+| Ítem                  | Valor                                                                   |
+| --------------------- | ----------------------------------------------------------------------- |
+| Bundle ID iOS         | `com.estephano.gobernaterritory02`                                      |
+| Package Android       | `com.estephano.gobernaterritory02`                                      |
+| `buildNumber` iOS     | `2`                                                                     |
+| `versionCode` Android | `2`                                                                     |
+| `version`             | `1.0.0`                                                                 |
+| TestFlight URL        | `https://testflight.apple.com/join/JAZ5smzy`                            |
+| EAS Project ID        | `17429ec1-1da2-410f-9f52-efc82919c219`                                  |
+| Submission rechazada  | `45b2038a-2730-4ac2-a6aa-97c5b741d7e7`                                  |
+| Backend API           | `https://api.goberna.us`                                                |
+| Demo user | teléfono `999000001` / `Review2024!` |
+| Campaña del reviewer  | `Guillermo Aliaga` (`guillermo-aliaga`)                                 |
+| Rol del reviewer      | `agente_campo` (perm_tierra=true, perm_digital=true)                    |
+| Permiso iOS usado     | `NSLocationWhenInUseUsageDescription` — foreground only, sin background |
+| Call site del request | `dashboard.tsx` → botón "Activar GPS" → `requestPermission()`           |
+| Call site secundario  | `new-form.tsx` → botón GPS capture (tap directo, check-first)           |
+| Pre-prompt custom     | No existe — dialog del sistema es el primero y único                    |
+| ATT framework         | No aplica — GPS es operativo interno, sin tracking de terceros          |
+| Distribución          | Unlisted App Distribution (pendiente de confirmación de Apple)          |
