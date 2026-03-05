@@ -4,6 +4,8 @@
  * Each invitation shows a copyable magic link:
  *   https://dashboard.grupogoberna.com/invite/{code}
  *
+ * Also shows the 4-character access code for easy mobile registration.
+ *
  * Only rendered for users who canManage (candidato+).
  */
 
@@ -19,6 +21,10 @@ import {
   revokeInvitation,
   buildInviteLink,
 } from "../../../../lib/services/invitations";
+import {
+  getCampaignAccessCode,
+  regenerateCampaignAccessCode,
+} from "../../../../lib/services/access-codes";
 import { ROLES } from "./role-config";
 
 // ── Types ───────────────────────────────────────────────────────────
@@ -56,6 +62,12 @@ export function InvitationsPanel({ campaignId }: InvitationsPanelProps) {
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // ── Access code state ────────────────────────────────────────────
+  const [accessCode, setAccessCode] = useState<string | null>(null);
+  const [loadingCode, setLoadingCode] = useState(true);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+
   // ── Data fetching ────────────────────────────────────────────────
 
   const fetchInvitations = useCallback(async () => {
@@ -82,9 +94,24 @@ export function InvitationsPanel({ campaignId }: InvitationsPanelProps) {
     }
   }, [campaignId]);
 
+  const fetchAccessCode = useCallback(async () => {
+    setLoadingCode(true);
+    try {
+      const res = await getCampaignAccessCode(campaignId);
+      if (res.ok && res.data) {
+        setAccessCode(res.data.access_code);
+      }
+    } catch {
+      // Non-critical — access code section just stays empty
+    } finally {
+      setLoadingCode(false);
+    }
+  }, [campaignId]);
+
   useEffect(() => {
     fetchInvitations();
-  }, [fetchInvitations]);
+    fetchAccessCode();
+  }, [fetchInvitations, fetchAccessCode]);
 
   // ── Handlers ─────────────────────────────────────────────────────
 
@@ -147,6 +174,41 @@ export function InvitationsPanel({ campaignId }: InvitationsPanelProps) {
     }
   }, []);
 
+  const handleCopyCode = useCallback(async () => {
+    if (!accessCode) return;
+    try {
+      await navigator.clipboard.writeText(accessCode);
+    } catch {
+      const el = document.createElement("textarea");
+      el.value = accessCode;
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+    }
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  }, [accessCode]);
+
+  const handleRegenerateCode = useCallback(async () => {
+    if (!confirm("¿Regenerar el código de acceso? El código anterior dejará de funcionar.")) return;
+    setRegenerating(true);
+    try {
+      const res = await regenerateCampaignAccessCode(campaignId);
+      if (res.ok && res.data) {
+        setAccessCode(res.data.access_code);
+      } else {
+        alert("Error regenerando código de acceso");
+      }
+    } catch {
+      alert("Error de red");
+    } finally {
+      setRegenerating(false);
+    }
+  }, [campaignId]);
+
   // ── Render ───────────────────────────────────────────────────────
 
   return (
@@ -175,12 +237,133 @@ export function InvitationsPanel({ campaignId }: InvitationsPanelProps) {
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--goberna-blue-900)", fontFamily: FONT_STACK }}>
-            Links de Invitación
+            Registro de Agentes
           </div>
           <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", fontFamily: FONT_STACK, marginTop: 1 }}>
-            Compartí el link por WhatsApp — el agente se registra directo en la app
+            Código de acceso o link de invitación — el agente se registra directo en la app
           </div>
         </div>
+      </div>
+
+      {/* ── Access Code section ─────────────────────────────────── */}
+      <div style={{
+        padding: "14px 16px",
+        borderBottom: "1px solid var(--color-border)",
+        background: "linear-gradient(135deg, #fffbeb, #fef3c7)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 18 }}>🔑</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#92400e", fontFamily: FONT_STACK }}>
+              Código de Acceso Rápido
+            </div>
+            <div style={{ fontSize: 11, color: "#b45309", fontFamily: FONT_STACK }}>
+              El agente lo ingresa en la app al registrarse — sin link, sin vencimiento
+            </div>
+          </div>
+        </div>
+
+        {loadingCode ? (
+          <div style={{ fontSize: 12, color: "#b45309", fontFamily: FONT_STACK }}>Cargando código...</div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {/* Big code display */}
+            <div style={{
+              display: "flex",
+              gap: 6,
+              alignItems: "center",
+            }}>
+              {accessCode ? accessCode.split("").map((char, i) => (
+                <div key={`code-char-${i}-${char}`} style={{
+                  width: 44,
+                  height: 52,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 26,
+                  fontWeight: 900,
+                  fontFamily: "monospace",
+                  color: "#1c1917",
+                  background: "#fff",
+                  border: "2px solid #fbbf24",
+                  borderRadius: 10,
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.08)",
+                  letterSpacing: 0,
+                }}>
+                  {char}
+                </div>
+              )) : (
+                <div style={{ fontSize: 13, color: "#b45309", fontFamily: FONT_STACK }}>Sin código generado</div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              {accessCode && (
+                <button
+                  type="button"
+                  onClick={handleCopyCode}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "6px 14px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    fontFamily: FONT_STACK,
+                    background: copiedCode ? "#f0fdf4" : "#fff",
+                    color: copiedCode ? "var(--color-success)" : "#92400e",
+                    border: `1px solid ${copiedCode ? "var(--color-success)" : "#fbbf24"}`,
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {copiedCode ? <><IconCheck size={12} /> Copiado</> : <><IconCopy size={12} /> Copiar código</>}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleRegenerateCode}
+                disabled={regenerating}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "6px 14px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  fontFamily: FONT_STACK,
+                  background: "transparent",
+                  color: "#b45309",
+                  border: "1px solid #fbbf24",
+                  borderRadius: 8,
+                  cursor: regenerating ? "not-allowed" : "pointer",
+                  opacity: regenerating ? 0.6 : 1,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {regenerating ? "Regenerando..." : (accessCode ? "↺ Regenerar" : "Generar código")}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Divider with "o comparte un link" ──────────────────── */}
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "10px 16px",
+        borderBottom: "1px solid var(--color-border)",
+      }}>
+        <div style={{ flex: 1, height: 1, background: "var(--color-border)" }} />
+        <span style={{ fontSize: 11, color: "var(--color-text-tertiary)", fontFamily: FONT_STACK, whiteSpace: "nowrap" }}>
+          o compartí un link de invitación
+        </span>
+        <div style={{ flex: 1, height: 1, background: "var(--color-border)" }} />
       </div>
 
       {/* Create section */}

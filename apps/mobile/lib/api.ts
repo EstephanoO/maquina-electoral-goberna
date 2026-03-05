@@ -30,6 +30,8 @@ import type {
   RegisterResponse,
   RegisterWithCodeRequest,
   ValidateInvitationResponse,
+  ValidateAccessCodeResponse,
+  RegisterWithAccessCodeRequest,
   RefreshResponse,
   CandidateInfo,
   CampaignConfig,
@@ -220,6 +222,34 @@ export async function validateInvitation(
  */
 export async function registerWithInvitation(
   body: RegisterWithCodeRequest,
+): Promise<ApiResult<RegisterResponse>> {
+  return request<RegisterResponse>('POST', '/auth/register', body, false);
+}
+
+// ─── Access Codes ────────────────────────────────────────────
+
+/**
+ * GET /api/access-codes/validate/:code — public, no auth needed.
+ * Validates a 4-char campaign access code and returns campaign info.
+ * Used to pre-fill campaign info before registration.
+ */
+export async function validateAccessCode(
+  code: string,
+): Promise<ApiResult<ValidateAccessCodeResponse>> {
+  return request<ValidateAccessCodeResponse>(
+    'GET',
+    `/access-codes/validate/${encodeURIComponent(code.toUpperCase())}`,
+    undefined,
+    false,
+  );
+}
+
+/**
+ * POST /api/auth/register — register a new user with a 4-char campaign access code.
+ * The access_code is validated server-side; campaign_id is resolved from the code.
+ */
+export async function registerWithAccessCode(
+  body: RegisterWithAccessCodeRequest,
 ): Promise<ApiResult<RegisterResponse>> {
   return request<RegisterResponse>('POST', '/auth/register', body, false);
 }

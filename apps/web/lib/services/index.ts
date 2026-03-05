@@ -14,3 +14,4 @@ export * from "./support";
 export * from "./validacion";
 export * from "./voluntarios";
 export * from "./invitations";
+export * from "./access-codes";

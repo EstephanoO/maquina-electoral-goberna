@@ -339,6 +339,22 @@ export type RegisterWithCodeRequest = RegisterRequest & {
   invitation_code: string;
 };
 
+// ─── Access Codes (GET /api/access-codes/validate/:code — public) ────
+
+/** Respuesta de validar un codigo de acceso de campana (4 chars) */
+export type ValidateAccessCodeResponse = {
+  campaign: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+};
+
+/** Extended register payload that uses a campaign access code (4 chars) */
+export type RegisterWithAccessCodeRequest = RegisterRequest & {
+  access_code: string;
+};
+
 // ─── API Error codes ────────────────────────────────────────
 
 export const API_ERRORS = {

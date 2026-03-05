@@ -31,6 +31,9 @@ export const registerSchema = z.object({
   email: z.string().email("email invalido").transform((e) => e.toLowerCase().trim()).optional(),
   // Invitation code - optional, validated and consumed during registration
   invitation_code: z.string().trim().toUpperCase().optional(),
+  // Access code de campaña (4 chars) - alternativa simple al invitation_code
+  // Si se provee, se valida contra campaign_access_codes y el campaign_id debe coincidir
+  access_code: z.string().trim().toUpperCase().max(4).optional(),
 });
 
 export const changePasswordSchema = z.object({

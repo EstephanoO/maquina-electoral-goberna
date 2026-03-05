@@ -9,6 +9,7 @@ import { changePasswordSchema, loginSchema, refreshSchema, registerSchema, reset
 import { authorize } from "../../infra/authorize";
 import { AppError, AuthService } from "./service";
 import * as invitationsRepo from "../invitations/repository";
+import * as accessCodesRepo from "../access-codes/repository";
 
 // ── Cookie helpers ──────────────────────────────────────────────────
 
@@ -209,7 +210,7 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
       }
 
       try {
-        const { phone, password, full_name, region, campaign_id, email: providedEmail, invitation_code } = parsed.data;
+        const { phone, password, full_name, region, campaign_id, email: providedEmail, invitation_code, access_code } = parsed.data;
 
         // ── Validate invitation code if provided ──────────────────────────
         let invitationRow: Awaited<ReturnType<typeof invitationsRepo.findByCode>> = null;
@@ -225,6 +226,23 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
           if (invitationRow.campaign_id !== campaign_id) {
             return reply.code(400).send(errorPayload(requestId, "INVITATION_CAMPAIGN_MISMATCH", "codigo no corresponde a este candidato"));
           }
+        }
+
+        // ── Validate access code (4-char campaign code) if provided ──────
+        // El access code valida que el campaign_id corresponde al codigo,
+        // pero no requiere campaign_id en el body — lo podemos resolver desde el codigo.
+        let accessCodeCampaignId = campaign_id;
+        if (access_code) {
+          const accessCodeRow = await accessCodesRepo.findByCode(access_code);
+          if (!accessCodeRow) {
+            return reply.code(400).send(errorPayload(requestId, "ACCESS_CODE_NOT_FOUND", "codigo de acceso invalido"));
+          }
+          // Si se provee campaign_id tambien, debe coincidir
+          if (campaign_id && accessCodeRow.campaign_id !== campaign_id) {
+            return reply.code(400).send(errorPayload(requestId, "ACCESS_CODE_CAMPAIGN_MISMATCH", "codigo no corresponde a este candidato"));
+          }
+          // El campaign_id viene del access code (no necesita que el usuario lo sepa)
+          accessCodeCampaignId = accessCodeRow.campaign_id;
         }
 
         // Check if phone already registered
@@ -244,11 +262,14 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
           }
         }
 
-        // Verify campaign exists (skip if invitation already validated — it joined campaigns)
-        if (!invitationRow) {
+        // Effective campaign_id: from access_code or from body
+        const effectiveCampaignId = accessCodeCampaignId;
+
+        // Verify campaign exists (skip if invitation or access_code already validated — they joined campaigns)
+        if (!invitationRow && !access_code) {
           const { rows: campaignRows } = await pool.query(
-            "SELECT id FROM campaigns WHERE id = $1",
-            [campaign_id],
+            "SELECT id FROM campaigns WHERE id = $1 AND status = 'active'",
+            [effectiveCampaignId],
           );
           if (campaignRows.length === 0) {
             return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "candidato no encontrado"));
@@ -275,7 +296,7 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
             `INSERT INTO access_requests (user_id, campaign_id, region, perm_tierra, perm_digital, status, resolved_at)
              VALUES ($1, $2, $3, true, true, 'approved', now())
              ON CONFLICT (user_id, campaign_id) WHERE status = 'pending' DO NOTHING`,
-            [user.id, campaign_id, region],
+            [user.id, effectiveCampaignId, region],
           );
 
           // Add user directly to campaign as agente_campo
@@ -284,7 +305,7 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
              VALUES ($1, $2, 'agente_campo', 'active', true, true, $3)
              ON CONFLICT (user_id, campaign_id)
              DO UPDATE SET role = 'agente_campo', status = 'active', perm_tierra = true, perm_digital = true, region = $3, assigned_at = now()`,
-            [user.id, campaign_id, region],
+            [user.id, effectiveCampaignId, region],
           );
 
           await client.query("COMMIT");
@@ -302,10 +323,11 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
 
         app.log.info({
           user_id: user.id,
-          campaign_id,
+          campaign_id: effectiveCampaignId,
           region,
           phone,
           invitation_code: invitation_code ?? null,
+          access_code: access_code ?? null,
           request_id: requestId,
         }, "user registered and auto-accepted as agente_campo (phone-based)");
 
