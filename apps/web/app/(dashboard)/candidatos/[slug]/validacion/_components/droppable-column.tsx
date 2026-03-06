@@ -40,6 +40,7 @@ export function DroppableColumn({
   isOver,
   isBlocked,
   totalItems,
+  totalIsPartial = false,
   hasMoreGlobal,
   loadingMore,
   collapsed,
@@ -52,6 +53,7 @@ export function DroppableColumn({
   isOver: boolean;
   isBlocked: boolean;
   totalItems: number;
+  totalIsPartial?: boolean;
   hasMoreGlobal: boolean;
   loadingMore: boolean;
   collapsed: boolean;
@@ -126,7 +128,7 @@ export function DroppableColumn({
             className="text-[10px] font-black rounded-full min-w-[20px] h-5 flex items-center justify-center px-1"
             style={{ background: `${col.accent}15`, color: col.accent }}
           >
-            {count}
+            {totalItems}{totalIsPartial ? "+" : ""}
           </span>
         </div>
       </div>
@@ -199,7 +201,7 @@ export function DroppableColumn({
           className="text-[10px] font-black rounded-full min-w-[20px] h-5 flex items-center justify-center px-1 shrink-0"
           style={{ background: `${col.accent}15`, color: col.accent }}
         >
-          {totalItems > 0 && totalItems !== count ? totalItems : count}
+          {totalItems}{totalIsPartial ? "+" : ""}
         </span>
         <button
           type="button"

@@ -28,7 +28,12 @@ export interface ValidationItem {
   updated_at: string;
 }
 
-export type ValidationStats = Record<ValidationStatus, number>;
+export type ValidationStats = {
+  pendiente: number;
+  contactado: number;
+  respondido: number;  // total respondido en backend (incluye todas las subclases de voto)
+  invalido: number;    // backend usa "invalido" — mapea a columna visual "imposible"
+};
 
 /* ─── API ─── */
 

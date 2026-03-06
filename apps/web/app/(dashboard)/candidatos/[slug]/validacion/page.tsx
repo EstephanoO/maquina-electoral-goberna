@@ -43,10 +43,32 @@ import { ToastProvider, useToast } from "./_components/toast";
 const PAGE_LIMIT = 100;
 
 /* ── Stats expandable panel ── */
-function StatsPanel({ stats, items, total }: { stats: ValidationStats; items: ValidationItem[]; total: number }) {
+function StatsPanel({
+  stats,
+  items,
+  total,
+  columnTotals,
+}: {
+  stats: ValidationStats;
+  items: ValidationItem[];
+  total: number;
+  columnTotals: Record<VisualColumn, { count: number; isPartial: boolean }>;
+}) {
+  // Totales reales del backend
   const processed = stats.contactado + stats.respondido + stats.invalido;
-  const conversion = stats.contactado > 0 ? Math.round((stats.respondido / (stats.contactado + stats.respondido)) * 100) : 0;
+  const conversion = (stats.contactado + stats.respondido) > 0
+    ? Math.round((stats.respondido / (stats.contactado + stats.respondido)) * 100)
+    : 0;
 
+  // Desglose de votos — calculado desde items en memoria
+  // Si respondido no está todo cargado, los números son parciales (se indica con +)
+  const respondidoLoaded = items.filter((i) => i.status === "respondido" || i.status === ("validado" as string)).length;
+  const respondidoIsPartial = respondidoLoaded < stats.respondido;
+  const voteDuro   = items.filter((i) => i.vote_class === "duro").length;
+  const voteBlando = items.filter((i) => i.vote_class === "blando").length;
+  const voteFlotante = items.filter((i) => i.vote_class === "flotante").length;
+
+  // Top encuestadores — parcial si no están todos cargados
   const byEncuestador: Record<string, number> = {};
   for (const item of items) {
     const name = item.encuestador?.split(" ")[0] || "Desconocido";
@@ -56,32 +78,66 @@ function StatsPanel({ stats, items, total }: { stats: ValidationStats; items: Va
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
 
-  const voteDuro = items.filter((i) => i.vote_class === "duro").length;
-  const voteBlando = items.filter((i) => i.vote_class === "blando").length;
-
   return (
     <div className="absolute top-full right-0 mt-2 z-50 w-80 bg-white rounded-xl border border-slate-200 shadow-xl p-4 flex flex-col gap-3">
+      {/* Totales reales del backend — siempre correctos */}
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-lg bg-slate-50 p-2.5">
           <div className="text-[10px] text-slate-400 font-medium">Procesados</div>
-          <div className="text-lg font-black text-slate-700">{processed}<span className="text-[11px] font-medium text-slate-400">/{total}</span></div>
+          <div className="text-lg font-black text-slate-700">
+            {processed}
+            <span className="text-[11px] font-medium text-slate-400">/{total}</span>
+          </div>
         </div>
         <div className="rounded-lg bg-slate-50 p-2.5">
-          <div className="text-[10px] text-slate-400 font-medium">Conversion</div>
+          <div className="text-[10px] text-slate-400 font-medium">Conversión</div>
           <div className="text-lg font-black text-cyan-600">{conversion}%</div>
         </div>
-        <div className="rounded-lg bg-emerald-50 p-2.5">
-          <div className="text-[10px] text-emerald-700 font-medium">Voto Duro</div>
-          <div className="text-lg font-black text-emerald-700">{voteDuro}</div>
+        <div className="rounded-lg bg-blue-50 p-2.5">
+          <div className="text-[10px] text-blue-700 font-medium">Pendiente</div>
+          <div className="text-lg font-black text-blue-700">{stats.pendiente}</div>
         </div>
-        <div className="rounded-lg bg-yellow-50 p-2.5">
-          <div className="text-[10px] text-yellow-700 font-medium">Voto Blando</div>
-          <div className="text-lg font-black text-yellow-600">{voteBlando}</div>
+        <div className="rounded-lg bg-sky-50 p-2.5">
+          <div className="text-[10px] text-sky-700 font-medium">Contactado</div>
+          <div className="text-lg font-black text-sky-600">{stats.contactado}</div>
         </div>
       </div>
+
+      {/* Desglose de votos — desde items en memoria, puede ser parcial */}
+      <div>
+        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+          Respondidos — {stats.respondido} total
+          {respondidoIsPartial && <span className="text-slate-300 font-normal ml-1">(desglose parcial)</span>}
+        </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          <div className="rounded-lg bg-emerald-50 p-2">
+            <div className="text-[9px] text-emerald-700 font-medium">Voto Duro</div>
+            <div className="text-base font-black text-emerald-700">
+              {voteDuro}{respondidoIsPartial ? "+" : ""}
+            </div>
+          </div>
+          <div className="rounded-lg bg-yellow-50 p-2">
+            <div className="text-[9px] text-yellow-700 font-medium">Voto Blando</div>
+            <div className="text-base font-black text-yellow-600">
+              {voteBlando}{respondidoIsPartial ? "+" : ""}
+            </div>
+          </div>
+          <div className="rounded-lg bg-violet-50 p-2">
+            <div className="text-[9px] text-violet-700 font-medium">Flotante</div>
+            <div className="text-base font-black text-violet-600">
+              {voteFlotante}{respondidoIsPartial ? "+" : ""}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Top encuestadores */}
       {topEnc.length > 0 && (
         <div>
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Top encuestadores</div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+            Top encuestadores
+            {items.length < total && <span className="text-slate-300 font-normal ml-1">(parcial)</span>}
+          </div>
           {topEnc.map(([name, count]) => (
             <div key={name} className="flex items-center gap-2 py-0.5">
               <span className="text-[11px] text-slate-700 font-medium flex-1 truncate">{name}</span>
@@ -405,6 +461,39 @@ function ValidacionBoard() {
     return groups;
   }, [filteredItems]);
 
+  /* ── Real totals per column ─────────────────────────────────────────
+   * Para columnas con paginación, grouped[col].length solo refleja los
+   * ítems cargados en memoria, no el total real.
+   *
+   * Fuente de verdad:
+   *   pendiente  → stats.pendiente   (backend)
+   *   contactado → stats.contactado  (backend)
+   *   imposible  → stats.invalido    (backend, nombre diferente)
+   *   respondido (total) → stats.respondido (backend)
+   *
+   * Para las subcolumnas de voto (blando/duro/flotante/respondido-sin-clase):
+   * el backend no desglosa — calculamos la proporción sobre los ítems en
+   * memoria y la proyectamos al total real de respondido.
+   * Mientras no estén todos cargados mostramos el parcial + "+" indicando
+   * que hay más.
+   * ──────────────────────────────────────────────────────────────────── */
+  const columnTotals = useMemo((): Record<VisualColumn, { count: number; isPartial: boolean }> => {
+    const respondidoTotal = stats.respondido;
+    const respondidoLoaded = grouped.respondido.length + grouped.voto_blando.length + grouped.voto_duro.length + grouped.voto_flotante.length;
+    const respondidoIsPartial = respondidoLoaded < respondidoTotal;
+
+    return {
+      pendiente:     { count: stats.pendiente,           isPartial: false },
+      contactado:    { count: stats.contactado,          isPartial: false },
+      imposible:     { count: stats.invalido,            isPartial: false },
+      // Subcolumnas de respondido: parciales hasta que todos los ítems estén cargados
+      respondido:    { count: grouped.respondido.length,    isPartial: respondidoIsPartial },
+      voto_blando:   { count: grouped.voto_blando.length,   isPartial: respondidoIsPartial },
+      voto_duro:     { count: grouped.voto_duro.length,     isPartial: respondidoIsPartial },
+      voto_flotante: { count: grouped.voto_flotante.length, isPartial: respondidoIsPartial },
+    };
+  }, [stats, grouped]);
+
   /* ── Blocked columns during drag ── */
   const blockedCols = useMemo((): Set<VisualColumn> => {
     if (!activeColumn) return new Set();
@@ -517,7 +606,7 @@ function ValidacionBoard() {
               {totalRecords > 0 ? `${Math.round((processed / totalRecords) * 100)}%` : "0%"}
             </button>
             {statsOpen && (
-              <StatsPanel stats={stats} items={items} total={totalRecords || totalItems} />
+              <StatsPanel stats={stats} items={items} total={totalRecords || totalItems} columnTotals={columnTotals} />
             )}
           </div>
         </div>
@@ -525,13 +614,18 @@ function ValidacionBoard() {
         {/* Stats mini-bar */}
         {!loading && (
           <div className="flex items-center gap-4 px-4 py-1.5 border-b border-slate-100 bg-white text-[11px] shrink-0">
-            {COLUMNS.map((col) => (
-              <span key={col.key} className="flex items-center gap-1 font-semibold" style={{ color: col.accent }}>
-                <span style={{ color: col.accent }}>{col.icon()}</span>
-                <span className="text-slate-500 font-normal">{col.label}</span>
-                <span className="tabular-nums">{grouped[col.key]?.length ?? 0}{col.key === "pendiente" && hasMore ? "+" : ""}</span>
-              </span>
-            ))}
+            {COLUMNS.map((col) => {
+              const total = columnTotals[col.key];
+              return (
+                <span key={col.key} className="flex items-center gap-1 font-semibold" style={{ color: col.accent }}>
+                  <span style={{ color: col.accent }}>{col.icon()}</span>
+                  <span className="text-slate-500 font-normal">{col.label}</span>
+                  <span className="tabular-nums">
+                    {total.count}{total.isPartial ? "+" : ""}
+                  </span>
+                </span>
+              );
+            })}
             <span className="ml-auto text-slate-400 tabular-nums">
               {totalRecords > 0
                 ? `${Math.round(((stats.contactado + stats.respondido + stats.invalido) / totalRecords) * 100)}%`
@@ -560,33 +654,37 @@ function ValidacionBoard() {
               onKeyDown={(e) => { if (e.key === "Escape") setStatsOpen(false); }}
               role="presentation"
             >
-              {COLUMNS.map((col) => (
-                <DroppableColumn
-                  key={col.key}
-                  col={col}
-                  items={grouped[col.key]}
-                  isOver={overColumn === col.key}
-                  isBlocked={activeColumn !== null && blockedCols.has(col.key)}
-                  totalItems={grouped[col.key].length}
-                  hasMoreGlobal={hasMore}
-                  loadingMore={loadingMore}
-                  collapsed={collapsedCols.has(col.key) || (activeColumn !== null && blockedCols.has(col.key))}
-                  onToggleCollapse={() => toggleColCollapse(col.key)}
-                  onLoadMore={fetchMore}
-                  renderCard={(item) => (
-                    <DraggableCard
-                      key={item.id}
-                      item={item}
-                      column={col.key}
-                      isUpdating={updatingId === item.id}
-                      columnColor={col.accent}
-                      compact={compact}
-                      onWhatsAppClick={handleWhatsAppClick}
-                      onAction={handleCardAction}
-                    />
-                  )}
-                />
-              ))}
+              {COLUMNS.map((col) => {
+                const total = columnTotals[col.key];
+                return (
+                  <DroppableColumn
+                    key={col.key}
+                    col={col}
+                    items={grouped[col.key]}
+                    isOver={overColumn === col.key}
+                    isBlocked={activeColumn !== null && blockedCols.has(col.key)}
+                    totalItems={total.count}
+                    totalIsPartial={total.isPartial}
+                    hasMoreGlobal={hasMore}
+                    loadingMore={loadingMore}
+                    collapsed={collapsedCols.has(col.key) || (activeColumn !== null && blockedCols.has(col.key))}
+                    onToggleCollapse={() => toggleColCollapse(col.key)}
+                    onLoadMore={fetchMore}
+                    renderCard={(item) => (
+                      <DraggableCard
+                        key={item.id}
+                        item={item}
+                        column={col.key}
+                        isUpdating={updatingId === item.id}
+                        columnColor={col.accent}
+                        compact={compact}
+                        onWhatsAppClick={handleWhatsAppClick}
+                        onAction={handleCardAction}
+                      />
+                    )}
+                  />
+                );
+              })}
             </div>
 
             <DragOverlay
