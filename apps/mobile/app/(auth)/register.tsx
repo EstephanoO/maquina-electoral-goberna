@@ -9,7 +9,7 @@
  * El candidato también puede usar links de invitación (pantalla separada /invite/[code]).
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -106,18 +106,30 @@ export default function RegisterScreen() {
   const [searchFocused, setSearchFocused] = useState(false);
 
   // ─── Load Candidates (only when in search mode) ─────────────
+  const [candidatesError, setCandidatesError] = useState(false);
+
+  const fetchCandidates = useCallback(() => {
+    setLoadingCandidates(true);
+    setCandidatesError(false);
+    getCandidates().then((result) => {
+      if (result.ok && result.data?.candidates && result.data.candidates.length > 0) {
+        setCandidates(result.data.candidates);
+      } else {
+        setCandidatesError(true);
+      }
+      setLoadingCandidates(false);
+    }).catch(() => {
+      setCandidatesError(true);
+      setLoadingCandidates(false);
+    });
+  }, []);
+
   useEffect(() => {
     if (campaignMode !== 'search') return;
     if (candidates.length > 0) return; // ya cargados
-    setLoadingCandidates(true);
-    getCandidates().then((result) => {
-      if (result.ok && result.data?.candidates) {
-        setCandidates(result.data.candidates);
-      }
-      setLoadingCandidates(false);
-    });
+    fetchCandidates();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campaignMode, candidates.length]);
+  }, [campaignMode, candidates.length, fetchCandidates]);
 
   // ─── Match Candidate by Name (search mode) ───────────────────
   // Busca por substring en nombre completo, partido o cargo.
@@ -567,37 +579,48 @@ export default function RegisterScreen() {
               {/* ── Mode: candidate name search ── */}
               {campaignMode === 'search' && (
                 <View style={styles.field}>
-                  <Text style={styles.label}>Primer nombre del candidato</Text>
-                  <View style={[styles.inputWrapper, searchFocused && styles.inputWrapperFocused]}>
-                    <Ionicons
-                      name="person-outline"
-                      size={20}
-                      color={searchFocused ? BORDER_FOCUS : TEXT_MUTED}
-                      style={styles.inputIcon}
-                    />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Ingresa nombre"
-                      placeholderTextColor={TEXT_MUTED}
-                      value={candidateSearch}
-                      onChangeText={setCandidateSearch}
-                      autoCapitalize="words"
-                      autoCorrect={false}
-                      onFocus={() => setSearchFocused(true)}
-                      onBlur={() => setSearchFocused(false)}
-                    />
-                    {matchedCandidate && (
-                      <Ionicons name="checkmark-circle" size={20} color={SUCCESS} />
-                    )}
-                    {loadingCandidates && (
-                      <ActivityIndicator size="small" color={TEXT_MUTED} />
-                    )}
-                  </View>
-                  {!matchedCandidate && candidateSearch.length > 0 && candidateSearch.length < 3 && (
-                    <Text style={styles.hint}>Escribe al menos 3 letras</Text>
-                  )}
-                  {!matchedCandidate && candidateSearch.length >= 3 && !loadingCandidates && (
-                    <Text style={styles.hintError}>No encontramos ese candidato</Text>
+                  <Text style={styles.label}>Nombre del candidato o partido</Text>
+                  {candidatesError ? (
+                    <View style={styles.errorRetryRow}>
+                      <Text style={styles.hintError}>No se pudo cargar la lista. ¿Tienes conexión?</Text>
+                      <Pressable onPress={fetchCandidates} style={styles.retryBtn}>
+                        <Text style={styles.retryBtnText}>Reintentar</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <>
+                      <View style={[styles.inputWrapper, searchFocused && styles.inputWrapperFocused]}>
+                        <Ionicons
+                          name="person-outline"
+                          size={20}
+                          color={searchFocused ? BORDER_FOCUS : TEXT_MUTED}
+                          style={styles.inputIcon}
+                        />
+                        <TextInput
+                          style={styles.input}
+                          placeholder="Ej: César Vásquez, Peru Primero..."
+                          placeholderTextColor={TEXT_MUTED}
+                          value={candidateSearch}
+                          onChangeText={setCandidateSearch}
+                          autoCapitalize="words"
+                          autoCorrect={false}
+                          onFocus={() => setSearchFocused(true)}
+                          onBlur={() => setSearchFocused(false)}
+                        />
+                        {matchedCandidate && (
+                          <Ionicons name="checkmark-circle" size={20} color={SUCCESS} />
+                        )}
+                        {loadingCandidates && (
+                          <ActivityIndicator size="small" color={TEXT_MUTED} />
+                        )}
+                      </View>
+                      {!matchedCandidate && candidateSearch.length > 0 && candidateSearch.length < 3 && (
+                        <Text style={styles.hint}>Escribe al menos 3 letras</Text>
+                      )}
+                      {!matchedCandidate && candidateSearch.length >= 3 && !loadingCandidates && (
+                        <Text style={styles.hintError}>No encontramos ese candidato</Text>
+                      )}
+                    </>
                   )}
                 </View>
               )}
@@ -810,6 +833,26 @@ const styles = StyleSheet.create({
     color: '#b45309',
     fontFamily: FONT_REGULAR,
     marginLeft: 6,
+  },
+
+  errorRetryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  retryBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#dc2626',
+  },
+  retryBtnText: {
+    fontSize: 13,
+    color: '#dc2626',
+    fontFamily: FONT_REGULAR,
   },
 
   // Mode toggle
