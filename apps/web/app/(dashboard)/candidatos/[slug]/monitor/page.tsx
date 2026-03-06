@@ -2,7 +2,7 @@
 
 /**
  * GOBERNA — Monitor WA (candidato-scoped)
- * War-room: siempre muestra los 5 celulares Vásquez 1–5.
+ * War-room: siempre muestra los 6 celulares Vásquez 1–6.
  * Integrado en el tab bar del candidato — sin header/footer propios.
  */
 
@@ -33,8 +33,8 @@ const G = {
   green:      "#22c55e",
 } as const;
 
-// ── Los 5 slots fijos ─────────────────────────────────────────────────
-const SLOTS = ["Vásquez 1", "Vásquez 2", "Vásquez 3", "Vásquez 4", "Vásquez 5"];
+// ── Los 6 slots fijos ─────────────────────────────────────────────────
+const SLOTS = ["Vásquez 1", "Vásquez 2", "Vásquez 3", "Vásquez 4", "Vásquez 5", "Vásquez 6"];
 
 const EMPTY_PHONE: ExtensionMonitorPhone = {
   own_number: "",
@@ -365,7 +365,7 @@ export default function MonitorWaPage() {
               <div style={{ width: 1, height: 28, background: "rgba(255,255,255,0.07)" }} />
               <div style={{ textAlign: "center" }}>
                 <div style={{ fontSize: 22, fontWeight: 900, color: G.text, letterSpacing: "-0.5px", lineHeight: 1 }}>
-                  {activeCount}<span style={{ fontSize: 13, color: G.textMid, fontWeight: 600 }}>/5</span>
+                  {activeCount}<span style={{ fontSize: 13, color: G.textMid, fontWeight: 600 }}>/6</span>
                 </div>
                 <div style={{ fontSize: 10, fontWeight: 700, color: G.textMid, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: 2 }}>
                   Activos
@@ -421,13 +421,15 @@ export default function MonitorWaPage() {
           </div>
         )}
 
-        {/* ── 5 celulares en horizontal ── */}
+        {/* ── 6 celulares: 3+3 ── */}
         <div style={{
           padding: "28px 24px 48px",
           display: "grid",
-          gridTemplateColumns: "repeat(5,1fr)",
-          gap: "18px",
+          gridTemplateColumns: "repeat(3,1fr)",
+          gap: "24px 20px",
           alignItems: "start",
+          maxWidth: 1200,
+          margin: "0 auto",
         }}>
           {slots.map(({ slotName, phone }) => (
             <PhoneCard key={slotName} phone={phone} slotName={slotName} />
