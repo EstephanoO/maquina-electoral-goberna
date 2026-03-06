@@ -246,7 +246,25 @@ export default function TierraPage() {
 
       {viewMode === "campo" ? (
         <div className="flex-1 min-h-0 relative">
-          <TierraMap ref={mapHandleRef} campaignId={campaign.id} slug={slug} primaryColor={campaign.color_primario} agents={enrichedAgents} forms={formPoints} selectedAgentId={selectedAgentId} onSelectAgent={handleSelectAgent} showTracking={showTracking} showDatos={showDatos} datosVizMode={datosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} mapTheme={mapTheme} showRoutes={showRoutes} drillState={drillState} onDrillChange={setDrillState} />
+          <TierraMap
+            ref={mapHandleRef}
+            campaignId={campaign.id}
+            slug={slug}
+            primaryColor={campaign.color_primario}
+            agents={enrichedAgents}
+            forms={drillBounds ? filteredFormPoints : formPoints}
+            selectedAgentId={selectedAgentId}
+            onSelectAgent={handleSelectAgent}
+            showTracking={showTracking}
+            showDatos={showDatos}
+            datosVizMode={datosVizMode}
+            heatmapRadius={heatmapRadius}
+            heatmapOpacity={heatmapOpacity}
+            mapTheme={mapTheme}
+            showRoutes={showRoutes}
+            drillState={drillState}
+            onDrillChange={setDrillState}
+          />
           <div className="absolute top-3 left-3 z-20 flex items-start gap-2">
             <button
               type="button"
