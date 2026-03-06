@@ -3,13 +3,13 @@
  *
  * Flujo en 2 pasos:
  * - Paso 1: Teléfono + Contraseña + Nombre
- * - Paso 2: Región + Campaña (via código de acceso 4 chars O primer nombre del candidato)
+ * - Paso 2: Región + Código de acceso de 4 chars (dado por el coordinador)
  *
- * El código de acceso (4 chars) es la vía rápida recomendada.
- * El candidato también puede usar links de invitación (pantalla separada /invite/[code]).
+ * El código de acceso (4 chars) es la única vía de registro.
+ * Links de invitación se manejan en pantalla separada /invite/[code].
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,14 +22,13 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useApp } from '@/lib/app-context';
-import { getCandidates, validateAccessCode, registerWithAccessCode } from '@/lib/api';
-import type { ApiResult, CandidateInfo, ValidateAccessCodeResponse } from '@/lib/types';
+import { validateAccessCode, registerWithAccessCode } from '@/lib/api';
+import type { ApiResult, ValidateAccessCodeResponse } from '@/lib/types';
 import RegionPicker from '@/components/RegionPicker';
 
 // ─── Design Tokens ─────────────────────────────────────────────
@@ -43,8 +42,6 @@ const BG_INPUT = '#F8FAFC';
 const SUCCESS = '#22c55e';
 const SUCCESS_BG = '#f0fdf4';
 const AMBER = '#f59e0b';
-const AMBER_BG = '#fffbeb';
-const AMBER_BORDER = '#fbbf24';
 const FONT = 'Montserrat-Bold';
 const FONT_REGULAR = 'Montserrat-Regular';
 
@@ -54,25 +51,13 @@ const PHONE_REGEX = /^9\d{8}$/;
 // Access code: exactly 4 alphanumeric chars
 const CODE_REGEX = /^[A-Z0-9]{4}$/;
 
-// Photo URL base
-const PHOTO_BASE_URL = 'https://maquina-electoral-goberna-web.vercel.app';
-
-// Normalize text for search (remove accents, lowercase)
-const normalize = (t: string) =>
-  t.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
 export default function RegisterScreen() {
   const router = useRouter();
-  const { register, login } = useApp();
+  const { login } = useApp();
 
   // ─── Step State ─────────────────────────────────────────────
   const [step, setStep] = useState(1);
   const totalSteps = 2;
-
-  // ─── Mode: access code or candidate name search ──────────────
-  // 'code' = codigo de acceso de 4 chars (via rápida)
-  // 'search' = busqueda por primer nombre del candidato (via alternativa)
-  const [campaignMode, setCampaignMode] = useState<'code' | 'search'>('code');
 
   // ─── Form State (Step 1) ─────────────────────────────────────
   const [phone, setPhone] = useState('');
@@ -82,19 +67,12 @@ export default function RegisterScreen() {
 
   // ─── Form State (Step 2) ─────────────────────────────────────
   const [region, setRegion] = useState<string | null>(null);
-
-  // Mode 'code': codigo de acceso
   const [accessCodeInput, setAccessCodeInput] = useState('');
   const [accessCodeCampaign, setAccessCodeCampaign] = useState<ValidateAccessCodeResponse['campaign'] | null>(null);
   const [validatingCode, setValidatingCode] = useState(false);
+  const [validatingAttempt, setValidatingAttempt] = useState(0); // 0=primer intento, 1+=reintento
   const [codeError, setCodeError] = useState<string | null>(null);
   const codeInputRefs = useRef<(TextInput | null)[]>([]);
-
-  // Mode 'search': busqueda por nombre
-  const [candidateSearch, setCandidateSearch] = useState('');
-  const [matchedCandidate, setMatchedCandidate] = useState<CandidateInfo | null>(null);
-  const [candidates, setCandidates] = useState<CandidateInfo[]>([]);
-  const [loadingCandidates, setLoadingCandidates] = useState(false);
 
   // ─── UI State ───────────────────────────────────────────────
   const [loading, setLoading] = useState(false);
@@ -103,61 +81,12 @@ export default function RegisterScreen() {
   const [phoneFocused, setPhoneFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
-  const [searchFocused, setSearchFocused] = useState(false);
 
-  // ─── Load Candidates (only when in search mode) ─────────────
-  const [candidatesError, setCandidatesError] = useState(false);
-
-  const fetchCandidates = useCallback(() => {
-    setLoadingCandidates(true);
-    setCandidatesError(false);
-    getCandidates().then((result) => {
-      if (result.ok && result.data?.candidates && result.data.candidates.length > 0) {
-        setCandidates(result.data.candidates);
-      } else {
-        setCandidatesError(true);
-      }
-      setLoadingCandidates(false);
-    }).catch(() => {
-      setCandidatesError(true);
-      setLoadingCandidates(false);
-    });
-  }, []);
-
-  useEffect(() => {
-    if (campaignMode !== 'search') return;
-    if (candidates.length > 0) return; // ya cargados
-    fetchCandidates();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campaignMode, candidates.length, fetchCandidates]);
-
-  // ─── Match Candidate by Name (search mode) ───────────────────
-  // Busca por substring en nombre completo, partido o cargo.
-  // Mínimo 3 caracteres. Muestra el mejor match (mayor coincidencia primero).
-  useEffect(() => {
-    if (campaignMode !== 'search') return;
-    const searchTerm = normalize(candidateSearch);
-    if (searchTerm.length < 3) {
-      setMatchedCandidate(null);
-      return;
-    }
-    // Score: nombre completo tiene más peso que partido/cargo
-    const scored = candidates
-      .map((c) => {
-        const fullName = normalize(c.name);
-        const partido  = normalize(c.partido ?? '');
-        const cargo    = normalize(c.cargo ?? '');
-        if (fullName.includes(searchTerm))  return { c, score: 2 };
-        if (partido.includes(searchTerm) || cargo.includes(searchTerm)) return { c, score: 1 };
-        return null;
-      })
-      .filter(Boolean) as { c: CandidateInfo; score: number }[];
-
-    scored.sort((a, b) => b.score - a.score);
-    setMatchedCandidate(scored[0]?.c ?? null);
-  }, [candidateSearch, candidates, campaignMode]);
-
-  // ─── Validate access code when 4 chars entered ───────────────
+  // ─── Validate access code cuando se completan 4 chars ────────
+  // Estrategia para conectividad intermitente:
+  //   1. Debounce 300ms — no dispara mientras el usuario tipea
+  //   2. Retry 3 intentos con backoff exponencial (0s → 1s → 3s)
+  //   3. Distingue "código inválido" (404) de "sin red" (error de red)
   useEffect(() => {
     const code = accessCodeInput.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 4);
     if (code.length < 4) {
@@ -168,21 +97,75 @@ export default function RegisterScreen() {
     if (!CODE_REGEX.test(code)) return;
 
     let cancelled = false;
-    setValidatingCode(true);
-    setCodeError(null);
-    setAccessCodeCampaign(null);
 
-    validateAccessCode(code).then((result) => {
-      if (cancelled) return;
-      setValidatingCode(false);
-      if (result.ok && result.data) {
-        setAccessCodeCampaign(result.data.campaign);
-      } else {
-        setCodeError('Código inválido. Verificá con tu coordinador.');
+    // Delays entre reintentos: inmediato, 1s, 3s
+    const RETRY_DELAYS = [0, 1000, 3000];
+
+    async function tryValidate() {
+      setValidatingCode(true);
+      setValidatingAttempt(0);
+      setCodeError(null);
+      setAccessCodeCampaign(null);
+
+      for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
+        if (cancelled) return;
+
+        setValidatingAttempt(attempt);
+
+        // Espera antes del reintento (0 en el primero)
+        if (RETRY_DELAYS[attempt] > 0) {
+          await new Promise<void>((resolve) => {
+            const t = setTimeout(resolve, RETRY_DELAYS[attempt]);
+            if (cancelled) clearTimeout(t);
+          });
+        }
+
+        if (cancelled) return;
+
+        const result = await validateAccessCode(code);
+        if (cancelled) return;
+
+        if (result.ok && result.data) {
+          setValidatingCode(false);
+          setAccessCodeCampaign(result.data.campaign);
+          return;
+        }
+
+        // Código 404 / inválido explícito → no tiene sentido reintentar
+        const isNetworkError = !result.ok && (
+          result.error?.toLowerCase().includes('red') ||
+          result.error?.toLowerCase().includes('network') ||
+          result.error?.toLowerCase().includes('timeout') ||
+          result.error?.toLowerCase().includes('espera') ||
+          result.status == null  // sin status = error de red/timeout
+        );
+
+        if (!isNetworkError) {
+          // El servidor respondió que el código no existe — no reintentamos
+          setValidatingCode(false);
+          setCodeError('Código inválido. Verificá con tu coordinador.');
+          return;
+        }
+
+        // Error de red: si hay más intentos, seguimos. Si no, informamos.
+        const isLastAttempt = attempt === RETRY_DELAYS.length - 1;
+        if (isLastAttempt) {
+          setValidatingCode(false);
+          setCodeError('Sin conexión. Verificá tu red e intentá de nuevo.');
+        }
+        // Si no es el último intento, el loop continúa con el siguiente delay
       }
-    });
+    }
 
-    return () => { cancelled = true; };
+    // Debounce: espera 300ms desde el último cambio antes de disparar
+    const debounceTimer = setTimeout(() => {
+      tryValidate();
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(debounceTimer);
+    };
   }, [accessCodeInput]);
 
   // ─── Validation ─────────────────────────────────────────────
@@ -192,11 +175,9 @@ export default function RegisterScreen() {
     fullName.trim().length >= 3
   ), [phone, password, fullName]);
 
-  const step2Valid = useMemo(() => {
-    if (!region) return false;
-    if (campaignMode === 'code') return accessCodeCampaign !== null;
-    return matchedCandidate !== null;
-  }, [region, campaignMode, accessCodeCampaign, matchedCandidate]);
+  const step2Valid = useMemo(() => (
+    region !== null && accessCodeCampaign !== null
+  ), [region, accessCodeCampaign]);
 
   // ─── Handlers ───────────────────────────────────────────────
   const handleNext = () => {
@@ -230,41 +211,21 @@ export default function RegisterScreen() {
   };
 
   const handleRegister = async () => {
-    if (!step2Valid) return;
+    if (!step2Valid || !accessCodeCampaign) return;
 
     setLoading(true);
     const email = `${phone.trim()}@goberna.pe`;
 
     try {
-      // Both register() and registerWithAccessCode() share .ok/.code/.error fields;
-      // we never read .data here, so ApiResult<unknown> covers both return types.
-      let registerResult: ApiResult<unknown>;
-
-      if (campaignMode === 'code' && accessCodeCampaign) {
-        // Register with access code — campaign_id resolved server-side from the code
-        registerResult = await registerWithAccessCode({
-          full_name: fullName.trim(),
-          email,
-          password: password.trim(),
-          phone: phone.trim(),
-          region: region!,
-          // campaign_id is optional when using access_code — backend resolves it
-          campaign_id: accessCodeCampaign.id,
-          access_code: accessCodeInput.toUpperCase().slice(0, 4),
-        });
-      } else if (campaignMode === 'search' && matchedCandidate) {
-        // Register with candidate match
-        registerResult = await register({
-          full_name: fullName.trim(),
-          email,
-          password: password.trim(),
-          phone: phone.trim(),
-          region: region!,
-          campaign_id: matchedCandidate.id,
-        });
-      } else {
-        return;
-      }
+      const registerResult: ApiResult<unknown> = await registerWithAccessCode({
+        full_name: fullName.trim(),
+        email,
+        password: password.trim(),
+        phone: phone.trim(),
+        region: region!,
+        campaign_id: accessCodeCampaign.id,
+        access_code: accessCodeInput.toUpperCase().slice(0, 4),
+      });
 
       if (!registerResult.ok) {
         if (registerResult.code === 'AUTH_PHONE_EXISTS') {
@@ -297,14 +258,6 @@ export default function RegisterScreen() {
     } finally {
       setLoading(false);
     }
-  };
-
-  // ─── Photo URL Helper ────────────────────────────────────────
-  const getPhotoUrl = (candidate: CandidateInfo) => {
-    if (!candidate.foto_url) return null;
-    return candidate.foto_url.startsWith('http')
-      ? candidate.foto_url
-      : `${PHOTO_BASE_URL}${candidate.foto_url}`;
   };
 
   // ─── Access Code: individual char boxes ─────────────────────
@@ -479,154 +432,93 @@ export default function RegisterScreen() {
                 />
               </View>
 
-              {/* Mode toggle */}
-              <View style={styles.modeToggle}>
-                <Pressable
-                  style={[styles.modeBtn, campaignMode === 'code' && styles.modeBtnActive]}
-                  onPress={() => setCampaignMode('code')}
-                >
-                  <Ionicons
-                    name="keypad-outline"
-                    size={16}
-                    color={campaignMode === 'code' ? BRAND_BLUE : TEXT_MUTED}
+              {/* ── Código de acceso ── */}
+              <View style={styles.field}>
+                <Text style={styles.label}>Código de acceso (4 caracteres)</Text>
+
+                {/* Char boxes — 4 fixed positions, rendered statically */}
+                <View style={styles.codeBoxRow}>
+                  {([0, 1, 2, 3] as const).map((pos) => {
+                    const positions = ['code-0', 'code-1', 'code-2', 'code-3'] as const;
+                    return (
+                      <View
+                        key={positions[pos]}
+                        style={[
+                          styles.codeBox,
+                          accessCodeInput.length === pos && styles.codeBoxActive,
+                          accessCodeCampaign && styles.codeBoxSuccess,
+                          codeError && styles.codeBoxError,
+                        ]}
+                      >
+                        <Text style={[
+                          styles.codeBoxChar,
+                          accessCodeCampaign && styles.codeBoxCharSuccess,
+                          codeError && styles.codeBoxCharError,
+                        ]}>
+                          {codeStr[pos] ?? ''}
+                        </Text>
+                      </View>
+                    );
+                  })}
+
+                  {/* Hidden input overlay */}
+                  <TextInput
+                    ref={(ref) => { codeInputRefs.current[0] = ref; }}
+                    style={styles.codeHiddenInput}
+                    value={accessCodeInput}
+                    onChangeText={(t) => {
+                      const clean = t.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4);
+                      setAccessCodeInput(clean);
+                    }}
+                    maxLength={4}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    keyboardType="default"
+                    returnKeyType="done"
                   />
-                  <Text style={[styles.modeBtnText, campaignMode === 'code' && styles.modeBtnTextActive]}>
-                    Código de acceso
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.modeBtn, campaignMode === 'search' && styles.modeBtnActive]}
-                  onPress={() => setCampaignMode('search')}
-                >
-                  <Ionicons
-                    name="search-outline"
-                    size={16}
-                    color={campaignMode === 'search' ? BRAND_BLUE : TEXT_MUTED}
-                  />
-                  <Text style={[styles.modeBtnText, campaignMode === 'search' && styles.modeBtnTextActive]}>
-                    Buscar candidato
-                  </Text>
-                </Pressable>
+                </View>
+
+                {/* Validation state */}
+                {validatingCode && (
+                  <View style={styles.codeStatusRow}>
+                    <ActivityIndicator size="small" color={AMBER} />
+                    <Text style={styles.hintAmber}>
+                      {validatingAttempt === 0
+                        ? 'Verificando código...'
+                        : `Reintentando (${validatingAttempt}/2)...`}
+                    </Text>
+                  </View>
+                )}
+                {codeError && !validatingCode && (
+                  <View style={styles.codeErrorRow}>
+                    <Text style={styles.hintError}>{codeError}</Text>
+                    {/* Botón reintentar — solo si el error es de red, no de código inválido */}
+                    {codeError.includes('conexión') && (
+                      <Pressable
+                        onPress={() => {
+                          // Forzar re-run del useEffect tocando el input (mismo valor)
+                          setAccessCodeInput((prev) => prev + ' ');
+                          setTimeout(() => setAccessCodeInput((prev) => prev.trimEnd()), 0);
+                        }}
+                        style={styles.retryCodeBtn}
+                        hitSlop={8}
+                      >
+                        <Text style={styles.retryCodeBtnText}>↺ Reintentar</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
+                {!codeError && accessCodeCampaign && !validatingCode && (
+                  <Text style={styles.hintSuccess}>Código válido ✓</Text>
+                )}
+
+                <Text style={styles.codeHint}>
+                  Pedile el código de 4 letras/números a tu coordinador de campaña
+                </Text>
               </View>
 
-              {/* ── Mode: access code ── */}
-              {campaignMode === 'code' && (
-                <View style={styles.field}>
-                  <Text style={styles.label}>Código de acceso (4 caracteres)</Text>
-
-                  {/* Char boxes — 4 fixed positions, rendered statically */}
-                  <View style={styles.codeBoxRow}>
-                    {([0, 1, 2, 3] as const).map((pos) => {
-                      const positions = ['code-0', 'code-1', 'code-2', 'code-3'] as const;
-                      return (
-                        <View
-                          key={positions[pos]}
-                          style={[
-                            styles.codeBox,
-                            accessCodeInput.length === pos && styles.codeBoxActive,
-                            accessCodeCampaign && styles.codeBoxSuccess,
-                            codeError && styles.codeBoxError,
-                          ]}
-                        >
-                          <Text style={[
-                            styles.codeBoxChar,
-                            accessCodeCampaign && styles.codeBoxCharSuccess,
-                            codeError && styles.codeBoxCharError,
-                          ]}>
-                            {codeStr[pos] ?? ''}
-                          </Text>
-                        </View>
-                      );
-                    })}
-
-                    {/* Hidden input overlay */}
-                    <TextInput
-                      ref={(ref) => { codeInputRefs.current[0] = ref; }}
-                      style={styles.codeHiddenInput}
-                      value={accessCodeInput}
-                      onChangeText={(t) => {
-                        const clean = t.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4);
-                        setAccessCodeInput(clean);
-                      }}
-                      maxLength={4}
-                      autoCapitalize="characters"
-                      autoCorrect={false}
-                      keyboardType="default"
-                      returnKeyType="done"
-                    />
-                  </View>
-
-                  {/* Validation state */}
-                  {validatingCode && (
-                    <View style={styles.codeStatusRow}>
-                      <ActivityIndicator size="small" color={AMBER} />
-                      <Text style={styles.hintAmber}>Verificando código...</Text>
-                    </View>
-                  )}
-                  {codeError && !validatingCode && (
-                    <Text style={styles.hintError}>{codeError}</Text>
-                  )}
-                  {!codeError && accessCodeCampaign && !validatingCode && (
-                    <Text style={styles.hintSuccess}>Código válido ✓</Text>
-                  )}
-
-                  <Text style={styles.codeHint}>
-                    Pedile el código de 4 letras/números a tu coordinador de campaña
-                  </Text>
-                </View>
-              )}
-
-              {/* ── Mode: candidate name search ── */}
-              {campaignMode === 'search' && (
-                <View style={styles.field}>
-                  <Text style={styles.label}>Nombre del candidato o partido</Text>
-                  {candidatesError ? (
-                    <View style={styles.errorRetryRow}>
-                      <Text style={styles.hintError}>No se pudo cargar la lista. ¿Tienes conexión?</Text>
-                      <Pressable onPress={fetchCandidates} style={styles.retryBtn}>
-                        <Text style={styles.retryBtnText}>Reintentar</Text>
-                      </Pressable>
-                    </View>
-                  ) : (
-                    <>
-                      <View style={[styles.inputWrapper, searchFocused && styles.inputWrapperFocused]}>
-                        <Ionicons
-                          name="person-outline"
-                          size={20}
-                          color={searchFocused ? BORDER_FOCUS : TEXT_MUTED}
-                          style={styles.inputIcon}
-                        />
-                        <TextInput
-                          style={styles.input}
-                          placeholder="Ej: César Vásquez, Peru Primero..."
-                          placeholderTextColor={TEXT_MUTED}
-                          value={candidateSearch}
-                          onChangeText={setCandidateSearch}
-                          autoCapitalize="words"
-                          autoCorrect={false}
-                          onFocus={() => setSearchFocused(true)}
-                          onBlur={() => setSearchFocused(false)}
-                        />
-                        {matchedCandidate && (
-                          <Ionicons name="checkmark-circle" size={20} color={SUCCESS} />
-                        )}
-                        {loadingCandidates && (
-                          <ActivityIndicator size="small" color={TEXT_MUTED} />
-                        )}
-                      </View>
-                      {!matchedCandidate && candidateSearch.length > 0 && candidateSearch.length < 3 && (
-                        <Text style={styles.hint}>Escribe al menos 3 letras</Text>
-                      )}
-                      {!matchedCandidate && candidateSearch.length >= 3 && !loadingCandidates && (
-                        <Text style={styles.hintError}>No encontramos ese candidato</Text>
-                      )}
-                    </>
-                  )}
-                </View>
-              )}
-
-              {/* ── Resolved campaign card (code mode) ── */}
-              {campaignMode === 'code' && accessCodeCampaign && (
+              {/* ── Campaign card resuelta ── */}
+              {accessCodeCampaign && (
                 <View style={styles.matchedCard}>
                   <View style={styles.campaignIconCircle}>
                     <Ionicons name="megaphone" size={24} color={BRAND_YELLOW} />
@@ -634,33 +526,6 @@ export default function RegisterScreen() {
                   <View style={styles.candidateInfo}>
                     <Text style={styles.candidateName}>{accessCodeCampaign.name}</Text>
                     <Text style={styles.candidateCargo}>Campaña verificada</Text>
-                  </View>
-                  <Ionicons name="checkmark-circle" size={28} color={SUCCESS} />
-                </View>
-              )}
-
-              {/* ── Matched candidate card (search mode) ── */}
-              {campaignMode === 'search' && matchedCandidate && (
-                <View style={styles.matchedCard}>
-                  {getPhotoUrl(matchedCandidate) ? (
-                    <Image
-                      source={{ uri: getPhotoUrl(matchedCandidate)! }}
-                      style={styles.candidatePhoto}
-                      contentFit="cover"
-                    />
-                  ) : (
-                    <View style={[styles.candidatePhoto, styles.candidatePhotoPlaceholder]}>
-                      <Text style={styles.candidatePhotoText}>
-                        {matchedCandidate.name.charAt(0)}
-                      </Text>
-                    </View>
-                  )}
-                  <View style={styles.candidateInfo}>
-                    <Text style={styles.candidateName}>{matchedCandidate.name}</Text>
-                    <Text style={styles.candidateCargo}>{matchedCandidate.cargo}</Text>
-                    <Text style={styles.candidatePartido}>
-                      {matchedCandidate.partido} · #{matchedCandidate.numero}
-                    </Text>
                   </View>
                   <Ionicons name="checkmark-circle" size={28} color={SUCCESS} />
                 </View>
@@ -835,59 +700,6 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
 
-  errorRetryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 4,
-  },
-  retryBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#dc2626',
-  },
-  retryBtnText: {
-    fontSize: 13,
-    color: '#dc2626',
-    fontFamily: FONT_REGULAR,
-  },
-
-  // Mode toggle
-  modeToggle: {
-    flexDirection: 'row',
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: BORDER,
-    overflow: 'hidden',
-    backgroundColor: BG_INPUT,
-  },
-  modeBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-  },
-  modeBtnActive: {
-    backgroundColor: '#dbeafe',
-    borderBottomWidth: 2,
-    borderBottomColor: BRAND_BLUE,
-  },
-  modeBtnText: {
-    fontSize: 12,
-    fontFamily: FONT,
-    color: TEXT_MUTED,
-    textAlign: 'center',
-  },
-  modeBtnTextActive: {
-    color: BRAND_BLUE,
-  },
-
   // Access code boxes
   codeBoxRow: {
     flexDirection: 'row',
@@ -943,6 +755,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 4,
     marginTop: 2,
+  },
+  codeErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginLeft: 4,
+    marginTop: 2,
+  },
+  retryCodeBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#dc2626',
+  },
+  retryCodeBtnText: {
+    fontSize: 12,
+    color: '#dc2626',
+    fontFamily: FONT_REGULAR,
   },
   codeHint: {
     fontSize: 12,
@@ -1019,22 +851,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  candidatePhoto: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    backgroundColor: '#e2e8f0',
-  },
-  candidatePhotoPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: BRAND_BLUE,
-  },
-  candidatePhotoText: {
-    fontSize: 22,
-    color: BRAND_YELLOW,
-    fontFamily: FONT,
-  },
   candidateInfo: {
     flex: 1,
   },
@@ -1045,12 +861,6 @@ const styles = StyleSheet.create({
   },
   candidateCargo: {
     fontSize: 13,
-    fontFamily: FONT_REGULAR,
-    color: TEXT_MUTED,
-    marginTop: 2,
-  },
-  candidatePartido: {
-    fontSize: 12,
     fontFamily: FONT_REGULAR,
     color: TEXT_MUTED,
     marginTop: 2,
