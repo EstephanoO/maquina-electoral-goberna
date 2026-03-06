@@ -8,6 +8,7 @@ const TABS = [
   { key: "tierra", label: "TERRITORIO", icon: MapPinIcon },
   { key: "analytics", label: "ANALYTICS", icon: MonitorIcon },
   { key: "cms-metrics", label: "DIGITAL", icon: CmsIcon },
+  { key: "monitor", label: "MONITOR WA", icon: WhatsAppIcon },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -136,6 +137,24 @@ function CmsIcon({ size = 16, active = false }: { size?: number; active?: boolea
       <path d="M18 20V10" />
       <path d="M12 20V4" />
       <path d="M6 20v-6" />
+    </svg>
+  );
+}
+
+function WhatsAppIcon({ size = 16, active = false }: { size?: number; active?: boolean }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={active ? "var(--tierra-tab-active-color, var(--goberna-blue-900))" : "var(--tierra-tab-inactive-color, #64748b)"}
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
     </svg>
   );
 }

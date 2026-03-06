@@ -619,7 +619,7 @@ export async function getCmsMetricsByOperator(
 export async function insertExtensionEvent(
   campaignId: string,
   operatorId: string,
-  phone: string,
+  phone: string | null,
   contactId: string | null,
   matched: boolean,
   ownNumber?: string | null,
@@ -627,7 +627,7 @@ export async function insertExtensionEvent(
   await pool.query(
     `INSERT INTO cms_extension_events (campaign_id, operator_id, contact_id, phone, matched, own_number)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [campaignId, operatorId, contactId ?? null, phone, matched, ownNumber ?? null],
+    [campaignId, operatorId, contactId ?? null, phone ?? null, matched, ownNumber ?? null],
   );
 }
 
@@ -1224,9 +1224,9 @@ export async function getExtensionMonitorByPhone(
        ee.operator_id,
        COALESCE(u.full_name, u.email)          AS full_name,
        u.email,
-       COUNT(*)::text                          AS wa_sent,
-       COUNT(DISTINCT ee.phone)::text          AS unique_contacts,
-       MAX(ee.created_at)::text                AS last_event_at
+       COUNT(*)::text                                   AS wa_sent,
+       COUNT(DISTINCT ee.phone)::text                   AS unique_contacts,
+       MAX(ee.created_at)::text                         AS last_event_at
      FROM cms_extension_events ee
      JOIN users u ON u.id = ee.operator_id
      LEFT JOIN wa_phones wp
@@ -1274,7 +1274,9 @@ export async function getExtensionMonitorByPhone(
     }
   }
 
-  // Query 2: unique contacts per phone (can't sum operator-level counts due to overlap)
+  // Query 2: unique contacts per phone (can't sum operator-level counts due to overlap).
+  // Exclude NULL phone — unresolved contacts (display-name only, no number extracted).
+  // COUNT(DISTINCT) already ignores NULLs in PostgreSQL, but the WHERE makes it explicit.
   const { rows: contactRows } = await pool.query<{
     own_number: string;
     unique_contacts: string;
@@ -1284,6 +1286,7 @@ export async function getExtensionMonitorByPhone(
        COUNT(DISTINCT phone)::text         AS unique_contacts
      FROM cms_extension_events
      WHERE campaign_id = $1
+       AND phone IS NOT NULL
      GROUP BY own_number`,
     [campaignId],
   );

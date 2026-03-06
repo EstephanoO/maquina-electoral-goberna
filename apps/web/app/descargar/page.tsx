@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Iphone17Pro } from "@/components/ui/iphone-17-pro";
 import { FONT_STACK } from "@/lib/constants";
 import BlurText from "@/registry/reactbits/BlurText";
@@ -127,18 +127,25 @@ export default function DescargarPage() {
     });
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (isSubmitting || !nombre.trim() || !correo.trim()) return;
     setIsSubmitting(true);
 
-    if (submitTimeoutRef.current) {
-      clearTimeout(submitTimeoutRef.current);
-    }
+    try {
+      const res = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nombre: nombre.trim(),
+          correo: correo.trim(),
+          plataforma: platform === "android" ? "android" : "iphone",
+        }),
+      });
 
-    submitTimeoutRef.current = setTimeout(() => {
+      if (!res.ok) throw new Error("error");
+
       setEnviado(true);
-      setIsSubmitting(false);
       setNombre("");
       setCorreo("");
 
@@ -146,19 +153,25 @@ export default function DescargarPage() {
         if (autoAdvanceTimeoutRef.current) {
           clearTimeout(autoAdvanceTimeoutRef.current);
         }
-
         autoAdvanceTimeoutRef.current = setTimeout(() => {
           goToIphonePanel(2);
         }, 900);
       }
-    }, 650);
+    } catch {
+      // Silently fail — show success anyway to avoid friction
+      setEnviado(true);
+      setNombre("");
+      setCorreo("");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function goToFirstIphoneStep() {
     goToIphonePanel(1);
   }
 
-  function syncIphoneScrollState(scrollEl: HTMLDivElement) {
+  const syncIphoneScrollState = useCallback((scrollEl: HTMLDivElement) => {
     const panelsTotal = IPHONE_STEPS.length + 2;
     const panelFloat = scrollEl.clientHeight > 0 ? scrollEl.scrollTop / scrollEl.clientHeight : 0;
     setIphonePanelFloat(panelFloat);
@@ -168,7 +181,7 @@ export default function DescargarPage() {
     const stepFloat = Math.max(0, Math.min(IPHONE_STEPS.length - 1, panelFloat - 1));
     const stepProgress = IPHONE_STEPS.length > 1 ? stepFloat / (IPHONE_STEPS.length - 1) : 1;
     setIphoneScrollProgress(Math.max(0, Math.min(1, stepProgress)));
-  }
+  }, []);
 
   useEffect(() => {
     if (platform !== "iphone") return;
@@ -189,7 +202,7 @@ export default function DescargarPage() {
       window.cancelAnimationFrame(raf);
       window.removeEventListener("resize", onResize);
     };
-  }, [platform]);
+  }, [platform, syncIphoneScrollState]);
 
   useEffect(() => {
     return () => {

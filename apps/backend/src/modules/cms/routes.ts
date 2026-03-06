@@ -782,9 +782,10 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         }
 
         // Resolved phone for event persistence.
-        // Priority: explicit phone > phone from matched contact > "unknown".
+        // Priority: explicit phone > phone from matched contact > null (unresolved).
         // NEVER use contact_name as phone — it's a display name, not a number.
-        const resolvedPhone = phone ?? (contact ? (contact.data?.telefono ?? "unknown") : "unknown");
+        // NULL signals "phone not resolved" and is excluded from unique_contacts counts.
+        const resolvedPhone: string | null = phone ?? (contact ? ((contact.data?.telefono as string | undefined) ?? null) : null);
 
         if (!contact) {
           // Persist the event even if no contact matched — still counts as a message sent

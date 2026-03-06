@@ -409,7 +409,7 @@ export async function getBrigadistaMetrics(
 export type WaPhone = {
   id: string;
   campaign_id: string;
-  own_number: string;   // "51987654321"
+  number: string;       // "51987654321" — columna real en DB
   alias: string | null; // "Vasquez 1"
   created_at: string;
   updated_at: string;

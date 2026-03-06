@@ -14,6 +14,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.estephano.gobernaterritory02",
       "buildNumber": "2",
+      "associatedDomains": ["applinks:dashboard.grupogoberna.com"],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "Goberna needs your location to record GPS coordinates when completing a field form. Your location data is not shared with third parties.",

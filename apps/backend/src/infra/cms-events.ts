@@ -34,7 +34,7 @@ export type CmsStatusUpdateEvent = {
 export type CmsExtensionMessageEvent = {
   campaignId: string;
   contactId: string;
-  phone: string;
+  phone: string | null;
   preview: string;
   detectedAt: number;
   operatorId: string;

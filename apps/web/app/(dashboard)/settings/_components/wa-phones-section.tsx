@@ -99,7 +99,7 @@ function PhoneRow({
     }
     setSaving(true);
     setError("");
-    const res = await upsertWaPhone(campaignId, phone.own_number, alias.trim());
+    const res = await upsertWaPhone(campaignId, phone.number, alias.trim());
     setSaving(false);
     if (!res.ok) {
       setError(res.error ?? "Error guardando.");
@@ -110,7 +110,7 @@ function PhoneRow({
   }
 
   async function handleDelete() {
-    if (!confirm(`¿Eliminar el alias "${phone.alias ?? phone.own_number}"?`)) return;
+    if (!confirm(`¿Eliminar el alias "${phone.alias ?? phone.number}"?`)) return;
     setDeleting(true);
     const res = await deleteWaPhone(campaignId, phone.id);
     setDeleting(false);
@@ -146,7 +146,7 @@ function PhoneRow({
       {/* Number + alias */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--color-text-primary)" }}>
-          +{phone.own_number}
+          +{phone.number}
         </div>
         {editing ? (
           <input

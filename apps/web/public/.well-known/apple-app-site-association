@@ -1,0 +1,16 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["QJGA378ZSG.com.estephano.gobernaterritory02"],
+        "components": [
+          {
+            "/": "/invite/*",
+            "comment": "Magic link invitations"
+          }
+        ]
+      }
+    ]
+  }
+}

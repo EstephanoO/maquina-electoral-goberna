@@ -244,6 +244,8 @@ function PhoneCard({ phone, slotName }: { phone: ExtensionMonitorPhone; slotName
           ? "drop-shadow(0 0 22px rgba(255,200,0,0.28)) drop-shadow(0 12px 40px rgba(0,0,0,0.8))"
           : "drop-shadow(0 6px 24px rgba(0,0,0,0.65))",
         transition: "filter 0.5s ease",
+        borderRadius: 44,
+        boxShadow: "inset 0 0 18px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.10)",
       }}>
         <Iphone frameColor="#000000" screenColor={active ? "#0f1d2f" : "#0a1420"}>
           <PhoneScreen phone={phone} slotName={slotName} />
