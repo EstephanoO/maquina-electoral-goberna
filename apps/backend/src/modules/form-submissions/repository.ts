@@ -168,3 +168,31 @@ export async function getCountByCampaign(campaignId: string): Promise<{
     week: parseInt(row?.week ?? "0", 10),
   };
 }
+
+/**
+ * Get submission counts for a specific agent in a campaign.
+ * Used by the mobile dashboard to show accurate totals (server-side truth).
+ */
+export async function getMyStats(campaignId: string, userId: string): Promise<{
+  total: number;
+  today: number;
+  week: number;
+}> {
+  const { rows } = await pool.query<{ total: string; today: string; week: string }>(
+    `SELECT
+       COUNT(*)::text AS total,
+       COUNT(*) FILTER (WHERE created_at AT TIME ZONE 'America/Lima' >= CURRENT_DATE AT TIME ZONE 'America/Lima')::text AS today,
+       COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::text AS week
+     FROM form_submissions
+     WHERE campaign_id = $1
+       AND submitted_by = $2
+       AND deleted_at IS NULL`,
+    [campaignId, userId],
+  );
+  const row = rows[0];
+  return {
+    total: parseInt(row?.total ?? "0", 10),
+    today: parseInt(row?.today ?? "0", 10),
+    week: parseInt(row?.week ?? "0", 10),
+  };
+}

@@ -20,6 +20,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useCandidate, useAgent, useApp, useActiveCampaign } from '@/lib/app-context';
 import { useAgentTracking } from '@/hooks/useAgentTracking';
 import { getQueueStats, getLocalFormsByCampaign, type PendingForm } from '@/lib/offline-queue';
+import { getMySubmissionStats } from '@/lib/api';
 import { appEvents } from '@/lib/events';
 import type { CampaignMembership } from '@/lib/types';
 
@@ -323,16 +324,19 @@ export default function DashboardScreen() {
   // Load data with shallow equality check — only sets state when data actually changed
   const loadData = useCallback(async () => {
     try {
-      const [queueStats, forms] = await Promise.all([
+      const [queueStats, forms, serverStats] = await Promise.all([
         getQueueStats(),
-        getLocalFormsByCampaign(campaign.id, 50),
+        getLocalFormsByCampaign(campaign.id, 200),
+        getMySubmissionStats(),
       ]);
 
       const formsPending = queueStats.forms?.pending ?? 0;
-      const formsSynced = queueStats.forms?.synced ?? 0;
+      // Server total is the source of truth — includes all synced submissions ever sent,
+      // even those already cleaned up from local SQLite (>7 days old).
+      const serverTotal = serverStats.ok ? (serverStats.data?.stats.total ?? 0) : 0;
       const newStats = {
-        total: formsPending + formsSynced,
-        synced: formsSynced,
+        total: serverTotal > 0 ? serverTotal + formsPending : formsPending + (queueStats.forms?.synced ?? 0),
+        synced: serverTotal > 0 ? serverTotal : (queueStats.forms?.synced ?? 0),
         pending: formsPending,
       };
 

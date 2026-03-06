@@ -178,6 +178,31 @@ export function buildFormSubmissionsRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── GET /api/form-submissions/my-stats ───────────────────────────
+    // Returns submission counts for the authenticated agent in the active campaign.
+    // Used by mobile dashboard to show accurate server-side totals.
+    app.get(
+      "/api/form-submissions/my-stats",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
+        const campaignId = request.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        try {
+          const stats = await repo.getMyStats(campaignId, authed.userId);
+          return reply.code(200).send({ ok: true, request_id: requestId, stats });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "form submissions my-stats failed");
+          return reply.code(500).send(errorPayload(requestId, "SUBMISSIONS_STATS_ERROR", "error obteniendo stats del agente"));
+        }
+      },
+    );
+
     // ── GET /api/form-submissions/stats ──────────────────────────────
     app.get(
       "/api/form-submissions/stats",

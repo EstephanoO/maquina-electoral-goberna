@@ -393,6 +393,20 @@ export async function updateMemberRole(
   return request<{ success: boolean }>('PUT', `/campaigns/${campaignId}/members/${userId}/role`, { role });
 }
 
+// ─── Form Submission Stats ───────────────────────────────────
+
+/**
+ * GET /api/form-submissions/my-stats
+ * Returns server-side submission counts for the authenticated agent.
+ * Used by the mobile dashboard so the total shown reflects all submissions
+ * ever synced to the server, not just what remains in local SQLite.
+ */
+export function getMySubmissionStats(): Promise<ApiResult<{
+  stats: { total: number; today: number; week: number };
+}>> {
+  return request('GET', '/form-submissions/my-stats');
+}
+
 // ─── GPS Tracking ───────────────────────────────────────────
 
 /** POST /api/agents/location — uses x-agent-token header (NOT JWT) */
