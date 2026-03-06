@@ -3,15 +3,15 @@
 /**
  * useAutoFit — fits map bounds when drill state changes.
  *
- * All geographic data is now served via vector tiles (no GeoJSON fallback).
- * Bounds are computed from the backend geo hierarchy cache (Redis-backed).
+ * Bound resolution is delegated to resolveDrillBounds (shared with useDrillBounds)
+ * so both hooks stay in sync if the geo API ever changes.
  */
 
 import { useEffect, useRef } from "react";
 import type { MapRef } from "@vis.gl/react-maplibre";
 import type { DrillState } from "../types";
 import { PERU_BOUNDS, FLY_DURATION } from "../constants";
-import { getDepartamentos, getProvincias, getDistritos } from "@/lib/services/geo";
+import { resolveDrillBounds } from "./resolve-drill-bounds";
 
 export function useAutoFit(
   mapRef: React.RefObject<MapRef | null>,
@@ -39,33 +39,10 @@ export function useAutoFit(
       return;
     }
 
-    // Level 1: fit to departamento bounds via API
-    if (drillState.level === 1 && drillState.depCode) {
-      getDepartamentos().then((result) => {
-        if (!result.ok || !result.departamentos || !mapRef.current) return;
-        const dep = result.departamentos.find((d) => d.coddep === drillState.depCode);
-        if (dep) mapRef.current.fitBounds(dep.bounds, { padding: 50, duration: FLY_DURATION });
-      }).catch(() => {});
-      return;
-    }
-
-    // Level 2: fit to provincia bounds via API
-    if (drillState.level === 2 && drillState.depCode && drillState.provCode) {
-      getProvincias(drillState.depCode).then((result) => {
-        if (!result.ok || !result.provincias || !mapRef.current) return;
-        const prov = result.provincias.find((p) => p.codprov_full === drillState.provCode);
-        if (prov) mapRef.current.fitBounds(prov.bounds, { padding: 50, duration: FLY_DURATION });
-      }).catch(() => {});
-      return;
-    }
-
-    // Level 3+: fit to distrito bounds via API
-    if (drillState.level >= 3 && drillState.provCode && drillState.distCode) {
-      getDistritos(drillState.provCode).then((result) => {
-        if (!result.ok || !result.distritos || !mapRef.current) return;
-        const dist = result.distritos.find((d) => d.ubigeo === drillState.distCode);
-        if (dist) mapRef.current.fitBounds(dist.bounds, { padding: 50, duration: FLY_DURATION });
-      }).catch(() => {});
-    }
-  }, [drillState.level, drillState.depCode, drillState.provCode, drillState.distCode, mapRef, skipNextFitRef]);
+    resolveDrillBounds(drillState).then((bounds) => {
+      if (!bounds || !mapRef.current) return;
+      mapRef.current.fitBounds(bounds, { padding: 50, duration: FLY_DURATION });
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drillState, mapRef, skipNextFitRef]);
 }

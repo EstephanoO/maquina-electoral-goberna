@@ -13,26 +13,28 @@ import { getAgentStatus } from "../utils";
 const DEFAULT_LAT = -12.046;
 const DEFAULT_LNG = -77.043;
 
-/**
- * Derive enriched agents, form points, connected count, and filtered subsets
- * from the raw stats, locations, and forms data.
- *
- * Optimization: pre-indexes forms by agent_id/encuestador_id into a Map so
- * the agent loop is O(agents + forms) instead of O(agents * forms).
- */
-/** Fast point-in-bounds check (O(1) per point) */
+/** O(1) point-in-bounding-box check */
 function inBounds(lat: number, lng: number, b: GeoBounds): boolean {
   return lng >= b[0][0] && lng <= b[1][0] && lat >= b[0][1] && lat <= b[1][1];
 }
 
+/**
+ * Derive enriched agents, form points, connected count, and drill-filtered subsets
+ * from the raw stats, locations, forms, and optional geographic bounds.
+ *
+ * When drillBounds is provided (user clicked a zone), filteredAgents and
+ * filteredFormPoints only contain items inside that bounding box.
+ * All counts are derived from the filtered sets so the UI stays consistent.
+ *
+ * Optimization: pre-indexes forms by agent_id/encuestador_id into a Map so
+ * the agent loop is O(agents + forms) instead of O(agents * forms).
+ */
 export function useEnrichedAgents(
   stats: CampaignStats | undefined,
   locations: AgentLocation[],
   forms: FormRecord[],
-  selectedAgentId: string | null,
-  selectedAgentIds: Set<string>,
-  drillBounds: GeoBounds | null = null,
   backgroundAgentIds: Set<string> = new Set(),
+  drillBounds: GeoBounds | null = null,
 ) {
   // ── Pre-index: forms by agent_id → most recent form with coords (O(forms)) ──
   const agentFormIndex = useMemo(() => {
@@ -103,7 +105,6 @@ export function useEnrichedAgents(
     const agents = Array.from(agentMap.values());
 
     // Override status for agents that sent a "background" status message.
-    // They may still have a recent GPS timestamp but are known to be inactive.
     if (backgroundAgentIds.size > 0) {
       for (const agent of agents) {
         if (backgroundAgentIds.has(agent.id) && agent.status !== "inactive") {
@@ -118,72 +119,49 @@ export function useEnrichedAgents(
     });
   }, [stats, locations, agentFormIndex, backgroundAgentIds]);
 
+  // ── All form points (full dataset, used by the map always) ──
   const formPoints = useMemo(
     (): FormPoint[] =>
       forms
         .map((f) => {
           const coords = formCoordsToLatLng(f.x, f.y, f.zona);
           if (!coords) return null;
-          return { id: f.id, lat: coords.lat, lng: coords.lng, nombre: f.nombre, telefono: f.telefono ?? "", encuestador: f.encuestador ?? "", created_at: f.created_at, agent_id: f.agent_id || f.encuestador_id };
+          return {
+            id: f.id, lat: coords.lat, lng: coords.lng,
+            nombre: f.nombre, telefono: f.telefono ?? "",
+            encuestador: f.encuestador ?? "", created_at: f.created_at,
+            agent_id: f.agent_id || f.encuestador_id,
+          };
         })
         .filter((p): p is NonNullable<typeof p> => p !== null),
     [forms],
   );
 
+  // ── Drill-filtered subsets — used by panel, KPIs, and overlay ──
+  // When drillBounds is null (level 0), returns the full sets unchanged.
+  const filteredFormPoints = useMemo((): FormPoint[] => {
+    if (!drillBounds) return formPoints;
+    return formPoints.filter((p) => inBounds(p.lat, p.lng, drillBounds));
+  }, [formPoints, drillBounds]);
+
+  const filteredAgents = useMemo((): EnrichedAgent[] => {
+    if (!drillBounds) return enrichedAgents;
+    return enrichedAgents.filter((a) => inBounds(a.lat, a.lng, drillBounds));
+  }, [enrichedAgents, drillBounds]);
+
   const connectedCount = useMemo(
-    () => enrichedAgents.filter((a) => a.status === "connected").length,
-    [enrichedAgents],
+    () => filteredAgents.filter((a) => a.status === "connected").length,
+    [filteredAgents],
   );
 
-  // Pre-compute form coords once for geo-filtering (reuses formPoints calculation)
-  const formCoordsIndex = useMemo(() => {
-    if (!drillBounds) return null;
-    const idx = new Map<string, { lat: number; lng: number }>();
-    for (const f of forms) {
-      const coords = formCoordsToLatLng(f.x, f.y, f.zona);
-      if (coords) idx.set(f.id, coords);
-    }
-    return idx;
-  }, [forms, drillBounds]);
-
-  const filteredForms = useMemo(() => {
-    let result = forms;
-
-    // Agent selection filter
-    if (selectedAgentIds.size > 0) {
-      result = result.filter((f) => selectedAgentIds.has(f.agent_id ?? "") || selectedAgentIds.has(f.encuestador_id ?? ""));
-    } else if (selectedAgentId) {
-      result = result.filter((f) => f.agent_id === selectedAgentId || f.encuestador_id === selectedAgentId);
-    }
-
-    // Geo-filter by drill bounds
-    if (drillBounds && formCoordsIndex) {
-      result = result.filter((f) => {
-        const coords = formCoordsIndex.get(f.id);
-        return coords ? inBounds(coords.lat, coords.lng, drillBounds) : false;
-      });
-    }
-
-    return result;
-  }, [forms, selectedAgentId, selectedAgentIds, drillBounds, formCoordsIndex]);
-
-  const filteredAgents = useMemo(() => {
-    let result = enrichedAgents;
-
-    // Agent selection filter
-    if (selectedAgentIds.size > 0) {
-      result = result.filter((a) => selectedAgentIds.has(a.id));
-    } else if (selectedAgentId) {
-      result = result.filter((a) => a.id === selectedAgentId);
-    }
-
-    // Geo-filter by drill bounds
-    if (drillBounds) {
-      result = result.filter((a) => inBounds(a.lat, a.lng, drillBounds));
-    }
-
-    return result;
-  }, [enrichedAgents, selectedAgentId, selectedAgentIds, drillBounds]);
-
-  return { enrichedAgents, formPoints, connectedCount, filteredForms, filteredAgents };
+  return {
+    // Full sets — always passed to TierraMap (map shows everything, map's own
+    // drill masking handles visual filtering at the GPU level)
+    enrichedAgents,
+    formPoints,
+    // Filtered sets — used by panel/KPIs/overlay to reflect the selected zone
+    filteredAgents,
+    filteredFormPoints,
+    connectedCount,
+  };
 }

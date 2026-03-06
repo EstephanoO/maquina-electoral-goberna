@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import type { EnrichedAgent, LogEntry, AgentStatus, MapTheme } from "./types";
+import type { EnrichedAgent, LogEntry, AgentStatus, MapTheme, DrillState } from "./types";
 import { STATUS_CFG } from "./constants";
 import {
   Glass, Kpi, CardHeader, AgentRow, RankingRow, LogRow, MoreBtn, SCROLL_MAX,
@@ -26,6 +26,8 @@ type Props = {
   /** Update handler — called from modal */
   onUpdateForm?: (formId: string, campaignId: string, updates: Record<string, string>) => Promise<boolean>;
   mapTheme?: MapTheme;
+  /** Current drill state — shows zone filter banner when level > 0 */
+  drillState?: DrillState;
 };
 
 /* ========== Constants ========== */
@@ -42,7 +44,7 @@ const RANKING_EXPANDED = 15;
 export function CampoOverlay({
   agents, connectedCount, logEntries, formCount,
   primaryColor, selectedAgentId, onAgentClick, onLogEntryClick,
-  userRole, onDeleteForm, onUpdateForm, mapTheme = "dark",
+  userRole, onDeleteForm, onUpdateForm, mapTheme = "dark", drillState,
 }: Props) {
   const [visible, setVisible] = useState(true);
   const [agentsOpen, setAgentsOpen] = useState(false);
@@ -85,6 +87,15 @@ export function CampoOverlay({
   const isDark = mapTheme === "dark";
   const accentColor = isDark ? "#60a5fa" : primaryColor;
 
+  // Derive the active zone label from drillState (dep → prov → dist → sector)
+  const activeZoneLabel = useMemo((): string | null => {
+    if (!drillState || drillState.level === 0) return null;
+    if (drillState.level >= 3 && drillState.distName) return drillState.distName;
+    if (drillState.level >= 2 && drillState.provName) return drillState.provName;
+    if (drillState.level >= 1 && drillState.depName) return drillState.depName;
+    return null;
+  }, [drillState]);
+
   return (
     <div
       className="absolute top-3 bottom-3 z-10 flex items-start transition-[right] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
@@ -111,7 +122,31 @@ export function CampoOverlay({
 
       {/* ─── Panel body ─── */}
       <div className="flex flex-col gap-2.5 overflow-y-auto overflow-x-hidden max-h-full" style={{ width: PANEL_W }}>
-        {/* ═══ Active filter banner ═══ */}
+
+        {/* ═══ Zone drill banner — shown when user has drilled into a zone ═══ */}
+        {activeZoneLabel && (
+          <div
+            className="flex items-center gap-2 px-3 py-2 rounded-2xl shadow-sm"
+            style={{
+              background: isDark ? "rgba(2,6,23,0.82)" : "rgba(239,246,255,0.92)",
+              border: isDark ? "1px solid rgba(96,165,250,0.35)" : "1px solid rgba(37,99,235,0.25)",
+            }}
+          >
+            {/* Pin icon */}
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={accentColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+              <circle cx="12" cy="10" r="3" />
+            </svg>
+            <span className={`text-[11px] font-semibold truncate flex-1 ${isDark ? "text-blue-200" : "text-blue-800"}`}>
+              {activeZoneLabel}
+            </span>
+            <span className="text-[10px] font-bold tabular-nums" style={{ color: accentColor }}>
+              {agents.length} ag · {formCount} datos
+            </span>
+          </div>
+        )}
+
+        {/* ═══ Active agent filter banner ═══ */}
         {selectedAgent && (
           <div
             className="flex items-center gap-2 px-3 py-2 rounded-2xl shadow-sm"
