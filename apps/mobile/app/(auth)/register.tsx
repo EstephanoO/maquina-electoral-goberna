@@ -119,7 +119,9 @@ export default function RegisterScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignMode, candidates.length]);
 
-  // ─── Match Candidate by First Name (search mode) ─────────────
+  // ─── Match Candidate by Name (search mode) ───────────────────
+  // Busca por substring en nombre completo, partido o cargo.
+  // Mínimo 3 caracteres. Muestra el mejor match (mayor coincidencia primero).
   useEffect(() => {
     if (campaignMode !== 'search') return;
     const searchTerm = normalize(candidateSearch);
@@ -127,11 +129,20 @@ export default function RegisterScreen() {
       setMatchedCandidate(null);
       return;
     }
-    const match = candidates.find((c) => {
-      const firstName = normalize(c.name.split(' ')[0] ?? '');
-      return firstName === searchTerm;
-    });
-    setMatchedCandidate(match ?? null);
+    // Score: nombre completo tiene más peso que partido/cargo
+    const scored = candidates
+      .map((c) => {
+        const fullName = normalize(c.name);
+        const partido  = normalize(c.partido ?? '');
+        const cargo    = normalize(c.cargo ?? '');
+        if (fullName.includes(searchTerm))  return { c, score: 2 };
+        if (partido.includes(searchTerm) || cargo.includes(searchTerm)) return { c, score: 1 };
+        return null;
+      })
+      .filter(Boolean) as { c: CandidateInfo; score: number }[];
+
+    scored.sort((a, b) => b.score - a.score);
+    setMatchedCandidate(scored[0]?.c ?? null);
   }, [candidateSearch, candidates, campaignMode]);
 
   // ─── Validate access code when 4 chars entered ───────────────
