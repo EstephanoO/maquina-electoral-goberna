@@ -115,8 +115,6 @@ export type TierraMapProps = {
   campaignId: string;
   slug: string;
   primaryColor: string;
-  /** Optional electoral vote target for the zone tooltip progress calculation */
-  metaVotos?: number;
   agents: EnrichedAgent[];
   forms: FormPoint[];
   selectedAgentId: string | null;

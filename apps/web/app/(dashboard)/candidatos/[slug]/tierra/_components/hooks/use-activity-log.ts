@@ -57,12 +57,11 @@ export function useActivityLog(
     }
 
     // Merge SSE-pushed events (connect/disconnect arrive instantly via SSE)
-    if (sseEvents) {
+    if (sseEvents?.length) {
+      // O(entries) Set build → O(1) per SSE event lookup instead of O(entries × sseEvents)
+      const existingIds = new Set(entries.map((e) => e.id));
       for (const ev of sseEvents) {
-        // Dedupe: skip if same id already exists from stats
-        if (!entries.some((e) => e.id === ev.id)) {
-          entries.push(ev);
-        }
+        if (!existingIds.has(ev.id)) entries.push(ev);
       }
     }
 

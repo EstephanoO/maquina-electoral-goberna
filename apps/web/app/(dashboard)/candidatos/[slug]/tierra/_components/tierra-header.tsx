@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { CampaignStats } from "@/lib/types";
-import type { MapTheme } from "./types";
+import type { MapTheme, DrillState } from "./types";
 
 /* ========== Types ========== */
 
@@ -17,18 +17,32 @@ type Props = {
   mapTheme: MapTheme;
   viewMode: TierraViewMode;
   onViewModeChange: (mode: TierraViewMode) => void;
+  /** When set, KPI labels reflect the active drill zone instead of global totals */
+  drillState?: DrillState;
 };
+
+/* ========== Helpers ========== */
+
+function getZoneLabel(drillState: DrillState | undefined): string | null {
+  if (!drillState || drillState.level === 0) return null;
+  if (drillState.level >= 3 && drillState.distName) return drillState.distName;
+  if (drillState.level >= 2 && drillState.provName) return drillState.provName;
+  if (drillState.level >= 1 && drillState.depName) return drillState.depName;
+  return null;
+}
 
 /* ========== Component ========== */
 
-export function TierraHeader({ stats, agentCount, formCount, connectedCount, mapTheme, viewMode, onViewModeChange }: Props) {
+export function TierraHeader({ stats, agentCount, formCount, connectedCount, mapTheme, viewMode, onViewModeChange, drillState }: Props) {
   const router = useRouter();
   const { campaign, metas, totals } = stats;
   const pc = campaign.color_primario;
   const sc = campaign.color_secundario;
   const isDark = mapTheme === "dark";
+  const zoneLabel = getZoneLabel(drillState);
 
   const metaDatos = metas.datos > 0 ? metas.datos : 200000;
+  // Progress bar always shows global totals (the goal doesn't change with drill)
   const datosProgress = Math.min((totals.forms_count / metaDatos) * 100, 100);
   const votosProgress = metas.votos > 0 ? Math.min((totals.forms_count / metas.votos) * 100, 100) : 0;
 
@@ -106,7 +120,15 @@ export function TierraHeader({ stats, agentCount, formCount, connectedCount, map
         {viewMode !== "pipeline" && (
           <>
             <div className={`w-px h-8 ${isDark ? "bg-slate-700/80" : "bg-slate-200/70"}`} />
-            <CampoKpis formCount={formCount} agentCount={agentCount} connectedCount={connectedCount} todayCount={totals.forms_today} primaryColor={pc} mapTheme={mapTheme} />
+            <CampoKpis
+              formCount={formCount}
+              agentCount={agentCount}
+              connectedCount={connectedCount}
+              todayCount={totals.forms_today}
+              primaryColor={pc}
+              mapTheme={mapTheme}
+              zoneLabel={zoneLabel}
+            />
           </>
         )}
       </div>
@@ -150,23 +172,56 @@ function SegmentButton({ active, onClick, icon, label, activeColor, mapTheme }: 
 
 /* ========== KPI Groups ========== */
 
-function CampoKpis({ formCount, agentCount, connectedCount, todayCount, primaryColor, mapTheme }: {
+function CampoKpis({ formCount, agentCount, connectedCount, todayCount, primaryColor, mapTheme, zoneLabel }: {
   formCount: number;
   agentCount: number;
   connectedCount: number;
   todayCount: number;
   primaryColor: string;
   mapTheme: MapTheme;
+  /** When set, KPI counts are scoped to this zone */
+  zoneLabel: string | null;
 }) {
+  const isDark = mapTheme === "dark";
+  const isFiltered = zoneLabel !== null;
+
   return (
     <div className="flex items-center gap-4">
-      <KpiSlot value={formCount.toLocaleString()} label="Puntos" mapTheme={mapTheme} />
+      {/* Zone chip — shown when drill is active */}
+      {isFiltered && (
+        <>
+          <div
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+            style={{
+              background: isDark ? "rgba(96,165,250,0.15)" : "rgba(37,99,235,0.08)",
+              border: isDark ? "1px solid rgba(96,165,250,0.35)" : "1px solid rgba(37,99,235,0.2)",
+            }}
+          >
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#60a5fa" : "#2563eb"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+            </svg>
+            <span
+              className="text-[11px] font-bold tracking-wide max-w-[120px] truncate"
+              style={{ color: isDark ? "#93c5fd" : "#1d4ed8" }}
+            >
+              {zoneLabel}
+            </span>
+          </div>
+          <KpiDivider mapTheme={mapTheme} />
+        </>
+      )}
+      <KpiSlot value={formCount.toLocaleString()} label={isFiltered ? "En zona" : "Puntos"} mapTheme={mapTheme} />
       <KpiDivider mapTheme={mapTheme} />
       <KpiSlot value={String(agentCount)} label="Agentes" mapTheme={mapTheme} />
       <KpiDivider mapTheme={mapTheme} />
       <KpiSlot value={String(connectedCount)} label="En linea" className={connectedCount > 0 ? "text-teal-500" : "text-slate-400"} mapTheme={mapTheme} />
-      <KpiDivider mapTheme={mapTheme} />
-      <KpiSlot value={`+${todayCount}`} label="Hoy" style={{ color: primaryColor }} mapTheme={mapTheme} />
+      {/* Today count only meaningful without geo filter — hide to avoid confusion */}
+      {!isFiltered && (
+        <>
+          <KpiDivider mapTheme={mapTheme} />
+          <KpiSlot value={`+${todayCount}`} label="Hoy" style={{ color: primaryColor }} mapTheme={mapTheme} />
+        </>
+      )}
     </div>
   );
 }
@@ -225,7 +280,7 @@ function MetaBar({ label, current, target, pct, color, mapTheme }: {
 
 function MapPinIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
       <circle cx="12" cy="10" r="3" />
     </svg>
@@ -234,7 +289,7 @@ function MapPinIcon() {
 
 function ChartBarIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M3 3v18h18" />
       <path d="M18 17V9" />
       <path d="M13 17V5" />
@@ -245,7 +300,7 @@ function ChartBarIcon() {
 
 function TableIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <line x1="3" y1="9" x2="21" y2="9" />
       <line x1="3" y1="15" x2="21" y2="15" />

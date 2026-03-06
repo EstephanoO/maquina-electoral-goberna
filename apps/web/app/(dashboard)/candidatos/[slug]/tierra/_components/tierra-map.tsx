@@ -102,7 +102,7 @@ function applyFluidMapInteractions(map: NativeMap) {
 }
 
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
-  { campaignId, slug, primaryColor, metaVotos, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange },
+  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange },
   ref,
 ) {
   const mapRef = useRef<MapRef | null>(null);
@@ -133,8 +133,6 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef, {
     forms,
     agents,
-    metaVotos,
-    primaryColor,
   });
   const { formTooltipRef, onFormMouseMove, onFormMouseLeave, showPinnedTooltip } = useFormTooltip(isZoomingRef, mapRef);
   const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent);
@@ -614,31 +612,30 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         ref={tooltipRef}
         style={{
           position: "absolute", top: 0, left: 0, pointerEvents: "none",
-          backgroundColor: "rgba(8, 14, 32, 0.97)",
-          backdropFilter: "blur(14px)",
-          WebkitBackdropFilter: "blur(14px)",
-          border: "1px solid rgba(250, 204, 21, 0.35)",
-          color: "#fef08a",
-          padding: "10px 13px",
-          borderRadius: 8,
+          backgroundColor: "rgba(15, 23, 42, 0.92)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          border: "1px solid rgba(255,255,255,0.1)",
+          padding: "10px 14px",
+          borderRadius: 10,
           zIndex: 20, opacity: 0, willChange: "transform",
           transform: "translate(0px, 0px)", transition: "opacity 100ms ease-out",
-          boxShadow: "0 12px 40px rgba(0,0,0,0.55), 0 1px 3px rgba(0,0,0,0.3)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
         }}
       />
 
-      {/* ── Form point tooltip (glassmorphism) ── */}
+      {/* ── Form / agent tooltip ── */}
       <div
         ref={formTooltipRef}
         style={{
           position: "absolute", top: 0, left: 0, pointerEvents: "none",
-          background: "rgba(255, 255, 255, 0.72)",
+          background: "rgba(255,255,255,0.94)",
           backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
-          borderRadius: 12, padding: "8px 12px", minWidth: 140, maxWidth: 200,
-          boxShadow: "0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04)",
-          border: "1px solid rgba(255,255,255,0.5)",
+          borderRadius: 10, padding: "8px 12px", minWidth: 130, maxWidth: 210,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.1), 0 1px 3px rgba(0,0,0,0.06)",
+          border: "1px solid rgba(226,232,240,0.8)",
           zIndex: 21, opacity: 0, willChange: "transform",
-          transform: "translate(0px, 0px)", transition: "opacity 150ms ease-out",
+          transform: "translate(0px, 0px)", transition: "opacity 120ms ease-out",
         }}
       />
     </div>
