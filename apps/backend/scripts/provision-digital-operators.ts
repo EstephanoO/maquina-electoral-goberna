@@ -20,7 +20,8 @@ import { getEnv } from "../src/config/env";
 const OPERATORS = [
   { full_name: "Paloma Ramos Gonzales",    email: "paloma@goberna.pe",  password: "Paloma1234!" },
   { full_name: "Dafer Quispe Durand",      email: "dafer@goberna.pe",   password: "Dafer1234!"  },
-  { full_name: "Aaron Yasser Vega Pajuelo",email: "aaron@goberna.pe",   password: "Aaron1234!" },
+  { full_name: "Aaron Yasser Vega Pajuelo",  email: "aaron@goberna.pe",  password: "Aaron1234!"  },
+  { full_name: "Mikela Valeria Rivera Concha", email: "mikela@goberna.pe", password: "Mikela1234!" },
 ] as const;
 
 // Victor Miranda Acosta — ya tiene cuenta, skip
