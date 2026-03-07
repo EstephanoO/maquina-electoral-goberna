@@ -20,7 +20,39 @@ import {
   RegionsRanking,
   SeoReport,
   type GA4Data,
+  type GA4Region,
 } from "./_components";
+
+/* ─────────────────────────────────────────────────────────────────────
+   HARDCODED: Detalles demográficos por Región — Edwards Infante
+   Fuente: Detalles_demográficos_Región.csv
+   Período: 2025-10-01 → 2026-03-07
+   ───────────────────────────────────────────────────────────────────── */
+const EDWARDS_INFANTE_REGIONS: GA4Region[] = [
+  { region: "Lima Province",          activeUsers: 1615, newUsers: 1575, engagedSessions: 892,  engagementRate: 0.317, sessionsPerUser: 0.552, avgEngagementTime: 43.985, events: 10328, keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Callao Region",          activeUsers: 244,  newUsers: 214,  engagedSessions: 174,  engagementRate: 0.385, sessionsPerUser: 0.713, avgEngagementTime: 43.951, events: 1523,  keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "La Libertad",            activeUsers: 104,  newUsers: 94,   engagedSessions: 28,   engagementRate: 0.219, sessionsPerUser: 0.269, avgEngagementTime: 28.635, events: 391,   keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Oregon",                 activeUsers: 55,   newUsers: 55,   engagedSessions: 10,   engagementRate: 0.182, sessionsPerUser: 0.182, avgEngagementTime: 0.982,  events: 178,   keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Piura",                  activeUsers: 36,   newUsers: 23,   engagedSessions: 24,   engagementRate: 0.436, sessionsPerUser: 0.667, avgEngagementTime: 111.444, events: 220,  keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Arequipa",               activeUsers: 29,   newUsers: 21,   engagedSessions: 20,   engagementRate: 0.345, sessionsPerUser: 0.690, avgEngagementTime: 21.586, events: 179,   keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Junin",                  activeUsers: 28,   newUsers: 20,   engagedSessions: 13,   engagementRate: 0.406, sessionsPerUser: 0.464, avgEngagementTime: 40.036, events: 101,   keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Ancash",                 activeUsers: 23,   newUsers: 17,   engagedSessions: 10,   engagementRate: 0.323, sessionsPerUser: 0.435, avgEngagementTime: 10.565, events: 92,    keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Cusco",                  activeUsers: 21,   newUsers: 12,   engagedSessions: 18,   engagementRate: 0.409, sessionsPerUser: 0.857, avgEngagementTime: 26.762, events: 117,   keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Lambayeque",             activeUsers: 17,   newUsers: 9,    engagedSessions: 10,   engagementRate: 0.385, sessionsPerUser: 0.588, avgEngagementTime: 18.235, events: 71,    keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Loreto",                 activeUsers: 13,   newUsers: 6,    engagedSessions: 9,    engagementRate: 0.450, sessionsPerUser: 0.692, avgEngagementTime: 32.538, events: 65,    keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Lima Region",            activeUsers: 12,   newUsers: 10,   engagedSessions: 4,    engagementRate: 0.267, sessionsPerUser: 0.333, avgEngagementTime: 14.917, events: 45,    keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Virginia",               activeUsers: 7,    newUsers: 7,    engagedSessions: 3,    engagementRate: 0.429, sessionsPerUser: 0.429, avgEngagementTime: 23.143, events: 28,    keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "California",             activeUsers: 4,    newUsers: 4,    engagedSessions: 2,    engagementRate: 0.500, sessionsPerUser: 0.500, avgEngagementTime: 26.750, events: 18,    keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Huanuco",                activeUsers: 4,    newUsers: 4,    engagedSessions: 0,    engagementRate: 0,     sessionsPerUser: 0,     avgEngagementTime: 0,      events: 14,    keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Ica",                    activeUsers: 4,    newUsers: 3,    engagedSessions: 1,    engagementRate: 0.200, sessionsPerUser: 0.250, avgEngagementTime: 20.500, events: 16,    keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "San Martin",             activeUsers: 3,    newUsers: 3,    engagedSessions: 0,    engagementRate: 0,     sessionsPerUser: 0,     avgEngagementTime: 0,      events: 9,     keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Moquegua",               activeUsers: 2,    newUsers: 2,    engagedSessions: 1,    engagementRate: 0.250, sessionsPerUser: 0.500, avgEngagementTime: 0.500,  events: 12,    keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Ayacucho",               activeUsers: 1,    newUsers: 1,    engagedSessions: 2,    engagementRate: 1.000, sessionsPerUser: 2.000, avgEngagementTime: 65.000, events: 17,    keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Cajamarca",              activeUsers: 1,    newUsers: 1,    engagedSessions: 0,    engagementRate: 0,     sessionsPerUser: 0,     avgEngagementTime: 0,      events: 3,     keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Puno",                   activeUsers: 1,    newUsers: 1,    engagedSessions: 1,    engagementRate: 1.000, sessionsPerUser: 1.000, avgEngagementTime: 114.000, events: 4,    keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Tacna",                  activeUsers: 1,    newUsers: 1,    engagedSessions: 0,    engagementRate: 0,     sessionsPerUser: 0,     avgEngagementTime: 0,      events: 3,     keyEvents: 0, keyEventRate: 0, revenue: 0 },
+  { region: "Ucayali",                activeUsers: 1,    newUsers: 1,    engagedSessions: 0,    engagementRate: 0,     sessionsPerUser: 0,     avgEngagementTime: 0,      events: 3,     keyEvents: 0, keyEventRate: 0, revenue: 0 },
+];
 
 /** Lazy-load CitiesHeatmap — keeps MapLibre GL out of the analytics chunk */
 const CitiesHeatmap = dynamic(
@@ -79,12 +111,17 @@ export default function DigitalPage() {
         if (res.ok && res.data) {
           setCampaign(res.data.campaign);
           const analytics = res.data.analytics;
+          const regions = analytics.regions?.length
+            ? analytics.regions
+            : slug === "edwards-infante"
+              ? EDWARDS_INFANTE_REGIONS
+              : [];
           setGA4Data({
             ...analytics,
             pagesDetailed: analytics.pagesDetailed || [],
             sessionSources: analytics.sessionSources || [],
             events: analytics.events || [],
-            regions: analytics.regions || [],
+            regions,
           });
           setError(null);
         } else {
