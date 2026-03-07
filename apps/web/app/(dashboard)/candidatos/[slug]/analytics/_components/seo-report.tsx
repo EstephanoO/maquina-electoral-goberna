@@ -16,10 +16,11 @@
  */
 
 import { useMemo } from "react";
-import type { GA4Data } from "./types";
+import type { GA4Data, GSCData } from "./types";
 
 type Props = {
   data: GA4Data;
+  gscData?: GSCData | null;
   primaryColor: string;
   secondaryColor?: string;
   campaignName: string;
@@ -112,7 +113,7 @@ function normalizeRegionName(r: string): string {
    Main component
    ═══════════════════════════════════════════════════════════════════ */
 
-export function SeoReport({ data, primaryColor, secondaryColor = "#10b981", campaignName }: Props) {
+export function SeoReport({ data, gscData, primaryColor, secondaryColor = "#10b981", campaignName }: Props) {
   /* --- Derived data ------------------------------------------ */
   const dateLabel = useMemo(
     () => formatDateRange(data.overview.dateRange.start, data.overview.dateRange.end),
@@ -425,40 +426,44 @@ export function SeoReport({ data, primaryColor, secondaryColor = "#10b981", camp
         </Section>
       )}
 
-      {/* ── 5. POSICIONAMIENTO (placeholder GSC) ─────────────── */}
+      {/* ── 5. POSICIONAMIENTO EN GOOGLE ─────────────────────── */}
       <Section title="Posicionamiento en Google" icon="search">
-        <div style={S.gscPlaceholder}>
-          <div style={S.gscIcon}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
+        {gscData ? (
+          <GscSummary gscData={gscData} primaryColor={primaryColor} />
+        ) : (
+          <div style={S.gscPlaceholder}>
+            <div style={S.gscIcon}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </div>
+            <div style={S.gscTitle}>Search Console no conectado</div>
+            <div style={S.gscDesc}>
+              Los datos de palabras clave y posicionamiento en Google provienen de{" "}
+              <strong>Google Search Console</strong>. Conecta tu propiedad para ver:
+            </div>
+            <div style={S.gscFeatures}>
+              {[
+                "Palabras clave con más impresiones y clics",
+                "Posición promedio en resultados de Google",
+                "CTR (tasa de clics) por keyword",
+                "Páginas mejor posicionadas en búsqueda orgánica",
+                "Consultas de búsqueda que llevan tráfico",
+              ].map((f) => (
+                <div key={f} style={S.gscFeatureRow}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <polyline points="9 18 15 12 9 6" />
+                  </svg>
+                  <span style={S.gscFeatureText}>{f}</span>
+                </div>
+              ))}
+            </div>
+            <div style={S.gscNote}>
+              Próximamente disponible — sube el CSV de Search Console cuando esté listo.
+            </div>
           </div>
-          <div style={S.gscTitle}>Search Console no conectado</div>
-          <div style={S.gscDesc}>
-            Los datos de palabras clave y posicionamiento en Google provienen de{" "}
-            <strong>Google Search Console</strong>. Conecta tu propiedad para ver:
-          </div>
-          <div style={S.gscFeatures}>
-            {[
-              "Palabras clave con más impresiones y clics",
-              "Posición promedio en resultados de Google",
-              "CTR (tasa de clics) por keyword",
-              "Páginas mejor posicionadas en búsqueda orgánica",
-              "Consultas de búsqueda que llevan tráfico",
-            ].map((f) => (
-              <div key={f} style={S.gscFeatureRow}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-                <span style={S.gscFeatureText}>{f}</span>
-              </div>
-            ))}
-          </div>
-          <div style={S.gscNote}>
-            Próximamente disponible — sube el CSV de Search Console cuando esté listo.
-          </div>
-        </div>
+        )}
       </Section>
     </div>
   );
@@ -573,6 +578,62 @@ function SourceIconSvg({ icon, color }: { icon: string; color: string }) {
     case "wa": return <svg {...p} aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>;
     default: return <svg {...p} aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>;
   }
+}
+
+/* ── GscSummary — resumen ejecutivo de Search Console dentro del SeoReport ── */
+
+function GscSummary({ gscData, primaryColor }: { gscData: GSCData; primaryColor: string }) {
+  const { totals, queries } = gscData;
+  const topQueries = queries.filter((q) => q.clicks > 0).slice(0, 5);
+  const posColor = totals.avgPosition <= 3 ? "#10b981" : totals.avgPosition <= 10 ? "#f59e0b" : "#ef4444";
+  const ctrColor = totals.ctr >= 0.05 ? "#10b981" : totals.ctr >= 0.02 ? "#f59e0b" : "#ef4444";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* KPI row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+        {[
+          { label: "Clics totales", value: fmtNum(totals.clicks), sub: gscData.period, color: primaryColor },
+          { label: "Impresiones", value: fmtNum(totals.impressions), sub: "apariciones en Google", color: "#64748b" },
+          { label: "CTR promedio", value: fmtPct(totals.ctr), sub: "ratio de clics", color: ctrColor },
+          { label: "Posición media", value: totals.avgPosition.toFixed(1), sub: "en resultados", color: posColor },
+        ].map((k) => (
+          <div key={k.label} style={{ padding: "12px 16px", backgroundColor: "#fafbfc", borderRadius: 10, border: "1px solid #f1f5f9" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: k.color, lineHeight: 1 }}>{k.value}</div>
+            <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Top queries */}
+      {topQueries.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 8 }}>
+            Consultas con más clics
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {topQueries.map((q, i) => (
+              <div key={q.query} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 8, backgroundColor: i === 0 ? `${primaryColor}08` : "transparent" }}>
+                <span style={{ minWidth: 20, fontSize: 11, fontWeight: 700, color: i < 3 ? primaryColor : "#94a3b8", textAlign: "right" as const }}>{i + 1}</span>
+                <span style={{ flex: 1, fontSize: 12, color: "#1e293b", fontWeight: i === 0 ? 600 : 400 }}>{q.query}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: primaryColor }}>{q.clicks} clics</span>
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>pos. {q.position.toFixed(1)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* GSC badge */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#94a3b8", paddingTop: 4 }}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        Google Search Console · {gscData.period} · búsqueda web
+      </div>
+    </div>
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════════════

@@ -99,3 +99,68 @@ export type GA4Data = {
   regions: GA4Region[];
   dailyUsers: GA4DailyUsers[];
 };
+
+/* ========== Google Search Console Types ========== */
+
+/** Fila del gráfico de tendencia diaria de GSC */
+export type GSCDaily = {
+  date: string;      // "YYYY-MM-DD"
+  clicks: number;
+  impressions: number;
+  ctr: number;       // decimal 0-1 (ej: 0.0417 = 4.17%)
+  position: number;  // posición promedio
+};
+
+/** Consulta de búsqueda individual (Search Query) */
+export type GSCQuery = {
+  query: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;       // decimal 0-1
+  position: number;
+};
+
+/** Página indexada en GSC */
+export type GSCPage = {
+  url: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;       // decimal 0-1
+  position: number;
+};
+
+/** Desglose por dispositivo */
+export type GSCDevice = {
+  device: string;    // "Ordenador" | "Móviles" | "Tablet"
+  clicks: number;
+  impressions: number;
+  ctr: number;       // decimal 0-1
+  position: number;
+};
+
+/** Desglose por país */
+export type GSCCountry = {
+  country: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;       // decimal 0-1
+  position: number;
+};
+
+/** Dataset completo de Google Search Console */
+export type GSCData = {
+  /** Período de los datos, ej: "Últimos 3 meses" */
+  period: string;
+  /** Totales agregados */
+  totals: {
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    avgPosition: number;
+  };
+  daily: GSCDaily[];
+  queries: GSCQuery[];
+  pages: GSCPage[];
+  devices: GSCDevice[];
+  countries: GSCCountry[];
+};

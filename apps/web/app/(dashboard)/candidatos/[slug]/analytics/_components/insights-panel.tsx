@@ -12,10 +12,11 @@
 "use client";
 
 import { useMemo } from "react";
-import type { GA4Data } from "./types";
+import type { GA4Data, GSCData } from "./types";
 
 type Props = {
   data: GA4Data;
+  gscData?: GSCData | null;
   primaryColor: string;
 };
 
@@ -26,8 +27,8 @@ type Insight = {
   detail: string;
 };
 
-export function InsightsPanel({ data, primaryColor }: Props) {
-  const insights = useMemo(() => generateInsights(data), [data]);
+export function InsightsPanel({ data, gscData, primaryColor }: Props) {
+  const insights = useMemo(() => generateInsights(data, gscData ?? null), [data, gscData]);
 
   if (!insights.length) {
     return (
@@ -73,7 +74,7 @@ export function InsightsPanel({ data, primaryColor }: Props) {
 
 /* ── Insight Generation Engine ──────────────────────────────────────── */
 
-function generateInsights(data: GA4Data): Insight[] {
+function generateInsights(data: GA4Data, gscData: GSCData | null): Insight[] {
   const insights: Insight[] = [];
 
   // ── Source insights ─────────────────────────────────────────────
@@ -318,6 +319,90 @@ function generateInsights(data: GA4Data): Insight[] {
         title: `Excelente tiempo de engagement: ${formatTime(data.overview.avgEngagementTime)}`,
         detail: "Los usuarios pasan tiempo real en la pagina. El contenido esta funcionando.",
       });
+    }
+  }
+
+  // ── GSC insights ───────────────────────────────────────────────
+  if (gscData) {
+    const { totals, queries } = gscData;
+
+    // CTR global
+    if (totals.ctr < 0.03 && totals.impressions > 100) {
+      insights.push({
+        type: "warning",
+        category: "Búsquedas",
+        title: `CTR de ${(totals.ctr * 100).toFixed(1)}% en Google Search`,
+        detail: `Con ${totals.impressions.toLocaleString("es-PE")} impresiones, solo ${totals.clicks} personas hacen clic. El título y la meta descripción del sitio no son atractivos. Optimizalos para la búsqueda electoral.`,
+      });
+    } else if (totals.ctr >= 0.05) {
+      insights.push({
+        type: "positive",
+        category: "Búsquedas",
+        title: `CTR de ${(totals.ctr * 100).toFixed(1)}% — por encima del promedio`,
+        detail: `El título en Google convierte bien: ${totals.clicks} clics de ${totals.impressions.toLocaleString("es-PE")} impresiones. Mantener consistencia en títulos de nuevas páginas.`,
+      });
+    }
+
+    // Posición promedio
+    if (totals.avgPosition > 10) {
+      insights.push({
+        type: "negative",
+        category: "Búsquedas",
+        title: `Posición ${totals.avgPosition.toFixed(1)} — fuera de la primera página`,
+        detail: "La mayoría de búsquedas no muestran el sitio en la primera página de Google. Priorizar SEO on-page en la homepage y publicar contenido sobre el distrito.",
+      });
+    } else if (totals.avgPosition <= 3) {
+      insights.push({
+        type: "positive",
+        category: "Búsquedas",
+        title: `Posición ${totals.avgPosition.toFixed(1)} — top 3 en Google`,
+        detail: "Excelente posicionamiento. El candidato aparece en los primeros resultados para sus búsquedas clave. Mantener la estrategia de contenido.",
+      });
+    }
+
+    // Queries con impresiones altas pero cero clics (oportunidades)
+    const zeroClickHighImpr = queries
+      .filter((q) => q.clicks === 0 && q.impressions >= 20 && q.position <= 10)
+      .slice(0, 2);
+    if (zeroClickHighImpr.length > 0) {
+      const names = zeroClickHighImpr.map((q) => `"${q.query}"`).join(", ");
+      insights.push({
+        type: "neutral",
+        category: "Búsquedas",
+        title: `Oportunidades SEO sin clic: ${names}`,
+        detail: `Estas consultas aparecen en la primera página pero nadie hace clic. Mejorar el snippet (título + meta descripción) para esas palabras puede duplicar el tráfico sin invertir en pauta.`,
+      });
+    }
+
+    // Query estrella (más clics, posición < 5)
+    const starQuery = queries.find((q) => q.clicks >= 5 && q.position < 5);
+    if (starQuery) {
+      insights.push({
+        type: "positive",
+        category: "Búsquedas",
+        title: `"${starQuery.query}" es la consulta estrella`,
+        detail: `${starQuery.clicks} clics en posición ${starQuery.position.toFixed(1)} con CTR de ${(starQuery.ctr * 100).toFixed(1)}%. Es el término más efectivo — crear más contenido relacionado para consolidar el liderazgo.`,
+      });
+    }
+
+    // Ratio impresiones / clics GA4 (coherencia entre fuentes)
+    if (data.overview.activeUsers > 0 && totals.clicks > 0) {
+      const gscShare = (totals.clicks / data.overview.activeUsers) * 100;
+      if (gscShare < 5) {
+        insights.push({
+          type: "neutral",
+          category: "Canales",
+          title: `Google Orgánico aporta solo el ${gscShare.toFixed(1)}% del tráfico total`,
+          detail: `${totals.clicks} clics orgánicos de ${data.overview.activeUsers.toLocaleString("es-PE")} visitantes totales. La mayor parte del tráfico viene de redes sociales o pauta. Fortalecer SEO reduciría la dependencia de presupuesto pagado.`,
+        });
+      } else if (gscShare > 30) {
+        insights.push({
+          type: "positive",
+          category: "Canales",
+          title: `Google Orgánico genera el ${gscShare.toFixed(1)}% del tráfico`,
+          detail: `${totals.clicks} de ${data.overview.activeUsers.toLocaleString("es-PE")} visitantes llegan por búsqueda orgánica. Excelente señal de posicionamiento — este tráfico es gratis y de alta intención.`,
+        });
+      }
     }
   }
 

@@ -19,8 +19,10 @@ import {
   InsightsPanel,
   RegionsRanking,
   SeoReport,
+  GscPanel,
   type GA4Data,
   type GA4Region,
+  type GSCData,
 } from "./_components";
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -53,6 +55,189 @@ const EDWARDS_INFANTE_REGIONS: GA4Region[] = [
   { region: "Tacna",                  activeUsers: 1,    newUsers: 1,    engagedSessions: 0,    engagementRate: 0,     sessionsPerUser: 0,     avgEngagementTime: 0,      events: 3,     keyEvents: 0, keyEventRate: 0, revenue: 0 },
   { region: "Ucayali",                activeUsers: 1,    newUsers: 1,    engagedSessions: 0,    engagementRate: 0,     sessionsPerUser: 0,     avgEngagementTime: 0,      events: 3,     keyEvents: 0, keyEventRate: 0, revenue: 0 },
 ];
+
+/* ─────────────────────────────────────────────────────────────────────
+   HARDCODED: Google Search Console — Edwards Infante
+   Fuente: edward/Gráfico.csv, Consultas.csv, Páginas.csv,
+           Dispositivos.csv, Países.csv
+   Período: Últimos 3 meses (Web)
+   Totales: 99 clics · 2400 impresiones · CTR 4.1% · Pos. 4.78
+   ───────────────────────────────────────────────────────────────────── */
+const EDWARDS_INFANTE_GSC: GSCData = {
+  period: "Últimos 3 meses",
+  totals: {
+    clicks: 99,
+    impressions: 2400,
+    ctr: 0.041,
+    avgPosition: 4.78,
+  },
+  daily: [
+    { date: "2025-12-05", clicks: 1,  impressions: 24,  ctr: 0.0417, position: 5.3  },
+    { date: "2025-12-06", clicks: 0,  impressions: 9,   ctr: 0,      position: 3.6  },
+    { date: "2025-12-07", clicks: 1,  impressions: 5,   ctr: 0.2,    position: 3.8  },
+    { date: "2025-12-08", clicks: 1,  impressions: 8,   ctr: 0.125,  position: 5.4  },
+    { date: "2025-12-09", clicks: 1,  impressions: 12,  ctr: 0.0833, position: 5.0  },
+    { date: "2025-12-10", clicks: 1,  impressions: 13,  ctr: 0.0769, position: 3.0  },
+    { date: "2025-12-11", clicks: 5,  impressions: 17,  ctr: 0.2941, position: 4.1  },
+    { date: "2025-12-12", clicks: 0,  impressions: 17,  ctr: 0,      position: 2.5  },
+    { date: "2025-12-13", clicks: 1,  impressions: 25,  ctr: 0.04,   position: 4.3  },
+    { date: "2025-12-14", clicks: 1,  impressions: 7,   ctr: 0.1429, position: 4.0  },
+    { date: "2025-12-15", clicks: 0,  impressions: 23,  ctr: 0,      position: 4.9  },
+    { date: "2025-12-16", clicks: 3,  impressions: 15,  ctr: 0.2,    position: 2.6  },
+    { date: "2025-12-17", clicks: 0,  impressions: 23,  ctr: 0,      position: 4.9  },
+    { date: "2025-12-18", clicks: 0,  impressions: 20,  ctr: 0,      position: 3.4  },
+    { date: "2025-12-19", clicks: 1,  impressions: 35,  ctr: 0.0286, position: 4.8  },
+    { date: "2025-12-20", clicks: 1,  impressions: 17,  ctr: 0.0588, position: 8.6  },
+    { date: "2025-12-21", clicks: 0,  impressions: 10,  ctr: 0,      position: 7.1  },
+    { date: "2025-12-22", clicks: 3,  impressions: 40,  ctr: 0.075,  position: 6.2  },
+    { date: "2025-12-23", clicks: 2,  impressions: 26,  ctr: 0.0769, position: 4.8  },
+    { date: "2025-12-24", clicks: 2,  impressions: 13,  ctr: 0.1538, position: 8.9  },
+    { date: "2025-12-25", clicks: 0,  impressions: 24,  ctr: 0,      position: 13.7 },
+    { date: "2025-12-26", clicks: 0,  impressions: 20,  ctr: 0,      position: 6.3  },
+    { date: "2025-12-27", clicks: 1,  impressions: 13,  ctr: 0.0769, position: 8.0  },
+    { date: "2025-12-28", clicks: 1,  impressions: 16,  ctr: 0.0625, position: 6.9  },
+    { date: "2025-12-29", clicks: 2,  impressions: 32,  ctr: 0.0625, position: 23.1 },
+    { date: "2025-12-30", clicks: 1,  impressions: 39,  ctr: 0.0256, position: 24.0 },
+    { date: "2025-12-31", clicks: 1,  impressions: 14,  ctr: 0.0714, position: 6.4  },
+    { date: "2026-01-01", clicks: 0,  impressions: 7,   ctr: 0,      position: 17.3 },
+    { date: "2026-01-02", clicks: 0,  impressions: 18,  ctr: 0,      position: 5.6  },
+    { date: "2026-01-03", clicks: 0,  impressions: 10,  ctr: 0,      position: 3.9  },
+    { date: "2026-01-04", clicks: 0,  impressions: 12,  ctr: 0,      position: 4.1  },
+    { date: "2026-01-05", clicks: 1,  impressions: 15,  ctr: 0.0667, position: 5.7  },
+    { date: "2026-01-06", clicks: 0,  impressions: 23,  ctr: 0,      position: 6.9  },
+    { date: "2026-01-07", clicks: 2,  impressions: 25,  ctr: 0.08,   position: 5.0  },
+    { date: "2026-01-08", clicks: 2,  impressions: 22,  ctr: 0.0909, position: 2.9  },
+    { date: "2026-01-09", clicks: 0,  impressions: 23,  ctr: 0,      position: 5.3  },
+    { date: "2026-01-10", clicks: 1,  impressions: 15,  ctr: 0.0667, position: 4.6  },
+    { date: "2026-01-11", clicks: 0,  impressions: 14,  ctr: 0,      position: 5.6  },
+    { date: "2026-01-12", clicks: 0,  impressions: 30,  ctr: 0,      position: 4.2  },
+    { date: "2026-01-13", clicks: 3,  impressions: 32,  ctr: 0.0938, position: 3.1  },
+    { date: "2026-01-14", clicks: 1,  impressions: 19,  ctr: 0.0526, position: 6.6  },
+    { date: "2026-01-15", clicks: 0,  impressions: 22,  ctr: 0,      position: 7.5  },
+    { date: "2026-01-16", clicks: 1,  impressions: 25,  ctr: 0.04,   position: 4.4  },
+    { date: "2026-01-17", clicks: 2,  impressions: 28,  ctr: 0.0714, position: 4.6  },
+    { date: "2026-01-18", clicks: 0,  impressions: 17,  ctr: 0,      position: 13.2 },
+    { date: "2026-01-19", clicks: 2,  impressions: 28,  ctr: 0.0714, position: 5.7  },
+    { date: "2026-01-20", clicks: 3,  impressions: 38,  ctr: 0.0789, position: 5.6  },
+    { date: "2026-01-21", clicks: 2,  impressions: 56,  ctr: 0.0357, position: 4.1  },
+    { date: "2026-01-22", clicks: 2,  impressions: 45,  ctr: 0.0444, position: 5.8  },
+    { date: "2026-01-23", clicks: 3,  impressions: 45,  ctr: 0.0667, position: 5.3  },
+    { date: "2026-01-24", clicks: 5,  impressions: 18,  ctr: 0.2778, position: 1.9  },
+    { date: "2026-01-25", clicks: 0,  impressions: 17,  ctr: 0,      position: 4.3  },
+    { date: "2026-01-26", clicks: 4,  impressions: 39,  ctr: 0.1026, position: 3.5  },
+    { date: "2026-01-27", clicks: 0,  impressions: 35,  ctr: 0,      position: 3.7  },
+    { date: "2026-01-28", clicks: 1,  impressions: 33,  ctr: 0.0303, position: 5.9  },
+    { date: "2026-01-29", clicks: 4,  impressions: 44,  ctr: 0.0909, position: 4.8  },
+    { date: "2026-01-30", clicks: 0,  impressions: 33,  ctr: 0,      position: 2.8  },
+    { date: "2026-01-31", clicks: 2,  impressions: 29,  ctr: 0.069,  position: 6.1  },
+    { date: "2026-02-01", clicks: 1,  impressions: 29,  ctr: 0.0345, position: 5.5  },
+    { date: "2026-02-02", clicks: 1,  impressions: 35,  ctr: 0.0286, position: 3.9  },
+    { date: "2026-02-03", clicks: 3,  impressions: 47,  ctr: 0.0638, position: 3.4  },
+    { date: "2026-02-04", clicks: 1,  impressions: 39,  ctr: 0.0256, position: 3.4  },
+    { date: "2026-02-05", clicks: 1,  impressions: 54,  ctr: 0.0185, position: 4.6  },
+    { date: "2026-02-06", clicks: 3,  impressions: 45,  ctr: 0.0667, position: 4.4  },
+    { date: "2026-02-07", clicks: 0,  impressions: 30,  ctr: 0,      position: 5.1  },
+    { date: "2026-02-08", clicks: 1,  impressions: 30,  ctr: 0.0333, position: 4.4  },
+    { date: "2026-02-09", clicks: 0,  impressions: 35,  ctr: 0,      position: 6.1  },
+    { date: "2026-02-10", clicks: 1,  impressions: 38,  ctr: 0.0263, position: 4.1  },
+    { date: "2026-02-11", clicks: 0,  impressions: 23,  ctr: 0,      position: 5.4  },
+    { date: "2026-02-12", clicks: 0,  impressions: 30,  ctr: 0,      position: 6.2  },
+    { date: "2026-02-13", clicks: 0,  impressions: 24,  ctr: 0,      position: 5.1  },
+    { date: "2026-02-14", clicks: 0,  impressions: 14,  ctr: 0,      position: 4.6  },
+    { date: "2026-02-15", clicks: 0,  impressions: 19,  ctr: 0,      position: 4.4  },
+    { date: "2026-02-16", clicks: 3,  impressions: 39,  ctr: 0.0769, position: 5.8  },
+    { date: "2026-02-17", clicks: 2,  impressions: 45,  ctr: 0.0444, position: 5.8  },
+    { date: "2026-02-18", clicks: 0,  impressions: 30,  ctr: 0,      position: 6.3  },
+    { date: "2026-02-19", clicks: 3,  impressions: 55,  ctr: 0.0545, position: 5.1  },
+    { date: "2026-02-20", clicks: 1,  impressions: 41,  ctr: 0.0244, position: 7.6  },
+    { date: "2026-02-21", clicks: 0,  impressions: 14,  ctr: 0,      position: 3.7  },
+    { date: "2026-02-22", clicks: 0,  impressions: 31,  ctr: 0,      position: 3.7  },
+    { date: "2026-02-23", clicks: 1,  impressions: 34,  ctr: 0.0294, position: 6.8  },
+    { date: "2026-02-24", clicks: 0,  impressions: 30,  ctr: 0,      position: 4.6  },
+    { date: "2026-02-25", clicks: 0,  impressions: 24,  ctr: 0,      position: 4.0  },
+    { date: "2026-02-26", clicks: 0,  impressions: 41,  ctr: 0,      position: 6.7  },
+    { date: "2026-02-27", clicks: 0,  impressions: 34,  ctr: 0,      position: 4.4  },
+    { date: "2026-02-28", clicks: 0,  impressions: 27,  ctr: 0,      position: 4.1  },
+    { date: "2026-03-01", clicks: 1,  impressions: 21,  ctr: 0.0476, position: 4.1  },
+    { date: "2026-03-02", clicks: 1,  impressions: 30,  ctr: 0.0333, position: 3.4  },
+    { date: "2026-03-03", clicks: 1,  impressions: 39,  ctr: 0.0256, position: 3.2  },
+    { date: "2026-03-04", clicks: 3,  impressions: 39,  ctr: 0.0769, position: 4.3  },
+  ],
+  queries: [
+    { query: "edwards infante",                      clicks: 23, impressions: 187, ctr: 0.123,  position: 2.49  },
+    { query: "edward infante",                       clicks: 8,  impressions: 86,  ctr: 0.093,  position: 2.52  },
+    { query: "alcalde de carmen de la legua",        clicks: 5,  impressions: 217, ctr: 0.023,  position: 4.84  },
+    { query: "alcalde carmen de la legua",           clicks: 2,  impressions: 60,  ctr: 0.0333, position: 4.32  },
+    { query: "edwards infante lópez",                clicks: 2,  impressions: 34,  ctr: 0.0588, position: 3.85  },
+    { query: "edward infante alcalde",               clicks: 1,  impressions: 8,   ctr: 0.125,  position: 4.12  },
+    { query: "alcalde de carmen de la legua reynoso",clicks: 0,  impressions: 45,  ctr: 0,      position: 3.67  },
+    { query: "alcalde de carmen de la legua 2025",   clicks: 0,  impressions: 30,  ctr: 0,      position: 2.33  },
+    { query: "carmelinas",                           clicks: 0,  impressions: 12,  ctr: 0,      position: 40.92 },
+    { query: "educación para adultos mayores",       clicks: 0,  impressions: 10,  ctr: 0,      position: 1.0   },
+    { query: "veterinaria patitas carmen de la legua",clicks: 0, impressions: 9,   ctr: 0,      position: 4.11  },
+    { query: "escuela del adulto mayor",             clicks: 0,  impressions: 9,   ctr: 0,      position: 12.78 },
+    { query: "carmelimo",                            clicks: 0,  impressions: 8,   ctr: 0,      position: 4.25  },
+    { query: "alcaldes de carmen de la legua",       clicks: 0,  impressions: 8,   ctr: 0,      position: 5.12  },
+    { query: "carmelinos",                           clicks: 0,  impressions: 8,   ctr: 0,      position: 5.88  },
+    { query: "carmelino",                            clicks: 0,  impressions: 7,   ctr: 0,      position: 7.86  },
+    { query: "omaped",                               clicks: 0,  impressions: 6,   ctr: 0,      position: 30.33 },
+    { query: "somos el pueblo",                      clicks: 0,  impressions: 5,   ctr: 0,      position: 35.0  },
+    { query: "municipalidad de carmen de la legua reynoso", clicks: 0, impressions: 4, ctr: 0, position: 1.5 },
+    { query: "educación adultos mayores",            clicks: 0,  impressions: 3,   ctr: 0,      position: 1.0   },
+    { query: "parvularia de adultos mayores",        clicks: 0,  impressions: 3,   ctr: 0,      position: 1.0   },
+    { query: "reynoso callao",                       clicks: 0,  impressions: 3,   ctr: 0,      position: 7.0   },
+    { query: "preferencias",                         clicks: 0,  impressions: 3,   ctr: 0,      position: 75.67 },
+    { query: "carmen de la legua municipalidad",     clicks: 0,  impressions: 2,   ctr: 0,      position: 1.0   },
+    { query: "la bombonera carmen de la legua",      clicks: 0,  impressions: 2,   ctr: 0,      position: 23.5  },
+  ],
+  pages: [
+    { url: "https://www.edwardsinfante.com/",                                                                    clicks: 83, impressions: 1631, ctr: 0.0509, position: 3.94  },
+    { url: "https://www.edwardsinfante.com/seguridad/la-seguridad-con-alerta-carmelino/",                        clicks: 5,  impressions: 48,   ctr: 0.1042, position: 3.81  },
+    { url: "https://www.edwardsinfante.com/novedades/agua-y-desague-para-villa-senor-de-los-milagros/",          clicks: 3,  impressions: 26,   ctr: 0.1154, position: 13.96 },
+    { url: "https://www.edwardsinfante.com/novedades/vida-plena-escuela-adulto-mayor/",                          clicks: 2,  impressions: 112,  ctr: 0.0179, position: 4.61  },
+    { url: "https://www.edwardsinfante.com/salud/inspeccion-sanitaria/",                                         clicks: 2,  impressions: 68,   ctr: 0.0294, position: 6.28  },
+    { url: "https://www.edwardsinfante.com/deporte/tai-chi-para-adultos-mayores/",                               clicks: 2,  impressions: 32,   ctr: 0.0625, position: 4.12  },
+    { url: "https://www.edwardsinfante.com/salud/cero-anemia-club-mamitas-d-hierro/",                            clicks: 2,  impressions: 24,   ctr: 0.0833, position: 5.71  },
+    { url: "https://www.edwardsinfante.com/salud/huellitas-protegidas-en-carmen-de-la-legua-reynoso/",           clicks: 0,  impressions: 91,   ctr: 0,      position: 10.38 },
+    { url: "https://www.edwardsinfante.com/proteccion-social/talleres-productivos-cdl/",                         clicks: 0,  impressions: 88,   ctr: 0,      position: 8.22  },
+    { url: "https://www.edwardsinfante.com/proteccion-social/club-omaped-inclusion/",                            clicks: 0,  impressions: 77,   ctr: 0,      position: 9.62  },
+    { url: "https://www.edwardsinfante.com/novedades/cubo-rubik-educacion-carmenlegua/",                         clicks: 0,  impressions: 64,   ctr: 0,      position: 9.5   },
+    { url: "https://www.edwardsinfante.com/novedades/pueblo-lo-confirma-lideramos/",                             clicks: 0,  impressions: 31,   ctr: 0,      position: 47.23 },
+    { url: "https://www.edwardsinfante.com/novedades/protegiendo-a-nuestros-animalitos/",                        clicks: 0,  impressions: 30,   ctr: 0,      position: 12.73 },
+    { url: "https://www.edwardsinfante.com/infraestructura/jugar-es-un-derecho/",                                clicks: 0,  impressions: 20,   ctr: 0,      position: 6.25  },
+    { url: "https://www.edwardsinfante.com/novedades/ninos-sonrien-carmen-de-la-legua/",                         clicks: 0,  impressions: 14,   ctr: 0,      position: 5.0   },
+    { url: "https://www.edwardsinfante.com/category/gestion-municipal/",                                         clicks: 0,  impressions: 13,   ctr: 0,      position: 6.0   },
+    { url: "https://www.edwardsinfante.com/proteccion-social/inclusion-resultados/",                             clicks: 0,  impressions: 11,   ctr: 0,      position: 4.18  },
+    { url: "https://www.edwardsinfante.com/salud/compra-segura-mercados-carmelinos/",                            clicks: 0,  impressions: 11,   ctr: 0,      position: 5.27  },
+  ],
+  devices: [
+    { device: "Ordenador", clicks: 51, impressions: 903,  ctr: 0.0565, position: 7.13 },
+    { device: "Móviles",   clicks: 45, impressions: 1450, ctr: 0.031,  position: 4.66 },
+    { device: "Tablet",    clicks: 3,  impressions: 47,   ctr: 0.0638, position: 7.09 },
+  ],
+  countries: [
+    { country: "Perú",          clicks: 93, impressions: 1680, ctr: 0.0554, position: 4.3   },
+    { country: "Estados Unidos",clicks: 1,  impressions: 155,  ctr: 0.0065, position: 10.39 },
+    { country: "México",        clicks: 1,  impressions: 148,  ctr: 0.0068, position: 5.5   },
+    { country: "España",        clicks: 1,  impressions: 81,   ctr: 0.0123, position: 11.23 },
+    { country: "Argentina",     clicks: 1,  impressions: 25,   ctr: 0.04,   position: 7.08  },
+    { country: "Uruguay",       clicks: 1,  impressions: 5,    ctr: 0.2,    position: 5.8   },
+    { country: "Bélgica",       clicks: 1,  impressions: 4,    ctr: 0.25,   position: 9.0   },
+    { country: "Colombia",      clicks: 0,  impressions: 28,   ctr: 0,      position: 8.04  },
+    { country: "Ecuador",       clicks: 0,  impressions: 26,   ctr: 0,      position: 7.38  },
+    { country: "Reino Unido",   clicks: 0,  impressions: 21,   ctr: 0,      position: 11.0  },
+    { country: "Venezuela",     clicks: 0,  impressions: 19,   ctr: 0,      position: 4.0   },
+    { country: "Guatemala",     clicks: 0,  impressions: 18,   ctr: 0,      position: 7.67  },
+    { country: "Chile",         clicks: 0,  impressions: 16,   ctr: 0,      position: 5.0   },
+    { country: "La India",      clicks: 0,  impressions: 16,   ctr: 0,      position: 16.12 },
+    { country: "República Dominicana", clicks: 0, impressions: 12, ctr: 0, position: 2.33  },
+    { country: "El Salvador",   clicks: 0,  impressions: 10,   ctr: 0,      position: 5.3   },
+    { country: "Canadá",        clicks: 0,  impressions: 10,   ctr: 0,      position: 8.3   },
+    { country: "Brasil",        clicks: 0,  impressions: 8,    ctr: 0,      position: 14.5  },
+    { country: "Italia",        clicks: 0,  impressions: 7,    ctr: 0,      position: 4.0   },
+    { country: "Malasia",       clicks: 0,  impressions: 7,    ctr: 0,      position: 8.43  },
+  ],
+};
 
 /** Lazy-load CitiesHeatmap — keeps MapLibre GL out of the analytics chunk */
 const CitiesHeatmap = dynamic(
@@ -209,6 +394,9 @@ export default function DigitalPage() {
   const hasDailyUsers = ga4Data.dailyUsers.some((d) => d.newUsers > 0 || d.returningUsers > 0);
   const hasRegions = (ga4Data.regions?.length ?? 0) > 0;
 
+  // ── GSC: datos hardcodeados para edwards-infante (única campaña con datos GSC por ahora) ──
+  const gscData: GSCData | null = slug === "edwards-infante" ? EDWARDS_INFANTE_GSC : null;
+
   /* ═══════════════════════════════════════════════════════════════
      UNIFIED DASHBOARD — Single scrollable view
      ─────────────────────────────────────────────────────────────
@@ -228,6 +416,7 @@ export default function DigitalPage() {
         overview={ga4Data.overview}
         primaryColor={pc}
         secondaryColor={sc}
+        hasGsc={!!gscData}
       />
 
       <div style={S.content}>
@@ -360,16 +549,27 @@ export default function DigitalPage() {
         <section style={S.section}>
           <SeoReport
             data={ga4Data}
+            gscData={gscData}
             primaryColor={pc}
             secondaryColor={sc}
             campaignName={campaign.name}
           />
         </section>
 
+        {/* ── BLOQUE 7b: Búsquedas en Google (GSC) — solo si hay datos ── */}
+        {gscData && (
+          <>
+            <SectionLabel label="Búsquedas en Google" />
+            <section style={S.section}>
+              <GscPanel data={gscData} primaryColor={pc} />
+            </section>
+          </>
+        )}
+
         {/* ── BLOQUE 8: Insights ─────────────────────────────────── */}
         <SectionLabel label="Insights Accionables" />
         <section style={S.sectionLast}>
-          <InsightsPanel data={ga4Data} primaryColor={pc} />
+          <InsightsPanel data={ga4Data} gscData={gscData} primaryColor={pc} />
         </section>
       </div>
     </div>

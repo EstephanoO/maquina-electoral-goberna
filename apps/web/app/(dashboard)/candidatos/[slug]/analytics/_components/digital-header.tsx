@@ -21,9 +21,10 @@ type Props = {
   overview: GA4Overview;
   primaryColor: string;
   secondaryColor?: string;
+  hasGsc?: boolean;
 };
 
-export function DigitalHeader({ campaign, overview, primaryColor }: Props) {
+export function DigitalHeader({ campaign, overview, primaryColor, hasGsc = false }: Props) {
   const router = useRouter();
 
   return (
@@ -80,6 +81,15 @@ export function DigitalHeader({ campaign, overview, primaryColor }: Props) {
           </svg>
           <span>Google Analytics</span>
         </div>
+        {hasGsc && (
+          <div style={styles.gscBadge}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4285f4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <span>Search Console</span>
+          </div>
+        )}
       </div>
     </header>
   );
@@ -201,5 +211,17 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "#fff7ed",
     borderRadius: 8,
     border: "1px solid #fed7aa",
+  },
+  gscBadge: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    fontSize: 12,
+    fontWeight: 600,
+    color: "#1e3a5f",
+    padding: "8px 12px",
+    backgroundColor: "#eff6ff",
+    borderRadius: 8,
+    border: "1px solid #bfdbfe",
   },
 };

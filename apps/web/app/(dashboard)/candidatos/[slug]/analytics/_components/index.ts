@@ -10,6 +10,12 @@ export type {
   GA4Region,
   GA4DailyUsers,
   GA4Data,
+  GSCData,
+  GSCDaily,
+  GSCQuery,
+  GSCPage,
+  GSCDevice,
+  GSCCountry,
 } from "./types";
 
 // Components
@@ -28,3 +34,4 @@ export { InsightsPanel } from "./insights-panel";
 export { RegionsRanking } from "./regions-ranking";
 export { RegionsMap } from "./regions-map";
 export { SeoReport } from "./seo-report";
+export { GscPanel } from "./gsc-panel";
