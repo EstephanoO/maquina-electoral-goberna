@@ -85,8 +85,8 @@ function normalizeRegionName(ga4Name: string): string | null {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Peru Departments GeoJSON (simplified polygons)
-   Source: Natural Earth / GADM simplified
+   Peru Departments GeoJSON
+   Loaded at runtime from /geo/peru-departments.geojson (public/)
    ═══════════════════════════════════════════════════════════════════ */
 
 // Simplified department centroids for flyTo
@@ -118,213 +118,7 @@ const REGION_CENTROIDS: Record<string, [number, number]> = {
   "Madre de Dios": [-70.5, -12.5],
 };
 
-// GeoJSON polygon data for Peru departments (simplified)
-// Using approximate bounding polygons for each department
-const PERU_REGIONS_GEOJSON: GeoJSON.FeatureCollection = {
-  type: "FeatureCollection",
-  features: [
-    {
-      type: "Feature",
-      properties: { name: "Amazonas" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-78.7,-2.0],[-77.0,-2.0],[-77.0,-6.0],[-78.2,-6.2],[-78.7,-5.0],[-78.7,-2.0]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Ancash" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-78.7,-8.4],[-76.8,-8.4],[-76.5,-10.0],[-78.0,-10.3],[-78.7,-9.5],[-78.7,-8.4]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Apurimac" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-73.8,-13.0],[-72.0,-13.0],[-72.0,-15.0],[-73.5,-15.0],[-74.0,-14.0],[-73.8,-13.0]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Arequipa" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-73.0,-14.5],[-70.5,-14.5],[-70.3,-16.5],[-72.5,-17.2],[-74.0,-16.5],[-73.0,-14.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Ayacucho" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-75.5,-12.0],[-73.0,-12.0],[-72.5,-14.5],[-75.0,-14.5],[-75.8,-13.5],[-75.5,-12.0]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Cajamarca" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-79.5,-5.5],[-77.5,-5.5],[-77.0,-7.5],[-78.5,-8.0],[-79.8,-7.0],[-79.5,-5.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Callao" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-77.2,-11.9],[-76.9,-11.9],[-76.9,-12.1],[-77.2,-12.1],[-77.2,-11.9]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Cusco" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-73.5,-11.5],[-70.0,-11.5],[-69.8,-15.0],[-72.5,-15.5],[-73.5,-14.0],[-73.5,-11.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Huancavelica" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-75.8,-11.5],[-74.0,-11.5],[-73.5,-13.5],[-75.2,-13.8],[-76.2,-12.8],[-75.8,-11.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Huanuco" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-77.0,-8.5],[-74.5,-8.5],[-74.5,-10.5],[-76.5,-10.8],[-77.5,-10.0],[-77.0,-8.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Ica" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-76.2,-12.5],[-74.0,-12.5],[-73.8,-15.5],[-75.8,-15.5],[-76.5,-14.0],[-76.2,-12.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Junin" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-76.5,-10.0],[-74.0,-10.0],[-73.8,-12.0],[-75.5,-12.5],[-76.8,-11.5],[-76.5,-10.0]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "La Libertad" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-79.5,-6.5],[-77.0,-6.5],[-76.8,-8.8],[-78.8,-9.0],[-80.0,-8.0],[-79.5,-6.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Lambayeque" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-80.5,-5.5],[-79.0,-5.5],[-78.5,-7.0],[-80.0,-7.0],[-80.8,-6.0],[-80.5,-5.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Lima" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-77.5,-10.0],[-75.5,-10.0],[-75.2,-12.8],[-77.0,-13.0],[-78.0,-12.0],[-77.5,-10.0]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Loreto" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-75.5,-1.0],[-70.0,-1.0],[-69.5,-4.5],[-72.0,-6.5],[-74.5,-6.0],[-76.0,-4.0],[-75.5,-1.0]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Madre de Dios" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-73.5,-10.5],[-68.5,-10.5],[-68.5,-14.5],[-70.5,-14.5],[-73.5,-12.5],[-73.5,-10.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Moquegua" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-71.5,-15.5],[-70.0,-15.5],[-70.0,-17.5],[-71.5,-17.5],[-72.0,-16.5],[-71.5,-15.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Pasco" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-76.5,-9.5],[-74.5,-9.5],[-74.2,-11.0],[-76.0,-11.2],[-77.0,-10.5],[-76.5,-9.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Piura" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-81.5,-3.5],[-79.2,-3.5],[-78.8,-5.5],[-80.5,-6.0],[-82.0,-5.0],[-81.5,-3.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Puno" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-70.5,-13.5],[-68.0,-13.5],[-68.2,-17.0],[-70.5,-17.0],[-71.0,-15.0],[-70.5,-13.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "San Martin" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-77.5,-5.5],[-75.5,-5.5],[-75.0,-8.5],[-77.0,-8.5],[-78.0,-7.0],[-77.5,-5.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Tacna" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-70.5,-16.5],[-69.0,-16.5],[-69.0,-18.5],[-71.0,-18.5],[-71.5,-17.5],[-70.5,-16.5]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Tumbes" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-80.8,-3.0],[-79.8,-3.0],[-79.8,-4.0],[-80.5,-4.2],[-81.2,-3.5],[-80.8,-3.0]]],
-      },
-    },
-    {
-      type: "Feature",
-      properties: { name: "Ucayali" },
-      geometry: {
-        type: "Polygon",
-        coordinates: [[[-75.5,-7.0],[-70.0,-7.0],[-70.0,-11.5],[-73.5,-11.5],[-75.5,-10.0],[-75.5,-7.0]]],
-      },
-    },
-  ],
-};
+
 
 /* ═══════════════════════════════════════════════════════════════════
    Map constants
@@ -370,6 +164,17 @@ export const RegionsMap = memo(function RegionsMap({
 }: Props) {
   const mapRef = useRef<MapRef | null>(null);
   const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
+  const [baseGeoJSON, setBaseGeoJSON] = useState<GeoJSON.FeatureCollection | null>(null);
+
+  // Load Peru departments GeoJSON from static public asset
+  useEffect(() => {
+    fetch("/geo/peru-departments.geojson")
+      .then((r) => r.json())
+      .then((data: GeoJSON.FeatureCollection) => setBaseGeoJSON(data))
+      .catch(() => {
+        // Silently fail — map will render without choropleth
+      });
+  }, []);
 
   // Build a lookup map: normalized region name → GA4Region data
   const regionDataMap = useMemo(() => {
@@ -418,9 +223,12 @@ export const RegionsMap = memo(function RegionsMap({
 
   // Enrich the GeoJSON features with user data
   const enrichedGeoJSON = useMemo((): GeoJSON.FeatureCollection => {
+    if (!baseGeoJSON) {
+      return { type: "FeatureCollection", features: [] };
+    }
     return {
       type: "FeatureCollection",
-      features: PERU_REGIONS_GEOJSON.features.map((f) => {
+      features: baseGeoJSON.features.map((f) => {
         const name = f.properties?.name as string;
         const data = regionDataMap.get(name);
         return {
@@ -434,7 +242,7 @@ export const RegionsMap = memo(function RegionsMap({
         };
       }),
     };
-  }, [regionDataMap, maxUsers]);
+  }, [baseGeoJSON, regionDataMap, maxUsers]);
 
   // Choropleth fill paint
   const fillPaint = useMemo(
