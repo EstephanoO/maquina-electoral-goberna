@@ -44,6 +44,7 @@ export interface CmsEventMap {
   "message.new": CmsMessageEvent;
   "message.status": CmsStatusUpdateEvent;
   "extension.message_received": CmsExtensionMessageEvent;
+  "extension.message_sent": CmsExtensionMessageEvent;
 }
 
 class CmsEventBus extends EventEmitter {
