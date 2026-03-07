@@ -17,13 +17,17 @@ export function useAutoFit(
   mapRef: React.RefObject<MapRef | null>,
   drillState: DrillState,
   skipNextFitRef: React.MutableRefObject<boolean>,
+  disabledRef: React.MutableRefObject<boolean>,
 ) {
   const prevLevelRef = useRef<number>(drillState.level);
 
   useEffect(() => {
     if (!mapRef.current) return;
 
-    // Skip if bounds were already handled by click handler
+    // Permanently disabled — caller owns the camera (e.g. demo mode).
+    if (disabledRef.current) return;
+
+    // Skip once — bounds already handled externally (click handler or fitToBounds).
     if (skipNextFitRef.current) {
       skipNextFitRef.current = false;
       prevLevelRef.current = drillState.level;
@@ -33,7 +37,6 @@ export function useAutoFit(
     prevLevelRef.current = drillState.level;
     const map = mapRef.current;
 
-    // Level 0: Peru overview
     if (drillState.level === 0) {
       map.fitBounds(PERU_BOUNDS, { padding: 40, duration: FLY_DURATION });
       return;
@@ -41,8 +44,13 @@ export function useAutoFit(
 
     resolveDrillBounds(drillState).then((bounds) => {
       if (!bounds || !mapRef.current) return;
+      if (disabledRef.current) return;
+      if (skipNextFitRef.current) {
+        skipNextFitRef.current = false;
+        return;
+      }
       mapRef.current.fitBounds(bounds, { padding: 50, duration: FLY_DURATION });
     }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drillState, mapRef, skipNextFitRef]);
+  }, [drillState, mapRef, skipNextFitRef, disabledRef]);
 }

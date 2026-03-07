@@ -15,6 +15,7 @@ import {
   INITIAL_DRILL,
   type TierraMapHandle, type DrillState, type ActiveLayer, type DatosVizMode, type MapTheme, type PinnedTooltipData,
 } from "./_components";
+import { DemoLeguaBanner } from "./_components/demo-legua-banner";
 import { tierraKeys } from "@/lib/hooks";
 import type { TierraViewMode } from "./_components/tierra-header";
 import { useAgentSSE } from "./_components/hooks/use-agent-sse";
@@ -23,6 +24,41 @@ import { useEnrichedAgents } from "./_components/hooks/use-enriched-agents";
 import { useActivityLog } from "./_components/hooks/use-activity-log";
 import { useSSELocations } from "./_components/hooks/use-sse-locations";
 import { useDrillBounds } from "./_components/hooks/use-drill-bounds";
+
+/* ─── Demo: Carmen de la Legua (Callao) ─── */
+
+/**
+ * Slugs de campaña que activan la demo de Edwards Infante.
+ * Agregá el slug real cuando se cree la campaña en el sistema.
+ */
+const LEGUA_DEMO_SLUGS = ["edwards-infante", "carmen-de-la-legua", "legua-demo"] as const;
+
+/**
+ * DrillState para Carmen de la Legua Reynoso.
+ * Fuente: GET /api/geo/provincias/0701/distritos (DB producción, 2026-03-07)
+ * Dep. Callao (07) → Prov. Callao (0701) → Dist. Carmen de la Legua (070103)
+ */
+const LEGUA_DRILL: DrillState = {
+  level: 3,
+  depCode: "07",
+  depName: "CALLAO",
+  provCode: "0701",
+  provName: "CALLAO",
+  distCode: "070103",
+  distName: "Carmen de la Legua Reynoso",
+  sector: null,
+  sectorName: null,
+};
+
+/**
+ * Bounds exactos de Carmen de la Legua Reynoso.
+ * Fuente: GET /api/geo/provincias/0701/distritos — geometría PostGIS de producción.
+ * [[minLng, minLat], [maxLng, maxLat]]
+ */
+const LEGUA_BOUNDS: [[number, number], [number, number]] = [
+  [-77.09924822899995, -12.04841197199994],  // SW
+  [-77.08161107999996, -12.036319686999946], // NE
+];
 
 /** Lazy-load TierraMap — keeps MapLibre GL out of the shared chunk */
 const TierraMap = dynamic(
@@ -51,6 +87,12 @@ export default function TierraPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
+  // ─── Demo: detectar si este slug es de la demo de Carmen de la Legua ───
+  // Usamos `(arr as readonly string[]).includes(slug)` para evitar el narrowing
+  // estricto de TS en tuples const sin perder la intención.
+  const isLeguaDemo = (LEGUA_DEMO_SLUGS as readonly string[]).includes(slug);
+  const [showLeguaBanner, setShowLeguaBanner] = useState(false);
+
   // ─── Data fetching ───
   const { data: stats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useCampaignStats(slug);
   const campaignId = stats?.campaign.id;
@@ -75,11 +117,17 @@ export default function TierraPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [drillState, setDrillState] = useState<DrillState>(INITIAL_DRILL);
+  const [drillState, setDrillState] = useState<DrillState>(
+    isLeguaDemo ? LEGUA_DRILL : INITIAL_DRILL,
+  );
   const [showRoutes, setShowRoutes] = useState(false);
 
   const showTracking = activeLayer === "agentes";
   const showDatos = activeLayer === "datos" || selectedAgentId !== null;
+
+  // ─── Demo: para los slugs de Legua, el drillState arranca ya en el distrito ───
+  // No necesitamos polling ni handle. El mapa recibe lockedBounds como prop y
+  // se encarga de todo internamente: initialViewState correcto + revalidador en onLoad.
 
   // ─── Count unique surveyors with routes (2+ geolocated forms) ───
   const routeSurveyorCount = useMemo(() => {
@@ -246,6 +294,14 @@ export default function TierraPage() {
 
       {viewMode === "campo" ? (
         <div className="flex-1 min-h-0 relative">
+          {/* ── Demo overlay: Carmen de la Legua ── */}
+          {showLeguaBanner && (
+            <DemoLeguaBanner
+              mapTheme={mapTheme}
+              onDismiss={() => setShowLeguaBanner(false)}
+            />
+          )}
+
           <TierraMap
             ref={mapHandleRef}
             campaignId={campaign.id}
@@ -264,6 +320,7 @@ export default function TierraPage() {
             showRoutes={showRoutes}
             drillState={drillState}
             onDrillChange={setDrillState}
+            lockedBounds={isLeguaDemo ? LEGUA_BOUNDS : undefined}
           />
           <div className="absolute top-3 left-3 z-20 flex items-start gap-2">
             <button

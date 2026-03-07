@@ -10,6 +10,7 @@ export { PipelineView } from "./pipeline-view";
 export { DatosView } from "./datos-view";
 export { PipelineFilters } from "./pipeline-filters";
 export { CampoOverlay } from "./campo-overlay";
+export { DemoLeguaBanner } from "./demo-legua-banner";
 
 /* ─── Values ─── */
 export { INITIAL_DRILL } from "./types";

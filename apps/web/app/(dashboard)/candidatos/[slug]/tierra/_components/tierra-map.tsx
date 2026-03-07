@@ -101,19 +101,43 @@ function applyFluidMapInteractions(map: NativeMap) {
   map.on("dragend", () => { canvas.style.cursor = "grab"; });
 }
 
+/**
+ * Derives a MapLibre initialViewState from a bounding box.
+ * Used when lockedBounds is provided so the map births at the right place
+ * with no Peru flash — no animation needed.
+ */
+function boundsToInitialViewState(bounds: [[number, number], [number, number]]) {
+  const [sw, ne] = bounds;
+  return {
+    longitude: (sw[0] + ne[0]) / 2,
+    latitude: (sw[1] + ne[1]) / 2,
+    zoom: 13, // safe zoom for a small district like Carmen de la Legua
+  };
+}
+
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
-  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange },
+  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange, lockedBounds },
   ref,
 ) {
   const mapRef = useRef<MapRef | null>(null);
   const [tileUrl, setTileUrl] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const [barsZoom, setBarsZoom] = useState<number>(PERU_VIEW.zoom);
+  const [barsZoom, setBarsZoom] = useState<number>(
+    lockedBounds ? boundsToInitialViewState(lockedBounds).zoom : PERU_VIEW.zoom,
+  );
   const skipNextFitRef = useRef(false);
   const isZoomingRef = useRef(false);
   const zoomEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** Set to true before any flyTo that should auto-drill — moveEnd will reverse-geocode the map center */
+  /**
+   * Set to true before any flyTo that should auto-drill.
+   * NEVER set when lockedBounds is active — the map must not drift via reverse-geocode.
+   */
   const pendingDrillRef = useRef(false);
+  /**
+   * When true, useAutoFit and handleLoad never touch the camera.
+   * Pre-seeded from lockedBounds so it's active before the first render.
+   */
+  const disableAutoFitRef = useRef(!!lockedBounds);
 
   // ─── Refs for volatile values (stable callbacks read these) ───
   const drillStateRef = useRef(drillState);
@@ -129,7 +153,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const { formsGeoJson, barsGeoJson } = useFormSources(forms, selectedAgentId, barsZoom);
   const { routesGeoJson, waypointsGeoJson } = useSurveyorRoutes(forms, selectedAgentId);
 
-  useAutoFit(mapRef, drillState, skipNextFitRef);
+  useAutoFit(mapRef, drillState, skipNextFitRef, disableAutoFitRef);
   const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef, {
     forms,
     agents,
@@ -335,6 +359,15 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     nudgeCamera,
     resetCameraOrientation,
     resetCameraPosition,
+    fitToBounds(bounds: [[number, number], [number, number]], padding = 40) {
+      skipNextFitRef.current = true;
+      pendingDrillRef.current = false;
+      mapRef.current?.fitBounds(bounds, { padding, duration: FLY_DURATION, essential: true });
+    },
+    disableAutoFit() {
+      disableAutoFitRef.current = true;
+      pendingDrillRef.current = false;
+    },
   }), [showPinnedTooltip, nudgeCamera, resetCameraOrientation, resetCameraPosition]);
 
   // ─── Init (SSR guard) ───
@@ -349,7 +382,16 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     if (!map) return;
 
     applyFluidMapInteractions(map);
-    map.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
+
+    if (lockedBounds) {
+      // Hard-pin the camera to the locked district — duration:0 = instant, no animation.
+      // This is the final revalidator: even if initialViewState drifted slightly due to
+      // MapLibre's internal projection math, this corrects it with zero flash.
+      map.fitBounds(lockedBounds, { padding: 30, duration: 0 });
+    } else if (!disableAutoFitRef.current) {
+      // Normal mode: start at Peru overview.
+      map.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
+    }
 
     if (tileUrl) {
       if (typeof requestIdleCallback === "function") {
@@ -358,7 +400,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         setTimeout(() => prewarmTiles(tileUrl), 1000);
       }
     }
-  }, [tileUrl]);
+  }, [tileUrl, lockedBounds]);
 
   // ─── Zoom tracking via react-maplibre callbacks ───
   const handleMoveStart = useCallback(() => {
@@ -374,7 +416,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
     // After cluster flyTo lands, reverse-geocode the map center and drill
     // to the appropriate level based on how far we zoomed in.
-    if (pendingDrillRef.current && mapRef.current) {
+    // Skip entirely in locked-bounds mode — we never want reverse-geocode to drift the drill.
+    if (!lockedBounds && pendingDrillRef.current && mapRef.current) {
       pendingDrillRef.current = false;
       const center = mapRef.current.getCenter();
       const zoom = mapRef.current.getZoom();
@@ -525,7 +568,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     <div ref={containerRef} style={{ position: "absolute", inset: 0, backgroundColor: mapTheme === "dark" ? "#0b1220" : "#e5e7eb" }}>
       <MapLibre
         ref={mapRef}
-        initialViewState={PERU_VIEW}
+        initialViewState={lockedBounds ? boundsToInitialViewState(lockedBounds) : PERU_VIEW}
         style={{ width: "100%", height: "100%" }}
         mapStyle={MAP_STYLES[mapTheme]}
         dragPan={MAP_DRAG_PAN_OPTIONS}

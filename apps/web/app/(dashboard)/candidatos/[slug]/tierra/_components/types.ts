@@ -92,6 +92,17 @@ export type TierraMapHandle = {
   resetCameraOrientation: () => void;
   /** Reset to Perú default position */
   resetCameraPosition: () => void;
+  /**
+   * Fit map to given bounds, bypassing useAutoFit (sets skipNextFit internally).
+   * Use this when the caller already has the bounding box (e.g. demo mode).
+   */
+  fitToBounds: (bounds: [[number, number], [number, number]], padding?: number) => void;
+  /**
+   * Disable useAutoFit permanently for this map instance.
+   * Once called, the map never auto-fits again — the caller owns the camera.
+   * Used by demo mode to prevent any source from resetting the viewport.
+   */
+  disableAutoFit: () => void;
 };
 
 /* ─── Drill Filters (output of useDrillFilters) ─── */
@@ -128,6 +139,14 @@ export type TierraMapProps = {
   showRoutes: boolean;
   drillState: DrillState;
   onDrillChange: (state: DrillState) => void;
+  /**
+   * When set, the map is locked to these bounds forever:
+   * - initialViewState is derived from them (no Peru flash)
+   * - autoFit is permanently disabled
+   * - handleLoad re-applies fitBounds with duration:0 as a hard pin
+   * - pendingDrillRef is never set (no reverse-geocode drift)
+   */
+  lockedBounds?: [[number, number], [number, number]];
 };
 
 /* ─── Log Entries ─── */
