@@ -30,7 +30,7 @@ export function SlideOver({
   const overlayStyle: CSSProperties = {
     position: "fixed",
     inset: 0,
-    zIndex: 1000,
+    zIndex: 1200,
     display: "flex",
     justifyContent: "flex-end",
   };

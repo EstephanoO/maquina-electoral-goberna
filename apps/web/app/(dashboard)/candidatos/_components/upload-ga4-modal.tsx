@@ -1210,7 +1210,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 1000,
+    zIndex: 1200,
     padding: 20,
   },
   modal: {
