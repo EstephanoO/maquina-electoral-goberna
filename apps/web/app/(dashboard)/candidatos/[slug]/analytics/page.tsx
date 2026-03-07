@@ -17,12 +17,19 @@ import {
   PagesDetailedTable,
   SourceQuality,
   InsightsPanel,
+  RegionsRanking,
   type GA4Data,
 } from "./_components";
 
 /** Lazy-load CitiesHeatmap — keeps MapLibre GL out of the analytics chunk */
 const CitiesHeatmap = dynamic(
   () => import("./_components/cities-heatmap").then((m) => m.CitiesHeatmap),
+  { ssr: false },
+);
+
+/** Lazy-load RegionsMap — keeps MapLibre GL out of the analytics chunk */
+const RegionsMap = dynamic(
+  () => import("./_components/regions-map").then((m) => m.RegionsMap),
   { ssr: false },
 );
 
@@ -60,6 +67,8 @@ export default function DigitalPage() {
   const [error, setError] = useState<string | null>(null);
   const [hoveredCity, setHoveredCity] = useState<string | null>(null);
   const [clickedCity, setClickedCity] = useState<string | null>(null);
+  const [hoveredRegion, setHoveredRegion] = useState<string | null>(null);
+  const [clickedRegion, setClickedRegion] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchAnalytics() {
@@ -74,6 +83,7 @@ export default function DigitalPage() {
             pagesDetailed: analytics.pagesDetailed || [],
             sessionSources: analytics.sessionSources || [],
             events: analytics.events || [],
+            regions: analytics.regions || [],
           });
           setError(null);
         } else {
@@ -159,6 +169,7 @@ export default function DigitalPage() {
   const hasEvents = ga4Data.events.length > 0;
   const hasPagesDetailed = ga4Data.pagesDetailed.length > 0;
   const hasDailyUsers = ga4Data.dailyUsers.some((d) => d.newUsers > 0 || d.returningUsers > 0);
+  const hasRegions = (ga4Data.regions?.length ?? 0) > 0;
 
   /* ═══════════════════════════════════════════════════════════════
      UNIFIED DASHBOARD — Single scrollable view
@@ -188,26 +199,71 @@ export default function DigitalPage() {
         </section>
 
         {/* ── BLOQUE 2: Geografia ────────────────────────────────── */}
-        <SectionLabel label="Mapa Geografico" />
+        <SectionLabel label={hasRegions ? "Mapa por Region" : "Mapa Geografico"} />
         <section style={S.heroGrid}>
           <div style={S.heroLeft}>
-            <CitiesRanking
-              cities={ga4Data.cities}
-              primaryColor={pc}
-              onCityHover={setHoveredCity}
-              onCityClick={setClickedCity}
-              clickedCity={clickedCity}
-            />
+            {hasRegions ? (
+              <RegionsRanking
+                regions={ga4Data.regions}
+                primaryColor={pc}
+                onRegionHover={setHoveredRegion}
+                onRegionClick={setClickedRegion}
+                clickedRegion={clickedRegion}
+              />
+            ) : (
+              <CitiesRanking
+                cities={ga4Data.cities}
+                primaryColor={pc}
+                onCityHover={setHoveredCity}
+                onCityClick={setClickedCity}
+                clickedCity={clickedCity}
+              />
+            )}
           </div>
           <div style={S.heroRight}>
-            <CitiesHeatmap
-              cities={ga4Data.cities}
-              primaryColor={pc}
-              highlightCity={hoveredCity}
-              clickedCity={clickedCity}
-            />
+            {hasRegions ? (
+              <RegionsMap
+                regions={ga4Data.regions}
+                primaryColor={pc}
+                highlightRegion={hoveredRegion}
+                clickedRegion={clickedRegion}
+              />
+            ) : (
+              <CitiesHeatmap
+                cities={ga4Data.cities}
+                primaryColor={pc}
+                highlightCity={hoveredCity}
+                clickedCity={clickedCity}
+              />
+            )}
           </div>
         </section>
+
+        {/* ── BLOQUE 2b: Ciudades (si hay regiones Y ciudades, mostrar ciudades tambien) */}
+        {hasRegions && ga4Data.cities.length > 0 && (
+          <>
+            <SectionLabel label="Detalle por Ciudad" />
+            <section style={S.heroGrid}>
+              <div style={S.heroLeft}>
+                <CitiesRanking
+                  cities={ga4Data.cities}
+                  primaryColor={pc}
+                  onCityHover={setHoveredCity}
+                  onCityClick={setClickedCity}
+                  clickedCity={clickedCity}
+                />
+              </div>
+              <div style={S.heroRight}>
+                <CitiesHeatmap
+                  cities={ga4Data.cities}
+                  primaryColor={pc}
+                  highlightCity={hoveredCity}
+                  clickedCity={clickedCity}
+                />
+              </div>
+            </section>
+          </>
+        )}
 
         {/* ── BLOQUE 3: Adquisicion ──────────────────────────────── */}
         <SectionLabel label="Adquisicion por Canal" />

@@ -81,6 +81,21 @@ export const ga4DailySchema = z.object({
   returningUsers: z.number().int().min(0),
 });
 
+/** Region-level data from Detalles Demográficos por Región CSV */
+export const ga4RegionSchema = z.object({
+  region: z.string(),
+  activeUsers: z.number().int().min(0),
+  newUsers: z.number().int().min(0).optional(),
+  engagedSessions: z.number().int().min(0).optional(),
+  engagementRate: z.number().min(0).max(1).optional(),
+  sessionsPerUser: z.number().min(0).optional(),
+  avgEngagementTime: z.number().min(0).optional(), // seconds
+  events: z.number().int().min(0).optional(),
+  keyEvents: z.number().int().min(0).optional(),
+  keyEventRate: z.number().min(0).max(1).optional(),
+  revenue: z.number().min(0).optional(),
+});
+
 export const ga4DataSchema = z.object({
   overview: ga4OverviewSchema,
   pages: z.array(ga4PageSchema),
@@ -89,6 +104,7 @@ export const ga4DataSchema = z.object({
   sessionSources: z.array(ga4SessionSourceSchema).optional().default([]),
   events: z.array(ga4EventSchema).optional().default([]),
   cities: z.array(ga4CitySchema),
+  regions: z.array(ga4RegionSchema).optional().default([]),
   dailyUsers: z.array(ga4DailySchema),
 });
 

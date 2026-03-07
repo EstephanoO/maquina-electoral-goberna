@@ -7,6 +7,7 @@ export type {
   GA4SessionSource,
   GA4Event,
   GA4City,
+  GA4Region,
   GA4DailyUsers,
   GA4Data,
 } from "./types";
@@ -24,3 +25,5 @@ export { EventsFunnel } from "./events-funnel";
 export { PagesDetailedTable } from "./pages-detailed-table";
 export { SourceQuality } from "./source-quality";
 export { InsightsPanel } from "./insights-panel";
+export { RegionsRanking } from "./regions-ranking";
+export { RegionsMap } from "./regions-map";

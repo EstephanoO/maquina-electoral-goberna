@@ -39,6 +39,20 @@ type EnrichedCity = {
   revenue?: number;
 };
 
+type EnrichedRegion = {
+  region: string;
+  activeUsers: number;
+  newUsers?: number;
+  engagedSessions?: number;
+  engagementRate?: number;
+  sessionsPerUser?: number;
+  avgEngagementTime?: number;
+  events?: number;
+  keyEvents?: number;
+  keyEventRate?: number;
+  revenue?: number;
+};
+
 type ParsedEvent = {
   name: string;
   count: number;
@@ -86,6 +100,7 @@ type ParsedGA4Data = {
   }>;
   events: ParsedEvent[];
   cities: EnrichedCity[];
+  regions: EnrichedRegion[];
   dailyUsers: Array<{
     day: number;
     newUsers: number;
@@ -110,6 +125,7 @@ type FileState = {
 const FILE_SLOTS: FileSlot[] = [
   { id: "panoramico", label: "Informe Panoramico", hint: "KPIs, paginas, fuentes, ciudades", icon: "chart", required: true },
   { id: "demografico", label: "Detalles Demograficos", hint: "Ciudades con engagement", icon: "globe", required: false },
+  { id: "demografico_region", label: "Demograficos por Region", hint: "Regiones con engagement (mapa)", icon: "map", required: false },
   { id: "eventos", label: "Eventos", hint: "Funnel de eventos", icon: "zap", required: false },
   { id: "paginas", label: "Paginas y Pantallas", hint: "URLs con metricas", icon: "file", required: false },
   { id: "fuente", label: "Fuente / Medio", hint: "Canales de adquisicion", icon: "share", required: false },
@@ -121,6 +137,7 @@ export function UploadGA4Modal({ open, onClose, campaign, onSuccess }: Props) {
   const [files, setFiles] = useState<Record<string, FileState>>({
     panoramico: emptyFileState(),
     demografico: emptyFileState(),
+    demografico_region: emptyFileState(),
     eventos: emptyFileState(),
     paginas: emptyFileState(),
     fuente: emptyFileState(),
@@ -174,6 +191,16 @@ export function UploadGA4Modal({ open, onClose, campaign, onSuccess }: Props) {
               return { ...prev, cities: mergeCities(prev.cities, cities) };
             }
             return createMinimalPreview({ cities });
+          });
+          break;
+        }
+        case "demografico_region": {
+          const regions = parseRegionesCSV(text);
+          setPreview((prev) => {
+            if (prev) {
+              return { ...prev, regions };
+            }
+            return createMinimalPreview({ regions });
           });
           break;
         }
@@ -246,6 +273,8 @@ export function UploadGA4Modal({ open, onClose, campaign, onSuccess }: Props) {
           };
         case "demografico":
           return { ...prev, cities: prev.cities.map((c) => ({ city: c.city, activeUsers: c.activeUsers })) };
+        case "demografico_region":
+          return { ...prev, regions: [] };
         case "eventos":
           return { ...prev, events: [] };
         case "paginas":
@@ -293,6 +322,7 @@ export function UploadGA4Modal({ open, onClose, campaign, onSuccess }: Props) {
     setFiles({
       panoramico: emptyFileState(),
       demografico: emptyFileState(),
+      demografico_region: emptyFileState(),
       eventos: emptyFileState(),
       paginas: emptyFileState(),
       fuente: emptyFileState(),
@@ -334,7 +364,7 @@ export function UploadGA4Modal({ open, onClose, campaign, onSuccess }: Props) {
           </div>
           <div style={styles.headerRight}>
             {hasAnyFile && (
-              <span style={styles.fileBadge}>{uploadedCount}/5 archivos</span>
+              <span style={styles.fileBadge}>{uploadedCount}/6 archivos</span>
             )}
             <button type="button" onClick={handleClose} style={styles.closeBtn} aria-label="Cerrar">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -551,6 +581,13 @@ function PreviewPanel({
           badge={files.demografico.file ? "enriquecido" : undefined}
         />
         <InventoryRow
+          icon="map"
+          label="Regiones (mapa)"
+          count={preview.regions.length}
+          active={preview.regions.length > 0}
+          badge={files.demografico_region.file ? "region" : undefined}
+        />
+        <InventoryRow
           icon="chart"
           label="Dias de datos"
           count={preview.dailyUsers.length}
@@ -651,6 +688,14 @@ function SlotIcon({ icon, size, color }: { icon: string; size: number; color: st
       return (
         <svg {...s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+        </svg>
+      );
+    case "map":
+      return (
+        <svg {...s} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+          <line x1="8" y1="2" x2="8" y2="18" />
+          <line x1="16" y1="6" x2="16" y2="22" />
         </svg>
       );
     case "info":
@@ -813,6 +858,7 @@ function parseInformePanoramico(text: string): ParsedGA4Data {
     sessionSources,
     events: [],
     cities,
+    regions: [],
     dailyUsers,
   };
 }
@@ -869,6 +915,70 @@ function parseDemograficosCSV(text: string): EnrichedCity[] {
   }
 
   return cities;
+}
+
+/** Parse Detalles Demograficos por Region CSV (GA4 region-level data) */
+function parseRegionesCSV(text: string): EnrichedRegion[] {
+  const lines = text.split("\n").map((l) => l.trim());
+  const sections = splitIntoSections(lines);
+
+  // The region CSV header uses "Región" instead of "Ciudad"
+  const regionSection = sections.find((s) =>
+    (s[0]?.includes("Regi") || s[0]?.includes("Region")) && s[0]?.includes("Usuarios activos")
+  );
+
+  if (!regionSection || regionSection.length < 2) {
+    throw new Error("No se encontro la seccion de regiones en el CSV. Verifica que sea el reporte 'Detalles demograficos: Region'.");
+  }
+
+  const regions: EnrichedRegion[] = [];
+
+  // Find which column index corresponds to each metric from the header
+  const headers = parseCSVLine(regionSection[0]);
+  const idxRegion = headers.findIndex((h) => h.includes("Regi") || h.includes("Region"));
+  const idxActiveUsers = headers.findIndex((h) => h.includes("Usuarios activos"));
+  const idxNewUsers = headers.findIndex((h) => h.includes("Usuarios nuevos"));
+  const idxEngagedSessions = headers.findIndex((h) => h.includes("Sesiones con interacci"));
+  const idxEngagementRate = headers.findIndex((h) => h.includes("Porcentaje de interacci"));
+  const idxSessionsPerUser = headers.findIndex((h) => h.includes("Sesiones con interacci") && h.includes("usuario"));
+  const idxAvgTime = headers.findIndex((h) => h.includes("Tiempo de interacci") || h.includes("Tiempo de interacción"));
+  const idxEvents = headers.findIndex((h) => h.includes("Número de eventos") || h.includes("Numero de eventos"));
+  const idxKeyEvents = headers.findIndex((h) => h.includes("Eventos clave") && !h.includes("Tasa"));
+  const idxKeyEventRate = headers.findIndex((h) => h.includes("Tasa de evento clave"));
+  const idxRevenue = headers.findIndex((h) => h.includes("ingresos") || h.includes("Ingresos"));
+
+  for (let i = 1; i < regionSection.length; i++) {
+    const vals = parseCSVLine(regionSection[i]);
+    if (vals.length < 2) continue;
+
+    const regionName = (idxRegion >= 0 ? vals[idxRegion] : vals[0])?.trim();
+    if (!regionName || regionName === "(not set)" || /^\d+$/.test(regionName)) continue;
+
+    const activeUsers = parseInt(idxActiveUsers >= 0 ? vals[idxActiveUsers] : vals[1]) || 0;
+    if (activeUsers === 0) continue;
+
+    regions.push({
+      region: regionName,
+      activeUsers,
+      newUsers: idxNewUsers >= 0 ? parseInt(vals[idxNewUsers]) || 0 : undefined,
+      engagedSessions: idxEngagedSessions >= 0 ? parseInt(vals[idxEngagedSessions]) || 0 : undefined,
+      engagementRate: idxEngagementRate >= 0 ? parseFloat(vals[idxEngagementRate]) || 0 : undefined,
+      sessionsPerUser: idxSessionsPerUser >= 0 && idxSessionsPerUser !== idxEngagedSessions
+        ? parseFloat(vals[idxSessionsPerUser]) || 0
+        : undefined,
+      avgEngagementTime: idxAvgTime >= 0 ? parseFloat(vals[idxAvgTime]) || 0 : undefined,
+      events: idxEvents >= 0 ? parseInt(vals[idxEvents]) || 0 : undefined,
+      keyEvents: idxKeyEvents >= 0 ? parseInt(vals[idxKeyEvents]) || 0 : undefined,
+      keyEventRate: idxKeyEventRate >= 0 ? parseFloat(vals[idxKeyEventRate]) || 0 : undefined,
+      revenue: idxRevenue >= 0 ? parseFloat(vals[idxRevenue]) || 0 : undefined,
+    });
+  }
+
+  if (regions.length === 0) {
+    throw new Error("No se encontraron regiones validas en el CSV. Verifica que sea el reporte de Region (no Ciudad).");
+  }
+
+  return regions.sort((a, b) => b.activeUsers - a.activeUsers);
 }
 
 /** Parse Eventos CSV */
@@ -998,6 +1108,7 @@ function createMinimalPreview(partial: Partial<ParsedGA4Data>): ParsedGA4Data {
     sessionSources: [],
     events: [],
     cities: [],
+    regions: [],
     dailyUsers: [],
     ...partial,
   };

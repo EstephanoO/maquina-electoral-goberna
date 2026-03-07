@@ -67,6 +67,21 @@ export type GA4City = {
   revenue?: number;
 };
 
+/** Region-level data from Detalles Demográficos por Región CSV */
+export type GA4Region = {
+  region: string;
+  activeUsers: number;
+  newUsers?: number;
+  engagedSessions?: number;
+  engagementRate?: number; // 0-1 decimal
+  sessionsPerUser?: number;
+  avgEngagementTime?: number; // seconds
+  events?: number;
+  keyEvents?: number;
+  keyEventRate?: number; // 0-1 decimal
+  revenue?: number;
+};
+
 export type GA4DailyUsers = {
   day: number;
   newUsers: number;
@@ -81,5 +96,6 @@ export type GA4Data = {
   sessionSources: GA4SessionSource[];
   events: GA4Event[];
   cities: GA4City[];
+  regions: GA4Region[];
   dailyUsers: GA4DailyUsers[];
 };
