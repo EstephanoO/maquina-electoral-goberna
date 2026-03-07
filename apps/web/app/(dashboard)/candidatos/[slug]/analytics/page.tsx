@@ -18,6 +18,7 @@ import {
   SourceQuality,
   InsightsPanel,
   RegionsRanking,
+  SeoReport,
   type GA4Data,
 } from "./_components";
 
@@ -317,7 +318,18 @@ export default function DigitalPage() {
           </>
         )}
 
-        {/* ── BLOQUE 7: Insights ─────────────────────────────────── */}
+        {/* ── BLOQUE 7: Informe Web (SEO Report) ─────────────────── */}
+        <SectionLabel label="Informe de Tráfico Web" />
+        <section style={S.section}>
+          <SeoReport
+            data={ga4Data}
+            primaryColor={pc}
+            secondaryColor={sc}
+            campaignName={campaign.name}
+          />
+        </section>
+
+        {/* ── BLOQUE 8: Insights ─────────────────────────────────── */}
         <SectionLabel label="Insights Accionables" />
         <section style={S.sectionLast}>
           <InsightsPanel data={ga4Data} primaryColor={pc} />

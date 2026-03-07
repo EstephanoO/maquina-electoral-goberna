@@ -27,3 +27,4 @@ export { SourceQuality } from "./source-quality";
 export { InsightsPanel } from "./insights-panel";
 export { RegionsRanking } from "./regions-ranking";
 export { RegionsMap } from "./regions-map";
+export { SeoReport } from "./seo-report";

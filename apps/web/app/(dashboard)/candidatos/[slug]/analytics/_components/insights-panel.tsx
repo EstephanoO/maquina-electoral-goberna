@@ -225,12 +225,58 @@ function generateInsights(data: GA4Data): Insight[] {
     }
   }
 
-  // ── City insights ──────────────────────────────────────────────
-  if (data.cities.length > 0) {
+  // ── Region insights (preferred over cities when available) ────
+  const hasRegions = (data.regions?.length ?? 0) > 0;
+
+  if (hasRegions) {
+    const enrichedRegions = data.regions.filter((r) => r.avgEngagementTime !== undefined && r.avgEngagementTime > 0);
+
+    if (enrichedRegions.length > 0) {
+      const topRegion = data.regions[0];
+
+      // Region with best engagement that is not the #1
+      const bestEngagement = enrichedRegions
+        .filter((r) => r.activeUsers > 5 && r.region !== topRegion?.region)
+        .sort((a, b) => (b.avgEngagementTime || 0) - (a.avgEngagementTime || 0))[0];
+
+      if (bestEngagement && bestEngagement.avgEngagementTime) {
+        insights.push({
+          type: "positive",
+          category: "Geografia",
+          title: `${bestEngagement.region} tiene el mejor engagement regional`,
+          detail: `${formatTime(bestEngagement.avgEngagementTime)} promedio con ${bestEngagement.activeUsers} usuarios. Buena señal para inversion en pauta regional.`,
+        });
+      }
+
+      // Top region with low engagement
+      if (topRegion && topRegion.avgEngagementTime !== undefined && topRegion.avgEngagementTime < 3) {
+        insights.push({
+          type: "warning",
+          category: "Geografia",
+          title: `${topRegion.region} lidera trafico pero con bajo engagement`,
+          detail: `${topRegion.activeUsers.toLocaleString()} usuarios pero solo ${formatTime(topRegion.avgEngagementTime || 0)} de interaccion. Revisa si la pauta en esa region esta bien segmentada.`,
+        });
+      }
+
+      // Geographic concentration risk
+      const totalRegionUsers = data.regions.reduce((s, r) => s + r.activeUsers, 0);
+      if (topRegion && totalRegionUsers > 0) {
+        const topShare = (topRegion.activeUsers / totalRegionUsers) * 100;
+        if (topShare > 80) {
+          insights.push({
+            type: "neutral",
+            category: "Geografia",
+            title: `${topShare.toFixed(0)}% del trafico concentrado en ${topRegion.region}`,
+            detail: `Presencia digital muy centralizada. Para ampliar el alcance, considera pauta en ${data.regions[1]?.region ?? "otras regiones"} y ${data.regions[2]?.region ?? "interior del pais"}.`,
+          });
+        }
+      }
+    }
+  } else if (data.cities.length > 0) {
+    // ── City insights (fallback when no regions) ───────────────
     const enrichedCities = data.cities.filter((c) => c.avgEngagementTime !== undefined && c.avgEngagementTime > 0);
 
     if (enrichedCities.length > 0) {
-      // City with best engagement that is not the #1 city
       const topCity = data.cities[0];
       const bestEngagement = enrichedCities
         .filter((c) => c.activeUsers > 5 && c.city !== topCity?.city)
@@ -245,7 +291,6 @@ function generateInsights(data: GA4Data): Insight[] {
         });
       }
 
-      // Top city with low engagement
       if (topCity && topCity.avgEngagementTime !== undefined && topCity.avgEngagementTime < 3) {
         insights.push({
           type: "warning",
