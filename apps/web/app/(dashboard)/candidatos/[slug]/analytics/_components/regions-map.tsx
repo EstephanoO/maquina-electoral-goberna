@@ -5,8 +5,8 @@
  *
  * Architecture:
  * - Declarative via @vis.gl/react-maplibre
- * - Choropleth fill layer driven by activeUsers per region
- * - GeoJSON polygon data embedded inline (no external tile dependency)
+ * - Bubble markers at department centroids, sized by activeUsers
+ * - No GeoJSON polygons — centroids hardcoded, zero async loading
  * - Region name normalization maps GA4 region names → Peru departamento names
  * - memo() wraps component to prevent cascade re-renders from parent
  */
@@ -14,17 +14,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Map as MapLibre,
-  Source,
-  Layer,
+  Marker,
   Popup,
   NavigationControl,
 } from "@vis.gl/react-maplibre";
-import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
-import type {
-  FillLayerSpecification,
-  LineLayerSpecification,
-  StyleSpecification,
-} from "maplibre-gl";
+import type { MapRef, StyleSpecification } from "@vis.gl/react-maplibre";
 import type { GA4Region } from "./types";
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -38,7 +32,8 @@ type Props = {
   clickedRegion?: string | null;
 };
 
-type HoverInfo = {
+type ActiveMarker = {
+  normalizedName: string;
   lng: number;
   lat: number;
   region: GA4Region & { normalizedName: string };
@@ -46,11 +41,10 @@ type HoverInfo = {
 
 /* ═══════════════════════════════════════════════════════════════════
    Region name normalization
-   Maps GA4 region names → Peru departamento names (as in GeoJSON)
+   Maps GA4 region names → Peru departamento names
    ═══════════════════════════════════════════════════════════════════ */
 
 const GA4_TO_PERU_REGION: Record<string, string> = {
-  // Direct matches
   "Amazonas": "Amazonas",
   "Ancash": "Ancash",
   "Apurimac": "Apurimac",
@@ -72,7 +66,6 @@ const GA4_TO_PERU_REGION: Record<string, string> = {
   "Tumbes": "Tumbes",
   "Ucayali": "Ucayali",
   "San Martin": "San Martin",
-  // GA4 variants
   "Lima Province": "Lima",
   "Lima Region": "Lima",
   "Callao Region": "Callao",
@@ -85,40 +78,50 @@ function normalizeRegionName(ga4Name: string): string | null {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   Peru Departments GeoJSON
-   Loaded at runtime from /geo/peru-departments.geojson (public/)
+   Department centroids [lon, lat]
    ═══════════════════════════════════════════════════════════════════ */
 
-// Simplified department centroids for flyTo
 const REGION_CENTROIDS: Record<string, [number, number]> = {
-  "Lima": [-76.5, -11.9],
-  "Callao": [-77.13, -12.05],
-  "Arequipa": [-72.5, -16.0],
-  "La Libertad": [-78.5, -7.8],
-  "Piura": [-80.2, -5.5],
-  "Cajamarca": [-78.5, -7.0],
-  "Cusco": [-71.5, -13.5],
-  "Junin": [-75.0, -11.5],
-  "Ancash": [-77.5, -9.5],
-  "Lambayeque": [-79.8, -6.7],
-  "Loreto": [-74.0, -4.5],
-  "Ica": [-75.5, -14.0],
-  "Puno": [-70.2, -15.5],
-  "San Martin": [-76.5, -7.0],
-  "Ucayali": [-74.0, -9.0],
-  "Huanuco": [-76.5, -9.8],
-  "Ayacucho": [-74.2, -13.2],
-  "Tacna": [-70.2, -17.5],
-  "Moquegua": [-70.9, -17.1],
-  "Tumbes": [-80.5, -3.7],
-  "Amazonas": [-78.0, -5.5],
-  "Pasco": [-76.2, -10.5],
-  "Apurimac": [-73.0, -14.0],
-  "Huancavelica": [-74.8, -12.8],
-  "Madre de Dios": [-70.5, -12.5],
+  "Lima":          [-76.50, -11.90],
+  "Callao":        [-77.13, -12.05],
+  "Arequipa":      [-72.50, -16.00],
+  "La Libertad":   [-78.50,  -7.80],
+  "Piura":         [-80.20,  -5.50],
+  "Cajamarca":     [-78.50,  -7.00],
+  "Cusco":         [-71.50, -13.50],
+  "Junin":         [-75.00, -11.50],
+  "Ancash":        [-77.50,  -9.50],
+  "Lambayeque":    [-79.80,  -6.70],
+  "Loreto":        [-74.00,  -4.50],
+  "Ica":           [-75.50, -14.00],
+  "Puno":          [-70.20, -15.50],
+  "San Martin":    [-76.50,  -7.00],
+  "Ucayali":       [-74.00,  -9.00],
+  "Huanuco":       [-76.50,  -9.80],
+  "Ayacucho":      [-74.20, -13.20],
+  "Tacna":         [-70.20, -17.50],
+  "Moquegua":      [-70.90, -17.10],
+  "Tumbes":        [-80.50,  -3.70],
+  "Amazonas":      [-78.00,  -5.50],
+  "Pasco":         [-76.20, -10.50],
+  "Apurimac":      [-73.00, -14.00],
+  "Huancavelica":  [-74.80, -12.80],
+  "Madre de Dios": [-70.50, -12.50],
 };
 
+/* ═══════════════════════════════════════════════════════════════════
+   Bubble sizing
+   Min 10px diameter, max 56px. Scaled by sqrt to avoid huge dominance.
+   ═══════════════════════════════════════════════════════════════════ */
 
+const MIN_R = 5;
+const MAX_R = 28;
+
+function bubbleRadius(activeUsers: number, maxUsers: number): number {
+  if (maxUsers <= 0) return MIN_R;
+  const t = Math.sqrt(activeUsers / maxUsers);
+  return MIN_R + t * (MAX_R - MIN_R);
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    Map constants
@@ -163,45 +166,32 @@ export const RegionsMap = memo(function RegionsMap({
   clickedRegion,
 }: Props) {
   const mapRef = useRef<MapRef | null>(null);
-  const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
-  const [baseGeoJSON, setBaseGeoJSON] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [activeMarker, setActiveMarker] = useState<ActiveMarker | null>(null);
 
-  // Load Peru departments GeoJSON from static public asset
-  useEffect(() => {
-    fetch("/geo/peru-departments.geojson")
-      .then((r) => r.json())
-      .then((data: GeoJSON.FeatureCollection) => setBaseGeoJSON(data))
-      .catch(() => {
-        // Silently fail — map will render without choropleth
-      });
-  }, []);
-
-  // Build a lookup map: normalized region name → GA4Region data
+  // Build lookup: normalized name → aggregated GA4Region
   const regionDataMap = useMemo(() => {
     const map = new Map<string, GA4Region & { normalizedName: string }>();
     for (const r of regions) {
       const normalized = normalizeRegionName(r.region);
-      if (normalized) {
-        // If both "Lima Province" and "Lima Region" exist, sum them
-        const existing = map.get(normalized);
-        if (existing) {
-          map.set(normalized, {
-            ...r,
-            region: r.region,
-            normalizedName: normalized,
-            activeUsers: existing.activeUsers + r.activeUsers,
-            newUsers:
-              existing.newUsers !== undefined && r.newUsers !== undefined
-                ? existing.newUsers + r.newUsers
-                : existing.newUsers ?? r.newUsers,
-            events:
-              existing.events !== undefined && r.events !== undefined
-                ? existing.events + r.events
-                : existing.events ?? r.events,
-          });
-        } else {
-          map.set(normalized, { ...r, normalizedName: normalized });
-        }
+      if (!normalized) continue;
+      const existing = map.get(normalized);
+      if (existing) {
+        map.set(normalized, {
+          ...r,
+          region: r.region,
+          normalizedName: normalized,
+          activeUsers: existing.activeUsers + r.activeUsers,
+          newUsers:
+            existing.newUsers !== undefined && r.newUsers !== undefined
+              ? existing.newUsers + r.newUsers
+              : existing.newUsers ?? r.newUsers,
+          events:
+            existing.events !== undefined && r.events !== undefined
+              ? existing.events + r.events
+              : existing.events ?? r.events,
+        });
+      } else {
+        map.set(normalized, { ...r, normalizedName: normalized });
       }
     }
     return map;
@@ -221,107 +211,6 @@ export const RegionsMap = memo(function RegionsMap({
     return total;
   }, [regionDataMap]);
 
-  // Enrich the GeoJSON features with user data
-  const enrichedGeoJSON = useMemo((): GeoJSON.FeatureCollection => {
-    if (!baseGeoJSON) {
-      return { type: "FeatureCollection", features: [] };
-    }
-    return {
-      type: "FeatureCollection",
-      features: baseGeoJSON.features.map((f) => {
-        const name = f.properties?.name as string;
-        const data = regionDataMap.get(name);
-        return {
-          ...f,
-          properties: {
-            ...f.properties,
-            activeUsers: data?.activeUsers ?? 0,
-            weight: data ? data.activeUsers / maxUsers : 0,
-            hasData: data ? 1 : 0,
-          },
-        };
-      }),
-    };
-  }, [baseGeoJSON, regionDataMap, maxUsers]);
-
-  // Choropleth fill paint
-  const fillPaint = useMemo(
-    (): FillLayerSpecification["paint"] => ({
-      "fill-color": [
-        "case",
-        ["==", ["get", "hasData"], 0],
-        "#f1f5f9",
-        [
-          "interpolate",
-          ["linear"],
-          ["get", "weight"],
-          0, "#dbeafe",
-          0.05, "#bfdbfe",
-          0.15, "#93c5fd",
-          0.3, primaryColor,
-          0.6, "#f97316",
-          0.85, "#dc2626",
-          1, "#991b1b",
-        ],
-      ],
-      "fill-opacity": [
-        "case",
-        ["==", ["get", "hasData"], 0],
-        0.25,
-        0.82,
-      ],
-    }),
-    [primaryColor],
-  );
-
-  const outlinePaint = useMemo(
-    (): LineLayerSpecification["paint"] => ({
-      "line-color": "#ffffff",
-      "line-width": 1.5,
-      "line-opacity": 0.9,
-    }),
-    [],
-  );
-
-  const highlightFillPaint = useMemo(
-    (): FillLayerSpecification["paint"] => ({
-      "fill-color": primaryColor,
-      "fill-opacity": 0.2,
-    }),
-    [primaryColor],
-  );
-
-  // ── Hover handler ──
-  const handleMouseMove = useCallback(
-    (e: MapLayerMouseEvent) => {
-      const f = e.features?.[0];
-      if (!f) {
-        setHoverInfo(null);
-        return;
-      }
-      const name = f.properties?.name as string;
-      const data = regionDataMap.get(name);
-      if (data) {
-        setHoverInfo({
-          lng: e.lngLat.lng,
-          lat: e.lngLat.lat,
-          region: data,
-        });
-      } else {
-        setHoverInfo(null);
-      }
-    },
-    [regionDataMap],
-  );
-
-  const handleMouseLeave = useCallback(() => setHoverInfo(null), []);
-  const handleMouseEnter = useCallback(() => {
-    if (mapRef.current) mapRef.current.getCanvas().style.cursor = "pointer";
-  }, []);
-  const handleCursorReset = useCallback(() => {
-    if (mapRef.current) mapRef.current.getCanvas().style.cursor = "";
-  }, []);
-
   // ── flyTo driven by parent props ──
   useEffect(() => {
     const m = mapRef.current;
@@ -330,7 +219,7 @@ export const RegionsMap = memo(function RegionsMap({
     const target = clickedRegion ?? highlightRegion ?? null;
     if (!target) {
       m.flyTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, duration: 400 });
-      setHoverInfo(null);
+      setActiveMarker(null);
       return;
     }
 
@@ -344,7 +233,8 @@ export const RegionsMap = memo(function RegionsMap({
 
     const data = regionDataMap.get(normalized);
     if (data) {
-      setHoverInfo({
+      setActiveMarker({
+        normalizedName: normalized,
         lng: centroid[0],
         lat: centroid[1],
         region: data,
@@ -354,8 +244,29 @@ export const RegionsMap = memo(function RegionsMap({
 
   const handleReset = useCallback(() => {
     mapRef.current?.flyTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, duration: 500 });
-    setHoverInfo(null);
+    setActiveMarker(null);
   }, []);
+
+  // Markers for all regions that have data
+  const markers = useMemo(() => {
+    return Array.from(regionDataMap.entries())
+      .map(([name, data]) => {
+        const centroid = REGION_CENTROIDS[name];
+        if (!centroid) return null;
+        const r = bubbleRadius(data.activeUsers, maxUsers);
+        const isHighlighted =
+          name === (clickedRegion ? normalizeRegionName(clickedRegion) ?? clickedRegion : null) ||
+          name === (highlightRegion ? normalizeRegionName(highlightRegion) ?? highlightRegion : null);
+        return { name, data, centroid, r, isHighlighted };
+      })
+      .filter(Boolean) as {
+        name: string;
+        data: GA4Region & { normalizedName: string };
+        centroid: [number, number];
+        r: number;
+        isHighlighted: boolean;
+      }[];
+  }, [regionDataMap, maxUsers, clickedRegion, highlightRegion]);
 
   return (
     <div style={STYLES.container}>
@@ -373,55 +284,62 @@ export const RegionsMap = memo(function RegionsMap({
         dragRotate={false}
         touchPitch={false}
         attributionControl={false}
-        interactiveLayerIds={["regions-fill"]}
-        onMouseMove={handleMouseMove}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={() => {
-          handleCursorReset();
-          handleMouseLeave();
-        }}
+        onClick={() => setActiveMarker(null)}
       >
         <NavigationControl position="top-right" showCompass={false} />
 
-        <Source id="peru-regions" type="geojson" data={enrichedGeoJSON}>
-          <Layer id="regions-fill" type="fill" paint={fillPaint} />
-          <Layer id="regions-outline" type="line" paint={outlinePaint} />
-          {hoverInfo && (
-            <Layer
-              id="regions-highlight"
-              type="fill"
-              paint={highlightFillPaint}
-              filter={["==", ["get", "name"], hoverInfo.region.normalizedName]}
+        {markers.map(({ name, data, centroid, r, isHighlighted }) => (
+          <Marker
+            key={name}
+            longitude={centroid[0]}
+            latitude={centroid[1]}
+            anchor="center"
+          >
+            <BubbleMarker
+              r={r}
+              isHighlighted={isHighlighted}
+              primaryColor={primaryColor}
+              onClick={() =>
+                setActiveMarker((prev) =>
+                  prev?.normalizedName === name
+                    ? null
+                    : { normalizedName: name, lng: centroid[0], lat: centroid[1], region: data },
+                )
+              }
+              onMouseEnter={() =>
+                setActiveMarker({
+                  normalizedName: name,
+                  lng: centroid[0],
+                  lat: centroid[1],
+                  region: data,
+                })
+              }
+              onMouseLeave={() =>
+                setActiveMarker((prev) =>
+                  prev?.normalizedName === name ? null : prev,
+                )
+              }
             />
-          )}
-        </Source>
+          </Marker>
+        ))}
 
-        {hoverInfo && (
+        {activeMarker && (
           <Popup
-            longitude={hoverInfo.lng}
-            latitude={hoverInfo.lat}
+            longitude={activeMarker.lng}
+            latitude={activeMarker.lat}
             anchor="bottom"
-            offset={12}
+            offset={activeMarker.region ? bubbleRadius(activeMarker.region.activeUsers, maxUsers) + 6 : 12}
             closeButton={false}
             closeOnClick={false}
           >
             <PopupContent
-              region={hoverInfo.region}
+              region={activeMarker.region}
               totalUsers={totalUsers}
               primaryColor={primaryColor}
             />
           </Popup>
         )}
       </MapLibre>
-
-      {/* Legend */}
-      <div style={STYLES.legend}>
-        <div style={STYLES.legendGradient(primaryColor)} />
-        <div style={STYLES.legendLabels}>
-          <span style={STYLES.legendText}>Menos</span>
-          <span style={STYLES.legendText}>Más</span>
-        </div>
-      </div>
 
       {/* Reset zoom */}
       <button
@@ -451,6 +369,52 @@ export const RegionsMap = memo(function RegionsMap({
 });
 
 /* ═══════════════════════════════════════════════════════════════════
+   BubbleMarker
+   ═══════════════════════════════════════════════════════════════════ */
+
+function BubbleMarker({
+  r,
+  isHighlighted,
+  primaryColor,
+  onClick,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  r: number;
+  isHighlighted: boolean;
+  primaryColor: string;
+  onClick: () => void;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}) {
+  const diameter = r * 2;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      style={{
+        width: diameter,
+        height: diameter,
+        borderRadius: "50%",
+        backgroundColor: isHighlighted ? "#dc2626" : primaryColor,
+        opacity: isHighlighted ? 1 : 0.75,
+        border: `2px solid ${isHighlighted ? "#991b1b" : "rgba(255,255,255,0.8)"}`,
+        cursor: "pointer",
+        transition: "opacity 0.15s, transform 0.15s",
+        boxShadow: isHighlighted
+          ? "0 0 0 4px rgba(220,38,38,0.25)"
+          : "0 1px 4px rgba(0,0,0,0.18)",
+        transform: isHighlighted ? "scale(1.15)" : "scale(1)",
+        padding: 0,
+      }}
+      aria-label="Ver región"
+    />
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    PopupContent
    ═══════════════════════════════════════════════════════════════════ */
 
@@ -468,18 +432,14 @@ function PopupContent({
     region.avgEngagementTime !== undefined || region.newUsers !== undefined;
 
   return (
-    <div
-      style={{ padding: "4px 4px", fontFamily: "system-ui, sans-serif", minWidth: 148 }}
-    >
+    <div style={{ padding: "4px 4px", fontFamily: "system-ui, sans-serif", minWidth: 148 }}>
       <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a" }}>
         {region.normalizedName}
       </div>
       <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>
         {region.region !== region.normalizedName ? `(${region.region})` : null}
       </div>
-      <div
-        style={{ fontSize: 20, fontWeight: 800, color: primaryColor, margin: "3px 0" }}
-      >
+      <div style={{ fontSize: 20, fontWeight: 800, color: primaryColor, margin: "3px 0" }}>
         {region.activeUsers.toLocaleString()}
       </div>
       <div style={{ fontSize: 11, color: "#64748b" }}>
@@ -499,25 +459,14 @@ function PopupContent({
           }}
         >
           {region.newUsers !== undefined && (
-            <Row
-              label="Nuevos"
-              value={`${region.newUsers.toLocaleString()}`}
-            />
+            <Row label="Nuevos" value={region.newUsers.toLocaleString()} />
           )}
-          {region.avgEngagementTime !== undefined &&
-            region.avgEngagementTime > 0 && (
-              <Row
-                label="Tiempo prom."
-                value={formatTime(region.avgEngagementTime)}
-              />
-            )}
-          {region.engagementRate !== undefined &&
-            region.engagementRate > 0 && (
-              <Row
-                label="Engagement"
-                value={`${(region.engagementRate * 100).toFixed(1)}%`}
-              />
-            )}
+          {region.avgEngagementTime !== undefined && region.avgEngagementTime > 0 && (
+            <Row label="Tiempo prom." value={formatTime(region.avgEngagementTime)} />
+          )}
+          {region.engagementRate !== undefined && region.engagementRate > 0 && (
+            <Row label="Engagement" value={`${(region.engagementRate * 100).toFixed(1)}%`} />
+          )}
           {region.events !== undefined && region.events > 0 && (
             <Row label="Eventos" value={region.events.toLocaleString()} />
           )}
@@ -529,9 +478,7 @@ function PopupContent({
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div
-      style={{ display: "flex", justifyContent: "space-between", gap: 16 }}
-    >
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
       <span style={{ color: "#94a3b8" }}>{label}</span>
       <span style={{ color: "#334155", fontWeight: 500 }}>{value}</span>
     </div>
@@ -562,34 +509,6 @@ const STYLES = {
     width: "100%",
     height: "100%",
   },
-  legend: {
-    position: "absolute" as const,
-    bottom: 48,
-    left: 16,
-    backgroundColor: "rgba(255,255,255,0.95)",
-    backdropFilter: "blur(8px)",
-    borderRadius: 8,
-    border: "1px solid #e2e8f0",
-    padding: "8px 12px",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-    zIndex: 2,
-    minWidth: 120,
-  },
-  legendGradient: (primaryColor: string): React.CSSProperties => ({
-    height: 8,
-    borderRadius: 4,
-    background: `linear-gradient(to right, #dbeafe, ${primaryColor}, #dc2626)`,
-    marginBottom: 4,
-  }),
-  legendLabels: {
-    display: "flex" as const,
-    justifyContent: "space-between" as const,
-  },
-  legendText: {
-    fontSize: 10,
-    color: "#94a3b8",
-    fontWeight: 500,
-  } as React.CSSProperties,
   resetBtn: {
     position: "absolute" as const,
     bottom: 16,
