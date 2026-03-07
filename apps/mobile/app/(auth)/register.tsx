@@ -436,8 +436,11 @@ export default function RegisterScreen() {
               <View style={styles.field}>
                 <Text style={styles.label}>Código de acceso (4 caracteres)</Text>
 
-                {/* Char boxes — 4 fixed positions, rendered statically */}
-                <View style={styles.codeBoxRow}>
+                {/* Char boxes — tap anywhere en la fila para enfocar el input oculto */}
+                <Pressable
+                  onPress={() => codeInputRefs.current[0]?.focus()}
+                  style={styles.codeBoxRow}
+                >
                   {([0, 1, 2, 3] as const).map((pos) => {
                     const positions = ['code-0', 'code-1', 'code-2', 'code-3'] as const;
                     return (
@@ -461,7 +464,8 @@ export default function RegisterScreen() {
                     );
                   })}
 
-                  {/* Hidden input overlay */}
+                  {/* Hidden input — position absolute para no romper el layout,
+                      pointerEvents none para que el Pressable padre maneje el tap */}
                   <TextInput
                     ref={(ref) => { codeInputRefs.current[0] = ref; }}
                     style={styles.codeHiddenInput}
@@ -475,8 +479,9 @@ export default function RegisterScreen() {
                     autoCorrect={false}
                     keyboardType="default"
                     returnKeyType="done"
+                    caretHidden
                   />
-                </View>
+                </Pressable>
 
                 {/* Validation state */}
                 {validatingCode && (
@@ -535,7 +540,7 @@ export default function RegisterScreen() {
               <Pressable
                 style={({ pressed }) => [
                   styles.button,
-                  styles.buttonPrimary,
+                  styles.buttonRegister,
                   (!step2Valid || loading) && styles.buttonDisabled,
                   pressed && step2Valid && !loading && styles.buttonPressed,
                 ]}
@@ -543,11 +548,11 @@ export default function RegisterScreen() {
                 disabled={!step2Valid || loading}
               >
                 {loading ? (
-                  <ActivityIndicator color={BRAND_BLUE} />
+                  <ActivityIndicator color={BRAND_BLUE} size="small" />
                 ) : (
                   <>
-                    <Text style={styles.buttonTextPrimary}>Crear Cuenta</Text>
-                    <Ionicons name="checkmark-circle" size={20} color={BRAND_BLUE} />
+                    <Ionicons name="checkmark-circle" size={24} color={BRAND_BLUE} />
+                    <Text style={styles.buttonTextRegister}>Registrarme</Text>
                   </>
                 )}
               </Pressable>
@@ -798,6 +803,17 @@ const styles = StyleSheet.create({
   buttonPrimary: {
     backgroundColor: BRAND_YELLOW,
   },
+  buttonRegister: {
+    backgroundColor: BRAND_YELLOW,
+    paddingVertical: 20,
+    borderRadius: 16,
+    marginTop: 24,
+    shadowColor: BRAND_YELLOW,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 8,
+  },
   buttonDisabled: {
     opacity: 0.5,
   },
@@ -818,6 +834,13 @@ const styles = StyleSheet.create({
     color: BRAND_BLUE,
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  buttonTextRegister: {
+    fontSize: 18,
+    fontFamily: FONT,
+    color: BRAND_BLUE,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
   },
 
   // Login link

@@ -430,14 +430,26 @@ export default function LoginScreen() {
             </Pressable>
           </View>
 
-          {/* Register Link */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>¿No tienes cuenta?</Text>
-            <Pressable 
+          {/* Register CTA */}
+          <View style={styles.registerCard}>
+            <View style={styles.registerCardLeft}>
+              <View style={styles.registerIconCircle}>
+                <Ionicons name="person-add" size={20} color={BRAND_BLUE} />
+              </View>
+              <View>
+                <Text style={styles.registerCardTitle}>¿Sin cuenta aún?</Text>
+                <Text style={styles.registerCardSub}>Tu coordinador te da el código</Text>
+              </View>
+            </View>
+            <Pressable
+              style={({ pressed }) => [
+                styles.registerCardBtn,
+                pressed && styles.registerCardBtnPressed,
+              ]}
               onPress={() => router.push('/(auth)/register')}
-              hitSlop={8}
             >
-              <Text style={styles.footerLink}>Regístrate</Text>
+              <Text style={styles.registerCardBtnText}>Registrarme</Text>
+              <Ionicons name="arrow-forward" size={16} color={BRAND_BLUE} />
             </Pressable>
           </View>
         </ScrollView>
@@ -582,24 +594,64 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   
-  // Footer
-  footer: {
+  // Register CTA Card
+  registerCard: {
+    marginTop: 32,
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 40,
+    justifyContent: 'space-between',
+    backgroundColor: BRAND_YELLOW,
+    borderRadius: 18,
+    padding: 16,
+    shadowColor: BRAND_YELLOW,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  footerText: { 
-    fontSize: 14, 
-    color: TEXT_MUTED, 
-    fontFamily: FONT_REGULAR 
+  registerCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
   },
-  footerLink: { 
-    fontSize: 14, 
-    color: BRAND_BLUE, 
-    fontFamily: FONT, 
-    textDecorationLine: 'underline' 
+  registerIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(22,57,96,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  registerCardTitle: {
+    fontSize: 14,
+    fontFamily: FONT,
+    color: BRAND_BLUE,
+  },
+  registerCardSub: {
+    fontSize: 11,
+    fontFamily: FONT_REGULAR,
+    color: 'rgba(22,57,96,0.65)',
+    marginTop: 1,
+  },
+  registerCardBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: BRAND_BLUE,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  registerCardBtnPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.97 }],
+  },
+  registerCardBtnText: {
+    fontSize: 13,
+    fontFamily: FONT,
+    color: BRAND_YELLOW,
+    letterSpacing: 0.5,
   },
   
   // Reset mode styles
