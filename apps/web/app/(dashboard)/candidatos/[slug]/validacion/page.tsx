@@ -161,6 +161,7 @@ function useFilters(items: ValidationItem[]) {
   const [search, setSearch] = useState("");
   const [filterZona, setFilterZona] = useState("");
   const [filterEnc, setFilterEnc] = useState("");
+  const [filterDepto, setFilterDepto] = useState("");
 
   const zonas = useMemo(() => {
     const s = new Set(items.map((i) => i.zona).filter(Boolean));
@@ -172,19 +173,25 @@ function useFilters(items: ValidationItem[]) {
     return Array.from(s).sort();
   }, [items]);
 
+  const departamentos = useMemo(() => {
+    const s = new Set(items.map((i) => i.departamento).filter(Boolean) as string[]);
+    return Array.from(s).sort();
+  }, [items]);
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     return items.filter((i) => {
       if (q && !i.nombre.toLowerCase().includes(q) && !i.telefono.includes(q) && !i.encuestador.toLowerCase().includes(q)) return false;
       if (filterZona && i.zona !== filterZona) return false;
       if (filterEnc && !i.encuestador.startsWith(filterEnc)) return false;
+      if (filterDepto && i.departamento !== filterDepto) return false;
       return true;
     });
-  }, [items, search, filterZona, filterEnc]);
+  }, [items, search, filterZona, filterEnc, filterDepto]);
 
-  const hasFilters = !!search || !!filterZona || !!filterEnc;
+  const hasFilters = !!search || !!filterZona || !!filterEnc || !!filterDepto;
 
-  return { search, setSearch, filterZona, setFilterZona, filterEnc, setFilterEnc, zonas, encuestadores, filtered, hasFilters };
+  return { search, setSearch, filterZona, setFilterZona, filterEnc, setFilterEnc, filterDepto, setFilterDepto, zonas, encuestadores, departamentos, filtered, hasFilters };
 }
 
 /* ── Inner board (needs toast context) ── */
@@ -237,7 +244,8 @@ function ValidacionBoard() {
     search, setSearch,
     filterZona, setFilterZona,
     filterEnc, setFilterEnc,
-    zonas, encuestadores,
+    filterDepto, setFilterDepto,
+    zonas, encuestadores, departamentos,
     filtered: filteredItems,
     hasFilters,
   } = useFilters(items);
@@ -532,6 +540,16 @@ function ValidacionBoard() {
           </div>
 
           {/* Filters */}
+          {departamentos.length > 1 && (
+            <select
+              value={filterDepto}
+              onChange={(e) => setFilterDepto(e.target.value)}
+              className="text-[11px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-600 outline-none focus:border-slate-400 cursor-pointer"
+            >
+              <option value="">Todos los departamentos</option>
+              {departamentos.map((d) => <option key={d} value={d}>{d.charAt(0) + d.slice(1).toLowerCase()}</option>)}
+            </select>
+          )}
           {zonas.length > 1 && (
             <select
               value={filterZona}
@@ -555,7 +573,7 @@ function ValidacionBoard() {
           {hasFilters && (
             <button
               type="button"
-              onClick={() => { setSearch(""); setFilterZona(""); setFilterEnc(""); }}
+              onClick={() => { setSearch(""); setFilterZona(""); setFilterEnc(""); setFilterDepto(""); }}
               className="text-[10px] font-semibold text-indigo-600 hover:underline cursor-pointer border-none bg-transparent"
             >
               Limpiar filtros

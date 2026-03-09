@@ -118,6 +118,7 @@ export async function listByCampaign(
     SELECT
       fv.id, fv.form_id, fv.campaign_id::text,
       fv.nombre, fv.telefono, fv.encuestador, fv.zona,
+      pd.nomdep as departamento,
       fv.form_created_at as created_at,
       fv.status, fv.notes,
       COALESCE(fv.tags, '{}') as tags,
@@ -128,6 +129,8 @@ export async function listByCampaign(
       fv.updated_at
     FROM form_validations fv
     LEFT JOIN users cu ON cu.id = fv.claimed_by
+    LEFT JOIN form_submissions fs ON fs.id::text = fv.form_id
+    LEFT JOIN peru_departamentos pd ON pd.coddep = LEFT(fs.ubigeo_distrito, 2)
     ${where}
     ORDER BY fv.form_created_at DESC
     LIMIT $${limitIdx} OFFSET $${offsetIdx}
@@ -197,6 +200,7 @@ export async function updateStatus(
     WHERE id = $1 AND campaign_id = $2
     RETURNING
       id, form_id, campaign_id::text, nombre, telefono, encuestador, zona,
+      NULL::text as departamento,
       form_created_at as created_at, status, notes, tags, score, vote_class,
       claimed_by::text, NULL::text as claimed_by_name, updated_at
   `, [id, campaignId, status, notes, userId, [], 0, finalVoteClass]);
@@ -217,6 +221,7 @@ export async function claim(
       AND (claimed_by IS NULL OR claimed_by = $3)
     RETURNING
       id, form_id, campaign_id::text, nombre, telefono, encuestador, zona,
+      NULL::text as departamento,
       form_created_at as created_at, status, notes,
       COALESCE(tags, '{}') as tags, COALESCE(score, 0) as score,
       COALESCE(vote_class, '') as vote_class,

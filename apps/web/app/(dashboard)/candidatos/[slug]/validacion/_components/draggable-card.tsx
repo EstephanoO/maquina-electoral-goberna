@@ -240,12 +240,17 @@ export function DraggableCard({
             )}
           </div>
 
-          {/* Meta row: zona + claimed_by */}
-          {!compact && (item.zona && item.zona !== "Sin zona" || claimedInitials) && (
+          {/* Meta row: departamento + zona + claimed_by */}
+          {!compact && (item.departamento || (item.zona && item.zona !== "Sin zona") || claimedInitials) && (
             <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+              {item.departamento && (
+                <span className="flex items-center gap-0.5 text-[10px] text-amber-600 bg-amber-50 rounded px-1.5 py-0.5">
+                  <MapPinIcon />
+                  {item.departamento.charAt(0) + item.departamento.slice(1).toLowerCase()}
+                </span>
+              )}
               {item.zona && item.zona !== "Sin zona" && (
                 <span className="flex items-center gap-0.5 text-[10px] text-slate-400 bg-slate-50 rounded px-1.5 py-0.5">
-                  <MapPinIcon />
                   {item.zona}
                 </span>
               )}

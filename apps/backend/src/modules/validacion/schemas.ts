@@ -25,6 +25,7 @@ export type ValidationRow = {
   telefono: string;
   encuestador: string;
   zona: string;
+  departamento: string | null;
   created_at: string;
   status: ValidationStatus;
   notes: string | null;
