@@ -24,6 +24,11 @@ const BrigadistaTable = dynamic(
   { ssr: false, loading: () => <TableSkeleton /> },
 );
 
+const ValidacionRanking = dynamic(
+  () => import("./validacion-ranking").then((m) => ({ default: m.ValidacionRanking })),
+  { ssr: false, loading: () => <TableSkeleton /> },
+);
+
 /* ========== Goal Helpers ========== */
 
 const DEFAULT_FECHA_LIMITE = "2026-04-10";
@@ -39,6 +44,7 @@ function calcDaysUntil(dateStr: string): number {
 /* ========== Types ========== */
 
 type Props = {
+  campaignId: string;
   brigadistas: CmsBrigadistaMetrics[];
   prevBrigadistas: CmsBrigadistaMetrics[];
   isLoading: boolean;
@@ -65,7 +71,7 @@ type Props = {
 /* ========== Component ========== */
 
 export const PipelineView = memo(function PipelineView({
-  brigadistas, prevBrigadistas, isLoading, isPending, primaryColor, secondaryColor,
+  campaignId, brigadistas, prevBrigadistas, isLoading, isPending, primaryColor, secondaryColor,
   forms, prevForms, agents, period, onPeriodChange, offset, onOffsetChange, periodLabel, dateRanges,
   totalDatos, serverTotals, agentesCampoCount, metaDatos,
 }: Props) {
@@ -248,6 +254,13 @@ export const PipelineView = memo(function PipelineView({
                 compareIds={compareIds}
                 onToggleCompare={handleToggleCompare}
               />
+            </div>
+          )}
+
+          {/* 5. Validacion Ranking — datos validados vs imposibles por encuestador */}
+          {campaignId && (
+            <div className="shrink-0 border-t border-slate-200">
+              <ValidacionRanking campaignId={campaignId} primaryColor={primaryColor} />
             </div>
           )}
         </div>

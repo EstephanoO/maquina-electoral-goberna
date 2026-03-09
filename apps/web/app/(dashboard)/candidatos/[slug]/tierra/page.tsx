@@ -370,6 +370,7 @@ export default function TierraPage() {
         </div>
       ) : viewMode === "pipeline" ? (
         <PipelineView
+          campaignId={campaign.id}
           brigadistas={pipeline.brigadistaMetrics ?? []}
           prevBrigadistas={pipeline.prevBrigadistaMetrics ?? []}
           isLoading={pipeline.metricsLoading}

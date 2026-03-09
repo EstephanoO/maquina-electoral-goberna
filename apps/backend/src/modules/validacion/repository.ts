@@ -176,6 +176,72 @@ export async function statsByCampaign(campaignId: string) {
   return stats;
 }
 
+/* ─── Stats by encuestador (brigadista ranking) ─── */
+
+export interface EncuestadorStats {
+  encuestador: string;
+  total: number;
+  pendiente: number;
+  contactado: number;
+  respondido: number;
+  invalido: number;
+  voto_duro: number;
+  voto_blando: number;
+  voto_flotante: number;
+  tasa_invalido: number;
+  tasa_validado: number;
+}
+
+export async function statsByEncuestador(campaignId: string): Promise<EncuestadorStats[]> {
+  const { rows } = await pool.query<{
+    encuestador: string;
+    total: string;
+    pendiente: string;
+    contactado: string;
+    respondido: string;
+    invalido: string;
+    voto_duro: string;
+    voto_blando: string;
+    voto_flotante: string;
+  }>(`
+    SELECT
+      encuestador,
+      COUNT(*)::text AS total,
+      COUNT(*) FILTER (WHERE status = 'pendiente')::text AS pendiente,
+      COUNT(*) FILTER (WHERE status = 'contactado')::text AS contactado,
+      COUNT(*) FILTER (WHERE status = 'respondido' OR status = 'validado')::text AS respondido,
+      COUNT(*) FILTER (WHERE status = 'invalido')::text AS invalido,
+      COUNT(*) FILTER (WHERE vote_class = 'duro')::text AS voto_duro,
+      COUNT(*) FILTER (WHERE vote_class = 'blando')::text AS voto_blando,
+      COUNT(*) FILTER (WHERE vote_class = 'flotante')::text AS voto_flotante
+    FROM form_validations
+    WHERE campaign_id = $1
+      AND encuestador IS NOT NULL AND encuestador != ''
+    GROUP BY encuestador
+    ORDER BY COUNT(*) FILTER (WHERE status = 'invalido') DESC, COUNT(*) DESC
+  `, [campaignId]);
+
+  return rows.map((r: { encuestador: string; total: string; pendiente: string; contactado: string; respondido: string; invalido: string; voto_duro: string; voto_blando: string; voto_flotante: string }) => {
+    const total = Number(r.total);
+    const invalido = Number(r.invalido);
+    const respondido = Number(r.respondido);
+    const procesados = Number(r.contactado) + respondido + invalido;
+    return {
+      encuestador: r.encuestador,
+      total,
+      pendiente: Number(r.pendiente),
+      contactado: Number(r.contactado),
+      respondido,
+      invalido,
+      voto_duro: Number(r.voto_duro),
+      voto_blando: Number(r.voto_blando),
+      voto_flotante: Number(r.voto_flotante),
+      tasa_invalido: total > 0 ? Math.round((invalido / total) * 1000) / 10 : 0,
+      tasa_validado: procesados > 0 ? Math.round((respondido / procesados) * 1000) / 10 : 0,
+    };
+  });
+}
+
 /* ─── Update status ─── */
 
 export async function updateStatus(

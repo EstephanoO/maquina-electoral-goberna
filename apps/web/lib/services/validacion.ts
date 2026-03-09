@@ -82,3 +82,25 @@ export async function claimValidation(id: string, campaignId: string) {
     headers: { "x-campaign-id": campaignId },
   });
 }
+
+/* ─── Brigadista Ranking (validacion) ─── */
+
+export interface ValidationBrigadistaStats {
+  encuestador: string;
+  total: number;
+  pendiente: number;
+  contactado: number;
+  respondido: number;
+  invalido: number;
+  voto_duro: number;
+  voto_blando: number;
+  voto_flotante: number;
+  tasa_invalido: number;
+  tasa_validado: number;
+}
+
+export async function getValidationBrigadistaStats(campaignId: string) {
+  return api.get<{ brigadistas: ValidationBrigadistaStats[] }>("/api/validacion/stats/brigadistas", {
+    headers: { "x-campaign-id": campaignId },
+  });
+}

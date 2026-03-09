@@ -60,6 +60,17 @@ export function buildValidacionRoutes(_env: AppEnv): FastifyPluginAsync {
       return reply.send({ ok: true, request_id: requestId, stats });
     });
 
+    // ── GET /api/validacion/stats/brigadistas — ranking by encuestador ──
+    app.get("/api/validacion/stats/brigadistas", {
+      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor", "agente_digital"] })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const campaignId = request.headers["x-campaign-id"] as string;
+      if (!campaignId) return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "x-campaign-id header requerido"));
+      const brigadistas = await repo.statsByEncuestador(campaignId);
+      return reply.send({ ok: true, request_id: requestId, brigadistas });
+    });
+
     // ── PUT /api/validacion/:id/status — update validation status ──
     app.put<{ Params: { id: string } }>("/api/validacion/:id/status", {
       preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor", "agente_digital"] })],
