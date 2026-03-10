@@ -116,7 +116,7 @@ function boundsToInitialViewState(bounds: [[number, number], [number, number]]) 
 }
 
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
-  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange, lockedBounds },
+  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange, onMapDoubleClick, lockedBounds },
   ref,
 ) {
   const mapRef = useRef<MapRef | null>(null);
@@ -451,7 +451,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         }
       }).catch(() => {});
     }
-  }, [onDrillChange, showDatos, datosVizMode]);
+  }, [onDrillChange, showDatos, datosVizMode, lockedBounds]);
 
   // Live zoom updates while camera moves in bars mode (for smooth split/merge behavior).
   const handleMove = useCallback((evt: { viewState?: { zoom?: number } }) => {
@@ -460,6 +460,10 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     if (typeof z !== "number") return;
     setBarsZoom((prev) => (Math.abs(prev - z) >= 0.1 ? z : prev));
   }, [showDatos, datosVizMode]);
+
+  const handleDoubleClick = useCallback(() => {
+    onMapDoubleClick?.();
+  }, [onMapDoubleClick]);
 
   // ─── Feature-state hover tracking (zero React re-renders) ───
   const hoveredRef = useRef<{ source: string; sourceLayer: string; id: string | number } | null>(null);
@@ -577,7 +581,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         touchPitch
         touchZoomRotate={{ around: "center" }}
         scrollZoom
-        doubleClickZoom
+        doubleClickZoom={false}
         minPitch={0}
         maxPitch={60}
         clickTolerance={4}
@@ -590,6 +594,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         onMoveStart={handleMoveStart}
         onMoveEnd={handleMoveEnd}
         onClick={handleClick}
+        onDblClick={handleDoubleClick}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         interactiveLayerIds={INTERACTIVE_LAYERS as unknown as string[]}

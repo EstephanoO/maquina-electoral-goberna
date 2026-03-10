@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
 import type { GeoJSONSource } from "maplibre-gl";
-import type { DrillLevel, DrillState, EnrichedAgent } from "../types";
+import type { DrillState, EnrichedAgent } from "../types";
 import { INITIAL_DRILL } from "../types";
 import { PERU_BOUNDS, FLY_DURATION } from "../constants";
 import { getBoundsFromFeature } from "../utils";
@@ -30,19 +30,15 @@ export function useMapClick(
     const features = e.features;
 
     if (!features?.length) {
-      // Empty space → go back one level
-      if (currentDrill.level > 0) {
-        const newLevel = (currentDrill.level - 1) as DrillLevel;
-        const newState = { ...currentDrill, level: newLevel };
-        if (newLevel < 4) { newState.sector = null; newState.sectorName = null; }
-        if (newLevel < 3) { newState.distCode = null; newState.distName = null; }
-        if (newLevel < 2) { newState.provCode = null; newState.provName = null; }
-        if (newLevel < 1) { newState.depCode = null; newState.depName = null; }
-        onDrillChange(newState);
-        if (newLevel === 0) {
-          mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: FLY_DURATION });
-        }
+      if (currentSelectedAgent) {
+        onSelectAgent(null);
       }
+
+      // Empty space (single click) → clear filters + reset zoom
+      onDrillChange(INITIAL_DRILL);
+      skipNextFitRef.current = true;
+      pendingDrillRef.current = false;
+      mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: FLY_DURATION });
       return;
     }
 

@@ -139,6 +139,7 @@ export type TierraMapProps = {
   showRoutes: boolean;
   drillState: DrillState;
   onDrillChange: (state: DrillState) => void;
+  onMapDoubleClick?: () => void;
   /**
    * When set, the map is locked to these bounds forever:
    * - initialViewState is derived from them (no Peru flash)

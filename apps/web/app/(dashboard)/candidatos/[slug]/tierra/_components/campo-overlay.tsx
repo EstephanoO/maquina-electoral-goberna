@@ -20,6 +20,7 @@ type Props = {
   /** Current drill state — shows zone filter banner when level > 0 */
   drillState?: DrillState;
   initialVisible?: boolean;
+  closeSignal?: number;
 };
 
 /* ========== Constants ========== */
@@ -38,6 +39,7 @@ export function CampoOverlay({
   primaryColor, selectedAgentId, onAgentClick,
   mapTheme = "dark", drillState,
   initialVisible = true,
+  closeSignal = 0,
 }: Props) {
   const [visible, setVisible] = useState(initialVisible);
   const [agentsOpen, setAgentsOpen] = useState(false);
@@ -114,6 +116,12 @@ export function CampoOverlay({
       window.removeEventListener("resize", syncToggleToAgentsCenter);
     };
   }, [selectedAgent, activeZoneLabel, syncToggleToAgentsCenter]);
+
+  useEffect(() => {
+    if (closeSignal > 0) {
+      setVisible(false);
+    }
+  }, [closeSignal]);
 
   return (
     <div

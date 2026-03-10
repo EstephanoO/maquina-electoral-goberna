@@ -118,6 +118,7 @@ export default function TierraPage() {
   const [mapTheme, setMapTheme] = useState<MapTheme>("dark");
   const isFullscreen = true;
   const [showControlsPanel, setShowControlsPanel] = useState(false);
+  const [rightPanelCloseSignal, setRightPanelCloseSignal] = useState(0);
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [drillState, setDrillState] = useState<DrillState>(
@@ -186,6 +187,11 @@ export default function TierraPage() {
       if (agent) mapHandleRef.current?.flyToPoint(agent.lng, agent.lat, 15);
       return agentId;
     });
+  }, []);
+
+  const handleMapDoubleClick = useCallback(() => {
+    setShowControlsPanel(false);
+    setRightPanelCloseSignal((prev) => prev + 1);
   }, []);
 
   const handleDeleteForm = useCallback(async (formId: string, cId: string): Promise<boolean> => {
@@ -309,6 +315,7 @@ export default function TierraPage() {
             showRoutes={showRoutes}
             drillState={drillState}
             onDrillChange={setDrillState}
+            onMapDoubleClick={handleMapDoubleClick}
             lockedBounds={isLeguaDemo ? LEGUA_BOUNDS : undefined}
           />
           <div
@@ -344,6 +351,7 @@ export default function TierraPage() {
             mapTheme={mapTheme}
             drillState={drillState}
             initialVisible={false}
+            closeSignal={rightPanelCloseSignal}
           />
         </div>
       ) : viewMode === "pipeline" ? (
