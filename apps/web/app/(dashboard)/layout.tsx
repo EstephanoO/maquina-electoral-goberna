@@ -365,6 +365,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
 
   // FIX: Close mobile sidebar on route change (was missing dependency array)
   useEffect(() => {
+    void pathname;
     setMobileOpen(false);
     setCampaignDropdownOpen(false);
   }, [pathname]);
@@ -812,6 +813,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
 
           {/* User info */}
           <div
+            className="sidebar-user-panel"
             style={{
               padding: showLabel ? "12px 20px 14px" : "12px 0 14px",
               borderTop: "1px solid var(--sidebar-border)",
@@ -843,7 +845,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             </div>
 
             {showLabel && (
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="sidebar-user-meta" style={{ flex: 1, minWidth: 0 }}>
                 <div
                   style={{
                     fontSize: 12,
@@ -857,7 +859,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                 >
                   {user?.full_name ?? "Usuario"}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+                <div className="sidebar-user-actions" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
                   <span
                     style={{
                       fontSize: 9,
@@ -872,24 +874,27 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
                   >
                     {uiRole}
                   </span>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      color: "rgba(255,255,255,0.35)",
-                      cursor: "pointer",
-                      padding: 2,
-                      display: "flex",
-                      alignItems: "center",
-                      transition: "color var(--duration-fast) ease",
-                    }}
-                    title="Cerrar sesión"
-                    aria-label="Cerrar sesión"
-                  >
-                    <LogoutIcon />
-                  </button>
+                  <span className="sidebar-logout-slot">
+                    <button
+                      type="button"
+                      className="sidebar-logout-btn"
+                      onClick={handleLogout}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "rgba(255,255,255,0.35)",
+                        cursor: "pointer",
+                        padding: 2,
+                        display: "flex",
+                        alignItems: "center",
+                        transition: "color var(--duration-fast) ease",
+                      }}
+                      title="Cerrar sesión"
+                      aria-label="Cerrar sesión"
+                    >
+                      <LogoutIcon />
+                    </button>
+                  </span>
                 </div>
               </div>
             )}
@@ -901,8 +906,6 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
       {!isMobile && (
         <div
           className="sidebar-edge-zone dashboard-sidebar-edge-zone"
-          onMouseEnter={() => setEdgeHover(true)}
-          onMouseLeave={() => setEdgeHover(false)}
           style={{
             position: "fixed",
             top: 0,
@@ -910,16 +913,17 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             bottom: 0,
             width: 20,
             zIndex: 1000,
-            cursor: "pointer",
             transition: "left var(--duration-normal) var(--ease-in-out)",
           }}
-          onClick={handleToggleCollapse}
-          role="presentation"
         >
           {/* Toggle pill centered on edge */}
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); handleToggleCollapse(); }}
+            onMouseEnter={() => setEdgeHover(true)}
+            onMouseLeave={() => setEdgeHover(false)}
+            onFocus={() => setEdgeHover(true)}
+            onBlur={() => setEdgeHover(false)}
             aria-label={showCollapsed ? "Expandir menu" : "Colapsar menu"}
             className="sidebar-edge-btn"
             style={{
@@ -1016,6 +1020,38 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
       )}
 
       {/* Sidebar hover CSS is now in globals.css */}
+      <style jsx>{`
+        .sidebar-user-panel {
+          transition: transform 180ms var(--ease-in-out);
+        }
+
+        .sidebar-logout-slot {
+          display: inline-flex;
+          width: 0;
+          opacity: 0;
+          overflow: hidden;
+          transform: translateX(-6px);
+          transition: width 180ms var(--ease-in-out), opacity 160ms ease, transform 180ms var(--ease-in-out);
+          pointer-events: none;
+        }
+
+        .sidebar-logout-btn {
+          flex-shrink: 0;
+        }
+
+        .sidebar-user-panel:hover,
+        .sidebar-user-panel:focus-within {
+          transform: translateX(4px);
+        }
+
+        .sidebar-user-panel:hover .sidebar-logout-slot,
+        .sidebar-user-panel:focus-within .sidebar-logout-slot {
+          width: 22px;
+          opacity: 1;
+          transform: translateX(0);
+          pointer-events: auto;
+        }
+      `}</style>
     </div>
   );
 });
