@@ -41,7 +41,8 @@ export function TierraHeader({
   const votosProgress = metas.votos > 0 ? Math.min((totals.forms_count / metas.votos) * 100, 100) : 0;
 
   const showBackButton = userRole !== "brigadista_zonal";
-  const showHeaderProfileLogout = userRole === "brigadista_zonal" && typeof onLogout === "function";
+  const normalizedRole = (userRole ?? "").toLowerCase();
+  const showHeaderProfileLogout = normalizedRole.includes("brigadista") && typeof onLogout === "function";
   const profileLabel = userName?.trim() || "Perfil";
 
   return (
@@ -133,7 +134,7 @@ export function TierraHeader({
             <span className={`ml-2 mr-1 max-w-[120px] truncate text-[11px] font-semibold ${isDark ? "text-slate-100" : "text-slate-700"}`}>
               {profileLabel}
             </span>
-            <span className="w-0 opacity-0 -translate-x-1 overflow-hidden pointer-events-none transition-all duration-200 group-hover:w-[34px] group-hover:opacity-100 group-hover:translate-x-0 group-hover:pointer-events-auto group-focus-within:w-[34px] group-focus-within:opacity-100 group-focus-within:translate-x-0 group-focus-within:pointer-events-auto">
+            <div className="inline-flex w-0 opacity-0 -translate-x-1 overflow-hidden pointer-events-none transition-all duration-200 group-hover:w-[34px] group-hover:opacity-100 group-hover:translate-x-0 group-hover:pointer-events-auto group-focus-within:w-[34px] group-focus-within:opacity-100 group-focus-within:translate-x-0 group-focus-within:pointer-events-auto">
               <button
                 type="button"
                 onClick={() => { void onLogout(); }}
@@ -147,7 +148,7 @@ export function TierraHeader({
               >
                 <LogoutIcon />
               </button>
-            </span>
+            </div>
           </div>
         ) : null}
       </div>
