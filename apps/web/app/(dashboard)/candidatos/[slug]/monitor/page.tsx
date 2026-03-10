@@ -30,6 +30,7 @@ import {
 import {
   ClassificationMetrics,
   ClassificationFeed,
+  AgentQuality,
 } from "./_components";
 
 // ── Palette ──────────────────────────────────────────────────────────
@@ -72,6 +73,7 @@ const EMPTY_PHONE: ExtensionMonitorPhone = {
 // ── Types ────────────────────────────────────────────────────────────
 type CmsStats = { pendiente: number; contactado: number; respondido: number; invalido: number; total: number };
 type SseStatus = "connecting" | "connected" | "disconnected";
+type TabId = "monitor" | "quality";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 function norm(s: string): string {
@@ -290,6 +292,7 @@ export default function MonitorWaPage() {
   const campaignId = campaign?.id ?? null;
 
   // ── State ───────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<TabId>("monitor");
   const [phones, setPhones] = useState<ExtensionMonitorPhone[]>([]);
   const [cmsStats, setCmsStats] = useState<CmsStats | null>(null);
   const [phoneLoading, setPhoneLoading] = useState(false);
@@ -446,24 +449,51 @@ export default function MonitorWaPage() {
           padding: "0 28px", position: "sticky", top: 48, zIndex: 40,
         }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 48 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{
-                width: 7, height: 7, borderRadius: "50%",
-                background: sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red,
-                boxShadow: `0 0 6px ${sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red}`,
-                animation: sseStatus === "connected" ? "gobPulse 2.5s ease-in-out infinite" : "none",
-              }} />
-              <span style={{
-                fontSize: 12, fontWeight: 800,
-                color: sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red,
-              }}>
-                {sseStatus === "connected" ? "EN VIVO" : sseStatus === "connecting" ? "CONECTANDO..." : "OFFLINE"}
-              </span>
-              {sseEventCount > 0 && sseStatus === "connected" && (
-                <span style={{ fontSize: 10, color: G.textDim, marginLeft: 4 }}>
-                  {sseEventCount} eventos RT
+            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              {/* SSE Status */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{
+                  width: 7, height: 7, borderRadius: "50%",
+                  background: sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red,
+                  boxShadow: `0 0 6px ${sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red}`,
+                  animation: sseStatus === "connected" ? "gobPulse 2.5s ease-in-out infinite" : "none",
+                }} />
+                <span style={{
+                  fontSize: 12, fontWeight: 800,
+                  color: sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red,
+                }}>
+                  {sseStatus === "connected" ? "EN VIVO" : sseStatus === "connecting" ? "CONECTANDO..." : "OFFLINE"}
                 </span>
-              )}
+                {sseEventCount > 0 && sseStatus === "connected" && (
+                  <span style={{ fontSize: 10, color: G.textDim, marginLeft: 4 }}>
+                    {sseEventCount} eventos RT
+                  </span>
+                )}
+              </div>
+
+              {/* Tabs */}
+              <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 2 }}>
+                {([
+                  { id: "monitor" as TabId, label: "Monitor WA" },
+                  { id: "quality" as TabId, label: "Control Agentes" },
+                ] as const).map(tab => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    style={{
+                      padding: "5px 14px", borderRadius: 6, border: "none",
+                      background: activeTab === tab.id ? G.goldFaint : "transparent",
+                      color: activeTab === tab.id ? G.gold : G.textDim,
+                      fontSize: 11, fontWeight: 800, cursor: "pointer",
+                      transition: "all 0.2s",
+                      borderBottom: activeTab === tab.id ? `2px solid ${G.gold}` : "2px solid transparent",
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
             </div>
             <button
               type="button"
@@ -496,6 +526,14 @@ export default function MonitorWaPage() {
 
         {/* ══ Content ══ */}
         <div style={{ padding: "20px 24px 16px", maxWidth: 1400, margin: "0 auto" }}>
+
+          {/* ── Quality Tab ── */}
+          {activeTab === "quality" && (
+            <AgentQuality campaignId={campaignId} />
+          )}
+
+          {/* ── Monitor Tab ── */}
+          {activeTab === "monitor" && <>
 
           {/* ── Row 1: Hero KPIs ── */}
           <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
@@ -578,6 +616,8 @@ export default function MonitorWaPage() {
               />
             </div>
           </div>
+
+          </>}
         </div>
       </div>
     </>
