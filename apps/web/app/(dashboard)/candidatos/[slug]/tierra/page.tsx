@@ -67,6 +67,7 @@ const TierraMap = dynamic(
 
 const EMPTY_FORMS: FormRecord[] = [];
 const TIERRA_FULLSCREEN_CLASS = "tierra-fullscreen";
+const LEFT_PANEL_W = 132;
 const TABBAR_THEME_VARS = [
   "--tierra-tabbar-bg",
   "--tierra-tabbar-border",
@@ -306,43 +307,28 @@ export default function TierraPage() {
             onDrillChange={setDrillState}
             lockedBounds={isLeguaDemo ? LEGUA_BOUNDS : undefined}
           />
-          <div className="absolute top-3 left-3 z-20 flex items-start">
-            {showControlsPanel ? (
-              <>
-                <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
-                <button
-                  type="button"
-                  onClick={() => setShowControlsPanel(false)}
-                  aria-label="Ocultar controles"
-                  className={`cursor-pointer -ml-0.5 mt-2 rounded-r-2xl border w-8 h-12 p-0 flex items-center justify-center shadow-lg transition-colors ${
-                    mapTheme === "dark"
-                      ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
-                      : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
-                  }`}
-                  title="Ocultar controles"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowControlsPanel(true)}
-                aria-label="Mostrar controles"
-                className={`cursor-pointer rounded-r-2xl border w-8 h-12 p-0 flex items-center justify-center shadow-lg transition-colors ${
-                  mapTheme === "dark"
-                    ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
-                    : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
-                }`}
-                title="Mostrar controles"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="rotate-180">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              </button>
-            )}
+          <div
+            className="absolute top-3 z-20 flex items-start transition-[left] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            style={{ left: showControlsPanel ? 12 : -(LEFT_PANEL_W + 4) }}
+          >
+            <div style={{ width: LEFT_PANEL_W }}>
+              <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowControlsPanel((prev) => !prev)}
+              aria-label={showControlsPanel ? "Ocultar controles" : "Mostrar controles"}
+              className={`cursor-pointer -ml-0.5 mt-2 rounded-r-2xl border w-8 h-12 p-0 flex items-center justify-center shadow-lg transition-colors ${
+                mapTheme === "dark"
+                  ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
+                  : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
+              }`}
+              title={showControlsPanel ? "Ocultar controles" : "Mostrar controles"}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`transition-transform duration-300 ${showControlsPanel ? "" : "rotate-180"}`}>
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
           </div>
           <CampoOverlay
             agents={filteredAgents}
