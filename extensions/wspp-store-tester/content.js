@@ -30,7 +30,7 @@ window.addEventListener('message', (e) => {
   // H-4: Validate source — only accept from same window
   if (e.source !== window) return;
 
-  // --- WSPP_SENT (contador de mensajes) ---
+  // --- WSPP_SENT (contador de mensajes — DOM-based) ---
   // S-6: Exponential backoff on SW wake-up retries (300ms → 600ms → 1200ms)
   if (e.data?.type === 'WSPP_SENT') {
     function trySend(attemptsLeft, delay) {
@@ -42,6 +42,20 @@ window.addEventListener('message', (e) => {
         });
     }
     trySend(3, 300);
+    return;
+  }
+
+  // --- WSPP_SENT_RICH (MsgCollection-based, higher fidelity phone resolution) ---
+  if (e.data?.type === 'WSPP_SENT_RICH') {
+    function trySendRich(attemptsLeft, delay) {
+      chrome.runtime.sendMessage({ type: 'WSPP_SENT_RICH', payload: e.data.payload })
+        .catch((err) => {
+          if (attemptsLeft > 0 && err?.message?.includes('Receiving end does not exist')) {
+            setTimeout(() => trySendRich(attemptsLeft - 1, delay * 2), delay);
+          }
+        });
+    }
+    trySendRich(3, 300);
     return;
   }
 

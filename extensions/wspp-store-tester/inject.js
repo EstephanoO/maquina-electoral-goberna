@@ -21,6 +21,22 @@
   // M-7: Removed dead webpack hook code (~35 lines). WA uses Metro/Haste, not webpack.
   // window.require() is the correct way to access WA internal modules.
 
+  // ─── JID→phone cache ──────────────────────────────────────────────────────
+  // Persists successful @lid→phone resolutions so we don't re-resolve every time.
+  // Max 2000 entries, LRU-ish (oldest entries dropped when full).
+  const _jidPhoneCache = new Map();
+  const JID_CACHE_MAX = 2000;
+
+  function cachePhone(jid, phone) {
+    if (!jid || !phone) return;
+    if (_jidPhoneCache.size >= JID_CACHE_MAX) {
+      // Drop oldest entry
+      const first = _jidPhoneCache.keys().next().value;
+      _jidPhoneCache.delete(first);
+    }
+    _jidPhoneCache.set(jid, phone);
+  }
+
   // ─── helpers ────────────────────────────────────────────────────────────────
 
   /** Extrae número de un JID de WA ("5198765432@c.us" → "5198765432"). Filtra grupos. */
@@ -43,72 +59,93 @@
    */
   function resolvePhoneFromLid(lidJid) {
     if (!lidJid || !lidJid.includes('@lid')) return null;
+
+    // Strategy 0: Check cache first
+    const cached = _jidPhoneCache.get(lidJid);
+    if (cached) return cached;
+
+    let resolved = null;
+
     try {
       // Strategy 1: Look up contact by @lid JID — check multiple phone properties
       const { ContactCollection } = window.require('WAWebContactCollection');
       if (ContactCollection && ContactCollection._models) {
         const contact = ContactCollection._models.find(c => c.id?._serialized === lidJid);
         if (contact) {
-          // WA stores phone in various properties depending on version
           const candidates = [
             contact.userid,
             contact.number,
             contact.phoneNumber,
             contact.jid?.user,
+            contact.plaintextDisabled, // some WA versions store phone here
           ];
           for (const val of candidates) {
             if (val && typeof val === 'string') {
               const digits = val.replace(/\D/g, '');
-              if (digits.length >= 9 && digits.length <= 15) return digits;
+              if (digits.length >= 9 && digits.length <= 15) { resolved = digits; break; }
             }
           }
         }
       }
-    } catch (_) {}
+    } catch (e) { console.warn('[WSPP] resolvePhoneFromLid S1 error:', e.message); }
 
-    try {
+    if (!resolved) try {
       // Strategy 2: Look up chat by @lid JID — chat.contact might have the phone
       const { ChatCollection } = window.require('WAWebChatCollection');
       if (ChatCollection && ChatCollection._models) {
         const chat = ChatCollection._models.find(c => c.id?._serialized === lidJid);
         if (chat) {
-          // Check chat.contact (populated after chat is loaded)
           const contact = chat.contact;
           if (contact) {
-            const candidates = [
-              contact.userid,
-              contact.number,
-              contact.phoneNumber,
-            ];
+            const candidates = [contact.userid, contact.number, contact.phoneNumber];
             for (const val of candidates) {
               if (val && typeof val === 'string') {
                 const digits = val.replace(/\D/g, '');
-                if (digits.length >= 9 && digits.length <= 15) return digits;
+                if (digits.length >= 9 && digits.length <= 15) { resolved = digits; break; }
               }
             }
           }
-          // Some versions expose formattedUser on the chat model
-          if (chat.formattedUser) {
+          if (!resolved && chat.formattedUser) {
             const digits = chat.formattedUser.replace(/\D/g, '');
-            if (digits.length >= 9 && digits.length <= 15) return digits;
+            if (digits.length >= 9 && digits.length <= 15) resolved = digits;
           }
         }
       }
-    } catch (_) {}
+    } catch (e) { console.warn('[WSPP] resolvePhoneFromLid S2 error:', e.message); }
 
-    try {
+    if (!resolved) try {
       // Strategy 3: WAWebWidFactory — numberForLid / createUserWid
       const wid = window.require('WAWebWidFactory');
       if (wid && typeof wid.numberForLid === 'function') {
         const num = wid.numberForLid(lidJid);
         if (num) {
           const digits = String(num).replace(/\D/g, '');
-          if (digits.length >= 9 && digits.length <= 15) return digits;
+          if (digits.length >= 9 && digits.length <= 15) resolved = digits;
         }
       }
-    } catch (_) {}
+    } catch (e) { console.warn('[WSPP] resolvePhoneFromLid S3 error:', e.message); }
 
-    return null;
+    if (!resolved) try {
+      // Strategy 4: Scan the active chat header DOM for phone subtitle
+      // WA shows "~+51 987 654 321" under the contact name in the chat header
+      const header = document.querySelector('#main header');
+      if (header) {
+        const spans = header.querySelectorAll('span[title], span[dir]');
+        for (const s of spans) {
+          const txt = (s.getAttribute('title') || s.textContent || '').trim();
+          const digits = txt.replace(/[^0-9]/g, '');
+          if (digits.length >= 9 && digits.length <= 15) { resolved = digits; break; }
+        }
+      }
+    } catch (e) { console.warn('[WSPP] resolvePhoneFromLid S4 error:', e.message); }
+
+    // Cache successful resolution
+    if (resolved) {
+      cachePhone(lidJid, resolved);
+      console.log('[WSPP] @lid resolved:', lidJid.substring(0, 15) + '…', '→', resolved, '(cached)');
+    }
+
+    return resolved;
   }
 
   /**
@@ -322,27 +359,59 @@
 
       MsgCollection.on('add', (msg) => {
         try {
-          // Solo mensajes entrantes (no propios)
-          if (msg.get('id')?.fromMe) return;
+          const isFromMe = !!msg.get('id')?.fromMe;
 
+          // ── OUTGOING: fromMe=true → enrich phone via MsgCollection JID ──
+          if (isFromMe) {
+            const to = msg.get('to')?._serialized;
+            if (!to || typeof to !== 'string') return;
+            if (to.includes('@g.us') || to.includes('@broadcast') || to.includes('@newsletter')) return;
+
+            let phone = jidToNumber(to);
+            if (!phone && to.includes('@lid')) {
+              phone = resolvePhoneFromLid(to);
+            }
+
+            // Also try to get name for the recipient
+            let contactName = null;
+            try {
+              const { ContactCollection } = window.require('WAWebContactCollection');
+              if (ContactCollection && ContactCollection._models) {
+                const contact = ContactCollection._models.find(c => c.id?._serialized === to);
+                if (contact) contactName = contact.pushname || contact.name || contact.formattedName || null;
+              }
+            } catch (_) {}
+
+            // Emit WSPP_SENT_RICH — higher fidelity than DOM-based WSPP_SENT
+            window.postMessage({
+              type: 'WSPP_SENT_RICH',
+              payload: {
+                phone,
+                contact_name: contactName || getActiveContactName(),
+                own_number: getOwnNumber(),
+                to_jid: to,
+                timestamp: msg.get('t') || Math.floor(Date.now() / 1000),
+              },
+            }, WA_ORIGIN);
+            return;
+          }
+
+          // ── INCOMING: fromMe=false → original flow ──
           const from = msg.get('from')?._serialized;
           if (!from || typeof from !== 'string') return;
 
-          // Filtrar grupos, broadcasts, newsletters y @lid
+          // Filtrar grupos, broadcasts, newsletters
           if (from.includes('@g.us') || from.includes('@broadcast') || from.includes('@newsletter')) return;
 
           // Extraer telefono del JID
           let phone = jidToNumber(from);
           const body = msg.get('body') || '';
-          const msgType = msg.get('type') || 'chat'; // 'chat', 'image', 'ptt', etc.
+          const msgType = msg.get('type') || 'chat';
           const timestamp = msg.get('t') || Math.floor(Date.now() / 1000);
 
-          // Si es @lid (linked-device JID), intentar resolver el teléfono real
+          // Si es @lid, intentar resolver el teléfono real
           if (!phone && from.includes('@lid')) {
             phone = resolvePhoneFromLid(from);
-            if (phone) {
-              console.log('[WSPP] ✓ @lid resuelto →', phone, '(desde', from + ')');
-            }
           }
 
           // Obtener nombre del contacto si es posible
@@ -357,11 +426,10 @@
             }
           } catch (_) {}
 
-          // H-3: Use specific origin instead of '*'
           window.postMessage({
             type: 'WSPP_RECEIVED',
             payload: {
-              phone,                        // puede ser null si @lid no se pudo resolver
+              phone,
               contact_name: contactName,
               from_jid: from,
               preview: body.substring(0, 500),
@@ -373,7 +441,7 @@
 
           console.log('[WSPP] ← recibido de:', phone ?? from, '| tipo:', msgType, '| preview:', body.substring(0, 60));
         } catch (err) {
-          console.error('[WSPP] Error procesando mensaje entrante:', err);
+          console.error('[WSPP] Error procesando mensaje:', err);
         }
       });
 
