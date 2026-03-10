@@ -90,7 +90,7 @@ export function CampoOverlay({
   }, []);
 
   useEffect(() => {
-    if (!selectedAgent) {
+    if (!selectedAgent && !activeZoneLabel) {
       setToggleTopOffset(TOGGLE_DEFAULT_TOP);
       return;
     }
@@ -113,7 +113,7 @@ export function CampoOverlay({
       observer.disconnect();
       window.removeEventListener("resize", syncToggleToAgentsCenter);
     };
-  }, [selectedAgent, syncToggleToAgentsCenter]);
+  }, [selectedAgent, activeZoneLabel, syncToggleToAgentsCenter]);
 
   return (
     <div

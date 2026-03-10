@@ -47,6 +47,35 @@ const VIZ_MODES: Array<{ id: DatosVizMode; label: string }> = [
   { id: "bars3d", label: "Barras 3D" },
 ];
 
+function VizModeIcon({ mode }: { mode: DatosVizMode }) {
+  if (mode === "points") {
+    return (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="6" cy="6" r="2" />
+        <circle cx="18" cy="8" r="2" />
+        <circle cx="8" cy="18" r="2" />
+      </svg>
+    );
+  }
+
+  if (mode === "heatmap") {
+    return (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 3s4 4 4 8a4 4 0 1 1-8 0c0-4 4-8 4-8z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 20V10" />
+      <path d="M10 20V6" />
+      <path d="M16 20V13" />
+      <path d="M22 20V4" />
+    </svg>
+  );
+}
+
 const THEME_MODES: Array<{ id: MapTheme; label: string }> = [
   { id: "dark", label: "Oscuro" },
   { id: "light", label: "Claro" },
@@ -116,7 +145,7 @@ export function MapControls({
         mapTheme={mapTheme}
       />
 
-      <div className="mt-1 rounded-2xl border p-1.5" style={sectionStyle}>
+      <div className="mt-1 p-1">
         <div className={`text-[10px] font-semibold tracking-wide uppercase px-1 pb-1 ${sectionTitleClass}`}>Tema</div>
         <div className="grid grid-cols-2 gap-1">
           {THEME_MODES.map((mode) => (
@@ -164,7 +193,7 @@ export function MapControls({
       </div>
 
       {activeLayer === "datos" && (
-        <div className="mt-1 rounded-2xl border p-1.5" style={sectionStyle}>
+        <div className="mt-1 p-1">
           <div className={`text-[10px] font-semibold tracking-wide uppercase px-1 pb-1 ${sectionTitleClass}`}>Visualizacion</div>
           <div className="grid grid-cols-3 gap-1">
             {VIZ_MODES.map((mode) => (
@@ -172,7 +201,7 @@ export function MapControls({
                 key={mode.id}
                 type="button"
                 onClick={() => onDatosVizModeChange(mode.id)}
-                className="cursor-pointer rounded-md border px-2 py-1 text-[10px] font-semibold transition-all duration-150"
+                className={`cursor-pointer rounded-md border transition-all duration-150 ${iconOnlyThemeToggle ? "px-0 py-1 h-7 flex items-center justify-center" : "px-2 py-1 text-[10px] font-semibold"}`}
                 style={{
                   backgroundColor: datosVizMode === mode.id
                     ? C.datos
@@ -180,8 +209,10 @@ export function MapControls({
                   color: datosVizMode === mode.id ? "#ffffff" : (isDark ? "#cbd5e1" : "#475569"),
                   borderColor: datosVizMode === mode.id ? C.datos : (isDark ? "#334155" : "#e2e8f0"),
                 }}
+                title={mode.label}
+                aria-label={mode.label}
               >
-                {mode.label}
+                {iconOnlyThemeToggle ? <VizModeIcon mode={mode.id} /> : mode.label}
               </button>
             ))}
           </div>
