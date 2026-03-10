@@ -58,6 +58,10 @@ export default function CandidatoSlugLayout({ children }: { children: React.Reac
   const activeTab: TabKey =
     (TABS.find((t) => pathname.includes(`/${t.key}`))?.key as TabKey) ?? "tierra";
   const isTierra = pathname.includes("/tierra");
+  const isDigitalValidation = pathname.includes("/validacion");
+  const visibleTabs = isDigitalValidation
+    ? TABS.filter((tab) => tab.key !== "tierra" && tab.key !== "cms-metrics")
+    : TABS;
 
   return (
     <div style={isTierra ? styles.wrapperTierra : styles.wrapper}>
@@ -65,7 +69,7 @@ export default function CandidatoSlugLayout({ children }: { children: React.Reac
       {!isTierra ? (
         <nav style={styles.tabBar}>
           <div style={styles.tabGroup}>
-            {TABS.map((tab) => {
+            {visibleTabs.map((tab) => {
               const isActive = activeTab === tab.key;
               const Icon = tab.icon;
 
