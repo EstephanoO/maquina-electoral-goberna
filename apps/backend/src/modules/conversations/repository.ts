@@ -60,6 +60,9 @@ export async function upsertMessage(
 
   const isOut = input.direction === "out";
 
+  // Always pass all 8 params — PostgreSQL needs to infer types for all of them.
+  // For inbound messages, $6 (owner_id) and $7 (owner_name) are still referenced in SQL
+  // but guarded by CASE WHEN $9 (is_outbound flag) so they only apply for outbound.
   const { rows } = await pool.query<{
     id: string;
     is_new: boolean;
@@ -72,8 +75,9 @@ export async function upsertMessage(
       messages, message_count, inbound_count
     ) VALUES (
       $1, $2, $3, $4, $5,
-      ${isOut ? "$6" : "NULL"}, ${isOut ? "$7" : "NULL"},
-      jsonb_build_array($8::jsonb), 1, ${isOut ? "0" : "1"}
+      CASE WHEN $9::boolean THEN $6::uuid ELSE NULL END,
+      CASE WHEN $9::boolean THEN $7::text ELSE NULL END,
+      jsonb_build_array($8::jsonb), 1, CASE WHEN $9::boolean THEN 0 ELSE 1 END
     )
     ON CONFLICT (campaign_id, own_number, jid) DO UPDATE SET
       -- Append message, cap at ${MAX_MESSAGES}
@@ -83,10 +87,10 @@ export async function upsertMessage(
         ELSE conversations.messages || jsonb_build_array($8::jsonb)
       END,
       message_count = conversations.message_count + 1,
-      inbound_count = conversations.inbound_count + ${isOut ? "0" : "1"},
+      inbound_count = conversations.inbound_count + CASE WHEN $9::boolean THEN 0 ELSE 1 END,
       -- Owner: first outbound operator wins (COALESCE = never overwrite)
-      owner_id = ${isOut ? "COALESCE(conversations.owner_id, $6)" : "conversations.owner_id"},
-      owner_name = ${isOut ? "COALESCE(conversations.owner_name, $7)" : "conversations.owner_name"},
+      owner_id = CASE WHEN $9::boolean THEN COALESCE(conversations.owner_id, $6::uuid) ELSE conversations.owner_id END,
+      owner_name = CASE WHEN $9::boolean THEN COALESCE(conversations.owner_name, $7::text) ELSE conversations.owner_name END,
       -- Phone: update if we have a better value (non-null replaces null)
       phone = COALESCE($4, conversations.phone),
       -- Contact name: update if we have a better value
@@ -106,6 +110,7 @@ export async function upsertMessage(
     operatorId,           // $6
     operatorName,         // $7
     msgEntry,             // $8
+    isOut,                // $9 — boolean flag
   ]);
 
   const row = rows[0]!;
