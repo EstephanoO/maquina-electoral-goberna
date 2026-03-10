@@ -789,7 +789,7 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
 
         if (!contact) {
           // Persist the event even if no contact matched — still counts as a message sent
-          await repo.insertExtensionEvent(campaignId, userId, resolvedPhone, null, false, ownNumber);
+          await repo.insertExtensionEvent(campaignId, userId, resolvedPhone, null, false, ownNumber, type);
           return reply.code(200).send({
             ok: true,
             request_id: requestId,
@@ -840,7 +840,7 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         });
 
         // Persist the extension event for operator metrics (wa_sent)
-        await repo.insertExtensionEvent(campaignId, userId, resolvedPhone, contact.id, true, ownNumber);
+        await repo.insertExtensionEvent(campaignId, userId, resolvedPhone, contact.id, true, ownNumber, type);
 
         return reply.code(200).send({
           ok: true,

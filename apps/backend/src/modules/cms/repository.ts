@@ -592,6 +592,7 @@ export async function getCmsMetricsByOperator(
        SELECT operator_id, campaign_id, COUNT(*)::bigint AS wa_sent
        FROM cms_extension_events ee
        ${extWhereClause}
+         AND ee.event_type = 'message_sent'
        GROUP BY operator_id, campaign_id
      ) ext ON ext.operator_id = fs.cms_claimed_by AND ext.campaign_id = fs.campaign_id
      ${whereClause}
@@ -623,11 +624,12 @@ export async function insertExtensionEvent(
   contactId: string | null,
   matched: boolean,
   ownNumber?: string | null,
+  eventType?: string,
 ): Promise<void> {
   await pool.query(
-    `INSERT INTO cms_extension_events (campaign_id, operator_id, contact_id, phone, matched, own_number)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [campaignId, operatorId, contactId ?? null, phone ?? null, matched, ownNumber ?? null],
+    `INSERT INTO cms_extension_events (campaign_id, operator_id, contact_id, phone, matched, own_number, event_type)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [campaignId, operatorId, contactId ?? null, phone ?? null, matched, ownNumber ?? null, eventType ?? "message_sent"],
   );
 }
 
@@ -1224,7 +1226,7 @@ export async function getExtensionMonitorByPhone(
        ee.operator_id,
        COALESCE(u.full_name, u.email)          AS full_name,
        u.email,
-       COUNT(*)::text                                   AS wa_sent,
+       COUNT(*) FILTER (WHERE ee.event_type = 'message_sent')::text  AS wa_sent,
        COUNT(DISTINCT ee.phone)::text                   AS unique_contacts,
        MAX(ee.created_at)::text                         AS last_event_at
      FROM cms_extension_events ee
@@ -1234,7 +1236,7 @@ export async function getExtensionMonitorByPhone(
        AND wp.number = COALESCE(ee.own_number, '')
      WHERE ee.campaign_id = $1
      GROUP BY ee.own_number, wp.alias, ee.operator_id, u.full_name, u.email
-     ORDER BY ee.own_number, COUNT(*) DESC`,
+     ORDER BY ee.own_number, COUNT(*) FILTER (WHERE ee.event_type = 'message_sent') DESC`,
     [campaignId],
   );
 
@@ -1321,14 +1323,14 @@ export async function getExtensionMonitor(
        ee.operator_id,
        COALESCE(u.full_name, u.email) AS full_name,
        u.email,
-       COUNT(*)::text                          AS wa_sent,
+       COUNT(*) FILTER (WHERE ee.event_type = 'message_sent')::text  AS wa_sent,
        COUNT(DISTINCT ee.phone)::text          AS unique_phones,
        MAX(ee.created_at)::text                AS last_event_at
      FROM cms_extension_events ee
      JOIN users u ON u.id = ee.operator_id
      WHERE ee.campaign_id = $1
      GROUP BY ee.operator_id, u.full_name, u.email
-     ORDER BY COUNT(*) DESC`,
+     ORDER BY COUNT(*) FILTER (WHERE ee.event_type = 'message_sent') DESC`,
     [campaignId],
   );
 

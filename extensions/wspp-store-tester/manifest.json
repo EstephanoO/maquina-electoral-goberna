@@ -1,9 +1,15 @@
 {
   "manifest_version": 3,
   "name": "WSPP Goberna",
-  "version": "4.0.0",
-  "description": "Contador de mensajes enviados — Goberna",
+  "version": "6.2.0",
+  "description": "Agente digital inteligente — detección, clasificación y validación — Goberna",
   "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "https://api.goberna.us/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_title": "WSPP Goberna"

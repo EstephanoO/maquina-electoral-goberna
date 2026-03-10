@@ -1,7 +1,7 @@
 'use strict';
 
 const API = 'https://api.goberna.us';
-const STORAGE_KEYS = ['wspp_token', 'wspp_user', 'wspp_count', 'wspp_campaign_id', 'wspp_own_number'];
+const STORAGE_KEYS = ['wspp_token', 'wspp_user', 'wspp_count', 'wspp_campaign_id', 'wspp_own_number', 'wspp_campaigns'];
 
 function $(id) { return document.getElementById(id); }
 
@@ -81,16 +81,26 @@ async function doLogin() {
 
     const token      = data.access_token;
     const userName   = data.user?.full_name || data.user?.email || email;
-    const campaignId = data.campaigns?.[0]?.id ?? null;
+    const campaigns  = data.campaigns || [];
+    const campaignId = campaigns[0]?.id ?? null;
 
+    // H-1: Also store refresh_token for token refresh flow
+    // S-7: Store campaigns list for campaign selector
+    // S-10: Store access_token in session storage (more secure) + local (fallback)
     chrome.storage.local.set({
-      wspp_token:       token,
-      wspp_user:        userName,
-      wspp_count:       0,
-      wspp_campaign_id: campaignId,
+      wspp_token:         token,
+      wspp_refresh_token: data.refresh_token || null,
+      wspp_user:          userName,
+      wspp_count:         '0',  // L-5: Use string '0' consistently
+      wspp_campaign_id:   campaignId,
+      wspp_campaigns:     JSON.stringify(campaigns.map(c => ({ id: c.id, name: c.name || c.candidate_name || c.id }))),
     });
+    if (chrome.storage.session) {
+      chrome.storage.session.set({ wspp_token: token });
+    }
 
     showDash(userName, 0);
+    renderCampaignSelector(campaigns, campaignId);
 
     // Mostrar el estado del número (puede ya estar guardado de sesiones anteriores)
     chrome.storage.local.get('wspp_own_number', (s) => renderPhone(s.wspp_own_number || null));
@@ -102,14 +112,47 @@ async function doLogin() {
 }
 
 // ── Logout ───────────────────────────────────────────────────────────
+// S-2 FIX: Revoke refresh token server-side before clearing local state.
 function doLogout() {
+  // Revoke server-side session (fire-and-forget — don't block UI on failure)
+  chrome.storage.local.get(['wspp_token'], (data) => {
+    if (data.wspp_token) {
+      fetch(`${API}/api/auth/logout`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${data.wspp_token}` },
+      }).catch(() => {}); // best-effort — user is leaving anyway
+    }
+  });
   // Preservar wspp_own_number al hacer logout — el número del celular no cambia
-  chrome.storage.local.remove(['wspp_token', 'wspp_user', 'wspp_count', 'wspp_campaign_id']);
+  // H-1: Also clear refresh_token on logout
+  // S-10: Clear session storage too
+  chrome.storage.local.remove(['wspp_token', 'wspp_refresh_token', 'wspp_user', 'wspp_count', 'wspp_campaign_id', 'wspp_campaigns']);
+  if (chrome.storage.session) chrome.storage.session.remove(['wspp_token']);
   $('inp-email').value    = '';
   $('inp-password').value = '';
   clearErr();
   $('dot').classList.remove('on');
   showLogin();
+}
+
+// ── S-7: Campaign selector ────────────────────────────────────────────
+function renderCampaignSelector(campaigns, activeId) {
+  const section = $('campaign-section');
+  const sel = $('sel-campaign');
+  if (!section || !sel) return;
+  if (!campaigns || campaigns.length <= 1) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  sel.innerHTML = '';
+  for (const c of campaigns) {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name || c.candidate_name || c.id;
+    if (c.id === activeId) opt.selected = true;
+    sel.appendChild(opt);
+  }
 }
 
 // ── Reactividad: escuchar cambios de storage ─────────────────────────
@@ -130,20 +173,38 @@ chrome.storage.onChanged.addListener((changes) => {
 // ── Init ─────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   $('btn-login').addEventListener('click', doLogin);
-  $('inp-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+  // L-9: Only trigger login on Enter if both email AND password fields have values
+  $('inp-email').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && $('inp-email').value.trim() && $('inp-password').value) doLogin();
+  });
+  $('inp-password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && $('inp-email').value.trim() && $('inp-password').value) doLogin();
+  });
   $('btn-logout').addEventListener('click', doLogout);
+  // L-5: Use string '0' consistently for counter
   $('btn-reset').addEventListener('click', () => {
-    chrome.storage.local.set({ wspp_count: 0 });
-    $('counter').textContent = 0;
+    chrome.storage.local.set({ wspp_count: '0' });
+    $('counter').textContent = '0';
   });
   $('btn-phone-edit').addEventListener('click', startPhoneEdit);
   $('btn-phone-save').addEventListener('click', savePhone);
   $('inp-phone').addEventListener('keydown', (e) => { if (e.key === 'Enter') savePhone(); });
+  // S-7: Campaign selector change
+  $('sel-campaign').addEventListener('change', () => {
+    const newId = $('sel-campaign').value;
+    chrome.storage.local.set({ wspp_campaign_id: newId });
+    console.log('[WSPP] Campaign switched to:', newId);
+  });
 
   chrome.storage.local.get([...STORAGE_KEYS, 'wspp_wa_active'], (saved) => {
     if (saved.wspp_token && saved.wspp_user) {
       showDash(saved.wspp_user, saved.wspp_count ?? 0);
       renderPhone(saved.wspp_own_number || null);
+      // S-7: Restore campaign selector
+      try {
+        const camps = JSON.parse(saved.wspp_campaigns || '[]');
+        renderCampaignSelector(camps, saved.wspp_campaign_id);
+      } catch (_) {}
     } else {
       showLogin();
     }

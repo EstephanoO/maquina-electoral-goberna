@@ -33,6 +33,7 @@ function isProtectedRoute(pathname: string): boolean {
   // Public prefixes
   if (pathname.startsWith("/mapa")) return false;
   if (pathname.startsWith("/invite")) return false;
+  if (pathname.startsWith("/extension-monitor")) return false;
 
   // Static assets / API / internal Next.js routes — skip middleware
   if (

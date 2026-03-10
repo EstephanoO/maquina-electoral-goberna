@@ -72,7 +72,7 @@ export function PublicHeader() {
             alt="Goberna"
             width={32}
             height={32}
-            style={{ borderRadius: 6 }}
+            style={{ borderRadius: 6, width: 32, height: 32 }}
             priority
           />
           <span

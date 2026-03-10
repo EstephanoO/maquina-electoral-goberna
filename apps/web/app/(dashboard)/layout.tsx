@@ -240,7 +240,7 @@ function LoadingScreen() {
         alt="GOBERNA"
         width={56}
         height={56}
-        style={{ borderRadius: "var(--radius-md)" }}
+        style={{ borderRadius: "var(--radius-md)", width: 56, height: 56 }}
         priority
       />
       <div
@@ -537,7 +537,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
             alt="GOBERNA"
             width={34}
             height={34}
-            style={{ flexShrink: 0, borderRadius: 6 }}
+            style={{ flexShrink: 0, borderRadius: 6, width: 34, height: 34 }}
           />
           {showLabel && (
             <>
