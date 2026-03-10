@@ -15,11 +15,21 @@ type Props = {
   viewMode: TierraViewMode;
   onViewModeChange: (mode: TierraViewMode) => void;
   userRole?: string;
+  userName?: string;
+  onLogout?: () => void | Promise<void>;
 };
 
 /* ========== Component ========== */
 
-export function TierraHeader({ stats, mapTheme, viewMode, onViewModeChange, userRole }: Props) {
+export function TierraHeader({
+  stats,
+  mapTheme,
+  viewMode,
+  onViewModeChange,
+  userRole,
+  userName,
+  onLogout,
+}: Props) {
   const router = useRouter();
   const { campaign, metas, totals } = stats;
   const pc = campaign.color_primario;
@@ -31,6 +41,8 @@ export function TierraHeader({ stats, mapTheme, viewMode, onViewModeChange, user
   const votosProgress = metas.votos > 0 ? Math.min((totals.forms_count / metas.votos) * 100, 100) : 0;
 
   const showBackButton = userRole !== "brigadista_zonal";
+  const showHeaderProfileLogout = userRole === "brigadista_zonal" && typeof onLogout === "function";
+  const profileLabel = userName?.trim() || "Perfil";
 
   return (
     <header className={`flex items-center justify-between h-16 px-5 border-b shrink-0 gap-5 z-20 ${
@@ -105,10 +117,39 @@ export function TierraHeader({ stats, mapTheme, viewMode, onViewModeChange, user
         </div>
       </div>
 
-      {/* Right: metas (both modes) */}
-      <div className="flex gap-4 shrink-0">
+      {/* Right: metas + brigadista logout (header-only) */}
+      <div className="flex gap-4 shrink-0 items-center">
         <MetaBar label="Meta datos" current={totals.forms_count} target={metaDatos} pct={datosProgress} color={pc} mapTheme={mapTheme} />
         <MetaBar label="Meta votos" current={null} target={metas.votos} pct={votosProgress} color={sc || pc} mapTheme={mapTheme} />
+        {showHeaderProfileLogout ? (
+          <div
+            className={`group flex items-center rounded-full px-2 py-1 transition-transform duration-200 hover:translate-x-1 focus-within:translate-x-1 ${
+              isDark ? "border border-slate-700 bg-slate-900/90" : "border border-slate-300/70 bg-white/90"
+            }`}
+          >
+            <div className={`w-7 h-7 rounded-full text-white text-[11px] font-bold flex items-center justify-center shrink-0 ${isDark ? "bg-slate-700" : "bg-slate-900"}`}>
+              {profileLabel.charAt(0).toUpperCase() || "?"}
+            </div>
+            <span className={`ml-2 mr-1 max-w-[120px] truncate text-[11px] font-semibold ${isDark ? "text-slate-100" : "text-slate-700"}`}>
+              {profileLabel}
+            </span>
+            <span className="w-0 opacity-0 -translate-x-1 overflow-hidden pointer-events-none transition-all duration-200 group-hover:w-[34px] group-hover:opacity-100 group-hover:translate-x-0 group-hover:pointer-events-auto group-focus-within:w-[34px] group-focus-within:opacity-100 group-focus-within:translate-x-0 group-focus-within:pointer-events-auto">
+              <button
+                type="button"
+                onClick={() => { void onLogout(); }}
+                className={`w-7 h-7 rounded-full transition-colors duration-150 cursor-pointer flex items-center justify-center ${
+                  isDark
+                    ? "border border-slate-600 bg-slate-800 text-slate-300 hover:text-red-400 hover:border-red-500"
+                    : "border border-slate-300 bg-white text-slate-600 hover:text-red-600 hover:border-red-300"
+                }`}
+                aria-label="Cerrar sesion"
+                title="Cerrar sesion"
+              >
+                <LogoutIcon />
+              </button>
+            </span>
+          </div>
+        ) : null}
       </div>
     </header>
   );
@@ -199,6 +240,16 @@ function TableIcon() {
       <line x1="3" y1="9" x2="21" y2="9" />
       <line x1="3" y1="15" x2="21" y2="15" />
       <line x1="9" y1="3" x2="9" y2="21" />
+    </svg>
+  );
+}
+
+function LogoutIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
     </svg>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 
 import type { FormRecord } from "@/lib/services";
@@ -83,11 +83,17 @@ const TABBAR_THEME_VARS = [
 
 export default function TierraPage() {
   const params = useParams();
+  const router = useRouter();
   const slug = params.slug as string;
   const mapHandleRef = useRef<TierraMapHandle | null>(null);
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const isBrigadistaZonal = user?.role === "brigadista_zonal";
   const queryClient = useQueryClient();
+
+  const handleHeaderLogout = useCallback(async () => {
+    await logout();
+    router.replace("/login");
+  }, [logout, router]);
 
   // ─── Demo: detectar si este slug es de la demo de Carmen de la Legua ───
   // Usamos `(arr as readonly string[]).includes(slug)` para evitar el narrowing
@@ -304,6 +310,8 @@ export default function TierraPage() {
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         userRole={user?.role}
+        userName={user?.full_name}
+        onLogout={handleHeaderLogout}
       />
 
       {viewMode === "campo" ? (
