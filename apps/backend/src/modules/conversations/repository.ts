@@ -1,4 +1,4 @@
-import pool from "../../db";
+import { pool } from "../../db";
 import type { UpsertMessageInput, ClassifyConversationInput } from "./schemas";
 
 // ═══════════════════════════════════════════════════════════════════════
