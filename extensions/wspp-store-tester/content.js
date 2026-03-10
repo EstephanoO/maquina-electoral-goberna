@@ -26,9 +26,15 @@ chrome.storage.onChanged.addListener((changes) => {
 });
 
 // ── Bridge WSPP_SENT → background SW ────────────────────────────────
+console.log('[WSPP BRIDGE] content.js loaded — listener registering');
 window.addEventListener('message', (e) => {
   // H-4: Validate source — only accept from same window
   if (e.source !== window) return;
+
+  const msgType = e.data?.type;
+  if (msgType && msgType.startsWith('WSPP_')) {
+    console.log('[WSPP BRIDGE] postMessage received:', msgType);
+  }
 
   // --- WSPP_SENT (contador de mensajes — DOM-based) ---
   // S-6: Exponential backoff on SW wake-up retries (300ms → 600ms → 1200ms)
@@ -88,17 +94,20 @@ window.addEventListener('message', (e) => {
   // S-6: Exponential backoff on SW wake-up retries (400ms → 800ms → 1600ms)
   if (e.data?.type === 'WSPP_RECEIVED') {
     const payload = e.data.payload;
+    console.log('%c[WSPP BRIDGE] WSPP_RECEIVED → sending to background', 'color:#a855f7;font-weight:700', payload.preview?.slice(0, 50));
     function trySendReceived(attemptsLeft, delay) {
       chrome.runtime.sendMessage(
         { type: 'WSPP_RECEIVED', payload },
         (response) => {
           if (chrome.runtime.lastError) {
             const errMsg = chrome.runtime.lastError.message || '';
+            console.warn('[WSPP BRIDGE] sendMessage error:', errMsg, '| retries left:', attemptsLeft);
             if (attemptsLeft > 0 && errMsg.includes('Receiving end does not exist')) {
               setTimeout(() => trySendReceived(attemptsLeft - 1, delay * 2), delay);
             }
             return;
           }
+          console.log('%c[WSPP BRIDGE] background responded:', 'color:#22c55e;font-weight:700', JSON.stringify(response)?.slice(0, 200));
           // Si background devuelve datos de validacion, pasarlos a inject.js
           if (response?.validation) {
             window.postMessage({ type: 'WSPP_VALIDATION_DATA', payload: response.validation }, WA_ORIGIN);

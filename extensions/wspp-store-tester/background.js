@@ -1040,6 +1040,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
     });
 
+    // Report to conversations module (uses from_jid as primary identifier)
+    reportConversation(from_jid, own_number, 'in', preview, phone, contact_name);
+
     // H-5: Step 2 — Incrementar contador (non-blocking)
     chrome.storage.local.get(['wspp_received_count'], (data) => {
       chrome.storage.local.set({ wspp_received_count: (data.wspp_received_count ?? 0) + 1 });
@@ -1343,6 +1346,39 @@ function makeSentDedupKey(own_number, timestamp) {
 }
 
 /**
+ * Report a message to the conversations module.
+ * Fire-and-forget — does not block the main handler flow.
+ * Requires a JID (from_jid for inbound, to_jid for outbound).
+ * If no JID is available (DOM-only WSPP_SENT), silently skips.
+ */
+function reportConversation(jid, ownNumber, direction, text, phone, contactName) {
+  if (!jid || !ownNumber) return;
+  const body = {
+    jid,
+    own_number: ownNumber,
+    direction,
+    text: (text || '').slice(0, 2000),
+    phone: phone || undefined,
+    contact_name: contactName || undefined,
+    timestamp: Date.now(),
+  };
+  apiFetch('/api/conversations/message', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }).then(j => {
+    if (j.ok) {
+      console.log(`[CONV] ✓ ${direction} → conv #${j.conversation_id}`,
+        j.is_new ? '(nueva)' : `(msg #${j.message_count})`,
+        j.auto_classified ? '🤖 clasificada' : '');
+    } else {
+      console.warn('[CONV] ✗', j.error || j.message || j.code);
+    }
+  }).catch(err => {
+    console.warn('[CONV] error:', err?.message || err);
+  });
+}
+
+/**
  * Core logic: increment counter + report to backend.
  * Shared by both WSPP_SENT and WSPP_SENT_RICH handlers.
  */
@@ -1376,6 +1412,12 @@ function processSentEvent(payload, source) {
       if (j.ok) console.log('[WSPP backend] ✓', j.matched ? 'matched' : (j.filtered ? 'filtered' : 'ok'));
       else      console.warn('[WSPP backend] ✗', j.error || j.message || j.code);
     });
+  }
+
+  // 4. Report to conversations module (requires to_jid from WSPP_SENT_RICH)
+  const toJid = payload.to_jid;
+  if (toJid) {
+    reportConversation(toJid, own_number, 'out', '(mensaje enviado)', phone, contact_name);
   }
 }
 
