@@ -1,6 +1,5 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyRequest, FastifyReply } from "fastify";
 import type { AppEnv } from "../../config/env";
-import type { AuthenticatedRequest } from "../../infra/auth";
 import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
 import { classifySchema, spamCheckSchema } from "./schemas";
@@ -106,8 +105,8 @@ async function callGemini(
     throw new Error(`Gemini ${res.status}: ${errText.slice(0, 200)}`);
   }
 
-  const json = await res.json();
-  const rawText =
+  const json = (await res.json()) as any;
+  const rawText: string =
     json?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 
   if (!rawText) return null;
@@ -150,11 +149,12 @@ export function buildAiRoutes(env: AppEnv): FastifyPluginAsync {
           rateLimit: {
             max: 60,       // 60 calls per minute per user
             timeWindow: 60000,
-            keyGenerator: (req: AuthenticatedRequest) => `ai:${req.userId ?? req.ip}`,
+            keyGenerator: (req: { userId?: string; ip: string }) =>
+              `ai:${req.userId ?? req.ip}`,
           },
         },
       },
-      async (request, reply) => {
+      async (request: FastifyRequest, reply: FastifyReply) => {
         const requestId = String(request.id);
 
         if (!env.geminiApiKey) {
@@ -226,7 +226,7 @@ export function buildAiRoutes(env: AppEnv): FastifyPluginAsync {
           authorize({ roles: ["admin", "candidato", "consultor", "agente_digital"] }),
         ],
       },
-      async (request, reply) => {
+      async (request: FastifyRequest, reply: FastifyReply) => {
         const requestId = String(request.id);
         const parsed = spamCheckSchema.safeParse(request.body);
         if (!parsed.success) {
