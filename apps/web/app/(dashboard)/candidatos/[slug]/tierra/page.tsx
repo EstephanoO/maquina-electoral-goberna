@@ -179,6 +179,7 @@ export default function TierraPage() {
   const handleSelectAgent = useCallback((agentId: string | null) => {
     if (agentId) {
       setActiveLayer("agentes");
+      setDrillState(INITIAL_DRILL);
     }
     setSelectedAgentId(agentId);
   }, []);
@@ -188,18 +189,20 @@ export default function TierraPage() {
     setSelectedAgentId((prev) => {
       if (prev === agentId) return null;
 
+      setDrillState(INITIAL_DRILL);
+
       const latestAgentForm = formPoints
         .filter((p) => p.agent_id === agentId)
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
 
       if (latestAgentForm) {
-        mapHandleRef.current?.flyToPoint(latestAgentForm.lng, latestAgentForm.lat, 16);
+        mapHandleRef.current?.flyToPoint(latestAgentForm.lng, latestAgentForm.lat, 16, false);
         return agentId;
       }
 
       const agent = enrichedAgentsRef.current.find((a) => a.id === agentId);
       if (agent) {
-        mapHandleRef.current?.flyToPoint(agent.lng, agent.lat, 15);
+        mapHandleRef.current?.flyToPoint(agent.lng, agent.lat, 15, false);
       }
       return agentId;
     });

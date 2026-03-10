@@ -61,7 +61,7 @@ export function useMapClick(
           const agent = currentAgents.find((a) => a.id === agentId);
           if (agent) {
             skipNextFitRef.current = true;
-            pendingDrillRef.current = true;
+            pendingDrillRef.current = false;
             mapRef.current?.flyTo({ center: [agent.lng, agent.lat], zoom: 13, duration: FLY_DURATION });
           }
         }

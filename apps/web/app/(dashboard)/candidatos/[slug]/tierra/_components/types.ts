@@ -82,7 +82,7 @@ export type CameraNudge = {
 /* ─── Map Handle (imperative API) ─── */
 
 export type TierraMapHandle = {
-  flyToPoint: (lng: number, lat: number, zoom?: number) => void;
+  flyToPoint: (lng: number, lat: number, zoom?: number, withDrill?: boolean) => void;
   getDrillState: () => DrillState;
   /** Show a pinned tooltip for a specific form point after flyTo completes */
   showPinnedTooltip: (data: PinnedTooltipData) => void;

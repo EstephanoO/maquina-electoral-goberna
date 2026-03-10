@@ -349,9 +349,9 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   // ─── Imperative handle ───
   useImperativeHandle(ref, () => ({
-    flyToPoint(lng: number, lat: number, zoom = 17) {
+    flyToPoint(lng: number, lat: number, zoom = 17, withDrill = true) {
       skipNextFitRef.current = true;
-      pendingDrillRef.current = true;
+      pendingDrillRef.current = withDrill;
       mapRef.current?.flyTo({ center: [lng, lat], zoom, duration: FLY_DURATION, essential: true });
     },
     getDrillState() { return drillStateRef.current; },
@@ -578,7 +578,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
       const agent = agents.find((a) => a.id === selectedAgentId);
       if (agent) {
         skipNextFitRef.current = true;
-        pendingDrillRef.current = true;
+        pendingDrillRef.current = false;
         mapRef.current.flyTo({ center: [agent.lng, agent.lat], zoom: 13, duration: FLY_DURATION });
       }
     }
