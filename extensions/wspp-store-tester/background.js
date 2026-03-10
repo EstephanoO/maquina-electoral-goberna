@@ -1387,7 +1387,7 @@ function processSentEvent(payload, source) {
 
   // 1. Increment local counter
   chrome.storage.local.get(['wspp_count'], (data) => {
-    const next = (data.wspp_count ?? 0) + 1;
+    const next = (parseInt(data.wspp_count, 10) || 0) + 1;
     chrome.storage.local.set({ wspp_count: next });
   });
 

@@ -91,7 +91,7 @@ async function doLogin() {
       wspp_token:         token,
       wspp_refresh_token: data.refresh_token || null,
       wspp_user:          userName,
-      wspp_count:         '0',  // L-5: Use string '0' consistently
+      wspp_count:         0,
       wspp_campaign_id:   campaignId,
       wspp_campaigns:     JSON.stringify(campaigns.map(c => ({ id: c.id, name: c.name || c.candidate_name || c.id }))),
     });
@@ -183,7 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-logout').addEventListener('click', doLogout);
   // L-5: Use string '0' consistently for counter
   $('btn-reset').addEventListener('click', () => {
-    chrome.storage.local.set({ wspp_count: '0' });
+    chrome.storage.local.set({ wspp_count: 0 });
     $('counter').textContent = '0';
   });
   $('btn-phone-edit').addEventListener('click', startPhoneEdit);
