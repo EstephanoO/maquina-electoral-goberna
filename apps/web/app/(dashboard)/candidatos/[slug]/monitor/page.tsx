@@ -3,24 +3,21 @@
 /**
  * GOBERNA — Monitor WA (candidato-scoped)
  *
- * War-room dashboard combining:
- * - 6 phone cards (Vasquez 1-6) in a 3+3 grid
- * - CMS funnel stats bar (pipeline progress)
- * - Live classification feed with inline correction UI
- * - Classification accuracy metrics + category breakdown
+ * War-room dashboard:
+ * - Hero KPI strip (total sent, active phones, classifications, accuracy)
+ * - 6 compact phone cards in a row
+ * - CMS pipeline funnel bar
+ * - Two-column: classification charts (Recharts) + live feed
  *
- * Integrated in the candidato tab bar — no own header/footer.
  * Auto-refreshes phones every 30s + SSE for classifications.
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { Iphone } from "@/components/magicui/iphone";
 import {
   getExtensionMonitor,
   type ExtensionMonitorPhone,
-  type ExtensionMonitorOperator,
 } from "@/lib/services/cms";
 import {
   getClassificationEvents,
@@ -37,29 +34,27 @@ import {
 
 // ── Palette ──────────────────────────────────────────────────────────
 const G = {
-  gold:       "#FFC800",
-  goldDim:    "#CC9F00",
-  goldFaint:  "rgba(255,200,0,0.10)",
+  gold: "#FFC800",
+  goldDim: "#CC9F00",
+  goldFaint: "rgba(255,200,0,0.10)",
   goldBorder: "rgba(255,200,0,0.25)",
-  navyDark:   "#0e2640",
-  bg:         "#060e18",
-  surface:    "#0c1a28",
-  surfaceUp:  "#0f2035",
-  border:     "rgba(255,255,255,0.06)",
-  text:       "#e9eef3",
-  textMid:    "#7a95aa",
-  textDim:    "#334d63",
-  green:      "#22c55e",
-  red:        "#ef5350",
-  blue:       "#3b82f6",
-  orange:     "#f59e0b",
-  purple:     "#a855f7",
-  cyan:       "#06b6d4",
+  bg: "#060e18",
+  surface: "#0c1a28",
+  surfaceUp: "#0f2035",
+  border: "rgba(255,255,255,0.06)",
+  text: "#e9eef3",
+  textMid: "#7a95aa",
+  textDim: "#334d63",
+  green: "#22c55e",
+  red: "#ef5350",
+  blue: "#3b82f6",
+  orange: "#f59e0b",
+  purple: "#a855f7",
+  cyan: "#06b6d4",
 } as const;
 
 // ── Constants ────────────────────────────────────────────────────────
 const SLOTS = ["Vasquez 1", "Vasquez 2", "Vasquez 3", "Vasquez 4", "Vasquez 5", "Vasquez 6"];
-const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif";
 const POLL_PHONES_MS = 30_000;
 const POLL_SSE_MS = 60_000;
 const POLL_FALLBACK_MS = 15_000;
@@ -77,7 +72,6 @@ const EMPTY_PHONE: ExtensionMonitorPhone = {
 // ── Types ────────────────────────────────────────────────────────────
 type CmsStats = { pendiente: number; contactado: number; respondido: number; invalido: number; total: number };
 type SseStatus = "connecting" | "connected" | "disconnected";
-type Tab = "feed" | "metrics";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 function norm(s: string): string {
@@ -95,123 +89,163 @@ function fmtRel(iso: string | null): string {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// PHONE COMPONENTS
+// HERO KPI CARD
 // ══════════════════════════════════════════════════════════════════════
 
-function OperatorRow({ op, maxSent }: { op: ExtensionMonitorOperator; maxSent: number }) {
-  const pct = maxSent > 0 ? (op.wa_sent / maxSent) * 100 : 0;
-  const name = op.full_name.split(" ")[0] ?? op.email.split("@")[0];
+function HeroCard({ value, label, sub, color, glow }: {
+  value: string | number; label: string; sub?: string; color: string; glow?: boolean;
+}) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-      <div style={{ width: 24, height: 24, borderRadius: "50%", flexShrink: 0, background: "rgba(255,200,0,0.12)", border: "1.5px solid rgba(255,200,0,0.30)", color: G.gold, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 900 }}>
-        {(op.full_name[0] ?? "?").toUpperCase()}
+    <div style={{
+      flex: 1, minWidth: 130, padding: "18px 20px",
+      background: `linear-gradient(135deg, ${G.surface} 0%, ${G.surfaceUp} 100%)`,
+      border: `1px solid ${glow ? `${color}40` : G.border}`,
+      borderRadius: 14, position: "relative", overflow: "hidden",
+    }}>
+      {glow && (
+        <div style={{
+          position: "absolute", top: -20, right: -20, width: 80, height: 80,
+          background: `radial-gradient(circle, ${color}15 0%, transparent 70%)`,
+          borderRadius: "50%",
+        }} />
+      )}
+      <div style={{ fontSize: 28, fontWeight: 900, color, letterSpacing: "-1px", lineHeight: 1 }}>
+        {value}
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: G.text, marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
-        <div style={{ height: 3, borderRadius: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${pct}%`, borderRadius: 2, background: "linear-gradient(90deg,#FFC800,#FFE066)", transition: "width 0.6s ease" }} />
+      <div style={{
+        fontSize: 10, fontWeight: 800, color: G.textMid, textTransform: "uppercase",
+        letterSpacing: "0.8px", marginTop: 6,
+      }}>
+        {label}
+      </div>
+      {sub && <div style={{ fontSize: 10, color: G.textDim, marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// COMPACT PHONE CARD
+// ══════════════════════════════════════════════════════════════════════
+
+function PhoneCard({ phone, slotName, maxSent }: {
+  phone: ExtensionMonitorPhone; slotName: string; maxSent: number;
+}) {
+  const active = phone.wa_sent > 0;
+  const pct = maxSent > 0 ? (phone.wa_sent / maxSent) * 100 : 0;
+  const topOp = [...phone.operators].sort((a, b) => b.wa_sent - a.wa_sent)[0];
+
+  return (
+    <div style={{
+      padding: "14px 16px", borderRadius: 12,
+      background: active
+        ? `linear-gradient(135deg, ${G.surface} 0%, rgba(255,200,0,0.04) 100%)`
+        : G.surface,
+      border: `1px solid ${active ? "rgba(255,200,0,0.18)" : G.border}`,
+      transition: "all 0.3s",
+    }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {active && (
+            <div style={{
+              width: 6, height: 6, borderRadius: "50%", background: G.gold,
+              boxShadow: `0 0 8px ${G.gold}`, animation: "gobPulse 2.5s ease-in-out infinite",
+            }} />
+          )}
+          <span style={{
+            fontSize: 11, fontWeight: 900, color: active ? G.gold : G.textDim,
+            letterSpacing: "0.3px",
+          }}>
+            {slotName}
+          </span>
+        </div>
+        <span style={{
+          fontSize: 9, fontWeight: 700, letterSpacing: "0.8px",
+          color: active ? G.green : G.textDim,
+        }}>
+          {active ? "ACTIVO" : "ESPERA"}
+        </span>
+      </div>
+
+      {/* Sent count + bar */}
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+          <span style={{ fontSize: 22, fontWeight: 900, color: active ? G.gold : G.textDim, lineHeight: 1 }}>
+            {phone.wa_sent}
+          </span>
+          <span style={{ fontSize: 10, fontWeight: 600, color: G.textDim, alignSelf: "flex-end" }}>
+            {phone.unique_contacts} contactos
+          </span>
+        </div>
+        <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,0.04)", overflow: "hidden" }}>
+          <div style={{
+            height: "100%", width: `${pct}%`, borderRadius: 2,
+            background: active ? `linear-gradient(90deg, ${G.gold}, #FFE066)` : "transparent",
+            transition: "width 0.6s ease",
+          }} />
         </div>
       </div>
-      <span style={{ flexShrink: 0, minWidth: 20, textAlign: "right", fontSize: 14, fontWeight: 900, color: G.gold }}>{op.wa_sent}</span>
-    </div>
-  );
-}
 
-function PhoneScreen({ phone, slotName }: { phone: ExtensionMonitorPhone; slotName: string }) {
-  const active = phone.wa_sent > 0;
-  const activeOps = [...phone.operators].filter(o => o.wa_sent > 0).sort((a, b) => b.wa_sent - a.wa_sent);
-  const maxOp = activeOps[0]?.wa_sent ?? 0;
-
-  return (
-    <div style={{ width: "100%", height: "100%", background: active ? "linear-gradient(175deg,#0f1d2f 0%,#091422 60%,#050c15 100%)" : "linear-gradient(175deg,#0a1420 0%,#060d18 60%,#030810 100%)", display: "flex", flexDirection: "column", fontFamily: FONT, overflow: "hidden" }}>
-      <div style={{ height: "7%", flexShrink: 0, display: "flex", alignItems: "flex-end", justifyContent: "flex-end", padding: "0 10% 5px" }}>
-        {active && <div style={{ width: 7, height: 7, borderRadius: "50%", background: G.gold, boxShadow: `0 0 8px ${G.gold}`, animation: "gobPulse 2.5s ease-in-out infinite" }} />}
-      </div>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "5% 9% 4%", gap: "4%", overflow: "hidden" }}>
-        <div style={{ fontSize: "clamp(12px,4.5%,17px)", fontWeight: 900, color: active ? G.gold : G.textDim, letterSpacing: "-0.2px", lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{slotName}</div>
-        {active ? (
-          <>
-            <div style={{ display: "flex", gap: "4%" }}>
-              {[{ v: phone.wa_sent, l: "Enviados" }, { v: phone.unique_contacts, l: "Contactos" }].map(({ v, l }) => (
-                <div key={l} style={{ flex: 1, padding: "10% 0", background: "rgba(255,200,0,0.07)", borderRadius: "12%", border: "1px solid rgba(255,200,0,0.18)", display: "flex", flexDirection: "column", alignItems: "center" }}>
-                  <span style={{ fontSize: "clamp(18px,7.5%,30px)", fontWeight: 900, lineHeight: 1, color: G.gold, letterSpacing: "-1px" }}>{v}</span>
-                  <span style={{ fontSize: "clamp(8px,2.8%,11px)", fontWeight: 700, color: G.goldDim, marginTop: "12%", letterSpacing: "0.4px" }}>{l}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ height: 1, background: "linear-gradient(90deg,transparent,rgba(255,200,0,0.18),transparent)" }} />
-            <div style={{ flex: 1, overflow: "hidden" }}>
-              {activeOps.slice(0, 6).map(op => <OperatorRow key={op.operator_id} op={op} maxSent={maxOp} />)}
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "3%", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-              <span style={{ fontSize: "clamp(8px,2.8%,11px)", color: G.textDim }}>Ultimo</span>
-              <span style={{ fontSize: "clamp(8px,2.8%,11px)", fontWeight: 700, color: "rgba(255,200,0,0.55)" }}>{fmtRel(phone.last_event_at)}</span>
-            </div>
-          </>
-        ) : (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8%" }}>
-            <div style={{ fontSize: "clamp(9px,3.2%,12px)", color: G.textDim, textAlign: "center" }}>En espera</div>
-          </div>
-        )}
-      </div>
-      <div style={{ height: "4%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ width: "30%", height: 3, borderRadius: 2, background: active ? "rgba(255,200,0,0.18)" : "rgba(255,255,255,0.06)" }} />
-      </div>
-    </div>
-  );
-}
-
-function PhoneCard({ phone, slotName }: { phone: ExtensionMonitorPhone; slotName: string }) {
-  const active = phone.wa_sent > 0;
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-      <div style={{ width: "100%", filter: active ? "drop-shadow(0 0 22px rgba(255,200,0,0.28)) drop-shadow(0 12px 40px rgba(0,0,0,0.8))" : "drop-shadow(0 6px 24px rgba(0,0,0,0.65))", transition: "filter 0.5s ease" }}>
-        <Iphone frameColor="#000000" screenColor={active ? "#0f1d2f" : "#0a1420"}>
-          <PhoneScreen phone={phone} slotName={slotName} />
-        </Iphone>
-      </div>
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.8px", textTransform: "uppercase", color: active ? G.gold : G.textDim }}>{slotName}</div>
-        {phone.own_number && (
-          <div style={{ marginTop: 3, fontSize: 10, fontWeight: 600, color: G.textMid, fontVariantNumeric: "tabular-nums", letterSpacing: "0.3px" }}>{phone.own_number}</div>
-        )}
-        <div style={{ marginTop: 3, fontSize: 10, fontWeight: 700, letterSpacing: "1.2px", color: active ? G.green : G.textDim }}>{active ? "ACTIVO" : "EN ESPERA"}</div>
+      {/* Operator + last activity */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: G.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "60%" }}>
+          {topOp ? (topOp.full_name.split(" ")[0] ?? topOp.email.split("@")[0]) : "\u2014"}
+        </span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,200,0,0.50)" }}>
+          {fmtRel(phone.last_event_at)}
+        </span>
       </div>
     </div>
   );
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// CMS FUNNEL BAR (compact horizontal)
+// CMS PIPELINE FUNNEL
 // ══════════════════════════════════════════════════════════════════════
 
-function FunnelBar({ stats }: { stats: CmsStats | null }) {
+function PipelineFunnel({ stats }: { stats: CmsStats | null }) {
   if (!stats) return null;
+
   const steps = [
-    { label: "Pendiente", value: stats.pendiente, color: G.textMid },
-    { label: "Contactado", value: stats.contactado, color: G.blue },
-    { label: "Respondido", value: stats.respondido, color: G.cyan },
-    { label: "Invalido", value: stats.invalido, color: G.red },
+    { label: "Pendiente", value: stats.pendiente, color: G.textMid, gradient: "linear-gradient(90deg, #7a95aa, #5a7a90)" },
+    { label: "Contactado", value: stats.contactado, color: G.blue, gradient: "linear-gradient(90deg, #3b82f6, #60a5fa)" },
+    { label: "Respondido", value: stats.respondido, color: G.cyan, gradient: "linear-gradient(90deg, #06b6d4, #22d3ee)" },
+    { label: "Invalido", value: stats.invalido, color: G.red, gradient: "linear-gradient(90deg, #ef5350, #f87171)" },
   ];
   const maxVal = steps.reduce((m, s) => Math.max(m, s.value), 1);
 
   return (
-    <div style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: 10, padding: "10px 16px", marginBottom: 12 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 900, color: G.gold, letterSpacing: "0.6px", textTransform: "uppercase" }}>Pipeline CMS</span>
-        <span style={{ fontSize: 11, fontWeight: 700, color: G.textMid }}>{stats.total.toLocaleString()} contactos</span>
+    <div style={{
+      background: G.surface, border: `1px solid ${G.border}`, borderRadius: 12,
+      padding: "14px 20px",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <span style={{ fontSize: 11, fontWeight: 900, color: G.gold, letterSpacing: "0.6px", textTransform: "uppercase" }}>
+          Pipeline CMS
+        </span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: G.textMid }}>
+          {stats.total.toLocaleString()} contactos
+        </span>
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: 10 }}>
         {steps.map(step => {
           const pct = (step.value / maxVal) * 100;
           return (
             <div key={step.label} style={{ flex: 1 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                <span style={{ fontSize: 9, fontWeight: 700, color: G.textDim }}>{step.label}</span>
-                <span style={{ fontSize: 10, fontWeight: 800, color: step.color }}>{step.value.toLocaleString()}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: G.textDim, textTransform: "uppercase" }}>
+                  {step.label}
+                </span>
+                <span style={{ fontSize: 11, fontWeight: 900, color: step.color }}>
+                  {step.value.toLocaleString()}
+                </span>
               </div>
-              <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,0.04)", overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${pct}%`, borderRadius: 3, background: step.color, opacity: 0.8, transition: "width 0.5s" }} />
+              <div style={{ height: 8, borderRadius: 4, background: "rgba(255,255,255,0.04)", overflow: "hidden" }}>
+                <div style={{
+                  height: "100%", width: `${pct}%`, borderRadius: 4,
+                  background: step.gradient, opacity: 0.9,
+                  transition: "width 0.5s ease",
+                }} />
               </div>
             </div>
           );
@@ -229,32 +263,27 @@ export default function MonitorWaPage() {
   const { campaigns } = useAuth();
   const params = useParams();
   const slug = params.slug as string;
-
-  const campaign   = campaigns.find((c) => c.slug === slug);
+  const campaign = campaigns.find((c) => c.slug === slug);
   const campaignId = campaign?.id ?? null;
 
-  // ── Phone/CMS state ──────────────────────────────────────────────
-  const [phones, setPhones]     = useState<ExtensionMonitorPhone[]>([]);
+  // ── State ───────────────────────────────────────────────────────
+  const [phones, setPhones] = useState<ExtensionMonitorPhone[]>([]);
   const [cmsStats, setCmsStats] = useState<CmsStats | null>(null);
   const [phoneLoading, setPhoneLoading] = useState(false);
-  const [phoneError, setPhoneError]     = useState<string | null>(null);
-  const [lastPhoneAt, setLastPhoneAt]   = useState<Date | null>(null);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
 
-  // ── Classification state ─────────────────────────────────────────
-  const [events, setEvents]           = useState<ClassificationEvent[]>([]);
-  const [classStats, setClassStats]   = useState<ClassificationStats | null>(null);
+  const [events, setEvents] = useState<ClassificationEvent[]>([]);
+  const [classStats, setClassStats] = useState<ClassificationStats | null>(null);
   const [classLoading, setClassLoading] = useState(false);
-  const [classError, setClassError]   = useState<string | null>(null);
-  const [classPage, setClassPage]     = useState(1);
-  const [classTotal, setClassTotal]   = useState(0);
-  const [activeTab, setActiveTab]     = useState<Tab>("feed");
-  const [filters, setFilters]         = useState({ source: "", category: "", vote_class: "" });
-  const [sseStatus, setSseStatus]     = useState<SseStatus>("connecting");
+  const [classError, setClassError] = useState<string | null>(null);
+  const [classPage, setClassPage] = useState(1);
+  const [classTotal, setClassTotal] = useState(0);
+  const [filters, setFilters] = useState({ source: "", category: "", vote_class: "" });
+  const [sseStatus, setSseStatus] = useState<SseStatus>("connecting");
   const [sseEventCount, setSseEventCount] = useState(0);
-  const [lastClassAt, setLastClassAt] = useState<Date | null>(null);
   const statsStaleRef = useRef(false);
 
-  // ── Load phones + CMS stats ──────────────────────────────────────
+  // ── Data loaders ───────────────────────────────────────────────
   const loadPhones = useCallback(async () => {
     if (!campaignId) return;
     setPhoneLoading(true);
@@ -262,7 +291,8 @@ export default function MonitorWaPage() {
     try {
       const [monitorRes, statsRes] = await Promise.all([
         getExtensionMonitor(campaignId),
-        fetch("/api/cms/stats", { credentials: "same-origin", headers: { "x-campaign-id": campaignId } }).then(r => r.json()).catch(() => null),
+        fetch("/api/cms/stats", { credentials: "same-origin", headers: { "x-campaign-id": campaignId } })
+          .then(r => r.json()).catch(() => null),
       ]);
       if (!monitorRes.ok) { setPhoneError(monitorRes.error ?? "Error"); return; }
       setPhones(monitorRes.phones ?? []);
@@ -275,54 +305,41 @@ export default function MonitorWaPage() {
           total: statsRes.total ?? 0,
         });
       }
-      setLastPhoneAt(new Date());
     } finally {
       setPhoneLoading(false);
     }
   }, [campaignId]);
 
-  // ── Load classification events ───────────────────────────────────
   const loadEvents = useCallback(async (pageNum = 1, append = false) => {
     if (!campaignId) return;
     setClassLoading(true);
     setClassError(null);
     const res = await getClassificationEvents(campaignId, {
-      page: pageNum,
-      limit: CLASS_PAGE_SIZE,
+      page: pageNum, limit: CLASS_PAGE_SIZE,
       source: filters.source || undefined,
       category: filters.category || undefined,
       vote_class: filters.vote_class || undefined,
     });
     setClassLoading(false);
-    if (!res.ok) { setClassError(res.error ?? "Error cargando eventos"); return; }
-    if (append) {
-      setEvents(prev => [...prev, ...(res.items ?? [])]);
-    } else {
-      setEvents(res.items ?? []);
-    }
+    if (!res.ok) { setClassError(res.error ?? "Error"); return; }
+    if (append) setEvents(prev => [...prev, ...(res.items ?? [])]);
+    else setEvents(res.items ?? []);
     setClassTotal(res.total ?? 0);
     setClassPage(pageNum);
-    setLastClassAt(new Date());
   }, [campaignId, filters]);
 
-  // ── Load classification stats ────────────────────────────────────
   const loadClassStats = useCallback(async () => {
     if (!campaignId) return;
     const res = await getClassificationStats(campaignId);
-    if (res.ok && res.stats) {
-      setClassStats(res.stats);
-      statsStaleRef.current = false;
-    }
+    if (res.ok && res.stats) { setClassStats(res.stats); statsStaleRef.current = false; }
   }, [campaignId]);
 
-  // ── SSE handler ──────────────────────────────────────────────────
+  // ── SSE ─────────────────────────────────────────────────────────
   const handleSseEvent = useCallback((ev: ClassificationSseEvent) => {
     if (ev.type === "connected") { setSseStatus("connected"); return; }
     if (ev.type === "heartbeat") return;
-
     if (ev.type === "classification.new") {
       setSseEventCount(c => c + 1);
-      setLastClassAt(new Date());
       setEvents(prev => {
         if (prev.some(e => e.id === ev.event.id)) return prev;
         return [ev.event, ...prev].slice(0, CLASS_PAGE_SIZE + 20);
@@ -330,72 +347,55 @@ export default function MonitorWaPage() {
       setClassTotal(t => t + 1);
       statsStaleRef.current = true;
     }
-
     if (ev.type === "classification.corrected") {
       setSseEventCount(c => c + 1);
-      setLastClassAt(new Date());
       setEvents(prev => prev.map(e => e.id === ev.event.id ? { ...e, ...ev.event } : e));
       statsStaleRef.current = true;
     }
   }, []);
 
-  // ── SSE connection ───────────────────────────────────────────────
   useEffect(() => {
     if (!campaignId) return;
     setSseStatus("connecting");
-    const cleanup = connectClassificationStream(
-      campaignId,
-      handleSseEvent,
-      () => setSseStatus("disconnected"),
-    );
-    return cleanup;
+    return connectClassificationStream(campaignId, handleSseEvent, () => setSseStatus("disconnected"));
   }, [campaignId, handleSseEvent]);
 
-  // ── Initial load ─────────────────────────────────────────────────
+  // ── Lifecycle ───────────────────────────────────────────────────
   useEffect(() => { loadPhones(); loadEvents(1); loadClassStats(); }, [loadPhones, loadEvents, loadClassStats]);
-
-  // ── Phone/CMS auto-refresh ───────────────────────────────────────
   useEffect(() => { const id = setInterval(loadPhones, POLL_PHONES_MS); return () => clearInterval(id); }, [loadPhones]);
-
-  // ── Classification auto-refresh (slower when SSE connected) ──────
   useEffect(() => {
-    const interval = sseStatus === "connected" ? POLL_SSE_MS : POLL_FALLBACK_MS;
+    const ms = sseStatus === "connected" ? POLL_SSE_MS : POLL_FALLBACK_MS;
     const id = setInterval(() => {
       if (sseStatus !== "connected") loadEvents(1);
       if (statsStaleRef.current || sseStatus !== "connected") loadClassStats();
-    }, interval);
+    }, ms);
     return () => clearInterval(id);
   }, [sseStatus, loadEvents, loadClassStats]);
 
-  // ── Handlers ─────────────────────────────────────────────────────
+  // ── Handlers ───────────────────────────────────────────────────
   const handleFilterChange = useCallback((key: string, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
   }, []);
-
-  const handleLoadMore = useCallback(() => { loadEvents(classPage + 1, true); }, [loadEvents, classPage]);
-
+  const handleLoadMore = useCallback(() => loadEvents(classPage + 1, true), [loadEvents, classPage]);
   const handleEventUpdate = useCallback((updated: ClassificationEvent) => {
     setEvents(prev => prev.map(ev => ev.id === updated.id ? { ...ev, ...updated } : ev));
   }, []);
 
-  const hasMore = events.length < classTotal;
-
-  // ── Phone slot computation ───────────────────────────────────────
+  // ── Computed ───────────────────────────────────────────────────
   const slots = SLOTS.map(slotName => {
     const match = phones.find(p => norm(p.alias ?? "") === norm(slotName));
     return { slotName, phone: match ?? { ...EMPTY_PHONE, alias: slotName } };
   });
   const activeCount = slots.filter(s => s.phone.wa_sent > 0).length;
-  const totalSent   = slots.reduce((sum, s) => sum + s.phone.wa_sent, 0);
+  const totalSent = slots.reduce((sum, s) => sum + s.phone.wa_sent, 0);
+  const maxPhoneSent = Math.max(...slots.map(s => s.phone.wa_sent), 1);
+  const hasMore = events.length < classTotal;
+  const isLoading = phoneLoading || classLoading;
+  const errorMsg = phoneError || classError;
 
-  const lastAt = lastPhoneAt && lastClassAt
-    ? (lastClassAt > lastPhoneAt ? lastClassAt : lastPhoneAt)
-    : lastPhoneAt ?? lastClassAt;
-
-  // ── No campaign yet ──
   if (!campaignId) {
     return (
-      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", background: G.bg, color: G.textDim, fontFamily: FONT, fontSize: 14 }}>
+      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", background: G.bg, color: G.textDim, fontSize: 14 }}>
         Cargando campana...
       </div>
     );
@@ -406,7 +406,7 @@ export default function MonitorWaPage() {
       <style>{`
         @keyframes gobPulse {
           0%,100% { opacity:1; transform:scale(1); }
-          50%      { opacity:0.4; transform:scale(0.7); }
+          50%     { opacity:0.4; transform:scale(0.7); }
         }
         * { box-sizing:border-box; }
       `}</style>
@@ -414,137 +414,147 @@ export default function MonitorWaPage() {
       <div style={{
         minHeight: "calc(100vh - 96px)",
         background: `radial-gradient(ellipse 90% 40% at 50% -5%, rgba(22,57,96,0.28) 0%, transparent 65%), ${G.bg}`,
-        color: G.text, fontFamily: FONT,
+        color: G.text,
       }}>
-
-        {/* ── Sub-header ── */}
+        {/* ══ Sticky Header Bar ══ */}
         <div style={{
           background: "rgba(9,22,38,0.94)", backdropFilter: "blur(12px)",
-          borderBottom: "1px solid rgba(255,200,0,0.14)", padding: "0 28px",
-          position: "sticky", top: 48, zIndex: 40,
+          borderBottom: "1px solid rgba(255,200,0,0.14)",
+          padding: "0 28px", position: "sticky", top: 48, zIndex: 40,
         }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 52, gap: 16 }}>
-            {/* Left: stats */}
-            <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 22, fontWeight: 900, color: G.gold, letterSpacing: "-0.5px", lineHeight: 1 }}>{totalSent}</div>
-                <div style={{ fontSize: 10, fontWeight: 700, color: G.goldDim, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: 2 }}>Enviados</div>
-              </div>
-              <div style={{ width: 1, height: 28, background: "rgba(255,255,255,0.07)" }} />
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 22, fontWeight: 900, color: G.text, letterSpacing: "-0.5px", lineHeight: 1 }}>{activeCount}<span style={{ fontSize: 13, color: G.textMid, fontWeight: 600 }}>/6</span></div>
-                <div style={{ fontSize: 10, fontWeight: 700, color: G.textMid, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: 2 }}>Activos</div>
-              </div>
-              <div style={{ width: 1, height: 28, background: "rgba(255,255,255,0.07)" }} />
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 22, fontWeight: 900, color: G.gold, letterSpacing: "-0.5px", lineHeight: 1 }}>{classTotal}</div>
-                <div style={{ fontSize: 10, fontWeight: 700, color: G.goldDim, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: 2 }}>Clasificaciones</div>
-              </div>
-              <div style={{ width: 1, height: 28, background: "rgba(255,255,255,0.07)" }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{
-                  width: 7, height: 7, borderRadius: "50%",
-                  background: sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red,
-                  boxShadow: `0 0 6px ${sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red}`,
-                  animation: sseStatus === "connected" ? "gobPulse 2.5s ease-in-out infinite" : "none",
-                }} />
-                <span style={{ fontSize: 11, fontWeight: 700, color: sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red }}>
-                  {sseStatus === "connected" ? "EN VIVO" : sseStatus === "connecting" ? "CONECTANDO" : "OFFLINE"}
-                </span>
-                {sseEventCount > 0 && sseStatus === "connected" && (
-                  <span style={{ fontSize: 9, color: G.textMid }}>({sseEventCount} RT)</span>
-                )}
-              </div>
-            </div>
-
-            {/* Right: tabs + refresh */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              {(["feed", "metrics"] as const).map(tab => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  style={{
-                    padding: "5px 14px", borderRadius: 7,
-                    border: `1px solid ${activeTab === tab ? G.goldBorder : G.border}`,
-                    background: activeTab === tab ? G.goldFaint : "transparent",
-                    color: activeTab === tab ? G.gold : G.textMid,
-                    fontSize: 11, fontWeight: 800, cursor: "pointer",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  {tab === "feed" ? "Feed" : "Metricas"}
-                </button>
-              ))}
-              {lastAt && (
-                <span style={{ fontSize: 11, color: G.textDim, fontVariantNumeric: "tabular-nums" }}>
-                  {lastAt.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 48 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{
+                width: 7, height: 7, borderRadius: "50%",
+                background: sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red,
+                boxShadow: `0 0 6px ${sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red}`,
+                animation: sseStatus === "connected" ? "gobPulse 2.5s ease-in-out infinite" : "none",
+              }} />
+              <span style={{
+                fontSize: 12, fontWeight: 800,
+                color: sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red,
+              }}>
+                {sseStatus === "connected" ? "EN VIVO" : sseStatus === "connecting" ? "CONECTANDO..." : "OFFLINE"}
+              </span>
+              {sseEventCount > 0 && sseStatus === "connected" && (
+                <span style={{ fontSize: 10, color: G.textDim, marginLeft: 4 }}>
+                  {sseEventCount} eventos RT
                 </span>
               )}
-              <button
-                type="button"
-                onClick={() => { loadPhones(); loadEvents(1); loadClassStats(); }}
-                disabled={phoneLoading || classLoading}
-                style={{
-                  padding: "6px 14px", borderRadius: 7,
-                  border: `1px solid ${(phoneLoading || classLoading) ? "rgba(255,200,0,0.12)" : G.goldBorder}`,
-                  background: (phoneLoading || classLoading) ? "transparent" : G.goldFaint,
-                  color: (phoneLoading || classLoading) ? G.textDim : G.gold,
-                  fontSize: 12, cursor: (phoneLoading || classLoading) ? "default" : "pointer",
-                  fontWeight: 800, transition: "all 0.2s",
-                }}
-              >
-                {(phoneLoading || classLoading) ? "\u00B7\u00B7\u00B7" : "\u21BB Actualizar"}
-              </button>
             </div>
+            <button
+              type="button"
+              onClick={() => { loadPhones(); loadEvents(1); loadClassStats(); }}
+              disabled={isLoading}
+              style={{
+                padding: "6px 16px", borderRadius: 8,
+                border: `1px solid ${isLoading ? "rgba(255,200,0,0.12)" : G.goldBorder}`,
+                background: isLoading ? "transparent" : G.goldFaint,
+                color: isLoading ? G.textDim : G.gold,
+                fontSize: 12, fontWeight: 800, cursor: isLoading ? "default" : "pointer",
+                transition: "all 0.2s",
+              }}
+            >
+              {isLoading ? "\u00B7\u00B7\u00B7" : "\u21BB Actualizar"}
+            </button>
           </div>
         </div>
 
-        {/* ── Error ── */}
-        {(phoneError || classError) && (
-          <div style={{ margin: "16px 28px 0", background: "rgba(239,83,80,0.07)", border: "1px solid rgba(239,83,80,0.22)", borderRadius: 10, padding: "10px 16px", fontSize: 13, color: G.red }}>
-            {phoneError || classError}
+        {/* ══ Error Banner ══ */}
+        {errorMsg && (
+          <div style={{
+            margin: "12px 28px 0", background: "rgba(239,83,80,0.07)",
+            border: "1px solid rgba(239,83,80,0.22)", borderRadius: 10,
+            padding: "10px 16px", fontSize: 13, color: G.red,
+          }}>
+            {errorMsg}
           </div>
         )}
 
-        {/* ── Content ── */}
-        <div style={{ padding: "28px 24px 16px", maxWidth: 1200, margin: "0 auto" }}>
+        {/* ══ Content ══ */}
+        <div style={{ padding: "20px 24px 16px", maxWidth: 1400, margin: "0 auto" }}>
 
-          {/* Row 1: 6 phones (3+3) */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "24px 20px", alignItems: "start", marginBottom: 24 }}>
+          {/* ── Row 1: Hero KPIs ── */}
+          <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+            <HeroCard value={totalSent} label="Mensajes Enviados" color={G.gold} glow />
+            <HeroCard
+              value={`${activeCount}/6`}
+              label="Telefonos Activos"
+              color={activeCount >= 4 ? G.green : activeCount >= 2 ? G.orange : G.red}
+              glow={activeCount > 0}
+            />
+            <HeroCard value={classTotal} label="Clasificaciones" color={G.cyan} />
+            <HeroCard
+              value={`${classStats?.accuracy_rate ?? 0}%`}
+              label="Precision IA"
+              sub={`${classStats?.corrections_count ?? 0} correcciones`}
+              color={(classStats?.accuracy_rate ?? 0) >= 90 ? G.green : (classStats?.accuracy_rate ?? 0) >= 70 ? G.orange : G.red}
+            />
+            <HeroCard
+              value={classStats?.last_hour ?? 0}
+              label="Ultima Hora"
+              color={G.green}
+              glow={(classStats?.last_hour ?? 0) > 0}
+            />
+          </div>
+
+          {/* ── Row 2: 6 Phone Cards ── */}
+          <div style={{
+            display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10,
+            marginBottom: 16,
+          }}>
             {slots.map(({ slotName, phone }) => (
-              <PhoneCard key={slotName} phone={phone} slotName={slotName} />
+              <PhoneCard key={slotName} phone={phone} slotName={slotName} maxSent={maxPhoneSent} />
             ))}
           </div>
 
-          {/* Row 2: CMS funnel + classification dashboard */}
-          <FunnelBar stats={cmsStats} />
+          {/* ── Row 3: Pipeline Funnel ── */}
+          <div style={{ marginBottom: 16 }}>
+            <PipelineFunnel stats={cmsStats} />
+          </div>
 
-          {activeTab === "metrics" && (
-            <ClassificationMetrics stats={classStats} />
-          )}
-          {activeTab === "feed" && campaignId && (
-            <ClassificationFeed
-              events={events}
-              campaignId={campaignId}
-              loading={classLoading}
-              hasMore={hasMore}
-              onLoadMore={handleLoadMore}
-              onEventUpdate={handleEventUpdate}
-              filters={filters}
-              onFilterChange={handleFilterChange}
-            />
-          )}
-        </div>
+          {/* ── Row 4: Two-column (Charts + Feed) ── */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
 
-        {/* ── Footer ── */}
-        <div style={{ borderTop: `1px solid ${G.border}`, padding: "12px 28px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 11, color: G.textDim, fontWeight: 600 }}>
-            Monitor WA \u00B7 Phones {POLL_PHONES_MS / 1000}s \u00B7 SSE {sseStatus === "connected" ? "activo" : "inactivo"} \u00B7 Poll {sseStatus === "connected" ? POLL_SSE_MS / 1000 : POLL_FALLBACK_MS / 1000}s
-          </span>
-          <span style={{ fontSize: 11, color: G.textDim }}>
-            {lastAt ? `Actualizado: ${lastAt.toLocaleTimeString("es-PE")}` : "\u2014"}
-          </span>
+            {/* Left: Classification Metrics (Charts) */}
+            <div>
+              <div style={{
+                fontSize: 12, fontWeight: 900, color: G.gold, letterSpacing: "0.6px",
+                textTransform: "uppercase", marginBottom: 12, paddingLeft: 4,
+              }}>
+                Metricas de Clasificacion
+              </div>
+              <ClassificationMetrics stats={classStats} />
+            </div>
+
+            {/* Right: Live Feed */}
+            <div>
+              <div style={{
+                fontSize: 12, fontWeight: 900, color: G.gold, letterSpacing: "0.6px",
+                textTransform: "uppercase", marginBottom: 12, paddingLeft: 4,
+                display: "flex", alignItems: "center", gap: 8,
+              }}>
+                Feed en Vivo
+                {sseStatus === "connected" && (
+                  <span style={{
+                    width: 6, height: 6, borderRadius: "50%", background: G.green,
+                    boxShadow: `0 0 6px ${G.green}`, display: "inline-block",
+                    animation: "gobPulse 2.5s ease-in-out infinite",
+                  }} />
+                )}
+              </div>
+              <ClassificationFeed
+                events={events}
+                campaignId={campaignId}
+                loading={classLoading}
+                hasMore={hasMore}
+                onLoadMore={handleLoadMore}
+                onEventUpdate={handleEventUpdate}
+                filters={filters}
+                onFilterChange={handleFilterChange}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </>
