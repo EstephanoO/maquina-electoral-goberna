@@ -58,8 +58,8 @@ export default function CandidatoSlugLayout({ children }: { children: React.Reac
   const activeTab: TabKey =
     (TABS.find((t) => pathname.includes(`/${t.key}`))?.key as TabKey) ?? "tierra";
   const isTierra = pathname.includes("/tierra");
-  const isDigitalValidation = pathname.includes("/validacion");
-  const visibleTabs = isDigitalValidation
+  const isDigitalArea = !isTierra;
+  const visibleTabs = isDigitalArea
     ? TABS.filter((tab) => tab.key !== "tierra" && tab.key !== "cms-metrics")
     : TABS;
 
