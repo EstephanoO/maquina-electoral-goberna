@@ -50,8 +50,8 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["admin", "candidato"], section: "main", visibility: "always" },
-  { icon: <DashboardIcon />, label: "Dashboard", href: (slug) => `/candidatos/${slug}/tierra`, roles: ["admin", "candidato", "consultor"], section: "main", visibility: "campaign" },
-  { icon: <ValidacionIcon />, label: "Validacion", href: (slug) => `/candidatos/${slug}/validacion`, roles: ["admin", "candidato", "consultor", "agente"], section: "main", visibility: "campaign" },
+  { icon: <DashboardIcon />, label: "Dashboard", href: (slug) => `/candidatos/${slug}/tierra`, roles: ["admin", "candidato", "consultor", "agente"], section: "main", visibility: "campaign" },
+  { icon: <ValidacionIcon />, label: "Validacion", href: (slug) => `/candidatos/${slug}/validacion`, roles: ["admin", "candidato", "consultor"], section: "main", visibility: "campaign" },
   { icon: <CmsIcon />, label: "CMS", href: "/cms", roles: ["admin", "candidato"], section: "main", visibility: "campaign" },
   // Admin-only: visible only in Admin General mode
   { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin", visibility: "global" },

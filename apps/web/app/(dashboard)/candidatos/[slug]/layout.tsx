@@ -1,17 +1,36 @@
 "use client";
 
 import { useParams, usePathname, useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useAuth } from "../../../../lib/auth-context";
 
 /* ── Tab config ─────────────────────────────────────────────────── */
 
-const TABS = [
-  { key: "tierra", label: "TERRITORIO", icon: MapPinIcon },
-  { key: "analytics", label: "ANALYTICS", icon: MonitorIcon },
-  { key: "cms-metrics", label: "DIGITAL", icon: CmsIcon },
-  { key: "monitor", label: "MONITOR WA", icon: WhatsAppIcon },
+type UIRole = "admin" | "consultor" | "candidato" | "agente";
+
+function mapBackendRoleToUI(backendRole: string): UIRole {
+  switch (backendRole) {
+    case "admin":
+      return "admin";
+    case "consultor":
+      return "consultor";
+    case "supervisor":
+    case "jefe_campana":
+    case "candidato":
+      return "candidato";
+    default:
+      return "agente";
+  }
+}
+
+const ALL_TABS = [
+  { key: "tierra", label: "TERRITORIO", icon: MapPinIcon, roles: ["admin", "consultor", "candidato", "agente"] as UIRole[] },
+  { key: "analytics", label: "ANALYTICS", icon: MonitorIcon, roles: ["admin", "consultor", "candidato"] as UIRole[] },
+  { key: "cms-metrics", label: "DIGITAL", icon: CmsIcon, roles: ["admin", "consultor", "candidato"] as UIRole[] },
+  { key: "monitor", label: "MONITOR WA", icon: WhatsAppIcon, roles: ["admin", "consultor", "candidato"] as UIRole[] },
 ] as const;
 
-type TabKey = (typeof TABS)[number]["key"];
+type TabKey = (typeof ALL_TABS)[number]["key"];
 
 /* ── Layout ─────────────────────────────────────────────────────── */
 
@@ -20,6 +39,21 @@ export default function CandidatoSlugLayout({ children }: { children: React.Reac
   const pathname = usePathname();
   const router = useRouter();
   const slug = params.slug as string;
+  const { user } = useAuth();
+
+  const uiRole: UIRole = mapBackendRoleToUI(user?.role ?? "agente_campo");
+  const TABS = ALL_TABS.filter((tab) => tab.roles.includes(uiRole));
+
+  // Redirect restricted roles away from tabs they can't access
+  useEffect(() => {
+    if (!user) return;
+    const currentTabKey = ALL_TABS.find((t) => pathname.includes(`/${t.key}`))?.key;
+    if (!currentTabKey) return; // on a sub-route we don't control (e.g. /validacion)
+    const allowed = ALL_TABS.filter((t) => t.roles.includes(uiRole)).map((t) => t.key);
+    if (!allowed.includes(currentTabKey)) {
+      router.replace(`/candidatos/${slug}/${allowed[0] ?? "tierra"}`);
+    }
+  }, [pathname, uiRole, slug, router, user]);
 
   const activeTab: TabKey =
     (TABS.find((t) => pathname.includes(`/${t.key}`))?.key as TabKey) ?? "tierra";
