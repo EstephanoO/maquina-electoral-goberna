@@ -21,7 +21,6 @@ import type { TierraViewMode } from "./_components/tierra-header";
 import { useAgentSSE } from "./_components/hooks/use-agent-sse";
 import { usePipelineState } from "./_components/hooks/use-pipeline-state";
 import { useEnrichedAgents } from "./_components/hooks/use-enriched-agents";
-import { useActivityLog } from "./_components/hooks/use-activity-log";
 import { useSSELocations } from "./_components/hooks/use-sse-locations";
 import { useDrillBounds } from "./_components/hooks/use-drill-bounds";
 
@@ -103,7 +102,7 @@ export default function TierraPage() {
   const pipeline = usePipelineState(campaignId, forms);
 
   // ─── SSE: live agent locations, offline events, background status ───
-  const { locations, sseEvents, backgroundAgentIds, handleSSEUpdate, handleAgentOffline, handleAgentStatus } =
+  const { locations, backgroundAgentIds, handleSSEUpdate, handleAgentOffline, handleAgentStatus } =
     useSSELocations(initialLocations);
   useAgentSSE(campaignId ?? null, handleSSEUpdate, handleAgentOffline, handleAgentStatus);
 
@@ -116,7 +115,6 @@ export default function TierraPage() {
   const [mapTheme, setMapTheme] = useState<MapTheme>("dark");
   const isFullscreen = true;
   const [showControlsPanel, setShowControlsPanel] = useState(false);
-  const [showRightPanel, setShowRightPanel] = useState(false);
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [drillState, setDrillState] = useState<DrillState>(
@@ -155,7 +153,6 @@ export default function TierraPage() {
   const enrichedAgentsRef = useRef(enrichedAgents);
   enrichedAgentsRef.current = enrichedAgents;
 
-  const flyToPoint = useCallback((lng: number, lat: number, zoom: number) => { mapHandleRef.current?.flyToPoint(lng, lat, zoom); }, []);
   const flyToFromDatos = useCallback((lng: number, lat: number, tooltipData?: PinnedTooltipData) => {
     setViewMode("campo");
     setActiveLayer("datos");
@@ -164,7 +161,6 @@ export default function TierraPage() {
       if (tooltipData) mapHandleRef.current?.showPinnedTooltip(tooltipData);
     }, 120);
   }, []);
-  const { logEntries, handleLogEntryClick } = useActivityLog(forms, stats, flyToPoint, sseEvents);
 
   // ─── Handlers ───
   const handleLayerChange = useCallback((layer: ActiveLayer) => {
@@ -315,71 +311,32 @@ export default function TierraPage() {
               type="button"
               onClick={() => setShowControlsPanel((prev) => !prev)}
               aria-label={showControlsPanel ? "Ocultar controles" : "Mostrar controles"}
-              className={`cursor-pointer rounded-md border w-9 h-9 p-0 flex items-center justify-center backdrop-blur-sm transition-colors ${
+              className={`cursor-pointer rounded-r-2xl border w-8 h-12 p-0 flex items-center justify-center shadow-lg transition-colors ${
                 mapTheme === "dark"
                   ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
                   : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
               }`}
               title={showControlsPanel ? "Ocultar controles" : "Mostrar controles"}
             >
-              {showControlsPanel ? (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
-                  <circle cx="12" cy="12" r="3" />
-                  <line x1="4" y1="20" x2="20" y2="4" />
-                </svg>
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowRightPanel((prev) => !prev)}
-              aria-label={showRightPanel ? "Ocultar panel derecho" : "Mostrar panel derecho"}
-              className={`cursor-pointer rounded-md border w-9 h-9 p-0 flex items-center justify-center backdrop-blur-sm transition-colors ${
-                mapTheme === "dark"
-                  ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
-                  : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
-              }`}
-              title={showRightPanel ? "Ocultar panel derecho" : "Mostrar panel derecho"}
-            >
-              {showRightPanel ? (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
-                  <circle cx="12" cy="12" r="3" />
-                  <line x1="4" y1="20" x2="20" y2="4" />
-                </svg>
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              )}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`transition-transform duration-300 ${showControlsPanel ? "" : "rotate-180"}`}>
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
             </button>
             {showControlsPanel ? (
               <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
             ) : null}
           </div>
-          {showRightPanel ? (
-            <CampoOverlay
-              agents={filteredAgents}
-              connectedCount={connectedCount}
-              logEntries={logEntries}
-              formCount={drillBounds ? filteredFormPoints.length : stats.totals.forms_count}
-              primaryColor={campaign.color_primario}
-              selectedAgentId={selectedAgentId}
-              onAgentClick={handleAgentListClick}
-              onLogEntryClick={handleLogEntryClick}
-              userRole={user?.role}
-              onDeleteForm={handleDeleteForm}
-              onUpdateForm={handleUpdateForm}
-              mapTheme={mapTheme}
-              drillState={drillState}
-            />
-          ) : null}
+          <CampoOverlay
+            agents={filteredAgents}
+            connectedCount={connectedCount}
+            formCount={drillBounds ? filteredFormPoints.length : stats.totals.forms_count}
+            primaryColor={campaign.color_primario}
+            selectedAgentId={selectedAgentId}
+            onAgentClick={handleAgentListClick}
+            mapTheme={mapTheme}
+            drillState={drillState}
+            initialVisible={false}
+          />
         </div>
       ) : viewMode === "pipeline" ? (
         <PipelineView

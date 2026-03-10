@@ -1,40 +1,30 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import type { EnrichedAgent, LogEntry, AgentStatus, MapTheme, DrillState } from "./types";
+import { useState, useMemo } from "react";
+import type { EnrichedAgent, AgentStatus, MapTheme, DrillState } from "./types";
 import { STATUS_CFG } from "./constants";
 import {
-  Glass, Kpi, CardHeader, AgentRow, RankingRow, LogRow, MoreBtn, SCROLL_MAX,
+  Glass, Kpi, CardHeader, AgentRow, RankingRow, MoreBtn, SCROLL_MAX,
 } from "./campo-overlay-parts";
-import { LogModal } from "./log-modal";
 
 /* ========== Types ========== */
 
 type Props = {
   agents: EnrichedAgent[];
   connectedCount: number;
-  logEntries: LogEntry[];
   formCount: number;
   primaryColor: string;
   selectedAgentId: string | null;
   onAgentClick: (agentId: string) => void;
-  onLogEntryClick: (entry: LogEntry) => void;
-  /** User role for permission checks */
-  userRole?: string;
-  /** Delete handler — called from modal */
-  onDeleteForm?: (formId: string, campaignId: string) => Promise<boolean>;
-  /** Update handler — called from modal */
-  onUpdateForm?: (formId: string, campaignId: string, updates: Record<string, string>) => Promise<boolean>;
   mapTheme?: MapTheme;
   /** Current drill state — shows zone filter banner when level > 0 */
   drillState?: DrillState;
+  initialVisible?: boolean;
 };
 
 /* ========== Constants ========== */
 
 const PANEL_W = 300;
-const LOG_COLLAPSED = 3;
-const LOG_EXPANDED = 12;
 const AGENTS_COLLAPSED = 4;
 const RANKING_COLLAPSED = 5;
 const RANKING_EXPANDED = 15;
@@ -42,24 +32,14 @@ const RANKING_EXPANDED = 15;
 /* ========== Component ========== */
 
 export function CampoOverlay({
-  agents, connectedCount, logEntries, formCount,
-  primaryColor, selectedAgentId, onAgentClick, onLogEntryClick,
-  userRole, onDeleteForm, onUpdateForm, mapTheme = "dark", drillState,
+  agents, connectedCount, formCount,
+  primaryColor, selectedAgentId, onAgentClick,
+  mapTheme = "dark", drillState,
+  initialVisible = true,
 }: Props) {
-  const [visible, setVisible] = useState(true);
+  const [visible, setVisible] = useState(initialVisible);
   const [agentsOpen, setAgentsOpen] = useState(false);
   const [rankingOpen, setRankingOpen] = useState(false);
-  const [logOpen, setLogOpen] = useState(false);
-  const [logModalOpen, setLogModalOpen] = useState(false);
-  const logListRef = useRef<HTMLDivElement>(null);
-  const prevLogCount = useRef(logEntries.length);
-
-  useEffect(() => {
-    if (logEntries.length > prevLogCount.current && logListRef.current) {
-      logListRef.current.scrollTop = 0;
-    }
-    prevLogCount.current = logEntries.length;
-  }, [logEntries.length]);
 
   const sortedAgents = useMemo(() => {
     const order: Record<string, number> = { connected: 0, idle: 1, inactive: 2 };
@@ -78,10 +58,6 @@ export function CampoOverlay({
 
   const visibleAgents = agentsOpen ? sortedAgents : sortedAgents.slice(0, AGENTS_COLLAPSED);
   const visibleRanking = rankingOpen ? rankedAgents.slice(0, RANKING_EXPANDED) : rankedAgents.slice(0, RANKING_COLLAPSED);
-
-  // Inline log: only form entries (datos subidos)
-  const formLogEntries = useMemo(() => logEntries.filter((e) => e.type === "form_new" || e.type === "form_submitted"), [logEntries]);
-  const visibleLogs = logOpen ? formLogEntries.slice(0, LOG_EXPANDED) : formLogEntries.slice(0, LOG_COLLAPSED);
 
   const selectedAgent = selectedAgentId ? agents.find((a) => a.id === selectedAgentId) : null;
   const isDark = mapTheme === "dark";
@@ -105,7 +81,7 @@ export function CampoOverlay({
       <button
         type="button"
         onClick={() => setVisible(!visible)}
-        className="shrink-0 mt-2 -mr-0.5 w-8 h-12 rounded-l-2xl flex items-center justify-center cursor-pointer shadow-lg transition-colors"
+        className="shrink-0 mt-4 -mr-0.5 w-8 h-12 rounded-l-2xl flex items-center justify-center cursor-pointer shadow-lg transition-colors"
         style={{
           background: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.35)",
           backdropFilter: "blur(16px)",
@@ -236,50 +212,7 @@ export function CampoOverlay({
           </Glass>
         )}
 
-        {/* ═══ Log card — datos subidos ═══ */}
-        <Glass mapTheme={mapTheme}>
-          <div className="flex items-center">
-            <CardHeader onClick={() => setLogOpen(!logOpen)} open={logOpen} mapTheme={mapTheme}>
-              <span className={`font-semibold text-[12px] ${isDark ? "text-slate-100" : "text-slate-700"}`}>Datos</span>
-              <span className="ml-1.5 text-[11px] font-bold tabular-nums mr-auto" style={{ color: accentColor }}>{formLogEntries.length}</span>
-            </CardHeader>
-            <button
-              type="button"
-              onClick={() => setLogModalOpen(true)}
-              className="shrink-0 mr-3 text-[9px] font-semibold uppercase tracking-wider cursor-pointer transition-colors hover:opacity-80"
-              style={{ color: accentColor }}
-              title="Ver registro completo"
-            >
-              Ver todos
-            </button>
-          </div>
-
-          <div ref={logListRef} className={logOpen ? "max-h-[340px] overflow-y-auto" : ""}>
-            {visibleLogs.length === 0 ? (
-              <p className={`px-3 py-3 text-center text-[11px] italic ${isDark ? "text-slate-400/90" : "text-slate-400/80"}`}>Sin registros</p>
-            ) : (
-              visibleLogs.map((e) => (
-                <LogRow key={e.id} mapTheme={mapTheme} entry={e} onLogEntryClick={onLogEntryClick} />
-              ))
-            )}
-          </div>
-
-          {!logOpen && formLogEntries.length > LOG_COLLAPSED && (
-            <MoreBtn mapTheme={mapTheme} count={formLogEntries.length - LOG_COLLAPSED} color={accentColor} onClick={() => setLogOpen(true)} />
-          )}
-        </Glass>
       </div>
-
-      {/* ═══ Full log modal ═══ */}
-      <LogModal
-        open={logModalOpen}
-        onClose={() => setLogModalOpen(false)}
-        entries={logEntries}
-        onEntryClick={(entry) => { setLogModalOpen(false); onLogEntryClick(entry); }}
-        userRole={userRole}
-        onDelete={onDeleteForm}
-        onUpdate={onUpdateForm}
-      />
     </div>
   );
 }
