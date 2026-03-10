@@ -24,7 +24,7 @@ const PROTECTED_PREFIXES = [
 ];
 
 // ── Public routes (no auth required) ────────────────────────────────
-const PUBLIC_PATHS = new Set(["/", "/login", "/register", "/onboarding", "/descargar", "/extension", "/voluntarios", "/extension-monitor"]);
+const PUBLIC_PATHS = new Set(["/", "/login", "/register", "/onboarding", "/descargar", "/extension", "/voluntarios"]);
 
 function isProtectedRoute(pathname: string): boolean {
   // Exact public paths
@@ -33,7 +33,7 @@ function isProtectedRoute(pathname: string): boolean {
   // Public prefixes
   if (pathname.startsWith("/mapa")) return false;
   if (pathname.startsWith("/invite")) return false;
-  if (pathname.startsWith("/extension-monitor")) return false;
+
 
   // Static assets / API / internal Next.js routes — skip middleware
   if (

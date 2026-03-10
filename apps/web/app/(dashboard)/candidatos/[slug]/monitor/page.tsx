@@ -33,7 +33,7 @@ import {
 import {
   ClassificationMetrics,
   ClassificationFeed,
-} from "@/app/(public)/extension-monitor/clasificaciones/_components";
+} from "./_components";
 
 // ── Palette ──────────────────────────────────────────────────────────
 const G = {
@@ -262,7 +262,7 @@ export default function MonitorWaPage() {
     try {
       const [monitorRes, statsRes] = await Promise.all([
         getExtensionMonitor(campaignId),
-        fetch(`/api/cms/stats?campaign_id=${campaignId}`, { credentials: "same-origin" }).then(r => r.json()).catch(() => null),
+        fetch("/api/cms/stats", { credentials: "same-origin", headers: { "x-campaign-id": campaignId } }).then(r => r.json()).catch(() => null),
       ]);
       if (!monitorRes.ok) { setPhoneError(monitorRes.error ?? "Error"); return; }
       setPhones(monitorRes.phones ?? []);
