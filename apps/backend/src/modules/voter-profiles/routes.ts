@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { AppEnv } from "../../config/env";
+import type { AuthenticatedRequest } from "../../infra/auth";
 import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
 import * as repo from "./repository";
@@ -13,8 +14,10 @@ export function buildVoterProfileRoutes(_env: AppEnv): FastifyPluginAsync {
       preHandler: [app.authenticate, authorize({ requireCampaign: true })],
     }, async (request, reply) => {
       const requestId = String(request.id);
-      const authed = (request as any).authed;
-      const campaignId = authed.campaignId;
+      const campaignId = request.activeCampaignId;
+      if (!campaignId) {
+        return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+      }
 
       const parsed = listQuerySchema.safeParse(request.query);
       if (!parsed.success) {
@@ -49,8 +52,10 @@ export function buildVoterProfileRoutes(_env: AppEnv): FastifyPluginAsync {
       preHandler: [app.authenticate, authorize({ requireCampaign: true })],
     }, async (request, reply) => {
       const requestId = String(request.id);
-      const authed = (request as any).authed;
-      const campaignId = authed.campaignId;
+      const campaignId = request.activeCampaignId;
+      if (!campaignId) {
+        return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+      }
 
       try {
         const stats = await repo.getStats(campaignId);
@@ -75,16 +80,21 @@ export function buildVoterProfileRoutes(_env: AppEnv): FastifyPluginAsync {
         return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", parsed.error.message));
       }
 
-      const profile = await repo.getById(parsed.data.id);
-      if (!profile) {
-        return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "Perfil no encontrado"));
-      }
+      try {
+        const profile = await repo.getById(parsed.data.id);
+        if (!profile) {
+          return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "Perfil no encontrado"));
+        }
 
-      return reply.code(200).send({
-        ok: true,
-        request_id: requestId,
-        profile,
-      });
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          profile,
+        });
+      } catch (err) {
+        request.log.error({ err }, "voter-profiles getById error");
+        return reply.code(500).send(errorPayload(requestId, "UPSTREAM_ERROR", "Error consultando perfil"));
+      }
     });
 
     // ── PUT /api/voter-profiles/:id — Update profile (manual edit) ──
@@ -92,6 +102,8 @@ export function buildVoterProfileRoutes(_env: AppEnv): FastifyPluginAsync {
       preHandler: [app.authenticate, authorize({ requireCampaign: true })],
     }, async (request, reply) => {
       const requestId = String(request.id);
+      const authed = request as unknown as AuthenticatedRequest;
+
       const paramsParsed = idParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
         return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", paramsParsed.error.message));
@@ -102,42 +114,46 @@ export function buildVoterProfileRoutes(_env: AppEnv): FastifyPluginAsync {
         return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", bodyParsed.error.message));
       }
 
-      const { pipeline_status, ...rest } = bodyParsed.data;
-      const authed = (request as any).authed;
+      try {
+        const { pipeline_status, ...rest } = bodyParsed.data;
 
-      let profile: repo.VoterProfile | null = null;
+        let profile: repo.VoterProfile | null = null;
 
-      // Update fields first
-      if (Object.keys(rest).length > 0) {
-        const updates = { ...rest } as Record<string, unknown>;
-        if (rest.vote_class !== undefined) {
-          updates.vote_class_source = "manual";
+        // Update fields first
+        if (Object.keys(rest).length > 0) {
+          const updates = { ...rest } as Record<string, unknown>;
+          if (rest.vote_class !== undefined) {
+            updates.vote_class_source = "manual";
+          }
+          profile = await repo.update(paramsParsed.data.id, updates as any);
         }
-        profile = await repo.update(paramsParsed.data.id, updates as any);
-      }
 
-      // Then update pipeline status if provided
-      if (pipeline_status) {
-        profile = await repo.updatePipelineStatus(
-          paramsParsed.data.id,
-          pipeline_status,
-          authed.userId,
-        );
-      }
+        // Then update pipeline status if provided
+        if (pipeline_status) {
+          profile = await repo.updatePipelineStatus(
+            paramsParsed.data.id,
+            pipeline_status,
+            authed.userId,
+          );
+        }
 
-      if (!profile) {
-        profile = await repo.getById(paramsParsed.data.id);
-      }
+        if (!profile) {
+          profile = await repo.getById(paramsParsed.data.id);
+        }
 
-      if (!profile) {
-        return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "Perfil no encontrado"));
-      }
+        if (!profile) {
+          return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "Perfil no encontrado"));
+        }
 
-      return reply.code(200).send({
-        ok: true,
-        request_id: requestId,
-        profile,
-      });
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          profile,
+        });
+      } catch (err) {
+        request.log.error({ err }, "voter-profiles update error");
+        return reply.code(500).send(errorPayload(requestId, "UPSTREAM_ERROR", "Error actualizando perfil"));
+      }
     });
 
     // ── PUT /api/voter-profiles/:id/status — Quick pipeline status change ──
@@ -145,6 +161,8 @@ export function buildVoterProfileRoutes(_env: AppEnv): FastifyPluginAsync {
       preHandler: [app.authenticate, authorize({ requireCampaign: true })],
     }, async (request, reply) => {
       const requestId = String(request.id);
+      const authed = request as unknown as AuthenticatedRequest;
+
       const paramsParsed = idParamSchema.safeParse(request.params);
       if (!paramsParsed.success) {
         return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", paramsParsed.error.message));
@@ -155,22 +173,26 @@ export function buildVoterProfileRoutes(_env: AppEnv): FastifyPluginAsync {
         return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", bodyParsed.error.message));
       }
 
-      const authed = (request as any).authed;
-      const profile = await repo.updatePipelineStatus(
-        paramsParsed.data.id,
-        bodyParsed.data.status,
-        authed.userId,
-      );
+      try {
+        const profile = await repo.updatePipelineStatus(
+          paramsParsed.data.id,
+          bodyParsed.data.status,
+          authed.userId,
+        );
 
-      if (!profile) {
-        return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "Perfil no encontrado"));
+        if (!profile) {
+          return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "Perfil no encontrado"));
+        }
+
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          profile,
+        });
+      } catch (err) {
+        request.log.error({ err }, "voter-profiles status update error");
+        return reply.code(500).send(errorPayload(requestId, "UPSTREAM_ERROR", "Error actualizando status"));
       }
-
-      return reply.code(200).send({
-        ok: true,
-        request_id: requestId,
-        profile,
-      });
     });
   };
 }
