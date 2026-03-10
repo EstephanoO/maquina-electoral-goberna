@@ -127,22 +127,30 @@ window.addEventListener('message', (e) => {
   }
 
   // --- WSPP_CLASSIFY (operador clasifica desde overlay) ---
+  // S-6: Retry with backoff if SW is sleeping (400ms → 800ms → 1600ms)
   if (e.data?.type === 'WSPP_CLASSIFY') {
-    chrome.runtime.sendMessage(
-      { type: 'WSPP_CLASSIFY', payload: e.data.payload },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          window.postMessage({ type: 'WSPP_CLASSIFY_RESULT', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
-          return;
+    function tryClassify(attemptsLeft, delay) {
+      chrome.runtime.sendMessage(
+        { type: 'WSPP_CLASSIFY', payload: e.data.payload },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            if (attemptsLeft > 0 && chrome.runtime.lastError.message?.includes('Receiving end does not exist')) {
+              setTimeout(() => tryClassify(attemptsLeft - 1, delay * 2), delay);
+              return;
+            }
+            window.postMessage({ type: 'WSPP_CLASSIFY_RESULT', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+            return;
+          }
+          window.postMessage({
+            type: 'WSPP_CLASSIFY_RESULT',
+            ok: response?.ok ?? false,
+            payload: response?.item ?? null,
+            error: response?.error ?? null,
+          }, WA_ORIGIN);
         }
-        window.postMessage({
-          type: 'WSPP_CLASSIFY_RESULT',
-          ok: response?.ok ?? false,
-          payload: response?.item ?? null,
-          error: response?.error ?? null,
-        }, WA_ORIGIN);
-      }
-    );
+      );
+    }
+    tryClassify(3, 400);
     return;
   }
 });

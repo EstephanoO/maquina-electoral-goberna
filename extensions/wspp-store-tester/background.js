@@ -1423,10 +1423,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   };
   _sentDedup.set(dedupKey, entry);
 
-  // Acknowledge immediately (counter incremented when actually processed)
-  // We increment eagerly here so popup count stays responsive
+  // Acknowledge immediately — actual counter increment happens in processSentEvent
+  // Return current count (will update asynchronously once processed)
   chrome.storage.local.get(['wspp_count'], (data) => {
-    sendResponse({ ok: true, count: (data.wspp_count ?? 0) + 1 });
+    sendResponse({ ok: true, count: data.wspp_count ?? 0 });
   });
 
   return true; // keep sendResponse alive for async storage callback

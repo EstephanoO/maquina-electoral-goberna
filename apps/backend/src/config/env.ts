@@ -66,6 +66,8 @@ export type AppEnv = {
   telegramChatId: string;
   // Gemini — clasificacion AI de mensajes (opcional, Gemini 2.5 Flash Lite)
   geminiApiKey: string;
+  // ElevenLabs — TTS proxy para notas de voz (opcional)
+  elevenlabsApiKey: string;
 };
 
 function toNumber(value: string | undefined, fallback: number): number {
@@ -182,5 +184,6 @@ export function getEnv(): AppEnv {
     telegramBotToken: (process.env.TELEGRAM_BOT_TOKEN ?? "").trim(),
     telegramChatId: (process.env.TELEGRAM_CHAT_ID ?? "").trim(),
     geminiApiKey: (process.env.GEMINI_API_KEY ?? "").trim(),
+    elevenlabsApiKey: (process.env.ELEVENLABS_API_KEY ?? "").trim(),
   };
 }

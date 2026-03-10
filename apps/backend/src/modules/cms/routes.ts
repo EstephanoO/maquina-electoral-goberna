@@ -11,6 +11,21 @@ import { pool } from "../../db";
 import * as repo from "./repository";
 import { buildCmsChatWsRoutes } from "./ws-chat";
 
+// ── SSE CORS origin validation ───────────────────────────────────────
+// reply.raw bypasses @fastify/cors, so we validate origin manually.
+function isSseOriginAllowed(origin: string, env: AppEnv): boolean {
+  // In dev, allow all origins
+  if (env.nodeEnv !== "production") return true;
+  return env.frontendOrigins.some((allowed) => {
+    if (allowed.includes("*")) {
+      // Pattern like "https://*.vercel.app"
+      const regex = new RegExp("^" + allowed.replace(/\*/g, "[^.]+") + "$");
+      return regex.test(origin);
+    }
+    return allowed === origin;
+  });
+}
+
 // ── Schemas ─────────────────────────────────────────────────────────
 
 const signalFlagsSchema = z.object({
@@ -68,17 +83,38 @@ function broadcastToCampaign(campaignId: string, event: string, payload: unknown
   }
 }
 
+// ── In-memory caches for hot-path data ──────────────────────────────
+// WA phones change ~never; cache for 60s to avoid DB query per extension-event.
+const WA_PHONES_CACHE_TTL_MS = 60_000;
+const waPhonesCacheMap = new Map<string, { phones: { number: string }[]; ts: number }>();
+
+async function getCachedWaPhones(campaignId: string): Promise<{ number: string }[]> {
+  const cached = waPhonesCacheMap.get(campaignId);
+  if (cached && Date.now() - cached.ts < WA_PHONES_CACHE_TTL_MS) return cached.phones;
+  const phones = await repo.listWaPhones(campaignId);
+  waPhonesCacheMap.set(campaignId, { phones, ts: Date.now() });
+  return phones;
+}
+
+// Operator emails don't change mid-session; cache for 5 min.
+const OPERATOR_EMAIL_CACHE_TTL_MS = 5 * 60_000;
+const operatorEmailCache = new Map<string, { email: string; ts: number }>();
+
 /**
  * After a mutation, resolve claimed_by_email via a lightweight query
  * so the SSE payload includes operator attribution.
  */
 async function resolveOperatorEmail(userId: string): Promise<string> {
+  const cached = operatorEmailCache.get(userId);
+  if (cached && Date.now() - cached.ts < OPERATOR_EMAIL_CACHE_TTL_MS) return cached.email;
   try {
     const { rows } = await pool.query<{ email: string }>(
       `SELECT email FROM users WHERE id = $1`,
       [userId],
     );
-    return rows[0]?.email ?? "";
+    const email = rows[0]?.email ?? "";
+    operatorEmailCache.set(userId, { email, ts: Date.now() });
+    return email;
   } catch {
     return "";
   }
@@ -673,8 +709,9 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
         reply.raw.setHeader("X-Accel-Buffering", "no");
 
         // CORS headers for SSE — reply.raw bypasses @fastify/cors plugin
+        // Validate origin against allowed frontendOrigins
         const origin = request.headers.origin;
-        if (origin) {
+        if (origin && isSseOriginAllowed(origin, env)) {
           reply.raw.setHeader("Access-Control-Allow-Origin", origin);
           reply.raw.setHeader("Access-Control-Allow-Credentials", "true");
         }
@@ -758,7 +795,7 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
           });
         }
 
-        const registeredPhones = await repo.listWaPhones(campaignId);
+        const registeredPhones = await getCachedWaPhones(campaignId);
         const isRegistered = registeredPhones.some((p) => p.number === ownNumber);
         if (!isRegistered) {
           app.log.info(
@@ -1011,7 +1048,7 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
     );
 
     // ── GET /api/cms/extension-monitor ────────────────────────────────
-    // PUBLIC endpoint (no auth). Returns per-phone + per-operator breakdown.
+    // Authenticated endpoint. Returns per-phone + per-operator breakdown.
     // Requires ?campaign_id=<uuid> query param.
     const extensionMonitorQuerySchema = z.object({
       campaign_id: z.string().uuid("campaign_id debe ser un UUID válido"),
@@ -1019,6 +1056,7 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
 
     app.get(
       "/api/cms/extension-monitor",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
       async (request, reply) => {
         const requestId = String(request.id);
 

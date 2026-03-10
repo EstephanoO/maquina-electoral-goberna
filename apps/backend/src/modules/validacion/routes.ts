@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { ServerResponse } from "node:http";
+import { z } from "zod";
 import type { AppEnv } from "../../config/env";
 import type { AuthenticatedRequest } from "../../infra/auth";
 import { authorize } from "../../infra/authorize";
@@ -51,7 +52,19 @@ function broadcastClassificationEvent(campaignId: string, event: string, payload
   }
 }
 
-export function buildValidacionRoutes(_env: AppEnv): FastifyPluginAsync {
+// SSE CORS origin validation — reply.raw bypasses @fastify/cors
+function isSseOriginAllowed(origin: string, env: AppEnv): boolean {
+  if (env.nodeEnv !== "production") return true;
+  return env.frontendOrigins.some((allowed) => {
+    if (allowed.includes("*")) {
+      const regex = new RegExp("^" + allowed.replace(/\*/g, "[^.]+") + "$");
+      return regex.test(origin);
+    }
+    return allowed === origin;
+  });
+}
+
+export function buildValidacionRoutes(env: AppEnv): FastifyPluginAsync {
   // Heartbeat for SSE — keeps connections alive through proxies/LBs
   const heartbeatTimer = setInterval(() => {
     for (const [id, client] of sseClients.entries()) {
@@ -185,23 +198,36 @@ export function buildValidacionRoutes(_env: AppEnv): FastifyPluginAsync {
     // Extension sends text → backend proxies to ElevenLabs → returns base64 audio
     // ═══════════════════════════════════════════════════════════════════
 
+    const ttsBodySchema = z.object({
+      text: z.string().min(1, "text requerido").max(5000, "text max 5000 chars"),
+      voice_id: z.string().max(100).optional(),
+    });
+
     app.post("/api/tts/generate", {
       preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor", "agente_digital"] })],
+      config: {
+        rateLimit: {
+          max: 30,       // 30 calls per minute per user
+          timeWindow: 60000,
+          keyGenerator: (req: { userId?: string; ip: string }) =>
+            `tts:${req.userId ?? req.ip}`,
+        },
+      },
     }, async (request, reply) => {
       const requestId = String(request.id);
 
-      const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
-      if (!ELEVENLABS_API_KEY) {
+      if (!env.elevenlabsApiKey) {
         return reply.code(503).send(errorPayload(requestId, "UPSTREAM_ERROR", "TTS service not configured"));
       }
 
-      const body = request.body as { text?: string; voice_id?: string };
-      const text = (body.text || "").trim();
-      if (!text || text.length > 5000) {
-        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "text requerido (max 5000 chars)"));
+      const parsed = ttsBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        const msg = parsed.error.issues.map((e) => e.message).join("; ");
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", msg));
       }
 
-      const voiceId = body.voice_id || "iaSdolcffUuIlEi5pdbj";
+      const { text, voice_id } = parsed.data;
+      const voiceId = voice_id || "iaSdolcffUuIlEi5pdbj";
 
       try {
         const ttsRes = await fetch(
@@ -209,7 +235,7 @@ export function buildValidacionRoutes(_env: AppEnv): FastifyPluginAsync {
           {
             method: "POST",
             headers: {
-              "xi-api-key": ELEVENLABS_API_KEY,
+              "xi-api-key": env.elevenlabsApiKey,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
@@ -349,7 +375,7 @@ export function buildValidacionRoutes(_env: AppEnv): FastifyPluginAsync {
 
       // CORS headers for SSE — reply.raw bypasses @fastify/cors plugin
       const origin = request.headers.origin;
-      if (origin) {
+      if (origin && isSseOriginAllowed(origin, env)) {
         reply.raw.setHeader("Access-Control-Allow-Origin", origin);
         reply.raw.setHeader("Access-Control-Allow-Credentials", "true");
       }

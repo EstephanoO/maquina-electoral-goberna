@@ -500,6 +500,7 @@ export async function getExtensionMonitor(campaignId: string): Promise<{
 }> {
   const res = await fetch(`/api/cms/extension-monitor?campaign_id=${encodeURIComponent(campaignId)}`, {
     credentials: "same-origin",
+    headers: { "x-campaign-id": campaignId },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { message?: string };

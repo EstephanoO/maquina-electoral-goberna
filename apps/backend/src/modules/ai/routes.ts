@@ -35,6 +35,9 @@ function getCached(key: string): ClassifyResult | null {
     classifyCache.delete(key);
     return null;
   }
+  // True LRU: re-insert to move to end of Map iteration order
+  classifyCache.delete(key);
+  classifyCache.set(key, entry);
   return entry.result;
 }
 
@@ -225,6 +228,14 @@ export function buildAiRoutes(env: AppEnv): FastifyPluginAsync {
           app.authenticate,
           authorize({ roles: ["admin", "candidato", "consultor", "agente_digital"] }),
         ],
+        config: {
+          rateLimit: {
+            max: 20,       // 20 calls per minute per user (extension calls every 5 min)
+            timeWindow: 60000,
+            keyGenerator: (req: { userId?: string; ip: string }) =>
+              `spam:${req.userId ?? req.ip}`,
+          },
+        },
       },
       async (request: FastifyRequest, reply: FastifyReply) => {
         const requestId = String(request.id);
