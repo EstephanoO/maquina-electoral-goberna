@@ -72,8 +72,8 @@ export const PERU_VIEW = { longitude: -75.0152, latitude: -9.1899, zoom: 5 } as 
 export const PERU_BOUNDS: [[number, number], [number, number]] = [[-81.4, -18.4], [-68.7, -0.1]];
 /** Flat [west, south, east, north] for Source bounds prop — tells MapLibre to skip tiles outside Peru */
 export const PERU_BOUNDS_FLAT: [number, number, number, number] = [-81.4, -18.4, -68.7, -0.1];
-/** Pan limit — Peru + generous margin. Prevents scrolling to Africa/Asia. */
-export const PERU_MAX_BOUNDS: [[number, number], [number, number]] = [[-90, -25], [-60, 5]];
+/** Pan limit — Peru + extra margin so zoom-out can show full country. */
+export const PERU_MAX_BOUNDS: [[number, number], [number, number]] = [[-92, -27], [-58, 7]];
 
 /* ─── Tile config ─── */
 
