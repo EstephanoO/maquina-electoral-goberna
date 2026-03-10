@@ -21,22 +21,27 @@ export function buildVoterProfileRoutes(_env: AppEnv): FastifyPluginAsync {
         return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", parsed.error.message));
       }
 
-      const result = await repo.list({
-        campaign_id: campaignId,
-        pipeline_status: parsed.data.pipeline_status,
-        vote_class: parsed.data.vote_class,
-        search: parsed.data.search,
-        has_wa: parsed.data.has_wa === "true",
-        limit: parsed.data.limit,
-        offset: parsed.data.offset,
-      });
+      try {
+        const result = await repo.list({
+          campaign_id: campaignId,
+          pipeline_status: parsed.data.pipeline_status,
+          vote_class: parsed.data.vote_class,
+          search: parsed.data.search,
+          has_wa: parsed.data.has_wa === "true",
+          limit: parsed.data.limit,
+          offset: parsed.data.offset,
+        });
 
-      return reply.code(200).send({
-        ok: true,
-        request_id: requestId,
-        items: result.items,
-        total: result.total,
-      });
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          items: result.items,
+          total: result.total,
+        });
+      } catch (err) {
+        request.log.error({ err }, "voter-profiles list error");
+        return reply.code(500).send(errorPayload(requestId, "UPSTREAM_ERROR", "Error listando perfiles de votantes"));
+      }
     });
 
     // ── GET /api/voter-profiles/stats — Aggregate stats ──
@@ -47,12 +52,17 @@ export function buildVoterProfileRoutes(_env: AppEnv): FastifyPluginAsync {
       const authed = (request as any).authed;
       const campaignId = authed.campaignId;
 
-      const stats = await repo.getStats(campaignId);
-      return reply.code(200).send({
-        ok: true,
-        request_id: requestId,
-        stats,
-      });
+      try {
+        const stats = await repo.getStats(campaignId);
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          stats,
+        });
+      } catch (err) {
+        request.log.error({ err }, "voter-profiles stats error");
+        return reply.code(500).send(errorPayload(requestId, "UPSTREAM_ERROR", "Error consultando stats de votantes"));
+      }
     });
 
     // ── GET /api/voter-profiles/:id — Get single profile ──

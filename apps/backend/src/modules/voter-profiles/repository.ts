@@ -149,58 +149,28 @@ export async function getById(id: string): Promise<VoterProfile | null> {
 }
 
 export async function getStats(campaignId: string): Promise<VoterProfileStats> {
-  const res = await pool.query<{
-    total: string;
-    by_status: string;
-    by_vote_class: string;
-    with_responses: string;
-    with_wa_contact: string;
-  }>(`
-    SELECT
-      COUNT(*) as total,
-      jsonb_object_agg(
-        COALESCE(NULLIF(pipeline_status, ''), 'nuevo'),
-        cnt
-      ) as by_status,
-      jsonb_object_agg(
-        COALESCE(NULLIF(vote_class, ''), 'sin_clasificar'),
-        vcnt
-      ) as by_vote_class,
-      SUM(CASE WHEN wa_received_count > 0 THEN 1 ELSE 0 END) as with_responses,
-      SUM(CASE WHEN wa_sent_count > 0 THEN 1 ELSE 0 END) as with_wa_contact
-    FROM (
-      SELECT
-        pipeline_status,
-        vote_class,
-        wa_received_count,
-        wa_sent_count,
-        COUNT(*) OVER (PARTITION BY COALESCE(NULLIF(pipeline_status, ''), 'nuevo')) as cnt,
-        COUNT(*) OVER (PARTITION BY COALESCE(NULLIF(vote_class, ''), 'sin_clasificar')) as vcnt
-      FROM voter_profiles
-      WHERE campaign_id = $1
-    ) sub
-  `, [campaignId]);
-
-  // Fallback: compute stats with simpler queries if the aggregate is tricky
-  const simpleRes = await pool.query<{ pipeline_status: string; cnt: string }>(`
-    SELECT COALESCE(NULLIF(pipeline_status, ''), 'nuevo') as pipeline_status, COUNT(*) as cnt
-    FROM voter_profiles WHERE campaign_id = $1
-    GROUP BY 1
-  `, [campaignId]);
-
-  const voteRes = await pool.query<{ vote_class: string; cnt: string }>(`
-    SELECT COALESCE(NULLIF(vote_class, ''), 'sin_clasificar') as vote_class, COUNT(*) as cnt
-    FROM voter_profiles WHERE campaign_id = $1
-    GROUP BY 1
-  `, [campaignId]);
-
-  const totalsRes = await pool.query<{ total: string; with_responses: string; with_wa_contact: string }>(`
-    SELECT
-      COUNT(*) as total,
-      SUM(CASE WHEN wa_received_count > 0 THEN 1 ELSE 0 END) as with_responses,
-      SUM(CASE WHEN wa_sent_count > 0 THEN 1 ELSE 0 END) as with_wa_contact
-    FROM voter_profiles WHERE campaign_id = $1
-  `, [campaignId]);
+  const [simpleRes, voteRes, totalsRes] = await Promise.all([
+    pool.query<{ pipeline_status: string; cnt: string }>(
+      `SELECT COALESCE(NULLIF(pipeline_status, ''), 'nuevo') as pipeline_status, COUNT(*) as cnt
+       FROM voter_profiles WHERE campaign_id = $1
+       GROUP BY 1`,
+      [campaignId],
+    ),
+    pool.query<{ vote_class: string; cnt: string }>(
+      `SELECT COALESCE(NULLIF(vote_class, ''), 'sin_clasificar') as vote_class, COUNT(*) as cnt
+       FROM voter_profiles WHERE campaign_id = $1
+       GROUP BY 1`,
+      [campaignId],
+    ),
+    pool.query<{ total: string; with_responses: string; with_wa_contact: string }>(
+      `SELECT
+         COUNT(*) as total,
+         SUM(CASE WHEN wa_received_count > 0 THEN 1 ELSE 0 END) as with_responses,
+         SUM(CASE WHEN wa_sent_count > 0 THEN 1 ELSE 0 END) as with_wa_contact
+       FROM voter_profiles WHERE campaign_id = $1`,
+      [campaignId],
+    ),
+  ]);
 
   const byStatus: Record<string, number> = {};
   for (const r of simpleRes.rows) byStatus[r.pipeline_status] = parseInt(r.cnt, 10);
