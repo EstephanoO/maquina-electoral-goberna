@@ -374,28 +374,30 @@ export default function TierraPage() {
           />
         </div>
       ) : viewMode === "pipeline" ? (
-        <PipelineView
-          campaignId={campaign.id}
-          brigadistas={pipeline.brigadistaMetrics ?? []}
-          prevBrigadistas={pipeline.prevBrigadistaMetrics ?? []}
-          isLoading={pipeline.metricsLoading}
-          isPending={pipeline.isPending}
-          primaryColor={campaign.color_primario}
-          secondaryColor={campaign.color_secundario}
-          forms={pipeline.filteredForms}
-          prevForms={pipeline.prevFilteredForms}
-          agents={enrichedAgents}
-          period={pipeline.period}
-          onPeriodChange={pipeline.onPeriodChange}
-          offset={pipeline.offset}
-          onOffsetChange={pipeline.onOffsetChange}
-          periodLabel={pipeline.periodLabel}
-          dateRanges={pipeline.dateRanges}
-          totalDatos={stats.totals.forms_count}
-          serverTotals={stats.totals}
-          agentesCampoCount={enrichedAgents.length}
-          metaDatos={stats.metas.datos}
-        />
+        <div className="flex-1 min-h-0 px-3 py-2 md:px-5 lg:px-7">
+          <PipelineView
+            campaignId={campaign.id}
+            brigadistas={pipeline.brigadistaMetrics ?? []}
+            prevBrigadistas={pipeline.prevBrigadistaMetrics ?? []}
+            isLoading={pipeline.metricsLoading}
+            isPending={pipeline.isPending}
+            primaryColor={campaign.color_primario}
+            secondaryColor={campaign.color_secundario}
+            forms={pipeline.filteredForms}
+            prevForms={pipeline.prevFilteredForms}
+            agents={enrichedAgents}
+            period={pipeline.period}
+            onPeriodChange={pipeline.onPeriodChange}
+            offset={pipeline.offset}
+            onOffsetChange={pipeline.onOffsetChange}
+            periodLabel={pipeline.periodLabel}
+            dateRanges={pipeline.dateRanges}
+            totalDatos={stats.totals.forms_count}
+            serverTotals={stats.totals}
+            agentesCampoCount={enrichedAgents.length}
+            metaDatos={stats.metas.datos}
+          />
+        </div>
       ) : (
         <DatosView
           forms={forms}
