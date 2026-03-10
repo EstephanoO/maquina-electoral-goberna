@@ -559,7 +559,80 @@
       }
       return;
     }
+
+    // Spam/repetition warning from background
+    if (e.data?.type === 'WSPP_SPAM_WARNING') {
+      showSpamWarning(e.data.payload);
+      return;
+    }
   });
+
+  // ── Spam warning overlay ──────────────────────────────────────────
+  let _spamOverlay = null;
+  function showSpamWarning(data) {
+    if (!data || !data.warnings || data.warnings.length === 0) return;
+    removeSpamWarning();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'wspp-spam-warning';
+    const isCritical = data.risk_level === 'critical';
+    const isHigh = data.risk_level === 'high';
+    Object.assign(overlay.style, {
+      position: 'fixed',
+      top: '16px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      zIndex: '99999',
+      background: isCritical ? '#dc2626' : isHigh ? '#ea580c' : '#ca8a04',
+      color: '#fff',
+      padding: '12px 20px',
+      borderRadius: '12px',
+      boxShadow: '0 4px 20px rgba(0,0,0,.3)',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      fontSize: '13px',
+      maxWidth: '500px',
+      cursor: 'pointer',
+      transition: 'opacity .3s',
+    });
+
+    const title = document.createElement('div');
+    title.style.fontWeight = '800';
+    title.style.marginBottom = '4px';
+    title.style.fontSize = '14px';
+    title.textContent = isCritical
+      ? 'RIESGO CRITICO DE BLOQUEO'
+      : isHigh ? 'RIESGO ALTO — Reducir velocidad' : 'Advertencia de spam';
+    overlay.appendChild(title);
+
+    for (const w of data.warnings.slice(0, 3)) {
+      const line = document.createElement('div');
+      line.style.fontSize = '12px';
+      line.style.opacity = '0.9';
+      line.textContent = w;
+      overlay.appendChild(line);
+    }
+
+    const score = document.createElement('div');
+    score.style.fontSize = '10px';
+    score.style.opacity = '0.7';
+    score.style.marginTop = '4px';
+    score.textContent = `Score: ${data.risk_score}/100 | ${data.message_count} msgs recientes`;
+    overlay.appendChild(score);
+
+    overlay.addEventListener('click', () => removeSpamWarning());
+    document.body.appendChild(overlay);
+    _spamOverlay = overlay;
+
+    // Auto-dismiss: 30s for critical, 15s for high, 8s for medium
+    const dismissMs = isCritical ? 30000 : isHigh ? 15000 : 8000;
+    setTimeout(() => removeSpamWarning(), dismissMs);
+  }
+
+  function removeSpamWarning() {
+    if (_spamOverlay) { _spamOverlay.remove(); _spamOverlay = null; }
+    const existing = document.getElementById('wspp-spam-warning');
+    if (existing) existing.remove();
+  }
 
   /**
    * Muestra un badge/overlay de validación sobre el header del chat activo.

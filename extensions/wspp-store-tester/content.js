@@ -146,3 +146,13 @@ window.addEventListener('message', (e) => {
     return;
   }
 });
+
+// ── WSPP_SPAM_WARNING — background → content → inject.js overlay ────
+// Background SW sends this when it detects spam patterns in outgoing messages.
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.type !== 'WSPP_SPAM_WARNING') return;
+  window.postMessage({
+    type: 'WSPP_SPAM_WARNING',
+    payload: msg.payload,
+  }, WA_ORIGIN);
+});

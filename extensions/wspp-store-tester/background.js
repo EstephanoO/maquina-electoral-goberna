@@ -363,19 +363,336 @@ async function classifyWithAggregation(phone, text, fromJid) {
 
   // Mensajes largos → clasificar inmediatamente (ya tienen contexto suficiente)
   if (text.length > 80) {
-    return classifyMessage(text);
+    return classifyWithGeminiFallback(phone, text, fromJid);
   }
 
   // Buffer key: use phone if available, fall back to JID for @lid contacts
   const bufferKey = phone || fromJid;
-  if (!bufferKey) return classifyMessage(text); // No key to aggregate by
+  if (!bufferKey) return classifyWithGeminiFallback(phone, text, fromJid);
 
   const aggregated = await bufferMessage(bufferKey, text);
   // M-5: check for sentinel (superseded by newer message from same contact)
   if (aggregated === MSG_BUFFER_SUPERSEDED) return MSG_BUFFER_SUPERSEDED;
   if (!aggregated) return null;
-  return classifyMessage(aggregated);
+  return classifyWithGeminiFallback(phone, aggregated, fromJid);
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// GEMINI FALLBACK — Only calls AI when regex is ambiguous.
+// Token-saving: regex classifies first (free). Gemini only for:
+//   1. regex returns null (no pattern match)
+//   2. regex confidence < 0.85 (ambiguous)
+// Conversation context: last 3 messages from the same phone.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Conversation history for context (per phone, last 3 messages)
+const _conversationHistory = new Map(); // phone → [{text, ts, direction}]
+const CONV_HISTORY_MAX_PER_PHONE = 5;
+const CONV_HISTORY_MAX_PHONES = 300;
+const GEMINI_CONFIDENCE_THRESHOLD = 0.85; // Below this, ask Gemini
+
+function recordConversation(phone, text, direction) {
+  if (!phone || !text) return;
+  const key = phone;
+  if (!_conversationHistory.has(key)) {
+    // Evict oldest phone if at capacity
+    if (_conversationHistory.size >= CONV_HISTORY_MAX_PHONES) {
+      const oldest = _conversationHistory.keys().next().value;
+      _conversationHistory.delete(oldest);
+    }
+    _conversationHistory.set(key, []);
+  }
+  const history = _conversationHistory.get(key);
+  history.push({ text: text.slice(0, 300), ts: Date.now(), direction });
+  if (history.length > CONV_HISTORY_MAX_PER_PHONE) history.shift();
+}
+
+function getConversationContext(phone) {
+  if (!phone) return '';
+  const history = _conversationHistory.get(phone);
+  if (!history || history.length === 0) return '';
+  return history
+    .map(h => `[${h.direction === 'in' ? 'Votante' : 'Operador'}]: ${h.text}`)
+    .join('\n');
+}
+
+/**
+ * Two-tier classification: regex first, Gemini fallback for ambiguous cases.
+ * Applies adaptive scoring adjustments from correction history.
+ */
+async function classifyWithGeminiFallback(phone, text, fromJid) {
+  const regexResult = classifyMessage(text);
+
+  // Apply adaptive scoring adjustments
+  const adjusted = applyAdaptiveScoring(regexResult);
+
+  // If regex is confident enough, use it directly
+  if (adjusted && adjusted.confidence >= GEMINI_CONFIDENCE_THRESHOLD) {
+    if (adjusted._boosted) {
+      console.log('[WSPP AI] Regex confident (%.0f%%, boosted) — skipping Gemini', adjusted.confidence * 100);
+    }
+    return adjusted;
+  }
+
+  // Try Gemini for ambiguous or null cases
+  // Only if message is substantial enough to be worth an API call
+  if (text.length < 15) return adjusted; // Too short for AI
+
+  try {
+    const context = getConversationContext(phone || fromJid);
+    const geminiResult = await apiFetch('/api/ai/classify', {
+      method: 'POST',
+      body: JSON.stringify({
+        text: text.slice(0, 2000),
+        conversation_context: context || undefined,
+      }),
+    });
+
+    if (geminiResult.ok && geminiResult.classification) {
+      const ai = geminiResult.classification;
+      console.log(
+        '%c  🤖 GEMINI → %c' + ai.category + '%c conf: ' + Math.round(ai.confidence * 100) + '%' +
+        (geminiResult.cached ? ' (cached)' : ''),
+        'color:#a855f7;font-weight:700', 'color:#FFC800;font-weight:900', 'color:#7a95aa',
+      );
+
+      // If both regex and Gemini classified, use higher confidence
+      if (adjusted && adjusted.confidence >= 0.5) {
+        // Merge: prefer Gemini if it's confident, otherwise blend
+        if (ai.confidence > adjusted.confidence) {
+          ai.reason = `AI: ${ai.reason} (regex: ${adjusted.category} @ ${Math.round(adjusted.confidence * 100)}%)`;
+          ai.category = `ai_${ai.category}`;
+          return ai;
+        }
+        // Regex was better — boost it slightly since Gemini agreed or was weaker
+        if (adjusted.vote_class === ai.vote_class) {
+          adjusted.confidence = Math.min(0.95, adjusted.confidence + 0.1);
+          adjusted.reason += ` [AI confirms: ${ai.category}]`;
+        }
+        return adjusted;
+      }
+
+      // Regex had nothing — use Gemini result if confident
+      if (ai.confidence >= 0.5 && ai.vote_class) {
+        ai.category = `ai_${ai.category}`;
+        return ai;
+      }
+    }
+  } catch (err) {
+    console.warn('[WSPP AI] Gemini fallback error:', err.message || err);
+    // Fail silently — regex result (even if weak) is better than nothing
+  }
+
+  return adjusted;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// ADAPTIVE SCORING — learns from operator corrections to adjust
+// confidence for specific categories. Persisted in chrome.storage.
+// When operators correct a classification, the category's weight is
+// adjusted so future regex hits get boosted or penalized.
+// ═══════════════════════════════════════════════════════════════════════
+
+// In-memory cache of adjustments: category → { boost: -0.2..+0.2, corrections: N }
+let _adaptiveWeights = {};
+const ADAPTIVE_STORAGE_KEY = 'wspp_adaptive_weights';
+const ADAPTIVE_MAX_BOOST = 0.15;    // Max ±15% adjustment
+const ADAPTIVE_DECAY_RATE = 0.02;   // Each correction moves weight by this much
+
+// Load from storage on startup
+chrome.storage.local.get([ADAPTIVE_STORAGE_KEY], (data) => {
+  _adaptiveWeights = data[ADAPTIVE_STORAGE_KEY] || {};
+  const count = Object.keys(_adaptiveWeights).length;
+  if (count > 0) console.log('[WSPP ADAPTIVE] Loaded', count, 'category weights');
+});
+
+/**
+ * Record a correction: the operator overrode a classification.
+ * @param {string} originalCategory — what regex/AI classified as
+ * @param {string} correctedVoteClass — what the operator said it actually is
+ * @param {boolean} wasCorrect — was the original classification right?
+ */
+function recordCorrection(originalCategory, correctedVoteClass, wasCorrect) {
+  if (!originalCategory) return;
+  const w = _adaptiveWeights[originalCategory] || { boost: 0, corrections: 0, correct: 0, wrong: 0 };
+  w.corrections++;
+  if (wasCorrect) {
+    w.correct++;
+    w.boost = Math.min(ADAPTIVE_MAX_BOOST, w.boost + ADAPTIVE_DECAY_RATE);
+  } else {
+    w.wrong++;
+    w.boost = Math.max(-ADAPTIVE_MAX_BOOST, w.boost - ADAPTIVE_DECAY_RATE);
+  }
+  _adaptiveWeights[originalCategory] = w;
+  chrome.storage.local.set({ [ADAPTIVE_STORAGE_KEY]: _adaptiveWeights });
+  console.log('[WSPP ADAPTIVE] Updated', originalCategory, '→ boost:', w.boost.toFixed(3),
+    '(correct:', w.correct, 'wrong:', w.wrong, ')');
+}
+
+/**
+ * Apply adaptive scoring: adjusts confidence based on historical accuracy.
+ */
+function applyAdaptiveScoring(classification) {
+  if (!classification || !classification.category) return classification;
+  const w = _adaptiveWeights[classification.category];
+  if (!w || w.corrections < 3) return classification; // Need minimum data
+  const adjusted = { ...classification };
+  adjusted.confidence = Math.max(0.1, Math.min(0.98, adjusted.confidence + w.boost));
+  if (w.boost !== 0) adjusted._boosted = true;
+  return adjusted;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SPAM / REPETITION DETECTOR — monitors outgoing messages to detect
+// patterns that could trigger WhatsApp anti-spam and get numbers banned.
+// Runs locally in the extension (no network calls). Shows warnings.
+// ═══════════════════════════════════════════════════════════════════════
+
+const _outgoingLog = []; // {text, timestamp, to_phone, own_number}
+const SPAM_LOG_MAX = 200;
+const SPAM_CHECK_INTERVAL_MS = 60000;    // check every 60s
+const SPAM_REPORT_INTERVAL_MS = 300000;  // report to backend every 5 min
+
+// Thresholds
+const SPAM_MAX_BURST_PER_MIN = 25;
+const SPAM_REPETITION_WARN = 0.5;  // 50% same messages → warning
+const SPAM_REPETITION_CRIT = 0.8;  // 80% → critical
+const SPAM_MIN_INTERVAL_SEC = 2;
+
+/**
+ * Record an outgoing message for spam analysis.
+ */
+function recordOutgoing(text, timestamp, toPhone, ownNumber) {
+  if (!text) return;
+  _outgoingLog.push({
+    text: text.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 500),
+    timestamp,
+    to_phone: toPhone || null,
+    own_number: ownNumber || null,
+  });
+  // Trim old entries (keep last 200)
+  while (_outgoingLog.length > SPAM_LOG_MAX) _outgoingLog.shift();
+}
+
+/**
+ * Analyze recent outgoing messages for spam patterns.
+ * Returns { risk_level, warnings } or null if not enough data.
+ */
+function localSpamCheck() {
+  // Only check last 10 minutes
+  const cutoff = Math.floor(Date.now() / 1000) - 600;
+  const recent = _outgoingLog.filter(m => m.timestamp >= cutoff);
+  if (recent.length < 5) return null;
+
+  const warnings = [];
+  let riskScore = 0;
+
+  // Repetition check
+  const texts = recent.map(m => m.text);
+  const unique = new Set(texts).size;
+  const repetitionRate = 1 - unique / texts.length;
+
+  if (repetitionRate >= SPAM_REPETITION_CRIT) {
+    riskScore += 40;
+    warnings.push(`⚠️ ${Math.round(repetitionRate * 100)}% mensajes idénticos en últimos 10 min. Alto riesgo de bloqueo.`);
+  } else if (repetitionRate >= SPAM_REPETITION_WARN) {
+    riskScore += 20;
+    warnings.push(`${Math.round(repetitionRate * 100)}% mensajes repetidos. Variá el contenido.`);
+  }
+
+  // Burst check (messages in last 60s)
+  const lastMinute = recent.filter(m => m.timestamp >= Math.floor(Date.now() / 1000) - 60);
+  if (lastMinute.length > SPAM_MAX_BURST_PER_MIN) {
+    riskScore += 35;
+    warnings.push(`⚠️ ${lastMinute.length} mensajes en el último minuto. DETENER envíos.`);
+  } else if (lastMinute.length > 15) {
+    riskScore += 15;
+    warnings.push(`${lastMinute.length} msg/min. Reducir velocidad.`);
+  }
+
+  // Interval check
+  if (recent.length >= 3) {
+    const sorted = [...recent].sort((a, b) => a.timestamp - b.timestamp);
+    let tooFast = 0;
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i].timestamp - sorted[i - 1].timestamp < SPAM_MIN_INTERVAL_SEC) tooFast++;
+    }
+    if (tooFast > sorted.length * 0.5) {
+      riskScore += 15;
+      warnings.push('Enviando muy rápido. Esperar 3-5s entre mensajes.');
+    }
+  }
+
+  // Same text to many different contacts
+  const textToContacts = new Map();
+  for (const m of recent) {
+    if (!m.to_phone) continue;
+    if (!textToContacts.has(m.text)) textToContacts.set(m.text, new Set());
+    textToContacts.get(m.text).add(m.to_phone);
+  }
+  let maxBroadcast = 0;
+  for (const [, contacts] of textToContacts) {
+    if (contacts.size > maxBroadcast) maxBroadcast = contacts.size;
+  }
+  if (maxBroadcast > 15) {
+    riskScore += 25;
+    warnings.push(`Mismo mensaje a ${maxBroadcast} contactos. Personalizar cada mensaje.`);
+  }
+
+  riskScore = Math.min(100, riskScore);
+  const risk_level = riskScore >= 70 ? 'critical' : riskScore >= 45 ? 'high' : riskScore >= 25 ? 'medium' : 'low';
+
+  return { risk_level, risk_score: riskScore, warnings, message_count: recent.length };
+}
+
+// Periodic spam check — notifies all WA tabs with a content script message
+let _lastSpamAlert = 0;
+setInterval(() => {
+  const result = localSpamCheck();
+  if (!result || result.risk_level === 'low') return;
+
+  // Don't spam alerts — max once per 3 minutes for medium, immediately for high/critical
+  const now = Date.now();
+  const minInterval = result.risk_level === 'critical' ? 30000 : result.risk_level === 'high' ? 60000 : 180000;
+  if (now - _lastSpamAlert < minInterval) return;
+  _lastSpamAlert = now;
+
+  console.warn('[WSPP SPAM]', result.risk_level.toUpperCase(), '| Score:', result.risk_score,
+    '| Warnings:', result.warnings.join(' | '));
+
+  // Notify WA tabs to show warning overlay
+  chrome.tabs.query({ url: '*://web.whatsapp.com/*' }, (tabs) => {
+    for (const tab of tabs) {
+      if (tab.id) {
+        chrome.tabs.sendMessage(tab.id, {
+          type: 'WSPP_SPAM_WARNING',
+          payload: result,
+        }).catch(() => {}); // Tab might not have content script
+      }
+    }
+  });
+}, SPAM_CHECK_INTERVAL_MS);
+
+// Periodic backend report (every 5 min, only if there's data)
+setInterval(() => {
+  if (_outgoingLog.length < 5) return;
+  const cutoff = Math.floor(Date.now() / 1000) - 300; // last 5 min
+  const recent = _outgoingLog.filter(m => m.timestamp >= cutoff);
+  if (recent.length < 3) return;
+
+  apiFetch('/api/ai/spam-check', {
+    method: 'POST',
+    body: JSON.stringify({
+      own_number: recent[0]?.own_number || undefined,
+      messages: recent.map(m => ({ text: m.text, timestamp: m.timestamp, to_phone: m.to_phone || undefined })),
+    }),
+  }).then(res => {
+    if (res.ok && res.risk_level !== 'low') {
+      console.warn('[WSPP SPAM-SERVER]', res.risk_level.toUpperCase(),
+        '| Score:', res.risk_score, '| Warnings:', (res.warnings || []).join(' | '));
+    }
+  }).catch(() => {});
+}, SPAM_REPORT_INTERVAL_MS);
 
 // ═══════════════════════════════════════════════════════════════════════
 // S-4: OFFLINE QUEUE — persiste API calls fallidos y los reintenta
@@ -697,6 +1014,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     console.log('%c  📩 "' + _previewShort + (preview && preview.length > 80 ? '…"' : '"'), 'color:#5a8aaa;font-style:italic');
   }
 
+  // Record conversation for AI context
+  recordConversation(phone || from_jid, preview, 'in');
+
   // M-2: Enqueue per-phone to prevent race conditions on concurrent messages
   enqueueForPhone(phone || from_jid, async () => {
     // H-5: Step 1 — fire-and-forget CMS event (non-blocking)
@@ -909,18 +1229,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type !== 'WSPP_CLASSIFY') return;
 
-  const { validation_id, vote_class, status } = msg.payload;
+  const { validation_id, vote_class, status, original_category } = msg.payload;
 
   (async () => {
     try {
       // Claim primero
       await claimValidation(validation_id);
 
+      // Fetch current state before updating (for adaptive scoring)
+      const currentValidation = await getCachedValidation(msg.payload._phone);
+
       // Actualizar status
       const res = await updateValidationStatus(validation_id, status, vote_class, '[MANUAL] Clasificado desde extensión WA');
       if (res.ok && res.item) {
         // Invalidar cache para este teléfono
         invalidateCache(res.item.telefono);
+
+        // Adaptive scoring: learn from operator correction
+        if (original_category || (currentValidation && currentValidation.vote_class)) {
+          const prevCategory = original_category || currentValidation?.vote_class || '';
+          const wasCorrect = prevCategory === vote_class;
+          recordCorrection(prevCategory, vote_class, wasCorrect);
+        }
 
         // Reportar evento de clasificación manual
         reportClassificationEvent({
@@ -1025,7 +1355,11 @@ function processSentEvent(payload, source) {
     chrome.storage.local.set({ wspp_count: next });
   });
 
-  // 2. Report to backend if there's something to report
+  // 2. Record for spam detection + conversation context
+  recordOutgoing(contact_name || phone || '?', timestamp || Math.floor(Date.now() / 1000), phone, own_number);
+  recordConversation(phone, contact_name || '(sent)', 'out');
+
+  // 3. Report to backend if there's something to report
   if (phone || contact_name) {
     const body = {
       type:         'message_sent',

@@ -64,6 +64,8 @@ export type AppEnv = {
   // Telegram — notificaciones de leads (opcional)
   telegramBotToken: string;
   telegramChatId: string;
+  // Gemini — clasificacion AI de mensajes (opcional, Gemini 2.5 Flash Lite)
+  geminiApiKey: string;
 };
 
 function toNumber(value: string | undefined, fallback: number): number {
@@ -179,5 +181,6 @@ export function getEnv(): AppEnv {
     twilioEncryptionKey: (process.env.TWILIO_ENCRYPTION_KEY ?? "").trim(),
     telegramBotToken: (process.env.TELEGRAM_BOT_TOKEN ?? "").trim(),
     telegramChatId: (process.env.TELEGRAM_CHAT_ID ?? "").trim(),
+    geminiApiKey: (process.env.GEMINI_API_KEY ?? "").trim(),
   };
 }
