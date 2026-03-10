@@ -72,6 +72,11 @@ export function CampoOverlay({
     return null;
   }, [drillState]);
 
+  const toggleTopOffset = useMemo(() => {
+    if (selectedAgent) return activeZoneLabel ? 144 : 108;
+    return activeZoneLabel ? 72 : 16;
+  }, [selectedAgent, activeZoneLabel]);
+
   return (
     <div
       className="absolute top-3 bottom-3 z-10 flex items-start transition-[right] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
@@ -81,8 +86,9 @@ export function CampoOverlay({
       <button
         type="button"
         onClick={() => setVisible(!visible)}
-        className="shrink-0 mt-4 -mr-0.5 w-8 h-12 rounded-l-2xl flex items-center justify-center cursor-pointer shadow-lg transition-colors"
+        className="shrink-0 -mr-0.5 w-8 h-12 rounded-l-2xl flex items-center justify-center cursor-pointer shadow-lg transition-colors"
         style={{
+          marginTop: toggleTopOffset,
           background: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.35)",
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
