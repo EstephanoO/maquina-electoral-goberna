@@ -127,7 +127,7 @@ export default function TierraPage() {
   const [showRoutes, setShowRoutes] = useState(false);
 
   const showTracking = activeLayer === "agentes";
-  const showDatos = activeLayer === "datos" || selectedAgentId !== null;
+  const showDatos = activeLayer === "datos";
 
   // ─── Demo: para los slugs de Legua, el drillState arranca ya en el distrito ───
   // No necesitamos polling ni handle. El mapa recibe lockedBounds como prop y
