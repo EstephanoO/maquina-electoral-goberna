@@ -79,6 +79,7 @@ export const PERU_MAX_BOUNDS: [[number, number], [number, number]] = [[-90, -25]
 
 const DARK_TILES = "https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}@2x.png";
 const LIGHT_TILES = "https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png";
+const VOYAGER_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 export const DEFAULT_TILE_TEMPLATE = "/api/tiles/{z}/{x}/{y}.vector.pbf";
 
 /**
@@ -86,7 +87,7 @@ export const DEFAULT_TILE_TEMPLATE = "/api/tiles/{z}/{x}/{y}.vector.pbf";
  * Uses CARTO light_nolabels/dark_nolabels raster for roads/terrain.
  * All geographic names come from Tegola tile properties shown via tooltips.
  */
-export const MAP_STYLES: Record<MapTheme, StyleSpecification> = {
+export const MAP_STYLES: Record<MapTheme, StyleSpecification | string> = {
   dark: {
     version: 8,
     sources: {
@@ -109,6 +110,7 @@ export const MAP_STYLES: Record<MapTheme, StyleSpecification> = {
     ],
     transition: { duration: 0, delay: 0 },
   },
+  voyager: VOYAGER_STYLE,
 };
 
 /** Backward-compatible alias (default dark). */

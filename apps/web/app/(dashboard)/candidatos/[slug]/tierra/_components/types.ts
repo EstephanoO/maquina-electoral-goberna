@@ -30,7 +30,7 @@ export type FormPoint = {
 };
 
 export type DatosVizMode = "points" | "heatmap" | "bars3d";
-export type MapTheme = "dark" | "light";
+export type MapTheme = "dark" | "light" | "voyager";
 
 /* ─── Drill Navigation ─── */
 

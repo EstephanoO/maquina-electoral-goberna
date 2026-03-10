@@ -79,6 +79,7 @@ function VizModeIcon({ mode }: { mode: DatosVizMode }) {
 const THEME_MODES: Array<{ id: MapTheme; label: string }> = [
   { id: "dark", label: "Oscuro" },
   { id: "light", label: "Claro" },
+  { id: "voyager", label: "Voyager" },
 ];
 
 export function MapControls({
@@ -147,7 +148,7 @@ export function MapControls({
 
       <div className="mt-1 p-1">
         <div className={`text-[10px] font-semibold tracking-wide uppercase px-1 pb-1 ${sectionTitleClass}`}>Tema</div>
-        <div className="grid grid-cols-2 gap-1">
+        <div className="grid grid-cols-3 gap-1">
           {THEME_MODES.map((mode) => (
             <button
               key={mode.id}
@@ -174,17 +175,24 @@ export function MapControls({
                     <path d="M21 12.79A9 9 0 1 1 11.21 3c0 0 0 0 0 0a7 7 0 0 0 9.79 9.79z" />
                   </svg>
                 ) : (
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <circle cx="12" cy="12" r="4" />
-                    <line x1="12" y1="2" x2="12" y2="5" />
-                    <line x1="12" y1="19" x2="12" y2="22" />
-                    <line x1="4.93" y1="4.93" x2="7.05" y2="7.05" />
-                    <line x1="16.95" y1="16.95" x2="19.07" y2="19.07" />
-                    <line x1="2" y1="12" x2="5" y2="12" />
-                    <line x1="19" y1="12" x2="22" y2="12" />
-                    <line x1="4.93" y1="19.07" x2="7.05" y2="16.95" />
-                    <line x1="16.95" y1="7.05" x2="19.07" y2="4.93" />
-                  </svg>
+                  mode.id === "light" ? (
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="4" />
+                      <line x1="12" y1="2" x2="12" y2="5" />
+                      <line x1="12" y1="19" x2="12" y2="22" />
+                      <line x1="4.93" y1="4.93" x2="7.05" y2="7.05" />
+                      <line x1="16.95" y1="16.95" x2="19.07" y2="19.07" />
+                      <line x1="2" y1="12" x2="5" y2="12" />
+                      <line x1="19" y1="12" x2="22" y2="12" />
+                      <line x1="4.93" y1="19.07" x2="7.05" y2="16.95" />
+                      <line x1="16.95" y1="7.05" x2="19.07" y2="4.93" />
+                    </svg>
+                  ) : (
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="3" y="5" width="18" height="14" rx="2" />
+                      <path d="M7 15l3-3 3 2 4-4" />
+                    </svg>
+                  )
                 )
               ) : mode.label}
             </button>

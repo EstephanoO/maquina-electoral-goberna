@@ -67,8 +67,7 @@ const TierraMap = dynamic(
 
 const EMPTY_FORMS: FormRecord[] = [];
 const TIERRA_FULLSCREEN_CLASS = "tierra-fullscreen";
-const LEFT_PANEL_W_DEFAULT = 132;
-const LEFT_PANEL_W_ZONAL = 176;
+const LEFT_PANEL_W = 176;
 const TABBAR_THEME_VARS = [
   "--tierra-tabbar-bg",
   "--tierra-tabbar-border",
@@ -87,7 +86,6 @@ export default function TierraPage() {
   const slug = params.slug as string;
   const mapHandleRef = useRef<TierraMapHandle | null>(null);
   const { user, logout } = useAuth();
-  const isBrigadistaZonal = user?.role === "brigadista_zonal";
   const queryClient = useQueryClient();
 
   const handleHeaderLogout = useCallback(async () => {
@@ -297,7 +295,7 @@ export default function TierraPage() {
   }
 
   const { campaign } = stats;
-  const leftPanelWidth = isBrigadistaZonal ? LEFT_PANEL_W_ZONAL : LEFT_PANEL_W_DEFAULT;
+  const leftPanelWidth = LEFT_PANEL_W;
 
   return (
     <div
@@ -350,7 +348,7 @@ export default function TierraPage() {
             style={{ left: showControlsPanel ? 12 : -(leftPanelWidth + 4) }}
           >
             <div style={{ width: leftPanelWidth }}>
-              <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} iconOnlyThemeToggle={isBrigadistaZonal} />
+              <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
             </div>
             <button
               type="button"
