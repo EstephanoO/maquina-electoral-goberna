@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
 import type { GeoJSONSource } from "maplibre-gl";
-import type { DrillState, EnrichedAgent } from "../types";
+import type { DrillLevel, DrillState, EnrichedAgent } from "../types";
 import { INITIAL_DRILL } from "../types";
 import { PERU_BOUNDS, FLY_DURATION } from "../constants";
 import { getBoundsFromFeature } from "../utils";
