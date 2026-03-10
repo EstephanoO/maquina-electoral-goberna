@@ -465,6 +465,62 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     onMapDoubleClick?.();
   }, [onMapDoubleClick]);
 
+  const handleMapDoubleClickWithDrill = useCallback((e: MapLayerMouseEvent) => {
+    const currentDrill = drillStateRef.current;
+    const f = e.features?.[0];
+    const layerId = f?.layer?.id;
+
+    if (!f || !layerId) {
+      handleDoubleClick();
+      return;
+    }
+
+    const isDep = layerId === "dep-fill" || layerId.startsWith("priority-dep");
+    const isProv = layerId === "prov-fill" || layerId.startsWith("priority-prov");
+    const isDist = layerId === "dist-fill" || layerId.startsWith("priority-dist");
+    const isSector = layerId.startsWith("sector");
+
+    let shouldUndrill = false;
+
+    if (isSector && currentDrill.level >= 4) {
+      const sectorNum = f.properties?.sector != null
+        ? Number(f.properties.sector)
+        : f.properties?.SECTOR != null
+          ? Number(f.properties.SECTOR)
+          : null;
+      shouldUndrill = sectorNum != null && currentDrill.sector === sectorNum;
+    } else if (isDist && currentDrill.level >= 3) {
+      const ubigeo = String(f.properties?.ubigeo ?? f.properties?.UBIGEO ?? "");
+      shouldUndrill = !!ubigeo && currentDrill.distCode === ubigeo;
+    } else if (isProv && currentDrill.level >= 2) {
+      const codprovFull = String(
+        f.properties?.codprov_full ?? ((f.properties?.CODDEP ?? "") + (f.properties?.CODPROV ?? "")),
+      );
+      shouldUndrill = !!codprovFull && currentDrill.provCode === codprovFull;
+    } else if (isDep && currentDrill.level >= 1) {
+      const coddep = String(f.properties?.coddep ?? f.properties?.CODDEP ?? "");
+      shouldUndrill = !!coddep && currentDrill.depCode === coddep;
+    }
+
+    if (shouldUndrill) {
+      const newLevel = Math.max(0, currentDrill.level - 1) as 0 | 1 | 2 | 3 | 4;
+      const newState = { ...currentDrill, level: newLevel };
+      if (newLevel < 4) { newState.sector = null; newState.sectorName = null; }
+      if (newLevel < 3) { newState.distCode = null; newState.distName = null; }
+      if (newLevel < 2) { newState.provCode = null; newState.provName = null; }
+      if (newLevel < 1) { newState.depCode = null; newState.depName = null; }
+      onDrillChange(newState);
+
+      skipNextFitRef.current = true;
+      pendingDrillRef.current = false;
+      if (newLevel === 0) {
+        mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: FLY_DURATION });
+      }
+    }
+
+    handleDoubleClick();
+  }, [handleDoubleClick, onDrillChange]);
+
   // ─── Feature-state hover tracking (zero React re-renders) ───
   const hoveredRef = useRef<{ source: string; sourceLayer: string; id: string | number } | null>(null);
 
@@ -594,7 +650,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         onMoveStart={handleMoveStart}
         onMoveEnd={handleMoveEnd}
         onClick={handleClick}
-        onDblClick={handleDoubleClick}
+        onDblClick={handleMapDoubleClickWithDrill}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         interactiveLayerIds={INTERACTIVE_LAYERS as unknown as string[]}
