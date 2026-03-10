@@ -63,8 +63,19 @@ export function CampoOverlay({
     return [...agents].filter((a) => a.forms_count > 0).sort((a, b) => b.forms_count - a.forms_count);
   }, [agents]);
 
-  const visibleAgents = agentsOpen ? sortedAgents : sortedAgents.slice(0, AGENTS_COLLAPSED);
-  const visibleRanking = rankingOpen ? rankedAgents.slice(0, RANKING_EXPANDED) : rankedAgents.slice(0, RANKING_COLLAPSED);
+  const visibleAgents = useMemo(() => {
+    if (selectedAgentId) {
+      return sortedAgents.filter((a) => a.id === selectedAgentId);
+    }
+    return agentsOpen ? sortedAgents : sortedAgents.slice(0, AGENTS_COLLAPSED);
+  }, [sortedAgents, agentsOpen, selectedAgentId]);
+
+  const visibleRanking = useMemo(() => {
+    if (selectedAgentId) {
+      return rankedAgents.filter((a) => a.id === selectedAgentId);
+    }
+    return rankingOpen ? rankedAgents.slice(0, RANKING_EXPANDED) : rankedAgents.slice(0, RANKING_COLLAPSED);
+  }, [rankedAgents, rankingOpen, selectedAgentId]);
 
   const selectedAgent = selectedAgentId ? agents.find((a) => a.id === selectedAgentId) : null;
   const isDark = mapTheme === "dark";
@@ -239,7 +250,7 @@ export function CampoOverlay({
               )}
             </div>
 
-            {!agentsOpen && sortedAgents.length > AGENTS_COLLAPSED && (
+            {!selectedAgentId && !agentsOpen && sortedAgents.length > AGENTS_COLLAPSED && (
               <MoreBtn mapTheme={mapTheme} count={sortedAgents.length - AGENTS_COLLAPSED} color={accentColor} onClick={() => setAgentsOpen(true)} />
             )}
           </Glass>
@@ -260,7 +271,7 @@ export function CampoOverlay({
               ))}
             </div>
 
-            {!rankingOpen && rankedAgents.length > RANKING_COLLAPSED && (
+            {!selectedAgentId && !rankingOpen && rankedAgents.length > RANKING_COLLAPSED && (
               <MoreBtn mapTheme={mapTheme} count={rankedAgents.length - RANKING_COLLAPSED} color={accentColor} onClick={() => setRankingOpen(true)} />
             )}
           </Glass>
