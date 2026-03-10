@@ -1,0 +1,166 @@
+import type { FastifyPluginAsync } from "fastify";
+import type { AppEnv } from "../../config/env";
+import { authorize } from "../../infra/authorize";
+import { errorPayload } from "../../infra/http";
+import * as repo from "./repository";
+import { listQuerySchema, idParamSchema, updateBodySchema, pipelineStatusSchema } from "./schemas";
+
+export function buildVoterProfileRoutes(_env: AppEnv): FastifyPluginAsync {
+  return async function voterProfileRoutes(app) {
+
+    // ── GET /api/voter-profiles — List profiles (paginated, filterable) ──
+    app.get("/api/voter-profiles", {
+      preHandler: [app.authenticate, authorize({ requireCampaign: true })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const authed = (request as any).authed;
+      const campaignId = authed.campaignId;
+
+      const parsed = listQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", parsed.error.message));
+      }
+
+      const result = await repo.list({
+        campaign_id: campaignId,
+        pipeline_status: parsed.data.pipeline_status,
+        vote_class: parsed.data.vote_class,
+        search: parsed.data.search,
+        has_wa: parsed.data.has_wa === "true",
+        limit: parsed.data.limit,
+        offset: parsed.data.offset,
+      });
+
+      return reply.code(200).send({
+        ok: true,
+        request_id: requestId,
+        items: result.items,
+        total: result.total,
+      });
+    });
+
+    // ── GET /api/voter-profiles/stats — Aggregate stats ──
+    app.get("/api/voter-profiles/stats", {
+      preHandler: [app.authenticate, authorize({ requireCampaign: true })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const authed = (request as any).authed;
+      const campaignId = authed.campaignId;
+
+      const stats = await repo.getStats(campaignId);
+      return reply.code(200).send({
+        ok: true,
+        request_id: requestId,
+        stats,
+      });
+    });
+
+    // ── GET /api/voter-profiles/:id — Get single profile ──
+    app.get("/api/voter-profiles/:id", {
+      preHandler: [app.authenticate, authorize({ requireCampaign: true })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const parsed = idParamSchema.safeParse(request.params);
+      if (!parsed.success) {
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", parsed.error.message));
+      }
+
+      const profile = await repo.getById(parsed.data.id);
+      if (!profile) {
+        return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "Perfil no encontrado"));
+      }
+
+      return reply.code(200).send({
+        ok: true,
+        request_id: requestId,
+        profile,
+      });
+    });
+
+    // ── PUT /api/voter-profiles/:id — Update profile (manual edit) ──
+    app.put("/api/voter-profiles/:id", {
+      preHandler: [app.authenticate, authorize({ requireCampaign: true })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const paramsParsed = idParamSchema.safeParse(request.params);
+      if (!paramsParsed.success) {
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", paramsParsed.error.message));
+      }
+
+      const bodyParsed = updateBodySchema.safeParse(request.body);
+      if (!bodyParsed.success) {
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", bodyParsed.error.message));
+      }
+
+      const { pipeline_status, ...rest } = bodyParsed.data;
+      const authed = (request as any).authed;
+
+      let profile: repo.VoterProfile | null = null;
+
+      // Update fields first
+      if (Object.keys(rest).length > 0) {
+        const updates = { ...rest } as Record<string, unknown>;
+        if (rest.vote_class !== undefined) {
+          updates.vote_class_source = "manual";
+        }
+        profile = await repo.update(paramsParsed.data.id, updates as any);
+      }
+
+      // Then update pipeline status if provided
+      if (pipeline_status) {
+        profile = await repo.updatePipelineStatus(
+          paramsParsed.data.id,
+          pipeline_status,
+          authed.userId,
+        );
+      }
+
+      if (!profile) {
+        profile = await repo.getById(paramsParsed.data.id);
+      }
+
+      if (!profile) {
+        return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "Perfil no encontrado"));
+      }
+
+      return reply.code(200).send({
+        ok: true,
+        request_id: requestId,
+        profile,
+      });
+    });
+
+    // ── PUT /api/voter-profiles/:id/status — Quick pipeline status change ──
+    app.put("/api/voter-profiles/:id/status", {
+      preHandler: [app.authenticate, authorize({ requireCampaign: true })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const paramsParsed = idParamSchema.safeParse(request.params);
+      if (!paramsParsed.success) {
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", paramsParsed.error.message));
+      }
+
+      const bodyParsed = pipelineStatusSchema.safeParse(request.body);
+      if (!bodyParsed.success) {
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", bodyParsed.error.message));
+      }
+
+      const authed = (request as any).authed;
+      const profile = await repo.updatePipelineStatus(
+        paramsParsed.data.id,
+        bodyParsed.data.status,
+        authed.userId,
+      );
+
+      if (!profile) {
+        return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "Perfil no encontrado"));
+      }
+
+      return reply.code(200).send({
+        ok: true,
+        request_id: requestId,
+        profile,
+      });
+    });
+  };
+}

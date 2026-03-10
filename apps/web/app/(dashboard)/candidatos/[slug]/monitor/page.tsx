@@ -31,6 +31,7 @@ import {
   ClassificationMetrics,
   ClassificationFeed,
   AgentQuality,
+  VoterProfilesTab,
 } from "./_components";
 
 // ── Palette ──────────────────────────────────────────────────────────
@@ -73,7 +74,7 @@ const EMPTY_PHONE: ExtensionMonitorPhone = {
 // ── Types ────────────────────────────────────────────────────────────
 type CmsStats = { pendiente: number; contactado: number; respondido: number; invalido: number; total: number };
 type SseStatus = "connecting" | "connected" | "disconnected";
-type TabId = "monitor" | "quality";
+type TabId = "monitor" | "quality" | "voters";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 function norm(s: string): string {
@@ -476,6 +477,7 @@ export default function MonitorWaPage() {
                 {([
                   { id: "monitor" as TabId, label: "Monitor WA" },
                   { id: "quality" as TabId, label: "Control Agentes" },
+                  { id: "voters" as TabId, label: "Perfiles de Votantes" },
                 ] as const).map(tab => (
                   <button
                     key={tab.id}
@@ -530,6 +532,11 @@ export default function MonitorWaPage() {
           {/* ── Quality Tab ── */}
           {activeTab === "quality" && (
             <AgentQuality campaignId={campaignId} />
+          )}
+
+          {/* ── Voters Tab ── */}
+          {activeTab === "voters" && (
+            <VoterProfilesTab campaignId={campaignId} />
           )}
 
           {/* ── Monitor Tab ── */}
