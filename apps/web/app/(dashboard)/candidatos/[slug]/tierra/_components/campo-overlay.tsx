@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import type { EnrichedAgent, AgentStatus, MapTheme, DrillState } from "./types";
 import { STATUS_CFG } from "./constants";
 import {
@@ -25,6 +25,8 @@ type Props = {
 /* ========== Constants ========== */
 
 const PANEL_W = 300;
+const TOGGLE_DEFAULT_TOP = 16;
+const TOGGLE_HEIGHT = 48;
 const AGENTS_COLLAPSED = 4;
 const RANKING_COLLAPSED = 5;
 const RANKING_EXPANDED = 15;
@@ -40,6 +42,9 @@ export function CampoOverlay({
   const [visible, setVisible] = useState(initialVisible);
   const [agentsOpen, setAgentsOpen] = useState(false);
   const [rankingOpen, setRankingOpen] = useState(false);
+  const panelBodyRef = useRef<HTMLDivElement | null>(null);
+  const agentsSectionRef = useRef<HTMLDivElement | null>(null);
+  const [toggleTopOffset, setToggleTopOffset] = useState(TOGGLE_DEFAULT_TOP);
 
   const sortedAgents = useMemo(() => {
     const order: Record<string, number> = { connected: 0, idle: 1, inactive: 2 };
@@ -72,10 +77,43 @@ export function CampoOverlay({
     return null;
   }, [drillState]);
 
-  const toggleTopOffset = useMemo(() => {
-    if (selectedAgent) return activeZoneLabel ? 144 : 108;
-    return activeZoneLabel ? 72 : 16;
-  }, [selectedAgent, activeZoneLabel]);
+  const syncToggleToAgentsCenter = useCallback(() => {
+    const panel = panelBodyRef.current;
+    const agentsSection = agentsSectionRef.current;
+    if (!panel || !agentsSection) return;
+
+    const panelRect = panel.getBoundingClientRect();
+    const agentsRect = agentsSection.getBoundingClientRect();
+    const centerInPanel = agentsRect.top - panelRect.top + agentsRect.height / 2;
+    const nextTop = Math.max(TOGGLE_DEFAULT_TOP, Math.round(centerInPanel - TOGGLE_HEIGHT / 2));
+    setToggleTopOffset(nextTop);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAgent) {
+      setToggleTopOffset(TOGGLE_DEFAULT_TOP);
+      return;
+    }
+
+    syncToggleToAgentsCenter();
+
+    const panel = panelBodyRef.current;
+    const agentsSection = agentsSectionRef.current;
+    if (!panel || !agentsSection) return;
+
+    const observer = new ResizeObserver(() => {
+      syncToggleToAgentsCenter();
+    });
+    observer.observe(panel);
+    observer.observe(agentsSection);
+
+    window.addEventListener("resize", syncToggleToAgentsCenter);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", syncToggleToAgentsCenter);
+    };
+  }, [selectedAgent, syncToggleToAgentsCenter]);
 
   return (
     <div
@@ -103,7 +141,7 @@ export function CampoOverlay({
       </button>
 
       {/* ─── Panel body ─── */}
-      <div className="flex flex-col gap-2.5 overflow-y-auto overflow-x-hidden max-h-full" style={{ width: PANEL_W }}>
+      <div ref={panelBodyRef} className="flex flex-col gap-2.5 overflow-y-auto overflow-x-hidden max-h-full" style={{ width: PANEL_W }}>
 
         {/* ═══ Zone drill banner — shown when user has drilled into a zone ═══ */}
         {activeZoneLabel && (
@@ -172,30 +210,32 @@ export function CampoOverlay({
         </div>
 
         {/* ═══ Agents card ═══ */}
-        <Glass mapTheme={mapTheme}>
-          <CardHeader onClick={() => setAgentsOpen(!agentsOpen)} open={agentsOpen} mapTheme={mapTheme}>
-            <span className={`font-semibold text-[12px] ${isDark ? "text-slate-100" : "text-slate-700"}`}>Agentes</span>
-            <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: accentColor }}>{agents.length}</span>
-            <span className="ml-auto mr-2 flex items-center gap-1 text-[9px] font-bold text-emerald-500">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              LIVE
-            </span>
-          </CardHeader>
+        <div ref={agentsSectionRef}>
+          <Glass mapTheme={mapTheme}>
+            <CardHeader onClick={() => setAgentsOpen(!agentsOpen)} open={agentsOpen} mapTheme={mapTheme}>
+              <span className={`font-semibold text-[12px] ${isDark ? "text-slate-100" : "text-slate-700"}`}>Agentes</span>
+              <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: accentColor }}>{agents.length}</span>
+              <span className="ml-auto mr-2 flex items-center gap-1 text-[9px] font-bold text-emerald-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                LIVE
+              </span>
+            </CardHeader>
 
-          <div className={agentsOpen ? SCROLL_MAX : ""}>
-            {visibleAgents.length === 0 ? (
-              <p className={`px-3 py-3 text-center text-[11px] ${isDark ? "text-slate-400/90" : "text-slate-400/80"}`}>Sin agentes</p>
-            ) : (
-              visibleAgents.map((a) => (
-                <AgentRow key={a.id} mapTheme={mapTheme} agent={a} primaryColor={accentColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
-              ))
+            <div className={agentsOpen ? SCROLL_MAX : ""}>
+              {visibleAgents.length === 0 ? (
+                <p className={`px-3 py-3 text-center text-[11px] ${isDark ? "text-slate-400/90" : "text-slate-400/80"}`}>Sin agentes</p>
+              ) : (
+                visibleAgents.map((a) => (
+                  <AgentRow key={a.id} mapTheme={mapTheme} agent={a} primaryColor={accentColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
+                ))
+              )}
+            </div>
+
+            {!agentsOpen && sortedAgents.length > AGENTS_COLLAPSED && (
+              <MoreBtn mapTheme={mapTheme} count={sortedAgents.length - AGENTS_COLLAPSED} color={accentColor} onClick={() => setAgentsOpen(true)} />
             )}
-          </div>
-
-          {!agentsOpen && sortedAgents.length > AGENTS_COLLAPSED && (
-            <MoreBtn mapTheme={mapTheme} count={sortedAgents.length - AGENTS_COLLAPSED} color={accentColor} onClick={() => setAgentsOpen(true)} />
-          )}
-        </Glass>
+          </Glass>
+        </div>
 
         {/* ═══ Ranking card ═══ */}
         {rankedAgents.length > 0 && (
