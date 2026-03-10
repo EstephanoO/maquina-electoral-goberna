@@ -105,7 +105,7 @@ export function CampoOverlay({
       <button
         type="button"
         onClick={() => setVisible(!visible)}
-        className="shrink-0 mt-2 -mr-0.5 w-8 h-16 rounded-l-2xl flex items-center justify-center cursor-pointer shadow-lg transition-colors"
+        className="shrink-0 mt-2 -mr-0.5 w-8 h-12 rounded-l-2xl flex items-center justify-center cursor-pointer shadow-lg transition-colors"
         style={{
           background: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.35)",
           backdropFilter: "blur(16px)",

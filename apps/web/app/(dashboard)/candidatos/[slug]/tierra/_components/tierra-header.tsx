@@ -149,7 +149,7 @@ function MetaBar({ label, current, target, pct, color, mapTheme }: {
 }) {
   const isDark = mapTheme === "dark";
   return (
-    <div className="min-w-[140px] py-1">
+      <div className="min-w-[172px] py-1">
       <div className="flex justify-between items-center mb-1">
         <span className={`text-[9px] font-semibold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-400"}`}>{label}</span>
         <span className="text-xs font-bold tabular-nums" style={{ color }}>{target > 0 ? `${pct.toFixed(0)}%` : "—"}</span>
