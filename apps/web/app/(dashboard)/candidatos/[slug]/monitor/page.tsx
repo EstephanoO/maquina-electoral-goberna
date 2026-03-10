@@ -186,11 +186,34 @@ function PhoneCard({ phone, slotName, maxSent }: {
         </div>
       </div>
 
-      {/* Operator + last activity */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 10, fontWeight: 600, color: G.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "60%" }}>
-          {topOp ? (topOp.full_name.split(" ")[0] ?? topOp.email.split("@")[0]) : "\u2014"}
-        </span>
+      {/* Operators list */}
+      {phone.operators.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          {phone.operators.sort((a, b) => b.wa_sent - a.wa_sent).map((op) => {
+            const name = op.full_name.split(" ")[0] ?? op.email.split("@")[0];
+            return (
+              <div key={op.operator_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 10, fontWeight: 600, color: G.textMid, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "45%" }}>
+                  {name}
+                </span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: G.gold }}>
+                    {op.wa_sent}
+                  </span>
+                  <span style={{ fontSize: 9, fontWeight: 600, color: G.cyan }}>
+                    {op.unique_phones} ct
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <span style={{ fontSize: 10, fontWeight: 600, color: G.textDim }}>{"\u2014"}</span>
+      )}
+
+      {/* Last activity */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,200,0,0.50)" }}>
           {fmtRel(phone.last_event_at)}
         </span>
