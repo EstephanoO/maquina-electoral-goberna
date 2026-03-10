@@ -21,6 +21,8 @@ type Props = {
   drillState?: DrillState;
   initialVisible?: boolean;
   closeSignal?: number;
+  openSignal?: number;
+  onVisibilityChange?: (visible: boolean) => void;
 };
 
 /* ========== Constants ========== */
@@ -40,6 +42,8 @@ export function CampoOverlay({
   mapTheme = "dark", drillState,
   initialVisible = true,
   closeSignal = 0,
+  openSignal = 0,
+  onVisibilityChange,
 }: Props) {
   const [visible, setVisible] = useState(initialVisible);
   const [agentsOpen, setAgentsOpen] = useState(false);
@@ -133,6 +137,16 @@ export function CampoOverlay({
       setVisible(false);
     }
   }, [closeSignal]);
+
+  useEffect(() => {
+    if (openSignal > 0) {
+      setVisible(true);
+    }
+  }, [openSignal]);
+
+  useEffect(() => {
+    onVisibilityChange?.(visible);
+  }, [visible, onVisibilityChange]);
 
   return (
     <div

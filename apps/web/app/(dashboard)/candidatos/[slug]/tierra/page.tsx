@@ -123,6 +123,8 @@ export default function TierraPage() {
   const isFullscreen = true;
   const [showControlsPanel, setShowControlsPanel] = useState(false);
   const [rightPanelCloseSignal, setRightPanelCloseSignal] = useState(0);
+  const [rightPanelOpenSignal, setRightPanelOpenSignal] = useState(0);
+  const [isRightPanelVisible, setIsRightPanelVisible] = useState(false);
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [drillState, setDrillState] = useState<DrillState>(
@@ -213,9 +215,14 @@ export default function TierraPage() {
   }, [formPoints]);
 
   const handleMapDoubleClick = useCallback(() => {
+    if (!showControlsPanel && !isRightPanelVisible) {
+      setShowControlsPanel(true);
+      setRightPanelOpenSignal((prev) => prev + 1);
+      return;
+    }
     setShowControlsPanel(false);
     setRightPanelCloseSignal((prev) => prev + 1);
-  }, []);
+  }, [showControlsPanel, isRightPanelVisible]);
 
   const handleDeleteForm = useCallback(async (formId: string, cId: string): Promise<boolean> => {
     const res = await deleteForm(formId, cId);
@@ -377,6 +384,8 @@ export default function TierraPage() {
             drillState={drillState}
             initialVisible={false}
             closeSignal={rightPanelCloseSignal}
+            openSignal={rightPanelOpenSignal}
+            onVisibilityChange={setIsRightPanelVisible}
           />
         </div>
       ) : viewMode === "pipeline" ? (
