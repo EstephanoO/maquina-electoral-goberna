@@ -89,6 +89,65 @@ function normalizePeruvianText(text) {
  *
  * Retorna: { vote_class, status, confidence, category, reason }
  */
+
+// PERF v7.1.0: Pre-compiled regex patterns at module scope (was inside classifyMessage — re-created per call)
+const _rxDinero = /yape|plin|nequi|transferencia|deposito|cuenta.?(bancaria|ahorro|corriente|bcp|bbva|interbank|scotiabank)|numero.?de.?(yape|cuenta|plin|celular.*yape)|apoyo.?(economico|monetario|dinero|plata|financier)|ayuda.?(economica|monetaria|financier)|envi(?:ar|e|o|ame).?(?:dinero|plata|soles|dolares)|necesit(?:o|amos).*(?:dinero|plata|comprar|pagar|economic)|granito.?de.?arena|su.?voluntad|su.?buena.?voluntad|lo.?que.?pueda|alguito|algito|cualquier.?(?:cosita|ayudita|apoyito|aporte)|colaboracion.*(?:economic|monetari|dinero|plata)|aport(?:e|ar|ecito).*(?:economic|monetari|voluntari)|pasando.?(?:por|un).?momento.?(?:dificil|critico|complicado)|bajos?.?recursos|situacion.?(?:dificil|critica|precaria|economica)|\d{2,}\.?\d*\s*soles|\d{1,}\s*mil\s*soles|s\/\.?\s*\d{2,}|medicamentos?.*(?:hospital|clinica|salud|enferm)|examenes?.*(?:hospital|clinica|medic|laboratorio)|operacion.*(?:necesit|urgen|ayud|plata|dinero)|tratamiento.*(?:necesit|costoso|caro|ayud|plata)|(?:mama|papa|hijo|hija|esposo|esposa|abuel).*(?:enferm|hospital|operar|necesita)/;
+const _rxTrabajo = /busc(?:o|ando|amos).*(?:trabajo|empleo|chamba|ocupacion)|necesit(?:o|amos).*(?:trabajo|empleo|chamba)|algun.?tipo.?de.?trabajo|oferta.?(?:laboral|de.?trabajo|de.?empleo)|oportunidad.?(?:laboral|de.?trabajo|de.?empleo)|pued(?:e|o|en).*(?:dar|ofrecer|conseguir).*(?:trabajo|empleo|chamba)|desempleado|sin.?trabajo|sin.?empleo|no.?(?:tengo|consigo|encuentro).*(?:trabajo|empleo|chamba)|trabaj(?:o|ar).*(?:campana).*despu(?:e|é)s|puesto.?de.?trabajo|(?:requiero|solicito).*(?:empleo|trabajo|chamba)|colocacion.?laboral/;
+const _rxPublicidad = /publicidad.*(?:pag|programa|difusion|campana|redes|radio|tv)|programa.?(?:radial|de.?radio|televisivo)|comunicador.?social|paginas?.?(?:en.?redes|de.?facebook|de.?instagram|de.?tiktok)|seguidores.*(?:vend|ofrec|paquete|precio|mil)|\d+\s*mil\s*seguidores|precio.*(?:publicidad|difusion|campana)|cotizacion.*(?:publicidad|medios|difusion)|tari(?:f|ff)a.*(?:publicidad|radio|tv|difusion)|paquete.*(?:publicidad|redes|difusion|seguidores)|(?:radio|tv|canal|programa).*(?:cob|cost|prec|tari|pag).*(?:sol|dolar|\d{3,})|\d{3,}\s*soles.*(?:publicidad|difusion|campana)|manejo.?de.?redes.*(?:social|digital|precio|cot)/;
+const _rxSaludParts = [
+  /trabajador(?:a|es)?.?de.?(?:salud|hospital)/,
+  /personal.?de.?(?:salud|hospital|posta)/,
+  /tecnico.?(?:en)?.?enfermeria/,
+  /enfermero|enfermera|enfermeria/,
+  /ministro.?de.?salud/,
+  /sector.?salud/,
+  /hospital.*(?:apoy|respald|trabaj|sum)/,
+  /(?:medico|doctor|enfermera).*(?:apoy|respald|vot|confian)/,
+  /companer(?:o|a)s?.?del?.?hospital/,
+  /colegio.?(?:medico|de.?enfermeros|de.?obstetri)/,
+];
+const _rxApoyoGenerico = /(?:apoy|respald|sumarse|cuent(?:e|a).?con|vot(?:o|ar|amos)|confian)/;
+const _rxMerch = /necesit(?:o|amos).*(?:afiches|paneles|volantes|calendarios|banderolas|polos|gorr)|envi(?:ar|en|e).*(?:afiches|paneles|volantes|calendarios|banderolas|material)|material.?(?:publicitario|de.?campana|de.?propaganda|de.?difusion)|afiches.*(?:repartir|pegar|distribuir|campana)|volantes.*(?:repartir|entregar|distribuir|campana)|calendarios.*(?:repartir|entregar|distribuir|campana)|paneles?.*(?:coloc|instal|poner|ubicar)|banderolas?.*(?:coloc|instal|poner|ubicar)|material.*(?:repartir|distribuir|entregar|zona|distrito|barrio)|pedir(?:le|les)?.*(?:afiches|paneles|volantes|calendarios|material)|nos?.?falta.*(?:afiches|paneles|volantes|calendarios|material)|mandar(?:nos|me)?.*(?:afiches|paneles|volantes|calendarios|material)/;
+const _rxCoordParts = [
+  /coordinador(?:a|es)?.*(?:zona|distrito|region|sector|campana|provincial)/,
+  /soy.?(?:el|la)?.?coordinador/,
+  /voluntari(?:o|a|os|as).*(?:sum|organ|inscri|registr|apoy)/,
+  /organiz(?:ar|ando|amos).*(?:grupo|comite|base|equipo|gente|voluntari)/,
+  /coordinando.*(?:zona|distrito|region|sector|campana)/,
+  /representante.*(?:zona|distrito|region|sector|partido)/,
+  /responsable.*(?:zona|distrito|region|sector)/,
+  /lider(?:esa)?.*(?:zona|barrio|comunidad|distrito)/,
+  /dirigente.*(?:barri|comun|distrit|vecin|zona)/,
+  /base.?partidaria/,
+  /armar(?:emos|ando)?.*(?:equipo|grupo|comite|estructura)/,
+];
+const _rxDuroParts = [
+  /cuent(?:e|a|en).?con.?(?:nuestro|mi|todo|el).?(?:respaldo|apoyo|voto)/,
+  /estamos.?(?:listos|dispuestos|organizados|firmes).*(?:apoy|trabaj|sum)/,
+  /(?:grupo|equipo|comite).?de.?apoyo/,
+  /militante|militando|militancia/,
+  /repartiendo.?(?:calendarios|volantes|material|afiches)/,
+  /canal.?de.?whatsapp/,
+  /fortalec(?:er|iendo).*(?:campana|partido|movimiento)/,
+  /sumando.?esfuerzos/,
+  /app.?3|alianza.?para.?el.?progreso/,
+  /con.?fuerza.?(?:doctor|ingeniero|hermano|cesar|candidato)/,
+  /seguir.?(?:sumando|apoyando|trabajando).*(?:campana|partido)/,
+  /nuestr(?:o|a)s?.?famili(?:a|as).*(?:apoy|respald|vot)/,
+  /formar.*(?:grupo|comite|base|estructura).*(?:apoyo|campana|distrito)/,
+  /trabajar.?coordinadamente/,
+  /todo(?:s)?.?(?:el|la|los|las)?.?(?:barrio|distrito|zona|comunidad).*(?:apoy|respald|vot)/,
+  /vamos.?(?:con|por|a.?ganar|a.?apoyar|arriba)/,
+  /a.?ganar.?(?:estas|las)?.?elecciones/,
+  /compromet(?:ido|ida|idos|idas).*(?:campana|partido|candidatura|doctor)/,
+  /incondicional(?:es)?.*(?:apoy|respald)/,
+  /adelante.*(?:doctor|ingeniero|cesar|candidato|hermano)/,
+  /ya.?somos.*(?:grupo|equipo|comite|personas|\d+)/,
+];
+const _rxDuroExtra = /companeros?.*(?:hospital|sector|zona|distrito|barrio)|dispuestos?.?a.?apoyar|confiamos.?en.?su.?trabajo|grupos?.?de.?apoyo|fuerza.*(?:doctor|cesar|ingeniero|candidato)/;
+const _rxBlando = /apoy(?:ar|o|e|emos).*(?:focos|cableado|indumentaria|materiales|implementos)|(?:campo|cancha|losa).*(?:deportiv|futbol|campeonato)|campeonato.*(?:apoy|ayud|patroci)|copa.?(?:peru|distrital|provincial|regional)|no.?contamos.?con.?(?:los|recursos|materiales)|club.?deportivo|mejorar.?(?:nuestro|el|la).?(?:campo|cancha|local|losa)|brind(?:ar|arle).*(?:nuestro|su).?apoyo.*apoy(?:ar|o)|queremos.*(?:brindarle|darle|ofrecerle).*(?:apoyo|respaldo).*apoy|premio.*(?:campeonato|torneo|copa|deport)|(?:trofeo|medalla|premio).*(?:campeonato|torneo|copa)|uniforme.*(?:equipo|deport|futbol|club)|camiseta.*(?:equipo|deport|futbol|club)|implementos?.?(?:deportiv|para.?el.?equipo)|iluminacion.*(?:cancha|campo|losa|parque)|techado.*(?:cancha|campo|losa|coliseo)|infraestructura.*(?:deport|comunal|barri)/;
+const _rxFlotante = /felicit(?:ar|o|arlo|aciones).*(?:trabajo|gestion|labor)|reconoc(?:er|iendo|emos).*(?:trabajo|labor|gestion)|consult(?:ar|arle|a).*(?:sobre|acerca|respecto)|quisiera.?saber|propuestas.*(?:para|del|sobre)|respecto.?a|que.?piensa.?(?:de|sobre)|que.?propone|buenas?.?(?:tardes|noches|dias|mananas).*(?:doctor|ingeniero|cesar).*inform|me.?gustaria.?(?:saber|conocer|que.?me.?diga)/;
+
 function classifyMessage(text) {
   if (!text || text.length < 15) return null; // Mensaje muy corto, no clasificable
 
@@ -97,10 +156,9 @@ function classifyMessage(text) {
   const lower = normalizePeruvianText(stripped);
 
   // S-5: Combined regex patterns — single-pass per category instead of 130+ individual .test() calls.
-  // Each category uses one precompiled RegExp with alternation for O(n) scan of the text.
+  // PERF v7.1.0: All regex now pre-compiled at module scope.
 
   // ── Regla 1: IMPOSIBLE — piden dinero / Yape / transferencia ──────
-  const _rxDinero = /yape|plin|nequi|transferencia|deposito|cuenta.?(bancaria|ahorro|corriente|bcp|bbva|interbank|scotiabank)|numero.?de.?(yape|cuenta|plin|celular.*yape)|apoyo.?(economico|monetario|dinero|plata|financier)|ayuda.?(economica|monetaria|financier)|envi(?:ar|e|o|ame).?(?:dinero|plata|soles|dolares)|necesit(?:o|amos).*(?:dinero|plata|comprar|pagar|economic)|granito.?de.?arena|su.?voluntad|su.?buena.?voluntad|lo.?que.?pueda|alguito|algito|cualquier.?(?:cosita|ayudita|apoyito|aporte)|colaboracion.*(?:economic|monetari|dinero|plata)|aport(?:e|ar|ecito).*(?:economic|monetari|voluntari)|pasando.?(?:por|un).?momento.?(?:dificil|critico|complicado)|bajos?.?recursos|situacion.?(?:dificil|critica|precaria|economica)|\d{2,}\.?\d*\s*soles|\d{1,}\s*mil\s*soles|s\/\.?\s*\d{2,}|medicamentos?.*(?:hospital|clinica|salud|enferm)|examenes?.*(?:hospital|clinica|medic|laboratorio)|operacion.*(?:necesit|urgen|ayud|plata|dinero)|tratamiento.*(?:necesit|costoso|caro|ayud|plata)|(?:mama|papa|hijo|hija|esposo|esposa|abuel).*(?:enferm|hospital|operar|necesita)/;
   if (_rxDinero.test(lower)) {
     return {
       vote_class: '',
@@ -112,7 +170,6 @@ function classifyMessage(text) {
   }
 
   // ── Regla 2: IMPOSIBLE — piden trabajo ────────────────────────────
-  const _rxTrabajo = /busc(?:o|ando|amos).*(?:trabajo|empleo|chamba|ocupacion)|necesit(?:o|amos).*(?:trabajo|empleo|chamba)|algun.?tipo.?de.?trabajo|oferta.?(?:laboral|de.?trabajo|de.?empleo)|oportunidad.?(?:laboral|de.?trabajo|de.?empleo)|pued(?:e|o|en).*(?:dar|ofrecer|conseguir).*(?:trabajo|empleo|chamba)|desempleado|sin.?trabajo|sin.?empleo|no.?(?:tengo|consigo|encuentro).*(?:trabajo|empleo|chamba)|trabaj(?:o|ar).*(?:campana).*despu(?:e|é)s|puesto.?de.?trabajo|(?:requiero|solicito).*(?:empleo|trabajo|chamba)|colocacion.?laboral/;
   if (_rxTrabajo.test(lower)) {
     return {
       vote_class: '',
@@ -124,7 +181,6 @@ function classifyMessage(text) {
   }
 
   // ── Regla 3: IMPOSIBLE — publicidad pagada / medios ───────────────
-  const _rxPublicidad = /publicidad.*(?:pag|programa|difusion|campana|redes|radio|tv)|programa.?(?:radial|de.?radio|televisivo)|comunicador.?social|paginas?.?(?:en.?redes|de.?facebook|de.?instagram|de.?tiktok)|seguidores.*(?:vend|ofrec|paquete|precio|mil)|\d+\s*mil\s*seguidores|precio.*(?:publicidad|difusion|campana)|cotizacion.*(?:publicidad|medios|difusion)|tari(?:f|ff)a.*(?:publicidad|radio|tv|difusion)|paquete.*(?:publicidad|redes|difusion|seguidores)|(?:radio|tv|canal|programa).*(?:cob|cost|prec|tari|pag).*(?:sol|dolar|\d{3,})|\d{3,}\s*soles.*(?:publicidad|difusion|campana)|manejo.?de.?redes.*(?:social|digital|precio|cot)/;
   if (_rxPublicidad.test(lower)) {
     return {
       vote_class: '',
@@ -136,23 +192,10 @@ function classifyMessage(text) {
   }
 
   // ── Regla 4: VOTO DURO — sector salud apoyando ───────────────────
-  // S-5: Combined into single regex per category + helper for score counting
-  const _rxSaludParts = [
-    /trabajador(?:a|es)?.?de.?(?:salud|hospital)/,
-    /personal.?de.?(?:salud|hospital|posta)/,
-    /tecnico.?(?:en)?.?enfermeria/,
-    /enfermero|enfermera|enfermeria/,
-    /ministro.?de.?salud/,
-    /sector.?salud/,
-    /hospital.*(?:apoy|respald|trabaj|sum)/,
-    /(?:medico|doctor|enfermera).*(?:apoy|respald|vot|confian)/,
-    /companer(?:o|a)s?.?del?.?hospital/,
-    /colegio.?(?:medico|de.?enfermeros|de.?obstetri)/,
-  ];
   let saludScore = 0;
   for (const p of _rxSaludParts) { if (p.test(lower)) saludScore++; }
 
-  const apoyoGenerico = /(?:apoy|respald|sumarse|cuent(?:e|a).?con|vot(?:o|ar|amos)|confian)/.test(lower);
+  const apoyoGenerico = _rxApoyoGenerico.test(lower);
   if (saludScore >= 1 && apoyoGenerico) {
     return {
       vote_class: 'duro',
@@ -163,8 +206,7 @@ function classifyMessage(text) {
     };
   }
 
-  // ── Regla 5: VOTO DURO — piden material de campaña (merch) ────────
-  const _rxMerch = /necesit(?:o|amos).*(?:afiches|paneles|volantes|calendarios|banderolas|polos|gorr)|envi(?:ar|en|e).*(?:afiches|paneles|volantes|calendarios|banderolas|material)|material.?(?:publicitario|de.?campana|de.?propaganda|de.?difusion)|afiches.*(?:repartir|pegar|distribuir|campana)|volantes.*(?:repartir|entregar|distribuir|campana)|calendarios.*(?:repartir|entregar|distribuir|campana)|paneles?.*(?:coloc|instal|poner|ubicar)|banderolas?.*(?:coloc|instal|poner|ubicar)|material.*(?:repartir|distribuir|entregar|zona|distrito|barrio)|pedir(?:le|les)?.*(?:afiches|paneles|volantes|calendarios|material)|nos?.?falta.*(?:afiches|paneles|volantes|calendarios|material)|mandar(?:nos|me)?.*(?:afiches|paneles|volantes|calendarios|material)/;
+  // ── Regla 5: VOTO DURO — piden material de campana (merch) ────────
   if (_rxMerch.test(lower)) {
     return {
       vote_class: 'duro',
@@ -176,50 +218,13 @@ function classifyMessage(text) {
   }
 
   // ── Regla 6: VOTO DURO — coordinadores / voluntarios ──────────────
-  const _rxCoordParts = [
-    /coordinador(?:a|es)?.*(?:zona|distrito|region|sector|campana|provincial)/,
-    /soy.?(?:el|la)?.?coordinador/,
-    /voluntari(?:o|a|os|as).*(?:sum|organ|inscri|registr|apoy)/,
-    /organiz(?:ar|ando|amos).*(?:grupo|comite|base|equipo|gente|voluntari)/,
-    /coordinando.*(?:zona|distrito|region|sector|campana)/,
-    /representante.*(?:zona|distrito|region|sector|partido)/,
-    /responsable.*(?:zona|distrito|region|sector)/,
-    /lider(?:esa)?.*(?:zona|barrio|comunidad|distrito)/,
-    /dirigente.*(?:barri|comun|distrit|vecin|zona)/,
-    /base.?partidaria/,
-    /armar(?:emos|ando)?.*(?:equipo|grupo|comite|estructura)/,
-  ];
   let coordScore = 0;
   for (const p of _rxCoordParts) { if (p.test(lower)) coordScore++; }
 
   // ── Regla 7: VOTO DURO — apoyo genuino, militantes, organizados ───
-  const _rxDuroParts = [
-    /cuent(?:e|a|en).?con.?(?:nuestro|mi|todo|el).?(?:respaldo|apoyo|voto)/,
-    /estamos.?(?:listos|dispuestos|organizados|firmes).*(?:apoy|trabaj|sum)/,
-    /(?:grupo|equipo|comite).?de.?apoyo/,
-    /militante|militando|militancia/,
-    /repartiendo.?(?:calendarios|volantes|material|afiches)/,
-    /canal.?de.?whatsapp/,
-    /fortalec(?:er|iendo).*(?:campana|partido|movimiento)/,
-    /sumando.?esfuerzos/,
-    /app.?3|alianza.?para.?el.?progreso/,
-    /con.?fuerza.?(?:doctor|ingeniero|hermano|cesar|candidato)/,
-    /seguir.?(?:sumando|apoyando|trabajando).*(?:campana|partido)/,
-    /nuestr(?:o|a)s?.?famili(?:a|as).*(?:apoy|respald|vot)/,
-    /formar.*(?:grupo|comite|base|estructura).*(?:apoyo|campana|distrito)/,
-    /trabajar.?coordinadamente/,
-    /todo(?:s)?.?(?:el|la|los|las)?.?(?:barrio|distrito|zona|comunidad).*(?:apoy|respald|vot)/,
-    /vamos.?(?:con|por|a.?ganar|a.?apoyar|arriba)/,
-    /a.?ganar.?(?:estas|las)?.?elecciones/,
-    /compromet(?:ido|ida|idos|idas).*(?:campana|partido|candidatura|doctor)/,
-    /incondicional(?:es)?.*(?:apoy|respald)/,
-    /adelante.*(?:doctor|ingeniero|cesar|candidato|hermano)/,
-    /ya.?somos.*(?:grupo|equipo|comite|personas|\d+)/,
-  ];
   let duroScore = coordScore;
   for (const p of _rxDuroParts) { if (p.test(lower)) duroScore++; }
-  // Señales adicionales de organización
-  const _rxDuroExtra = /companeros?.*(?:hospital|sector|zona|distrito|barrio)|dispuestos?.?a.?apoyar|confiamos.?en.?su.?trabajo|grupos?.?de.?apoyo|fuerza.*(?:doctor|cesar|ingeniero|candidato)/;
+  // Senales adicionales de organizacion
   const extraMatch = lower.match(new RegExp(_rxDuroExtra.source, 'g'));
   if (extraMatch) duroScore += extraMatch.length;
 
@@ -235,7 +240,6 @@ function classifyMessage(text) {
   }
 
   // ── Regla 8: VOTO BLANDO — piden algo material a cambio ───────────
-  const _rxBlando = /apoy(?:ar|o|e|emos).*(?:focos|cableado|indumentaria|materiales|implementos)|(?:campo|cancha|losa).*(?:deportiv|futbol|campeonato)|campeonato.*(?:apoy|ayud|patroci)|copa.?(?:peru|distrital|provincial|regional)|no.?contamos.?con.?(?:los|recursos|materiales)|club.?deportivo|mejorar.?(?:nuestro|el|la).?(?:campo|cancha|local|losa)|brind(?:ar|arle).*(?:nuestro|su).?apoyo.*apoy(?:ar|o)|queremos.*(?:brindarle|darle|ofrecerle).*(?:apoyo|respaldo).*apoy|premio.*(?:campeonato|torneo|copa|deport)|(?:trofeo|medalla|premio).*(?:campeonato|torneo|copa)|uniforme.*(?:equipo|deport|futbol|club)|camiseta.*(?:equipo|deport|futbol|club)|implementos?.?(?:deportiv|para.?el.?equipo)|iluminacion.*(?:cancha|campo|losa|parque)|techado.*(?:cancha|campo|losa|coliseo)|infraestructura.*(?:deport|comunal|barri)/;
   if (_rxBlando.test(lower)) {
     return {
       vote_class: 'blando',
@@ -257,8 +261,7 @@ function classifyMessage(text) {
     };
   }
 
-  // ── Regla 10: FLOTANTE — señales ambiguas ─────────────────────────
-  const _rxFlotante = /felicit(?:ar|o|arlo|aciones).*(?:trabajo|gestion|labor)|reconoc(?:er|iendo|emos).*(?:trabajo|labor|gestion)|consult(?:ar|arle|a).*(?:sobre|acerca|respecto)|quisiera.?saber|propuestas.*(?:para|del|sobre)|respecto.?a|que.?piensa.?(?:de|sobre)|que.?propone|buenas?.?(?:tardes|noches|dias|mananas).*(?:doctor|ingeniero|cesar).*inform|me.?gustaria.?(?:saber|conocer|que.?me.?diga)/;
+  // ── Regla 10: FLOTANTE — senales ambiguas ─────────────────────────
   if (_rxFlotante.test(lower)) {
     return {
       vote_class: 'flotante',
@@ -1281,48 +1284,97 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// GENERATE_VOICE: text → ElevenLabs → base64 OGG → content script
+// AUDIO CATALOG — pre-generated audio messages (v7.2.0)
+// Replaces per-message ElevenLabs TTS with a reusable catalog.
 // ═══════════════════════════════════════════════════════════════════════
 
+// In-memory cache of catalog metadata (refreshed every 5 minutes)
+let _audioCatalogCache = null;
+let _audioCatalogCacheTs = 0;
+const CATALOG_CACHE_TTL = 5 * 60 * 1000; // 5 min
+
+// Audio blob cache — keeps fetched audio base64 to avoid re-fetching
+const _audioDataCache = new Map(); // id → { audioBase64, mimeType }
+const AUDIO_DATA_CACHE_MAX = 20;
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type !== 'GENERATE_VOICE') return;
+  if (msg.type !== 'FETCH_AUDIO_CATALOG') return;
 
-  const text = (msg.text || '').trim();
-  if (!text) {
-    sendResponse({ ok: false, error: 'Texto vacío' });
-    return true;
-  }
-
-  console.log('[WSPP TTS] Generando voz para:', text.slice(0, 80));
-
-  // C-1 FIX: Route TTS through backend proxy instead of calling ElevenLabs directly.
-  // The API key is now stored server-side only.
   (async () => {
     try {
-      // Use apiFetch to go through backend proxy (has auth + campaign headers)
-      const result = await apiFetch('/api/tts/generate', {
-        method: 'POST',
-        body: JSON.stringify({
-          text,
-          voice_id: ELEVENLABS_VOICE_ID,
-        }),
-      });
-
-      if (!result.ok || !result.audioBase64) {
-        console.error('[WSPP TTS] Backend proxy error:', result.error || result.message);
-        sendResponse({ ok: false, error: result.error || result.message || 'TTS generation failed' });
+      const now = Date.now();
+      if (_audioCatalogCache && (now - _audioCatalogCacheTs) < CATALOG_CACHE_TTL) {
+        sendResponse({ ok: true, items: _audioCatalogCache });
         return;
       }
 
-      console.log('[WSPP TTS] Audio generado via backend proxy');
-      sendResponse({ ok: true, audioBase64: result.audioBase64, mimeType: result.mimeType || 'audio/ogg; codecs=opus' });
+      const result = await apiFetch('/api/audio-catalog');
+      if (!result.ok) {
+        sendResponse({ ok: false, error: result.message || 'Failed to fetch catalog' });
+        return;
+      }
+
+      _audioCatalogCache = result.items || [];
+      _audioCatalogCacheTs = now;
+      console.log('[WSPP CATALOG] Fetched', _audioCatalogCache.length, 'items');
+      sendResponse({ ok: true, items: _audioCatalogCache });
     } catch (err) {
-      console.error('[WSPP TTS] Error:', err);
+      console.error('[WSPP CATALOG] Fetch error:', err);
       sendResponse({ ok: false, error: err.message });
     }
   })();
 
-  return true; // keep sendResponse alive for async
+  return true;
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type !== 'GET_CATALOG_AUDIO') return;
+
+  const audioId = msg.id;
+  if (!audioId) {
+    sendResponse({ ok: false, error: 'Missing audio id' });
+    return true;
+  }
+
+  (async () => {
+    try {
+      // Check cache first
+      const cached = _audioDataCache.get(audioId);
+      if (cached) {
+        console.log('[WSPP CATALOG] Audio from cache:', audioId);
+        sendResponse({ ok: true, ...cached });
+        return;
+      }
+
+      const result = await apiFetch(`/api/audio-catalog/${audioId}`);
+      if (!result.ok || !result.item?.audioBase64) {
+        sendResponse({ ok: false, error: result.message || 'Audio not available' });
+        return;
+      }
+
+      const data = {
+        audioBase64: result.item.audioBase64,
+        mimeType: result.item.mimeType || 'audio/ogg; codecs=opus',
+        label: result.item.label,
+        category: result.item.category,
+      };
+
+      // Cache it
+      if (_audioDataCache.size >= AUDIO_DATA_CACHE_MAX) {
+        const oldest = _audioDataCache.keys().next().value;
+        _audioDataCache.delete(oldest);
+      }
+      _audioDataCache.set(audioId, data);
+
+      console.log('[WSPP CATALOG] Audio fetched:', audioId, data.label);
+      sendResponse({ ok: true, ...data });
+    } catch (err) {
+      console.error('[WSPP CATALOG] Get audio error:', err);
+      sendResponse({ ok: false, error: err.message });
+    }
+  })();
+
+  return true;
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1383,7 +1435,8 @@ function reportConversation(jid, ownNumber, direction, text, phone, contactName)
  * Shared by both WSPP_SENT and WSPP_SENT_RICH handlers.
  */
 function processSentEvent(payload, source) {
-  const { phone, own_number, contact_name, timestamp } = payload;
+  const { phone, own_number, contact_name, timestamp, body: msgBody } = payload;
+  const messageText = msgBody || '';
 
   // 1. Increment local counter
   chrome.storage.local.get(['wspp_count'], (data) => {
@@ -1392,22 +1445,23 @@ function processSentEvent(payload, source) {
   });
 
   // 2. Record for spam detection + conversation context
-  recordOutgoing(contact_name || phone || '?', timestamp || Math.floor(Date.now() / 1000), phone, own_number);
-  recordConversation(phone, contact_name || '(sent)', 'out');
+  // BUG FIX v7.1.0: pass actual message text instead of contact_name
+  recordOutgoing(messageText || phone || '?', timestamp || Math.floor(Date.now() / 1000), phone, own_number);
+  recordConversation(phone, messageText || '(sent)', 'out');
 
   // 3. Report to backend if there's something to report
   if (phone || contact_name) {
-    const body = {
+    const eventBody = {
       type:         'message_sent',
       phone:        phone || undefined,
       contact_name: contact_name || undefined,
       own_number:   own_number || undefined,
       detected_at:  (timestamp || Math.floor(Date.now() / 1000)) * 1000,
     };
-    console.log(`[WSPP] → sent event (${source}):`, JSON.stringify(body));
+    console.log(`[WSPP] → sent event (${source}):`, JSON.stringify(eventBody));
     apiFetch('/api/cms/extension-event', {
       method: 'POST',
-      body:   JSON.stringify(body),
+      body:   JSON.stringify(eventBody),
     }).then(j => {
       if (j.ok) console.log('[WSPP backend] ✓', j.matched ? 'matched' : (j.filtered ? 'filtered' : 'ok'));
       else      console.warn('[WSPP backend] ✗', j.error || j.message || j.code);
@@ -1415,9 +1469,10 @@ function processSentEvent(payload, source) {
   }
 
   // 4. Report to conversations module (requires to_jid from WSPP_SENT_RICH)
+  // BUG FIX v7.1.0: pass actual message text instead of placeholder
   const toJid = payload.to_jid;
   if (toJid) {
-    reportConversation(toJid, own_number, 'out', '(mensaje enviado)', phone, contact_name);
+    reportConversation(toJid, own_number, 'out', messageText || '(mensaje enviado)', phone, contact_name);
   }
 }
 

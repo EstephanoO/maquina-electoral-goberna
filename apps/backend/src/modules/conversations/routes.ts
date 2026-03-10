@@ -2,7 +2,9 @@ import type { FastifyPluginAsync } from "fastify";
 import type { AppEnv } from "../../config/env";
 import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
+import { pool } from "../../db";
 import * as repo from "./repository";
+import * as voterProfileRepo from "../voter-profiles/repository";
 import {
   upsertMessageSchema,
   classifyConversationSchema,
@@ -115,6 +117,41 @@ async function classifyWithGemini(
   }
 }
 
+// ── Sync classification to voter profile (fire-and-forget) ───────────
+async function syncVoteClassToProfile(
+  campaignId: string,
+  conversationId: number,
+  voteClass: string,
+  category: string,
+  source: string,
+  log: { warn: (obj: Record<string, unknown>, msg: string) => void },
+): Promise<void> {
+  try {
+    // Fetch conversation to get phone
+    const conv = await repo.getById(conversationId, campaignId);
+    if (!conv?.phone) return;
+
+    // Update the voter profile's vote classification
+    const canon = voterProfileRepo.normalizePhone(conv.phone);
+    if (canon.length !== 9) return;
+
+    const { rows } = await pool.query<{ id: string }>(
+      `SELECT id::text FROM voter_profiles WHERE campaign_id = $1 AND canonical_phone = $2 LIMIT 1`,
+      [campaignId, canon],
+    );
+    if (rows.length === 0) return;
+
+    await voterProfileRepo.update(rows[0]!.id, {
+      vote_class: voteClass,
+      vote_class_source: source,
+      category,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log.warn({ conversation_id: conversationId, error: msg }, "sync vote_class to voter profile failed");
+  }
+}
+
 // ── Route builder ────────────────────────────────────────────────────
 
 export function buildConversationRoutes(env: AppEnv): FastifyPluginAsync {
@@ -150,6 +187,38 @@ export function buildConversationRoutes(env: AppEnv): FastifyPluginAsync {
         linked = linkResult.linked;
       }
 
+      // 2b. Auto-upsert voter profile (fire-and-forget — don't block response)
+      if (parsed.data.phone) {
+        const isOutbound = parsed.data.direction === "out";
+        voterProfileRepo.upsert({
+          campaign_id: campaignId,
+          phone: parsed.data.phone,
+          name: parsed.data.contact_name || undefined,
+          jid: parsed.data.jid,
+          conversation_id: result.conversation_id,
+          contacted_by: isOutbound ? authed.userId : undefined,
+        }).then((vp) => {
+          // Increment WA counters on the profile
+          voterProfileRepo.incrementWaCounts(
+            campaignId,
+            parsed.data.phone!,
+            isOutbound ? 1 : 0,
+            isOutbound ? 0 : 1,
+          ).catch(() => {}); // fire-and-forget
+          // Update pipeline status if this is first outbound contact
+          if (isOutbound && vp.pipeline_status === "nuevo") {
+            voterProfileRepo.updatePipelineStatus(vp.id, "contactado", authed.userId).catch(() => {});
+          }
+          // If inbound, mark as responded
+          if (!isOutbound && (vp.pipeline_status === "nuevo" || vp.pipeline_status === "contactado")) {
+            voterProfileRepo.updatePipelineStatus(vp.id, "respondido", undefined).catch(() => {});
+          }
+        }).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          app.log.warn({ phone: parsed.data.phone, error: msg }, "voter-profile auto-upsert failed");
+        });
+      }
+
       // 3. Auto-classify if: has 2+ inbound messages, not yet classified, Gemini available
       let autoClassified = false;
       if (
@@ -175,6 +244,8 @@ export function buildConversationRoutes(env: AppEnv): FastifyPluginAsync {
               });
               autoClassified = true;
               app.log.info({ conversation_id: result.conversation_id, category: aiResult.category, confidence: aiResult.confidence }, "conversation auto-classified");
+              // Sync vote_class to voter profile (fire-and-forget)
+              syncVoteClassToProfile(campaignId, result.conversation_id, aiResult.vote_class, aiResult.category, "auto", app.log).catch(() => {});
             }
           } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -214,6 +285,18 @@ export function buildConversationRoutes(env: AppEnv): FastifyPluginAsync {
       const result = await repo.classify(campaignId, parsed.data);
       if (!result.updated) {
         return reply.code(409).send(errorPayload(requestId, "ALREADY_CLASSIFIED", result.reason || "conversacion ya clasificada"));
+      }
+
+      // Sync vote_class to voter profile (fire-and-forget)
+      if (parsed.data.vote_class) {
+        syncVoteClassToProfile(
+          campaignId,
+          parsed.data.conversation_id,
+          parsed.data.vote_class,
+          parsed.data.category || "manual",
+          "manual",
+          app.log,
+        ).catch(() => {});
       }
 
       return reply.send({ ok: true, request_id: requestId });
@@ -264,6 +347,16 @@ export function buildConversationRoutes(env: AppEnv): FastifyPluginAsync {
           reason: aiResult.reason,
           source: "auto",
         });
+
+        // Sync to voter profile (fire-and-forget)
+        syncVoteClassToProfile(
+          campaignId,
+          parsed.data.conversation_id,
+          aiResult.vote_class,
+          aiResult.category,
+          "auto",
+          app.log,
+        ).catch(() => {});
 
         return reply.send({ ok: true, request_id: requestId, classification: aiResult });
       } catch (err: unknown) {

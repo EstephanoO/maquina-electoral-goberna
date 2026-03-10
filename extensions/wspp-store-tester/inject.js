@@ -27,6 +27,45 @@
   const _jidPhoneCache = new Map();
   const JID_CACHE_MAX = 2000;
 
+  // PERF v7.1.0: JID→model indexes for O(1) lookups (was O(n) .find() per message)
+  let _contactIndex = null; // Map<serialized_jid, ContactModel>
+  let _chatIndex = null;    // Map<serialized_jid, ChatModel>
+  let _indexBuiltAt = 0;
+  const INDEX_REFRESH_MS = 60000; // rebuild every 60s
+
+  function getContactIndex() {
+    const now = Date.now();
+    if (_contactIndex && (now - _indexBuiltAt) < INDEX_REFRESH_MS) return _contactIndex;
+    try {
+      const { ContactCollection } = window.require('WAWebContactCollection');
+      if (ContactCollection && ContactCollection._models) {
+        _contactIndex = new Map();
+        for (const c of ContactCollection._models) {
+          const key = c.id?._serialized;
+          if (key) _contactIndex.set(key, c);
+        }
+        _indexBuiltAt = now;
+      }
+    } catch (_) { /* module not ready yet */ }
+    return _contactIndex;
+  }
+
+  function getChatIndex() {
+    const now = Date.now();
+    if (_chatIndex && (now - _indexBuiltAt) < INDEX_REFRESH_MS) return _chatIndex;
+    try {
+      const { ChatCollection } = window.require('WAWebChatCollection');
+      if (ChatCollection && ChatCollection._models) {
+        _chatIndex = new Map();
+        for (const c of ChatCollection._models) {
+          const key = c.id?._serialized;
+          if (key) _chatIndex.set(key, c);
+        }
+      }
+    } catch (_) { /* module not ready yet */ }
+    return _chatIndex;
+  }
+
   function cachePhone(jid, phone) {
     if (!jid || !phone) return;
     if (_jidPhoneCache.size >= JID_CACHE_MAX) {
@@ -68,9 +107,10 @@
 
     try {
       // Strategy 1: Look up contact by @lid JID — check multiple phone properties
-      const { ContactCollection } = window.require('WAWebContactCollection');
-      if (ContactCollection && ContactCollection._models) {
-        const contact = ContactCollection._models.find(c => c.id?._serialized === lidJid);
+      // PERF v7.1.0: Use indexed Map instead of linear scan
+      const contactIdx = getContactIndex();
+      if (contactIdx) {
+        const contact = contactIdx.get(lidJid);
         if (contact) {
           const candidates = [
             contact.userid,
@@ -91,9 +131,10 @@
 
     if (!resolved) try {
       // Strategy 2: Look up chat by @lid JID — chat.contact might have the phone
-      const { ChatCollection } = window.require('WAWebChatCollection');
-      if (ChatCollection && ChatCollection._models) {
-        const chat = ChatCollection._models.find(c => c.id?._serialized === lidJid);
+      // PERF v7.1.0: Use indexed Map instead of linear scan
+      const chatIdx = getChatIndex();
+      if (chatIdx) {
+        const chat = chatIdx.get(lidJid);
         if (chat) {
           const contact = chat.contact;
           if (contact) {
@@ -373,16 +414,19 @@
             }
 
             // Also try to get name for the recipient
+            // PERF v7.1.0: Use indexed Map instead of linear scan
             let contactName = null;
             try {
-              const { ContactCollection } = window.require('WAWebContactCollection');
-              if (ContactCollection && ContactCollection._models) {
-                const contact = ContactCollection._models.find(c => c.id?._serialized === to);
+              const cidx = getContactIndex();
+              if (cidx) {
+                const contact = cidx.get(to);
                 if (contact) contactName = contact.pushname || contact.name || contact.formattedName || null;
               }
             } catch (_) {}
 
             // Emit WSPP_SENT_RICH — higher fidelity than DOM-based WSPP_SENT
+            // BUG FIX v7.1.0: capture outgoing message body for classification + spam detection
+            const outBody = msg.get('body') || '';
             window.postMessage({
               type: 'WSPP_SENT_RICH',
               payload: {
@@ -391,6 +435,7 @@
                 own_number: getOwnNumber(),
                 to_jid: to,
                 timestamp: msg.get('t') || Math.floor(Date.now() / 1000),
+                body: outBody.substring(0, 500),
               },
             }, WA_ORIGIN);
             return;
@@ -415,11 +460,12 @@
           }
 
           // Obtener nombre del contacto si es posible
+          // PERF v7.1.0: Use indexed Map instead of linear scan
           let contactName = null;
           try {
-            const { ContactCollection } = window.require('WAWebContactCollection');
-            if (ContactCollection && ContactCollection._models) {
-              const contact = ContactCollection._models.find(c => c.id?._serialized === from);
+            const cidx = getContactIndex();
+            if (cidx) {
+              const contact = cidx.get(from);
               if (contact) {
                 contactName = contact.pushname || contact.name || contact.formattedName || null;
               }
@@ -751,12 +797,15 @@
       e.stopPropagation();
       const vote = btn.getAttribute('data-vote');
       // H-3: Use specific origin instead of '*'
+      // BUG FIX v7.1.0: include _phone and original_category for adaptive scoring
       window.postMessage({
         type: 'WSPP_CLASSIFY',
         payload: {
           validation_id: data.id,
           vote_class: vote === 'invalido' ? '' : vote,
           status: vote === 'invalido' ? 'invalido' : 'respondido',
+          _phone: data.telefono || null,
+          original_category: data.vote_class || null,
         },
       }, WA_ORIGIN);
       // Disable buttons while processing
@@ -924,11 +973,42 @@
   // ═══════════════════════════════════════════════════════════════════════
 
   // ── Botón flotante ──────────────────────────────────────────────────
-  function createTTSButton() {
+  // ═══════════════════════════════════════════════════════════════════════
+  // AUDIO CATALOG PANEL (v7.2.0)
+  // Replaces per-message ElevenLabs TTS with a reusable audio catalog.
+  // Button opens a panel with pre-generated audio messages.
+  // Send flow: clipboard Blob paste → WA attaches as audio.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  let _catalogItems = [];
+  let _catalogPanelOpen = false;
+  let _catalogLoading = false;
+
+  const CATALOG_ICONS = {
+    saludo: '\uD83D\uDC4B',          // wave
+    agradecimiento: '\uD83D\uDE4F',  // pray
+    pedir_voto: '\u2705',            // check
+    respuesta_trabajo: '\uD83D\uDCBC', // briefcase
+    respuesta_dinero: '\uD83D\uDCB0', // money bag
+    invitacion_evento: '\uD83D\uDCC5', // calendar
+    despedida: '\uD83D\uDC4D',       // thumbs up
+    propuestas: '\uD83D\uDCCB',      // clipboard
+  };
+
+  // ── Convertir base64 a Blob ──────────────────────────────────────────
+  function base64ToBlob(base64, mimeType) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mimeType });
+  }
+
+  // ── Create the mic button (opens catalog panel) ─────────────────────
+  function createCatalogButton() {
     const btn = document.createElement('button');
-    btn.id = 'wspp-tts-btn';
-    btn.innerHTML = '🎤';
-    btn.title = 'Generar voz y enviar';
+    btn.id = 'wspp-catalog-btn';
+    btn.innerHTML = '\uD83C\uDFA4';
+    btn.title = 'Audios de Cesar Vasquez';
     Object.assign(btn.style, {
       position: 'fixed',
       bottom: '80px',
@@ -948,223 +1028,262 @@
       justifyContent: 'center',
       transition: 'background .2s, transform .1s',
     });
-    btn.addEventListener('mouseenter', () => { btn.style.background = '#008f72'; });
-    btn.addEventListener('mouseleave', () => { btn.style.background = '#00a884'; });
-    btn.addEventListener('click', handleTTSClick);
+    btn.addEventListener('mouseenter', () => { if (!_catalogPanelOpen) btn.style.background = '#008f72'; });
+    btn.addEventListener('mouseleave', () => { if (!_catalogPanelOpen) btn.style.background = '#00a884'; });
+    btn.addEventListener('click', toggleCatalogPanel);
     document.body.appendChild(btn);
     return btn;
   }
 
-  // ── Estado del botón ────────────────────────────────────────────────
-  function setTTSState(state) {
-    const btn = document.getElementById('wspp-tts-btn');
-    if (!btn) return;
-    switch (state) {
-      case 'idle':
-        btn.innerHTML = '🎤';
-        btn.style.background = '#00a884';
-        btn.style.pointerEvents = 'auto';
-        btn.title = 'Generar voz y enviar';
-        break;
-      case 'loading':
-        btn.innerHTML = '⏳';
-        btn.style.background = '#1f2c34';
-        btn.style.pointerEvents = 'none';
-        btn.title = 'Generando audio...';
-        break;
-      case 'error':
-        btn.innerHTML = '❌';
-        btn.style.background = '#ef5350';
-        btn.style.pointerEvents = 'auto';
-        btn.title = 'Error — click para reintentar';
-        setTimeout(() => setTTSState('idle'), 3000);
-        break;
-      case 'success':
-        btn.innerHTML = '✅';
-        btn.style.background = '#00a884';
-        btn.style.pointerEvents = 'auto';
-        btn.title = 'Audio enviado';
-        setTimeout(() => setTTSState('idle'), 2000);
-        break;
+  // ── Toggle the catalog panel ────────────────────────────────────────
+  function toggleCatalogPanel() {
+    const existing = document.getElementById('wspp-catalog-panel');
+    if (existing) {
+      existing.remove();
+      _catalogPanelOpen = false;
+      const btn = document.getElementById('wspp-catalog-btn');
+      if (btn) btn.style.background = '#00a884';
+      return;
     }
-  }
+    _catalogPanelOpen = true;
+    const btn = document.getElementById('wspp-catalog-btn');
+    if (btn) btn.style.background = '#1f2c34';
 
-  // ── Capturar texto del composer ─────────────────────────────────────
-  function getComposerText() {
-    // El composer del chat tiene estos selectores posibles
-    const selectors = [
-      '[data-testid="conversation-compose-box-input"]',
-      '#main [contenteditable="true"][role="textbox"]',
-      'footer [contenteditable="true"][role="textbox"]',
-    ];
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      if (el) {
-        const text = (el.innerText || el.textContent || '').trim();
-        if (text) return { text, element: el };
-      }
+    // Request catalog from backend if empty
+    if (_catalogItems.length === 0 && !_catalogLoading) {
+      _catalogLoading = true;
+      window.postMessage({ type: 'FETCH_AUDIO_CATALOG' }, WA_ORIGIN);
     }
-    return { text: null, element: null };
+
+    renderCatalogPanel();
   }
 
-  // ── Limpiar el composer después de capturar ─────────────────────────
-  function clearComposer(el) {
-    if (!el) return;
-    el.innerHTML = '';
-    el.textContent = '';
-    // Disparar input event para que WA actualice su estado interno
-    el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  // ── Render the catalog panel ────────────────────────────────────────
+  function renderCatalogPanel() {
+    let panel = document.getElementById('wspp-catalog-panel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'wspp-catalog-panel';
+      Object.assign(panel.style, {
+        position: 'fixed',
+        bottom: '140px',
+        right: '16px',
+        zIndex: '99999',
+        width: '320px',
+        maxHeight: '460px',
+        background: '#111b21',
+        borderRadius: '12px',
+        boxShadow: '0 4px 24px rgba(0,0,0,.5)',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        fontFamily: 'Segoe UI, sans-serif',
+        animation: 'wspp-slide-up .2s ease-out',
+      });
+      document.body.appendChild(panel);
+    }
+
+    const loading = _catalogLoading && _catalogItems.length === 0;
+
+    panel.innerHTML = `
+      <div style="padding:12px 16px;background:#1f2c34;border-bottom:1px solid #2a3942;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:16px;">\uD83C\uDFA4</span>
+        <span style="color:#e9edef;font-size:14px;font-weight:600;flex:1;">Audios de Cesar Vasquez</span>
+        <button id="wspp-catalog-close" style="background:none;border:none;color:#8696a0;font-size:18px;cursor:pointer;padding:2px 6px;">\u2715</button>
+      </div>
+      <div id="wspp-catalog-list" style="overflow-y:auto;flex:1;padding:8px;">
+        ${loading ? '<div style="color:#8696a0;text-align:center;padding:24px;font-size:13px;">Cargando catalogo...</div>' : ''}
+        ${!loading && _catalogItems.length === 0 ? '<div style="color:#8696a0;text-align:center;padding:24px;font-size:13px;">No hay audios disponibles</div>' : ''}
+        ${_catalogItems.map(item => `
+          <div class="wspp-catalog-item" data-id="${item.id}" data-has-audio="${item.has_audio}" style="
+            padding:10px 12px;margin:4px 0;border-radius:8px;cursor:pointer;
+            background:#1f2c34;transition:background .15s;display:flex;align-items:center;gap:10px;
+            ${!item.has_audio ? 'opacity:0.4;pointer-events:none;' : ''}
+          ">
+            <span style="font-size:20px;flex-shrink:0;">${CATALOG_ICONS[item.category] || '\uD83D\uDD0A'}</span>
+            <div style="flex:1;min-width:0;">
+              <div style="color:#e9edef;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                ${item.label}
+              </div>
+              <div style="color:#8696a0;font-size:11px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                ${item.description || item.category}
+              </div>
+            </div>
+            <span style="color:#00a884;font-size:14px;flex-shrink:0;">${item.has_audio ? '\u25B6' : '\u23F3'}</span>
+          </div>
+        `).join('')}
+      </div>
+      <div id="wspp-catalog-status" style="padding:8px 16px;background:#1f2c34;border-top:1px solid #2a3942;color:#8696a0;font-size:11px;text-align:center;display:none;"></div>
+    `;
+
+    // Close button
+    panel.querySelector('#wspp-catalog-close')?.addEventListener('click', () => {
+      panel.remove();
+      _catalogPanelOpen = false;
+      const btn = document.getElementById('wspp-catalog-btn');
+      if (btn) btn.style.background = '#00a884';
+    });
+
+    // Item click handlers
+    panel.querySelectorAll('.wspp-catalog-item').forEach(el => {
+      el.addEventListener('mouseenter', () => { el.style.background = '#2a3942'; });
+      el.addEventListener('mouseleave', () => { el.style.background = '#1f2c34'; });
+      el.addEventListener('click', () => handleCatalogItemClick(el.getAttribute('data-id')));
+    });
   }
 
-  // ── Convertir base64 a Blob ──────────────────────────────────────────
-  function base64ToBlob(base64, mimeType) {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return new Blob([bytes], { type: mimeType });
+  // ── Handle catalog item click — fetch audio and send via clipboard ──
+  function handleCatalogItemClick(audioId) {
+    if (!audioId) return;
+
+    const statusEl = document.getElementById('wspp-catalog-status');
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.textContent = 'Cargando audio...';
+      statusEl.style.color = '#8696a0';
+    }
+
+    // Highlight the clicked item
+    const items = document.querySelectorAll('.wspp-catalog-item');
+    items.forEach(el => { el.style.pointerEvents = 'none'; el.style.opacity = '0.6'; });
+
+    window.postMessage({ type: 'GET_CATALOG_AUDIO', id: audioId }, WA_ORIGIN);
   }
 
-  // ── Calcular SHA256 hash en base64 (para filehash) ───────────────────
-  async function sha256Base64(blob) {
-    const buffer = await blob.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-    const bytes = new Uint8Array(hashBuffer);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary);
-  }
-
-  // ── Enviar audio como PTT (nota de voz) via módulos internos de WA ──
-  async function sendAsPTT(base64, mimeType) {
+  // ── Send audio via clipboard paste into WA composer ─────────────────
+  async function sendAudioViaClipboard(audioBase64, mimeType) {
     try {
-      // 1. Obtener chat activo
-      const { ChatCollection } = window.require('WAWebChatCollection');
-      const chat = ChatCollection._models.find(c => c.active);
-      if (!chat) {
-        console.error('[WSPP TTS] No hay chat activo');
+      const blob = base64ToBlob(audioBase64, mimeType);
+
+      // Find the composer input
+      const selectors = [
+        '[data-testid="conversation-compose-box-input"]',
+        '#main [contenteditable="true"][role="textbox"]',
+        'footer [contenteditable="true"][role="textbox"]',
+      ];
+      let composer = null;
+      for (const sel of selectors) {
+        composer = document.querySelector(sel);
+        if (composer) break;
+      }
+
+      if (!composer) {
+        console.error('[WSPP CATALOG] No composer found');
         return false;
       }
-      console.log('[WSPP TTS] Chat activo:', chat.id?._serialized);
 
-      // 2. Crear blob y OpaqueData
-      const OpaqueData = window.require('WAWebMediaOpaqueData');
-      const blob = base64ToBlob(base64, mimeType);
-      const opaqueData = await OpaqueData.createFromData(blob, mimeType);
-      const filehash = await sha256Base64(blob);
-      console.log('[WSPP TTS] OpaqueData creado, size:', blob.size, 'hash:', filehash.slice(0, 20) + '...');
+      // Focus the composer
+      composer.focus();
 
-      // 3. Usar addAndSendMsgToChat con un objeto mensaje completo
-      //    Basado en la estructura real de un PTT enviado por WA
-      const { addAndSendMsgToChat } = window.require('WAWebSendMsgChatAction');
+      // Create a File from the Blob (WA expects a file-like object)
+      const file = new File([blob], 'audio_cesar_vasquez.ogg', { type: mimeType });
 
-      const msgAttrs = {
-        type: 'ptt',
-        mimetype: 'audio/ogg; codecs=opus',
-        duration: Math.ceil(blob.size / 3000),  // estimado ~3KB/sec para OGG
-        size: blob.size,
-        filehash,
-        body: undefined,
-        caption: undefined,
-        isGif: false,
-        isForwarded: false,
-        isViewOnce: false,
-      };
+      // Create a DataTransfer with the file
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
 
-      console.log('[WSPP TTS] Enviando con addAndSendMsgToChat, attrs:', JSON.stringify(msgAttrs));
-
-      const result = await addAndSendMsgToChat(chat, msgAttrs, {
-        mediaData: {
-          type: 'ptt',
-          mediaStage: 'PENDING',
-          size: blob.size,
-          filehash,
-          mimetype: 'audio/ogg; codecs=opus',
-          mediaBlob: opaqueData,
-          duration: msgAttrs.duration,
-          isViewOnce: false,
-          isGif: false,
-          swStreamingSupported: false,
-          animationDuration: 0,
-          animatedAsNewMsg: false,
-        },
+      // Dispatch paste event on the composer
+      const pasteEvent = new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData: dataTransfer,
       });
 
-      console.log('[WSPP TTS] ✓ addAndSendMsgToChat resultado:', result);
+      composer.dispatchEvent(pasteEvent);
+      console.log('[WSPP CATALOG] Paste event dispatched');
+
       return true;
     } catch (err) {
-      console.error('[WSPP TTS] Error enviando PTT:', err);
+      console.error('[WSPP CATALOG] Clipboard send error:', err);
       return false;
     }
   }
 
-  // ── Click handler principal ─────────────────────────────────────────
-  function handleTTSClick() {
-    const { text, element } = getComposerText();
+  // ── Receive catalog data from background ────────────────────────────
+  window.addEventListener('message', (e) => {
+    if (e.source !== window) return;
 
-    if (!text) {
-      // Feedback visual: shake del botón
-      const btn = document.getElementById('wspp-tts-btn');
-      if (btn) {
-        btn.style.transform = 'translateX(-5px)';
-        setTimeout(() => { btn.style.transform = 'translateX(5px)'; }, 100);
-        setTimeout(() => { btn.style.transform = ''; }, 200);
+    // Catalog list received
+    if (e.data?.type === 'AUDIO_CATALOG_READY') {
+      _catalogLoading = false;
+      if (e.data.ok && e.data.items) {
+        _catalogItems = e.data.items;
+        console.log('[WSPP CATALOG] Loaded', _catalogItems.length, 'items');
+      } else {
+        console.warn('[WSPP CATALOG] Error loading catalog:', e.data.error);
       }
-      console.log('[WSPP TTS] No hay texto en el composer');
+      if (_catalogPanelOpen) renderCatalogPanel();
       return;
     }
 
-    console.log('[WSPP TTS] Texto capturado:', text.slice(0, 80));
-    setTTSState('loading');
+    // Single audio received — send via clipboard
+    if (e.data?.type === 'CATALOG_AUDIO_READY') {
+      const statusEl = document.getElementById('wspp-catalog-status');
 
-    // Limpiar el composer para que el usuario sepa que se capturó
-    clearComposer(element);
+      if (!e.data.ok || !e.data.audioBase64) {
+        console.error('[WSPP CATALOG] Audio error:', e.data.error);
+        if (statusEl) {
+          statusEl.textContent = 'Error: ' + (e.data.error || 'audio no disponible');
+          statusEl.style.color = '#ef5350';
+        }
+        // Re-enable items
+        document.querySelectorAll('.wspp-catalog-item').forEach(el => {
+          el.style.pointerEvents = ''; el.style.opacity = '';
+        });
+        setTimeout(() => { if (statusEl) statusEl.style.display = 'none'; }, 3000);
+        return;
+      }
 
-    // H-3: Pedir audio al background via content.js bridge — use specific origin
-    window.postMessage({ type: 'GENERATE_VOICE', text }, WA_ORIGIN);
-  }
+      if (statusEl) {
+        statusEl.textContent = 'Enviando audio...';
+        statusEl.style.color = '#00a884';
+      }
 
-  // ── Recibir audio generado ──────────────────────────────────────────
-  window.addEventListener('message', async (e) => {
-    if (e.source !== window || e.data?.type !== 'VOICE_READY') return;
-
-    if (!e.data.ok) {
-      console.error('[WSPP TTS] Error del backend:', e.data.error);
-      setTTSState('error');
+      sendAudioViaClipboard(e.data.audioBase64, e.data.mimeType).then(ok => {
+        if (ok) {
+          if (statusEl) {
+            statusEl.textContent = (e.data.label || 'Audio') + ' — pegado en el chat';
+            statusEl.style.color = '#00a884';
+          }
+          console.log('[WSPP CATALOG] Audio sent via clipboard');
+        } else {
+          if (statusEl) {
+            statusEl.textContent = 'Error al pegar — intenta manualmente';
+            statusEl.style.color = '#ef5350';
+          }
+        }
+        // Re-enable items after 1.5s
+        setTimeout(() => {
+          document.querySelectorAll('.wspp-catalog-item').forEach(el => {
+            el.style.pointerEvents = ''; el.style.opacity = '';
+          });
+          setTimeout(() => { if (statusEl) statusEl.style.display = 'none'; }, 2000);
+        }, 1500);
+      });
       return;
-    }
-
-    console.log('[WSPP TTS] Audio recibido, enviando como PTT...');
-
-    const ok = await sendAsPTT(e.data.audioBase64, e.data.mimeType);
-
-    if (ok) {
-      setTTSState('success');
-    } else {
-      setTTSState('error');
     }
   });
 
-  // ── Insertar botón cuando el chat esté listo ────────────────────────
-  // L-11: Added max retries to prevent infinite polling
-  const MAX_TTS_BUTTON_RETRIES = 30; // ~60s max wait
-  let _ttsButtonRetries = 0;
+  // ── Insert catalog button when chat is ready ────────────────────────
+  const MAX_CATALOG_BTN_RETRIES = 30;
+  let _catalogBtnRetries = 0;
 
   function waitForChatAndInsertButton() {
-    if (document.getElementById('wspp-tts-btn')) return;
+    if (document.getElementById('wspp-catalog-btn')) return;
     if (document.querySelector('#main') || document.querySelector('.two')) {
-      createTTSButton();
-      console.log('[WSPP TTS] ✓ Botón 🎤 insertado');
+      createCatalogButton();
+      console.log('[WSPP CATALOG] Button inserted');
       return;
     }
-    _ttsButtonRetries++;
-    if (_ttsButtonRetries < MAX_TTS_BUTTON_RETRIES) {
+    _catalogBtnRetries++;
+    if (_catalogBtnRetries < MAX_CATALOG_BTN_RETRIES) {
       setTimeout(waitForChatAndInsertButton, 2000);
     } else {
-      console.warn('[WSPP TTS] ⚠️ Chat container not found after', MAX_TTS_BUTTON_RETRIES, 'retries — giving up');
+      console.warn('[WSPP CATALOG] Chat container not found after', MAX_CATALOG_BTN_RETRIES, 'retries');
     }
   }
 
-  // Esperar a que WA Web cargue completamente
+  // Wait for WA Web to load
   if (document.readyState === 'complete') {
     setTimeout(waitForChatAndInsertButton, 3000);
   } else {

@@ -65,23 +65,39 @@ window.addEventListener('message', (e) => {
     return;
   }
 
-  // --- GENERATE_VOICE (TTS: inject → background → inject) ---
-  if (e.data?.type === 'GENERATE_VOICE') {
-    const text = e.data.text;
-    console.log('[WSPP TTS bridge] Enviando a background:', text?.slice(0, 50));
-
-    chrome.runtime.sendMessage({ type: 'GENERATE_VOICE', text }, (response) => {
+  // --- FETCH_AUDIO_CATALOG (catalog list: inject → background → inject) ---
+  if (e.data?.type === 'FETCH_AUDIO_CATALOG') {
+    console.log('[WSPP CATALOG bridge] Fetching catalog');
+    chrome.runtime.sendMessage({ type: 'FETCH_AUDIO_CATALOG' }, (response) => {
       if (chrome.runtime.lastError) {
-        console.error('[WSPP TTS bridge] Error:', chrome.runtime.lastError.message);
-        window.postMessage({ type: 'VOICE_READY', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        window.postMessage({ type: 'AUDIO_CATALOG_READY', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
         return;
       }
-      // Pasar respuesta de vuelta al MAIN world (inject.js)
       window.postMessage({
-        type: 'VOICE_READY',
+        type: 'AUDIO_CATALOG_READY',
+        ok: response?.ok ?? false,
+        items: response?.items ?? [],
+        error: response?.error ?? null,
+      }, WA_ORIGIN);
+    });
+    return;
+  }
+
+  // --- GET_CATALOG_AUDIO (fetch single audio: inject → background → inject) ---
+  if (e.data?.type === 'GET_CATALOG_AUDIO') {
+    const audioId = e.data.id;
+    console.log('[WSPP CATALOG bridge] Getting audio:', audioId);
+    chrome.runtime.sendMessage({ type: 'GET_CATALOG_AUDIO', id: audioId }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'CATALOG_AUDIO_READY', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({
+        type: 'CATALOG_AUDIO_READY',
         ok: response?.ok ?? false,
         audioBase64: response?.audioBase64 ?? null,
         mimeType: response?.mimeType ?? null,
+        label: response?.label ?? null,
         error: response?.error ?? null,
       }, WA_ORIGIN);
     });
