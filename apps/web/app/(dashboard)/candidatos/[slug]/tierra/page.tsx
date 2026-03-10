@@ -67,7 +67,8 @@ const TierraMap = dynamic(
 
 const EMPTY_FORMS: FormRecord[] = [];
 const TIERRA_FULLSCREEN_CLASS = "tierra-fullscreen";
-const LEFT_PANEL_W = 132;
+const LEFT_PANEL_W_DEFAULT = 132;
+const LEFT_PANEL_W_ZONAL = 176;
 const TABBAR_THEME_VARS = [
   "--tierra-tabbar-bg",
   "--tierra-tabbar-border",
@@ -85,6 +86,7 @@ export default function TierraPage() {
   const slug = params.slug as string;
   const mapHandleRef = useRef<TierraMapHandle | null>(null);
   const { user } = useAuth();
+  const isBrigadistaZonal = user?.role === "brigadista_zonal";
   const queryClient = useQueryClient();
 
   // ─── Demo: detectar si este slug es de la demo de Carmen de la Legua ───
@@ -264,6 +266,7 @@ export default function TierraPage() {
   }
 
   const { campaign } = stats;
+  const leftPanelWidth = isBrigadistaZonal ? LEFT_PANEL_W_ZONAL : LEFT_PANEL_W_DEFAULT;
 
   return (
     <div
@@ -275,6 +278,7 @@ export default function TierraPage() {
         mapTheme={mapTheme}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        userRole={user?.role}
       />
 
       {viewMode === "campo" ? (
@@ -309,10 +313,10 @@ export default function TierraPage() {
           />
           <div
             className="absolute top-3 z-20 flex items-start transition-[left] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-            style={{ left: showControlsPanel ? 12 : -(LEFT_PANEL_W + 4) }}
+            style={{ left: showControlsPanel ? 12 : -(leftPanelWidth + 4) }}
           >
-            <div style={{ width: LEFT_PANEL_W }}>
-              <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
+            <div style={{ width: leftPanelWidth }}>
+              <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} iconOnlyThemeToggle={isBrigadistaZonal} />
             </div>
             <button
               type="button"

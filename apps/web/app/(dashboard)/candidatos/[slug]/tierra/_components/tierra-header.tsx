@@ -14,11 +14,12 @@ type Props = {
   mapTheme: MapTheme;
   viewMode: TierraViewMode;
   onViewModeChange: (mode: TierraViewMode) => void;
+  userRole?: string;
 };
 
 /* ========== Component ========== */
 
-export function TierraHeader({ stats, mapTheme, viewMode, onViewModeChange }: Props) {
+export function TierraHeader({ stats, mapTheme, viewMode, onViewModeChange, userRole }: Props) {
   const router = useRouter();
   const { campaign, metas, totals } = stats;
   const pc = campaign.color_primario;
@@ -29,25 +30,29 @@ export function TierraHeader({ stats, mapTheme, viewMode, onViewModeChange }: Pr
   const datosProgress = Math.min((totals.forms_count / metaDatos) * 100, 100);
   const votosProgress = metas.votos > 0 ? Math.min((totals.forms_count / metas.votos) * 100, 100) : 0;
 
+  const showBackButton = userRole !== "brigadista_zonal";
+
   return (
     <header className={`flex items-center justify-between h-16 px-5 border-b shrink-0 gap-5 z-20 ${
       isDark ? "bg-slate-950 border-slate-800" : "bg-white border-slate-200/80"
     }`}>
       {/* Left: back + candidate identity */}
       <div className="flex items-center gap-3 min-w-0">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className={`w-8 h-8 rounded-lg border cursor-pointer flex items-center justify-center shrink-0 transition-colors ${
-            isDark
-              ? "border-slate-700 bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-              : "border-slate-200 bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-          }`}
-          aria-label="Volver"
-          title="Volver"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>
-        </button>
+        {showBackButton ? (
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className={`w-8 h-8 rounded-lg border cursor-pointer flex items-center justify-center shrink-0 transition-colors ${
+              isDark
+                ? "border-slate-700 bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                : "border-slate-200 bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            }`}
+            aria-label="Volver"
+            title="Volver"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>
+          </button>
+        ) : null}
 
         <div className="w-9 h-9 rounded-full overflow-hidden border-2 shrink-0" style={{ borderColor: sc || pc }}>
           {campaign.foto_url ? (

@@ -10,7 +10,8 @@ import { useEffect } from "react";
  *   candidato      → /equipo                            (gestión de equipo de su campaña)
  *   consultor      → /candidatos/[slug]/tierra          (mapa de la campaña activa)
  *   agente_digital → /candidatos/[slug]/validacion      (única pantalla disponible)
- *   otros          → /equipo                            (vista de equipo)
+  *   brigadista_zonal → /candidatos/[slug]/tierra        (territorio por defecto)
+  *   otros            → /equipo                          (vista de equipo)
  *
  * Muestra un spinner mínimo mientras resuelve auth + campaña activa.
  */
@@ -53,6 +54,16 @@ export default function DashboardHomePage() {
         router.replace(`/candidatos/${campaign.slug}/validacion`);
       }
       // Si no hay campaña activa, se queda en el spinner (edge case: no debería ocurrir)
+      return;
+    }
+
+    // Brigadista zonal → territorio de la campaña activa
+    if (user.role === "brigadista_zonal") {
+      const campaign =
+        campaigns.find((c) => c.id === activeCampaignId) ?? campaigns[0];
+      if (campaign?.slug) {
+        router.replace(`/candidatos/${campaign.slug}/tierra`);
+      }
       return;
     }
 
