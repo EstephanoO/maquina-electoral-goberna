@@ -149,7 +149,7 @@ export const PipelineView = memo(function PipelineView({
   const isEmpty = !hasForms && !hasBrigadistas;
 
   return (
-    <div className={`flex flex-col flex-1 min-h-0 overflow-y-auto bg-slate-50/80 transition-opacity duration-150 ${isPending ? "opacity-70" : "opacity-100"}`}>
+    <div className={`h-full flex flex-col min-h-0 overflow-y-auto bg-slate-50/80 transition-opacity duration-150 ${isPending ? "opacity-70" : "opacity-100"}`}>
       {/* 1. Filter bar */}
       <div className="shrink-0 border-b border-slate-100 bg-white">
         <PipelineFilters period={period} onChange={onPeriodChange} primaryColor={primaryColor} offset={offset} onOffsetChange={onOffsetChange} />
