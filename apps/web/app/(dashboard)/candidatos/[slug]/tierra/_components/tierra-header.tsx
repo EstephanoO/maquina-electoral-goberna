@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { CampaignStats } from "@/lib/types";
-import type { MapTheme, DrillState } from "./types";
+import type { MapTheme } from "./types";
 
 /* ========== Types ========== */
 
@@ -11,36 +11,19 @@ export type TierraViewMode = "campo" | "pipeline" | "datos";
 
 type Props = {
   stats: CampaignStats;
-  agentCount: number;
-  formCount: number;
-  connectedCount: number;
   mapTheme: MapTheme;
   viewMode: TierraViewMode;
   onViewModeChange: (mode: TierraViewMode) => void;
-  /** When set, KPI labels reflect the active drill zone instead of global totals */
-  drillState?: DrillState;
 };
-
-/* ========== Helpers ========== */
-
-function getZoneLabel(drillState: DrillState | undefined): string | null {
-  if (!drillState || drillState.level === 0) return null;
-  if (drillState.level >= 3 && drillState.distName) return drillState.distName;
-  if (drillState.level >= 2 && drillState.provName) return drillState.provName;
-  if (drillState.level >= 1 && drillState.depName) return drillState.depName;
-  return null;
-}
 
 /* ========== Component ========== */
 
-export function TierraHeader({ stats, agentCount, formCount, connectedCount, mapTheme, viewMode, onViewModeChange, drillState }: Props) {
+export function TierraHeader({ stats, mapTheme, viewMode, onViewModeChange }: Props) {
   const router = useRouter();
   const { campaign, metas, totals } = stats;
   const pc = campaign.color_primario;
   const sc = campaign.color_secundario;
   const isDark = mapTheme === "dark";
-  const zoneLabel = getZoneLabel(drillState);
-
   const metaDatos = metas.datos > 0 ? metas.datos : 200000;
   // Progress bar always shows global totals (the goal doesn't change with drill)
   const datosProgress = Math.min((totals.forms_count / metaDatos) * 100, 100);
@@ -63,12 +46,12 @@ export function TierraHeader({ stats, agentCount, formCount, connectedCount, map
           aria-label="Volver"
           title="Volver"
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><title>Volver</title><polyline points="15 18 9 12 15 6" /></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>
         </button>
 
         <div className="w-9 h-9 rounded-full overflow-hidden border-2 shrink-0" style={{ borderColor: sc || pc }}>
           {campaign.foto_url ? (
-            <Image src={campaign.foto_url} alt="" width={36} height={36} className="w-full h-full object-cover" unoptimized />
+            <Image src={campaign.foto_url} alt={`Foto de ${campaign.name}`} width={36} height={36} className="w-full h-full object-cover" unoptimized />
           ) : (
             <span className="w-full h-full flex items-center justify-center text-white text-xs font-extrabold" style={{ backgroundColor: pc }}>
               {campaign.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
@@ -86,7 +69,7 @@ export function TierraHeader({ stats, agentCount, formCount, connectedCount, map
         </div>
       </div>
 
-      {/* Center: segmented control + KPIs */}
+      {/* Center: segmented control */}
       <div className="flex items-center gap-5">
         {/* Segmented control — pill style */}
         <div className={`flex rounded-full p-0.5 ${isDark ? "bg-slate-900/95 border border-slate-700" : "bg-slate-100"}`}>
@@ -115,22 +98,6 @@ export function TierraHeader({ stats, agentCount, formCount, connectedCount, map
             mapTheme={mapTheme}
           />
         </div>
-
-        {/* Contextual KPIs — only for Campo and Datos mode; Pipeline has the hero card */}
-        {viewMode !== "pipeline" && (
-          <>
-            <div className={`w-px h-8 ${isDark ? "bg-slate-700/80" : "bg-slate-200/70"}`} />
-            <CampoKpis
-              formCount={formCount}
-              agentCount={agentCount}
-              connectedCount={connectedCount}
-              todayCount={totals.forms_today}
-              primaryColor={pc}
-              mapTheme={mapTheme}
-              zoneLabel={zoneLabel}
-            />
-          </>
-        )}
       </div>
 
       {/* Right: metas (both modes) */}
@@ -170,85 +137,7 @@ function SegmentButton({ active, onClick, icon, label, activeColor, mapTheme }: 
   );
 }
 
-/* ========== KPI Groups ========== */
-
-function CampoKpis({ formCount, agentCount, connectedCount, todayCount, primaryColor, mapTheme, zoneLabel }: {
-  formCount: number;
-  agentCount: number;
-  connectedCount: number;
-  todayCount: number;
-  primaryColor: string;
-  mapTheme: MapTheme;
-  /** When set, KPI counts are scoped to this zone */
-  zoneLabel: string | null;
-}) {
-  const isDark = mapTheme === "dark";
-  const isFiltered = zoneLabel !== null;
-
-  return (
-    <div className="flex items-center gap-4">
-      {/* Zone chip — shown when drill is active */}
-      {isFiltered && (
-        <>
-          <div
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
-            style={{
-              background: isDark ? "rgba(96,165,250,0.15)" : "rgba(37,99,235,0.08)",
-              border: isDark ? "1px solid rgba(96,165,250,0.35)" : "1px solid rgba(37,99,235,0.2)",
-            }}
-          >
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#60a5fa" : "#2563eb"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
-            </svg>
-            <span
-              className="text-[11px] font-bold tracking-wide max-w-[120px] truncate"
-              style={{ color: isDark ? "#93c5fd" : "#1d4ed8" }}
-            >
-              {zoneLabel}
-            </span>
-          </div>
-          <KpiDivider mapTheme={mapTheme} />
-        </>
-      )}
-      <KpiSlot value={formCount.toLocaleString()} label={isFiltered ? "En zona" : "Puntos"} mapTheme={mapTheme} />
-      <KpiDivider mapTheme={mapTheme} />
-      <KpiSlot value={String(agentCount)} label="Agentes" mapTheme={mapTheme} />
-      <KpiDivider mapTheme={mapTheme} />
-      <KpiSlot value={String(connectedCount)} label="En linea" className={connectedCount > 0 ? "text-teal-500" : "text-slate-400"} mapTheme={mapTheme} />
-      {/* Today count only meaningful without geo filter — hide to avoid confusion */}
-      {!isFiltered && (
-        <>
-          <KpiDivider mapTheme={mapTheme} />
-          <KpiSlot value={`+${todayCount}`} label="Hoy" style={{ color: primaryColor }} mapTheme={mapTheme} />
-        </>
-      )}
-    </div>
-  );
-}
-
-
-
 /* ========== Sub-components ========== */
-
-function KpiSlot({ value, label, className, style, mapTheme }: {
-  value: string;
-  label: string;
-  className?: string;
-  style?: React.CSSProperties;
-  mapTheme: MapTheme;
-}) {
-  const isDark = mapTheme === "dark";
-  return (
-    <div className="flex flex-col items-center">
-      <span className={`text-[20px] font-black leading-tight tabular-nums ${className ?? (isDark ? "text-slate-100" : "text-slate-800")}`} style={style}>{value}</span>
-      <span className={`text-[9px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>{label}</span>
-    </div>
-  );
-}
-
-function KpiDivider({ mapTheme }: { mapTheme: MapTheme }) {
-  return <div className={`w-px h-8 ${mapTheme === "dark" ? "bg-slate-700/80" : "bg-slate-100"}`} />;
-}
 
 function MetaBar({ label, current, target, pct, color, mapTheme }: {
   label: string;

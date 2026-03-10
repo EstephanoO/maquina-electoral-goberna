@@ -62,51 +62,42 @@ export default function CandidatoSlugLayout({ children }: { children: React.Reac
   return (
     <div style={isTierra ? styles.wrapperTierra : styles.wrapper}>
       {/* Tab bar */}
-      <nav
-        style={isTierra ? styles.tabBarTierra : styles.tabBar}
-        className={isTierra ? "candidato-tabbar-tierra" : undefined}
-      >
-        <div style={styles.tabGroup}>
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.key;
-            const Icon = tab.icon;
+      {!isTierra ? (
+        <nav style={styles.tabBar}>
+          <div style={styles.tabGroup}>
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.key;
+              const Icon = tab.icon;
 
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => router.push(`/candidatos/${slug}/${tab.key}`)}
-                style={{
-                  ...styles.tab,
-                  ...(isActive ? styles.tabActive : {}),
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive) e.currentTarget.style.background = "var(--tierra-tab-hover-bg, rgba(15,23,42,0.04))";
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) e.currentTarget.style.background = "transparent";
-                }}
-              >
-                <Icon size={15} active={isActive} />
-                <span>{tab.label}</span>
-                {isActive && <span style={styles.activeIndicator} />}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => router.push(`/candidatos/${slug}/${tab.key}`)}
+                  style={{
+                    ...styles.tab,
+                    ...(isActive ? styles.tabActive : {}),
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) e.currentTarget.style.background = "var(--tierra-tab-hover-bg, rgba(15,23,42,0.04))";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  <Icon size={15} active={isActive} />
+                  <span>{tab.label}</span>
+                  {isActive && <span style={styles.activeIndicator} />}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      ) : null}
 
       {/* Page content */}
       <div style={{ flex: 1, position: "relative" }}>{children}</div>
 
-      {/* Responsive tierra tab bar */}
-      <style>{`
-        @media (max-width: 767px) {
-          .candidato-tabbar-tierra {
-            left: 0 !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }
@@ -221,22 +212,6 @@ const styles: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     zIndex: 60,
     position: "relative",
-  },
-  tabBarTierra: {
-    display: "flex",
-    alignItems: "center",
-    height: 48,
-    padding: "0 16px",
-    background: "var(--tierra-tabbar-bg, #ffffff)",
-    borderBottom: "1px solid var(--tierra-tabbar-border, #e2e8f0)",
-    flexShrink: 0,
-    /* Fixed so it stays above the Tierra fixed container */
-    position: "fixed",
-    top: 0,
-    left: "var(--sidebar-current-width, 72px)" as unknown as number, /* adapts to sidebar state */
-    right: 0,
-    zIndex: 60,
-    transition: "left 0.2s cubic-bezier(0.4,0,0.2,1)",
   },
   tabGroup: {
     display: "flex",

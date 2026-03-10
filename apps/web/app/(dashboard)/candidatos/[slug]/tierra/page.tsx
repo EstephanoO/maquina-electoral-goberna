@@ -114,7 +114,8 @@ export default function TierraPage() {
   const [heatmapRadius, setHeatmapRadius] = useState(26);
   const [heatmapOpacity, setHeatmapOpacity] = useState(0.88);
   const [mapTheme, setMapTheme] = useState<MapTheme>("dark");
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(true);
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [drillState, setDrillState] = useState<DrillState>(
@@ -283,13 +284,9 @@ export default function TierraPage() {
     >
       <TierraHeader
         stats={stats}
-        agentCount={filteredAgents.length}
-        formCount={drillBounds ? filteredFormPoints.length : stats.totals.forms_count}
-        connectedCount={connectedCount}
         mapTheme={mapTheme}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        drillState={drillState}
       />
 
       {viewMode === "campo" ? (
@@ -350,23 +347,40 @@ export default function TierraPage() {
                 </svg>
               )}
             </button>
-            <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
+            <button
+              type="button"
+              onClick={() => setIsPanelOpen((prev) => !prev)}
+              aria-label={isPanelOpen ? "Ocultar panel" : "Mostrar panel"}
+              className={`cursor-pointer rounded-md border px-3 h-9 text-xs font-semibold backdrop-blur-sm transition-colors ${
+                mapTheme === "dark"
+                  ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
+                  : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
+              }`}
+              title={isPanelOpen ? "Ocultar panel" : "Mostrar panel"}
+            >
+              {isPanelOpen ? "Ocultar panel" : "Mostrar panel"}
+            </button>
+            {isPanelOpen ? (
+              <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
+            ) : null}
           </div>
-          <CampoOverlay
-            agents={filteredAgents}
-            connectedCount={connectedCount}
-            logEntries={logEntries}
-            formCount={drillBounds ? filteredFormPoints.length : stats.totals.forms_count}
-            primaryColor={campaign.color_primario}
-            selectedAgentId={selectedAgentId}
-            onAgentClick={handleAgentListClick}
-            onLogEntryClick={handleLogEntryClick}
-            userRole={user?.role}
-            onDeleteForm={handleDeleteForm}
-            onUpdateForm={handleUpdateForm}
-            mapTheme={mapTheme}
-            drillState={drillState}
-          />
+          {isPanelOpen ? (
+            <CampoOverlay
+              agents={filteredAgents}
+              connectedCount={connectedCount}
+              logEntries={logEntries}
+              formCount={drillBounds ? filteredFormPoints.length : stats.totals.forms_count}
+              primaryColor={campaign.color_primario}
+              selectedAgentId={selectedAgentId}
+              onAgentClick={handleAgentListClick}
+              onLogEntryClick={handleLogEntryClick}
+              userRole={user?.role}
+              onDeleteForm={handleDeleteForm}
+              onUpdateForm={handleUpdateForm}
+              mapTheme={mapTheme}
+              drillState={drillState}
+            />
+          ) : null}
         </div>
       ) : viewMode === "pipeline" ? (
         <PipelineView
@@ -423,4 +437,3 @@ export default function TierraPage() {
     </div>
   );
 }
-
