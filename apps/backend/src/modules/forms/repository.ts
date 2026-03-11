@@ -49,6 +49,31 @@ export async function ensureFormsTable() {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_forms_campaign_id ON public.forms (campaign_id)`);
 }
 
+/**
+ * Pre-enqueue check: returns phone numbers that already exist in
+ * form_submissions for the given campaign.  Runs a single cheap SELECT so
+ * the handler can reject duplicates synchronously (409) before they hit the
+ * write-behind queue.
+ */
+export async function findDuplicatePhones(
+  campaignId: string,
+  phones: string[],
+): Promise<string[]> {
+  const cleaned = phones.map((p) => p.trim()).filter(Boolean);
+  if (cleaned.length === 0) return [];
+
+  const result = await pool.query<{ phone: string }>(
+    `SELECT DISTINCT fs.data->>'telefono' AS phone
+     FROM   form_submissions fs
+     WHERE  fs.campaign_id = $1
+       AND  fs.deleted_at IS NULL
+       AND  fs.data->>'telefono' = ANY($2::text[])`,
+    [campaignId, cleaned],
+  );
+
+  return result.rows.map((r) => r.phone);
+}
+
 type BatchResult = {
   attempted: number;
   accepted: number;

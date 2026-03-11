@@ -10,7 +10,7 @@ import { consumeDualWeightedRateLimit } from "../../infra/redis";
 import { emitCampaignEvent } from "../campaigns/routes";
 import { formSchema, type FormInput } from "./schema";
 import { FormsWriteBehindQueue } from "./write-behind-queue";
-import { getFormsByCampaign, getRecentForms, deleteFormById, softDeleteFormById, restoreFormById, getPendingDeletions, updateFormById, batchHardDeleteForms, batchSoftDeleteForms } from "./repository";
+import { findDuplicatePhones, getFormsByCampaign, getRecentForms, deleteFormById, softDeleteFormById, restoreFormById, getPendingDeletions, updateFormById, batchHardDeleteForms, batchSoftDeleteForms } from "./repository";
 
 function parseFormsPayload(body: unknown): FormInput[] {
   const items = Array.isArray(body) ? body : [body];
@@ -108,6 +108,30 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
           markOutcome("rate_limited");
           metricsRegistry.incCounter("forms_ingest_total", "429");
           return reply.code(429).send(errorPayload(requestId, "RATE_LIMITED", "demasiadas forms por minuto"));
+        }
+
+        // ── Pre-enqueue phone dedup check ─────────────────────────────
+        // Reject synchronously if the phone already exists in the campaign
+        // so the mobile client gets a 409 instead of a silent swallow.
+        if (campaignId) {
+          const phones = forms
+            .map((f) => String((f as Record<string, unknown>).telefono ?? "").trim())
+            .filter(Boolean);
+
+          if (phones.length > 0) {
+            const duplicates = await findDuplicatePhones(campaignId, phones);
+            if (duplicates.length > 0) {
+              metricsRegistry.incCounter("forms_ingest_total", "409");
+              markOutcome("deduped");
+              return reply.code(409).send({
+                ok: false,
+                request_id: requestId,
+                code: "DUPLICATE_PHONE",
+                message: `Este número ya está registrado: ${duplicates.join(", ")}`,
+                duplicated_phones: duplicates,
+              });
+            }
+          }
         }
 
         let queued = 0;

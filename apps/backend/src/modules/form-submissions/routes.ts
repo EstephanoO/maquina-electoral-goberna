@@ -31,11 +31,23 @@ export function buildFormSubmissionsRoutes(_env: AppEnv): FastifyPluginAsync {
 
           const result = await repo.insertBatch([submission], authed.userId);
 
+          // If all submissions were rejected due to duplicate phones, return 409
+          if (result.accepted === 0 && result.duplicated_phones.length > 0) {
+            return reply.code(409).send({
+              ok: false,
+              request_id: requestId,
+              code: "DUPLICATE_PHONE",
+              message: `Este número ya está registrado: ${result.duplicated_phones.join(", ")}`,
+              duplicated_phones: result.duplicated_phones,
+            });
+          }
+
           return reply.code(201).send({
             ok: true,
             request_id: requestId,
             accepted: result.accepted,
             attempted: result.attempted,
+            duplicated_phones: result.duplicated_phones,
           });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "form submission create failed");
@@ -74,6 +86,7 @@ export function buildFormSubmissionsRoutes(_env: AppEnv): FastifyPluginAsync {
             request_id: requestId,
             accepted: result.accepted,
             attempted: result.attempted,
+            duplicated_phones: result.duplicated_phones,
           });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "form submission batch create failed");

@@ -19,6 +19,8 @@ export type FormSubmissionRow = {
 type BatchResult = {
   attempted: number;
   accepted: number;
+  /** Phones that were rejected because they already exist in the campaign */
+  duplicated_phones: string[];
 };
 
 export async function insertBatch(
@@ -26,7 +28,7 @@ export async function insertBatch(
   submittedBy: string | null,
 ): Promise<BatchResult> {
   if (submissions.length === 0) {
-    return { attempted: 0, accepted: 0 };
+    return { attempted: 0, accepted: 0, duplicated_phones: [] };
   }
 
   const payload = JSON.stringify(
@@ -69,6 +71,18 @@ export async function insertBatch(
                  CASE WHEN COALESCE(data::jsonb->>'telefono','') <> '' THEN data::jsonb->>'telefono' ELSE client_id END,
                  client_id ASC
       ),
+      -- Identify phones that already exist in the DB (for explicit error messages)
+      existing_phones AS (
+        SELECT DISTINCT d.data::jsonb->>'telefono' AS phone
+        FROM deduped d
+        WHERE COALESCE(d.data::jsonb->>'telefono', '') <> ''
+          AND EXISTS (
+            SELECT 1 FROM public.form_submissions ex
+            WHERE ex.campaign_id = d.campaign_id
+              AND ex.data->>'telefono' = d.data::jsonb->>'telefono'
+              AND ex.deleted_at IS NULL
+          )
+      ),
       inserted AS (
         INSERT INTO form_submissions (
           form_definition_id, campaign_id, meet_id, meet_group_id, submitted_by,
@@ -92,15 +106,17 @@ export async function insertBatch(
       )
       SELECT
         (SELECT count(*)::bigint FROM incoming) AS attempted,
-        (SELECT count(*)::bigint FROM inserted) AS accepted
+        (SELECT count(*)::bigint FROM inserted) AS accepted,
+        (SELECT COALESCE(array_agg(phone), '{}') FROM existing_phones) AS duplicated_phones
     `,
     [payload],
-  )) as { rows: Array<{ attempted: string | number; accepted: string | number }> };
+  )) as { rows: Array<{ attempted: string | number; accepted: string | number; duplicated_phones: string[] }> };
 
-  const row = result.rows[0] ?? { attempted: 0, accepted: 0 };
+  const row = result.rows[0] ?? { attempted: 0, accepted: 0, duplicated_phones: [] };
   return {
     attempted: Number(row.attempted ?? 0),
     accepted: Number(row.accepted ?? 0),
+    duplicated_phones: Array.isArray(row.duplicated_phones) ? row.duplicated_phones : [],
   };
 }
 
