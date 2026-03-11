@@ -18,6 +18,7 @@ const PROTECTED_PREFIXES = [
   "/cms-metrics",
   "/equipo",
   "/formularios",
+  "/gestion",
   "/map",
   "/ops",
   "/settings",
