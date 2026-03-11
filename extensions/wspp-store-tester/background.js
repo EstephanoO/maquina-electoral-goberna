@@ -1381,6 +1381,77 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
+// GENERATE_CATALOG_AUDIO — calls backend to regenerate audio for an item
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type !== 'GENERATE_CATALOG_AUDIO') return;
+  const itemId = msg.id;
+  if (!itemId) { sendResponse({ ok: false, error: 'Missing id' }); return true; }
+
+  (async () => {
+    try {
+      const result = await apiFetch(`/api/audio-catalog/${itemId}/generate`, { method: 'POST' });
+      if (!result.ok) {
+        sendResponse({ ok: false, error: result.message || result.error || 'Generation failed' });
+        return;
+      }
+      // Bust audio cache for this item so next fetch gets fresh data
+      _audioDataCache.delete(itemId);
+      // Also bust metadata cache so duration/size refresh
+      _audioCatalogCache = null;
+      _audioCatalogCacheTs = 0;
+      sendResponse({ ok: true, id: itemId, audioSize: result.audioSize, durationMs: result.durationMs });
+    } catch (err) {
+      sendResponse({ ok: false, error: err.message });
+    }
+  })();
+
+  return true;
+});
+
+// UPDATE_CATALOG_SCRIPT — updates the script_text of a catalog item
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type !== 'UPDATE_CATALOG_SCRIPT') return;
+  const { id: itemId, script_text } = msg;
+  if (!itemId || !script_text) { sendResponse({ ok: false, error: 'Missing id or script_text' }); return true; }
+
+  (async () => {
+    try {
+      const result = await apiFetch(`/api/audio-catalog/${itemId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ script_text }),
+      });
+      if (!result.ok) {
+        sendResponse({ ok: false, error: result.message || result.error || 'Update failed' });
+        return;
+      }
+      // Bust all caches — metadata changed
+      _audioDataCache.delete(itemId);
+      _audioCatalogCache = null;
+      _audioCatalogCacheTs = 0;
+      sendResponse({ ok: true, id: itemId, script_text });
+    } catch (err) {
+      sendResponse({ ok: false, error: err.message });
+    }
+  })();
+
+  return true;
+});
+
+// BUST_AUDIO_CACHE / BUST_CATALOG_CACHE — cache invalidation from inject
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'BUST_AUDIO_CACHE' && msg.id) {
+    _audioDataCache.delete(msg.id);
+    sendResponse({ ok: true });
+    return true;
+  }
+  if (msg.type === 'BUST_CATALOG_CACHE') {
+    _audioCatalogCache = null;
+    _audioCatalogCacheTs = 0;
+    sendResponse({ ok: true });
+    return true;
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════
 // SENT EVENT DEDUP — WSPP_SENT (DOM) vs WSPP_SENT_RICH (MsgCollection)
 // Both fire for the same outgoing message. WSPP_SENT_RICH has better

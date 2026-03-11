@@ -1,7 +1,7 @@
 'use strict';
 
 const API = 'https://api.goberna.us';
-const STORAGE_KEYS = ['wspp_token', 'wspp_user', 'wspp_count', 'wspp_campaign_id', 'wspp_own_number', 'wspp_campaigns'];
+const STORAGE_KEYS = ['wspp_token', 'wspp_user', 'wspp_user_role', 'wspp_count', 'wspp_campaign_id', 'wspp_own_number', 'wspp_campaigns'];
 
 function $(id) { return document.getElementById(id); }
 
@@ -91,6 +91,7 @@ async function doLogin() {
       wspp_token:         token,
       wspp_refresh_token: data.refresh_token || null,
       wspp_user:          userName,
+      wspp_user_role:     data.user?.role || 'agente_digital',
       wspp_count:         0,
       wspp_campaign_id:   campaignId,
       wspp_campaigns:     JSON.stringify(campaigns.map(c => ({ id: c.id, name: c.name || c.candidate_name || c.id }))),
@@ -126,7 +127,7 @@ function doLogout() {
   // Preservar wspp_own_number al hacer logout — el número del celular no cambia
   // H-1: Also clear refresh_token on logout
   // S-10: Clear session storage too
-  chrome.storage.local.remove(['wspp_token', 'wspp_refresh_token', 'wspp_user', 'wspp_count', 'wspp_campaign_id', 'wspp_campaigns']);
+  chrome.storage.local.remove(['wspp_token', 'wspp_refresh_token', 'wspp_user', 'wspp_user_role', 'wspp_count', 'wspp_campaign_id', 'wspp_campaigns']);
   if (chrome.storage.session) chrome.storage.session.remove(['wspp_token']);
   $('inp-email').value    = '';
   $('inp-password').value = '';

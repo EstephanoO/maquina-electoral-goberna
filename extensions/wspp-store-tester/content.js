@@ -104,6 +104,53 @@ window.addEventListener('message', (e) => {
     return;
   }
 
+  // --- GENERATE_CATALOG_AUDIO (regenerate audio: inject → background → inject) ---
+  if (e.data?.type === 'GENERATE_CATALOG_AUDIO') {
+    const itemId = e.data.id;
+    console.log('[WSPP CATALOG bridge] Generating audio:', itemId);
+    chrome.runtime.sendMessage({ type: 'GENERATE_CATALOG_AUDIO', id: itemId }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'GENERATE_CATALOG_AUDIO_DONE', ok: false, id: itemId, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({
+        type: 'GENERATE_CATALOG_AUDIO_DONE',
+        ok: response?.ok ?? false,
+        id: itemId,
+        audioSize: response?.audioSize ?? 0,
+        durationMs: response?.durationMs ?? 0,
+        error: response?.error ?? null,
+      }, WA_ORIGIN);
+    });
+    return;
+  }
+
+  // --- UPDATE_CATALOG_SCRIPT (update script: inject → background → inject) ---
+  if (e.data?.type === 'UPDATE_CATALOG_SCRIPT') {
+    const { id: itemId, script_text } = e.data;
+    console.log('[WSPP CATALOG bridge] Updating script:', itemId);
+    chrome.runtime.sendMessage({ type: 'UPDATE_CATALOG_SCRIPT', id: itemId, script_text }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'UPDATE_CATALOG_SCRIPT_DONE', ok: false, id: itemId, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({
+        type: 'UPDATE_CATALOG_SCRIPT_DONE',
+        ok: response?.ok ?? false,
+        id: itemId,
+        script_text: response?.script_text ?? script_text,
+        error: response?.error ?? null,
+      }, WA_ORIGIN);
+    });
+    return;
+  }
+
+  // --- Cache invalidation (inject → background, fire-and-forget) ---
+  if (e.data?.type === 'BUST_AUDIO_CACHE' || e.data?.type === 'BUST_CATALOG_CACHE') {
+    chrome.runtime.sendMessage({ type: e.data.type, id: e.data.id }, () => {});
+    return;
+  }
+
   // --- WSPP_RECEIVED (mensaje entrante detectado) ---
   // Uses retry logic (like WSPP_SENT) because the MV3 service worker
   // may be sleeping and needs time to wake up.

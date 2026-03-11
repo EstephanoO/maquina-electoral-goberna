@@ -971,65 +971,136 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // AUDIO CATALOG PANEL (v7.3.0)
+  // AUDIO CATALOG PANEL (v7.4.0)
   // Replaces per-message ElevenLabs TTS with a reusable audio catalog.
-  // Button opens a panel with pre-generated audio messages.
-  // Send flow: window.WWebJS.sendMessage({ sendAudioAsVoice: true })
-  //   → WAWebPrepRawMedia.prepRawMedia(opaqueData, { isPtt: true })
-  //   → addAndSendMsgToChat(chat, { type: 'ptt', ... })
-  //   → message appears as WhatsApp voice note with waveform.
+  // Consultor role: can regenerate, edit script inline, toggle active/inactive.
+  // Agente digital: send-only.
   // ═══════════════════════════════════════════════════════════════════════
 
   let _catalogItems = [];
   let _catalogPanelOpen = false;
   let _catalogLoading = false;
+  let _catalogIsConsultor = false; // true if logged-in user has consultor+ role
+  let _catalogEditingId = null;    // id of item currently being edited
 
-  const CATALOG_ICONS = {
-    saludo: '\uD83D\uDC4B',          // wave
-    agradecimiento: '\uD83D\uDE4F',  // pray
-    pedir_voto: '\u2705',            // check
-    respuesta_trabajo: '\uD83D\uDCBC', // briefcase
-    respuesta_dinero: '\uD83D\uDCB0', // money bag
-    invitacion_evento: '\uD83D\uDCC5', // calendar
-    despedida: '\uD83D\uDC4D',       // thumbs up
-    propuestas: '\uD83D\uDCCB',      // clipboard
+  // ── SVG icons (inline, no emoji) ───────────────────────────────────
+  const CATALOG_SVG = {
+    // Mic button SVG
+    mic: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`,
+    // Category icons
+    saludo:             `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>`,
+    agradecimiento:     `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`,
+    pedir_voto:         `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+    respuesta_trabajo:  `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>`,
+    respuesta_dinero:   `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
+    invitacion_evento:  `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
+    despedida:          `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
+    propuestas:         `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`,
+    // UI action icons
+    send:    `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`,
+    refresh: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`,
+    edit:    `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
+    close:   `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
+    check:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+    waveform:`<svg width="52" height="20" viewBox="0 0 52 20" fill="none"><rect x="0"  y="8"  width="3" height="4"  rx="1.5" fill="currentColor" opacity=".4"/><rect x="5"  y="5"  width="3" height="10" rx="1.5" fill="currentColor" opacity=".6"/><rect x="10" y="2"  width="3" height="16" rx="1.5" fill="currentColor" opacity=".8"/><rect x="15" y="6"  width="3" height="8"  rx="1.5" fill="currentColor" opacity=".7"/><rect x="20" y="3"  width="3" height="14" rx="1.5" fill="currentColor"/><rect x="25" y="7"  width="3" height="6"  rx="1.5" fill="currentColor" opacity=".7"/><rect x="30" y="1"  width="3" height="18" rx="1.5" fill="currentColor" opacity=".9"/><rect x="35" y="5"  width="3" height="10" rx="1.5" fill="currentColor" opacity=".6"/><rect x="40" y="8"  width="3" height="4"  rx="1.5" fill="currentColor" opacity=".5"/><rect x="45" y="4"  width="3" height="12" rx="1.5" fill="currentColor" opacity=".7"/><rect x="49" y="9"  width="3" height="2"  rx="1" fill="currentColor" opacity=".3"/></svg>`,
   };
 
-  // ── Convertir base64 a Blob ──────────────────────────────────────────
-  function base64ToBlob(base64, mimeType) {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return new Blob([bytes], { type: mimeType });
+  const CATALOG_CATEGORY_LABELS = {
+    saludo: 'Saludo',
+    agradecimiento: 'Agradecimiento',
+    pedir_voto: 'Voto',
+    respuesta_trabajo: 'Trabajo',
+    respuesta_dinero: 'Dinero',
+    invitacion_evento: 'Evento',
+    despedida: 'Despedida',
+    propuestas: 'Propuestas',
+  };
+
+  const CATALOG_CATEGORY_COLORS = {
+    saludo:            { bg: 'rgba(0,168,132,.15)',  accent: '#00a884' },
+    agradecimiento:    { bg: 'rgba(239,83,80,.12)',  accent: '#ef5350' },
+    pedir_voto:        { bg: 'rgba(251,188,4,.12)',  accent: '#f59e0b' },
+    respuesta_trabajo: { bg: 'rgba(99,102,241,.12)', accent: '#818cf8' },
+    respuesta_dinero:  { bg: 'rgba(16,185,129,.12)', accent: '#34d399' },
+    invitacion_evento: { bg: 'rgba(14,165,233,.12)', accent: '#38bdf8' },
+    despedida:         { bg: 'rgba(168,85,247,.12)', accent: '#c084fc' },
+    propuestas:        { bg: 'rgba(245,158,11,.12)', accent: '#fbbf24' },
+  };
+
+  // Inject keyframes once
+  (function injectCatalogStyles() {
+    if (document.getElementById('wspp-catalog-styles')) return;
+    const s = document.createElement('style');
+    s.id = 'wspp-catalog-styles';
+    s.textContent = `
+      @keyframes wspp-slide-up {
+        from { opacity:0; transform:translateY(16px) scale(.97); }
+        to   { opacity:1; transform:translateY(0)    scale(1);   }
+      }
+      @keyframes wspp-spin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+      }
+      @keyframes wspp-pulse-dot {
+        0%,100% { opacity:1; } 50% { opacity:.3; }
+      }
+      .wspp-catalog-item:hover .wspp-item-actions { opacity:1 !important; }
+      .wspp-catalog-item:hover { background: #2a3942 !important; }
+      .wspp-send-btn:hover { background: #008f72 !important; transform: scale(1.04); }
+      .wspp-icon-btn:hover { background: rgba(255,255,255,.08) !important; }
+      .wspp-catalog-item.wspp-sending { pointer-events:none; }
+      .wspp-catalog-item.wspp-sending .wspp-waveform { color:#00a884; }
+      .wspp-spinning { animation: wspp-spin .7s linear infinite; }
+      .wspp-edit-area { resize:none; outline:none; }
+      .wspp-edit-area:focus { border-color:#00a884 !important; }
+    `;
+    document.head.appendChild(s);
+  })();
+
+  // ── Detect consultor role from storage ─────────────────────────────
+  function _refreshConsultorFlag(cb) {
+    chrome.storage.local.get(['wspp_user_role'], (s) => {
+      const role = s.wspp_user_role || '';
+      _catalogIsConsultor = ['admin','consultor'].includes(role);
+      if (cb) cb();
+    });
   }
 
-  // ── Create the mic button (opens catalog panel) ─────────────────────
+  // ── Format duration ms → m:ss ──────────────────────────────────────
+  function _fmtDuration(ms) {
+    if (!ms) return '';
+    const s = Math.round(ms / 1000);
+    return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+  }
+
+  // ── Create the mic FAB button ───────────────────────────────────────
   function createCatalogButton() {
     const btn = document.createElement('button');
     btn.id = 'wspp-catalog-btn';
-    btn.innerHTML = '\uD83C\uDFA4';
-    btn.title = 'Audios de Cesar Vasquez';
+    btn.title = 'Audios Goberna — César Vásquez';
+    btn.innerHTML = CATALOG_SVG.mic;
     Object.assign(btn.style, {
       position: 'fixed',
       bottom: '80px',
       right: '24px',
       zIndex: '99999',
-      width: '48px',
-      height: '48px',
+      width: '52px',
+      height: '52px',
       borderRadius: '50%',
       border: 'none',
-      background: '#00a884',
+      background: 'linear-gradient(135deg,#00a884 0%,#008f72 100%)',
       color: '#fff',
-      fontSize: '22px',
       cursor: 'pointer',
-      boxShadow: '0 2px 8px rgba(0,0,0,.3)',
+      boxShadow: '0 4px 16px rgba(0,168,132,.45), 0 2px 4px rgba(0,0,0,.3)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      transition: 'background .2s, transform .1s',
+      transition: 'box-shadow .2s, transform .15s',
     });
-    btn.addEventListener('mouseenter', () => { if (!_catalogPanelOpen) btn.style.background = '#008f72'; });
-    btn.addEventListener('mouseleave', () => { if (!_catalogPanelOpen) btn.style.background = '#00a884'; });
+    btn.addEventListener('mouseenter', () => {
+      if (!_catalogPanelOpen) btn.style.transform = 'scale(1.08)';
+    });
+    btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
     btn.addEventListener('click', toggleCatalogPanel);
     document.body.appendChild(btn);
     return btn;
@@ -1041,24 +1112,25 @@
     if (existing) {
       existing.remove();
       _catalogPanelOpen = false;
+      _catalogEditingId = null;
       const btn = document.getElementById('wspp-catalog-btn');
-      if (btn) btn.style.background = '#00a884';
+      if (btn) btn.style.boxShadow = '0 4px 16px rgba(0,168,132,.45), 0 2px 4px rgba(0,0,0,.3)';
       return;
     }
     _catalogPanelOpen = true;
     const btn = document.getElementById('wspp-catalog-btn');
-    if (btn) btn.style.background = '#1f2c34';
+    if (btn) btn.style.boxShadow = '0 0 0 3px rgba(0,168,132,.4), 0 4px 16px rgba(0,168,132,.5)';
 
-    // Request catalog from backend if empty
-    if (_catalogItems.length === 0 && !_catalogLoading) {
-      _catalogLoading = true;
-      window.postMessage({ type: 'FETCH_AUDIO_CATALOG' }, WA_ORIGIN);
-    }
-
-    renderCatalogPanel();
+    _refreshConsultorFlag(() => {
+      if (_catalogItems.length === 0 && !_catalogLoading) {
+        _catalogLoading = true;
+        window.postMessage({ type: 'FETCH_AUDIO_CATALOG' }, WA_ORIGIN);
+      }
+      renderCatalogPanel();
+    });
   }
 
-  // ── Render the catalog panel ────────────────────────────────────────
+  // ── Render the full catalog panel ───────────────────────────────────
   function renderCatalogPanel() {
     let panel = document.getElementById('wspp-catalog-panel');
     if (!panel) {
@@ -1066,86 +1138,445 @@
       panel.id = 'wspp-catalog-panel';
       Object.assign(panel.style, {
         position: 'fixed',
-        bottom: '140px',
+        bottom: '148px',
         right: '16px',
         zIndex: '99999',
-        width: '320px',
-        maxHeight: '460px',
-        background: '#111b21',
-        borderRadius: '12px',
-        boxShadow: '0 4px 24px rgba(0,0,0,.5)',
+        width: '380px',
+        maxHeight: '520px',
+        background: '#0b1418',
+        borderRadius: '16px',
+        boxShadow: '0 8px 40px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.06)',
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        fontFamily: 'Segoe UI, sans-serif',
-        animation: 'wspp-slide-up .2s ease-out',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        animation: 'wspp-slide-up .22s cubic-bezier(.16,1,.3,1)',
       });
       document.body.appendChild(panel);
     }
 
     const loading = _catalogLoading && _catalogItems.length === 0;
 
-    panel.innerHTML = `
-      <div style="padding:12px 16px;background:#1f2c34;border-bottom:1px solid #2a3942;display:flex;align-items:center;gap:8px;">
-        <span style="font-size:16px;">\uD83C\uDFA4</span>
-        <span style="color:#e9edef;font-size:14px;font-weight:600;flex:1;">Audios de Cesar Vasquez</span>
-        <button id="wspp-catalog-close" style="background:none;border:none;color:#8696a0;font-size:18px;cursor:pointer;padding:2px 6px;">\u2715</button>
-      </div>
-      <div id="wspp-catalog-list" style="overflow-y:auto;flex:1;padding:8px;">
-        ${loading ? '<div style="color:#8696a0;text-align:center;padding:24px;font-size:13px;">Cargando catalogo...</div>' : ''}
-        ${!loading && _catalogItems.length === 0 ? '<div style="color:#8696a0;text-align:center;padding:24px;font-size:13px;">No hay audios disponibles</div>' : ''}
-        ${_catalogItems.map(item => `
-          <div class="wspp-catalog-item" data-id="${item.id}" data-has-audio="${item.has_audio}" style="
-            padding:10px 12px;margin:4px 0;border-radius:8px;cursor:pointer;
-            background:#1f2c34;transition:background .15s;display:flex;align-items:center;gap:10px;
-            ${!item.has_audio ? 'opacity:0.4;pointer-events:none;' : ''}
-          ">
-            <span style="font-size:20px;flex-shrink:0;">${CATALOG_ICONS[item.category] || '\uD83D\uDD0A'}</span>
-            <div style="flex:1;min-width:0;">
-              <div style="color:#e9edef;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                ${item.label}
-              </div>
-              <div style="color:#8696a0;font-size:11px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                ${item.description || item.category}
-              </div>
-            </div>
-            <span style="color:#00a884;font-size:14px;flex-shrink:0;">${item.has_audio ? '\u25B6' : '\u23F3'}</span>
-          </div>
-        `).join('')}
-      </div>
-      <div id="wspp-catalog-status" style="padding:8px 16px;background:#1f2c34;border-top:1px solid #2a3942;color:#8696a0;font-size:11px;text-align:center;display:none;"></div>
-    `;
+    // ── Header ─────────────────────────────────────────────────────
+    const header = document.createElement('div');
+    Object.assign(header.style, {
+      padding: '14px 16px 12px',
+      background: 'linear-gradient(180deg,#1a2730 0%,#111b21 100%)',
+      borderBottom: '1px solid rgba(255,255,255,.06)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      flexShrink: '0',
+    });
 
-    // Close button
-    panel.querySelector('#wspp-catalog-close')?.addEventListener('click', () => {
+    const headerIcon = document.createElement('div');
+    Object.assign(headerIcon.style, {
+      width: '32px', height: '32px', borderRadius: '10px',
+      background: 'linear-gradient(135deg,#00a884,#008f72)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: '#fff', flexShrink: '0',
+      boxShadow: '0 2px 8px rgba(0,168,132,.4)',
+    });
+    headerIcon.innerHTML = CATALOG_SVG.mic;
+    headerIcon.querySelector('svg').style.width = '16px';
+    headerIcon.querySelector('svg').style.height = '16px';
+
+    const headerText = document.createElement('div');
+    headerText.style.flex = '1';
+    const headerTitle = document.createElement('div');
+    Object.assign(headerTitle.style, {
+      color: '#e9edef', fontSize: '14px', fontWeight: '700', letterSpacing: '-.1px',
+    });
+    headerTitle.textContent = 'Audios — César Vásquez';
+    const headerSub = document.createElement('div');
+    Object.assign(headerSub.style, {
+      color: '#8696a0', fontSize: '11px', marginTop: '1px',
+    });
+    headerSub.textContent = _catalogIsConsultor
+      ? `${_catalogItems.length} plantillas · modo consultor`
+      : `${_catalogItems.length} plantillas disponibles`;
+    headerText.appendChild(headerTitle);
+    headerText.appendChild(headerSub);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.innerHTML = CATALOG_SVG.close;
+    Object.assign(closeBtn.style, {
+      background: 'none', border: 'none', color: '#8696a0',
+      cursor: 'pointer', padding: '6px', borderRadius: '8px',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      transition: 'background .15s, color .15s',
+    });
+    closeBtn.classList.add('wspp-icon-btn');
+    closeBtn.addEventListener('click', () => {
       panel.remove();
       _catalogPanelOpen = false;
-      const btn = document.getElementById('wspp-catalog-btn');
-      if (btn) btn.style.background = '#00a884';
+      _catalogEditingId = null;
+      const fab = document.getElementById('wspp-catalog-btn');
+      if (fab) fab.style.boxShadow = '0 4px 16px rgba(0,168,132,.45), 0 2px 4px rgba(0,0,0,.3)';
     });
 
-    // Item click handlers
-    panel.querySelectorAll('.wspp-catalog-item').forEach(el => {
-      el.addEventListener('mouseenter', () => { el.style.background = '#2a3942'; });
-      el.addEventListener('mouseleave', () => { el.style.background = '#1f2c34'; });
-      el.addEventListener('click', () => handleCatalogItemClick(el.getAttribute('data-id')));
+    header.appendChild(headerIcon);
+    header.appendChild(headerText);
+    header.appendChild(closeBtn);
+    panel.innerHTML = '';
+    panel.appendChild(header);
+
+    // ── List area ──────────────────────────────────────────────────
+    const list = document.createElement('div');
+    list.id = 'wspp-catalog-list';
+    Object.assign(list.style, {
+      overflowY: 'auto',
+      flex: '1',
+      padding: '8px',
+      scrollbarWidth: 'thin',
+      scrollbarColor: '#2a3942 transparent',
     });
-  }
 
-  // ── Handle catalog item click — fetch audio and send via clipboard ──
-  function handleCatalogItemClick(audioId) {
-    if (!audioId) return;
-
-    const statusEl = document.getElementById('wspp-catalog-status');
-    if (statusEl) {
-      statusEl.style.display = 'block';
-      statusEl.textContent = 'Cargando audio...';
-      statusEl.style.color = '#8696a0';
+    if (loading) {
+      const loadEl = document.createElement('div');
+      Object.assign(loadEl.style, {
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        padding: '40px 0', gap: '12px',
+      });
+      const spinner = document.createElement('div');
+      Object.assign(spinner.style, {
+        width: '28px', height: '28px', borderRadius: '50%',
+        border: '3px solid rgba(0,168,132,.2)',
+        borderTopColor: '#00a884',
+      });
+      spinner.classList.add('wspp-spinning');
+      const loadTxt = document.createElement('div');
+      Object.assign(loadTxt.style, { color: '#8696a0', fontSize: '13px' });
+      loadTxt.textContent = 'Cargando plantillas...';
+      loadEl.appendChild(spinner);
+      loadEl.appendChild(loadTxt);
+      list.appendChild(loadEl);
+    } else if (_catalogItems.length === 0) {
+      const empty = document.createElement('div');
+      Object.assign(empty.style, {
+        color: '#8696a0', textAlign: 'center',
+        padding: '40px 16px', fontSize: '13px', lineHeight: '1.5',
+      });
+      empty.textContent = 'No hay audios disponibles';
+      list.appendChild(empty);
+    } else {
+      _catalogItems.forEach(item => {
+        list.appendChild(_buildCatalogCard(item));
+      });
     }
 
-    // Highlight the clicked item
-    const items = document.querySelectorAll('.wspp-catalog-item');
-    items.forEach(el => { el.style.pointerEvents = 'none'; el.style.opacity = '0.6'; });
+    panel.appendChild(list);
+
+    // ── Status bar ─────────────────────────────────────────────────
+    const statusBar = document.createElement('div');
+    statusBar.id = 'wspp-catalog-status';
+    Object.assign(statusBar.style, {
+      padding: '0 16px',
+      background: '#111b21',
+      borderTop: '1px solid rgba(255,255,255,.05)',
+      color: '#8696a0',
+      fontSize: '12px',
+      textAlign: 'center',
+      display: 'none',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '6px',
+      height: '0',
+      overflow: 'hidden',
+      transition: 'height .2s, padding .2s',
+    });
+    panel.appendChild(statusBar);
+  }
+
+  // ── Build a single catalog card ─────────────────────────────────────
+  function _buildCatalogCard(item) {
+    const colors = CATALOG_CATEGORY_COLORS[item.category] || { bg: 'rgba(134,150,160,.1)', accent: '#8696a0' };
+    const catLabel = CATALOG_CATEGORY_LABELS[item.category] || item.category;
+    const catSvg = CATALOG_SVG[item.category] || CATALOG_SVG.propuestas;
+    const dur = _fmtDuration(item.duration_ms);
+    const hasAudio = item.has_audio;
+    const isEditing = _catalogEditingId === item.id;
+
+    const card = document.createElement('div');
+    card.className = 'wspp-catalog-item';
+    card.dataset.id = item.id;
+    card.dataset.hasAudio = String(hasAudio);
+    Object.assign(card.style, {
+      padding: '0',
+      margin: '5px 0',
+      borderRadius: '12px',
+      background: '#111b21',
+      border: '1px solid rgba(255,255,255,.05)',
+      overflow: 'hidden',
+      transition: 'background .15s, border-color .15s',
+      opacity: hasAudio ? '1' : '0.5',
+    });
+
+    // ── Card top row ─────────────────────────────────────────────
+    const top = document.createElement('div');
+    Object.assign(top.style, {
+      display: 'flex', alignItems: 'center', gap: '10px',
+      padding: '10px 12px 8px',
+    });
+
+    // Category icon pill
+    const iconPill = document.createElement('div');
+    Object.assign(iconPill.style, {
+      width: '36px', height: '36px', borderRadius: '10px',
+      background: colors.bg,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: colors.accent, flexShrink: '0',
+    });
+    iconPill.innerHTML = catSvg;
+
+    // Text block
+    const textBlock = document.createElement('div');
+    textBlock.style.flex = '1';
+    textBlock.style.minWidth = '0';
+
+    const labelRow = document.createElement('div');
+    Object.assign(labelRow.style, {
+      display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px',
+    });
+    const labelEl = document.createElement('div');
+    Object.assign(labelEl.style, {
+      color: '#e9edef', fontSize: '13px', fontWeight: '600',
+      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: '1',
+    });
+    labelEl.textContent = item.label;
+
+    const catBadge = document.createElement('span');
+    Object.assign(catBadge.style, {
+      fontSize: '10px', fontWeight: '700', letterSpacing: '.3px',
+      color: colors.accent, background: colors.bg,
+      padding: '2px 6px', borderRadius: '20px', flexShrink: '0',
+      textTransform: 'uppercase',
+    });
+    catBadge.textContent = catLabel;
+    labelRow.appendChild(labelEl);
+    labelRow.appendChild(catBadge);
+
+    const descEl = document.createElement('div');
+    Object.assign(descEl.style, {
+      color: '#8696a0', fontSize: '11px',
+      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+    });
+    descEl.textContent = item.description || '';
+    textBlock.appendChild(labelRow);
+    textBlock.appendChild(descEl);
+
+    top.appendChild(iconPill);
+    top.appendChild(textBlock);
+    card.appendChild(top);
+
+    // ── Waveform + duration row + send button ────────────────────
+    const bottomRow = document.createElement('div');
+    Object.assign(bottomRow.style, {
+      display: 'flex', alignItems: 'center', gap: '8px',
+      padding: '4px 12px 10px',
+    });
+
+    const waveWrap = document.createElement('div');
+    waveWrap.className = 'wspp-waveform';
+    Object.assign(waveWrap.style, {
+      flex: '1', color: hasAudio ? colors.accent : '#3a4a52',
+    });
+    waveWrap.innerHTML = CATALOG_SVG.waveform;
+
+    const durEl = document.createElement('span');
+    Object.assign(durEl.style, {
+      fontSize: '11px', color: '#8696a0', flexShrink: '0', fontVariantNumeric: 'tabular-nums',
+    });
+    durEl.textContent = dur;
+
+    const sendBtn = document.createElement('button');
+    sendBtn.className = 'wspp-send-btn';
+    sendBtn.innerHTML = CATALOG_SVG.send;
+    Object.assign(sendBtn.style, {
+      width: '32px', height: '32px', borderRadius: '50%',
+      border: 'none', flexShrink: '0',
+      background: hasAudio ? `linear-gradient(135deg,${colors.accent},${colors.accent}cc)` : '#2a3942',
+      color: '#fff', cursor: hasAudio ? 'pointer' : 'default',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      transition: 'background .15s, transform .15s',
+      boxShadow: hasAudio ? `0 2px 8px ${colors.accent}55` : 'none',
+    });
+    if (!hasAudio) sendBtn.style.pointerEvents = 'none';
+    sendBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (hasAudio) handleCatalogItemClick(item.id, item.label);
+    });
+
+    bottomRow.appendChild(waveWrap);
+    if (dur) bottomRow.appendChild(durEl);
+    bottomRow.appendChild(sendBtn);
+    card.appendChild(bottomRow);
+
+    // ── Consultor actions row ────────────────────────────────────
+    if (_catalogIsConsultor) {
+      const actionsRow = document.createElement('div');
+      actionsRow.className = 'wspp-item-actions';
+      Object.assign(actionsRow.style, {
+        display: 'flex', alignItems: 'center', gap: '4px',
+        padding: '0 8px 8px',
+        opacity: '0',
+        transition: 'opacity .15s',
+      });
+
+      // Regenerate button
+      const regenBtn = document.createElement('button');
+      regenBtn.title = 'Regenerar audio con ElevenLabs';
+      regenBtn.innerHTML = CATALOG_SVG.refresh + '<span style="margin-left:4px;font-size:10px;font-weight:600;">Regenerar</span>';
+      Object.assign(regenBtn.style, {
+        display: 'flex', alignItems: 'center', padding: '5px 8px',
+        borderRadius: '8px', border: '1px solid rgba(255,255,255,.07)',
+        background: 'rgba(255,255,255,.03)', color: '#8696a0',
+        fontSize: '11px', cursor: 'pointer', transition: 'background .15s, color .15s',
+        gap: '2px',
+      });
+      regenBtn.classList.add('wspp-icon-btn');
+      regenBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _handleRegenerate(item.id, regenBtn);
+      });
+
+      // Edit script button
+      const editBtn = document.createElement('button');
+      editBtn.title = 'Editar guión del audio';
+      editBtn.innerHTML = CATALOG_SVG.edit + '<span style="margin-left:4px;font-size:10px;font-weight:600;">Editar guión</span>';
+      Object.assign(editBtn.style, {
+        display: 'flex', alignItems: 'center', padding: '5px 8px',
+        borderRadius: '8px', border: '1px solid rgba(255,255,255,.07)',
+        background: 'rgba(255,255,255,.03)', color: '#8696a0',
+        fontSize: '11px', cursor: 'pointer', transition: 'background .15s, color .15s',
+        gap: '2px',
+      });
+      editBtn.classList.add('wspp-icon-btn');
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _catalogEditingId = isEditing ? null : item.id;
+        renderCatalogPanel();
+      });
+
+      actionsRow.appendChild(regenBtn);
+      actionsRow.appendChild(editBtn);
+      card.appendChild(actionsRow);
+    }
+
+    // ── Inline script editor (consultor, expanded) ───────────────
+    if (_catalogIsConsultor && isEditing) {
+      const editorWrap = document.createElement('div');
+      Object.assign(editorWrap.style, {
+        padding: '0 12px 12px',
+        borderTop: '1px solid rgba(255,255,255,.05)',
+        marginTop: '4px',
+      });
+
+      const editorLabel = document.createElement('div');
+      Object.assign(editorLabel.style, {
+        fontSize: '10px', color: '#8696a0', textTransform: 'uppercase',
+        letterSpacing: '.5px', margin: '8px 0 6px',
+      });
+      editorLabel.textContent = 'Guión del audio';
+
+      const textarea = document.createElement('textarea');
+      textarea.className = 'wspp-edit-area';
+      textarea.value = item.script_text || '';
+      Object.assign(textarea.style, {
+        width: '100%', minHeight: '80px', padding: '8px 10px',
+        background: '#0b1418', border: '1px solid rgba(255,255,255,.1)',
+        borderRadius: '8px', color: '#e9edef', fontSize: '12px',
+        lineHeight: '1.5', fontFamily: 'inherit', boxSizing: 'border-box',
+      });
+
+      const saveScriptBtn = document.createElement('button');
+      saveScriptBtn.innerHTML = CATALOG_SVG.check + '<span style="margin-left:5px;">Guardar guión</span>';
+      Object.assign(saveScriptBtn.style, {
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        marginTop: '8px', width: '100%', padding: '7px',
+        borderRadius: '8px', border: 'none',
+        background: 'linear-gradient(135deg,#00a884,#008f72)',
+        color: '#fff', fontSize: '12px', fontWeight: '700',
+        cursor: 'pointer',
+      });
+      saveScriptBtn.addEventListener('click', () => {
+        const newScript = textarea.value.trim();
+        if (!newScript) return;
+        _handleUpdateScript(item.id, newScript, saveScriptBtn);
+      });
+
+      editorWrap.appendChild(editorLabel);
+      editorWrap.appendChild(textarea);
+      editorWrap.appendChild(saveScriptBtn);
+      card.appendChild(editorWrap);
+    }
+
+    return card;
+  }
+
+  // ── Regenerate audio for an item ────────────────────────────────────
+  function _handleRegenerate(itemId, btn) {
+    const origContent = btn.innerHTML;
+    const spinner = document.createElement('div');
+    Object.assign(spinner.style, { width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(255,255,255,.2)', borderTopColor: '#00a884', flexShrink: '0' });
+    spinner.classList.add('wspp-spinning');
+    btn.innerHTML = '';
+    btn.appendChild(spinner);
+    btn.disabled = true;
+
+    _showCatalogStatus('Regenerando audio...', '#8696a0');
+    window.postMessage({ type: 'GENERATE_CATALOG_AUDIO', id: itemId }, WA_ORIGIN);
+
+    // Response handled in message listener below
+    _pendingRegenId = itemId;
+    _pendingRegenBtn = { el: btn, orig: origContent };
+  }
+
+  // ── Update script for an item ────────────────────────────────────────
+  function _handleUpdateScript(itemId, newScript, btn) {
+    const origContent = btn.innerHTML;
+    btn.textContent = 'Guardando...';
+    btn.disabled = true;
+
+    window.postMessage({ type: 'UPDATE_CATALOG_SCRIPT', id: itemId, script_text: newScript }, WA_ORIGIN);
+    _pendingUpdateId = itemId;
+    _pendingUpdateBtn = { el: btn, orig: origContent };
+  }
+
+  // Pending regen/update state
+  let _pendingRegenId = null;
+  let _pendingRegenBtn = null;
+  let _pendingUpdateId = null;
+  let _pendingUpdateBtn = null;
+
+  // ── Show/hide status bar ────────────────────────────────────────────
+  function _showCatalogStatus(text, color, duration) {
+    const bar = document.getElementById('wspp-catalog-status');
+    if (!bar) return;
+    bar.textContent = text;
+    bar.style.color = color || '#8696a0';
+    bar.style.display = 'flex';
+    bar.style.height = '36px';
+    bar.style.padding = '0 16px';
+    if (duration) {
+      setTimeout(() => {
+        bar.style.height = '0';
+        bar.style.padding = '0 16px';
+        setTimeout(() => { bar.style.display = 'none'; }, 200);
+      }, duration);
+    }
+  }
+
+  // ── Handle catalog item send click ──────────────────────────────────
+  function handleCatalogItemClick(audioId, label) {
+    if (!audioId) return;
+    _showCatalogStatus('Cargando audio...', '#8696a0');
+
+    // Disable all cards while loading
+    document.querySelectorAll('.wspp-catalog-item').forEach(el => {
+      el.style.pointerEvents = 'none'; el.style.opacity = '0.5';
+    });
 
     window.postMessage({ type: 'GET_CATALOG_AUDIO', id: audioId }, WA_ORIGIN);
   }
@@ -1336,7 +1767,7 @@
   window.addEventListener('message', (e) => {
     if (e.source !== window) return;
 
-    // Catalog list received
+    // ── Catalog list received ──────────────────────────────────────
     if (e.data?.type === 'AUDIO_CATALOG_READY') {
       _catalogLoading = false;
       if (e.data.ok && e.data.items) {
@@ -1349,50 +1780,80 @@
       return;
     }
 
-    // Single audio received — send via clipboard
+    // ── Single audio received — send as PTT ────────────────────────
     if (e.data?.type === 'CATALOG_AUDIO_READY') {
-      const statusEl = document.getElementById('wspp-catalog-status');
-
       if (!e.data.ok || !e.data.audioBase64) {
         console.error('[WSPP CATALOG] Audio error:', e.data.error);
-        if (statusEl) {
-          statusEl.textContent = 'Error: ' + (e.data.error || 'audio no disponible');
-          statusEl.style.color = '#ef5350';
-        }
-        // Re-enable items
+        _showCatalogStatus('Error: ' + (e.data.error || 'audio no disponible'), '#ef5350', 3500);
         document.querySelectorAll('.wspp-catalog-item').forEach(el => {
           el.style.pointerEvents = ''; el.style.opacity = '';
         });
-        setTimeout(() => { if (statusEl) statusEl.style.display = 'none'; }, 3000);
         return;
       }
 
-      if (statusEl) {
-        statusEl.textContent = 'Enviando nota de voz...';
-        statusEl.style.color = '#00a884';
-      }
+      _showCatalogStatus('Enviando nota de voz...', '#00a884');
 
       sendAudioAsPTT(e.data.audioBase64, e.data.mimeType).then(ok => {
         if (ok) {
-          if (statusEl) {
-            statusEl.textContent = (e.data.label || 'Audio') + ' — enviado como nota de voz ✓';
-            statusEl.style.color = '#00a884';
-          }
+          _showCatalogStatus((e.data.label || 'Audio') + ' — enviado ✓', '#00a884', 3000);
           console.log('[WSPP CATALOG] PTT voice note sent successfully');
         } else {
-          if (statusEl) {
-            statusEl.textContent = 'Error al enviar — verifica que haya un chat abierto';
-            statusEl.style.color = '#ef5350';
-          }
+          _showCatalogStatus('Error al enviar — abre un chat primero', '#ef5350', 3500);
         }
-        // Re-enable items after 1.5s
         setTimeout(() => {
           document.querySelectorAll('.wspp-catalog-item').forEach(el => {
             el.style.pointerEvents = ''; el.style.opacity = '';
           });
-          setTimeout(() => { if (statusEl) statusEl.style.display = 'none'; }, 2000);
-        }, 1500);
+        }, 1200);
       });
+      return;
+    }
+
+    // ── Regenerate audio response ──────────────────────────────────
+    if (e.data?.type === 'GENERATE_CATALOG_AUDIO_DONE') {
+      if (_pendingRegenBtn) {
+        _pendingRegenBtn.el.innerHTML = _pendingRegenBtn.orig;
+        _pendingRegenBtn.el.disabled = false;
+        _pendingRegenBtn = null;
+      }
+      if (e.data.ok) {
+        // Update local item data and re-render
+        const idx = _catalogItems.findIndex(i => i.id === e.data.id);
+        if (idx >= 0) {
+          _catalogItems[idx] = { ..._catalogItems[idx], has_audio: true, audio_size: e.data.audioSize, duration_ms: e.data.durationMs };
+        }
+        // Bust audio cache for this item
+        window.postMessage({ type: 'BUST_AUDIO_CACHE', id: e.data.id }, WA_ORIGIN);
+        _showCatalogStatus('Audio regenerado ✓', '#00a884', 2500);
+        if (_catalogPanelOpen) renderCatalogPanel();
+      } else {
+        _showCatalogStatus('Error al regenerar: ' + (e.data.error || 'intenta de nuevo'), '#ef5350', 4000);
+      }
+      _pendingRegenId = null;
+      return;
+    }
+
+    // ── Update script response ─────────────────────────────────────
+    if (e.data?.type === 'UPDATE_CATALOG_SCRIPT_DONE') {
+      if (_pendingUpdateBtn) {
+        _pendingUpdateBtn.el.innerHTML = _pendingUpdateBtn.orig;
+        _pendingUpdateBtn.el.disabled = false;
+        _pendingUpdateBtn = null;
+      }
+      if (e.data.ok) {
+        // Update local item, clear has_audio (needs regen)
+        const idx = _catalogItems.findIndex(i => i.id === e.data.id);
+        if (idx >= 0) {
+          _catalogItems[idx] = { ..._catalogItems[idx], script_text: e.data.script_text, has_audio: false, audio_size: 0, duration_ms: 0 };
+        }
+        window.postMessage({ type: 'BUST_CATALOG_CACHE' }, WA_ORIGIN);
+        _catalogEditingId = null;
+        _showCatalogStatus('Guión guardado — regenerá el audio ✓', '#00a884', 3000);
+        if (_catalogPanelOpen) renderCatalogPanel();
+      } else {
+        _showCatalogStatus('Error al guardar: ' + (e.data.error || 'intenta de nuevo'), '#ef5350', 4000);
+      }
+      _pendingUpdateId = null;
       return;
     }
   });
