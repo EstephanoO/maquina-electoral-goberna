@@ -282,7 +282,9 @@ export async function upsert(data: {
     data.lng ?? null,
   ]);
 
-  return res.rows[0];
+  const profile = res.rows[0];
+  if (!profile) throw new Error("upsertByPhone: RETURNING yielded no row");
+  return profile;
 }
 
 /** Update a voter profile (manual edits from dashboard) */
