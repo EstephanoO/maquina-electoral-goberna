@@ -1355,10 +1355,10 @@
         });
         lbl.textContent = CATALOG_CATEGORY_LABELS[cat] || cat;
 
-        // Counter badge (top-right)
+        // Counter badge (bottom-right)
         const badge = document.createElement('div');
         Object.assign(badge.style, {
-          position: 'absolute', top: '5px', right: '5px',
+          position: 'absolute', bottom: '5px', right: '6px',
           minWidth: '16px', height: '16px', borderRadius: '8px',
           background: readyCount > 0 ? colors.accent : '#636366',
           color: '#fff', fontSize: '9px', fontWeight: '800',
