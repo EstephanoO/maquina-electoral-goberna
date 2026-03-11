@@ -14,6 +14,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@tanstack/react-query": "^5.90.21",
     "@vis.gl/react-maplibre": "^8.1.0",
+    "exceljs": "^4.4.0",
     "maplibre-gl": "^5.18.0",
     "motion": "^12.34.5",
     "next": "16.1.6",
