@@ -9,28 +9,28 @@
 
 **Goberna** es una plataforma SaaS de operacion territorial para campanas politicas en Peru.
 
-| Aspecto | Detalle |
-|---------|---------|
-| Organizacion | Grupo Goberna |
-| Mercado | Peru (conectividad intermitente, campo operativo real) |
+| Aspecto       | Detalle                                                            |
+| ------------- | ------------------------------------------------------------------ |
+| Organizacion  | Grupo Goberna                                                      |
+| Mercado       | Peru (conectividad intermitente, campo operativo real)             |
 | Diferenciador | Offline-first, mapas vectoriales, CRM/CMS integrado, multi-campana |
-| Equipo | EstephanoO (lead) + Maximoff19 (dev CMS) |
-| Prioridad | Operabilidad > Sofisticacion |
+| Equipo        | EstephanoO (lead) + Maximoff19 (dev CMS)                           |
+| Prioridad     | Operabilidad > Sofisticacion                                       |
 
 ### Equipo y Responsabilidades
 
-| Persona | GitHub | Rol | Area |
-|---------|--------|-----|------|
-| EstephanoO | `@EstephanoO` | Lead / Reviewer | Todo el sistema |
-| Maximoff19 | `@Maximoff19` | Developer | CMS + Twilio (`apps/backend/src/modules/cms/`, `twilio/`, `apps/web/app/(dashboard)/cms/`) |
+| Persona    | GitHub        | Rol             | Area                                                                                       |
+| ---------- | ------------- | --------------- | ------------------------------------------------------------------------------------------ |
+| EstephanoO | `@EstephanoO` | Lead / Reviewer | Todo el sistema                                                                            |
+| Maximoff19 | `@Maximoff19` | Developer       | CMS + Twilio (`apps/backend/src/modules/cms/`, `twilio/`, `apps/web/app/(dashboard)/cms/`) |
 
 ### Documentacion de Desarrollo
 
-| Archivo | Proposito |
-|---------|-----------|
-| `CONTRIBUTING.md` | Flujo GitHub Flow, convenciones, guia para ambos devs |
-| `ONBOARDING.md` | Setup rapido para nuevos integrantes |
-| `CMS_DEVELOPER_GUIDE.md` | Guia tecnica completa del modulo CMS + Twilio |
+| Archivo                  | Proposito                                             |
+| ------------------------ | ----------------------------------------------------- |
+| `CONTRIBUTING.md`        | Flujo GitHub Flow, convenciones, guia para ambos devs |
+| `ONBOARDING.md`          | Setup rapido para nuevos integrantes                  |
+| `CMS_DEVELOPER_GUIDE.md` | Guia tecnica completa del modulo CMS + Twilio         |
 
 ---
 
@@ -103,6 +103,7 @@ nexus6.0/
 ```
 
 **Dominios publicos:**
+
 - API: `https://api.goberna.us` (Cloudflare → Nginx → Backend)
 - Web: `https://dashboard.grupogoberna.com` (Vercel)
 
@@ -110,22 +111,22 @@ nexus6.0/
 
 ## 4. Stack Tecnologico (Estado Actual)
 
-| Capa | Tecnologia | Version | Ubicacion | Estado |
-|------|-----------|---------|-----------|--------|
-| Backend API | Fastify + TypeScript + Bun | fastify 5.6, ts 5.9 | `apps/backend/` | **Produccion** |
-| Base de Datos | PostgreSQL + PostGIS | 15 + 3.4 | Docker VPS | **Produccion** |
-| Cache/Queues | Redis | 7.4 (Streams) | Docker VPS | **Produccion** |
-| Vector Tiles | Tegola | — | Docker VPS | **Produccion** |
-| ORM | Drizzle ORM | 0.44 | `apps/backend/` | **Produccion** |
-| Validacion | Zod | 4.x | `apps/backend/` | **Produccion** |
-| JWT | jose | 6.x | `apps/backend/` | **Produccion** |
-| Messaging | Twilio (WhatsApp) | 5.x | `apps/backend/` | **Produccion** |
-| Web Admin | Next.js + React + Tailwind | next 16.1, react 19.2, tailwind 4 | `apps/web/` | **Produccion** (Vercel) |
-| Mapas Web | MapLibre GL + vis.gl | maplibre 5.x | `apps/web/` | **Produccion** |
-| Data Fetching Web | TanStack Query | 5.x | `apps/web/` | **Produccion** |
-| Mobile App | Expo + React Native | SDK 54, RN 0.81 | `apps/mobile/` | **Desarrollo** |
-| Offline Mobile | expo-sqlite | 16.x | `apps/mobile/` | **Desarrollo** |
-| CI/CD | GitHub Actions | — | `.github/workflows/` | **Produccion** |
+| Capa              | Tecnologia                 | Version                           | Ubicacion            | Estado                  |
+| ----------------- | -------------------------- | --------------------------------- | -------------------- | ----------------------- |
+| Backend API       | Fastify + TypeScript + Bun | fastify 5.6, ts 5.9               | `apps/backend/`      | **Produccion**          |
+| Base de Datos     | PostgreSQL + PostGIS       | 15 + 3.4                          | Docker VPS           | **Produccion**          |
+| Cache/Queues      | Redis                      | 7.4 (Streams)                     | Docker VPS           | **Produccion**          |
+| Vector Tiles      | Tegola                     | —                                 | Docker VPS           | **Produccion**          |
+| ORM               | Drizzle ORM                | 0.44                              | `apps/backend/`      | **Produccion**          |
+| Validacion        | Zod                        | 4.x                               | `apps/backend/`      | **Produccion**          |
+| JWT               | jose                       | 6.x                               | `apps/backend/`      | **Produccion**          |
+| Messaging         | Twilio (WhatsApp)          | 5.x                               | `apps/backend/`      | **Produccion**          |
+| Web Admin         | Next.js + React + Tailwind | next 16.1, react 19.2, tailwind 4 | `apps/web/`          | **Produccion** (Vercel) |
+| Mapas Web         | MapLibre GL + vis.gl       | maplibre 5.x                      | `apps/web/`          | **Produccion**          |
+| Data Fetching Web | TanStack Query             | 5.x                               | `apps/web/`          | **Produccion**          |
+| Mobile App        | Expo + React Native        | SDK 54, RN 0.81                   | `apps/mobile/`       | **Desarrollo**          |
+| Offline Mobile    | expo-sqlite                | 16.x                              | `apps/mobile/`       | **Desarrollo**          |
+| CI/CD             | GitHub Actions             | —                                 | `.github/workflows/` | **Produccion**          |
 
 **Dependencias clave del backend:** fastify, @fastify/websocket, @fastify/cors, @fastify/helmet, @fastify/rate-limit, drizzle-orm, jose, bcryptjs, zod, redis, twilio, pg
 
@@ -133,17 +134,17 @@ nexus6.0/
 
 ## 5. Infraestructura de Produccion
 
-| Recurso | Valor |
-|---------|-------|
-| VPS Host | `161.132.39.165` |
-| VPS RAM | 32GB |
-| SSH User | `deploy` |
-| Project Dir | `/srv/app` |
-| Timezone | `America/Lima` |
-| API Domain | `api.goberna.us` |
-| Frontend Domain | `dashboard.grupogoberna.com` |
-| Frontend Host | Vercel (maquina-electoral-goberna-web) |
-| DNS/Edge | Cloudflare (proxy ON) |
+| Recurso         | Valor                                  |
+| --------------- | -------------------------------------- |
+| VPS Host        | `161.132.39.165`                       |
+| VPS RAM         | 32GB                                   |
+| SSH User        | `deploy`                               |
+| Project Dir     | `/srv/app`                             |
+| Timezone        | `America/Lima`                         |
+| API Domain      | `api.goberna.us`                       |
+| Frontend Domain | `dashboard.grupogoberna.com`           |
+| Frontend Host   | Vercel (maquina-electoral-goberna-web) |
+| DNS/Edge        | Cloudflare (proxy ON)                  |
 
 ---
 
@@ -163,160 +164,161 @@ Todo endpoint del backend responde en este formato:
 
 ### Codigos de Error
 
-| Codigo | Descripcion |
-|--------|-------------|
-| `VALIDATION_ERROR` | Schema Zod invalido |
-| `AUTH_TOKEN_MISSING` | Sin token en request |
-| `AUTH_TOKEN_EXPIRED` | JWT vencido |
-| `AUTH_TOKEN_INVALID` | JWT invalido |
-| `AUTH_INVALID_CREDENTIALS` | Login fallido |
-| `AUTH_USER_SUSPENDED` | Usuario suspendido |
-| `AUTH_REFRESH_INVALID` | Refresh token invalido |
-| `AUTH_REFRESH_REVOKED` | Refresh token reutilizado (posible ataque) |
-| `AUTH_REFRESH_EXPIRED` | Refresh token expirado |
-| `AUTHZ_ROLE_INSUFFICIENT` | Sin permiso de rol |
-| `AUTHZ_CAMPAIGN_DENIED` | Sin acceso a la campana |
-| `AUTHZ_CAMPAIGN_MISSING` | Falta campaign_id requerido |
-| `AUTHZ_PERMISSION_DENIED` | Sin permiso tierra/digital |
-| `RATE_LIMITED` | Demasiadas requests |
-| `NOT_FOUND` | Recurso no existe |
-| `UPSTREAM_ERROR` | Error de servicio externo |
-| `ALREADY_CLAIMED` | Contacto CMS ya tomado |
-| `TWILIO_SEND_ERROR` | Error enviando WhatsApp |
-| `MISSING_CAMPAIGN` | Falta campaign_id |
+| Codigo                     | Descripcion                                |
+| -------------------------- | ------------------------------------------ |
+| `VALIDATION_ERROR`         | Schema Zod invalido                        |
+| `AUTH_TOKEN_MISSING`       | Sin token en request                       |
+| `AUTH_TOKEN_EXPIRED`       | JWT vencido                                |
+| `AUTH_TOKEN_INVALID`       | JWT invalido                               |
+| `AUTH_INVALID_CREDENTIALS` | Login fallido                              |
+| `AUTH_USER_SUSPENDED`      | Usuario suspendido                         |
+| `AUTH_REFRESH_INVALID`     | Refresh token invalido                     |
+| `AUTH_REFRESH_REVOKED`     | Refresh token reutilizado (posible ataque) |
+| `AUTH_REFRESH_EXPIRED`     | Refresh token expirado                     |
+| `AUTHZ_ROLE_INSUFFICIENT`  | Sin permiso de rol                         |
+| `AUTHZ_CAMPAIGN_DENIED`    | Sin acceso a la campana                    |
+| `AUTHZ_CAMPAIGN_MISSING`   | Falta campaign_id requerido                |
+| `AUTHZ_PERMISSION_DENIED`  | Sin permiso tierra/digital                 |
+| `RATE_LIMITED`             | Demasiadas requests                        |
+| `NOT_FOUND`                | Recurso no existe                          |
+| `UPSTREAM_ERROR`           | Error de servicio externo                  |
+| `ALREADY_CLAIMED`          | Contacto CMS ya tomado                     |
+| `TWILIO_SEND_ERROR`        | Error enviando WhatsApp                    |
+| `MISSING_CAMPAIGN`         | Falta campaign_id                          |
 
 ### Endpoints Publicos (sin auth)
 
-| Endpoint | Descripcion |
-|----------|-------------|
-| `GET /api/health` | Liveness check |
-| `GET /api/ready` | Readiness (DB + Redis + Tegola) |
-| `POST /api/auth/login` | Login email o telefono + password |
-| `POST /api/auth/register` | Registro de usuario (telefono como primario) |
-| `GET /api/candidates` | Lista de candidatos/campanas |
-| `GET /api/invitations/validate/:code` | Validar codigo de invitacion |
-| `POST /api/webhooks/twilio/whatsapp` | Webhook Twilio (valida firma X-Twilio-Signature) |
-| `POST /api/auth/reset-password` | Reset password con flag activo |
-| `POST /api/api/auth/reset-password` | Alias compat mobile (path duplicado) |
+| Endpoint                              | Descripcion                                      |
+| ------------------------------------- | ------------------------------------------------ |
+| `GET /api/health`                     | Liveness check                                   |
+| `GET /api/ready`                      | Readiness (DB + Redis + Tegola)                  |
+| `POST /api/auth/login`                | Login email o telefono + password                |
+| `POST /api/auth/register`             | Registro de usuario (telefono como primario)     |
+| `GET /api/candidates`                 | Lista de candidatos/campanas                     |
+| `GET /api/invitations/validate/:code` | Validar codigo de invitacion                     |
+| `POST /api/webhooks/twilio/whatsapp`  | Webhook Twilio (valida firma X-Twilio-Signature) |
+| `POST /api/auth/reset-password`       | Reset password con flag activo                   |
+| `POST /api/api/auth/reset-password`   | Alias compat mobile (path duplicado)             |
 
 ### Endpoints Autenticados (JWT Bearer o httpOnly Cookie)
 
-| Endpoint | Descripcion |
-|----------|-------------|
-| `GET /api/auth/me` | Perfil + campanas del usuario |
-| `POST /api/auth/refresh` | Renovar tokens (body JSON mobile / cookie web) |
-| `POST /api/auth/logout` | Cerrar sesion (revoca todos los refresh tokens) |
-| `POST /api/auth/change-password` | Cambiar password (requiere password actual) |
-| `POST /api/users/:userId/require-password-reset` | Marcar usuario para reset (candidato+) |
-| **Campaigns** | |
-| `GET /api/campaigns` | Listar campanas del usuario (admin ve todas) |
-| `GET /api/campaigns/:id` | Config de campana |
-| `POST /api/campaigns` | Crear campana (admin) |
-| `PUT /api/campaigns/:id` | Actualizar campana (candidato+) |
-| `GET /api/campaigns/:slug/stats` | Stats del dashboard |
-| `GET /api/campaigns/:id/members` | Listar miembros (candidato+) |
-| `POST /api/campaigns/:id/members` | Agregar miembro (admin) |
-| `DELETE /api/campaigns/:id/members/:userId` | Remover miembro (admin) |
-| `PUT /api/campaigns/:id/members/:userId/role` | Cambiar rol (candidato+) |
-| **Forms** | |
-| `GET /api/form-definitions/active` | Formularios activos |
-| `POST /api/forms` | Submit formulario (legacy write-behind) |
-| `POST /api/forms/batch` | Submit batch (legacy write-behind) |
-| `POST /api/form-submissions` | Submit formulario (nuevo, directo) |
-| `POST /api/form-submissions/batch` | Submit batch (nuevo, directo) |
-| `GET /api/form-submissions` | Listar submissions por campana |
-| `GET /api/form-submissions/recent` | Submissions recientes |
-| `GET /api/form-submissions/meet/:meetId` | Submissions de un meet |
-| `GET /api/form-submissions/stats` | Stats de submissions |
-| **Meets** | |
-| `GET /api/meets` | Listar meets de campana |
-| `POST /api/meets` | Crear meet |
-| `PUT /api/meets/:id` | Actualizar meet |
-| `PUT /api/meets/:id/status` | Cambiar estado de meet |
-| **Zones** | |
-| `GET /api/zones/campaign/:campaignId` | Listar zonas de campana |
-| `GET /api/zones/campaign/:campaignId/geojson` | Zonas como GeoJSON FeatureCollection |
-| `GET /api/zones/:id` | Detalle de zona |
-| `POST /api/zones` | Crear zona (candidato+) |
-| `PUT /api/zones/:id` | Actualizar zona |
-| `DELETE /api/zones/:id` | Eliminar zona |
-| **Org Hierarchy** | |
-| `GET /api/org-hierarchy/campaign/:campaignId` | Arbol organizacional |
-| `GET /api/org-hierarchy/campaign/:campaignId/subordinates/:userId` | Subordinados de un usuario |
-| `POST /api/org-hierarchy` | Asignar relacion supervisor |
-| `PUT /api/org-hierarchy/:id` | Actualizar nodo |
-| `DELETE /api/org-hierarchy/:id` | Remover relacion |
-| **Invitations** | |
-| `POST /api/invitations` | Crear invitacion (candidato+) |
-| `GET /api/invitations/campaign/:campaignId` | Listar invitaciones de campana |
-| `DELETE /api/invitations/:id` | Revocar invitacion |
-| **Access Requests** | |
-| `GET /api/access-requests` | Listar solicitudes (candidato+) |
-| `POST /api/access-requests/:id/resolve` | Aprobar/rechazar solicitud |
-| **Analytics (GA4)** | |
-| `POST /api/campaigns/:campaignId/analytics` | Guardar datos GA4 (candidato+) |
-| `GET /api/campaigns/:campaignId/analytics` | Obtener datos GA4 |
-| `GET /api/analytics/by-slug/:slug` | Analytics por slug de campana |
-| `DELETE /api/campaigns/:campaignId/analytics` | Eliminar datos GA4 (admin) |
-| **CMS (Contact Management)** | |
-| `GET /api/cms/contacts` | Listar contactos con filtro/busqueda |
-| `PUT /api/cms/contacts/:id/claim` | Reclamar contacto (lock) |
-| `PUT /api/cms/contacts/:id/release` | Liberar contacto |
-| `PUT /api/cms/contacts/:id/hablado` | Marcar como hablado |
-| `PUT /api/cms/contacts/:id/respondieron` | Marcar como respondieron |
-| `PUT /api/cms/contacts/:id/revert` | Revertir un paso atras |
-| `PUT /api/cms/contacts/:id/archive` | Archivar contacto |
-| `PUT /api/cms/contacts/:id/notes` | Actualizar notas del operador |
-| `GET /api/cms/stats` | Stats CMS por campana |
-| `GET /api/cms/metrics` | Metricas CMS global (candidato+) |
-| `GET /api/cms/metrics/brigadistas` | Metricas por brigadista con dedup telefono |
-| `POST /api/cms/extension-event` | Evento desde extension Chrome (type: "message_sent" o "message_received"). Persiste en `cms_extension_events`, incrementa `wa_sent` en metricas de operadora. Solo `message_received` dispara auto-transicion hablado→respondieron. |
-| `GET /api/cms/stream` | SSE eventos realtime del CMS |
-| **Objectives** | |
-| `GET /api/objectives/zones` | Objetivos por zona |
-| `PUT /api/objectives/zones/:region` | Crear/actualizar objetivo zona |
-| `POST /api/objectives/zones/bulk` | Bulk upsert objetivos zona |
-| `DELETE /api/objectives/zones/:region` | Eliminar objetivo zona |
-| `GET /api/objectives/users` | Objetivos efectivos por usuario |
-| `PUT /api/objectives/users/:userId` | Setear objetivo usuario |
-| `GET /api/objectives/summary` | Resumen de progreso |
-| **Twilio (WhatsApp)** | |
-| `POST /api/twilio/whatsapp/send` | Enviar mensaje WA a contacto CMS |
-| `GET /api/twilio/whatsapp/messages/:contactId` | Historial de conversacion WA |
-| **Leads** | |
-| `GET /api/leads` | Listar leads de campana |
-| `POST /api/leads` | Crear lead |
-| `PUT /api/leads/:id` | Actualizar lead |
-| **Support** | |
-| `POST /api/support` | Crear ticket de soporte |
-| `GET /api/support` | Listar tickets (admin+) |
-| **Validacion** | |
-| `POST /api/validacion` | Submit de validacion |
-| `GET /api/validacion` | Listar validaciones |
-| **Voluntarios** | |
-| `GET /api/voluntarios` | Listar voluntarios de campana |
-| `POST /api/voluntarios` | Registrar voluntario |
-| **Metrics / Ops** | |
-| `GET /api/metrics` | Metricas operativas (admin) — latencias p50/p90/p95/p99 por ruta |
+| Endpoint                                                           | Descripcion                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/auth/me`                                                 | Perfil + campanas del usuario                                                                                                                                                                                                       |
+| `POST /api/auth/refresh`                                           | Renovar tokens (body JSON mobile / cookie web)                                                                                                                                                                                      |
+| `POST /api/auth/logout`                                            | Cerrar sesion (revoca todos los refresh tokens)                                                                                                                                                                                     |
+| `POST /api/auth/change-password`                                   | Cambiar password (requiere password actual)                                                                                                                                                                                         |
+| `POST /api/users/:userId/require-password-reset`                   | Marcar usuario para reset (candidato+)                                                                                                                                                                                              |
+| **Campaigns**                                                      |                                                                                                                                                                                                                                     |
+| `GET /api/campaigns`                                               | Listar campanas del usuario (admin ve todas)                                                                                                                                                                                        |
+| `GET /api/campaigns/:id`                                           | Config de campana                                                                                                                                                                                                                   |
+| `POST /api/campaigns`                                              | Crear campana (admin)                                                                                                                                                                                                               |
+| `PUT /api/campaigns/:id`                                           | Actualizar campana (candidato+)                                                                                                                                                                                                     |
+| `GET /api/campaigns/:slug/stats`                                   | Stats del dashboard                                                                                                                                                                                                                 |
+| `GET /api/campaigns/:id/members`                                   | Listar miembros (candidato+)                                                                                                                                                                                                        |
+| `POST /api/campaigns/:id/members`                                  | Agregar miembro (admin)                                                                                                                                                                                                             |
+| `DELETE /api/campaigns/:id/members/:userId`                        | Remover miembro (admin)                                                                                                                                                                                                             |
+| `PUT /api/campaigns/:id/members/:userId/role`                      | Cambiar rol (candidato+)                                                                                                                                                                                                            |
+| **Forms**                                                          |                                                                                                                                                                                                                                     |
+| `GET /api/form-definitions/active`                                 | Formularios activos                                                                                                                                                                                                                 |
+| `POST /api/forms`                                                  | Submit formulario (legacy write-behind)                                                                                                                                                                                             |
+| `POST /api/forms/batch`                                            | Submit batch (legacy write-behind)                                                                                                                                                                                                  |
+| `POST /api/form-submissions`                                       | Submit formulario (nuevo, directo)                                                                                                                                                                                                  |
+| `POST /api/form-submissions/batch`                                 | Submit batch (nuevo, directo)                                                                                                                                                                                                       |
+| `GET /api/form-submissions`                                        | Listar submissions por campana                                                                                                                                                                                                      |
+| `GET /api/form-submissions/recent`                                 | Submissions recientes                                                                                                                                                                                                               |
+| `GET /api/form-submissions/meet/:meetId`                           | Submissions de un meet                                                                                                                                                                                                              |
+| `GET /api/form-submissions/stats`                                  | Stats de submissions                                                                                                                                                                                                                |
+| **Meets**                                                          |                                                                                                                                                                                                                                     |
+| `GET /api/meets`                                                   | Listar meets de campana                                                                                                                                                                                                             |
+| `POST /api/meets`                                                  | Crear meet                                                                                                                                                                                                                          |
+| `PUT /api/meets/:id`                                               | Actualizar meet                                                                                                                                                                                                                     |
+| `PUT /api/meets/:id/status`                                        | Cambiar estado de meet                                                                                                                                                                                                              |
+| **Zones**                                                          |                                                                                                                                                                                                                                     |
+| `GET /api/zones/campaign/:campaignId`                              | Listar zonas de campana                                                                                                                                                                                                             |
+| `GET /api/zones/campaign/:campaignId/geojson`                      | Zonas como GeoJSON FeatureCollection                                                                                                                                                                                                |
+| `GET /api/zones/:id`                                               | Detalle de zona                                                                                                                                                                                                                     |
+| `POST /api/zones`                                                  | Crear zona (candidato+)                                                                                                                                                                                                             |
+| `PUT /api/zones/:id`                                               | Actualizar zona                                                                                                                                                                                                                     |
+| `DELETE /api/zones/:id`                                            | Eliminar zona                                                                                                                                                                                                                       |
+| **Org Hierarchy**                                                  |                                                                                                                                                                                                                                     |
+| `GET /api/org-hierarchy/campaign/:campaignId`                      | Arbol organizacional                                                                                                                                                                                                                |
+| `GET /api/org-hierarchy/campaign/:campaignId/subordinates/:userId` | Subordinados de un usuario                                                                                                                                                                                                          |
+| `POST /api/org-hierarchy`                                          | Asignar relacion supervisor                                                                                                                                                                                                         |
+| `PUT /api/org-hierarchy/:id`                                       | Actualizar nodo                                                                                                                                                                                                                     |
+| `DELETE /api/org-hierarchy/:id`                                    | Remover relacion                                                                                                                                                                                                                    |
+| **Invitations**                                                    |                                                                                                                                                                                                                                     |
+| `POST /api/invitations`                                            | Crear invitacion (candidato+)                                                                                                                                                                                                       |
+| `GET /api/invitations/campaign/:campaignId`                        | Listar invitaciones de campana                                                                                                                                                                                                      |
+| `DELETE /api/invitations/:id`                                      | Revocar invitacion                                                                                                                                                                                                                  |
+| **Access Requests**                                                |                                                                                                                                                                                                                                     |
+| `GET /api/access-requests`                                         | Listar solicitudes (candidato+)                                                                                                                                                                                                     |
+| `POST /api/access-requests/:id/resolve`                            | Aprobar/rechazar solicitud                                                                                                                                                                                                          |
+| **Analytics (GA4)**                                                |                                                                                                                                                                                                                                     |
+| `POST /api/campaigns/:campaignId/analytics`                        | Guardar datos GA4 (candidato+)                                                                                                                                                                                                      |
+| `GET /api/campaigns/:campaignId/analytics`                         | Obtener datos GA4                                                                                                                                                                                                                   |
+| `GET /api/analytics/by-slug/:slug`                                 | Analytics por slug de campana                                                                                                                                                                                                       |
+| `DELETE /api/campaigns/:campaignId/analytics`                      | Eliminar datos GA4 (admin)                                                                                                                                                                                                          |
+| **CMS (Contact Management)**                                       |                                                                                                                                                                                                                                     |
+| `GET /api/cms/contacts`                                            | Listar contactos con filtro/busqueda                                                                                                                                                                                                |
+| `PUT /api/cms/contacts/:id/claim`                                  | Reclamar contacto (lock)                                                                                                                                                                                                            |
+| `PUT /api/cms/contacts/:id/release`                                | Liberar contacto                                                                                                                                                                                                                    |
+| `PUT /api/cms/contacts/:id/hablado`                                | Marcar como hablado                                                                                                                                                                                                                 |
+| `PUT /api/cms/contacts/:id/respondieron`                           | Marcar como respondieron                                                                                                                                                                                                            |
+| `PUT /api/cms/contacts/:id/revert`                                 | Revertir un paso atras                                                                                                                                                                                                              |
+| `PUT /api/cms/contacts/:id/archive`                                | Archivar contacto                                                                                                                                                                                                                   |
+| `PUT /api/cms/contacts/:id/notes`                                  | Actualizar notas del operador                                                                                                                                                                                                       |
+| `GET /api/cms/stats`                                               | Stats CMS por campana                                                                                                                                                                                                               |
+| `GET /api/cms/metrics`                                             | Metricas CMS global (candidato+)                                                                                                                                                                                                    |
+| `GET /api/cms/metrics/brigadistas`                                 | Metricas por brigadista con dedup telefono                                                                                                                                                                                          |
+| `POST /api/cms/extension-event`                                    | Evento desde extension Chrome (type: "message_sent" o "message_received"). Persiste en `cms_extension_events`, incrementa `wa_sent` en metricas de operadora. Solo `message_received` dispara auto-transicion hablado→respondieron. |
+| `GET /api/cms/stream`                                              | SSE eventos realtime del CMS                                                                                                                                                                                                        |
+| **Objectives**                                                     |                                                                                                                                                                                                                                     |
+| `GET /api/objectives/zones`                                        | Objetivos por zona                                                                                                                                                                                                                  |
+| `PUT /api/objectives/zones/:region`                                | Crear/actualizar objetivo zona                                                                                                                                                                                                      |
+| `POST /api/objectives/zones/bulk`                                  | Bulk upsert objetivos zona                                                                                                                                                                                                          |
+| `DELETE /api/objectives/zones/:region`                             | Eliminar objetivo zona                                                                                                                                                                                                              |
+| `GET /api/objectives/users`                                        | Objetivos efectivos por usuario                                                                                                                                                                                                     |
+| `PUT /api/objectives/users/:userId`                                | Setear objetivo usuario                                                                                                                                                                                                             |
+| `GET /api/objectives/summary`                                      | Resumen de progreso                                                                                                                                                                                                                 |
+| **Twilio (WhatsApp)**                                              |                                                                                                                                                                                                                                     |
+| `POST /api/twilio/whatsapp/send`                                   | Enviar mensaje WA a contacto CMS                                                                                                                                                                                                    |
+| `GET /api/twilio/whatsapp/messages/:contactId`                     | Historial de conversacion WA                                                                                                                                                                                                        |
+| **Leads**                                                          |                                                                                                                                                                                                                                     |
+| `GET /api/leads`                                                   | Listar leads de campana                                                                                                                                                                                                             |
+| `POST /api/leads`                                                  | Crear lead                                                                                                                                                                                                                          |
+| `PUT /api/leads/:id`                                               | Actualizar lead                                                                                                                                                                                                                     |
+| **Support**                                                        |                                                                                                                                                                                                                                     |
+| `POST /api/support`                                                | Crear ticket de soporte                                                                                                                                                                                                             |
+| `GET /api/support`                                                 | Listar tickets (admin+)                                                                                                                                                                                                             |
+| **Validacion**                                                     |                                                                                                                                                                                                                                     |
+| `POST /api/validacion`                                             | Submit de validacion                                                                                                                                                                                                                |
+| `GET /api/validacion`                                              | Listar validaciones                                                                                                                                                                                                                 |
+| **Voluntarios**                                                    |                                                                                                                                                                                                                                     |
+| `GET /api/voluntarios`                                             | Listar voluntarios de campana                                                                                                                                                                                                       |
+| `POST /api/voluntarios`                                            | Registrar voluntario                                                                                                                                                                                                                |
+| **Metrics / Ops**                                                  |                                                                                                                                                                                                                                     |
+| `GET /api/metrics`                                                 | Metricas operativas (admin) — latencias p50/p90/p95/p99 por ruta                                                                                                                                                                    |
 
 ### Endpoints de Tracking (x-agent-token)
 
-| Endpoint | Descripcion |
-|----------|-------------|
-| `POST /api/agents/location` | Enviar ubicacion (+ history append) |
+| Endpoint                           | Descripcion                             |
+| ---------------------------------- | --------------------------------------- |
+| `POST /api/agents/location`        | Enviar ubicacion (+ history append)     |
 | `POST /api/agents/locations/batch` | Enviar batch de ubicaciones (hasta 100) |
-| `GET /api/agents/live` | Posiciones actuales |
-| `GET /api/agents/stream` | SSE de posiciones |
-| `GET /api/agents/health` | Health del tracking |
+| `GET /api/agents/live`             | Posiciones actuales                     |
+| `GET /api/agents/stream`           | SSE de posiciones                       |
+| `GET /api/agents/health`           | Health del tracking                     |
 
 ### WebSocket Tracking (wss://)
 
-| Endpoint | Descripcion |
-|----------|-------------|
+| Endpoint                               | Descripcion                                               |
+| -------------------------------------- | --------------------------------------------------------- |
 | `GET /ws/tracking?token=<agent_token>` | WebSocket bidireccional para ingest de ubicaciones mobile |
-| `GET /ws/tracking/health` | Health del WS tracking |
+| `GET /ws/tracking/health`              | Health del WS tracking                                    |
 
 **Protocolo WS (JSON):**
+
 - **Client→Server:** `{ type: "location", data: LocationPayload }` / `{ type: "location.batch", data: LocationPayload[] }` / `{ type: "ping" }`
 - **Server→Client:** `{ type: "ack", seq, accepted, deduped }` / `{ type: "ack.batch", accepted, deduped, failed }` / `{ type: "config", interval_ms?, distance_m? }` / `{ type: "pong" }` / `{ type: "error", code, message }`
 
@@ -454,11 +456,11 @@ curl https://api.goberna.us/api/ready
 
 ### Ramas
 
-| Tipo | Patron | Proposito |
-|------|--------|-----------|
-| `main` | Protegida | Produccion. Nadie pushea directo. |
-| `feature/*` | Temporal | Nueva funcionalidad |
-| `hotfix/*` | Temporal | Fix urgente en produccion |
+| Tipo        | Patron    | Proposito                         |
+| ----------- | --------- | --------------------------------- |
+| `main`      | Protegida | Produccion. Nadie pushea directo. |
+| `feature/*` | Temporal  | Nueva funcionalidad               |
+| `hotfix/*`  | Temporal  | Fix urgente en produccion         |
 
 ### Proceso
 
@@ -479,6 +481,7 @@ curl https://api.goberna.us/api/ready
 - **CODEOWNERS** — `@EstephanoO` auto-asignado como reviewer
 - **CI corre en cada PR** — type check backend, build web, gitleaks
 - **CI corre en push a main** — deploy automatico al VPS
+- **Commits asistidos por agente** — cuando se le pida crear un commit, DEBE cargar y usar la skill `conventional-commit` ubicada en `.agents/skills/conventional-commit/` antes de redactar el mensaje
 
 ### CI/CD Pipeline (`.github/workflows/deploy.yml`)
 
@@ -503,12 +506,12 @@ Push a main:
 
 El backend arranca en dos archivos:
 
-| Archivo | Responsabilidad |
-|---------|-----------------|
-| `src/server.ts` | Bootstrap: lee env, conecta Redis + DB, llama `buildApp()`, hace listen |
-| `src/app.ts` | Composition root: registra plugins Fastify + todos los modulos de rutas |
+| Archivo             | Responsabilidad                                                                                       |
+| ------------------- | ----------------------------------------------------------------------------------------------------- |
+| `src/server.ts`     | Bootstrap: lee env, conecta Redis + DB, llama `buildApp()`, hace listen                               |
+| `src/app.ts`        | Composition root: registra plugins Fastify + todos los modulos de rutas                               |
 | `src/config/env.ts` | **Unica fuente de verdad** de variables de entorno — NUNCA leer `process.env` directamente en modulos |
-| `src/db.ts` | Pool `pg.Pool` con SSL auto-detect — compartido por todos los repositorios |
+| `src/db.ts`         | Pool `pg.Pool` con SSL auto-detect — compartido por todos los repositorios                            |
 
 ### 10.2 Patron de Modulo (obligatorio)
 
@@ -527,6 +530,7 @@ src/modules/<nombre>/
 **Regla clave:** Los handlers en `routes.ts` deben ser delgados. La logica va en `service.ts` o `repository.ts`.
 
 **Ejemplo de handler bien escrito:**
+
 ```typescript
 app.post("/api/cms/contacts/:id/claim", {
   preHandler: [app.authenticate, authorize({ requireCampaign: true })]
@@ -543,59 +547,59 @@ app.post("/api/cms/contacts/:id/claim", {
 
 ### 10.3 Capa de Infraestructura (`src/infra/`)
 
-| Archivo | Responsabilidad |
-|---------|-----------------|
-| `auth.ts` | Decorator `app.authenticate`: resuelve Bearer header o cookie httpOnly, verifica JWT, decora request con `userId`, `userRole`, `campaignIds`, `campaignPerms` |
-| `auth.ts` | Exporta `AUTH_COOKIE_NAMES`, `parseCookies()` — fuente de verdad de nombres de cookies |
-| `authorize.ts` | Factory `authorize(options)`: RBAC por rol + campaign scope + permisos tierra/digital |
-| `http.ts` | `errorPayload(requestId, code, message)` — helper para respuestas de error standard |
-| `redis.ts` | Cliente Redis, Lua scripts (enqueue, rate-limit dual), helpers xReadGroup, xAutoClaim, DLQ |
-| `metrics.ts` | Registry de latencias p50/p90/p95/p99 por ruta + ingest outcome latencies |
-| `upstream.ts` | HTTP client con retry para llamadas a Tegola |
-| `health-poller.ts` | Polling periodico de readiness (DB, Redis, Tegola) |
-| `cms-events.ts` | EventEmitter para broadcast SSE del CMS por campaign_id |
-| `crypto.ts` | Cifrado AES para auth_tokens de Twilio en DB |
-| `telegram.ts` | Cliente Telegram para notificaciones de leads |
+| Archivo            | Responsabilidad                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth.ts`          | Decorator `app.authenticate`: resuelve Bearer header o cookie httpOnly, verifica JWT, decora request con `userId`, `userRole`, `campaignIds`, `campaignPerms` |
+| `auth.ts`          | Exporta `AUTH_COOKIE_NAMES`, `parseCookies()` — fuente de verdad de nombres de cookies                                                                        |
+| `authorize.ts`     | Factory `authorize(options)`: RBAC por rol + campaign scope + permisos tierra/digital                                                                         |
+| `http.ts`          | `errorPayload(requestId, code, message)` — helper para respuestas de error standard                                                                           |
+| `redis.ts`         | Cliente Redis, Lua scripts (enqueue, rate-limit dual), helpers xReadGroup, xAutoClaim, DLQ                                                                    |
+| `metrics.ts`       | Registry de latencias p50/p90/p95/p99 por ruta + ingest outcome latencies                                                                                     |
+| `upstream.ts`      | HTTP client con retry para llamadas a Tegola                                                                                                                  |
+| `health-poller.ts` | Polling periodico de readiness (DB, Redis, Tegola)                                                                                                            |
+| `cms-events.ts`    | EventEmitter para broadcast SSE del CMS por campaign_id                                                                                                       |
+| `crypto.ts`        | Cifrado AES para auth_tokens de Twilio en DB                                                                                                                  |
+| `telegram.ts`      | Cliente Telegram para notificaciones de leads                                                                                                                 |
 
 ### 10.4 Modulos Registrados (22 total)
 
-| Modulo | Prefijo API | Descripcion |
-|--------|-------------|-------------|
-| `health` | `/api/health`, `/api/ready` | Liveness + readiness |
-| `auth` | `/api/auth/*`, `/api/users/*` | Login, register, refresh, tokens, roles |
-| `campaigns` | `/api/campaigns/*`, `/api/candidates` | CRUD campanas + stats + members |
-| `forms` | `/api/forms/*` | Formularios legacy (write-behind Redis Streams) |
-| `form-submissions` | `/api/form-submissions/*` | Formularios nuevos (JSONB directo a DB) |
-| `form-definitions` | `/api/form-definitions/*` | Definiciones de formularios |
-| `agents` | `/api/agents/*`, `/ws/tracking` | Tracking GPS + WS bidireccional + SSE + history |
-| `meets` | `/api/meets/*` | Reuniones de campo |
-| `zones` | `/api/zones/*` | Zonas geograficas (centro + radio) |
-| `org-hierarchy` | `/api/org-hierarchy/*` | Jerarquia organizacional |
-| `invitations` | `/api/invitations/*` | Invitaciones por codigo |
-| `access-requests` | `/api/access-requests/*` | Solicitudes de acceso |
-| `map` | `/api/config`, `/api/tiles/*`, `/api/capabilities` | Proxy tiles MVT a Tegola |
-| `uploads` | `/api/uploads/*` | Archivos |
-| `analytics` | `/api/campaigns/:id/analytics`, `/api/analytics/*` | Datos GA4 por campana |
-| `cms` | `/api/cms/*` | CMS contactos + SSE realtime |
-| `objectives` | `/api/objectives/*` | Objetivos por zona y por usuario |
-| `twilio` | `/api/twilio/*`, `/api/webhooks/twilio/*` | WhatsApp via Twilio |
-| `leads` | `/api/leads/*` | Leads de campana con notificacion Telegram |
-| `support` | `/api/support/*` | Tickets de soporte interno |
-| `validacion` | `/api/validacion/*` | Validacion de datos de campo |
-| `voluntarios` | `/api/voluntarios/*` | Registro de voluntarios |
+| Modulo             | Prefijo API                                        | Descripcion                                     |
+| ------------------ | -------------------------------------------------- | ----------------------------------------------- |
+| `health`           | `/api/health`, `/api/ready`                        | Liveness + readiness                            |
+| `auth`             | `/api/auth/*`, `/api/users/*`                      | Login, register, refresh, tokens, roles         |
+| `campaigns`        | `/api/campaigns/*`, `/api/candidates`              | CRUD campanas + stats + members                 |
+| `forms`            | `/api/forms/*`                                     | Formularios legacy (write-behind Redis Streams) |
+| `form-submissions` | `/api/form-submissions/*`                          | Formularios nuevos (JSONB directo a DB)         |
+| `form-definitions` | `/api/form-definitions/*`                          | Definiciones de formularios                     |
+| `agents`           | `/api/agents/*`, `/ws/tracking`                    | Tracking GPS + WS bidireccional + SSE + history |
+| `meets`            | `/api/meets/*`                                     | Reuniones de campo                              |
+| `zones`            | `/api/zones/*`                                     | Zonas geograficas (centro + radio)              |
+| `org-hierarchy`    | `/api/org-hierarchy/*`                             | Jerarquia organizacional                        |
+| `invitations`      | `/api/invitations/*`                               | Invitaciones por codigo                         |
+| `access-requests`  | `/api/access-requests/*`                           | Solicitudes de acceso                           |
+| `map`              | `/api/config`, `/api/tiles/*`, `/api/capabilities` | Proxy tiles MVT a Tegola                        |
+| `uploads`          | `/api/uploads/*`                                   | Archivos                                        |
+| `analytics`        | `/api/campaigns/:id/analytics`, `/api/analytics/*` | Datos GA4 por campana                           |
+| `cms`              | `/api/cms/*`                                       | CMS contactos + SSE realtime                    |
+| `objectives`       | `/api/objectives/*`                                | Objetivos por zona y por usuario                |
+| `twilio`           | `/api/twilio/*`, `/api/webhooks/twilio/*`          | WhatsApp via Twilio                             |
+| `leads`            | `/api/leads/*`                                     | Leads de campana con notificacion Telegram      |
+| `support`          | `/api/support/*`                                   | Tickets de soporte interno                      |
+| `validacion`       | `/api/validacion/*`                                | Validacion de datos de campo                    |
+| `voluntarios`      | `/api/voluntarios/*`                               | Registro de voluntarios                         |
 
 **Ruta especial:** `GET /api/metrics` definida directamente en `app.ts` (no en un modulo).
 
 ### 10.5 Modelo de Roles (6 niveles)
 
-| Rol | Nivel | Descripcion |
-|-----|-------|-------------|
-| `admin` | 50 | Acceso total al sistema |
-| `consultor` | 40 | Consultores externos con acceso amplio |
-| `candidato` | 30 | Candidato + gestion operativa de su campana |
-| `brigadista_zonal` | 20 | Coordinadores de zona |
-| `agente_campo` | 10 | Agentes de campo (mobile) |
-| `agente_digital` | 10 | Operadores digitales (mismo nivel que campo) |
+| Rol                | Nivel | Descripcion                                  |
+| ------------------ | ----- | -------------------------------------------- |
+| `admin`            | 50    | Acceso total al sistema                      |
+| `consultor`        | 40    | Consultores externos con acceso amplio       |
+| `candidato`        | 30    | Candidato + gestion operativa de su campana  |
+| `brigadista_zonal` | 20    | Coordinadores de zona                        |
+| `agente_campo`     | 10    | Agentes de campo (mobile)                    |
+| `agente_digital`   | 10    | Operadores digitales (mismo nivel que campo) |
 
 **Regla:** `authorize({ roles: ["candidato"] })` permite nivel 30+. Un rol con nivel >= al requerido pasa.
 **Nota:** `jefe_campana` fue eliminado del sistema. El alias no existe en `ROLE_ALIASES`. Migraciones DB pendientes.
@@ -606,12 +610,13 @@ app.post("/api/cms/contacts/:id/claim", {
 
 El backend sirve a **dos clientes** con mecanismos de auth distintos simultaneamente:
 
-| Cliente | Transporte | Storage | Refresh |
-|---------|-----------|---------|---------|
-| **Web** (Next.js via Vercel proxy) | httpOnly cookie `goberna_access_token` | Cookie del browser | `POST /api/auth/refresh` — cookie va automaticamente |
-| **Mobile** (Expo directo) | `Authorization: Bearer <token>` header | `expo-secure-store` | `POST /api/auth/refresh` con `{ refresh_token }` en body JSON |
+| Cliente                            | Transporte                             | Storage             | Refresh                                                       |
+| ---------------------------------- | -------------------------------------- | ------------------- | ------------------------------------------------------------- |
+| **Web** (Next.js via Vercel proxy) | httpOnly cookie `goberna_access_token` | Cookie del browser  | `POST /api/auth/refresh` — cookie va automaticamente          |
+| **Mobile** (Expo directo)          | `Authorization: Bearer <token>` header | `expo-secure-store` | `POST /api/auth/refresh` con `{ refresh_token }` en body JSON |
 
 **Resolucion de token en `src/infra/auth.ts`:**
+
 ```
 1. Authorization: Bearer <token>  → si existe, usar (mobile/programmatic)
 2. Cookie: goberna_access_token   → fallback (web via httpOnly cookie)
@@ -620,15 +625,16 @@ El backend sirve a **dos clientes** con mecanismos de auth distintos simultaneam
 
 **Cookies seteadas por el backend (login + refresh):**
 
-| Cookie | httpOnly | Path | Max-Age | Proposito |
-|--------|----------|------|---------|-----------|
-| `goberna_access_token` | Si | `/` | 31536000 (1 año) | JWT de acceso |
-| `goberna_refresh_token` | Si | `/api/auth` | 31536000 (1 año) | JWT de refresh (scope restringido) |
-| `goberna_session` | No | `/` | 31536000 (1 año) | Flag `"1"` — Next.js middleware detecta sesion sin leer JWT |
+| Cookie                  | httpOnly | Path        | Max-Age          | Proposito                                                   |
+| ----------------------- | -------- | ----------- | ---------------- | ----------------------------------------------------------- |
+| `goberna_access_token`  | Si       | `/`         | 31536000 (1 año) | JWT de acceso                                               |
+| `goberna_refresh_token` | Si       | `/api/auth` | 31536000 (1 año) | JWT de refresh (scope restringido)                          |
+| `goberna_session`       | No       | `/`         | 31536000 (1 año) | Flag `"1"` — Next.js middleware detecta sesion sin leer JWT |
 
 **Refresh token rotation:** Cada refresh revoca el token actual y emite uno nuevo en la misma familia. Si se detecta reutilizacion del mismo token, se revoca **toda la familia** (proteccion contra token reuse attacks).
 
 **Reglas de seguridad (No Negociables):**
+
 - **NUNCA** guardar tokens en localStorage/sessionStorage en la web
 - **NUNCA** leer el JWT desde JavaScript en el browser (es httpOnly)
 - El flag `goberna_session=1` es el unico indicador client-side de sesion activa
@@ -641,16 +647,20 @@ El backend sirve a **dos clientes** con mecanismos de auth distintos simultaneam
 
 ```typescript
 // Solo admins
-preHandler: [app.authenticate, authorize({ roles: ["admin"] })]
+preHandler: [app.authenticate, authorize({ roles: ["admin"] })];
 
 // Candidato y arriba, scoped a una campana (campaign_id de header, param o body)
-preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })]
+preHandler: [
+  app.authenticate,
+  authorize({ roles: ["candidato"], requireCampaign: true }),
+];
 
 // Requiere permiso tierra dentro de la campana
-preHandler: [app.authenticate, authorize({ requirePermission: "tierra" })]
+preHandler: [app.authenticate, authorize({ requirePermission: "tierra" })];
 ```
 
 **Resolucion de campaign_id** (en orden de prioridad):
+
 1. Header `x-campaign-id`
 2. Route param `campaignId`
 3. Body `campaign_id`
@@ -678,6 +688,7 @@ Mobile/Field → POST /api/agents/location
 ```
 
 **Lua scripts en `src/infra/redis.ts`:**
+
 - `trackingEnqueueScript` — dedup por seq number por agente (atomic HGET/HSET + XADD)
 - `formsEnqueueScript` — dedup por idempotency key con TTL (atomic SET NX + XADD)
 - `weightedRateLimitScript` — rate limit con costo variable (single actor)
@@ -887,15 +898,16 @@ Cada app tiene su propio `AGENTS.md` que:
 
 Cualquier cambio debe cumplir:
 
-| App | Comando | Resultado |
-|-----|---------|-----------|
-| Backend | `bunx tsc --noEmit` | Sin errores |
-| Web | `bun run build` | Build exitoso |
-| Mobile | `bunx tsc --noEmit` | Sin errores |
-| Produccion | `curl /api/health` | 200 OK |
-| Produccion | `curl /api/ready` | 200 OK |
+| App        | Comando             | Resultado     |
+| ---------- | ------------------- | ------------- |
+| Backend    | `bunx tsc --noEmit` | Sin errores   |
+| Web        | `bun run build`     | Build exitoso |
+| Mobile     | `bunx tsc --noEmit` | Sin errores   |
+| Produccion | `curl /api/health`  | 200 OK        |
+| Produccion | `curl /api/ready`   | 200 OK        |
 
 **Checklist adicional por cambio en backend:**
+
 1. Mantener contrato backwards-compatible o versionar
 2. Si cambia request/response de endpoint existente, actualizar seccion 6 de este archivo
 3. Si se agrega modulo nuevo, agregarlo a seccion 10.4 de este archivo
