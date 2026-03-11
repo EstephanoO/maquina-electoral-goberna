@@ -20,10 +20,10 @@ import {
 // Endpoints:
 //   GET  /api/audio-catalog          — List catalog items (metadata only)
 //   GET  /api/audio-catalog/:id      — Get single item WITH audio blob
-//   POST /api/audio-catalog/:id/generate — Generate audio for an item (ElevenLabs)
-//   POST /api/audio-catalog          — Create new item (candidato+)
-//   PUT  /api/audio-catalog/:id      — Update item metadata (candidato+)
-//   DELETE /api/audio-catalog/:id    — Delete item (candidato+)
+//   POST /api/audio-catalog/:id/generate — Generate audio for an item (consultor+)
+//   POST /api/audio-catalog          — Create new item (consultor+)
+//   PUT  /api/audio-catalog/:id      — Update item metadata (consultor+)
+//   DELETE /api/audio-catalog/:id    — Delete item (consultor+)
 // ═══════════════════════════════════════════════════════════════════════
 
 export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
@@ -79,7 +79,7 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
     // ── POST /api/audio-catalog/:id/generate — generate audio via ElevenLabs ──
     // This is the ONLY endpoint that calls ElevenLabs. Called once per item.
     app.post<{ Params: { id: string } }>("/api/audio-catalog/:id/generate", {
-      preHandler: [app.authenticate, authorize({ roles: ["candidato"] })],
+      preHandler: [app.authenticate, authorize({ roles: ["consultor"] })],
     }, async (request, reply) => {
       const requestId = String(request.id);
 
@@ -140,9 +140,9 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
       }
     });
 
-    // ── POST /api/audio-catalog — create new item (candidato+) ───────
+    // ── POST /api/audio-catalog — create new item (consultor+) ───────
     app.post("/api/audio-catalog", {
-      preHandler: [app.authenticate, authorize({ roles: ["candidato"], requireCampaign: true })],
+      preHandler: [app.authenticate, authorize({ roles: ["consultor"], requireCampaign: true })],
     }, async (request, reply) => {
       const requestId = String(request.id);
       const campaignId = (request as unknown as { activeCampaignId: string }).activeCampaignId;
@@ -159,7 +159,7 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
 
     // ── PUT /api/audio-catalog/:id — update item metadata ────────────
     app.put<{ Params: { id: string } }>("/api/audio-catalog/:id", {
-      preHandler: [app.authenticate, authorize({ roles: ["candidato"] })],
+      preHandler: [app.authenticate, authorize({ roles: ["consultor"] })],
     }, async (request, reply) => {
       const requestId = String(request.id);
 
@@ -177,7 +177,7 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
 
     // ── DELETE /api/audio-catalog/:id — delete item ──────────────────
     app.delete<{ Params: { id: string } }>("/api/audio-catalog/:id", {
-      preHandler: [app.authenticate, authorize({ roles: ["candidato"] })],
+      preHandler: [app.authenticate, authorize({ roles: ["consultor"] })],
     }, async (request, reply) => {
       const requestId = String(request.id);
       const deleted = await repo.remove(request.params.id);

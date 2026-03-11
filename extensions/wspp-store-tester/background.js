@@ -1310,7 +1310,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       const result = await apiFetch('/api/audio-catalog');
       if (!result.ok) {
-        sendResponse({ ok: false, error: result.message || 'Failed to fetch catalog' });
+        const errDetail = result.error || result.message || 'Failed to fetch catalog';
+        console.error('[WSPP CATALOG] apiFetch failed:', errDetail, '| status:', result.status);
+        sendResponse({ ok: false, error: errDetail });
         return;
       }
 
@@ -1348,7 +1350,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       const result = await apiFetch(`/api/audio-catalog/${audioId}`);
       if (!result.ok || !result.item?.audioBase64) {
-        sendResponse({ ok: false, error: result.message || 'Audio not available' });
+        const errDetail = result.error || result.message || 'Audio not available';
+        console.error('[WSPP CATALOG] audio fetch failed:', audioId, errDetail, '| status:', result.status);
+        sendResponse({ ok: false, error: errDetail });
         return;
       }
 

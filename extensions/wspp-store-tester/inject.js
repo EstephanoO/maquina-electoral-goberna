@@ -1152,19 +1152,53 @@
 
   // ── Send audio as WhatsApp voice note (PTT) via WA internal modules ──
   //
-  // Uses window.WWebJS.sendMessage() with sendAudioAsVoice: true.
-  // This is the same path WA Web uses internally:
-  //   processMediaData(mediaInfo, { forceVoice: true })
-  //     → WAWebPrepRawMedia.prepRawMedia(opaqueData, { isPtt: true })
-  //     → generates waveform
-  //     → addAndSendMsgToChat(chat, { type: 'ptt', mimetype: 'audio/ogg; codecs=opus', ... })
+  // Implements the full PTT pipeline directly using window.require() modules,
+  // mirroring what whatsapp-web.js does in processMediaData + sendMessage.
+  // window.WWebJS does NOT exist in the browser — that's a Puppeteer abstraction.
   //
-  // Result: message appears as a native WA voice note with waveform, NOT a file attachment.
-  async function sendAudioAsPTT(audioBase64, mimeType) {
+  // Pipeline:
+  //   base64 → File → OpaqueData
+  //     → WAWebPrepRawMedia.prepRawMedia(opaqueData, { isPtt: true })
+  //     → waitForPrep() → mediaData (type: 'ptt')
+  //     → generateWaveform(file) → mediaData.waveform
+  //     → WAWebMediaStorage.getOrCreateMediaObject(filehash)
+  //     → WAWebMediaMmsV4Upload.uploadMedia({ mimetype, mediaObject, mediaType })
+  //     → mediaData.set(uploadedEntry)
+  //     → build message object { type:'ptt', ... }
+  //     → WAWebSendMsgChatAction.addAndSendMsgToChat(chat, message)
+  //
+  // Result: native WA voice note bubble with waveform.
+
+  // Helper: generate waveform Uint8Array from audio File (same as WWebJS.generateWaveform)
+  async function _generateWaveform(audioFile) {
     try {
-      // 1. Verify window.WWebJS is available (injected by WA Web itself)
-      if (!window.WWebJS || typeof window.WWebJS.sendMessage !== 'function') {
-        console.error('[WSPP CATALOG] window.WWebJS not available yet — WA Web still loading?');
+      const audioData = await audioFile.arrayBuffer();
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const audioBuffer = await audioContext.decodeAudioData(audioData);
+      const rawData = audioBuffer.getChannelData(0);
+      const samples = 64;
+      const blockSize = Math.floor(rawData.length / samples);
+      const filteredData = [];
+      for (let i = 0; i < samples; i++) {
+        const blockStart = blockSize * i;
+        let sum = 0;
+        for (let j = 0; j < blockSize; j++) sum += Math.abs(rawData[blockStart + j]);
+        filteredData.push(sum / blockSize);
+      }
+      const multiplier = Math.pow(Math.max(...filteredData), -1);
+      return new Uint8Array(filteredData.map(n => Math.floor(100 * n * multiplier)));
+    } catch (e) {
+      console.warn('[WSPP CATALOG] Waveform generation failed (non-fatal):', e.message);
+      return undefined;
+    }
+  }
+
+  async function sendAudioAsPTT(audioBase64, mimeType) {
+    const mime = mimeType || 'audio/ogg; codecs=opus';
+    try {
+      // 1. Verify window.require is available
+      if (typeof window.require !== 'function') {
+        console.error('[WSPP CATALOG] window.require not available — WA Web still loading?');
         return false;
       }
 
@@ -1175,7 +1209,7 @@
         return false;
       }
 
-      // Resolve the chat model from WA's collections
+      // 3. Resolve chat model
       let chat = null;
       try {
         const Collections = window.require('WAWebCollections');
@@ -1183,40 +1217,117 @@
         const wid = widFactory.createWid(chatJid);
         chat = Collections.Chat.get(wid);
         if (!chat) {
-          // Fallback: find or create (handles cases where chat isn't preloaded)
-          const FindChatAction = window.require('WAWebFindChatAction');
-          const result = await FindChatAction.findOrCreateLatestChat(wid);
+          const FindChat = window.require('WAWebFindChatAction');
+          const result = await FindChat.findOrCreateLatestChat(wid);
           chat = result?.chat ?? result;
         }
       } catch (err) {
         console.error('[WSPP CATALOG] Failed to resolve chat model:', err);
         return false;
       }
-
       if (!chat) {
         console.error('[WSPP CATALOG] Chat model not found for JID:', chatJid);
         return false;
       }
 
-      // 3. Build media info object — WWebJS mediaInfo format
-      const mediaInfo = {
-        data: audioBase64,
-        mimetype: mimeType || 'audio/ogg; codecs=opus',
-        filename: 'voice_cesar_vasquez.ogg',
+      // 4. base64 → File
+      const binary = atob(audioBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: mime });
+      const file = new File([blob], 'voice_cesar_vasquez.ogg', { type: mime, lastModified: Date.now() });
+
+      // 5. File → OpaqueData
+      const OpaqueData = window.require('WAWebMediaOpaqueData');
+      const opaqueData = await OpaqueData.createFromData(file, mime);
+
+      // 6. prepRawMedia with isPtt: true
+      const { prepRawMedia } = window.require('WAWebPrepRawMedia');
+      const mediaPrep = prepRawMedia(opaqueData, {
+        isPtt: true,
+        asSticker: false,
+        asGif: false,
+        asDocument: false,
+      });
+      const mediaData = await mediaPrep.waitForPrep();
+      console.log('[WSPP CATALOG] prepRawMedia done, type:', mediaData.type, 'filehash:', mediaData.filehash?.slice(0, 12));
+
+      // 7. Generate waveform (non-fatal if fails)
+      const waveform = await _generateWaveform(file);
+      if (waveform) mediaData.waveform = waveform;
+
+      // 8. mediaObject + mediaType
+      const { getOrCreateMediaObject } = window.require('WAWebMediaStorage');
+      const mediaObject = getOrCreateMediaObject(mediaData.filehash);
+      const { msgToMediaType } = window.require('WAWebMmsMediaTypes');
+      const mediaType = msgToMediaType({ type: mediaData.type, isGif: false });
+
+      // 9. Ensure mediaBlob is OpaqueData
+      if (!(mediaData.mediaBlob instanceof OpaqueData)) {
+        mediaData.mediaBlob = await OpaqueData.createFromData(mediaData.mediaBlob, mediaData.mediaBlob.type);
+      }
+      mediaData.renderableUrl = mediaData.mediaBlob.url();
+      mediaObject.consolidate(mediaData.toJSON());
+      mediaData.mediaBlob.autorelease();
+
+      // 10. Upload to WA MMS
+      const { uploadMedia } = window.require('WAWebMediaMmsV4Upload');
+      const uploadedMedia = await uploadMedia({ mimetype: mediaData.mimetype, mediaObject, mediaType });
+      const mediaEntry = uploadedMedia?.mediaEntry;
+      if (!mediaEntry) throw new Error('Upload failed: no mediaEntry returned');
+
+      mediaData.set({
+        clientUrl: mediaEntry.mmsUrl,
+        deprecatedMms3Url: mediaEntry.deprecatedMms3Url,
+        directPath: mediaEntry.directPath,
+        mediaKey: mediaEntry.mediaKey,
+        mediaKeyTimestamp: mediaEntry.mediaKeyTimestamp,
+        filehash: mediaObject.filehash,
+        encFilehash: mediaEntry.encFilehash,
+        uploadhash: mediaEntry.uploadHash,
+        size: mediaObject.size,
+        streamingSidecar: mediaEntry.sidecar,
+        firstFrameSidecar: mediaEntry.firstFrameSidecar,
+      });
+
+      console.log('[WSPP CATALOG] Upload done, directPath:', mediaEntry.directPath?.slice(0, 30));
+
+      // 11. Build message identity fields
+      const { getMaybeMeLidUser, getMaybeMePnUser } = window.require('WAWebUserPrefsMeUser');
+      const meUser = getMaybeMePnUser();
+      const newId = await window.require('WAWebMsgKey').newId();
+      const MsgKey = window.require('WAWebMsgKey');
+      const newMsgKey = new MsgKey({ from: meUser, to: chat.id, id: newId, selfDir: 'out' });
+
+      const ephemeralFields = window.require('WAWebGetEphemeralFieldsMsgActionsUtils').getEphemeralFields(chat);
+
+      // 12. Build message object — spread mediaData JSON, override type to 'ptt'
+      const mediaJSON = mediaData.toJSON ? mediaData.toJSON() : mediaData;
+      const message = {
+        ...mediaJSON,
+        ...ephemeralFields,
+        id: newMsgKey,
+        ack: 0,
+        from: meUser,
+        to: chat.id,
+        local: true,
+        self: 'out',
+        t: Math.floor(Date.now() / 1000),
+        isNewMsg: true,
+        type: 'ptt',
+        mimetype: mime,
       };
 
-      // 4. Send via WWebJS — sendAudioAsVoice: true sets isPtt: true internally
-      //    This triggers the full PTT pipeline: prepRawMedia → waveform → type:'ptt'
-      await window.WWebJS.sendMessage(chat, undefined, {
-        media: mediaInfo,
-        sendAudioAsVoice: true,
-      });
+      // 13. Send
+      const { addAndSendMsgToChat } = window.require('WAWebSendMsgChatAction');
+      const [msgPromise] = addAndSendMsgToChat(chat, message);
+      await msgPromise;
 
       console.log('[WSPP CATALOG] PTT voice note sent to', chatJid);
       return true;
 
     } catch (err) {
-      console.error('[WSPP CATALOG] PTT send error:', err);
+      console.error('[WSPP CATALOG] PTT send error:', err.message, err.stack?.slice(0, 300));
       return false;
     }
   }
