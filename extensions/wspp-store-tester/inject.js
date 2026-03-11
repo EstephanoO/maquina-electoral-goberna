@@ -917,41 +917,21 @@
     check: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
     waveform: `<svg width="52" height="20" viewBox="0 0 52 20" fill="none"><rect x="0"  y="8"  width="3" height="4"  rx="1.5" fill="currentColor" opacity=".4"/><rect x="5"  y="5"  width="3" height="10" rx="1.5" fill="currentColor" opacity=".6"/><rect x="10" y="2"  width="3" height="16" rx="1.5" fill="currentColor" opacity=".8"/><rect x="15" y="6"  width="3" height="8"  rx="1.5" fill="currentColor" opacity=".7"/><rect x="20" y="3"  width="3" height="14" rx="1.5" fill="currentColor"/><rect x="25" y="7"  width="3" height="6"  rx="1.5" fill="currentColor" opacity=".7"/><rect x="30" y="1"  width="3" height="18" rx="1.5" fill="currentColor" opacity=".9"/><rect x="35" y="5"  width="3" height="10" rx="1.5" fill="currentColor" opacity=".6"/><rect x="40" y="8"  width="3" height="4"  rx="1.5" fill="currentColor" opacity=".5"/><rect x="45" y="4"  width="3" height="12" rx="1.5" fill="currentColor" opacity=".7"/><rect x="49" y="9"  width="3" height="2"  rx="1" fill="currentColor" opacity=".3"/></svg>`
   };
-  var _FALLBACK_LABELS = {
-    saludo: "Saludo",
-    agradecimiento: "Agradecimiento",
-    pedir_voto: "Voto",
-    respuesta_trabajo: "Trabajo",
-    respuesta_dinero: "Dinero",
-    invitacion_evento: "Evento",
-    despedida: "Despedida",
-    propuestas: "Propuestas"
-  };
-  var _FALLBACK_COLORS = {
-    saludo: "#00a884",
-    agradecimiento: "#ef5350",
-    pedir_voto: "#f59e0b",
-    respuesta_trabajo: "#818cf8",
-    respuesta_dinero: "#34d399",
-    invitacion_evento: "#38bdf8",
-    despedida: "#c084fc",
-    propuestas: "#fbbf24"
-  };
   var _DEFAULT_ACCENT = "#8696a0";
+  var _DEFAULT_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
   function _getCatLabel(catKey) {
     const cat = _catalogCategories.find((c) => c.key === catKey);
-    if (cat) return cat.label;
-    return _FALLBACK_LABELS[catKey] || catKey;
+    return cat?.label || catKey;
   }
   function _getCatColors(catKey) {
     const cat = _catalogCategories.find((c) => c.key === catKey);
-    const accent = cat?.color || _FALLBACK_COLORS[catKey] || _DEFAULT_ACCENT;
+    const accent = cat?.color || _DEFAULT_ACCENT;
     return { bg: `${accent}18`, accent };
   }
   function _getCatIcon(catKey) {
     const cat = _catalogCategories.find((c) => c.key === catKey);
     const iconKey = cat?.icon || catKey;
-    return CATALOG_SVG[iconKey] || CATALOG_SVG.propuestas;
+    return CATALOG_SVG[iconKey] || CATALOG_SVG[catKey] || _DEFAULT_SVG;
   }
   function _getCatSortOrder(catKey) {
     const cat = _catalogCategories.find((c) => c.key === catKey);
@@ -1237,10 +1217,11 @@
         if (!grouped[cat.key]) grouped[cat.key] = [];
       });
       const allCats = Object.keys(grouped).sort((a, b) => _getCatSortOrder(a) - _getCatSortOrder(b));
+      const colCount = allCats.length <= 3 ? 2 : allCats.length <= 6 ? 3 : 4;
       const grid = document.createElement("div");
       Object.assign(grid.style, {
         display: "grid",
-        gridTemplateColumns: "repeat(4, 1fr)",
+        gridTemplateColumns: `repeat(${colCount}, 1fr)`,
         gap: "7px"
       });
       allCats.forEach((cat) => {
@@ -1628,7 +1609,7 @@
       _catalogView = backTarget;
       renderCatalogPanel();
     }));
-    const CATEGORY_OPTIONS = _catalogCategories.length > 0 ? _catalogCategories.map((c) => ({ value: c.key, label: c.label })) : Object.entries(_FALLBACK_LABELS).map(([k, v]) => ({ value: k, label: v }));
+    const CATEGORY_OPTIONS = _catalogCategories.slice().sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999)).map((c) => ({ value: c.key, label: c.label }));
     const body = document.createElement("div");
     Object.assign(body.style, { overflowY: "auto", flex: "1", padding: "14px", display: "flex", flexDirection: "column", gap: "10px" });
     body.appendChild(_mkDetailLabel("Nombre"));

@@ -60,35 +60,25 @@ const CATALOG_SVG = {
 };
 
 // ── Dynamic category helpers (read from _catalogCategories fetched from API) ──
-// Fallback labels/colors for categories not yet loaded from API
-const _FALLBACK_LABELS = {
-  saludo: 'Saludo', agradecimiento: 'Agradecimiento', pedir_voto: 'Voto',
-  respuesta_trabajo: 'Trabajo', respuesta_dinero: 'Dinero',
-  invitacion_evento: 'Evento', despedida: 'Despedida', propuestas: 'Propuestas',
-};
-const _FALLBACK_COLORS = {
-  saludo: '#00a884', agradecimiento: '#ef5350', pedir_voto: '#f59e0b',
-  respuesta_trabajo: '#818cf8', respuesta_dinero: '#34d399',
-  invitacion_evento: '#38bdf8', despedida: '#c084fc', propuestas: '#fbbf24',
-};
 const _DEFAULT_ACCENT = '#8696a0';
+// Generic icon for categories without a matching SVG in the map
+const _DEFAULT_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
 
 function _getCatLabel(catKey) {
   const cat = _catalogCategories.find(c => c.key === catKey);
-  if (cat) return cat.label;
-  return _FALLBACK_LABELS[catKey] || catKey;
+  return cat?.label || catKey;
 }
 
 function _getCatColors(catKey) {
   const cat = _catalogCategories.find(c => c.key === catKey);
-  const accent = cat?.color || _FALLBACK_COLORS[catKey] || _DEFAULT_ACCENT;
+  const accent = cat?.color || _DEFAULT_ACCENT;
   return { bg: `${accent}18`, accent };
 }
 
 function _getCatIcon(catKey) {
   const cat = _catalogCategories.find(c => c.key === catKey);
   const iconKey = cat?.icon || catKey;
-  return CATALOG_SVG[iconKey] || CATALOG_SVG.propuestas;
+  return CATALOG_SVG[iconKey] || CATALOG_SVG[catKey] || _DEFAULT_SVG;
 }
 
 function _getCatSortOrder(catKey) {
@@ -373,9 +363,11 @@ function _renderGridView(panel) {
     });
     const allCats = Object.keys(grouped).sort((a, b) => _getCatSortOrder(a) - _getCatSortOrder(b));
 
+    // Adaptive grid: 3 cols for <= 6 cats, 4 cols for 7-12, 3 cols for 13+ (scrollable)
+    const colCount = allCats.length <= 3 ? 2 : allCats.length <= 6 ? 3 : 4;
     const grid = document.createElement('div');
     Object.assign(grid.style, {
-      display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '7px',
+      display: 'grid', gridTemplateColumns: `repeat(${colCount}, 1fr)`, gap: '7px',
     });
 
     allCats.forEach(cat => {
@@ -690,10 +682,11 @@ function _renderCreateView(panel) {
   const backTarget = _catalogCategory ? 'category' : 'grid';
   panel.appendChild(_mkHeader('Nueva plantilla', () => { _catalogView = backTarget; renderCatalogPanel(); }));
 
-  // Build category options from dynamic categories (with fallback)
-  const CATEGORY_OPTIONS = _catalogCategories.length > 0
-    ? _catalogCategories.map(c => ({ value: c.key, label: c.label }))
-    : Object.entries(_FALLBACK_LABELS).map(([k, v]) => ({ value: k, label: v }));
+  // Build category options from dynamic categories
+  const CATEGORY_OPTIONS = _catalogCategories
+    .slice()
+    .sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999))
+    .map(c => ({ value: c.key, label: c.label }));
 
   const body = document.createElement('div');
   Object.assign(body.style, { overflowY: 'auto', flex: '1', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' });
