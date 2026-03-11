@@ -113,8 +113,8 @@ export const MAP_STYLES: Record<MapTheme, StyleSpecification | string> = {
   voyager: VOYAGER_STYLE,
 };
 
-/** Backward-compatible alias (default dark). */
-export const MAP_STYLE = MAP_STYLES.dark;
+/** Backward-compatible alias (default voyager). */
+export const MAP_STYLE = MAP_STYLES.voyager;
 
 /* ─── Interactive layer IDs (static — never changes at runtime) ─── */
 

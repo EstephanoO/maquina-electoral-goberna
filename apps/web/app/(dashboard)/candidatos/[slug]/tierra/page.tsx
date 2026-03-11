@@ -119,7 +119,7 @@ export default function TierraPage() {
   const [datosVizMode, setDatosVizMode] = useState<DatosVizMode>("points");
   const [heatmapRadius, setHeatmapRadius] = useState(26);
   const [heatmapOpacity, setHeatmapOpacity] = useState(0.88);
-  const [mapTheme, setMapTheme] = useState<MapTheme>("dark");
+  const [mapTheme, setMapTheme] = useState<MapTheme>("voyager");
   const isFullscreen = true;
   const [showControlsPanel, setShowControlsPanel] = useState(false);
   const [rightPanelCloseSignal, setRightPanelCloseSignal] = useState(0);
