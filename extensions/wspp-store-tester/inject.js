@@ -1358,7 +1358,7 @@
         // Counter badge (bottom-right)
         const badge = document.createElement('div');
         Object.assign(badge.style, {
-          position: 'absolute', bottom: '5px', right: '6px',
+          position: 'absolute', bottom: '5px', left: '6px',
           minWidth: '16px', height: '16px', borderRadius: '8px',
           background: readyCount > 0 ? colors.accent : '#636366',
           color: '#fff', fontSize: '9px', fontWeight: '800',
