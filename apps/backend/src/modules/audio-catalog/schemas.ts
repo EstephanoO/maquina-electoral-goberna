@@ -1,18 +1,7 @@
 import { z } from "zod";
 
-// Canonical category list — must stay in sync with extension panel CATALOG_CATEGORY_LABELS
-export const AUDIO_CATALOG_CATEGORIES = [
-  "saludo",
-  "agradecimiento",
-  "pedir_voto",
-  "respuesta_trabajo",
-  "respuesta_dinero",
-  "invitacion_evento",
-  "despedida",
-  "propuestas",
-] as const;
-
-export type AudioCatalogCategory = typeof AUDIO_CATALOG_CATEGORIES[number];
+// Categories are now dynamic (stored in audio_catalog_categories table).
+// No hardcoded enum — any non-empty string is accepted as category key.
 
 export const listCatalogSchema = z.object({
   campaign_id: z.string().uuid(),
@@ -25,9 +14,7 @@ export const generateAudioSchema = z.object({
 
 export const createItemSchema = z.object({
   campaign_id: z.string().uuid(),
-  category: z.enum(AUDIO_CATALOG_CATEGORIES, {
-    error: `category debe ser uno de: ${AUDIO_CATALOG_CATEGORIES.join(", ")}`,
-  }),
+  category: z.string().min(1).max(100),
   label: z.string().min(1).max(200),
   description: z.string().max(500).optional().default(""),
   script_text: z.string().min(1).max(5000),
@@ -43,4 +30,21 @@ export const updateItemSchema = z.object({
   script_text: z.string().min(1).max(5000).optional(),
   sort_order: z.number().int().min(0).optional(),
   is_active: z.boolean().optional(),
+});
+
+// ── Category schemas ─────────────────────────────────────────────────
+export const createCategorySchema = z.object({
+  campaign_id: z.string().uuid(),
+  key: z.string().min(1).max(100).regex(/^[a-z0-9_]+$/, "key debe ser snake_case (letras minúsculas, números, guión bajo)"),
+  label: z.string().min(1).max(100),
+  icon: z.string().max(50).optional().default("default"),
+  color: z.string().max(20).optional().default("#8696a0"),
+  sort_order: z.number().int().min(0).optional().default(0),
+});
+
+export const updateCategorySchema = z.object({
+  label: z.string().min(1).max(100).optional(),
+  icon: z.string().max(50).optional(),
+  color: z.string().max(20).optional(),
+  sort_order: z.number().int().min(0).optional(),
 });

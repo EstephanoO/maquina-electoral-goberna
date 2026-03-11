@@ -871,6 +871,8 @@
 
   // src/inject/audio-catalog-panel.js
   var _catalogItems = [];
+  var _catalogCategories = [];
+  var _catalogCategoriesLoading = false;
   var _catalogPanelOpen = false;
   var _catalogLoading = false;
   var _catalogEditingId = null;
@@ -884,6 +886,7 @@
   var _pendingDeleteId = null;
   var _pendingDeleteBtn = null;
   var _pendingCreateBtn = null;
+  var _pendingDeleteCatBtn = null;
   var CATALOG_SVG = {
     mic: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`,
     saludo: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>`,
@@ -894,6 +897,19 @@
     invitacion_evento: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
     despedida: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
     propuestas: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`,
+    // New category icons
+    cuando_llaman: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+    impulsar_canal: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`,
+    agendar: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/></svg>`,
+    apoyo_historico: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+    opiniones: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
+    pedir_apoyo: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`,
+    compartir_canal: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`,
+    saludos: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>`,
+    cerrar_conv: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>`,
+    compartir_mensaje: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
+    mantener_contacto: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
+    responder_opiniones: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>`,
     send: `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`,
     refresh: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`,
     edit: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
@@ -901,7 +917,7 @@
     check: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
     waveform: `<svg width="52" height="20" viewBox="0 0 52 20" fill="none"><rect x="0"  y="8"  width="3" height="4"  rx="1.5" fill="currentColor" opacity=".4"/><rect x="5"  y="5"  width="3" height="10" rx="1.5" fill="currentColor" opacity=".6"/><rect x="10" y="2"  width="3" height="16" rx="1.5" fill="currentColor" opacity=".8"/><rect x="15" y="6"  width="3" height="8"  rx="1.5" fill="currentColor" opacity=".7"/><rect x="20" y="3"  width="3" height="14" rx="1.5" fill="currentColor"/><rect x="25" y="7"  width="3" height="6"  rx="1.5" fill="currentColor" opacity=".7"/><rect x="30" y="1"  width="3" height="18" rx="1.5" fill="currentColor" opacity=".9"/><rect x="35" y="5"  width="3" height="10" rx="1.5" fill="currentColor" opacity=".6"/><rect x="40" y="8"  width="3" height="4"  rx="1.5" fill="currentColor" opacity=".5"/><rect x="45" y="4"  width="3" height="12" rx="1.5" fill="currentColor" opacity=".7"/><rect x="49" y="9"  width="3" height="2"  rx="1" fill="currentColor" opacity=".3"/></svg>`
   };
-  var CATALOG_CATEGORY_LABELS = {
+  var _FALLBACK_LABELS = {
     saludo: "Saludo",
     agradecimiento: "Agradecimiento",
     pedir_voto: "Voto",
@@ -911,16 +927,40 @@
     despedida: "Despedida",
     propuestas: "Propuestas"
   };
-  var CATALOG_CATEGORY_COLORS = {
-    saludo: { bg: "rgba(0,168,132,.15)", accent: "#00a884" },
-    agradecimiento: { bg: "rgba(239,83,80,.12)", accent: "#ef5350" },
-    pedir_voto: { bg: "rgba(251,188,4,.12)", accent: "#f59e0b" },
-    respuesta_trabajo: { bg: "rgba(99,102,241,.12)", accent: "#818cf8" },
-    respuesta_dinero: { bg: "rgba(16,185,129,.12)", accent: "#34d399" },
-    invitacion_evento: { bg: "rgba(14,165,233,.12)", accent: "#38bdf8" },
-    despedida: { bg: "rgba(168,85,247,.12)", accent: "#c084fc" },
-    propuestas: { bg: "rgba(245,158,11,.12)", accent: "#fbbf24" }
+  var _FALLBACK_COLORS = {
+    saludo: "#00a884",
+    agradecimiento: "#ef5350",
+    pedir_voto: "#f59e0b",
+    respuesta_trabajo: "#818cf8",
+    respuesta_dinero: "#34d399",
+    invitacion_evento: "#38bdf8",
+    despedida: "#c084fc",
+    propuestas: "#fbbf24"
   };
+  var _DEFAULT_ACCENT = "#8696a0";
+  function _getCatLabel(catKey) {
+    const cat = _catalogCategories.find((c) => c.key === catKey);
+    if (cat) return cat.label;
+    return _FALLBACK_LABELS[catKey] || catKey;
+  }
+  function _getCatColors(catKey) {
+    const cat = _catalogCategories.find((c) => c.key === catKey);
+    const accent = cat?.color || _FALLBACK_COLORS[catKey] || _DEFAULT_ACCENT;
+    return { bg: `${accent}18`, accent };
+  }
+  function _getCatIcon(catKey) {
+    const cat = _catalogCategories.find((c) => c.key === catKey);
+    const iconKey = cat?.icon || catKey;
+    return CATALOG_SVG[iconKey] || CATALOG_SVG.propuestas;
+  }
+  function _getCatSortOrder(catKey) {
+    const cat = _catalogCategories.find((c) => c.key === catKey);
+    return cat?.sort_order ?? 999;
+  }
+  function _getCatId(catKey) {
+    const cat = _catalogCategories.find((c) => c.key === catKey);
+    return cat?.id || null;
+  }
   function injectCatalogStyles() {
     if (document.getElementById("wspp-catalog-styles")) return;
     const root = document.head || document.documentElement;
@@ -948,6 +988,8 @@
     .wspp-spinning { animation: wspp-spin .7s linear infinite; }
     .wspp-edit-area { resize:none; outline:none; }
     .wspp-edit-area:focus { border-color:#00a884 !important; }
+    .wspp-edit-area::placeholder { color: #636366; }
+    select option { background: #2c2c2e; color: #e9edef; }
   `;
     root.appendChild(s);
   }
@@ -1005,6 +1047,10 @@
     if (_catalogItems.length === 0 && !_catalogLoading) {
       _catalogLoading = true;
       window.postMessage({ type: "FETCH_AUDIO_CATALOG" }, WA_ORIGIN);
+    }
+    if (_catalogCategories.length === 0 && !_catalogCategoriesLoading) {
+      _catalogCategoriesLoading = true;
+      window.postMessage({ type: "FETCH_CATALOG_CATEGORIES" }, WA_ORIGIN);
     }
     renderCatalogPanel();
   }
@@ -1182,17 +1228,15 @@
       empty.textContent = "No hay plantillas disponibles";
       body.appendChild(empty);
     } else {
-      const ORDER = ["saludo", "pedir_voto", "agradecimiento", "propuestas", "respuesta_trabajo", "respuesta_dinero", "invitacion_evento", "despedida"];
       const grouped = {};
       _catalogItems.forEach((item) => {
         if (!grouped[item.category]) grouped[item.category] = [];
         grouped[item.category].push(item);
       });
-      const allCats = Object.keys(grouped).sort((a, b) => {
-        const ia = ORDER.indexOf(a);
-        const ib = ORDER.indexOf(b);
-        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      _catalogCategories.forEach((cat) => {
+        if (!grouped[cat.key]) grouped[cat.key] = [];
       });
+      const allCats = Object.keys(grouped).sort((a, b) => _getCatSortOrder(a) - _getCatSortOrder(b));
       const grid = document.createElement("div");
       Object.assign(grid.style, {
         display: "grid",
@@ -1201,8 +1245,8 @@
       });
       allCats.forEach((cat) => {
         const items = grouped[cat];
-        const colors = CATALOG_CATEGORY_COLORS[cat] || { bg: "rgba(134,150,160,.12)", accent: "#8696a0" };
-        const catSvg = CATALOG_SVG[cat] || CATALOG_SVG.propuestas;
+        const colors = _getCatColors(cat);
+        const catSvg = _getCatIcon(cat);
         const readyCount = items.filter((i) => i.has_audio).length;
         const tile = document.createElement("div");
         Object.assign(tile.style, {
@@ -1246,7 +1290,7 @@
           textOverflow: "ellipsis",
           whiteSpace: "nowrap"
         });
-        lbl.textContent = CATALOG_CATEGORY_LABELS[cat] || cat;
+        lbl.textContent = _getCatLabel(cat);
         const badge = document.createElement("div");
         Object.assign(badge.style, {
           position: "absolute",
@@ -1295,10 +1339,12 @@
   function _renderCategoryView(panel) {
     const cat = _catalogCategory;
     const items = _catalogItems.filter((i) => i.category === cat).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-    const colors = CATALOG_CATEGORY_COLORS[cat] || { bg: "rgba(134,150,160,.12)", accent: "#8696a0" };
-    let addBtn = null;
+    const colors = _getCatColors(cat);
+    let rightBtns = null;
     if (_catalogIsConsultor) {
-      addBtn = document.createElement("button");
+      rightBtns = document.createElement("div");
+      Object.assign(rightBtns.style, { display: "flex", alignItems: "center", gap: "4px", flexShrink: "0" });
+      const addBtn = document.createElement("button");
       addBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
       Object.assign(addBtn.style, {
         width: "26px",
@@ -1310,22 +1356,48 @@
         cursor: "pointer",
         display: "flex",
         alignItems: "center",
-        justifyContent: "center",
-        flexShrink: "0"
+        justifyContent: "center"
       });
       addBtn.title = "Agregar plantilla en esta categor\xEDa";
       addBtn.addEventListener("click", () => {
         _catalogView = "create";
         renderCatalogPanel();
       });
+      rightBtns.appendChild(addBtn);
+      const delCatBtn = document.createElement("button");
+      delCatBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`;
+      Object.assign(delCatBtn.style, {
+        width: "26px",
+        height: "26px",
+        borderRadius: "50%",
+        background: "rgba(239,83,80,.12)",
+        border: "none",
+        color: "#ef5350",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
+      });
+      delCatBtn.title = "Eliminar categor\xEDa (y todos sus audios)";
+      delCatBtn.addEventListener("click", () => {
+        const catLabel = _getCatLabel(cat);
+        if (!confirm(`\xBFEliminar la categor\xEDa "${catLabel}" y TODOS sus audios? Esta acci\xF3n no se puede deshacer.`)) return;
+        const catId = _getCatId(cat);
+        if (!catId) {
+          _showCatalogStatus("Categor\xEDa no encontrada en API", "#ef5350", 3e3);
+          return;
+        }
+        _handleDeleteCategory(catId, cat, delCatBtn);
+      });
+      rightBtns.appendChild(delCatBtn);
     }
     panel.appendChild(_mkHeader(
-      CATALOG_CATEGORY_LABELS[cat] || cat,
+      _getCatLabel(cat),
       () => {
         _catalogView = "grid";
         renderCatalogPanel();
       },
-      addBtn
+      rightBtns
     ));
     const body = document.createElement("div");
     Object.assign(body.style, {
@@ -1411,9 +1483,10 @@
             flexShrink: "0",
             transition: "background .12s, color .12s"
           });
+          const _eAccent = colors.accent;
           editBtn.addEventListener("mouseenter", () => {
-            editBtn.style.background = `${colors.accent}22`;
-            editBtn.style.color = colors.accent;
+            editBtn.style.background = `${_eAccent}22`;
+            editBtn.style.color = _eAccent;
           });
           editBtn.addEventListener("mouseleave", () => {
             editBtn.style.background = "rgba(255,255,255,.06)";
@@ -1449,8 +1522,8 @@
       renderCatalogPanel();
       return;
     }
-    const colors = CATALOG_CATEGORY_COLORS[item.category] || { bg: "rgba(134,150,160,.12)", accent: "#8696a0" };
-    const catSvg = CATALOG_SVG[item.category] || CATALOG_SVG.propuestas;
+    const colors = _getCatColors(item.category);
+    const catSvg = _getCatIcon(item.category);
     const dur = _fmtDuration(item.duration_ms);
     panel.appendChild(_mkHeader(item.label, () => {
       _catalogView = "category";
@@ -1488,7 +1561,7 @@
       marginBottom: "4px",
       textTransform: "uppercase"
     });
-    catBadge.textContent = CATALOG_CATEGORY_LABELS[item.category] || item.category;
+    catBadge.textContent = _getCatLabel(item.category);
     const descEl = document.createElement("div");
     Object.assign(descEl.style, { fontSize: "11px", color: "#8e8e93", lineHeight: "1.4" });
     descEl.textContent = item.description || "";
@@ -1549,21 +1622,13 @@
     panel.appendChild(_mkStatusBar());
   }
   function _renderCreateView(panel) {
-    const preselectedCat = _catalogView === "create" && _catalogCategory ? _catalogCategory : "saludo";
+    const preselectedCat = _catalogView === "create" && _catalogCategory ? _catalogCategory : _catalogCategories[0]?.key || "saludo";
+    const backTarget = _catalogCategory ? "category" : "grid";
     panel.appendChild(_mkHeader("Nueva plantilla", () => {
-      _catalogView = "category";
+      _catalogView = backTarget;
       renderCatalogPanel();
     }));
-    const CATEGORY_OPTIONS = [
-      { value: "saludo", label: "Saludo" },
-      { value: "agradecimiento", label: "Agradecimiento" },
-      { value: "pedir_voto", label: "Pedir voto" },
-      { value: "respuesta_trabajo", label: "Respuesta trabajo" },
-      { value: "respuesta_dinero", label: "Respuesta dinero" },
-      { value: "invitacion_evento", label: "Invitaci\xF3n a evento" },
-      { value: "despedida", label: "Despedida" },
-      { value: "propuestas", label: "Propuestas" }
-    ];
+    const CATEGORY_OPTIONS = _catalogCategories.length > 0 ? _catalogCategories.map((c) => ({ value: c.key, label: c.label })) : Object.entries(_FALLBACK_LABELS).map(([k, v]) => ({ value: k, label: v }));
     const body = document.createElement("div");
     Object.assign(body.style, { overflowY: "auto", flex: "1", padding: "14px", display: "flex", flexDirection: "column", gap: "10px" });
     body.appendChild(_mkDetailLabel("Nombre"));
@@ -1757,6 +1822,17 @@
     btn.disabled = true;
     window.postMessage({ type: "CREATE_CATALOG_ITEM", data }, WA_ORIGIN);
     _pendingCreateBtn = { el: btn, orig: origContent };
+  }
+  function _handleDeleteCategory(catId, catKey, btn) {
+    const origContent = btn.innerHTML;
+    btn.innerHTML = "";
+    const spinner = document.createElement("div");
+    Object.assign(spinner.style, { width: "12px", height: "12px", borderRadius: "50%", border: "2px solid rgba(255,255,255,.2)", borderTopColor: "#ef5350" });
+    spinner.classList.add("wspp-spinning");
+    btn.appendChild(spinner);
+    btn.disabled = true;
+    window.postMessage({ type: "DELETE_CATALOG_CATEGORY", id: catId }, WA_ORIGIN);
+    _pendingDeleteCatBtn = { el: btn, orig: origContent, catKey };
   }
   function _showCatalogStatus(text, color, duration) {
     const bar = document.getElementById("wspp-catalog-status");
@@ -2037,6 +2113,49 @@
       } else {
         _showCatalogStatus("Error al crear: " + (e.data.error || "intenta de nuevo"), "#ef5350", 4e3);
       }
+      return;
+    }
+    if (e.data?.type === "CATALOG_CATEGORIES_READY") {
+      _catalogCategoriesLoading = false;
+      if (e.data.ok && e.data.categories) {
+        _catalogCategories = e.data.categories;
+        console.log("[WSPP CATALOG] Loaded", _catalogCategories.length, "categories");
+      } else {
+        console.warn("[WSPP CATALOG] Error loading categories:", e.data.error);
+      }
+      if (_catalogPanelOpen) renderCatalogPanel();
+      return;
+    }
+    if (e.data?.type === "CREATE_CATALOG_CATEGORY_DONE") {
+      if (e.data.ok && e.data.category) {
+        _catalogCategories.push(e.data.category);
+        _showCatalogStatus("Categor\xEDa creada \u2713", "#00a884", 2500);
+        if (_catalogPanelOpen) renderCatalogPanel();
+      } else {
+        _showCatalogStatus("Error al crear categor\xEDa: " + (e.data.error || "intenta de nuevo"), "#ef5350", 4e3);
+      }
+      return;
+    }
+    if (e.data?.type === "DELETE_CATALOG_CATEGORY_DONE") {
+      if (_pendingDeleteCatBtn) {
+        _pendingDeleteCatBtn.el.innerHTML = _pendingDeleteCatBtn.orig;
+        _pendingDeleteCatBtn.el.disabled = false;
+      }
+      if (e.data.ok) {
+        const deletedKey = _pendingDeleteCatBtn?.catKey;
+        _catalogCategories = _catalogCategories.filter((c) => c.id !== e.data.id);
+        if (deletedKey) {
+          _catalogItems = _catalogItems.filter((i) => i.category !== deletedKey);
+        }
+        window.postMessage({ type: "BUST_CATALOG_CACHE" }, WA_ORIGIN);
+        _catalogView = "grid";
+        _catalogCategory = null;
+        _showCatalogStatus("Categor\xEDa eliminada \u2713", "#00a884", 2500);
+        if (_catalogPanelOpen) renderCatalogPanel();
+      } else {
+        _showCatalogStatus("Error al eliminar categor\xEDa: " + (e.data.error || "intenta de nuevo"), "#ef5350", 4e3);
+      }
+      _pendingDeleteCatBtn = null;
       return;
     }
   });

@@ -201,6 +201,57 @@ window.addEventListener('message', (e) => {
     return;
   }
 
+  // --- FETCH_CATALOG_CATEGORIES (categories list: inject → background → inject) ---
+  if (e.data?.type === 'FETCH_CATALOG_CATEGORIES') {
+    chrome.runtime.sendMessage({ type: 'FETCH_CATALOG_CATEGORIES' }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'CATALOG_CATEGORIES_READY', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({
+        type: 'CATALOG_CATEGORIES_READY',
+        ok: response?.ok ?? false,
+        categories: response?.categories ?? [],
+        error: response?.error ?? null,
+      }, WA_ORIGIN);
+    });
+    return;
+  }
+
+  // --- CREATE_CATALOG_CATEGORY (create: inject → background → inject) ---
+  if (e.data?.type === 'CREATE_CATALOG_CATEGORY') {
+    chrome.runtime.sendMessage({ type: 'CREATE_CATALOG_CATEGORY', data: e.data.data }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'CREATE_CATALOG_CATEGORY_DONE', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({
+        type: 'CREATE_CATALOG_CATEGORY_DONE',
+        ok: response?.ok ?? false,
+        category: response?.category ?? null,
+        error: response?.error ?? null,
+      }, WA_ORIGIN);
+    });
+    return;
+  }
+
+  // --- DELETE_CATALOG_CATEGORY (delete: inject → background → inject) ---
+  if (e.data?.type === 'DELETE_CATALOG_CATEGORY') {
+    chrome.runtime.sendMessage({ type: 'DELETE_CATALOG_CATEGORY', id: e.data.id }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'DELETE_CATALOG_CATEGORY_DONE', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({
+        type: 'DELETE_CATALOG_CATEGORY_DONE',
+        ok: response?.ok ?? false,
+        id: e.data.id,
+        error: response?.error ?? null,
+      }, WA_ORIGIN);
+    });
+    return;
+  }
+
   // --- Cache invalidation (inject → background, fire-and-forget) ---
   if (e.data?.type === 'BUST_AUDIO_CACHE' || e.data?.type === 'BUST_CATALOG_CACHE') {
     chrome.runtime.sendMessage({ type: e.data.type, id: e.data.id }, () => {});

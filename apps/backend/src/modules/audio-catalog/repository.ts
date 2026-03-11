@@ -24,6 +24,21 @@ export type AudioCatalogMeta = Omit<AudioCatalogItem, "audio_base64"> & {
   has_audio: boolean;
 };
 
+export type AudioCatalogCategoryRow = {
+  id: string;
+  campaign_id: string;
+  key: string;
+  label: string;
+  icon: string;
+  color: string;
+  sort_order: number;
+  created_at: string;
+};
+
+// ══════════════════════════════════════════════════════════════════════
+// CATALOG ITEMS
+// ══════════════════════════════════════════════════════════════════════
+
 // ── List catalog items (metadata only — no audio blob) ───────────────
 export async function list(
   campaignId: string,
@@ -171,6 +186,84 @@ export async function update(
 export async function remove(id: string): Promise<boolean> {
   const { rowCount } = await pool.query(
     "DELETE FROM audio_catalog WHERE id = $1",
+    [id],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// CATEGORIES
+// ══════════════════════════════════════════════════════════════════════
+
+export async function listCategories(campaignId: string): Promise<AudioCatalogCategoryRow[]> {
+  const { rows } = await pool.query<AudioCatalogCategoryRow>(`
+    SELECT id::text, campaign_id::text, key, label, icon, color, sort_order, created_at::text
+    FROM audio_catalog_categories
+    WHERE campaign_id = $1
+    ORDER BY sort_order, created_at
+  `, [campaignId]);
+  return rows;
+}
+
+export async function createCategory(data: {
+  campaign_id: string;
+  key: string;
+  label: string;
+  icon: string;
+  color: string;
+  sort_order: number;
+}): Promise<AudioCatalogCategoryRow> {
+  const { rows } = await pool.query<AudioCatalogCategoryRow>(`
+    INSERT INTO audio_catalog_categories (campaign_id, key, label, icon, color, sort_order)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    RETURNING id::text, campaign_id::text, key, label, icon, color, sort_order, created_at::text
+  `, [data.campaign_id, data.key, data.label, data.icon, data.color, data.sort_order]);
+  return rows[0]!;
+}
+
+export async function updateCategory(
+  id: string,
+  data: Partial<{ label: string; icon: string; color: string; sort_order: number }>,
+): Promise<AudioCatalogCategoryRow | null> {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  let idx = 1;
+
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined) {
+      sets.push(`${key} = $${idx}`);
+      params.push(value);
+      idx++;
+    }
+  }
+
+  if (sets.length === 0) return null;
+  params.push(id);
+
+  const { rows } = await pool.query<AudioCatalogCategoryRow>(`
+    UPDATE audio_catalog_categories SET ${sets.join(", ")}
+    WHERE id = $${idx}
+    RETURNING id::text, campaign_id::text, key, label, icon, color, sort_order, created_at::text
+  `, params);
+
+  return rows[0] ?? null;
+}
+
+export async function removeCategory(id: string): Promise<boolean> {
+  // Also delete all catalog items in this category
+  const cat = await pool.query<{ campaign_id: string; key: string }>(
+    "SELECT campaign_id::text, key FROM audio_catalog_categories WHERE id = $1",
+    [id],
+  );
+  if (!cat.rows[0]) return false;
+
+  await pool.query(
+    "DELETE FROM audio_catalog WHERE campaign_id = $1 AND category = $2",
+    [cat.rows[0].campaign_id, cat.rows[0].key],
+  );
+
+  const { rowCount } = await pool.query(
+    "DELETE FROM audio_catalog_categories WHERE id = $1",
     [id],
   );
   return (rowCount ?? 0) > 0;

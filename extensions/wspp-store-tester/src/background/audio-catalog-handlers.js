@@ -166,9 +166,99 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'BUST_CATALOG_CACHE') {
     _audioCatalogCache = null;
     _audioCatalogCacheTs = 0;
+    _categoriesCache = null;
+    _categoriesCacheTs = 0;
     sendResponse({ ok: true });
     return true;
   }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// CATEGORIES — dynamic categories from backend
+// ═══════════════════════════════════════════════════════════════════════
+let _categoriesCache = null;
+let _categoriesCacheTs = 0;
+const CATEGORIES_CACHE_TTL = 5 * 60 * 1000;
+
+// FETCH_CATALOG_CATEGORIES — returns dynamic categories from backend
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type !== 'FETCH_CATALOG_CATEGORIES') return;
+
+  (async () => {
+    try {
+      const now = Date.now();
+      if (_categoriesCache && (now - _categoriesCacheTs) < CATEGORIES_CACHE_TTL) {
+        sendResponse({ ok: true, categories: _categoriesCache });
+        return;
+      }
+      const result = await apiFetch('/api/audio-catalog-categories');
+      if (!result.ok) {
+        sendResponse({ ok: false, error: result.error || result.message || 'Failed to fetch categories' });
+        return;
+      }
+      _categoriesCache = result.categories || [];
+      _categoriesCacheTs = now;
+      console.log('[WSPP CATALOG] Fetched', _categoriesCache.length, 'categories');
+      sendResponse({ ok: true, categories: _categoriesCache });
+    } catch (err) {
+      sendResponse({ ok: false, error: err.message });
+    }
+  })();
+  return true;
+});
+
+// CREATE_CATALOG_CATEGORY
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type !== 'CREATE_CATALOG_CATEGORY') return;
+  const { data } = msg;
+  if (!data?.key || !data?.label) {
+    sendResponse({ ok: false, error: 'Missing key or label' });
+    return true;
+  }
+
+  (async () => {
+    try {
+      const result = await apiFetch('/api/audio-catalog-categories', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      if (!result.ok) {
+        sendResponse({ ok: false, error: result.message || result.error || 'Create failed' });
+        return;
+      }
+      _categoriesCache = null;
+      _categoriesCacheTs = 0;
+      sendResponse({ ok: true, category: result.category });
+    } catch (err) {
+      sendResponse({ ok: false, error: err.message });
+    }
+  })();
+  return true;
+});
+
+// DELETE_CATALOG_CATEGORY
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type !== 'DELETE_CATALOG_CATEGORY') return;
+  const catId = msg.id;
+  if (!catId) { sendResponse({ ok: false, error: 'Missing id' }); return true; }
+
+  (async () => {
+    try {
+      const result = await apiFetch(`/api/audio-catalog-categories/${catId}`, { method: 'DELETE' });
+      if (!result.ok) {
+        sendResponse({ ok: false, error: result.message || result.error || 'Delete failed' });
+        return;
+      }
+      _categoriesCache = null;
+      _categoriesCacheTs = 0;
+      _audioCatalogCache = null;
+      _audioCatalogCacheTs = 0;
+      sendResponse({ ok: true, id: catId });
+    } catch (err) {
+      sendResponse({ ok: false, error: err.message });
+    }
+  })();
+  return true;
 });
 
 // DELETE_CATALOG_ITEM — deletes a catalog item from the backend

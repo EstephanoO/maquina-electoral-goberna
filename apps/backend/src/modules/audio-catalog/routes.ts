@@ -8,6 +8,8 @@ import {
   generateAudioSchema,
   createItemSchema,
   updateItemSchema,
+  createCategorySchema,
+  updateCategorySchema,
 } from "./schemas";
 
 // ── OGG/Opus duration parser (no external deps) ──────────────────────
@@ -340,6 +342,76 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
       const deleted = await repo.remove(request.params.id);
       if (!deleted) {
         return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "item no encontrado"));
+      }
+      return reply.send({ ok: true, request_id: requestId });
+    });
+
+    // ══════════════════════════════════════════════════════════════════
+    // CATEGORY CRUD
+    // ══════════════════════════════════════════════════════════════════
+
+    // ── GET /api/audio-catalog-categories — list categories ──────────
+    app.get("/api/audio-catalog-categories", {
+      preHandler: [app.authenticate, authorize({ roles: ["agente_digital"] })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const campaignId = request.headers["x-campaign-id"] as string;
+      if (!campaignId) {
+        return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "x-campaign-id header requerido"));
+      }
+      const categories = await repo.listCategories(campaignId);
+      return reply.send({ ok: true, request_id: requestId, categories });
+    });
+
+    // ── POST /api/audio-catalog-categories — create category ─────────
+    app.post("/api/audio-catalog-categories", {
+      preHandler: [app.authenticate, authorize({ roles: ["consultor"], requireCampaign: true })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const campaignId = (request as unknown as { activeCampaignId: string }).activeCampaignId;
+
+      const parsed = createCategorySchema.safeParse({ ...(request.body as Record<string, unknown>), campaign_id: campaignId });
+      if (!parsed.success) {
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "datos invalidos"));
+      }
+
+      try {
+        const category = await repo.createCategory(parsed.data);
+        return reply.code(201).send({ ok: true, request_id: requestId, category });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "unknown";
+        if (msg.includes("unique") || msg.includes("duplicate")) {
+          return reply.code(409).send(errorPayload(requestId, "DUPLICATE_CATEGORY", "ya existe una categoría con esa key"));
+        }
+        throw err;
+      }
+    });
+
+    // ── PUT /api/audio-catalog-categories/:id — update category ──────
+    app.put<{ Params: { id: string } }>("/api/audio-catalog-categories/:id", {
+      preHandler: [app.authenticate, authorize({ roles: ["consultor"] })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const parsed = updateCategorySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "datos invalidos"));
+      }
+      const category = await repo.updateCategory(request.params.id, parsed.data);
+      if (!category) {
+        return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "categoría no encontrada"));
+      }
+      return reply.send({ ok: true, request_id: requestId, category });
+    });
+
+    // ── DELETE /api/audio-catalog-categories/:id — delete category ────
+    // Also deletes all audio items in this category.
+    app.delete<{ Params: { id: string } }>("/api/audio-catalog-categories/:id", {
+      preHandler: [app.authenticate, authorize({ roles: ["consultor"] })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const deleted = await repo.removeCategory(request.params.id);
+      if (!deleted) {
+        return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "categoría no encontrada"));
       }
       return reply.send({ ok: true, request_id: requestId });
     });
