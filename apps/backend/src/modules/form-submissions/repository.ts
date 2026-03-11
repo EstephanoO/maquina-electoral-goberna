@@ -68,6 +68,14 @@ export async function insertBatch(
           i.form_definition_id, i.campaign_id, i.meet_id, i.meet_group_id, i.submitted_by,
           i.data::jsonb, i.lat, i.lng, i.client_id, now()
         FROM incoming i
+        -- Skip rows where the phone already exists in this campaign (uq_fs_campaign_telefono)
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.form_submissions ex
+          WHERE ex.campaign_id = i.campaign_id
+            AND ex.data->>'telefono' = i.data::jsonb->>'telefono'
+            AND COALESCE(i.data::jsonb->>'telefono', '') <> ''
+            AND ex.deleted_at IS NULL
+        )
         ON CONFLICT (client_id) DO NOTHING
         RETURNING client_id
       )

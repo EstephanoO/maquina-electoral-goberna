@@ -115,6 +115,14 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
           i.encuestador_id, i.candidato_preferido, i.client_id, i.home_maps_url,
           i.polling_place_url, i.comentarios, i.campaign_id, i.form_definition_id
         FROM incoming i
+        -- Skip rows where the phone already exists in this campaign (uq_forms_campaign_telefono)
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.forms ex
+          WHERE ex.campaign_id = i.campaign_id
+            AND ex.telefono = i.telefono
+            AND ex.telefono <> ''
+            AND ex.deleted_at IS NULL
+        )
         ON CONFLICT (client_id) DO NOTHING
         RETURNING client_id
       )
@@ -183,6 +191,13 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
             CASE WHEN i.submitted_by ~ '^[0-9a-f-]{36}$' THEN i.submitted_by::uuid ELSE NULL END,
             i.data::jsonb, i.lat, i.lng, i.client_id, now()
           FROM incoming i
+          WHERE NOT EXISTS (
+            SELECT 1 FROM public.form_submissions ex
+            WHERE ex.campaign_id = i.campaign_id::uuid
+              AND ex.data->>'telefono' = i.data::jsonb->>'telefono'
+              AND COALESCE(i.data::jsonb->>'telefono', '') <> ''
+              AND ex.deleted_at IS NULL
+          )
           ON CONFLICT (client_id) DO NOTHING
         `,
         [submissionsPayload],
