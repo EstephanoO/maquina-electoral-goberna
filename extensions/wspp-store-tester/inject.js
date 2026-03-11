@@ -1169,7 +1169,10 @@
       _renderDetailView(panel);
     } else if (_catalogView === 'create') {
       _renderCreateView(panel);
+    } else if (_catalogView === 'category' && _catalogCategory) {
+      _renderCategoryView(panel);
     } else {
+      _catalogView = 'grid';
       _renderGridView(panel);
     }
   }
@@ -1242,12 +1245,17 @@
     _catalogPanelOpen = false;
     _catalogView = 'grid';
     _catalogDetailId = null;
+    _catalogCategory = null;
     _catalogEditingId = null;
     const fab = document.getElementById('wspp-catalog-btn');
     if (fab) fab.style.boxShadow = '0 4px 16px rgba(0,168,132,.45), 0 2px 4px rgba(0,0,0,.3)';
   }
 
-  // ── GRID VIEW — 4-column iOS-style icon grid ────────────────────────
+  // ── View state: 'grid' | 'category' | 'detail' | 'create' ──────────
+  // _catalogView and _catalogDetailId already declared above
+  let _catalogCategory = null; // category key when in 'category' view
+
+  // ── GRID VIEW — 2-row × 4-col category tiles ────────────────────────
   function _renderGridView(panel) {
     const loading = _catalogLoading && _catalogItems.length === 0;
 
@@ -1264,7 +1272,7 @@
         flexShrink: '0',
       });
       addBtn.title = 'Crear nueva plantilla';
-      addBtn.addEventListener('click', () => { _catalogView = 'create'; renderCatalogPanel(); });
+      addBtn.addEventListener('click', () => { _catalogCategory = null; _catalogView = 'create'; renderCatalogPanel(); });
     }
 
     panel.appendChild(_mkHeader('César Vásquez', null, addBtn));
@@ -1272,164 +1280,255 @@
     // Body
     const body = document.createElement('div');
     Object.assign(body.style, {
-      overflowY: 'auto', flex: '1', padding: '12px',
+      overflowY: 'auto', flex: '1', padding: '10px',
       scrollbarWidth: 'thin', scrollbarColor: '#3a3a3c transparent',
     });
 
     if (loading) {
       const wrap = document.createElement('div');
-      Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '36px 0', gap: '10px' });
+      Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '32px 0', gap: '10px' });
       const sp = document.createElement('div');
-      Object.assign(sp.style, { width: '24px', height: '24px', borderRadius: '50%', border: '3px solid rgba(0,168,132,.2)', borderTopColor: '#00a884' });
+      Object.assign(sp.style, { width: '22px', height: '22px', borderRadius: '50%', border: '3px solid rgba(0,168,132,.2)', borderTopColor: '#00a884' });
       sp.classList.add('wspp-spinning');
       const txt = document.createElement('div');
-      Object.assign(txt.style, { color: '#8e8e93', fontSize: '13px' });
+      Object.assign(txt.style, { color: '#8e8e93', fontSize: '12px' });
       txt.textContent = 'Cargando...';
       wrap.appendChild(sp); wrap.appendChild(txt);
       body.appendChild(wrap);
     } else if (_catalogItems.length === 0) {
       const empty = document.createElement('div');
-      Object.assign(empty.style, { color: '#8e8e93', textAlign: 'center', padding: '36px 0', fontSize: '13px' });
+      Object.assign(empty.style, { color: '#8e8e93', textAlign: 'center', padding: '32px 0', fontSize: '13px' });
       empty.textContent = 'No hay plantillas disponibles';
       body.appendChild(empty);
     } else {
-      // Group items by category
-      const grouped = {};
+      // Build category → items map
       const ORDER = ['saludo','pedir_voto','agradecimiento','propuestas','respuesta_trabajo','respuesta_dinero','invitacion_evento','despedida'];
+      const grouped = {};
       _catalogItems.forEach(item => {
         if (!grouped[item.category]) grouped[item.category] = [];
         grouped[item.category].push(item);
       });
+      // Collect all categories present, sorted by ORDER
+      const allCats = Object.keys(grouped).sort((a, b) => {
+        const ia = ORDER.indexOf(a); const ib = ORDER.indexOf(b);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      });
 
-      // Render all items as a 4-col grid (no section headers — clean iOS)
+      // 4-column grid of category tiles
       const grid = document.createElement('div');
       Object.assign(grid.style, {
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '8px',
+        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '7px',
       });
 
-      // Sort by ORDER then leftovers
-      const sorted = [..._catalogItems].sort((a, b) => {
-        const ia = ORDER.indexOf(a.category); const ib = ORDER.indexOf(b.category);
-        if (ia !== ib) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-        return (a.sort_order || 0) - (b.sort_order || 0);
+      allCats.forEach(cat => {
+        const items = grouped[cat];
+        const colors = CATALOG_CATEGORY_COLORS[cat] || { bg: 'rgba(134,150,160,.12)', accent: '#8696a0' };
+        const catSvg = CATALOG_SVG[cat] || CATALOG_SVG.propuestas;
+        const readyCount = items.filter(i => i.has_audio).length;
+
+        const tile = document.createElement('div');
+        Object.assign(tile.style, {
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          padding: '9px 4px 7px', borderRadius: '13px', background: '#2c2c2e',
+          cursor: 'pointer', transition: 'transform .12s, background .12s',
+          position: 'relative', minHeight: '72px',
+        });
+
+        // Icon
+        const iconWrap = document.createElement('div');
+        Object.assign(iconWrap.style, {
+          width: '38px', height: '38px', borderRadius: '11px',
+          background: colors.bg, display: 'flex', alignItems: 'center',
+          justifyContent: 'center', color: colors.accent, marginBottom: '5px',
+          boxShadow: `0 2px 8px ${colors.accent}28`,
+        });
+        iconWrap.innerHTML = catSvg;
+        iconWrap.querySelector('svg').setAttribute('width','20');
+        iconWrap.querySelector('svg').setAttribute('height','20');
+
+        // Label
+        const lbl = document.createElement('div');
+        Object.assign(lbl.style, {
+          fontSize: '9px', fontWeight: '700', color: '#ebebf5',
+          textAlign: 'center', lineHeight: '1.2', width: '100%', padding: '0 2px',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        });
+        lbl.textContent = CATALOG_CATEGORY_LABELS[cat] || cat;
+
+        // Counter badge (top-right)
+        const badge = document.createElement('div');
+        Object.assign(badge.style, {
+          position: 'absolute', top: '5px', right: '5px',
+          minWidth: '16px', height: '16px', borderRadius: '8px',
+          background: readyCount > 0 ? colors.accent : '#636366',
+          color: '#fff', fontSize: '9px', fontWeight: '800',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '0 4px',
+        });
+        badge.textContent = String(items.length);
+
+        tile.appendChild(iconWrap);
+        tile.appendChild(lbl);
+        tile.appendChild(badge);
+
+        // Press feedback
+        tile.addEventListener('mousedown', () => { tile.style.transform = 'scale(.93)'; tile.style.background = '#3a3a3c'; });
+        tile.addEventListener('mouseup',   () => { tile.style.transform = 'scale(1)';   tile.style.background = '#2c2c2e'; });
+        tile.addEventListener('mouseleave',() => { tile.style.transform = 'scale(1)';   tile.style.background = '#2c2c2e'; });
+
+        tile.addEventListener('click', () => {
+          _catalogCategory = cat;
+          _catalogView = 'category';
+          renderCatalogPanel();
+        });
+
+        grid.appendChild(tile);
       });
 
-      sorted.forEach(item => { grid.appendChild(_buildGridTile(item)); });
       body.appendChild(grid);
     }
 
     panel.appendChild(body);
-
-    // Status bar
-    const statusBar = document.createElement('div');
-    statusBar.id = 'wspp-catalog-status';
-    Object.assign(statusBar.style, {
-      padding: '0 14px', background: '#1c1c1e',
-      borderTop: '1px solid rgba(255,255,255,.05)',
-      color: '#8e8e93', fontSize: '12px', textAlign: 'center',
-      display: 'none', alignItems: 'center', justifyContent: 'center',
-      height: '0', overflow: 'hidden', transition: 'height .2s, padding .2s',
-    });
-    panel.appendChild(statusBar);
+    panel.appendChild(_mkStatusBar());
   }
 
-  // ── Grid tile — compact iOS app-icon style ──────────────────────────
-  function _buildGridTile(item) {
-    const colors = CATALOG_CATEGORY_COLORS[item.category] || { bg: 'rgba(134,150,160,.12)', accent: '#8696a0' };
-    const catSvg = CATALOG_SVG[item.category] || CATALOG_SVG.propuestas;
-    const hasAudio = item.has_audio;
+  // ── CATEGORY VIEW — list of items inside a category ──────────────────
+  function _renderCategoryView(panel) {
+    const cat = _catalogCategory;
+    const items = _catalogItems
+      .filter(i => i.category === cat)
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
 
-    const tile = document.createElement('div');
-    tile.className = 'wspp-catalog-item';
-    Object.assign(tile.style, {
-      display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'flex-start',
-      padding: '10px 4px 8px',
-      borderRadius: '14px',
-      background: '#2c2c2e',
-      cursor: hasAudio ? 'pointer' : 'default',
-      opacity: hasAudio ? '1' : '0.45',
-      transition: 'transform .12s, background .12s',
-      minHeight: '76px',
-      position: 'relative',
-    });
-    if (!hasAudio) tile.style.pointerEvents = 'none';
+    const colors = CATALOG_CATEGORY_COLORS[cat] || { bg: 'rgba(134,150,160,.12)', accent: '#8696a0' };
 
-    // Icon circle
-    const iconWrap = document.createElement('div');
-    Object.assign(iconWrap.style, {
-      width: '40px', height: '40px', borderRadius: '12px',
-      background: colors.bg,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: colors.accent, marginBottom: '6px',
-      boxShadow: `0 2px 8px ${colors.accent}30`,
-    });
-    iconWrap.innerHTML = catSvg;
-    iconWrap.querySelector('svg').setAttribute('width', '20');
-    iconWrap.querySelector('svg').setAttribute('height', '20');
-
-    // Label
-    const lbl = document.createElement('div');
-    Object.assign(lbl.style, {
-      fontSize: '10px', fontWeight: '600', color: '#ebebf5',
-      textAlign: 'center', lineHeight: '1.2',
-      overflow: 'hidden', textOverflow: 'ellipsis',
-      display: '-webkit-box', webkitLineClamp: '2', webkitBoxOrient: 'vertical',
-      width: '100%', padding: '0 2px',
-    });
-    // Use short label (first word of category label)
-    lbl.textContent = CATALOG_CATEGORY_LABELS[item.category] || item.label;
-
-    tile.appendChild(iconWrap);
-    tile.appendChild(lbl);
-
-    // Long-press / right-click → detail view (consultor)
-    tile.addEventListener('click', (e) => {
-      if (!hasAudio) return;
-      e.stopPropagation();
-      // Single tap → send directly
-      handleCatalogItemClick(item.id, item.label);
-    });
-
-    // Consultor: tap icon → open detail (hold Shift or right-click)
+    // Header: back → grid, title = category label, + button for consultor
+    let addBtn = null;
     if (_catalogIsConsultor) {
-      tile.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        _catalogDetailId = item.id;
-        _catalogView = 'detail';
-        renderCatalogPanel();
+      addBtn = document.createElement('button');
+      addBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+      Object.assign(addBtn.style, {
+        width: '26px', height: '26px', borderRadius: '50%',
+        background: `${colors.accent}22`, border: 'none',
+        color: colors.accent, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: '0',
       });
-      // "Edit" dot indicator
-      const dot = document.createElement('div');
-      Object.assign(dot.style, {
-        position: 'absolute', top: '5px', right: '5px',
-        width: '6px', height: '6px', borderRadius: '50%',
-        background: colors.accent, opacity: '.6',
-      });
-      tile.appendChild(dot);
+      addBtn.title = 'Agregar plantilla en esta categoría';
+      addBtn.addEventListener('click', () => { _catalogView = 'create'; renderCatalogPanel(); });
     }
 
-    // Press feedback
-    tile.addEventListener('mousedown', () => { tile.style.transform = 'scale(.93)'; tile.style.background = '#3a3a3c'; });
-    tile.addEventListener('mouseup',   () => { tile.style.transform = 'scale(1)';   tile.style.background = '#2c2c2e'; });
-    tile.addEventListener('mouseleave',() => { tile.style.transform = 'scale(1)';   tile.style.background = '#2c2c2e'; });
+    panel.appendChild(_mkHeader(
+      CATALOG_CATEGORY_LABELS[cat] || cat,
+      () => { _catalogView = 'grid'; renderCatalogPanel(); },
+      addBtn
+    ));
 
-    return tile;
+    const body = document.createElement('div');
+    Object.assign(body.style, {
+      overflowY: 'auto', flex: '1',
+      scrollbarWidth: 'thin', scrollbarColor: '#3a3a3c transparent',
+    });
+
+    if (items.length === 0) {
+      const empty = document.createElement('div');
+      Object.assign(empty.style, { color: '#8e8e93', textAlign: 'center', padding: '28px 0', fontSize: '12px' });
+      empty.textContent = 'Sin plantillas en esta categoría';
+      body.appendChild(empty);
+    } else {
+      items.forEach((item, idx) => {
+        const row = document.createElement('div');
+        row.className = 'wspp-catalog-item';
+        const isLast = idx === items.length - 1;
+        Object.assign(row.style, {
+          display: 'flex', alignItems: 'center', gap: '10px',
+          padding: '10px 14px',
+          borderBottom: isLast ? 'none' : '1px solid rgba(255,255,255,.05)',
+          cursor: item.has_audio ? 'pointer' : 'default',
+          transition: 'background .1s',
+          position: 'relative',
+        });
+
+        // Waveform icon (left)
+        const iconCol = document.createElement('div');
+        Object.assign(iconCol.style, {
+          width: '32px', height: '32px', borderRadius: '9px', flexShrink: '0',
+          background: item.has_audio ? colors.bg : 'rgba(99,99,102,.15)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: item.has_audio ? colors.accent : '#636366',
+        });
+        iconCol.innerHTML = item.has_audio
+          ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>`
+          : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+
+        // Text
+        const textCol = document.createElement('div');
+        Object.assign(textCol.style, { flex: '1', minWidth: '0' });
+        const rowLabel = document.createElement('div');
+        Object.assign(rowLabel.style, {
+          fontSize: '13px', fontWeight: '600', color: item.has_audio ? '#e9edef' : '#636366',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        });
+        rowLabel.textContent = item.label;
+        const rowDesc = document.createElement('div');
+        Object.assign(rowDesc.style, {
+          fontSize: '11px', color: '#636366', marginTop: '1px',
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        });
+        const dur = _fmtDuration(item.duration_ms);
+        rowDesc.textContent = item.description || (dur ? `⏱ ${dur}` : '');
+        textCol.appendChild(rowLabel);
+        if (item.description || dur) textCol.appendChild(rowDesc);
+
+        row.appendChild(iconCol);
+        row.appendChild(textCol);
+
+        // Consultor: edit button (right)
+        if (_catalogIsConsultor) {
+          const editBtn = document.createElement('button');
+          editBtn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
+          Object.assign(editBtn.style, {
+            background: 'rgba(255,255,255,.06)', border: 'none',
+            color: '#8696a0', cursor: 'pointer',
+            width: '28px', height: '28px', borderRadius: '8px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: '0', transition: 'background .12s, color .12s',
+          });
+          editBtn.addEventListener('mouseenter', () => { editBtn.style.background = `${colors.accent}22`; editBtn.style.color = colors.accent; });
+          editBtn.addEventListener('mouseleave', () => { editBtn.style.background = 'rgba(255,255,255,.06)'; editBtn.style.color = '#8696a0'; });
+          editBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            _catalogDetailId = item.id;
+            _catalogView = 'detail';
+            renderCatalogPanel();
+          });
+          row.appendChild(editBtn);
+        }
+
+        // Hover / press feedback
+        if (item.has_audio) {
+          row.addEventListener('mouseenter', () => { row.style.background = 'rgba(255,255,255,.04)'; });
+          row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+          row.addEventListener('click', () => handleCatalogItemClick(item.id, item.label));
+        }
+
+        body.appendChild(row);
+      });
+    }
+
+    panel.appendChild(body);
+    panel.appendChild(_mkStatusBar());
   }
 
-  // ── DETAIL VIEW — full card for a single item (consultor) ───────────
+  // ── DETAIL VIEW — edit a single item (consultor only) ───────────────
   function _renderDetailView(panel) {
     const item = _catalogItems.find(i => i.id === _catalogDetailId);
-    if (!item) { _catalogView = 'grid'; renderCatalogPanel(); return; }
+    if (!item) { _catalogView = 'category'; renderCatalogPanel(); return; }
 
     const colors = CATALOG_CATEGORY_COLORS[item.category] || { bg: 'rgba(134,150,160,.12)', accent: '#8696a0' };
     const catSvg = CATALOG_SVG[item.category] || CATALOG_SVG.propuestas;
     const dur = _fmtDuration(item.duration_ms);
 
-    panel.appendChild(_mkHeader(item.label, () => { _catalogView = 'grid'; renderCatalogPanel(); }));
+    panel.appendChild(_mkHeader(item.label, () => { _catalogView = 'category'; renderCatalogPanel(); }));
 
     const body = document.createElement('div');
     Object.assign(body.style, { overflowY: 'auto', flex: '1', padding: '14px' });
@@ -1439,12 +1538,12 @@
     Object.assign(metaRow.style, { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' });
     const iconBig = document.createElement('div');
     Object.assign(iconBig.style, {
-      width: '52px', height: '52px', borderRadius: '14px',
+      width: '48px', height: '48px', borderRadius: '13px',
       background: colors.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
       color: colors.accent, flexShrink: '0',
     });
     iconBig.innerHTML = catSvg;
-    iconBig.querySelector('svg').setAttribute('width','26'); iconBig.querySelector('svg').setAttribute('height','26');
+    iconBig.querySelector('svg').setAttribute('width','24'); iconBig.querySelector('svg').setAttribute('height','24');
 
     const metaText = document.createElement('div');
     const catBadge = document.createElement('div');
@@ -1455,36 +1554,33 @@
     });
     catBadge.textContent = CATALOG_CATEGORY_LABELS[item.category] || item.category;
     const descEl = document.createElement('div');
-    Object.assign(descEl.style, { fontSize: '12px', color: '#8e8e93', lineHeight: '1.4' });
+    Object.assign(descEl.style, { fontSize: '11px', color: '#8e8e93', lineHeight: '1.4' });
     descEl.textContent = item.description || '';
     const durEl = document.createElement('div');
-    Object.assign(durEl.style, { fontSize: '11px', color: '#636366', marginTop: '2px' });
+    Object.assign(durEl.style, { fontSize: '10px', color: '#636366', marginTop: '2px' });
     durEl.textContent = dur ? `⏱ ${dur}` : '';
     metaText.appendChild(catBadge); metaText.appendChild(descEl); if (dur) metaText.appendChild(durEl);
     metaRow.appendChild(iconBig); metaRow.appendChild(metaText);
     body.appendChild(metaRow);
 
     // Script textarea
-    const scriptLabel = _mkDetailLabel('Guión');
-    body.appendChild(scriptLabel);
+    body.appendChild(_mkDetailLabel('Guión'));
     const textarea = document.createElement('textarea');
     textarea.id = 'wspp-detail-script';
     textarea.className = 'wspp-edit-area';
     textarea.value = item.script_text || '';
     Object.assign(textarea.style, {
-      width: '100%', minHeight: '90px', padding: '10px 12px',
+      width: '100%', minHeight: '88px', padding: '10px 12px',
       background: '#2c2c2e', border: '1px solid rgba(255,255,255,.08)',
       borderRadius: '12px', color: '#e9edef', fontSize: '12px',
-      lineHeight: '1.6', fontFamily: 'inherit', boxSizing: 'border-box',
-      marginBottom: '10px',
+      lineHeight: '1.6', fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: '10px',
     });
     body.appendChild(textarea);
 
-    // Action buttons row
+    // Actions
     const actions = document.createElement('div');
     Object.assign(actions.style, { display: 'flex', flexDirection: 'column', gap: '8px' });
 
-    // Save script
     const saveBtn = _mkActionBtn('Guardar guión', '#00a884', CATALOG_SVG.check);
     saveBtn.addEventListener('click', () => {
       const s = textarea.value.trim();
@@ -1493,12 +1589,10 @@
     });
     actions.appendChild(saveBtn);
 
-    // Regenerate audio
     const regenBtn = _mkActionBtn('Regenerar audio', '#818cf8', CATALOG_SVG.refresh);
     regenBtn.addEventListener('click', () => _handleRegenerate(item.id, regenBtn));
     actions.appendChild(regenBtn);
 
-    // Delete item
     const delBtn = _mkActionBtn('Eliminar plantilla', '#ef5350',
       `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`
     );
@@ -1511,23 +1605,15 @@
 
     body.appendChild(actions);
     panel.appendChild(body);
-
-    // Status bar
-    const statusBar = document.createElement('div');
-    statusBar.id = 'wspp-catalog-status';
-    Object.assign(statusBar.style, {
-      padding: '0 14px', background: '#1c1c1e',
-      borderTop: '1px solid rgba(255,255,255,.05)',
-      color: '#8e8e93', fontSize: '12px', textAlign: 'center',
-      display: 'none', alignItems: 'center', justifyContent: 'center',
-      height: '0', overflow: 'hidden', transition: 'height .2s',
-    });
-    panel.appendChild(statusBar);
+    panel.appendChild(_mkStatusBar());
   }
 
   // ── CREATE VIEW — form to add a new item ────────────────────────────
   function _renderCreateView(panel) {
-    panel.appendChild(_mkHeader('Nueva plantilla', () => { _catalogView = 'grid'; renderCatalogPanel(); }));
+    // Pre-select current category if coming from category view
+    const preselectedCat = _catalogView === 'create' && _catalogCategory ? _catalogCategory : 'saludo';
+
+    panel.appendChild(_mkHeader('Nueva plantilla', () => { _catalogView = 'category'; renderCatalogPanel(); }));
 
     const CATEGORY_OPTIONS = [
       { value: 'saludo', label: 'Saludo' },
@@ -1543,22 +1629,16 @@
     const body = document.createElement('div');
     Object.assign(body.style, { overflowY: 'auto', flex: '1', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' });
 
-    // Label input
     body.appendChild(_mkDetailLabel('Nombre'));
     const labelInput = _mkTextInput('Ej: Saludo inicial');
-    labelInput.id = 'wspp-create-label';
     body.appendChild(labelInput);
 
-    // Description input
     body.appendChild(_mkDetailLabel('Descripción corta'));
     const descInput = _mkTextInput('Para quién es este audio');
-    descInput.id = 'wspp-create-desc';
     body.appendChild(descInput);
 
-    // Category select
     body.appendChild(_mkDetailLabel('Categoría'));
     const catSel = document.createElement('select');
-    catSel.id = 'wspp-create-category';
     Object.assign(catSel.style, {
       width: '100%', padding: '10px 12px', background: '#2c2c2e',
       border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px',
@@ -1567,25 +1647,23 @@
     CATEGORY_OPTIONS.forEach(opt => {
       const o = document.createElement('option');
       o.value = opt.value; o.textContent = opt.label;
+      if (opt.value === preselectedCat) o.selected = true;
       catSel.appendChild(o);
     });
     body.appendChild(catSel);
 
-    // Script textarea
     body.appendChild(_mkDetailLabel('Guión (texto que se convertirá en audio)'));
     const scriptArea = document.createElement('textarea');
-    scriptArea.id = 'wspp-create-script';
     scriptArea.className = 'wspp-edit-area';
     scriptArea.placeholder = 'Hola, habla el doctor César Vásquez...';
     Object.assign(scriptArea.style, {
-      width: '100%', minHeight: '90px', padding: '10px 12px',
+      width: '100%', minHeight: '88px', padding: '10px 12px',
       background: '#2c2c2e', border: '1px solid rgba(255,255,255,.08)',
       borderRadius: '12px', color: '#e9edef', fontSize: '12px',
       lineHeight: '1.6', fontFamily: 'inherit', boxSizing: 'border-box',
     });
     body.appendChild(scriptArea);
 
-    // Create button
     const createBtn = _mkActionBtn('Crear plantilla', '#00a884', CATALOG_SVG.check);
     createBtn.addEventListener('click', () => {
       const label = labelInput.value.trim();
@@ -1596,25 +1674,30 @@
         _showCatalogStatus('Nombre y guión son obligatorios', '#ef5350', 3000);
         return;
       }
+      // Stay on this category after creation
+      _catalogCategory = cat;
       _handleCreateItem({ label, description: desc, category: cat, script_text: script }, createBtn);
     });
     body.appendChild(createBtn);
 
     panel.appendChild(body);
+    panel.appendChild(_mkStatusBar());
+  }
 
-    const statusBar = document.createElement('div');
-    statusBar.id = 'wspp-catalog-status';
-    Object.assign(statusBar.style, {
+  // ── Small helpers ───────────────────────────────────────────────────
+  function _mkStatusBar() {
+    const bar = document.createElement('div');
+    bar.id = 'wspp-catalog-status';
+    Object.assign(bar.style, {
       padding: '0 14px', background: '#1c1c1e',
       borderTop: '1px solid rgba(255,255,255,.05)',
       color: '#8e8e93', fontSize: '12px', textAlign: 'center',
       display: 'none', alignItems: 'center', justifyContent: 'center',
-      height: '0', overflow: 'hidden', transition: 'height .2s',
+      height: '0', overflow: 'hidden', transition: 'height .2s, padding .2s',
     });
-    panel.appendChild(statusBar);
+    return bar;
   }
 
-  // ── Small helpers ───────────────────────────────────────────────────
   function _mkDetailLabel(text) {
     const l = document.createElement('div');
     Object.assign(l.style, { fontSize: '11px', color: '#8e8e93', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: '4px' });
@@ -2008,6 +2091,7 @@
         window.postMessage({ type: 'BUST_CATALOG_CACHE' }, WA_ORIGIN);
         _catalogEditingId = null;
         _showCatalogStatus('Guión guardado — regenerá el audio ✓', '#00a884', 3000);
+        // Stay in detail view (user may want to regenerate next)
         if (_catalogPanelOpen) renderCatalogPanel();
       } else {
         _showCatalogStatus('Error al guardar: ' + (e.data.error || 'intenta de nuevo'), '#ef5350', 4000);
@@ -2027,7 +2111,7 @@
         // Remove from local list
         _catalogItems = _catalogItems.filter(i => i.id !== e.data.id);
         window.postMessage({ type: 'BUST_CATALOG_CACHE' }, WA_ORIGIN);
-        _catalogView = 'grid';
+        _catalogView = 'category';  // back to category list, not grid
         _catalogDetailId = null;
         _showCatalogStatus('Plantilla eliminada ✓', '#00a884', 2500);
         if (_catalogPanelOpen) renderCatalogPanel();
@@ -2046,10 +2130,11 @@
         _pendingCreateBtn = null;
       }
       if (e.data.ok && e.data.item) {
-        // Add new item to local list and go back to grid
+        // Add new item to local list and go back to category view
         _catalogItems.push(e.data.item);
         window.postMessage({ type: 'BUST_CATALOG_CACHE' }, WA_ORIGIN);
-        _catalogView = 'grid';
+        _catalogCategory = e.data.item.category; // stay in this category
+        _catalogView = 'category';
         _showCatalogStatus('Plantilla creada — generá el audio ✓', '#00a884', 3000);
         if (_catalogPanelOpen) renderCatalogPanel();
       } else {
