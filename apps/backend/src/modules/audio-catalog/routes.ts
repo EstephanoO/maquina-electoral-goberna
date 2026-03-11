@@ -94,8 +94,12 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
 
       // Generate via ElevenLabs
       try {
+        // Use /stream endpoint with output_format query param — the body-level
+        // output_format param is ignored by ElevenLabs and always returns MP3.
+        // opus_48000_32 produces a real OGG/Opus container (magic bytes: OggS)
+        // which is the only format WhatsApp PTT accepts.
         const ttsRes = await fetch(
-          `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(item.voice_id)}`,
+          `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(item.voice_id)}/stream?output_format=opus_48000_32`,
           {
             method: "POST",
             headers: {
@@ -105,7 +109,6 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
             body: JSON.stringify({
               text: item.script_text,
               model_id: "eleven_multilingual_v2",
-              output_format: "ogg_24000",
             }),
           },
         );
@@ -119,8 +122,8 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
         const buffer = await ttsRes.arrayBuffer();
         const base64 = Buffer.from(buffer).toString("base64");
         const size = buffer.byteLength;
-        // Rough estimate: OGG at 24kHz ~3KB/s → duration ≈ size/3
-        const durationMs = Math.round((size / 3) * 1000 / 1000);
+        // Opus at 32kbps: duration ≈ (size * 8) / 32000 seconds
+        const durationMs = Math.round((size * 8 / 32000) * 1000);
 
         await repo.saveAudio(item.id, base64, size, durationMs);
 

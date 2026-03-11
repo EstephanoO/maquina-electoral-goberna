@@ -230,8 +230,11 @@ export function buildValidacionRoutes(env: AppEnv): FastifyPluginAsync {
       const voiceId = voice_id || "iaSdolcffUuIlEi5pdbj";
 
       try {
+        // Use /stream endpoint with output_format query param — body-level
+        // output_format is ignored by ElevenLabs and always returns MP3.
+        // opus_48000_32 produces real OGG/Opus (magic bytes: OggS) for WA PTT.
         const ttsRes = await fetch(
-          `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`,
+          `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=opus_48000_32`,
           {
             method: "POST",
             headers: {
@@ -241,7 +244,6 @@ export function buildValidacionRoutes(env: AppEnv): FastifyPluginAsync {
             body: JSON.stringify({
               text,
               model_id: "eleven_multilingual_v2",
-              output_format: "ogg_24000",
             }),
           },
         );
