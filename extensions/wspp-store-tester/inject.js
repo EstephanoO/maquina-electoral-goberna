@@ -1027,9 +1027,12 @@
     propuestas:        { bg: 'rgba(245,158,11,.12)', accent: '#fbbf24' },
   };
 
-  // Inject keyframes once
-  (function injectCatalogStyles() {
+  // Inject keyframes — deferred: called on first panel open, not at document_start
+  // (document.head is null at document_start, so we can't inject here directly)
+  function injectCatalogStyles() {
     if (document.getElementById('wspp-catalog-styles')) return;
+    const root = document.head || document.documentElement;
+    if (!root) return;
     const s = document.createElement('style');
     s.id = 'wspp-catalog-styles';
     s.textContent = `
@@ -1054,8 +1057,8 @@
       .wspp-edit-area { resize:none; outline:none; }
       .wspp-edit-area:focus { border-color:#00a884 !important; }
     `;
-    document.head.appendChild(s);
-  })();
+    root.appendChild(s);
+  }
 
   // ── Detect consultor role from storage ─────────────────────────────
   function _refreshConsultorFlag(cb) {
@@ -1132,6 +1135,7 @@
 
   // ── Render the full catalog panel ───────────────────────────────────
   function renderCatalogPanel() {
+    injectCatalogStyles(); // safe to call here — DOM is ready when panel opens
     let panel = document.getElementById('wspp-catalog-panel');
     if (!panel) {
       panel = document.createElement('div');
