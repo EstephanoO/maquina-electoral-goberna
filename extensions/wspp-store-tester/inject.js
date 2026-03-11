@@ -874,9 +874,11 @@
     'WAWebContactCollection',
   ];
   const WA_OPTIONAL_MODULES = [
-    'WAWebMediaOpaqueData',      // TTS
-    'WAWebSendMsgChatAction',    // TTS
-    'WAWebWidFactory',           // @lid resolution
+    'WAWebMediaOpaqueData',      // PTT: media opaque data wrapper
+    'WAWebPrepRawMedia',         // PTT: prepRawMedia({ isPtt: true }) pipeline
+    'WAWebSendMsgChatAction',    // PTT: addAndSendMsgToChat
+    'WAWebWidFactory',           // @lid resolution + chat lookup
+    'WAWebFindChatAction',       // PTT: fallback chat resolver
   ];
 
   function runModuleHealthCheck() {
@@ -969,15 +971,13 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // TTS: Botón 🎤 para generar voz con ElevenLabs y enviarla como archivo
-  // ═══════════════════════════════════════════════════════════════════════
-
-  // ── Botón flotante ──────────────────────────────────────────────────
-  // ═══════════════════════════════════════════════════════════════════════
-  // AUDIO CATALOG PANEL (v7.2.0)
+  // AUDIO CATALOG PANEL (v7.3.0)
   // Replaces per-message ElevenLabs TTS with a reusable audio catalog.
   // Button opens a panel with pre-generated audio messages.
-  // Send flow: clipboard Blob paste → WA attaches as audio.
+  // Send flow: window.WWebJS.sendMessage({ sendAudioAsVoice: true })
+  //   → WAWebPrepRawMedia.prepRawMedia(opaqueData, { isPtt: true })
+  //   → addAndSendMsgToChat(chat, { type: 'ptt', ... })
+  //   → message appears as WhatsApp voice note with waveform.
   // ═══════════════════════════════════════════════════════════════════════
 
   let _catalogItems = [];
@@ -1150,51 +1150,73 @@
     window.postMessage({ type: 'GET_CATALOG_AUDIO', id: audioId }, WA_ORIGIN);
   }
 
-  // ── Send audio via clipboard paste into WA composer ─────────────────
-  async function sendAudioViaClipboard(audioBase64, mimeType) {
+  // ── Send audio as WhatsApp voice note (PTT) via WA internal modules ──
+  //
+  // Uses window.WWebJS.sendMessage() with sendAudioAsVoice: true.
+  // This is the same path WA Web uses internally:
+  //   processMediaData(mediaInfo, { forceVoice: true })
+  //     → WAWebPrepRawMedia.prepRawMedia(opaqueData, { isPtt: true })
+  //     → generates waveform
+  //     → addAndSendMsgToChat(chat, { type: 'ptt', mimetype: 'audio/ogg; codecs=opus', ... })
+  //
+  // Result: message appears as a native WA voice note with waveform, NOT a file attachment.
+  async function sendAudioAsPTT(audioBase64, mimeType) {
     try {
-      const blob = base64ToBlob(audioBase64, mimeType);
-
-      // Find the composer input
-      const selectors = [
-        '[data-testid="conversation-compose-box-input"]',
-        '#main [contenteditable="true"][role="textbox"]',
-        'footer [contenteditable="true"][role="textbox"]',
-      ];
-      let composer = null;
-      for (const sel of selectors) {
-        composer = document.querySelector(sel);
-        if (composer) break;
-      }
-
-      if (!composer) {
-        console.error('[WSPP CATALOG] No composer found');
+      // 1. Verify window.WWebJS is available (injected by WA Web itself)
+      if (!window.WWebJS || typeof window.WWebJS.sendMessage !== 'function') {
+        console.error('[WSPP CATALOG] window.WWebJS not available yet — WA Web still loading?');
         return false;
       }
 
-      // Focus the composer
-      composer.focus();
+      // 2. Get the currently active chat model
+      const chatJid = _lastActiveChatJid;
+      if (!chatJid) {
+        console.error('[WSPP CATALOG] No active chat JID — open a conversation first');
+        return false;
+      }
 
-      // Create a File from the Blob (WA expects a file-like object)
-      const file = new File([blob], 'audio_cesar_vasquez.ogg', { type: mimeType });
+      // Resolve the chat model from WA's collections
+      let chat = null;
+      try {
+        const Collections = window.require('WAWebCollections');
+        const widFactory = window.require('WAWebWidFactory');
+        const wid = widFactory.createWid(chatJid);
+        chat = Collections.Chat.get(wid);
+        if (!chat) {
+          // Fallback: find or create (handles cases where chat isn't preloaded)
+          const FindChatAction = window.require('WAWebFindChatAction');
+          const result = await FindChatAction.findOrCreateLatestChat(wid);
+          chat = result?.chat ?? result;
+        }
+      } catch (err) {
+        console.error('[WSPP CATALOG] Failed to resolve chat model:', err);
+        return false;
+      }
 
-      // Create a DataTransfer with the file
-      const dataTransfer = new DataTransfer();
-      dataTransfer.items.add(file);
+      if (!chat) {
+        console.error('[WSPP CATALOG] Chat model not found for JID:', chatJid);
+        return false;
+      }
 
-      // Dispatch paste event on the composer
-      const pasteEvent = new ClipboardEvent('paste', {
-        bubbles: true,
-        cancelable: true,
-        clipboardData: dataTransfer,
+      // 3. Build media info object — WWebJS mediaInfo format
+      const mediaInfo = {
+        data: audioBase64,
+        mimetype: mimeType || 'audio/ogg; codecs=opus',
+        filename: 'voice_cesar_vasquez.ogg',
+      };
+
+      // 4. Send via WWebJS — sendAudioAsVoice: true sets isPtt: true internally
+      //    This triggers the full PTT pipeline: prepRawMedia → waveform → type:'ptt'
+      await window.WWebJS.sendMessage(chat, undefined, {
+        media: mediaInfo,
+        sendAudioAsVoice: true,
       });
 
-      composer.dispatchEvent(pasteEvent);
-      console.log('[WSPP CATALOG] Paste event dispatched');
-
+      console.log('[WSPP CATALOG] PTT voice note sent to', chatJid);
       return true;
+
     } catch (err) {
-      console.error('[WSPP CATALOG] Clipboard send error:', err);
+      console.error('[WSPP CATALOG] PTT send error:', err);
       return false;
     }
   }
@@ -1235,20 +1257,20 @@
       }
 
       if (statusEl) {
-        statusEl.textContent = 'Enviando audio...';
+        statusEl.textContent = 'Enviando nota de voz...';
         statusEl.style.color = '#00a884';
       }
 
-      sendAudioViaClipboard(e.data.audioBase64, e.data.mimeType).then(ok => {
+      sendAudioAsPTT(e.data.audioBase64, e.data.mimeType).then(ok => {
         if (ok) {
           if (statusEl) {
-            statusEl.textContent = (e.data.label || 'Audio') + ' — pegado en el chat';
+            statusEl.textContent = (e.data.label || 'Audio') + ' — enviado como nota de voz ✓';
             statusEl.style.color = '#00a884';
           }
-          console.log('[WSPP CATALOG] Audio sent via clipboard');
+          console.log('[WSPP CATALOG] PTT voice note sent successfully');
         } else {
           if (statusEl) {
-            statusEl.textContent = 'Error al pegar — intenta manualmente';
+            statusEl.textContent = 'Error al enviar — verifica que haya un chat abierto';
             statusEl.style.color = '#ef5350';
           }
         }
