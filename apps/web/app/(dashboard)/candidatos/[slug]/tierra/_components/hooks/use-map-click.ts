@@ -30,29 +30,49 @@ export function useMapClick(
     const features = e.features;
 
     if (!features?.length) {
-      // Empty space → go back one level
-      if (currentDrill.level > 0) {
-        const newLevel = (currentDrill.level - 1) as DrillLevel;
-        const newState = { ...currentDrill, level: newLevel };
-        if (newLevel < 4) { newState.sector = null; newState.sectorName = null; }
-        if (newLevel < 3) { newState.distCode = null; newState.distName = null; }
-        if (newLevel < 2) { newState.provCode = null; newState.provName = null; }
-        if (newLevel < 1) { newState.depCode = null; newState.depName = null; }
-        onDrillChange(newState);
-        if (newLevel === 0) {
-          mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: FLY_DURATION });
+      if (currentSelectedAgent) {
+        onSelectAgent(null);
+      }
+
+      // Empty space (single click) → clear filters + reset zoom
+      onDrillChange(INITIAL_DRILL);
+      skipNextFitRef.current = true;
+      pendingDrillRef.current = false;
+      mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: FLY_DURATION });
+      return;
+    }
+
+    const byLayer = (ids: string[]) => features.find((feature) => {
+      const id = feature.layer?.id;
+      return typeof id === "string" && ids.includes(id);
+    });
+
+    // Priority order matters:
+    // 1) Agent markers (user intent: select agent)
+    // 2) Form clusters (zoom-in intent)
+    // 3) Territorial drill layers
+    const agentFeature = byLayer(["agents-circles", "agents-selected-ring"]);
+    if (agentFeature) {
+      const agentId = agentFeature.properties?.agent_id;
+      if (agentId) {
+        if (currentSelectedAgent === agentId) { onSelectAgent(null); }
+        else {
+          onSelectAgent(agentId);
+          const agent = currentAgents.find((a) => a.id === agentId);
+          if (agent) {
+            skipNextFitRef.current = true;
+            pendingDrillRef.current = false;
+            mapRef.current?.flyTo({ center: [agent.lng, agent.lat], zoom: 13, duration: FLY_DURATION });
+          }
         }
       }
       return;
     }
 
-    const f = features[0];
-    const layerId = f.layer?.id;
-
-    // Cluster → expand zoom, then moveEnd will reverse-geocode to auto-drill
-    if (layerId === "forms-clusters" || layerId === "forms-cluster-ring") {
-      const clusterId = f.properties?.cluster_id;
-      const coords = (f.geometry as GeoJSON.Point).coordinates;
+    const clusterFeature = byLayer(["forms-clusters", "forms-cluster-ring"]);
+    if (clusterFeature) {
+      const clusterId = clusterFeature.properties?.cluster_id;
+      const coords = (clusterFeature.geometry as GeoJSON.Point).coordinates;
       const [lng, lat] = coords;
 
       if (clusterId != null && mapRef.current) {
@@ -80,23 +100,8 @@ export function useMapClick(
       return;
     }
 
-    // Agent → toggle selection
-    if (layerId === "agents-circles" || layerId === "agents-selected-ring") {
-      const agentId = f.properties?.agent_id;
-      if (agentId) {
-        if (currentSelectedAgent === agentId) { onSelectAgent(null); }
-        else {
-          onSelectAgent(agentId);
-          const agent = currentAgents.find((a) => a.id === agentId);
-          if (agent) {
-            skipNextFitRef.current = true;
-            pendingDrillRef.current = true;
-            mapRef.current?.flyTo({ center: [agent.lng, agent.lat], zoom: 13, duration: FLY_DURATION });
-          }
-        }
-      }
-      return;
-    }
+    const f = features[0];
+    const layerId = f.layer?.id;
 
     // Drill navigation
     const isDep = layerId === "dep-fill" || layerId?.startsWith("priority-dep");

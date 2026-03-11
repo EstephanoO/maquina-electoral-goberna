@@ -30,7 +30,7 @@ export type FormPoint = {
 };
 
 export type DatosVizMode = "points" | "heatmap" | "bars3d";
-export type MapTheme = "dark" | "light";
+export type MapTheme = "dark" | "light" | "voyager";
 
 /* ─── Drill Navigation ─── */
 
@@ -82,7 +82,7 @@ export type CameraNudge = {
 /* ─── Map Handle (imperative API) ─── */
 
 export type TierraMapHandle = {
-  flyToPoint: (lng: number, lat: number, zoom?: number) => void;
+  flyToPoint: (lng: number, lat: number, zoom?: number, withDrill?: boolean) => void;
   getDrillState: () => DrillState;
   /** Show a pinned tooltip for a specific form point after flyTo completes */
   showPinnedTooltip: (data: PinnedTooltipData) => void;
@@ -139,6 +139,7 @@ export type TierraMapProps = {
   showRoutes: boolean;
   drillState: DrillState;
   onDrillChange: (state: DrillState) => void;
+  onMapDoubleClick?: () => void;
   /**
    * When set, the map is locked to these bounds forever:
    * - initialViewState is derived from them (no Peru flash)

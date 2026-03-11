@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { CampaignStats } from "@/lib/types";
-import type { MapTheme, DrillState } from "./types";
+import type { MapTheme } from "./types";
 
 /* ========== Types ========== */
 
@@ -11,40 +11,39 @@ export type TierraViewMode = "campo" | "pipeline" | "datos";
 
 type Props = {
   stats: CampaignStats;
-  agentCount: number;
-  formCount: number;
-  connectedCount: number;
   mapTheme: MapTheme;
   viewMode: TierraViewMode;
   onViewModeChange: (mode: TierraViewMode) => void;
-  /** When set, KPI labels reflect the active drill zone instead of global totals */
-  drillState?: DrillState;
+  userRole?: string;
+  userName?: string;
+  onLogout?: () => void | Promise<void>;
 };
-
-/* ========== Helpers ========== */
-
-function getZoneLabel(drillState: DrillState | undefined): string | null {
-  if (!drillState || drillState.level === 0) return null;
-  if (drillState.level >= 3 && drillState.distName) return drillState.distName;
-  if (drillState.level >= 2 && drillState.provName) return drillState.provName;
-  if (drillState.level >= 1 && drillState.depName) return drillState.depName;
-  return null;
-}
 
 /* ========== Component ========== */
 
-export function TierraHeader({ stats, agentCount, formCount, connectedCount, mapTheme, viewMode, onViewModeChange, drillState }: Props) {
+export function TierraHeader({
+  stats,
+  mapTheme,
+  viewMode,
+  onViewModeChange,
+  userRole,
+  userName,
+  onLogout,
+}: Props) {
   const router = useRouter();
   const { campaign, metas, totals } = stats;
   const pc = campaign.color_primario;
   const sc = campaign.color_secundario;
   const isDark = mapTheme === "dark";
-  const zoneLabel = getZoneLabel(drillState);
-
   const metaDatos = metas.datos > 0 ? metas.datos : 200000;
   // Progress bar always shows global totals (the goal doesn't change with drill)
   const datosProgress = Math.min((totals.forms_count / metaDatos) * 100, 100);
   const votosProgress = metas.votos > 0 ? Math.min((totals.forms_count / metas.votos) * 100, 100) : 0;
+
+  const showBackButton = userRole !== "brigadista_zonal";
+  const normalizedRole = (userRole ?? "").toLowerCase();
+  const showHeaderProfileLogout = normalizedRole.includes("brigadista") && typeof onLogout === "function";
+  const profileLabel = userName?.trim() || "Perfil";
 
   return (
     <header className={`flex items-center justify-between h-16 px-5 border-b shrink-0 gap-5 z-20 ${
@@ -52,23 +51,25 @@ export function TierraHeader({ stats, agentCount, formCount, connectedCount, map
     }`}>
       {/* Left: back + candidate identity */}
       <div className="flex items-center gap-3 min-w-0">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className={`w-8 h-8 rounded-lg border cursor-pointer flex items-center justify-center shrink-0 transition-colors ${
-            isDark
-              ? "border-slate-700 bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-              : "border-slate-200 bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-          }`}
-          aria-label="Volver"
-          title="Volver"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><title>Volver</title><polyline points="15 18 9 12 15 6" /></svg>
-        </button>
+        {showBackButton ? (
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className={`w-8 h-8 rounded-lg border cursor-pointer flex items-center justify-center shrink-0 transition-colors ${
+              isDark
+                ? "border-slate-700 bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                : "border-slate-200 bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            }`}
+            aria-label="Volver"
+            title="Volver"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>
+          </button>
+        ) : null}
 
         <div className="w-9 h-9 rounded-full overflow-hidden border-2 shrink-0" style={{ borderColor: sc || pc }}>
           {campaign.foto_url ? (
-            <Image src={campaign.foto_url} alt="" width={36} height={36} className="w-full h-full object-cover" unoptimized />
+            <Image src={campaign.foto_url} alt={`Foto de ${campaign.name}`} width={36} height={36} className="w-full h-full object-cover" unoptimized />
           ) : (
             <span className="w-full h-full flex items-center justify-center text-white text-xs font-extrabold" style={{ backgroundColor: pc }}>
               {campaign.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
@@ -86,7 +87,7 @@ export function TierraHeader({ stats, agentCount, formCount, connectedCount, map
         </div>
       </div>
 
-      {/* Center: segmented control + KPIs */}
+      {/* Center: segmented control */}
       <div className="flex items-center gap-5">
         {/* Segmented control — pill style */}
         <div className={`flex rounded-full p-0.5 ${isDark ? "bg-slate-900/95 border border-slate-700" : "bg-slate-100"}`}>
@@ -115,28 +116,41 @@ export function TierraHeader({ stats, agentCount, formCount, connectedCount, map
             mapTheme={mapTheme}
           />
         </div>
-
-        {/* Contextual KPIs — only for Campo and Datos mode; Pipeline has the hero card */}
-        {viewMode !== "pipeline" && (
-          <>
-            <div className={`w-px h-8 ${isDark ? "bg-slate-700/80" : "bg-slate-200/70"}`} />
-            <CampoKpis
-              formCount={formCount}
-              agentCount={agentCount}
-              connectedCount={connectedCount}
-              todayCount={totals.forms_today}
-              primaryColor={pc}
-              mapTheme={mapTheme}
-              zoneLabel={zoneLabel}
-            />
-          </>
-        )}
       </div>
 
-      {/* Right: metas (both modes) */}
-      <div className="flex gap-4 shrink-0">
+      {/* Right: metas + brigadista logout (header-only) */}
+      <div className="flex gap-4 shrink-0 items-center">
         <MetaBar label="Meta datos" current={totals.forms_count} target={metaDatos} pct={datosProgress} color={pc} mapTheme={mapTheme} />
         <MetaBar label="Meta votos" current={null} target={metas.votos} pct={votosProgress} color={sc || pc} mapTheme={mapTheme} />
+        {showHeaderProfileLogout ? (
+          <div
+            className={`group flex items-center rounded-full px-2 py-1 transition-transform duration-200 hover:translate-x-1 focus-within:translate-x-1 ${
+              isDark ? "border border-slate-700 bg-slate-900/90" : "border border-slate-300/70 bg-white/90"
+            }`}
+          >
+            <div className={`w-7 h-7 rounded-full text-white text-[11px] font-bold flex items-center justify-center shrink-0 ${isDark ? "bg-slate-700" : "bg-slate-900"}`}>
+              {profileLabel.charAt(0).toUpperCase() || "?"}
+            </div>
+            <span className={`ml-2 mr-1 max-w-[120px] truncate text-[11px] font-semibold ${isDark ? "text-slate-100" : "text-slate-700"}`}>
+              {profileLabel}
+            </span>
+            <div className="inline-flex w-0 opacity-0 -translate-x-1 overflow-hidden pointer-events-none transition-all duration-200 group-hover:w-[34px] group-hover:opacity-100 group-hover:translate-x-0 group-hover:pointer-events-auto group-focus-within:w-[34px] group-focus-within:opacity-100 group-focus-within:translate-x-0 group-focus-within:pointer-events-auto">
+              <button
+                type="button"
+                onClick={() => { void onLogout(); }}
+                className={`w-7 h-7 rounded-full transition-colors duration-150 cursor-pointer flex items-center justify-center ${
+                  isDark
+                    ? "border border-slate-600 bg-slate-800 text-slate-300 hover:text-red-400 hover:border-red-500"
+                    : "border border-slate-300 bg-white text-slate-600 hover:text-red-600 hover:border-red-300"
+                }`}
+                aria-label="Cerrar sesion"
+                title="Cerrar sesion"
+              >
+                <LogoutIcon />
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </header>
   );
@@ -170,85 +184,7 @@ function SegmentButton({ active, onClick, icon, label, activeColor, mapTheme }: 
   );
 }
 
-/* ========== KPI Groups ========== */
-
-function CampoKpis({ formCount, agentCount, connectedCount, todayCount, primaryColor, mapTheme, zoneLabel }: {
-  formCount: number;
-  agentCount: number;
-  connectedCount: number;
-  todayCount: number;
-  primaryColor: string;
-  mapTheme: MapTheme;
-  /** When set, KPI counts are scoped to this zone */
-  zoneLabel: string | null;
-}) {
-  const isDark = mapTheme === "dark";
-  const isFiltered = zoneLabel !== null;
-
-  return (
-    <div className="flex items-center gap-4">
-      {/* Zone chip — shown when drill is active */}
-      {isFiltered && (
-        <>
-          <div
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
-            style={{
-              background: isDark ? "rgba(96,165,250,0.15)" : "rgba(37,99,235,0.08)",
-              border: isDark ? "1px solid rgba(96,165,250,0.35)" : "1px solid rgba(37,99,235,0.2)",
-            }}
-          >
-            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#60a5fa" : "#2563eb"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
-            </svg>
-            <span
-              className="text-[11px] font-bold tracking-wide max-w-[120px] truncate"
-              style={{ color: isDark ? "#93c5fd" : "#1d4ed8" }}
-            >
-              {zoneLabel}
-            </span>
-          </div>
-          <KpiDivider mapTheme={mapTheme} />
-        </>
-      )}
-      <KpiSlot value={formCount.toLocaleString()} label={isFiltered ? "En zona" : "Puntos"} mapTheme={mapTheme} />
-      <KpiDivider mapTheme={mapTheme} />
-      <KpiSlot value={String(agentCount)} label="Agentes" mapTheme={mapTheme} />
-      <KpiDivider mapTheme={mapTheme} />
-      <KpiSlot value={String(connectedCount)} label="En linea" className={connectedCount > 0 ? "text-teal-500" : "text-slate-400"} mapTheme={mapTheme} />
-      {/* Today count only meaningful without geo filter — hide to avoid confusion */}
-      {!isFiltered && (
-        <>
-          <KpiDivider mapTheme={mapTheme} />
-          <KpiSlot value={`+${todayCount}`} label="Hoy" style={{ color: primaryColor }} mapTheme={mapTheme} />
-        </>
-      )}
-    </div>
-  );
-}
-
-
-
 /* ========== Sub-components ========== */
-
-function KpiSlot({ value, label, className, style, mapTheme }: {
-  value: string;
-  label: string;
-  className?: string;
-  style?: React.CSSProperties;
-  mapTheme: MapTheme;
-}) {
-  const isDark = mapTheme === "dark";
-  return (
-    <div className="flex flex-col items-center">
-      <span className={`text-[20px] font-black leading-tight tabular-nums ${className ?? (isDark ? "text-slate-100" : "text-slate-800")}`} style={style}>{value}</span>
-      <span className={`text-[9px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-500"}`}>{label}</span>
-    </div>
-  );
-}
-
-function KpiDivider({ mapTheme }: { mapTheme: MapTheme }) {
-  return <div className={`w-px h-8 ${mapTheme === "dark" ? "bg-slate-700/80" : "bg-slate-100"}`} />;
-}
 
 function MetaBar({ label, current, target, pct, color, mapTheme }: {
   label: string;
@@ -260,7 +196,7 @@ function MetaBar({ label, current, target, pct, color, mapTheme }: {
 }) {
   const isDark = mapTheme === "dark";
   return (
-    <div className="min-w-[140px] py-1">
+      <div className="min-w-[172px] py-1">
       <div className="flex justify-between items-center mb-1">
         <span className={`text-[9px] font-semibold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-400"}`}>{label}</span>
         <span className="text-xs font-bold tabular-nums" style={{ color }}>{target > 0 ? `${pct.toFixed(0)}%` : "—"}</span>
@@ -305,6 +241,16 @@ function TableIcon() {
       <line x1="3" y1="9" x2="21" y2="9" />
       <line x1="3" y1="15" x2="21" y2="15" />
       <line x1="9" y1="3" x2="9" y2="21" />
+    </svg>
+  );
+}
+
+function LogoutIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
     </svg>
   );
 }

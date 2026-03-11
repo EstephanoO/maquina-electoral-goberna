@@ -1,40 +1,35 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
-import type { EnrichedAgent, LogEntry, AgentStatus, MapTheme, DrillState } from "./types";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import type { EnrichedAgent, AgentStatus, MapTheme, DrillState } from "./types";
 import { STATUS_CFG } from "./constants";
 import {
-  Glass, Kpi, CardHeader, AgentRow, RankingRow, LogRow, MoreBtn, SCROLL_MAX,
+  Glass, Kpi, CardHeader, AgentRow, RankingRow, MoreBtn, SCROLL_MAX,
 } from "./campo-overlay-parts";
-import { LogModal } from "./log-modal";
 
 /* ========== Types ========== */
 
 type Props = {
   agents: EnrichedAgent[];
   connectedCount: number;
-  logEntries: LogEntry[];
   formCount: number;
   primaryColor: string;
   selectedAgentId: string | null;
   onAgentClick: (agentId: string) => void;
-  onLogEntryClick: (entry: LogEntry) => void;
-  /** User role for permission checks */
-  userRole?: string;
-  /** Delete handler — called from modal */
-  onDeleteForm?: (formId: string, campaignId: string) => Promise<boolean>;
-  /** Update handler — called from modal */
-  onUpdateForm?: (formId: string, campaignId: string, updates: Record<string, string>) => Promise<boolean>;
   mapTheme?: MapTheme;
   /** Current drill state — shows zone filter banner when level > 0 */
   drillState?: DrillState;
+  initialVisible?: boolean;
+  closeSignal?: number;
+  openSignal?: number;
+  onVisibilityChange?: (visible: boolean) => void;
 };
 
 /* ========== Constants ========== */
 
 const PANEL_W = 300;
-const LOG_COLLAPSED = 3;
-const LOG_EXPANDED = 12;
+const TOGGLE_DEFAULT_TOP = 16;
+const TOGGLE_HEIGHT = 48;
 const AGENTS_COLLAPSED = 4;
 const RANKING_COLLAPSED = 5;
 const RANKING_EXPANDED = 15;
@@ -42,24 +37,20 @@ const RANKING_EXPANDED = 15;
 /* ========== Component ========== */
 
 export function CampoOverlay({
-  agents, connectedCount, logEntries, formCount,
-  primaryColor, selectedAgentId, onAgentClick, onLogEntryClick,
-  userRole, onDeleteForm, onUpdateForm, mapTheme = "dark", drillState,
+  agents, connectedCount, formCount,
+  primaryColor, selectedAgentId, onAgentClick,
+  mapTheme = "dark", drillState,
+  initialVisible = true,
+  closeSignal = 0,
+  openSignal = 0,
+  onVisibilityChange,
 }: Props) {
-  const [visible, setVisible] = useState(true);
+  const [visible, setVisible] = useState(initialVisible);
   const [agentsOpen, setAgentsOpen] = useState(false);
   const [rankingOpen, setRankingOpen] = useState(false);
-  const [logOpen, setLogOpen] = useState(false);
-  const [logModalOpen, setLogModalOpen] = useState(false);
-  const logListRef = useRef<HTMLDivElement>(null);
-  const prevLogCount = useRef(logEntries.length);
-
-  useEffect(() => {
-    if (logEntries.length > prevLogCount.current && logListRef.current) {
-      logListRef.current.scrollTop = 0;
-    }
-    prevLogCount.current = logEntries.length;
-  }, [logEntries.length]);
+  const panelBodyRef = useRef<HTMLDivElement | null>(null);
+  const agentsSectionRef = useRef<HTMLDivElement | null>(null);
+  const [toggleTopOffset, setToggleTopOffset] = useState(TOGGLE_DEFAULT_TOP);
 
   const sortedAgents = useMemo(() => {
     const order: Record<string, number> = { connected: 0, idle: 1, inactive: 2 };
@@ -76,12 +67,19 @@ export function CampoOverlay({
     return [...agents].filter((a) => a.forms_count > 0).sort((a, b) => b.forms_count - a.forms_count);
   }, [agents]);
 
-  const visibleAgents = agentsOpen ? sortedAgents : sortedAgents.slice(0, AGENTS_COLLAPSED);
-  const visibleRanking = rankingOpen ? rankedAgents.slice(0, RANKING_EXPANDED) : rankedAgents.slice(0, RANKING_COLLAPSED);
+  const visibleAgents = useMemo(() => {
+    if (selectedAgentId) {
+      return sortedAgents.filter((a) => a.id === selectedAgentId);
+    }
+    return agentsOpen ? sortedAgents : sortedAgents.slice(0, AGENTS_COLLAPSED);
+  }, [sortedAgents, agentsOpen, selectedAgentId]);
 
-  // Inline log: only form entries (datos subidos)
-  const formLogEntries = useMemo(() => logEntries.filter((e) => e.type === "form_new" || e.type === "form_submitted"), [logEntries]);
-  const visibleLogs = logOpen ? formLogEntries.slice(0, LOG_EXPANDED) : formLogEntries.slice(0, LOG_COLLAPSED);
+  const visibleRanking = useMemo(() => {
+    if (selectedAgentId) {
+      return rankedAgents.filter((a) => a.id === selectedAgentId);
+    }
+    return rankingOpen ? rankedAgents.slice(0, RANKING_EXPANDED) : rankedAgents.slice(0, RANKING_COLLAPSED);
+  }, [rankedAgents, rankingOpen, selectedAgentId]);
 
   const selectedAgent = selectedAgentId ? agents.find((a) => a.id === selectedAgentId) : null;
   const isDark = mapTheme === "dark";
@@ -96,6 +94,60 @@ export function CampoOverlay({
     return null;
   }, [drillState]);
 
+  const syncToggleToAgentsCenter = useCallback(() => {
+    const panel = panelBodyRef.current;
+    const agentsSection = agentsSectionRef.current;
+    if (!panel || !agentsSection) return;
+
+    const panelRect = panel.getBoundingClientRect();
+    const agentsRect = agentsSection.getBoundingClientRect();
+    const centerInPanel = agentsRect.top - panelRect.top + agentsRect.height / 2;
+    const nextTop = Math.max(TOGGLE_DEFAULT_TOP, Math.round(centerInPanel - TOGGLE_HEIGHT / 2));
+    setToggleTopOffset(nextTop);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAgent && !activeZoneLabel) {
+      setToggleTopOffset(TOGGLE_DEFAULT_TOP);
+      return;
+    }
+
+    syncToggleToAgentsCenter();
+
+    const panel = panelBodyRef.current;
+    const agentsSection = agentsSectionRef.current;
+    if (!panel || !agentsSection) return;
+
+    const observer = new ResizeObserver(() => {
+      syncToggleToAgentsCenter();
+    });
+    observer.observe(panel);
+    observer.observe(agentsSection);
+
+    window.addEventListener("resize", syncToggleToAgentsCenter);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", syncToggleToAgentsCenter);
+    };
+  }, [selectedAgent, activeZoneLabel, syncToggleToAgentsCenter]);
+
+  useEffect(() => {
+    if (closeSignal > 0) {
+      setVisible(false);
+    }
+  }, [closeSignal]);
+
+  useEffect(() => {
+    if (openSignal > 0) {
+      setVisible(true);
+    }
+  }, [openSignal]);
+
+  useEffect(() => {
+    onVisibilityChange?.(visible);
+  }, [visible, onVisibilityChange]);
+
   return (
     <div
       className="absolute top-3 bottom-3 z-10 flex items-start transition-[right] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
@@ -105,8 +157,9 @@ export function CampoOverlay({
       <button
         type="button"
         onClick={() => setVisible(!visible)}
-        className="shrink-0 mt-2 -mr-0.5 w-8 h-16 rounded-l-2xl flex items-center justify-center cursor-pointer shadow-lg transition-colors"
+        className="shrink-0 -mr-0.5 w-8 h-12 rounded-l-2xl flex items-center justify-center cursor-pointer shadow-lg transition-colors"
         style={{
+          marginTop: toggleTopOffset,
           background: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.35)",
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
@@ -121,7 +174,7 @@ export function CampoOverlay({
       </button>
 
       {/* ─── Panel body ─── */}
-      <div className="flex flex-col gap-2.5 overflow-y-auto overflow-x-hidden max-h-full" style={{ width: PANEL_W }}>
+      <div ref={panelBodyRef} className="flex flex-col gap-2.5 overflow-y-auto overflow-x-hidden max-h-full" style={{ width: PANEL_W }}>
 
         {/* ═══ Zone drill banner — shown when user has drilled into a zone ═══ */}
         {activeZoneLabel && (
@@ -190,30 +243,32 @@ export function CampoOverlay({
         </div>
 
         {/* ═══ Agents card ═══ */}
-        <Glass mapTheme={mapTheme}>
-          <CardHeader onClick={() => setAgentsOpen(!agentsOpen)} open={agentsOpen} mapTheme={mapTheme}>
-            <span className={`font-semibold text-[12px] ${isDark ? "text-slate-100" : "text-slate-700"}`}>Agentes</span>
-            <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: accentColor }}>{agents.length}</span>
-            <span className="ml-auto mr-2 flex items-center gap-1 text-[9px] font-bold text-emerald-500">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              LIVE
-            </span>
-          </CardHeader>
+        <div ref={agentsSectionRef}>
+          <Glass mapTheme={mapTheme}>
+            <CardHeader onClick={() => setAgentsOpen(!agentsOpen)} open={agentsOpen} mapTheme={mapTheme}>
+              <span className={`font-semibold text-[12px] ${isDark ? "text-slate-100" : "text-slate-700"}`}>Agentes</span>
+              <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: accentColor }}>{agents.length}</span>
+              <span className="ml-auto mr-2 flex items-center gap-1 text-[9px] font-bold text-emerald-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                LIVE
+              </span>
+            </CardHeader>
 
-          <div className={agentsOpen ? SCROLL_MAX : ""}>
-            {visibleAgents.length === 0 ? (
-              <p className={`px-3 py-3 text-center text-[11px] ${isDark ? "text-slate-400/90" : "text-slate-400/80"}`}>Sin agentes</p>
-            ) : (
-              visibleAgents.map((a) => (
-                <AgentRow key={a.id} mapTheme={mapTheme} agent={a} primaryColor={accentColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
-              ))
+            <div className={agentsOpen ? SCROLL_MAX : ""}>
+              {visibleAgents.length === 0 ? (
+                <p className={`px-3 py-3 text-center text-[11px] ${isDark ? "text-slate-400/90" : "text-slate-400/80"}`}>Sin agentes</p>
+              ) : (
+                visibleAgents.map((a) => (
+                  <AgentRow key={a.id} mapTheme={mapTheme} agent={a} primaryColor={accentColor} selected={a.id === selectedAgentId} onClick={onAgentClick} />
+                ))
+              )}
+            </div>
+
+            {!selectedAgentId && !agentsOpen && sortedAgents.length > AGENTS_COLLAPSED && (
+              <MoreBtn mapTheme={mapTheme} count={sortedAgents.length - AGENTS_COLLAPSED} color={accentColor} onClick={() => setAgentsOpen(true)} />
             )}
-          </div>
-
-          {!agentsOpen && sortedAgents.length > AGENTS_COLLAPSED && (
-            <MoreBtn mapTheme={mapTheme} count={sortedAgents.length - AGENTS_COLLAPSED} color={accentColor} onClick={() => setAgentsOpen(true)} />
-          )}
-        </Glass>
+          </Glass>
+        </div>
 
         {/* ═══ Ranking card ═══ */}
         {rankedAgents.length > 0 && (
@@ -230,56 +285,13 @@ export function CampoOverlay({
               ))}
             </div>
 
-            {!rankingOpen && rankedAgents.length > RANKING_COLLAPSED && (
+            {!selectedAgentId && !rankingOpen && rankedAgents.length > RANKING_COLLAPSED && (
               <MoreBtn mapTheme={mapTheme} count={rankedAgents.length - RANKING_COLLAPSED} color={accentColor} onClick={() => setRankingOpen(true)} />
             )}
           </Glass>
         )}
 
-        {/* ═══ Log card — datos subidos ═══ */}
-        <Glass mapTheme={mapTheme}>
-          <div className="flex items-center">
-            <CardHeader onClick={() => setLogOpen(!logOpen)} open={logOpen} mapTheme={mapTheme}>
-              <span className={`font-semibold text-[12px] ${isDark ? "text-slate-100" : "text-slate-700"}`}>Datos</span>
-              <span className="ml-1.5 text-[11px] font-bold tabular-nums mr-auto" style={{ color: accentColor }}>{formLogEntries.length}</span>
-            </CardHeader>
-            <button
-              type="button"
-              onClick={() => setLogModalOpen(true)}
-              className="shrink-0 mr-3 text-[9px] font-semibold uppercase tracking-wider cursor-pointer transition-colors hover:opacity-80"
-              style={{ color: accentColor }}
-              title="Ver registro completo"
-            >
-              Ver todos
-            </button>
-          </div>
-
-          <div ref={logListRef} className={logOpen ? "max-h-[340px] overflow-y-auto" : ""}>
-            {visibleLogs.length === 0 ? (
-              <p className={`px-3 py-3 text-center text-[11px] italic ${isDark ? "text-slate-400/90" : "text-slate-400/80"}`}>Sin registros</p>
-            ) : (
-              visibleLogs.map((e) => (
-                <LogRow key={e.id} mapTheme={mapTheme} entry={e} onLogEntryClick={onLogEntryClick} />
-              ))
-            )}
-          </div>
-
-          {!logOpen && formLogEntries.length > LOG_COLLAPSED && (
-            <MoreBtn mapTheme={mapTheme} count={formLogEntries.length - LOG_COLLAPSED} color={accentColor} onClick={() => setLogOpen(true)} />
-          )}
-        </Glass>
       </div>
-
-      {/* ═══ Full log modal ═══ */}
-      <LogModal
-        open={logModalOpen}
-        onClose={() => setLogModalOpen(false)}
-        entries={logEntries}
-        onEntryClick={(entry) => { setLogModalOpen(false); onLogEntryClick(entry); }}
-        userRole={userRole}
-        onDelete={onDeleteForm}
-        onUpdate={onUpdateForm}
-      />
     </div>
   );
 }

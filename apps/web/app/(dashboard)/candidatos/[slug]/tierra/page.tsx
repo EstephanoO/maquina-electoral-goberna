@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 
 import type { FormRecord } from "@/lib/services";
@@ -21,7 +21,6 @@ import type { TierraViewMode } from "./_components/tierra-header";
 import { useAgentSSE } from "./_components/hooks/use-agent-sse";
 import { usePipelineState } from "./_components/hooks/use-pipeline-state";
 import { useEnrichedAgents } from "./_components/hooks/use-enriched-agents";
-import { useActivityLog } from "./_components/hooks/use-activity-log";
 import { useSSELocations } from "./_components/hooks/use-sse-locations";
 import { useDrillBounds } from "./_components/hooks/use-drill-bounds";
 
@@ -68,6 +67,7 @@ const TierraMap = dynamic(
 
 const EMPTY_FORMS: FormRecord[] = [];
 const TIERRA_FULLSCREEN_CLASS = "tierra-fullscreen";
+const LEFT_PANEL_W = 176;
 const TABBAR_THEME_VARS = [
   "--tierra-tabbar-bg",
   "--tierra-tabbar-border",
@@ -82,10 +82,16 @@ const TABBAR_THEME_VARS = [
 
 export default function TierraPage() {
   const params = useParams();
+  const router = useRouter();
   const slug = params.slug as string;
   const mapHandleRef = useRef<TierraMapHandle | null>(null);
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const queryClient = useQueryClient();
+
+  const handleHeaderLogout = useCallback(async () => {
+    await logout();
+    router.replace("/login");
+  }, [logout, router]);
 
   // ─── Demo: detectar si este slug es de la demo de Carmen de la Legua ───
   // Usamos `(arr as readonly string[]).includes(slug)` para evitar el narrowing
@@ -103,7 +109,7 @@ export default function TierraPage() {
   const pipeline = usePipelineState(campaignId, forms);
 
   // ─── SSE: live agent locations, offline events, background status ───
-  const { locations, sseEvents, backgroundAgentIds, handleSSEUpdate, handleAgentOffline, handleAgentStatus } =
+  const { locations, backgroundAgentIds, handleSSEUpdate, handleAgentOffline, handleAgentStatus } =
     useSSELocations(initialLocations);
   useAgentSSE(campaignId ?? null, handleSSEUpdate, handleAgentOffline, handleAgentStatus);
 
@@ -113,8 +119,12 @@ export default function TierraPage() {
   const [datosVizMode, setDatosVizMode] = useState<DatosVizMode>("points");
   const [heatmapRadius, setHeatmapRadius] = useState(26);
   const [heatmapOpacity, setHeatmapOpacity] = useState(0.88);
-  const [mapTheme, setMapTheme] = useState<MapTheme>("dark");
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [mapTheme, setMapTheme] = useState<MapTheme>("voyager");
+  const isFullscreen = true;
+  const [showControlsPanel, setShowControlsPanel] = useState(false);
+  const [rightPanelCloseSignal, setRightPanelCloseSignal] = useState(0);
+  const [rightPanelOpenSignal, setRightPanelOpenSignal] = useState(0);
+  const [isRightPanelVisible, setIsRightPanelVisible] = useState(false);
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [drillState, setDrillState] = useState<DrillState>(
@@ -123,7 +133,7 @@ export default function TierraPage() {
   const [showRoutes, setShowRoutes] = useState(false);
 
   const showTracking = activeLayer === "agentes";
-  const showDatos = activeLayer === "datos" || selectedAgentId !== null;
+  const showDatos = activeLayer === "datos";
 
   // ─── Demo: para los slugs de Legua, el drillState arranca ya en el distrito ───
   // No necesitamos polling ni handle. El mapa recibe lockedBounds como prop y
@@ -153,7 +163,6 @@ export default function TierraPage() {
   const enrichedAgentsRef = useRef(enrichedAgents);
   enrichedAgentsRef.current = enrichedAgents;
 
-  const flyToPoint = useCallback((lng: number, lat: number, zoom: number) => { mapHandleRef.current?.flyToPoint(lng, lat, zoom); }, []);
   const flyToFromDatos = useCallback((lng: number, lat: number, tooltipData?: PinnedTooltipData) => {
     setViewMode("campo");
     setActiveLayer("datos");
@@ -162,7 +171,6 @@ export default function TierraPage() {
       if (tooltipData) mapHandleRef.current?.showPinnedTooltip(tooltipData);
     }, 120);
   }, []);
-  const { logEntries, handleLogEntryClick } = useActivityLog(forms, stats, flyToPoint, sseEvents);
 
   // ─── Handlers ───
   const handleLayerChange = useCallback((layer: ActiveLayer) => {
@@ -175,17 +183,46 @@ export default function TierraPage() {
   }, []);
 
   const handleSelectAgent = useCallback((agentId: string | null) => {
+    if (agentId) {
+      setActiveLayer("agentes");
+      setDrillState(INITIAL_DRILL);
+    }
     setSelectedAgentId(agentId);
   }, []);
 
   const handleAgentListClick = useCallback((agentId: string) => {
+    setActiveLayer("agentes");
     setSelectedAgentId((prev) => {
       if (prev === agentId) return null;
+
+      setDrillState(INITIAL_DRILL);
+
+      const latestAgentForm = formPoints
+        .filter((p) => p.agent_id === agentId)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+      if (latestAgentForm) {
+        mapHandleRef.current?.flyToPoint(latestAgentForm.lng, latestAgentForm.lat, 16, false);
+        return agentId;
+      }
+
       const agent = enrichedAgentsRef.current.find((a) => a.id === agentId);
-      if (agent) mapHandleRef.current?.flyToPoint(agent.lng, agent.lat, 15);
+      if (agent) {
+        mapHandleRef.current?.flyToPoint(agent.lng, agent.lat, 15, false);
+      }
       return agentId;
     });
-  }, []);
+  }, [formPoints]);
+
+  const handleMapDoubleClick = useCallback(() => {
+    if (!showControlsPanel && !isRightPanelVisible) {
+      setShowControlsPanel(true);
+      setRightPanelOpenSignal((prev) => prev + 1);
+      return;
+    }
+    setShowControlsPanel(false);
+    setRightPanelCloseSignal((prev) => prev + 1);
+  }, [showControlsPanel, isRightPanelVisible]);
 
   const handleDeleteForm = useCallback(async (formId: string, cId: string): Promise<boolean> => {
     const res = await deleteForm(formId, cId);
@@ -220,21 +257,11 @@ export default function TierraPage() {
 
   // Fullscreen mode: hide global dashboard chrome (sidebar + top tabbar) while this page is visible.
   useEffect(() => {
-    document.body.classList.toggle(TIERRA_FULLSCREEN_CLASS, isFullscreen);
+    document.body.classList.add(TIERRA_FULLSCREEN_CLASS);
     return () => {
       document.body.classList.remove(TIERRA_FULLSCREEN_CLASS);
     };
-  }, [isFullscreen]);
-
-  // Escape exits fullscreen.
-  useEffect(() => {
-    if (!isFullscreen) return;
-    const onKeyDown = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") setIsFullscreen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isFullscreen]);
+  }, []);
 
   // Cleanup tabbar vars and fullscreen class when leaving Tierra route.
   useEffect(() => {
@@ -275,6 +302,7 @@ export default function TierraPage() {
   }
 
   const { campaign } = stats;
+  const leftPanelWidth = LEFT_PANEL_W;
 
   return (
     <div
@@ -283,13 +311,12 @@ export default function TierraPage() {
     >
       <TierraHeader
         stats={stats}
-        agentCount={filteredAgents.length}
-        formCount={drillBounds ? filteredFormPoints.length : stats.totals.forms_count}
-        connectedCount={connectedCount}
         mapTheme={mapTheme}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        drillState={drillState}
+        userRole={user?.role}
+        userName={user?.full_name}
+        onLogout={handleHeaderLogout}
       />
 
       {viewMode === "campo" ? (
@@ -320,77 +347,72 @@ export default function TierraPage() {
             showRoutes={showRoutes}
             drillState={drillState}
             onDrillChange={setDrillState}
+            onMapDoubleClick={handleMapDoubleClick}
             lockedBounds={isLeguaDemo ? LEGUA_BOUNDS : undefined}
           />
-          <div className="absolute top-3 left-3 z-20 flex items-start gap-2">
+          <div
+            className="absolute top-3 z-20 flex items-start transition-[left] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+            style={{ left: showControlsPanel ? 12 : -(leftPanelWidth + 4) }}
+          >
+            <div style={{ width: leftPanelWidth }}>
+              <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
+            </div>
             <button
               type="button"
-              onClick={() => setIsFullscreen((prev) => !prev)}
-              aria-label={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}
-              className={`cursor-pointer rounded-md border w-9 h-9 p-0 flex items-center justify-center backdrop-blur-sm transition-colors ${
+              onClick={() => setShowControlsPanel((prev) => !prev)}
+              aria-label={showControlsPanel ? "Ocultar controles" : "Mostrar controles"}
+              className={`cursor-pointer -ml-0.5 mt-2 rounded-r-2xl border w-8 h-12 p-0 flex items-center justify-center shadow-lg transition-colors ${
                 mapTheme === "dark"
                   ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
                   : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
               }`}
-              title={isFullscreen ? "Salir de pantalla completa (Esc)" : "Pantalla completa"}
+              title={showControlsPanel ? "Ocultar controles" : "Mostrar controles"}
             >
-              {isFullscreen ? (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polyline points="9 3 3 3 3 9" />
-                  <polyline points="15 3 21 3 21 9" />
-                  <polyline points="3 15 3 21 9 21" />
-                  <polyline points="21 15 21 21 15 21" />
-                </svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polyline points="15 3 21 3 21 9" />
-                  <polyline points="9 21 3 21 3 15" />
-                  <line x1="21" y1="3" x2="14" y2="10" />
-                  <line x1="3" y1="21" x2="10" y2="14" />
-                </svg>
-              )}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`transition-transform duration-300 ${showControlsPanel ? "" : "rotate-180"}`}>
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
             </button>
-            <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
           </div>
           <CampoOverlay
             agents={filteredAgents}
             connectedCount={connectedCount}
-            logEntries={logEntries}
             formCount={drillBounds ? filteredFormPoints.length : stats.totals.forms_count}
             primaryColor={campaign.color_primario}
             selectedAgentId={selectedAgentId}
             onAgentClick={handleAgentListClick}
-            onLogEntryClick={handleLogEntryClick}
-            userRole={user?.role}
-            onDeleteForm={handleDeleteForm}
-            onUpdateForm={handleUpdateForm}
             mapTheme={mapTheme}
             drillState={drillState}
+            initialVisible={false}
+            closeSignal={rightPanelCloseSignal}
+            openSignal={rightPanelOpenSignal}
+            onVisibilityChange={setIsRightPanelVisible}
           />
         </div>
       ) : viewMode === "pipeline" ? (
-        <PipelineView
-          campaignId={campaign.id}
-          brigadistas={pipeline.brigadistaMetrics ?? []}
-          prevBrigadistas={pipeline.prevBrigadistaMetrics ?? []}
-          isLoading={pipeline.metricsLoading}
-          isPending={pipeline.isPending}
-          primaryColor={campaign.color_primario}
-          secondaryColor={campaign.color_secundario}
-          forms={pipeline.filteredForms}
-          prevForms={pipeline.prevFilteredForms}
-          agents={enrichedAgents}
-          period={pipeline.period}
-          onPeriodChange={pipeline.onPeriodChange}
-          offset={pipeline.offset}
-          onOffsetChange={pipeline.onOffsetChange}
-          periodLabel={pipeline.periodLabel}
-          dateRanges={pipeline.dateRanges}
-          totalDatos={stats.totals.forms_count}
-          serverTotals={stats.totals}
-          agentesCampoCount={enrichedAgents.length}
-          metaDatos={stats.metas.datos}
-        />
+        <div className="flex-1 min-h-0 px-3 py-2 md:px-5 lg:px-7">
+          <PipelineView
+            campaignId={campaign.id}
+            brigadistas={pipeline.brigadistaMetrics ?? []}
+            prevBrigadistas={pipeline.prevBrigadistaMetrics ?? []}
+            isLoading={pipeline.metricsLoading}
+            isPending={pipeline.isPending}
+            primaryColor={campaign.color_primario}
+            secondaryColor={campaign.color_secundario}
+            forms={pipeline.filteredForms}
+            prevForms={pipeline.prevFilteredForms}
+            agents={enrichedAgents}
+            period={pipeline.period}
+            onPeriodChange={pipeline.onPeriodChange}
+            offset={pipeline.offset}
+            onOffsetChange={pipeline.onOffsetChange}
+            periodLabel={pipeline.periodLabel}
+            dateRanges={pipeline.dateRanges}
+            totalDatos={stats.totals.forms_count}
+            serverTotals={stats.totals}
+            agentesCampoCount={enrichedAgents.length}
+            metaDatos={stats.metas.datos}
+          />
+        </div>
       ) : (
         <DatosView
           forms={forms}
@@ -423,4 +445,3 @@ export default function TierraPage() {
     </div>
   );
 }
-

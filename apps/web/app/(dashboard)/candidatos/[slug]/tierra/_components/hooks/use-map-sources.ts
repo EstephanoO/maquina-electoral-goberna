@@ -26,9 +26,13 @@ function stableHash(input: string): number {
 /* ─── Agent source ─── */
 
 export function useAgentsSource(agents: EnrichedAgent[], selectedAgentId: string | null) {
+  const visibleAgents = selectedAgentId
+    ? agents.filter((a) => a.id === selectedAgentId)
+    : agents;
+
   return useMemo(() => ({
     type: "FeatureCollection" as const,
-    features: agents.map((a) => ({
+    features: visibleAgents.map((a) => ({
       type: "Feature" as const,
       properties: {
         agent_id: a.id,
@@ -39,7 +43,7 @@ export function useAgentsSource(agents: EnrichedAgent[], selectedAgentId: string
       },
       geometry: { type: "Point" as const, coordinates: [a.lng, a.lat] },
     })),
-  }), [agents, selectedAgentId]);
+  }), [visibleAgents, selectedAgentId]);
 }
 
 /* ─── Form sources (clustered) ─── */
