@@ -9,7 +9,11 @@
  * - campaign_id, form_definition_id
  *
  * Special field type "location" → GPS capture with UTM conversion.
- * 
+ *
+ * LUGAR DE REGISTRO: Si el agente llena el campo "Lugar de registro"
+ * (para datos tomados en papel y cargados luego desde casa), el GPS
+ * pasa a ser opcional. Si NO se llena, el GPS sigue siendo obligatorio.
+ *
  * OFFLINE-FIRST: Forms are saved to SQLite queue immediately,
  * then synced to backend when online.
  */
@@ -51,6 +55,8 @@ const FONT = 'Montserrat-Bold';
 const BORDER = '#E1E6F0';
 const TEXT_MUTED = 'rgba(22, 57, 96, 0.7)';
 const ERROR_RED = '#DC2626';
+const AMBER = '#F59E0B';
+const AMBER_BG = '#FFFBEB';
 
 // Peru phone validation: 9 digits starting with 9
 const PERU_PHONE_REGEX = /^9\d{8}$/;
@@ -123,6 +129,7 @@ function DynamicField({
   primaryColor,
   externalError,
   checkingPhone,
+  gpsOpcional,
 }: {
   field: FormField;
   value: string;
@@ -132,6 +139,8 @@ function DynamicField({
   externalError?: string | null;
   /** Whether a phone duplicate check is in progress */
   checkingPhone?: boolean;
+  /** If true, GPS field shows as optional (lugar_registro was filled) */
+  gpsOpcional?: boolean;
 }) {
   const [capturandoGps, setCapturandoGps] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
@@ -160,6 +169,8 @@ function DynamicField({
 
   if (field.type === 'location') {
     const hasLocation = value !== '';
+    // Si gpsOpcional=true (lugar_registro lleno), el campo GPS no muestra asterisco
+    const showRequiredGps = field.required && !gpsOpcional;
 
     const captureLocation = async () => {
       if (capturandoGps) return;
@@ -207,22 +218,36 @@ function DynamicField({
     return (
       <View style={styles.field}>
         <Text style={styles.label}>
-          {field.label} {showRequired && <RequiredAsterisk />}
+          {field.label}{' '}
+          {showRequiredGps ? <RequiredAsterisk /> : (
+            gpsOpcional ? <Text style={styles.optionalLabel}> (opcional)</Text> : null
+          )}
         </Text>
         <Pressable
           style={[
             styles.gpsBtn,
             { borderColor: primaryColor },
             hasLocation && styles.gpsBtnCaptured,
+            gpsOpcional && !hasLocation && styles.gpsBtnOptional,
             capturandoGps && { opacity: 0.6 },
           ]}
           onPress={captureLocation}
           disabled={capturandoGps}
         >
-          <Text style={[styles.gpsBtnText, { color: primaryColor }, hasLocation && styles.gpsBtnTextCaptured]}>
-            {displayText}
+          <Text style={[
+            styles.gpsBtnText,
+            { color: primaryColor },
+            hasLocation && styles.gpsBtnTextCaptured,
+            gpsOpcional && !hasLocation && styles.gpsBtnTextOptional,
+          ]}>
+            {gpsOpcional && !hasLocation ? 'Agregar GPS (opcional)' : displayText}
           </Text>
         </Pressable>
+        {gpsOpcional && !hasLocation && (
+          <Text style={styles.gpsOpcionalHint}>
+            Omitido — usaras el lugar indicado abajo.
+          </Text>
+        )}
       </View>
     );
   }
@@ -344,7 +369,11 @@ export default function NewFormScreen() {
 
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [ubicacionUtm, setUbicacionUtm] = useState<UtmData | null>(null);
+  const [lugarRegistro, setLugarRegistro] = useState('');
   const [enviando, setEnviando] = useState(false);
+
+  // GPS es opcional cuando el agente indica el lugar manual donde capturó el dato
+  const gpsOpcional = lugarRegistro.trim().length > 0;
 
   // ── Phone duplicate detection ───────────────────────────────
   const [phoneDupError, setPhoneDupError] = useState<string | null>(null);
@@ -476,8 +505,11 @@ export default function NewFormScreen() {
       }
     }
 
-    if (!ubicacionUtm) {
-      Alert.alert('Ubicacion requerida', 'Debes capturar la ubicacion GPS.');
+    if (!ubicacionUtm && !gpsOpcional) {
+      Alert.alert(
+        'Ubicacion requerida',
+        'Debes capturar la ubicacion GPS, o indicar el "Lugar de registro" si cargaste el dato desde casa.',
+      );
       return;
     }
 
@@ -505,21 +537,28 @@ export default function NewFormScreen() {
       const clientId = generateClientId();
 
       // Build the full payload with resolved values (no fallbacks to placeholders)
-      const payloadData = {
+      const payloadData: Record<string, unknown> = {
         nombre: resolved.nombre || 'Sin nombre',
         telefono: resolved.telefono || '',
         fecha: new Date().toISOString(),
-        x: ubicacionUtm.easting,
-        y: ubicacionUtm.northing,
-        zona: `${ubicacionUtm.zone}${ubicacionUtm.hemisphere}`,
         candidato_preferido: resolved.candidato_preferido || candidate.name,
         encuestador: agent.full_name,
         encuestador_id: agent.id,
         comentarios: resolved.comentarios || '',
-        // Include GPS coordinates for mapping
-        lat: ubicacionUtm.latitude,
-        lng: ubicacionUtm.longitude,
       };
+
+      if (ubicacionUtm) {
+        // GPS capturado en campo
+        payloadData.x = ubicacionUtm.easting;
+        payloadData.y = ubicacionUtm.northing;
+        payloadData.zona = `${ubicacionUtm.zone}${ubicacionUtm.hemisphere}`;
+        payloadData.lat = ubicacionUtm.latitude;
+        payloadData.lng = ubicacionUtm.longitude;
+      } else {
+        // Sin GPS — dato cargado desde casa con lugar manual
+        payloadData.lugar_registro = lugarRegistro.trim();
+        payloadData.coord_source = 'manual_lugar';
+      }
 
       // OFFLINE-FIRST: Queue the form locally first
       await queueForm({
@@ -540,6 +579,7 @@ export default function NewFormScreen() {
       // Reset form for next entry
       setFormData({});
       setUbicacionUtm(null);
+      setLugarRegistro('');
 
       // Success - form is saved locally and will sync when online
       Alert.alert(
@@ -606,6 +646,7 @@ export default function NewFormScreen() {
                 primaryColor={primary}
                 externalError={field.id === phoneFieldId ? phoneDupError : null}
                 checkingPhone={field.id === phoneFieldId ? checkingPhone : false}
+                gpsOpcional={field.type === 'location' ? gpsOpcional : undefined}
               />
             ))}
 
@@ -615,6 +656,36 @@ export default function NewFormScreen() {
               <Text style={[styles.candidatoDetail, { color: secondary }]}>
                 {candidate.cargo} · {candidate.partido}
               </Text>
+            </View>
+
+            {/* ── Lugar de registro (hace GPS opcional) ─────────── */}
+            <View style={styles.lugarRegistroCard}>
+              <Text style={styles.lugarRegistroTitle}>
+                ¿Dato tomado en papel?
+              </Text>
+              <Text style={styles.lugarRegistroDesc}>
+                Si cargaste este registro desde casa, indica el lugar donde
+                recogiste el dato (ej: "Plaza San Martin", "Feria del parque").
+                Esto reemplaza la ubicacion GPS.
+              </Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  styles.lugarRegistroInput,
+                  lugarRegistro.trim().length > 0 && styles.lugarRegistroInputFilled,
+                ]}
+                placeholder="Ej: Plaza de Armas, Mercado Central..."
+                placeholderTextColor={TEXT_MUTED}
+                value={lugarRegistro}
+                onChangeText={setLugarRegistro}
+                autoCapitalize="sentences"
+                returnKeyType="done"
+              />
+              {lugarRegistro.trim().length > 0 && (
+                <Text style={styles.lugarRegistroHint}>
+                  GPS omitido — se registrara el lugar indicado.
+                </Text>
+              )}
             </View>
           </View>
 
@@ -695,8 +766,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
   },
   gpsBtnCaptured: { backgroundColor: '#DCFCE7', borderColor: '#22C55E' },
+  gpsBtnOptional: { borderStyle: 'dashed', backgroundColor: AMBER_BG, borderColor: AMBER },
   gpsBtnText: { fontSize: 14, fontFamily: FONT },
   gpsBtnTextCaptured: { color: '#22C55E' },
+  gpsBtnTextOptional: { color: AMBER },
+  gpsOpcionalHint: { fontSize: 11, color: AMBER, fontFamily: FONT },
   optionsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   optionBtn: {
     borderWidth: 1,
@@ -737,4 +811,39 @@ const styles = StyleSheet.create({
   noFormText: { fontSize: 15, color: TEXT_MUTED, fontFamily: FONT, textAlign: 'center' },
   backBtn: { borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 },
   backBtnText: { fontSize: 14, color: '#FFFFFF', fontFamily: FONT, textTransform: 'uppercase' },
+  // Lugar de registro
+  lugarRegistroCard: {
+    borderWidth: 1.5,
+    borderColor: AMBER,
+    borderRadius: 14,
+    padding: 16,
+    backgroundColor: AMBER_BG,
+    gap: 10,
+  },
+  lugarRegistroTitle: {
+    fontSize: 13,
+    color: '#92400E',
+    fontFamily: FONT,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  lugarRegistroDesc: {
+    fontSize: 13,
+    color: '#78350F',
+    fontFamily: FONT,
+    lineHeight: 19,
+  },
+  lugarRegistroInput: {
+    backgroundColor: '#FFFFFF',
+    borderColor: AMBER,
+  },
+  lugarRegistroInputFilled: {
+    borderColor: '#10B981',
+    backgroundColor: '#F0FDF4',
+  },
+  lugarRegistroHint: {
+    fontSize: 11,
+    color: '#059669',
+    fontFamily: FONT,
+  },
 });
