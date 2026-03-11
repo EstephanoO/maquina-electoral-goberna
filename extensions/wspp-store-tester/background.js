@@ -1454,6 +1454,63 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+// DELETE_CATALOG_ITEM — deletes a catalog item from the backend
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type !== 'DELETE_CATALOG_ITEM') return;
+  const itemId = msg.id;
+  if (!itemId) { sendResponse({ ok: false, error: 'Missing id' }); return true; }
+
+  (async () => {
+    try {
+      const result = await apiFetch(`/api/audio-catalog/${itemId}`, { method: 'DELETE' });
+      if (!result.ok) {
+        sendResponse({ ok: false, error: result.message || result.error || 'Delete failed' });
+        return;
+      }
+      // Bust all caches
+      _audioDataCache.delete(itemId);
+      _audioCatalogCache = null;
+      _audioCatalogCacheTs = 0;
+      sendResponse({ ok: true, id: itemId });
+    } catch (err) {
+      sendResponse({ ok: false, error: err.message });
+    }
+  })();
+
+  return true;
+});
+
+// CREATE_CATALOG_ITEM — creates a new catalog item in the backend
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type !== 'CREATE_CATALOG_ITEM') return;
+  const { data } = msg;
+  if (!data?.label || !data?.script_text) {
+    sendResponse({ ok: false, error: 'Missing required fields (label, script_text)' });
+    return true;
+  }
+
+  (async () => {
+    try {
+      const result = await apiFetch('/api/audio-catalog', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      if (!result.ok) {
+        sendResponse({ ok: false, error: result.message || result.error || 'Create failed' });
+        return;
+      }
+      // Bust catalog metadata cache so next list fetch is fresh
+      _audioCatalogCache = null;
+      _audioCatalogCacheTs = 0;
+      sendResponse({ ok: true, item: result.item ?? result });
+    } catch (err) {
+      sendResponse({ ok: false, error: err.message });
+    }
+  })();
+
+  return true;
+});
+
 // ═══════════════════════════════════════════════════════════════════════
 // SENT EVENT DEDUP — WSPP_SENT (DOM) vs WSPP_SENT_RICH (MsgCollection)
 // Both fire for the same outgoing message. WSPP_SENT_RICH has better

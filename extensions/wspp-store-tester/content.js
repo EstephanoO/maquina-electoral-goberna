@@ -154,6 +154,44 @@ window.addEventListener('message', (e) => {
     return;
   }
 
+  // --- DELETE_CATALOG_ITEM (delete item: inject → background → inject) ---
+  if (e.data?.type === 'DELETE_CATALOG_ITEM') {
+    const itemId = e.data.id;
+    console.log('[WSPP CATALOG bridge] Deleting item:', itemId);
+    chrome.runtime.sendMessage({ type: 'DELETE_CATALOG_ITEM', id: itemId }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'DELETE_CATALOG_ITEM_DONE', ok: false, id: itemId, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({
+        type: 'DELETE_CATALOG_ITEM_DONE',
+        ok: response?.ok ?? false,
+        id: itemId,
+        error: response?.error ?? null,
+      }, WA_ORIGIN);
+    });
+    return;
+  }
+
+  // --- CREATE_CATALOG_ITEM (create item: inject → background → inject) ---
+  if (e.data?.type === 'CREATE_CATALOG_ITEM') {
+    const { data } = e.data;
+    console.log('[WSPP CATALOG bridge] Creating item:', data?.label);
+    chrome.runtime.sendMessage({ type: 'CREATE_CATALOG_ITEM', data }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'CREATE_CATALOG_ITEM_DONE', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({
+        type: 'CREATE_CATALOG_ITEM_DONE',
+        ok: response?.ok ?? false,
+        item: response?.item ?? null,
+        error: response?.error ?? null,
+      }, WA_ORIGIN);
+    });
+    return;
+  }
+
   // --- Cache invalidation (inject → background, fire-and-forget) ---
   if (e.data?.type === 'BUST_AUDIO_CACHE' || e.data?.type === 'BUST_CATALOG_CACHE') {
     chrome.runtime.sendMessage({ type: e.data.type, id: e.data.id }, () => {});

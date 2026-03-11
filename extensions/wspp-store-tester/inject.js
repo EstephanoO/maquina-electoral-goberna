@@ -1133,8 +1133,14 @@
   }
 
   // ── Render the full catalog panel ───────────────────────────────────
+  // ── View state: 'grid' | 'detail' | 'create' ───────────────────────
+  let _catalogView = 'grid';   // current view
+  let _catalogDetailId = null; // item id shown in detail/edit view
+
+  // ── Render dispatcher ───────────────────────────────────────────────
   function renderCatalogPanel() {
-    injectCatalogStyles(); // safe to call here — DOM is ready when panel opens
+    injectCatalogStyles();
+    // Wipe and rebuild from scratch every render (simple, no stale DOM)
     let panel = document.getElementById('wspp-catalog-panel');
     if (!panel) {
       panel = document.createElement('div');
@@ -1144,378 +1150,504 @@
         bottom: '148px',
         right: '16px',
         zIndex: '99999',
-        width: '380px',
-        maxHeight: '520px',
-        background: '#0b1418',
-        borderRadius: '16px',
-        boxShadow: '0 8px 40px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.06)',
+        width: '340px',
+        background: '#1c1c1e',          // iOS dark sheet
+        borderRadius: '20px',
+        boxShadow: '0 12px 48px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.07)',
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        animation: 'wspp-slide-up .22s cubic-bezier(.16,1,.3,1)',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif',
+        animation: 'wspp-slide-up .25s cubic-bezier(.16,1,.3,1)',
+        maxHeight: '560px',
       });
       document.body.appendChild(panel);
     }
+    panel.innerHTML = '';
 
-    const loading = _catalogLoading && _catalogItems.length === 0;
+    if (_catalogView === 'detail' && _catalogDetailId) {
+      _renderDetailView(panel);
+    } else if (_catalogView === 'create') {
+      _renderCreateView(panel);
+    } else {
+      _renderGridView(panel);
+    }
+  }
 
-    // ── Header ─────────────────────────────────────────────────────
-    const header = document.createElement('div');
-    Object.assign(header.style, {
-      padding: '14px 16px 12px',
-      background: 'linear-gradient(180deg,#1a2730 0%,#111b21 100%)',
+  // ── Shared header builder ───────────────────────────────────────────
+  function _mkHeader(title, onBack, rightEl) {
+    const hdr = document.createElement('div');
+    Object.assign(hdr.style, {
+      display: 'flex', alignItems: 'center', gap: '8px',
+      padding: '13px 14px 10px',
       borderBottom: '1px solid rgba(255,255,255,.06)',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '10px',
+      flexShrink: '0',
+      background: '#1c1c1e',
+    });
+
+    if (onBack) {
+      const back = document.createElement('button');
+      back.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>`;
+      Object.assign(back.style, {
+        background: 'none', border: 'none', color: '#00a884',
+        cursor: 'pointer', padding: '2px', display: 'flex',
+        alignItems: 'center', flexShrink: '0',
+      });
+      back.addEventListener('click', onBack);
+      hdr.appendChild(back);
+    } else {
+      // Mic icon pill
+      const pill = document.createElement('div');
+      Object.assign(pill.style, {
+        width: '28px', height: '28px', borderRadius: '8px',
+        background: 'linear-gradient(135deg,#00a884,#007a62)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: '#fff', flexShrink: '0',
+      });
+      pill.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`;
+      hdr.appendChild(pill);
+    }
+
+    const titleEl = document.createElement('div');
+    Object.assign(titleEl.style, {
+      flex: '1', color: '#fff', fontSize: '15px', fontWeight: '700',
+      letterSpacing: '-.2px',
+    });
+    titleEl.textContent = title;
+    hdr.appendChild(titleEl);
+
+    if (rightEl) {
+      hdr.appendChild(rightEl);
+    }
+
+    // Close X always on the right
+    const closeX = document.createElement('button');
+    closeX.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+    Object.assign(closeX.style, {
+      width: '26px', height: '26px', borderRadius: '50%',
+      background: 'rgba(255,255,255,.1)', border: 'none',
+      color: '#8696a0', cursor: 'pointer',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
       flexShrink: '0',
     });
+    closeX.addEventListener('click', _closePanel);
+    hdr.appendChild(closeX);
 
-    const headerIcon = document.createElement('div');
-    Object.assign(headerIcon.style, {
-      width: '32px', height: '32px', borderRadius: '10px',
-      background: 'linear-gradient(135deg,#00a884,#008f72)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: '#fff', flexShrink: '0',
-      boxShadow: '0 2px 8px rgba(0,168,132,.4)',
-    });
-    headerIcon.innerHTML = CATALOG_SVG.mic;
-    headerIcon.querySelector('svg').style.width = '16px';
-    headerIcon.querySelector('svg').style.height = '16px';
+    return hdr;
+  }
 
-    const headerText = document.createElement('div');
-    headerText.style.flex = '1';
-    const headerTitle = document.createElement('div');
-    Object.assign(headerTitle.style, {
-      color: '#e9edef', fontSize: '14px', fontWeight: '700', letterSpacing: '-.1px',
-    });
-    headerTitle.textContent = 'Audios — César Vásquez';
-    const headerSub = document.createElement('div');
-    Object.assign(headerSub.style, {
-      color: '#8696a0', fontSize: '11px', marginTop: '1px',
-    });
-    headerSub.textContent = _catalogIsConsultor
-      ? `${_catalogItems.length} plantillas · modo consultor`
-      : `${_catalogItems.length} plantillas disponibles`;
-    headerText.appendChild(headerTitle);
-    headerText.appendChild(headerSub);
+  function _closePanel() {
+    const panel = document.getElementById('wspp-catalog-panel');
+    if (panel) panel.remove();
+    _catalogPanelOpen = false;
+    _catalogView = 'grid';
+    _catalogDetailId = null;
+    _catalogEditingId = null;
+    const fab = document.getElementById('wspp-catalog-btn');
+    if (fab) fab.style.boxShadow = '0 4px 16px rgba(0,168,132,.45), 0 2px 4px rgba(0,0,0,.3)';
+  }
 
-    const closeBtn = document.createElement('button');
-    closeBtn.innerHTML = CATALOG_SVG.close;
-    Object.assign(closeBtn.style, {
-      background: 'none', border: 'none', color: '#8696a0',
-      cursor: 'pointer', padding: '6px', borderRadius: '8px',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      transition: 'background .15s, color .15s',
-    });
-    closeBtn.classList.add('wspp-icon-btn');
-    closeBtn.addEventListener('click', () => {
-      panel.remove();
-      _catalogPanelOpen = false;
-      _catalogEditingId = null;
-      const fab = document.getElementById('wspp-catalog-btn');
-      if (fab) fab.style.boxShadow = '0 4px 16px rgba(0,168,132,.45), 0 2px 4px rgba(0,0,0,.3)';
-    });
+  // ── GRID VIEW — 4-column iOS-style icon grid ────────────────────────
+  function _renderGridView(panel) {
+    const loading = _catalogLoading && _catalogItems.length === 0;
 
-    header.appendChild(headerIcon);
-    header.appendChild(headerText);
-    header.appendChild(closeBtn);
-    panel.innerHTML = '';
-    panel.appendChild(header);
+    // Header: title + optional "+" for consultor
+    let addBtn = null;
+    if (_catalogIsConsultor) {
+      addBtn = document.createElement('button');
+      addBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
+      Object.assign(addBtn.style, {
+        width: '28px', height: '28px', borderRadius: '50%',
+        background: 'rgba(0,168,132,.15)', border: 'none',
+        color: '#00a884', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: '0',
+      });
+      addBtn.title = 'Crear nueva plantilla';
+      addBtn.addEventListener('click', () => { _catalogView = 'create'; renderCatalogPanel(); });
+    }
 
-    // ── List area ──────────────────────────────────────────────────
-    const list = document.createElement('div');
-    list.id = 'wspp-catalog-list';
-    Object.assign(list.style, {
-      overflowY: 'auto',
-      flex: '1',
-      padding: '8px',
-      scrollbarWidth: 'thin',
-      scrollbarColor: '#2a3942 transparent',
+    panel.appendChild(_mkHeader('César Vásquez', null, addBtn));
+
+    // Body
+    const body = document.createElement('div');
+    Object.assign(body.style, {
+      overflowY: 'auto', flex: '1', padding: '12px',
+      scrollbarWidth: 'thin', scrollbarColor: '#3a3a3c transparent',
     });
 
     if (loading) {
-      const loadEl = document.createElement('div');
-      Object.assign(loadEl.style, {
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        padding: '40px 0', gap: '12px',
-      });
-      const spinner = document.createElement('div');
-      Object.assign(spinner.style, {
-        width: '28px', height: '28px', borderRadius: '50%',
-        border: '3px solid rgba(0,168,132,.2)',
-        borderTopColor: '#00a884',
-      });
-      spinner.classList.add('wspp-spinning');
-      const loadTxt = document.createElement('div');
-      Object.assign(loadTxt.style, { color: '#8696a0', fontSize: '13px' });
-      loadTxt.textContent = 'Cargando plantillas...';
-      loadEl.appendChild(spinner);
-      loadEl.appendChild(loadTxt);
-      list.appendChild(loadEl);
+      const wrap = document.createElement('div');
+      Object.assign(wrap.style, { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '36px 0', gap: '10px' });
+      const sp = document.createElement('div');
+      Object.assign(sp.style, { width: '24px', height: '24px', borderRadius: '50%', border: '3px solid rgba(0,168,132,.2)', borderTopColor: '#00a884' });
+      sp.classList.add('wspp-spinning');
+      const txt = document.createElement('div');
+      Object.assign(txt.style, { color: '#8e8e93', fontSize: '13px' });
+      txt.textContent = 'Cargando...';
+      wrap.appendChild(sp); wrap.appendChild(txt);
+      body.appendChild(wrap);
     } else if (_catalogItems.length === 0) {
       const empty = document.createElement('div');
-      Object.assign(empty.style, {
-        color: '#8696a0', textAlign: 'center',
-        padding: '40px 16px', fontSize: '13px', lineHeight: '1.5',
-      });
-      empty.textContent = 'No hay audios disponibles';
-      list.appendChild(empty);
+      Object.assign(empty.style, { color: '#8e8e93', textAlign: 'center', padding: '36px 0', fontSize: '13px' });
+      empty.textContent = 'No hay plantillas disponibles';
+      body.appendChild(empty);
     } else {
+      // Group items by category
+      const grouped = {};
+      const ORDER = ['saludo','pedir_voto','agradecimiento','propuestas','respuesta_trabajo','respuesta_dinero','invitacion_evento','despedida'];
       _catalogItems.forEach(item => {
-        list.appendChild(_buildCatalogCard(item));
+        if (!grouped[item.category]) grouped[item.category] = [];
+        grouped[item.category].push(item);
       });
+
+      // Render all items as a 4-col grid (no section headers — clean iOS)
+      const grid = document.createElement('div');
+      Object.assign(grid.style, {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: '8px',
+      });
+
+      // Sort by ORDER then leftovers
+      const sorted = [..._catalogItems].sort((a, b) => {
+        const ia = ORDER.indexOf(a.category); const ib = ORDER.indexOf(b.category);
+        if (ia !== ib) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+        return (a.sort_order || 0) - (b.sort_order || 0);
+      });
+
+      sorted.forEach(item => { grid.appendChild(_buildGridTile(item)); });
+      body.appendChild(grid);
     }
 
-    panel.appendChild(list);
+    panel.appendChild(body);
 
-    // ── Status bar ─────────────────────────────────────────────────
+    // Status bar
     const statusBar = document.createElement('div');
     statusBar.id = 'wspp-catalog-status';
     Object.assign(statusBar.style, {
-      padding: '0 16px',
-      background: '#111b21',
+      padding: '0 14px', background: '#1c1c1e',
       borderTop: '1px solid rgba(255,255,255,.05)',
-      color: '#8696a0',
-      fontSize: '12px',
-      textAlign: 'center',
-      display: 'none',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '6px',
-      height: '0',
-      overflow: 'hidden',
-      transition: 'height .2s, padding .2s',
+      color: '#8e8e93', fontSize: '12px', textAlign: 'center',
+      display: 'none', alignItems: 'center', justifyContent: 'center',
+      height: '0', overflow: 'hidden', transition: 'height .2s, padding .2s',
     });
     panel.appendChild(statusBar);
   }
 
-  // ── Build a single catalog card ─────────────────────────────────────
-  function _buildCatalogCard(item) {
-    const colors = CATALOG_CATEGORY_COLORS[item.category] || { bg: 'rgba(134,150,160,.1)', accent: '#8696a0' };
-    const catLabel = CATALOG_CATEGORY_LABELS[item.category] || item.category;
+  // ── Grid tile — compact iOS app-icon style ──────────────────────────
+  function _buildGridTile(item) {
+    const colors = CATALOG_CATEGORY_COLORS[item.category] || { bg: 'rgba(134,150,160,.12)', accent: '#8696a0' };
     const catSvg = CATALOG_SVG[item.category] || CATALOG_SVG.propuestas;
-    const dur = _fmtDuration(item.duration_ms);
     const hasAudio = item.has_audio;
-    const isEditing = _catalogEditingId === item.id;
 
-    const card = document.createElement('div');
-    card.className = 'wspp-catalog-item';
-    card.dataset.id = item.id;
-    card.dataset.hasAudio = String(hasAudio);
-    Object.assign(card.style, {
-      padding: '0',
-      margin: '5px 0',
-      borderRadius: '12px',
-      background: '#111b21',
-      border: '1px solid rgba(255,255,255,.05)',
-      overflow: 'hidden',
-      transition: 'background .15s, border-color .15s',
-      opacity: hasAudio ? '1' : '0.5',
+    const tile = document.createElement('div');
+    tile.className = 'wspp-catalog-item';
+    Object.assign(tile.style, {
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'flex-start',
+      padding: '10px 4px 8px',
+      borderRadius: '14px',
+      background: '#2c2c2e',
+      cursor: hasAudio ? 'pointer' : 'default',
+      opacity: hasAudio ? '1' : '0.45',
+      transition: 'transform .12s, background .12s',
+      minHeight: '76px',
+      position: 'relative',
     });
+    if (!hasAudio) tile.style.pointerEvents = 'none';
 
-    // ── Card top row ─────────────────────────────────────────────
-    const top = document.createElement('div');
-    Object.assign(top.style, {
-      display: 'flex', alignItems: 'center', gap: '10px',
-      padding: '10px 12px 8px',
-    });
-
-    // Category icon pill
-    const iconPill = document.createElement('div');
-    Object.assign(iconPill.style, {
-      width: '36px', height: '36px', borderRadius: '10px',
+    // Icon circle
+    const iconWrap = document.createElement('div');
+    Object.assign(iconWrap.style, {
+      width: '40px', height: '40px', borderRadius: '12px',
       background: colors.bg,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: colors.accent, flexShrink: '0',
+      color: colors.accent, marginBottom: '6px',
+      boxShadow: `0 2px 8px ${colors.accent}30`,
     });
-    iconPill.innerHTML = catSvg;
+    iconWrap.innerHTML = catSvg;
+    iconWrap.querySelector('svg').setAttribute('width', '20');
+    iconWrap.querySelector('svg').setAttribute('height', '20');
 
-    // Text block
-    const textBlock = document.createElement('div');
-    textBlock.style.flex = '1';
-    textBlock.style.minWidth = '0';
-
-    const labelRow = document.createElement('div');
-    Object.assign(labelRow.style, {
-      display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px',
+    // Label
+    const lbl = document.createElement('div');
+    Object.assign(lbl.style, {
+      fontSize: '10px', fontWeight: '600', color: '#ebebf5',
+      textAlign: 'center', lineHeight: '1.2',
+      overflow: 'hidden', textOverflow: 'ellipsis',
+      display: '-webkit-box', webkitLineClamp: '2', webkitBoxOrient: 'vertical',
+      width: '100%', padding: '0 2px',
     });
-    const labelEl = document.createElement('div');
-    Object.assign(labelEl.style, {
-      color: '#e9edef', fontSize: '13px', fontWeight: '600',
-      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: '1',
-    });
-    labelEl.textContent = item.label;
+    // Use short label (first word of category label)
+    lbl.textContent = CATALOG_CATEGORY_LABELS[item.category] || item.label;
 
-    const catBadge = document.createElement('span');
-    Object.assign(catBadge.style, {
-      fontSize: '10px', fontWeight: '700', letterSpacing: '.3px',
-      color: colors.accent, background: colors.bg,
-      padding: '2px 6px', borderRadius: '20px', flexShrink: '0',
-      textTransform: 'uppercase',
-    });
-    catBadge.textContent = catLabel;
-    labelRow.appendChild(labelEl);
-    labelRow.appendChild(catBadge);
+    tile.appendChild(iconWrap);
+    tile.appendChild(lbl);
 
-    const descEl = document.createElement('div');
-    Object.assign(descEl.style, {
-      color: '#8696a0', fontSize: '11px',
-      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-    });
-    descEl.textContent = item.description || '';
-    textBlock.appendChild(labelRow);
-    textBlock.appendChild(descEl);
-
-    top.appendChild(iconPill);
-    top.appendChild(textBlock);
-    card.appendChild(top);
-
-    // ── Waveform + duration row + send button ────────────────────
-    const bottomRow = document.createElement('div');
-    Object.assign(bottomRow.style, {
-      display: 'flex', alignItems: 'center', gap: '8px',
-      padding: '4px 12px 10px',
-    });
-
-    const waveWrap = document.createElement('div');
-    waveWrap.className = 'wspp-waveform';
-    Object.assign(waveWrap.style, {
-      flex: '1', color: hasAudio ? colors.accent : '#3a4a52',
-    });
-    waveWrap.innerHTML = CATALOG_SVG.waveform;
-
-    const durEl = document.createElement('span');
-    Object.assign(durEl.style, {
-      fontSize: '11px', color: '#8696a0', flexShrink: '0', fontVariantNumeric: 'tabular-nums',
-    });
-    durEl.textContent = dur;
-
-    const sendBtn = document.createElement('button');
-    sendBtn.className = 'wspp-send-btn';
-    sendBtn.innerHTML = CATALOG_SVG.send;
-    Object.assign(sendBtn.style, {
-      width: '32px', height: '32px', borderRadius: '50%',
-      border: 'none', flexShrink: '0',
-      background: hasAudio ? `linear-gradient(135deg,${colors.accent},${colors.accent}cc)` : '#2a3942',
-      color: '#fff', cursor: hasAudio ? 'pointer' : 'default',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      transition: 'background .15s, transform .15s',
-      boxShadow: hasAudio ? `0 2px 8px ${colors.accent}55` : 'none',
-    });
-    if (!hasAudio) sendBtn.style.pointerEvents = 'none';
-    sendBtn.addEventListener('click', (e) => {
+    // Long-press / right-click → detail view (consultor)
+    tile.addEventListener('click', (e) => {
+      if (!hasAudio) return;
       e.stopPropagation();
-      if (hasAudio) handleCatalogItemClick(item.id, item.label);
+      // Single tap → send directly
+      handleCatalogItemClick(item.id, item.label);
     });
 
-    bottomRow.appendChild(waveWrap);
-    if (dur) bottomRow.appendChild(durEl);
-    bottomRow.appendChild(sendBtn);
-    card.appendChild(bottomRow);
-
-    // ── Consultor actions row ────────────────────────────────────
+    // Consultor: tap icon → open detail (hold Shift or right-click)
     if (_catalogIsConsultor) {
-      const actionsRow = document.createElement('div');
-      actionsRow.className = 'wspp-item-actions';
-      Object.assign(actionsRow.style, {
-        display: 'flex', alignItems: 'center', gap: '4px',
-        padding: '0 8px 8px',
-        opacity: '0',
-        transition: 'opacity .15s',
-      });
-
-      // Regenerate button
-      const regenBtn = document.createElement('button');
-      regenBtn.title = 'Regenerar audio con ElevenLabs';
-      regenBtn.innerHTML = CATALOG_SVG.refresh + '<span style="margin-left:4px;font-size:10px;font-weight:600;">Regenerar</span>';
-      Object.assign(regenBtn.style, {
-        display: 'flex', alignItems: 'center', padding: '5px 8px',
-        borderRadius: '8px', border: '1px solid rgba(255,255,255,.07)',
-        background: 'rgba(255,255,255,.03)', color: '#8696a0',
-        fontSize: '11px', cursor: 'pointer', transition: 'background .15s, color .15s',
-        gap: '2px',
-      });
-      regenBtn.classList.add('wspp-icon-btn');
-      regenBtn.addEventListener('click', (e) => {
+      tile.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
         e.stopPropagation();
-        _handleRegenerate(item.id, regenBtn);
-      });
-
-      // Edit script button
-      const editBtn = document.createElement('button');
-      editBtn.title = 'Editar guión del audio';
-      editBtn.innerHTML = CATALOG_SVG.edit + '<span style="margin-left:4px;font-size:10px;font-weight:600;">Editar guión</span>';
-      Object.assign(editBtn.style, {
-        display: 'flex', alignItems: 'center', padding: '5px 8px',
-        borderRadius: '8px', border: '1px solid rgba(255,255,255,.07)',
-        background: 'rgba(255,255,255,.03)', color: '#8696a0',
-        fontSize: '11px', cursor: 'pointer', transition: 'background .15s, color .15s',
-        gap: '2px',
-      });
-      editBtn.classList.add('wspp-icon-btn');
-      editBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        _catalogEditingId = isEditing ? null : item.id;
+        _catalogDetailId = item.id;
+        _catalogView = 'detail';
         renderCatalogPanel();
       });
-
-      actionsRow.appendChild(regenBtn);
-      actionsRow.appendChild(editBtn);
-      card.appendChild(actionsRow);
+      // "Edit" dot indicator
+      const dot = document.createElement('div');
+      Object.assign(dot.style, {
+        position: 'absolute', top: '5px', right: '5px',
+        width: '6px', height: '6px', borderRadius: '50%',
+        background: colors.accent, opacity: '.6',
+      });
+      tile.appendChild(dot);
     }
 
-    // ── Inline script editor (consultor, expanded) ───────────────
-    if (_catalogIsConsultor && isEditing) {
-      const editorWrap = document.createElement('div');
-      Object.assign(editorWrap.style, {
-        padding: '0 12px 12px',
-        borderTop: '1px solid rgba(255,255,255,.05)',
-        marginTop: '4px',
-      });
+    // Press feedback
+    tile.addEventListener('mousedown', () => { tile.style.transform = 'scale(.93)'; tile.style.background = '#3a3a3c'; });
+    tile.addEventListener('mouseup',   () => { tile.style.transform = 'scale(1)';   tile.style.background = '#2c2c2e'; });
+    tile.addEventListener('mouseleave',() => { tile.style.transform = 'scale(1)';   tile.style.background = '#2c2c2e'; });
 
-      const editorLabel = document.createElement('div');
-      Object.assign(editorLabel.style, {
-        fontSize: '10px', color: '#8696a0', textTransform: 'uppercase',
-        letterSpacing: '.5px', margin: '8px 0 6px',
-      });
-      editorLabel.textContent = 'Guión del audio';
+    return tile;
+  }
 
-      const textarea = document.createElement('textarea');
-      textarea.className = 'wspp-edit-area';
-      textarea.value = item.script_text || '';
-      Object.assign(textarea.style, {
-        width: '100%', minHeight: '80px', padding: '8px 10px',
-        background: '#0b1418', border: '1px solid rgba(255,255,255,.1)',
-        borderRadius: '8px', color: '#e9edef', fontSize: '12px',
-        lineHeight: '1.5', fontFamily: 'inherit', boxSizing: 'border-box',
-      });
+  // ── DETAIL VIEW — full card for a single item (consultor) ───────────
+  function _renderDetailView(panel) {
+    const item = _catalogItems.find(i => i.id === _catalogDetailId);
+    if (!item) { _catalogView = 'grid'; renderCatalogPanel(); return; }
 
-      const saveScriptBtn = document.createElement('button');
-      saveScriptBtn.innerHTML = CATALOG_SVG.check + '<span style="margin-left:5px;">Guardar guión</span>';
-      Object.assign(saveScriptBtn.style, {
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        marginTop: '8px', width: '100%', padding: '7px',
-        borderRadius: '8px', border: 'none',
-        background: 'linear-gradient(135deg,#00a884,#008f72)',
-        color: '#fff', fontSize: '12px', fontWeight: '700',
-        cursor: 'pointer',
-      });
-      saveScriptBtn.addEventListener('click', () => {
-        const newScript = textarea.value.trim();
-        if (!newScript) return;
-        _handleUpdateScript(item.id, newScript, saveScriptBtn);
-      });
+    const colors = CATALOG_CATEGORY_COLORS[item.category] || { bg: 'rgba(134,150,160,.12)', accent: '#8696a0' };
+    const catSvg = CATALOG_SVG[item.category] || CATALOG_SVG.propuestas;
+    const dur = _fmtDuration(item.duration_ms);
 
-      editorWrap.appendChild(editorLabel);
-      editorWrap.appendChild(textarea);
-      editorWrap.appendChild(saveScriptBtn);
-      card.appendChild(editorWrap);
-    }
+    panel.appendChild(_mkHeader(item.label, () => { _catalogView = 'grid'; renderCatalogPanel(); }));
 
-    return card;
+    const body = document.createElement('div');
+    Object.assign(body.style, { overflowY: 'auto', flex: '1', padding: '14px' });
+
+    // Icon + meta
+    const metaRow = document.createElement('div');
+    Object.assign(metaRow.style, { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' });
+    const iconBig = document.createElement('div');
+    Object.assign(iconBig.style, {
+      width: '52px', height: '52px', borderRadius: '14px',
+      background: colors.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: colors.accent, flexShrink: '0',
+    });
+    iconBig.innerHTML = catSvg;
+    iconBig.querySelector('svg').setAttribute('width','26'); iconBig.querySelector('svg').setAttribute('height','26');
+
+    const metaText = document.createElement('div');
+    const catBadge = document.createElement('div');
+    Object.assign(catBadge.style, {
+      display: 'inline-block', fontSize: '10px', fontWeight: '700',
+      color: colors.accent, background: colors.bg,
+      padding: '2px 8px', borderRadius: '20px', marginBottom: '4px', textTransform: 'uppercase',
+    });
+    catBadge.textContent = CATALOG_CATEGORY_LABELS[item.category] || item.category;
+    const descEl = document.createElement('div');
+    Object.assign(descEl.style, { fontSize: '12px', color: '#8e8e93', lineHeight: '1.4' });
+    descEl.textContent = item.description || '';
+    const durEl = document.createElement('div');
+    Object.assign(durEl.style, { fontSize: '11px', color: '#636366', marginTop: '2px' });
+    durEl.textContent = dur ? `⏱ ${dur}` : '';
+    metaText.appendChild(catBadge); metaText.appendChild(descEl); if (dur) metaText.appendChild(durEl);
+    metaRow.appendChild(iconBig); metaRow.appendChild(metaText);
+    body.appendChild(metaRow);
+
+    // Script textarea
+    const scriptLabel = _mkDetailLabel('Guión');
+    body.appendChild(scriptLabel);
+    const textarea = document.createElement('textarea');
+    textarea.id = 'wspp-detail-script';
+    textarea.className = 'wspp-edit-area';
+    textarea.value = item.script_text || '';
+    Object.assign(textarea.style, {
+      width: '100%', minHeight: '90px', padding: '10px 12px',
+      background: '#2c2c2e', border: '1px solid rgba(255,255,255,.08)',
+      borderRadius: '12px', color: '#e9edef', fontSize: '12px',
+      lineHeight: '1.6', fontFamily: 'inherit', boxSizing: 'border-box',
+      marginBottom: '10px',
+    });
+    body.appendChild(textarea);
+
+    // Action buttons row
+    const actions = document.createElement('div');
+    Object.assign(actions.style, { display: 'flex', flexDirection: 'column', gap: '8px' });
+
+    // Save script
+    const saveBtn = _mkActionBtn('Guardar guión', '#00a884', CATALOG_SVG.check);
+    saveBtn.addEventListener('click', () => {
+      const s = textarea.value.trim();
+      if (!s) return;
+      _handleUpdateScript(item.id, s, saveBtn);
+    });
+    actions.appendChild(saveBtn);
+
+    // Regenerate audio
+    const regenBtn = _mkActionBtn('Regenerar audio', '#818cf8', CATALOG_SVG.refresh);
+    regenBtn.addEventListener('click', () => _handleRegenerate(item.id, regenBtn));
+    actions.appendChild(regenBtn);
+
+    // Delete item
+    const delBtn = _mkActionBtn('Eliminar plantilla', '#ef5350',
+      `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`
+    );
+    Object.assign(delBtn.style, { background: 'rgba(239,83,80,.12)', color: '#ef5350' });
+    delBtn.addEventListener('click', () => {
+      if (!confirm(`¿Eliminar "${item.label}"? Esta acción no se puede deshacer.`)) return;
+      _handleDeleteItem(item.id, delBtn);
+    });
+    actions.appendChild(delBtn);
+
+    body.appendChild(actions);
+    panel.appendChild(body);
+
+    // Status bar
+    const statusBar = document.createElement('div');
+    statusBar.id = 'wspp-catalog-status';
+    Object.assign(statusBar.style, {
+      padding: '0 14px', background: '#1c1c1e',
+      borderTop: '1px solid rgba(255,255,255,.05)',
+      color: '#8e8e93', fontSize: '12px', textAlign: 'center',
+      display: 'none', alignItems: 'center', justifyContent: 'center',
+      height: '0', overflow: 'hidden', transition: 'height .2s',
+    });
+    panel.appendChild(statusBar);
+  }
+
+  // ── CREATE VIEW — form to add a new item ────────────────────────────
+  function _renderCreateView(panel) {
+    panel.appendChild(_mkHeader('Nueva plantilla', () => { _catalogView = 'grid'; renderCatalogPanel(); }));
+
+    const CATEGORY_OPTIONS = [
+      { value: 'saludo', label: 'Saludo' },
+      { value: 'agradecimiento', label: 'Agradecimiento' },
+      { value: 'pedir_voto', label: 'Pedir voto' },
+      { value: 'respuesta_trabajo', label: 'Respuesta trabajo' },
+      { value: 'respuesta_dinero', label: 'Respuesta dinero' },
+      { value: 'invitacion_evento', label: 'Invitación a evento' },
+      { value: 'despedida', label: 'Despedida' },
+      { value: 'propuestas', label: 'Propuestas' },
+    ];
+
+    const body = document.createElement('div');
+    Object.assign(body.style, { overflowY: 'auto', flex: '1', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' });
+
+    // Label input
+    body.appendChild(_mkDetailLabel('Nombre'));
+    const labelInput = _mkTextInput('Ej: Saludo inicial');
+    labelInput.id = 'wspp-create-label';
+    body.appendChild(labelInput);
+
+    // Description input
+    body.appendChild(_mkDetailLabel('Descripción corta'));
+    const descInput = _mkTextInput('Para quién es este audio');
+    descInput.id = 'wspp-create-desc';
+    body.appendChild(descInput);
+
+    // Category select
+    body.appendChild(_mkDetailLabel('Categoría'));
+    const catSel = document.createElement('select');
+    catSel.id = 'wspp-create-category';
+    Object.assign(catSel.style, {
+      width: '100%', padding: '10px 12px', background: '#2c2c2e',
+      border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px',
+      color: '#e9edef', fontSize: '13px', cursor: 'pointer',
+    });
+    CATEGORY_OPTIONS.forEach(opt => {
+      const o = document.createElement('option');
+      o.value = opt.value; o.textContent = opt.label;
+      catSel.appendChild(o);
+    });
+    body.appendChild(catSel);
+
+    // Script textarea
+    body.appendChild(_mkDetailLabel('Guión (texto que se convertirá en audio)'));
+    const scriptArea = document.createElement('textarea');
+    scriptArea.id = 'wspp-create-script';
+    scriptArea.className = 'wspp-edit-area';
+    scriptArea.placeholder = 'Hola, habla el doctor César Vásquez...';
+    Object.assign(scriptArea.style, {
+      width: '100%', minHeight: '90px', padding: '10px 12px',
+      background: '#2c2c2e', border: '1px solid rgba(255,255,255,.08)',
+      borderRadius: '12px', color: '#e9edef', fontSize: '12px',
+      lineHeight: '1.6', fontFamily: 'inherit', boxSizing: 'border-box',
+    });
+    body.appendChild(scriptArea);
+
+    // Create button
+    const createBtn = _mkActionBtn('Crear plantilla', '#00a884', CATALOG_SVG.check);
+    createBtn.addEventListener('click', () => {
+      const label = labelInput.value.trim();
+      const desc  = descInput.value.trim();
+      const cat   = catSel.value;
+      const script = scriptArea.value.trim();
+      if (!label || !script) {
+        _showCatalogStatus('Nombre y guión son obligatorios', '#ef5350', 3000);
+        return;
+      }
+      _handleCreateItem({ label, description: desc, category: cat, script_text: script }, createBtn);
+    });
+    body.appendChild(createBtn);
+
+    panel.appendChild(body);
+
+    const statusBar = document.createElement('div');
+    statusBar.id = 'wspp-catalog-status';
+    Object.assign(statusBar.style, {
+      padding: '0 14px', background: '#1c1c1e',
+      borderTop: '1px solid rgba(255,255,255,.05)',
+      color: '#8e8e93', fontSize: '12px', textAlign: 'center',
+      display: 'none', alignItems: 'center', justifyContent: 'center',
+      height: '0', overflow: 'hidden', transition: 'height .2s',
+    });
+    panel.appendChild(statusBar);
+  }
+
+  // ── Small helpers ───────────────────────────────────────────────────
+  function _mkDetailLabel(text) {
+    const l = document.createElement('div');
+    Object.assign(l.style, { fontSize: '11px', color: '#8e8e93', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: '4px' });
+    l.textContent = text;
+    return l;
+  }
+
+  function _mkTextInput(placeholder) {
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.placeholder = placeholder;
+    inp.className = 'wspp-edit-area';
+    Object.assign(inp.style, {
+      width: '100%', padding: '10px 12px', background: '#2c2c2e',
+      border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px',
+      color: '#e9edef', fontSize: '13px', fontFamily: 'inherit', boxSizing: 'border-box',
+      outline: 'none',
+    });
+    return inp;
+  }
+
+  function _mkActionBtn(label, color, iconSvg) {
+    const btn = document.createElement('button');
+    btn.innerHTML = `<span style="display:flex;align-items:center;gap:6px;">${iconSvg}<span>${label}</span></span>`;
+    Object.assign(btn.style, {
+      width: '100%', padding: '11px', borderRadius: '12px', border: 'none',
+      background: `${color}22`, color,
+      fontSize: '13px', fontWeight: '700', cursor: 'pointer',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      transition: 'background .15s',
+    });
+    btn.addEventListener('mouseenter', () => { btn.style.background = `${color}33`; });
+    btn.addEventListener('mouseleave', () => { btn.style.background = `${color}22`; });
+    return btn;
   }
 
   // ── Regenerate audio for an item ────────────────────────────────────
@@ -1547,11 +1679,35 @@
     _pendingUpdateBtn = { el: btn, orig: origContent };
   }
 
+  // ── Delete item ─────────────────────────────────────────────────────
+  function _handleDeleteItem(itemId, btn) {
+    const origContent = btn.innerHTML;
+    btn.textContent = 'Eliminando...';
+    btn.disabled = true;
+
+    window.postMessage({ type: 'DELETE_CATALOG_ITEM', id: itemId }, WA_ORIGIN);
+    _pendingDeleteId = itemId;
+    _pendingDeleteBtn = { el: btn, orig: origContent };
+  }
+
+  // ── Create item ──────────────────────────────────────────────────────
+  function _handleCreateItem(data, btn) {
+    const origContent = btn.innerHTML;
+    btn.textContent = 'Creando...';
+    btn.disabled = true;
+
+    window.postMessage({ type: 'CREATE_CATALOG_ITEM', data }, WA_ORIGIN);
+    _pendingCreateBtn = { el: btn, orig: origContent };
+  }
+
   // Pending regen/update state
   let _pendingRegenId = null;
   let _pendingRegenBtn = null;
   let _pendingUpdateId = null;
   let _pendingUpdateBtn = null;
+  let _pendingDeleteId = null;
+  let _pendingDeleteBtn = null;
+  let _pendingCreateBtn = null;
 
   // ── Show/hide status bar ────────────────────────────────────────────
   function _showCatalogStatus(text, color, duration) {
@@ -1857,6 +2013,48 @@
         _showCatalogStatus('Error al guardar: ' + (e.data.error || 'intenta de nuevo'), '#ef5350', 4000);
       }
       _pendingUpdateId = null;
+      return;
+    }
+
+    // ── Delete item response ───────────────────────────────────────
+    if (e.data?.type === 'DELETE_CATALOG_ITEM_DONE') {
+      if (_pendingDeleteBtn) {
+        _pendingDeleteBtn.el.innerHTML = _pendingDeleteBtn.orig;
+        _pendingDeleteBtn.el.disabled = false;
+        _pendingDeleteBtn = null;
+      }
+      if (e.data.ok) {
+        // Remove from local list
+        _catalogItems = _catalogItems.filter(i => i.id !== e.data.id);
+        window.postMessage({ type: 'BUST_CATALOG_CACHE' }, WA_ORIGIN);
+        _catalogView = 'grid';
+        _catalogDetailId = null;
+        _showCatalogStatus('Plantilla eliminada ✓', '#00a884', 2500);
+        if (_catalogPanelOpen) renderCatalogPanel();
+      } else {
+        _showCatalogStatus('Error al eliminar: ' + (e.data.error || 'intenta de nuevo'), '#ef5350', 4000);
+      }
+      _pendingDeleteId = null;
+      return;
+    }
+
+    // ── Create item response ───────────────────────────────────────
+    if (e.data?.type === 'CREATE_CATALOG_ITEM_DONE') {
+      if (_pendingCreateBtn) {
+        _pendingCreateBtn.el.innerHTML = _pendingCreateBtn.orig;
+        _pendingCreateBtn.el.disabled = false;
+        _pendingCreateBtn = null;
+      }
+      if (e.data.ok && e.data.item) {
+        // Add new item to local list and go back to grid
+        _catalogItems.push(e.data.item);
+        window.postMessage({ type: 'BUST_CATALOG_CACHE' }, WA_ORIGIN);
+        _catalogView = 'grid';
+        _showCatalogStatus('Plantilla creada — generá el audio ✓', '#00a884', 3000);
+        if (_catalogPanelOpen) renderCatalogPanel();
+      } else {
+        _showCatalogStatus('Error al crear: ' + (e.data.error || 'intenta de nuevo'), '#ef5350', 4000);
+      }
       return;
     }
   });
