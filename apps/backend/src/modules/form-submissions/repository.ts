@@ -59,24 +59,35 @@ export async function insertBatch(
           client_id text
         )
       ),
+      -- Deduplicate within the batch itself (keep first client_id per phone+campaign)
+      deduped AS (
+        SELECT DISTINCT ON (campaign_id, CASE WHEN COALESCE(data::jsonb->>'telefono','') <> '' THEN data::jsonb->>'telefono' ELSE client_id END)
+          form_definition_id, campaign_id, meet_id, meet_group_id, submitted_by,
+          data, lat, lng, client_id
+        FROM incoming
+        ORDER BY campaign_id,
+                 CASE WHEN COALESCE(data::jsonb->>'telefono','') <> '' THEN data::jsonb->>'telefono' ELSE client_id END,
+                 client_id ASC
+      ),
       inserted AS (
         INSERT INTO form_submissions (
           form_definition_id, campaign_id, meet_id, meet_group_id, submitted_by,
           data, lat, lng, client_id, synced_at
         )
         SELECT
-          i.form_definition_id, i.campaign_id, i.meet_id, i.meet_group_id, i.submitted_by,
-          i.data::jsonb, i.lat, i.lng, i.client_id, now()
-        FROM incoming i
-        -- Skip rows where the phone already exists in this campaign (uq_fs_campaign_telefono)
+          d.form_definition_id, d.campaign_id, d.meet_id, d.meet_group_id, d.submitted_by,
+          d.data::jsonb, d.lat, d.lng, d.client_id, now()
+        FROM deduped d
+        -- Skip phones already in the DB for this campaign
         WHERE NOT EXISTS (
           SELECT 1 FROM public.form_submissions ex
-          WHERE ex.campaign_id = i.campaign_id
-            AND ex.data->>'telefono' = i.data::jsonb->>'telefono'
-            AND COALESCE(i.data::jsonb->>'telefono', '') <> ''
+          WHERE ex.campaign_id = d.campaign_id
+            AND ex.data->>'telefono' = d.data::jsonb->>'telefono'
+            AND COALESCE(d.data::jsonb->>'telefono', '') <> ''
             AND ex.deleted_at IS NULL
         )
-        ON CONFLICT (client_id) DO NOTHING
+        -- client_id dedup (idempotent retries) + phone unique index as safety net
+        ON CONFLICT DO NOTHING
         RETURNING client_id
       )
       SELECT

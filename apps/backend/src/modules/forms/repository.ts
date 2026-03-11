@@ -104,6 +104,17 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
           form_definition_id uuid
         )
       ),
+      -- Deduplicate within the batch itself (keep oldest client_id per phone+campaign)
+      deduped AS (
+        SELECT DISTINCT ON (campaign_id, CASE WHEN telefono <> '' THEN telefono ELSE client_id END)
+          nombre, telefono, fecha, x, y, zona, candidate, encuestador, encuestador_id,
+          candidato_preferido, client_id, home_maps_url, polling_place_url, comentarios,
+          campaign_id, form_definition_id
+        FROM incoming
+        ORDER BY campaign_id,
+                 CASE WHEN telefono <> '' THEN telefono ELSE client_id END,
+                 client_id ASC
+      ),
       inserted AS (
         INSERT INTO public.forms (
           nombre, telefono, fecha, x, y, zona, candidate, encuestador, encuestador_id,
@@ -111,19 +122,20 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
           campaign_id, form_definition_id
         )
         SELECT
-          i.nombre, i.telefono, i.fecha, i.x, i.y, i.zona, i.candidate, i.encuestador,
-          i.encuestador_id, i.candidato_preferido, i.client_id, i.home_maps_url,
-          i.polling_place_url, i.comentarios, i.campaign_id, i.form_definition_id
-        FROM incoming i
-        -- Skip rows where the phone already exists in this campaign (uq_forms_campaign_telefono)
+          d.nombre, d.telefono, d.fecha, d.x, d.y, d.zona, d.candidate, d.encuestador,
+          d.encuestador_id, d.candidato_preferido, d.client_id, d.home_maps_url,
+          d.polling_place_url, d.comentarios, d.campaign_id, d.form_definition_id
+        FROM deduped d
+        -- Skip phones already in the DB for this campaign
         WHERE NOT EXISTS (
           SELECT 1 FROM public.forms ex
-          WHERE ex.campaign_id = i.campaign_id
-            AND ex.telefono = i.telefono
-            AND ex.telefono <> ''
+          WHERE ex.campaign_id = d.campaign_id
+            AND ex.telefono = d.telefono
+            AND d.telefono <> ''
             AND ex.deleted_at IS NULL
         )
-        ON CONFLICT (client_id) DO NOTHING
+        -- client_id dedup (idempotent retries) + phone unique index as safety net
+        ON CONFLICT DO NOTHING
         RETURNING client_id
       )
       SELECT
