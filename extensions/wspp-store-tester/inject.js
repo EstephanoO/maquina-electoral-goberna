@@ -6,16 +6,25 @@
   // H-3+H-4: Only accept postMessages from WA Web's own origin
   const WA_ORIGIN = 'https://web.whatsapp.com';
 
-  // ─── own_number desde storage (via content.js) ───────────────────────────────
-  // content.js envía WSPP_SET_OWN_NUMBER al arrancar y cuando el usuario lo cambia.
+  // ─── own_number y user_role desde storage (via content.js) ──────────────────
+  // inject.js corre en world MAIN y NO tiene acceso a chrome.storage.
+  // content.js (ISOLATED) lee ambos valores y los empuja via postMessage.
   let _ownNumber = null;
+  let _catalogIsConsultor = false; // true when effective role is consultor or admin
 
   window.addEventListener('message', (e) => {
-    // H-4: Validate origin — only accept from same window (content.js bridge)
     if (e.source !== window) return;
-    if (e.data?.type !== 'WSPP_SET_OWN_NUMBER') return;
-    _ownNumber = e.data.number || null;
-    console.log('[WSPP] own_number actualizado:', _ownNumber ?? 'NULL');
+    if (e.data?.type === 'WSPP_SET_OWN_NUMBER') {
+      _ownNumber = e.data.number || null;
+      console.log('[WSPP] own_number actualizado:', _ownNumber ?? 'NULL');
+      return;
+    }
+    if (e.data?.type === 'WSPP_SET_USER_ROLE') {
+      const role = e.data.role || 'agente_digital';
+      _catalogIsConsultor = ['admin', 'consultor'].includes(role);
+      console.log('[WSPP] user_role actualizado:', role, '| consultor:', _catalogIsConsultor);
+      return;
+    }
   });
 
   // M-7: Removed dead webpack hook code (~35 lines). WA uses Metro/Haste, not webpack.
@@ -980,7 +989,7 @@
   let _catalogItems = [];
   let _catalogPanelOpen = false;
   let _catalogLoading = false;
-  let _catalogIsConsultor = false; // true if logged-in user has consultor+ role
+  // _catalogIsConsultor is declared at the top of the IIFE (line ~13), set via WSPP_SET_USER_ROLE
   let _catalogEditingId = null;    // id of item currently being edited
 
   // ── SVG icons (inline, no emoji) ───────────────────────────────────
@@ -1060,15 +1069,6 @@
     root.appendChild(s);
   }
 
-  // ── Detect consultor role from storage ─────────────────────────────
-  function _refreshConsultorFlag(cb) {
-    chrome.storage.local.get(['wspp_user_role'], (s) => {
-      const role = s.wspp_user_role || '';
-      _catalogIsConsultor = ['admin','consultor'].includes(role);
-      if (cb) cb();
-    });
-  }
-
   // ── Format duration ms → m:ss ──────────────────────────────────────
   function _fmtDuration(ms) {
     if (!ms) return '';
@@ -1124,13 +1124,12 @@
     const btn = document.getElementById('wspp-catalog-btn');
     if (btn) btn.style.boxShadow = '0 0 0 3px rgba(0,168,132,.4), 0 4px 16px rgba(0,168,132,.5)';
 
-    _refreshConsultorFlag(() => {
-      if (_catalogItems.length === 0 && !_catalogLoading) {
-        _catalogLoading = true;
-        window.postMessage({ type: 'FETCH_AUDIO_CATALOG' }, WA_ORIGIN);
-      }
-      renderCatalogPanel();
-    });
+    // _catalogIsConsultor is already set via WSPP_SET_USER_ROLE from content.js
+    if (_catalogItems.length === 0 && !_catalogLoading) {
+      _catalogLoading = true;
+      window.postMessage({ type: 'FETCH_AUDIO_CATALOG' }, WA_ORIGIN);
+    }
+    renderCatalogPanel();
   }
 
   // ── Render the full catalog panel ───────────────────────────────────

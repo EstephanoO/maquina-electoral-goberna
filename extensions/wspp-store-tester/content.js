@@ -7,21 +7,30 @@
 // H-3: Use specific origin for postMessage instead of '*'
 const WA_ORIGIN = 'https://web.whatsapp.com';
 
-// ── Empujar own_number al MAIN world ────────────────────────────────
-// inject.js escucha WSPP_SET_OWN_NUMBER y cachea el valor.
+// ── Empujar own_number y user_role al MAIN world ─────────────────────
+// inject.js vive en world MAIN y no tiene acceso a chrome.storage.
+// content.js (ISOLATED) lee los valores y los envía via postMessage.
 function pushOwnNumber(number) {
   window.postMessage({ type: 'WSPP_SET_OWN_NUMBER', number: number || null }, WA_ORIGIN);
 }
 
-// Al arrancar: leer del storage y empujar
-chrome.storage.local.get('wspp_own_number', (s) => {
+function pushUserRole(role) {
+  window.postMessage({ type: 'WSPP_SET_USER_ROLE', role: role || 'agente_digital' }, WA_ORIGIN);
+}
+
+// Al arrancar: leer del storage y empujar ambos valores
+chrome.storage.local.get(['wspp_own_number', 'wspp_user_role'], (s) => {
   pushOwnNumber(s.wspp_own_number || null);
+  pushUserRole(s.wspp_user_role || 'agente_digital');
 });
 
-// Si el usuario lo cambia desde el popup mientras WA está abierto: actualizar en caliente
+// Si el usuario cambia valores desde el popup mientras WA está abierto: actualizar en caliente
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.wspp_own_number !== undefined) {
     pushOwnNumber(changes.wspp_own_number.newValue || null);
+  }
+  if (changes.wspp_user_role !== undefined) {
+    pushUserRole(changes.wspp_user_role.newValue || 'agente_digital');
   }
 });
 
