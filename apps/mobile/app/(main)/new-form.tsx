@@ -14,8 +14,9 @@
  * then synced to backend when online.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -29,9 +30,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
+import * as Network from 'expo-network';
 
 import { useCandidate, useFormConfig, useAgent, useActiveCampaign } from '@/lib/app-context';
-import { queueForm, forceSyncNow } from '@/lib/offline-queue';
+import { queueForm, forceSyncNow, phoneExistsLocally } from '@/lib/offline-queue';
+import { checkPhoneDuplicate } from '@/lib/api';
 import { appEvents } from '@/lib/events';
 import { latLonToUtm } from '@/lib/utm';
 import type { FormField, UtmData } from '@/lib/types';
@@ -118,11 +121,17 @@ function DynamicField({
   value,
   onChange,
   primaryColor,
+  externalError,
+  checkingPhone,
 }: {
   field: FormField;
   value: string;
   onChange: (val: string) => void;
   primaryColor: string;
+  /** Error message injected by the parent (e.g. duplicate phone) */
+  externalError?: string | null;
+  /** Whether a phone duplicate check is in progress */
+  checkingPhone?: boolean;
 }) {
   const [capturandoGps, setCapturandoGps] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
@@ -280,31 +289,42 @@ function DynamicField({
 
   const multiline = field.type === 'textarea';
 
+  // Combined error: local format error takes priority, then external (duplicate) error
+  const displayError = isPhoneField ? (phoneError ?? externalError ?? null) : null;
+  const hasError = displayError !== null;
+
   return (
     <View style={styles.field}>
       <Text style={styles.label}>
         {field.label} {showRequired && <RequiredAsterisk />}
         {isOptional && <Text style={styles.optionalLabel}> (opcional)</Text>}
       </Text>
-      <TextInput
-        style={[
-          styles.input,
-          multiline && styles.inputMultiline,
-          isPhoneField && phoneError && styles.inputError,
-        ]}
-        placeholder={isPhoneField ? '987654321' : (field.placeholder ?? '')}
-        placeholderTextColor={TEXT_MUTED}
-        value={value}
-        onChangeText={isPhoneField ? handlePhoneChange : onChange}
-        keyboardType={keyboardType}
-        multiline={multiline}
-        numberOfLines={multiline ? 3 : 1}
-        textAlignVertical={multiline ? 'top' : 'auto'}
-        maxLength={isPhoneField ? 9 : field.validation?.maxLength}
-        autoCapitalize={field.type === 'email' ? 'none' : 'sentences'}
-      />
-      {isPhoneField && phoneError && (
-        <Text style={styles.fieldError}>{phoneError}</Text>
+      <View>
+        <TextInput
+          style={[
+            styles.input,
+            multiline && styles.inputMultiline,
+            isPhoneField && hasError && styles.inputError,
+          ]}
+          placeholder={isPhoneField ? '987654321' : (field.placeholder ?? '')}
+          placeholderTextColor={TEXT_MUTED}
+          value={value}
+          onChangeText={isPhoneField ? handlePhoneChange : onChange}
+          keyboardType={keyboardType}
+          multiline={multiline}
+          numberOfLines={multiline ? 3 : 1}
+          textAlignVertical={multiline ? 'top' : 'auto'}
+          maxLength={isPhoneField ? 9 : field.validation?.maxLength}
+          autoCapitalize={field.type === 'email' ? 'none' : 'sentences'}
+        />
+        {isPhoneField && checkingPhone && (
+          <View style={styles.phoneCheckingIndicator}>
+            <ActivityIndicator size="small" color={TEXT_MUTED} />
+          </View>
+        )}
+      </View>
+      {isPhoneField && hasError && (
+        <Text style={styles.fieldError}>{displayError}</Text>
       )}
     </View>
   );
@@ -325,6 +345,74 @@ export default function NewFormScreen() {
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [ubicacionUtm, setUbicacionUtm] = useState<UtmData | null>(null);
   const [enviando, setEnviando] = useState(false);
+
+  // ── Phone duplicate detection ───────────────────────────────
+  const [phoneDupError, setPhoneDupError] = useState<string | null>(null);
+  const [checkingPhone, setCheckingPhone] = useState(false);
+  const phoneCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Detect which field is the phone field (resolved once when formConfig changes)
+  const phoneFieldId = formConfig?.schema.fields.find((f) => {
+    return f.type === 'phone'
+      || matchesKeywords(f.label, PHONE_KEYWORDS)
+      || matchesKeywords(f.id, PHONE_KEYWORDS);
+  })?.id ?? null;
+
+  // Run duplicate check whenever the phone value reaches 9 valid digits
+  useEffect(() => {
+    if (!phoneFieldId || !campaign?.id) return;
+
+    const phoneValue = (formData[phoneFieldId] ?? '').trim();
+
+    // Clear error + cancel pending check when phone is incomplete
+    if (!PERU_PHONE_REGEX.test(phoneValue)) {
+      setPhoneDupError(null);
+      setCheckingPhone(false);
+      if (phoneCheckTimer.current) clearTimeout(phoneCheckTimer.current);
+      return;
+    }
+
+    // Debounce 300ms so we don't fire on every keystroke
+    if (phoneCheckTimer.current) clearTimeout(phoneCheckTimer.current);
+
+    phoneCheckTimer.current = setTimeout(async () => {
+      setCheckingPhone(true);
+      setPhoneDupError(null);
+
+      try {
+        // ── Check 1: SQLite local (immediate, offline-safe) ──────
+        const localDup = await phoneExistsLocally(campaign.id, phoneValue);
+        if (localDup) {
+          setPhoneDupError('Este número ya fue registrado');
+          setCheckingPhone(false);
+          return;
+        }
+
+        // ── Check 2: Backend (requires network) ─────────────────
+        const networkState = await Network.getNetworkStateAsync();
+        if (networkState.isConnected && networkState.isInternetReachable) {
+          const result = await checkPhoneDuplicate(phoneValue);
+          if (result.ok && result.data.exists) {
+            setPhoneDupError('Este número ya está registrado en el servidor');
+            setCheckingPhone(false);
+            return;
+          }
+        }
+
+        // No duplicate found
+        setPhoneDupError(null);
+      } catch {
+        // Network error → graceful degradation, let submission pass
+        setPhoneDupError(null);
+      } finally {
+        setCheckingPhone(false);
+      }
+    }, 300);
+
+    return () => {
+      if (phoneCheckTimer.current) clearTimeout(phoneCheckTimer.current);
+    };
+  }, [formData, phoneFieldId, campaign?.id]);
 
   const updateField = useCallback((fieldId: string, value: string) => {
     setFormData((prev) => ({ ...prev, [fieldId]: value }));
@@ -364,6 +452,11 @@ export default function NewFormScreen() {
         const phoneValue = formData[field.id].trim();
         if (!PERU_PHONE_REGEX.test(phoneValue)) {
           Alert.alert('Telefono invalido', 'El telefono debe tener 9 digitos y empezar con 9.');
+          return;
+        }
+        // Block submission if duplicate was detected
+        if (phoneDupError) {
+          Alert.alert('Número duplicado', phoneDupError);
           return;
         }
       }
@@ -511,6 +604,8 @@ export default function NewFormScreen() {
                     : (val) => updateField(field.id, val)
                 }
                 primaryColor={primary}
+                externalError={field.id === phoneFieldId ? phoneDupError : null}
+                checkingPhone={field.id === phoneFieldId ? checkingPhone : false}
               />
             ))}
 
@@ -524,12 +619,12 @@ export default function NewFormScreen() {
           </View>
 
           <Pressable
-            style={[styles.saveBtn, { backgroundColor: secondary }, enviando && styles.saveBtnDisabled]}
+            style={[styles.saveBtn, { backgroundColor: secondary }, (enviando || !!phoneDupError || checkingPhone) && styles.saveBtnDisabled]}
             onPress={handleSubmit}
-            disabled={enviando}
+            disabled={enviando || !!phoneDupError || checkingPhone}
           >
             <Text style={[styles.saveBtnText, { color: primary }]}>
-              {enviando ? 'Enviando...' : 'Enviar registro'}
+              {enviando ? 'Enviando...' : checkingPhone ? 'Verificando...' : 'Enviar registro'}
             </Text>
           </Pressable>
         </ScrollView>
@@ -584,6 +679,13 @@ const styles = StyleSheet.create({
     color: ERROR_RED,
     fontFamily: FONT,
     marginTop: 4,
+  },
+  phoneCheckingIndicator: {
+    position: 'absolute',
+    right: 14,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
   },
   gpsBtn: {
     borderWidth: 1,

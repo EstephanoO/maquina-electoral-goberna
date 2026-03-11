@@ -59,6 +59,7 @@ export {
   getFormByClientId,
   getAllLocalForms,
   getLocalFormsByCampaign,
+  phoneExistsLocally,
   type FormPayload,
   type PendingForm,
 } from './forms';

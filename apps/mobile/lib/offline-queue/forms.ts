@@ -191,6 +191,27 @@ export async function getFormQueueStats(): Promise<{
 }
 
 /**
+ * Check if a phone number already exists locally in pending_forms
+ * for the given campaign (any sync status except failed with max attempts).
+ * Returns true if found → the agent already submitted this number.
+ */
+export async function phoneExistsLocally(
+  campaignId: string,
+  phone: string,
+): Promise<boolean> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ found: number }>(
+    `SELECT 1 AS found FROM pending_forms
+     WHERE campaign_id = ?
+       AND json_extract(payload, '$.telefono') = ?
+       AND sync_status != 'failed'
+     LIMIT 1`,
+    [campaignId, phone],
+  );
+  return row !== null;
+}
+
+/**
  * Get a specific form by client_id
  */
 export async function getFormByClientId(clientId: string): Promise<PendingForm | null> {

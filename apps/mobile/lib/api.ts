@@ -300,6 +300,23 @@ export async function submitForm(
   );
 }
 
+// ─── Phone duplicate check ──────────────────────────────────
+
+/**
+ * GET /api/forms/check-phone?phone=999888777
+ * Returns { exists: boolean } — true if this phone already exists
+ * in form_submissions for the active campaign.
+ * Used by the form screen to block submission of duplicate phones.
+ */
+export async function checkPhoneDuplicate(
+  phone: string,
+): Promise<ApiResult<{ exists: boolean; phone: string }>> {
+  return request<{ exists: boolean; phone: string }>(
+    'GET',
+    `/forms/check-phone?phone=${encodeURIComponent(phone)}`,
+  );
+}
+
 // ─── Access Requests ────────────────────────────────────────
 
 /** POST /api/access-requests — authenticated user requests access to a campaign */

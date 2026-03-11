@@ -275,6 +275,42 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // GET /api/forms/check-phone?phone=999888777 — fast duplicate check
+    // Returns { exists: boolean } so the mobile client can block submission
+    // before the form even hits the write-behind queue.
+    app.get(
+      "/api/forms/check-phone",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        const { phone } = request.query as { phone?: string };
+        const cleaned = (phone ?? "").replace(/\D/g, "").trim();
+
+        if (!cleaned) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "phone es requerido"));
+        }
+
+        try {
+          const duplicates = await findDuplicatePhones(campaignId, [cleaned]);
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            exists: duplicates.length > 0,
+            phone: cleaned,
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "check-phone failed");
+          return reply.code(500).send(errorPayload(requestId, "CHECK_PHONE_ERROR", "error verificando telefono"));
+        }
+      },
+    );
+
     // DELETE /api/forms/:id - Delete a form (admin only)
     app.delete(
       "/api/forms/:id",
