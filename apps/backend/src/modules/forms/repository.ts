@@ -86,17 +86,19 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
 
   const payload = JSON.stringify(
     forms.map((form) => ({
-      nombre: form.nombre,
-      telefono: form.telefono,
-      fecha: form.fecha,
-      x: form.x,
-      y: form.y,
-      zona: form.zona,
+      // All NOT NULL columns get safe defaults to prevent DLQ on missing fields
+      nombre: (form.nombre as string | null | undefined) ?? '',
+      telefono: (form.telefono as string | null | undefined) ?? '',
+      fecha: form.fecha ?? new Date().toISOString(),
+      // x/y are NOT NULL in DB — default to 0 when GPS was not captured (lugar_registro path)
+      x: (form.x as number | null | undefined) ?? 0,
+      y: (form.y as number | null | undefined) ?? 0,
+      zona: (form.zona as string | null | undefined) ?? '',
       // Use candidato_preferido as fallback for candidate (legacy field)
       candidate: form.candidate ?? form.candidato_preferido ?? "",
-      encuestador: form.encuestador,
-      encuestador_id: form.encuestador_id,
-      candidato_preferido: form.candidato_preferido,
+      encuestador: (form.encuestador as string | null | undefined) ?? '',
+      encuestador_id: (form.encuestador_id as string | null | undefined) ?? '',
+      candidato_preferido: (form.candidato_preferido as string | null | undefined) ?? '',
       client_id: form.client_id,
       home_maps_url: form.home_maps_url ?? null,
       polling_place_url: form.polling_place_url ?? null,

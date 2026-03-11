@@ -18,10 +18,12 @@
  * then synced to backend when online.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  InputAccessoryView,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -41,7 +43,8 @@ import { queueForm, forceSyncNow, phoneExistsLocally } from '@/lib/offline-queue
 import { checkPhoneDuplicate } from '@/lib/api';
 import { appEvents } from '@/lib/events';
 import { latLonToUtm } from '@/lib/utm';
-import type { FormField, UtmData } from '@/lib/types';
+import DistritoPicker from '@/components/DistritoPicker';
+import type { FormField, UtmData, SelectedDistrito } from '@/lib/types';
 
 // Simple UUID generator (crypto.randomUUID may not be available in RN)
 function generateClientId(): string {
@@ -130,6 +133,10 @@ function DynamicField({
   externalError,
   checkingPhone,
   gpsOpcional,
+  onFocus,
+  onLayout,
+  inputAccessoryViewID,
+  inputRef,
 }: {
   field: FormField;
   value: string;
@@ -141,6 +148,14 @@ function DynamicField({
   checkingPhone?: boolean;
   /** If true, GPS field shows as optional (lugar_registro was filled) */
   gpsOpcional?: boolean;
+  /** Called when the field's text input gains focus */
+  onFocus?: () => void;
+  /** Capture layout for scroll-to-focused */
+  onLayout?: (event: { nativeEvent: { layout: { y: number } } }) => void;
+  /** InputAccessoryView ID for iOS keyboard toolbar */
+  inputAccessoryViewID?: string;
+  /** Ref callback for the underlying TextInput */
+  inputRef?: (ref: TextInput | null) => void;
 }) {
   const [capturandoGps, setCapturandoGps] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
@@ -216,7 +231,7 @@ function DynamicField({
     }
 
     return (
-      <View style={styles.field}>
+      <View style={styles.field} onLayout={onLayout}>
         <Text style={styles.label}>
           {field.label}{' '}
           {showRequiredGps ? <RequiredAsterisk /> : (
@@ -233,6 +248,8 @@ function DynamicField({
           ]}
           onPress={captureLocation}
           disabled={capturandoGps}
+          accessibilityRole="button"
+          accessibilityLabel={hasLocation ? `GPS capturado: ${displayText}` : 'Capturar ubicacion GPS'}
         >
           <Text style={[
             styles.gpsBtnText,
@@ -254,7 +271,7 @@ function DynamicField({
 
   if (field.type === 'select' || field.type === 'radio') {
     return (
-      <View style={styles.field}>
+      <View style={styles.field} onLayout={onLayout}>
         <Text style={styles.label}>
           {field.label} {showRequired && <RequiredAsterisk />}
         </Text>
@@ -267,6 +284,9 @@ function DynamicField({
                 value === opt.value && { backgroundColor: primaryColor, borderColor: primaryColor },
               ]}
               onPress={() => onChange(opt.value)}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: value === opt.value }}
+              accessibilityLabel={opt.label}
             >
               <Text
                 style={[
@@ -286,10 +306,13 @@ function DynamicField({
   if (field.type === 'checkbox') {
     const checked = value === 'true';
     return (
-      <View style={styles.field}>
+      <View style={styles.field} onLayout={onLayout}>
         <Pressable
           style={styles.checkboxRow}
           onPress={() => onChange(checked ? 'false' : 'true')}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked }}
+          accessibilityLabel={field.label}
         >
           <View style={[styles.checkbox, checked && { backgroundColor: primaryColor, borderColor: primaryColor }]}>
             {checked && <Text style={styles.checkmark}>✓</Text>}
@@ -319,13 +342,14 @@ function DynamicField({
   const hasError = displayError !== null;
 
   return (
-    <View style={styles.field}>
+    <View style={styles.field} onLayout={onLayout}>
       <Text style={styles.label}>
         {field.label} {showRequired && <RequiredAsterisk />}
         {isOptional && <Text style={styles.optionalLabel}> (opcional)</Text>}
       </Text>
       <View>
         <TextInput
+          ref={(r) => inputRef?.(r)}
           style={[
             styles.input,
             multiline && styles.inputMultiline,
@@ -335,12 +359,14 @@ function DynamicField({
           placeholderTextColor={TEXT_MUTED}
           value={value}
           onChangeText={isPhoneField ? handlePhoneChange : onChange}
+          onFocus={onFocus}
           keyboardType={keyboardType}
           multiline={multiline}
           numberOfLines={multiline ? 3 : 1}
           textAlignVertical={multiline ? 'top' : 'auto'}
           maxLength={isPhoneField ? 9 : field.validation?.maxLength}
           autoCapitalize={field.type === 'email' ? 'none' : 'sentences'}
+          inputAccessoryViewID={inputAccessoryViewID}
         />
         {isPhoneField && checkingPhone && (
           <View style={styles.phoneCheckingIndicator}>
@@ -357,6 +383,61 @@ function DynamicField({
 
 // ─── Screen ─────────────────────────────────────────────────
 
+// ─── Keyboard Toolbar (iOS InputAccessoryView) ─────────────
+const ACCESSORY_ID = 'goberna-form-toolbar';
+
+function KeyboardToolbar({
+  onPrev,
+  onNext,
+  onDone,
+  hasPrev,
+  hasNext,
+  primaryColor,
+}: {
+  onPrev: () => void;
+  onNext: () => void;
+  onDone: () => void;
+  hasPrev: boolean;
+  hasNext: boolean;
+  primaryColor: string;
+}) {
+  if (Platform.OS !== 'ios') return null;
+  return (
+    <InputAccessoryView nativeID={ACCESSORY_ID}>
+      <View style={styles.toolbar}>
+        <View style={styles.toolbarNav}>
+          <Pressable
+            onPress={onPrev}
+            disabled={!hasPrev}
+            style={[styles.toolbarBtn, !hasPrev && styles.toolbarBtnDisabled]}
+            accessibilityLabel="Campo anterior"
+            accessibilityRole="button"
+          >
+            <Text style={[styles.toolbarBtnText, !hasPrev && styles.toolbarBtnTextDisabled]}>◀</Text>
+          </Pressable>
+          <Pressable
+            onPress={onNext}
+            disabled={!hasNext}
+            style={[styles.toolbarBtn, !hasNext && styles.toolbarBtnDisabled]}
+            accessibilityLabel="Siguiente campo"
+            accessibilityRole="button"
+          >
+            <Text style={[styles.toolbarBtnText, !hasNext && styles.toolbarBtnTextDisabled]}>▶</Text>
+          </Pressable>
+        </View>
+        <Pressable
+          onPress={onDone}
+          style={styles.toolbarDoneBtn}
+          accessibilityLabel="Cerrar teclado"
+          accessibilityRole="button"
+        >
+          <Text style={[styles.toolbarDoneText, { color: primaryColor }]}>Listo</Text>
+        </Pressable>
+      </View>
+    </InputAccessoryView>
+  );
+}
+
 export default function NewFormScreen() {
   const router = useRouter();
   const candidate = useCandidate();
@@ -369,11 +450,68 @@ export default function NewFormScreen() {
 
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [ubicacionUtm, setUbicacionUtm] = useState<UtmData | null>(null);
-  const [lugarRegistro, setLugarRegistro] = useState('');
+  const [lugarRegistro, setLugarRegistro] = useState<SelectedDistrito | null>(null);
   const [enviando, setEnviando] = useState(false);
 
-  // GPS es opcional cuando el agente indica el lugar manual donde capturó el dato
-  const gpsOpcional = lugarRegistro.trim().length > 0;
+  // GPS es opcional cuando el agente selecciona un distrito (dato capturado en papel)
+  const gpsOpcional = lugarRegistro !== null;
+
+  // ── Scroll-to-focused-field infrastructure ───────────────────
+  const scrollRef = useRef<ScrollView>(null);
+  const fieldLayoutsRef = useRef<Record<string, number>>({}); // fieldId → y offset
+  const inputRefsRef = useRef<Record<string, TextInput | null>>({});
+  const [focusedIdx, setFocusedIdx] = useState(-1);
+
+  // Build ordered list of text-input field IDs (for prev/next navigation)
+  const textFieldIds = useMemo(() => {
+    if (!formConfig) return [];
+    const ids: string[] = [];
+    for (const f of formConfig.schema.fields) {
+      // Only fields with TextInput (text, phone, number, email, textarea)
+      if (f.type !== 'location' && f.type !== 'select' && f.type !== 'radio' && f.type !== 'checkbox') {
+        ids.push(f.id);
+      }
+    }
+    return ids;
+  }, [formConfig]);
+
+  const scrollToField = useCallback((fieldId: string) => {
+    const y = fieldLayoutsRef.current[fieldId];
+    if (y != null && scrollRef.current) {
+      // Scroll so the field is ~100px from the top (comfortable reading position above keyboard)
+      scrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true });
+    }
+  }, []);
+
+  const handleFieldFocus = useCallback((fieldId: string) => {
+    const idx = textFieldIds.indexOf(fieldId);
+    setFocusedIdx(idx);
+    // Small delay to let keyboard animate open before scrolling
+    setTimeout(() => scrollToField(fieldId), 150);
+  }, [textFieldIds, scrollToField]);
+
+  const handleFieldLayout = useCallback((fieldId: string, y: number) => {
+    fieldLayoutsRef.current[fieldId] = y;
+  }, []);
+
+  const focusPrev = useCallback(() => {
+    if (focusedIdx <= 0) return;
+    const prevId = textFieldIds[focusedIdx - 1];
+    const ref = inputRefsRef.current[prevId];
+    if (ref) ref.focus();
+  }, [focusedIdx, textFieldIds]);
+
+  const focusNext = useCallback(() => {
+    if (focusedIdx < 0 || focusedIdx >= textFieldIds.length - 1) return;
+    const nextId = textFieldIds[focusedIdx + 1];
+    const ref = inputRefsRef.current[nextId];
+    if (ref) ref.focus();
+  }, [focusedIdx, textFieldIds]);
+
+  const dismissKeyboard = useCallback(() => {
+    Keyboard.dismiss();
+    setFocusedIdx(-1);
+  }, []);
 
   // ── Phone duplicate detection ───────────────────────────────
   const [phoneDupError, setPhoneDupError] = useState<string | null>(null);
@@ -469,6 +607,9 @@ export default function NewFormScreen() {
       
       // Skip validation for optional fields
       if (isOptional) continue;
+
+      // Skip location fields here — they have their own GPS/distrito validation below (line 646)
+      if (field.type === 'location') continue;
       
       if (field.required && !formData[field.id]?.trim()) {
         Alert.alert('Campo requerido', `"${field.label}" es obligatorio.`);
@@ -554,10 +695,18 @@ export default function NewFormScreen() {
         payloadData.zona = `${ubicacionUtm.zone}${ubicacionUtm.hemisphere}`;
         payloadData.lat = ubicacionUtm.latitude;
         payloadData.lng = ubicacionUtm.longitude;
-      } else {
-        // Sin GPS — dato cargado desde casa con lugar manual
-        payloadData.lugar_registro = lugarRegistro.trim();
-        payloadData.coord_source = 'manual_lugar';
+      } else if (lugarRegistro) {
+        // Sin GPS — dato cargado desde casa, distrito seleccionado
+        // x/y/zona son NOT NULL en DB: usar 0,0 y nombre del distrito como zona
+        payloadData.x = 0;
+        payloadData.y = 0;
+        payloadData.zona = lugarRegistro.distrito;
+        payloadData.lugar_registro = `${lugarRegistro.distrito}, ${lugarRegistro.provincia}, ${lugarRegistro.departamento}`;
+        payloadData.ubigeo = lugarRegistro.ubigeo;
+        payloadData.departamento = lugarRegistro.departamento;
+        payloadData.provincia = lugarRegistro.provincia;
+        payloadData.distrito = lugarRegistro.distrito;
+        payloadData.coord_source = 'distrito_picker';
       }
 
       // OFFLINE-FIRST: Queue the form locally first
@@ -579,7 +728,7 @@ export default function NewFormScreen() {
       // Reset form for next entry
       setFormData({});
       setUbicacionUtm(null);
-      setLugarRegistro('');
+      setLugarRegistro(null);
 
       // Success - form is saved locally and will sync when online
       Alert.alert(
@@ -621,14 +770,28 @@ export default function NewFormScreen() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.header}>
-            <Pressable onPress={() => router.back()} style={styles.backBtnSimple}>
+            <Pressable
+              onPress={() => router.back()}
+              style={styles.backBtnSimple}
+              accessibilityRole="button"
+              accessibilityLabel="Volver a la pantalla anterior"
+            >
               <Text style={[styles.backText, { color: TEXT_MUTED }]}>← Volver</Text>
             </Pressable>
-            <Text style={[styles.title, { color: primary }]}>{formConfig.name}</Text>
+            <Text style={[styles.title, { color: primary }]} accessibilityRole="header">
+              {formConfig.name}
+            </Text>
             <Text style={[styles.subtitle, { color: TEXT_MUTED }]}>Agente: {agent.full_name}</Text>
           </View>
 
@@ -647,6 +810,10 @@ export default function NewFormScreen() {
                 externalError={field.id === phoneFieldId ? phoneDupError : null}
                 checkingPhone={field.id === phoneFieldId ? checkingPhone : false}
                 gpsOpcional={field.type === 'location' ? gpsOpcional : undefined}
+                onFocus={() => handleFieldFocus(field.id)}
+                onLayout={(e) => handleFieldLayout(field.id, e.nativeEvent.layout.y)}
+                inputAccessoryViewID={ACCESSORY_ID}
+                inputRef={(r) => { inputRefsRef.current[field.id] = r; }}
               />
             ))}
 
@@ -659,31 +826,27 @@ export default function NewFormScreen() {
             </View>
 
             {/* ── Lugar de registro (hace GPS opcional) ─────────── */}
-            <View style={styles.lugarRegistroCard}>
+            <View
+              style={styles.lugarRegistroCard}
+              onLayout={(e) => handleFieldLayout('__lugar_registro__', e.nativeEvent.layout.y)}
+            >
               <Text style={styles.lugarRegistroTitle}>
                 ¿Dato tomado en papel?
               </Text>
               <Text style={styles.lugarRegistroDesc}>
-                Si cargaste este registro desde casa, indica el lugar donde
-                recogiste el dato (ej: "Plaza San Martin", "Feria del parque").
-                Esto reemplaza la ubicacion GPS.
+                Si cargaste este registro desde casa, selecciona el distrito
+                donde recogiste el dato. Esto reemplaza la ubicacion GPS.
               </Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  styles.lugarRegistroInput,
-                  lugarRegistro.trim().length > 0 && styles.lugarRegistroInputFilled,
-                ]}
-                placeholder="Ej: Plaza de Armas, Mercado Central..."
-                placeholderTextColor={TEXT_MUTED}
+              <DistritoPicker
                 value={lugarRegistro}
-                onChangeText={setLugarRegistro}
-                autoCapitalize="sentences"
-                returnKeyType="done"
+                onSelect={setLugarRegistro}
+                onClear={() => setLugarRegistro(null)}
+                primaryColor={primary}
+                placeholder="Seleccionar distrito..."
               />
-              {lugarRegistro.trim().length > 0 && (
+              {lugarRegistro && (
                 <Text style={styles.lugarRegistroHint}>
-                  GPS omitido — se registrara el lugar indicado.
+                  GPS omitido — registrado en {lugarRegistro.distrito}, {lugarRegistro.provincia}.
                 </Text>
               )}
             </View>
@@ -691,15 +854,30 @@ export default function NewFormScreen() {
 
           <Pressable
             style={[styles.saveBtn, { backgroundColor: secondary }, (enviando || !!phoneDupError || checkingPhone) && styles.saveBtnDisabled]}
-            onPress={handleSubmit}
+            onPress={() => { dismissKeyboard(); handleSubmit(); }}
             disabled={enviando || !!phoneDupError || checkingPhone}
+            accessibilityRole="button"
+            accessibilityLabel={enviando ? 'Enviando registro' : 'Enviar registro'}
           >
             <Text style={[styles.saveBtnText, { color: primary }]}>
               {enviando ? 'Enviando...' : checkingPhone ? 'Verificando...' : 'Enviar registro'}
             </Text>
           </Pressable>
+
+          {/* Extra space at bottom so last field isn't stuck against the keyboard */}
+          <View style={styles.keyboardSpacer} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* iOS keyboard toolbar with Prev / Next / Done */}
+      <KeyboardToolbar
+        onPrev={focusPrev}
+        onNext={focusNext}
+        onDone={dismissKeyboard}
+        hasPrev={focusedIdx > 0}
+        hasNext={focusedIdx >= 0 && focusedIdx < textFieldIds.length - 1}
+        primaryColor={primary}
+      />
     </SafeAreaView>
   );
 }
@@ -709,14 +887,14 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   scroll: { padding: 20, paddingBottom: 40 },
   header: { marginBottom: 24 },
-  backBtnSimple: { marginBottom: 12 },
-  backText: { fontSize: 14, fontFamily: FONT },
+  backBtnSimple: { marginBottom: 12, paddingVertical: 8 },
+  backText: { fontSize: 15, fontFamily: FONT },
   title: { fontSize: 24, fontFamily: FONT },
   subtitle: { fontSize: 14, fontFamily: FONT, marginTop: 4 },
-  form: { gap: 20 },
+  form: { gap: 22 },
   field: { gap: 8 },
   label: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#163960',
     fontFamily: FONT,
     textTransform: 'uppercase',
@@ -724,11 +902,11 @@ const styles = StyleSheet.create({
   },
   requiredAsterisk: {
     color: ERROR_RED,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
   },
   optionalLabel: {
-    fontSize: 10,
+    fontSize: 11,
     color: TEXT_MUTED,
     textTransform: 'lowercase',
     fontFamily: FONT,
@@ -737,16 +915,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER,
     borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
+    padding: 16,
+    fontSize: 17,
     color: '#163960',
     fontFamily: FONT,
     backgroundColor: '#F8FAFC',
+    // Minimum 48dp touch target (Android Material guideline)
+    minHeight: 52,
   },
-  inputMultiline: { minHeight: 80, paddingTop: 14 },
+  inputMultiline: { minHeight: 90, paddingTop: 14 },
   inputError: { borderColor: ERROR_RED, backgroundColor: '#FEF2F2' },
   fieldError: {
-    fontSize: 11,
+    fontSize: 12,
     color: ERROR_RED,
     fontFamily: FONT,
     marginTop: 4,
@@ -761,38 +941,42 @@ const styles = StyleSheet.create({
   gpsBtn: {
     borderWidth: 1,
     borderRadius: 12,
-    padding: 14,
+    padding: 16,
+    minHeight: 52,
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#F8FAFC',
   },
   gpsBtnCaptured: { backgroundColor: '#DCFCE7', borderColor: '#22C55E' },
   gpsBtnOptional: { borderStyle: 'dashed', backgroundColor: AMBER_BG, borderColor: AMBER },
-  gpsBtnText: { fontSize: 14, fontFamily: FONT },
+  gpsBtnText: { fontSize: 15, fontFamily: FONT },
   gpsBtnTextCaptured: { color: '#22C55E' },
   gpsBtnTextOptional: { color: AMBER },
-  gpsOpcionalHint: { fontSize: 11, color: AMBER, fontFamily: FONT },
-  optionsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  gpsOpcionalHint: { fontSize: 12, color: AMBER, fontFamily: FONT },
+  optionsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   optionBtn: {
     borderWidth: 1,
     borderColor: BORDER,
     borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    minHeight: 48,
+    justifyContent: 'center',
     backgroundColor: '#F8FAFC',
   },
-  optionText: { fontSize: 14, color: '#163960', fontFamily: FONT },
-  checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  optionText: { fontSize: 15, color: '#163960', fontFamily: FONT },
+  checkboxRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 48 },
   checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
+    width: 28,
+    height: 28,
+    borderRadius: 7,
     borderWidth: 2,
     borderColor: BORDER,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkmark: { color: '#FFFFFF', fontSize: 14, fontFamily: FONT },
-  checkboxLabel: { fontSize: 15, color: '#163960', fontFamily: FONT },
+  checkmark: { color: '#FFFFFF', fontSize: 16, fontFamily: FONT },
+  checkboxLabel: { fontSize: 16, color: '#163960', fontFamily: FONT, flex: 1 },
   candidatoCard: { borderRadius: 16, padding: 16, gap: 4 },
   candidatoLabel: {
     fontSize: 11,
@@ -803,13 +987,13 @@ const styles = StyleSheet.create({
   },
   candidatoName: { fontSize: 18, color: '#FFFFFF', fontFamily: FONT },
   candidatoDetail: { fontSize: 13, fontFamily: FONT },
-  saveBtn: { borderRadius: 14, padding: 16, alignItems: 'center', marginTop: 32 },
+  saveBtn: { borderRadius: 14, padding: 18, alignItems: 'center', marginTop: 32, minHeight: 56 },
   saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { fontSize: 16, fontFamily: FONT, textTransform: 'uppercase', letterSpacing: 1 },
+  saveBtnText: { fontSize: 17, fontFamily: FONT, textTransform: 'uppercase', letterSpacing: 1 },
   noFormContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 16 },
   noFormTitle: { fontSize: 22, color: '#163960', fontFamily: FONT },
   noFormText: { fontSize: 15, color: TEXT_MUTED, fontFamily: FONT, textAlign: 'center' },
-  backBtn: { borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32 },
+  backBtn: { borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32, minHeight: 48 },
   backBtnText: { fontSize: 14, color: '#FFFFFF', fontFamily: FONT, textTransform: 'uppercase' },
   // Lugar de registro
   lugarRegistroCard: {
@@ -821,7 +1005,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   lugarRegistroTitle: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#92400E',
     fontFamily: FONT,
     textTransform: 'uppercase',
@@ -831,19 +1015,48 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#78350F',
     fontFamily: FONT,
-    lineHeight: 19,
-  },
-  lugarRegistroInput: {
-    backgroundColor: '#FFFFFF',
-    borderColor: AMBER,
-  },
-  lugarRegistroInputFilled: {
-    borderColor: '#10B981',
-    backgroundColor: '#F0FDF4',
+    lineHeight: 20,
   },
   lugarRegistroHint: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#059669',
+    fontFamily: FONT,
+  },
+  // Keyboard spacer — extra room so last field isn't crushed against keyboard
+  keyboardSpacer: { height: 120 },
+  // iOS keyboard toolbar
+  toolbar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#F2F2F7',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(60,60,67,.18)',
+  },
+  toolbarNav: { flexDirection: 'row', gap: 6 },
+  toolbarBtn: {
+    width: 44,
+    height: 38,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(60,60,67,.18)',
+  },
+  toolbarBtnDisabled: { opacity: 0.35 },
+  toolbarBtnText: { fontSize: 16, color: '#163960', fontWeight: '600' },
+  toolbarBtnTextDisabled: { color: TEXT_MUTED },
+  toolbarDoneBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  toolbarDoneText: {
+    fontSize: 16,
+    fontWeight: '700',
     fontFamily: FONT,
   },
 });
