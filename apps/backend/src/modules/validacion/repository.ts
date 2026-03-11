@@ -1,5 +1,5 @@
 import { pool } from "../../db";
-import type { ValidationRow, ValidationStatus, ClassificationEventRow, ClassificationSource } from "./schemas";
+import type { ValidationRow, ValidationStatus, ClassificationEventRow, ClassificationSource, ScorerConfigInput } from "./schemas";
 
 
 /* ─── Ensure table ─── */
@@ -514,6 +514,325 @@ export async function correctClassificationEvent(
       NULL::text as nombre
   `, [eventId, campaignId, correctedVoteClass, correctedStatus, correctedBy]);
   return rows[0] ?? null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CONVERSATION SCORE — computa score conversacional desde classification_events
+// ═══════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════
+// SCORER CONFIG — per-campaign overrides de umbrales, pesos, decay
+// Stored in campaigns.config.scorer_config (JSONB)
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface ResolvedScorerConfig {
+  threshold_duro: number;
+  threshold_blando: number;
+  threshold_flotante: number;
+  invalido_lock_threshold: number;
+  invalido_reversal_threshold: number;
+  decay_half_life_ms: number;
+  category_weights: Record<string, number>;
+}
+
+/** Lee la config de scorer de una campaña. Retorna null si no hay overrides. */
+export async function getScorerConfig(campaignId: string): Promise<ScorerConfigInput | null> {
+  const { rows } = await pool.query<{ scorer_config: unknown }>(`
+    SELECT config->'scorer_config' AS scorer_config
+    FROM campaigns
+    WHERE id = $1
+  `, [campaignId]);
+  const raw = rows[0]?.scorer_config;
+  if (!raw || typeof raw !== "object") return null;
+  return raw as ScorerConfigInput;
+}
+
+/** Escribe la config de scorer en campaigns.config.scorer_config (merge, no reemplaza). */
+export async function setScorerConfig(campaignId: string, config: ScorerConfigInput): Promise<void> {
+  await pool.query(`
+    UPDATE campaigns
+    SET config = jsonb_set(COALESCE(config, '{}')::jsonb, '{scorer_config}', $1::jsonb),
+        updated_at = now()
+    WHERE id = $2
+  `, [JSON.stringify(config), campaignId]);
+}
+
+/** Resuelve la config final mergeando overrides de campaña con defaults globales. */
+export function resolveScorerConfig(overrides: ScorerConfigInput | null): ResolvedScorerConfig {
+  const o = overrides ?? {};
+  return {
+    threshold_duro: o.threshold_duro ?? 2.5,
+    threshold_blando: o.threshold_blando ?? 0.8,
+    threshold_flotante: o.threshold_flotante ?? 0.1,
+    invalido_lock_threshold: o.invalido_lock_threshold ?? INVALIDO_LOCK_THRESHOLD,
+    invalido_reversal_threshold: o.invalido_reversal_threshold ?? INVALIDO_REVERSAL_THRESHOLD,
+    decay_half_life_ms: (o.decay_half_life_days ?? 7) * 24 * 60 * 60 * 1000,
+    category_weights: { ...CATEGORY_WEIGHTS, ...(o.category_weights ?? {}) },
+  };
+}
+
+// FUENTE DE VERDAD: Si cambiás estos pesos, actualizá también CATEGORY_WEIGHTS en
+// extensions/wspp-store-tester/src/background/conversation-scorer.js (extensión Chrome).
+export const CATEGORY_WEIGHTS: Record<string, number> = {
+  pide_dinero:          -3.0,
+  pide_trabajo:         -2.5,
+  publicidad_pagada:    -2.0,
+  sector_salud:          2.5,
+  coordinador:           3.0,
+  apoyo_genuino:         2.0,
+  apoyo_probable:        1.0,
+  pide_merch:            2.5,
+  apoyo_condicional:     1.2,
+  indeciso:              0.3,
+  sector_salud_indeciso: 0.5,
+  ai_sector_salud:       2.5,
+  ai_coordinador:        3.0,
+  ai_apoyo_genuino:      2.0,
+  ai_apoyo_condicional:  1.2,
+  ai_indeciso:           0.3,
+  ai_pide_dinero:       -3.0,
+  ai_pide_trabajo:      -2.5,
+  ai_publicidad_pagada: -2.0,
+};
+
+// FUENTE DE VERDAD: Si cambiás estos valores, actualizalos también en conversation-scorer.js.
+export const DECAY_HALF_LIFE_MS: number = 7 * 24 * 60 * 60 * 1000; // 7 días
+export const INVALIDO_LOCK_THRESHOLD: number = 2.5;
+export const INVALIDO_REVERSAL_THRESHOLD: number = 3.0;
+
+export interface ConversationScore {
+  vote_class: string;
+  status: string;
+  confidence: number;
+  score: number;
+  reason: string;
+  locked_invalido: boolean;
+  positive_score: number;
+  negative_score: number;
+  signal_count: number;
+}
+
+// Mapa de voto → categoría sintética para correcciones manuales.
+// Espejo de la lógica de seedConversationScore() en conversation-scorer.js.
+const MANUAL_SEED_CATEGORY: Record<string, string> = {
+  duro:     "apoyo_genuino",
+  blando:   "apoyo_condicional",
+  flotante: "indeciso",
+  "":       "pide_dinero", // invalido — el negativo más fuerte
+};
+
+/**
+ * Trae los últimos 20 eventos para un teléfono, combinando:
+ *   - Eventos `source='auto'`: clasificaciones automáticas con su confidence real
+ *   - Eventos `source='manual'` con corrección: se convierten en signals sintéticos
+ *     de conf=1.0 usando la categoría correspondiente al voto corregido.
+ *     Esto espeja exactamente lo que hace seedConversationScore() en la extensión.
+ *
+ * Los events manuales se incluyen aunque superen el LIMIT=20, porque una corrección
+ * del operador siempre debe tener peso en el score final.
+ *
+ * Usado por computeConversationScore() y por el endpoint scorer-debug.
+ */
+export async function fetchRawSignalsForPhone(
+  campaignId: string,
+  phone: string,
+): Promise<{ category: string; confidence: number; created_at: string }[]> {
+  const { rows } = await pool.query<{
+    category: string;
+    confidence: number;
+    created_at: string;
+    source: string;
+    corrected_vote_class: string | null;
+  }>(`
+    (
+      -- Eventos automáticos: últimos 20
+      SELECT category, confidence, created_at, source, corrected_vote_class
+      FROM classification_events
+      WHERE campaign_id = $1
+        AND phone IS NOT NULL
+        AND RIGHT(REGEXP_REPLACE(phone, '\\D', '', 'g'), 9) = RIGHT(REGEXP_REPLACE($2, '\\D', '', 'g'), 9)
+        AND source = 'auto'
+      ORDER BY created_at DESC
+      LIMIT 20
+    )
+    UNION ALL
+    (
+      -- Correcciones manuales: todas (sin límite — son pocas y valen mucho)
+      SELECT category, confidence, created_at, source, corrected_vote_class
+      FROM classification_events
+      WHERE campaign_id = $1
+        AND phone IS NOT NULL
+        AND RIGHT(REGEXP_REPLACE(phone, '\\D', '', 'g'), 9) = RIGHT(REGEXP_REPLACE($2, '\\D', '', 'g'), 9)
+        AND source = 'manual'
+        AND corrected_vote_class IS NOT NULL
+    )
+    ORDER BY created_at DESC
+  `, [campaignId, phone]);
+
+  // Normalizar: las correcciones manuales se convierten en signals sintéticos de conf=1.0
+  return rows.map((r) => {
+    if (r.source === 'manual' && r.corrected_vote_class !== null) {
+      const seedCategory = MANUAL_SEED_CATEGORY[r.corrected_vote_class] ?? "indeciso";
+      return { category: seedCategory, confidence: 1.0, created_at: r.created_at };
+    }
+    return { category: r.category, confidence: r.confidence, created_at: r.created_at };
+  });
+}
+
+export async function computeConversationScore(
+  campaignId: string,
+  phone: string,
+  configOverrides?: ResolvedScorerConfig | null,
+): Promise<ConversationScore | null> {
+  const rows = await fetchRawSignalsForPhone(campaignId, phone);
+  if (rows.length === 0) return null;
+
+  // Usar config de campaña si se proporcionó, sino defaults globales
+  const cfg = configOverrides ?? resolveScorerConfig(null);
+
+  const now = Date.now();
+  let positiveScore = 0;
+  let negativeScore = 0;
+
+  for (const row of rows) {
+    const baseWeight = cfg.category_weights[row.category] ?? 0;
+    if (baseWeight === 0) continue;
+
+    const ageMs = now - new Date(row.created_at).getTime();
+    const decay = Math.pow(0.5, ageMs / cfg.decay_half_life_ms);
+    const effective = baseWeight * row.confidence * decay;
+
+    if (effective > 0) {
+      positiveScore += effective;
+    } else {
+      negativeScore += Math.abs(effective);
+    }
+  }
+
+  // Lock calculado sobre negativeScore con decay aplicado — igual que conversation-scorer.js
+  const lockedInvalido = negativeScore >= cfg.invalido_lock_threshold;
+  const netScore = positiveScore - negativeScore;
+
+  if (lockedInvalido && positiveScore < cfg.invalido_reversal_threshold) {
+    return {
+      vote_class: "",
+      status: "invalido",
+      confidence: Math.min(0.95, 0.7 + negativeScore * 0.05),
+      score: netScore,
+      reason: `Invalido bloqueado (neg: ${negativeScore.toFixed(2)}, pos: ${positiveScore.toFixed(2)})`,
+      locked_invalido: true,
+      positive_score: positiveScore,
+      negative_score: negativeScore,
+      signal_count: rows.length,
+    };
+  }
+
+  if (netScore < -0.5 && negativeScore > positiveScore) {
+    return {
+      vote_class: "",
+      status: "invalido",
+      confidence: Math.min(0.9, 0.5 + negativeScore * 0.05),
+      score: netScore,
+      reason: `Score negativo (neg: ${negativeScore.toFixed(2)}, pos: ${positiveScore.toFixed(2)})`,
+      locked_invalido: false,
+      positive_score: positiveScore,
+      negative_score: negativeScore,
+      signal_count: rows.length,
+    };
+  }
+
+  if (netScore >= cfg.threshold_duro) {
+    return { vote_class: "duro", status: "respondido", confidence: Math.min(0.95, 0.7 + netScore * 0.04), score: netScore, reason: `Score conversacional duro (${netScore.toFixed(2)})`, locked_invalido: false, positive_score: positiveScore, negative_score: negativeScore, signal_count: rows.length };
+  }
+  if (netScore >= cfg.threshold_blando) {
+    return { vote_class: "blando", status: "respondido", confidence: Math.min(0.85, 0.55 + netScore * 0.05), score: netScore, reason: `Score conversacional blando (${netScore.toFixed(2)})`, locked_invalido: false, positive_score: positiveScore, negative_score: negativeScore, signal_count: rows.length };
+  }
+  if (netScore >= cfg.threshold_flotante) {
+    return { vote_class: "flotante", status: "respondido", confidence: Math.min(0.7, 0.4 + netScore * 0.1), score: netScore, reason: `Score conversacional flotante (${netScore.toFixed(2)})`, locked_invalido: false, positive_score: positiveScore, negative_score: negativeScore, signal_count: rows.length };
+  }
+
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SCORER BOOTSTRAP — devuelve los últimos eventos por teléfono para
+// precalentar el conversation-scorer de la extensión Chrome al arrancar.
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface ScorerBootstrapSignal {
+  phone: string;       // normalizado: últimos 9 dígitos
+  category: string;
+  confidence: number;
+  ts: number;          // epoch ms (cliente usa para decay temporal)
+}
+
+/**
+ * Lee los últimos `signalsPerPhone` eventos auto por cada teléfono único
+ * de la campaña, ordenados del más reciente al más antiguo.
+ * El cliente usa estos datos para sembrar su scorer local sin mensajes.
+ *
+ * Límites:
+ *  - maxPhones: protege contra campañas con miles de teléfonos
+ *  - signalsPerPhone: igual al SIGNAL_MAX_PER_PHONE de la extensión (20)
+ *  - Sólo eventos `source = 'auto'` (los manuales los siembra seedConversationScore)
+ *  - Sólo categorías con peso conocido (filtra ruido)
+ */
+export async function fetchScorerBootstrap(
+  campaignId: string,
+  maxPhones = 500,
+  signalsPerPhone = 20,
+): Promise<ScorerBootstrapSignal[]> {
+  // Usamos LATERAL para traer los últimos N por teléfono en un solo query.
+  // RIGHT(REGEXP_REPLACE(phone, '\D', '', 'g'), 9) normaliza el teléfono igual
+  // que _normalizePhoneKey() en la extensión.
+  const knownCategories = Object.keys(CATEGORY_WEIGHTS);
+  if (knownCategories.length === 0) return [];
+
+  // Construir lista de categorías como literales SQL seguros (son strings fijos del código)
+  const catList = knownCategories.map((c) => `'${c}'`).join(", ");
+
+  const { rows } = await pool.query<{
+    phone_normalized: string;
+    category: string;
+    confidence: number;
+    created_at: string;
+  }>(`
+    WITH ranked AS (
+      SELECT
+        RIGHT(REGEXP_REPLACE(phone, '\\D', '', 'g'), 9) AS phone_normalized,
+        category,
+        confidence,
+        created_at,
+        ROW_NUMBER() OVER (
+          PARTITION BY RIGHT(REGEXP_REPLACE(phone, '\\D', '', 'g'), 9)
+          ORDER BY created_at DESC
+        ) AS rn
+      FROM classification_events
+      WHERE campaign_id = $1
+        AND source = 'auto'
+        AND phone IS NOT NULL
+        AND LENGTH(REGEXP_REPLACE(phone, '\\D', '', 'g')) >= 7
+        AND category IN (${catList})
+    ),
+    top_phones AS (
+      SELECT DISTINCT phone_normalized
+      FROM ranked
+      WHERE rn = 1
+      LIMIT $2
+    )
+    SELECT r.phone_normalized, r.category, r.confidence, r.created_at
+    FROM ranked r
+    INNER JOIN top_phones tp ON tp.phone_normalized = r.phone_normalized
+    WHERE r.rn <= $3
+    ORDER BY r.phone_normalized, r.created_at DESC
+  `, [campaignId, maxPhones, signalsPerPhone]);
+
+  return rows.map((r) => ({
+    phone: r.phone_normalized,
+    category: r.category,
+    confidence: r.confidence,
+    ts: new Date(r.created_at).getTime(),
+  }));
 }
 
 /* ─── Classification stats (aggregated metrics) ─── */

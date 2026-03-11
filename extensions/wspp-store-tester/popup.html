@@ -6,40 +6,66 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      width: 240px;
+      width: 320px;
       background: #111b21;
       color: #e9edef;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
       font-size: 13px;
+      -webkit-font-smoothing: antialiased;
     }
 
     /* ── Header ── */
     .hdr {
       background: #1f2c34;
-      padding: 12px 14px;
+      padding: 10px 14px;
       display: flex;
       align-items: center;
       gap: 8px;
       border-bottom: 1px solid #2a3942;
     }
-    .hdr-title { font-weight: 700; font-size: 13px; flex: 1; }
+    .hdr-title { font-weight: 700; font-size: 14px; flex: 1; letter-spacing: -.3px; }
     .hdr-dot {
       width: 8px; height: 8px; border-radius: 50%;
       background: #3a4a52;
       transition: background .3s;
     }
-    .hdr-dot.on { background: #00a884; }
+    .hdr-dot.on { background: #00a884; box-shadow: 0 0 6px rgba(0,168,132,.4); }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      background: #1a262d;
+      border-bottom: 1px solid #2a3942;
+    }
+    .tab {
+      flex: 1;
+      padding: 8px 0;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 600;
+      color: #8696a0;
+      cursor: pointer;
+      border: none;
+      background: none;
+      letter-spacing: .2px;
+      transition: color .15s, border-color .15s;
+      border-bottom: 2px solid transparent;
+    }
+    .tab.active {
+      color: #00a884;
+      border-bottom-color: #00a884;
+    }
 
     /* ── Login ── */
     #view-login { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
     .inp {
-      width: 100%; padding: 9px 11px; border-radius: 8px;
+      width: 100%; padding: 9px 11px; border-radius: 10px;
       background: #1f2c34; border: 1px solid #2a3942;
-      color: #e9edef; font-size: 12px; outline: none;
+      color: #e9edef; font-size: 13px; outline: none;
     }
     .inp:focus { border-color: #00a884; }
     .btn {
-      width: 100%; padding: 10px; border-radius: 8px; border: none;
+      width: 100%; padding: 10px; border-radius: 10px; border: none;
       background: #00a884; color: #fff;
       font-size: 13px; font-weight: 700; cursor: pointer;
     }
@@ -47,14 +73,14 @@
     .btn:disabled { opacity: .5; cursor: default; }
     .err {
       font-size: 11px; color: #ef5350;
-      background: #2d0d0d; border-radius: 6px;
+      background: #2d0d0d; border-radius: 8px;
       padding: 7px 9px; display: none;
     }
 
     /* ── Dashboard ── */
     #view-dash { display: none; flex-direction: column; }
     .user-row {
-      padding: 10px 14px;
+      padding: 8px 14px;
       font-size: 11px; color: #8696a0;
       border-bottom: 1px solid #2a3942;
       display: flex; justify-content: space-between; align-items: center;
@@ -65,24 +91,29 @@
     }
     .logout-btn:hover { color: #ef5350; }
 
+    /* ── Tab content containers ── */
+    .tab-content { display: none; }
+    .tab-content.active { display: flex; flex-direction: column; }
+
+    /* ── Home tab ── */
     .counter-box {
-      padding: 20px 14px 16px;
+      padding: 16px 14px 12px;
       display: flex; flex-direction: column; align-items: center; gap: 4px;
     }
     .counter-num {
-      font-size: 56px; font-weight: 800; line-height: 1;
+      font-size: 48px; font-weight: 800; line-height: 1;
       color: #00a884;
+      font-feature-settings: 'tnum';
     }
     .counter-lbl {
-      font-size: 11px; color: #8696a0; text-transform: uppercase; letter-spacing: .6px;
+      font-size: 10px; color: #8696a0; text-transform: uppercase; letter-spacing: .6px;
     }
 
-    /* ── Número propio ── */
     .phone-section {
-      margin: 0 14px 12px;
+      margin: 0 14px 10px;
       padding: 10px 12px;
       background: #1f2c34;
-      border-radius: 8px;
+      border-radius: 10px;
       border: 1px solid #2a3942;
     }
     .phone-label {
@@ -90,7 +121,6 @@
       text-transform: uppercase; letter-spacing: .6px;
       margin-bottom: 6px;
     }
-    /* Estado: mostrando número guardado */
     .phone-display {
       display: flex; align-items: center; justify-content: space-between; gap: 8px;
     }
@@ -103,7 +133,6 @@
       border-radius: 4px;
     }
     .phone-edit-btn:hover { color: #e9edef; background: #2a3942; }
-    /* Estado: editando */
     .phone-edit {
       display: none;
       flex-direction: column; gap: 6px;
@@ -112,37 +141,150 @@
       font-size: 10px; color: #8696a0; margin-top: 2px;
     }
     .phone-save-btn {
-      padding: 6px 10px; border-radius: 6px; border: none;
+      padding: 6px 10px; border-radius: 8px; border: none;
       background: #00a884; color: #fff;
       font-size: 11px; font-weight: 700; cursor: pointer;
       align-self: flex-end;
     }
     .phone-save-btn:hover { background: #008f72; }
-    /* Sin número configurado */
     .phone-missing {
       font-size: 11px; color: #f0ad4e;
     }
 
     .reset-btn {
-      margin: 0 14px 14px;
-      padding: 7px; border-radius: 8px; border: 1px solid #2a3942;
+      margin: 0 14px 10px;
+      padding: 7px; border-radius: 10px; border: 1px solid #2a3942;
       background: none; color: #8696a0;
       font-size: 11px; cursor: pointer; width: calc(100% - 28px);
     }
     .reset-btn:hover { border-color: #ef5350; color: #ef5350; }
 
     .wa-status {
-      padding: 8px 14px;
+      padding: 6px 14px;
       font-size: 10px; color: #8696a0;
       border-top: 1px solid #2a3942;
       text-align: center;
     }
+
+    /* ── Validacion tab ── */
+    .val-header {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 12px;
+      border-bottom: 1px solid #2a3942;
+    }
+    .val-search {
+      flex: 1; padding: 7px 10px; border-radius: 8px;
+      background: #1f2c34; border: 1px solid #2a3942;
+      color: #e9edef; font-size: 12px; outline: none;
+    }
+    .val-search:focus { border-color: #00a884; }
+    .val-refresh {
+      background: none; border: 1px solid #2a3942; border-radius: 8px;
+      color: #8696a0; padding: 6px 8px; cursor: pointer; font-size: 12px;
+    }
+    .val-refresh:hover { border-color: #00a884; color: #00a884; }
+
+    .val-filters {
+      display: flex; gap: 4px; padding: 6px 12px;
+      border-bottom: 1px solid #2a3942;
+    }
+    .val-pill {
+      padding: 4px 10px; border-radius: 20px; border: none;
+      font-size: 10px; font-weight: 600; cursor: pointer;
+      background: #1f2c34; color: #8696a0;
+      transition: all .15s;
+    }
+    .val-pill.active {
+      background: #00a884; color: #fff;
+    }
+
+    .val-list {
+      max-height: 360px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .val-empty {
+      padding: 32px 14px;
+      text-align: center;
+      color: #8696a0;
+      font-size: 12px;
+    }
+
+    /* Contact card */
+    .val-card {
+      display: block; width: 100%; text-align: left;
+      padding: 8px 14px;
+      background: none; border: none; border-bottom: 1px solid rgba(42,57,66,.5);
+      cursor: pointer; color: #e9edef;
+      transition: background .12s;
+    }
+    .val-card:hover { background: rgba(0,168,132,.06); }
+
+    .val-card-row1 {
+      display: flex; align-items: center; gap: 6px; margin-bottom: 2px;
+    }
+    .val-card-name {
+      font-size: 13px; font-weight: 600; flex: 1;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      letter-spacing: -.2px;
+    }
+    .val-card-status {
+      font-size: 8px; font-weight: 700; padding: 2px 7px;
+      border-radius: 20px; text-transform: uppercase; letter-spacing: .3px;
+      flex-shrink: 0;
+    }
+    .val-card-phone {
+      font-size: 11px; color: #8696a0;
+      font-feature-settings: 'tnum';
+      letter-spacing: .2px;
+      margin-bottom: 2px;
+    }
+    .val-card-meta {
+      font-size: 10px; color: #667781;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .val-card-actions {
+      display: flex; gap: 6px; align-items: center; margin-top: 4px;
+    }
+    .val-wa-btn {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 3px 10px; border-radius: 20px;
+      background: #25D366; color: #fff;
+      font-size: 10px; font-weight: 700;
+      text-decoration: none; border: none; cursor: pointer;
+    }
+    .val-wa-btn:hover { background: #1fb855; }
+    .val-claim-btn {
+      padding: 3px 10px; border-radius: 20px;
+      background: rgba(0,122,255,.15); color: #5ac8fa;
+      font-size: 10px; font-weight: 600; border: none; cursor: pointer;
+    }
+    .val-mine { font-size: 9px; color: #00a884; font-weight: 600; }
+    .val-taken { font-size: 9px; color: #667781; }
+
+    .val-loadmore {
+      display: block; width: 100%; padding: 10px;
+      background: none; border: none; border-top: 1px solid #2a3942;
+      color: #00a884; font-size: 11px; font-weight: 600; cursor: pointer;
+    }
+    .val-loadmore:hover { color: #5ac8fa; }
+
+    .val-stats {
+      display: flex; gap: 8px; padding: 6px 12px;
+      border-bottom: 1px solid #2a3942;
+      font-size: 10px; color: #8696a0;
+      flex-wrap: wrap;
+    }
+    .val-stat-dot {
+      display: inline-block; width: 5px; height: 5px;
+      border-radius: 50%; margin-right: 3px; vertical-align: middle;
+    }
+    .val-stat-num { font-weight: 700; color: #e9edef; }
   </style>
 </head>
 <body>
 
   <div class="hdr">
-    <span style="font-size:16px">💬</span>
     <span class="hdr-title">Goberna</span>
     <div class="hdr-dot" id="dot"></div>
   </div>
@@ -150,7 +292,7 @@
   <!-- LOGIN -->
   <div id="view-login">
     <input class="inp" id="inp-email"    type="email"    placeholder="email@goberna.pe" />
-    <input class="inp" id="inp-password" type="password" placeholder="Contraseña" />
+    <input class="inp" id="inp-password" type="password" placeholder="Contrasena" />
     <div class="err" id="err"></div>
     <button class="btn" id="btn-login">Entrar</button>
   </div>
@@ -158,47 +300,65 @@
   <!-- DASHBOARD -->
   <div id="view-dash">
     <div class="user-row">
-      <span id="user-name">—</span>
+      <span id="user-name">&mdash;</span>
       <button class="logout-btn" id="btn-logout">Salir</button>
     </div>
 
-    <div class="counter-box">
-      <div class="counter-num" id="counter">0</div>
-      <div class="counter-lbl">mensajes enviados</div>
+    <!-- Tabs -->
+    <div class="tabs">
+      <button class="tab active" data-tab="home">Inicio</button>
+      <button class="tab" data-tab="validacion">Validacion</button>
     </div>
 
-    <!-- Número WA propio -->
-    <div class="phone-section">
-      <div class="phone-label">Tu número WhatsApp</div>
-
-      <!-- Sin número -->
-      <div id="phone-missing">
-        <div class="phone-missing">⚠ Sin número configurado</div>
-        <div class="phone-hint" style="margin-top:4px">Los envíos no se registrarán hasta que lo configures.</div>
+    <!-- HOME TAB -->
+    <div class="tab-content active" id="tab-home">
+      <div class="counter-box">
+        <div class="counter-num" id="counter">0</div>
+        <div class="counter-lbl">mensajes enviados</div>
       </div>
 
-      <!-- Número guardado -->
-      <div class="phone-display" id="phone-display" style="display:none">
-        <span class="phone-value" id="phone-value">—</span>
-        <button class="phone-edit-btn" id="btn-phone-edit">Cambiar</button>
+      <div class="phone-section">
+        <div class="phone-label">Tu numero WhatsApp</div>
+        <div id="phone-missing">
+          <div class="phone-missing">Sin numero configurado</div>
+          <div class="phone-hint" style="margin-top:4px">Los envios no se registraran hasta que lo configures.</div>
+        </div>
+        <div class="phone-display" id="phone-display" style="display:none">
+          <span class="phone-value" id="phone-value">&mdash;</span>
+          <button class="phone-edit-btn" id="btn-phone-edit">Cambiar</button>
+        </div>
+        <div class="phone-edit" id="phone-edit">
+          <input class="inp" id="inp-phone" type="tel" placeholder="51987654321" style="font-size:12px" />
+          <div class="phone-hint">Solo digitos, con codigo de pais (ej: 51987654321)</div>
+          <button class="phone-save-btn" id="btn-phone-save">Guardar</button>
+        </div>
       </div>
 
-      <!-- Formulario de edición -->
-      <div class="phone-edit" id="phone-edit">
-        <input class="inp" id="inp-phone" type="tel" placeholder="51987654321" style="font-size:12px" />
-        <div class="phone-hint">Solo dígitos, con código de país (ej: 51987654321)</div>
-        <button class="phone-save-btn" id="btn-phone-save">Guardar</button>
+      <div class="phone-section" id="campaign-section" style="display:none">
+        <div class="phone-label">Campana activa</div>
+        <select class="inp" id="sel-campaign" style="font-size:11px;padding:7px 8px;cursor:pointer"></select>
       </div>
+
+      <button class="reset-btn" id="btn-reset">Reiniciar contador</button>
+      <div class="wa-status" id="wa-status">Abre WhatsApp Web para empezar</div>
     </div>
 
-    <!-- S-7: Campaign selector for multi-campaign users -->
-    <div class="phone-section" id="campaign-section" style="display:none">
-      <div class="phone-label">Campaña activa</div>
-      <select class="inp" id="sel-campaign" style="font-size:11px;padding:7px 8px;cursor:pointer"></select>
+    <!-- VALIDACION TAB -->
+    <div class="tab-content" id="tab-validacion">
+      <div class="val-stats" id="val-stats"></div>
+      <div class="val-header">
+        <input class="val-search" id="val-search" type="text" placeholder="Buscar nombre o tel..." />
+        <button class="val-refresh" id="val-refresh" title="Recargar">&#x21bb;</button>
+      </div>
+      <div class="val-filters">
+        <button class="val-pill active" data-filter="pendiente">Pendientes</button>
+        <button class="val-pill" data-filter="contactado">Contactados</button>
+        <button class="val-pill" data-filter="">Todos</button>
+      </div>
+      <div class="val-list" id="val-list">
+        <div class="val-empty">Cargando...</div>
+      </div>
     </div>
-
-    <button class="reset-btn" id="btn-reset">Reiniciar contador</button>
-    <div class="wa-status" id="wa-status">Abre WhatsApp Web para empezar</div>
   </div>
 
   <script src="popup.js"></script>

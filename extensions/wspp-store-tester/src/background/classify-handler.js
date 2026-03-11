@@ -5,6 +5,7 @@
 import { getCachedValidation, claimValidation, updateValidationStatus, invalidateCache } from './validation-client.js';
 import { recordCorrection } from './adaptive-scoring.js';
 import { reportClassificationEvent } from './classification-reporter.js';
+import { seedConversationScore } from './conversation-scorer.js';
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type !== 'WSPP_CLASSIFY') return;
@@ -24,6 +25,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (res.ok && res.item) {
         // Invalidar cache para este teléfono
         invalidateCache(res.item.telefono);
+
+        // CONV-SCORE: Sembrar historial con la corrección del operador.
+        // En lugar de borrar el historial (que causaría que el próximo mensaje
+        // empiece desde cero), sembramos signals que reflejan la decisión correcta.
+        // Los mensajes futuros se acumularán sobre esta base.
+        if (res.item.telefono || msg.payload._phone) {
+          seedConversationScore(
+            res.item.telefono || msg.payload._phone,
+            vote_class,
+            status,
+          );
+        }
 
         // Adaptive scoring: learn from operator correction
         if (original_category || (currentValidation && currentValidation.vote_class)) {

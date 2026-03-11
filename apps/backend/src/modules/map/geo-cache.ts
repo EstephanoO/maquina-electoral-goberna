@@ -428,6 +428,200 @@ export async function reverseGeocode(lng: number, lat: number): Promise<ReverseG
   };
 }
 
+/* ========== District Search ========== */
+
+export type DistritoSearchResult = {
+  ubigeo: string;
+  distrito: string;
+  provincia: string;
+  departamento: string;
+  coddep: string;
+  codprov_full: string;
+};
+
+/**
+ * Full-text search across all ~1900 distritos.
+ * Permissive: matches substring in distrito, provincia, or departamento name.
+ * Uses ILIKE for case-insensitive matching (no unaccent dependency).
+ * Prioritizes: distrito prefix > distrito contains > provincia match > departamento match.
+ * Results cached 24h in Redis (query-specific key).
+ */
+export async function searchDistritos(query: string, limit = 20): Promise<DistritoSearchResult[]> {
+  const normalized = query.trim().toLowerCase();
+  if (normalized.length < 1) return [];
+
+  const cacheKey = `${CACHE_PREFIX}search:${normalized}:${limit}`;
+
+  // Try cache
+  try {
+    const cached = await redisClient.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch {
+    // Redis error, fall through
+  }
+
+  // Permissive search: ILIKE with substring matching on all three levels.
+  // Scoring: distrito prefix = 0, distrito contains = 1, provincia = 2, departamento = 3.
+  const pattern = `%${normalized}%`;
+  const prefixPattern = `${normalized}%`;
+
+  const result = await pool.query<{
+    ubigeo: string;
+    distrito: string;
+    provincia: string;
+    departamento: string;
+    coddep: string;
+    codprov: string;
+  }>(
+    `
+    SELECT
+      d.ubigeo,
+      d.nomdist AS distrito,
+      prov.nomprov AS provincia,
+      dep.nomdep AS departamento,
+      d.coddep,
+      d.codprov
+    FROM peru_distritos d
+    JOIN peru_provincias prov ON prov.coddep = d.coddep AND prov.codprov = d.codprov
+    JOIN peru_departamentos dep ON dep.coddep = d.coddep
+    WHERE lower(d.nomdist) LIKE $1
+       OR lower(prov.nomprov) LIKE $1
+       OR lower(dep.nomdep) LIKE $1
+    ORDER BY
+      CASE
+        WHEN lower(d.nomdist) LIKE $2 THEN 0
+        WHEN lower(d.nomdist) LIKE $1 THEN 1
+        WHEN lower(prov.nomprov) LIKE $1 THEN 2
+        ELSE 3
+      END,
+      d.nomdist
+    LIMIT $3
+    `,
+    [pattern, prefixPattern, limit],
+  );
+
+  const rows: DistritoSearchResult[] = result.rows.map((r) => ({
+    ubigeo: r.ubigeo,
+    distrito: r.distrito,
+    provincia: r.provincia,
+    departamento: r.departamento,
+    coddep: r.coddep,
+    codprov_full: r.coddep + r.codprov,
+  }));
+
+  // Cache for 24h
+  try {
+    await redisClient.setEx(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(rows));
+  } catch {
+    // Cache write failed, continue
+  }
+
+  return rows;
+}
+
+/**
+ * Get ALL distritos with parent names (for mobile offline cache).
+ * ~1900 rows, cached 24h. Returns flat list without bounds (lighter payload).
+ */
+export async function getAllDistritos(): Promise<DistritoSearchResult[]> {
+  const cacheKey = `${CACHE_PREFIX}all-distritos`;
+
+  try {
+    const cached = await redisClient.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch {
+    // Redis error, fall through
+  }
+
+  const result = await pool.query<{
+    ubigeo: string;
+    distrito: string;
+    provincia: string;
+    departamento: string;
+    coddep: string;
+    codprov: string;
+  }>(`
+    SELECT
+      d.ubigeo,
+      d.nomdist AS distrito,
+      prov.nomprov AS provincia,
+      dep.nomdep AS departamento,
+      d.coddep,
+      d.codprov
+    FROM peru_distritos d
+    JOIN peru_provincias prov ON prov.coddep = d.coddep AND prov.codprov = d.codprov
+    JOIN peru_departamentos dep ON dep.coddep = d.coddep
+    ORDER BY dep.nomdep, prov.nomprov, d.nomdist
+  `);
+
+  const rows: DistritoSearchResult[] = result.rows.map((r) => ({
+    ubigeo: r.ubigeo,
+    distrito: r.distrito,
+    provincia: r.provincia,
+    departamento: r.departamento,
+    coddep: r.coddep,
+    codprov_full: r.coddep + r.codprov,
+  }));
+
+  try {
+    await redisClient.setEx(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(rows));
+  } catch {
+    // Cache write failed
+  }
+
+  return rows;
+}
+
+/**
+ * Validate a ubigeo code and return centroid coordinates.
+ * Used by forms module to enrich submissions with distrito location data.
+ */
+export async function validateAndEnrichUbigeo(ubigeo: string): Promise<{
+  valid: boolean;
+  distrito?: string;
+  provincia?: string;
+  departamento?: string;
+  centroid_lat?: number;
+  centroid_lng?: number;
+} | null> {
+  if (!ubigeo || ubigeo.length !== 6) return null;
+
+  const result = await pool.query<{
+    distrito: string;
+    provincia: string;
+    departamento: string;
+    centroid_lat: number;
+    centroid_lng: number;
+  }>(
+    `
+    SELECT
+      d.nomdist AS distrito,
+      prov.nomprov AS provincia,
+      dep.nomdep AS departamento,
+      ST_Y(ST_Centroid(d.geom)) AS centroid_lat,
+      ST_X(ST_Centroid(d.geom)) AS centroid_lng
+    FROM peru_distritos d
+    JOIN peru_provincias prov ON prov.coddep = d.coddep AND prov.codprov = d.codprov
+    JOIN peru_departamentos dep ON dep.coddep = d.coddep
+    WHERE d.ubigeo = $1
+    LIMIT 1
+    `,
+    [ubigeo],
+  );
+
+  const row = result.rows[0];
+  if (!row) return { valid: false };
+
+  return {
+    valid: true,
+    distrito: row.distrito,
+    provincia: row.provincia,
+    departamento: row.departamento,
+    centroid_lat: row.centroid_lat,
+    centroid_lng: row.centroid_lng,
+  };
+}
+
 /* ========== Tile Cache ========== */
 // Tile caching: Tegola Redis cache (max_zoom=14) + Nginx disk cache (zoom-tiered TTL).
 // The backend only proxies tiles to Tegola — no second Redis cache layer needed.

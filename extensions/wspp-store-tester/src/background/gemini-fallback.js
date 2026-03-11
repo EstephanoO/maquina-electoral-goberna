@@ -3,6 +3,7 @@
 import { classifyMessage } from './classifier.js';
 import { applyAdaptiveScoring } from './adaptive-scoring.js';
 import { apiFetch } from './api-client.js';
+import { getConversationScore } from './conversation-scorer.js';
 
 const _conversationHistory = new Map(); // phone → [{text, ts, direction}]
 const CONV_HISTORY_MAX_PER_PHONE = 5;
@@ -34,6 +35,45 @@ export function getConversationContext(phone) {
 }
 
 /**
+ * Construye el bloque de contexto conversacional acumulado para enriquecer
+ * el prompt de Gemini. Incluye:
+ *   - Score numérico actual (positivo, negativo, neto)
+ *   - Clasificación conversacional estable si existe
+ *   - Historial de últimos mensajes
+ *
+ * Gemini usa este prior para no clasificar un mensaje ambiguo en vacío:
+ * si el contacto ya tiene score=3.2 duro, un mensaje neutro no debería
+ * romper esa clasificación.
+ *
+ * @param {string} phone
+ * @returns {string}
+ */
+function buildGeminiContext(phone) {
+  const parts = [];
+
+  // ── 1. Score conversacional acumulado ──
+  const convScore = getConversationScore(phone);
+  if (convScore) {
+    const voteLabel = convScore.vote_class
+      ? `${convScore.vote_class} (${convScore.status})`
+      : `invalido`;
+    parts.push(
+      `[HISTORIAL ACUMULADO] Clasificación estable del contacto: ${voteLabel} | ` +
+      `score neto: ${convScore.score.toFixed(2)} | conf: ${Math.round(convScore.confidence * 100)}%` +
+      (convScore.reason ? ` | ${convScore.reason}` : '')
+    );
+  }
+
+  // ── 2. Historial de mensajes recientes ──
+  const context = getConversationContext(phone);
+  if (context) {
+    parts.push(context);
+  }
+
+  return parts.join('\n');
+}
+
+/**
  * Two-tier classification: regex first, Gemini fallback for ambiguous cases.
  * Applies adaptive scoring adjustments from correction history.
  */
@@ -52,7 +92,9 @@ export async function classifyWithGeminiFallback(phone, text, fromJid) {
   if (text.length < 15) return adjusted;
 
   try {
-    const context = getConversationContext(phone || fromJid);
+    // Usar el contexto enriquecido: score conversacional acumulado + historial de mensajes.
+    // Gemini tiene el prior del contacto y no clasifica el mensaje en el vacío.
+    const context = buildGeminiContext(phone || fromJid);
     const geminiResult = await apiFetch('/api/ai/classify', {
       method: 'POST',
       body: JSON.stringify({

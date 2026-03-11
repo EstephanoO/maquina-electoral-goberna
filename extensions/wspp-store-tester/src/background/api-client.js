@@ -128,13 +128,20 @@ export async function apiFetch(path, options = {}, _isRetry = false) {
         return;
       }
       try {
+        const baseHeaders = {
+          'Authorization': `Bearer ${data.wspp_token}`,
+          'x-campaign-id': data.wspp_campaign_id,
+          'X-Extension-Version': EXT_VERSION,
+        };
+        // Only set Content-Type: application/json when a body is present,
+        // otherwise Fastify rejects the empty body with a parse error.
+        if (options.body) {
+          baseHeaders['Content-Type'] = 'application/json';
+        }
         const res = await fetch(`${API}${path}`, {
           ...options,
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${data.wspp_token}`,
-            'x-campaign-id': data.wspp_campaign_id,
-            'X-Extension-Version': EXT_VERSION,
+            ...baseHeaders,
             ...(options.headers || {}),
           },
         });

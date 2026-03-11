@@ -45,3 +45,9 @@ import './background/audio-catalog-handlers.js';
 
 // 14. Sent handler (depende de api-client, spam-detector, gemini-fallback, received-handler)
 import './background/sent-handler.js';
+
+// 15. Scorer bootstrap — precalienta el conversation-scorer con historial del backend.
+//     Fire-and-forget: no bloquea el SW. Los handlers de mensajes ya están registrados.
+//     Si el usuario no está logueado todavía, el bootstrap reintentará en el próximo SW wake-up.
+import { bootstrapScorer } from './background/scorer-bootstrap.js';
+bootstrapScorer();

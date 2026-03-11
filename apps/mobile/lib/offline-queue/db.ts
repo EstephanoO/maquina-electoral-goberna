@@ -105,6 +105,51 @@ async function initTables(database: SQLite.SQLiteDatabase): Promise<void> {
   await database.runAsync(
     "INSERT OR IGNORE INTO sync_meta (key, value) VALUES ('location_seq', '0')"
   );
+  
+  // Geo distritos cache table (preloaded from backend, ~1900 rows)
+  await database.execAsync(`
+    CREATE TABLE IF NOT EXISTS geo_distritos (
+      ubigeo TEXT PRIMARY KEY,
+      distrito TEXT NOT NULL,
+      provincia TEXT NOT NULL,
+      departamento TEXT NOT NULL,
+      coddep TEXT NOT NULL,
+      codprov_full TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  
+  // Index for fast search (distrito name is the primary search target)
+  await database.execAsync(`
+    CREATE INDEX IF NOT EXISTS idx_geo_distritos_distrito
+    ON geo_distritos(distrito COLLATE NOCASE);
+  `);
+  
+  // Index for provincia name search
+  await database.execAsync(`
+    CREATE INDEX IF NOT EXISTS idx_geo_distritos_provincia
+    ON geo_distritos(provincia COLLATE NOCASE);
+  `);
+  
+  // Recently used distritos (for "recientes" + "last used" features)
+  await database.execAsync(`
+    CREATE TABLE IF NOT EXISTS geo_recientes (
+      ubigeo TEXT PRIMARY KEY,
+      distrito TEXT NOT NULL,
+      provincia TEXT NOT NULL,
+      departamento TEXT NOT NULL,
+      coddep TEXT NOT NULL,
+      codprov_full TEXT NOT NULL,
+      used_at TEXT NOT NULL DEFAULT (datetime('now')),
+      use_count INTEGER NOT NULL DEFAULT 1
+    );
+  `);
+  
+  // Index for recientes ordered by last use
+  await database.execAsync(`
+    CREATE INDEX IF NOT EXISTS idx_geo_recientes_used_at
+    ON geo_recientes(used_at DESC);
+  `);
 }
 
 export async function closeDatabase(): Promise<void> {

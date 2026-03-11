@@ -9,6 +9,7 @@ import { recordConversation } from './gemini-fallback.js';
 import { apiFetch } from './api-client.js';
 import { getCachedValidation, claimValidation, updateValidationStatus, invalidateCache } from './validation-client.js';
 import { reportClassificationEvent } from './classification-reporter.js';
+import { mergeWithConversationScore, resetConversationScore, getConversationDebug } from './conversation-scorer.js';
 
 const _phoneQueue = new Map(); // phone → Promise chain
 
@@ -86,23 +87,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     });
 
     // H-5: Step 3 — Clasificar (may buffer short messages)
-    const classification = await classifyWithAggregation(phone, preview, from_jid);
+    const rawClassification = await classifyWithAggregation(phone, preview, from_jid);
 
     // M-5: Check for superseded sentinel — this message was replaced by a newer aggregate
-    if (classification === MSG_BUFFER_SUPERSEDED) {
+    if (rawClassification === MSG_BUFFER_SUPERSEDED) {
       console.log('%c  ⏭️  Mensaje superseded por agregación — esperando buffer completo', 'color:#7a95aa');
       sendResponse({ validation: null, superseded: true });
       return;
     }
 
-    if (classification) {
+    // CONV-SCORE: fusionar clasificación del mensaje con score conversacional acumulado
+    // El scorer mantiene historial de todos los mensajes y produce una clasificación estable.
+    // Un solo mensaje negativo (invalido) no revierte semanas de señales positivas.
+    const phoneKey = phone || from_jid;
+    const classification = mergeWithConversationScore(phoneKey, rawClassification);
+
+    if (rawClassification && classification) {
       const confPct = Math.round(classification.confidence * 100);
       const confColor = confPct >= 85 ? '#22c55e' : confPct >= 70 ? '#f59e0b' : '#ef5350';
+      const scoreOverride = classification.score !== undefined;
       console.log(
         '%c  🧠 CLASIFICADO → %c' + classification.category +
         '%c  |  vote: %c' + (classification.vote_class || 'invalido') +
         '%c  |  status: %c' + classification.status +
-        '%c  |  conf: %c' + confPct + '%',
+        '%c  |  conf: %c' + confPct + '%' +
+        (scoreOverride ? `%c  |  score: %c${(classification.score).toFixed(2)}` : ''),
         'color:#06b6d4;font-weight:700',
         'color:#FFC800;font-weight:900',
         'color:#555',
@@ -111,9 +120,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         'color:#3b82f6;font-weight:700',
         'color:#555',
         'color:' + confColor + ';font-weight:900',
+        ...(scoreOverride ? ['color:#555', 'color:#a855f7;font-weight:700'] : []),
       );
       console.log('%c     Razón: ' + classification.reason, 'color:#7a95aa');
-    } else {
+      if (rawClassification && rawClassification.vote_class !== classification.vote_class) {
+        console.log(
+          '%c     ↳ Scorer: %c' + (classification.vote_class || 'invalido') +
+          '%c vs msg raw: %c' + (rawClassification.vote_class || 'invalido'),
+          'color:#a855f7', 'color:#FFC800;font-weight:700',
+          'color:#7a95aa', 'color:#ef5350;font-weight:700',
+        );
+      }
+    } else if (!classification) {
       console.log('%c  🧠 Sin clasificación (mensaje muy corto o sin patrones)', 'color:#555');
     }
 
@@ -140,15 +158,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     let result = { validation: null };
 
     if (validation) {
-      // 5. Auto-clasificar si el item está en estado contactado/respondido y hay clasificación
+      // 5. Auto-clasificar si el item está en estado contactado/respondido y hay clasificación.
+      // CONV-SCORE: Ya no bloqueamos por hasVoteClass. El scorer conversacional integra el
+      // historial completo, así que siempre es válido actualizar con su resultado.
+      // Excepción: si la nueva clasificación es igual a la actual, no hay necesidad de escribir.
       const canAutoClassify =
         classification &&
         classification.confidence >= 0.7 &&
+        !classification._fromConversationHistory &&   // no escribir al backend si es solo historial acumulado sin mensaje nuevo
         (validation.status === 'contactado' || validation.status === 'respondido' || validation.status === 'pendiente');
 
-      // Solo auto-transicionar si el item no tiene ya una clasificación de voto
       const hasVoteClass = validation.vote_class && validation.vote_class !== '';
-      const shouldClassify = canAutoClassify && (!hasVoteClass || classification.status === 'invalido');
+      // Actualizar si cualquiera de los dos campos es diferente (vote_class o status)
+      const currentVoteClass = validation.vote_class || '';
+      const currentStatus = validation.status || '';
+      const newVoteClass = classification?.vote_class || '';
+      const newStatus = classification?.status || '';
+      const classChanged = currentVoteClass !== newVoteClass || currentStatus !== newStatus;
+      const shouldClassify = canAutoClassify && classChanged;
 
       if (shouldClassify) {
         // Claim primero si no está reclamado

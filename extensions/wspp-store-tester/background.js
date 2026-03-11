@@ -278,13 +278,18 @@
           return;
         }
         try {
+          const baseHeaders = {
+            "Authorization": `Bearer ${data.wspp_token}`,
+            "x-campaign-id": data.wspp_campaign_id,
+            "X-Extension-Version": EXT_VERSION
+          };
+          if (options.body) {
+            baseHeaders["Content-Type"] = "application/json";
+          }
           const res = await fetch(`${API}${path}`, {
             ...options,
             headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${data.wspp_token}`,
-              "x-campaign-id": data.wspp_campaign_id,
-              "X-Extension-Version": EXT_VERSION,
+              ...baseHeaders,
               ...options.headers || {}
             }
           });
@@ -351,6 +356,316 @@
     if (phone) _validationCache.delete(phone);
   }
 
+  // src/background/conversation-scorer.js
+  var SCORER_STORAGE_KEY = "wspp_conv_scores";
+  var SCORER_CONFIG_KEY = "wspp_scorer_config";
+  var SIGNAL_MAX_PER_PHONE = 20;
+  var PHONE_MAX_ENTRIES = 500;
+  var DEFAULT_DECAY_HALF_LIFE_MS = 7 * 24 * 60 * 60 * 1e3;
+  var DEFAULT_CATEGORY_WEIGHTS = {
+    // ── Invalido (negativos) ──
+    pide_dinero: -3,
+    pide_trabajo: -2.5,
+    publicidad_pagada: -2,
+    // ── Duro (positivos altos) ──
+    sector_salud: 2.5,
+    coordinador: 3,
+    apoyo_genuino: 2,
+    apoyo_probable: 1,
+    pide_merch: 2.5,
+    // ── Blando (positivos bajos) ──
+    apoyo_condicional: 1.2,
+    // ── Flotante (neutros bajos) ──
+    indeciso: 0.3,
+    sector_salud_indeciso: 0.5,
+    // ── AI-prefixed (misma lógica) ──
+    ai_sector_salud: 2.5,
+    ai_coordinador: 3,
+    ai_apoyo_genuino: 2,
+    ai_apoyo_condicional: 1.2,
+    ai_indeciso: 0.3,
+    ai_pide_dinero: -3,
+    ai_pide_trabajo: -2.5,
+    ai_publicidad_pagada: -2
+  };
+  var DEFAULT_THRESHOLDS = {
+    duro: 2.5,
+    blando: 0.8,
+    flotante: 0.1
+  };
+  var DEFAULT_INVALIDO_LOCK_THRESHOLD = 2.5;
+  var DEFAULT_INVALIDO_REVERSAL_THRESHOLD = 3;
+  var CATEGORY_WEIGHTS = { ...DEFAULT_CATEGORY_WEIGHTS };
+  var THRESHOLDS = { ...DEFAULT_THRESHOLDS };
+  var DECAY_HALF_LIFE_MS = DEFAULT_DECAY_HALF_LIFE_MS;
+  var INVALIDO_LOCK_THRESHOLD = DEFAULT_INVALIDO_LOCK_THRESHOLD;
+  var INVALIDO_REVERSAL_THRESHOLD = DEFAULT_INVALIDO_REVERSAL_THRESHOLD;
+  function setScorerConfig(config) {
+    if (!config || typeof config !== "object") return;
+    if (config.category_weights && typeof config.category_weights === "object") {
+      CATEGORY_WEIGHTS = { ...DEFAULT_CATEGORY_WEIGHTS, ...config.category_weights };
+    }
+    if (typeof config.threshold_duro === "number") THRESHOLDS.duro = config.threshold_duro;
+    if (typeof config.threshold_blando === "number") THRESHOLDS.blando = config.threshold_blando;
+    if (typeof config.threshold_flotante === "number") THRESHOLDS.flotante = config.threshold_flotante;
+    if (typeof config.invalido_lock_threshold === "number") INVALIDO_LOCK_THRESHOLD = config.invalido_lock_threshold;
+    if (typeof config.invalido_reversal_threshold === "number") INVALIDO_REVERSAL_THRESHOLD = config.invalido_reversal_threshold;
+    if (typeof config.decay_half_life_ms === "number" && config.decay_half_life_ms > 0) {
+      DECAY_HALF_LIFE_MS = config.decay_half_life_ms;
+    }
+    chrome.storage.local.set({ [SCORER_CONFIG_KEY]: config });
+    console.log("[SCORER] Config aplicada \u2014 umbrales:", THRESHOLDS, "| lock:", INVALIDO_LOCK_THRESHOLD, "| reversal:", INVALIDO_REVERSAL_THRESHOLD);
+  }
+  chrome.storage.local.get([SCORER_CONFIG_KEY], (data) => {
+    const stored = data[SCORER_CONFIG_KEY];
+    if (stored && typeof stored === "object") {
+      setScorerConfig(stored);
+      console.log("[SCORER] Config restaurada desde storage");
+    }
+  });
+  var _state = /* @__PURE__ */ new Map();
+  var _persistTimer = null;
+  chrome.storage.local.get([SCORER_STORAGE_KEY], (data) => {
+    const stored = data[SCORER_STORAGE_KEY];
+    if (!stored || typeof stored !== "object") return;
+    let loaded = 0;
+    for (const [phone, entry] of Object.entries(stored)) {
+      if (entry && Array.isArray(entry.signals)) {
+        _state.set(phone, {
+          signals: entry.signals
+        });
+        loaded++;
+      }
+    }
+    if (loaded > 0) console.log(`[SCORER] Cargados ${loaded} tel\xE9fonos desde storage`);
+  });
+  function _persistImmediate() {
+    if (_persistTimer !== null) {
+      clearTimeout(_persistTimer);
+      _persistTimer = null;
+    }
+    const obj = {};
+    for (const [phone, entry] of _state.entries()) {
+      obj[phone] = { signals: entry.signals };
+    }
+    chrome.storage.local.set({ [SCORER_STORAGE_KEY]: obj });
+  }
+  function _persist() {
+    if (_persistTimer !== null) clearTimeout(_persistTimer);
+    _persistTimer = setTimeout(() => {
+      _persistTimer = null;
+      const obj = {};
+      for (const [phone, entry] of _state.entries()) {
+        obj[phone] = { signals: entry.signals };
+      }
+      chrome.storage.local.set({ [SCORER_STORAGE_KEY]: obj });
+    }, 500);
+  }
+  function decayFactor(ageMs) {
+    return Math.pow(0.5, ageMs / DECAY_HALF_LIFE_MS);
+  }
+  function _normalizePhoneKey(key) {
+    if (!key) return key;
+    let normalized = key;
+    if (normalized.includes("@")) {
+      normalized = normalized.split("@")[0];
+    }
+    const digits = normalized.replace(/\D/g, "");
+    if (digits.length < 7) return key;
+    return digits.slice(-9);
+  }
+  function recordSignal(phone, classification) {
+    if (!phone || !classification) return;
+    const key = _normalizePhoneKey(phone);
+    if (!_state.has(key) && _state.size >= PHONE_MAX_ENTRIES) {
+      const oldest = _state.keys().next().value;
+      _state.delete(oldest);
+    }
+    if (!_state.has(key)) {
+      _state.set(key, { signals: [] });
+    }
+    const entry = _state.get(key);
+    const baseWeight = CATEGORY_WEIGHTS[classification.category] ?? 0;
+    if (baseWeight === 0 && classification.confidence < 0.5) return;
+    const signal = {
+      category: classification.category,
+      weight: baseWeight,
+      confidence: classification.confidence,
+      ts: Date.now()
+    };
+    entry.signals.push(signal);
+    if (entry.signals.length > SIGNAL_MAX_PER_PHONE) {
+      entry.signals.shift();
+    }
+    _persist();
+  }
+  function getConversationScore(phone) {
+    if (!phone) return null;
+    const entry = _state.get(_normalizePhoneKey(phone));
+    if (!entry || entry.signals.length === 0) return null;
+    const now = Date.now();
+    let positiveScore = 0;
+    let negativeScore = 0;
+    for (const sig of entry.signals) {
+      const age = now - sig.ts;
+      const decay = decayFactor(age);
+      const effectiveWeight = sig.weight * sig.confidence * decay;
+      if (effectiveWeight > 0) {
+        positiveScore += effectiveWeight;
+      } else {
+        negativeScore += Math.abs(effectiveWeight);
+      }
+    }
+    const netScore = positiveScore - negativeScore;
+    const lockedInvalido = negativeScore >= INVALIDO_LOCK_THRESHOLD;
+    if (lockedInvalido) {
+      if (positiveScore >= INVALIDO_REVERSAL_THRESHOLD) {
+      } else {
+        return {
+          vote_class: "",
+          status: "invalido",
+          confidence: Math.min(0.95, 0.7 + negativeScore * 0.05),
+          score: netScore,
+          reason: `Invalido bloqueado (neg: ${negativeScore.toFixed(2)}, pos: ${positiveScore.toFixed(2)})`
+        };
+      }
+    }
+    if (netScore < -0.5 && negativeScore > positiveScore) {
+      return {
+        vote_class: "",
+        status: "invalido",
+        confidence: Math.min(0.9, 0.5 + negativeScore * 0.05),
+        score: netScore,
+        reason: `Score negativo (neg: ${negativeScore.toFixed(2)}, pos: ${positiveScore.toFixed(2)})`
+      };
+    }
+    if (netScore >= THRESHOLDS.duro) {
+      const topCategory = _getTopCategory(entry.signals, now, "positive");
+      return {
+        vote_class: "duro",
+        status: "respondido",
+        confidence: Math.min(0.95, 0.7 + netScore * 0.04),
+        score: netScore,
+        reason: `Score conversacional duro (${netScore.toFixed(2)}) \u2014 top: ${topCategory}`
+      };
+    }
+    if (netScore >= THRESHOLDS.blando) {
+      const topCategory = _getTopCategory(entry.signals, now, "positive");
+      return {
+        vote_class: "blando",
+        status: "respondido",
+        confidence: Math.min(0.85, 0.55 + netScore * 0.05),
+        score: netScore,
+        reason: `Score conversacional blando (${netScore.toFixed(2)}) \u2014 top: ${topCategory}`
+      };
+    }
+    if (netScore >= THRESHOLDS.flotante) {
+      return {
+        vote_class: "flotante",
+        status: "respondido",
+        confidence: Math.min(0.7, 0.4 + netScore * 0.1),
+        score: netScore,
+        reason: `Score conversacional flotante (${netScore.toFixed(2)})`
+      };
+    }
+    return null;
+  }
+  function mergeWithConversationScore(phone, msgClassification) {
+    if (!phone) return msgClassification;
+    const key = _normalizePhoneKey(phone);
+    if (msgClassification) {
+      recordSignal(key, msgClassification);
+    }
+    const conversationResult = getConversationScore(key);
+    if (!conversationResult) return msgClassification;
+    if (!msgClassification) return { ...conversationResult, _fromConversationHistory: true };
+    const sameClass = msgClassification.vote_class === conversationResult.vote_class || msgClassification.status === "invalido" && conversationResult.status === "invalido";
+    if (sameClass) {
+      return {
+        ...conversationResult,
+        confidence: Math.min(0.97, Math.max(conversationResult.confidence, msgClassification.confidence) + 0.03),
+        reason: `[CONV] ${conversationResult.reason}`,
+        category: msgClassification.category
+      };
+    }
+    return {
+      ...conversationResult,
+      reason: `[CONV] ${conversationResult.reason} \u2190 msg: ${msgClassification.category}`,
+      category: msgClassification.category
+    };
+  }
+  function seedConversationScore(phone, voteClass, status) {
+    if (!phone) return;
+    const key = _normalizePhoneKey(phone);
+    let seedCategory;
+    if (status === "invalido") {
+      seedCategory = "pide_dinero";
+    } else if (voteClass === "duro") {
+      seedCategory = "apoyo_genuino";
+    } else if (voteClass === "blando") {
+      seedCategory = "apoyo_condicional";
+    } else if (voteClass === "flotante") {
+      seedCategory = "indeciso";
+    } else {
+      seedCategory = "indeciso";
+    }
+    const baseWeight = CATEGORY_WEIGHTS[seedCategory] ?? 0;
+    const now = Date.now();
+    const signals = [
+      { category: seedCategory, weight: baseWeight, confidence: 1, ts: now - 1e3 },
+      { category: seedCategory, weight: baseWeight, confidence: 1, ts: now }
+    ];
+    if (!_state.has(key) && _state.size >= PHONE_MAX_ENTRIES) {
+      const oldest = _state.keys().next().value;
+      _state.delete(oldest);
+    }
+    _state.set(key, { signals });
+    _persistImmediate();
+  }
+  function recordSignalRaw(phone, category, confidence, ts) {
+    if (!phone || !category) return false;
+    const key = _normalizePhoneKey(phone);
+    if (_state.has(key)) return false;
+    const baseWeight = CATEGORY_WEIGHTS[category] ?? 0;
+    if (baseWeight === 0) return false;
+    if (_state.size >= PHONE_MAX_ENTRIES) {
+      const oldest = _state.keys().next().value;
+      _state.delete(oldest);
+    }
+    if (!_state.has(key)) {
+      _state.set(key, { signals: [] });
+    }
+    const entry = _state.get(key);
+    const signal = {
+      category,
+      weight: baseWeight,
+      confidence,
+      ts
+      // timestamp original — decay calculado contra Date.now() al leer
+    };
+    entry.signals.push(signal);
+    if (entry.signals.length > SIGNAL_MAX_PER_PHONE) {
+      entry.signals.shift();
+    }
+    return true;
+  }
+  function flushScorerStorage() {
+    _persistImmediate();
+  }
+  function _getTopCategory(signals, now, sign) {
+    let best = null;
+    let bestW = 0;
+    for (const sig of signals) {
+      const w = sig.weight * sig.confidence * decayFactor(now - sig.ts);
+      const relevant = sign === "positive" ? w > 0 : w < 0;
+      if (relevant && Math.abs(w) > Math.abs(bestW)) {
+        bestW = w;
+        best = sig.category;
+      }
+    }
+    return best || "desconocido";
+  }
+
   // src/background/gemini-fallback.js
   var _conversationHistory = /* @__PURE__ */ new Map();
   var CONV_HISTORY_MAX_PER_PHONE = 5;
@@ -376,6 +691,21 @@
     if (!history || history.length === 0) return "";
     return history.map((h) => `[${h.direction === "in" ? "Votante" : "Operador"}]: ${h.text}`).join("\n");
   }
+  function buildGeminiContext(phone) {
+    const parts = [];
+    const convScore = getConversationScore(phone);
+    if (convScore) {
+      const voteLabel = convScore.vote_class ? `${convScore.vote_class} (${convScore.status})` : `invalido`;
+      parts.push(
+        `[HISTORIAL ACUMULADO] Clasificaci\xF3n estable del contacto: ${voteLabel} | score neto: ${convScore.score.toFixed(2)} | conf: ${Math.round(convScore.confidence * 100)}%` + (convScore.reason ? ` | ${convScore.reason}` : "")
+      );
+    }
+    const context = getConversationContext(phone);
+    if (context) {
+      parts.push(context);
+    }
+    return parts.join("\n");
+  }
   async function classifyWithGeminiFallback(phone, text, fromJid) {
     const regexResult = classifyMessage(text);
     const adjusted = applyAdaptiveScoring(regexResult);
@@ -387,7 +717,7 @@
     }
     if (text.length < 15) return adjusted;
     try {
-      const context = getConversationContext(phone || fromJid);
+      const context = buildGeminiContext(phone || fromJid);
       const geminiResult = await apiFetch("/api/ai/classify", {
         method: "POST",
         body: JSON.stringify({
@@ -679,17 +1009,20 @@
       chrome.storage.local.get(["wspp_received_count"], (data) => {
         chrome.storage.local.set({ wspp_received_count: (data.wspp_received_count ?? 0) + 1 });
       });
-      const classification = await classifyWithAggregation(phone, preview, from_jid);
-      if (classification === MSG_BUFFER_SUPERSEDED) {
+      const rawClassification = await classifyWithAggregation(phone, preview, from_jid);
+      if (rawClassification === MSG_BUFFER_SUPERSEDED) {
         console.log("%c  \u23ED\uFE0F  Mensaje superseded por agregaci\xF3n \u2014 esperando buffer completo", "color:#7a95aa");
         sendResponse({ validation: null, superseded: true });
         return;
       }
-      if (classification) {
+      const phoneKey = phone || from_jid;
+      const classification = mergeWithConversationScore(phoneKey, rawClassification);
+      if (rawClassification && classification) {
         const confPct = Math.round(classification.confidence * 100);
         const confColor = confPct >= 85 ? "#22c55e" : confPct >= 70 ? "#f59e0b" : "#ef5350";
+        const scoreOverride = classification.score !== void 0;
         console.log(
-          "%c  \u{1F9E0} CLASIFICADO \u2192 %c" + classification.category + "%c  |  vote: %c" + (classification.vote_class || "invalido") + "%c  |  status: %c" + classification.status + "%c  |  conf: %c" + confPct + "%",
+          "%c  \u{1F9E0} CLASIFICADO \u2192 %c" + classification.category + "%c  |  vote: %c" + (classification.vote_class || "invalido") + "%c  |  status: %c" + classification.status + "%c  |  conf: %c" + confPct + "%" + (scoreOverride ? `%c  |  score: %c${classification.score.toFixed(2)}` : ""),
           "color:#06b6d4;font-weight:700",
           "color:#FFC800;font-weight:900",
           "color:#555",
@@ -697,10 +1030,20 @@
           "color:#555",
           "color:#3b82f6;font-weight:700",
           "color:#555",
-          "color:" + confColor + ";font-weight:900"
+          "color:" + confColor + ";font-weight:900",
+          ...scoreOverride ? ["color:#555", "color:#a855f7;font-weight:700"] : []
         );
         console.log("%c     Raz\xF3n: " + classification.reason, "color:#7a95aa");
-      } else {
+        if (rawClassification && rawClassification.vote_class !== classification.vote_class) {
+          console.log(
+            "%c     \u21B3 Scorer: %c" + (classification.vote_class || "invalido") + "%c vs msg raw: %c" + (rawClassification.vote_class || "invalido"),
+            "color:#a855f7",
+            "color:#FFC800;font-weight:700",
+            "color:#7a95aa",
+            "color:#ef5350;font-weight:700"
+          );
+        }
+      } else if (!classification) {
         console.log("%c  \u{1F9E0} Sin clasificaci\xF3n (mensaje muy corto o sin patrones)", "color:#555");
       }
       const validation = await getCachedValidation(phone);
@@ -719,9 +1062,15 @@
       }
       let result = { validation: null };
       if (validation) {
-        const canAutoClassify = classification && classification.confidence >= 0.7 && (validation.status === "contactado" || validation.status === "respondido" || validation.status === "pendiente");
+        const canAutoClassify = classification && classification.confidence >= 0.7 && !classification._fromConversationHistory && // no escribir al backend si es solo historial acumulado sin mensaje nuevo
+        (validation.status === "contactado" || validation.status === "respondido" || validation.status === "pendiente");
         const hasVoteClass = validation.vote_class && validation.vote_class !== "";
-        const shouldClassify = canAutoClassify && (!hasVoteClass || classification.status === "invalido");
+        const currentVoteClass = validation.vote_class || "";
+        const currentStatus = validation.status || "";
+        const newVoteClass = classification?.vote_class || "";
+        const newStatus = classification?.status || "";
+        const classChanged = currentVoteClass !== newVoteClass || currentStatus !== newStatus;
+        const shouldClassify = canAutoClassify && classChanged;
         if (shouldClassify) {
           if (!validation.claimed_by) {
             await claimValidation(validation.id);
@@ -852,6 +1201,13 @@
         const res = await updateValidationStatus(validation_id, status, vote_class, "[MANUAL] Clasificado desde extensi\xF3n WA");
         if (res.ok && res.item) {
           invalidateCache(res.item.telefono);
+          if (res.item.telefono || msg.payload._phone) {
+            seedConversationScore(
+              res.item.telefono || msg.payload._phone,
+              vote_class,
+              status
+            );
+          }
           if (original_category || currentValidation && currentValidation.vote_class) {
             const prevCategory = original_category || currentValidation?.vote_class || "";
             const wasCorrect = prevCategory === vote_class;
@@ -1188,4 +1544,73 @@
       chrome.storage.local.set({ wspp_wa_active: tabs.length > 0 });
     });
   });
+
+  // src/background/scorer-bootstrap.js
+  var BOOTSTRAP_KEY = "wspp_scorer_bootstrapped_at";
+  var BOOTSTRAP_COOLDOWN_MS = 6 * 60 * 60 * 1e3;
+  var _bootstrapped = false;
+  async function bootstrapScorer() {
+    if (_bootstrapped) return;
+    _bootstrapped = true;
+    const stored = await new Promise((r) => chrome.storage.local.get([BOOTSTRAP_KEY], r));
+    const lastRun = stored[BOOTSTRAP_KEY] ?? 0;
+    if (Date.now() - lastRun < BOOTSTRAP_COOLDOWN_MS) {
+      console.log(`[SCORER BOOTSTRAP] Cooldown activo \u2014 \xFAltimo bootstrap hace ${Math.round((Date.now() - lastRun) / 6e4)}min, saltando`);
+      return;
+    }
+    console.log("[SCORER BOOTSTRAP] Iniciando precalentamiento desde backend...");
+    const t0 = Date.now();
+    try {
+      const cfgRes = await apiFetch("/api/validacion/scorer-config");
+      if (cfgRes.ok && cfgRes.config) {
+        setScorerConfig(cfgRes.config);
+        console.log("[SCORER BOOTSTRAP] Config de campa\xF1a aplicada", cfgRes.has_overrides ? "(con overrides)" : "(defaults)");
+      }
+    } catch (err) {
+      console.warn("[SCORER BOOTSTRAP] Error cargando config:", err?.message || err);
+    }
+    let signals;
+    try {
+      const res = await apiFetch("/api/validacion/scorer-bootstrap");
+      if (!res.ok) {
+        if (res.error === "No auth" || res.code === "AUTH_TOKEN_MISSING") {
+          console.log("[SCORER BOOTSTRAP] Sin auth \u2014 se reintentar\xE1 al pr\xF3ximo arranque de SW");
+        } else {
+          console.warn("[SCORER BOOTSTRAP] Error del backend:", res.error || res.message || res.code);
+        }
+        _bootstrapped = false;
+        return;
+      }
+      signals = res.signals;
+    } catch (err) {
+      console.warn("[SCORER BOOTSTRAP] Fallo de red:", err?.message || err);
+      _bootstrapped = false;
+      return;
+    }
+    if (!Array.isArray(signals) || signals.length === 0) {
+      console.log("[SCORER BOOTSTRAP] Sin historial en backend para esta campa\xF1a");
+      await chrome.storage.local.set({ [BOOTSTRAP_KEY]: Date.now() });
+      return;
+    }
+    let injected = 0;
+    let skipped = 0;
+    for (const sig of signals) {
+      if (!sig.phone || !sig.category || typeof sig.confidence !== "number" || !sig.ts) continue;
+      const wasInjected = recordSignalRaw(sig.phone, sig.category, sig.confidence, sig.ts);
+      if (wasInjected) injected++;
+      else skipped++;
+    }
+    if (injected > 0) {
+      flushScorerStorage();
+    }
+    const elapsed = Date.now() - t0;
+    const phones = new Set(signals.map((s) => s.phone)).size;
+    console.log(
+      `[SCORER BOOTSTRAP] \u2713 ${injected} signals inyectadas (${skipped} saltadas \u2014 tel\xE9fonos ya calientes) | ${phones} phones | ${elapsed}ms`
+    );
+    await chrome.storage.local.set({ [BOOTSTRAP_KEY]: Date.now() });
+  }
+
+  // src/background-entry.js
+  bootstrapScorer();
 })();

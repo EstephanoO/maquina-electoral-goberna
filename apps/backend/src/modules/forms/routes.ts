@@ -11,6 +11,7 @@ import { emitCampaignEvent } from "../campaigns/routes";
 import { formSchema, type FormInput } from "./schema";
 import { FormsWriteBehindQueue } from "./write-behind-queue";
 import { findDuplicatePhones, getFormsByCampaign, getRecentForms, deleteFormById, softDeleteFormById, restoreFormById, getPendingDeletions, updateFormById, batchHardDeleteForms, batchSoftDeleteForms } from "./repository";
+import { validateAndEnrichUbigeo } from "../map/geo-cache";
 
 function parseFormsPayload(body: unknown): FormInput[] {
   const items = Array.isArray(body) ? body : [body];
@@ -85,6 +86,23 @@ export function buildFormsRoutes(env: AppEnv): FastifyPluginAsync {
         if (campaignId) {
           for (const form of forms) {
             form.campaign_id = campaignId;
+          }
+        }
+
+        // ── Ubigeo enrichment: add centroid coords when distrito picker is used ──
+        for (const form of forms) {
+          const payload = form as Record<string, unknown>;
+          const ubigeo = typeof payload.ubigeo === "string" ? payload.ubigeo : undefined;
+          if (ubigeo && ubigeo.length === 6 && payload.coord_source === "distrito_picker") {
+            try {
+              const enriched = await validateAndEnrichUbigeo(ubigeo);
+              if (enriched?.valid && enriched.centroid_lat != null && enriched.centroid_lng != null) {
+                payload.centroid_lat = enriched.centroid_lat;
+                payload.centroid_lng = enriched.centroid_lng;
+              }
+            } catch {
+              // Non-critical — continue without enrichment
+            }
           }
         }
 

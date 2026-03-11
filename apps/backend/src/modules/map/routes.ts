@@ -9,6 +9,8 @@ import {
   getDistritos,
   getPeruBounds,
   reverseGeocode,
+  searchDistritos,
+  getAllDistritos,
 } from "./geo-cache";
 
 const layersContract = [
@@ -114,6 +116,30 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
       // Short cache - reverse geocode results don't change often but are point-specific
       reply.header("Cache-Control", "public, max-age=3600");
       return { ok: true, ...result };
+    });
+
+    /* ========== District Search & Bulk Endpoints ========== */
+
+    // Search distritos by name (global, no drill-down needed) — public, cached 24h
+    app.get<{ Querystring: { q: string; limit?: string } }>("/api/geo/distritos/search", async (request, reply) => {
+      const { q, limit } = request.query;
+
+      if (!q || q.trim().length < 1) {
+        return reply.code(400).send({ ok: false, error: "q no puede estar vacio" });
+      }
+
+      const limitNum = limit ? Math.min(Math.max(parseInt(limit, 10) || 20, 1), 50) : 20;
+
+      const results = await searchDistritos(q, limitNum);
+      reply.header("Cache-Control", "public, max-age=86400, stale-while-revalidate=3600");
+      return { ok: true, results, count: results.length };
+    });
+
+    // Get ALL distritos flat list (for mobile offline cache preload) — public, cached 24h
+    app.get("/api/geo/distritos/all", async (_request, reply) => {
+      const results = await getAllDistritos();
+      reply.header("Cache-Control", "public, max-age=86400, stale-while-revalidate=3600");
+      return { ok: true, distritos: results, count: results.length };
     });
 
     /* ========== Tile Proxy (passthrough to Tegola) ========== */

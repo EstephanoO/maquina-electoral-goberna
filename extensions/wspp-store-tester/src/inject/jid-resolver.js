@@ -213,10 +213,40 @@ export function getActiveContactName() {
 /**
  * Número propio del celular.
  * Fuente de verdad: storage (via content.js → WSPP_SET_OWN_NUMBER).
+ * Fallback: live detection from WA internal modules if storage is empty.
  * M-7: Removed webpack fallback — WA uses Metro, not webpack.
  */
 export function getOwnNumber() {
-  return _ownNumber || null;
+  if (_ownNumber) return _ownNumber;
+
+  // Live fallback: try WA modules directly
+  try {
+    const mod = window.require('WAWebUserPrefsMeUser');
+    const me = mod?.getMeUser?.() || mod?.getMaybeMeUser?.();
+    if (me) {
+      const digits = (me.user || me._serialized || '').replace(/\D/g, '');
+      if (digits.length >= 9 && digits.length <= 15) return digits;
+    }
+  } catch (_) {}
+
+  try {
+    const { Conn } = window.require('WAWebConnModel');
+    const wid = Conn?.wid;
+    if (wid) {
+      const digits = (wid.user || wid._serialized || '').replace(/\D/g, '');
+      if (digits.length >= 9 && digits.length <= 15) return digits;
+    }
+  } catch (_) {}
+
+  try {
+    const waMe = localStorage.getItem('last-wid-md') || localStorage.getItem('last-wid');
+    if (waMe) {
+      const digits = waMe.replace(/@.+$/, '').replace(/\D/g, '');
+      if (digits.length >= 9 && digits.length <= 15) return digits;
+    }
+  } catch (_) {}
+
+  return null;
 }
 
 /**

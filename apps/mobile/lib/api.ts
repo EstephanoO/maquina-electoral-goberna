@@ -47,6 +47,10 @@ import type {
   MeetParticipant,
   CampaignMember,
   CreateMeetPayload,
+  DepartamentoInfo,
+  ProvinciaInfo,
+  DistritoInfo,
+  SelectedDistrito,
 } from './types';
 
 // ─── Config ─────────────────────────────────────────────────
@@ -422,6 +426,33 @@ export function getMySubmissionStats(): Promise<ApiResult<{
   stats: { total: number; today: number; week: number };
 }>> {
   return request('GET', '/form-submissions/my-stats');
+}
+
+// ─── Geo Hierarchy (public, no auth) ────────────────────────
+
+/** GET /api/geo/departamentos — list all 25 departments. Cached 24h server-side. */
+export async function getGeoDepartamentos(): Promise<ApiResult<{ departamentos: DepartamentoInfo[] }>> {
+  return request('GET', '/geo/departamentos', undefined, false);
+}
+
+/** GET /api/geo/departamentos/:coddep/provincias — provinces of a department. */
+export async function getGeoProvincias(coddep: string): Promise<ApiResult<{ provincias: ProvinciaInfo[] }>> {
+  return request('GET', `/geo/departamentos/${coddep}/provincias`, undefined, false);
+}
+
+/** GET /api/geo/provincias/:codprov_full/distritos — districts of a province. */
+export async function getGeoDistritos(codprov_full: string): Promise<ApiResult<{ distritos: DistritoInfo[] }>> {
+  return request('GET', `/geo/provincias/${codprov_full}/distritos`, undefined, false);
+}
+
+/** GET /api/geo/distritos/all — flat list of all ~1900 distritos (for offline cache preload). */
+export async function getGeoAllDistritos(): Promise<ApiResult<{ distritos: SelectedDistrito[]; count: number }>> {
+  return request('GET', '/geo/distritos/all', undefined, false);
+}
+
+/** GET /api/geo/distritos/search?q=&limit= — search distritos by name (online). */
+export async function searchGeoDistritos(q: string, limit = 20): Promise<ApiResult<{ results: SelectedDistrito[]; count: number }>> {
+  return request('GET', `/geo/distritos/search?q=${encodeURIComponent(q)}&limit=${limit}`, undefined, false);
 }
 
 // ─── GPS Tracking ───────────────────────────────────────────

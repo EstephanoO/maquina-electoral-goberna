@@ -3,6 +3,9 @@
   var WA_ORIGIN = "https://web.whatsapp.com";
   var _ownNumber = null;
   var _catalogIsConsultor = false;
+  function setOwnNumber(num) {
+    _ownNumber = num || null;
+  }
   window.addEventListener("message", (e) => {
     if (e.source !== window) return;
     if (e.data?.type === "WSPP_SET_OWN_NUMBER") {
@@ -193,7 +196,34 @@
     return null;
   }
   function getOwnNumber() {
-    return _ownNumber || null;
+    if (_ownNumber) return _ownNumber;
+    try {
+      const mod = window.require("WAWebUserPrefsMeUser");
+      const me = mod?.getMeUser?.() || mod?.getMaybeMeUser?.();
+      if (me) {
+        const digits = (me.user || me._serialized || "").replace(/\D/g, "");
+        if (digits.length >= 9 && digits.length <= 15) return digits;
+      }
+    } catch (_) {
+    }
+    try {
+      const { Conn } = window.require("WAWebConnModel");
+      const wid = Conn?.wid;
+      if (wid) {
+        const digits = (wid.user || wid._serialized || "").replace(/\D/g, "");
+        if (digits.length >= 9 && digits.length <= 15) return digits;
+      }
+    } catch (_) {
+    }
+    try {
+      const waMe = localStorage.getItem("last-wid-md") || localStorage.getItem("last-wid");
+      if (waMe) {
+        const digits = waMe.replace(/@.+$/, "").replace(/\D/g, "");
+        if (digits.length >= 9 && digits.length <= 15) return digits;
+      }
+    } catch (_) {
+    }
+    return null;
   }
   function normalizePhone(raw) {
     if (!raw) return null;
@@ -751,6 +781,67 @@
       if (_healthBadge === badge) badge.remove();
     }, 15e3);
   }
+  function detectOwnNumber() {
+    if (_ownNumber) return;
+    let phone = null;
+    try {
+      const mod = window.require("WAWebUserPrefsMeUser");
+      const me = mod?.getMeUser?.() || mod?.getMaybeMeUser?.();
+      if (me) {
+        const raw = me.user || me._serialized || "";
+        const digits = raw.replace(/\D/g, "");
+        if (digits.length >= 9 && digits.length <= 15) phone = digits;
+      }
+    } catch (_) {
+    }
+    if (!phone) try {
+      const wid = window.require("WAWebWidFactory");
+      const me = wid?.getMeWid?.() || wid?.getCurrentWid?.();
+      if (me) {
+        const raw = me.user || me._serialized || "";
+        const digits = raw.replace(/\D/g, "");
+        if (digits.length >= 9 && digits.length <= 15) phone = digits;
+      }
+    } catch (_) {
+    }
+    if (!phone) try {
+      const { Conn } = window.require("WAWebConnModel");
+      const wid = Conn?.wid || Conn?.ref;
+      if (wid) {
+        const raw = typeof wid === "string" ? wid : wid.user || wid._serialized || "";
+        const digits = raw.replace(/\D/g, "");
+        if (digits.length >= 9 && digits.length <= 15) phone = digits;
+      }
+    } catch (_) {
+    }
+    if (!phone) try {
+      const store = window.Store;
+      if (store?.Conn?.wid) {
+        const raw = store.Conn.wid.user || store.Conn.wid._serialized || "";
+        const digits = raw.replace(/\D/g, "");
+        if (digits.length >= 9 && digits.length <= 15) phone = digits;
+      }
+    } catch (_) {
+    }
+    if (!phone) try {
+      const waMe = localStorage.getItem("last-wid-md") || localStorage.getItem("last-wid");
+      if (waMe) {
+        const digits = waMe.replace(/@.+$/, "").replace(/\D/g, "");
+        if (digits.length >= 9 && digits.length <= 15) phone = digits;
+      }
+    } catch (_) {
+    }
+    if (!phone) return;
+    setOwnNumber(phone);
+    console.log(
+      "%c[WSPP] own_number auto-detectado: +" + phone,
+      "color:#34c759;font-weight:700;font-size:13px"
+    );
+    window.postMessage({
+      type: "WSPP_OWN_NUMBER_DETECTED",
+      number: phone
+    }, WA_ORIGIN);
+  }
   function tryInstallWAListeners() {
     if (!window.require) {
       _waListenerRetries++;
@@ -774,6 +865,7 @@
       }
     } else {
       runModuleHealthCheck();
+      detectOwnNumber();
     }
   }
 

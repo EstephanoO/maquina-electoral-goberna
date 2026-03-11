@@ -145,20 +145,54 @@ export function connectClassificationStream(
   onError?: (err: Error) => void,
 ): () => void {
   let aborted = false;
-  const ctrl = new AbortController();
+  let attempt = 0;
+  let ctrl = new AbortController();
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  async function tryRefreshToken(): Promise<boolean> {
+    try {
+      const res = await fetch("/api/auth/refresh", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
 
   async function connect() {
     if (aborted) return;
+    ctrl = new AbortController();
+
     try {
       const res = await fetch("/api/validacion/classification-events/stream", {
         credentials: "same-origin",
-        headers: { "x-campaign-id": campaignId },
+        headers: {
+          "x-campaign-id": campaignId,
+          Accept: "text/event-stream",
+        },
         signal: ctrl.signal,
       });
+
+      // Handle 401: try refresh once
+      if (res.status === 401) {
+        const refreshed = await tryRefreshToken();
+        if (refreshed && !aborted) {
+          attempt = 0;
+          return connect();
+        }
+        throw new Error("Authentication failed");
+      }
 
       if (!res.ok) {
         throw new Error(`SSE stream responded ${res.status}`);
       }
+
+      // Reset attempt counter on successful connection
+      attempt = 0;
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No readable body");
@@ -174,7 +208,6 @@ export function connectClassificationStream(
 
         buf += decoder.decode(value, { stream: true });
         const lines = buf.split("\n");
-        // Keep last partial line in buffer
         buf = lines.pop() ?? "";
 
         for (const line of lines) {
@@ -183,7 +216,6 @@ export function connectClassificationStream(
           } else if (line.startsWith("data: ")) {
             currentData = line.slice(6);
           } else if (line === "" && currentEvent && currentData) {
-            // Empty line = end of SSE message
             try {
               const parsed = JSON.parse(currentData);
               if (currentEvent === "classification.new") {
@@ -208,9 +240,11 @@ export function connectClassificationStream(
       onError?.(error);
     }
 
-    // Auto-reconnect with backoff (SSE retry header sets 3s, we use 4s as fallback)
+    // Exponential backoff reconnection (max 30s)
     if (!aborted) {
-      setTimeout(connect, 4_000);
+      const delay = Math.min(1000 * 2 ** attempt, 30_000);
+      attempt++;
+      reconnectTimer = setTimeout(connect, delay);
     }
   }
 
@@ -219,5 +253,6 @@ export function connectClassificationStream(
   return () => {
     aborted = true;
     ctrl.abort();
+    if (reconnectTimer) clearTimeout(reconnectTimer);
   };
 }

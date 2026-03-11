@@ -45,6 +45,15 @@ window.addEventListener('message', (e) => {
     console.log('[WSPP BRIDGE] postMessage received:', msgType);
   }
 
+  // --- WSPP_OWN_NUMBER_DETECTED (inject auto-detected own phone from WA modules) ---
+  if (e.data?.type === 'WSPP_OWN_NUMBER_DETECTED' && e.data.number) {
+    const num = e.data.number;
+    console.log('[WSPP BRIDGE] own_number auto-detected:', num);
+    // Persist to storage so popup shows it + survives reloads
+    chrome.storage.local.set({ wspp_own_number: num });
+    return;
+  }
+
   // --- WSPP_SENT (contador de mensajes — DOM-based) ---
   // S-6: Exponential backoff on SW wake-up retries (300ms → 600ms → 1200ms)
   if (e.data?.type === 'WSPP_SENT') {

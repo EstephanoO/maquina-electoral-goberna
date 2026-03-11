@@ -357,6 +357,42 @@ export type RegisterWithAccessCodeRequest = RegisterRequest & {
 
 // ─── API Error codes ────────────────────────────────────────
 
+// ─── Geo Hierarchy ──────────────────────────────────────────
+
+export type GeoBounds = [[number, number], [number, number]];
+
+export type DepartamentoInfo = {
+  coddep: string;
+  departamento: string;
+  bounds: GeoBounds;
+};
+
+export type ProvinciaInfo = {
+  coddep: string;
+  codprov: string;
+  codprov_full: string;
+  provincia: string;
+  bounds: GeoBounds;
+};
+
+export type DistritoInfo = {
+  coddep: string;
+  codprov_full: string;
+  ubigeo: string;
+  distrito: string;
+  bounds: GeoBounds;
+};
+
+/** Selected location from the distrito picker */
+export type SelectedDistrito = {
+  ubigeo: string;
+  distrito: string;
+  provincia: string;
+  departamento: string;
+  codprov_full: string;
+  coddep: string;
+};
+
 export const API_ERRORS = {
   AUTH_INVALID_CREDENTIALS: 'AUTH_INVALID_CREDENTIALS',
   AUTH_TOKEN_EXPIRED: 'AUTH_TOKEN_EXPIRED',

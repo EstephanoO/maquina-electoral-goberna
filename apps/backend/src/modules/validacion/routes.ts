@@ -12,6 +12,7 @@ import {
   classificationEventSchema,
   correctClassificationSchema,
   CLASSIFICATION_SOURCES,
+  scorerConfigSchema,
 } from "./schemas";
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -342,6 +343,137 @@ export function buildValidacionRoutes(env: AppEnv): FastifyPluginAsync {
       broadcastClassificationEvent(campaignId, "classification.corrected", result);
 
       return reply.send({ ok: true, request_id: requestId, event: result });
+    });
+
+    // ── GET /api/validacion/scorer-config — config de scorer de la campaña (para extensión) ──
+    // Devuelve los defaults globales mergeados con overrides de la campaña.
+    // La extensión lo llama al arrancar para sincronizar umbrales y pesos.
+    app.get("/api/validacion/scorer-config", {
+      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor", "agente_digital"] })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const campaignId = request.headers["x-campaign-id"] as string;
+      if (!campaignId) return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "x-campaign-id header requerido"));
+
+      const overrides = await repo.getScorerConfig(campaignId);
+      const resolved = repo.resolveScorerConfig(overrides);
+
+      return reply.send({
+        ok: true,
+        request_id: requestId,
+        config: resolved,
+        has_overrides: overrides !== null,
+      });
+    });
+
+    // ── PUT /api/validacion/scorer-config — actualizar config de scorer de la campaña (admin/candidato) ──
+    app.put("/api/validacion/scorer-config", {
+      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor"] })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const campaignId = request.headers["x-campaign-id"] as string;
+      if (!campaignId) return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "x-campaign-id header requerido"));
+
+      const parsed = scorerConfigSchema.safeParse(request.body);
+      if (!parsed.success) return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "datos invalidos"));
+
+      await repo.setScorerConfig(campaignId, parsed.data);
+      const resolved = repo.resolveScorerConfig(parsed.data);
+
+      return reply.send({
+        ok: true,
+        request_id: requestId,
+        config: resolved,
+      });
+    });
+
+    // ── GET /api/validacion/scorer-bootstrap — bulk signals para precalentar el scorer de la extensión ──
+    // Devuelve los últimos N eventos auto por teléfono (máx 500 phones × 20 signals).
+    // La extensión lo llama al iniciar el SW para no arrancar en frío.
+    app.get("/api/validacion/scorer-bootstrap", {
+      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor", "agente_digital"] })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const campaignId = request.headers["x-campaign-id"] as string;
+      if (!campaignId) return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "x-campaign-id header requerido"));
+
+      const signals = await repo.fetchScorerBootstrap(campaignId);
+      return reply.send({ ok: true, request_id: requestId, signals, count: signals.length });
+    });
+
+    // ── GET /api/validacion/conversation-score — compute conversational score for a phone ──
+    // Reads classification_events for the phone and returns the stable accumulated vote_class.
+    // Useful for the dashboard to show a contact's current conversational score.
+    app.get("/api/validacion/conversation-score", {
+      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor", "agente_digital"] })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const campaignId = request.headers["x-campaign-id"] as string;
+      if (!campaignId) return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "x-campaign-id header requerido"));
+
+      const query = request.query as { phone?: string };
+      const phone = (query.phone || "").trim();
+      if (!phone || phone.length < 7) {
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "phone query param requerido (min 7 caracteres)"));
+      }
+
+      const overrides = await repo.getScorerConfig(campaignId);
+      const cfg = repo.resolveScorerConfig(overrides);
+      const score = await repo.computeConversationScore(campaignId, phone, cfg);
+      return reply.send({ ok: true, request_id: requestId, score });
+    });
+
+    // ── GET /api/validacion/scorer-debug — debug del estado del scorer para un teléfono ──
+    // Devuelve los signals raw del backend con decay calculado, para diagnosticar
+    // discrepancias entre lo que ve el dashboard y lo que tiene la extensión en memoria.
+    app.get("/api/validacion/scorer-debug", {
+      preHandler: [app.authenticate, authorize({ roles: ["admin", "candidato", "consultor"] })],
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+      const campaignId = request.headers["x-campaign-id"] as string;
+      if (!campaignId) return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "x-campaign-id header requerido"));
+
+      const query = request.query as { phone?: string };
+      const phone = (query.phone || "").trim();
+      if (!phone || phone.length < 7) {
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "phone query param requerido (min 7 caracteres)"));
+      }
+
+      // Traer los últimos 20 eventos auto para este teléfono
+      const rows = await repo.fetchRawSignalsForPhone(campaignId, phone);
+
+      // Usar config de campaña para debug también
+      const overrides = await repo.getScorerConfig(campaignId);
+      const cfg = repo.resolveScorerConfig(overrides);
+
+      const now = Date.now();
+      const signals = rows.map((r) => {
+        const baseWeight = cfg.category_weights[r.category] ?? 0;
+        const ageMs = now - new Date(r.created_at).getTime();
+        const decay = Math.pow(0.5, ageMs / cfg.decay_half_life_ms);
+        const effectiveWeight = baseWeight * r.confidence * decay;
+        return {
+          category: r.category,
+          confidence: r.confidence,
+          base_weight: baseWeight,
+          effective_weight: Math.round(effectiveWeight * 1000) / 1000,
+          decay_factor: Math.round(decay * 1000) / 1000,
+          age_hours: Math.round(ageMs / 3600000 * 10) / 10,
+          created_at: r.created_at,
+        };
+      });
+
+      const score = await repo.computeConversationScore(campaignId, phone, cfg);
+
+      return reply.send({
+        ok: true,
+        request_id: requestId,
+        phone,
+        score,
+        signals,
+        config: cfg,
+        has_overrides: overrides !== null,
+      });
     });
 
     // ── GET /api/validacion/classification-stats — aggregated classification metrics ──

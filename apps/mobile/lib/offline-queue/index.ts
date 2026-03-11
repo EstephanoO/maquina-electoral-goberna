@@ -64,6 +64,21 @@ export {
   type PendingForm,
 } from './forms';
 
+// Geo (offline distrito cache + recientes)
+export {
+  preloadDistritos,
+  isGeoCacheReady,
+  getGeoCacheCount,
+  searchDistritosOffline,
+  saveReciente,
+  getRecientes,
+  getLastUsed,
+  getMostUsed,
+  type SearchResultItem,
+  type SearchProvinciaGroup,
+  type SearchDistritoItem,
+} from './geo';
+
 // Sync service
 export {
   runSync,

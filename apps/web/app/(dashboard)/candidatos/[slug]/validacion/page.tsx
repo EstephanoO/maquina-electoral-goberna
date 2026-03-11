@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import {
   DndContext,
   DragOverlay,
@@ -535,7 +536,15 @@ function ValidacionBoard() {
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-3 bg-white border-b border-slate-200 shrink-0 flex-wrap gap-y-2">
           <div className="flex-1 min-w-0">
-            <h1 className="text-base font-bold text-slate-800">Validacion de Datos</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-bold text-slate-800">Validacion de Datos</h1>
+              <Link
+                href={`/candidatos/${slug}/validacion-wa`}
+                className="text-[11px] font-semibold text-blue-600 border border-blue-200 rounded-md px-2.5 py-0.5 hover:bg-blue-50 transition-colors"
+              >
+                WhatsApp
+              </Link>
+            </div>
             <p className="text-[11px] text-slate-400 mt-0.5">Arrastra las tarjetas entre columnas para clasificar</p>
           </div>
 

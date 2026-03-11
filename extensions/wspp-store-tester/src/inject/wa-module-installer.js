@@ -1,7 +1,7 @@
 // wa-module-installer.js — instala listeners de módulos internos de WA.
 // Maneja: incoming messages, chat watcher, health check.
 
-import { WA_ORIGIN } from './bootstrap.js';
+import { WA_ORIGIN, _ownNumber, setOwnNumber } from './bootstrap.js';
 import { jidToNumber, resolvePhoneFromLid, getContactIndex, getChatIndex, getOwnNumber } from './jid-resolver.js';
 
 let _msgListenerInstalled = false;
@@ -282,6 +282,86 @@ function showHealthBadge(level, message) {
   if (!isError) setTimeout(() => { if (_healthBadge === badge) badge.remove(); }, 15000);
 }
 
+/**
+ * Auto-detect own phone number from WA Web internal modules.
+ * Tries multiple strategies since WA changes module names across versions.
+ * When found, updates _ownNumber in-process AND notifies content.js
+ * to persist in chrome.storage.local (so it survives page reloads).
+ */
+function detectOwnNumber() {
+  // Skip if already set (from storage via content.js)
+  if (_ownNumber) return;
+
+  let phone = null;
+
+  // Strategy 1: WAWebUserPrefsMeUser — .getMeUser().user
+  try {
+    const mod = window.require('WAWebUserPrefsMeUser');
+    const me = mod?.getMeUser?.() || mod?.getMaybeMeUser?.();
+    if (me) {
+      const raw = me.user || me._serialized || '';
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length >= 9 && digits.length <= 15) phone = digits;
+    }
+  } catch (_) {}
+
+  // Strategy 2: WAWebWidFactory — currentWid or toPhoneNumber
+  if (!phone) try {
+    const wid = window.require('WAWebWidFactory');
+    const me = wid?.getMeWid?.() || wid?.getCurrentWid?.();
+    if (me) {
+      const raw = me.user || me._serialized || '';
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length >= 9 && digits.length <= 15) phone = digits;
+    }
+  } catch (_) {}
+
+  // Strategy 3: WAWebConnModel — Conn.wid
+  if (!phone) try {
+    const { Conn } = window.require('WAWebConnModel');
+    const wid = Conn?.wid || Conn?.ref;
+    if (wid) {
+      const raw = typeof wid === 'string' ? wid : (wid.user || wid._serialized || '');
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length >= 9 && digits.length <= 15) phone = digits;
+    }
+  } catch (_) {}
+
+  // Strategy 4: WAWebComposeBoxActions / window.Store.Conn (legacy)
+  if (!phone) try {
+    const store = window.Store;
+    if (store?.Conn?.wid) {
+      const raw = store.Conn.wid.user || store.Conn.wid._serialized || '';
+      const digits = raw.replace(/\D/g, '');
+      if (digits.length >= 9 && digits.length <= 15) phone = digits;
+    }
+  } catch (_) {}
+
+  // Strategy 5: Scan localStorage for WA's own phone cache
+  if (!phone) try {
+    const waMe = localStorage.getItem('last-wid-md') || localStorage.getItem('last-wid');
+    if (waMe) {
+      const digits = waMe.replace(/@.+$/, '').replace(/\D/g, '');
+      if (digits.length >= 9 && digits.length <= 15) phone = digits;
+    }
+  } catch (_) {}
+
+  if (!phone) return;
+
+  // Set in-memory
+  setOwnNumber(phone);
+  console.log(
+    '%c[WSPP] own_number auto-detectado: +' + phone,
+    'color:#34c759;font-weight:700;font-size:13px'
+  );
+
+  // Notify content.js → chrome.storage.local (persists across reloads)
+  window.postMessage({
+    type: 'WSPP_OWN_NUMBER_DETECTED',
+    number: phone,
+  }, WA_ORIGIN);
+}
+
 export function tryInstallWAListeners() {
   if (!window.require) {
     _waListenerRetries++;
@@ -309,5 +389,7 @@ export function tryInstallWAListeners() {
   } else {
     // S-3: All listeners installed — run health check
     runModuleHealthCheck();
+    // Auto-detect own phone number from WA internals
+    detectOwnNumber();
   }
 }

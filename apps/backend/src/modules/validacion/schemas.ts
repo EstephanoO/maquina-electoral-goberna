@@ -42,6 +42,26 @@ export const correctClassificationSchema = z.object({
 
 export type CorrectClassificationInput = z.infer<typeof correctClassificationSchema>;
 
+/* ─── Scorer config schema (per-campaign overrides) ─── */
+
+// Shape de campaigns.config.scorer_config — cada campo es opcional,
+// defaults globales de CATEGORY_WEIGHTS/THRESHOLDS se usan como fallback.
+export const scorerConfigSchema = z.object({
+  // Umbrales de clasificación
+  threshold_duro: z.number().min(0.1).max(10).optional(),
+  threshold_blando: z.number().min(0.01).max(10).optional(),
+  threshold_flotante: z.number().min(0.01).max(10).optional(),
+  // Lock de inválido
+  invalido_lock_threshold: z.number().min(0.5).max(10).optional(),
+  invalido_reversal_threshold: z.number().min(0.5).max(10).optional(),
+  // Decay
+  decay_half_life_days: z.number().min(1).max(90).optional(),
+  // Overrides de pesos por categoría (parcial — se mergean con defaults)
+  category_weights: z.record(z.string(), z.number().min(-10).max(10)).optional(),
+}).strict();
+
+export type ScorerConfigInput = z.infer<typeof scorerConfigSchema>;
+
 /* ─── Row types ─── */
 
 export type ValidationRow = {

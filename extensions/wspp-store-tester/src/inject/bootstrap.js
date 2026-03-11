@@ -9,6 +9,11 @@ export const WA_ORIGIN = 'https://web.whatsapp.com';
 export let _ownNumber = null;
 export let _catalogIsConsultor = false; // true when effective role is consultor or admin
 
+/** Setter for _ownNumber — used by wa-module-installer auto-detection */
+export function setOwnNumber(num) {
+  _ownNumber = num || null;
+}
+
 window.addEventListener('message', (e) => {
   if (e.source !== window) return;
   if (e.data?.type === 'WSPP_SET_OWN_NUMBER') {
