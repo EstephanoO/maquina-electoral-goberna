@@ -665,18 +665,39 @@ function _renderCreateView(panel) {
   });
   body.appendChild(scriptArea);
 
-  const createBtn = _mkActionBtn('Crear plantilla', '#00a884', CATALOG_SVG.check);
+  // ── Order (sort_order) ──────────────────────────────────────────────
+  body.appendChild(_mkDetailLabel('Orden de aparición'));
+  const sortInput = document.createElement('input');
+  sortInput.type = 'number'; sortInput.min = '0'; sortInput.max = '999'; sortInput.value = '0';
+  sortInput.placeholder = '0';
+  Object.assign(sortInput.style, {
+    width: '100%', padding: '10px 12px', background: '#2c2c2e',
+    border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px',
+    color: '#e9edef', fontSize: '13px', fontFamily: 'inherit', boxSizing: 'border-box',
+    outline: 'none',
+  });
+  body.appendChild(sortInput);
+
+  // ── Voice ID (optional — leave blank to use default César Vásquez voice) ──
+  body.appendChild(_mkDetailLabel('Voice ID (opcional — dejar vacío para voz por defecto)'));
+  const voiceInput = _mkTextInput('iaSdolcffUuIlEi5pdbj');
+  body.appendChild(voiceInput);
+
+  const createBtn = _mkActionBtn('Crear y generar audio', '#00a884', CATALOG_SVG.check);
   createBtn.addEventListener('click', () => {
     const label = labelInput.value.trim();
     const desc  = descInput.value.trim();
     const cat   = catSel.value;
     const script = scriptArea.value.trim();
+    const sortOrder = parseInt(sortInput.value, 10) || 0;
+    const voiceId = voiceInput.value.trim() || undefined;
+
     if (!label || !script) {
       _showCatalogStatus('Nombre y guión son obligatorios', '#ef5350', 3000);
       return;
     }
     _catalogCategory = cat;
-    _handleCreateItem({ label, description: desc, category: cat, script_text: script }, createBtn);
+    _handleCreateItem({ label, description: desc, category: cat, script_text: script, sort_order: sortOrder, voice_id: voiceId }, createBtn);
   });
   body.appendChild(createBtn);
 
@@ -1080,7 +1101,18 @@ window.addEventListener('message', (e) => {
       window.postMessage({ type: 'BUST_CATALOG_CACHE' }, WA_ORIGIN);
       _catalogCategory = e.data.item.category;
       _catalogView = 'category';
-      _showCatalogStatus('Plantilla creada — generá el audio ✓', '#00a884', 3000);
+
+      if (e.data.audio_generated) {
+        // Backend auto-generated audio — item already has audio ready to send
+        _showCatalogStatus('Plantilla creada con audio ✓', '#00a884', 3000);
+      } else if (e.data.audio_error) {
+        // Item created but TTS failed — show warning, user can regenerate manually
+        _showCatalogStatus('Plantilla creada — audio falló: ' + e.data.audio_error.slice(0, 60), '#f59e0b', 5000);
+      } else {
+        // No auto_generate flag or TTS not configured — prompt manual generation
+        _showCatalogStatus('Plantilla creada — generá el audio ✓', '#00a884', 3000);
+      }
+
       if (_catalogPanelOpen) renderCatalogPanel();
     } else {
       _showCatalogStatus('Error al crear: ' + (e.data.error || 'intenta de nuevo'), '#ef5350', 4000);

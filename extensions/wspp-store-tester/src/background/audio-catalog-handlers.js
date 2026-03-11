@@ -197,7 +197,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
-// CREATE_CATALOG_ITEM — creates a new catalog item in the backend
+// CREATE_CATALOG_ITEM — creates a new catalog item in the backend.
+// Sends auto_generate: true so the backend calls ElevenLabs immediately
+// after creating the item. Response includes audio_generated flag and
+// updated item with has_audio / audio_size / duration_ms if TTS succeeded.
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type !== 'CREATE_CATALOG_ITEM') return;
   const { data } = msg;
@@ -210,7 +213,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     try {
       const result = await apiFetch('/api/audio-catalog', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, auto_generate: true }),
       });
       if (!result.ok) {
         sendResponse({ ok: false, error: result.message || result.error || 'Create failed' });
@@ -219,7 +222,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // Bust catalog metadata cache so next list fetch is fresh
       _audioCatalogCache = null;
       _audioCatalogCacheTs = 0;
-      sendResponse({ ok: true, item: result.item ?? result });
+      // Pass through audio_generated + audioSize + durationMs so the panel
+      // can update its local state without a second round-trip
+      sendResponse({
+        ok: true,
+        item: result.item ?? result,
+        audio_generated: result.audio_generated ?? false,
+        audioSize: result.audioSize,
+        durationMs: result.durationMs,
+        audio_error: result.audio_error,
+      });
     } catch (err) {
       sendResponse({ ok: false, error: err.message });
     }

@@ -10,6 +10,128 @@ import {
   updateItemSchema,
 } from "./schemas";
 
+// ── OGG/Opus duration parser (no external deps) ──────────────────────
+// Reads the last OGG page's granule_position and the OpusHead pre-skip
+// to compute exact duration. Falls back to bitrate estimation on error.
+//
+// OGG page header layout (RFC 3533):
+//   0-3:   capture_pattern "OggS"
+//   4:     stream_structure_version
+//   5:     header_type_flag
+//   6-13:  granule_position (int64 LE)
+//   14-17: bitstream_serial_number
+//   18-21: page_sequence_number
+//   22-25: CRC checksum
+//   26:    number_page_segments
+//   27..:  segment_table
+//
+// OpusHead packet layout (RFC 7845 §5.1):
+//   0-7:   "OpusHead" magic
+//   8:     version
+//   9:     channel_count
+//   10-11: pre_skip (uint16 LE)
+//   12-15: input_sample_rate (uint32 LE) — informational only
+//   ...
+//
+// Opus output sample rate is always 48000 Hz (fixed by spec).
+// Duration = (last_granule_position - pre_skip) / 48000
+function parseOggOpusDurationMs(buffer: ArrayBuffer): number {
+  const FALLBACK_KBPS = 32;
+  const bytes = new Uint8Array(buffer);
+  const dv = new DataView(buffer);
+
+  try {
+    // 1. Find pre_skip from the first OpusHead page
+    let preSkip = 0;
+    for (let i = 0; i < bytes.length - 8; i++) {
+      // Find "OpusHead" magic signature
+      if (
+        bytes[i] === 0x4f && bytes[i+1] === 0x70 && bytes[i+2] === 0x75 &&
+        bytes[i+3] === 0x73 && bytes[i+4] === 0x48 && bytes[i+5] === 0x65 &&
+        bytes[i+6] === 0x61 && bytes[i+7] === 0x64
+      ) {
+        preSkip = dv.getUint16(i + 10, true); // LE uint16
+        break;
+      }
+    }
+
+    // 2. Scan all OGG pages to find the maximum granule_position
+    // (last page = end of stream)
+    let maxGranule = 0;
+    let i = 0;
+    while (i < bytes.length - 27) {
+      // Find "OggS" capture pattern
+      if (
+        bytes[i] !== 0x4f || bytes[i+1] !== 0x67 ||
+        bytes[i+2] !== 0x67 || bytes[i+3] !== 0x53
+      ) {
+        i++;
+        continue;
+      }
+
+      // Read granule_position as two uint32 (JS can't do int64 natively)
+      const granuleLo = dv.getUint32(i + 6,  true);
+      const granuleHi = dv.getUint32(i + 10, true);
+      // granuleHi should be 0 for audio files under ~25 hours — safe to ignore
+      if (granuleHi === 0 && granuleLo > maxGranule) {
+        maxGranule = granuleLo;
+      }
+
+      // Skip to next page: parse segment table to find page body size
+      const numSegments = bytes[i + 26] ?? 0;
+      if (i + 27 + numSegments > bytes.length) break;
+      let pageBodySize = 0;
+      for (let s = 0; s < numSegments; s++) {
+        pageBodySize += bytes[i + 27 + s] ?? 0;
+      }
+      i += 27 + numSegments + pageBodySize;
+    }
+
+    if (maxGranule > preSkip) {
+      return Math.round(((maxGranule - preSkip) / 48000) * 1000);
+    }
+  } catch {
+    // Fall through to estimation
+  }
+
+  // Fallback: bitrate estimation (±30% accuracy)
+  return Math.round((buffer.byteLength * 8 / (FALLBACK_KBPS * 1000)) * 1000);
+}
+
+// ── Shared ElevenLabs TTS call — reused by generate endpoint and auto-generate ──
+async function callElevenLabsTTS(
+  apiKey: string,
+  voiceId: string,
+  scriptText: string,
+): Promise<{ base64: string; size: number; durationMs: number } | { error: string; status: number }> {
+  const ttsRes = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=opus_48000_32`,
+    {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text: scriptText,
+        model_id: "eleven_multilingual_v2",
+      }),
+    },
+  );
+
+  if (!ttsRes.ok) {
+    const errText = await ttsRes.text().catch(() => ttsRes.statusText);
+    return { error: errText, status: ttsRes.status };
+  }
+
+  const buffer = await ttsRes.arrayBuffer();
+  const base64 = Buffer.from(buffer).toString("base64");
+  const size = buffer.byteLength;
+  const durationMs = parseOggOpusDurationMs(buffer);
+
+  return { base64, size, durationMs };
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // AUDIO CATALOG MODULE
 //
@@ -77,7 +199,10 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
     });
 
     // ── POST /api/audio-catalog/:id/generate — generate audio via ElevenLabs ──
-    // This is the ONLY endpoint that calls ElevenLabs. Called once per item.
+    // This is the canonical endpoint that calls ElevenLabs TTS. Called once per item.
+    // Uses the item's voice_id (defaults to César Vásquez clone if not set).
+    // Output format: OGG/Opus 48kHz 32kbps (only format WhatsApp PTT accepts).
+    // Duration is parsed from OGG granule_position — exact, not estimated.
     app.post<{ Params: { id: string } }>("/api/audio-catalog/:id/generate", {
       preHandler: [app.authenticate, authorize({ roles: ["consultor"] })],
     }, async (request, reply) => {
@@ -92,49 +217,23 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
         return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "item no encontrado"));
       }
 
-      // Generate via ElevenLabs
       try {
-        // Use /stream endpoint with output_format query param — the body-level
-        // output_format param is ignored by ElevenLabs and always returns MP3.
-        // opus_48000_32 produces a real OGG/Opus container (magic bytes: OggS)
-        // which is the only format WhatsApp PTT accepts.
-        const ttsRes = await fetch(
-          `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(item.voice_id)}/stream?output_format=opus_48000_32`,
-          {
-            method: "POST",
-            headers: {
-              "xi-api-key": env.elevenlabsApiKey,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              text: item.script_text,
-              model_id: "eleven_multilingual_v2",
-            }),
-          },
-        );
+        const result = await callElevenLabsTTS(env.elevenlabsApiKey, item.voice_id, item.script_text);
 
-        if (!ttsRes.ok) {
-          const errText = await ttsRes.text().catch(() => ttsRes.statusText);
-          app.log.error({ status: ttsRes.status, body: errText }, "ElevenLabs TTS error (catalog)");
-          return reply.code(502).send(errorPayload(requestId, "UPSTREAM_ERROR", `ElevenLabs returned ${ttsRes.status}`));
+        if ("error" in result) {
+          app.log.error({ status: result.status, body: result.error }, "ElevenLabs TTS error (catalog generate)");
+          return reply.code(502).send(errorPayload(requestId, "UPSTREAM_ERROR", `ElevenLabs returned ${result.status}`));
         }
 
-        const buffer = await ttsRes.arrayBuffer();
-        const base64 = Buffer.from(buffer).toString("base64");
-        const size = buffer.byteLength;
-        // Opus at 32kbps: duration ≈ (size * 8) / 32000 seconds
-        const durationMs = Math.round((size * 8 / 32000) * 1000);
-
-        await repo.saveAudio(item.id, base64, size, durationMs);
-
-        app.log.info({ id: item.id, category: item.category, size }, "audio generated for catalog item");
+        await repo.saveAudio(item.id, result.base64, result.size, result.durationMs);
+        app.log.info({ id: item.id, category: item.category, size: result.size, durationMs: result.durationMs }, "audio generated for catalog item");
 
         return reply.send({
           ok: true,
           request_id: requestId,
           id: item.id,
-          audioSize: size,
-          durationMs,
+          audioSize: result.size,
+          durationMs: result.durationMs,
         });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Unknown TTS error";
@@ -144,6 +243,10 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
     });
 
     // ── POST /api/audio-catalog — create new item (consultor+) ───────
+    // If auto_generate: true is sent in the body AND ELEVENLABS_API_KEY is
+    // configured, the backend calls ElevenLabs immediately after creating the
+    // item and returns { item, audioSize, durationMs, audio_generated: true }.
+    // If TTS fails, the item is still created — audio_generated: false in response.
     app.post("/api/audio-catalog", {
       preHandler: [app.authenticate, authorize({ roles: ["consultor"], requireCampaign: true })],
     }, async (request, reply) => {
@@ -156,8 +259,59 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
       }
 
       const authed = request as unknown as { userId: string };
-      const item = await repo.create({ ...parsed.data, created_by: authed.userId });
-      return reply.code(201).send({ ok: true, request_id: requestId, item });
+      const { auto_generate, ...createData } = parsed.data;
+      const item = await repo.create({ ...createData, created_by: authed.userId });
+
+      // Auto-generate audio if requested and TTS is configured
+      if (auto_generate && env.elevenlabsApiKey) {
+        try {
+          const voiceId = item.voice_id;
+          const ttsResult = await callElevenLabsTTS(env.elevenlabsApiKey, voiceId, item.script_text);
+
+          if ("error" in ttsResult) {
+            app.log.warn({ id: item.id, status: ttsResult.status }, "auto-generate TTS failed after create");
+            return reply.code(201).send({
+              ok: true,
+              request_id: requestId,
+              item,
+              audio_generated: false,
+              audio_error: `ElevenLabs returned ${ttsResult.status}`,
+            });
+          }
+
+          await repo.saveAudio(item.id, ttsResult.base64, ttsResult.size, ttsResult.durationMs);
+          app.log.info({ id: item.id, category: item.category, size: ttsResult.size, durationMs: ttsResult.durationMs }, "audio auto-generated on create");
+
+          // Return the item with updated audio metadata
+          const itemWithAudio = {
+            ...item,
+            has_audio: true,
+            audio_size: ttsResult.size,
+            duration_ms: ttsResult.durationMs,
+          };
+
+          return reply.code(201).send({
+            ok: true,
+            request_id: requestId,
+            item: itemWithAudio,
+            audio_generated: true,
+            audioSize: ttsResult.size,
+            durationMs: ttsResult.durationMs,
+          });
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "TTS error";
+          app.log.warn({ err, id: item.id }, "auto-generate TTS threw on create");
+          return reply.code(201).send({
+            ok: true,
+            request_id: requestId,
+            item,
+            audio_generated: false,
+            audio_error: message,
+          });
+        }
+      }
+
+      return reply.code(201).send({ ok: true, request_id: requestId, item, audio_generated: false });
     });
 
     // ── PUT /api/audio-catalog/:id — update item metadata ────────────

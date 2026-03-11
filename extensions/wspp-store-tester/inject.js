@@ -1518,18 +1518,43 @@
       boxSizing: "border-box"
     });
     body.appendChild(scriptArea);
-    const createBtn = _mkActionBtn("Crear plantilla", "#00a884", CATALOG_SVG.check);
+    body.appendChild(_mkDetailLabel("Orden de aparici\xF3n"));
+    const sortInput = document.createElement("input");
+    sortInput.type = "number";
+    sortInput.min = "0";
+    sortInput.max = "999";
+    sortInput.value = "0";
+    sortInput.placeholder = "0";
+    Object.assign(sortInput.style, {
+      width: "100%",
+      padding: "10px 12px",
+      background: "#2c2c2e",
+      border: "1px solid rgba(255,255,255,.08)",
+      borderRadius: "12px",
+      color: "#e9edef",
+      fontSize: "13px",
+      fontFamily: "inherit",
+      boxSizing: "border-box",
+      outline: "none"
+    });
+    body.appendChild(sortInput);
+    body.appendChild(_mkDetailLabel("Voice ID (opcional \u2014 dejar vac\xEDo para voz por defecto)"));
+    const voiceInput = _mkTextInput("iaSdolcffUuIlEi5pdbj");
+    body.appendChild(voiceInput);
+    const createBtn = _mkActionBtn("Crear y generar audio", "#00a884", CATALOG_SVG.check);
     createBtn.addEventListener("click", () => {
       const label = labelInput.value.trim();
       const desc = descInput.value.trim();
       const cat = catSel.value;
       const script = scriptArea.value.trim();
+      const sortOrder = parseInt(sortInput.value, 10) || 0;
+      const voiceId = voiceInput.value.trim() || void 0;
       if (!label || !script) {
         _showCatalogStatus("Nombre y gui\xF3n son obligatorios", "#ef5350", 3e3);
         return;
       }
       _catalogCategory = cat;
-      _handleCreateItem({ label, description: desc, category: cat, script_text: script }, createBtn);
+      _handleCreateItem({ label, description: desc, category: cat, script_text: script, sort_order: sortOrder, voice_id: voiceId }, createBtn);
     });
     body.appendChild(createBtn);
     panel.appendChild(body);
@@ -1909,7 +1934,13 @@
         window.postMessage({ type: "BUST_CATALOG_CACHE" }, WA_ORIGIN);
         _catalogCategory = e.data.item.category;
         _catalogView = "category";
-        _showCatalogStatus("Plantilla creada \u2014 gener\xE1 el audio \u2713", "#00a884", 3e3);
+        if (e.data.audio_generated) {
+          _showCatalogStatus("Plantilla creada con audio \u2713", "#00a884", 3e3);
+        } else if (e.data.audio_error) {
+          _showCatalogStatus("Plantilla creada \u2014 audio fall\xF3: " + e.data.audio_error.slice(0, 60), "#f59e0b", 5e3);
+        } else {
+          _showCatalogStatus("Plantilla creada \u2014 gener\xE1 el audio \u2713", "#00a884", 3e3);
+        }
         if (_catalogPanelOpen) renderCatalogPanel();
       } else {
         _showCatalogStatus("Error al crear: " + (e.data.error || "intenta de nuevo"), "#ef5350", 4e3);

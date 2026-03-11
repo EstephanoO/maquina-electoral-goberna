@@ -1053,7 +1053,7 @@
       try {
         const result = await apiFetch("/api/audio-catalog", {
           method: "POST",
-          body: JSON.stringify(data)
+          body: JSON.stringify({ ...data, auto_generate: true })
         });
         if (!result.ok) {
           sendResponse({ ok: false, error: result.message || result.error || "Create failed" });
@@ -1061,7 +1061,14 @@
         }
         _audioCatalogCache = null;
         _audioCatalogCacheTs = 0;
-        sendResponse({ ok: true, item: result.item ?? result });
+        sendResponse({
+          ok: true,
+          item: result.item ?? result,
+          audio_generated: result.audio_generated ?? false,
+          audioSize: result.audioSize,
+          durationMs: result.durationMs,
+          audio_error: result.audio_error
+        });
       } catch (err) {
         sendResponse({ ok: false, error: err.message });
       }
