@@ -847,9 +847,9 @@ async function apiFetch(path, options = {}, _isRetry = false) {
   return new Promise((resolve) => {
     // S-10: Read token from session storage first, fall back to local
     _getToken(async (data) => {
-      if (!data.wspp_token || !data.wspp_campaign_id) {
+      if (!data.wspp_token) {
         // S-10: Try auto-refresh if session token is gone but refresh token exists
-        if (!data.wspp_token && !_isRetry) {
+        if (!_isRetry) {
           const refreshed = await tryRefreshToken();
           if (refreshed) {
             resolve(await apiFetch(path, options, true));
@@ -859,6 +859,8 @@ async function apiFetch(path, options = {}, _isRetry = false) {
         resolve({ ok: false, error: 'No auth' });
         return;
       }
+      // campaign_id missing: still attempt the call — backend will reject with
+      // a descriptive error (MISSING_CAMPAIGN) rather than silently failing here.
       try {
         const res = await fetch(`${API}${path}`, {
           ...options,

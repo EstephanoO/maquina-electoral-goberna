@@ -84,6 +84,15 @@ async function doLogin() {
     const campaigns  = data.campaigns || [];
     const campaignId = campaigns[0]?.id ?? null;
 
+    // Compute effective role = max between global role and all campaign roles.
+    // The JWT uses the effective role, so we must match it here for the
+    // consultor gate in the catalog panel to work correctly.
+    const ROLE_LEVEL = { admin: 50, consultor: 40, candidato: 30, brigadista_zonal: 20, agente_campo: 10, agente_digital: 10 };
+    const globalLevel = ROLE_LEVEL[data.user?.role] ?? 0;
+    const campaignLevel = campaigns.reduce((max, c) => Math.max(max, ROLE_LEVEL[c.role] ?? 0), 0);
+    const effectiveLevel = Math.max(globalLevel, campaignLevel);
+    const effectiveRole = Object.entries(ROLE_LEVEL).find(([, v]) => v === effectiveLevel)?.[0] || data.user?.role || 'agente_digital';
+
     // H-1: Also store refresh_token for token refresh flow
     // S-7: Store campaigns list for campaign selector
     // S-10: Store access_token in session storage (more secure) + local (fallback)
@@ -91,7 +100,7 @@ async function doLogin() {
       wspp_token:         token,
       wspp_refresh_token: data.refresh_token || null,
       wspp_user:          userName,
-      wspp_user_role:     data.user?.role || 'agente_digital',
+      wspp_user_role:     effectiveRole,
       wspp_count:         0,
       wspp_campaign_id:   campaignId,
       wspp_campaigns:     JSON.stringify(campaigns.map(c => ({ id: c.id, name: c.name || c.candidate_name || c.id }))),
