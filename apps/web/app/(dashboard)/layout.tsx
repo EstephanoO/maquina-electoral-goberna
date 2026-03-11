@@ -370,43 +370,54 @@ function NotificationsButton({ showLabel, isMobile, onClose }: { showLabel: bool
     setLoading(true);
     const notifs: Notification[] = [];
 
+    // Access requests — { ok, access_requests: [{ id, user_full_name, campaign_name, status, requested_at }] }
     try {
       const res = await fetch("/api/access-requests", { credentials: "same-origin" });
       if (res.ok) {
-        const json = await res.json() as { ok: boolean; data?: Array<{ id: string; user_name?: string; created_at: string }> };
-        if (json.ok && Array.isArray(json.data)) {
-          for (const r of json.data.slice(0, 5)) {
-            notifs.push({ id: `access-${r.id}`, title: "Solicitud de acceso", subtitle: r.user_name, type: "access", time: relTime(r.created_at) });
+        const json = await res.json() as {
+          ok: boolean;
+          access_requests?: Array<{ id: string; user_full_name?: string; status: string; requested_at: string }>;
+        };
+        if (json.ok && Array.isArray(json.access_requests)) {
+          for (const r of json.access_requests.filter((x) => x.status === "pending").slice(0, 5)) {
+            notifs.push({ id: `access-${r.id}`, title: "Solicitud de acceso pendiente", subtitle: r.user_full_name, type: "access", time: relTime(r.requested_at) });
           }
         }
       }
     } catch { /* noop */ }
 
+    // Support conversations — { ok, conversations: [{ other_user_id, other_user_name, unread_count, updated_at }] }
     try {
-      const res = await fetch("/api/support", { credentials: "same-origin" });
+      const res = await fetch("/api/support/conversations", { credentials: "same-origin" });
       if (res.ok) {
-        const json = await res.json() as { ok: boolean; data?: Array<{ id: string; subject?: string; created_at: string }> };
-        if (json.ok && Array.isArray(json.data)) {
-          for (const t of json.data.slice(0, 3)) {
-            notifs.push({ id: `support-${t.id}`, title: "Ticket de soporte", subtitle: t.subject, type: "support", time: relTime(t.created_at) });
+        const json = await res.json() as {
+          ok: boolean;
+          conversations?: Array<{ other_user_id: string; other_user_name?: string; unread_count?: number; updated_at: string }>;
+        };
+        if (json.ok && Array.isArray(json.conversations)) {
+          for (const c of json.conversations.filter((x) => (x.unread_count ?? 0) > 0).slice(0, 3)) {
+            notifs.push({ id: `support-${c.other_user_id}`, title: "Mensaje sin leer", subtitle: c.other_user_name, type: "support", time: relTime(c.updated_at) });
           }
         }
       }
     } catch { /* noop */ }
 
+    // Leads — { ok, leads: [{ id, nombre, plataforma, created_at }], total }
     try {
       const res = await fetch("/api/leads", { credentials: "same-origin" });
       if (res.ok) {
-        const json = await res.json() as { ok: boolean; data?: Array<{ id: string; nombre?: string; created_at: string }> };
-        if (json.ok && Array.isArray(json.data)) {
-          for (const l of json.data.slice(0, 3)) {
+        const json = await res.json() as {
+          ok: boolean;
+          leads?: Array<{ id: string; nombre?: string; created_at: string }>;
+        };
+        if (json.ok && Array.isArray(json.leads)) {
+          for (const l of json.leads.slice(0, 3)) {
             notifs.push({ id: `lead-${l.id}`, title: "Nuevo lead", subtitle: l.nombre, type: "lead", time: relTime(l.created_at) });
           }
         }
       }
     } catch { /* noop */ }
 
-    notifs.sort((a, b) => a.time.localeCompare(b.time));
     setNotifications(notifs);
     setFetched(true);
     setLoading(false);

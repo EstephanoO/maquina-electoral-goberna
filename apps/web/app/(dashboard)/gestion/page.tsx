@@ -96,44 +96,77 @@ export default function GestionPage() {
       setLoading(true);
       const newCards: KanbanCardData[] = [];
 
-      // 1. Access requests (pendiente)
+      // 1. Access requests
+      // Backend: GET /api/access-requests → { ok, request_id, access_requests: AccessRequestRow[] }
+      // Fields: id, user_id, campaign_id, status, requested_at, user_full_name, campaign_name
       try {
         const res = await fetch("/api/access-requests", { credentials: "same-origin" });
         if (res.ok) {
-          const json = await res.json() as { ok: boolean; data?: Array<{ id: string; user_name?: string; created_at: string; campaign_name?: string }> };
-          if (json.ok && Array.isArray(json.data)) {
-            for (const req of json.data.slice(0, 8)) {
+          const json = await res.json() as {
+            ok: boolean;
+            access_requests?: Array<{
+              id: string;
+              user_full_name?: string;
+              campaign_name?: string;
+              status: string;
+              requested_at: string;
+            }>;
+          };
+          if (json.ok && Array.isArray(json.access_requests)) {
+            // Show pending first, then others — limit 8
+            const pending = json.access_requests.filter((r) => r.status === "pending");
+            const rest = json.access_requests.filter((r) => r.status !== "pending");
+            for (const req of [...pending, ...rest].slice(0, 8)) {
               newCards.push({
                 id: `access-${req.id}`,
-                title: req.user_name ?? "Solicitud de acceso",
+                title: req.user_full_name ?? "Solicitud de acceso",
                 subtitle: req.campaign_name ? `Campaña: ${req.campaign_name}` : undefined,
                 source: "access",
-                badge: "Pendiente",
-                badgeColor: "#F59E0B",
-                meta: relativeTime(req.created_at),
-                href: undefined,
+                badge: req.status === "pending" ? "Pendiente" : req.status === "approved" ? "Aprobado" : "Rechazado",
+                badgeColor: req.status === "pending" ? "#F59E0B" : req.status === "approved" ? "#10B981" : "#EF4444",
+                meta: relativeTime(req.requested_at),
               });
             }
           }
         }
       } catch { /* graceful degradation */ }
 
-      // 2. Meets (activos → en-progreso, completados → completado)
+      // 2. Meets — por campaña activa
+      // Backend: GET /api/meets/campaign/:campaignId → { ok, request_id, meets: MeetWithParticipantCount[] }
+      // Fields: id, title, status, location_name, starts_at, participant_count
       if (activeCampaignId) {
         try {
-          const res = await fetch(`/api/meets?campaign_id=${activeCampaignId}`, { credentials: "same-origin" });
+          const res = await fetch(`/api/meets/campaign/${activeCampaignId}`, { credentials: "same-origin" });
           if (res.ok) {
-            const json = await res.json() as { ok: boolean; data?: Array<{ id: string; title: string; status: string; location_name?: string; starts_at: string }> };
-            if (json.ok && Array.isArray(json.data)) {
-              for (const meet of json.data.slice(0, 10)) {
+            const json = await res.json() as {
+              ok: boolean;
+              meets?: Array<{
+                id: string;
+                title: string;
+                status: string;
+                location_name?: string | null;
+                starts_at: string;
+                participant_count?: number;
+              }>;
+            };
+            if (json.ok && Array.isArray(json.meets)) {
+              // active + scheduled primero, completed al final — limit 10
+              const sorted = [...json.meets].sort((a, b) => {
+                const order: Record<string, number> = { active: 0, scheduled: 1, completed: 2, cancelled: 3 };
+                return (order[a.status] ?? 9) - (order[b.status] ?? 9);
+              });
+              for (const meet of sorted.slice(0, 10)) {
+                const statusLabel: Record<string, string> = { active: "Activa", scheduled: "Programada", completed: "Completada", cancelled: "Cancelada" };
+                const statusColor: Record<string, string> = { active: "#7C3AED", scheduled: "#0EA5E9", completed: "#10B981", cancelled: "#94A3B8" };
                 newCards.push({
                   id: `meet-${meet.id}`,
                   title: meet.title,
                   subtitle: meet.location_name ?? undefined,
                   source: "meet",
-                  badge: meet.status,
-                  badgeColor: meet.status === "active" ? "#7C3AED" : meet.status === "completed" ? "#10B981" : "#94A3B8",
-                  meta: relativeTime(meet.starts_at),
+                  badge: statusLabel[meet.status] ?? meet.status,
+                  badgeColor: statusColor[meet.status] ?? "#94A3B8",
+                  meta: meet.participant_count != null ? `${meet.participant_count} participantes` : relativeTime(meet.starts_at),
+                  tags: meet.participant_count != null ? [{ label: relativeTime(meet.starts_at), color: "#94A3B8" }] : undefined,
                 });
               }
             }
@@ -141,18 +174,25 @@ export default function GestionPage() {
         } catch { /* graceful degradation */ }
       }
 
-      // 3. Leads (pendiente)
+      // 3. Leads (solo admin los puede ver)
+      // Backend: GET /api/leads → { ok, request_id, leads: LeadRow[], total: number }
+      // Fields: id, nombre, correo, plataforma, created_at
       try {
         const res = await fetch("/api/leads", { credentials: "same-origin" });
         if (res.ok) {
-          const json = await res.json() as { ok: boolean; data?: Array<{ id: string; nombre?: string; status?: string; created_at: string }> };
-          if (json.ok && Array.isArray(json.data)) {
-            for (const lead of json.data.slice(0, 6)) {
+          const json = await res.json() as {
+            ok: boolean;
+            leads?: Array<{ id: string; nombre?: string; plataforma?: string; created_at: string }>;
+            total?: number;
+          };
+          if (json.ok && Array.isArray(json.leads)) {
+            for (const lead of json.leads.slice(0, 6)) {
               newCards.push({
                 id: `lead-${lead.id}`,
                 title: lead.nombre ?? "Lead sin nombre",
+                subtitle: lead.plataforma ? `Plataforma: ${lead.plataforma}` : undefined,
                 source: "lead",
-                badge: lead.status ?? "nuevo",
+                badge: "Nuevo",
                 badgeColor: "#10B981",
                 meta: relativeTime(lead.created_at),
               });
@@ -161,20 +201,34 @@ export default function GestionPage() {
         }
       } catch { /* graceful degradation */ }
 
-      // 4. Support tickets (pendiente)
+      // 4. Soporte — mensajes recientes sin leer hacia admin
+      // Backend: GET /api/support/conversations → lista de conversaciones activas
+      // Support es un sistema de chat (support_messages table), no tickets
       try {
-        const res = await fetch("/api/support", { credentials: "same-origin" });
+        const res = await fetch("/api/support/conversations", { credentials: "same-origin" });
         if (res.ok) {
-          const json = await res.json() as { ok: boolean; data?: Array<{ id: string; subject?: string; status?: string; created_at: string }> };
-          if (json.ok && Array.isArray(json.data)) {
-            for (const ticket of json.data.slice(0, 5)) {
+          const json = await res.json() as {
+            ok: boolean;
+            conversations?: Array<{
+              other_user_id: string;
+              other_user_name?: string;
+              last_message?: string;
+              unread_count?: number;
+              updated_at: string;
+            }>;
+          };
+          if (json.ok && Array.isArray(json.conversations)) {
+            const withUnread = json.conversations.filter((c) => (c.unread_count ?? 0) > 0);
+            for (const conv of withUnread.slice(0, 5)) {
               newCards.push({
-                id: `support-${ticket.id}`,
-                title: ticket.subject ?? "Ticket de soporte",
+                id: `support-${conv.other_user_id}`,
+                title: `Mensaje de ${conv.other_user_name ?? "usuario"}`,
+                subtitle: conv.last_message ? `"${conv.last_message.slice(0, 60)}${conv.last_message.length > 60 ? "…" : ""}"` : undefined,
                 source: "support",
-                badge: ticket.status ?? "abierto",
+                badge: conv.unread_count ? `${conv.unread_count} sin leer` : "Nuevo",
                 badgeColor: "#EF4444",
-                meta: relativeTime(ticket.created_at),
+                meta: relativeTime(conv.updated_at),
+                href: undefined,
               });
             }
           }
