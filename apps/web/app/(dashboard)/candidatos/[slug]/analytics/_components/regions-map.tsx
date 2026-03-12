@@ -20,6 +20,7 @@ import {
 } from "@vis.gl/react-maplibre";
 import type { MapRef, StyleSpecification } from "@vis.gl/react-maplibre";
 import type { GA4Region } from "./types";
+import { useTheme } from "@/lib/theme-context";
 
 /* ═══════════════════════════════════════════════════════════════════
    Types
@@ -155,6 +156,25 @@ const MAP_STYLE: StyleSpecification = {
   ],
 };
 
+const MAP_STYLE_DARK: StyleSpecification = {
+  version: 8,
+  name: "Peru Regions Dark",
+  sources: {
+    "carto-dark": {
+      type: "raster",
+      tiles: [
+        "https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}@2x.png",
+        "https://b.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}@2x.png",
+      ],
+      tileSize: 256,
+      attribution: "&copy; CARTO &copy; OSM",
+    },
+  },
+  layers: [
+    { id: "carto-dark", type: "raster", source: "carto-dark", minzoom: 0, maxzoom: 20 },
+  ],
+};
+
 /* ═══════════════════════════════════════════════════════════════════
    Component
    ═══════════════════════════════════════════════════════════════════ */
@@ -165,6 +185,8 @@ export const RegionsMap = memo(function RegionsMap({
   highlightRegion,
   clickedRegion,
 }: Props) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const mapRef = useRef<MapRef | null>(null);
   const [activeMarker, setActiveMarker] = useState<ActiveMarker | null>(null);
 
@@ -278,7 +300,7 @@ export const RegionsMap = memo(function RegionsMap({
           zoom: DEFAULT_ZOOM,
         }}
         style={STYLES.map}
-        mapStyle={MAP_STYLE}
+        mapStyle={isDark ? MAP_STYLE_DARK : MAP_STYLE}
         minZoom={3}
         maxZoom={12}
         dragRotate={false}
@@ -345,7 +367,7 @@ export const RegionsMap = memo(function RegionsMap({
       <button
         type="button"
         onClick={handleReset}
-        style={STYLES.resetBtn}
+        style={{ ...STYLES.resetBtn, ...(isDark ? { backgroundColor: "rgba(9,13,21,0.92)", border: "1px solid #2c425d", color: "#e2ecff" } : null) }}
         title="Ver todo Peru"
         aria-label="Ver todo Peru"
       >

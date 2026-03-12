@@ -3,6 +3,7 @@
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "../../../../lib/auth-context";
+import { useTheme } from "../../../../lib/theme-context";
 
 /* ── Tab config ─────────────────────────────────────────────────── */
 
@@ -38,6 +39,7 @@ export default function CandidatoSlugLayout({ children }: { children: React.Reac
   const router = useRouter();
   const slug = params.slug as string;
   const { user } = useAuth();
+  const { theme } = useTheme();
 
   const uiRole: UIRole = mapBackendRoleToUI(user?.role ?? "agente_campo");
   const TABS = ALL_TABS.filter((tab) => tab.roles.includes(uiRole));
@@ -52,6 +54,19 @@ export default function CandidatoSlugLayout({ children }: { children: React.Reac
       router.replace(`/candidatos/${slug}/${allowed[0] ?? "analytics"}`);
     }
   }, [pathname, uiRole, slug, router, user]);
+
+  // Keep candidato top tabbar synced with app theme (Monitor / Analytics / etc.)
+  useEffect(() => {
+    const root = document.documentElement;
+    const isDark = theme === "dark";
+    void pathname;
+
+    root.style.setProperty("--tierra-tabbar-bg", isDark ? "#090D15" : "#ffffff");
+    root.style.setProperty("--tierra-tabbar-border", isDark ? "#1d2f43" : "#e2e8f0");
+    root.style.setProperty("--tierra-tab-active-color", isDark ? "#ffffff" : "#0f2744");
+    root.style.setProperty("--tierra-tab-inactive-color", isDark ? "#cbd5e1" : "#64748b");
+    root.style.setProperty("--tierra-tab-hover-bg", isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.04)");
+  }, [theme, pathname]);
 
   const activeTab: TabKey =
     (TABS.find((t) => pathname.includes(`/${t.key}`))?.key as TabKey) ?? "analytics";

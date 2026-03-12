@@ -1,6 +1,7 @@
 "use client";
 
 import type { GA4Source } from "./types";
+import { useTheme } from "@/lib/theme-context";
 
 type Props = {
   sources: GA4Source[];
@@ -31,6 +32,8 @@ const SOURCE_ICONS: Record<string, string> = {
 };
 
 export function TrafficSources({ sources, primaryColor }: Props) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const total = sources.reduce((sum, s) => sum + s.users, 0);
   const sorted = [...sources].sort((a, b) => b.users - a.users);
   const top = sorted.slice(0, 6);
@@ -54,7 +57,7 @@ export function TrafficSources({ sources, primaryColor }: Props) {
         <div style={styles.chartWrapper}>
           <svg viewBox="0 0 100 100" style={styles.donut} aria-hidden="true">
             {renderDonutSegments(sorted, total)}
-            <circle cx="50" cy="50" r="32" fill="#fff" />
+            <circle cx="50" cy="50" r="32" fill={isDark ? "#090D15" : "#fff"} />
           </svg>
           <div style={styles.chartCenter}>
             <span style={styles.chartValue}>{total.toLocaleString()}</span>

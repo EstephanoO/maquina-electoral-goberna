@@ -195,7 +195,7 @@ const styles: Record<string, React.CSSProperties> = {
   footer: {
     padding: "12px 20px",
     borderTop: "1px solid var(--color-surface-active)",
-    backgroundColor: "#fafbfc",
+    backgroundColor: "var(--color-surface-hover)",
   },
   footerText: {
     fontSize: 12,

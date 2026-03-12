@@ -554,7 +554,7 @@ const S: Record<string, React.CSSProperties> = {
     borderBottom: "1px solid var(--color-surface-active)",
     padding: "0 12px",
     gap: 0,
-    backgroundColor: "#fafafa",
+    backgroundColor: "var(--color-surface-hover)",
   },
   tabBtn: {
     padding: "10px 16px",

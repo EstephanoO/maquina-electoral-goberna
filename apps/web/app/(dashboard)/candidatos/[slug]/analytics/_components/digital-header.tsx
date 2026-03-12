@@ -51,7 +51,7 @@ export function DigitalHeader({ campaign, overview, primaryColor, hasGsc = false
         <div style={styles.identity}>
           <div style={styles.nameRow}>
             <span style={styles.name}>{campaign.name}</span>
-            <span style={{ ...styles.badge, backgroundColor: `${primaryColor}15`, color: primaryColor }}>
+            <span style={{ ...styles.badge, ...(isDark ? { backgroundColor: "#1a2738", color: "#ffffff", border: "1px solid #2c425d" } : { backgroundColor: `${primaryColor}15`, color: primaryColor }) }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
               </svg>
@@ -76,7 +76,7 @@ export function DigitalHeader({ campaign, overview, primaryColor, hasGsc = false
           </svg>
           <span>{formatDateRange(overview.dateRange.start, overview.dateRange.end)}</span>
         </div>
-        <div style={styles.ga4Badge}>
+        <div style={{ ...styles.ga4Badge, ...(isDark ? { backgroundColor: "#1a2738", border: "1px solid #2c425d", color: "#ffffff" } : null) }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M22.4 6.8c-.4-.7-1.1-1.1-1.8-1.1h-3.4c-.7 0-1.4.4-1.8 1.1l-1.7 3c-.4.7-.4 1.5 0 2.2l1.7 3c.4.7 1.1 1.1 1.8 1.1h3.4c.7 0 1.4-.4 1.8-1.1l1.7-3c.4-.7.4-1.5 0-2.2l-1.7-3z" fill="#F9AB00"/>
             <path d="M12 4.5c-.7 0-1.4.4-1.8 1.1l-1.7 3c-.4.7-.4 1.5 0 2.2l1.7 3c.4.7 1.1 1.1 1.8 1.1h3.4c.7 0 1.4-.4 1.8-1.1l1.7-3c.4-.7.4-1.5 0-2.2l-1.7-3c-.4-.7-1.1-1.1-1.8-1.1H12z" fill="#E37400"/>
@@ -85,7 +85,7 @@ export function DigitalHeader({ campaign, overview, primaryColor, hasGsc = false
           <span>Google Analytics</span>
         </div>
         {hasGsc && (
-          <div style={styles.gscBadge}>
+          <div style={{ ...styles.gscBadge, ...(isDark ? { backgroundColor: "#1a2738", border: "1px solid #2c425d", color: "#ffffff" } : null) }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4285f4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />

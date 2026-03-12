@@ -278,6 +278,8 @@ type AnalyticsResponse = {
 export default function DigitalPage() {
   const params = useParams();
   const router = useRouter();
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const slug = params.slug as string;
 
   const [campaign, setCampaign] = useState<CampaignInfo | null>(null);
@@ -327,9 +329,26 @@ export default function DigitalPage() {
   }, [slug]);
 
   /* ── Loading ─────────────────────────────────────────────────── */
+  const fullScreenStyle = isDark
+    ? {
+      ...FULL_SCREEN,
+      backgroundColor: "#090D15",
+      "--color-surface": "#090D15",
+      "--color-surface-elevated": "#090D15",
+      "--color-surface-hover": "#090D15",
+      "--color-surface-active": "#1a2738",
+      "--color-border": "#1d2f43",
+      "--color-border-strong": "#2c425d",
+      "--color-text-primary": "#ffffff",
+      "--color-text-secondary": "#cbd5e1",
+      "--color-text-tertiary": "#94a3b8",
+    } as React.CSSProperties
+    : FULL_SCREEN;
+  const contentStyle = isDark ? { ...S.content, backgroundColor: "#090D15" } : S.content;
+
   if (loading) {
     return (
-      <div style={FULL_SCREEN}>
+      <div style={fullScreenStyle} className="analytics-page-root">
         <div style={S.loadingContainer}>
           <div style={S.spinner} />
           <span style={S.loadingText}>Cargando datos digitales...</span>
@@ -342,7 +361,7 @@ export default function DigitalPage() {
   /* ── Fatal error ─────────────────────────────────────────────── */
   if (error && !campaign) {
     return (
-      <div style={FULL_SCREEN}>
+      <div style={fullScreenStyle} className="analytics-page-root">
         <div style={S.errorContainer}>
           <div style={S.errorTitle}>No se pudo cargar</div>
           <div style={S.errorMessage}>{error ?? "Candidato no encontrado"}</div>
@@ -352,7 +371,7 @@ export default function DigitalPage() {
     );
   }
 
-  const pc = campaign?.color_primario ?? "#1e40af";
+  const pc = isDark ? "#ffffff" : (campaign?.color_primario ?? "#1e40af");
   const sc = campaign?.color_secundario ?? "#fbbf24";
 
   /* ── No GA4 data ─────────────────────────────────────────────── */
@@ -362,7 +381,7 @@ export default function DigitalPage() {
       partido: null, foto_url: null, color_primario: pc, color_secundario: sc,
     };
     return (
-      <div style={FULL_SCREEN}>
+      <div style={fullScreenStyle} className="analytics-page-root">
         <NoDataHeader campaign={placeholderCampaign} onBack={() => router.back()} />
         <div style={S.emptyContainer}>
           <div style={S.emptyIcon}>
@@ -380,7 +399,7 @@ export default function DigitalPage() {
 
   if (!campaign) {
     return (
-      <div style={FULL_SCREEN}>
+      <div style={fullScreenStyle} className="analytics-page-root">
         <div style={S.errorContainer}>
           <div style={S.errorTitle}>Error de datos</div>
           <div style={S.errorMessage}>Datos de campana incompletos</div>
@@ -411,7 +430,7 @@ export default function DigitalPage() {
      ═══════════════════════════════════════════════════════════ */
 
   return (
-    <div style={FULL_SCREEN}>
+    <div style={fullScreenStyle} className="analytics-page-root">
       <DigitalHeader
         campaign={campaign}
         overview={ga4Data.overview}
@@ -420,7 +439,7 @@ export default function DigitalPage() {
         hasGsc={!!gscData}
       />
 
-      <div style={S.content}>
+      <div style={contentStyle}>
         {/* ── BLOQUE 1: KPIs ─────────────────────────────────────── */}
         <section style={S.section}>
           <KpiCards overview={ga4Data.overview} primaryColor={pc} secondaryColor={sc} />

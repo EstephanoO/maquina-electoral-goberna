@@ -599,7 +599,7 @@ function GscSummary({ gscData, primaryColor }: { gscData: GSCData; primaryColor:
           { label: "CTR promedio", value: fmtPct(totals.ctr), sub: "ratio de clics", color: ctrColor },
           { label: "Posición media", value: totals.avgPosition.toFixed(1), sub: "en resultados", color: posColor },
         ].map((k) => (
-          <div key={k.label} style={{ padding: "12px 16px", backgroundColor: "#fafbfc", borderRadius: 10, border: "1px solid var(--color-surface-active)" }}>
+          <div key={k.label} style={{ padding: "12px 16px", backgroundColor: "var(--color-surface-hover)", borderRadius: 10, border: "1px solid var(--color-surface-active)" }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: k.color, lineHeight: 1 }}>{k.value}</div>
             <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 3 }}>{k.sub}</div>
@@ -701,7 +701,7 @@ const S: Record<string, React.CSSProperties> = {
     gap: 10,
     padding: "14px 20px",
     borderBottom: "1px solid var(--color-surface-active)",
-    backgroundColor: "#fafbfc",
+    backgroundColor: "var(--color-surface-hover)",
   },
   sectionTitle: { fontSize: 14, fontWeight: 700, color: "var(--color-text-primary)" },
   sectionBody: { padding: 20 },
@@ -720,7 +720,7 @@ const S: Record<string, React.CSSProperties> = {
     padding: "14px 16px",
     borderRadius: 12,
     border: "1px solid var(--color-surface-active)",
-    backgroundColor: "#fafbfc",
+    backgroundColor: "var(--color-surface-hover)",
   },
   execKpiIconBg: {
     width: 40,
@@ -768,7 +768,7 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: "6px 6px 0 0",
     marginBottom: 4,
   },
-  geoRowEven: { backgroundColor: "#fafbfc" },
+  geoRowEven: { backgroundColor: "var(--color-surface-hover)" },
   geoColRank: { fontSize: 13, color: "var(--color-text-tertiary)", textAlign: "center" as const },
   geoColName: { fontSize: 13, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" },
   geoColBar: { display: "flex", alignItems: "center" },
@@ -798,7 +798,7 @@ const S: Record<string, React.CSSProperties> = {
     padding: 14,
     borderRadius: 12,
     border: "1px solid var(--color-surface-active)",
-    backgroundColor: "#fafbfc",
+    backgroundColor: "var(--color-surface-hover)",
   },
   sourceCardTop: { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 },
   sourceIcon: {
@@ -862,7 +862,7 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: "6px 6px 0 0",
     marginBottom: 4,
   },
-  pageRowEven: { backgroundColor: "#fafbfc" },
+  pageRowEven: { backgroundColor: "var(--color-surface-hover)" },
   pageColPage: { minWidth: 0, overflow: "hidden" },
   pageLabel: { fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 6 },
   pageHomeBadge: {
@@ -871,7 +871,7 @@ const S: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     padding: "1px 5px",
     borderRadius: 4,
-    backgroundColor: "#dbeafe",
+    backgroundColor: "var(--color-surface-active)",
     color: "#1e40af",
     textTransform: "uppercase" as const,
     letterSpacing: "0.03em",

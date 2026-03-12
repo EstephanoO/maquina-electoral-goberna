@@ -174,7 +174,7 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: "0.05em",
     color: "var(--color-text-tertiary)",
     borderBottom: "1px solid var(--color-surface-active)",
-    backgroundColor: "#fafbfc",
+    backgroundColor: "var(--color-surface-hover)",
   },
   thPage: {
     textAlign: "left" as const,

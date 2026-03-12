@@ -283,11 +283,11 @@ export default function MonitorWaPage() {
   useEffect(() => {
     if (typeof document === "undefined") return;
     const root = document.documentElement;
-    root.style.setProperty("--tierra-tabbar-bg", themeMode === "dark" ? G.surface : "#ffffff");
-    root.style.setProperty("--tierra-tabbar-border", G.border);
-    root.style.setProperty("--tierra-tab-active-color", G.brandBlue);
-    root.style.setProperty("--tierra-tab-inactive-color", G.textMid);
-    root.style.setProperty("--tierra-tab-hover-bg", themeMode === "dark" ? G.surfaceSoft : "rgba(15,23,42,0.04)");
+    root.style.setProperty("--tierra-tabbar-bg", themeMode === "dark" ? "#090D15" : "#ffffff");
+    root.style.setProperty("--tierra-tabbar-border", themeMode === "dark" ? "#1d2f43" : G.border);
+    root.style.setProperty("--tierra-tab-active-color", themeMode === "dark" ? "#ffffff" : G.brandBlue);
+    root.style.setProperty("--tierra-tab-inactive-color", themeMode === "dark" ? "#cbd5e1" : G.textMid);
+    root.style.setProperty("--tierra-tab-hover-bg", themeMode === "dark" ? "#1a2738" : "rgba(15,23,42,0.04)");
 
     return () => {
       root.style.removeProperty("--tierra-tabbar-bg");
