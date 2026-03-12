@@ -145,8 +145,8 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
 
 export type NewPoint = { id: string; lng: number; lat: number; color: string };
 
-/** 3 pulses × 0.7s each = 2.1s, plus a small buffer */
-const PULSE_DURATION_MS = 2_400;
+/** 4 pulses × 1s each = 4s, plus a small buffer */
+const PULSE_DURATION_MS = 4_400;
 
 /**
  * useNewPoints — detects newly ingested forms between polls.

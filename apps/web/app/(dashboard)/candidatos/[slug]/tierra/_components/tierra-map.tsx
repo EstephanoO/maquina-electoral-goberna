@@ -722,6 +722,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         {showDatos && datosVizMode === "points" && newPoints.map((p) => (
           <Marker key={p.id} longitude={p.lng} latitude={p.lat} anchor="center">
             <div className="tierra-new-point" style={{ "--ring-color": p.color } as React.CSSProperties}>
+              <div className="tierra-new-point-dot" />
               <div className="tierra-new-point-ring" />
               <div className="tierra-new-point-ring" />
             </div>

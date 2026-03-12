@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition, useCallback } from "react";
 import type { FormRecord } from "@/lib/services";
 import { useBrigadistaMetrics, useRecentForms } from "@/lib/hooks";
 import { type PipelinePeriod, type PipelineDateRanges, getDateRanges } from "../pipeline-filters";
+import { type GeoDrillState, INITIAL_GEO_DRILL } from "../geo-ranking";
 
 /* ========== Types ========== */
 
@@ -13,16 +14,19 @@ export type PipelineState = {
   /** Period offset: 0 = current, -1 = previous, etc. */
   offset: number;
   onOffsetChange: (offset: number) => void;
-  /** Region filter: null = all regions, string = departamento name */
-  region: string | null;
-  onRegionChange: (r: string | null) => void;
-  /** Sorted list of unique departamento names found in forms data */
-  availableRegions: string[];
-  /** Total forms count filtered by region (null when no region filter active) */
+  /** Geo drill state for the ranking (dep → prov → dist) */
+  geoDrill: GeoDrillState;
+  onGeoDrillChange: (d: GeoDrillState) => void;
+  /** Total forms count filtered by geo (null when no geo filter active) */
   regionTotalDatos: number | null;
+  /** Whether any geo filter is active */
+  hasGeoFilter: boolean;
   isPending: boolean;
   periodLabel: string;
   dateRanges: PipelineDateRanges;
+  /** All forms for the current period (unfiltered by geo — for geo ranking) */
+  periodForms: FormRecord[];
+  /** Forms filtered by geo + period (for funnel, charts, brigadista table) */
   filteredForms: FormRecord[];
   prevFilteredForms: FormRecord[];
   brigadistaMetrics: ReturnType<typeof useBrigadistaMetrics>["data"];
@@ -38,7 +42,8 @@ const EMPTY_FORMS: FormRecord[] = [];
  * Encapsulates all Pipeline-specific state:
  * - Period filter + startTransition for non-urgent switches
  * - Date range computation (current + previous)
- * - Server-side period-scoped forms queries (avoids 500-record cap issues)
+ * - Geo drill state (departamento → provincia → distrito)
+ * - Server-side period-scoped forms queries
  * - Dual brigadista metrics queries (current + previous period)
  */
 export function usePipelineState(
@@ -47,19 +52,19 @@ export function usePipelineState(
 ): PipelineState {
   const [period, setPeriod] = useState<PipelinePeriod>("week");
   const [offset, setOffset] = useState(0);
-  const [region, setRegion] = useState<string | null>(null);
+  const [geoDrill, setGeoDrill] = useState<GeoDrillState>(INITIAL_GEO_DRILL);
   const [isPending, startTransition] = useTransition();
 
   const onPeriodChange = useCallback((p: PipelinePeriod) => {
-    startTransition(() => { setPeriod(p); setOffset(0); }); // reset offset on period change
+    startTransition(() => { setPeriod(p); setOffset(0); });
   }, []);
 
   const onOffsetChange = useCallback((o: number) => {
-    startTransition(() => setOffset(Math.min(o, 0))); // never go into the future
+    startTransition(() => setOffset(Math.min(o, 0)));
   }, []);
 
-  const onRegionChange = useCallback((r: string | null) => {
-    startTransition(() => setRegion(r));
+  const onGeoDrillChange = useCallback((d: GeoDrillState) => {
+    startTransition(() => setGeoDrill(d));
   }, []);
 
   const dateRanges = useMemo(() => getDateRanges(period, offset), [period, offset]);
@@ -75,10 +80,7 @@ export function usePipelineState(
   );
 
   // ── Server-side period-scoped forms queries ──
-  // Instead of filtering the unscoped 500-record forms array client-side,
-  // we fetch forms directly from the API with from/to params. This ensures
-  // "today"/"week"/"month" get the actual forms for that period.
-  const { data: periodForms } = useRecentForms(
+  const { data: serverPeriodForms } = useRecentForms(
     period !== "all" ? campaignId : undefined,
     periodFrom,
     periodTo,
@@ -91,59 +93,62 @@ export function usePipelineState(
   );
 
   // For "all" period, use the unfiltered forms array from the parent
-  const timeForms = period === "all" ? forms : (periodForms ?? EMPTY_FORMS);
+  const timeForms = period === "all" ? forms : (serverPeriodForms ?? EMPTY_FORMS);
   const prevTimeForms = period === "all" ? EMPTY_FORMS : (prevPeriodForms ?? EMPTY_FORMS);
 
-  // ── Available regions: derived from ALL forms (not period-filtered) ──
-  const availableRegions = useMemo(() => {
-    const deps = new Set<string>();
-    for (const f of forms) {
-      if (f.departamento) deps.add(f.departamento);
-    }
-    return Array.from(deps).sort((a, b) => a.localeCompare(b, "es"));
-  }, [forms]);
+  // ── Geo filter derived from drill state ──
+  const hasGeoFilter = !!(geoDrill.departamento || geoDrill.provincia);
 
-  // ── Region total: count all-time forms in the selected region (for funnel "Total") ──
+  const matchesGeo = useCallback((f: FormRecord): boolean => {
+    if (geoDrill.departamento && f.departamento !== geoDrill.departamento) return false;
+    if (geoDrill.provincia && f.provincia !== geoDrill.provincia) return false;
+    return true;
+  }, [geoDrill.departamento, geoDrill.provincia]);
+
+  // ── Geo total: count all-time forms matching the geo filter (for funnel "Total") ──
   const regionTotalDatos = useMemo(
-    () => region ? forms.filter((f) => f.departamento === region).length : null,
-    [forms, region],
+    () => hasGeoFilter ? forms.filter(matchesGeo).length : null,
+    [forms, hasGeoFilter, matchesGeo],
   );
 
-  // ── Region filter: applied client-side on top of time-filtered forms ──
+  // ── Period forms (unfiltered by geo — used by GeoRanking for its own drill) ──
+  const periodForms = timeForms;
+
+  // ── Geo-filtered forms: for funnel, charts, brigadista table ──
   const filteredForms = useMemo(
-    () => region ? timeForms.filter((f) => f.departamento === region) : timeForms,
-    [timeForms, region],
+    () => hasGeoFilter ? timeForms.filter(matchesGeo) : timeForms,
+    [timeForms, hasGeoFilter, matchesGeo],
   );
   const prevFilteredForms = useMemo(
-    () => region ? prevTimeForms.filter((f) => f.departamento === region) : prevTimeForms,
-    [prevTimeForms, region],
+    () => hasGeoFilter ? prevTimeForms.filter(matchesGeo) : prevTimeForms,
+    [prevTimeForms, hasGeoFilter, matchesGeo],
   );
 
-  // ── Region filter on brigadista metrics (by forms, since metrics don't have departamento) ──
-  const regionBrigadistaIds = useMemo(() => {
-    if (!region) return null;
+  // ── Geo filter on brigadista metrics ──
+  const geoBrigadistaIds = useMemo(() => {
+    if (!hasGeoFilter) return null;
     const ids = new Set<string>();
     for (const f of timeForms) {
-      if (f.departamento === region) {
+      if (matchesGeo(f)) {
         const id = f.agent_id || f.encuestador_id;
         if (id) ids.add(id);
       }
     }
     return ids;
-  }, [timeForms, region]);
+  }, [timeForms, hasGeoFilter, matchesGeo]);
 
   const filteredBrigadistas = useMemo(
-    () => regionBrigadistaIds && brigadistaMetrics
-      ? brigadistaMetrics.filter((b) => regionBrigadistaIds.has(b.brigadista_id))
+    () => geoBrigadistaIds && brigadistaMetrics
+      ? brigadistaMetrics.filter((b) => geoBrigadistaIds.has(b.brigadista_id))
       : brigadistaMetrics,
-    [brigadistaMetrics, regionBrigadistaIds],
+    [brigadistaMetrics, geoBrigadistaIds],
   );
 
   const filteredPrevBrigadistas = useMemo(
-    () => regionBrigadistaIds && prevBrigadistaMetrics
-      ? prevBrigadistaMetrics.filter((b) => regionBrigadistaIds.has(b.brigadista_id))
+    () => geoBrigadistaIds && prevBrigadistaMetrics
+      ? prevBrigadistaMetrics.filter((b) => geoBrigadistaIds.has(b.brigadista_id))
       : prevBrigadistaMetrics,
-    [prevBrigadistaMetrics, regionBrigadistaIds],
+    [prevBrigadistaMetrics, geoBrigadistaIds],
   );
 
   return {
@@ -151,13 +156,14 @@ export function usePipelineState(
     onPeriodChange,
     offset,
     onOffsetChange,
-    region,
-    onRegionChange,
-    availableRegions,
+    geoDrill,
+    onGeoDrillChange,
     regionTotalDatos,
+    hasGeoFilter,
     isPending,
     periodLabel: dateRanges.previousLabel,
     dateRanges,
+    periodForms,
     filteredForms,
     prevFilteredForms,
     brigadistaMetrics: filteredBrigadistas,

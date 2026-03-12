@@ -7,6 +7,7 @@ import type { FormRecord } from "@/lib/services";
 import { useTheme } from "@/lib/theme-context";
 import type { EnrichedAgent } from "./types";
 import { PipelineFilters, type PipelinePeriod, type PipelineDateRanges } from "./pipeline-filters";
+import { GeoRanking, type GeoDrillState, INITIAL_GEO_DRILL } from "./geo-ranking";
 
 /* ========== Lazy-loaded components ========== */
 
@@ -44,6 +45,8 @@ function calcDaysUntil(dateStr: string): number {
 
 /* ========== Types ========== */
 
+type RankingTab = "regiones" | "brigadistas";
+
 type Props = {
   campaignId: string;
   brigadistas: CmsBrigadistaMetrics[];
@@ -52,23 +55,24 @@ type Props = {
   isPending?: boolean;
   primaryColor: string;
   secondaryColor?: string;
+  /** Forms filtered by period + geo (for funnel, charts, brigadista table) */
   forms: FormRecord[];
   prevForms: FormRecord[];
+  /** All forms for the current period (unfiltered by geo — for geo ranking) */
+  periodForms: FormRecord[];
   agents: EnrichedAgent[];
   period: PipelinePeriod;
   onPeriodChange: (p: PipelinePeriod) => void;
-  /** Period offset for time navigation (0 = current, -1 = previous, etc.) */
   offset: number;
   onOffsetChange: (offset: number) => void;
-  /** Region filter: null = all, string = departamento name */
-  region: string | null;
-  onRegionChange: (r: string | null) => void;
-  /** Available regions derived from forms data */
-  availableRegions: string[];
+  /** Geo drill state for the ranking */
+  geoDrill: GeoDrillState;
+  onGeoDrillChange: (d: GeoDrillState) => void;
+  /** Whether any geo filter is active */
+  hasGeoFilter: boolean;
   periodLabel: string;
   dateRanges: PipelineDateRanges;
   totalDatos: number;
-  /** Server-side totals from campaign stats (authoritative counts) */
   serverTotals: { forms_count: number; forms_today: number; forms_week: number };
   agentesCampoCount: number;
   metaDatos: number;
@@ -78,25 +82,29 @@ type Props = {
 
 export const PipelineView = memo(function PipelineView({
   campaignId, brigadistas, prevBrigadistas, isLoading, isPending, primaryColor, secondaryColor,
-  forms, prevForms, agents, period, onPeriodChange, offset, onOffsetChange,
-  region, onRegionChange, availableRegions,
+  forms, prevForms, periodForms, agents, period, onPeriodChange, offset, onOffsetChange,
+  geoDrill, onGeoDrillChange, hasGeoFilter,
   periodLabel, dateRanges,
   totalDatos, serverTotals, agentesCampoCount, metaDatos,
 }: Props) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
+
+  // ── Tab state ──
+  const [activeTab, setActiveTab] = useState<RankingTab>("regiones");
+
   // ── Compare / drill-down state (max 2 selected) ──
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const handleToggleCompare = useCallback((id: string) => {
     setCompareIds((prev) => {
       if (prev.includes(id)) return prev.filter((x) => x !== id);
-      if (prev.length >= 2) return [prev[1], id]; // FIFO: drop oldest
+      if (prev.length >= 2) return [prev[1], id];
       return [...prev, id];
     });
   }, []);
   const handleClearCompare = useCallback(() => setCompareIds([]), []);
 
-  // Goal calculations for brigadista table — period-adaptive
+  // Goal calculations
   const goalCalcs = useMemo(() => {
     const meta = metaDatos > 0 ? metaDatos : DEFAULT_META_DATOS;
     const brigs = agentesCampoCount > 0 ? agentesCampoCount : Math.max(brigadistas.length, 1);
@@ -104,7 +112,6 @@ export const PipelineView = memo(function PipelineView({
     const goalPerBrigadista = brigs > 0 ? Math.ceil(meta / brigs) : 0;
     const goalPerBrigadistaPerDay = brigs > 0 && dias > 0 ? Math.ceil(meta / (brigs * dias)) : 0;
 
-    // Period-adaptive goal per brigadista (matches the Goal Hero period)
     let periodGoalPerBrig = goalPerBrigadista;
     if (period === "today") periodGoalPerBrig = goalPerBrigadistaPerDay;
     else if (period === "week") periodGoalPerBrig = goalPerBrigadistaPerDay * 7;
@@ -137,6 +144,13 @@ export const PipelineView = memo(function PipelineView({
     return { a: { id: compareIds[0], name: getName(compareIds[0]) }, b: { id: compareIds[1], name: getName(compareIds[1]) } };
   }, [compareIds, brigadistas, forms]);
 
+  // ── Geo label for context ──
+  const geoLabel = useMemo(() => {
+    if (geoDrill.provincia) return geoDrill.provincia;
+    if (geoDrill.departamento) return geoDrill.departamento;
+    return null;
+  }, [geoDrill]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center flex-1 gap-3">
@@ -146,11 +160,8 @@ export const PipelineView = memo(function PipelineView({
     );
   }
 
-  // Use server-side counts when available (current period) — forms array may be empty
-  // due to client-side filtering on a limited (500-record) API response.
-  // When a region filter is active, server totals are NOT region-scoped,
-  // so we MUST fall back to forms.length (which IS region-filtered).
-  const serverPeriodCount = (offset === 0 && !region)
+  // Server-side period counts (only when no geo filter)
+  const serverPeriodCount = (offset === 0 && !hasGeoFilter)
     ? (period === "today" ? serverTotals.forms_today
       : period === "week" ? serverTotals.forms_week
       : period === "all" ? serverTotals.forms_count
@@ -158,14 +169,39 @@ export const PipelineView = memo(function PipelineView({
     : undefined;
   const hasForms = forms.length > 0 || (serverPeriodCount != null && serverPeriodCount > 0);
   const hasBrigadistas = brigadistas.length > 0;
-  const isEmpty = !hasForms && !hasBrigadistas;
+  const isEmpty = !hasForms && !hasBrigadistas && periodForms.length === 0;
+
+  const TABS: { key: RankingTab; label: string; icon: string }[] = [
+    { key: "regiones", label: "Regiones", icon: "M" },
+    { key: "brigadistas", label: "Brigadistas", icon: "B" },
+  ];
 
   return (
-      <div className={`hide-scrollbar tierra-pipeline-view h-full flex flex-col min-h-0 overflow-y-auto transition-opacity duration-150 ${isDark ? "bg-[#090D15]" : "bg-slate-50/80"} ${isPending ? "opacity-70" : "opacity-100"}`}>
-      {/* 1. Filter bar */}
+    <div className={`hide-scrollbar tierra-pipeline-view h-full flex flex-col min-h-0 overflow-y-auto transition-opacity duration-150 ${isDark ? "bg-[#090D15]" : "bg-slate-50/80"} ${isPending ? "opacity-70" : "opacity-100"}`}>
+      {/* 1. Filter bar (period + date nav only — no geo dropdowns) */}
       <div className={`shrink-0 ${isDark ? "border-b border-[#2a303b] bg-[#090D15]" : "border-b border-slate-100 bg-white"}`}>
-        <PipelineFilters period={period} onChange={onPeriodChange} primaryColor={primaryColor} offset={offset} onOffsetChange={onOffsetChange} region={region} onRegionChange={onRegionChange} availableRegions={availableRegions} />
+        <PipelineFilters period={period} onChange={onPeriodChange} primaryColor={primaryColor} offset={offset} onOffsetChange={onOffsetChange} />
       </div>
+
+      {/* Geo context banner */}
+      {geoLabel && (
+        <div className={`flex items-center gap-2 px-4 py-1.5 shrink-0 ${isDark ? "bg-[#0f1729] border-b border-[#2a303b]" : "bg-slate-50 border-b border-slate-100"}`}>
+          <button
+            type="button"
+            onClick={() => onGeoDrillChange(INITIAL_GEO_DRILL)}
+            className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] cursor-pointer border-none transition-colors shrink-0 ${isDark ? "bg-[#1e293b] text-slate-300 hover:bg-[#334155]" : "bg-slate-200 text-slate-500 hover:bg-slate-300"}`}
+            aria-label="Limpiar filtro geo"
+          >
+            &times;
+          </button>
+          <span className={`text-[11px] font-semibold ${isDark ? "text-slate-300" : "text-slate-500"}`}>
+            Filtrando por:
+          </span>
+          <span className="text-[11px] font-bold" style={{ color: primaryColor }}>
+            {geoDrill.departamento}{geoDrill.provincia ? ` / ${geoDrill.provincia}` : ""}
+          </span>
+        </div>
+      )}
 
       {/* Agent drill-down banner (1 selected) */}
       {agentDrill && (
@@ -173,7 +209,7 @@ export const PipelineView = memo(function PipelineView({
           <button
             type="button"
             onClick={handleClearCompare}
-            className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] cursor-pointer border-none transition-colors shrink-0 ${isDark ? "bg-[#090D15] text-slate-300 hover:bg-[#090D15]" : "bg-slate-100 text-slate-400 hover:bg-slate-200"}`}
+            className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] cursor-pointer border-none transition-colors shrink-0 ${isDark ? "bg-[#1e293b] text-slate-300 hover:bg-[#334155]" : "bg-slate-100 text-slate-400 hover:bg-slate-200"}`}
             aria-label="Volver a vista global"
           >
             &larr;
@@ -191,7 +227,7 @@ export const PipelineView = memo(function PipelineView({
           <button
             type="button"
             onClick={handleClearCompare}
-            className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] cursor-pointer border-none transition-colors shrink-0 ${isDark ? "bg-[#090D15] text-slate-300 hover:bg-[#090D15]" : "bg-slate-100 text-slate-400 hover:bg-slate-200"}`}
+            className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] cursor-pointer border-none transition-colors shrink-0 ${isDark ? "bg-[#1e293b] text-slate-300 hover:bg-[#334155]" : "bg-slate-100 text-slate-400 hover:bg-slate-200"}`}
             aria-label="Limpiar comparacion"
           >
             &times;
@@ -204,7 +240,7 @@ export const PipelineView = memo(function PipelineView({
 
       {isEmpty ? (
         <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center p-16">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isDark ? "bg-[#090D15]" : "bg-slate-100"}`}>
+          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isDark ? "bg-[#1e293b]" : "bg-slate-100"}`}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#94a3b8" : "#94a3b8"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Sin datos">
               <title>Sin datos</title>
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -220,7 +256,7 @@ export const PipelineView = memo(function PipelineView({
         </div>
       ) : (
         <div className="flex flex-col gap-0 min-h-0">
-          {/* 2. Goal Hero — compact period-adaptive progress */}
+          {/* 2. Funnel */}
           <div className={`shrink-0 ${isDark ? "border-b border-[#2a303b] bg-[#090D15]" : "border-b border-slate-100 bg-white"}`}>
             <PipelineFunnel
               primaryColor={primaryColor}
@@ -234,7 +270,64 @@ export const PipelineView = memo(function PipelineView({
             />
           </div>
 
-          {/* 3. Activity Charts (KPIs + timeline + ranking) — collapsible */}
+          {/* 3. Tabs: Regiones / Brigadistas */}
+          <div className={`shrink-0 ${isDark ? "border-b border-[#2a303b] bg-[#090D15]" : "border-b border-slate-100 bg-white"}`}>
+            <div className="flex px-4 gap-0">
+              {TABS.map((tab) => {
+                const active = activeTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider border-none cursor-pointer transition-colors relative ${
+                      active
+                        ? (isDark ? "text-slate-100" : "text-slate-800")
+                        : (isDark ? "text-slate-500 hover:text-slate-300" : "text-slate-400 hover:text-slate-600")
+                    } bg-transparent`}
+                  >
+                    {tab.label}
+                    {active && (
+                      <div
+                        className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full"
+                        style={{ backgroundColor: primaryColor }}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Tab content */}
+          {activeTab === "regiones" ? (
+            <div className={`shrink-0 ${isDark ? "bg-[#090D15]" : "bg-white"}`}>
+              <GeoRanking
+                forms={periodForms}
+                drill={geoDrill}
+                onDrillChange={onGeoDrillChange}
+                primaryColor={primaryColor}
+              />
+            </div>
+          ) : (
+            hasBrigadistas && (
+              <div className={isDark ? "shrink-0 bg-[#090D15]" : "shrink-0 bg-white"} style={{ minHeight: "320px" }}>
+                <BrigadistaTable
+                  brigadistas={brigadistas}
+                  primaryColor={primaryColor}
+                  goalPerBrigadista={goalCalcs.goalPerBrigadista}
+                  goalPerBrigadistaPerDay={goalCalcs.goalPerBrigadistaPerDay}
+                  periodGoalPerBrig={goalCalcs.periodGoalPerBrig}
+                  period={period}
+                  daysRemaining={goalCalcs.daysRemaining}
+                  compareIds={compareIds}
+                  onToggleCompare={handleToggleCompare}
+                />
+              </div>
+            )
+          )}
+
+          {/* 4. Activity Charts — collapsible */}
           {hasForms && (
             <ChartsSection
               forms={forms}
@@ -252,24 +345,7 @@ export const PipelineView = memo(function PipelineView({
             />
           )}
 
-          {/* 4. Brigadista Table — goal progress per brigadista, always visible */}
-          {hasBrigadistas && (
-            <div className={isDark ? "shrink-0 bg-[#090D15]" : "shrink-0 bg-white"} style={{ minHeight: "320px" }}>
-              <BrigadistaTable
-                brigadistas={brigadistas}
-                primaryColor={primaryColor}
-                goalPerBrigadista={goalCalcs.goalPerBrigadista}
-                goalPerBrigadistaPerDay={goalCalcs.goalPerBrigadistaPerDay}
-                periodGoalPerBrig={goalCalcs.periodGoalPerBrig}
-                period={period}
-                daysRemaining={goalCalcs.daysRemaining}
-                compareIds={compareIds}
-                onToggleCompare={handleToggleCompare}
-              />
-            </div>
-          )}
-
-          {/* 5. Validacion Ranking — datos validados vs imposibles por encuestador */}
+          {/* 5. Validacion Ranking */}
           {campaignId && (
             <div className={`shrink-0 ${isDark ? "border-t border-[#2a303b]" : "border-t border-slate-200"}`}>
               <ValidacionRanking campaignId={campaignId} primaryColor={primaryColor} />
@@ -297,7 +373,7 @@ function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodL
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`flex items-center gap-2 w-full px-4 py-2 text-left cursor-pointer border-none transition-colors ${isDark ? "bg-[#090D15] hover:bg-[#090D15]" : "bg-slate-50/60 hover:bg-slate-100/60"}`}
+        className={`flex items-center gap-2 w-full px-4 py-2 text-left cursor-pointer border-none transition-colors ${isDark ? "bg-[#090D15] hover:bg-[#111827]" : "bg-slate-50/60 hover:bg-slate-100/60"}`}
       >
         <svg
           width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
@@ -312,19 +388,19 @@ function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodL
       </button>
       {open && (
         <ActivityCharts
-              forms={forms}
-              prevForms={prevForms}
-              primaryColor={primaryColor}
-              secondaryColor={secondaryColor}
-              periodLabel={periodLabel}
-              period={period}
-              dateRanges={dateRanges}
-              periodGoalPerBrig={periodGoalPerBrig}
-              compareIds={compareIds}
-              onToggleCompare={onToggleCompare}
-              onClearCompare={onClearCompare}
-              serverPeriodCount={serverPeriodCount}
-            />
+          forms={forms}
+          prevForms={prevForms}
+          primaryColor={primaryColor}
+          secondaryColor={secondaryColor}
+          periodLabel={periodLabel}
+          period={period}
+          dateRanges={dateRanges}
+          periodGoalPerBrig={periodGoalPerBrig}
+          compareIds={compareIds}
+          onToggleCompare={onToggleCompare}
+          onClearCompare={onClearCompare}
+          serverPeriodCount={serverPeriodCount}
+        />
       )}
     </div>
   );

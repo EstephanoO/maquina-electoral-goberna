@@ -461,8 +461,14 @@ body {
 }
 
 @keyframes tierra-sonar {
-  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
-  100% { transform: translate(-50%, -50%) scale(3.5); opacity: 0; }
+  0% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(5); opacity: 0; }
+}
+
+@keyframes tierra-sonar-dot {
+  0%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+  8% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  60% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
 }
 
 .tierra-new-point {
@@ -472,25 +478,41 @@ body {
   pointer-events: none;
 }
 
+/* ── Central dot: solid filled circle that flashes on each pulse ── */
+.tierra-new-point-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ring-color);
+  transform: translate(-50%, -50%) scale(0.6);
+  opacity: 0;
+  animation: tierra-sonar-dot 1s ease-out 4;
+  box-shadow: 0 0 6px 2px var(--ring-color);
+}
+
+/* ── Expanding rings ── */
 .tierra-new-point-ring {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 12px;
-  height: 12px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  border: 2px solid var(--ring-color);
+  border: 3px solid var(--ring-color);
   background: transparent;
   transform: translate(-50%, -50%) scale(1);
   opacity: 0;
-  animation: tierra-sonar 0.7s ease-out 3;
+  animation: tierra-sonar 1s ease-out 4;
 }
 
 .tierra-new-point-ring:nth-child(2) {
-  animation-delay: 0.12s;
-  border-width: 1px;
-  width: 16px;
-  height: 16px;
+  animation-delay: 0.15s;
+  border-width: 2px;
+  width: 28px;
+  height: 28px;
 }
 
 /* ═══════════════════════════════════════════════════════════════

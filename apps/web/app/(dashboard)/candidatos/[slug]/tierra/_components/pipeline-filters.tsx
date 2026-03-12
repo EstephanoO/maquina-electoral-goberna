@@ -26,16 +26,9 @@ type Props = {
   /** How many periods back from "current" (0 = today/this week/this month, -1 = yesterday/last week, etc.) */
   offset: number;
   onOffsetChange: (offset: number) => void;
-  /** Currently selected region (null = all) */
-  region: string | null;
-  onRegionChange: (region: string | null) => void;
-  /** Available region names (derived from forms data) */
-  availableRegions: string[];
 };
 
 /* ========== Date Helpers ========== */
-
-/* ── Date formatting helpers ── */
 
 const SHORT_MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 const DAY_NAMES = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"];
@@ -50,11 +43,11 @@ function fmtDayShort(d: Date): string {
   return `${d.getDate()} ${SHORT_MONTHS[d.getMonth()]}`;
 }
 
-/** e.g. "24 Feb – 2 Mar" */
+/** e.g. "24 Feb - 2 Mar" */
 function fmtWeekRange(mon: Date): string {
   const sun = new Date(mon);
   sun.setDate(mon.getDate() + 6);
-  return `${fmtDayShort(mon)} – ${fmtDayShort(sun)}`;
+  return `${fmtDayShort(mon)} \u2013 ${fmtDayShort(sun)}`;
 }
 
 /** e.g. "Feb 2026" */
@@ -64,13 +57,6 @@ function fmtMonth(d: Date): string {
 
 /**
  * Compute current & previous date ranges for a given period.
- * `offset` shifts the window: 0 = current period, -1 = previous, -2 = two ago, etc.
- * Week = Mon→Sun (ISO week).
- * Month = 1st → last day of month.
- * All = no bounds (offset ignored).
- *
- * `label` = human-friendly ("Hoy", "Esta semana", etc.)
- * `rangeLabel` = concrete date string shown between arrows ("Lun 24 Feb", "24 Feb – 2 Mar")
  */
 export function getDateRanges(period: PipelinePeriod, offset = 0): PipelineDateRanges {
   const now = new Date();
@@ -155,25 +141,19 @@ const PERIODS: { key: PipelinePeriod; label: string }[] = [
   { key: "all", label: "Todo" },
 ];
 
-export function PipelineFilters({ period, onChange, primaryColor, offset, onOffsetChange, region, onRegionChange, availableRegions }: Props) {
+export function PipelineFilters({ period, onChange, primaryColor, offset, onOffsetChange }: Props) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const ranges = useMemo(() => getDateRanges(period, offset), [period, offset]);
   const canGoForward = period !== "all" && offset < 0;
 
-  /** Concrete date string to show between arrows — always a real date/range */
   const navLabel = useMemo(() => {
     if (period === "all") return "";
     const from = ranges.current.from ? new Date(ranges.current.from) : null;
     if (!from) return "";
 
     if (period === "today") return fmtDayFull(from);
-
-    if (period === "week") {
-      return fmtWeekRange(from);
-    }
-
-    // month
+    if (period === "week") return fmtWeekRange(from);
     return fmtMonth(from);
   }, [period, ranges]);
 
@@ -197,45 +177,13 @@ export function PipelineFilters({ period, onChange, primaryColor, offset, onOffs
         })}
       </div>
 
-      {/* Region filter dropdown */}
-      {availableRegions.length > 1 && (
-        <div className="relative">
-          <select
-            value={region ?? ""}
-            onChange={(e) => onRegionChange(e.target.value || null)}
-            className={`appearance-none pl-2.5 pr-6 py-1 text-[11px] font-semibold rounded-lg cursor-pointer transition-colors ${
-              isDark
-                ? "border border-[#2a303b] bg-[#090D15] text-slate-200 hover:border-[#343b47]"
-                : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-            }`}
-            style={region ? { borderColor: primaryColor, color: primaryColor } : undefined}
-          >
-            <option value="">Todas las regiones</option>
-            {availableRegions.map((r) => (
-              <option key={r} value={r}>{r}</option>
-            ))}
-          </select>
-          {/* Custom chevron */}
-          <svg
-            width="10" height="10" viewBox="0 0 24 24" fill="none"
-            stroke={region ? primaryColor : (isDark ? "#94a3b8" : "#94a3b8")}
-            strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
-            role="img" aria-label="Expandir"
-          >
-            <title>Expandir</title>
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </div>
-      )}
-
-      {/* ← date/range → navigation */}
+      {/* date/range navigation */}
       {period !== "all" && (
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => onOffsetChange(offset - 1)}
-            className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors cursor-pointer border-none bg-transparent ${isDark ? "text-slate-400 hover:text-white hover:bg-[#090D15]" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"}`}
+            className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors cursor-pointer border-none bg-transparent ${isDark ? "text-slate-400 hover:text-white hover:bg-[#111827]" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"}`}
             aria-label="Periodo anterior"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Anterior"><title>Anterior</title><polyline points="15 18 9 12 15 6" /></svg>
@@ -249,7 +197,7 @@ export function PipelineFilters({ period, onChange, primaryColor, offset, onOffs
             type="button"
             onClick={() => onOffsetChange(offset + 1)}
             disabled={!canGoForward}
-            className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer border-none bg-transparent ${isDark ? "text-slate-400 hover:text-white hover:bg-[#090D15]" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"}`}
+            className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer border-none bg-transparent ${isDark ? "text-slate-400 hover:text-white hover:bg-[#111827]" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"}`}
             aria-label="Periodo siguiente"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Siguiente"><title>Siguiente</title><polyline points="9 18 15 12 9 6" /></svg>
@@ -259,7 +207,7 @@ export function PipelineFilters({ period, onChange, primaryColor, offset, onOffs
             <button
               type="button"
               onClick={() => onOffsetChange(0)}
-              className={`ml-1 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded cursor-pointer transition-colors ${isDark ? "border border-[#343b47] hover:bg-[#090D15] bg-[#090D15]" : "border border-slate-200 hover:bg-slate-50 bg-white"}`}
+              className={`ml-1 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded cursor-pointer transition-colors ${isDark ? "border border-[#343b47] hover:bg-[#111827] bg-[#090D15]" : "border border-slate-200 hover:bg-slate-50 bg-white"}`}
               style={{ color: primaryColor }}
             >
               Actual
