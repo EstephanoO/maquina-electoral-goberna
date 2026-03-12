@@ -1,18 +1,19 @@
 /**
- * GOBERNA — Telegram Bot con IA (Gemini)
+ * GOBERNA — Telegram Bot con IA (Gemini 2.5 Flash Lite)
  *
- * El bot entiende lenguaje natural en español.
- * Gemini interpreta el mensaje, extrae el intent y los parámetros,
- * el bot ejecuta la query SQL correspondiente, y Gemini formatea
- * la respuesta de forma conversacional.
+ * El bot entiende lenguaje natural y genera queries SQL contra la DB
+ * de producción para responder cualquier pregunta operativa.
  *
- * Intents soportados:
- *   - top_agentes     → top agentes de hoy (global o por depto/campaña)
- *   - resumen_dia     → resumen global del día
- *   - resumen_campana → stats de una campaña específica
- *   - health          → estado del servidor
- *   - ayuda           → lista de capacidades
- *   - unknown         → Gemini responde directamente si puede
+ * Flujo:
+ *   1. Usuario manda /g <pregunta>
+ *   2. Gemini genera SQL seguro (SELECT-only) basado en el schema real
+ *   3. Backend ejecuta la query
+ *   4. Gemini formatea la respuesta para Telegram
+ *
+ * Comandos:
+ *   /g <pregunta>  — cualquier consulta en lenguaje natural
+ *   /health        — estado del servidor
+ *   /ayuda         — ejemplos de uso
  *
  * Fire-and-forget, nunca bloquea el main app.
  */
@@ -29,264 +30,335 @@ let _env: AppEnv | null = null;
 let _running = false;
 let _offset = 0;
 
-// ── Bounding boxes UTM por departamento ────────────────────────────
+const GEMINI_MODEL = "gemini-2.5-flash-lite";
 
-type DeptoBbox = { zona: string; minX: number; maxX: number; minY: number; maxY: number };
+// ── Schema context for Gemini ───────────────────────────────────────
 
-const DEPTOS: Record<string, { label: string; bboxes: DeptoBbox[] }> = {
-  lambayeque:  { label: "Lambayeque",  bboxes: [{ zona: "17S", minX: 580000, maxX: 780000, minY: 9097214, maxY: 9350000 }] },
-  cajamarca:   { label: "Cajamarca",   bboxes: [{ zona: "17S", minX: 650000, maxX: 825978, minY: 9350000, maxY: 9985737 }] },
-  lima:        { label: "Lima",        bboxes: [{ zona: "18S", minX: 250000, maxX: 400000, minY: 8630000, maxY: 8720000 }] },
-  laLibertad:  { label: "La Libertad", bboxes: [{ zona: "17S", minX: 534229, maxX: 700000, minY: 9097214, maxY: 9200000 }] },
-};
+const DB_SCHEMA = `
+=== BASE DE DATOS GOBERNA (PostgreSQL 15 + PostGIS) ===
+Zona horaria del negocio: America/Lima (UTC-5). SIEMPRE convertir timestamps.
+
+--- TABLAS PRINCIPALES ---
+
+forms (13,671 rows) — Registros de campo capturados por agentes via app mobile.
+  id uuid PK, nombre text NOT NULL, telefono text NOT NULL,
+  fecha timestamptz NOT NULL, x float8 NOT NULL (UTM easting), y float8 NOT NULL (UTM northing),
+  zona text NOT NULL (UTM zone eg '17S','18S'), candidate text, encuestador text NOT NULL (nombre del agente),
+  encuestador_id text NOT NULL (user UUID del agente), candidato_preferido text,
+  client_id text UNIQUE, comentarios text, campaign_id uuid FK→campaigns,
+  form_definition_id uuid, meet_id uuid FK→meets,
+  created_at timestamptz NOT NULL, deleted_at timestamptz (soft delete)
+  NOTA: x=0,y=0 significa "sin GPS" (capturado desde casa). Excluir con x>100000.
+  NOTA: zona '17S' = Lambayeque/Cajamarca/La Libertad. zona '18S' = Lima/centro/sur Peru.
+
+form_submissions (18,376 rows) — Registros nuevos (JSONB). Dual-write desde forms + mobile directo.
+  id uuid PK, form_definition_id uuid, campaign_id uuid FK, meet_id uuid,
+  submitted_by uuid FK→users (agente), data jsonb NOT NULL (contiene: nombre, telefono, zona,
+  candidato_preferido, comentarios, encuestador, departamento, provincia, distrito, ubigeo, lugar_registro),
+  lat float8, lng float8 (coordenadas WGS84), client_id text UNIQUE,
+  cms_status text ('pending','claimed','hablado','respondieron','archived'),
+  cms_claimed_by uuid FK→users (operadora digital), cms_claimed_at timestamptz,
+  cms_hablado_at timestamptz, cms_respondieron_at timestamptz,
+  cms_operator_notes jsonb, cms_tags text[], ubigeo_distrito text, coord_source text,
+  created_at timestamptz, synced_at timestamptz, deleted_at timestamptz
+
+users (3,180 rows) — Todos los usuarios del sistema.
+  id uuid PK, full_name text, email text UNIQUE, phone varchar, role text
+  (admin|consultor|candidato|brigadista_zonal|agente_campo|agente_digital),
+  status text (active|suspended), region varchar, created_at timestamptz
+
+user_campaigns (448 rows) — Asignación de usuarios a campañas con rol específico.
+  user_id uuid FK→users, campaign_id uuid FK→campaigns,
+  role text (puede diferir del rol global), perm_tierra bool, perm_digital bool,
+  region varchar, status text, assigned_at timestamptz
+
+campaigns (16 rows) — Campañas políticas.
+  id uuid PK, name text, slug text UNIQUE, partido text, cargo text,
+  numero int, status text, foto_url text, config jsonb, created_at timestamptz
+
+meets (163 rows) — Reuniones/jornadas de campo.
+  id uuid PK, campaign_id uuid FK, title varchar, status varchar (active|scheduled|completed|cancelled),
+  starts_at timestamptz, ends_at timestamptz, location_name varchar, lat float8, lng float8,
+  meet_type text, target_forms int, leader_id uuid FK→users, zone_id uuid, created_by uuid
+
+cms_extension_events (10,941 rows) — Eventos WhatsApp de agentes digitales (extensión Chrome).
+  id bigint PK, campaign_id uuid, operator_id uuid FK→users (operadora digital),
+  contact_id uuid FK→form_submissions, event_type varchar ('message_sent'|'message_received'),
+  phone text, matched bool, own_number varchar, created_at timestamptz
+
+cms_twilio_messages (32 rows) — Mensajes WhatsApp via Twilio.
+  id uuid PK, campaign_id uuid, contact_id uuid FK→form_submissions,
+  sent_by uuid FK→users, direction text ('outbound'|'inbound'), body text,
+  status text, twilio_sid text, created_at timestamptz
+
+leads (53 rows) — Leads de campaña digital.
+  id uuid PK, nombre varchar, correo varchar, plataforma varchar, created_at timestamptz
+
+zones (160 rows) — Zonas geográficas de campaña.
+  id uuid PK, campaign_id uuid FK, name text, center_lat float8, center_lng float8,
+  radius_meters int, color text, assigned_to uuid FK→users, metadata jsonb
+
+zone_objectives (objetivos de zona) — Metas por zona.
+  id uuid PK, campaign_id uuid, region text, target_forms int, description text
+
+user_objectives — Metas por usuario.
+  id uuid PK, user_id uuid FK, campaign_id uuid, target_forms int, notes text
+
+--- RELACIONES CLAVE ---
+- forms.encuestador_id = users.id::text (agente de campo que capturó)
+- forms.campaign_id = campaigns.id
+- form_submissions.submitted_by = users.id (agente)
+- form_submissions.cms_claimed_by = users.id (operadora digital)
+- user_campaigns.user_id + user_campaigns.campaign_id = asignación
+- user_campaigns.role = rol dentro de esa campaña
+- cms_extension_events.operator_id = users.id (agente digital)
+- Agentes de campo: user_campaigns.role = 'agente_campo'
+- Agentes digitales: user_campaigns.role = 'agente_digital'
+- Consultores: user_campaigns.role = 'consultor'
+
+--- DEPARTAMENTOS POR UTM ---
+forms.zona='17S' con x entre 580000-780000, y entre 9097214-9350000 → Lambayeque
+forms.zona='17S' con x entre 650000-825978, y entre 9350000-9985737 → Cajamarca
+forms.zona='18S' con x entre 250000-400000, y entre 8630000-8720000 → Lima
+form_submissions tiene data->>'departamento', data->>'provincia', data->>'distrito' como alternativa.
+`;
+
+const SYSTEM_PROMPT = `Eres el motor de consultas SQL de Goberna, plataforma de operación territorial para campañas políticas en Perú.
+
+SCHEMA DE LA BASE DE DATOS:
+${DB_SCHEMA}
+
+Tu trabajo: dado un mensaje en español, generar UNA query SQL segura y responder con JSON.
+
+REGLAS ESTRICTAS:
+1. SOLO genera SELECT. NUNCA INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE.
+2. SIEMPRE usa AT TIME ZONE 'America/Lima' para fechas.
+3. SIEMPRE excluye deleted_at IS NOT NULL (soft deletes).
+4. LIMIT máximo 30 rows.
+5. Si piden "hoy", usa: created_at >= (CURRENT_DATE AT TIME ZONE 'America/Lima')::date
+6. Si piden "esta semana", usa: created_at >= date_trunc('week', now() AT TIME ZONE 'America/Lima')
+7. Si piden "este mes", usa: created_at >= date_trunc('month', now() AT TIME ZONE 'America/Lima')
+8. Si piden una fecha específica (ej: "5 de marzo"), usa: (created_at AT TIME ZONE 'America/Lima')::date = '2026-03-05'
+9. Cuando busques por nombre de persona, usa ILIKE '%nombre%' para ser flexible.
+10. Cuando busques por campaña, usa ILIKE '%nombre%' en campaigns.name.
+11. Para agentes digitales: filtra por user_campaigns.role = 'agente_digital' o cms_extension_events.
+12. Para agentes de campo: filtra por user_campaigns.role = 'agente_campo' o forms.encuestador.
+13. Si no puedes generar SQL válido, devuelve intent "chat" con una respuesta directa.
+
+FORMATO DE RESPUESTA (JSON estricto, sin markdown, sin backticks):
+{"intent":"query","sql":"SELECT ...","descripcion":"qué muestra esta query"}
+{"intent":"chat","respuesta":"texto de respuesta directa si no se necesita SQL"}
+
+NUNCA generes otra cosa que no sea ese JSON.`;
 
 // ── Gemini API ──────────────────────────────────────────────────────
 
-type GeminiIntent = {
-  intent: "top_agentes" | "resumen_dia" | "resumen_campana" | "health" | "ayuda" | "unknown";
-  depto?: string;       // clave de DEPTOS si aplica
-  campana?: string;     // nombre parcial de campaña
-  periodo?: "hoy" | "semana" | "mes";  // default "hoy"
-  mensaje_directo?: string; // si intent=unknown, Gemini responde directamente
-};
+type GeminiSqlResult =
+  | { intent: "query"; sql: string; descripcion: string }
+  | { intent: "chat"; respuesta: string };
 
-const SYSTEM_PROMPT = `Eres el asistente interno de Goberna, una plataforma de operación territorial para campañas políticas en Perú.
-Tu trabajo es interpretar mensajes de los coordinadores de campaña y extraer el intent y parámetros.
-
-Departamentos disponibles en el sistema (y sus alias comunes):
-- lambayeque: lambayeque, chiclayo, ferreñafe
-- cajamarca: cajamarca
-- lima: lima, lima norte, lima sur
-- laLibertad: la libertad, trujillo
-
-Responde SIEMPRE con un JSON válido con esta estructura exacta:
-{
-  "intent": "top_agentes" | "resumen_dia" | "resumen_campana" | "health" | "ayuda" | "unknown",
-  "depto": "<clave de depto o null>",
-  "campana": "<nombre parcial de campaña o null>",
-  "periodo": "hoy" | "semana" | "mes",
-  "mensaje_directo": "<respuesta directa si intent=unknown, sino null>"
-}
-
-Reglas:
-- Si piden "mejores agentes", "top agentes", "quién llevó más", "ranking" → intent: top_agentes
-- Si piden "resumen", "cómo vamos", "cuántos registros" sin especificar campaña → intent: resumen_dia
-- Si mencionan el nombre de una persona o campaña específica → intent: resumen_campana, campana: el nombre
-- Si piden "/health", "estado del servidor", "está caído" → intent: health
-- Si preguntan qué puede hacer el bot → intent: ayuda
-- Si preguntan algo que no tiene datos en el sistema → intent: unknown, mensaje_directo: respuesta breve
-- periodo por defecto es "hoy" salvo que digan "esta semana" o "este mes"
-- SOLO devuelve el JSON, sin texto extra, sin markdown, sin bloques de código`;
-
-async function geminiParseIntent(userMessage: string): Promise<GeminiIntent> {
+async function geminiGenerateSQL(userMessage: string): Promise<GeminiSqlResult> {
   if (!_env?.geminiApiKey) {
-    // Fallback sin IA: solo detecta comandos básicos por texto
-    const t = userMessage.toLowerCase();
-    if (t.includes("health") || t.includes("servidor")) return { intent: "health" };
-    if (t.includes("ayuda") || t.includes("comandos")) return { intent: "ayuda" };
-    if (t.includes("resumen") || t.includes("cuántos") || t.includes("cuantos")) return { intent: "resumen_dia" };
-    return { intent: "top_agentes", periodo: "hoy" };
+    return { intent: "chat", respuesta: "API key de Gemini no configurada." };
   }
 
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${_env.geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${_env.geminiApiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
           contents: [{ parts: [{ text: userMessage }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 256 },
+          generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
         }),
-        signal: AbortSignal.timeout(10_000),
+        signal: AbortSignal.timeout(15_000),
       },
     );
 
-    if (!res.ok) return { intent: "unknown", mensaje_directo: "No pude procesar tu mensaje." };
+    if (!res.ok) {
+      const err = await res.text().catch(() => "");
+      return { intent: "chat", respuesta: `Error Gemini (${res.status}): ${err.slice(0, 100)}` };
+    }
 
     const data = (await res.json()) as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     };
 
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    // Strip possible markdown code block wrapping
     const cleaned = raw.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "").trim();
-    return JSON.parse(cleaned) as GeminiIntent;
-  } catch {
-    return { intent: "unknown", mensaje_directo: "Tuve un problema procesando tu pregunta. Intenta de nuevo." };
+    const parsed = JSON.parse(cleaned) as GeminiSqlResult;
+
+    // Security: block anything that's not a SELECT
+    if (parsed.intent === "query") {
+      const sqlUpper = parsed.sql.toUpperCase().trim();
+      const forbidden = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE", "GRANT", "REVOKE"];
+      for (const kw of forbidden) {
+        if (sqlUpper.startsWith(kw) || sqlUpper.includes(`; ${kw}`)) {
+          return { intent: "chat", respuesta: "No puedo ejecutar ese tipo de consulta." };
+        }
+      }
+      if (!sqlUpper.startsWith("SELECT") && !sqlUpper.startsWith("WITH")) {
+        return { intent: "chat", respuesta: "Solo puedo ejecutar consultas de lectura." };
+      }
+    }
+
+    return parsed;
+  } catch (e) {
+    return { intent: "chat", respuesta: `Error procesando: ${String(e).slice(0, 100)}` };
   }
 }
 
-async function geminiFormatResponse(datos: unknown, preguntaOriginal: string): Promise<string> {
-  if (!_env?.geminiApiKey) return String(datos);
+async function geminiFormatResponse(
+  rows: Record<string, unknown>[],
+  descripcion: string,
+  preguntaOriginal: string,
+  rowCount: number,
+): Promise<string> {
+  if (!_env?.geminiApiKey) return JSON.stringify(rows, null, 2);
+
+  const datosStr = JSON.stringify(rows.slice(0, 30), null, 2);
+
+  const prompt = `Eres el bot de Goberna para Telegram. El usuario preguntó: "${preguntaOriginal}"
+La query buscó: ${descripcion}
+Se encontraron ${rowCount} resultados.
+
+Datos (JSON):
+${datosStr}
+
+Formatea una respuesta clara para Telegram:
+- Usa *negrita* para datos importantes (formato Markdown de Telegram)
+- Usa emojis con moderación (🏆🥇🥈🥉📊📋📅👤📝)
+- Máximo 25 líneas
+- Si hay ranking, usa numeración
+- Incluye totales cuando sean relevantes
+- Si no hay datos, dilo amablemente
+- NO inventes datos que no estén en el JSON
+- NO uses formato de tabla (no se ve bien en Telegram)
+- El texto debe ser directo, como un reporte conciso`;
 
   try {
-    const prompt = `Eres el asistente de Goberna. El usuario preguntó: "${preguntaOriginal}"
-Los datos de la base de datos son:
-${JSON.stringify(datos, null, 2)}
-
-Formatea una respuesta clara, concisa y en español para enviar por WhatsApp/Telegram.
-Usa emojis moderadamente. Destaca los números importantes con *negrita*.
-Máximo 20 líneas. No agregues información que no esté en los datos.`;
-
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${_env.geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${_env.geminiApiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: 512 },
+          generationConfig: { temperature: 0.4, maxOutputTokens: 1024 },
         }),
-        signal: AbortSignal.timeout(10_000),
+        signal: AbortSignal.timeout(15_000),
       },
     );
 
-    if (!res.ok) return String(datos);
+    if (!res.ok) return `📊 ${descripcion}\n\n${datosStr}`;
     const data = (await res.json()) as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     };
-    return data.candidates?.[0]?.content?.parts?.[0]?.text ?? String(datos);
+    return data.candidates?.[0]?.content?.parts?.[0]?.text ?? datosStr;
   } catch {
-    return String(datos);
+    return `📊 ${descripcion}\n\n${datosStr}`;
   }
 }
 
-// ── DB queries ──────────────────────────────────────────────────────
+// ── Message handler ─────────────────────────────────────────────────
 
-function bboxWhere(bboxes: DeptoBbox[]): string {
-  return bboxes
-    .map((b) => `(zona = '${b.zona}' AND x BETWEEN ${b.minX} AND ${b.maxX} AND y BETWEEN ${b.minY} AND ${b.maxY})`)
-    .join(" OR ");
-}
+async function handleMessage(chatId: number, userText: string) {
+  await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
 
-function periodFilter(periodo: string = "hoy"): Date {
-  const now = new Date();
-  const lima = new Date(now.toLocaleString("en-US", { timeZone: "America/Lima" }));
-  if (periodo === "semana") {
-    lima.setDate(lima.getDate() - lima.getDay()); // inicio de semana
-  } else if (periodo === "mes") {
-    lima.setDate(1);
+  // Special commands
+  if (userText === "/health") {
+    await reply(chatId, await buildHealthReport(_env!));
+    return;
   }
-  lima.setHours(0, 0, 0, 0);
-  // Convert Lima midnight back to UTC
-  return new Date(lima.getTime() + 5 * 60 * 60 * 1000);
-}
-
-async function queryTopAgentes(depto?: string, periodo?: string) {
-  const since = periodFilter(periodo);
-
-  let whereExtra = "";
-  if (depto && DEPTOS[depto]) {
-    whereExtra = `AND (${bboxWhere(DEPTOS[depto]!.bboxes)})`;
-  } else {
-    whereExtra = "AND (x > 100000 OR y > 100000)";
+  if (userText === "/ayuda") {
+    await reply(chatId, buildAyuda());
+    return;
   }
 
-  const res = await pool.query<{ encuestador: string; registros: string; telefonos: string }>(
-    `SELECT encuestador,
-            COUNT(*) AS registros,
-            COUNT(DISTINCT telefono) FILTER (WHERE telefono <> '') AS telefonos
-     FROM forms
-     WHERE deleted_at IS NULL
-       AND created_at >= $1
-       AND encuestador IS NOT NULL AND encuestador <> ''
-       ${whereExtra}
-     GROUP BY encuestador
-     ORDER BY registros DESC
-     LIMIT 10`,
-    [since.toISOString()],
-  );
+  // Generate SQL via Gemini
+  const result = await geminiGenerateSQL(userText);
 
-  return {
-    depto: depto ? DEPTOS[depto]?.label : "Todas las campañas",
-    periodo: periodo ?? "hoy",
-    agentes: res.rows.map((r, i) => ({
-      posicion: i + 1,
-      nombre: r.encuestador,
-      registros: Number(r.registros),
-      telefonos_unicos: Number(r.telefonos),
-    })),
-  };
-}
-
-async function queryResumenDia(periodo?: string) {
-  const since = periodFilter(periodo);
-
-  const res = await pool.query<{ total: string; agentes: string; campanas: string }>(
-    `SELECT COUNT(*) AS total,
-            COUNT(DISTINCT encuestador_id) AS agentes,
-            COUNT(DISTINCT campaign_id) AS campanas
-     FROM forms
-     WHERE deleted_at IS NULL AND created_at >= $1`,
-    [since.toISOString()],
-  );
-
-  const top = await pool.query<{ encuestador: string; registros: string }>(
-    `SELECT encuestador, COUNT(*) AS registros
-     FROM forms
-     WHERE deleted_at IS NULL AND created_at >= $1
-       AND encuestador IS NOT NULL AND encuestador <> ''
-       AND (x > 100000 OR y > 100000)
-     GROUP BY encuestador ORDER BY registros DESC LIMIT 5`,
-    [since.toISOString()],
-  );
-
-  const row = res.rows[0] ?? { total: "0", agentes: "0", campanas: "0" };
-  return {
-    periodo: periodo ?? "hoy",
-    total_registros: Number(row.total),
-    agentes_activos: Number(row.agentes),
-    campanas_activas: Number(row.campanas),
-    top_agentes: top.rows.map((r) => ({ nombre: r.encuestador, registros: Number(r.registros) })),
-  };
-}
-
-async function queryResumenCampana(nombreCampana: string, periodo?: string) {
-  const since = periodFilter(periodo);
-
-  const campRes = await pool.query<{ id: string; name: string }>(
-    `SELECT id, name FROM campaigns WHERE LOWER(name) ILIKE $1 LIMIT 1`,
-    [`%${nombreCampana.toLowerCase()}%`],
-  );
-
-  if (!campRes.rows.length) {
-    return { error: `No encontré ninguna campaña con el nombre "${nombreCampana}".` };
+  if (result.intent === "chat") {
+    await reply(chatId, result.respuesta);
+    return;
   }
 
-  const camp = campRes.rows[0]!;
+  // Execute SQL
+  try {
+    const queryResult = await pool.query(result.sql);
+    const rows = queryResult.rows as Record<string, unknown>[];
+    const rowCount = queryResult.rowCount ?? 0;
 
-  const statsRes = await pool.query<{ total_periodo: string; agentes_periodo: string; total_acumulado: string }>(
-    `SELECT COUNT(*) AS total_periodo,
-            COUNT(DISTINCT encuestador_id) AS agentes_periodo,
-            (SELECT COUNT(*) FROM forms WHERE campaign_id = $1 AND deleted_at IS NULL) AS total_acumulado
-     FROM forms
-     WHERE campaign_id = $1 AND deleted_at IS NULL AND created_at >= $2`,
-    [camp.id, since.toISOString()],
-  );
+    if (rows.length === 0) {
+      await reply(chatId, `📭 No se encontraron resultados.\n_${result.descripcion}_`);
+      return;
+    }
 
-  const agRes = await pool.query<{ encuestador: string; registros: string }>(
-    `SELECT encuestador, COUNT(*) AS registros
-     FROM forms
-     WHERE campaign_id = $1 AND deleted_at IS NULL AND created_at >= $2
-       AND encuestador IS NOT NULL AND encuestador <> ''
-     GROUP BY encuestador ORDER BY registros DESC LIMIT 5`,
-    [camp.id, since.toISOString()],
-  );
+    // Format with Gemini
+    const respuesta = await geminiFormatResponse(rows, result.descripcion, userText, rowCount);
+    await reply(chatId, respuesta);
+  } catch (e) {
+    const errMsg = String(e).slice(0, 200);
+    // Retry: tell Gemini about the error and ask for a fixed query
+    const retry = await geminiGenerateSQL(
+      `${userText}\n\nNOTA: La query anterior falló con error: ${errMsg}. Corrige el SQL.`,
+    );
 
-  const stats = statsRes.rows[0] ?? { total_periodo: "0", agentes_periodo: "0", total_acumulado: "0" };
-  return {
-    campana: camp.name,
-    periodo: periodo ?? "hoy",
-    registros_periodo: Number(stats.total_periodo),
-    agentes_activos: Number(stats.agentes_periodo),
-    total_acumulado: Number(stats.total_acumulado),
-    top_agentes: agRes.rows.map((r) => ({ nombre: r.encuestador, registros: Number(r.registros) })),
-  };
+    if (retry.intent === "query") {
+      try {
+        const retryResult = await pool.query(retry.sql);
+        const rows = retryResult.rows as Record<string, unknown>[];
+        if (rows.length === 0) {
+          await reply(chatId, `📭 No se encontraron resultados.\n_${retry.descripcion}_`);
+          return;
+        }
+        const respuesta = await geminiFormatResponse(rows, retry.descripcion, userText, retryResult.rowCount ?? 0);
+        await reply(chatId, respuesta);
+        return;
+      } catch {
+        // Second failure — give up
+      }
+    }
+
+    await reply(chatId, `❌ No pude completar la consulta. Intenta reformular la pregunta.`);
+  }
 }
 
-// ── Health report ───────────────────────────────────────────────────
+// ── Health & Ayuda ──────────────────────────────────────────────────
+
+function buildAyuda(): string {
+  return [
+    `🤖 *Goberna Bot — IA*`,
+    ``,
+    `Escribe \`/g\` seguido de tu pregunta:`,
+    ``,
+    `📊 *Reportes generales:*`,
+    `• \`/g resumen de hoy\``,
+    `• \`/g cuántos registros esta semana\``,
+    `• \`/g total de registros por campaña este mes\``,
+    ``,
+    `🏆 *Agentes de campo:*`,
+    `• \`/g top agentes de hoy en Lambayeque\``,
+    `• \`/g cuántos registros lleva Katterine Perez\``,
+    `• \`/g agentes de la campaña César Vásquez\``,
+    `• \`/g registros del 5 de marzo en Cajamarca\``,
+    ``,
+    `📱 *Agentes digitales (CMS):*`,
+    `• \`/g métricas de agentes digitales hoy\``,
+    `• \`/g cuántos mensajes WA se enviaron esta semana\``,
+    `• \`/g contactos en estado hablado de César Vásquez\``,
+    ``,
+    `📋 *Campañas y equipos:*`,
+    `• \`/g miembros de la campaña Perú Primero\``,
+    `• \`/g reuniones activas\``,
+    `• \`/g leads de esta semana\``,
+    ``,
+    `🔧 *Sistema:*`,
+    `• \`/health\` — estado del servidor`,
+  ].join("\n");
+}
 
 async function checkDatabase(): Promise<boolean> {
   try { const r = await pool.query("SELECT 1 AS ok"); return r.rowCount === 1; }
@@ -299,16 +371,14 @@ async function checkTegola(env: AppEnv): Promise<boolean> {
   try { const r = await fetchWithRetry(`${env.tegolaBaseUrl}/capabilities`, env); return r.ok; }
   catch { return false; }
 }
-
 function formatBytes(bytes: number): string {
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(0)} KB`;
   if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
   return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
-
 function getUptime(): string {
-  const secs = os.uptime();
-  const d = Math.floor(secs / 86400), h = Math.floor((secs % 86400) / 3600), m = Math.floor((secs % 3600) / 60);
+  const s = os.uptime();
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
   return [d > 0 && `${d}d`, h > 0 && `${h}h`, `${m}m`].filter(Boolean).join(" ");
 }
 
@@ -316,7 +386,7 @@ async function buildHealthReport(env: AppEnv): Promise<string> {
   const [dbok, redisok, tegolaok] = await Promise.all([checkDatabase(), checkRedis(), checkTegola(env)]);
   const load1 = os.loadavg()[0] ?? 0;
   const cpuCount = os.cpus().length || 1;
-  const totalMem = os.totalmem(), freeMem = os.freemem(), usedMem = totalMem - freeMem;
+  const totalMem = os.totalmem(), usedMem = totalMem - os.freemem();
   let diskLine = "💿 Disco: N/A";
   try {
     const fs = statfsSync("/");
@@ -328,80 +398,13 @@ async function buildHealthReport(env: AppEnv): Promise<string> {
     `🏥 *Status — Goberna*`, `📅 ${new Date().toLocaleString("es-PE", { timeZone: "America/Lima" })}`, `⏱ Uptime: ${getUptime()}`, ``,
     `*Servicios:*`, `${icon(dbok)} PostgreSQL`, `${icon(redisok)} Redis`, `${icon(tegolaok)} Tegola`, ``,
     `*Recursos (${formatBytes(totalMem)} RAM):*`,
-    `🖥 CPU: ${Math.min(100, (load1 / cpuCount) * 100).toFixed(1)}% (load ${load1.toFixed(2)})`,
-    `💾 RAM: ${formatBytes(usedMem)} / ${formatBytes(totalMem)} (${totalMem > 0 ? ((usedMem / totalMem) * 100).toFixed(0) : 0}%)`,
+    `🖥 CPU: ${Math.min(100, (load1 / cpuCount) * 100).toFixed(1)}%`,
+    `💾 RAM: ${formatBytes(usedMem)} / ${formatBytes(totalMem)} (${((usedMem / totalMem) * 100).toFixed(0)}%)`,
     diskLine,
   ].join("\n");
 }
 
-// ── Message handler ─────────────────────────────────────────────────
-
-async function handleMessage(chatId: number, userText: string) {
-  // Show typing indicator
-  await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
-
-  // Parse intent with Gemini
-  const intent = await geminiParseIntent(userText);
-
-  // Execute the right query then format with Gemini
-  switch (intent.intent) {
-    case "top_agentes": {
-      const datos = await queryTopAgentes(intent.depto ?? undefined, intent.periodo);
-      const respuesta = await geminiFormatResponse(datos, userText);
-      await reply(chatId, respuesta);
-      return;
-    }
-    case "resumen_dia": {
-      const datos = await queryResumenDia(intent.periodo);
-      const respuesta = await geminiFormatResponse(datos, userText);
-      await reply(chatId, respuesta);
-      return;
-    }
-    case "resumen_campana": {
-      if (!intent.campana) {
-        await reply(chatId, "¿De qué campaña quieres el resumen? Dime el nombre.");
-        return;
-      }
-      const datos = await queryResumenCampana(intent.campana, intent.periodo);
-      const respuesta = await geminiFormatResponse(datos, userText);
-      await reply(chatId, respuesta);
-      return;
-    }
-    case "health": {
-      const report = await buildHealthReport(_env!);
-      await reply(chatId, report);
-      return;
-    }
-    case "ayuda": {
-      await reply(chatId, [
-        `🤖 *Goberna Bot — IA*`,
-        ``,
-        `Usa \`/g <pregunta>\` para consultar en español natural:`,
-        ``,
-        `• \`/g mejores agentes de hoy\``,
-        `• \`/g top de Lambayeque esta semana\``,
-        `• \`/g cómo va la campaña César Vásquez\``,
-        `• \`/g resumen del día\``,
-        `• \`/g cuántos registros llevamos en cajamarca\``,
-        ``,
-        `Comandos directos:`,
-        `• \`/health\` — estado del servidor`,
-        `• \`/ayuda\` — esta lista`,
-      ].join("\n"));
-      return;
-    }
-    case "unknown": {
-      await reply(chatId, intent.mensaje_directo ?? "No entendí tu pregunta. Intenta de nuevo.");
-      return;
-    }
-    default: {
-      await reply(chatId, "No entendí. Escríbeme de otra forma o pregunta '¿qué puedes hacer?'");
-      return;
-    }
-  }
-}
-
-// ── Telegram API helpers ────────────────────────────────────────────
+// ── Telegram API ────────────────────────────────────────────────────
 
 function tgApi(method: string, body: Record<string, unknown>): Promise<Response> {
   return fetch(`https://api.telegram.org/bot${_env!.telegramBotToken}/${method}`, {
@@ -412,7 +415,29 @@ function tgApi(method: string, body: Record<string, unknown>): Promise<Response>
 }
 
 async function reply(chatId: number, text: string) {
-  await tgApi("sendMessage", { chat_id: chatId, text, parse_mode: "Markdown" }).catch(() => {});
+  // Telegram has 4096 char limit — split if needed
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > 0) {
+    if (remaining.length <= 4000) {
+      chunks.push(remaining);
+      break;
+    }
+    // Find last newline before 4000
+    const cutoff = remaining.lastIndexOf("\n", 4000);
+    const cut = cutoff > 200 ? cutoff : 4000;
+    chunks.push(remaining.slice(0, cut));
+    remaining = remaining.slice(cut);
+  }
+
+  for (const chunk of chunks) {
+    await tgApi("sendMessage", { chat_id: chatId, text: chunk, parse_mode: "Markdown" }).catch(
+      async () => {
+        // Markdown parse error — retry without parse_mode
+        await tgApi("sendMessage", { chat_id: chatId, text: chunk }).catch(() => {});
+      },
+    );
+  }
 }
 
 // ── Polling loop ────────────────────────────────────────────────────
@@ -446,29 +471,29 @@ async function pollOnce() {
       const raw = msg.text.trim();
       const lower = raw.toLowerCase();
 
-      // /health y /ayuda sin prefijo /g (comandos de sistema)
+      // /health — direct
       if (lower === "/health" || lower.startsWith("/health@")) {
         handleMessage(msg.chat.id, "/health").catch(() => {});
         continue;
       }
+
+      // /ayuda, /help, /start — direct
       if (lower === "/ayuda" || lower === "/help" || lower === "/start" || lower.startsWith("/ayuda@")) {
         handleMessage(msg.chat.id, "/ayuda").catch(() => {});
         continue;
       }
 
-      // /g <pregunta> — activa la IA con lenguaje natural
-      // Acepta: /g, /G, /g@gobernanotifierbot
+      // /g <pregunta> — IA
       const gMatch = raw.match(/^\/[gG](?:@\w+)?\s+([\s\S]+)/);
       if (gMatch) {
-        const pregunta = gMatch[1]!.trim();
-        handleMessage(msg.chat.id, pregunta).catch(() => {});
+        handleMessage(msg.chat.id, gMatch[1]!.trim()).catch(() => {});
         continue;
       }
 
-      // Todo lo demás → ignorar
+      // Everything else → ignore
     }
   } catch {
-    // Network/timeout — retry next cycle
+    // Network/timeout — retry
   }
 }
 
