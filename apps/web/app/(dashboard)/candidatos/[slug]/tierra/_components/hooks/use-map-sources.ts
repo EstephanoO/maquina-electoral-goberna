@@ -8,7 +8,7 @@
  * agents and form submissions.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { EnrichedAgent, FormPoint } from "../types";
 
 const NEON_COLORS = ["#34f5a4", "#ff9f43"] as const;
@@ -139,4 +139,62 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
   }, [visibleForms, barsGridSizeDeg]);
 
   return { formsGeoJson, barsGeoJson };
+}
+
+/* ─── New-point halo detection ─── */
+
+export type HaloPoint = { id: string; lng: number; lat: number };
+
+const HALO_DURATION_MS = 2_000;
+
+/**
+ * useNewPoints — detects newly ingested forms between polls and emits
+ * their coordinates for a brief halo animation. Each batch of new points
+ * lives for HALO_DURATION_MS then auto-clears.
+ *
+ * Uses a Set<id> diff: previous IDs vs current IDs → new entries get halos.
+ * First render (empty → full) is skipped to avoid halo-ing the entire dataset.
+ */
+export function useNewPoints(forms: FormPoint[]): HaloPoint[] {
+  const prevIdsRef = useRef<Set<string> | null>(null);
+  const [haloPoints, setHaloPoints] = useState<HaloPoint[]>([]);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const currentIds = new Set(forms.map((f) => f.id));
+
+    // Skip first render — don't halo the initial dataset load.
+    if (prevIdsRef.current === null) {
+      prevIdsRef.current = currentIds;
+      return;
+    }
+
+    const prevIds = prevIdsRef.current;
+    const newPoints: HaloPoint[] = [];
+    for (const f of forms) {
+      if (f.lat && f.lng && !prevIds.has(f.id)) {
+        newPoints.push({ id: f.id, lng: f.lng, lat: f.lat });
+      }
+    }
+
+    prevIdsRef.current = currentIds;
+
+    if (newPoints.length === 0) return;
+
+    setHaloPoints(newPoints);
+
+    // Auto-clear after animation duration
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setHaloPoints([]);
+      timerRef.current = null;
+    }, HALO_DURATION_MS);
+  }, [forms]);
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
+
+  return haloPoints;
 }

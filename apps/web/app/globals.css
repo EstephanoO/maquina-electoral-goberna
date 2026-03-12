@@ -460,6 +460,48 @@ body {
   100% { background-position: 200% 0; }
 }
 
+@keyframes tierra-halo {
+  0% {
+    transform: translate(-50%, -50%) scale(0.3);
+    opacity: 0.85;
+  }
+  60% {
+    opacity: 0.4;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+.tierra-halo-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid rgba(52, 245, 164, 0.7);
+  background: radial-gradient(circle, rgba(52, 245, 164, 0.25) 0%, transparent 70%);
+  transform: translate(-50%, -50%) scale(0.3);
+  animation: tierra-halo 2s ease-out forwards;
+  pointer-events: none;
+}
+
+.tierra-halo-ring-outer {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 1px solid rgba(52, 245, 164, 0.35);
+  transform: translate(-50%, -50%) scale(0.3);
+  animation: tierra-halo 2s 0.15s ease-out forwards;
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* ═══════════════════════════════════════════════════════════════
    Utility Animation Classes
    ═══════════════════════════════════════════════════════════════ */

@@ -31,7 +31,7 @@
  */
 
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Layer, Map as MapLibre, Source } from "@vis.gl/react-maplibre";
+import { Layer, Map as MapLibre, Marker, Source } from "@vis.gl/react-maplibre";
 import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
 import type { CircleLayerSpecification, DragPanOptions, FillLayerSpecification, LineLayerSpecification, Map as NativeMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -59,7 +59,7 @@ import {
 } from "./map-paint-constants";
 
 import { useDrillFilters } from "./hooks/use-drill-filters";
-import { useAgentsSource, useFormSources } from "./hooks/use-map-sources";
+import { useAgentsSource, useFormSources, useNewPoints } from "./hooks/use-map-sources";
 import { useSurveyorRoutes } from "./hooks/use-surveyor-routes";
 import { useAutoFit } from "./hooks/use-auto-fit";
 import { useZoneTooltip } from "./hooks/use-zone-tooltip";
@@ -152,6 +152,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const filters = useDrillFilters(drillState, campaignId);
   const agentsGeoJson = useAgentsSource(agents, selectedAgentId);
   const { formsGeoJson, barsGeoJson } = useFormSources(forms, selectedAgentId, barsZoom);
+  const haloPoints = useNewPoints(forms);
   const { routesGeoJson, waypointsGeoJson } = useSurveyorRoutes(forms, selectedAgentId);
 
   useAutoFit(mapRef, drillState, skipNextFitRef, disableAutoFitRef);
@@ -716,6 +717,16 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
           <Layer id="agents-labels" type="symbol" minzoom={10} layout={agentLabelsLayoutWithVis} paint={AGENT_LABELS_PAINT} />
           <Layer id="agents-count" type="symbol" minzoom={8} layout={agentCountLayoutWithVis} paint={AGENT_COUNT_PAINT} />
         </Source>
+
+        {/* ── New-point halos — CSS-animated Markers that auto-clear after 2s ── */}
+        {showDatos && haloPoints.map((p) => (
+          <Marker key={p.id} longitude={p.lng} latitude={p.lat} anchor="center">
+            <div style={{ position: "relative", width: 0, height: 0 }}>
+              <div className="tierra-halo-ring" />
+              <div className="tierra-halo-ring-outer" />
+            </div>
+          </Marker>
+        ))}
 
       </MapLibre>
 
