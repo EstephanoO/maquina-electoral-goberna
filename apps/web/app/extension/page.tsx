@@ -34,7 +34,7 @@ export default function ExtensionPage() {
             </div>
           </div>
           <h1 style={{ fontSize: "clamp(28px, 7vw, 40px)", fontWeight: 800, lineHeight: 1.1, color: "#fff", margin: "0 0 8px", letterSpacing: "-0.02em" }}>WhatsApp Helper</h1>
-          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", margin: 0, lineHeight: 1.5 }}>Extension de Chrome para Goberna <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(37,211,102,0.6)" }}>v7.0.1</span></p>
+          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", margin: 0, lineHeight: 1.5 }}>Extension de Chrome para Goberna <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(37,211,102,0.6)" }}>v8.0.0</span></p>
         </div>
 
         {view === "intro" && (
@@ -110,7 +110,7 @@ export default function ExtensionPage() {
 
             <InstallStep n={3} title="Carga la extension" last>
               <p style={stepText}>
-                Haz clic en <strong style={{ color: "#fff" }}>&quot;Cargar descomprimida&quot;</strong> y selecciona la carpeta donde descomprimiste el ZIP.
+                Haz clic en <strong style={{ color: "#fff" }}>&quot;Cargar descomprimida&quot;</strong> y selecciona la carpeta <strong style={{ color: "#25d366" }}>whatsapp-helper</strong> que aparece al descomprimir.
               </p>
               <p style={stepText}>
                 Veras el icono de WhatsApp Goberna en la barra de Chrome. Listo!
@@ -118,6 +118,15 @@ export default function ExtensionPage() {
               <div style={{ background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.2)", borderRadius: 10, padding: "14px", marginTop: 8 }}>
                 <p style={{ fontSize: 13, fontWeight: 600, color: "#25d366", margin: 0 }}>
                   Ahora cuando hagas clic en un numero de WhatsApp en Validacion, se abrira en la misma pestana.
+                </p>
+              </div>
+
+              <div style={{ background: "rgba(255,149,0,0.08)", border: "1px solid rgba(255,149,0,0.2)", borderRadius: 10, padding: "14px", marginTop: 12 }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: "#ff9f0a", margin: "0 0 4px" }}>
+                  Ya tenias una version anterior?
+                </p>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", margin: 0, lineHeight: 1.5 }}>
+                  Borra la carpeta vieja, descomprime la nueva, y haz clic en el boton de recarga en chrome://extensions.
                 </p>
               </div>
             </InstallStep>
