@@ -147,8 +147,10 @@ export const PipelineView = memo(function PipelineView({
   }
 
   // Use server-side counts when available (current period) — forms array may be empty
-  // due to client-side filtering on a limited (500-record) API response
-  const serverPeriodCount = offset === 0
+  // due to client-side filtering on a limited (500-record) API response.
+  // When a region filter is active, server totals are NOT region-scoped,
+  // so we MUST fall back to forms.length (which IS region-filtered).
+  const serverPeriodCount = (offset === 0 && !region)
     ? (period === "today" ? serverTotals.forms_today
       : period === "week" ? serverTotals.forms_week
       : period === "all" ? serverTotals.forms_count

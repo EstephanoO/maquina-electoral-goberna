@@ -413,7 +413,7 @@ export default function TierraPage() {
             availableRegions={pipeline.availableRegions}
             periodLabel={pipeline.periodLabel}
             dateRanges={pipeline.dateRanges}
-            totalDatos={stats.totals.forms_count}
+            totalDatos={pipeline.regionTotalDatos ?? stats.totals.forms_count}
             serverTotals={stats.totals}
             agentesCampoCount={enrichedAgents.length}
             metaDatos={stats.metas.datos}

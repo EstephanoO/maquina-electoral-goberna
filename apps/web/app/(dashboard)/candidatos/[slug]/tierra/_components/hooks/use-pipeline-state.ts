@@ -18,6 +18,8 @@ export type PipelineState = {
   onRegionChange: (r: string | null) => void;
   /** Sorted list of unique departamento names found in forms data */
   availableRegions: string[];
+  /** Total forms count filtered by region (null when no region filter active) */
+  regionTotalDatos: number | null;
   isPending: boolean;
   periodLabel: string;
   dateRanges: PipelineDateRanges;
@@ -101,6 +103,12 @@ export function usePipelineState(
     return Array.from(deps).sort((a, b) => a.localeCompare(b, "es"));
   }, [forms]);
 
+  // ── Region total: count all-time forms in the selected region (for funnel "Total") ──
+  const regionTotalDatos = useMemo(
+    () => region ? forms.filter((f) => f.departamento === region).length : null,
+    [forms, region],
+  );
+
   // ── Region filter: applied client-side on top of time-filtered forms ──
   const filteredForms = useMemo(
     () => region ? timeForms.filter((f) => f.departamento === region) : timeForms,
@@ -146,6 +154,7 @@ export function usePipelineState(
     region,
     onRegionChange,
     availableRegions,
+    regionTotalDatos,
     isPending,
     periodLabel: dateRanges.previousLabel,
     dateRanges,
