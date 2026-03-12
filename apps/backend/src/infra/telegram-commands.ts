@@ -193,7 +193,7 @@ async function geminiGenerateSQL(userMessage: string): Promise<GeminiSqlResult> 
         body: JSON.stringify({
           system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
           contents: [{ parts: [{ text: userMessage }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+          generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
         }),
         signal: AbortSignal.timeout(15_000),
       },
@@ -210,7 +210,31 @@ async function geminiGenerateSQL(userMessage: string): Promise<GeminiSqlResult> 
 
     const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
     const cleaned = raw.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "").trim();
-    const parsed = JSON.parse(cleaned) as GeminiSqlResult;
+
+    let parsed: GeminiSqlResult;
+    try {
+      parsed = JSON.parse(cleaned) as GeminiSqlResult;
+    } catch {
+      // Try to repair truncated JSON — extract SQL if present
+      const sqlMatch = cleaned.match(/"sql"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)/);
+      const descMatch = cleaned.match(/"descripcion"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)/);
+      const tipoMatch = cleaned.match(/"tipo"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)/);
+      if (sqlMatch?.[1]) {
+        parsed = {
+          intent: "query",
+          sql: sqlMatch[1].replace(/\\"/g, '"').replace(/\\n/g, " "),
+          descripcion: descMatch?.[1] ?? "Consulta generada",
+          tipo: tipoMatch?.[1] as string | undefined,
+        };
+      } else {
+        // Try to extract chat response
+        const chatMatch = cleaned.match(/"respuesta"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)/);
+        if (chatMatch?.[1]) {
+          return { intent: "chat", respuesta: chatMatch[1] };
+        }
+        return { intent: "chat", respuesta: "No pude procesar la consulta. Intenta reformularla." };
+      }
+    }
 
     // Security: block anything that's not a SELECT
     if (parsed.intent === "query") {
