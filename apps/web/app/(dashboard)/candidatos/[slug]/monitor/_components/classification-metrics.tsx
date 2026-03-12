@@ -21,7 +21,7 @@ const VOTE_ICONS: Record<string, string> = {
   Invalido: "×",
 };
 
-function themeIsDark(theme: typeof MONITOR_THEME) {
+function themeIsDark(theme: { bg: string }) {
   return theme.bg === "#09121d";
 }
 
