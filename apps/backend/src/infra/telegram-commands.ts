@@ -147,18 +147,30 @@ REGLAS ESTRICTAS:
 6. Si piden "esta semana", usa: created_at >= date_trunc('week', now() AT TIME ZONE 'America/Lima')
 7. Si piden "este mes", usa: created_at >= date_trunc('month', now() AT TIME ZONE 'America/Lima')
 8. Si piden una fecha específica (ej: "5 de marzo"), usa: (created_at AT TIME ZONE 'America/Lima')::date = '2026-03-05'
-9. Cuando busques por nombre de persona (agente), usa ILIKE '%nombre%' para ser flexible.
-10. Cuando busques por campaña, usa ILIKE '%nombre%' en campaigns.name O campaigns.slug.
+9. CRITICO — BÚSQUEDA POR NOMBRE: Los nombres en Perú tienen tildes (César, Vásquez, María, etc). SIEMPRE usa unaccent() para comparar: WHERE unaccent(campo) ILIKE unaccent('%texto%'). NUNCA uses ILIKE sin unaccent.
+10. Para buscar campaña, PREFIERE buscar por slug (sin tildes ni espacios): campaigns.slug ILIKE '%cesar-vasquez%'. Alternativa: unaccent(campaigns.name) ILIKE unaccent('%cesar vasquez%').
 11. Para agentes digitales: filtra por user_campaigns.role = 'agente_digital' o cms_extension_events.
 12. Para agentes de campo: filtra por user_campaigns.role = 'agente_campo' o forms.encuestador.
 13. Si no puedes generar SQL válido, devuelve intent "chat" con una respuesta directa.
 14. Para reportes de territorio, PREFIERE form_submissions (tiene más datos y JSONB con departamento/provincia/distrito).
 15. SIEMPRE incluye nombres legibles (JOIN con users, campaigns) — nunca devuelvas solo UUIDs.
+16. Para obtener el nombre del agente, usa: COALESCE(u.full_name, fs.data->>'encuestador') donde u viene de LEFT JOIN users u ON fs.submitted_by = u.id.
+
+CAMPAÑAS ACTIVAS Y SUS SLUGS (usar slug para buscar):
+cesar-vasquez, ernesto-bustamante, fernando-rospigliosi, fuerza-popular, ahora-nacion, peru-primero, edwards-infante, guillermo-aliaga, rosangella-barbaran, rocio-porras, renovacion-popular, yessenia-lozano, pais-para-todos, donald-trump, joe-biden
 
 QUERIES TÍPICAS QUE DEBES SABER GENERAR:
-- "reporte de hoy de César Vásquez" → form_submissions WHERE campaign_id = (SELECT id FROM campaigns WHERE name ILIKE '%cesar%vasquez%') agrupado por agente con COUNT.
-- "top agentes de Lambayeque" → form_submissions con data->>'departamento' ILIKE '%lambayeque%' agrupado por submitted_by JOIN users ORDER BY count DESC.
-- "cómo va la semana" → resumen con total formularios, agentes activos, meets.
+- "reporte de hoy de César Vásquez" →
+  SELECT COALESCE(u.full_name, fs.data->>'encuestador') as agente, COUNT(*) as registros
+  FROM form_submissions fs
+  JOIN campaigns c ON fs.campaign_id = c.id
+  LEFT JOIN users u ON fs.submitted_by = u.id
+  WHERE c.slug = 'cesar-vasquez'
+  AND (fs.created_at AT TIME ZONE 'America/Lima')::date = (now() AT TIME ZONE 'America/Lima')::date
+  AND fs.deleted_at IS NULL
+  GROUP BY agente ORDER BY registros DESC LIMIT 30
+- "top agentes de Lambayeque" → form_submissions con data->>'departamento' ILIKE '%lambayeque%' agrupado por agente con COUNT, ORDER BY count DESC.
+- "cómo va la semana" → total formularios + agentes activos + meets activos en un solo resumen.
 - "busca al usuario 955135501" → users WHERE phone LIKE '%955135501%'.
 
 FORMATO DE RESPUESTA (JSON estricto, sin markdown, sin backticks):
