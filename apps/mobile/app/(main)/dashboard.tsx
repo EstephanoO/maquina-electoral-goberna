@@ -16,6 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 
 import { useCandidate, useAgent, useApp, useActiveCampaign } from '@/lib/app-context';
 import { useAgentTracking } from '@/hooks/useAgentTracking';
@@ -224,7 +226,336 @@ const OptionsMenu = memo(function OptionsMenu({
   );
 });
 
+// ─── Form Status Config ─────────────────────────────────────────
+
+type FormStatus = 'synced' | 'pending' | 'syncing' | 'failed' | 'rejected' | 'ghost';
+
+interface StatusConfig {
+  icon: keyof typeof MaterialIcons.glyphMap;
+  label: string;
+  description: string;
+  bgColor: string;
+  fgColor: string;
+  badgeBg: string;
+  iconBg: string;
+  tappable: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+}
+
+const STATUS_MAP: Record<FormStatus, StatusConfig> = {
+  synced: {
+    icon: 'cloud-done',
+    label: 'Sincronizado',
+    description: 'Registro guardado en el servidor.',
+    bgColor: '#ffffff',
+    fgColor: '#16a34a',
+    badgeBg: '#dcfce7',
+    iconBg: '#f0fdf4',
+    tappable: false,
+    canEdit: false,
+    canDelete: false,
+  },
+  pending: {
+    icon: 'cloud-upload',
+    label: 'Pendiente',
+    description: 'Esperando conexion para sincronizar.',
+    bgColor: '#ffffff',
+    fgColor: '#d97706',
+    badgeBg: '#fef3c7',
+    iconBg: '#fffbeb',
+    tappable: false,
+    canEdit: false,
+    canDelete: false,
+  },
+  syncing: {
+    icon: 'cloud-upload',
+    label: 'Sincronizando',
+    description: 'Enviando al servidor...',
+    bgColor: '#ffffff',
+    fgColor: '#d97706',
+    badgeBg: '#fef3c7',
+    iconBg: '#fffbeb',
+    tappable: false,
+    canEdit: false,
+    canDelete: false,
+  },
+  ghost: {
+    icon: 'sync-problem',
+    label: 'Reintentando',
+    description: 'El servidor no confirmo este registro. Se reintentara automaticamente.',
+    bgColor: '#fff7ed',
+    fgColor: '#c2410c',
+    badgeBg: '#ffedd5',
+    iconBg: '#fed7aa',
+    tappable: true,
+    canEdit: false,
+    canDelete: true,
+  },
+  failed: {
+    icon: 'error-outline',
+    label: 'Error',
+    description: 'No se pudo sincronizar con el servidor.',
+    bgColor: '#fef2f2',
+    fgColor: '#dc2626',
+    badgeBg: '#fee2e2',
+    iconBg: '#fecaca',
+    tappable: true,
+    canEdit: true,
+    canDelete: true,
+  },
+  rejected: {
+    icon: 'cancel',
+    label: 'Rechazado',
+    description: 'El servidor no acepto este registro.',
+    bgColor: '#fef2f2',
+    fgColor: '#dc2626',
+    badgeBg: '#fee2e2',
+    iconBg: '#fecaca',
+    tappable: true,
+    canEdit: true,
+    canDelete: true,
+  },
+};
+
+// ─── Form Action Sheet (bottom sheet overlay) ──────────────────
+
+interface ActionSheetProps {
+  form: PendingForm | null;
+  onClose: () => void;
+  onEdit: (form: PendingForm) => void;
+  onDelete: (form: PendingForm) => void;
+  primaryColor: string;
+}
+
+const FormActionSheet = memo(function FormActionSheet({
+  form,
+  onClose,
+  onEdit,
+  onDelete,
+  primaryColor,
+}: ActionSheetProps) {
+  if (!form) return null;
+
+  const status = STATUS_MAP[form.sync_status as FormStatus] ?? STATUS_MAP.failed;
+
+  let data: { nombre?: string; telefono?: string } = {};
+  try { data = JSON.parse(form.payload); } catch { /* ignore */ }
+
+  const detailMessage = form.sync_status === 'rejected'
+    ? (form.reject_reason || status.description)
+    : form.sync_status === 'failed'
+    ? (form.last_error || status.description)
+    : status.description;
+
+  const handleDelete = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    Alert.alert(
+      'Eliminar registro',
+      `Se eliminara "${data.nombre || 'Sin nombre'}" de la lista. Esta accion no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: () => { onDelete(form); onClose(); },
+        },
+      ],
+    );
+  };
+
+  const handleEdit = () => {
+    onEdit(form);
+    onClose();
+  };
+
+  return (
+    <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
+      <Pressable style={sheetStyles.backdrop} onPress={onClose}>
+        <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)} style={sheetStyles.backdropFill} />
+      </Pressable>
+      <Animated.View
+        entering={SlideInDown.springify().damping(20).stiffness(200)}
+        exiting={SlideOutDown.duration(200)}
+        style={sheetStyles.sheet}
+      >
+        {/* Drag handle */}
+        <View style={sheetStyles.handleBar}>
+          <View style={sheetStyles.handle} />
+        </View>
+
+        {/* Status header */}
+        <View style={sheetStyles.header}>
+          <View style={[sheetStyles.statusIcon, { backgroundColor: status.iconBg }]}>
+            <MaterialIcons name={status.icon} size={24} color={status.fgColor} />
+          </View>
+          <View style={sheetStyles.headerText}>
+            <Text style={[sheetStyles.headerTitle, { color: status.fgColor }]}>
+              {status.label}
+            </Text>
+            <Text style={sheetStyles.headerName} numberOfLines={1}>
+              {data.nombre || 'Sin nombre'}
+              {data.telefono ? ` \u00B7 ${data.telefono}` : ''}
+            </Text>
+          </View>
+        </View>
+
+        {/* Detail message */}
+        <View style={[sheetStyles.messageCard, { backgroundColor: status.badgeBg }]}>
+          <MaterialIcons name="info-outline" size={16} color={status.fgColor} />
+          <Text style={[sheetStyles.messageText, { color: status.fgColor }]}>
+            {detailMessage}
+          </Text>
+        </View>
+
+        {/* Actions */}
+        <View style={sheetStyles.actions}>
+          {status.canEdit && (
+            <Pressable
+              style={[sheetStyles.actionBtn, { backgroundColor: primaryColor }]}
+              onPress={handleEdit}
+              android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
+            >
+              <MaterialIcons name="edit" size={18} color="#fff" />
+              <Text style={sheetStyles.actionBtnTextPrimary}>Editar y reenviar</Text>
+            </Pressable>
+          )}
+          {status.canDelete && (
+            <Pressable
+              style={[sheetStyles.actionBtn, sheetStyles.actionBtnDestructive]}
+              onPress={handleDelete}
+              android_ripple={{ color: 'rgba(220,38,38,0.1)' }}
+            >
+              <MaterialIcons name="delete-outline" size={18} color="#dc2626" />
+              <Text style={sheetStyles.actionBtnTextDestructive}>Eliminar registro</Text>
+            </Pressable>
+          )}
+          <Pressable
+            style={[sheetStyles.actionBtn, sheetStyles.actionBtnCancel]}
+            onPress={onClose}
+            android_ripple={{ color: 'rgba(0,0,0,0.05)' }}
+          >
+            <Text style={sheetStyles.actionBtnTextCancel}>Cerrar</Text>
+          </Pressable>
+        </View>
+      </Animated.View>
+    </Modal>
+  );
+});
+
+const sheetStyles = StyleSheet.create({
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+  },
+  backdropFill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  sheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 34, // safe area
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: -4 },
+    shadowRadius: 16,
+    elevation: 16,
+  },
+  handleBar: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#cbd5e1',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginBottom: 16,
+  },
+  statusIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerText: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontFamily: FONT,
+  },
+  headerName: {
+    fontSize: 13,
+    fontFamily: FONT,
+    color: '#64748b',
+    marginTop: 2,
+  },
+  messageCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  messageText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: FONT,
+    lineHeight: 20,
+  },
+  actions: {
+    gap: 8,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    minHeight: 48,
+  },
+  actionBtnDestructive: {
+    backgroundColor: '#fef2f2',
+  },
+  actionBtnCancel: {
+    backgroundColor: '#f1f5f9',
+  },
+  actionBtnTextPrimary: {
+    fontSize: 15,
+    fontFamily: FONT,
+    color: '#ffffff',
+  },
+  actionBtnTextDestructive: {
+    fontSize: 15,
+    fontFamily: FONT,
+    color: '#dc2626',
+  },
+  actionBtnTextCancel: {
+    fontSize: 15,
+    fontFamily: FONT,
+    color: '#64748b',
+  },
+});
+
 // ─── Form Item Component ────────────────────────────────────────
+// Material Design 3 aligned: 48dp min touch target, semantic colors,
+// icon + text status indicators (not color alone), proper hierarchy.
 
 interface LocalFormData {
   nombre?: string;
@@ -235,13 +566,11 @@ interface LocalFormData {
 const FormItem = memo(function FormItem({
   form,
   primaryColor,
-  onEdit,
-  onDelete,
+  onPress,
 }: {
   form: PendingForm;
   primaryColor: string;
-  onEdit: (form: PendingForm) => void;
-  onDelete: (form: PendingForm) => void;
+  onPress: (form: PendingForm) => void;
 }) {
   let data: LocalFormData = {};
   try {
@@ -250,82 +579,143 @@ const FormItem = memo(function FormItem({
     // ignore
   }
 
-  const isSynced = form.sync_status === 'synced';
-  const isFailed = form.sync_status === 'failed';
-  const isRejected = form.sync_status === 'rejected';
-  const isGhost = form.sync_status === 'ghost';
-  const hasError = isRejected || isFailed;
+  const status = STATUS_MAP[form.sync_status as FormStatus] ?? STATUS_MAP.pending;
 
   // Format time
   const formDate = data.fecha ? new Date(data.fecha) : new Date(form.created_at);
   const timeStr = formDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
 
-  const errorMessage = isRejected
-    ? (form.reject_reason || 'Este registro fue rechazado por el servidor.')
-    : isGhost
-    ? 'Este registro se marco como sincronizado pero el servidor no lo tiene. Se reintentara automaticamente.'
-    : (form.last_error || 'Error al sincronizar con el servidor.');
-
   const handlePress = () => {
-    if (!hasError && !isGhost) return;
-    Alert.alert(
-      isRejected ? 'Registro rechazado' : isGhost ? 'No confirmado' : 'Error de sincronizacion',
-      errorMessage,
-      isGhost
-        ? [
-            { text: 'OK', style: 'cancel' },
-            { text: 'Eliminar', style: 'destructive', onPress: () => onDelete(form) },
-          ]
-        : [
-            { text: 'Cerrar', style: 'cancel' },
-            { text: 'Eliminar', style: 'destructive', onPress: () => onDelete(form) },
-            { text: 'Editar dato', onPress: () => onEdit(form) },
-          ],
-    );
+    if (status.tappable) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onPress(form);
+    }
   };
 
-  // Red for error states, orange for ghost, primary for everything else
-  const indicatorColor = hasError ? '#dc2626' : isGhost ? '#f97316' : primaryColor;
-  // Status dot: green = synced, red = rejected/failed, orange = ghost, yellow = pending/syncing
-  const dotColor = isSynced ? '#4ade80' : hasError ? '#f87171' : isGhost ? '#fb923c' : '#fbbf24';
-  const badgeLabel = isRejected ? 'Rechazado' : isFailed ? 'Error' : isGhost ? 'Reintentando' : null;
-
-  const bgColor = hasError ? '#fef2f2' : isGhost ? '#fff7ed' : undefined;
-  const textColor = hasError ? '#dc2626' : isGhost ? '#c2410c' : undefined;
-  const badgeColor = hasError ? '#dc2626' : isGhost ? '#ea580c' : undefined;
-  const badgeBg = hasError ? '#fee2e2' : isGhost ? '#ffedd5' : undefined;
-
   return (
-    <Pressable onPress={handlePress} disabled={!hasError && !isGhost}>
-      <View style={[styles.formItem, bgColor ? { backgroundColor: bgColor } : undefined]}>
-        <View style={[styles.formItemIndicator, { backgroundColor: indicatorColor }]} />
-        <View style={styles.formItemContent}>
-          <View style={styles.formItemRow}>
-            <Text
-              style={[styles.formItemName, textColor ? { color: textColor } : undefined]}
-              numberOfLines={1}
-            >
-              {data.nombre || 'Sin nombre'}
+    <Pressable
+      onPress={handlePress}
+      disabled={!status.tappable}
+      style={({ pressed }) => [
+        fItemStyles.container,
+        { backgroundColor: status.bgColor },
+        pressed && status.tappable && { opacity: 0.7 },
+      ]}
+      android_ripple={status.tappable ? { color: `${status.fgColor}15` } : undefined}
+      accessibilityRole="button"
+      accessibilityLabel={`${data.nombre || 'Sin nombre'}, ${data.telefono || 'sin telefono'}, ${status.label}`}
+      accessibilityHint={status.tappable ? 'Toca para ver opciones' : undefined}
+    >
+      {/* Status icon — Material 3: don't convey info by color alone */}
+      <View style={[fItemStyles.iconContainer, { backgroundColor: status.iconBg }]}>
+        <MaterialIcons name={status.icon} size={20} color={status.fgColor} />
+      </View>
+
+      {/* Content */}
+      <View style={fItemStyles.content}>
+        <View style={fItemStyles.topRow}>
+          <Text style={fItemStyles.name} numberOfLines={1}>
+            {data.nombre || 'Sin nombre'}
+          </Text>
+          <Text style={fItemStyles.time}>{timeStr}</Text>
+        </View>
+        <View style={fItemStyles.bottomRow}>
+          <Text style={fItemStyles.phone}>{data.telefono || '---'}</Text>
+          {/* Status badge */}
+          <View style={[fItemStyles.badge, { backgroundColor: status.badgeBg }]}>
+            <View style={[fItemStyles.badgeDot, { backgroundColor: status.fgColor }]} />
+            <Text style={[fItemStyles.badgeText, { color: status.fgColor }]}>
+              {status.label}
             </Text>
-            <Text style={styles.formItemTime}>{timeStr}</Text>
-          </View>
-          <View style={styles.formItemRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-              <Text style={[styles.formItemPhone, textColor ? { color: textColor } : undefined]}>
-                {data.telefono || '---'}
-              </Text>
-              {badgeLabel && (
-                <Text style={{ fontSize: 10, fontFamily: FONT, color: badgeColor, backgroundColor: badgeBg, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, overflow: 'hidden' }}>
-                  {badgeLabel}
-                </Text>
-              )}
-            </View>
-            <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           </View>
         </View>
       </View>
+
+      {/* Chevron for tappable items */}
+      {status.tappable && (
+        <MaterialIcons name="chevron-right" size={20} color="#94a3b8" style={fItemStyles.chevron} />
+      )}
     </Pressable>
   );
+});
+
+const fItemStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingVertical: 12,
+    paddingLeft: 14,
+    paddingRight: 10,
+    borderRadius: 12,
+    minHeight: 64, // well above 48dp touch target
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  content: {
+    flex: 1,
+  },
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  name: {
+    fontSize: 15,
+    fontFamily: FONT,
+    color: '#1e293b',
+    flex: 1,
+    marginRight: 8,
+  },
+  time: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontFamily: FONT,
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  phone: {
+    fontSize: 13,
+    color: '#64748b',
+    fontFamily: FONT,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  badgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontFamily: FONT,
+    letterSpacing: 0.3,
+  },
+  chevron: {
+    marginLeft: 4,
+  },
 });
 
 // ─── Empty State ────────────────────────────────────────────────
@@ -362,6 +752,7 @@ export default function DashboardScreen() {
   const [stats, setStats] = useState({ total: 0, synced: 0, pending: 0, rejected: 0 });
   const [localForms, setLocalForms] = useState<PendingForm[]>([]);
   const [showMenu, setShowMenu] = useState(false);
+  const [selectedForm, setSelectedForm] = useState<PendingForm | null>(null);
 
   // Build photo URL once
   const photoUrl = candidate.foto_url
@@ -465,6 +856,10 @@ export default function DashboardScreen() {
     setRefreshing(false);
   }, [refreshConfig, loadData]);
 
+  const handleFormPress = useCallback((form: PendingForm) => {
+    setSelectedForm(form);
+  }, []);
+
   const handleEditForm = useCallback((form: PendingForm) => {
     // Navigate to new-form with pre-filled data from the rejected/failed form
     try {
@@ -480,12 +875,13 @@ export default function DashboardScreen() {
 
   const handleDeleteForm = useCallback(async (form: PendingForm) => {
     await deleteLocalForm(form.id);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     loadData();
   }, [loadData]);
 
   const renderItem = useCallback(({ item }: { item: PendingForm }) => (
-    <FormItem form={item} primaryColor={primary} onEdit={handleEditForm} onDelete={handleDeleteForm} />
-  ), [primary, handleEditForm, handleDeleteForm]);
+    <FormItem form={item} primaryColor={primary} onPress={handleFormPress} />
+  ), [primary, handleFormPress]);
 
   const handleSwitchCampaign = useCallback(async (campaignId: string) => {
     await switchCampaign(campaignId);
@@ -572,6 +968,15 @@ export default function DashboardScreen() {
         activeCampaignId={campaign.id}
         isAdmin={agent.role === 'admin'}
         isConsultor={agent.role === 'consultor'}
+        primaryColor={primary}
+      />
+
+      {/* Form Action Sheet — replaces Alert.alert with proper bottom sheet */}
+      <FormActionSheet
+        form={selectedForm}
+        onClose={() => setSelectedForm(null)}
+        onEdit={handleEditForm}
+        onDelete={handleDeleteForm}
         primaryColor={primary}
       />
     </SafeAreaView>
@@ -724,56 +1129,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  // Form items
-  formItem: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    marginBottom: 8,
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  formItemIndicator: {
-    width: 4,
-  },
-  formItemContent: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-  },
-  formItemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  formItemName: {
-    fontSize: 15,
-    fontFamily: FONT,
-    color: '#1e293b',
-    flex: 1,
-    marginRight: 8,
-  },
-  formItemTime: {
-    fontSize: 12,
-    color: '#94a3b8',
-    fontFamily: FONT,
-  },
-  formItemPhone: {
-    fontSize: 13,
-    color: '#64748b',
-    fontFamily: FONT,
-    marginTop: 2,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
+  // (Form item styles are in fItemStyles StyleSheet above)
 
   // Empty state
   emptyState: {
