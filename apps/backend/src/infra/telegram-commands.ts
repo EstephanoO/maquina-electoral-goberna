@@ -30,6 +30,30 @@ let _env: AppEnv | null = null;
 let _running = false;
 let _offset = 0;
 
+// ── Estado conversacional por chat ──────────────────────────────────
+// Recuerda la última campaña elegida y el contexto pendiente
+type ChatState = {
+  pendingCommand?: string;     // comando esperando respuesta (ej: "/meta")
+  lastCampaignSlug?: string;   // última campaña usada
+  ts: number;                  // timestamp para expirar
+};
+const _chatState = new Map<number, ChatState>();
+const CHAT_STATE_TTL = 5 * 60 * 1000; // 5 minutos
+
+function getChatState(chatId: number): ChatState | undefined {
+  const s = _chatState.get(chatId);
+  if (s && Date.now() - s.ts > CHAT_STATE_TTL) { _chatState.delete(chatId); return undefined; }
+  return s;
+}
+function setChatState(chatId: number, partial: Partial<ChatState>) {
+  const existing = getChatState(chatId);
+  _chatState.set(chatId, { ...existing, ...partial, ts: Date.now() });
+}
+function clearPending(chatId: number) {
+  const s = getChatState(chatId);
+  if (s) { delete s.pendingCommand; _chatState.set(chatId, { ...s, ts: Date.now() }); }
+}
+
 const GEMINI_MODEL = "gemini-2.5-flash-lite";
 
 // ── Schema context for Gemini ───────────────────────────────────────
@@ -153,7 +177,11 @@ REGLAS ESTRICTAS:
 10. Para buscar campaña, PREFIERE buscar por slug (sin tildes ni espacios): campaigns.slug ILIKE '%cesar-vasquez%'. Alternativa: unaccent(campaigns.name) ILIKE unaccent('%cesar vasquez%').
 11. Para agentes digitales: filtra por user_campaigns.role = 'agente_digital' o cms_extension_events.
 12. Para agentes de campo: filtra por user_campaigns.role = 'agente_campo' o forms.encuestador.
-13. Si no puedes generar SQL válido, devuelve intent "chat" con una respuesta directa.
+13. Si no puedes generar SQL válido o la pregunta es ambigua, devuelve intent "chat" con una PREGUNTA de clarificación. Ejemplos:
+   - "¿Te refieres a la campaña César Vásquez o a un agente con ese nombre?"
+   - "¿Quieres ver los datos de hoy, esta semana, o un rango específico?"
+   - "¿Qué campaña te interesa? Tenemos: César Vásquez, Ernesto Bustamante, Fuerza Popular..."
+   NUNCA respondas solo "no pude procesar". Siempre sugiere algo útil o pregunta para clarificar.
 14. Para reportes de territorio, PREFIERE form_submissions (tiene más datos y JSONB con departamento/provincia/distrito).
 15. SIEMPRE incluye nombres legibles (JOIN con users, campaigns) — nunca devuelvas solo UUIDs.
 16. Para obtener el nombre del agente, usa: COALESCE(u.full_name, fs.data->>'encuestador') donde u viene de LEFT JOIN users u ON fs.submitted_by = u.id.
@@ -705,6 +733,50 @@ async function buildTopReport(campaignSlug?: string): Promise<string> {
   return lines.join("\n");
 }
 
+// ── Selector de campaña interactivo ──────────────────────────────────
+
+async function buildCampaignPicker(chatId: number, command: string): Promise<string> {
+  const { rows } = await pool.query(`
+    SELECT c.name, c.slug, COUNT(fs.id) as registros,
+      CASE WHEN config->>'meta_total' IS NOT NULL THEN '🎯' ELSE '' END as tiene_meta
+    FROM campaigns c
+    LEFT JOIN form_submissions fs ON fs.campaign_id = c.id
+      AND fs.deleted_at IS NULL
+      AND fs.created_at >= now() - interval '7 days'
+    WHERE c.status = 'active'
+    GROUP BY c.id, c.name, c.slug, c.config
+    HAVING COUNT(fs.id) > 0
+    ORDER BY COUNT(fs.id) DESC
+  `);
+
+  setChatState(chatId, { pendingCommand: command });
+
+  const lines: string[] = [
+    `📋 *¿De cuál campaña?*`,
+    ``,
+  ];
+
+  (rows as Record<string,unknown>[]).forEach((r, i) => {
+    lines.push(`${i + 1}. ${r.tiene_meta}*${r.name}* — ${r.registros} reg (7d)`);
+  });
+
+  lines.push(``);
+  lines.push(`_Escribe el nombre o número de la campaña._`);
+
+  return lines.join("\n");
+}
+
+function resolveCampaignFromPickerInput(input: string): string | undefined {
+  const trimmed = input.trim();
+  // Si es un número, intentar matchear con la posición
+  const num = parseInt(trimmed, 10);
+  if (!isNaN(num) && num >= 1) {
+    // Se resuelve en handleMessage con la lista real
+    return undefined; // necesita la lista
+  }
+  return slugFromInput(trimmed);
+}
+
 // ── Meta dinámica por campaña ────────────────────────────────────────
 
 type MetaCalc = {
@@ -956,10 +1028,35 @@ function scheduleAlertaDiaria(): void {
 
 // ── Message handler ─────────────────────────────────────────────────
 
+async function executeCampaignCommand(chatId: number, command: string, slug: string): Promise<void> {
+  setChatState(chatId, { lastCampaignSlug: slug });
+  clearPending(chatId);
+
+  switch (command) {
+    case "/meta": await reply(chatId, await buildMetaReport(slug)); break;
+    case "/diario": await reply(chatId, await buildDiarioReport(slug)); break;
+    case "/semana": await reply(chatId, await buildSemanaReport(slug)); break;
+    case "/top": await reply(chatId, await buildTopReport(slug)); break;
+    case "/inactivos": await reply(chatId, await buildInactivosReport(slug)); break;
+    default: await reply(chatId, `❌ Comando no reconocido: ${command}`);
+  }
+}
+
 async function handleMessage(chatId: number, userText: string) {
   await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
 
-  // ── Comandos rápidos (sin IA) ──
+  const state = getChatState(chatId);
+
+  // ── Resolver pending command (user respondió con nombre de campaña) ──
+  if (state?.pendingCommand && !userText.startsWith("/")) {
+    const slug = slugFromInput(userText);
+    if (slug) {
+      await executeCampaignCommand(chatId, state.pendingCommand, slug);
+      return;
+    }
+  }
+
+  // ── Comandos directos ──
   if (userText === "/health") {
     await reply(chatId, await buildHealthReport(_env!));
     return;
@@ -969,48 +1066,30 @@ async function handleMessage(chatId: number, userText: string) {
     return;
   }
 
-  // /meta [campaña]
-  const metaMatch = userText.match(/^\/meta(?:\s+(.+))?$/i);
-  if (metaMatch) {
-    await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
-    const slug = metaMatch[1] ? slugFromInput(metaMatch[1]) : "cesar-vasquez";
-    await reply(chatId, await buildMetaReport(slug!));
-    return;
-  }
+  // Comandos que requieren campaña: /meta, /diario, /semana, /top, /inactivos
+  const cmdMatch = userText.match(/^\/(meta|diario|semana|top|inactivos)(?:\s+(.+))?$/i);
+  if (cmdMatch) {
+    const command = `/${cmdMatch[1]!.toLowerCase()}`;
+    const arg = cmdMatch[2]?.trim();
 
-  // /diario [campaña]
-  const diarioMatch = userText.match(/^\/diario(?:\s+(.+))?$/i);
-  if (diarioMatch) {
-    await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
-    const slug = diarioMatch[1] ? slugFromInput(diarioMatch[1]) : undefined;
-    await reply(chatId, await buildDiarioReport(slug));
-    return;
-  }
+    if (arg) {
+      // Campaña explícita
+      const slug = slugFromInput(arg);
+      if (slug) {
+        await executeCampaignCommand(chatId, command, slug);
+        return;
+      }
+    }
 
-  // /semana [campaña]
-  const semanaMatch = userText.match(/^\/semana(?:\s+(.+))?$/i);
-  if (semanaMatch) {
-    await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
-    const slug = semanaMatch[1] ? slugFromInput(semanaMatch[1]) : undefined;
-    await reply(chatId, await buildSemanaReport(slug));
-    return;
-  }
+    // Sin campaña — usar la última si existe
+    if (state?.lastCampaignSlug) {
+      await reply(chatId, `_Usando última campaña seleccionada._`);
+      await executeCampaignCommand(chatId, command, state.lastCampaignSlug);
+      return;
+    }
 
-  // /inactivos [campaña]
-  const inactivosMatch = userText.match(/^\/inactivos(?:\s+(.+))?$/i);
-  if (inactivosMatch) {
-    await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
-    const slug = inactivosMatch[1] ? slugFromInput(inactivosMatch[1]) : undefined;
-    await reply(chatId, await buildInactivosReport(slug));
-    return;
-  }
-
-  // /top [campaña]
-  const topMatch = userText.match(/^\/top(?:\s+(.+))?$/i);
-  if (topMatch) {
-    await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
-    const slug = topMatch[1] ? slugFromInput(topMatch[1]) : undefined;
-    await reply(chatId, await buildTopReport(slug));
+    // No hay campaña previa — preguntar
+    await reply(chatId, await buildCampaignPicker(chatId, command));
     return;
   }
 
@@ -1284,6 +1363,12 @@ async function pollOnce() {
       const gMatch = raw.match(/^\/[gG](?:@\w+)?\s+([\s\S]+)/);
       if (gMatch) {
         handleMessage(msg.chat.id, gMatch[1]!.trim()).catch(() => {});
+        continue;
+      }
+
+      // Respuesta a pending command (texto libre sin /)
+      if (!raw.startsWith("/") && getChatState(msg.chat.id)?.pendingCommand) {
+        handleMessage(msg.chat.id, raw).catch(() => {});
         continue;
       }
 
