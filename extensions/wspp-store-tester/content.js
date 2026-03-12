@@ -336,10 +336,45 @@ window.addEventListener('message', (e) => {
 
 // ── WSPP_SPAM_WARNING — background → content → inject.js overlay ────
 // Background SW sends this when it detects spam patterns in outgoing messages.
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.type !== 'WSPP_SPAM_WARNING') return;
-  window.postMessage({
-    type: 'WSPP_SPAM_WARNING',
-    payload: msg.payload,
-  }, WA_ORIGIN);
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'WSPP_SPAM_WARNING') {
+    window.postMessage({
+      type: 'WSPP_SPAM_WARNING',
+      payload: msg.payload,
+    }, WA_ORIGIN);
+    return;
+  }
+
+  // ── WSPP_OPEN_CHAT — popup/background → content → inject.js ──────
+  // Opens a chat by phone number inside WA Web.
+  // Flow: popup sends chrome.tabs.sendMessage → content.js relays to inject.js
+  //       inject.js responds with WSPP_OPEN_CHAT_RESULT via postMessage → content.js
+  //       content.js relays result back via sendResponse.
+  if (msg.type === 'WSPP_OPEN_CHAT') {
+    const phone = msg.phone;
+    console.log('[WSPP BRIDGE] WSPP_OPEN_CHAT → forwarding to inject.js for phone:', phone);
+
+    // Listen for the result from inject.js (one-shot)
+    const onResult = (e) => {
+      if (e.source !== window) return;
+      if (e.data?.type !== 'WSPP_OPEN_CHAT_RESULT') return;
+      if (e.data.phone !== phone) return;
+      window.removeEventListener('message', onResult);
+      clearTimeout(timeout);
+      sendResponse({ ok: e.data.ok, error: e.data.error || null });
+    };
+    window.addEventListener('message', onResult);
+
+    // Timeout after 10s
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', onResult);
+      sendResponse({ ok: false, error: 'Timeout — WA Web did not respond' });
+    }, 10000);
+
+    // Forward to inject.js
+    window.postMessage({ type: 'WSPP_OPEN_CHAT', phone }, WA_ORIGIN);
+
+    // Return true to signal async sendResponse
+    return true;
+  }
 });

@@ -362,6 +362,46 @@ function detectOwnNumber() {
   }, WA_ORIGIN);
 }
 
+/**
+ * Opens a chat by phone number inside WA Web — no external wa.me link needed.
+ * Normalizes the phone, creates a WID, resolves/creates the chat, and makes it active.
+ * @param {string} phone — raw phone digits (e.g. "51987654321")
+ * @returns {Promise<{ok: boolean, error?: string}>}
+ */
+export async function openChatByPhone(phone) {
+  if (!phone || typeof phone !== 'string') {
+    return { ok: false, error: 'No phone provided' };
+  }
+  // Strip non-digits
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 9 || digits.length > 15) {
+    return { ok: false, error: 'Invalid phone: ' + phone };
+  }
+
+  if (typeof window.require !== 'function') {
+    return { ok: false, error: 'WA Web not loaded (window.require missing)' };
+  }
+
+  try {
+    const widFactory = window.require('WAWebWidFactory');
+    const wid = widFactory.createWid(digits + '@c.us');
+
+    const FindChat = window.require('WAWebFindChatAction');
+    const result = await FindChat.findOrCreateLatestChat(wid);
+    const chat = result?.chat ?? result;
+
+    if (!chat) {
+      return { ok: false, error: 'Could not resolve chat for ' + digits };
+    }
+
+    console.log('[WSPP] Chat opened for:', digits);
+    return { ok: true };
+  } catch (err) {
+    console.error('[WSPP] openChatByPhone error:', err);
+    return { ok: false, error: err.message || 'Unknown error' };
+  }
+}
+
 export function tryInstallWAListeners() {
   if (!window.require) {
     _waListenerRetries++;
@@ -393,3 +433,19 @@ export function tryInstallWAListeners() {
     detectOwnNumber();
   }
 }
+
+// ── WSPP_OPEN_CHAT listener (content.js → inject.js) ───────────────
+// Handles requests from popup/content.js to navigate to a chat by phone number.
+window.addEventListener('message', async (e) => {
+  if (e.source !== window) return;
+  if (e.data?.type !== 'WSPP_OPEN_CHAT') return;
+
+  const phone = e.data.phone;
+  const result = await openChatByPhone(phone);
+  window.postMessage({
+    type: 'WSPP_OPEN_CHAT_RESULT',
+    ok: result.ok,
+    error: result.error || null,
+    phone,
+  }, WA_ORIGIN);
+});

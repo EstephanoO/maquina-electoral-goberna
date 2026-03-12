@@ -186,26 +186,40 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
   if (batchResult.accepted > 0) {
     try {
       const submissionsPayload = JSON.stringify(
-        forms.map((f) => ({
-          form_definition_id: f.form_definition_id ?? null,
-          campaign_id: f.campaign_id ?? null,
-          meet_id: null,
-          meet_group_id: null,
-          submitted_by: f.encuestador_id ?? null,
-          data: JSON.stringify({
-            nombre: f.nombre,
-            telefono: f.telefono,
-            zona: f.zona,
-            candidato_preferido: f.candidato_preferido,
-            comentarios: f.comentarios ?? null,
-            encuestador: f.encuestador,
-            home_maps_url: f.home_maps_url ?? null,
-            polling_place_url: f.polling_place_url ?? null,
-          }),
-          lat: f.y ?? null,
-          lng: f.x ?? null,
-          client_id: f.client_id,
-        })),
+        forms.map((f) => {
+          const payload = f as Record<string, unknown>;
+          // Mobile sends WGS84 lat/lng alongside UTM x/y.
+          // Prefer WGS84 when available; fall back to UTM x/y for legacy data.
+          const wgs84Lat = typeof payload.lat === "number" && Math.abs(payload.lat) <= 90 ? payload.lat : null;
+          const wgs84Lng = typeof payload.lng === "number" && Math.abs(payload.lng) <= 180 ? payload.lng : null;
+          // f.y = UTM northing, f.x = UTM easting (legacy mapping)
+          const utmY = typeof payload.y === "number" ? payload.y : null;
+          const utmX = typeof payload.x === "number" ? payload.x : null;
+
+          return {
+            form_definition_id: f.form_definition_id ?? null,
+            campaign_id: f.campaign_id ?? null,
+            meet_id: null,
+            meet_group_id: null,
+            submitted_by: f.encuestador_id ?? null,
+            data: JSON.stringify({
+              nombre: f.nombre,
+              telefono: f.telefono,
+              zona: f.zona,
+              candidato_preferido: f.candidato_preferido,
+              comentarios: f.comentarios ?? null,
+              encuestador: f.encuestador,
+              home_maps_url: f.home_maps_url ?? null,
+              polling_place_url: f.polling_place_url ?? null,
+            }),
+            // Use WGS84 lat/lng when valid, otherwise fall back to UTM y/x
+            lat: wgs84Lat ?? utmY ?? null,
+            lng: wgs84Lng ?? utmX ?? null,
+            // Pass UTM zona so the geocoding CTE can detect UTM and convert
+            zona: typeof payload.zona === "string" ? payload.zona : null,
+            client_id: f.client_id,
+          };
+        }),
       );
 
       await pool.query(
@@ -221,17 +235,42 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
               data text,
               lat double precision,
               lng double precision,
+              zona text,
               client_id text
             )
+          ),
+          -- Resolve WGS84 point: if lat/lng are already WGS84 (abs < 90/180) use directly;
+          -- if they're UTM (lat > 1000) and zona matches a UTM zone pattern, convert via ST_Transform.
+          with_point AS (
+            SELECT
+              i.*,
+              CASE
+                WHEN i.lat IS NOT NULL AND i.lng IS NOT NULL AND i.lat <> 0 AND i.lng <> 0
+                THEN
+                  CASE
+                    -- Already WGS84 (latitude in valid degree range)
+                    WHEN abs(i.lat) <= 90 THEN ST_SetSRID(ST_Point(i.lng, i.lat), 4326)
+                    -- UTM coordinates — convert using zona field
+                    WHEN i.lat > 1000 AND i.zona ~ '^[0-9]{1,2}[NSns]$' THEN
+                      ST_Transform(
+                        ST_SetSRID(ST_Point(i.lng, i.lat),
+                          CASE WHEN i.zona LIKE '17%' THEN 32717
+                               WHEN i.zona LIKE '18%' THEN 32718
+                               ELSE 32717 END
+                        ), 4326)
+                    ELSE NULL
+                  END
+                ELSE NULL
+              END AS wgs84_point
+            FROM incoming i
           ),
           -- Reverse-geocode: enrich JSONB data with departamento/provincia/distrito
           geocoded AS (
             SELECT
-              i.*,
+              w.*,
               CASE
-                WHEN i.lat IS NOT NULL AND i.lng IS NOT NULL
-                  AND i.lat <> 0 AND i.lng <> 0
-                  AND COALESCE(i.data::jsonb->>'departamento', '') = ''
+                WHEN w.wgs84_point IS NOT NULL
+                  AND COALESCE(w.data::jsonb->>'departamento', '') = ''
                 THEN (
                   SELECT jsonb_build_object(
                     'departamento', dep.nomdep,
@@ -242,12 +281,12 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
                   FROM peru_distritos dist
                   JOIN peru_departamentos dep ON dep.coddep = dist.coddep
                   JOIN peru_provincias prov ON prov.coddep = dist.coddep AND prov.codprov = dist.codprov
-                  WHERE ST_Contains(dist.geom, ST_SetSRID(ST_Point(i.lng, i.lat), 4326))
+                  WHERE ST_Contains(dist.geom, w.wgs84_point)
                   LIMIT 1
                 )
                 ELSE NULL
               END AS geo_data
-            FROM incoming i
+            FROM with_point w
           )
           INSERT INTO form_submissions (
             form_definition_id, campaign_id, meet_id, meet_group_id, submitted_by,

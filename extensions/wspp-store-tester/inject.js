@@ -842,6 +842,33 @@
       number: phone
     }, WA_ORIGIN);
   }
+  async function openChatByPhone(phone) {
+    if (!phone || typeof phone !== "string") {
+      return { ok: false, error: "No phone provided" };
+    }
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 9 || digits.length > 15) {
+      return { ok: false, error: "Invalid phone: " + phone };
+    }
+    if (typeof window.require !== "function") {
+      return { ok: false, error: "WA Web not loaded (window.require missing)" };
+    }
+    try {
+      const widFactory = window.require("WAWebWidFactory");
+      const wid = widFactory.createWid(digits + "@c.us");
+      const FindChat = window.require("WAWebFindChatAction");
+      const result = await FindChat.findOrCreateLatestChat(wid);
+      const chat = result?.chat ?? result;
+      if (!chat) {
+        return { ok: false, error: "Could not resolve chat for " + digits };
+      }
+      console.log("[WSPP] Chat opened for:", digits);
+      return { ok: true };
+    } catch (err) {
+      console.error("[WSPP] openChatByPhone error:", err);
+      return { ok: false, error: err.message || "Unknown error" };
+    }
+  }
   function tryInstallWAListeners() {
     if (!window.require) {
       _waListenerRetries++;
@@ -868,6 +895,18 @@
       detectOwnNumber();
     }
   }
+  window.addEventListener("message", async (e) => {
+    if (e.source !== window) return;
+    if (e.data?.type !== "WSPP_OPEN_CHAT") return;
+    const phone = e.data.phone;
+    const result = await openChatByPhone(phone);
+    window.postMessage({
+      type: "WSPP_OPEN_CHAT_RESULT",
+      ok: result.ok,
+      error: result.error || null,
+      phone
+    }, WA_ORIGIN);
+  });
 
   // src/inject/audio-catalog-panel.js
   var _catalogItems = [];
