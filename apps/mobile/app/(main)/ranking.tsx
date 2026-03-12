@@ -27,8 +27,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import Animated, { FadeInDown, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
-
 import { useCandidate, useAgent } from '@/lib/app-context';
 import { getMyDeptRanking, getDepartmentsRanking } from '@/lib/api';
 
@@ -103,8 +101,7 @@ const HeroKPI = memo(function HeroKPI({
   primaryColor: string;
 }) {
   return (
-    <Animated.View
-      entering={FadeInDown.duration(400).delay(100)}
+    <View
       style={[s.hero, { backgroundColor: primaryColor }]}
       accessibilityRole="summary"
       accessibilityLabel={`Hoy: ${agentsActiveToday} agentes activos, ${registrosHoy} registros${departamento ? `, departamento ${departamento}` : ''}`}
@@ -139,7 +136,7 @@ const HeroKPI = memo(function HeroKPI({
       <View style={s.heroWatermark} pointerEvents="none">
         <MaterialIcons name="trending-up" size={80} color="rgba(255,255,255,0.08)" />
       </View>
-    </Animated.View>
+    </View>
   );
 });
 
@@ -305,7 +302,6 @@ const AccordionCard = memo(function AccordionCard({
   primaryColor,
   children,
   defaultExpanded = false,
-  delay = 200,
 }: {
   icon: keyof typeof MaterialIcons.glyphMap;
   title: string;
@@ -314,7 +310,6 @@ const AccordionCard = memo(function AccordionCard({
   primaryColor: string;
   children: React.ReactNode;
   defaultExpanded?: boolean;
-  delay?: number;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
@@ -324,11 +319,7 @@ const AccordionCard = memo(function AccordionCard({
   }, []);
 
   return (
-    <Animated.View
-      entering={FadeInDown.duration(400).delay(delay)}
-      layout={LinearTransition.springify().damping(20).stiffness(200)}
-      style={s.card}
-    >
+    <View style={s.card}>
       {/* Tappable header */}
       <Pressable
         onPress={toggle}
@@ -356,16 +347,9 @@ const AccordionCard = memo(function AccordionCard({
         />
       </Pressable>
 
-      {/* Expanded content */}
-      {expanded && (
-        <Animated.View
-          entering={FadeIn.duration(250)}
-          exiting={FadeOut.duration(150)}
-        >
-          {children}
-        </Animated.View>
-      )}
-    </Animated.View>
+      {/* Expanded content — instant show/hide, no animation */}
+      {expanded && children}
+    </View>
   );
 });
 
@@ -492,7 +476,6 @@ export default function RankingScreen() {
           summaryText={agentSummary}
           primaryColor={primary}
           defaultExpanded={false}
-          delay={200}
         >
           {agentRanking.ranking.map((ag, idx) => (
             <AgentRow
@@ -516,7 +499,6 @@ export default function RankingScreen() {
           summaryText={deptSummary}
           primaryColor={primary}
           defaultExpanded={false}
-          delay={300}
         >
           {departments.map((dept, idx) => (
             <DeptRow
@@ -676,11 +658,13 @@ const s = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 16,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
     shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 3,
-    elevation: 1,
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 8,
+    elevation: 3,
   },
 
   // ── Accordion header ───────────────────────────────────────────
