@@ -20,7 +20,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useCandidate, useAgent, useApp, useActiveCampaign } from '@/lib/app-context';
 import { useAgentTracking } from '@/hooks/useAgentTracking';
 import { getQueueStats, getLocalFormsByCampaign, type PendingForm } from '@/lib/offline-queue';
-import { getMySubmissionStats } from '@/lib/api';
+import { getMySubmissionStats, getMyDeptRanking } from '@/lib/api';
 import { appEvents } from '@/lib/events';
 import type { CampaignMembership } from '@/lib/types';
 
@@ -287,6 +287,184 @@ const EmptyState = memo(function EmptyState({ primaryColor }: { primaryColor: st
   );
 });
 
+// ─── Department Ranking ─────────────────────────────────────────
+
+type RankingAgent = { id: string; name: string; count: number; today: number };
+type RankingData = {
+  departamento: string | null;
+  my_position: number;
+  my_count: number;
+  total_agents: number;
+  ranking: RankingAgent[];
+};
+
+const DeptRankingSection = memo(function DeptRankingSection({
+  ranking,
+  myUserId,
+  primaryColor,
+  secondaryColor,
+}: {
+  ranking: RankingData | null;
+  myUserId: string;
+  primaryColor: string;
+  secondaryColor: string;
+}) {
+  if (!ranking || !ranking.departamento || ranking.ranking.length === 0) return null;
+
+  return (
+    <View style={rkStyles.container}>
+      <View style={rkStyles.header}>
+        <MaterialIcons name="leaderboard" size={16} color={primaryColor} />
+        <Text style={[rkStyles.title, { color: primaryColor }]}>
+          Ranking — {ranking.departamento}
+        </Text>
+      </View>
+
+      {ranking.my_position > 0 && (
+        <View style={[rkStyles.myPosition, { backgroundColor: `${primaryColor}12` }]}>
+          <Text style={[rkStyles.myPositionLabel, { color: primaryColor }]}>
+            Tu posicion: #{ranking.my_position} de {ranking.total_agents}
+          </Text>
+        </View>
+      )}
+
+      {ranking.ranking.slice(0, 10).map((agent, idx) => {
+        const isMe = agent.id === myUserId;
+        const medal = idx === 0 ? '1' : idx === 1 ? '2' : idx === 2 ? '3' : String(idx + 1);
+        return (
+          <View
+            key={agent.id}
+            style={[
+              rkStyles.row,
+              isMe && { backgroundColor: `${primaryColor}10` },
+            ]}
+          >
+            <View style={[
+              rkStyles.rank,
+              idx < 3 && { backgroundColor: primaryColor },
+              idx >= 3 && { backgroundColor: '#e2e8f0' },
+            ]}>
+              <Text style={[
+                rkStyles.rankText,
+                idx < 3 && { color: '#fff' },
+                idx >= 3 && { color: '#64748b' },
+              ]}>
+                {medal}
+              </Text>
+            </View>
+            <View style={rkStyles.nameCol}>
+              <Text
+                style={[rkStyles.name, isMe && { color: primaryColor, fontWeight: '700' }]}
+                numberOfLines={1}
+              >
+                {isMe ? 'Tu' : agent.name.split(' ').slice(0, 2).join(' ')}
+              </Text>
+              {agent.today > 0 && (
+                <Text style={rkStyles.todayBadge}>+{agent.today} hoy</Text>
+              )}
+            </View>
+            <Text style={[rkStyles.count, isMe && { color: primaryColor }]}>
+              {agent.count}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+});
+
+const rkStyles = StyleSheet.create({
+  container: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 12,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 8,
+  },
+  title: {
+    fontSize: 12,
+    fontFamily: FONT,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  myPosition: {
+    marginHorizontal: 14,
+    marginBottom: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+  },
+  myPositionLabel: {
+    fontSize: 12,
+    fontFamily: FONT,
+    textAlign: 'center',
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#f1f5f9',
+  },
+  rank: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  rankText: {
+    fontSize: 11,
+    fontFamily: FONT,
+  },
+  nameCol: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  name: {
+    fontSize: 14,
+    fontFamily: FONT,
+    color: '#1e293b',
+    flexShrink: 1,
+  },
+  todayBadge: {
+    fontSize: 10,
+    fontFamily: FONT,
+    color: '#4ade80',
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  count: {
+    fontSize: 16,
+    fontFamily: FONT,
+    color: '#334155',
+    minWidth: 36,
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
+  },
+});
+
 // ─── Screen ─────────────────────────────────────────────────────
 
 export default function DashboardScreen() {
@@ -309,6 +487,7 @@ export default function DashboardScreen() {
   const [stats, setStats] = useState({ total: 0, synced: 0, pending: 0 });
   const [localForms, setLocalForms] = useState<PendingForm[]>([]);
   const [showMenu, setShowMenu] = useState(false);
+  const [ranking, setRanking] = useState<RankingData | null>(null);
 
   // Build photo URL once
   const photoUrl = candidate.foto_url
@@ -324,15 +503,17 @@ export default function DashboardScreen() {
   // Load data with shallow equality check — only sets state when data actually changed
   const loadData = useCallback(async () => {
     try {
-      const [queueStats, forms, serverStats] = await Promise.all([
+      const [queueStats, forms, serverStats, rankingRes] = await Promise.all([
         getQueueStats(),
         getLocalFormsByCampaign(campaign.id, 200),
         getMySubmissionStats(),
+        getMyDeptRanking(),
       ]);
 
       const formsPending = queueStats.forms?.pending ?? 0;
       // Server total is the source of truth — includes all synced submissions ever sent,
       // even those already cleaned up from local SQLite (>7 days old).
+      // Uses phone dedup (DISTINCT ON telefono) consistent with Pipeline/web dashboard.
       const serverTotal = serverStats.ok ? (serverStats.data?.stats.total ?? 0) : 0;
       const newStats = {
         total: serverTotal > 0 ? serverTotal + formsPending : formsPending + (queueStats.forms?.synced ?? 0),
@@ -355,6 +536,11 @@ export default function DashboardScreen() {
       if (changed) {
         prevFormsRef.current = forms;
         setLocalForms(forms);
+      }
+
+      // Update ranking (lightweight — no ref optimization needed)
+      if (rankingRes.ok && rankingRes.data) {
+        setRanking(rankingRes.data);
       }
     } catch (err) {
       console.warn('Failed to load data:', err);
@@ -403,13 +589,19 @@ export default function DashboardScreen() {
         stats={stats}
         onMenuPress={() => setShowMenu(true)}
       />
+      <DeptRankingSection
+        ranking={ranking}
+        myUserId={agent.id}
+        primaryColor={primary}
+        secondaryColor={secondary}
+      />
       {localForms.length > 0 && (
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: primary }]}>Recientes</Text>
         </View>
       )}
     </>
-  ), [candidate, photoUrl, primary, secondary, agent.full_name, agent.role, trackingActive, stats, localForms.length]);
+  ), [candidate, photoUrl, primary, secondary, agent.full_name, agent.role, agent.id, trackingActive, stats, ranking, localForms.length]);
 
   const renderEmpty = useCallback(() => (
     <EmptyState primaryColor={primary} />

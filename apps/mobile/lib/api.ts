@@ -428,6 +428,21 @@ export function getMySubmissionStats(): Promise<ApiResult<{
   return request('GET', '/form-submissions/my-stats');
 }
 
+/**
+ * GET /api/form-submissions/my-stats/ranking
+ * Returns a ranking of agents within the requesting agent's department.
+ * Department is auto-detected from the agent's most frequent submission location.
+ */
+export function getMyDeptRanking(): Promise<ApiResult<{
+  departamento: string | null;
+  my_position: number;
+  my_count: number;
+  total_agents: number;
+  ranking: Array<{ id: string; name: string; count: number; today: number }>;
+}>> {
+  return request('GET', '/form-submissions/my-stats/ranking');
+}
+
 // ─── Geo Hierarchy (public, no auth) ────────────────────────
 
 /** GET /api/geo/departamentos — list all 25 departments. Cached 24h server-side. */

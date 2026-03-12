@@ -216,6 +216,31 @@ export function buildFormSubmissionsRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── GET /api/form-submissions/my-stats/ranking ─────────────────
+    // Returns a ranking of agents within the requesting agent's department.
+    // Department is determined by the most frequent departamento in the agent's submissions.
+    app.get(
+      "/api/form-submissions/my-stats/ranking",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
+        const campaignId = request.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        try {
+          const ranking = await repo.getMyDeptRanking(campaignId, authed.userId);
+          return reply.code(200).send({ ok: true, request_id: requestId, ...ranking });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "form submissions dept ranking failed");
+          return reply.code(500).send(errorPayload(requestId, "SUBMISSIONS_RANKING_ERROR", "error obteniendo ranking departamental"));
+        }
+      },
+    );
+
     // ── GET /api/form-submissions/stats ──────────────────────────────
     app.get(
       "/api/form-submissions/stats",

@@ -237,6 +237,7 @@ export async function getCountByCampaign(campaignId: string): Promise<{
 
 /**
  * Get submission counts for a specific agent in a campaign.
+ * Uses phone dedup (DISTINCT ON telefono) to match Pipeline/web dashboard counts.
  * Used by the mobile dashboard to show accurate totals (server-side truth).
  */
 export async function getMyStats(campaignId: string, userId: string): Promise<{
@@ -245,14 +246,21 @@ export async function getMyStats(campaignId: string, userId: string): Promise<{
   week: number;
 }> {
   const { rows } = await pool.query<{ total: string; today: string; week: string }>(
-    `SELECT
+    `WITH unique_forms AS (
+       SELECT DISTINCT ON (data->>'telefono')
+         id, created_at
+       FROM form_submissions
+       WHERE campaign_id = $1
+         AND submitted_by = $2
+         AND COALESCE(data->>'telefono', '') != ''
+         AND deleted_at IS NULL
+       ORDER BY data->>'telefono', created_at ASC
+     )
+     SELECT
        COUNT(*)::text AS total,
        COUNT(*) FILTER (WHERE created_at AT TIME ZONE 'America/Lima' >= CURRENT_DATE AT TIME ZONE 'America/Lima')::text AS today,
        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::text AS week
-     FROM form_submissions
-     WHERE campaign_id = $1
-       AND submitted_by = $2
-       AND deleted_at IS NULL`,
+     FROM unique_forms`,
     [campaignId, userId],
   );
   const row = rows[0];
@@ -260,5 +268,100 @@ export async function getMyStats(campaignId: string, userId: string): Promise<{
     total: parseInt(row?.total ?? "0", 10),
     today: parseInt(row?.today ?? "0", 10),
     week: parseInt(row?.week ?? "0", 10),
+  };
+}
+
+/**
+ * Department ranking: top agents within the same department as the requesting user.
+ * Department is determined by the most frequent departamento in the agent's submissions.
+ * Returns the agent's position, their department, and a ranked list of agents.
+ */
+export type DeptRankingAgent = {
+  id: string;
+  name: string;
+  count: number;
+  today: number;
+};
+
+export type DeptRankingResult = {
+  departamento: string | null;
+  my_position: number;
+  my_count: number;
+  total_agents: number;
+  ranking: DeptRankingAgent[];
+};
+
+export async function getMyDeptRanking(
+  campaignId: string,
+  userId: string,
+  limit = 20,
+): Promise<DeptRankingResult> {
+  // Step 1: Determine the agent's primary department (most frequent in their submissions)
+  const { rows: deptRows } = await pool.query<{ departamento: string }>(
+    `SELECT data->>'departamento' AS departamento
+     FROM form_submissions
+     WHERE campaign_id = $1
+       AND submitted_by = $2
+       AND deleted_at IS NULL
+       AND COALESCE(data->>'departamento', '') != ''
+     GROUP BY data->>'departamento'
+     ORDER BY COUNT(*) DESC
+     LIMIT 1`,
+    [campaignId, userId],
+  );
+
+  const departamento = deptRows[0]?.departamento ?? null;
+  if (!departamento) {
+    return { departamento: null, my_position: 0, my_count: 0, total_agents: 0, ranking: [] };
+  }
+
+  // Step 2: Rank all agents in that department (phone dedup, consistent with Pipeline)
+  const { rows } = await pool.query<{
+    id: string;
+    name: string;
+    count: string;
+    today: string;
+  }>(
+    `WITH dept_forms AS (
+       SELECT DISTINCT ON (data->>'telefono')
+         id, submitted_by, created_at
+       FROM form_submissions
+       WHERE campaign_id = $1
+         AND UPPER(data->>'departamento') = UPPER($2)
+         AND COALESCE(data->>'telefono', '') != ''
+         AND deleted_at IS NULL
+       ORDER BY data->>'telefono', created_at ASC
+     )
+     SELECT
+       df.submitted_by::text AS id,
+       COALESCE(u.full_name, 'Agente') AS name,
+       COUNT(*)::text AS count,
+       COUNT(*) FILTER (WHERE df.created_at AT TIME ZONE 'America/Lima' >= CURRENT_DATE AT TIME ZONE 'America/Lima')::text AS today
+     FROM dept_forms df
+     LEFT JOIN users u ON u.id = df.submitted_by
+     WHERE df.submitted_by IS NOT NULL
+     GROUP BY df.submitted_by, COALESCE(u.full_name, 'Agente')
+     ORDER BY COUNT(*) DESC
+     LIMIT $3`,
+    [campaignId, departamento, limit],
+  );
+
+  const ranking: DeptRankingAgent[] = rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    count: parseInt(r.count, 10),
+    today: parseInt(r.today, 10),
+  }));
+
+  const myIdx = ranking.findIndex((a) => a.id === userId);
+  const myPosition = myIdx >= 0 ? myIdx + 1 : 0;
+  const myCount = myIdx >= 0 ? (ranking[myIdx]?.count ?? 0) : 0;
+
+  return {
+    departamento,
+    my_position: myPosition,
+    my_count: myCount,
+    total_agents: ranking.length,
+    ranking,
   };
 }
