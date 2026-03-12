@@ -525,6 +525,16 @@ async function buildDiarioReport(campaignSlug?: string): Promise<string> {
     if (totalAyer > 0) lines.push(`_Ayer: ${totalAyer} registros._`);
   }
 
+  // Si la campaña tiene meta, agregar progreso
+  if (campaignSlug) {
+    const meta = await calcularMeta(campaignSlug);
+    if (meta) {
+      lines.push(``);
+      lines.push(`🎯 *Meta:* ${buildProgressBar(meta.pct_progreso)} *${meta.pct_progreso}%* (${meta.datos_dedup.toLocaleString()}/${meta.meta_total.toLocaleString()})`);
+      lines.push(`⚡ *Cuota diaria:* ${meta.meta_diaria_agente} reg/agente | 📅 ${meta.dias_restantes}d restantes`);
+    }
+  }
+
   return lines.join("\n");
 }
 
@@ -695,44 +705,182 @@ async function buildTopReport(campaignSlug?: string): Promise<string> {
   return lines.join("\n");
 }
 
+// ── Meta dinámica por campaña ────────────────────────────────────────
+
+type MetaCalc = {
+  campana: string;
+  slug: string;
+  meta_total: number;
+  election_date: string;
+  buffer_pct: number;
+  datos_actuales: number;
+  datos_dedup: number;
+  restante: number;
+  dias_restantes: number;
+  agentes_campo: number;
+  meta_diaria_agente: number;
+  pct_progreso: number;
+};
+
+async function calcularMeta(campaignSlug: string): Promise<MetaCalc | null> {
+  const { rows: camp } = await pool.query(`
+    SELECT id, name, slug,
+      (config->>'meta_total')::int as meta_total,
+      config->>'election_date' as election_date,
+      COALESCE((config->>'buffer_pct')::int, 25) as buffer_pct
+    FROM campaigns
+    WHERE slug = $1 AND config->>'meta_total' IS NOT NULL
+  `, [campaignSlug]);
+
+  if (camp.length === 0) return null;
+  const c = camp[0] as Record<string, unknown>;
+
+  const { rows: datos } = await pool.query(`
+    SELECT
+      COUNT(*) as total,
+      COUNT(DISTINCT CASE WHEN COALESCE(data->>'telefono','') != '' THEN data->>'telefono' END) as dedup
+    FROM form_submissions
+    WHERE campaign_id = $1 AND deleted_at IS NULL
+  `, [c.id]);
+
+  const { rows: agentes } = await pool.query(`
+    SELECT COUNT(DISTINCT user_id) as total
+    FROM user_campaigns
+    WHERE campaign_id = $1 AND role = 'agente_campo'
+  `, [c.id]);
+
+  const metaTotal = Number(c.meta_total);
+  const bufferPct = Number(c.buffer_pct);
+  const datosActuales = Number((datos[0] as Record<string,unknown>).total);
+  const datosDedup = Number((datos[0] as Record<string,unknown>).dedup);
+  const agentesCampo = Math.max(1, Number((agentes[0] as Record<string,unknown>).total));
+
+  const electionDate = c.election_date as string;
+  const hoyLima = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Lima" }));
+  const eleccion = new Date(electionDate + "T00:00:00");
+  const diasRestantes = Math.max(1, Math.ceil((eleccion.getTime() - hoyLima.getTime()) / 86400000));
+
+  const restante = Math.max(0, metaTotal - datosDedup);
+  const metaDiariaAgente = Math.ceil((restante / diasRestantes / agentesCampo) * (1 + bufferPct / 100));
+  const pctProgreso = Math.round((datosDedup / metaTotal) * 100);
+
+  return {
+    campana: c.name as string,
+    slug: c.slug as string,
+    meta_total: metaTotal,
+    election_date: electionDate,
+    buffer_pct: bufferPct,
+    datos_actuales: datosActuales,
+    datos_dedup: datosDedup,
+    restante,
+    dias_restantes: diasRestantes,
+    agentes_campo: agentesCampo,
+    meta_diaria_agente: metaDiariaAgente,
+    pct_progreso: pctProgreso,
+  };
+}
+
+function buildProgressBar(pct: number, width = 10): string {
+  const filled = Math.min(width, Math.round((pct / 100) * width));
+  return "█".repeat(filled) + "░".repeat(width - filled);
+}
+
+async function buildMetaReport(campaignSlug: string): Promise<string> {
+  const meta = await calcularMeta(campaignSlug);
+  if (!meta) {
+    return `📭 No hay meta configurada para esa campaña.\n_Configura meta\\_total, election\\_date y buffer\\_pct en campaigns.config._`;
+  }
+
+  const eleccionStr = new Date(meta.election_date + "T00:00:00").toLocaleDateString("es-PE", { day: "numeric", month: "long", year: "numeric" });
+
+  // Top agentes de hoy vs meta diaria
+  const { rows: topHoy } = await pool.query(`
+    SELECT
+      COALESCE(u.full_name, fs.data->>'encuestador') as agente,
+      COUNT(*) as hoy
+    FROM form_submissions fs
+    LEFT JOIN users u ON fs.submitted_by = u.id
+    WHERE fs.campaign_id = (SELECT id FROM campaigns WHERE slug = $1)
+    AND (fs.created_at AT TIME ZONE 'America/Lima')::date = (now() AT TIME ZONE 'America/Lima')::date
+    AND fs.deleted_at IS NULL
+    GROUP BY agente ORDER BY hoy DESC LIMIT 10
+  `, [campaignSlug]);
+
+  const lines: string[] = [
+    `🎯 *Meta — ${meta.campana}*`,
+    ``,
+    `📊 *Progreso global:*`,
+    `${buildProgressBar(meta.pct_progreso, 15)} *${meta.pct_progreso}%*`,
+    `📝 *${meta.datos_dedup.toLocaleString()}* de ${meta.meta_total.toLocaleString()} (dedup teléfono)`,
+    `📋 Restante: *${meta.restante.toLocaleString()}* registros`,
+    ``,
+    `📅 *Elección:* ${eleccionStr} (*${meta.dias_restantes} días*)`,
+    `👥 *Agentes de campo:* ${meta.agentes_campo}`,
+    `📈 *Buffer inactivos:* +${meta.buffer_pct}%`,
+    ``,
+    `⚡ *Meta diaria por agente: ${meta.meta_diaria_agente} registros*`,
+    ``,
+  ];
+
+  if ((topHoy as Record<string,unknown>[]).length > 0) {
+    lines.push(`🏆 *Hoy vs meta diaria (${meta.meta_diaria_agente}):*`);
+    for (const r of topHoy as Record<string,unknown>[]) {
+      const hoy = Number(r.hoy);
+      const pct = Math.round((hoy / meta.meta_diaria_agente) * 100);
+      const icon = pct >= 100 ? "✅" : pct >= 50 ? "🟡" : "🔴";
+      lines.push(`${icon} *${r.agente}* ▸ ${hoy}/${meta.meta_diaria_agente} (${pct}%)`);
+    }
+  } else {
+    lines.push(`⚠️ Sin registros hoy todavía.`);
+  }
+
+  return lines.join("\n");
+}
+
 // ── Alertas automáticas (cron 8pm Lima) ─────────────────────────────
 
 async function checkMetasAlerts(): Promise<void> {
   if (!_env?.telegramChatId) return;
 
-  // Buscar agentes que HOY llegaron exactamente a su meta (con tolerancia ±5%)
-  const { rows } = await pool.query(`
-    SELECT
-      u.full_name as agente,
-      c.name as campana,
-      uo.target_forms as meta,
-      COUNT(fs.id) as logrado_hoy
-    FROM user_objectives uo
-    JOIN users u ON uo.user_id = u.id
-    JOIN campaigns c ON uo.campaign_id = c.id
-    JOIN form_submissions fs ON fs.submitted_by = uo.user_id
-      AND fs.campaign_id = uo.campaign_id
-      AND (fs.created_at AT TIME ZONE 'America/Lima')::date = (now() AT TIME ZONE 'America/Lima')::date
-      AND fs.deleted_at IS NULL
-    WHERE uo.target_forms > 0
-    GROUP BY u.full_name, c.name, uo.target_forms
-    HAVING COUNT(fs.id) >= uo.target_forms
+  // Buscar campañas con meta configurada
+  const { rows: campanas } = await pool.query(`
+    SELECT slug FROM campaigns
+    WHERE config->>'meta_total' IS NOT NULL AND status = 'active'
   `);
 
-  for (const r of rows as Record<string,unknown>[]) {
-    const logrado = Number(r.logrado_hoy);
-    const meta = Number(r.meta);
-    const pct = Math.round((logrado / meta) * 100);
-    const msg = [
-      `🎯 *¡Meta alcanzada!*`,
-      ``,
-      `👤 *${r.agente}*`,
-      `📋 Campaña: ${r.campana}`,
-      `📝 Registros hoy: *${logrado}* / meta: ${meta} (*${pct}%*)`,
-      ``,
-      `¡Excelente trabajo! 🏆`,
-    ].join("\n");
-    await reply(Number(_env.telegramChatId), msg);
+  for (const c of campanas as Record<string,unknown>[]) {
+    const meta = await calcularMeta(c.slug as string);
+    if (!meta) continue;
+
+    // Buscar agentes que HOY llegaron a la meta diaria
+    const { rows: agentes } = await pool.query(`
+      SELECT
+        COALESCE(u.full_name, fs.data->>'encuestador') as agente,
+        COUNT(*) as hoy
+      FROM form_submissions fs
+      LEFT JOIN users u ON fs.submitted_by = u.id
+      WHERE fs.campaign_id = (SELECT id FROM campaigns WHERE slug = $1)
+      AND (fs.created_at AT TIME ZONE 'America/Lima')::date = (now() AT TIME ZONE 'America/Lima')::date
+      AND fs.deleted_at IS NULL
+      GROUP BY agente
+      HAVING COUNT(*) >= $2
+    `, [c.slug, meta.meta_diaria_agente]);
+
+    for (const a of agentes as Record<string,unknown>[]) {
+      const hoy = Number(a.hoy);
+      const pct = Math.round((hoy / meta.meta_diaria_agente) * 100);
+      const msg = [
+        `🎯 *¡Meta diaria alcanzada!*`,
+        ``,
+        `👤 *${a.agente}*`,
+        `📋 ${meta.campana}`,
+        `📝 Hoy: *${hoy}* registros (meta: ${meta.meta_diaria_agente} | *${pct}%*)`,
+        ``,
+        `🏆 ¡Excelente trabajo!`,
+      ].join("\n");
+      await reply(Number(_env.telegramChatId), msg);
+      await new Promise(r => setTimeout(r, 300));
+    }
   }
 }
 
@@ -808,6 +956,15 @@ async function handleMessage(chatId: number, userText: string) {
   }
   if (userText === "/ayuda" || userText === "/help" || userText === "/start") {
     await reply(chatId, buildAyuda());
+    return;
+  }
+
+  // /meta [campaña]
+  const metaMatch = userText.match(/^\/meta(?:\s+(.+))?$/i);
+  if (metaMatch) {
+    await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
+    const slug = metaMatch[1] ? slugFromInput(metaMatch[1]) : "cesar-vasquez";
+    await reply(chatId, await buildMetaReport(slug!));
     return;
   }
 
@@ -925,14 +1082,13 @@ function buildAyuda(): string {
     `🤖 *Goberna Bot*`,
     ``,
     `⚡ *Comandos rápidos:*`,
-    `• \`/diario\` — resumen de hoy vs ayer (todas las campañas)`,
+    `• \`/meta\` — progreso vs meta + cuota diaria`,
+    `• \`/meta cesar vasquez\` — meta de esa campaña`,
+    `• \`/diario\` — resumen de hoy vs ayer`,
     `• \`/diario cesar vasquez\` — solo esa campaña`,
     `• \`/semana\` — resumen semanal con comparativa`,
-    `• \`/semana cesar vasquez\` — solo esa campaña`,
     `• \`/top\` — ranking de agentes de hoy`,
-    `• \`/top cesar vasquez\` — solo esa campaña`,
     `• \`/inactivos\` — agentes sin actividad +2 días`,
-    `• \`/inactivos cesar vasquez\` — solo esa campaña`,
     ``,
     `🤖 *Consultas con IA — escribe /g seguido de tu pregunta:*`,
     ``,
@@ -1081,6 +1237,12 @@ async function pollOnce() {
       // /ayuda, /help, /start
       if (lower === "/ayuda" || lower === "/help" || lower === "/start" || lower.startsWith("/ayuda@")) {
         handleMessage(msg.chat.id, "/ayuda").catch(() => {});
+        continue;
+      }
+
+      // /meta [campaña]
+      if (lower.startsWith("/meta")) {
+        handleMessage(msg.chat.id, raw).catch(() => {});
         continue;
       }
 
