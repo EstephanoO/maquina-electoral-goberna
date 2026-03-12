@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WSPP Goberna",
-  "version": "8.3.0",
+  "version": "8.4.0",
   "description": "Agente digital inteligente — detección, clasificación y validación — Goberna",
   "permissions": ["storage", "tabs"],
   "host_permissions": [

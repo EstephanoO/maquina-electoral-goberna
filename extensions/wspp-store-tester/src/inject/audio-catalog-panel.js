@@ -180,7 +180,7 @@ function toggleCatalogPanel() {
 function _closePanel() {
   _destroyPreview();
   const p = document.getElementById('wspp-cat-panel'); if (p) p.remove();
-  _catalogPanelOpen = false; _catalogView = 'grid'; _catalogDetailId = null; _catalogCategory = null; _catalogEditingId = null;
+  _catalogPanelOpen = false; _catalogView = 'grid'; _catalogDetailId = null; _catalogCategory = null; _catalogEditingId = null; _showNewCatForm = false;
   const fab = document.getElementById('wspp-catalog-btn');
   if (fab) fab.style.boxShadow = '0 3px 12px rgba(0,168,132,.4), 0 1px 3px rgba(0,0,0,.3)';
 }
@@ -415,55 +415,118 @@ function _renderDetail(panel) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// CREATE VIEW — form to add new item
+// CREATE VIEW — simplified: Categoría + Nombre + Guión + Orden
 // ═══════════════════════════════════════════════════════════════════════
+let _showNewCatForm = false; // inline category creation toggle
+
 function _renderCreate(panel) {
   const preselectedCat = _catalogCategory || (_catalogCategories[0]?.key || 'saludo');
   const backTarget = _catalogCategory ? 'category' : 'grid';
-  panel.appendChild(_mkHdr('Nueva plantilla', () => { _catalogView = backTarget; renderCatalogPanel(); }));
+  panel.appendChild(_mkHdr('Nueva plantilla', () => { _showNewCatForm = false; _catalogView = backTarget; renderCatalogPanel(); }));
 
   const body = _el('div', { padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '7px' }, { cls: 'wc-body' });
 
+  // ── Category selector with "+ Nueva" option ─────────────────────
+  body.appendChild(_el('div', {}, { cls: 'wc-lbl', txt: 'Categoría' }));
+
+  if (!_showNewCatForm) {
+    const catRow = _el('div', { display: 'flex', gap: '6px', alignItems: 'center' });
+    const catSel = _el('select', { cursor: 'pointer', WebkitAppearance: 'none', appearance: 'none', flex: '1' }, { cls: 'wc-input' });
+    catSel.id = 'wspp-create-cat-sel';
+    _catalogCategories.slice().sort((a,b) => (a.sort_order??999)-(b.sort_order??999)).forEach(c => {
+      const o = _el('option'); o.value = c.key; o.textContent = c.label; if (c.key === preselectedCat) o.selected = true; catSel.appendChild(o);
+    });
+    catRow.appendChild(catSel);
+    const newCatBtn = _el('button', { flexShrink: '0', background: 'rgba(0,168,132,.1)', color: '#00a884', fontSize: '11px', fontWeight: '700', padding: '7px 10px', borderRadius: '10px', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }, { html: `${I.plus} Nueva` });
+    newCatBtn.addEventListener('click', () => { _showNewCatForm = true; renderCatalogPanel(); });
+    catRow.appendChild(newCatBtn);
+    body.appendChild(catRow);
+  } else {
+    // Inline new category form
+    const catForm = _el('div', { background: 'rgba(255,255,255,.03)', borderRadius: '10px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px', border: '1px solid rgba(0,168,132,.15)' });
+
+    const catNameRow = _el('div', { display: 'flex', gap: '6px' });
+    const catLabelInp = _el('input', { flex: '1' }, { cls: 'wc-input', type: 'text', placeholder: 'Nombre (ej: Propuestas)' });
+    catLabelInp.id = 'wspp-newcat-label';
+    catNameRow.appendChild(catLabelInp);
+    catForm.appendChild(catNameRow);
+
+    // Color picker row
+    const PALETTE = ['#00a884','#818cf8','#f59e0b','#ef5350','#ec4899','#8b5cf6','#06b6d4','#84cc16','#f97316','#8696a0'];
+    const colorRow = _el('div', { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' });
+    colorRow.appendChild(_el('div', { fontSize: '10px', color: '#666', marginRight: '2px' }, { txt: 'Color:' }));
+    let _selectedColor = PALETTE[0];
+    PALETTE.forEach(c => {
+      const swatch = _el('div', {
+        width: '18px', height: '18px', borderRadius: '50%', background: c, cursor: 'pointer',
+        border: c === _selectedColor ? '2px solid #fff' : '2px solid transparent', transition: 'border .1s', flexShrink: '0',
+      });
+      swatch.addEventListener('click', () => {
+        _selectedColor = c;
+        colorRow.querySelectorAll('div[style*="border-radius: 50%"], div[style*="border-radius:50%"]').forEach(s => { s.style.border = '2px solid transparent'; });
+        swatch.style.border = '2px solid #fff';
+      });
+      colorRow.appendChild(swatch);
+    });
+    catForm.appendChild(colorRow);
+
+    // Action row
+    const catActRow = _el('div', { display: 'flex', gap: '6px' });
+    const cancelCatBtn = _el('button', { flex: '1', background: 'rgba(255,255,255,.06)', color: '#888' }, { cls: 'wc-btn', txt: 'Cancelar' });
+    cancelCatBtn.addEventListener('click', () => { _showNewCatForm = false; renderCatalogPanel(); });
+    catActRow.appendChild(cancelCatBtn);
+
+    const saveCatBtn = _el('button', { flex: '1', background: 'rgba(0,168,132,.13)', color: '#00a884' }, { cls: 'wc-btn', html: `${I.check} Crear categoría` });
+    saveCatBtn.addEventListener('click', () => {
+      const label = catLabelInp.value.trim();
+      if (!label) { _toast('Nombre de categoría obligatorio', '#ef5350', 2500); return; }
+      const key = label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+      if (!key) { _toast('Nombre inválido', '#ef5350', 2500); return; }
+      if (_catalogCategories.some(c => c.key === key)) { _toast('Ya existe una categoría con ese nombre', '#f59e0b', 2500); return; }
+      saveCatBtn.textContent = 'Creando...'; saveCatBtn.disabled = true;
+      const sortOrder = _catalogCategories.length;
+      window.postMessage({ type: 'CREATE_CATALOG_CATEGORY', data: { key, label, color: _selectedColor, sort_order: sortOrder } }, WA_ORIGIN);
+      // Response handled in CREATE_CATALOG_CATEGORY_DONE — it pushes to _catalogCategories + re-renders
+      // After creation, auto-select the new category and close form
+      const _onCatCreated = (ev) => {
+        if (ev.source !== window || ev.data?.type !== 'CREATE_CATALOG_CATEGORY_DONE') return;
+        window.removeEventListener('message', _onCatCreated);
+        if (ev.data.ok) { _catalogCategory = key; _showNewCatForm = false; }
+        else { saveCatBtn.textContent = 'Crear categoría'; saveCatBtn.disabled = false; }
+      };
+      window.addEventListener('message', _onCatCreated);
+    });
+    catActRow.appendChild(saveCatBtn);
+    catForm.appendChild(catActRow);
+    body.appendChild(catForm);
+  }
+
+  // ── Nombre ──────────────────────────────────────────────────────
   body.appendChild(_el('div', {}, { cls: 'wc-lbl', txt: 'Nombre' }));
   const labelInp = _el('input', {}, { cls: 'wc-input', type: 'text', placeholder: 'Ej: Saludo inicial' });
   body.appendChild(labelInp);
 
-  body.appendChild(_el('div', {}, { cls: 'wc-lbl', txt: 'Descripción' }));
-  const descInp = _el('input', {}, { cls: 'wc-input', type: 'text', placeholder: 'Para quién es este audio' });
-  body.appendChild(descInp);
-
-  body.appendChild(_el('div', {}, { cls: 'wc-lbl', txt: 'Categoría' }));
-  const catSel = _el('select', { cursor: 'pointer', WebkitAppearance: 'none', appearance: 'none' }, { cls: 'wc-input' });
-  _catalogCategories.slice().sort((a,b) => (a.sort_order??999)-(b.sort_order??999)).forEach(c => {
-    const o = _el('option'); o.value = c.key; o.textContent = c.label; if (c.key === preselectedCat) o.selected = true; catSel.appendChild(o);
-  });
-  body.appendChild(catSel);
-
+  // ── Guión ───────────────────────────────────────────────────────
   body.appendChild(_el('div', {}, { cls: 'wc-lbl', txt: 'Guión' }));
   const scriptTa = _el('textarea', {}, { cls: 'wc-input wc-textarea', placeholder: 'Hola, habla el doctor César Vásquez...' });
   body.appendChild(scriptTa);
 
-  // Order + Voice ID in one row
-  const row2 = _el('div', { display: 'flex', gap: '8px' });
-  const orderWrap = _el('div', { flex: '1' });
-  orderWrap.appendChild(_el('div', {}, { cls: 'wc-lbl', txt: 'Orden' }));
-  const sortInp = _el('input', {}, { cls: 'wc-input', type: 'number', min: '0', max: '999', value: '0' });
-  orderWrap.appendChild(sortInp);
-  row2.appendChild(orderWrap);
-  const voiceWrap = _el('div', { flex: '2' });
-  voiceWrap.appendChild(_el('div', {}, { cls: 'wc-lbl', txt: 'Voice ID (opcional)' }));
-  const voiceInp = _el('input', {}, { cls: 'wc-input', type: 'text', placeholder: 'Voz por defecto' });
-  voiceWrap.appendChild(voiceInp);
-  row2.appendChild(voiceWrap);
-  body.appendChild(row2);
+  // ── Orden ───────────────────────────────────────────────────────
+  body.appendChild(_el('div', {}, { cls: 'wc-lbl', txt: 'Orden' }));
+  const sortInp = _el('input', { width: '70px' }, { cls: 'wc-input', type: 'number', min: '0', max: '999', value: '0' });
+  body.appendChild(sortInp);
 
+  // ── Submit ──────────────────────────────────────────────────────
   const createBtn = _el('button', { background: 'rgba(0,168,132,.13)', color: '#00a884', marginTop: '2px' }, { cls: 'wc-btn', html: `${I.check} Crear y generar audio` });
   createBtn.addEventListener('click', () => {
     const label = labelInp.value.trim();
     const script = scriptTa.value.trim();
     if (!label || !script) { _toast('Nombre y guión son obligatorios', '#ef5350', 2500); return; }
-    _catalogCategory = catSel.value;
-    _handleCreateItem({ label, description: descInp.value.trim(), category: catSel.value, script_text: script, sort_order: parseInt(sortInp.value,10)||0, voice_id: voiceInp.value.trim()||undefined }, createBtn);
+    const catSel = document.getElementById('wspp-create-cat-sel');
+    const category = _showNewCatForm ? _catalogCategory : (catSel?.value || preselectedCat);
+    if (!category) { _toast('Seleccioná una categoría', '#ef5350', 2500); return; }
+    _catalogCategory = category;
+    _handleCreateItem({ label, category, script_text: script, sort_order: parseInt(sortInp.value,10)||0 }, createBtn);
   });
   body.appendChild(createBtn);
 
