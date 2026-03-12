@@ -14,14 +14,14 @@ function pushOwnNumber(number) {
   window.postMessage({ type: 'WSPP_SET_OWN_NUMBER', number: number || null }, WA_ORIGIN);
 }
 
-function pushUserRole(role) {
-  window.postMessage({ type: 'WSPP_SET_USER_ROLE', role: role || 'agente_digital' }, WA_ORIGIN);
+function pushUserRole(role, audioAdmin) {
+  window.postMessage({ type: 'WSPP_SET_USER_ROLE', role: role || 'agente_digital', perm_audio_admin: !!audioAdmin }, WA_ORIGIN);
 }
 
 // Al arrancar: leer del storage y empujar ambos valores
-chrome.storage.local.get(['wspp_own_number', 'wspp_user_role'], (s) => {
+chrome.storage.local.get(['wspp_own_number', 'wspp_user_role', 'wspp_audio_admin'], (s) => {
   pushOwnNumber(s.wspp_own_number || null);
-  pushUserRole(s.wspp_user_role || 'agente_digital');
+  pushUserRole(s.wspp_user_role || 'agente_digital', s.wspp_audio_admin);
 });
 
 // Si el usuario cambia valores desde el popup mientras WA está abierto: actualizar en caliente
@@ -29,8 +29,11 @@ chrome.storage.onChanged.addListener((changes) => {
   if (changes.wspp_own_number !== undefined) {
     pushOwnNumber(changes.wspp_own_number.newValue || null);
   }
-  if (changes.wspp_user_role !== undefined) {
-    pushUserRole(changes.wspp_user_role.newValue || 'agente_digital');
+  if (changes.wspp_user_role !== undefined || changes.wspp_audio_admin !== undefined) {
+    // Re-read both values to ensure consistency
+    chrome.storage.local.get(['wspp_user_role', 'wspp_audio_admin'], (s) => {
+      pushUserRole(s.wspp_user_role || 'agente_digital', s.wspp_audio_admin);
+    });
   }
 });
 

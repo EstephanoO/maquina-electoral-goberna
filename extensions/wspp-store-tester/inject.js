@@ -15,8 +15,9 @@
     }
     if (e.data?.type === "WSPP_SET_USER_ROLE") {
       const role = e.data.role || "agente_digital";
-      _catalogIsConsultor = ["admin", "consultor"].includes(role);
-      console.log("[WSPP] user_role actualizado:", role, "| consultor:", _catalogIsConsultor);
+      const audioAdmin = !!e.data.perm_audio_admin;
+      _catalogIsConsultor = ["admin", "consultor"].includes(role) || audioAdmin;
+      console.log("[WSPP] user_role actualizado:", role, "| audio_admin:", audioAdmin, "| catalogCRUD:", _catalogIsConsultor);
       return;
     }
   });

@@ -92,6 +92,7 @@ export class AuthService {
         name: c.campaign_name,
         slug: c.campaign_slug,
         role: c.role,
+        perm_audio_admin: c.perm_audio_admin,
       })),
       // Include flag if user needs to reset password
       ...(user.password_reset_required ? { password_reset_required: true } : {}),
@@ -199,7 +200,7 @@ export class AuthService {
   private buildCampaignPerms(campaigns: UserCampaignRow[]): Record<string, CampaignPerms> {
     const perms: Record<string, CampaignPerms> = {};
     for (const c of campaigns) {
-      perms[c.campaign_id] = { tierra: c.perm_tierra, digital: c.perm_digital };
+      perms[c.campaign_id] = { tierra: c.perm_tierra, digital: c.perm_digital, audio_admin: c.perm_audio_admin };
     }
     return perms;
   }

@@ -375,6 +375,7 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
           name: c.campaign_name,
           slug: c.campaign_slug,
           role: c.role,
+          perm_audio_admin: c.perm_audio_admin,
         }));
 
         return reply.code(200).send({

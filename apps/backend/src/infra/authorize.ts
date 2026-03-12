@@ -39,7 +39,7 @@ export type AuthorizeOptions = {
   /** If true, checks that the request includes a campaign_id and user has access */
   requireCampaign?: boolean;
   /** If set, validates the user has this permission for the active campaign. Implies requireCampaign. */
-  requirePermission?: "tierra" | "digital";
+  requirePermission?: "tierra" | "digital" | "audio_admin";
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -158,15 +158,24 @@ export function authorize(options: AuthorizeOptions = {}) {
 
       // ── Permission check ──────────────────────────────────────
       if (requirePermission) {
-        const perms = req.campaignPerms?.[campaignId];
-        const allowed = perms
-          ? (requirePermission === "tierra" ? perms.tierra : perms.digital)
-          : false;
+        // Consultor+ (level >= 40) auto-passes all permission checks.
+        // This matches the existing convention where consultor has full operational access.
+        const userRole = normalizeRole(req.userRole);
+        const userLevel = ROLE_HIERARCHY[userRole] ?? 0;
+        if (userLevel < 40) {
+          const perms = req.campaignPerms?.[campaignId];
+          let allowed = false;
+          if (perms) {
+            if (requirePermission === "tierra") allowed = perms.tierra;
+            else if (requirePermission === "digital") allowed = perms.digital;
+            else if (requirePermission === "audio_admin") allowed = perms.audio_admin;
+          }
 
-        if (!allowed) {
-          return reply
-            .code(403)
-            .send(errorPayload(requestId, "AUTHZ_PERMISSION_DENIED", `sin permiso '${requirePermission}' para esta campaña`));
+          if (!allowed) {
+            return reply
+              .code(403)
+              .send(errorPayload(requestId, "AUTHZ_PERMISSION_DENIED", `sin permiso '${requirePermission}' para esta campaña`));
+          }
         }
       }
     }

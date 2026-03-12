@@ -11,7 +11,7 @@ import { jwtVerify } from "jose";
 
 import { errorPayload } from "./http";
 
-export type CampaignPermsMap = Record<string, { tierra: boolean; digital: boolean }>;
+export type CampaignPermsMap = Record<string, { tierra: boolean; digital: boolean; audio_admin: boolean }>;
 
 export type AuthenticatedRequest = FastifyRequest & {
   userId: string;

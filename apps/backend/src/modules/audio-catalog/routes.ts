@@ -206,7 +206,7 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
     // Output format: OGG/Opus 48kHz 32kbps (only format WhatsApp PTT accepts).
     // Duration is parsed from OGG granule_position — exact, not estimated.
     app.post<{ Params: { id: string } }>("/api/audio-catalog/:id/generate", {
-      preHandler: [app.authenticate, authorize({ roles: ["consultor"] })],
+      preHandler: [app.authenticate, authorize({ roles: ["agente_digital"], requirePermission: "audio_admin" })],
     }, async (request, reply) => {
       const requestId = String(request.id);
 
@@ -250,7 +250,7 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
     // item and returns { item, audioSize, durationMs, audio_generated: true }.
     // If TTS fails, the item is still created — audio_generated: false in response.
     app.post("/api/audio-catalog", {
-      preHandler: [app.authenticate, authorize({ roles: ["consultor"], requireCampaign: true })],
+      preHandler: [app.authenticate, authorize({ roles: ["agente_digital"], requirePermission: "audio_admin" })],
     }, async (request, reply) => {
       const requestId = String(request.id);
       const campaignId = (request as unknown as { activeCampaignId: string }).activeCampaignId;
@@ -318,7 +318,7 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
 
     // ── PUT /api/audio-catalog/:id — update item metadata ────────────
     app.put<{ Params: { id: string } }>("/api/audio-catalog/:id", {
-      preHandler: [app.authenticate, authorize({ roles: ["consultor"] })],
+      preHandler: [app.authenticate, authorize({ roles: ["agente_digital"], requirePermission: "audio_admin" })],
     }, async (request, reply) => {
       const requestId = String(request.id);
 
@@ -336,7 +336,7 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
 
     // ── DELETE /api/audio-catalog/:id — delete item ──────────────────
     app.delete<{ Params: { id: string } }>("/api/audio-catalog/:id", {
-      preHandler: [app.authenticate, authorize({ roles: ["consultor"] })],
+      preHandler: [app.authenticate, authorize({ roles: ["agente_digital"], requirePermission: "audio_admin" })],
     }, async (request, reply) => {
       const requestId = String(request.id);
       const deleted = await repo.remove(request.params.id);
@@ -365,7 +365,7 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
 
     // ── POST /api/audio-catalog-categories — create category ─────────
     app.post("/api/audio-catalog-categories", {
-      preHandler: [app.authenticate, authorize({ roles: ["consultor"], requireCampaign: true })],
+      preHandler: [app.authenticate, authorize({ roles: ["agente_digital"], requirePermission: "audio_admin" })],
     }, async (request, reply) => {
       const requestId = String(request.id);
       const campaignId = (request as unknown as { activeCampaignId: string }).activeCampaignId;
@@ -389,7 +389,7 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
 
     // ── PUT /api/audio-catalog-categories/:id — update category ──────
     app.put<{ Params: { id: string } }>("/api/audio-catalog-categories/:id", {
-      preHandler: [app.authenticate, authorize({ roles: ["consultor"] })],
+      preHandler: [app.authenticate, authorize({ roles: ["agente_digital"], requirePermission: "audio_admin" })],
     }, async (request, reply) => {
       const requestId = String(request.id);
       const parsed = updateCategorySchema.safeParse(request.body);
@@ -406,7 +406,7 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
     // ── DELETE /api/audio-catalog-categories/:id — delete category ────
     // Also deletes all audio items in this category.
     app.delete<{ Params: { id: string } }>("/api/audio-catalog-categories/:id", {
-      preHandler: [app.authenticate, authorize({ roles: ["consultor"] })],
+      preHandler: [app.authenticate, authorize({ roles: ["agente_digital"], requirePermission: "audio_admin" })],
     }, async (request, reply) => {
       const requestId = String(request.id);
       const deleted = await repo.removeCategory(request.params.id);

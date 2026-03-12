@@ -77,7 +77,8 @@ export class AuthRepository {
       `SELECT c.id AS campaign_id, c.name AS campaign_name, c.slug AS campaign_slug,
               c.config AS campaign_config, uc.role,
               COALESCE(uc.perm_tierra, true) AS perm_tierra,
-              COALESCE(uc.perm_digital, true) AS perm_digital
+              COALESCE(uc.perm_digital, true) AS perm_digital,
+              COALESCE(uc.perm_audio_admin, false) AS perm_audio_admin
        FROM user_campaigns uc
        JOIN campaigns c ON c.id = uc.campaign_id
        WHERE uc.user_id = $1 AND uc.status = 'active' AND c.status = 'active'`,
@@ -91,7 +92,7 @@ export class AuthRepository {
     const { rows } = await this.pool.query(
       `SELECT id AS campaign_id, name AS campaign_name, slug AS campaign_slug,
               config AS campaign_config, 'admin' AS role,
-              true AS perm_tierra, true AS perm_digital
+              true AS perm_tierra, true AS perm_digital, true AS perm_audio_admin
        FROM campaigns WHERE status = 'active' ORDER BY name`,
     );
     return rows as UserCampaignRow[];

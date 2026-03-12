@@ -20,6 +20,7 @@ export type UserCampaignRow = {
   role: string;
   perm_tierra: boolean;
   perm_digital: boolean;
+  perm_audio_admin: boolean;
 };
 
 export type RefreshTokenRow = {
@@ -36,6 +37,7 @@ export type RefreshTokenRow = {
 export type CampaignPerms = {
   tierra: boolean;
   digital: boolean;
+  audio_admin: boolean;
 };
 
 export type JwtPayload = {
@@ -66,6 +68,7 @@ export type LoginResult = {
     name: string;
     slug: string;
     role: string;
+    perm_audio_admin: boolean;
   }>;
   /** If true, user must set new password before accessing the app */
   password_reset_required?: boolean;

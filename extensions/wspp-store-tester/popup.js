@@ -1,7 +1,7 @@
 'use strict';
 
 const API = 'https://api.goberna.us';
-const STORAGE_KEYS = ['wspp_token', 'wspp_user', 'wspp_user_role', 'wspp_count', 'wspp_campaign_id', 'wspp_own_number', 'wspp_campaigns'];
+const STORAGE_KEYS = ['wspp_token', 'wspp_user', 'wspp_user_role', 'wspp_audio_admin', 'wspp_count', 'wspp_campaign_id', 'wspp_own_number', 'wspp_campaigns'];
 
 function $(id) { return document.getElementById(id); }
 
@@ -109,14 +109,19 @@ async function doLogin() {
     const effectiveLevel = Math.max(globalLevel, campaignLevel);
     const effectiveRole = Object.entries(ROLE_LEVEL).find(([, v]) => v === effectiveLevel)?.[0] || data.user?.role || 'agente_digital';
 
+    // Check perm_audio_admin for the active campaign
+    const activeCampaign = campaigns.find(c => c.id === campaignId);
+    const audioAdmin = !!activeCampaign?.perm_audio_admin;
+
     chrome.storage.local.set({
       wspp_token:         token,
       wspp_refresh_token: data.refresh_token || null,
       wspp_user:          userName,
       wspp_user_role:     effectiveRole,
+      wspp_audio_admin:   audioAdmin,
       wspp_count:         0,
       wspp_campaign_id:   campaignId,
-      wspp_campaigns:     JSON.stringify(campaigns.map(c => ({ id: c.id, name: c.name || c.candidate_name || c.id }))),
+      wspp_campaigns:     JSON.stringify(campaigns.map(c => ({ id: c.id, name: c.name || c.candidate_name || c.id, perm_audio_admin: !!c.perm_audio_admin }))),
     });
     if (chrome.storage.session) {
       chrome.storage.session.set({ wspp_token: token });
@@ -142,7 +147,7 @@ function doLogout() {
       }).catch(() => {});
     }
   });
-  chrome.storage.local.remove(['wspp_token', 'wspp_refresh_token', 'wspp_user', 'wspp_user_role', 'wspp_count', 'wspp_campaign_id', 'wspp_campaigns']);
+  chrome.storage.local.remove(['wspp_token', 'wspp_refresh_token', 'wspp_user', 'wspp_user_role', 'wspp_audio_admin', 'wspp_count', 'wspp_campaign_id', 'wspp_campaigns']);
   if (chrome.storage.session) chrome.storage.session.remove(['wspp_token']);
   $('inp-email').value    = '';
   $('inp-password').value = '';
@@ -448,7 +453,16 @@ document.addEventListener('DOMContentLoaded', () => {
   $('inp-phone').addEventListener('keydown', (e) => { if (e.key === 'Enter') savePhone(); });
   $('sel-campaign').addEventListener('change', () => {
     const newId = $('sel-campaign').value;
-    chrome.storage.local.set({ wspp_campaign_id: newId });
+    // Update perm_audio_admin for the newly selected campaign
+    chrome.storage.local.get(['wspp_campaigns'], (s) => {
+      let audioAdmin = false;
+      try {
+        const campaigns = JSON.parse(s.wspp_campaigns || '[]');
+        const camp = campaigns.find(c => c.id === newId);
+        audioAdmin = !!camp?.perm_audio_admin;
+      } catch {}
+      chrome.storage.local.set({ wspp_campaign_id: newId, wspp_audio_admin: audioAdmin });
+    });
   });
 
   // Tab handlers

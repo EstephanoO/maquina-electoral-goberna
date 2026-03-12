@@ -34,7 +34,7 @@ export default function ExtensionPage() {
             </div>
           </div>
           <h1 style={{ fontSize: "clamp(28px, 7vw, 40px)", fontWeight: 800, lineHeight: 1.1, color: "#fff", margin: "0 0 8px", letterSpacing: "-0.02em" }}>WhatsApp Helper</h1>
-          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", margin: 0, lineHeight: 1.5 }}>Extension de Chrome para Goberna <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(37,211,102,0.6)" }}>v8.0.0</span></p>
+          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", margin: 0, lineHeight: 1.5 }}>Extension de Chrome para Goberna <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(37,211,102,0.6)" }}>v8.1.0</span></p>
         </div>
 
         {view === "intro" && (
