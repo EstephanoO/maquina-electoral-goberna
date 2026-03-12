@@ -130,31 +130,53 @@ ${DB_SCHEMA}
 
 Tu trabajo: dado un mensaje en español, generar UNA query SQL segura y responder con JSON.
 
+CONTEXTO CLAVE — CAMPAÑAS vs AGENTES:
+- Las campañas llevan nombre de candidatos: "César Vásquez", "Ernesto Bustamante", "Fuerza Popular", etc.
+- Cuando el usuario dice "de César Vásquez", "de Ernesto", "de Fuerza Popular" = se refiere a la CAMPAÑA (filtrar por campaigns.name o campaigns.slug).
+- Los agentes de campo son quienes CAPTURAN formularios. Sus nombres están en forms.encuestador o users.full_name.
+- "reporte de territorio" o "datos de territorio" = formularios capturados (form_submissions o forms).
+- "reporte de digital" o "datos de digital" = eventos CMS (cms_extension_events) y contactos WhatsApp.
+- Si el usuario dice "de hoy" y hay muy pocos datos, incluye también "ayer" para dar contexto útil. Indica claramente cuáles son de hoy y cuáles de ayer.
+
 REGLAS ESTRICTAS:
 1. SOLO genera SELECT. NUNCA INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE.
 2. SIEMPRE usa AT TIME ZONE 'America/Lima' para fechas.
 3. SIEMPRE excluye deleted_at IS NOT NULL (soft deletes).
 4. LIMIT máximo 30 rows.
-5. Si piden "hoy", usa: created_at >= (CURRENT_DATE AT TIME ZONE 'America/Lima')::date
+5. Si piden "hoy", usa: (fs.created_at AT TIME ZONE 'America/Lima')::date = (now() AT TIME ZONE 'America/Lima')::date
 6. Si piden "esta semana", usa: created_at >= date_trunc('week', now() AT TIME ZONE 'America/Lima')
 7. Si piden "este mes", usa: created_at >= date_trunc('month', now() AT TIME ZONE 'America/Lima')
 8. Si piden una fecha específica (ej: "5 de marzo"), usa: (created_at AT TIME ZONE 'America/Lima')::date = '2026-03-05'
-9. Cuando busques por nombre de persona, usa ILIKE '%nombre%' para ser flexible.
-10. Cuando busques por campaña, usa ILIKE '%nombre%' en campaigns.name.
+9. Cuando busques por nombre de persona (agente), usa ILIKE '%nombre%' para ser flexible.
+10. Cuando busques por campaña, usa ILIKE '%nombre%' en campaigns.name O campaigns.slug.
 11. Para agentes digitales: filtra por user_campaigns.role = 'agente_digital' o cms_extension_events.
 12. Para agentes de campo: filtra por user_campaigns.role = 'agente_campo' o forms.encuestador.
 13. Si no puedes generar SQL válido, devuelve intent "chat" con una respuesta directa.
+14. Para reportes de territorio, PREFIERE form_submissions (tiene más datos y JSONB con departamento/provincia/distrito).
+15. SIEMPRE incluye nombres legibles (JOIN con users, campaigns) — nunca devuelvas solo UUIDs.
+
+QUERIES TÍPICAS QUE DEBES SABER GENERAR:
+- "reporte de hoy de César Vásquez" → form_submissions WHERE campaign_id = (SELECT id FROM campaigns WHERE name ILIKE '%cesar%vasquez%') agrupado por agente con COUNT.
+- "top agentes de Lambayeque" → form_submissions con data->>'departamento' ILIKE '%lambayeque%' agrupado por submitted_by JOIN users ORDER BY count DESC.
+- "cómo va la semana" → resumen con total formularios, agentes activos, meets.
+- "busca al usuario 955135501" → users WHERE phone LIKE '%955135501%'.
 
 FORMATO DE RESPUESTA (JSON estricto, sin markdown, sin backticks):
-{"intent":"query","sql":"SELECT ...","descripcion":"qué muestra esta query"}
+{"intent":"query","sql":"SELECT ...","descripcion":"qué muestra esta query","tipo":"ranking|resumen|detalle|lista"}
 {"intent":"chat","respuesta":"texto de respuesta directa si no se necesita SQL"}
+
+El campo "tipo" clasifica la respuesta:
+- "ranking": resultados ordenados por cantidad (top agentes, mejores, etc)
+- "resumen": cifras agregadas generales (totales, promedios, conteos)
+- "detalle": información de una persona o entidad específica
+- "lista": listado de items (meets, campañas, zonas, etc)
 
 NUNCA generes otra cosa que no sea ese JSON.`;
 
 // ── Gemini API ──────────────────────────────────────────────────────
 
 type GeminiSqlResult =
-  | { intent: "query"; sql: string; descripcion: string }
+  | { intent: "query"; sql: string; descripcion: string; tipo?: string }
   | { intent: "chat"; respuesta: string };
 
 async function geminiGenerateSQL(userMessage: string): Promise<GeminiSqlResult> {
@@ -215,28 +237,94 @@ async function geminiFormatResponse(
   descripcion: string,
   preguntaOriginal: string,
   rowCount: number,
+  tipo?: string,
 ): Promise<string> {
   if (!_env?.geminiApiKey) return JSON.stringify(rows, null, 2);
 
   const datosStr = JSON.stringify(rows.slice(0, 30), null, 2);
 
-  const prompt = `Eres el bot de Goberna para Telegram. El usuario preguntó: "${preguntaOriginal}"
+  const templateGuide = tipo === "ranking"
+    ? `FORMATO RANKING — usa este template exacto:
+
+🏆 *[Título descriptivo]*
+📅 [Fecha o período]
+
+1. *[Nombre]* ▸ [cantidad] registros
+2. *[Nombre]* ▸ [cantidad] registros
+3. *[Nombre]* ▸ [cantidad] registros
+...
+
+📊 *Total:* [N] registros | [N] agentes activos
+
+Reglas: numerar del 1 al N. Una línea por persona. Alinear con ▸. Total al final.`
+
+    : tipo === "resumen"
+    ? `FORMATO RESUMEN — usa este template exacto:
+
+📊 *Resumen — [Campaña/Contexto]*
+📅 [Fecha o período]
+
+📝 Formularios: *[N]* hoy | *[N]* esta semana
+👥 Agentes activos: *[N]* de [N total]
+📍 Meets: *[N]* activos | *[N]* completados
+🏆 Mejor agente: *[Nombre]* ([N] registros)
+⚠️ Sin actividad: [nombres separados por coma]
+
+Reglas: una línea por métrica. Negrita en números. Incluir lo que haya disponible en los datos.`
+
+    : tipo === "detalle"
+    ? `FORMATO DETALLE — usa este template exacto:
+
+👤 *[Nombre completo]*
+📞 [Teléfono]
+📧 [Email]
+🏷️ Rol: [rol]
+📋 Campaña: [nombre]
+📝 Registros: *[N]* total | *[N]* hoy
+📅 Último registro: [fecha]
+
+Reglas: una línea por dato. Solo mostrar campos que existan en el JSON. Negrita en nombre y números clave.`
+
+    : tipo === "lista"
+    ? `FORMATO LISTA — usa este template exacto:
+
+📋 *[Título descriptivo]*
+📅 [Fecha o período]
+
+1. 📍 *[Nombre/Título del item]*
+   [Detalle línea 1] | [Detalle línea 2]
+
+2. 📍 *[Nombre/Título del item]*
+   [Detalle línea 1] | [Detalle línea 2]
+
+📊 *Total:* [N] items
+
+Reglas: numerar. Nombre en negrita. Detalles debajo con indent. Total al final.`
+
+    : `FORMATO GENERAL — respuesta clara y estructurada:
+- Una línea de título con emoji y *negrita*
+- Datos organizados con emojis de guía (📝👥📍📊🏆⚠️📅)
+- Números siempre en *negrita*
+- Total o conclusión al final`;
+
+  const prompt = `Eres el bot de reportes de Goberna para Telegram. El usuario preguntó: "${preguntaOriginal}"
 La query buscó: ${descripcion}
 Se encontraron ${rowCount} resultados.
 
 Datos (JSON):
 ${datosStr}
 
-Formatea una respuesta clara para Telegram:
-- Usa *negrita* para datos importantes (formato Markdown de Telegram)
-- Usa emojis con moderación (🏆🥇🥈🥉📊📋📅👤📝)
-- Máximo 25 líneas
-- Si hay ranking, usa numeración
-- Incluye totales cuando sean relevantes
-- Si no hay datos, dilo amablemente
+${templateGuide}
+
+REGLAS OBLIGATORIAS:
+- Usa EXACTAMENTE el formato Markdown de Telegram: *negrita* (NO **negrita**)
+- NO uses formato de tabla ni code blocks
 - NO inventes datos que no estén en el JSON
-- NO uses formato de tabla (no se ve bien en Telegram)
-- El texto debe ser directo, como un reporte conciso`;
+- Si un campo es null o vacío, omítelo
+- Máximo 30 líneas
+- Sé directo, como un reporte ejecutivo para un jefe de campaña
+- Si no hay datos, responde: "📭 No hay datos de [contexto] para [período]."
+- Los nombres propios siempre con mayúscula inicial`;
 
   try {
     const res = await fetch(
@@ -297,7 +385,7 @@ async function handleMessage(chatId: number, userText: string) {
     }
 
     // Format with Gemini
-    const respuesta = await geminiFormatResponse(rows, result.descripcion, userText, rowCount);
+    const respuesta = await geminiFormatResponse(rows, result.descripcion, userText, rowCount, result.tipo);
     await reply(chatId, respuesta);
   } catch (e) {
     const errMsg = String(e).slice(0, 200);
@@ -314,7 +402,7 @@ async function handleMessage(chatId: number, userText: string) {
           await reply(chatId, `📭 No se encontraron resultados.\n_${retry.descripcion}_`);
           return;
         }
-        const respuesta = await geminiFormatResponse(rows, retry.descripcion, userText, retryResult.rowCount ?? 0);
+        const respuesta = await geminiFormatResponse(rows, retry.descripcion, userText, retryResult.rowCount ?? 0, retry.tipo);
         await reply(chatId, respuesta);
         return;
       } catch {
