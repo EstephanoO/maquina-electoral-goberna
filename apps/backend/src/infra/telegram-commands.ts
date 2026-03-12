@@ -90,7 +90,7 @@ async function geminiParseIntent(userMessage: string): Promise<GeminiIntent> {
 
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${_env.geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${_env.geminiApiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -131,7 +131,7 @@ Usa emojis moderadamente. Destaca los números importantes con *negrita*.
 Máximo 20 líneas. No agregues información que no esté en los datos.`;
 
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${_env.geminiApiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${_env.geminiApiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
