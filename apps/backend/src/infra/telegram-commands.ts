@@ -423,22 +423,431 @@ REGLAS OBLIGATORIAS:
   }
 }
 
+// ── Queries rápidas (sin Gemini) ────────────────────────────────────
+
+async function buildDiarioReport(campaignSlug?: string): Promise<string> {
+  const campFilter = campaignSlug
+    ? `AND c.slug = '${campaignSlug.replace(/'/g, "''")}'`
+    : "";
+  const campLabel = campaignSlug ?? "todas las campañas";
+
+  const { rows: hoy } = await pool.query(`
+    SELECT
+      c.name as campana,
+      COUNT(*) as registros_hoy,
+      COUNT(DISTINCT fs.submitted_by) as agentes_hoy
+    FROM form_submissions fs
+    JOIN campaigns c ON fs.campaign_id = c.id
+    WHERE (fs.created_at AT TIME ZONE 'America/Lima')::date = (now() AT TIME ZONE 'America/Lima')::date
+    AND fs.deleted_at IS NULL ${campFilter}
+    GROUP BY c.name ORDER BY registros_hoy DESC
+  `);
+
+  const { rows: ayer } = await pool.query(`
+    SELECT
+      c.name as campana,
+      COUNT(*) as registros_ayer
+    FROM form_submissions fs
+    JOIN campaigns c ON fs.campaign_id = c.id
+    WHERE (fs.created_at AT TIME ZONE 'America/Lima')::date = (now() AT TIME ZONE 'America/Lima')::date - 1
+    AND fs.deleted_at IS NULL ${campFilter}
+    GROUP BY c.name
+  `);
+
+  const { rows: prom7 } = await pool.query(`
+    SELECT
+      c.name as campana,
+      ROUND(COUNT(*)::numeric / 7, 0) as prom_diario
+    FROM form_submissions fs
+    JOIN campaigns c ON fs.campaign_id = c.id
+    WHERE fs.created_at >= now() - interval '7 days'
+    AND (fs.created_at AT TIME ZONE 'America/Lima')::date < (now() AT TIME ZONE 'America/Lima')::date
+    AND fs.deleted_at IS NULL ${campFilter}
+    GROUP BY c.name
+  `);
+
+  const { rows: top } = await pool.query(`
+    SELECT
+      COALESCE(u.full_name, fs.data->>'encuestador') as agente,
+      c.name as campana,
+      COUNT(*) as registros
+    FROM form_submissions fs
+    JOIN campaigns c ON fs.campaign_id = c.id
+    LEFT JOIN users u ON fs.submitted_by = u.id
+    WHERE (fs.created_at AT TIME ZONE 'America/Lima')::date = (now() AT TIME ZONE 'America/Lima')::date
+    AND fs.deleted_at IS NULL ${campFilter}
+    GROUP BY agente, c.name ORDER BY registros DESC LIMIT 5
+  `);
+
+  const fecha = new Date().toLocaleDateString("es-PE", { timeZone: "America/Lima", day: "numeric", month: "long" });
+  const totalHoy = (hoy as Record<string,unknown>[]).reduce((s, r) => s + Number(r.registros_hoy), 0);
+  const totalAyer = (ayer as Record<string,unknown>[]).reduce((s, r) => s + Number(r.registros_ayer), 0);
+  const delta = totalHoy - totalAyer;
+  const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
+  const deltaEmoji = delta > 0 ? "📈" : delta < 0 ? "📉" : "➡️";
+
+  const lines: string[] = [
+    `📊 *Reporte Diario — ${fecha}*`,
+    `📋 Campaña: ${campLabel}`,
+    ``,
+    `📝 *Registros hoy:* ${totalHoy}  ${deltaEmoji} ${deltaStr} vs ayer (${totalAyer})`,
+    ``,
+  ];
+
+  if ((hoy as Record<string,unknown>[]).length > 1) {
+    lines.push(`*Por campaña:*`);
+    for (const r of hoy as Record<string,unknown>[]) {
+      const ayerRow = (ayer as Record<string,unknown>[]).find(a => a.campana === r.campana);
+      const promRow = (prom7 as Record<string,unknown>[]).find(p => p.campana === r.campana);
+      const d = Number(r.registros_hoy) - Number(ayerRow?.registros_ayer ?? 0);
+      const dStr = d >= 0 ? `+${d}` : `${d}`;
+      const prom = promRow?.prom_diario ?? "—";
+      lines.push(`• *${r.campana}*: ${r.registros_hoy} (${dStr} vs ayer | prom 7d: ${prom})`);
+    }
+    lines.push(``);
+  } else if ((hoy as Record<string,unknown>[]).length === 1) {
+    const promRow = (prom7 as Record<string,unknown>[]).find(p => p.campana === (hoy as Record<string,unknown>[])[0]!.campana);
+    lines.push(`👥 *Agentes activos hoy:* ${(hoy as Record<string,unknown>[])[0]!.agentes_hoy}`);
+    lines.push(`📉 *Promedio últimos 7 días:* ${promRow?.prom_diario ?? "—"} reg/día`);
+    lines.push(``);
+  }
+
+  if ((top as Record<string,unknown>[]).length > 0) {
+    lines.push(`🏆 *Top agentes hoy:*`);
+    (top as Record<string,unknown>[]).forEach((r, i) => {
+      const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+      lines.push(`${medal} *${r.agente}* ▸ ${r.registros} registros`);
+    });
+  }
+
+  if (totalHoy === 0) {
+    lines.push(`⚠️ Sin actividad registrada hoy todavía.`);
+    if (totalAyer > 0) lines.push(`_Ayer: ${totalAyer} registros._`);
+  }
+
+  return lines.join("\n");
+}
+
+async function buildSemanaReport(campaignSlug?: string): Promise<string> {
+  const campFilter = campaignSlug
+    ? `AND c.slug = '${campaignSlug.replace(/'/g, "''")}'`
+    : "";
+  const campLabel = campaignSlug ?? "todas las campañas";
+
+  const { rows: dias } = await pool.query(`
+    SELECT
+      (fs.created_at AT TIME ZONE 'America/Lima')::date as dia,
+      COUNT(*) as registros,
+      COUNT(DISTINCT fs.submitted_by) as agentes
+    FROM form_submissions fs
+    JOIN campaigns c ON fs.campaign_id = c.id
+    WHERE fs.created_at >= date_trunc('week', now() AT TIME ZONE 'America/Lima') AT TIME ZONE 'America/Lima'
+    AND fs.deleted_at IS NULL ${campFilter}
+    GROUP BY dia ORDER BY dia
+  `);
+
+  const { rows: top } = await pool.query(`
+    SELECT
+      COALESCE(u.full_name, fs.data->>'encuestador') as agente,
+      COUNT(*) as registros
+    FROM form_submissions fs
+    JOIN campaigns c ON fs.campaign_id = c.id
+    LEFT JOIN users u ON fs.submitted_by = u.id
+    WHERE fs.created_at >= date_trunc('week', now() AT TIME ZONE 'America/Lima') AT TIME ZONE 'America/Lima'
+    AND fs.deleted_at IS NULL ${campFilter}
+    GROUP BY agente ORDER BY registros DESC LIMIT 5
+  `);
+
+  const { rows: semanaAnterior } = await pool.query(`
+    SELECT COUNT(*) as total
+    FROM form_submissions fs
+    JOIN campaigns c ON fs.campaign_id = c.id
+    WHERE fs.created_at >= date_trunc('week', now() AT TIME ZONE 'America/Lima') AT TIME ZONE 'America/Lima' - interval '7 days'
+    AND fs.created_at < date_trunc('week', now() AT TIME ZONE 'America/Lima') AT TIME ZONE 'America/Lima'
+    AND fs.deleted_at IS NULL ${campFilter}
+  `);
+
+  const totalSemana = (dias as Record<string,unknown>[]).reduce((s, r) => s + Number(r.registros), 0);
+  const totalSemAnt = Number((semanaAnterior as Record<string,unknown>[])[0]?.total ?? 0);
+  const delta = totalSemana - totalSemAnt;
+  const deltaStr = delta >= 0 ? `+${delta}` : `${delta}`;
+  const deltaEmoji = delta > 0 ? "📈" : delta < 0 ? "📉" : "➡️";
+
+  const diasSemana = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+  const lines: string[] = [
+    `📊 *Resumen Semanal*`,
+    `📋 ${campLabel}`,
+    ``,
+    `📝 *Total semana:* ${totalSemana}  ${deltaEmoji} ${deltaStr} vs semana anterior (${totalSemAnt})`,
+    ``,
+    `*Actividad por día:*`,
+  ];
+
+  for (const r of dias as Record<string,unknown>[]) {
+    const d = new Date(r.dia as string);
+    const nombre = diasSemana[d.getUTCDay()] ?? "";
+    const bar = "█".repeat(Math.min(10, Math.round(Number(r.registros) / Math.max(1, totalSemana / 10 / (dias as Record<string,unknown>[]).length))));
+    lines.push(`${nombre}: *${r.registros}* reg | ${r.agentes} agentes ${bar}`);
+  }
+
+  if ((top as Record<string,unknown>[]).length > 0) {
+    lines.push(``);
+    lines.push(`🏆 *Top agentes de la semana:*`);
+    (top as Record<string,unknown>[]).forEach((r, i) => {
+      const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+      lines.push(`${medal} *${r.agente}* ▸ ${r.registros}`);
+    });
+  }
+
+  return lines.join("\n");
+}
+
+async function buildInactivosReport(campaignSlug?: string): Promise<string> {
+  const campFilter = campaignSlug
+    ? `AND c.slug = '${campaignSlug.replace(/'/g, "''")}'`
+    : "";
+
+  const { rows } = await pool.query(`
+    SELECT
+      u.full_name as agente,
+      c.name as campana,
+      MAX((fs.created_at AT TIME ZONE 'America/Lima')::date) as ultimo_dia,
+      (now() AT TIME ZONE 'America/Lima')::date - MAX((fs.created_at AT TIME ZONE 'America/Lima')::date) as dias_sin_actividad,
+      COUNT(*) as total_historico
+    FROM form_submissions fs
+    JOIN users u ON fs.submitted_by = u.id
+    JOIN campaigns c ON fs.campaign_id = c.id
+    WHERE fs.deleted_at IS NULL ${campFilter}
+    GROUP BY u.full_name, c.name
+    HAVING MAX((fs.created_at AT TIME ZONE 'America/Lima')::date) < (now() AT TIME ZONE 'America/Lima')::date - interval '2 days'
+    ORDER BY dias_sin_actividad DESC LIMIT 20
+  `);
+
+  if ((rows as Record<string,unknown>[]).length === 0) {
+    return `✅ *Sin inactivos*\nTodos los agentes tienen actividad en los últimos 2 días.`;
+  }
+
+  const fecha = new Date().toLocaleDateString("es-PE", { timeZone: "America/Lima", day: "numeric", month: "long" });
+  const lines: string[] = [
+    `⚠️ *Agentes sin actividad — ${fecha}*`,
+    ``,
+  ];
+
+  for (const r of rows as Record<string,unknown>[]) {
+    const dias = Number(r.dias_sin_actividad);
+    const emoji = dias >= 7 ? "🔴" : dias >= 4 ? "🟠" : "🟡";
+    lines.push(`${emoji} *${r.agente}* — ${dias}d sin actividad`);
+    lines.push(`   Último: ${r.ultimo_dia} | Total histórico: ${r.total_historico}`);
+  }
+
+  lines.push(``);
+  lines.push(`📊 *Total inactivos:* ${(rows as Record<string,unknown>[]).length} agentes`);
+
+  return lines.join("\n");
+}
+
+async function buildTopReport(campaignSlug?: string): Promise<string> {
+  const campFilter = campaignSlug
+    ? `AND c.slug = '${campaignSlug.replace(/'/g, "''")}'`
+    : "";
+  const campLabel = campaignSlug ?? "todas las campañas";
+  const fecha = new Date().toLocaleDateString("es-PE", { timeZone: "America/Lima", day: "numeric", month: "long" });
+
+  const { rows } = await pool.query(`
+    SELECT
+      COALESCE(u.full_name, fs.data->>'encuestador') as agente,
+      COUNT(*) as hoy,
+      (SELECT COUNT(*) FROM form_submissions fs2
+       WHERE fs2.submitted_by = fs.submitted_by
+       AND (fs2.created_at AT TIME ZONE 'America/Lima')::date = (now() AT TIME ZONE 'America/Lima')::date - 1
+       AND fs2.deleted_at IS NULL) as ayer
+    FROM form_submissions fs
+    JOIN campaigns c ON fs.campaign_id = c.id
+    LEFT JOIN users u ON fs.submitted_by = u.id
+    WHERE (fs.created_at AT TIME ZONE 'America/Lima')::date = (now() AT TIME ZONE 'America/Lima')::date
+    AND fs.deleted_at IS NULL ${campFilter}
+    GROUP BY agente, fs.submitted_by ORDER BY hoy DESC LIMIT 15
+  `);
+
+  if ((rows as Record<string,unknown>[]).length === 0) {
+    return `📭 Sin registros hoy en ${campLabel}.\n_Puede que el día recién esté comenzando._`;
+  }
+
+  const totalHoy = (rows as Record<string,unknown>[]).reduce((s, r) => s + Number(r.hoy), 0);
+  const lines: string[] = [
+    `🏆 *Top Agentes — ${fecha}*`,
+    `📋 ${campLabel}`,
+    ``,
+  ];
+
+  (rows as Record<string,unknown>[]).forEach((r, i) => {
+    const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
+    const ayer = Number(r.ayer);
+    const hoy = Number(r.hoy);
+    const d = hoy - ayer;
+    const dStr = ayer > 0 ? ` (${d >= 0 ? "+" : ""}${d} vs ayer)` : "";
+    lines.push(`${medal} *${r.agente}* ▸ ${hoy} registros${dStr}`);
+  });
+
+  lines.push(``);
+  lines.push(`📊 *Total hoy:* ${totalHoy} registros | ${(rows as Record<string,unknown>[]).length} agentes activos`);
+
+  return lines.join("\n");
+}
+
+// ── Alertas automáticas (cron 8pm Lima) ─────────────────────────────
+
+async function checkMetasAlerts(): Promise<void> {
+  if (!_env?.telegramChatId) return;
+
+  // Buscar agentes que HOY llegaron exactamente a su meta (con tolerancia ±5%)
+  const { rows } = await pool.query(`
+    SELECT
+      u.full_name as agente,
+      c.name as campana,
+      uo.target_forms as meta,
+      COUNT(fs.id) as logrado_hoy
+    FROM user_objectives uo
+    JOIN users u ON uo.user_id = u.id
+    JOIN campaigns c ON uo.campaign_id = c.id
+    JOIN form_submissions fs ON fs.submitted_by = uo.user_id
+      AND fs.campaign_id = uo.campaign_id
+      AND (fs.created_at AT TIME ZONE 'America/Lima')::date = (now() AT TIME ZONE 'America/Lima')::date
+      AND fs.deleted_at IS NULL
+    WHERE uo.target_forms > 0
+    GROUP BY u.full_name, c.name, uo.target_forms
+    HAVING COUNT(fs.id) >= uo.target_forms
+  `);
+
+  for (const r of rows as Record<string,unknown>[]) {
+    const logrado = Number(r.logrado_hoy);
+    const meta = Number(r.meta);
+    const pct = Math.round((logrado / meta) * 100);
+    const msg = [
+      `🎯 *¡Meta alcanzada!*`,
+      ``,
+      `👤 *${r.agente}*`,
+      `📋 Campaña: ${r.campana}`,
+      `📝 Registros hoy: *${logrado}* / meta: ${meta} (*${pct}%*)`,
+      ``,
+      `¡Excelente trabajo! 🏆`,
+    ].join("\n");
+    await reply(Number(_env.telegramChatId), msg);
+  }
+}
+
+async function sendAlertaDiaria(): Promise<void> {
+  if (!_env?.telegramChatId) return;
+
+  // Enviar reporte de cada campaña activa con actividad en los últimos 3 días
+  const { rows: campanas } = await pool.query(`
+    SELECT DISTINCT c.slug, c.name
+    FROM campaigns c
+    JOIN form_submissions fs ON fs.campaign_id = c.id
+    WHERE c.status = 'active'
+    AND fs.created_at >= now() - interval '3 days'
+    AND fs.deleted_at IS NULL
+    ORDER BY c.name
+  `);
+
+  const fecha = new Date().toLocaleDateString("es-PE", {
+    timeZone: "America/Lima", weekday: "long", day: "numeric", month: "long",
+  });
+
+  // Header
+  await reply(Number(_env.telegramChatId), `🌙 *Resumen del día — ${fecha}*`);
+
+  for (const c of campanas as Record<string,unknown>[]) {
+    try {
+      const reporte = await buildDiarioReport(c.slug as string);
+      await reply(Number(_env.telegramChatId), reporte);
+      await new Promise(r => setTimeout(r, 500)); // rate limit entre mensajes
+    } catch { /* skip failed campaign */ }
+  }
+
+  // Inactivos globales al final
+  try {
+    const inactivos = await buildInactivosReport();
+    await reply(Number(_env.telegramChatId), inactivos);
+  } catch { /* skip */ }
+}
+
+let _alertaTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleAlertaDiaria(): void {
+  if (_alertaTimer) clearTimeout(_alertaTimer);
+
+  const now = new Date();
+  // Hora target: 20:00 Lima (UTC-5 = 01:00 UTC siguiente día)
+  const limaOffset = -5 * 60; // minutos
+  const limaMs = now.getTime() + (limaOffset - (-now.getTimezoneOffset())) * 60 * 1000;
+  const lima = new Date(limaMs);
+
+  let target = new Date(lima);
+  target.setHours(20, 0, 0, 0);
+  if (lima >= target) target.setDate(target.getDate() + 1); // ya pasó → mañana
+
+  const msUntil = target.getTime() - lima.getTime();
+
+  _alertaTimer = setTimeout(async () => {
+    await sendAlertaDiaria().catch(() => {});
+    await checkMetasAlerts().catch(() => {});
+    scheduleAlertaDiaria(); // reprogramar para mañana
+  }, msUntil);
+}
+
 // ── Message handler ─────────────────────────────────────────────────
 
 async function handleMessage(chatId: number, userText: string) {
   await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
 
-  // Special commands
+  // ── Comandos rápidos (sin IA) ──
   if (userText === "/health") {
     await reply(chatId, await buildHealthReport(_env!));
     return;
   }
-  if (userText === "/ayuda") {
+  if (userText === "/ayuda" || userText === "/help" || userText === "/start") {
     await reply(chatId, buildAyuda());
     return;
   }
 
-  // Generate SQL via Gemini
+  // /diario [campaña]
+  const diarioMatch = userText.match(/^\/diario(?:\s+(.+))?$/i);
+  if (diarioMatch) {
+    await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
+    const slug = diarioMatch[1] ? slugFromInput(diarioMatch[1]) : undefined;
+    await reply(chatId, await buildDiarioReport(slug));
+    return;
+  }
+
+  // /semana [campaña]
+  const semanaMatch = userText.match(/^\/semana(?:\s+(.+))?$/i);
+  if (semanaMatch) {
+    await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
+    const slug = semanaMatch[1] ? slugFromInput(semanaMatch[1]) : undefined;
+    await reply(chatId, await buildSemanaReport(slug));
+    return;
+  }
+
+  // /inactivos [campaña]
+  const inactivosMatch = userText.match(/^\/inactivos(?:\s+(.+))?$/i);
+  if (inactivosMatch) {
+    await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
+    const slug = inactivosMatch[1] ? slugFromInput(inactivosMatch[1]) : undefined;
+    await reply(chatId, await buildInactivosReport(slug));
+    return;
+  }
+
+  // /top [campaña]
+  const topMatch = userText.match(/^\/top(?:\s+(.+))?$/i);
+  if (topMatch) {
+    await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
+    const slug = topMatch[1] ? slugFromInput(topMatch[1]) : undefined;
+    await reply(chatId, await buildTopReport(slug));
+    return;
+  }
+
+  // ── IA Gemini ──
   const result = await geminiGenerateSQL(userText);
 
   if (result.intent === "chat") {
@@ -457,12 +866,10 @@ async function handleMessage(chatId: number, userText: string) {
       return;
     }
 
-    // Format with Gemini
     const respuesta = await geminiFormatResponse(rows, result.descripcion, userText, rowCount, result.tipo);
     await reply(chatId, respuesta);
   } catch (e) {
     const errMsg = String(e).slice(0, 200);
-    // Retry: tell Gemini about the error and ask for a fixed query
     const retry = await geminiGenerateSQL(
       `${userText}\n\nNOTA: La query anterior falló con error: ${errMsg}. Corrige el SQL.`,
     );
@@ -478,46 +885,79 @@ async function handleMessage(chatId: number, userText: string) {
         const respuesta = await geminiFormatResponse(rows, retry.descripcion, userText, retryResult.rowCount ?? 0, retry.tipo);
         await reply(chatId, respuesta);
         return;
-      } catch {
-        // Second failure — give up
-      }
+      } catch { /* give up */ }
     }
 
     await reply(chatId, `❌ No pude completar la consulta. Intenta reformular la pregunta.`);
   }
 }
 
+// ── Helpers ──────────────────────────────────────────────────────────
+
+// Convierte texto libre a slug de campaña (fuzzy)
+const CAMPAIGN_SLUGS: Record<string, string> = {
+  "cesar vasquez": "cesar-vasquez", "cesar": "cesar-vasquez",
+  "ernesto bustamante": "ernesto-bustamante", "ernesto": "ernesto-bustamante",
+  "fernando rospigliosi": "fernando-rospigliosi", "fernando": "fernando-rospigliosi",
+  "fuerza popular": "fuerza-popular", "fuerza": "fuerza-popular",
+  "ahora nacion": "ahora-nacion", "ahora": "ahora-nacion",
+  "peru primero": "peru-primero", "peru": "peru-primero",
+  "edwards infante": "edwards-infante", "edwards": "edwards-infante",
+  "guillermo aliaga": "guillermo-aliaga", "guillermo": "guillermo-aliaga",
+  "rosangella barbaran": "rosangella-barbaran", "rosangella": "rosangella-barbaran",
+  "rocio porras": "rocio-porras", "rocio": "rocio-porras",
+  "renovacion popular": "renovacion-popular", "renovacion": "renovacion-popular",
+  "yessenia lozano": "yessenia-lozano", "yessenia": "yessenia-lozano",
+  "pais para todos": "pais-para-todos",
+};
+
+function slugFromInput(input: string): string | undefined {
+  const normalized = input.toLowerCase().trim()
+    .replace(/á/g, "a").replace(/é/g, "e").replace(/í/g, "i")
+    .replace(/ó/g, "o").replace(/ú/g, "u").replace(/ñ/g, "n");
+  return CAMPAIGN_SLUGS[normalized] ?? normalized.replace(/\s+/g, "-");
+}
+
 // ── Health & Ayuda ──────────────────────────────────────────────────
 
 function buildAyuda(): string {
   return [
-    `🤖 *Goberna Bot — IA*`,
+    `🤖 *Goberna Bot*`,
     ``,
-    `Escribe \`/g\` seguido de tu pregunta:`,
+    `⚡ *Comandos rápidos:*`,
+    `• \`/diario\` — resumen de hoy vs ayer (todas las campañas)`,
+    `• \`/diario cesar vasquez\` — solo esa campaña`,
+    `• \`/semana\` — resumen semanal con comparativa`,
+    `• \`/semana cesar vasquez\` — solo esa campaña`,
+    `• \`/top\` — ranking de agentes de hoy`,
+    `• \`/top cesar vasquez\` — solo esa campaña`,
+    `• \`/inactivos\` — agentes sin actividad +2 días`,
+    `• \`/inactivos cesar vasquez\` — solo esa campaña`,
     ``,
-    `📊 *Reportes generales:*`,
-    `• \`/g resumen de hoy\``,
-    `• \`/g cuántos registros esta semana\``,
-    `• \`/g total de registros por campaña este mes\``,
+    `🤖 *Consultas con IA — escribe /g seguido de tu pregunta:*`,
     ``,
-    `🏆 *Agentes de campo:*`,
-    `• \`/g top agentes de hoy en Lambayeque\``,
-    `• \`/g cuántos registros lleva Katterine Perez\``,
-    `• \`/g agentes de la campaña César Vásquez\``,
-    `• \`/g registros del 5 de marzo en Cajamarca\``,
+    `📋 *Actividad de agentes:*`,
+    `• \`/g actividad de Mónica Sánchez el 11 de marzo\``,
+    `• \`/g cuántos registros lleva Elmer Alaya hoy\``,
+    `• \`/g top agentes de Lambayeque esta semana\``,
     ``,
-    `📱 *Agentes digitales (CMS):*`,
+    `📊 *Campañas y territorio:*`,
+    `• \`/g reporte de César Vásquez en territorio hoy\``,
+    `• \`/g registros por departamento esta semana\``,
+    `• \`/g reuniones activas de César Vásquez\``,
+    ``,
+    `📱 *Digital (CMS/WhatsApp):*`,
     `• \`/g métricas de agentes digitales hoy\``,
     `• \`/g cuántos mensajes WA se enviaron esta semana\``,
-    `• \`/g contactos en estado hablado de César Vásquez\``,
     ``,
-    `📋 *Campañas y equipos:*`,
-    `• \`/g miembros de la campaña Perú Primero\``,
-    `• \`/g reuniones activas\``,
-    `• \`/g leads de esta semana\``,
+    `🔎 *Usuarios:*`,
+    `• \`/g busca al usuario 955135501\``,
+    `• \`/g datos de María López\``,
     ``,
     `🔧 *Sistema:*`,
     `• \`/health\` — estado del servidor`,
+    ``,
+    `🌙 *Alerta automática diaria a las 8pm Lima*`,
   ].join("\n");
 }
 
@@ -632,15 +1072,39 @@ async function pollOnce() {
       const raw = msg.text.trim();
       const lower = raw.toLowerCase();
 
-      // /health — direct
+      // /health
       if (lower === "/health" || lower.startsWith("/health@")) {
         handleMessage(msg.chat.id, "/health").catch(() => {});
         continue;
       }
 
-      // /ayuda, /help, /start — direct
+      // /ayuda, /help, /start
       if (lower === "/ayuda" || lower === "/help" || lower === "/start" || lower.startsWith("/ayuda@")) {
         handleMessage(msg.chat.id, "/ayuda").catch(() => {});
+        continue;
+      }
+
+      // /diario [campaña]
+      if (lower.startsWith("/diario")) {
+        handleMessage(msg.chat.id, raw).catch(() => {});
+        continue;
+      }
+
+      // /semana [campaña]
+      if (lower.startsWith("/semana")) {
+        handleMessage(msg.chat.id, raw).catch(() => {});
+        continue;
+      }
+
+      // /inactivos [campaña]
+      if (lower.startsWith("/inactivos")) {
+        handleMessage(msg.chat.id, raw).catch(() => {});
+        continue;
+      }
+
+      // /top [campaña]
+      if (lower.startsWith("/top")) {
+        handleMessage(msg.chat.id, raw).catch(() => {});
         continue;
       }
 
@@ -672,8 +1136,10 @@ export function startTelegramCommands(env: AppEnv) {
   _env = env;
   _running = true;
   void pollLoop();
+  scheduleAlertaDiaria(); // cron 8pm Lima
 }
 
 export function stopTelegramCommands() {
   _running = false;
+  if (_alertaTimer) { clearTimeout(_alertaTimer); _alertaTimer = null; }
 }
