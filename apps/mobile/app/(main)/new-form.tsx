@@ -162,7 +162,12 @@ function DynamicField({
 
   // Determine if this field should show required asterisk
   const isOptional = isOptionalField(field.id);
-  const showRequired = field.required && !isOptional;
+  // nombre and telefono are ALWAYS required regardless of form definition
+  const backendKey = resolveBackendField(field);
+  const isNombreField = backendKey === 'nombre';
+  const isPhoneField = field.type === 'phone' || matchesKeywords(field.label, PHONE_KEYWORDS) || matchesKeywords(field.id, PHONE_KEYWORDS);
+  const forceRequired = isNombreField || isPhoneField;
+  const showRequired = (field.required || forceRequired) && !isOptional;
 
   // Handle phone input with validation
   const handlePhoneChange = (text: string) => {
@@ -324,7 +329,7 @@ function DynamicField({
   }
 
   // Handle phone fields specially (by type or label/id keywords)
-  const isPhoneField = field.type === 'phone' || matchesKeywords(field.label, PHONE_KEYWORDS) || matchesKeywords(field.id, PHONE_KEYWORDS);
+  // Note: isPhoneField already computed above for required asterisk logic
 
   const keyboardType =
     field.type === 'phone' || isPhoneField
@@ -644,16 +649,23 @@ export default function NewFormScreen() {
       // Skip validation for optional fields
       if (isOptional) continue;
 
-      // Skip location fields here — they have their own GPS/distrito validation below (line 646)
+      // Skip location fields here — they have their own GPS/distrito validation below
       if (field.type === 'location') continue;
-      
-      if (field.required && !formData[field.id]?.trim()) {
+
+      // Detect semantic role of this field
+      const backendKey = resolveBackendField(field);
+      const isNombreField = backendKey === 'nombre';
+      const isPhoneField = field.type === 'phone' || matchesKeywords(field.label, PHONE_KEYWORDS) || matchesKeywords(field.id, PHONE_KEYWORDS);
+
+      // nombre and telefono are ALWAYS required regardless of form definition
+      const forceRequired = isNombreField || isPhoneField;
+
+      if ((field.required || forceRequired) && !formData[field.id]?.trim()) {
         Alert.alert('Campo requerido', `"${field.label}" es obligatorio.`);
         return;
       }
       
       // Phone validation for Peru (9 digits starting with 9)
-      const isPhoneField = field.type === 'phone' || matchesKeywords(field.label, PHONE_KEYWORDS) || matchesKeywords(field.id, PHONE_KEYWORDS);
       if (isPhoneField && formData[field.id]) {
         const phoneValue = formData[field.id].trim();
         if (!PERU_PHONE_REGEX.test(phoneValue)) {
@@ -662,7 +674,7 @@ export default function NewFormScreen() {
         }
         // Block submission if duplicate was detected
         if (phoneDupError) {
-          Alert.alert('Número duplicado', phoneDupError);
+          Alert.alert('Numero duplicado', phoneDupError);
           return;
         }
       }
