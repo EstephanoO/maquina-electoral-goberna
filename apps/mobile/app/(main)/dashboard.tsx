@@ -19,7 +19,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 
 import { useCandidate, useAgent, useApp, useActiveCampaign } from '@/lib/app-context';
 import { useAgentTracking } from '@/hooks/useAgentTracking';
-import { getQueueStats, getLocalFormsByCampaign, getSyncedClientIds, markFormsAsGhost, type PendingForm } from '@/lib/offline-queue';
+import { getQueueStats, getLocalFormsByCampaign, getSyncedClientIds, markFormsAsGhost, deleteLocalForm, type PendingForm } from '@/lib/offline-queue';
 import { getMySubmissionStats, getMyClientIds } from '@/lib/api';
 import { appEvents } from '@/lib/events';
 import type { CampaignMembership } from '@/lib/types';
@@ -236,10 +236,12 @@ const FormItem = memo(function FormItem({
   form,
   primaryColor,
   onEdit,
+  onDelete,
 }: {
   form: PendingForm;
   primaryColor: string;
   onEdit: (form: PendingForm) => void;
+  onDelete: (form: PendingForm) => void;
 }) {
   let data: LocalFormData = {};
   try {
@@ -270,9 +272,13 @@ const FormItem = memo(function FormItem({
       isRejected ? 'Registro rechazado' : isGhost ? 'No confirmado' : 'Error de sincronizacion',
       errorMessage,
       isGhost
-        ? [{ text: 'OK' }]
+        ? [
+            { text: 'OK', style: 'cancel' },
+            { text: 'Eliminar', style: 'destructive', onPress: () => onDelete(form) },
+          ]
         : [
             { text: 'Cerrar', style: 'cancel' },
+            { text: 'Eliminar', style: 'destructive', onPress: () => onDelete(form) },
             { text: 'Editar dato', onPress: () => onEdit(form) },
           ],
     );
@@ -472,9 +478,14 @@ export default function DashboardScreen() {
     }
   }, [router]);
 
+  const handleDeleteForm = useCallback(async (form: PendingForm) => {
+    await deleteLocalForm(form.id);
+    loadData();
+  }, [loadData]);
+
   const renderItem = useCallback(({ item }: { item: PendingForm }) => (
-    <FormItem form={item} primaryColor={primary} onEdit={handleEditForm} />
-  ), [primary, handleEditForm]);
+    <FormItem form={item} primaryColor={primary} onEdit={handleEditForm} onDelete={handleDeleteForm} />
+  ), [primary, handleEditForm, handleDeleteForm]);
 
   const handleSwitchCampaign = useCallback(async (campaignId: string) => {
     await switchCampaign(campaignId);

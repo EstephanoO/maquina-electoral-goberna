@@ -93,6 +93,13 @@ async function initTables(database: SQLite.SQLiteDatabase): Promise<void> {
     // Column already exists — expected on subsequent launches
   }
 
+  // Migration: add ghost_count to track how many times a form was detected as ghost
+  try {
+    await database.execAsync(`ALTER TABLE pending_forms ADD COLUMN ghost_count INTEGER NOT NULL DEFAULT 0;`);
+  } catch {
+    // Column already exists — expected on subsequent launches
+  }
+
   // Index for efficient sync queries
   await database.execAsync(`
     CREATE INDEX IF NOT EXISTS idx_forms_sync_status 

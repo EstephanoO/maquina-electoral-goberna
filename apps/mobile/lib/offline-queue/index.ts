@@ -63,6 +63,7 @@ export {
   markFormsAsRejected,
   markFormsAsGhost,
   getSyncedClientIds,
+  deleteLocalForm,
   type FormPayload,
   type PendingForm,
 } from './forms';

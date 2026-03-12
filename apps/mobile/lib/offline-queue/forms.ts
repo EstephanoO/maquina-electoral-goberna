@@ -267,6 +267,14 @@ export async function getAllLocalForms(limit = 50): Promise<PendingForm[]> {
 }
 
 /**
+ * Delete a local form by ID (used when agent dismisses a rejected/ghost form)
+ */
+export async function deleteLocalForm(id: number): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync('DELETE FROM pending_forms WHERE id = ?', [id]);
+}
+
+/**
  * Get local forms for a specific campaign
  */
 export async function getLocalFormsByCampaign(campaignId: string, limit = 50): Promise<PendingForm[]> {
@@ -287,19 +295,35 @@ export async function getLocalFormsByCampaign(campaignId: string, limit = 50): P
  * Mark forms as ghost — they were marked "synced" locally but the server
  * doesn't have them (dropped by write-behind dedup or other failures).
  * Ghost forms are re-queued for sync (sync service picks up 'ghost' like 'pending').
+ * Increments ghost_count each time. After MAX_GHOST_RETRIES, marks as rejected permanently.
  */
+const MAX_GHOST_RETRIES = 1; // one retry, then permanent rejection
+
 export async function markFormsAsGhost(ids: number[]): Promise<void> {
   if (ids.length === 0) return;
 
   const db = await getDatabase();
   const placeholders = ids.map(() => '?').join(',');
 
+  // First: mark forms that have already retried as rejected (permanent)
+  await db.runAsync(
+    `UPDATE pending_forms
+     SET sync_status = 'rejected',
+         reject_reason = 'El servidor no aceptó este registro después de reintentarlo. Es posible que el número ya fue registrado por otro agente.'
+     WHERE id IN (${placeholders})
+       AND ghost_count >= ${MAX_GHOST_RETRIES}`,
+    ids,
+  );
+
+  // Then: mark the rest as ghost for retry (increment ghost_count)
   await db.runAsync(
     `UPDATE pending_forms
      SET sync_status = 'ghost',
          sync_attempts = 0,
+         ghost_count = ghost_count + 1,
          last_error = 'No confirmado por el servidor — se reintentará'
-     WHERE id IN (${placeholders})`,
+     WHERE id IN (${placeholders})
+       AND sync_status != 'rejected'`,
     ids,
   );
 }
