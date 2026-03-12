@@ -26,6 +26,11 @@ type Props = {
   /** How many periods back from "current" (0 = today/this week/this month, -1 = yesterday/last week, etc.) */
   offset: number;
   onOffsetChange: (offset: number) => void;
+  /** Currently selected region (null = all) */
+  region: string | null;
+  onRegionChange: (region: string | null) => void;
+  /** Available region names (derived from forms data) */
+  availableRegions: string[];
 };
 
 /* ========== Date Helpers ========== */
@@ -150,7 +155,7 @@ const PERIODS: { key: PipelinePeriod; label: string }[] = [
   { key: "all", label: "Todo" },
 ];
 
-export function PipelineFilters({ period, onChange, primaryColor, offset, onOffsetChange }: Props) {
+export function PipelineFilters({ period, onChange, primaryColor, offset, onOffsetChange, region, onRegionChange, availableRegions }: Props) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const ranges = useMemo(() => getDateRanges(period, offset), [period, offset]);
@@ -173,7 +178,7 @@ export function PipelineFilters({ period, onChange, primaryColor, offset, onOffs
   }, [period, ranges]);
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5">
+    <div className="flex items-center gap-3 px-4 py-2.5 flex-wrap">
       {/* Period pills */}
       <div className={`flex rounded-lg overflow-hidden ${isDark ? "border border-[#2a303b] bg-[#090D15]" : "border border-slate-200 bg-white"}`}>
         {PERIODS.map((p) => {
@@ -191,6 +196,38 @@ export function PipelineFilters({ period, onChange, primaryColor, offset, onOffs
           );
         })}
       </div>
+
+      {/* Region filter dropdown */}
+      {availableRegions.length > 1 && (
+        <div className="relative">
+          <select
+            value={region ?? ""}
+            onChange={(e) => onRegionChange(e.target.value || null)}
+            className={`appearance-none pl-2.5 pr-6 py-1 text-[11px] font-semibold rounded-lg cursor-pointer transition-colors ${
+              isDark
+                ? "border border-[#2a303b] bg-[#090D15] text-slate-200 hover:border-[#343b47]"
+                : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+            }`}
+            style={region ? { borderColor: primaryColor, color: primaryColor } : undefined}
+          >
+            <option value="">Todas las regiones</option>
+            {availableRegions.map((r) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+          {/* Custom chevron */}
+          <svg
+            width="10" height="10" viewBox="0 0 24 24" fill="none"
+            stroke={region ? primaryColor : (isDark ? "#94a3b8" : "#94a3b8")}
+            strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none"
+            role="img" aria-label="Expandir"
+          >
+            <title>Expandir</title>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+      )}
 
       {/* ← date/range → navigation */}
       {period !== "all" && (

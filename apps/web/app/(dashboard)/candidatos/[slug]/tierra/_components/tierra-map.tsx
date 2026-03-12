@@ -51,6 +51,7 @@ import {
   CLUSTER_RING_PAINT, CLUSTER_CIRCLE_PAINT, CLUSTER_RING_DARK_PAINT, CLUSTER_CIRCLE_DARK_PAINT,
   CLUSTER_COUNT_LAYOUT, CLUSTER_COUNT_PAINT,
   FORM_POINTS_PAINT, FORM_POINTS_DARK_PAINT, FORM_POINTS_DARK_GLOW_PAINT,
+  NEW_POINT_PULSE_PAINT, NEW_POINT_PULSE_DARK_PAINT, NEW_POINT_GLOW_PAINT,
   AGENT_SELECTED_FILTER, AGENT_CONNECTED_FILTER, AGENT_PULSE_PAINT,
   AGENT_LABELS_LAYOUT, AGENT_LABELS_PAINT, AGENT_COUNT_LAYOUT, AGENT_COUNT_PAINT,
   ROUTE_LINE_PAINT, ROUTE_LINE_LAYOUT, ROUTE_CASING_PAINT,
@@ -66,6 +67,7 @@ import { useZoneTooltip } from "./hooks/use-zone-tooltip";
 import { useFormTooltip } from "./hooks/use-form-tooltip";
 import { useMapClick } from "./hooks/use-map-click";
 import { useMapResize } from "./hooks/use-map-resize";
+import { usePulseAnimation } from "./hooks/use-pulse-animation";
 import { reverseGeocode } from "@/lib/services/geo";
 
 /* ========== Component (P6 — wrapped with memo) ========== */
@@ -151,7 +153,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── Hooks ───
   const filters = useDrillFilters(drillState, campaignId);
   const agentsGeoJson = useAgentsSource(agents, selectedAgentId);
-  const { formsGeoJson, barsGeoJson } = useFormSources(forms, selectedAgentId, barsZoom);
+  const { formsGeoJson, barsGeoJson, newPointsGeoJson, hasNewPoints } = useFormSources(forms, selectedAgentId, barsZoom);
   const { routesGeoJson, waypointsGeoJson } = useSurveyorRoutes(forms, selectedAgentId);
 
   useAutoFit(mapRef, drillState, skipNextFitRef, disableAutoFitRef);
@@ -264,8 +266,19 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     "circle-stroke-opacity": 1,
   }), [primaryColor]);
 
+  // ─── Pulse paint (theme-aware) ───
+  const pulsePaint = useMemo(
+    () => (mapTheme === "dark" ? NEW_POINT_PULSE_DARK_PAINT : NEW_POINT_PULSE_PAINT),
+    [mapTheme],
+  );
+
+  // ─── Pulse animation (requestAnimationFrame driven) ───
+  usePulseAnimation(mapRef, hasNewPoints && showDatos && datosVizMode === "points", mapTheme === "dark");
+
   // ─── P1: Visibility layout objects for always-mounted Sources ───
   const pointsVisibility = useMemo(() => showDatos && datosVizMode === "points" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
+  const pulseVisibility = useMemo(() => showDatos && datosVizMode === "points" && hasNewPoints ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode, hasNewPoints]);
+  const pulseGlowVisibility = useMemo(() => showDatos && datosVizMode === "points" && hasNewPoints && mapTheme === "dark" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode, hasNewPoints, mapTheme]);
   const pointsGlowVisibility = useMemo(() => showDatos && datosVizMode === "points" && mapTheme === "dark" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode, mapTheme]);
   const heatmapVisibility = useMemo(() => showDatos && datosVizMode === "heatmap" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
   const barsVisibility = useMemo(() => showDatos && datosVizMode === "bars3d" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
@@ -706,6 +719,12 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         <Source id="forms-bars" type="geojson" data={barsGeoJson}>
           <Layer id="forms-bars-3d" type="fill-extrusion" layout={barsVisibility} paint={BARS_EXTRUSION_PAINT} />
           <Layer id="forms-bars-outline" type="line" layout={barsVisibility} paint={BARS_LINE_PAINT} />
+        </Source>
+
+        {/* ── New-point pulse rings — separate source, not clustered ── */}
+        <Source id="forms-new-points" type="geojson" data={newPointsGeoJson}>
+          <Layer id="forms-new-glow" type="circle" layout={pulseGlowVisibility} paint={NEW_POINT_GLOW_PAINT} />
+          <Layer id="forms-new-pulse" type="circle" layout={pulseVisibility} paint={pulsePaint} />
         </Source>
 
         {/* ── Agent markers — always mounted, visibility controlled via layout ── */}

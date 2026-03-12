@@ -186,6 +186,38 @@ export const FORM_POINTS_DARK_PAINT: CircleLayerSpecification["paint"] = {
   "circle-stroke-opacity": 0.9,
 };
 
+/* ─── New-point pulse paints (animated via JS — see use-pulse-animation.ts) ─── */
+
+/**
+ * The pulse ring layer is driven by requestAnimationFrame.
+ * These are the BASE values; the hook overwrites circle-radius and circle-opacity each frame.
+ */
+export const NEW_POINT_PULSE_PAINT: CircleLayerSpecification["paint"] = {
+  "circle-radius": 6,
+  "circle-color": "transparent",
+  "circle-opacity": 0,
+  "circle-stroke-width": 2.5,
+  "circle-stroke-color": ["coalesce", ["get", "point_color"], "#34f5a4"],
+  "circle-stroke-opacity": 0.8,
+};
+
+export const NEW_POINT_PULSE_DARK_PAINT: CircleLayerSpecification["paint"] = {
+  "circle-radius": 6,
+  "circle-color": "transparent",
+  "circle-opacity": 0,
+  "circle-stroke-width": 2,
+  "circle-stroke-color": ["coalesce", ["get", "point_color"], "#34f5a4"],
+  "circle-stroke-opacity": 0.9,
+};
+
+/** Glow ring behind the pulse (dark theme only) */
+export const NEW_POINT_GLOW_PAINT: CircleLayerSpecification["paint"] = {
+  "circle-radius": 6,
+  "circle-color": ["coalesce", ["get", "point_glow"], "rgba(52,245,164,0.45)"],
+  "circle-opacity": 0,
+  "circle-blur": 0.9,
+};
+
 /* ─── Agent paints (static) ─── */
 
 export const AGENT_SELECTED_FILTER: FilterSpecification = ["==", ["get", "is_selected"], 1];

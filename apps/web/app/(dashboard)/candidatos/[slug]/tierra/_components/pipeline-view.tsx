@@ -60,6 +60,11 @@ type Props = {
   /** Period offset for time navigation (0 = current, -1 = previous, etc.) */
   offset: number;
   onOffsetChange: (offset: number) => void;
+  /** Region filter: null = all, string = departamento name */
+  region: string | null;
+  onRegionChange: (r: string | null) => void;
+  /** Available regions derived from forms data */
+  availableRegions: string[];
   periodLabel: string;
   dateRanges: PipelineDateRanges;
   totalDatos: number;
@@ -73,7 +78,9 @@ type Props = {
 
 export const PipelineView = memo(function PipelineView({
   campaignId, brigadistas, prevBrigadistas, isLoading, isPending, primaryColor, secondaryColor,
-  forms, prevForms, agents, period, onPeriodChange, offset, onOffsetChange, periodLabel, dateRanges,
+  forms, prevForms, agents, period, onPeriodChange, offset, onOffsetChange,
+  region, onRegionChange, availableRegions,
+  periodLabel, dateRanges,
   totalDatos, serverTotals, agentesCampoCount, metaDatos,
 }: Props) {
   const { theme } = useTheme();
@@ -155,7 +162,7 @@ export const PipelineView = memo(function PipelineView({
       <div className={`hide-scrollbar tierra-pipeline-view h-full flex flex-col min-h-0 overflow-y-auto transition-opacity duration-150 ${isDark ? "bg-[#090D15]" : "bg-slate-50/80"} ${isPending ? "opacity-70" : "opacity-100"}`}>
       {/* 1. Filter bar */}
       <div className={`shrink-0 ${isDark ? "border-b border-[#2a303b] bg-[#090D15]" : "border-b border-slate-100 bg-white"}`}>
-        <PipelineFilters period={period} onChange={onPeriodChange} primaryColor={primaryColor} offset={offset} onOffsetChange={onOffsetChange} />
+        <PipelineFilters period={period} onChange={onPeriodChange} primaryColor={primaryColor} offset={offset} onOffsetChange={onOffsetChange} region={region} onRegionChange={onRegionChange} availableRegions={availableRegions} />
       </div>
 
       {/* Agent drill-down banner (1 selected) */}

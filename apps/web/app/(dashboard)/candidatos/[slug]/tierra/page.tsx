@@ -408,6 +408,9 @@ export default function TierraPage() {
             onPeriodChange={pipeline.onPeriodChange}
             offset={pipeline.offset}
             onOffsetChange={pipeline.onOffsetChange}
+            region={pipeline.region}
+            onRegionChange={pipeline.onRegionChange}
+            availableRegions={pipeline.availableRegions}
             periodLabel={pipeline.periodLabel}
             dateRanges={pipeline.dateRanges}
             totalDatos={stats.totals.forms_count}
