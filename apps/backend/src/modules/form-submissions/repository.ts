@@ -296,17 +296,26 @@ export async function getMyDeptRanking(
   userId: string,
   limit = 20,
 ): Promise<DeptRankingResult> {
-  // Step 1: Determine the agent's primary department (most frequent in their submissions)
+  // Step 1: Determine the agent's primary department.
+  // First try: most frequent departamento in their form_submissions.
+  // Fallback: user_campaigns.region (normalized: underscores → spaces, uppercased).
   const { rows: deptRows } = await pool.query<{ departamento: string }>(
-    `SELECT data->>'departamento' AS departamento
-     FROM form_submissions
-     WHERE campaign_id = $1
-       AND submitted_by = $2
-       AND deleted_at IS NULL
-       AND COALESCE(data->>'departamento', '') != ''
-     GROUP BY data->>'departamento'
-     ORDER BY COUNT(*) DESC
-     LIMIT 1`,
+    `SELECT COALESCE(
+       (SELECT data->>'departamento'
+        FROM form_submissions
+        WHERE campaign_id = $1
+          AND submitted_by = $2
+          AND deleted_at IS NULL
+          AND COALESCE(data->>'departamento', '') != ''
+        GROUP BY data->>'departamento'
+        ORDER BY COUNT(*) DESC
+        LIMIT 1),
+       (SELECT UPPER(REPLACE(region, '_', ' '))
+        FROM user_campaigns
+        WHERE campaign_id = $1
+          AND user_id = $2
+          AND COALESCE(region, '') != '')
+     ) AS departamento`,
     [campaignId, userId],
   );
 
