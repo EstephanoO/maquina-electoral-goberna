@@ -132,11 +132,13 @@ Tu trabajo: dado un mensaje en español, generar UNA query SQL segura y responde
 
 CONTEXTO CLAVE — CAMPAÑAS vs AGENTES:
 - Las campañas llevan nombre de candidatos: "César Vásquez", "Ernesto Bustamante", "Fuerza Popular", etc.
-- Cuando el usuario dice "de César Vásquez", "de Ernesto", "de Fuerza Popular" = se refiere a la CAMPAÑA (filtrar por campaigns.name o campaigns.slug).
-- Los agentes de campo son quienes CAPTURAN formularios. Sus nombres están en forms.encuestador o users.full_name.
-- "reporte de territorio" o "datos de territorio" = formularios capturados (form_submissions o forms).
+- Cuando el usuario dice "de César Vásquez", "de Ernesto", "de Fuerza Popular" = se refiere a la CAMPAÑA (filtrar por campaigns.slug).
+- Cuando el usuario dice un nombre que NO es de campaña (ej: "Mónica Sánchez", "Juan García", "Elmer Alaya") = se refiere a un AGENTE (filtrar por users.full_name).
+- Para distinguir: si el nombre coincide con un slug de campaña conocido → es campaña. Si no → es agente de campo (buscar en users.full_name).
+- "reporte de territorio" o "datos de territorio" = formularios capturados (form_submissions).
 - "reporte de digital" o "datos de digital" = eventos CMS (cms_extension_events) y contactos WhatsApp.
-- Si el usuario dice "de hoy" y hay muy pocos datos, incluye también "ayer" para dar contexto útil. Indica claramente cuáles son de hoy y cuáles de ayer.
+- "actividad del día", "cómo fue su día", "a qué horas subió" = timeline por hora (agrupar por date_trunc('hour', created_at)).
+- Si el usuario dice "de hoy" y hay muy pocos datos, incluye también "ayer" para dar contexto. Indica claramente cuáles son de hoy y cuáles de ayer.
 
 REGLAS ESTRICTAS:
 1. SOLO genera SELECT. NUNCA INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE.
@@ -160,18 +162,35 @@ CAMPAÑAS ACTIVAS Y SUS SLUGS (usar slug para buscar):
 cesar-vasquez, ernesto-bustamante, fernando-rospigliosi, fuerza-popular, ahora-nacion, peru-primero, edwards-infante, guillermo-aliaga, rosangella-barbaran, rocio-porras, renovacion-popular, yessenia-lozano, pais-para-todos, donald-trump, joe-biden
 
 QUERIES TÍPICAS QUE DEBES SABER GENERAR:
-- "reporte de hoy de César Vásquez" →
+
+1. "reporte de hoy de César Vásquez" (por campaña) →
   SELECT COALESCE(u.full_name, fs.data->>'encuestador') as agente, COUNT(*) as registros
-  FROM form_submissions fs
-  JOIN campaigns c ON fs.campaign_id = c.id
+  FROM form_submissions fs JOIN campaigns c ON fs.campaign_id = c.id
   LEFT JOIN users u ON fs.submitted_by = u.id
   WHERE c.slug = 'cesar-vasquez'
   AND (fs.created_at AT TIME ZONE 'America/Lima')::date = (now() AT TIME ZONE 'America/Lima')::date
   AND fs.deleted_at IS NULL
   GROUP BY agente ORDER BY registros DESC LIMIT 30
-- "top agentes de Lambayeque" → form_submissions con data->>'departamento' ILIKE '%lambayeque%' agrupado por agente con COUNT, ORDER BY count DESC.
-- "cómo va la semana" → total formularios + agentes activos + meets activos en un solo resumen.
-- "busca al usuario 955135501" → users WHERE phone LIKE '%955135501%'.
+
+2. "actividad de Mónica Sánchez el 11 de marzo" (por agente, timeline por hora) →
+  SELECT to_char(date_trunc('hour', fs.created_at AT TIME ZONE 'America/Lima'), 'HH12:MI AM') as hora,
+    COUNT(*) as registros,
+    MIN(to_char(fs.created_at AT TIME ZONE 'America/Lima', 'HH12:MI AM')) as primer_registro,
+    MAX(to_char(fs.created_at AT TIME ZONE 'America/Lima', 'HH12:MI AM')) as ultimo_registro
+  FROM form_submissions fs JOIN users u ON fs.submitted_by = u.id
+  WHERE unaccent(u.full_name) ILIKE unaccent('%monica sanchez%')
+  AND (fs.created_at AT TIME ZONE 'America/Lima')::date = '2026-03-11'
+  AND fs.deleted_at IS NULL
+  GROUP BY date_trunc('hour', fs.created_at AT TIME ZONE 'America/Lima')
+  ORDER BY hora
+
+3. "top agentes de Lambayeque" → form_submissions con data->>'departamento' ILIKE '%lambayeque%', agrupar por agente, ORDER BY count DESC.
+
+4. "cómo va la semana" → total formularios + agentes activos + meets activos.
+
+5. "busca al usuario 955135501" → users WHERE phone LIKE '%955135501%'.
+
+6. "registro de actividad del día de X" → usar el patrón del ejemplo 2 (timeline por hora) con nombre de agente.
 
 FORMATO DE RESPUESTA (JSON estricto, sin markdown, sin backticks):
 {"intent":"query","sql":"SELECT ...","descripcion":"qué muestra esta query","tipo":"ranking|resumen|detalle|lista"}
@@ -182,6 +201,7 @@ El campo "tipo" clasifica la respuesta:
 - "resumen": cifras agregadas generales (totales, promedios, conteos)
 - "detalle": información de una persona o entidad específica
 - "lista": listado de items (meets, campañas, zonas, etc)
+- "timeline": actividad cronológica por hora de un agente en un día
 
 NUNCA generes otra cosa que no sea ese JSON.`;
 
@@ -279,7 +299,24 @@ async function geminiFormatResponse(
 
   const datosStr = JSON.stringify(rows.slice(0, 30), null, 2);
 
-  const templateGuide = tipo === "ranking"
+  const templateGuide = tipo === "timeline"
+    ? `FORMATO TIMELINE — actividad de un agente en el día:
+
+📋 *Actividad de [Nombre del agente]*
+📅 [Fecha]
+
+🕐 [Hora] — *[N]* registros  _(primer: HH:MM, último: HH:MM)_
+🕑 [Hora] — *[N]* registros  _(primer: HH:MM, último: HH:MM)_
+🕒 [Hora] — *[N]* registros  _(primer: HH:MM, último: HH:MM)_
+...
+
+📊 *Total del día:* [N] registros
+⏱ *Actividad:* [hora inicio] — [hora fin]
+🔥 *Hora más productiva:* [Hora] con [N] registros
+
+Reglas: una línea por hora activa. Si hay registros a las 00:00, indica entre paréntesis "(sync nocturno — probablemente cargados offline)". Negrita en números.`
+
+    : tipo === "ranking"
     ? `FORMATO RANKING — usa este template exacto:
 
 🏆 *[Título descriptivo]*
