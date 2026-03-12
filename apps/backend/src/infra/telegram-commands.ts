@@ -718,6 +718,7 @@ type MetaCalc = {
   restante: number;
   dias_restantes: number;
   agentes_campo: number;
+  agentes_campo_total: number;
   meta_diaria_agente: number;
   pct_progreso: number;
 };
@@ -743,17 +744,25 @@ async function calcularMeta(campaignSlug: string): Promise<MetaCalc | null> {
     WHERE campaign_id = $1 AND deleted_at IS NULL
   `, [c.id]);
 
-  const { rows: agentes } = await pool.query(`
+  const { rows: agentesTotales } = await pool.query(`
     SELECT COUNT(DISTINCT user_id) as total
     FROM user_campaigns
     WHERE campaign_id = $1 AND role = 'agente_campo'
+  `, [c.id]);
+
+  const { rows: agentesActivos } = await pool.query(`
+    SELECT COUNT(DISTINCT submitted_by) as activos
+    FROM form_submissions
+    WHERE campaign_id = $1 AND deleted_at IS NULL
+    AND created_at >= now() - interval '7 days'
   `, [c.id]);
 
   const metaTotal = Number(c.meta_total);
   const bufferPct = Number(c.buffer_pct);
   const datosActuales = Number((datos[0] as Record<string,unknown>).total);
   const datosDedup = Number((datos[0] as Record<string,unknown>).dedup);
-  const agentesCampo = Math.max(1, Number((agentes[0] as Record<string,unknown>).total));
+  const agentesCampoTotal = Math.max(1, Number((agentesTotales[0] as Record<string,unknown>).total));
+  const agentesCampo = Math.max(1, Number((agentesActivos[0] as Record<string,unknown>).activos));
 
   const electionDate = c.election_date as string;
   const hoyLima = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Lima" }));
@@ -775,6 +784,7 @@ async function calcularMeta(campaignSlug: string): Promise<MetaCalc | null> {
     restante,
     dias_restantes: diasRestantes,
     agentes_campo: agentesCampo,
+    agentes_campo_total: agentesCampoTotal,
     meta_diaria_agente: metaDiariaAgente,
     pct_progreso: pctProgreso,
   };
@@ -815,7 +825,7 @@ async function buildMetaReport(campaignSlug: string): Promise<string> {
     `📋 Restante: *${meta.restante.toLocaleString()}* registros`,
     ``,
     `📅 *Elección:* ${eleccionStr} (*${meta.dias_restantes} días*)`,
-    `👥 *Agentes de campo:* ${meta.agentes_campo}`,
+    `👥 *Agentes activos (7d):* ${meta.agentes_campo} de ${meta.agentes_campo_total} registrados`,
     `📈 *Buffer inactivos:* +${meta.buffer_pct}%`,
     ``,
     `⚡ *Meta diaria por agente: ${meta.meta_diaria_agente} registros*`,
