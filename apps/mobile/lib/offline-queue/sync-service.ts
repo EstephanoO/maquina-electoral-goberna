@@ -46,6 +46,7 @@ import {
   markFormsAsSyncing,
   markFormsAsSynced,
   markFormsAsFailed,
+  markFormsAsRejected,
   cleanupSyncedForms,
   getFormQueueStats,
   type PendingForm,
@@ -300,9 +301,22 @@ async function syncForms(): Promise<{ synced: number; failed: number }> {
         await markFormsAsSynced([form.id]);
         synced++;
       } else if (response.status === 409) {
-        // Conflict = already exists = consider it synced
-        await markFormsAsSynced([form.id]);
-        synced++;
+        // 409 = duplicate phone or already exists
+        // Parse the response to get the rejection reason for the agent
+        let reason = 'Numero de telefono ya registrado en esta campana';
+        try {
+          const body = await response.json() as { code?: string; message?: string; duplicated_phones?: string[] };
+          if (body.code === 'DUPLICATE_PHONE') {
+            const phones = body.duplicated_phones?.join(', ') ?? '';
+            reason = phones
+              ? `Telefono duplicado: ${phones}`
+              : (body.message ?? reason);
+          }
+        } catch {
+          // Fallback to default reason
+        }
+        await markFormsAsRejected([form.id], reason);
+        failed++;
       } else {
         const errorText = await response.text().catch(() => 'Unknown error');
         await markFormsAsFailed([form.id], `HTTP ${response.status}: ${errorText}`);

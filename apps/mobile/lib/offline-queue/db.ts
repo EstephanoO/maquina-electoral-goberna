@@ -86,6 +86,13 @@ async function initTables(database: SQLite.SQLiteDatabase): Promise<void> {
     );
   `);
   
+  // Migration: add reject_reason column for forms rejected by server (e.g. duplicate phone)
+  try {
+    await database.execAsync(`ALTER TABLE pending_forms ADD COLUMN reject_reason TEXT;`);
+  } catch {
+    // Column already exists — expected on subsequent launches
+  }
+
   // Index for efficient sync queries
   await database.execAsync(`
     CREATE INDEX IF NOT EXISTS idx_forms_sync_status 

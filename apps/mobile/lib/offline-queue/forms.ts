@@ -19,9 +19,10 @@ export interface PendingForm {
   form_definition_id: string;
   payload: string; // JSON stringified
   created_at: string;
-  sync_status: 'pending' | 'syncing' | 'synced' | 'failed';
+  sync_status: 'pending' | 'syncing' | 'synced' | 'failed' | 'rejected';
   sync_attempts: number;
   last_error: string | null;
+  reject_reason: string | null;
 }
 
 export interface FormPayload {
@@ -139,6 +140,25 @@ export async function markFormsAsFailed(ids: number[], error: string): Promise<v
 }
 
 /**
+ * Mark forms as rejected by the server (e.g. duplicate phone).
+ * These won't retry — the agent sees them in red with an explanation.
+ */
+export async function markFormsAsRejected(ids: number[], reason: string): Promise<void> {
+  if (ids.length === 0) return;
+  
+  const db = await getDatabase();
+  const placeholders = ids.map(() => '?').join(',');
+  
+  await db.runAsync(
+    `UPDATE pending_forms 
+     SET sync_status = 'rejected',
+         reject_reason = ?
+     WHERE id IN (${placeholders})`,
+    [reason, ...ids]
+  );
+}
+
+/**
  * Clean up old synced forms (keep last 7 days for auditing)
  */
 export async function cleanupSyncedForms(): Promise<number> {
@@ -161,6 +181,7 @@ export async function getFormQueueStats(): Promise<{
   syncing: number;
   synced: number;
   failed: number;
+  rejected: number;
   total: number;
 }> {
   const db = await getDatabase();
@@ -176,12 +197,13 @@ export async function getFormQueueStats(): Promise<{
     syncing: 0,
     synced: 0,
     failed: 0,
+    rejected: 0,
     total: 0,
   };
   
   for (const row of rows) {
     const status = row.sync_status as keyof typeof stats;
-    if (status in stats) {
+    if (status in stats && status !== 'total') {
       stats[status] = row.count;
     }
     stats.total += row.count;

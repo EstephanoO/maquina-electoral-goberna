@@ -60,6 +60,7 @@ export {
   getAllLocalForms,
   getLocalFormsByCampaign,
   phoneExistsLocally,
+  markFormsAsRejected,
   type FormPayload,
   type PendingForm,
 } from './forms';

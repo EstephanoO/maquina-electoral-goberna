@@ -42,7 +42,7 @@ interface HeaderProps {
   agentName: string;
   agentRole: string;
   trackingActive: boolean;
-  stats: { total: number; synced: number; pending: number };
+  stats: { total: number; synced: number; pending: number; rejected: number };
   onMenuPress: () => void;
 }
 
@@ -248,30 +248,57 @@ const FormItem = memo(function FormItem({
 
   const isSynced = form.sync_status === 'synced';
   const isFailed = form.sync_status === 'failed';
+  const isRejected = form.sync_status === 'rejected';
 
   // Format time
   const formDate = data.fecha ? new Date(data.fecha) : new Date(form.created_at);
   const timeStr = formDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
 
+  const handlePress = () => {
+    if (isRejected) {
+      Alert.alert(
+        'Registro rechazado',
+        form.reject_reason || 'Este registro fue rechazado por el servidor.',
+        [{ text: 'Entendido' }],
+      );
+    }
+  };
+
+  // Indicator color: red for rejected, primary for everything else
+  const indicatorColor = isRejected ? '#dc2626' : primaryColor;
+  // Status dot: green = synced, red = rejected/failed, yellow = pending/syncing
+  const dotColor = isSynced ? '#4ade80' : (isRejected || isFailed) ? '#f87171' : '#fbbf24';
+
   return (
-    <View style={styles.formItem}>
-      <View style={[styles.formItemIndicator, { backgroundColor: primaryColor }]} />
-      <View style={styles.formItemContent}>
-        <View style={styles.formItemRow}>
-          <Text style={styles.formItemName} numberOfLines={1}>
-            {data.nombre || 'Sin nombre'}
-          </Text>
-          <Text style={styles.formItemTime}>{timeStr}</Text>
-        </View>
-        <View style={styles.formItemRow}>
-          <Text style={styles.formItemPhone}>{data.telefono || '---'}</Text>
-          <View style={[
-            styles.statusDot,
-            { backgroundColor: isSynced ? '#4ade80' : isFailed ? '#f87171' : '#fbbf24' }
-          ]} />
+    <Pressable onPress={handlePress} disabled={!isRejected}>
+      <View style={[styles.formItem, isRejected && { backgroundColor: '#fef2f2' }]}>
+        <View style={[styles.formItemIndicator, { backgroundColor: indicatorColor }]} />
+        <View style={styles.formItemContent}>
+          <View style={styles.formItemRow}>
+            <Text
+              style={[styles.formItemName, isRejected && { color: '#dc2626' }]}
+              numberOfLines={1}
+            >
+              {data.nombre || 'Sin nombre'}
+            </Text>
+            <Text style={styles.formItemTime}>{timeStr}</Text>
+          </View>
+          <View style={styles.formItemRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+              <Text style={[styles.formItemPhone, isRejected && { color: '#dc2626' }]}>
+                {data.telefono || '---'}
+              </Text>
+              {isRejected && (
+                <Text style={{ fontSize: 10, fontFamily: FONT, color: '#dc2626', backgroundColor: '#fee2e2', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, overflow: 'hidden' }}>
+                  Duplicado
+                </Text>
+              )}
+            </View>
+            <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
+          </View>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 });
 
@@ -484,7 +511,7 @@ export default function DashboardScreen() {
   const secondary = candidate.color_secundario;
 
   const [refreshing, setRefreshing] = useState(false);
-  const [stats, setStats] = useState({ total: 0, synced: 0, pending: 0 });
+  const [stats, setStats] = useState({ total: 0, synced: 0, pending: 0, rejected: 0 });
   const [localForms, setLocalForms] = useState<PendingForm[]>([]);
   const [showMenu, setShowMenu] = useState(false);
   const [ranking, setRanking] = useState<RankingData | null>(null);
@@ -511,6 +538,7 @@ export default function DashboardScreen() {
       ]);
 
       const formsPending = queueStats.forms?.pending ?? 0;
+      const formsRejected = queueStats.forms?.rejected ?? 0;
       // Server total is the source of truth — includes all synced submissions ever sent,
       // even those already cleaned up from local SQLite (>7 days old).
       // Uses phone dedup (DISTINCT ON telefono) consistent with Pipeline/web dashboard.
@@ -519,11 +547,12 @@ export default function DashboardScreen() {
         total: serverTotal > 0 ? serverTotal + formsPending : formsPending + (queueStats.forms?.synced ?? 0),
         synced: serverTotal > 0 ? serverTotal : (queueStats.forms?.synced ?? 0),
         pending: formsPending,
+        rejected: formsRejected,
       };
 
       // Only update stats if values changed
       const prev = prevStatsRef.current;
-      if (prev.total !== newStats.total || prev.synced !== newStats.synced || prev.pending !== newStats.pending) {
+      if (prev.total !== newStats.total || prev.synced !== newStats.synced || prev.pending !== newStats.pending || prev.rejected !== newStats.rejected) {
         prevStatsRef.current = newStats;
         setStats(newStats);
       }
