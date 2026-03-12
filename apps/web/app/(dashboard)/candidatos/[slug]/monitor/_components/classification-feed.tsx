@@ -1,43 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ClassificationEvent } from "@/lib/services/classification";
 import { correctClassification } from "@/lib/services/classification";
-
-// ── Palette ────────────────────────────────────────────────────────
-const G = {
-  gold: "#FFC800",
-  goldDim: "#CC9F00",
-  goldFaint: "rgba(255,200,0,0.08)",
-  goldBorder: "rgba(255,200,0,0.22)",
-  surface: "#0c1a28",
-  surfaceUp: "#0f2035",
-  border: "rgba(255,255,255,0.06)",
-  text: "#e9eef3",
-  textMid: "#7a95aa",
-  textDim: "#334d63",
-  green: "#22c55e",
-  red: "#ef5350",
-  blue: "#3b82f6",
-  orange: "#f59e0b",
-  purple: "#a855f7",
-  cyan: "#06b6d4",
-} as const;
+import { MONITOR_THEME as G } from "./theme";
 
 const VOTE_CLASS_BADGE: Record<string, { label: string; color: string; bg: string }> = {
-  duro: { label: "DURO", color: "#22c55e", bg: "rgba(34,197,94,0.15)" },
-  blando: { label: "BLANDO", color: "#f59e0b", bg: "rgba(245,158,11,0.15)" },
-  flotante: { label: "FLOTANTE", color: "#a855f7", bg: "rgba(168,85,247,0.15)" },
+  duro: { label: "DURO", color: G.green, bg: G.greenSoft },
+  blando: { label: "BLANDO", color: G.orange, bg: G.orangeSoft },
+  flotante: { label: "FLOTANTE", color: G.purple, bg: G.purpleSoft },
 };
 
 const STATUS_BADGE: Record<string, { label: string; color: string }> = {
-  respondido: { label: "Respondido", color: G.blue },
+  respondido: { label: "Respondido", color: G.sky },
   invalido: { label: "Invalido", color: G.red },
 };
 
 const SOURCE_BADGE: Record<string, { label: string; color: string }> = {
-  auto: { label: "AUTO", color: G.cyan },
-  manual: { label: "MANUAL", color: G.gold },
+  auto: { label: "AUTO", color: G.sky },
+  manual: { label: "MANUAL", color: G.brandGold },
   correction: { label: "CORRECCION", color: G.orange },
 };
 
@@ -80,7 +61,7 @@ function ConfidenceBar({ value }: { value: number }) {
   const color = pct >= 85 ? G.green : pct >= 70 ? G.orange : G.red;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <div style={{ width: 50, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+      <div style={{ width: 50, height: 6, borderRadius: 999, background: G.surfaceSoft, overflow: "hidden" }}>
         <div style={{ height: "100%", width: `${pct}%`, borderRadius: 2, background: color, transition: "width 0.3s ease" }} />
       </div>
       <span style={{ fontSize: 10, fontWeight: 700, color, minWidth: 28 }}>{pct}%</span>
@@ -114,22 +95,22 @@ function CorrectionEditor({
   };
 
   const selectStyle: React.CSSProperties = {
-    padding: "4px 8px", borderRadius: 6, fontSize: 11, fontWeight: 700,
-    background: G.surfaceUp, color: G.text, border: `1px solid ${G.goldBorder}`,
+    padding: "8px 10px", borderRadius: 10, fontSize: 11, fontWeight: 700,
+    background: G.bg, color: G.text, border: `1px solid ${G.borderStrong}`,
     cursor: "pointer", outline: "none",
   };
   const btnStyle = (bg: string, color: string): React.CSSProperties => ({
-    padding: "4px 12px", borderRadius: 6, fontSize: 11, fontWeight: 800,
-    background: bg, color, border: "none", cursor: saving ? "not-allowed" : "pointer",
+    padding: "8px 12px", borderRadius: 10, fontSize: 11, fontWeight: 800,
+    background: bg, color, border: bg === "transparent" ? `1px solid ${G.borderStrong}` : "none", cursor: saving ? "not-allowed" : "pointer",
     opacity: saving ? 0.6 : 1,
   });
 
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 8,
-      padding: "8px 12px", marginTop: 6,
-      background: "rgba(255,200,0,0.05)", borderRadius: 8,
-      border: `1px solid ${G.goldBorder}`,
+      padding: "12px", marginTop: 8, flexWrap: "wrap",
+      background: G.surfaceSoft, borderRadius: 14,
+      border: `1px solid ${G.border}`,
     }}>
       <select value={voteClass} onChange={e => setVoteClass(e.target.value)} style={selectStyle}>
         <option value="duro">Duro</option>
@@ -141,7 +122,7 @@ function CorrectionEditor({
         <option value="respondido">Respondido</option>
         <option value="invalido">Invalido</option>
       </select>
-      <button type="button" onClick={handleSave} disabled={saving} style={btnStyle(G.gold, "#0e2640")}>
+      <button type="button" onClick={handleSave} disabled={saving} style={btnStyle(G.brandBlue, G.bg)}>
         {saving ? "..." : "Guardar"}
       </button>
       <button type="button" onClick={onCancel} style={btnStyle("transparent", G.textMid)}>
@@ -171,13 +152,14 @@ function EventRow({
 
   return (
     <div style={{
-      padding: "12px 16px",
-      background: isCorrected ? "rgba(255,200,0,0.03)" : G.surface,
-      border: `1px solid ${isCorrected ? G.goldBorder : G.border}`,
-      borderRadius: 10,
-      display: "flex", flexDirection: "column", gap: 6,
-      transition: "all 0.2s",
-    }}>
+        padding: "16px 18px",
+        background: G.surface,
+        border: `1px solid ${isCorrected ? G.orange : G.border}`,
+        borderRadius: 16,
+        boxShadow: "0 10px 28px rgba(22,57,96,0.06)",
+        display: "flex", flexDirection: "column", gap: 6,
+        transition: "border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease",
+      }}>
       {/* Top row: source + name/phone + time */}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         {/* Source badge */}
@@ -210,7 +192,7 @@ function EventRow({
         {/* Category */}
         <span style={{
           padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
-          color: G.textMid, background: "rgba(255,255,255,0.05)",
+          color: G.textMid, background: G.surfaceSoft,
         }}>
           {CATEGORY_LABELS[event.category] || event.category || "---"}
         </span>
@@ -239,7 +221,7 @@ function EventRow({
         {isCorrected && (
           <span style={{
             padding: "2px 8px", borderRadius: 4, fontSize: 9, fontWeight: 900,
-            color: G.orange, background: "rgba(245,158,11,0.12)",
+            color: G.orange, background: G.orangeSoft,
           }}>
             CORREGIDO por {event.corrected_by_name || "---"}
           </span>
@@ -254,9 +236,9 @@ function EventRow({
             onClick={() => setEditing(true)}
             style={{
               padding: "3px 10px", borderRadius: 5, fontSize: 10, fontWeight: 700,
-              color: G.goldDim, background: "transparent",
-              border: `1px solid ${G.goldBorder}`, cursor: "pointer",
-            }}
+               color: G.brandBlue, background: G.bg,
+               border: `1px solid ${G.borderStrong}`, cursor: "pointer",
+             }}
           >
             Corregir
           </button>
@@ -266,9 +248,9 @@ function EventRow({
       {/* Message preview */}
       {event.message_text && (
         <div style={{
-          fontSize: 11, color: G.textMid, lineHeight: 1.4,
-          padding: "6px 10px", borderRadius: 6,
-          background: "rgba(255,255,255,0.02)",
+          fontSize: 11, color: G.textMid, lineHeight: 1.5,
+          padding: "10px 12px", borderRadius: 10,
+          background: G.surfaceAlt,
           maxHeight: 60, overflow: "hidden",
           fontStyle: "italic",
         }}>
@@ -321,27 +303,47 @@ export function ClassificationFeed({
 }) {
   const filterBarStyle: React.CSSProperties = {
     display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
-    padding: "10px 0", borderBottom: `1px solid ${G.border}`, marginBottom: 12,
+    padding: "14px 16px", borderBottom: `1px solid ${G.border}`, marginBottom: 14,
+    background: G.surfaceAlt, borderRadius: 16,
   };
   const selectStyle: React.CSSProperties = {
-    padding: "5px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700,
-    background: G.surfaceUp, color: G.text, border: `1px solid ${G.border}`,
+    padding: "8px 10px", borderRadius: 10, fontSize: 11, fontWeight: 700,
+    background: G.bg, color: G.text, border: `1px solid ${G.borderStrong}`,
     cursor: "pointer", outline: "none",
   };
+  const requestingMoreRef = useRef(false);
+
+  useEffect(() => {
+    if (!loading) {
+      requestingMoreRef.current = false;
+    }
+  }, [loading]);
+
+  function handleFeedScroll(event: React.UIEvent<HTMLDivElement>) {
+    if (!hasMore || loading || requestingMoreRef.current) return;
+
+    const element = event.currentTarget;
+    const remaining = element.scrollHeight - element.scrollTop - element.clientHeight;
+
+    if (remaining > 120) return;
+
+    requestingMoreRef.current = true;
+    onLoadMore();
+  }
 
   return (
-    <div>
+    <div style={{ background: G.surface, border: `1px solid ${G.borderStrong}`, borderRadius: 24, padding: 16, boxShadow: "none" }}>
       {/* Filters bar */}
       <div style={filterBarStyle}>
-        <span style={{ fontSize: 11, fontWeight: 800, color: G.goldDim, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: G.brandBlue, textTransform: "uppercase", letterSpacing: "0.5px" }}>
           Filtros:
         </span>
-        <select value={filters.source} onChange={e => onFilterChange("source", e.target.value)} style={selectStyle}>
+        <select aria-label="Filtrar por origen" value={filters.source} onChange={e => onFilterChange("source", e.target.value)} style={selectStyle}>
           <option value="">Todos los origenes</option>
           <option value="auto">Auto</option>
           <option value="manual">Manual</option>
         </select>
-        <select value={filters.category} onChange={e => onFilterChange("category", e.target.value)} style={selectStyle}>
+        <select aria-label="Filtrar por categoria" value={filters.category} onChange={e => onFilterChange("category", e.target.value)} style={selectStyle}>
           <option value="">Todas las categorias</option>
           <option value="pide_dinero">Pide Dinero</option>
           <option value="pide_trabajo">Pide Trabajo</option>
@@ -353,7 +355,7 @@ export function ClassificationFeed({
           <option value="apoyo_condicional">Condicional</option>
           <option value="indeciso">Indeciso</option>
         </select>
-        <select value={filters.vote_class} onChange={e => onFilterChange("vote_class", e.target.value)} style={selectStyle}>
+        <select aria-label="Filtrar por clase de voto" value={filters.vote_class} onChange={e => onFilterChange("vote_class", e.target.value)} style={selectStyle}>
           <option value="">Todas las clases</option>
           <option value="duro">Duro</option>
           <option value="blando">Blando</option>
@@ -362,9 +364,9 @@ export function ClassificationFeed({
       </div>
 
       {/* Events list */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div onScroll={handleFeedScroll} style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "64.8vh", overflowY: "auto", paddingRight: 4 }}>
         {events.length === 0 && !loading && (
-          <div style={{ padding: 40, textAlign: "center", color: G.textDim, fontSize: 13 }}>
+          <div style={{ padding: 40, textAlign: "center", color: G.textDim, fontSize: 13, background: G.surfaceAlt, borderRadius: 16 }}>
             No hay eventos de clasificacion aun. Los eventos apareceran cuando la extension WA clasifique mensajes.
           </div>
         )}
@@ -376,33 +378,17 @@ export function ClassificationFeed({
             onUpdate={onEventUpdate}
           />
         ))}
+        {loading && events.length > 0 ? (
+          <div style={{ padding: "10px 0 4px", textAlign: "center", color: G.textDim, fontSize: 12 }}>
+            Cargando mas eventos...
+          </div>
+        ) : null}
       </div>
 
-      {/* Load more */}
-      {hasMore && (
-        <div style={{ display: "flex", justifyContent: "center", padding: "16px 0" }}>
-          <button
-            type="button"
-            onClick={onLoadMore}
-            disabled={loading}
-            style={{
-              padding: "8px 24px", borderRadius: 8,
-              fontSize: 12, fontWeight: 800,
-              color: loading ? G.textDim : G.gold,
-              background: loading ? "transparent" : G.goldFaint,
-              border: `1px solid ${G.goldBorder}`,
-              cursor: loading ? "default" : "pointer",
-            }}
-          >
-            {loading ? "Cargando..." : "Cargar mas"}
-          </button>
-        </div>
-      )}
-
       {loading && events.length === 0 && (
-        <div style={{ padding: 40, textAlign: "center", color: G.textDim }}>
-          Cargando eventos...
-        </div>
+         <div style={{ padding: 40, textAlign: "center", color: G.textDim, background: G.surfaceAlt, borderRadius: 16 }}>
+           Cargando eventos...
+         </div>
       )}
     </div>
   );

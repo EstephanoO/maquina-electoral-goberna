@@ -129,7 +129,7 @@ export function useEnrichedAgents(
           return {
             id: f.id, lat: coords.lat, lng: coords.lng,
             nombre: f.nombre, telefono: f.telefono ?? "",
-            encuestador: f.encuestador ?? "", created_at: f.created_at,
+            encuestador: f.encuestador ?? "", region: f.zona ?? "", created_at: f.created_at,
             agent_id: f.agent_id || f.encuestador_id,
           };
         })

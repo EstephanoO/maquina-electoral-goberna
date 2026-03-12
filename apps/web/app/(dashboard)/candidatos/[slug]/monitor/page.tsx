@@ -15,6 +15,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { useTheme } from "@/lib/theme-context";
 import {
   getExtensionMonitor,
   type ExtensionMonitorPhone,
@@ -32,28 +33,9 @@ import {
   ClassificationFeed,
   AgentQuality,
   VoterProfilesTab,
+  MetricCard,
 } from "./_components";
-
-// ── Palette ──────────────────────────────────────────────────────────
-const G = {
-  gold: "#FFC800",
-  goldDim: "#CC9F00",
-  goldFaint: "rgba(255,200,0,0.10)",
-  goldBorder: "rgba(255,200,0,0.25)",
-  bg: "#060e18",
-  surface: "#0c1a28",
-  surfaceUp: "#0f2035",
-  border: "rgba(255,255,255,0.06)",
-  text: "#e9eef3",
-  textMid: "#7a95aa",
-  textDim: "#334d63",
-  green: "#22c55e",
-  red: "#ef5350",
-  blue: "#3b82f6",
-  orange: "#f59e0b",
-  purple: "#a855f7",
-  cyan: "#06b6d4",
-} as const;
+import { getMonitorTheme, setMonitorThemeMode, type MonitorThemeMode } from "./_components/theme";
 
 // ── Constants ────────────────────────────────────────────────────────
 const SLOTS = ["Vasquez 1", "Vasquez 2", "Vasquez 3", "Vasquez 4", "Vasquez 5", "Vasquez 6"];
@@ -72,7 +54,6 @@ const EMPTY_PHONE: ExtensionMonitorPhone = {
 };
 
 // ── Types ────────────────────────────────────────────────────────────
-type CmsStats = { pendiente: number; contactado: number; respondido: number; invalido: number; total: number };
 type SseStatus = "connecting" | "connected" | "disconnected";
 type TabId = "monitor" | "quality" | "voters";
 
@@ -92,98 +73,58 @@ function fmtRel(iso: string | null): string {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// HERO KPI CARD
-// ══════════════════════════════════════════════════════════════════════
-
-function HeroCard({ value, label, sub, color, glow }: {
-  value: string | number; label: string; sub?: string; color: string; glow?: boolean;
-}) {
-  return (
-    <div style={{
-      flex: 1, minWidth: 130, padding: "18px 20px",
-      background: `linear-gradient(135deg, ${G.surface} 0%, ${G.surfaceUp} 100%)`,
-      border: `1px solid ${glow ? `${color}40` : G.border}`,
-      borderRadius: 14, position: "relative", overflow: "hidden",
-    }}>
-      {glow && (
-        <div style={{
-          position: "absolute", top: -20, right: -20, width: 80, height: 80,
-          background: `radial-gradient(circle, ${color}15 0%, transparent 70%)`,
-          borderRadius: "50%",
-        }} />
-      )}
-      <div style={{ fontSize: 28, fontWeight: 900, color, letterSpacing: "-1px", lineHeight: 1 }}>
-        {value}
-      </div>
-      <div style={{
-        fontSize: 10, fontWeight: 800, color: G.textMid, textTransform: "uppercase",
-        letterSpacing: "0.8px", marginTop: 6,
-      }}>
-        {label}
-      </div>
-      {sub && <div style={{ fontSize: 10, color: G.textDim, marginTop: 2 }}>{sub}</div>}
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════
 // COMPACT PHONE CARD
 // ══════════════════════════════════════════════════════════════════════
 
 function PhoneCard({ phone, slotName, maxSent }: {
   phone: ExtensionMonitorPhone; slotName: string; maxSent: number;
 }) {
+  const G = getMonitorTheme((globalThis as typeof globalThis & { __gobernaMonitorTheme?: MonitorThemeMode }).__gobernaMonitorTheme ?? "light");
   const active = phone.wa_sent > 0;
   const pct = maxSent > 0 ? (phone.wa_sent / maxSent) * 100 : 0;
   const topOp = [...phone.operators].sort((a, b) => b.wa_sent - a.wa_sent)[0];
 
   return (
     <div style={{
-      padding: "14px 16px", borderRadius: 12,
-      background: active
-        ? `linear-gradient(135deg, ${G.surface} 0%, rgba(255,200,0,0.04) 100%)`
-        : G.surface,
-      border: `1px solid ${active ? "rgba(255,200,0,0.18)" : G.border}`,
-      transition: "all 0.3s",
+      padding: "18px", borderRadius: 18,
+      background: G.surface,
+      border: `1px solid ${active ? G.brandBlue : G.border}`,
+      boxShadow: "0 12px 28px rgba(22,57,96,0.06)",
+      transition: "border-color 0.3s ease, background-color 0.3s ease",
+      minHeight: 220,
+      height: "100%",
+      display: "flex",
+      flexDirection: "column",
     }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {active && (
-            <div style={{
-              width: 6, height: 6, borderRadius: "50%", background: G.gold,
-              boxShadow: `0 0 8px ${G.gold}`, animation: "gobPulse 2.5s ease-in-out infinite",
-            }} />
-          )}
           <span style={{
-            fontSize: 11, fontWeight: 900, color: active ? G.gold : G.textDim,
+            fontSize: 11, fontWeight: 900, color: active ? G.brandBlue : G.textMid,
             letterSpacing: "0.3px",
           }}>
             {slotName}
           </span>
         </div>
-        <span style={{
-          fontSize: 9, fontWeight: 700, letterSpacing: "0.8px",
-          color: active ? G.green : G.textDim,
-        }}>
-          {active ? "ACTIVO" : "ESPERA"}
+        <span style={{ fontSize: 10, fontWeight: 700, color: G.textDim }}>
+          {fmtRel(phone.last_event_at)}
         </span>
       </div>
 
       {/* Sent count + bar */}
       <div style={{ marginBottom: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-          <span style={{ fontSize: 22, fontWeight: 900, color: active ? G.gold : G.textDim, lineHeight: 1 }}>
+          <span style={{ fontSize: 24, fontWeight: 900, color: active ? G.brandBlue : G.textMid, lineHeight: 1 }}>
             {phone.wa_sent}
           </span>
           <span style={{ fontSize: 10, fontWeight: 600, color: G.textDim, alignSelf: "flex-end" }}>
             {phone.unique_contacts} contactos
           </span>
         </div>
-        <div style={{ height: 4, borderRadius: 2, background: "rgba(255,255,255,0.04)", overflow: "hidden" }}>
+        <div style={{ height: 6, borderRadius: 999, background: G.surfaceSoft, overflow: "hidden" }}>
           <div style={{
-            height: "100%", width: `${pct}%`, borderRadius: 2,
-            background: active ? `linear-gradient(90deg, ${G.gold}, #FFE066)` : "transparent",
+            height: "100%", width: `${pct}%`, borderRadius: 999,
+            background: active ? G.brandBlue : "transparent",
             transition: "width 0.6s ease",
           }} />
         </div>
@@ -191,7 +132,7 @@ function PhoneCard({ phone, slotName, maxSent }: {
 
       {/* Operators list */}
       {phone.operators.length > 0 ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1 }}>
           {phone.operators.sort((a, b) => b.wa_sent - a.wa_sent).map((op) => {
             const name = op.full_name.split(" ")[0] ?? op.email.split("@")[0];
             return (
@@ -200,10 +141,10 @@ function PhoneCard({ phone, slotName, maxSent }: {
                   {name}
                 </span>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: G.gold }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: G.brandBlue }}>
                     {op.wa_sent}
                   </span>
-                  <span style={{ fontSize: 9, fontWeight: 600, color: G.cyan }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: G.sky }}>
                     {op.unique_phones} ct
                   </span>
                 </div>
@@ -212,71 +153,17 @@ function PhoneCard({ phone, slotName, maxSent }: {
           })}
         </div>
       ) : (
-        <span style={{ fontSize: 10, fontWeight: 600, color: G.textDim }}>{"\u2014"}</span>
+        <div style={{ flex: 1, display: "flex", alignItems: "flex-start" }}>
+          <span style={{ fontSize: 10, fontWeight: 600, color: G.textDim }}>{"\u2014"}</span>
+        </div>
       )}
 
-      {/* Last activity */}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,200,0,0.50)" }}>
-          {fmtRel(phone.last_event_at)}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════
-// CMS PIPELINE FUNNEL
-// ══════════════════════════════════════════════════════════════════════
-
-function PipelineFunnel({ stats }: { stats: CmsStats | null }) {
-  if (!stats) return null;
-
-  const steps = [
-    { label: "Pendiente", value: stats.pendiente, color: G.textMid, gradient: "linear-gradient(90deg, #7a95aa, #5a7a90)" },
-    { label: "Contactado", value: stats.contactado, color: G.blue, gradient: "linear-gradient(90deg, #3b82f6, #60a5fa)" },
-    { label: "Respondido", value: stats.respondido, color: G.cyan, gradient: "linear-gradient(90deg, #06b6d4, #22d3ee)" },
-    { label: "Invalido", value: stats.invalido, color: G.red, gradient: "linear-gradient(90deg, #ef5350, #f87171)" },
-  ];
-  const maxVal = steps.reduce((m, s) => Math.max(m, s.value), 1);
-
-  return (
-    <div style={{
-      background: G.surface, border: `1px solid ${G.border}`, borderRadius: 12,
-      padding: "14px 20px",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <span style={{ fontSize: 11, fontWeight: 900, color: G.gold, letterSpacing: "0.6px", textTransform: "uppercase" }}>
-          Pipeline CMS
-        </span>
-        <span style={{ fontSize: 11, fontWeight: 700, color: G.textMid }}>
-          {stats.total.toLocaleString()} contactos
-        </span>
-      </div>
-      <div style={{ display: "flex", gap: 10 }}>
-        {steps.map(step => {
-          const pct = (step.value / maxVal) * 100;
-          return (
-            <div key={step.label} style={{ flex: 1 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ fontSize: 9, fontWeight: 700, color: G.textDim, textTransform: "uppercase" }}>
-                  {step.label}
-                </span>
-                <span style={{ fontSize: 11, fontWeight: 900, color: step.color }}>
-                  {step.value.toLocaleString()}
-                </span>
-              </div>
-              <div style={{ height: 8, borderRadius: 4, background: "rgba(255,255,255,0.04)", overflow: "hidden" }}>
-                <div style={{
-                  height: "100%", width: `${pct}%`, borderRadius: 4,
-                  background: step.gradient, opacity: 0.9,
-                  transition: "width 0.5s ease",
-                }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      {topOp && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${G.border}` }}>
+          <span style={{ fontSize: 10, color: G.textDim }}>Top operador: </span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: G.text }}>{topOp.full_name}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -291,11 +178,11 @@ export default function MonitorWaPage() {
   const slug = params.slug as string;
   const campaign = campaigns.find((c) => c.slug === slug);
   const campaignId = campaign?.id ?? null;
+  const { theme, setTheme } = useTheme();
 
   // ── State ───────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<TabId>("monitor");
   const [phones, setPhones] = useState<ExtensionMonitorPhone[]>([]);
-  const [cmsStats, setCmsStats] = useState<CmsStats | null>(null);
   const [phoneLoading, setPhoneLoading] = useState(false);
   const [phoneError, setPhoneError] = useState<string | null>(null);
 
@@ -309,6 +196,13 @@ export default function MonitorWaPage() {
   const [sseStatus, setSseStatus] = useState<SseStatus>("connecting");
   const [sseEventCount, setSseEventCount] = useState(0);
   const statsStaleRef = useRef(false);
+  const themeMode = theme as MonitorThemeMode;
+  const G = getMonitorTheme(themeMode);
+
+  if (typeof globalThis !== "undefined") {
+    (globalThis as typeof globalThis & { __gobernaMonitorTheme?: MonitorThemeMode }).__gobernaMonitorTheme = themeMode;
+  }
+  setMonitorThemeMode(themeMode);
 
   // ── Data loaders ───────────────────────────────────────────────
   const loadPhones = useCallback(async () => {
@@ -316,22 +210,9 @@ export default function MonitorWaPage() {
     setPhoneLoading(true);
     setPhoneError(null);
     try {
-      const [monitorRes, statsRes] = await Promise.all([
-        getExtensionMonitor(campaignId),
-        fetch("/api/cms/stats", { credentials: "same-origin", headers: { "x-campaign-id": campaignId } })
-          .then(r => r.json()).catch(() => null),
-      ]);
+      const monitorRes = await getExtensionMonitor(campaignId);
       if (!monitorRes.ok) { setPhoneError(monitorRes.error ?? "Error"); return; }
       setPhones(monitorRes.phones ?? []);
-      if (statsRes?.ok) {
-        setCmsStats({
-          pendiente: statsRes.by_status?.pendiente ?? statsRes.by_status?.nuevo ?? 0,
-          contactado: statsRes.by_status?.contactado ?? statsRes.by_status?.hablado ?? 0,
-          respondido: statsRes.by_status?.respondido ?? statsRes.by_status?.respondieron ?? 0,
-          invalido: statsRes.by_status?.invalido ?? statsRes.by_status?.archivado ?? 0,
-          total: statsRes.total ?? 0,
-        });
-      }
     } finally {
       setPhoneLoading(false);
     }
@@ -399,6 +280,24 @@ export default function MonitorWaPage() {
     return () => clearInterval(id);
   }, [sseStatus, loadEvents, loadClassStats]);
 
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    root.style.setProperty("--tierra-tabbar-bg", themeMode === "dark" ? G.surface : "#ffffff");
+    root.style.setProperty("--tierra-tabbar-border", G.border);
+    root.style.setProperty("--tierra-tab-active-color", G.brandBlue);
+    root.style.setProperty("--tierra-tab-inactive-color", G.textMid);
+    root.style.setProperty("--tierra-tab-hover-bg", themeMode === "dark" ? G.surfaceSoft : "rgba(15,23,42,0.04)");
+
+    return () => {
+      root.style.removeProperty("--tierra-tabbar-bg");
+      root.style.removeProperty("--tierra-tabbar-border");
+      root.style.removeProperty("--tierra-tab-active-color");
+      root.style.removeProperty("--tierra-tab-inactive-color");
+      root.style.removeProperty("--tierra-tab-hover-bg");
+    };
+  }, [G, themeMode]);
+
   // ── Handlers ───────────────────────────────────────────────────
   const handleFilterChange = useCallback((key: string, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -416,9 +315,14 @@ export default function MonitorWaPage() {
   const activeCount = slots.filter(s => s.phone.wa_sent > 0).length;
   const totalSent = slots.reduce((sum, s) => sum + s.phone.wa_sent, 0);
   const maxPhoneSent = Math.max(...slots.map(s => s.phone.wa_sent), 1);
+  const shouldUsePhoneCarousel = slots.length > 5;
   const hasMore = events.length < classTotal;
   const isLoading = phoneLoading || classLoading;
   const errorMsg = phoneError || classError;
+  const lastActivity = slots
+    .map((slot) => slot.phone.last_event_at)
+    .filter((value): value is string => Boolean(value))
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
 
   if (!campaignId) {
     return (
@@ -433,93 +337,138 @@ export default function MonitorWaPage() {
       <style>{`
         @keyframes gobPulse {
           0%,100% { opacity:1; transform:scale(1); }
-          50%     { opacity:0.4; transform:scale(0.7); }
+          50%     { opacity:0.45; transform:scale(0.8); }
+        }
+        [data-monitor-page] button:focus,
+        [data-monitor-page] button:focus-visible,
+        [data-monitor-page] select:focus,
+        [data-monitor-page] select:focus-visible,
+        [data-monitor-page] input:focus,
+        [data-monitor-page] input:focus-visible {
+          outline: none !important;
+          box-shadow: none !important;
         }
         * { box-sizing:border-box; }
       `}</style>
 
       <div style={{
         minHeight: "calc(100vh - 96px)",
-        background: `radial-gradient(ellipse 90% 40% at 50% -5%, rgba(22,57,96,0.28) 0%, transparent 65%), ${G.bg}`,
+        background: G.bg,
         color: G.text,
-      }}>
+      }} data-monitor-page>
         {/* ══ Sticky Header Bar ══ */}
         <div style={{
-          background: "rgba(9,22,38,0.94)", backdropFilter: "blur(12px)",
-          borderBottom: "1px solid rgba(255,200,0,0.14)",
-          padding: "0 28px", position: "sticky", top: 48, zIndex: 40,
+          background: themeMode === "dark" ? "rgba(15,27,42,0.92)" : "rgba(255,255,255,0.94)", backdropFilter: "blur(8px)",
+          borderBottom: `1px solid ${G.border}`,
+          padding: "14px 28px",
         }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 48 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-              {/* SSE Status */}
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{
-                  width: 7, height: 7, borderRadius: "50%",
-                  background: sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red,
-                  boxShadow: `0 0 6px ${sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red}`,
-                  animation: sseStatus === "connected" ? "gobPulse 2.5s ease-in-out infinite" : "none",
-                }} />
-                <span style={{
-                  fontSize: 12, fontWeight: 800,
-                  color: sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.gold : G.red,
-                }}>
-                  {sseStatus === "connected" ? "EN VIVO" : sseStatus === "connecting" ? "CONECTANDO..." : "OFFLINE"}
-                </span>
-                {sseEventCount > 0 && sseStatus === "connected" && (
-                  <span style={{ fontSize: 10, color: G.textDim, marginLeft: 4 }}>
-                    {sseEventCount} eventos RT
-                  </span>
-                )}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 900, color: G.brandBlue }}>Monitor</div>
+              <div style={{ fontSize: 12, color: G.textMid }}>
+                Vista operativa de WhatsApp, clasificacion y calidad para {campaign?.name ?? slug}
               </div>
-
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", justifyContent: "flex-end" }}>
               {/* Tabs */}
-              <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 2 }}>
+              <div role="tablist" aria-label="Secciones del monitor" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                 {([
-                  { id: "monitor" as TabId, label: "Monitor WA" },
+                  { id: "monitor" as TabId, label: "Monitor" },
                   { id: "quality" as TabId, label: "Control Agentes" },
                   { id: "voters" as TabId, label: "Perfiles de Votantes" },
                 ] as const).map(tab => (
                   <button
                     key={tab.id}
                     type="button"
+                    role="tab"
+                    aria-selected={activeTab === tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     style={{
-                      padding: "5px 14px", borderRadius: 6, border: "none",
-                      background: activeTab === tab.id ? G.goldFaint : "transparent",
-                      color: activeTab === tab.id ? G.gold : G.textDim,
+                      padding: "9px 14px", borderRadius: 999, border: `1px solid ${activeTab === tab.id ? G.brandBlue : G.borderStrong}`,
+                      background: activeTab === tab.id ? G.surfaceSoft : G.bg,
+                      color: activeTab === tab.id ? G.brandBlue : G.textMid,
                       fontSize: 11, fontWeight: 800, cursor: "pointer",
-                      transition: "all 0.2s",
-                      borderBottom: activeTab === tab.id ? `2px solid ${G.gold}` : "2px solid transparent",
+                      transition: "background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease",
                     }}
                   >
                     {tab.label}
                   </button>
                 ))}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "10px 14px",
+                    borderRadius: 999,
+                    border: `1px solid ${G.borderStrong}`,
+                    background: G.surfaceAlt,
+                    color: sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.orange : G.red,
+                    fontSize: 12,
+                    fontWeight: 800,
+                  }}
+                >
+                  <span
+                    role="img"
+                    aria-label={sseStatus === "connected" ? "Conexion en linea" : "Estado de conexion"}
+                    title={sseStatus === "connected" ? "Conexion en linea" : sseStatus === "connecting" ? "Reconectando" : "Sin conexion"}
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: sseStatus === "connected" ? G.green : sseStatus === "connecting" ? G.orange : G.red,
+                      display: "inline-block",
+                      animation: sseStatus === "connected" ? "gobPulse 2.5s ease-in-out infinite" : "none",
+                    }}
+                  />
+                  {sseStatus === "connected" ? "En vivo" : sseStatus === "connecting" ? "Reconectando" : "Sin conexion"}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTheme(themeMode === "light" ? "dark" : "light")}
+                  aria-label={themeMode === "light" ? "Activar modo oscuro" : "Activar modo claro"}
+                  title={themeMode === "light" ? "Modo oscuro" : "Modo claro"}
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 999,
+                    border: `1px solid ${G.borderStrong}`,
+                    background: G.surfaceAlt,
+                    color: G.brandBlue,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                  }}
+                >
+                  {themeMode === "light" ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="12" cy="12" r="4" />
+                      <path d="M12 2v2" />
+                      <path d="M12 20v2" />
+                      <path d="m4.93 4.93 1.41 1.41" />
+                      <path d="m17.66 17.66 1.41 1.41" />
+                      <path d="M2 12h2" />
+                      <path d="M20 12h2" />
+                      <path d="m6.34 17.66-1.41 1.41" />
+                      <path d="m19.07 4.93-1.41 1.41" />
+                    </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                    </svg>
+                  )}
+                </button>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => { loadPhones(); loadEvents(1); loadClassStats(); }}
-              disabled={isLoading}
-              style={{
-                padding: "6px 16px", borderRadius: 8,
-                border: `1px solid ${isLoading ? "rgba(255,200,0,0.12)" : G.goldBorder}`,
-                background: isLoading ? "transparent" : G.goldFaint,
-                color: isLoading ? G.textDim : G.gold,
-                fontSize: 12, fontWeight: 800, cursor: isLoading ? "default" : "pointer",
-                transition: "all 0.2s",
-              }}
-            >
-              {isLoading ? "\u00B7\u00B7\u00B7" : "\u21BB Actualizar"}
-            </button>
           </div>
         </div>
 
         {/* ══ Error Banner ══ */}
         {errorMsg && (
           <div style={{
-            margin: "12px 28px 0", background: "rgba(239,83,80,0.07)",
-            border: "1px solid rgba(239,83,80,0.22)", borderRadius: 10,
+            margin: "12px 28px 0", background: G.redSoft,
+            border: `1px solid ${G.red}`, borderRadius: 14,
             padding: "10px 16px", fontSize: 13, color: G.red,
           }}>
             {errorMsg}
@@ -527,7 +476,7 @@ export default function MonitorWaPage() {
         )}
 
         {/* ══ Content ══ */}
-        <div style={{ padding: "20px 24px 16px", maxWidth: 1400, margin: "0 auto" }}>
+        <div style={{ padding: "28px 24px 20px", maxWidth: 1440, margin: "0 auto" }}>
 
           {/* ── Quality Tab ── */}
           {activeTab === "quality" && (
@@ -540,55 +489,79 @@ export default function MonitorWaPage() {
           )}
 
           {/* ── Monitor Tab ── */}
-          {activeTab === "monitor" && <>
+          {activeTab === "monitor" && <div role="tabpanel" aria-label="Monitor" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
 
           {/* ── Row 1: Hero KPIs ── */}
-          <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
-            <HeroCard value={totalSent} label="Mensajes Enviados" color={G.gold} glow />
-            <HeroCard
-              value={`${activeCount}/6`}
-              label="Telefonos Activos"
-              color={activeCount >= 4 ? G.green : activeCount >= 2 ? G.orange : G.red}
-              glow={activeCount > 0}
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) 220px", gap: 14, alignItems: "stretch" }}>
+            <MetricCard
+              value={totalSent}
+              label="Mensajes Enviados"
+              color={G.brandBlue}
+              emphasis
+              trend={slots.map((slot) => slot.phone.wa_sent)}
+              trendType="line"
+              graphicSize="large"
             />
-            <HeroCard value={classTotal} label="Clasificaciones" color={G.cyan} />
-            <HeroCard
-              value={`${classStats?.accuracy_rate ?? 0}%`}
-              label="Precision IA"
-              sub={`${classStats?.corrections_count ?? 0} correcciones`}
-              color={(classStats?.accuracy_rate ?? 0) >= 90 ? G.green : (classStats?.accuracy_rate ?? 0) >= 70 ? G.orange : G.red}
+            <MetricCard
+              value={classTotal}
+              label="Clasificaciones"
+              color={G.sky}
+              trend={classStats ? [classStats.last_hour, classStats.last_24h / 6, classStats.last_24h / 3, classTotal] : [0, 0, 0, 0]}
+              trendType="line"
+              graphicSize="large"
             />
-            <HeroCard
-              value={classStats?.last_hour ?? 0}
-              label="Ultima Hora"
-              color={G.green}
-              glow={(classStats?.last_hour ?? 0) > 0}
-            />
+            <div style={{ display: "grid", gridTemplateRows: "1fr 1fr", gap: 14 }}>
+              <MetricCard
+                value={activeCount}
+                label="Telefonos Activos"
+                color={activeCount >= 4 ? G.green : activeCount >= 2 ? G.orange : G.red}
+                emphasis={activeCount > 0}
+                trendType="donut"
+                donutValue={activeCount}
+                donutTotal={slots.length}
+                donutLabel={`${activeCount}/${slots.length}`}
+                hideValue
+                compact
+              />
+              <MetricCard
+                value={classStats?.last_hour ?? 0}
+                label="Ultima Hora"
+                color={G.green}
+                emphasis={(classStats?.last_hour ?? 0) > 0}
+                trend={classStats ? [classStats.last_hour, classStats.last_24h / 6, classStats.last_24h] : [0, 0, 0]}
+                trendType="line"
+                compact
+              />
+            </div>
           </div>
 
           {/* ── Row 2: 6 Phone Cards ── */}
-          <div style={{
-            display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10,
-            marginBottom: 16,
+          <div style={shouldUsePhoneCarousel ? {
+            display: "flex",
+            gap: 14,
+            overflowX: "auto",
+            paddingBottom: 4,
+            scrollSnapType: "x proximity",
+          } : {
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+            gap: 14,
           }}>
             {slots.map(({ slotName, phone }) => (
-              <PhoneCard key={slotName} phone={phone} slotName={slotName} maxSent={maxPhoneSent} />
+              <div key={slotName} style={shouldUsePhoneCarousel ? { flex: "0 0 220px", scrollSnapAlign: "start" } : undefined}>
+                <PhoneCard phone={phone} slotName={slotName} maxSent={maxPhoneSent} />
+              </div>
             ))}
           </div>
 
-          {/* ── Row 3: Pipeline Funnel ── */}
-          <div style={{ marginBottom: 16 }}>
-            <PipelineFunnel stats={cmsStats} />
-          </div>
-
-          {/* ── Row 4: Two-column (Charts + Feed) ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
+          {/* ── Row 3: Two-column (Charts + Feed) ── */}
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 0.95fr) minmax(0, 1.25fr)", gap: 18, alignItems: "start" }}>
 
             {/* Left: Classification Metrics (Charts) */}
             <div>
               <div style={{
-                fontSize: 12, fontWeight: 900, color: G.gold, letterSpacing: "0.6px",
-                textTransform: "uppercase", marginBottom: 12, paddingLeft: 4,
+                fontSize: 12, fontWeight: 900, color: G.brandBlue, letterSpacing: "0.6px",
+                textTransform: "uppercase", marginBottom: 12, paddingLeft: 4, minHeight: 18,
               }}>
                 Metricas de Clasificacion
               </div>
@@ -598,15 +571,15 @@ export default function MonitorWaPage() {
             {/* Right: Live Feed */}
             <div>
               <div style={{
-                fontSize: 12, fontWeight: 900, color: G.gold, letterSpacing: "0.6px",
-                textTransform: "uppercase", marginBottom: 12, paddingLeft: 4,
+                fontSize: 12, fontWeight: 900, color: G.brandBlue, letterSpacing: "0.6px",
+                textTransform: "uppercase", marginBottom: 12, paddingLeft: 4, minHeight: 18,
                 display: "flex", alignItems: "center", gap: 8,
               }}>
                 Feed en Vivo
                 {sseStatus === "connected" && (
                   <span style={{
                     width: 6, height: 6, borderRadius: "50%", background: G.green,
-                    boxShadow: `0 0 6px ${G.green}`, display: "inline-block",
+                    display: "inline-block",
                     animation: "gobPulse 2.5s ease-in-out infinite",
                   }} />
                 )}
@@ -624,7 +597,7 @@ export default function MonitorWaPage() {
             </div>
           </div>
 
-          </>}
+          </div>}
         </div>
       </div>
     </>

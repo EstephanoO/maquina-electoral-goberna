@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useTheme } from "@/lib/theme-context";
 import type { GA4Overview } from "./types";
 
 type CampaignInfo = {
@@ -26,18 +27,20 @@ type Props = {
 
 export function DigitalHeader({ campaign, overview, primaryColor, hasGsc = false }: Props) {
   const router = useRouter();
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
 
   return (
-    <header style={styles.root}>
+    <header style={{ ...styles.root, ...(isDark ? { backgroundColor: "#090D15", borderBottom: "1px solid #1d2f43" } : null) }}>
       {/* Left: Back + Identity */}
       <div style={styles.left}>
-        <button type="button" onClick={() => router.back()} style={styles.backBtn} aria-label="Volver">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><title>Volver</title><polyline points="15 18 9 12 15 6" /></svg>
+        <button type="button" onClick={() => router.back()} style={{ ...styles.backBtn, ...(isDark ? { backgroundColor: "#090D15", border: "1px solid #1d2f43", color: "#cbd5e1" } : null) }} aria-label="Volver">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><polyline points="15 18 9 12 15 6" /></svg>
         </button>
 
         <div style={{ ...styles.avatar, borderColor: primaryColor }}>
           {campaign.foto_url ? (
-            <Image src={campaign.foto_url} alt="" width={40} height={40} style={styles.avatarImg} unoptimized />
+            <Image src={campaign.foto_url} alt={campaign.name} width={40} height={40} style={styles.avatarImg} unoptimized />
           ) : (
             <span style={{ ...styles.avatarInitials, backgroundColor: primaryColor }}>
               {campaign.name.split(" ").map((w) => w[0]).join("").slice(0, 2)}
@@ -64,8 +67,8 @@ export function DigitalHeader({ campaign, overview, primaryColor, hasGsc = false
 
       {/* Right: Date range + GA4 badge */}
       <div style={styles.right}>
-        <div style={styles.dateRange}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <div style={{ ...styles.dateRange, ...(isDark ? { backgroundColor: "#090D15", border: "1px solid #1d2f43" } : null) }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
             <line x1="16" y1="2" x2="16" y2="6" />
             <line x1="8" y1="2" x2="8" y2="6" />
@@ -109,8 +112,8 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     height: 64,
     padding: "0 24px",
-    backgroundColor: "#ffffff",
-    borderBottom: "1px solid #e2e8f0",
+    backgroundColor: "var(--color-surface)",
+    borderBottom: "1px solid var(--color-border)",
     flexShrink: 0,
   },
   left: {
@@ -122,9 +125,9 @@ const styles: Record<string, React.CSSProperties> = {
     width: 36,
     height: 36,
     borderRadius: 10,
-    border: "1px solid #e2e8f0",
-    backgroundColor: "#ffffff",
-    color: "#64748b",
+    border: "1px solid var(--color-border)",
+    backgroundColor: "var(--color-surface)",
+    color: "var(--color-text-secondary)",
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
@@ -163,7 +166,7 @@ const styles: Record<string, React.CSSProperties> = {
   name: {
     fontSize: 16,
     fontWeight: 700,
-    color: "#0f172a",
+    color: "var(--color-text-primary)",
   },
   badge: {
     display: "inline-flex",
@@ -178,11 +181,11 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     gap: 6,
     fontSize: 13,
-    color: "#64748b",
+    color: "var(--color-text-secondary)",
     marginTop: 2,
   },
   partido: {
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
   },
   right: {
     display: "flex",
@@ -194,11 +197,11 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 8,
     fontSize: 13,
-    color: "#64748b",
+    color: "var(--color-text-secondary)",
     padding: "8px 12px",
-    backgroundColor: "#f8fafc",
+    backgroundColor: "var(--color-surface-hover)",
     borderRadius: 8,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
   },
   ga4Badge: {
     display: "flex",
@@ -206,9 +209,9 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     fontSize: 12,
     fontWeight: 600,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
     padding: "8px 12px",
-    backgroundColor: "#fff7ed",
+    backgroundColor: "var(--color-warning-bg)",
     borderRadius: 8,
     border: "1px solid #fed7aa",
   },

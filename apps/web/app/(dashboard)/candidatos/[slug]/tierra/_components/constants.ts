@@ -22,8 +22,8 @@ export const DATA_POINT = "#2563eb";
 
 export const ZONE_FILL = "rgba(148, 163, 184, 0.14)";
 export const ZONE_HOVER = "rgba(148, 163, 184, 0.3)";
-export const ZONE_LINE = "#cbd5e1";
-export const ZONE_LINE_GHOST = "#64748b";
+export const ZONE_LINE = "#94a3b8";
+export const ZONE_LINE_GHOST = "#a8b7c8";
 
 /* ─── Mask system — opacity-based for instant GPU transitions ─── */
 
@@ -77,39 +77,17 @@ export const PERU_MAX_BOUNDS: [[number, number], [number, number]] = [[-92, -27]
 
 /* ─── Tile config ─── */
 
-const DARK_TILES = "https://basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}@2x.png";
-const LIGHT_TILES = "https://basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}@2x.png";
+const DARK_STYLE = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 const VOYAGER_STYLE = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 export const DEFAULT_TILE_TEMPLATE = "/api/tiles/{z}/{x}/{y}.vector.pbf";
 
 /**
- * MAP_STYLES — dark/light basemaps without any text labels.
- * Uses CARTO light_nolabels/dark_nolabels raster for roads/terrain.
+ * MAP_STYLES — dark/light basemaps for Territorio.
+ * Dark uses CARTO Dark Matter GL style. Voyager acts as light mode.
  * All geographic names come from Tegola tile properties shown via tooltips.
  */
 export const MAP_STYLES: Record<MapTheme, StyleSpecification | string> = {
-  dark: {
-    version: 8,
-    sources: {
-      "dark-base": { type: "raster", tiles: [DARK_TILES], tileSize: 256, attribution: "&copy; CARTO", maxzoom: 19 },
-    },
-    layers: [
-      { id: "background", type: "background", paint: { "background-color": "#0b1220" } },
-      { id: "dark-base", type: "raster", source: "dark-base" },
-    ],
-    transition: { duration: 0, delay: 0 },
-  },
-  light: {
-    version: 8,
-    sources: {
-      "light-base": { type: "raster", tiles: [LIGHT_TILES], tileSize: 256, attribution: "&copy; CARTO", maxzoom: 19 },
-    },
-    layers: [
-      { id: "background", type: "background", paint: { "background-color": "#e5e7eb" } },
-      { id: "light-base", type: "raster", source: "light-base" },
-    ],
-    transition: { duration: 0, delay: 0 },
-  },
+  dark: DARK_STYLE,
   voyager: VOYAGER_STYLE,
 };
 

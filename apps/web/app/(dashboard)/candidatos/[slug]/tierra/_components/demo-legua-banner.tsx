@@ -116,7 +116,7 @@ export function DemoLeguaBanner({ mapTheme, onDismiss }: Props) {
           width: 680,
           maxWidth: "calc(100vw - 48px)",
           maxHeight: "calc(100vh - 96px)",
-          background: isDark ? "#0f172a" : "#ffffff",
+          background: isDark ? "#090D15" : "#ffffff",
           border: isDark ? "1px solid rgba(148,163,184,0.18)" : "1px solid rgba(226,232,240,0.8)",
           boxShadow: "0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04)",
           transform: visible ? "translateY(0) scale(1)" : "translateY(24px) scale(0.97)",
@@ -129,7 +129,7 @@ export function DemoLeguaBanner({ mapTheme, onDismiss }: Props) {
           className="px-7 pt-6 pb-5 relative overflow-hidden"
           style={{
             background: isDark
-              ? "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)"
+              ? "linear-gradient(135deg, #090D15 0%, #1e293b 100%)"
               : "linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)",
             borderBottom: isDark ? "1px solid rgba(148,163,184,0.12)" : "1px solid rgba(147,197,253,0.4)",
           }}
@@ -177,7 +177,7 @@ export function DemoLeguaBanner({ mapTheme, onDismiss }: Props) {
         <div
           className="flex shrink-0 px-1 pt-1"
           style={{
-            background: isDark ? "#0f172a" : "#f8fafc",
+            background: isDark ? "#090D15" : "#f8fafc",
             borderBottom: isDark ? "1px solid rgba(148,163,184,0.1)" : "1px solid rgba(226,232,240,0.8)",
           }}
         >
@@ -320,7 +320,7 @@ function TabTerritorio({ isDark }: { isDark: boolean }) {
             {((LEGUA.metaDatos / LEGUA.padron) * 100).toFixed(0)}% del padrón
           </span>
         </div>
-        <div className={`h-2.5 rounded-full overflow-hidden ${isDark ? "bg-slate-800" : "bg-slate-200"}`}>
+        <div className={`h-2.5 rounded-full overflow-hidden ${isDark ? "bg-[#090D15]" : "bg-slate-200"}`}>
           <div
             className="h-full rounded-full"
             style={{
@@ -442,7 +442,7 @@ function TabVentajas({ isDark }: { isDark: boolean }) {
           ].map((r) => (
             <div key={r.aspecto} className="grid grid-cols-[1fr_auto_auto] gap-3 items-center text-[11px]">
               <span className={`font-semibold ${isDark ? "text-slate-300" : "text-slate-600"}`}>{r.aspecto}</span>
-              <span className={`px-2 py-0.5 rounded-lg text-center ${isDark ? "bg-slate-800 text-slate-400" : "bg-slate-200 text-slate-500"}`}>{r.sin}</span>
+              <span className={`px-2 py-0.5 rounded-lg text-center ${isDark ? "bg-[#090D15] text-slate-400" : "bg-slate-200 text-slate-500"}`}>{r.sin}</span>
               <span className="px-2 py-0.5 rounded-lg text-center bg-blue-500/15 text-blue-500 font-bold">{r.con}</span>
             </div>
           ))}

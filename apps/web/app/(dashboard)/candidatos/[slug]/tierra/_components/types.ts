@@ -25,12 +25,13 @@ export type FormPoint = {
   nombre: string;
   telefono: string;
   encuestador: string;
+  region?: string;
   created_at: string;
   agent_id?: string;
 };
 
 export type DatosVizMode = "points" | "heatmap" | "bars3d";
-export type MapTheme = "dark" | "light" | "voyager";
+export type MapTheme = "dark" | "voyager";
 
 /* ─── Drill Navigation ─── */
 

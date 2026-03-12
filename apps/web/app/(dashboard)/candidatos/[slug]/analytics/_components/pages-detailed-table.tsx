@@ -57,7 +57,7 @@ export function PagesDetailedTable({ pages, primaryColor }: Props) {
             style={{
               ...S.sortBtn,
               backgroundColor: sortBy === key ? primaryColor : "transparent",
-              color: sortBy === key ? "#fff" : "#64748b",
+              color: sortBy === key ? "#fff" : "var(--color-text-secondary)",
             }}
           >
             {key === "views" && "Vistas"}
@@ -82,8 +82,8 @@ export function PagesDetailedTable({ pages, primaryColor }: Props) {
               <div style={S.rankCol}>
                 <span style={{
                   ...S.rank,
-                  backgroundColor: idx < 3 ? primaryColor : "#f1f5f9",
-                  color: idx < 3 ? "#fff" : "#64748b",
+                  backgroundColor: idx < 3 ? primaryColor : "var(--color-surface-active)",
+                  color: idx < 3 ? "#fff" : "var(--color-text-secondary)",
                 }}>
                   {idx + 1}
                 </span>
@@ -120,7 +120,7 @@ export function PagesDetailedTable({ pages, primaryColor }: Props) {
                   <span style={{
                     ...S.metricValue,
                     color: page.avgEngagementTime > (maxTime * 0.5) ? "#10b981" :
-                           page.avgEngagementTime > (maxTime * 0.2) ? "#f59e0b" : "#94a3b8",
+                           page.avgEngagementTime > (maxTime * 0.2) ? "#f59e0b" : "var(--color-text-tertiary)",
                   }}>
                     {timeLabel}
                   </span>
@@ -154,9 +154,9 @@ function formatTime(seconds: number): string {
 
 const S: Record<string, React.CSSProperties> = {
   container: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     padding: 20,
     display: "flex",
     flexDirection: "column" as const,
@@ -172,13 +172,13 @@ const S: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: 14,
     fontWeight: 700,
-    color: "#0f172a",
+    color: "var(--color-text-primary)",
   },
   badge: {
     fontSize: 11,
     fontWeight: 500,
-    color: "#64748b",
-    backgroundColor: "#f1f5f9",
+    color: "var(--color-text-secondary)",
+    backgroundColor: "var(--color-surface-active)",
     padding: "3px 8px",
     borderRadius: 4,
   },
@@ -187,7 +187,7 @@ const S: Record<string, React.CSSProperties> = {
     gap: 4,
     marginBottom: 14,
     padding: 3,
-    backgroundColor: "#f8fafc",
+    backgroundColor: "var(--color-surface-hover)",
     borderRadius: 8,
   },
   sortBtn: {
@@ -244,7 +244,7 @@ const S: Record<string, React.CSSProperties> = {
   pathText: {
     fontSize: 12,
     fontWeight: 500,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
     whiteSpace: "nowrap" as const,
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -270,7 +270,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   progressBg: {
     height: 3,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "var(--color-surface-active)",
     borderRadius: 2,
     overflow: "hidden",
   },
@@ -293,11 +293,11 @@ const S: Record<string, React.CSSProperties> = {
   metricValue: {
     fontSize: 12,
     fontWeight: 700,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
   },
   metricLabel: {
     fontSize: 9,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
   },
   empty: {
     flex: 1,
@@ -311,7 +311,7 @@ const S: Record<string, React.CSSProperties> = {
   emptyText: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
   },
   emptyHint: {
     fontSize: 11,

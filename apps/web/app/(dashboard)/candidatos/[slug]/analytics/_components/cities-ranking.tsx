@@ -90,8 +90,8 @@ export function CitiesRanking({ cities, primaryColor, onCityHover, onCityClick, 
               {/* Rank */}
               <div style={{
                 ...styles.rank,
-                backgroundColor: isTop3 ? `${primaryColor}12` : "#f8fafc",
-                color: isTop3 ? primaryColor : "#94a3b8",
+                backgroundColor: isTop3 ? `${primaryColor}12` : "var(--color-surface-hover)",
+                color: isTop3 ? primaryColor : "var(--color-text-tertiary)",
                 fontWeight: isTop3 ? 800 : 600,
               }}>
                 {medal || i + 1}
@@ -102,14 +102,14 @@ export function CitiesRanking({ cities, primaryColor, onCityHover, onCityClick, 
                 <div style={styles.cityTop}>
                   <span style={{
                     ...styles.cityName,
-                    color: isTop3 ? "#0f172a" : "#334155",
+                    color: isTop3 ? "var(--color-text-primary)" : "var(--color-text-secondary)",
                     fontWeight: isTop3 ? 600 : 500,
                   }}>
                     {city.city}
                   </span>
                   <span style={{
                     ...styles.cityUsers,
-                    color: isTop3 ? primaryColor : "#64748b",
+                    color: isTop3 ? primaryColor : "var(--color-text-secondary)",
                     fontWeight: isTop3 ? 700 : 600,
                   }}>
                     {city.activeUsers.toLocaleString()}
@@ -173,9 +173,9 @@ export function CitiesRanking({ cities, primaryColor, onCityHover, onCityClick, 
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)",
     overflow: "hidden",
     display: "flex",
@@ -187,7 +187,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     alignItems: "center",
     padding: "14px 20px",
-    borderBottom: "1px solid #f1f5f9",
+    borderBottom: "1px solid var(--color-surface-active)",
     flexShrink: 0,
   },
   headerLeft: {
@@ -198,7 +198,7 @@ const styles: Record<string, React.CSSProperties> = {
   headerTitle: {
     fontSize: 15,
     fontWeight: 600,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
   },
   headerRight: {
     display: "flex",
@@ -207,8 +207,8 @@ const styles: Record<string, React.CSSProperties> = {
   badge: {
     fontSize: 11,
     fontWeight: 600,
-    color: "#64748b",
-    backgroundColor: "#f1f5f9",
+    color: "var(--color-text-secondary)",
+    backgroundColor: "var(--color-surface-active)",
     padding: "4px 10px",
     borderRadius: 6,
   },
@@ -278,7 +278,7 @@ const styles: Record<string, React.CSSProperties> = {
   barTrack: {
     flex: 1,
     height: 4,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "var(--color-surface-active)",
     borderRadius: 2,
     overflow: "hidden",
   },
@@ -290,20 +290,20 @@ const styles: Record<string, React.CSSProperties> = {
   pct: {
     fontSize: 11,
     fontWeight: 500,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     width: 38,
     textAlign: "right" as const,
     flexShrink: 0,
   },
   footer: {
     padding: "10px 20px",
-    borderTop: "1px solid #f1f5f9",
+    borderTop: "1px solid var(--color-surface-active)",
     textAlign: "center" as const,
     flexShrink: 0,
   },
   footerText: {
     fontSize: 12,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     fontWeight: 500,
   },
   metricsRow: {
@@ -314,9 +314,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   metric: {
     fontSize: 10,
-    color: "#64748b",
+    color: "var(--color-text-secondary)",
   },
   metricLabel: {
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
   },
 };

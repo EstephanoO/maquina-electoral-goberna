@@ -182,10 +182,16 @@ function ProgressIndicator({ days, totalDays }: { days: number; totalDays: numbe
 // ── Main Export ──────────────────────────────────────────────────────
 
 export function CampaignGoals({ agentesCampoCount }: CampaignGoalsProps) {
-  // Editable inputs
+  // Config values
   const [metaDatos, setMetaDatos] = useState(200000);
   const [brigadistas, setBrigadistas] = useState(40);
   const [fechaLimite, setFechaLimite] = useState("2026-04-10");
+  const [showEditModal, setShowEditModal] = useState(false);
+
+  // Draft values for modal edit
+  const [draftMetaDatos, setDraftMetaDatos] = useState(200000);
+  const [draftBrigadistas, setDraftBrigadistas] = useState(40);
+  const [draftFechaLimite, setDraftFechaLimite] = useState("2026-04-10");
 
   // Sync brigadistas from props when available
   useEffect(() => {
@@ -217,6 +223,20 @@ export function CampaignGoals({ agentesCampoCount }: CampaignGoalsProps) {
     if (brigadistas <= 0) return 0;
     return Math.ceil(metaDatos / brigadistas);
   }, [metaDatos, brigadistas]);
+
+  const openEditModal = () => {
+    setDraftMetaDatos(metaDatos);
+    setDraftBrigadistas(brigadistas);
+    setDraftFechaLimite(fechaLimite);
+    setShowEditModal(true);
+  };
+
+  const saveEdits = () => {
+    setMetaDatos(Math.max(0, draftMetaDatos));
+    setBrigadistas(Math.max(1, draftBrigadistas));
+    setFechaLimite(draftFechaLimite);
+    setShowEditModal(false);
+  };
 
   return (
     <div style={cardStyle}>
@@ -254,76 +274,36 @@ export function CampaignGoals({ agentesCampoCount }: CampaignGoalsProps) {
             Calculadora de objetivos para brigadistas de campo
           </p>
         </div>
+        <button
+          type="button"
+          onClick={openEditModal}
+          aria-label="Editar metas"
+          title="Editar metas"
+          style={{
+            marginLeft: "auto",
+            width: 34,
+            height: 34,
+            color: "var(--goberna-blue-600)",
+            background: "var(--color-surface-alt)",
+            border: "1px solid var(--color-border)",
+            borderRadius: 8,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+          </svg>
+        </button>
       </div>
 
-      {/* Editable Inputs Row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 20 }}>
-        {/* Meta de Datos */}
-        <div>
-          <label htmlFor="goal-meta-datos" style={labelStyle}>Meta de Datos</label>
-          <input
-            id="goal-meta-datos"
-            type="number"
-            min={0}
-            step={1000}
-            value={metaDatos}
-            onChange={(e) => setMetaDatos(Math.max(0, parseInt(e.target.value, 10) || 0))}
-            style={inputStyle}
-            onFocus={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--goberna-blue-400)"; }}
-            onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--color-border)"; }}
-          />
-        </div>
-
-        {/* Brigadistas */}
-        <div>
-          <label htmlFor="goal-brigadistas" style={labelStyle}>Brigadistas (campo)</label>
-          <input
-            id="goal-brigadistas"
-            type="number"
-            min={1}
-            value={brigadistas}
-            onChange={(e) => setBrigadistas(Math.max(1, parseInt(e.target.value, 10) || 1))}
-            style={inputStyle}
-            onFocus={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--goberna-blue-400)"; }}
-            onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--color-border)"; }}
-          />
-          {agentesCampoCount > 0 && brigadistas !== agentesCampoCount && (
-            <button
-              type="button"
-              onClick={() => setBrigadistas(agentesCampoCount)}
-              style={{
-                marginTop: 4,
-                fontSize: 10,
-                fontWeight: 600,
-                color: "var(--goberna-blue-600)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-                textDecoration: "underline",
-              }}
-            >
-              Usar actual ({agentesCampoCount})
-            </button>
-          )}
-        </div>
-
-        {/* Fecha Limite */}
-        <div>
-          <label htmlFor="goal-fecha-limite" style={labelStyle}>Fecha Limite</label>
-          <input
-            id="goal-fecha-limite"
-            type="date"
-            value={fechaLimite}
-            onChange={(e) => setFechaLimite(e.target.value)}
-            style={inputStyle}
-            onFocus={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--goberna-blue-400)"; }}
-            onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--color-border)"; }}
-          />
-          <span style={{ fontSize: 10, fontWeight: 600, color: dias <= 7 ? "#dc2626" : "var(--color-text-tertiary)", marginTop: 4, display: "block" }}>
-            {dias} {dias === 1 ? "dia" : "dias"} restantes
-          </span>
-        </div>
+      <div style={{ marginBottom: 20 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: dias <= 7 ? "#dc2626" : "var(--color-text-tertiary)", display: "block", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+          {dias} {dias === 1 ? "dia" : "dias"} restantes para la fecha limite
+        </span>
       </div>
 
       {/* Calculated Metrics */}
@@ -372,6 +352,149 @@ export function CampaignGoals({ agentesCampoCount }: CampaignGoalsProps) {
         <strong style={{ color: "var(--color-text-primary)" }}>{dias} dias</strong> para alcanzar la meta de{" "}
         <strong style={{ color: "#059669" }}>{formatNumber(metaDatos)}</strong> datos.
       </div>
+
+      {showEditModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 60,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              width: "min(560px, 100%)",
+              background: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+              borderRadius: 14,
+              boxShadow: "var(--shadow-sm)",
+              padding: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "var(--color-text-primary)", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                Editar metas
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 8,
+                  border: "1px solid var(--color-border)",
+                  background: "var(--color-surface-alt)",
+                  color: "var(--color-text-secondary)",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+                aria-label="Cerrar"
+              >
+                x
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+              <div>
+                <label htmlFor="goal-meta-datos" style={labelStyle}>Meta de Datos</label>
+                <input
+                  id="goal-meta-datos"
+                  type="number"
+                  min={0}
+                  step={1000}
+                  value={draftMetaDatos}
+                  onChange={(e) => setDraftMetaDatos(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="goal-brigadistas" style={labelStyle}>Brigadistas (campo)</label>
+                <input
+                  id="goal-brigadistas"
+                  type="number"
+                  min={1}
+                  value={draftBrigadistas}
+                  onChange={(e) => setDraftBrigadistas(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  style={inputStyle}
+                />
+                {agentesCampoCount > 0 && draftBrigadistas !== agentesCampoCount && (
+                  <button
+                    type="button"
+                    onClick={() => setDraftBrigadistas(agentesCampoCount)}
+                    style={{
+                      marginTop: 4,
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: "var(--goberna-blue-600)",
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: 0,
+                      textDecoration: "underline",
+                    }}
+                  >
+                    Usar actual ({agentesCampoCount})
+                  </button>
+                )}
+              </div>
+
+              <div>
+                <label htmlFor="goal-fecha-limite" style={labelStyle}>Fecha Limite</label>
+                <input
+                  id="goal-fecha-limite"
+                  type="date"
+                  value={draftFechaLimite}
+                  onChange={(e) => setDraftFechaLimite(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  border: "1px solid var(--color-border)",
+                  background: "var(--color-surface-alt)",
+                  color: "var(--color-text-secondary)",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={saveEdits}
+                style={{
+                  padding: "7px 10px",
+                  fontSize: 12,
+                  borderRadius: 8,
+                  border: "1px solid var(--color-border-strong)",
+                  background: "var(--color-surface-active)",
+                  color: "var(--color-text-primary)",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Guardar cambios
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -100,7 +100,7 @@ function getSourceColor(source: string): string {
   for (const [k, color] of Object.entries(SOURCE_COLORS)) {
     if (key.includes(k)) return color;
   }
-  return "#94a3b8";
+  return "var(--color-text-tertiary)";
 }
 
 function getSourceLabel(source: string): string {
@@ -164,15 +164,15 @@ function renderDonutSegments(sources: GA4Source[], total: number) {
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
     overflow: "hidden",
   },
   header: {
     padding: "16px 20px",
-    borderBottom: "1px solid #f1f5f9",
+    borderBottom: "1px solid var(--color-surface-active)",
   },
   headerTitle: {
     display: "flex",
@@ -180,7 +180,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 10,
     fontSize: 15,
     fontWeight: 600,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
   },
   content: {
     display: "flex",
@@ -210,12 +210,12 @@ const styles: Record<string, React.CSSProperties> = {
   chartValue: {
     fontSize: 24,
     fontWeight: 700,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
     lineHeight: 1,
   },
   chartLabel: {
     fontSize: 11,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     marginTop: 2,
   },
   legend: {
@@ -249,13 +249,13 @@ const styles: Record<string, React.CSSProperties> = {
   legendLabel: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#334155",
+    color: "var(--color-text-secondary)",
   },
   legendMedium: {
     fontSize: 10,
     fontWeight: 500,
-    color: "#94a3b8",
-    backgroundColor: "#f1f5f9",
+    color: "var(--color-text-tertiary)",
+    backgroundColor: "var(--color-surface-active)",
     padding: "2px 6px",
     borderRadius: 4,
   },
@@ -267,13 +267,13 @@ const styles: Record<string, React.CSSProperties> = {
   legendValue: {
     fontSize: 12,
     fontWeight: 600,
-    color: "#64748b",
+    color: "var(--color-text-secondary)",
     width: 50,
   },
   legendBar: {
     flex: 1,
     height: 4,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "var(--color-surface-active)",
     borderRadius: 2,
     overflow: "hidden",
   },
@@ -285,7 +285,7 @@ const styles: Record<string, React.CSSProperties> = {
   legendPct: {
     fontSize: 11,
     fontWeight: 500,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     width: 40,
     textAlign: "right" as const,
   },

@@ -8,7 +8,7 @@
  * - Per-operator table merging extension-monitor + conversation stats
  * - Expandable conversation detail with message thread + AI reason
  *
- * Uses same dark palette (G) and inline styles as the rest of the monitor.
+ * Uses the same white institutional palette as Monitor WA.
  */
 
 import { useEffect, useState, useCallback } from "react";
@@ -26,27 +26,8 @@ import {
   type Conversation,
   type ConversationStats,
 } from "@/lib/services/conversations";
-
-// ── Palette (shared with page.tsx) ──────────────────────────────────
-const G = {
-  gold: "#FFC800",
-  goldDim: "#CC9F00",
-  goldFaint: "rgba(255,200,0,0.10)",
-  goldBorder: "rgba(255,200,0,0.25)",
-  bg: "#060e18",
-  surface: "#0c1a28",
-  surfaceUp: "#0f2035",
-  border: "rgba(255,255,255,0.06)",
-  text: "#e9eef3",
-  textMid: "#7a95aa",
-  textDim: "#334d63",
-  green: "#22c55e",
-  red: "#ef5350",
-  blue: "#3b82f6",
-  orange: "#f59e0b",
-  purple: "#a855f7",
-  cyan: "#06b6d4",
-} as const;
+import { MONITOR_THEME as G } from "./theme";
+import { MetricCard } from "./metric-card";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -114,32 +95,38 @@ function voteClassLabel(vc: string): string {
 // ══════════════════════════════════════════════════════════════════════
 
 function AlertCard({ alert }: { alert: Alert }) {
-  const borderColor = alert.severity === "high" ? G.red : G.orange;
+  const borderColor = alert.severity === "high" ? G.red : "#d96b5f";
   return (
     <div style={{
-      padding: "14px 18px", borderRadius: 12,
-      background: `linear-gradient(135deg, ${G.surface} 0%, ${alert.severity === "high" ? "rgba(239,83,80,0.06)" : "rgba(245,158,11,0.06)"} 100%)`,
-      border: `1px solid ${borderColor}30`,
-      position: "relative", overflow: "hidden",
+      padding: "16px 18px", borderRadius: 24,
+      background: G.surface,
+      border: `1px solid ${borderColor}`,
+      overflow: "visible",
+      boxShadow: "none",
+      display: "flex",
+      flexDirection: "column",
+      gap: 8,
     }}>
-      <div style={{
-        position: "absolute", top: 0, left: 0, width: 3, height: "100%",
-        background: borderColor,
-      }} />
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, color: borderColor }}>
-          {alert.severity === "high" ? "\u26A0" : "\u26A1"} {alert.title}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, paddingBottom: 8, borderBottom: `1px solid ${G.border}` }}>
+        <span style={{ fontSize: 12, fontWeight: 800, color: borderColor, display: "flex", alignItems: "flex-start", gap: 8, flex: 1, minWidth: 0, lineHeight: 1.4 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={borderColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+            <path d="M12 9v4" />
+            <path d="M12 17h.01" />
+          </svg>
+          <span style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{alert.title}</span>
         </span>
         <span style={{
           fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
-          background: `${borderColor}18`, color: borderColor,
+          background: G.surfaceSoft, color: borderColor,
           textTransform: "uppercase", letterSpacing: "0.5px",
+          flexShrink: 0,
         }}>
           {alert.severity}
         </span>
       </div>
-      <div style={{ fontSize: 11, color: G.textMid, lineHeight: 1.4 }}>{alert.detail}</div>
-      <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+      <div style={{ fontSize: 11, color: G.textMid, lineHeight: 1.5, whiteSpace: "normal", wordBreak: "break-word" }}>{alert.detail}</div>
+      <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: 10, fontWeight: 700, color: G.text }}>{alert.operator}</span>
         <span style={{ fontSize: 10, color: G.textDim }}>{alert.metric}: <span style={{ color: borderColor, fontWeight: 800 }}>{alert.value}</span></span>
       </div>
@@ -154,13 +141,13 @@ function AlertCard({ alert }: { alert: Alert }) {
 function ConversationDetail({ conv, onClose }: { conv: Conversation; onClose: () => void }) {
   return (
     <div style={{
-      background: G.surface, border: `1px solid ${G.goldBorder}`, borderRadius: 14,
+      background: G.surface, border: `1px solid ${G.borderStrong}`, borderRadius: 24,
       padding: "20px 24px", marginTop: 12,
     }}>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: G.gold }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: G.brandBlue }}>
             {conv.contact_name ?? conv.phone ?? conv.jid}
           </div>
           <div style={{ fontSize: 10, color: G.textDim, marginTop: 2 }}>
@@ -203,7 +190,7 @@ function ConversationDetail({ conv, onClose }: { conv: Conversation; onClose: ()
       {conv.reason && (
         <div style={{
           padding: "10px 14px", borderRadius: 10, marginBottom: 14,
-          background: "rgba(168,85,247,0.06)", border: `1px solid rgba(168,85,247,0.15)`,
+          background: G.purpleSoft, border: `1px solid ${G.borderStrong}`,
           fontSize: 11, color: G.textMid, lineHeight: 1.5, fontStyle: "italic",
         }}>
           <span style={{ fontWeight: 800, color: G.purple, fontStyle: "normal" }}>IA: </span>
@@ -219,8 +206,8 @@ function ConversationDetail({ conv, onClose }: { conv: Conversation; onClose: ()
             <div key={`${msg.ts}-${msg.d}`} style={{
               alignSelf: isIn ? "flex-start" : "flex-end",
               maxWidth: "75%", padding: "8px 12px", borderRadius: 10,
-              background: isIn ? "rgba(34,197,94,0.10)" : "rgba(59,130,246,0.10)",
-              border: `1px solid ${isIn ? "rgba(34,197,94,0.18)" : "rgba(59,130,246,0.18)"}`,
+              background: isIn ? G.greenSoft : G.skySoft,
+              border: `1px solid ${G.borderStrong}`,
             }}>
               <div style={{ fontSize: 11, color: G.text, lineHeight: 1.4, wordBreak: "break-word" }}>
                 {msg.t}
@@ -418,21 +405,21 @@ export function AgentQuality({ campaignId }: { campaignId: string }) {
   // ── Render ─────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div style={{ padding: 40, textAlign: "center", color: G.textDim, fontSize: 13 }}>
-        Cargando datos de calidad...
-      </div>
+        <div style={{ padding: 40, textAlign: "center", color: G.textDim, fontSize: 13, background: G.surfaceAlt, borderRadius: 24, border: `1px solid ${G.borderStrong}` }}>
+          Cargando datos de calidad...
+        </div>
     );
   }
 
   if (error) {
     return (
-      <div style={{
-        margin: "20px 0", background: "rgba(239,83,80,0.07)",
-        border: "1px solid rgba(239,83,80,0.22)", borderRadius: 10,
-        padding: "14px 20px", fontSize: 13, color: G.red,
-      }}>
-        {error}
-      </div>
+        <div style={{
+          margin: "20px 0", background: G.redSoft,
+          border: `1px solid ${G.red}`, borderRadius: 24,
+          padding: "14px 20px", fontSize: 13, color: G.red,
+        }}>
+          {error}
+        </div>
     );
   }
 
@@ -440,39 +427,63 @@ export function AgentQuality({ campaignId }: { campaignId: string }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
       {/* ══ KPI Strip ══ */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <KpiCard label="Operadores" value={operators.length} color={G.gold} />
-        <KpiCard label="Total Enviados" value={operators.reduce((s, o) => s + o.wa_sent, 0)} color={G.cyan} />
-        <KpiCard label="Contactos Unicos" value={operators.reduce((s, o) => s + o.unique_contacts, 0)} color={G.blue} />
-        <KpiCard label="Conversaciones" value={convStats?.total ?? 0} color={G.purple} />
-        <KpiCard label="Clasificadas" value={convStats?.classified ?? 0} color={G.green} />
-        <KpiCard label="Alertas" value={alerts.length} color={alerts.length > 0 ? G.red : G.green} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+        <MetricCard
+          label="Operadores"
+          value={operators.length}
+          color={G.brandBlue}
+          trendType="donut"
+          donutValue={operators.filter((operator) => operator.wa_sent > 0).length}
+          donutTotal={Math.max(operators.length, 1)}
+          donutLabel={`${operators.filter((operator) => operator.wa_sent > 0).length}/${Math.max(operators.length, 1)}`}
+        />
+        <MetricCard
+          label="Ratio Promedio"
+          value={Math.round((operators.reduce((s, o) => s + o.msgs_per_contact, 0) / Math.max(operators.length, 1)) * 10) / 10}
+          color="#d96b5f"
+          trend={operators.map((operator) => operator.msgs_per_contact).filter((value) => value > 0)}
+          trendType="line"
+        />
+        <MetricCard
+          label="Alertas"
+          value={alerts.length}
+          color={alerts.length > 0 ? G.red : G.green}
+          trend={[alerts.filter((alert) => alert.severity === "high").length, alerts.filter((alert) => alert.severity === "medium").length, alerts.length]}
+          trendType="line"
+        />
       </div>
 
       {/* ══ Alerts ══ */}
-      {alerts.length > 0 && (
-        <div>
-          <div style={{
-            fontSize: 12, fontWeight: 900, color: G.red, letterSpacing: "0.6px",
-            textTransform: "uppercase", marginBottom: 10, paddingLeft: 4,
-          }}>
-            Alertas de Calidad ({alerts.length})
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 10 }}>
-            {alerts.map(a => <AlertCard key={a.id} alert={a} />)}
-          </div>
+      <div style={{
+        background: G.surface,
+        border: `1px solid ${G.borderStrong}`,
+        borderRadius: 24,
+        padding: "16px 18px",
+      }}>
+        <div style={{
+          fontSize: 12, fontWeight: 900, color: G.textMid, letterSpacing: "3px",
+          textTransform: "uppercase", marginBottom: 10, paddingLeft: 4,
+        }}>
+          Alertas de Calidad ({alerts.length})
         </div>
-      )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, maxHeight: 420, overflowY: "auto", paddingRight: 6 }}>
+          {alerts.length > 0 ? alerts.map((a) => <AlertCard key={a.id} alert={a} />) : (
+            <div style={{ padding: 20, borderRadius: 16, background: G.surfaceAlt, color: G.textDim, fontSize: 12, textAlign: "center" }}>
+              Sin alertas de calidad en este momento.
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* ══ Two-column: Charts ══ */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
         {/* Msgs per contact bar chart */}
         <div style={{
-          background: G.surface, border: `1px solid ${G.border}`, borderRadius: 12,
+          background: G.surface, border: `1px solid ${G.borderStrong}`, borderRadius: 24,
           padding: "16px 20px",
         }}>
           <div style={{
-            fontSize: 11, fontWeight: 900, color: G.gold, letterSpacing: "0.6px",
+            fontSize: 11, fontWeight: 800, color: G.textMid, letterSpacing: "3px",
             textTransform: "uppercase", marginBottom: 12,
           }}>
             Ratio Msgs / Contacto
@@ -493,14 +504,14 @@ export function AgentQuality({ campaignId }: { campaignId: string }) {
                 />
                 <Tooltip
                   contentStyle={{
-                    background: G.surfaceUp, border: `1px solid ${G.border}`,
-                    borderRadius: 8, fontSize: 11, color: G.text,
+                    background: G.surface, border: `1px solid ${G.borderStrong}`,
+                    borderRadius: 16, fontSize: 11, color: G.text,
                   }}
-                  cursor={{ fill: "rgba(255,255,255,0.03)" }}
+                  cursor={{ fill: G.surfaceSoft }}
                 />
                 <Bar dataKey="ratio" radius={[4, 4, 0, 0]}>
                   {chartData.map((entry) => (
-                    <Cell key={entry.name} fill={entry.flagged ? G.red : G.cyan} />
+                    <Cell key={entry.name} fill={entry.flagged ? G.red : G.teal} />
                   ))}
                 </Bar>
               </BarChart>
@@ -514,12 +525,12 @@ export function AgentQuality({ campaignId }: { campaignId: string }) {
         </div>
 
         {/* Vote class breakdown */}
-        <div style={{
-          background: G.surface, border: `1px solid ${G.border}`, borderRadius: 12,
-          padding: "16px 20px",
-        }}>
           <div style={{
-            fontSize: 11, fontWeight: 900, color: G.gold, letterSpacing: "0.6px",
+            background: G.surface, border: `1px solid ${G.borderStrong}`, borderRadius: 24,
+            padding: "16px 20px",
+          }}>
+            <div style={{
+            fontSize: 11, fontWeight: 800, color: G.textMid, letterSpacing: "3px",
             textTransform: "uppercase", marginBottom: 12,
           }}>
             Clasificaciones por Tipo
@@ -540,10 +551,10 @@ export function AgentQuality({ campaignId }: { campaignId: string }) {
                 />
                 <Tooltip
                   contentStyle={{
-                    background: G.surfaceUp, border: `1px solid ${G.border}`,
-                    borderRadius: 8, fontSize: 11, color: G.text,
+                    background: G.surface, border: `1px solid ${G.borderStrong}`,
+                    borderRadius: 16, fontSize: 11, color: G.text,
                   }}
-                  cursor={{ fill: "rgba(255,255,255,0.03)" }}
+                  cursor={{ fill: G.surfaceSoft }}
                 />
                 <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                   {voteChartData.map((entry) => (
@@ -560,7 +571,7 @@ export function AgentQuality({ campaignId }: { campaignId: string }) {
 
       {/* ══ Operator Table ══ */}
       <div style={{
-        background: G.surface, border: `1px solid ${G.border}`, borderRadius: 12,
+        background: G.surface, border: `1px solid ${G.borderStrong}`, borderRadius: 24,
         overflow: "hidden",
       }}>
         <div style={{
@@ -568,15 +579,15 @@ export function AgentQuality({ campaignId }: { campaignId: string }) {
           display: "flex", justifyContent: "space-between", alignItems: "center",
         }}>
           <span style={{
-            fontSize: 12, fontWeight: 900, color: G.gold, letterSpacing: "0.6px",
+            fontSize: 12, fontWeight: 800, color: G.textMid, letterSpacing: "3px",
             textTransform: "uppercase",
           }}>
             Rendimiento por Operador
           </span>
           <button type="button" onClick={loadData} style={{
             padding: "4px 12px", borderRadius: 6,
-            border: `1px solid ${G.goldBorder}`, background: G.goldFaint,
-            color: G.gold, fontSize: 10, fontWeight: 800, cursor: "pointer",
+            border: `1px solid ${G.borderStrong}`, background: G.surfaceSoft,
+            color: G.brandBlue, fontSize: 10, fontWeight: 800, cursor: "pointer",
           }}>
             {"\u21BB"} Refrescar
           </button>
@@ -624,23 +635,29 @@ export function AgentQuality({ campaignId }: { campaignId: string }) {
                     key={op.operator_id}
                     style={{
                       borderBottom: `1px solid ${G.border}`,
-                      background: flagged ? "rgba(239,83,80,0.04)" : "transparent",
-                      transition: "background 0.2s",
-                    }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = `${G.surfaceUp}`; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = flagged ? "rgba(239,83,80,0.04)" : "transparent"; }}
+                       background: flagged ? G.redSoft : "transparent",
+                       transition: "background 0.2s",
+                     }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = `${G.surfaceAlt}`; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = flagged ? G.redSoft : "transparent"; }}
                   >
                     <td style={{ padding: "10px 14px", fontWeight: 700, color: flagged ? G.red : G.text }}>
-                      {flagged && <span style={{ marginRight: 4 }}>{"\u26A0"}</span>}
+                      {flagged && (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={G.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ marginRight: 4, display: "inline-block", verticalAlign: "-1px" }}>
+                          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+                          <path d="M12 9v4" />
+                          <path d="M12 17h.01" />
+                        </svg>
+                      )}
                       {op.name}
                     </td>
                     <td style={{ padding: "10px 14px", textAlign: "right", color: G.textDim }}>
                       {op.phones.map(p => p.replace("Vasquez ", "V")).join(", ")}
                     </td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: G.gold }}>
+                    <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: G.brandBlue }}>
                       {op.wa_sent.toLocaleString()}
                     </td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", color: G.cyan }}>
+                    <td style={{ padding: "10px 14px", textAlign: "right", color: G.teal }}>
                       {op.unique_contacts}
                     </td>
                     <td style={{
@@ -655,7 +672,7 @@ export function AgentQuality({ campaignId }: { campaignId: string }) {
                     <td style={{ padding: "10px 14px", textAlign: "right", color: G.green }}>
                       {op.conversations_classified}
                     </td>
-                    <td style={{ padding: "10px 14px", textAlign: "right", color: G.blue }}>
+                    <td style={{ padding: "10px 14px", textAlign: "right", color: G.sky }}>
                       {op.conversations_with_inbound}
                     </td>
                   </tr>
@@ -676,11 +693,11 @@ export function AgentQuality({ campaignId }: { campaignId: string }) {
       {/* ══ Suspect Conversations ══ */}
       {suspectConvs.length > 0 && (
         <div style={{
-          background: G.surface, border: `1px solid ${G.border}`, borderRadius: 12,
+          background: G.surface, border: `1px solid ${G.borderStrong}`, borderRadius: 24,
           padding: "16px 20px",
         }}>
           <div style={{
-            fontSize: 12, fontWeight: 900, color: G.orange, letterSpacing: "0.6px",
+            fontSize: 12, fontWeight: 800, color: G.textMid, letterSpacing: "3px",
             textTransform: "uppercase", marginBottom: 12,
           }}>
             Conversaciones Sospechosas ({suspectConvs.length})
@@ -694,16 +711,16 @@ export function AgentQuality({ campaignId }: { campaignId: string }) {
                   style={{
                     display: "flex", justifyContent: "space-between", alignItems: "center",
                     padding: "10px 14px", borderRadius: 10, cursor: "pointer",
-                    background: selectedConv?.id === conv.id ? G.surfaceUp : "transparent",
-                    border: `1px solid ${selectedConv?.id === conv.id ? G.goldBorder : G.border}`,
-                    transition: "all 0.2s", width: "100%", textAlign: "left",
+                    background: selectedConv?.id === conv.id ? G.surfaceAlt : "transparent",
+                    border: `1px solid ${selectedConv?.id === conv.id ? G.borderStrong : G.border}`,
+                    transition: "background-color 0.2s ease, border-color 0.2s ease", width: "100%", textAlign: "left",
                     font: "inherit", color: "inherit",
                   }}
                 >
                   <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                     <span style={{
                       fontSize: 9, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
-                      background: conv.vote_class ? `${voteClassColor(conv.vote_class)}18` : "rgba(255,255,255,0.04)",
+                      background: conv.vote_class ? `${voteClassColor(conv.vote_class)}18` : G.surfaceAlt,
                       color: conv.vote_class ? voteClassColor(conv.vote_class) : G.textDim,
                     }}>
                       {conv.vote_class ? voteClassLabel(conv.vote_class) : "pending"}
@@ -737,28 +754,6 @@ export function AgentQuality({ campaignId }: { campaignId: string }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ── Small KPI Card ──────────────────────────────────────────────────
-
-function KpiCard({ label, value, color }: { label: string; value: number; color: string }) {
-  return (
-    <div style={{
-      flex: 1, minWidth: 120, padding: "14px 16px",
-      background: `linear-gradient(135deg, ${G.surface} 0%, ${G.surfaceUp} 100%)`,
-      border: `1px solid ${G.border}`, borderRadius: 12,
-    }}>
-      <div style={{ fontSize: 22, fontWeight: 900, color, lineHeight: 1 }}>
-        {typeof value === "number" ? value.toLocaleString() : value}
-      </div>
-      <div style={{
-        fontSize: 9, fontWeight: 800, color: G.textMid, textTransform: "uppercase",
-        letterSpacing: "0.8px", marginTop: 4,
-      }}>
-        {label}
-      </div>
     </div>
   );
 }

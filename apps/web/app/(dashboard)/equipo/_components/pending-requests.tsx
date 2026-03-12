@@ -6,7 +6,8 @@
 "use client";
 
 import { useState } from "react";
-import { Avatar, Button, IconPhone, IconMapPin, IconWhatsApp, IconCheck, IconX, IconClock } from "../../../../lib/ui";
+import { Avatar, IconPhone, IconMapPin, IconWhatsApp, IconCheck, IconX, IconClock } from "../../../../lib/ui";
+import { useTheme } from "../../../../lib/theme-context";
 import { type PendingRequest, formatDate, openWhatsApp } from "./role-config";
 import { RoleSelector } from "./role-selector";
 
@@ -23,6 +24,8 @@ type RequestCardProps = {
 
 function RequestCard({ request, selected, onToggleSelect, resolving, onResolve, allowedRoles }: RequestCardProps) {
   const [selectedRole, setSelectedRole] = useState("agente_campo");
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
 
   return (
     <div style={{
@@ -82,8 +85,9 @@ function RequestCard({ request, selected, onToggleSelect, resolving, onResolve, 
                 gap: 3,
                 fontSize: 9,
                 fontWeight: 600,
-                color: "#0369A1",
-                background: "#E0F2FE",
+                color: isDark ? "#8fc3f5" : "#0369A1",
+                background: isDark ? "rgba(143,195,245,0.12)" : "#E0F2FE",
+                border: isDark ? "1px solid rgba(143,195,245,0.24)" : "1px solid transparent",
                 padding: "2px 6px",
                 borderRadius: 4,
                 textTransform: "uppercase",
@@ -110,8 +114,9 @@ function RequestCard({ request, selected, onToggleSelect, resolving, onResolve, 
               width: 32,
               height: 32,
               borderRadius: 8,
-              background: "#DCFCE7",
-              border: "1px solid #BBF7D0",
+              background: isDark ? "var(--color-surface-active)" : "#DCFCE7",
+              border: isDark ? "1px solid var(--color-border-strong)" : "1px solid #BBF7D0",
+              color: isDark ? "#63e39d" : "#16a34a",
               cursor: "pointer",
               flexShrink: 0,
             }}
@@ -131,15 +136,26 @@ function RequestCard({ request, selected, onToggleSelect, resolving, onResolve, 
             <RoleSelector value={selectedRole} onChange={setSelectedRole} allowedRoles={allowedRoles} />
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-            <Button
-              variant="primary"
-              size="sm"
+            <button
+              type="button"
               disabled={resolving}
               onClick={() => onResolve("approved", selectedRole)}
-              style={{ background: "var(--color-success)", border: "none" }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "6px 12px",
+                fontSize: 12,
+                fontWeight: 700,
+                background: isDark ? "var(--color-surface-active)" : "var(--color-success)",
+                border: isDark ? "1px solid var(--color-border-strong)" : "1px solid transparent",
+                color: isDark ? "#63e39d" : "#fff",
+                borderRadius: 6,
+                cursor: "pointer",
+              }}
             >
               <IconCheck size={14} /> Aprobar
-            </Button>
+            </button>
             <button
               type="button"
               disabled={resolving}
@@ -152,8 +168,8 @@ function RequestCard({ request, selected, onToggleSelect, resolving, onResolve, 
                 fontSize: 12,
                 fontWeight: 700,
                 color: "var(--color-error)",
-                background: "transparent",
-                border: "1px solid var(--color-error)",
+                background: isDark ? "var(--color-surface-active)" : "transparent",
+                border: isDark ? "1px solid var(--color-border-strong)" : "1px solid var(--color-error)",
                 borderRadius: 6,
                 cursor: "pointer",
               }}
@@ -192,6 +208,8 @@ function BatchBar({
   processing,
   allowedRoles,
 }: BatchBarProps) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const allSelected = selectedCount === total && total > 0;
 
   return (
@@ -200,7 +218,9 @@ function BatchBar({
       alignItems: "center",
       gap: 12,
       padding: "12px 16px",
-      background: selectedCount > 0 ? "var(--goberna-blue-50)" : "var(--color-surface)",
+      background: isDark
+        ? (selectedCount > 0 ? "var(--color-surface-active)" : "var(--color-surface)")
+        : (selectedCount > 0 ? "var(--goberna-blue-50)" : "var(--color-surface)"),
       border: "1px solid var(--color-border)",
       borderRadius: "var(--radius-lg)",
       marginBottom: 8,
@@ -253,16 +273,28 @@ function BatchBar({
             <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>Aprobar como:</span>
             <RoleSelector value={batchRole} onChange={onBatchRoleChange} allowedRoles={allowedRoles} />
           </div>
-          <Button
-            variant="primary"
-            size="sm"
+          <button
+            type="button"
             onClick={onBatchApprove}
             disabled={processing}
-            loading={processing}
-            style={{ background: "var(--color-success)", border: "none" }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 12px",
+              fontSize: 12,
+              fontWeight: 700,
+              background: isDark ? "var(--color-surface-active)" : "var(--color-success)",
+              border: isDark ? "1px solid var(--color-border-strong)" : "1px solid transparent",
+              color: isDark ? "#63e39d" : "#fff",
+              borderRadius: 6,
+              cursor: processing ? "not-allowed" : "pointer",
+              opacity: processing ? 0.6 : 1,
+            }}
           >
+            <IconCheck size={14} />
             Aprobar {selectedCount}
-          </Button>
+          </button>
           <button
             type="button"
             onClick={onBatchReject}
@@ -271,10 +303,10 @@ function BatchBar({
               display: "flex",
               alignItems: "center",
               gap: 6,
-              padding: "6px 12px",
-              background: "transparent",
+                padding: "6px 12px",
+              background: isDark ? "var(--color-surface-active)" : "transparent",
               color: "var(--color-error)",
-              border: "1px solid var(--color-error)",
+              border: isDark ? "1px solid var(--color-border-strong)" : "1px solid var(--color-error)",
               borderRadius: 6,
               cursor: processing ? "not-allowed" : "pointer",
               fontSize: 12,

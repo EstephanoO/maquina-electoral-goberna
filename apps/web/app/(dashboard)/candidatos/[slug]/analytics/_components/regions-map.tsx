@@ -433,16 +433,16 @@ function PopupContent({
 
   return (
     <div style={{ padding: "4px 4px", fontFamily: "system-ui, sans-serif", minWidth: 148 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a" }}>
+      <div style={{ fontWeight: 700, fontSize: 13, color: "var(--color-text-primary)" }}>
         {region.normalizedName}
       </div>
-      <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>
+      <div style={{ fontSize: 11, color: "var(--color-text-secondary)", marginBottom: 4 }}>
         {region.region !== region.normalizedName ? `(${region.region})` : null}
       </div>
       <div style={{ fontSize: 20, fontWeight: 800, color: primaryColor, margin: "3px 0" }}>
         {region.activeUsers.toLocaleString()}
       </div>
-      <div style={{ fontSize: 11, color: "#64748b" }}>
+      <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
         usuarios activos · {pct}%
       </div>
 
@@ -451,7 +451,7 @@ function PopupContent({
           style={{
             marginTop: 8,
             paddingTop: 8,
-            borderTop: "1px solid #e2e8f0",
+            borderTop: "1px solid var(--color-border)",
             fontSize: 11,
             display: "flex",
             flexDirection: "column",
@@ -479,8 +479,8 @@ function PopupContent({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
-      <span style={{ color: "#94a3b8" }}>{label}</span>
-      <span style={{ color: "#334155", fontWeight: 500 }}>{value}</span>
+      <span style={{ color: "var(--color-text-tertiary)" }}>{label}</span>
+      <span style={{ color: "var(--color-text-secondary)", fontWeight: 500 }}>{value}</span>
     </div>
   );
 }
@@ -498,9 +498,9 @@ function formatTime(seconds: number): string {
 const STYLES = {
   container: {
     position: "relative" as const,
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)",
     overflow: "hidden",
     height: "100%",
@@ -518,8 +518,8 @@ const STYLES = {
     borderRadius: 8,
     backgroundColor: "rgba(255,255,255,0.95)",
     backdropFilter: "blur(8px)",
-    border: "1px solid #e2e8f0",
-    color: "#64748b",
+    border: "1px solid var(--color-border)",
+    color: "var(--color-text-secondary)",
     cursor: "pointer",
     display: "flex" as const,
     alignItems: "center" as const,

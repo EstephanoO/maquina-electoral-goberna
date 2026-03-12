@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
+import { useTheme } from "@/lib/theme-context";
 
 import { api } from "@/lib/services";
 
@@ -365,7 +366,7 @@ export default function DigitalPage() {
         <NoDataHeader campaign={placeholderCampaign} onBack={() => router.back()} />
         <div style={S.emptyContainer}>
           <div style={S.emptyIcon}>
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M12 20V10" /><path d="M18 20V4" /><path d="M6 20v-4" />
             </svg>
           </div>
@@ -593,11 +594,14 @@ function SectionLabel({ label }: { label: string }) {
 type NoDataHeaderProps = { campaign: CampaignInfo; onBack: () => void };
 
 function NoDataHeader({ campaign, onBack }: NoDataHeaderProps) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+
   return (
-    <header style={S.header}>
+    <header style={{ ...S.header, ...(isDark ? { backgroundColor: "#090D15", borderBottom: "1px solid #1d2f43" } : null) }}>
       <div style={S.headerLeft}>
-        <button type="button" onClick={onBack} style={S.headerBackBtn} aria-label="Volver">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><title>Volver</title><polyline points="15 18 9 12 15 6" /></svg>
+        <button type="button" onClick={onBack} style={{ ...S.headerBackBtn, ...(isDark ? { backgroundColor: "#090D15", border: "1px solid #1d2f43", color: "#cbd5e1" } : null) }} aria-label="Volver">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"><polyline points="15 18 9 12 15 6" /></svg>
         </button>
         <div style={S.headerIdentity}>
           <div style={S.headerName}>{campaign.name}</div>
@@ -616,7 +620,7 @@ function NoDataHeader({ campaign, onBack }: NoDataHeaderProps) {
 const FULL_SCREEN: React.CSSProperties = {
   display: "flex",
   flexDirection: "column",
-  backgroundColor: "#f8fafc",
+  backgroundColor: "var(--color-surface-hover)",
   flex: 1,
   minHeight: 0,
 };
@@ -626,7 +630,7 @@ const S: Record<string, React.CSSProperties> = {
     flex: 1,
     overflow: "auto",
     padding: 24,
-    backgroundColor: "#f8fafc",
+    backgroundColor: "var(--color-surface-hover)",
   },
   section: { marginBottom: 24 },
   sectionLast: { marginBottom: 0 },
@@ -640,12 +644,12 @@ const S: Record<string, React.CSSProperties> = {
   sectionLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "#e2e8f0",
+    backgroundColor: "var(--color-border)",
   },
   sectionText: {
     fontSize: 11,
     fontWeight: 700,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     textTransform: "uppercase" as const,
     letterSpacing: "0.08em",
     whiteSpace: "nowrap" as const,
@@ -687,12 +691,12 @@ const S: Record<string, React.CSSProperties> = {
   spinner: {
     width: 32,
     height: 32,
-    border: "3px solid #e2e8f0",
+    border: "3px solid var(--color-border)",
     borderTopColor: "#1d4ed8",
     borderRadius: "50%",
     animation: "spin 1s linear infinite",
   },
-  loadingText: { fontSize: 14, color: "#64748b" },
+  loadingText: { fontSize: 14, color: "var(--color-text-secondary)" },
   errorContainer: {
     display: "flex",
     flexDirection: "column" as const,
@@ -701,15 +705,15 @@ const S: Record<string, React.CSSProperties> = {
     flex: 1,
     gap: 12,
   },
-  errorTitle: { fontSize: 18, fontWeight: 600, color: "#1e293b" },
-  errorMessage: { fontSize: 14, color: "#64748b" },
+  errorTitle: { fontSize: 18, fontWeight: 600, color: "var(--color-text-primary)" },
+  errorMessage: { fontSize: 14, color: "var(--color-text-secondary)" },
   backButton: {
     marginTop: 12,
     padding: "8px 20px",
     borderRadius: 8,
-    border: "1px solid #e2e8f0",
-    backgroundColor: "#ffffff",
-    color: "#334155",
+    border: "1px solid var(--color-border)",
+    backgroundColor: "var(--color-surface)",
+    color: "var(--color-text-secondary)",
     fontSize: 13,
     cursor: "pointer",
   },
@@ -726,23 +730,23 @@ const S: Record<string, React.CSSProperties> = {
     width: 80,
     height: 80,
     borderRadius: "50%",
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "var(--color-surface-active)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 8,
   },
-  emptyTitle: { fontSize: 18, fontWeight: 700, color: "#1e293b" },
-  emptyMessage: { fontSize: 14, color: "#64748b", textAlign: "center" as const },
-  emptyHint: { fontSize: 12, color: "#94a3b8", textAlign: "center" as const, maxWidth: 300 },
+  emptyTitle: { fontSize: 18, fontWeight: 700, color: "var(--color-text-primary)" },
+  emptyMessage: { fontSize: 14, color: "var(--color-text-secondary)", textAlign: "center" as const },
+  emptyHint: { fontSize: 12, color: "var(--color-text-tertiary)", textAlign: "center" as const, maxWidth: 300 },
   header: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     height: 56,
     padding: "0 16px",
-    backgroundColor: "#ffffff",
-    borderBottom: "1px solid #e2e8f0",
+    backgroundColor: "var(--color-surface)",
+    borderBottom: "1px solid var(--color-border)",
     flexShrink: 0,
   },
   headerLeft: { display: "flex", alignItems: "center", gap: 10 },
@@ -750,17 +754,17 @@ const S: Record<string, React.CSSProperties> = {
     width: 30,
     height: 30,
     borderRadius: 8,
-    border: "1px solid #e2e8f0",
-    backgroundColor: "#f8fafc",
-    color: "#64748b",
+    border: "1px solid var(--color-border)",
+    backgroundColor: "var(--color-surface-hover)",
+    color: "var(--color-text-secondary)",
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
   },
   headerIdentity: {},
-  headerName: { fontSize: 14, fontWeight: 700, color: "#0f172a" },
-  headerMeta: { display: "flex", gap: 8, fontSize: 11, color: "#64748b", alignItems: "center" },
+  headerName: { fontSize: 14, fontWeight: 700, color: "var(--color-text-primary)" },
+  headerMeta: { display: "flex", gap: 8, fontSize: 11, color: "var(--color-text-secondary)", alignItems: "center" },
   headerBadge: {
     display: "inline-flex",
     alignItems: "center",
@@ -770,6 +774,6 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: 10,
     fontWeight: 700,
     textTransform: "uppercase" as const,
-    color: "#ffffff",
+    color: "var(--color-text-on-primary)",
   },
 };

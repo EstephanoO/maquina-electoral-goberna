@@ -220,7 +220,7 @@ export function InvitationsPanel({ campaignId }: InvitationsPanelProps) {
         gap: 10,
         padding: "14px 16px",
         borderBottom: "1px solid var(--color-border)",
-        background: "linear-gradient(135deg, #f0f4ff, #e8f0fe)",
+        background: "var(--color-surface-alt)",
         borderRadius: "var(--radius-lg) var(--radius-lg) 0 0",
       }}>
         <div style={{
@@ -236,7 +236,7 @@ export function InvitationsPanel({ campaignId }: InvitationsPanelProps) {
           <IconLink size={16} color="#fff" />
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--goberna-blue-900)", fontFamily: FONT_STACK }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--color-text-primary)", fontFamily: FONT_STACK }}>
             Registro de Agentes
           </div>
           <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", fontFamily: FONT_STACK, marginTop: 1 }}>
@@ -249,22 +249,22 @@ export function InvitationsPanel({ campaignId }: InvitationsPanelProps) {
       <div style={{
         padding: "14px 16px",
         borderBottom: "1px solid var(--color-border)",
-        background: "linear-gradient(135deg, #fffbeb, #fef3c7)",
+        background: "var(--color-warning-bg)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 18 }}>🔑</span>
+              <span style={{ fontSize: 18, color: "var(--color-warning)" }}>⌁</span>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#92400e", fontFamily: FONT_STACK }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--color-warning)", fontFamily: FONT_STACK }}>
               Código de Acceso Rápido
             </div>
-            <div style={{ fontSize: 11, color: "#b45309", fontFamily: FONT_STACK }}>
+              <div style={{ fontSize: 11, color: "var(--color-text-secondary)", fontFamily: FONT_STACK }}>
               El agente lo ingresa en la app al registrarse — sin link, sin vencimiento
             </div>
           </div>
         </div>
 
         {loadingCode ? (
-          <div style={{ fontSize: 12, color: "#b45309", fontFamily: FONT_STACK }}>Cargando código...</div>
+            <div style={{ fontSize: 12, color: "var(--color-text-secondary)", fontFamily: FONT_STACK }}>Cargando código...</div>
         ) : (
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             {/* Big code display */}
@@ -283,9 +283,9 @@ export function InvitationsPanel({ campaignId }: InvitationsPanelProps) {
                   fontSize: 26,
                   fontWeight: 900,
                   fontFamily: "monospace",
-                  color: "#1c1917",
-                  background: "#fff",
-                  border: "2px solid #fbbf24",
+                  color: "var(--color-text-primary)",
+                  background: "var(--color-surface)",
+                  border: "2px solid var(--color-warning-border)",
                   borderRadius: 10,
                   boxShadow: "0 2px 4px rgba(0,0,0,0.08)",
                   letterSpacing: 0,
@@ -293,7 +293,7 @@ export function InvitationsPanel({ campaignId }: InvitationsPanelProps) {
                   {char}
                 </div>
               )) : (
-                <div style={{ fontSize: 13, color: "#b45309", fontFamily: FONT_STACK }}>Sin código generado</div>
+                <div style={{ fontSize: 13, color: "var(--color-text-secondary)", fontFamily: FONT_STACK }}>Sin código generado</div>
               )}
             </div>
 
@@ -311,9 +311,9 @@ export function InvitationsPanel({ campaignId }: InvitationsPanelProps) {
                     fontSize: 12,
                     fontWeight: 700,
                     fontFamily: FONT_STACK,
-                    background: copiedCode ? "#f0fdf4" : "#fff",
-                    color: copiedCode ? "var(--color-success)" : "#92400e",
-                    border: `1px solid ${copiedCode ? "var(--color-success)" : "#fbbf24"}`,
+                    background: copiedCode ? "var(--color-success-bg)" : "var(--color-surface)",
+                    color: copiedCode ? "var(--color-success)" : "var(--color-warning)",
+                    border: `1px solid ${copiedCode ? "var(--color-success)" : "var(--color-warning-border)"}`,
                     borderRadius: 8,
                     cursor: "pointer",
                     transition: "all 0.15s",

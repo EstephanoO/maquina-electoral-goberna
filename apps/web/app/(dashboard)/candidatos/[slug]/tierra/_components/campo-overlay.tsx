@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import type { EnrichedAgent, AgentStatus, MapTheme, DrillState } from "./types";
+import type { EnrichedAgent, AgentStatus, MapTheme, DrillState, FormPoint } from "./types";
 import { STATUS_CFG } from "./constants";
 import {
   Glass, Kpi, CardHeader, AgentRow, RankingRow, MoreBtn, SCROLL_MAX,
@@ -13,6 +13,7 @@ type Props = {
   agents: EnrichedAgent[];
   connectedCount: number;
   formCount: number;
+  forms: FormPoint[];
   primaryColor: string;
   selectedAgentId: string | null;
   onAgentClick: (agentId: string) => void;
@@ -34,10 +35,51 @@ const AGENTS_COLLAPSED = 4;
 const RANKING_COLLAPSED = 5;
 const RANKING_EXPANDED = 15;
 
+const DEPARTAMENTO_BY_CODE: Record<string, string> = {
+  "01": "AMAZONAS",
+  "02": "ANCASH",
+  "03": "APURIMAC",
+  "04": "AREQUIPA",
+  "05": "AYACUCHO",
+  "06": "CAJAMARCA",
+  "07": "CALLAO",
+  "08": "CUSCO",
+  "09": "HUANCAVELICA",
+  "10": "HUANUCO",
+  "11": "ICA",
+  "12": "JUNIN",
+  "13": "LA LIBERTAD",
+  "14": "LAMBAYEQUE",
+  "15": "LIMA",
+  "16": "LORETO",
+  "17": "MADRE DE DIOS",
+  "18": "MOQUEGUA",
+  "19": "PASCO",
+  "20": "PIURA",
+  "21": "PUNO",
+  "22": "SAN MARTIN",
+  "23": "TACNA",
+  "24": "TUMBES",
+  "25": "UCAYALI",
+};
+
+function resolveDepartamento(zona: string): string {
+  const raw = (zona || "").trim();
+  if (!raw) return "Sin region";
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length >= 2) {
+    const dep = DEPARTAMENTO_BY_CODE[digits.slice(0, 2)];
+    if (dep) return dep;
+  }
+  const first = raw.split(/[\-|/>,]/).map((p) => p.trim()).filter(Boolean)[0] || raw;
+  return first.replace(/\d+/g, "").trim().toUpperCase() || "Sin region";
+}
+
 /* ========== Component ========== */
 
 export function CampoOverlay({
   agents, connectedCount, formCount,
+  forms,
   primaryColor, selectedAgentId, onAgentClick,
   mapTheme = "dark", drillState,
   initialVisible = true,
@@ -66,6 +108,28 @@ export function CampoOverlay({
   const rankedAgents = useMemo(() => {
     return [...agents].filter((a) => a.forms_count > 0).sort((a, b) => b.forms_count - a.forms_count);
   }, [agents]);
+
+  const recentAgentLog = useMemo(() => {
+    const latestRegionByAgent = new Map<string, string>();
+    const sortedForms = [...forms].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    for (const f of sortedForms) {
+      const key = f.agent_id || "";
+      if (!key || latestRegionByAgent.has(key)) continue;
+      const rawZona = (f.region || "").trim();
+      const region = resolveDepartamento(rawZona);
+      latestRegionByAgent.set(key, region);
+    }
+
+    return [...agents]
+      .sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())
+      .slice(0, 8)
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+        region: latestRegionByAgent.get(a.id) || "Sin region",
+        status: a.status,
+      }));
+  }, [agents, forms]);
 
   const visibleAgents = useMemo(() => {
     if (selectedAgentId) {
@@ -290,6 +354,40 @@ export function CampoOverlay({
             )}
           </Glass>
         )}
+
+        {/* ═══ Log rapido card ═══ */}
+        <Glass mapTheme={mapTheme}>
+          <CardHeader onClick={() => void 0} open mapTheme={mapTheme}>
+            <span className={`font-semibold text-[12px] ${isDark ? "text-slate-100" : "text-slate-700"}`}>Log rapido</span>
+            <span className="ml-1.5 text-[11px] font-bold tabular-nums" style={{ color: accentColor }}>{recentAgentLog.length}</span>
+            <span className="ml-auto mr-2 text-[9px] font-bold" style={{ color: isDark ? "#cbd5e1" : "#64748b" }}>AGENTE / REGION</span>
+          </CardHeader>
+
+          <div className="max-h-[150px] overflow-y-auto">
+            {recentAgentLog.length === 0 ? (
+              <p className={`px-3 py-3 text-center text-[11px] ${isDark ? "text-slate-400/90" : "text-slate-400/80"}`}>Sin actividad</p>
+            ) : (
+              recentAgentLog.map((row) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  onClick={() => onAgentClick(row.id)}
+                  className={`w-full px-3 py-2 border-b last:border-b-0 flex items-center gap-2 text-left transition-colors cursor-pointer ${isDark ? "border-slate-700/50 hover:bg-white/5" : "border-slate-200 hover:bg-slate-100/60"}`}
+                  title={`Ir a ${row.name}`}
+                >
+                  <span className="w-5 h-5 rounded-md flex items-center justify-center text-[10px]" style={{
+                    backgroundColor: isDark ? "rgba(148,163,184,0.16)" : "#f1f5f9",
+                    color: STATUS_CFG[row.status].color,
+                  }}>
+                    ⦿
+                  </span>
+                  <span className={`text-[11px] font-semibold truncate flex-1 ${isDark ? "text-slate-200" : "text-slate-700"}`} title={row.name}>{row.name}</span>
+                  <span className={`text-[10px] font-medium truncate max-w-[110px] ${isDark ? "text-slate-400" : "text-slate-500"}`} title={row.region}>{row.region}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </Glass>
 
       </div>
     </div>

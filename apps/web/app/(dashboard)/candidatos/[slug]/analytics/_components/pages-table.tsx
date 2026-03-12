@@ -55,7 +55,7 @@ export function PagesTable({ pages, primaryColor }: Props) {
                 <tr key={page.title} style={styles.row}>
                   <td style={styles.tdPage}>
                     <div style={styles.pageCell}>
-                      <span style={{ ...styles.rank, backgroundColor: i < 3 ? `${primaryColor}15` : "#f8fafc", color: i < 3 ? primaryColor : "#94a3b8" }}>
+                      <span style={{ ...styles.rank, backgroundColor: i < 3 ? `${primaryColor}15` : "var(--color-surface-hover)", color: i < 3 ? primaryColor : "var(--color-text-tertiary)" }}>
                         {i + 1}
                       </span>
                       <div style={styles.pageInfo}>
@@ -124,9 +124,9 @@ function truncate(str: string, len: number): string {
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
     overflow: "hidden",
   },
@@ -135,7 +135,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     alignItems: "center",
     padding: "16px 20px",
-    borderBottom: "1px solid #f1f5f9",
+    borderBottom: "1px solid var(--color-surface-active)",
   },
   headerTitle: {
     display: "flex",
@@ -143,7 +143,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 10,
     fontSize: 15,
     fontWeight: 600,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
   },
   headerMeta: {
     display: "flex",
@@ -153,11 +153,11 @@ const styles: Record<string, React.CSSProperties> = {
   metaValue: {
     fontSize: 18,
     fontWeight: 700,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
   },
   metaLabel: {
     fontSize: 12,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
   },
   tableWrapper: {
     overflowX: "auto" as const,
@@ -172,8 +172,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     textTransform: "uppercase" as const,
     letterSpacing: "0.05em",
-    color: "#94a3b8",
-    borderBottom: "1px solid #f1f5f9",
+    color: "var(--color-text-tertiary)",
+    borderBottom: "1px solid var(--color-surface-active)",
     backgroundColor: "#fafbfc",
   },
   thPage: {
@@ -188,12 +188,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   tdPage: {
     padding: "12px 20px",
-    borderBottom: "1px solid #f8fafc",
+    borderBottom: "1px solid var(--color-surface-hover)",
   },
   tdNum: {
     padding: "12px 20px",
     textAlign: "right" as const,
-    borderBottom: "1px solid #f8fafc",
+    borderBottom: "1px solid var(--color-surface-hover)",
   },
   pageCell: {
     display: "flex",
@@ -219,7 +219,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "block",
     fontSize: 13,
     fontWeight: 500,
-    color: "#334155",
+    color: "var(--color-text-secondary)",
     marginBottom: 6,
     whiteSpace: "nowrap" as const,
     overflow: "hidden",
@@ -227,7 +227,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   progressBar: {
     height: 3,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "var(--color-surface-active)",
     borderRadius: 2,
     overflow: "hidden",
     marginTop: 4,
@@ -240,12 +240,12 @@ const styles: Record<string, React.CSSProperties> = {
   numValue: {
     fontSize: 14,
     fontWeight: 600,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
   },
   numValueLight: {
     fontSize: 14,
     fontWeight: 500,
-    color: "#64748b",
+    color: "var(--color-text-secondary)",
   },
   bounceChip: {
     display: "inline-block",
@@ -262,9 +262,9 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     padding: "10px 0",
     border: "none",
-    borderTop: "1px solid #f1f5f9",
+    borderTop: "1px solid var(--color-surface-active)",
     backgroundColor: "transparent",
-    color: "#64748b",
+    color: "var(--color-text-secondary)",
     fontSize: 12,
     fontWeight: 600,
     cursor: "pointer",

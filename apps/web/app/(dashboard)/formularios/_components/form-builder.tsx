@@ -221,8 +221,8 @@ export function FormBuilder({ campaigns, editForm, saving, onSave, onCancel }: F
                     ? "var(--goberna-blue-900)"
                     : isDone
                     ? "#22c55e"
-                    : "#e2e8f0",
-                  color: isActive || isDone ? "#fff" : "#94a3b8",
+                    : "var(--color-border)",
+                  color: isActive || isDone ? "#fff" : "var(--color-text-tertiary)",
                   flexShrink: 0,
                   transition: "all .2s",
                 }}
@@ -249,7 +249,7 @@ export function FormBuilder({ campaigns, editForm, saving, onSave, onCancel }: F
                 style={{
                   flex: 1,
                   height: 2,
-                  background: step > s.num ? "#22c55e" : "#e2e8f0",
+                  background: step > s.num ? "#22c55e" : "var(--color-border)",
                   margin: "0 12px",
                   transition: "background .2s",
                 }}
@@ -277,7 +277,7 @@ export function FormBuilder({ campaigns, editForm, saving, onSave, onCancel }: F
           value={campaignId}
           onChange={(e) => setCampaignId(e.target.value)}
           disabled={!!editForm}
-          style={{ ...INPUT, background: editForm ? "#f8fafc" : "#fff", cursor: editForm ? "not-allowed" : "pointer" }}
+          style={{ ...INPUT, background: editForm ? "var(--color-surface-hover)" : "#fff", cursor: editForm ? "not-allowed" : "pointer" }}
         >
           <option value="">Seleccionar campaña…</option>
           {campaigns.map((c) => (

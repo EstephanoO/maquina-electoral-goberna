@@ -90,10 +90,10 @@ function Sparkline({ data, primaryColor }: SparklineProps) {
             y1={g.y}
             x2={W - PAD.right}
             y2={g.y}
-            stroke="#e2e8f0"
+            stroke="var(--color-border)"
             strokeWidth="0.5"
           />
-          <text x={PAD.left - 4} y={g.y + 3.5} textAnchor="end" fontSize="7" fill="#94a3b8">
+          <text x={PAD.left - 4} y={g.y + 3.5} textAnchor="end" fontSize="7" fill="var(--color-text-tertiary)">
             {g.label}
           </text>
         </g>
@@ -120,7 +120,7 @@ function Sparkline({ data, primaryColor }: SparklineProps) {
 
       {/* X axis labels */}
       {labels.map(({ i, label }) => (
-        <text key={i} x={xScale(i)} y={H - 4} textAnchor="middle" fontSize="7" fill="#94a3b8">
+        <text key={i} x={xScale(i)} y={H - 4} textAnchor="middle" fontSize="7" fill="var(--color-text-tertiary)">
           {label}
         </text>
       ))}
@@ -138,12 +138,12 @@ function DeviceBars({ devices, primaryColor }: { devices: GSCDevice[]; primaryCo
       {devices.map((d, i) => (
         <div key={d.device}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-            <span style={{ fontSize: 12, color: "#475569", fontWeight: 500 }}>{d.device}</span>
-            <span style={{ fontSize: 12, color: "#1e293b", fontWeight: 700 }}>
-              {fmt(d.clicks)} <span style={{ color: "#94a3b8", fontWeight: 400 }}>clics</span>
+            <span style={{ fontSize: 12, color: "var(--color-text-secondary)", fontWeight: 500 }}>{d.device}</span>
+            <span style={{ fontSize: 12, color: "var(--color-text-primary)", fontWeight: 700 }}>
+              {fmt(d.clicks)} <span style={{ color: "var(--color-text-tertiary)", fontWeight: 400 }}>clics</span>
             </span>
           </div>
-          <div style={{ height: 6, borderRadius: 3, backgroundColor: "#f1f5f9", overflow: "hidden" }}>
+          <div style={{ height: 6, borderRadius: 3, backgroundColor: "var(--color-surface-active)", overflow: "hidden" }}>
             <div
               style={{
                 height: "100%",
@@ -154,7 +154,7 @@ function DeviceBars({ devices, primaryColor }: { devices: GSCDevice[]; primaryCo
               }}
             />
           </div>
-          <div style={{ display: "flex", gap: 12, marginTop: 3, fontSize: 10, color: "#94a3b8" }}>
+          <div style={{ display: "flex", gap: 12, marginTop: 3, fontSize: 10, color: "var(--color-text-tertiary)" }}>
             <span>{fmt(d.impressions)} imp.</span>
             <span>CTR {pct(d.ctr)}</span>
             <span>Pos. {d.position.toFixed(1)}</span>
@@ -236,7 +236,7 @@ export function GscPanel({ data, primaryColor }: Props) {
           label="Impresiones"
           value={fmt(totals.impressions)}
           sub="veces que apareció"
-          color="#64748b"
+          color="var(--color-text-secondary)"
         />
         <KpiCell
           label="CTR promedio"
@@ -255,11 +255,11 @@ export function GscPanel({ data, primaryColor }: Props) {
       {/* ── Sparkline ── */}
       <div style={S.chartWrap}>
         <div style={S.chartLegend}>
-          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#64748b" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--color-text-secondary)" }}>
             <span style={{ width: 20, height: 2, backgroundColor: primaryColor, borderRadius: 1, display: "inline-block" }} />
             Clics
           </span>
-          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#94a3b8" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--color-text-tertiary)" }}>
             <span style={{ width: 20, height: 2, backgroundColor: `${primaryColor}66`, borderRadius: 1, display: "inline-block" }} />
             Impresiones
           </span>
@@ -288,7 +288,7 @@ export function GscPanel({ data, primaryColor }: Props) {
               </span>
             )}
             {t === "paginas" && (
-              <span style={{ ...S.tabBadge, backgroundColor: "#f1f5f9", color: "#64748b" }}>
+              <span style={{ ...S.tabBadge, backgroundColor: "var(--color-surface-active)", color: "var(--color-text-secondary)" }}>
                 {pages.length}
               </span>
             )}
@@ -372,13 +372,13 @@ function KpiCell({
 }) {
   return (
     <div style={S.kpiCell}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>
         {label}
       </div>
       <div style={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1, marginBottom: 3 }}>
         {value}
       </div>
-      <div style={{ fontSize: 10, color: "#94a3b8" }}>{sub}</div>
+      <div style={{ fontSize: 10, color: "var(--color-text-tertiary)" }}>{sub}</div>
     </div>
   );
 }
@@ -408,10 +408,10 @@ function QueryRow({
   return (
     <div style={{ ...S.tableRow, backgroundColor: isTop ? `${primaryColor}06` : "transparent" }}>
       <div style={{ flex: 3, display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-        <span style={{ ...S.rank, backgroundColor: rank <= 3 ? `${primaryColor}20` : "#f1f5f9", color: rank <= 3 ? primaryColor : "#94a3b8" }}>
+        <span style={{ ...S.rank, backgroundColor: rank <= 3 ? `${primaryColor}20` : "var(--color-surface-active)", color: rank <= 3 ? primaryColor : "var(--color-text-tertiary)" }}>
           {rank}
         </span>
-        <span style={{ fontSize: 12, color: "#1e293b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 12, color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {query.query}
         </span>
         {query.clicks >= 5 && (
@@ -420,10 +420,10 @@ function QueryRow({
       </div>
       <div style={S.metricCell}>{query.clicks > 0 ? fmt(query.clicks) : <span style={{ color: "#cbd5e1" }}>—</span>}</div>
       <div style={S.metricCell}>{fmt(query.impressions)}</div>
-      <div style={{ ...S.metricCell, color: query.ctr >= 0.1 ? "#10b981" : query.ctr >= 0.05 ? "#f59e0b" : "#64748b" }}>
+      <div style={{ ...S.metricCell, color: query.ctr >= 0.1 ? "#10b981" : query.ctr >= 0.05 ? "#f59e0b" : "var(--color-text-secondary)" }}>
         {query.ctr > 0 ? pct(query.ctr) : <span style={{ color: "#cbd5e1" }}>—</span>}
       </div>
-      <div style={{ ...S.metricCell, color: query.position <= 3 ? "#10b981" : query.position <= 10 ? "#f59e0b" : "#64748b" }}>
+      <div style={{ ...S.metricCell, color: query.position <= 3 ? "#10b981" : query.position <= 10 ? "#f59e0b" : "var(--color-text-secondary)" }}>
         {query.position.toFixed(1)}
       </div>
     </div>
@@ -442,7 +442,7 @@ function PageRow({
   return (
     <div style={S.tableRow}>
       <div style={{ flex: 3, display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-        <span style={{ ...S.rank, backgroundColor: "#f1f5f9", color: "#94a3b8" }}>{rank}</span>
+        <span style={{ ...S.rank, backgroundColor: "var(--color-surface-active)", color: "var(--color-text-tertiary)" }}>{rank}</span>
         <a
           href={page.url}
           target="_blank"
@@ -455,10 +455,10 @@ function PageRow({
       </div>
       <div style={S.metricCell}>{page.clicks > 0 ? fmt(page.clicks) : <span style={{ color: "#cbd5e1" }}>—</span>}</div>
       <div style={S.metricCell}>{fmt(page.impressions)}</div>
-      <div style={{ ...S.metricCell, color: page.ctr >= 0.08 ? "#10b981" : page.ctr >= 0.03 ? "#f59e0b" : "#64748b" }}>
+      <div style={{ ...S.metricCell, color: page.ctr >= 0.08 ? "#10b981" : page.ctr >= 0.03 ? "#f59e0b" : "var(--color-text-secondary)" }}>
         {page.ctr > 0 ? pct(page.ctr) : <span style={{ color: "#cbd5e1" }}>—</span>}
       </div>
-      <div style={{ ...S.metricCell, color: page.position <= 3 ? "#10b981" : page.position <= 10 ? "#f59e0b" : "#64748b" }}>
+      <div style={{ ...S.metricCell, color: page.position <= 3 ? "#10b981" : page.position <= 10 ? "#f59e0b" : "var(--color-text-secondary)" }}>
         {page.position.toFixed(1)}
       </div>
     </div>
@@ -470,13 +470,13 @@ function CountryRow({ rank, country }: { rank: number; country: GSCCountry }) {
   return (
     <div style={S.tableRow}>
       <div style={{ flex: 3, display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-        <span style={{ ...S.rank, backgroundColor: "#f1f5f9", color: "#94a3b8" }}>{rank}</span>
+        <span style={{ ...S.rank, backgroundColor: "var(--color-surface-active)", color: "var(--color-text-tertiary)" }}>{rank}</span>
         <span style={{ fontSize: 14 }}>{emoji}</span>
-        <span style={{ fontSize: 12, color: "#1e293b" }}>{country.country}</span>
+        <span style={{ fontSize: 12, color: "var(--color-text-primary)" }}>{country.country}</span>
       </div>
       <div style={S.metricCell}>{country.clicks > 0 ? fmt(country.clicks) : <span style={{ color: "#cbd5e1" }}>—</span>}</div>
       <div style={S.metricCell}>{fmt(country.impressions)}</div>
-      <div style={{ ...S.metricCell, color: country.ctr >= 0.05 ? "#10b981" : "#64748b" }}>
+      <div style={{ ...S.metricCell, color: country.ctr >= 0.05 ? "#10b981" : "var(--color-text-secondary)" }}>
         {country.ctr > 0 ? pct(country.ctr) : <span style={{ color: "#cbd5e1" }}>—</span>}
       </div>
       <div style={S.metricCell}>{country.position.toFixed(1)}</div>
@@ -486,7 +486,7 @@ function CountryRow({ rank, country }: { rank: number; country: GSCCountry }) {
 
 /* ─── Icon ─── */
 
-function SearchIcon({ color = "#64748b" }: { color?: string }) {
+function SearchIcon({ color = "var(--color-text-secondary)" }: { color?: string }) {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <circle cx="11" cy="11" r="8" />
@@ -499,8 +499,8 @@ function SearchIcon({ color = "#64748b" }: { color?: string }) {
 
 const S: Record<string, React.CSSProperties> = {
   card: {
-    backgroundColor: "#ffffff",
-    border: "1px solid #e2e8f0",
+    backgroundColor: "var(--color-surface)",
+    border: "1px solid var(--color-border)",
     borderRadius: 16,
     overflow: "hidden",
   },
@@ -509,7 +509,7 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "16px 20px 12px",
-    borderBottom: "1px solid #f1f5f9",
+    borderBottom: "1px solid var(--color-surface-active)",
   },
   iconWrap: {
     width: 36,
@@ -522,26 +522,26 @@ const S: Record<string, React.CSSProperties> = {
   cardTitle: {
     fontSize: 14,
     fontWeight: 700,
-    color: "#0f172a",
+    color: "var(--color-text-primary)",
     lineHeight: 1.2,
   },
   cardSub: {
     fontSize: 11,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     marginTop: 1,
   },
   kpiRow: {
     display: "grid",
     gridTemplateColumns: "repeat(4, 1fr)",
-    borderBottom: "1px solid #f1f5f9",
+    borderBottom: "1px solid var(--color-surface-active)",
   },
   kpiCell: {
     padding: "16px 20px",
-    borderRight: "1px solid #f1f5f9",
+    borderRight: "1px solid var(--color-surface-active)",
   },
   chartWrap: {
     padding: "12px 16px 8px",
-    borderBottom: "1px solid #f1f5f9",
+    borderBottom: "1px solid var(--color-surface-active)",
   },
   chartLegend: {
     display: "flex",
@@ -551,7 +551,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   tabs: {
     display: "flex",
-    borderBottom: "1px solid #f1f5f9",
+    borderBottom: "1px solid var(--color-surface-active)",
     padding: "0 12px",
     gap: 0,
     backgroundColor: "#fafafa",
@@ -560,7 +560,7 @@ const S: Record<string, React.CSSProperties> = {
     padding: "10px 16px",
     fontSize: 12,
     fontWeight: 600,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     background: "none",
     border: "none",
     borderBottom: "2px solid transparent",
@@ -584,10 +584,10 @@ const S: Record<string, React.CSSProperties> = {
     padding: "6px 8px",
     fontSize: 10,
     fontWeight: 700,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     textTransform: "uppercase" as const,
     letterSpacing: "0.06em",
-    borderBottom: "1px solid #f1f5f9",
+    borderBottom: "1px solid var(--color-surface-active)",
     marginBottom: 2,
   },
   tableRow: {
@@ -595,7 +595,7 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: "center",
     padding: "7px 8px",
     borderRadius: 8,
-    borderBottom: "1px solid #f8fafc",
+    borderBottom: "1px solid var(--color-surface-hover)",
     transition: "background-color 0.15s",
   },
   metricCell: {
@@ -603,7 +603,7 @@ const S: Record<string, React.CSSProperties> = {
     textAlign: "right" as const,
     fontSize: 12,
     fontWeight: 600,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
   },
   rank: {
     minWidth: 20,
@@ -629,9 +629,9 @@ const S: Record<string, React.CSSProperties> = {
     padding: "6px 12px",
     fontSize: 11,
     fontWeight: 600,
-    color: "#64748b",
-    backgroundColor: "#f8fafc",
-    border: "1px solid #e2e8f0",
+    color: "var(--color-text-secondary)",
+    backgroundColor: "var(--color-surface-hover)",
+    border: "1px solid var(--color-border)",
     borderRadius: 8,
     cursor: "pointer",
     width: "100%",

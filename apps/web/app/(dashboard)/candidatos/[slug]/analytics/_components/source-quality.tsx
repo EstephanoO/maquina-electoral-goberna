@@ -35,8 +35,8 @@ const CHANNEL_COLORS: Record<string, string> = {
   twitter: "#1DA1F2",
   tiktok: "#000000",
   youtube: "#FF0000",
-  direct: "#64748b",
-  "(direct)": "#64748b",
+  direct: "var(--color-text-secondary)",
+  "(direct)": "var(--color-text-secondary)",
 };
 
 const MEDIUM_LABELS: Record<string, string> = {
@@ -243,9 +243,9 @@ function getChannelColor(source: string, fallback: string): string {
 
 const S: Record<string, React.CSSProperties> = {
   container: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     padding: 20,
     display: "flex",
     flexDirection: "column" as const,
@@ -261,13 +261,13 @@ const S: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: 14,
     fontWeight: 700,
-    color: "#0f172a",
+    color: "var(--color-text-primary)",
   },
   badge: {
     fontSize: 11,
     fontWeight: 500,
-    color: "#64748b",
-    backgroundColor: "#f1f5f9",
+    color: "var(--color-text-secondary)",
+    backgroundColor: "var(--color-surface-active)",
     padding: "3px 8px",
     borderRadius: 4,
   },
@@ -278,7 +278,7 @@ const S: Record<string, React.CSSProperties> = {
     marginBottom: 16,
   },
   summaryCard: {
-    backgroundColor: "#f8fafc",
+    backgroundColor: "var(--color-surface-hover)",
     borderRadius: 8,
     padding: "10px 12px",
     textAlign: "center" as const,
@@ -287,13 +287,13 @@ const S: Record<string, React.CSSProperties> = {
     display: "block",
     fontSize: 14,
     fontWeight: 700,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
   },
   summaryLabel: {
     display: "block",
     fontSize: 9,
     fontWeight: 500,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     textTransform: "uppercase" as const,
     marginTop: 2,
   },
@@ -332,13 +332,13 @@ const S: Record<string, React.CSSProperties> = {
   sourceName: {
     fontSize: 12,
     fontWeight: 600,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
   },
   mediumTag: {
     fontSize: 9,
     fontWeight: 500,
-    color: "#64748b",
-    backgroundColor: "#f1f5f9",
+    color: "var(--color-text-secondary)",
+    backgroundColor: "var(--color-surface-active)",
     padding: "1px 5px",
     borderRadius: 3,
     display: "inline-block",
@@ -359,7 +359,7 @@ const S: Record<string, React.CSSProperties> = {
   barBg: {
     flex: 1,
     height: 6,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "var(--color-surface-active)",
     borderRadius: 3,
     overflow: "hidden",
   },
@@ -371,7 +371,7 @@ const S: Record<string, React.CSSProperties> = {
   barPercent: {
     fontSize: 11,
     fontWeight: 600,
-    color: "#334155",
+    color: "var(--color-text-secondary)",
     minWidth: 36,
     textAlign: "right" as const,
   },
@@ -382,7 +382,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   stat: {
     fontSize: 10,
-    color: "#64748b",
+    color: "var(--color-text-secondary)",
   },
   qualityBadge: {
     fontSize: 9,
@@ -392,7 +392,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   moreText: {
     fontSize: 11,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     textAlign: "center" as const,
     marginTop: 8,
   },
@@ -408,6 +408,6 @@ const S: Record<string, React.CSSProperties> = {
   emptyText: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
   },
 };

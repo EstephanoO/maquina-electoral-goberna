@@ -6,9 +6,12 @@
 import type { CSSProperties } from "react";
 import { Card } from "../../../../lib/ui";
 import { IconChevronDown } from "../../../../lib/ui";
+import { useTheme } from "../../../../lib/theme-context";
 import { ROLES } from "./role-config";
 
 export function HierarchyDiagram() {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const sorted = Object.values(ROLES).filter((r) => r.key !== "admin").sort((a, b) => b.level - a.level);
 
   const headerStyle: CSSProperties = {
@@ -24,7 +27,8 @@ export function HierarchyDiagram() {
   return (
     <Card padding="lg">
       <div style={headerStyle}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--goberna-blue-600)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--goberna-blue-600)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+          <title>Estructura de mando</title>
           <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
           <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
         </svg>
@@ -52,10 +56,10 @@ export function HierarchyDiagram() {
                 <div style={{ fontSize: 13, fontWeight: 700, color: role.color }}>
                   {role.label}
                 </div>
-                <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", lineHeight: 1.3 }}>
+                <div style={{ fontSize: 11, color: isDark ? "#ffffff" : "var(--color-text-tertiary)", lineHeight: 1.3 }}>
                   {role.description}
                   {role.capacity && (
-                    <span style={{ marginLeft: 6, fontWeight: 600, color: "var(--color-text-secondary)" }}>
+                    <span style={{ marginLeft: 6, fontWeight: 600, color: isDark ? "#ffffff" : "var(--color-text-secondary)" }}>
                       {role.capacity}
                     </span>
                   )}

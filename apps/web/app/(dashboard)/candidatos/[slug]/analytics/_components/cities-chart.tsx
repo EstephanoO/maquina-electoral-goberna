@@ -53,8 +53,8 @@ export function CitiesChart({ cities, primaryColor }: Props) {
               <div style={styles.rowLeft}>
                 <span style={{ 
                   ...styles.rank, 
-                  backgroundColor: isTop3 ? primaryColor : "#f1f5f9",
-                  color: isTop3 ? "#ffffff" : "#64748b",
+                  backgroundColor: isTop3 ? primaryColor : "var(--color-surface-active)",
+                  color: isTop3 ? "var(--color-surface)" : "var(--color-text-secondary)",
                 }}>
                   {i + 1}
                 </span>
@@ -73,7 +73,7 @@ export function CitiesChart({ cities, primaryColor }: Props) {
                     }} 
                   />
                 </div>
-                <span style={{ ...styles.value, color: isTop3 ? "#1e293b" : "#64748b" }}>
+                <span style={{ ...styles.value, color: isTop3 ? "var(--color-text-primary)" : "var(--color-text-secondary)" }}>
                   {city.activeUsers.toLocaleString()}
                 </span>
                 <span style={styles.pct}>{shareOfTotal}%</span>
@@ -97,9 +97,9 @@ export function CitiesChart({ cities, primaryColor }: Props) {
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
     overflow: "hidden",
   },
@@ -108,7 +108,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     alignItems: "center",
     padding: "16px 20px",
-    borderBottom: "1px solid #f1f5f9",
+    borderBottom: "1px solid var(--color-surface-active)",
   },
   headerTitle: {
     display: "flex",
@@ -116,14 +116,14 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 10,
     fontSize: 15,
     fontWeight: 600,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
   },
   headerMeta: {},
   metaBadge: {
     fontSize: 11,
     fontWeight: 600,
-    color: "#64748b",
-    backgroundColor: "#f1f5f9",
+    color: "var(--color-text-secondary)",
+    backgroundColor: "var(--color-surface-active)",
     padding: "4px 10px",
     borderRadius: 6,
   },
@@ -157,7 +157,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cityName: {
     fontSize: 13,
-    color: "#334155",
+    color: "var(--color-text-secondary)",
     whiteSpace: "nowrap" as const,
     overflow: "hidden",
     textOverflow: "ellipsis",
@@ -171,7 +171,7 @@ const styles: Record<string, React.CSSProperties> = {
   barWrapper: {
     flex: 1,
     height: 8,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "var(--color-surface-active)",
     borderRadius: 4,
     overflow: "hidden",
   },
@@ -188,17 +188,17 @@ const styles: Record<string, React.CSSProperties> = {
   },
   pct: {
     fontSize: 11,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     width: 40,
     textAlign: "right" as const,
   },
   footer: {
     padding: "12px 20px",
-    borderTop: "1px solid #f1f5f9",
+    borderTop: "1px solid var(--color-surface-active)",
     backgroundColor: "#fafbfc",
   },
   footerText: {
     fontSize: 12,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
   },
 };

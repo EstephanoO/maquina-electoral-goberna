@@ -122,9 +122,9 @@ function KpiIcon({ name, color }: { name: string; color: string }) {
 const styles: Record<string, React.CSSProperties> = {
   grid: {
     display: "flex",
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)",
     overflow: "hidden",
   },
@@ -142,7 +142,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   divider: {
     width: 1,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "var(--color-surface-active)",
     margin: "12px 0",
   },
   iconWrapper: {},
@@ -162,7 +162,7 @@ const styles: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: 12,
     fontWeight: 500,
-    color: "#64748b",
+    color: "var(--color-text-secondary)",
     textTransform: "uppercase" as const,
     letterSpacing: "0.025em",
   },
@@ -181,13 +181,13 @@ const styles: Record<string, React.CSSProperties> = {
   unit: {
     fontSize: 14,
     fontWeight: 500,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
   },
   change: {
     margin: 0,
     marginTop: 6,
     fontSize: 11,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     fontWeight: 500,
   },
 };

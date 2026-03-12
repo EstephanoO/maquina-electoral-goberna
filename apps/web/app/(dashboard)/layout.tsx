@@ -164,28 +164,6 @@ function CloseIcon() {
   );
 }
 
-function CollapseIcon({ collapsed }: { collapsed: boolean }) {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      style={{
-        transform: collapsed ? "rotate(180deg)" : "rotate(0deg)",
-        transition: "transform 0.2s ease",
-      }}
-    >
-      <polyline points="15 18 9 12 15 6" />
-    </svg>
-  );
-}
-
 function LogoutIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -267,29 +245,6 @@ function LoadingScreen() {
   );
 }
 
-// ── Sidebar state persistence ───────────────────────────────────────
-
-const SIDEBAR_STORAGE_KEY = "goberna_sidebar_collapsed";
-
-function readSidebarPref(): boolean {
-  if (typeof window === "undefined") return true;
-  try {
-    const val = localStorage.getItem(SIDEBAR_STORAGE_KEY);
-    // Default to collapsed on first visit (no stored preference)
-    if (val === null) return true;
-    return val === "1";
-  } catch {
-    return true;
-  }
-}
-
-function writeSidebarPref(collapsed: boolean) {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(SIDEBAR_STORAGE_KEY, collapsed ? "1" : "0");
-  } catch { /* noop */ }
-}
-
 // ── Sidebar constants ───────────────────────────────────────────────
 
 const SIDEBAR_W_EXPANDED = 260;
@@ -322,30 +277,20 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
   const pathname = usePathname();
 
   // ── Sidebar state ─────────────────────────────────────────
-  const [collapsed, setCollapsed] = useState(() => readSidebarPref());
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [campaignDropdownOpen, setCampaignDropdownOpen] = useState(false);
-  const [edgeHover, setEdgeHover] = useState(false);
+  const [sidebarHoverOpen, setSidebarHoverOpen] = useState(false);
 
   // Derive UI role from the authenticated user's backend role
   const uiRole: UIRole = mapBackendRoleToUI(user?.role ?? "agent");
 
   // Sidebar respects user preference on all routes (including /tierra)
-  const showCollapsed = isMobile ? true : collapsed;
+  const showCollapsed = isMobile ? true : !sidebarHoverOpen;
   const showLabel = !showCollapsed || mobileOpen;
   const sidebarWidth = showCollapsed ? SIDEBAR_W_COLLAPSED : SIDEBAR_W_EXPANDED;
   const isCmsRoute = pathname === "/cms" || pathname.startsWith("/cms/");
   const isImmersiveRoute = pathname.includes("/tierra");
-
-  // Persist preference (only for non-immersive toggling)
-  const handleToggleCollapse = useCallback(() => {
-    setCollapsed((prev) => {
-      const next = !prev;
-      writeSidebarPref(next);
-      return next;
-    });
-  }, []);
 
   // Track viewport width for mobile detection (avoids SSR window access)
   useEffect(() => {
@@ -503,6 +448,8 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
       {/* ── Sidebar ────────────────────────────────────────────── */}
       <aside
         className="dashboard-shell-sidebar"
+        onMouseEnter={() => { if (!isMobile) setSidebarHoverOpen(true); }}
+        onMouseLeave={() => { if (!isMobile) setSidebarHoverOpen(false); }}
         style={{
           position: "fixed",
           top: 0,
@@ -515,7 +462,7 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
           flexDirection: "column",
           transition: "width var(--duration-normal) var(--ease-in-out)",
           zIndex: 999,
-          boxShadow: mobileOpen ? "4px 0 24px rgba(0,0,0,0.3)" : "1px 0 0 rgba(255,255,255,0.04)",
+          boxShadow: mobileOpen ? "4px 0 24px rgba(0,0,0,0.3)" : "1px 0 0 rgba(255,255,255,0.1)",
           overflow: "hidden",
         }}
       >
@@ -900,72 +847,6 @@ const DashboardShell = memo(function DashboardShell({ children }: { children: Re
           </div>
         </div>
       </aside>
-
-      {/* ── Sidebar edge hover zone + toggle (desktop only) ──── */}
-      {!isMobile && (
-        <div
-          className="sidebar-edge-zone dashboard-sidebar-edge-zone"
-          style={{
-            position: "fixed",
-            top: 0,
-            left: sidebarWidth - 10,
-            bottom: 0,
-            width: 20,
-            zIndex: 1000,
-            transition: "left var(--duration-normal) var(--ease-in-out)",
-          }}
-        >
-          {/* Toggle pill centered on edge */}
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); handleToggleCollapse(); }}
-            onMouseEnter={() => setEdgeHover(true)}
-            onMouseLeave={() => setEdgeHover(false)}
-            onFocus={() => setEdgeHover(true)}
-            onBlur={() => setEdgeHover(false)}
-            aria-label={showCollapsed ? "Expandir menu" : "Colapsar menu"}
-            className="sidebar-edge-btn"
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              width: 18,
-              height: 36,
-              borderRadius: 9,
-              background: edgeHover ? "var(--goberna-blue-800)" : "var(--goberna-blue-900)",
-              border: "2px solid var(--color-background)",
-              color: edgeHover ? "#ffffff" : "rgba(255,255,255,0.4)",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 0,
-              opacity: edgeHover ? 1 : 0.35,
-              transition: "opacity var(--duration-normal) ease, background var(--duration-fast) ease, color var(--duration-fast) ease",
-              boxShadow: edgeHover ? "var(--shadow-md)" : "var(--shadow-xs)",
-            }}
-          >
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-              style={{
-                transform: showCollapsed ? "rotate(180deg)" : "rotate(0deg)",
-                transition: "transform var(--duration-normal) ease",
-              }}
-            >
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </button>
-        </div>
-      )}
 
       {/* ── Mobile hamburger (only visible on mobile) ──────────── */}
       {isMobile && !mobileOpen && !isCmsRoute && (

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTheme } from "@/lib/theme-context";
 
 import type { FormRecord } from "@/lib/services";
 import { deleteForm, updateForm } from "@/lib/services";
@@ -86,6 +87,7 @@ export default function TierraPage() {
   const slug = params.slug as string;
   const mapHandleRef = useRef<TierraMapHandle | null>(null);
   const { user, logout } = useAuth();
+  const { theme, setTheme } = useTheme();
   const queryClient = useQueryClient();
 
   const handleHeaderLogout = useCallback(async () => {
@@ -119,7 +121,7 @@ export default function TierraPage() {
   const [datosVizMode, setDatosVizMode] = useState<DatosVizMode>("points");
   const [heatmapRadius, setHeatmapRadius] = useState(26);
   const [heatmapOpacity, setHeatmapOpacity] = useState(0.88);
-  const [mapTheme, setMapTheme] = useState<MapTheme>("voyager");
+  const mapTheme: MapTheme = theme === "dark" ? "dark" : "voyager";
   const isFullscreen = true;
   const [showControlsPanel, setShowControlsPanel] = useState(false);
   const [rightPanelCloseSignal, setRightPanelCloseSignal] = useState(0);
@@ -167,7 +169,7 @@ export default function TierraPage() {
     setViewMode("campo");
     setActiveLayer("datos");
     setTimeout(() => {
-      mapHandleRef.current?.flyToPoint(lng, lat, 16);
+      mapHandleRef.current?.flyToPoint(lng, lat, 16, false);
       if (tooltipData) mapHandleRef.current?.showPinnedTooltip(tooltipData);
     }, 120);
   }, []);
@@ -276,12 +278,12 @@ export default function TierraPage() {
   if (statsLoading) {
     return (
       <div
-        className="fixed right-0 bottom-0 z-50 flex flex-col bg-slate-50 overflow-hidden transition-[left,top] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
+        className={`fixed right-0 bottom-0 z-50 flex flex-col overflow-hidden transition-[left,top] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] ${theme === "dark" ? "bg-[#090D15]" : "bg-slate-50"}`}
         style={{ top: isFullscreen ? 0 : 48, left: isFullscreen ? 0 : "var(--sidebar-current-width, 72px)" }}
       >
-        <div className="flex flex-col items-center justify-center flex-1 gap-3 bg-slate-50">
-          <div className="w-8 h-8 border-[3px] border-slate-200 border-t-blue-700 rounded-full animate-spin" />
-          <span className="text-sm text-slate-500">Cargando campaña...</span>
+        <div className={`flex flex-col items-center justify-center flex-1 gap-3 ${theme === "dark" ? "bg-[#090D15]" : "bg-slate-50"}`}>
+          <div className={`w-8 h-8 border-[3px] rounded-full animate-spin ${theme === "dark" ? "border-slate-700 border-t-slate-100" : "border-slate-200 border-t-blue-700"}`} />
+          <span className={`text-sm ${theme === "dark" ? "text-slate-300" : "text-slate-500"}`}>Cargando campaña...</span>
         </div>
       </div>
     );
@@ -289,13 +291,13 @@ export default function TierraPage() {
   if (statsError || !stats) {
     return (
       <div
-        className="fixed right-0 bottom-0 z-50 flex flex-col bg-slate-50 overflow-hidden transition-[left,top] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
+        className={`fixed right-0 bottom-0 z-50 flex flex-col overflow-hidden transition-[left,top] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] ${theme === "dark" ? "bg-[#090D15]" : "bg-slate-50"}`}
         style={{ top: isFullscreen ? 0 : 48, left: isFullscreen ? 0 : "var(--sidebar-current-width, 72px)" }}
       >
-        <div className="flex flex-col items-center justify-center flex-1 gap-3 bg-slate-50">
-          <div className="text-lg font-semibold text-slate-800">No se pudo cargar</div>
-          <div className="text-sm text-slate-500">{statsError instanceof Error ? statsError.message : "Candidato no encontrado"}</div>
-          <button type="button" onClick={() => refetchStats()} className="mt-3 px-5 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-[13px] cursor-pointer hover:bg-slate-50">Reintentar</button>
+        <div className={`flex flex-col items-center justify-center flex-1 gap-3 ${theme === "dark" ? "bg-[#090D15]" : "bg-slate-50"}`}>
+          <div className={`text-lg font-semibold ${theme === "dark" ? "text-slate-100" : "text-slate-800"}`}>No se pudo cargar</div>
+          <div className={`text-sm ${theme === "dark" ? "text-slate-400" : "text-slate-500"}`}>{statsError instanceof Error ? statsError.message : "Candidato no encontrado"}</div>
+          <button type="button" onClick={() => refetchStats()} className={`mt-3 px-5 py-2 rounded-lg border text-[13px] cursor-pointer ${theme === "dark" ? "border-slate-700 bg-[#090D15] text-slate-100 hover:bg-[#090D15]" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>Reintentar</button>
         </div>
       </div>
     );
@@ -306,7 +308,7 @@ export default function TierraPage() {
 
   return (
     <div
-      className="fixed z-50 flex flex-col bg-slate-50 overflow-hidden right-0 bottom-0 transition-[left,top] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
+      className={`fixed z-50 flex flex-col overflow-hidden right-0 bottom-0 transition-[left,top] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] ${theme === "dark" ? "bg-[#090D15]" : "bg-slate-50"}`}
       style={{ top: isFullscreen ? 0 : 48, left: isFullscreen ? 0 : "var(--sidebar-current-width, 72px)" }}
     >
       <TierraHeader
@@ -355,7 +357,7 @@ export default function TierraPage() {
             style={{ left: showControlsPanel ? 12 : -(leftPanelWidth + 4) }}
           >
             <div style={{ width: leftPanelWidth }}>
-              <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={setMapTheme} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
+              <MapControls activeLayer={activeLayer} onLayerChange={handleLayerChange} showRoutes={showRoutes} onRoutesToggle={handleRoutesToggle} datosVizMode={datosVizMode} onDatosVizModeChange={setDatosVizMode} heatmapRadius={heatmapRadius} heatmapOpacity={heatmapOpacity} onHeatmapRadiusChange={setHeatmapRadius} onHeatmapOpacityChange={setHeatmapOpacity} mapTheme={mapTheme} onMapThemeChange={(nextTheme) => { setTheme(nextTheme === "dark" ? "dark" : "light"); }} agentCount={enrichedAgents.length} formCount={stats.totals.forms_count} routeSurveyorCount={routeSurveyorCount} />
             </div>
             <button
               type="button"
@@ -363,7 +365,7 @@ export default function TierraPage() {
               aria-label={showControlsPanel ? "Ocultar controles" : "Mostrar controles"}
               className={`cursor-pointer -ml-0.5 mt-2 rounded-r-2xl border w-8 h-12 p-0 flex items-center justify-center shadow-lg transition-colors ${
                 mapTheme === "dark"
-                  ? "border-slate-600 bg-slate-900/85 text-slate-100 hover:bg-slate-800/90"
+                  ? "border-slate-600 bg-[#090D15]/85 text-slate-100 hover:bg-[#090D15]/90"
                   : "border-slate-200 bg-white/95 text-slate-700 hover:bg-slate-100/95"
               }`}
               title={showControlsPanel ? "Ocultar controles" : "Mostrar controles"}
@@ -377,6 +379,7 @@ export default function TierraPage() {
             agents={filteredAgents}
             connectedCount={connectedCount}
             formCount={drillBounds ? filteredFormPoints.length : stats.totals.forms_count}
+            forms={drillBounds ? filteredFormPoints : formPoints}
             primaryColor={campaign.color_primario}
             selectedAgentId={selectedAgentId}
             onAgentClick={handleAgentListClick}

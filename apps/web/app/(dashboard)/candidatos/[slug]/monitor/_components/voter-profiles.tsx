@@ -21,15 +21,8 @@ import {
   type PipelineStatus,
   PIPELINE_STATUSES,
 } from "@/lib/services/voter-profiles";
-
-// ── Palette ─────────────────────────────────────────────────────────
-const G = {
-  gold: "#FFC800", goldDim: "#CC9F00", goldFaint: "rgba(255,200,0,0.10)",
-  goldBorder: "rgba(255,200,0,0.25)", bg: "#060e18", surface: "#0c1a28",
-  surfaceUp: "#0f2035", border: "rgba(255,255,255,0.06)", text: "#e9eef3",
-  textMid: "#7a95aa", textDim: "#334d63", green: "#22c55e", red: "#ef5350",
-  blue: "#3b82f6", orange: "#f59e0b", purple: "#a855f7", cyan: "#06b6d4",
-} as const;
+import { MONITOR_THEME as G } from "./theme";
+import { MetricCard } from "./metric-card";
 
 const STATUS_COLORS: Record<string, string> = {
   nuevo: G.textMid, contactado: G.blue, respondido: G.cyan,
@@ -50,6 +43,28 @@ function fmtDate(iso: string | null): string {
 function fmtPhone(p: string): string {
   if (p.length === 9) return `+51 ${p.slice(0, 3)} ${p.slice(3, 6)} ${p.slice(6)}`;
   return p;
+}
+
+function voteClassLabel(v: string): string {
+  return v === "duro" ? "Duro" : v === "blando" ? "Blando" : v === "flotante" ? "Flotante" : v === "invalido" ? "Invalido" : v;
+}
+
+function StatusIcon({ color }: { color: string }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12 2.5 2.5L15.5 10" />
+    </svg>
+  );
+}
+
+function VoteIcon({ color }: { color: string }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 11 12 14 22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+    </svg>
+  );
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -90,7 +105,7 @@ function EditPanel({ profile, campaignId, onSaved, onClose }: {
 
   const inputStyle: React.CSSProperties = {
     width: "100%", padding: "8px 10px", borderRadius: 8,
-    background: G.surfaceUp, border: `1px solid ${G.border}`,
+    background: G.surfaceAlt, border: `1px solid ${G.borderStrong}`,
     color: G.text, fontSize: 12, outline: "none",
   };
   const labelStyle: React.CSSProperties = {
@@ -100,26 +115,12 @@ function EditPanel({ profile, campaignId, onSaved, onClose }: {
 
   return (
     <div style={{
-      background: G.surface, border: `1px solid ${G.goldBorder}`, borderRadius: 14,
+      background: G.surface, border: `1px solid ${G.borderStrong}`, borderRadius: 24,
       padding: "20px 24px", marginTop: 10,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: G.gold }}>Editar Perfil</span>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" onClick={handleSave} disabled={saving} style={{
-            padding: "6px 16px", borderRadius: 8, border: "none",
-            background: G.green, color: "#fff", fontSize: 11, fontWeight: 700,
-            cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1,
-          }}>
-            {saving ? "Guardando..." : "Guardar"}
-          </button>
-          <button type="button" onClick={onClose} style={{
-            padding: "6px 12px", borderRadius: 8, border: `1px solid ${G.border}`,
-            background: "transparent", color: G.textMid, fontSize: 11, fontWeight: 700, cursor: "pointer",
-          }}>
-            Cancelar
-          </button>
-        </div>
+        <span style={{ fontSize: 13, fontWeight: 800, color: G.brandBlue }}>Editar Perfil</span>
+        <span style={{ fontSize: 10, color: G.textDim }}>Actualiza los datos del perfil</span>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -171,12 +172,104 @@ function EditPanel({ profile, campaignId, onSaved, onClose }: {
             {profile.name_variants.map(n => (
               <span key={n} style={{
                 fontSize: 10, padding: "2px 8px", borderRadius: 6,
-                background: "rgba(255,255,255,0.04)", color: G.textDim,
+                background: G.surfaceAlt, color: G.textDim,
               }}>{n}</span>
             ))}
           </div>
         </div>
       )}
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+        <button type="button" onClick={onClose} style={{
+          display: "inline-flex", alignItems: "center", gap: 8,
+          padding: "8px 14px", borderRadius: 12, border: `1px solid ${G.borderStrong}`,
+          background: G.surfaceAlt, color: G.textMid, fontSize: 11, fontWeight: 700, cursor: "pointer",
+          transition: "transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease",
+        }}
+        onMouseEnter={(event) => {
+          event.currentTarget.style.transform = "translateY(-1px)";
+          event.currentTarget.style.background = G.surfaceSoft;
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.style.transform = "translateY(0)";
+          event.currentTarget.style.background = G.surfaceAlt;
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg>
+          Cancelar
+        </button>
+        <button type="button" onClick={handleSave} disabled={saving} style={{
+          display: "inline-flex", alignItems: "center", gap: 8,
+          padding: "8px 16px", borderRadius: 12, border: "none",
+          background: G.green, color: "#fff", fontSize: 11, fontWeight: 700,
+          cursor: saving ? "default" : "pointer", opacity: saving ? 0.5 : 1,
+          transition: "transform 0.18s ease, filter 0.18s ease",
+        }}
+        onMouseEnter={(event) => {
+          if (saving) return;
+          event.currentTarget.style.transform = "translateY(-1px)";
+          event.currentTarget.style.filter = "brightness(1.03)";
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.style.transform = "translateY(0)";
+          event.currentTarget.style.filter = "brightness(1)";
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+            <path d="M17 21v-8H7v8" />
+            <path d="M7 3v5h8" />
+          </svg>
+          {saving ? "Guardando..." : "Guardar"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EditProfileModal({ profile, campaignId, onSaved, onClose }: {
+  profile: VoterProfile;
+  campaignId: string;
+  onSaved: (p: VoterProfile) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        zIndex: 80,
+      }}
+    >
+      <button
+        type="button"
+        aria-label="Cerrar modal de editar perfil"
+        onClick={onClose}
+        style={{
+          position: "absolute",
+          inset: 0,
+          border: "none",
+          background: "rgba(15, 23, 42, 0.32)",
+          backdropFilter: "blur(4px)",
+          cursor: "pointer",
+        }}
+      />
+      <div
+        style={{
+          position: "relative",
+          width: "min(920px, 100%)",
+          maxHeight: "calc(100vh - 48px)",
+          overflowY: "auto",
+          borderRadius: 28,
+        }}
+      >
+        <EditPanel profile={profile} campaignId={campaignId} onSaved={onSaved} onClose={onClose} />
+      </div>
     </div>
   );
 }
@@ -201,30 +294,41 @@ function ProfileDetail({ profile, campaignId, onUpdate }: {
 
   return (
     <div style={{ padding: "12px 16px" }}>
-      {/* Pipeline buttons */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-        {PIPELINE_STATUSES.map(s => (
-          <button
-            key={s}
-            type="button"
-            disabled={changingStatus || profile.pipeline_status === s}
-            onClick={() => handleStatusChange(s)}
-            style={{
-              padding: "5px 12px", borderRadius: 6, fontSize: 10, fontWeight: 700,
-              border: profile.pipeline_status === s ? `2px solid ${STATUS_COLORS[s]}` : `1px solid ${G.border}`,
-              background: profile.pipeline_status === s ? `${STATUS_COLORS[s]}15` : "transparent",
-              color: profile.pipeline_status === s ? STATUS_COLORS[s] : G.textDim,
-              cursor: profile.pipeline_status === s || changingStatus ? "default" : "pointer",
-              textTransform: "capitalize", transition: "all 0.2s",
-            }}
-          >
-            {s}
-          </button>
-        ))}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: G.text, lineHeight: 1.1 }}>
+            {profile.canonical_name || fmtPhone(profile.canonical_phone)}
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12, color: G.textDim }}>
+            {fmtPhone(profile.canonical_phone)}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          aria-label="Editar perfil"
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 999,
+            border: `1px solid ${G.borderStrong}`,
+            background: G.surfaceSoft,
+            color: G.brandBlue,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+        </button>
       </div>
 
       {/* Info grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
         <InfoItem label="Telefono" value={fmtPhone(profile.canonical_phone)} />
         <InfoItem label="Zona" value={profile.zona || "\u2014"} />
         <InfoItem label="Distrito" value={profile.distrito || "\u2014"} />
@@ -238,13 +342,41 @@ function ProfileDetail({ profile, campaignId, onUpdate }: {
         {profile.confidence != null && <InfoItem label="Confianza IA" value={`${Math.round(profile.confidence * 100)}%`} />}
       </div>
 
+      {/* Pipeline buttons */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        {PIPELINE_STATUSES.map(s => (
+          <button
+            key={s}
+            type="button"
+            disabled={changingStatus || profile.pipeline_status === s}
+            onClick={() => handleStatusChange(s)}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "7px 12px", borderRadius: 999, fontSize: 10, fontWeight: 700,
+              border: `1px solid ${profile.pipeline_status === s ? STATUS_COLORS[s] : G.borderStrong}`,
+              background: profile.pipeline_status === s ? `${STATUS_COLORS[s]}12` : G.surface,
+              color: profile.pipeline_status === s ? STATUS_COLORS[s] : G.textDim,
+              cursor: profile.pipeline_status === s || changingStatus ? "default" : "pointer",
+              textTransform: "capitalize", transition: "background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease",
+            }}
+          >
+            <StatusIcon color={profile.pipeline_status === s ? STATUS_COLORS[s] : G.textDim} />
+            {s}
+          </button>
+        ))}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 10, fontWeight: 700, padding: "7px 12px", borderRadius: 999, background: `${VOTE_COLORS[profile.vote_class] ?? G.textDim}12`, color: VOTE_COLORS[profile.vote_class] ?? G.textDim, textTransform: "capitalize", border: `1px solid ${VOTE_COLORS[profile.vote_class] ?? G.borderStrong}` }}>
+          <VoteIcon color={VOTE_COLORS[profile.vote_class] ?? G.textDim} />
+          {profile.vote_class ? voteClassLabel(profile.vote_class) : "No definido"}
+        </span>
+      </div>
+
       {/* Tags */}
       {profile.tags.length > 0 && (
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
           {profile.tags.map(t => (
             <span key={t} style={{
               fontSize: 10, padding: "2px 8px", borderRadius: 6,
-              background: `${G.gold}15`, color: G.goldDim, fontWeight: 700,
+                background: G.surfaceSoft, color: G.brandBlue, fontWeight: 700,
             }}>{t}</span>
           ))}
         </div>
@@ -254,28 +386,15 @@ function ProfileDetail({ profile, campaignId, onUpdate }: {
       {profile.notes && (
         <div style={{
           padding: "8px 12px", borderRadius: 8, marginBottom: 10,
-          background: "rgba(255,255,255,0.02)", border: `1px solid ${G.border}`,
+          background: G.surfaceAlt, border: `1px solid ${G.border}`,
           fontSize: 11, color: G.textMid, lineHeight: 1.5,
         }}>
           {profile.notes}
         </div>
       )}
 
-      {/* Edit button */}
-      <button
-        type="button"
-        onClick={() => setEditing(!editing)}
-        style={{
-          padding: "6px 14px", borderRadius: 8, fontSize: 10, fontWeight: 700,
-          border: `1px solid ${G.goldBorder}`, background: G.goldFaint,
-          color: G.gold, cursor: "pointer",
-        }}
-      >
-        {editing ? "Ocultar editor" : "Editar perfil"}
-      </button>
-
       {editing && (
-        <EditPanel
+        <EditProfileModal
           profile={profile}
           campaignId={campaignId}
           onSaved={(p) => { onUpdate(p); setEditing(false); }}
@@ -295,6 +414,34 @@ function InfoItem({ label, value, color }: { label: string; value: string; color
   );
 }
 
+function DeltaCard({ label, value, color, percentage }: { label: string; value: number; color: string; percentage: number }) {
+  const positive = percentage >= 50;
+  const tone = positive ? G.green : G.red;
+
+  return (
+    <div style={{
+      padding: "14px 16px",
+      background: G.surface,
+      border: `1px solid ${G.borderStrong}`,
+      borderRadius: 24,
+      display: "flex",
+      flexDirection: "column",
+      gap: 10,
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 800, color: G.textMid, textTransform: "uppercase", letterSpacing: "2.4px" }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: G.text, lineHeight: 1 }}>{value.toLocaleString()}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, color: tone }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={tone} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {positive ? <path d="m7 14 5-5 5 5" /> : <path d="m7 10 5 5 5-5" />}
+        </svg>
+        <span style={{ fontSize: 12, fontWeight: 800 }}>{Math.round(percentage)}%</span>
+      </div>
+    </div>
+  );
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // MAIN EXPORT
 // ══════════════════════════════════════════════════════════════════════
@@ -305,7 +452,7 @@ export function VoterProfilesTab({ campaignId }: { campaignId: string }) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [selectedProfile, setSelectedProfile] = useState<VoterProfile | null>(null);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -341,6 +488,7 @@ export function VoterProfilesTab({ campaignId }: { campaignId: string }) {
 
   const handleProfileUpdate = useCallback((updated: VoterProfile) => {
     setProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
+    setSelectedProfile((prev) => (prev?.id === updated.id ? updated : prev));
   }, []);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -351,20 +499,34 @@ export function VoterProfilesTab({ campaignId }: { campaignId: string }) {
 
       {/* ══ KPI Strip ══ */}
       {stats && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <MiniKpi label="Total Votantes" value={stats.total} color={G.gold} />
-          {Object.entries(stats.by_status).map(([s, c]) => (
-            <MiniKpi key={s} label={s} value={c as number} color={STATUS_COLORS[s] ?? G.textMid} />
-          ))}
-          <MiniKpi label="Con WA" value={stats.with_wa_contact} color={G.cyan} />
-          <MiniKpi label="Respondieron" value={stats.with_responses} color={G.green} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+          <DeltaCard label="Total Votantes" value={stats.total} color={G.brandBlue} percentage={(stats.with_wa_contact / Math.max(stats.total, 1)) * 100} />
+          <MetricCard
+            label="Respondieron"
+            value={stats.with_responses}
+            color={G.green}
+            trend={[stats.with_responses, Math.max(stats.with_wa_contact - stats.with_responses, 0), stats.total]}
+            trendType="line"
+          />
+          <MetricCard
+            label="Comprometidos"
+            value={Number(stats.by_status.comprometido ?? 0)}
+            color={STATUS_COLORS.comprometido}
+            trend={[
+              Number(stats.by_status.nuevo ?? 0),
+              Number(stats.by_status.contactado ?? 0),
+              Number(stats.by_status.respondido ?? 0),
+              Number(stats.by_status.comprometido ?? 0),
+            ]}
+            trendType="line"
+          />
         </div>
       )}
 
       {/* ══ Filters ══ */}
       <div style={{
         display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center",
-        background: G.surface, border: `1px solid ${G.border}`, borderRadius: 12,
+        background: G.surface, border: `1px solid ${G.borderStrong}`, borderRadius: 24,
         padding: "10px 16px",
       }}>
         <input
@@ -373,8 +535,8 @@ export function VoterProfilesTab({ campaignId }: { campaignId: string }) {
           onKeyDown={e => { if (e.key === "Enter") loadData(0); }}
           placeholder="Buscar nombre, telefono, zona..."
           style={{
-            flex: 1, minWidth: 180, padding: "7px 12px", borderRadius: 8,
-            background: G.surfaceUp, border: `1px solid ${G.border}`,
+            flex: 1, minWidth: 180, padding: "7px 12px", borderRadius: 14,
+            background: G.surfaceAlt, border: `1px solid ${G.borderStrong}`,
             color: G.text, fontSize: 12, outline: "none",
           }}
         />
@@ -382,8 +544,8 @@ export function VoterProfilesTab({ campaignId }: { campaignId: string }) {
           value={statusFilter}
           onChange={e => setStatusFilter(e.target.value)}
           style={{
-            padding: "7px 10px", borderRadius: 8,
-            background: G.surfaceUp, border: `1px solid ${G.border}`,
+            padding: "7px 10px", borderRadius: 14,
+            background: G.surfaceAlt, border: `1px solid ${G.borderStrong}`,
             color: G.text, fontSize: 11, cursor: "pointer",
           }}
         >
@@ -394,8 +556,8 @@ export function VoterProfilesTab({ campaignId }: { campaignId: string }) {
           value={voteFilter}
           onChange={e => setVoteFilter(e.target.value)}
           style={{
-            padding: "7px 10px", borderRadius: 8,
-            background: G.surfaceUp, border: `1px solid ${G.border}`,
+            padding: "7px 10px", borderRadius: 14,
+            background: G.surfaceAlt, border: `1px solid ${G.borderStrong}`,
             color: G.text, fontSize: 11, cursor: "pointer",
           }}
         >
@@ -405,37 +567,25 @@ export function VoterProfilesTab({ campaignId }: { campaignId: string }) {
           <option value="flotante">Flotante</option>
           <option value="invalido">Invalido</option>
         </select>
-        <button
-          type="button"
-          onClick={() => loadData(0)}
-          disabled={loading}
-          style={{
-            padding: "7px 14px", borderRadius: 8, border: `1px solid ${G.goldBorder}`,
-            background: G.goldFaint, color: G.gold, fontSize: 11, fontWeight: 700,
-            cursor: loading ? "default" : "pointer",
-          }}
-        >
-          {loading ? "\u00B7\u00B7\u00B7" : "Buscar"}
-        </button>
       </div>
 
       {/* ══ Error ══ */}
       {error && (
         <div style={{
-          background: "rgba(239,83,80,0.07)", border: "1px solid rgba(239,83,80,0.22)",
-          borderRadius: 10, padding: "10px 16px", fontSize: 12, color: G.red,
+          background: G.redSoft, border: `1px solid ${G.red}`,
+          borderRadius: 24, padding: "10px 16px", fontSize: 12, color: G.red,
         }}>{error}</div>
       )}
 
       {/* ══ Table ══ */}
       <div style={{
-        background: G.surface, border: `1px solid ${G.border}`, borderRadius: 12,
+        background: G.surface, border: `1px solid ${G.borderStrong}`, borderRadius: 24,
         overflow: "hidden",
       }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${G.border}` }}>
-              {["Nombre", "Telefono", "Estado", "Voto", "Zona", "WA", "Capturado", "Contacto"].map(h => (
+              {["Nombre", "Telefono", "Estado", "Voto", "Capturado"].map(h => (
                 <th key={h} style={{
                   padding: "10px 12px", textAlign: "left", fontWeight: 800,
                   color: G.textMid, textTransform: "uppercase", letterSpacing: "0.5px", fontSize: 9,
@@ -450,22 +600,19 @@ export function VoterProfilesTab({ campaignId }: { campaignId: string }) {
               <ProfileTableRow
                 key={p.id}
                 profile={p}
-                expanded={expandedId === p.id}
-                onToggle={() => setExpandedId(expandedId === p.id ? null : p.id)}
-                campaignId={campaignId}
-                onUpdate={handleProfileUpdate}
+                onOpen={() => setSelectedProfile(p)}
               />
             ))}
             {profiles.length === 0 && !loading && (
               <tr>
-                <td colSpan={8} style={{ padding: 30, textAlign: "center", color: G.textDim }}>
+                <td colSpan={5} style={{ padding: 30, textAlign: "center", color: G.textDim }}>
                   {search || statusFilter || voteFilter ? "Sin resultados para estos filtros" : "Sin perfiles de votantes"}
                 </td>
               </tr>
             )}
             {loading && (
               <tr>
-                <td colSpan={8} style={{ padding: 30, textAlign: "center", color: G.textDim }}>
+                <td colSpan={5} style={{ padding: 30, textAlign: "center", color: G.textDim }}>
                   Cargando...
                 </td>
               </tr>
@@ -484,12 +631,16 @@ export function VoterProfilesTab({ campaignId }: { campaignId: string }) {
               disabled={currentPage <= 1}
               onClick={() => loadData(page - PAGE_SIZE)}
               style={{
-                padding: "5px 12px", borderRadius: 6, border: `1px solid ${G.border}`,
-                background: "transparent", color: currentPage <= 1 ? G.textDim : G.text,
-                fontSize: 11, cursor: currentPage <= 1 ? "default" : "pointer",
-              }}
+                 width: 34, height: 34, borderRadius: 999, border: `1px solid ${G.borderStrong}`,
+                 background: "transparent", color: currentPage <= 1 ? G.textDim : G.text,
+                 fontSize: 11, cursor: currentPage <= 1 ? "default" : "pointer",
+                 display: "inline-flex", alignItems: "center", justifyContent: "center",
+               }}
+              aria-label="Pagina anterior"
             >
-              Anterior
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
             </button>
             <span style={{ fontSize: 11, color: G.textMid }}>
               {currentPage} / {totalPages} ({total} total)
@@ -499,40 +650,50 @@ export function VoterProfilesTab({ campaignId }: { campaignId: string }) {
               disabled={currentPage >= totalPages}
               onClick={() => loadData(page + PAGE_SIZE)}
               style={{
-                padding: "5px 12px", borderRadius: 6, border: `1px solid ${G.border}`,
-                background: "transparent", color: currentPage >= totalPages ? G.textDim : G.text,
-                fontSize: 11, cursor: currentPage >= totalPages ? "default" : "pointer",
-              }}
+                  width: 34, height: 34, borderRadius: 999, border: `1px solid ${G.borderStrong}`,
+                  background: "transparent", color: currentPage >= totalPages ? G.textDim : G.text,
+                 fontSize: 11, cursor: currentPage >= totalPages ? "default" : "pointer",
+                 display: "inline-flex", alignItems: "center", justifyContent: "center",
+               }}
+              aria-label="Pagina siguiente"
             >
-              Siguiente
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
             </button>
           </div>
         )}
       </div>
+      {selectedProfile && (
+        <ProfileDetailModal
+          profile={selectedProfile}
+          campaignId={campaignId}
+          onUpdate={handleProfileUpdate}
+          onClose={() => setSelectedProfile(null)}
+        />
+      )}
     </div>
   );
 }
 
 // ── Table row ───────────────────────────────────────────────────────
 
-function ProfileTableRow({ profile, expanded, onToggle, campaignId, onUpdate }: {
-  profile: VoterProfile; expanded: boolean;
-  onToggle: () => void; campaignId: string;
-  onUpdate: (p: VoterProfile) => void;
+function ProfileTableRow({ profile, onOpen }: {
+  profile: VoterProfile;
+  onOpen: () => void;
 }) {
   const p = profile;
   return (
-    <>
-      <tr
-        onClick={onToggle}
-        style={{
-          borderBottom: `1px solid ${G.border}`,
-          cursor: "pointer", transition: "background 0.15s",
-          background: expanded ? G.surfaceUp : "transparent",
-        }}
-        onMouseEnter={e => { if (!expanded) (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.02)"; }}
-        onMouseLeave={e => { if (!expanded) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-      >
+    <tr
+      onClick={onOpen}
+      style={{
+        borderBottom: `1px solid ${G.border}`,
+        cursor: "pointer", transition: "background 0.15s",
+        background: "transparent",
+      }}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = G.surfaceAlt; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+    >
         <td style={{ padding: "10px 12px", fontWeight: 700, color: G.text, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {p.canonical_name || fmtPhone(p.canonical_phone)}
         </td>
@@ -556,53 +717,33 @@ function ProfileTableRow({ profile, expanded, onToggle, campaignId, onUpdate }: 
               textTransform: "capitalize",
             }}>{p.vote_class}</span>
           ) : (
-            <span style={{ fontSize: 9, color: G.textDim }}>\u2014</span>
-          )}
-        </td>
-        <td style={{ padding: "10px 12px", color: G.textDim, maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {p.zona || p.distrito || "\u2014"}
-        </td>
-        <td style={{ padding: "10px 12px" }}>
-          {(p.wa_sent_count > 0 || p.wa_received_count > 0) ? (
-            <span style={{ fontSize: 10, color: G.cyan }}>
-              {p.wa_sent_count}\u2191 {p.wa_received_count}\u2193
-            </span>
-          ) : (
-            <span style={{ fontSize: 9, color: G.textDim }}>\u2014</span>
+            <span style={{ fontSize: 9, color: G.textDim }}>No definido</span>
           )}
         </td>
         <td style={{ padding: "10px 12px", color: G.textDim, fontSize: 10 }}>
           {fmtDate(p.first_captured_at)}
         </td>
-        <td style={{ padding: "10px 12px", color: G.textDim, fontSize: 10 }}>
-          {fmtDate(p.last_contacted_at)}
-        </td>
-      </tr>
-      {expanded && (
-        <tr>
-          <td colSpan={8} style={{ background: G.surfaceUp, borderBottom: `1px solid ${G.goldBorder}` }}>
-            <ProfileDetail profile={p} campaignId={campaignId} onUpdate={onUpdate} />
-          </td>
-        </tr>
-      )}
-    </>
+    </tr>
   );
 }
 
-// ── Mini KPI ────────────────────────────────────────────────────────
-
-function MiniKpi({ label, value, color }: { label: string; value: number; color: string }) {
+function ProfileDetailModal({ profile, campaignId, onUpdate, onClose }: {
+  profile: VoterProfile;
+  campaignId: string;
+  onUpdate: (p: VoterProfile) => void;
+  onClose: () => void;
+}) {
   return (
-    <div style={{
-      padding: "10px 14px", borderRadius: 10, minWidth: 90,
-      background: `linear-gradient(135deg, ${G.surface} 0%, ${G.surfaceUp} 100%)`,
-      border: `1px solid ${G.border}`,
-    }}>
-      <div style={{ fontSize: 20, fontWeight: 900, color, lineHeight: 1 }}>{value.toLocaleString()}</div>
-      <div style={{
-        fontSize: 8, fontWeight: 800, color: G.textMid, textTransform: "uppercase",
-        letterSpacing: "0.6px", marginTop: 3,
-      }}>{label}</div>
+    <div style={{ position: "fixed", inset: 0, zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <button
+        type="button"
+        aria-label="Cerrar modal de perfil"
+        onClick={onClose}
+        style={{ position: "absolute", inset: 0, border: "none", background: "rgba(15, 23, 42, 0.32)", backdropFilter: "blur(4px)", cursor: "pointer" }}
+      />
+      <div style={{ position: "relative", width: "min(760px, 100%)", maxHeight: "calc(100vh - 48px)", overflowY: "auto", background: G.surfaceAlt, borderRadius: 28, padding: 12 }}>
+        <ProfileDetail profile={profile} campaignId={campaignId} onUpdate={onUpdate} />
+      </div>
     </div>
   );
 }

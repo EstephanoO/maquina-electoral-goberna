@@ -24,10 +24,8 @@ function mapBackendRoleToUI(backendRole: string): UIRole {
 }
 
 const ALL_TABS = [
-  { key: "tierra", label: "TERRITORIO", icon: MapPinIcon, roles: ["admin", "consultor", "candidato", "agente"] as UIRole[] },
   { key: "analytics", label: "ANALYTICS", icon: MonitorIcon, roles: ["admin", "consultor", "candidato"] as UIRole[] },
-  { key: "cms-metrics", label: "DIGITAL", icon: CmsIcon, roles: ["admin", "consultor", "candidato"] as UIRole[] },
-  { key: "monitor", label: "MONITOR WA", icon: WhatsAppIcon, roles: ["admin", "consultor", "candidato"] as UIRole[] },
+  { key: "monitor", label: "MONITOR", icon: WhatsAppIcon, roles: ["admin", "consultor", "candidato"] as UIRole[] },
 ] as const;
 
 type TabKey = (typeof ALL_TABS)[number]["key"];
@@ -51,12 +49,12 @@ export default function CandidatoSlugLayout({ children }: { children: React.Reac
     if (!currentTabKey) return; // on a sub-route we don't control (e.g. /validacion)
     const allowed = ALL_TABS.filter((t) => t.roles.includes(uiRole)).map((t) => t.key);
     if (!allowed.includes(currentTabKey)) {
-      router.replace(`/candidatos/${slug}/${allowed[0] ?? "tierra"}`);
+      router.replace(`/candidatos/${slug}/${allowed[0] ?? "analytics"}`);
     }
   }, [pathname, uiRole, slug, router, user]);
 
   const activeTab: TabKey =
-    (TABS.find((t) => pathname.includes(`/${t.key}`))?.key as TabKey) ?? "tierra";
+    (TABS.find((t) => pathname.includes(`/${t.key}`))?.key as TabKey) ?? "analytics";
   const isTierra = pathname.includes("/tierra");
 
   return (

@@ -9,6 +9,7 @@
 import { useState } from "react";
 import type { CSSProperties } from "react";
 import { Avatar, IconPhone, IconWhatsApp, IconKey, IconTrash } from "../../../../lib/ui";
+import { useTheme } from "../../../../lib/theme-context";
 import {
   type Member,
   getRoleConfig,
@@ -40,8 +41,17 @@ export function MemberRow({
   onResetPassword,
   allowedRoles,
 }: MemberRowProps) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [hovered, setHovered] = useState(false);
   const config = getRoleConfig(member.role);
+  const darkAvatarBorder: Record<string, string> = {
+    agente_campo: "#ffffff",
+    candidato: "#7dd3fc",
+    consultor: "#c4b5fd",
+    agente_digital: "#e9d5ff",
+  };
+  const avatarBorderColor = isDark ? (darkAvatarBorder[member.role] ?? config.borderColor) : config.borderColor;
   const isProtected =
     member.role === "admin" ||
     isSelf ||
@@ -55,8 +65,8 @@ export function MemberRow({
 
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
       style={{
         display: "flex",
         alignItems: "center",
@@ -74,7 +84,7 @@ export function MemberRow({
     >
       {/* Left: avatar with status dot */}
       <div style={{ position: "relative", flexShrink: 0 }}>
-        <Avatar name={member.full_name} size={42} borderColor={config.borderColor} />
+        <Avatar name={member.full_name} size={42} borderColor={avatarBorderColor} />
         <span
           title={statusLabel}
           style={{
@@ -150,8 +160,9 @@ export function MemberRow({
                 width: 22,
                 height: 22,
                 borderRadius: 6,
-                background: "#DCFCE7",
-                border: "1px solid #BBF7D0",
+                background: isDark ? "var(--color-surface-active)" : "#DCFCE7",
+                border: isDark ? "1px solid var(--color-border-strong)" : "1px solid #BBF7D0",
+                color: isDark ? "#22c55e" : "#16a34a",
                 cursor: "pointer",
                 flexShrink: 0,
                 padding: 0,
@@ -199,7 +210,7 @@ export function MemberRow({
             allowedRoles={allowedRoles}
           />
         ) : (
-          <RoleBadge role={member.role} size="sm" />
+          <RoleBadge role={member.role} size="sm" uniform />
         )}
       </div>
     </div>
@@ -221,8 +232,8 @@ function ActionButton({
 }) {
   const colors =
     variant === "danger"
-      ? { color: "var(--color-error)", bg: "#FEF2F2", border: "#FECACA" }
-      : { color: "var(--goberna-blue-600)", bg: "var(--goberna-blue-50)", border: "var(--goberna-blue-200)" };
+      ? { color: "#ff7d73", bg: "var(--color-surface-active)", border: "var(--color-border-strong)" }
+      : { color: "var(--goberna-blue-500)", bg: "var(--color-surface-active)", border: "var(--color-border-strong)" };
 
   return (
     <button

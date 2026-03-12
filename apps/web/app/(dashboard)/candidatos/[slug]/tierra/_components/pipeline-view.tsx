@@ -4,6 +4,7 @@ import { memo, useMemo, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import type { CmsBrigadistaMetrics } from "@/lib/types";
 import type { FormRecord } from "@/lib/services";
+import { useTheme } from "@/lib/theme-context";
 import type { EnrichedAgent } from "./types";
 import { PipelineFilters, type PipelinePeriod, type PipelineDateRanges } from "./pipeline-filters";
 
@@ -75,6 +76,8 @@ export const PipelineView = memo(function PipelineView({
   forms, prevForms, agents, period, onPeriodChange, offset, onOffsetChange, periodLabel, dateRanges,
   totalDatos, serverTotals, agentesCampoCount, metaDatos,
 }: Props) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   // ── Compare / drill-down state (max 2 selected) ──
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const handleToggleCompare = useCallback((id: string) => {
@@ -130,8 +133,8 @@ export const PipelineView = memo(function PipelineView({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center flex-1 gap-3">
-        <div className="w-5 h-5 border-2 border-slate-200 border-t-slate-600 rounded-full animate-spin" />
-        <span className="text-sm text-slate-400 font-medium">Cargando metricas...</span>
+        <div className={`w-5 h-5 border-2 rounded-full animate-spin ${isDark ? "border-[#343b47] border-t-slate-200" : "border-slate-200 border-t-slate-600"}`} />
+        <span className={`text-sm font-medium ${isDark ? "text-slate-300" : "text-slate-400"}`}>Cargando metricas...</span>
       </div>
     );
   }
@@ -149,24 +152,24 @@ export const PipelineView = memo(function PipelineView({
   const isEmpty = !hasForms && !hasBrigadistas;
 
   return (
-    <div className={`h-full flex flex-col min-h-0 overflow-y-auto bg-slate-50/80 transition-opacity duration-150 ${isPending ? "opacity-70" : "opacity-100"}`}>
+      <div className={`hide-scrollbar tierra-pipeline-view h-full flex flex-col min-h-0 overflow-y-auto transition-opacity duration-150 ${isDark ? "bg-[#090D15]" : "bg-slate-50/80"} ${isPending ? "opacity-70" : "opacity-100"}`}>
       {/* 1. Filter bar */}
-      <div className="shrink-0 border-b border-slate-100 bg-white">
+      <div className={`shrink-0 ${isDark ? "border-b border-[#2a303b] bg-[#090D15]" : "border-b border-slate-100 bg-white"}`}>
         <PipelineFilters period={period} onChange={onPeriodChange} primaryColor={primaryColor} offset={offset} onOffsetChange={onOffsetChange} />
       </div>
 
       {/* Agent drill-down banner (1 selected) */}
       {agentDrill && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-white border-b border-slate-200/80 shrink-0">
+        <div className={`flex items-center gap-3 px-4 py-2 shrink-0 ${isDark ? "bg-[#090D15] border-b border-[#2a303b]" : "bg-white border-b border-slate-200/80"}`}>
           <button
             type="button"
             onClick={handleClearCompare}
-            className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-[11px] cursor-pointer border-none hover:bg-slate-200 transition-colors shrink-0"
+            className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] cursor-pointer border-none transition-colors shrink-0 ${isDark ? "bg-[#090D15] text-slate-300 hover:bg-[#090D15]" : "bg-slate-100 text-slate-400 hover:bg-slate-200"}`}
             aria-label="Volver a vista global"
           >
             &larr;
           </button>
-          <span className="text-[12px] font-bold text-slate-700 truncate">{agentDrill.name}</span>
+          <span className={`text-[12px] font-bold truncate ${isDark ? "text-slate-100" : "text-slate-700"}`}>{agentDrill.name}</span>
           <span className="text-[11px] font-extrabold tabular-nums ml-auto" style={{ color: primaryColor }}>
             {agentDrill.periodDatos} registros en periodo
           </span>
@@ -175,25 +178,25 @@ export const PipelineView = memo(function PipelineView({
 
       {/* Compare banner (2 selected) */}
       {comparePair && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-white border-b border-slate-200/80 shrink-0">
+        <div className={`flex items-center gap-3 px-4 py-2 shrink-0 ${isDark ? "bg-[#090D15] border-b border-[#2a303b]" : "bg-white border-b border-slate-200/80"}`}>
           <button
             type="button"
             onClick={handleClearCompare}
-            className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-[11px] cursor-pointer border-none hover:bg-slate-200 transition-colors shrink-0"
+            className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] cursor-pointer border-none transition-colors shrink-0 ${isDark ? "bg-[#090D15] text-slate-300 hover:bg-[#090D15]" : "bg-slate-100 text-slate-400 hover:bg-slate-200"}`}
             aria-label="Limpiar comparacion"
           >
             &times;
           </button>
           <span className="text-[12px] font-bold truncate" style={{ color: primaryColor }}>{comparePair.a.name}</span>
-          <span className="text-[10px] font-bold text-slate-400">vs</span>
+          <span className={`text-[10px] font-bold ${isDark ? "text-slate-400" : "text-slate-400"}`}>vs</span>
           <span className="text-[12px] font-bold truncate" style={{ color: "#f59e0b" }}>{comparePair.b.name}</span>
         </div>
       )}
 
       {isEmpty ? (
         <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center p-16">
-          <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Sin datos">
+          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isDark ? "bg-[#090D15]" : "bg-slate-100"}`}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#94a3b8" : "#94a3b8"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Sin datos">
               <title>Sin datos</title>
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
               <circle cx="9" cy="7" r="4" />
@@ -202,14 +205,14 @@ export const PipelineView = memo(function PipelineView({
             </svg>
           </div>
           <div>
-            <span className="text-base font-semibold text-slate-600 block">Sin datos en este periodo</span>
-            <span className="text-sm text-slate-400 mt-1 block max-w-xs">Proba seleccionando &quot;Todo&quot; o un periodo mas amplio</span>
+            <span className={`text-base font-semibold block ${isDark ? "text-slate-200" : "text-slate-600"}`}>Sin datos en este periodo</span>
+            <span className={`text-sm mt-1 block max-w-xs ${isDark ? "text-slate-400" : "text-slate-400"}`}>Proba seleccionando &quot;Todo&quot; o un periodo mas amplio</span>
           </div>
         </div>
       ) : (
         <div className="flex flex-col gap-0 min-h-0">
           {/* 2. Goal Hero — compact period-adaptive progress */}
-          <div className="shrink-0 border-b border-slate-100 bg-white">
+          <div className={`shrink-0 ${isDark ? "border-b border-[#2a303b] bg-[#090D15]" : "border-b border-slate-100 bg-white"}`}>
             <PipelineFunnel
               primaryColor={primaryColor}
               totalDatos={agentDrill ? agentDrill.totalCaptures : totalDatos}
@@ -242,7 +245,7 @@ export const PipelineView = memo(function PipelineView({
 
           {/* 4. Brigadista Table — goal progress per brigadista, always visible */}
           {hasBrigadistas && (
-            <div className="shrink-0 bg-white" style={{ minHeight: "320px" }}>
+            <div className={isDark ? "shrink-0 bg-[#090D15]" : "shrink-0 bg-white"} style={{ minHeight: "320px" }}>
               <BrigadistaTable
                 brigadistas={brigadistas}
                 primaryColor={primaryColor}
@@ -259,7 +262,7 @@ export const PipelineView = memo(function PipelineView({
 
           {/* 5. Validacion Ranking — datos validados vs imposibles por encuestador */}
           {campaignId && (
-            <div className="shrink-0 border-t border-slate-200">
+            <div className={`shrink-0 ${isDark ? "border-t border-[#2a303b]" : "border-t border-slate-200"}`}>
               <ValidacionRanking campaignId={campaignId} primaryColor={primaryColor} />
             </div>
           )}
@@ -277,24 +280,26 @@ function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodL
   compareIds: string[]; onToggleCompare: (id: string) => void; onClearCompare: () => void;
   serverPeriodCount?: number;
 }) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [open, setOpen] = useState(true);
   return (
-    <div className="shrink-0 border-b border-slate-100">
+    <div className={`shrink-0 ${isDark ? "border-b border-[#2a303b] bg-[#090D15]" : "border-b border-slate-100"}`}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 w-full px-4 py-2 bg-slate-50/60 text-left cursor-pointer border-none hover:bg-slate-100/60 transition-colors"
+        className={`flex items-center gap-2 w-full px-4 py-2 text-left cursor-pointer border-none transition-colors ${isDark ? "bg-[#090D15] hover:bg-[#090D15]" : "bg-slate-50/60 hover:bg-slate-100/60"}`}
       >
         <svg
-          width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+          width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
           className={`transition-transform duration-200 ${open ? "rotate-90" : ""}`}
           role="img" aria-label="Toggle"
         >
           <title>Toggle</title>
           <polyline points="9 18 15 12 9 6" />
         </svg>
-        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Actividad &amp; Rendimiento</span>
-        {!open && <span className="text-[9px] text-slate-400 ml-auto">Mostrar graficos</span>}
+        <span className={`text-[10px] font-semibold uppercase tracking-wider ${isDark ? "text-slate-300" : "text-slate-400"}`}>Actividad &amp; Rendimiento</span>
+        {!open && <span className={`text-[9px] ml-auto ${isDark ? "text-slate-400" : "text-slate-400"}`}>Mostrar graficos</span>}
       </button>
       {open && (
         <ActivityCharts
