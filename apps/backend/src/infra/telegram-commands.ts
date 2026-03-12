@@ -376,15 +376,17 @@ async function handleMessage(chatId: number, userText: string) {
       await reply(chatId, [
         `🤖 *Goberna Bot — IA*`,
         ``,
-        `Puedo responder preguntas en español natural. Por ejemplo:`,
+        `Usa \`/g <pregunta>\` para consultar en español natural:`,
         ``,
-        `• _"¿Quiénes son los mejores agentes de hoy?"_`,
-        `• _"Dame el top de Lambayeque esta semana"_`,
-        `• _"¿Cómo va la campaña César Vásquez?"_`,
-        `• _"Resumen del día"_`,
-        `• _"¿Cómo está el servidor?"_`,
+        `• \`/g mejores agentes de hoy\``,
+        `• \`/g top de Lambayeque esta semana\``,
+        `• \`/g cómo va la campaña César Vásquez\``,
+        `• \`/g resumen del día\``,
+        `• \`/g cuántos registros llevamos en cajamarca\``,
         ``,
-        `No necesitas comandos exactos, escribe como hablarías.`,
+        `Comandos directos:`,
+        `• \`/health\` — estado del servidor`,
+        `• \`/ayuda\` — esta lista`,
       ].join("\n"));
       return;
     }
@@ -440,8 +442,30 @@ async function pollOnce() {
       _offset = update.update_id + 1;
       const msg = update.message;
       if (!msg?.text?.trim()) continue;
-      // Fire-and-forget each message
-      handleMessage(msg.chat.id, msg.text).catch(() => {});
+
+      const raw = msg.text.trim();
+      const lower = raw.toLowerCase();
+
+      // /health y /ayuda sin prefijo /g (comandos de sistema)
+      if (lower === "/health" || lower.startsWith("/health@")) {
+        handleMessage(msg.chat.id, "/health").catch(() => {});
+        continue;
+      }
+      if (lower === "/ayuda" || lower === "/help" || lower === "/start" || lower.startsWith("/ayuda@")) {
+        handleMessage(msg.chat.id, "/ayuda").catch(() => {});
+        continue;
+      }
+
+      // /g <pregunta> — activa la IA con lenguaje natural
+      // Acepta: /g, /G, /g@gobernanotifierbot
+      const gMatch = raw.match(/^\/[gG](?:@\w+)?\s+([\s\S]+)/);
+      if (gMatch) {
+        const pregunta = gMatch[1]!.trim();
+        handleMessage(msg.chat.id, pregunta).catch(() => {});
+        continue;
+      }
+
+      // Todo lo demás → ignorar
     }
   } catch {
     // Network/timeout — retry next cycle
