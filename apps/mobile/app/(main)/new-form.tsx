@@ -34,7 +34,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import * as Network from 'expo-network';
 
@@ -440,6 +440,7 @@ function KeyboardToolbar({
 
 export default function NewFormScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ prefill?: string }>();
   const candidate = useCandidate();
   const formConfig = useFormConfig();
   const agent = useAgent();
@@ -448,10 +449,45 @@ export default function NewFormScreen() {
   const primary = candidate.color_primario;
   const secondary = candidate.color_secundario;
 
+  // ── Prefill: reverse-map backend field names → form field IDs ──
+  const initialFormData = useMemo(() => {
+    if (!params.prefill || !formConfig) return {};
+    try {
+      const parsed = JSON.parse(params.prefill);
+      const data: Record<string, unknown> = parsed.data ?? parsed;
+      // Build reverse map: backendFieldName → formFieldId
+      const reverseMap: Record<string, string> = {};
+      for (const field of formConfig.schema.fields) {
+        const backendKey = resolveBackendField(field);
+        if (backendKey && !reverseMap[backendKey]) {
+          reverseMap[backendKey] = field.id;
+        }
+      }
+      // Populate formData using reverse map
+      const result: Record<string, string> = {};
+      for (const [key, value] of Object.entries(data)) {
+        const fieldId = reverseMap[key];
+        if (fieldId && typeof value === 'string' && value.trim()) {
+          result[fieldId] = value;
+        }
+      }
+      return result;
+    } catch {
+      return {};
+    }
+  }, [params.prefill, formConfig]);
+
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [ubicacionUtm, setUbicacionUtm] = useState<UtmData | null>(null);
   const [lugarRegistro, setLugarRegistro] = useState<SelectedDistrito | null>(null);
   const [enviando, setEnviando] = useState(false);
+
+  // Seed formData from prefill once formConfig is available
+  useEffect(() => {
+    if (Object.keys(initialFormData).length > 0) {
+      setFormData(initialFormData);
+    }
+  }, [initialFormData]);
 
   // GPS es opcional cuando el agente selecciona un distrito (dato capturado en papel)
   const gpsOpcional = lugarRegistro !== null;

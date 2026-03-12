@@ -443,6 +443,16 @@ export function getMyDeptRanking(): Promise<ApiResult<{
   return request('GET', '/form-submissions/my-stats/ranking');
 }
 
+/**
+ * GET /api/form-submissions/my-stats/departments
+ * Returns all departments ranked by total unique phone registrations.
+ */
+export function getDepartmentsRanking(): Promise<ApiResult<{
+  departments: Array<{ departamento: string; total: number; today: number; agents: number }>;
+}>> {
+  return request('GET', '/form-submissions/my-stats/departments');
+}
+
 // ─── Geo Hierarchy (public, no auth) ────────────────────────
 
 /** GET /api/geo/departamentos — list all 25 departments. Cached 24h server-side. */

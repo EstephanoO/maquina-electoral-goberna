@@ -374,3 +374,54 @@ export async function getMyDeptRanking(
     ranking,
   };
 }
+
+/**
+ * Departments ranking: all departments sorted by total unique phone registrations.
+ * Each department shows total count, today count, and number of active agents.
+ */
+export type DeptSummary = {
+  departamento: string;
+  total: number;
+  today: number;
+  agents: number;
+};
+
+export async function getDepartmentsRanking(
+  campaignId: string,
+): Promise<DeptSummary[]> {
+  const { rows } = await pool.query<{
+    departamento: string;
+    total: string;
+    today: string;
+    agents: string;
+  }>(
+    `WITH unique_forms AS (
+       SELECT DISTINCT ON (data->>'telefono')
+         id, submitted_by, created_at,
+         UPPER(data->>'departamento') AS departamento
+       FROM form_submissions
+       WHERE campaign_id = $1
+         AND COALESCE(data->>'telefono', '') != ''
+         AND COALESCE(data->>'departamento', '') != ''
+         AND deleted_at IS NULL
+       ORDER BY data->>'telefono', created_at ASC
+     )
+     SELECT
+       departamento,
+       COUNT(*)::text AS total,
+       COUNT(*) FILTER (WHERE created_at AT TIME ZONE 'America/Lima' >= CURRENT_DATE AT TIME ZONE 'America/Lima')::text AS today,
+       COUNT(DISTINCT submitted_by)::text AS agents
+     FROM unique_forms
+     WHERE departamento IS NOT NULL
+     GROUP BY departamento
+     ORDER BY COUNT(*) DESC`,
+    [campaignId],
+  );
+
+  return rows.map((r) => ({
+    departamento: r.departamento,
+    total: parseInt(r.total, 10),
+    today: parseInt(r.today, 10),
+    agents: parseInt(r.agents, 10),
+  }));
+}

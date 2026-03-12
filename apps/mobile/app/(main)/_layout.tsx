@@ -3,7 +3,7 @@
  * 
  * Tab visibility:
  * - Dashboard: Always visible
- * - Reuniones (Metas): Always visible  
+ * - Ranking: Always visible (department + departments ranking)
  * - Solicitudes: Only for candidato and above
  * - new-form: Hidden (accessed via FAB)
  */
@@ -52,10 +52,10 @@ export default function MainLayout() {
         }}
       />
       <Tabs.Screen
-        name="reuniones"
+        name="ranking"
         options={{
           tabBarIcon: ({ color }) => (
-            <MaterialIcons name="groups" size={28} color={color} />
+            <MaterialIcons name="leaderboard" size={28} color={color} />
           ),
         }}
       />

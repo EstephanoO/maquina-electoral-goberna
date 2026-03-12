@@ -241,6 +241,29 @@ export function buildFormSubmissionsRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── GET /api/form-submissions/my-stats/departments ──────────────
+    // Returns all departments ranked by total unique phone registrations.
+    app.get(
+      "/api/form-submissions/my-stats/departments",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const campaignId = request.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        try {
+          const departments = await repo.getDepartmentsRanking(campaignId);
+          return reply.code(200).send({ ok: true, request_id: requestId, departments });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "form submissions departments ranking failed");
+          return reply.code(500).send(errorPayload(requestId, "DEPARTMENTS_RANKING_ERROR", "error obteniendo ranking departamental"));
+        }
+      },
+    );
+
     // ── GET /api/form-submissions/stats ──────────────────────────────
     app.get(
       "/api/form-submissions/stats",

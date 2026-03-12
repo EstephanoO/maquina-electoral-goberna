@@ -20,7 +20,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useCandidate, useAgent, useApp, useActiveCampaign } from '@/lib/app-context';
 import { useAgentTracking } from '@/hooks/useAgentTracking';
 import { getQueueStats, getLocalFormsByCampaign, type PendingForm } from '@/lib/offline-queue';
-import { getMySubmissionStats, getMyDeptRanking } from '@/lib/api';
+import { getMySubmissionStats } from '@/lib/api';
 import { appEvents } from '@/lib/events';
 import type { CampaignMembership } from '@/lib/types';
 
@@ -235,9 +235,11 @@ interface LocalFormData {
 const FormItem = memo(function FormItem({
   form,
   primaryColor,
+  onEdit,
 }: {
   form: PendingForm;
   primaryColor: string;
+  onEdit: (form: PendingForm) => void;
 }) {
   let data: LocalFormData = {};
   try {
@@ -249,34 +251,42 @@ const FormItem = memo(function FormItem({
   const isSynced = form.sync_status === 'synced';
   const isFailed = form.sync_status === 'failed';
   const isRejected = form.sync_status === 'rejected';
+  const hasError = isRejected || isFailed;
 
   // Format time
   const formDate = data.fecha ? new Date(data.fecha) : new Date(form.created_at);
   const timeStr = formDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
 
+  const errorMessage = isRejected
+    ? (form.reject_reason || 'Este registro fue rechazado por el servidor.')
+    : (form.last_error || 'Error al sincronizar con el servidor.');
+
   const handlePress = () => {
-    if (isRejected) {
-      Alert.alert(
-        'Registro rechazado',
-        form.reject_reason || 'Este registro fue rechazado por el servidor.',
-        [{ text: 'Entendido' }],
-      );
-    }
+    if (!hasError) return;
+    Alert.alert(
+      isRejected ? 'Registro rechazado' : 'Error de sincronizacion',
+      errorMessage,
+      [
+        { text: 'Cerrar', style: 'cancel' },
+        { text: 'Editar dato', onPress: () => onEdit(form) },
+      ],
+    );
   };
 
-  // Indicator color: red for rejected, primary for everything else
-  const indicatorColor = isRejected ? '#dc2626' : primaryColor;
+  // Red for error states, primary for everything else
+  const indicatorColor = hasError ? '#dc2626' : primaryColor;
   // Status dot: green = synced, red = rejected/failed, yellow = pending/syncing
-  const dotColor = isSynced ? '#4ade80' : (isRejected || isFailed) ? '#f87171' : '#fbbf24';
+  const dotColor = isSynced ? '#4ade80' : hasError ? '#f87171' : '#fbbf24';
+  const badgeLabel = isRejected ? 'Rechazado' : isFailed ? 'Error' : null;
 
   return (
-    <Pressable onPress={handlePress} disabled={!isRejected}>
-      <View style={[styles.formItem, isRejected && { backgroundColor: '#fef2f2' }]}>
+    <Pressable onPress={handlePress} disabled={!hasError}>
+      <View style={[styles.formItem, hasError && { backgroundColor: '#fef2f2' }]}>
         <View style={[styles.formItemIndicator, { backgroundColor: indicatorColor }]} />
         <View style={styles.formItemContent}>
           <View style={styles.formItemRow}>
             <Text
-              style={[styles.formItemName, isRejected && { color: '#dc2626' }]}
+              style={[styles.formItemName, hasError && { color: '#dc2626' }]}
               numberOfLines={1}
             >
               {data.nombre || 'Sin nombre'}
@@ -285,12 +295,12 @@ const FormItem = memo(function FormItem({
           </View>
           <View style={styles.formItemRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-              <Text style={[styles.formItemPhone, isRejected && { color: '#dc2626' }]}>
+              <Text style={[styles.formItemPhone, hasError && { color: '#dc2626' }]}>
                 {data.telefono || '---'}
               </Text>
-              {isRejected && (
+              {badgeLabel && (
                 <Text style={{ fontSize: 10, fontFamily: FONT, color: '#dc2626', backgroundColor: '#fee2e2', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, overflow: 'hidden' }}>
-                  Duplicado
+                  {badgeLabel}
                 </Text>
               )}
             </View>
@@ -312,184 +322,6 @@ const EmptyState = memo(function EmptyState({ primaryColor }: { primaryColor: st
       <Text style={styles.emptySubtitle}>Toca + para agregar</Text>
     </View>
   );
-});
-
-// ─── Department Ranking ─────────────────────────────────────────
-
-type RankingAgent = { id: string; name: string; count: number; today: number };
-type RankingData = {
-  departamento: string | null;
-  my_position: number;
-  my_count: number;
-  total_agents: number;
-  ranking: RankingAgent[];
-};
-
-const DeptRankingSection = memo(function DeptRankingSection({
-  ranking,
-  myUserId,
-  primaryColor,
-  secondaryColor,
-}: {
-  ranking: RankingData | null;
-  myUserId: string;
-  primaryColor: string;
-  secondaryColor: string;
-}) {
-  if (!ranking || !ranking.departamento || ranking.ranking.length === 0) return null;
-
-  return (
-    <View style={rkStyles.container}>
-      <View style={rkStyles.header}>
-        <MaterialIcons name="leaderboard" size={16} color={primaryColor} />
-        <Text style={[rkStyles.title, { color: primaryColor }]}>
-          Ranking — {ranking.departamento}
-        </Text>
-      </View>
-
-      {ranking.my_position > 0 && (
-        <View style={[rkStyles.myPosition, { backgroundColor: `${primaryColor}12` }]}>
-          <Text style={[rkStyles.myPositionLabel, { color: primaryColor }]}>
-            Tu posicion: #{ranking.my_position} de {ranking.total_agents}
-          </Text>
-        </View>
-      )}
-
-      {ranking.ranking.slice(0, 10).map((agent, idx) => {
-        const isMe = agent.id === myUserId;
-        const medal = idx === 0 ? '1' : idx === 1 ? '2' : idx === 2 ? '3' : String(idx + 1);
-        return (
-          <View
-            key={agent.id}
-            style={[
-              rkStyles.row,
-              isMe && { backgroundColor: `${primaryColor}10` },
-            ]}
-          >
-            <View style={[
-              rkStyles.rank,
-              idx < 3 && { backgroundColor: primaryColor },
-              idx >= 3 && { backgroundColor: '#e2e8f0' },
-            ]}>
-              <Text style={[
-                rkStyles.rankText,
-                idx < 3 && { color: '#fff' },
-                idx >= 3 && { color: '#64748b' },
-              ]}>
-                {medal}
-              </Text>
-            </View>
-            <View style={rkStyles.nameCol}>
-              <Text
-                style={[rkStyles.name, isMe && { color: primaryColor, fontWeight: '700' }]}
-                numberOfLines={1}
-              >
-                {isMe ? 'Tu' : agent.name.split(' ').slice(0, 2).join(' ')}
-              </Text>
-              {agent.today > 0 && (
-                <Text style={rkStyles.todayBadge}>+{agent.today} hoy</Text>
-              )}
-            </View>
-            <Text style={[rkStyles.count, isMe && { color: primaryColor }]}>
-              {agent.count}
-            </Text>
-          </View>
-        );
-      })}
-    </View>
-  );
-});
-
-const rkStyles = StyleSheet.create({
-  container: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 12,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 8,
-  },
-  title: {
-    fontSize: 12,
-    fontFamily: FONT,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  myPosition: {
-    marginHorizontal: 14,
-    marginBottom: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 6,
-  },
-  myPositionLabel: {
-    fontSize: 12,
-    fontFamily: FONT,
-    textAlign: 'center',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#f1f5f9',
-  },
-  rank: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  rankText: {
-    fontSize: 11,
-    fontFamily: FONT,
-  },
-  nameCol: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  name: {
-    fontSize: 14,
-    fontFamily: FONT,
-    color: '#1e293b',
-    flexShrink: 1,
-  },
-  todayBadge: {
-    fontSize: 10,
-    fontFamily: FONT,
-    color: '#4ade80',
-    backgroundColor: '#f0fdf4',
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  count: {
-    fontSize: 16,
-    fontFamily: FONT,
-    color: '#334155',
-    minWidth: 36,
-    textAlign: 'right',
-    fontVariant: ['tabular-nums'],
-  },
 });
 
 // ─── Screen ─────────────────────────────────────────────────────
@@ -514,7 +346,6 @@ export default function DashboardScreen() {
   const [stats, setStats] = useState({ total: 0, synced: 0, pending: 0, rejected: 0 });
   const [localForms, setLocalForms] = useState<PendingForm[]>([]);
   const [showMenu, setShowMenu] = useState(false);
-  const [ranking, setRanking] = useState<RankingData | null>(null);
 
   // Build photo URL once
   const photoUrl = candidate.foto_url
@@ -530,11 +361,10 @@ export default function DashboardScreen() {
   // Load data with shallow equality check — only sets state when data actually changed
   const loadData = useCallback(async () => {
     try {
-      const [queueStats, forms, serverStats, rankingRes] = await Promise.all([
+      const [queueStats, forms, serverStats] = await Promise.all([
         getQueueStats(),
         getLocalFormsByCampaign(campaign.id, 200),
         getMySubmissionStats(),
-        getMyDeptRanking(),
       ]);
 
       const formsPending = queueStats.forms?.pending ?? 0;
@@ -573,10 +403,6 @@ export default function DashboardScreen() {
         setLocalForms(forms);
       }
 
-      // Update ranking (lightweight — no ref optimization needed)
-      if (rankingRes.ok && rankingRes.data) {
-        setRanking(rankingRes.data);
-      }
     } catch (err) {
       console.warn('Failed to load data:', err);
     }
@@ -600,9 +426,22 @@ export default function DashboardScreen() {
     setRefreshing(false);
   }, [refreshConfig, loadData]);
 
+  const handleEditForm = useCallback((form: PendingForm) => {
+    // Navigate to new-form with pre-filled data from the rejected/failed form
+    try {
+      const payload = JSON.parse(form.payload);
+      router.push({
+        pathname: '/(main)/new-form',
+        params: { prefill: JSON.stringify(payload) },
+      });
+    } catch {
+      router.push('/(main)/new-form');
+    }
+  }, [router]);
+
   const renderItem = useCallback(({ item }: { item: PendingForm }) => (
-    <FormItem form={item} primaryColor={primary} />
-  ), [primary]);
+    <FormItem form={item} primaryColor={primary} onEdit={handleEditForm} />
+  ), [primary, handleEditForm]);
 
   const handleSwitchCampaign = useCallback(async (campaignId: string) => {
     await switchCampaign(campaignId);
@@ -624,19 +463,13 @@ export default function DashboardScreen() {
         stats={stats}
         onMenuPress={() => setShowMenu(true)}
       />
-      <DeptRankingSection
-        ranking={ranking}
-        myUserId={agent.id}
-        primaryColor={primary}
-        secondaryColor={secondary}
-      />
       {localForms.length > 0 && (
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: primary }]}>Recientes</Text>
         </View>
       )}
     </>
-  ), [candidate, photoUrl, primary, secondary, agent.full_name, agent.role, agent.id, trackingActive, stats, ranking, localForms.length]);
+  ), [candidate, photoUrl, primary, secondary, agent.full_name, agent.role, trackingActive, stats, localForms.length]);
 
   const renderEmpty = useCallback(() => (
     <EmptyState primaryColor={primary} />
