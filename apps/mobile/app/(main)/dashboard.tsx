@@ -19,8 +19,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 
 import { useCandidate, useAgent, useApp, useActiveCampaign } from '@/lib/app-context';
 import { useAgentTracking } from '@/hooks/useAgentTracking';
-import { getQueueStats, getLocalFormsByCampaign, type PendingForm } from '@/lib/offline-queue';
-import { getMySubmissionStats } from '@/lib/api';
+import { getQueueStats, getLocalFormsByCampaign, getSyncedClientIds, markFormsAsGhost, type PendingForm } from '@/lib/offline-queue';
+import { getMySubmissionStats, getMyClientIds } from '@/lib/api';
 import { appEvents } from '@/lib/events';
 import type { CampaignMembership } from '@/lib/types';
 
@@ -251,6 +251,7 @@ const FormItem = memo(function FormItem({
   const isSynced = form.sync_status === 'synced';
   const isFailed = form.sync_status === 'failed';
   const isRejected = form.sync_status === 'rejected';
+  const isGhost = form.sync_status === 'ghost';
   const hasError = isRejected || isFailed;
 
   // Format time
@@ -259,34 +260,43 @@ const FormItem = memo(function FormItem({
 
   const errorMessage = isRejected
     ? (form.reject_reason || 'Este registro fue rechazado por el servidor.')
+    : isGhost
+    ? 'Este registro se marco como sincronizado pero el servidor no lo tiene. Se reintentara automaticamente.'
     : (form.last_error || 'Error al sincronizar con el servidor.');
 
   const handlePress = () => {
-    if (!hasError) return;
+    if (!hasError && !isGhost) return;
     Alert.alert(
-      isRejected ? 'Registro rechazado' : 'Error de sincronizacion',
+      isRejected ? 'Registro rechazado' : isGhost ? 'No confirmado' : 'Error de sincronizacion',
       errorMessage,
-      [
-        { text: 'Cerrar', style: 'cancel' },
-        { text: 'Editar dato', onPress: () => onEdit(form) },
-      ],
+      isGhost
+        ? [{ text: 'OK' }]
+        : [
+            { text: 'Cerrar', style: 'cancel' },
+            { text: 'Editar dato', onPress: () => onEdit(form) },
+          ],
     );
   };
 
-  // Red for error states, primary for everything else
-  const indicatorColor = hasError ? '#dc2626' : primaryColor;
-  // Status dot: green = synced, red = rejected/failed, yellow = pending/syncing
-  const dotColor = isSynced ? '#4ade80' : hasError ? '#f87171' : '#fbbf24';
-  const badgeLabel = isRejected ? 'Rechazado' : isFailed ? 'Error' : null;
+  // Red for error states, orange for ghost, primary for everything else
+  const indicatorColor = hasError ? '#dc2626' : isGhost ? '#f97316' : primaryColor;
+  // Status dot: green = synced, red = rejected/failed, orange = ghost, yellow = pending/syncing
+  const dotColor = isSynced ? '#4ade80' : hasError ? '#f87171' : isGhost ? '#fb923c' : '#fbbf24';
+  const badgeLabel = isRejected ? 'Rechazado' : isFailed ? 'Error' : isGhost ? 'Reintentando' : null;
+
+  const bgColor = hasError ? '#fef2f2' : isGhost ? '#fff7ed' : undefined;
+  const textColor = hasError ? '#dc2626' : isGhost ? '#c2410c' : undefined;
+  const badgeColor = hasError ? '#dc2626' : isGhost ? '#ea580c' : undefined;
+  const badgeBg = hasError ? '#fee2e2' : isGhost ? '#ffedd5' : undefined;
 
   return (
-    <Pressable onPress={handlePress} disabled={!hasError}>
-      <View style={[styles.formItem, hasError && { backgroundColor: '#fef2f2' }]}>
+    <Pressable onPress={handlePress} disabled={!hasError && !isGhost}>
+      <View style={[styles.formItem, bgColor ? { backgroundColor: bgColor } : undefined]}>
         <View style={[styles.formItemIndicator, { backgroundColor: indicatorColor }]} />
         <View style={styles.formItemContent}>
           <View style={styles.formItemRow}>
             <Text
-              style={[styles.formItemName, hasError && { color: '#dc2626' }]}
+              style={[styles.formItemName, textColor ? { color: textColor } : undefined]}
               numberOfLines={1}
             >
               {data.nombre || 'Sin nombre'}
@@ -295,11 +305,11 @@ const FormItem = memo(function FormItem({
           </View>
           <View style={styles.formItemRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-              <Text style={[styles.formItemPhone, hasError && { color: '#dc2626' }]}>
+              <Text style={[styles.formItemPhone, textColor ? { color: textColor } : undefined]}>
                 {data.telefono || '---'}
               </Text>
               {badgeLabel && (
-                <Text style={{ fontSize: 10, fontFamily: FONT, color: '#dc2626', backgroundColor: '#fee2e2', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, overflow: 'hidden' }}>
+                <Text style={{ fontSize: 10, fontFamily: FONT, color: badgeColor, backgroundColor: badgeBg, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, overflow: 'hidden' }}>
                   {badgeLabel}
                 </Text>
               )}
@@ -358,17 +368,40 @@ export default function DashboardScreen() {
   const prevStatsRef = useRef(stats);
   const prevFormsRef = useRef<PendingForm[]>(localForms);
 
-  // Load data with shallow equality check — only sets state when data actually changed
+  // Load data with shallow equality check — only sets state when data actually changed.
+  // Also reconciles local "synced" forms against server truth to detect ghost forms.
   const loadData = useCallback(async () => {
     try {
-      const [queueStats, forms, serverStats] = await Promise.all([
+      const [queueStats, forms, serverStats, clientIdsResult] = await Promise.all([
         getQueueStats(),
         getLocalFormsByCampaign(campaign.id, 200),
         getMySubmissionStats(),
+        getMyClientIds(),
       ]);
 
-      const formsPending = queueStats.forms?.pending ?? 0;
-      const formsRejected = queueStats.forms?.rejected ?? 0;
+      // ── Reconciliation: detect ghost forms ──────────────────────────
+      // Forms marked "synced" locally but not confirmed by the server
+      // were silently dropped by the write-behind queue (dedup/failure).
+      // Mark them as "ghost" so they get re-submitted by the sync service.
+      if (clientIdsResult.ok && clientIdsResult.data) {
+        const serverSet = new Set(clientIdsResult.data.client_ids);
+        const localSynced = await getSyncedClientIds(campaign.id);
+        const ghostIds = localSynced
+          .filter((f) => !serverSet.has(f.client_id))
+          .map((f) => f.id);
+        if (ghostIds.length > 0) {
+          await markFormsAsGhost(ghostIds);
+        }
+      }
+
+      // Re-fetch after reconciliation may have changed statuses
+      const [updatedQueueStats, updatedForms] = await Promise.all([
+        getQueueStats(),
+        getLocalFormsByCampaign(campaign.id, 200),
+      ]);
+
+      const formsPending = (updatedQueueStats.forms?.pending ?? 0) + (updatedQueueStats.forms?.ghost ?? 0);
+      const formsRejected = updatedQueueStats.forms?.rejected ?? 0;
       // Server total is the source of truth — includes all synced submissions ever sent,
       // even those already cleaned up from local SQLite (>7 days old).
       // Uses phone dedup (DISTINCT ON telefono) consistent with Pipeline/web dashboard.
@@ -380,8 +413,8 @@ export default function DashboardScreen() {
       const serverOk = serverStats.ok === true;
       const serverTotal = serverOk ? (serverStats.data?.stats.total ?? 0) : 0;
       const newStats = {
-        total: serverOk ? serverTotal + formsPending : formsPending + (queueStats.forms?.synced ?? 0),
-        synced: serverOk ? serverTotal : (queueStats.forms?.synced ?? 0),
+        total: serverOk ? serverTotal + formsPending : formsPending + (updatedQueueStats.forms?.synced ?? 0),
+        synced: serverOk ? serverTotal : (updatedQueueStats.forms?.synced ?? 0),
         pending: formsPending,
         rejected: formsRejected,
       };
@@ -396,11 +429,11 @@ export default function DashboardScreen() {
       // Only update forms list if contents changed (compare by ids + sync_status)
       const prevForms = prevFormsRef.current;
       const changed =
-        forms.length !== prevForms.length ||
-        forms.some((f, i) => f.client_id !== prevForms[i]?.client_id || f.sync_status !== prevForms[i]?.sync_status);
+        updatedForms.length !== prevForms.length ||
+        updatedForms.some((f, i) => f.client_id !== prevForms[i]?.client_id || f.sync_status !== prevForms[i]?.sync_status);
       if (changed) {
-        prevFormsRef.current = forms;
-        setLocalForms(forms);
+        prevFormsRef.current = updatedForms;
+        setLocalForms(updatedForms);
       }
 
     } catch (err) {

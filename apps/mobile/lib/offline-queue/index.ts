@@ -61,6 +61,8 @@ export {
   getLocalFormsByCampaign,
   phoneExistsLocally,
   markFormsAsRejected,
+  markFormsAsGhost,
+  getSyncedClientIds,
   type FormPayload,
   type PendingForm,
 } from './forms';

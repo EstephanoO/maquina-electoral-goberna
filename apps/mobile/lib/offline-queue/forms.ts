@@ -19,7 +19,7 @@ export interface PendingForm {
   form_definition_id: string;
   payload: string; // JSON stringified
   created_at: string;
-  sync_status: 'pending' | 'syncing' | 'synced' | 'failed' | 'rejected';
+  sync_status: 'pending' | 'syncing' | 'synced' | 'failed' | 'rejected' | 'ghost';
   sync_attempts: number;
   last_error: string | null;
   reject_reason: string | null;
@@ -76,7 +76,7 @@ export async function getPendingForms(limit = 20): Promise<PendingForm[]> {
   
   const rows = await db.getAllAsync<PendingForm>(
     `SELECT * FROM pending_forms 
-     WHERE sync_status IN ('pending', 'failed') 
+     WHERE sync_status IN ('pending', 'failed', 'ghost') 
      AND sync_attempts < 5
      ORDER BY created_at ASC 
      LIMIT ?`,
@@ -182,6 +182,7 @@ export async function getFormQueueStats(): Promise<{
   synced: number;
   failed: number;
   rejected: number;
+  ghost: number;
   total: number;
 }> {
   const db = await getDatabase();
@@ -198,6 +199,7 @@ export async function getFormQueueStats(): Promise<{
     synced: 0,
     failed: 0,
     rejected: 0,
+    ghost: 0,
     total: 0,
   };
   
@@ -278,5 +280,43 @@ export async function getLocalFormsByCampaign(campaignId: string, limit = 50): P
     [campaignId, limit]
   );
   
+  return rows;
+}
+
+/**
+ * Mark forms as ghost — they were marked "synced" locally but the server
+ * doesn't have them (dropped by write-behind dedup or other failures).
+ * Ghost forms are re-queued for sync (sync service picks up 'ghost' like 'pending').
+ */
+export async function markFormsAsGhost(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+
+  const db = await getDatabase();
+  const placeholders = ids.map(() => '?').join(',');
+
+  await db.runAsync(
+    `UPDATE pending_forms
+     SET sync_status = 'ghost',
+         sync_attempts = 0,
+         last_error = 'No confirmado por el servidor — se reintentará'
+     WHERE id IN (${placeholders})`,
+    ids,
+  );
+}
+
+/**
+ * Get client_ids of locally "synced" forms for a campaign.
+ * Used for reconciliation against server truth.
+ */
+export async function getSyncedClientIds(campaignId: string): Promise<{ id: number; client_id: string }[]> {
+  const db = await getDatabase();
+
+  const rows = await db.getAllAsync<{ id: number; client_id: string }>(
+    `SELECT id, client_id FROM pending_forms
+     WHERE campaign_id = ?
+       AND sync_status = 'synced'`,
+    [campaignId],
+  );
+
   return rows;
 }

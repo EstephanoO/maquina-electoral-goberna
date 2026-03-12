@@ -241,6 +241,31 @@ export function buildFormSubmissionsRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── GET /api/form-submissions/my-client-ids ────────────────────
+    // Returns the list of client_ids the server has persisted for this agent.
+    // Mobile uses this to reconcile local "synced" forms against server truth.
+    app.get(
+      "/api/form-submissions/my-client-ids",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
+        const campaignId = request.activeCampaignId;
+
+        if (!campaignId) {
+          return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "campaign_id requerido"));
+        }
+
+        try {
+          const clientIds = await repo.getMyClientIds(campaignId, authed.userId);
+          return reply.code(200).send({ ok: true, request_id: requestId, client_ids: clientIds });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "form submissions my-client-ids failed");
+          return reply.code(500).send(errorPayload(requestId, "CLIENT_IDS_ERROR", "error obteniendo client_ids"));
+        }
+      },
+    );
+
     // ── GET /api/form-submissions/my-stats/departments ──────────────
     // Returns all departments ranked by total unique phone registrations.
     app.get(

@@ -429,6 +429,17 @@ export function getMySubmissionStats(): Promise<ApiResult<{
 }
 
 /**
+ * GET /api/form-submissions/my-client-ids
+ * Returns the list of client_ids that the server has persisted for this agent.
+ * Used for reconciliation: detect local "synced" forms the server dropped.
+ */
+export function getMyClientIds(): Promise<ApiResult<{
+  client_ids: string[];
+}>> {
+  return request('GET', '/form-submissions/my-client-ids');
+}
+
+/**
  * GET /api/form-submissions/my-stats/ranking
  * Returns a ranking of agents within the requesting agent's department.
  * Department is auto-detected from the agent's most frequent submission location.

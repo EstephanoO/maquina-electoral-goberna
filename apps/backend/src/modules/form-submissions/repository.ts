@@ -240,6 +240,19 @@ export async function getCountByCampaign(campaignId: string): Promise<{
  * Uses phone dedup (DISTINCT ON telefono) to match Pipeline/web dashboard counts.
  * Used by the mobile dashboard to show accurate totals (server-side truth).
  */
+export async function getMyClientIds(campaignId: string, userId: string): Promise<string[]> {
+  const { rows } = await pool.query<{ client_id: string }>(
+    `SELECT client_id
+     FROM form_submissions
+     WHERE campaign_id = $1
+       AND submitted_by = $2
+       AND client_id IS NOT NULL
+       AND deleted_at IS NULL`,
+    [campaignId, userId],
+  );
+  return rows.map((r) => r.client_id);
+}
+
 export async function getMyStats(campaignId: string, userId: string): Promise<{
   total: number;
   today: number;
