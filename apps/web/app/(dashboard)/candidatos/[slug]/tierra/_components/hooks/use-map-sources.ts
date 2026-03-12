@@ -8,7 +8,7 @@
  * agents and form submissions.
  */
 
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import type { EnrichedAgent, FormPoint } from "../types";
 
 const NEON_COLORS = ["#34f5a4", "#ff9f43"] as const;
@@ -46,21 +46,11 @@ export function useAgentsSource(agents: EnrichedAgent[], selectedAgentId: string
   }), [visibleAgents, selectedAgentId]);
 }
 
-/* ─── New-point pulse duration (ms) ─── */
-
-const NEW_POINT_PULSE_MS = 12_000;
-
 /* ─── Form sources (clustered) ─── */
 
 export function useFormSources(forms: FormPoint[], selectedAgentId: string | null, barsZoom = 8) {
   const MIN_BAR_HEIGHT = 140;
   const MAX_BAR_HEIGHT = 2600;
-
-  /* ── New-point detection ──
-   * Track all previously seen form IDs. On each poll cycle (5s), any ID
-   * not in the set is "new" and gets a pulse ring for NEW_POINT_PULSE_MS. */
-  const seenIdsRef = useRef<Set<string>>(new Set());
-  const newIdsRef = useRef<Map<string, number>>(new Map()); // id → timestamp when first seen
 
   // Dynamic grid: zoom in => smaller cells (bars split), zoom out => larger cells (bars merge).
   const barsGridSizeDeg = useMemo(() => {
@@ -84,35 +74,6 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
     [validForms, selectedAgentId],
   );
 
-  // Detect new points: compare current IDs against seenIdsRef
-  const newPointIds = useMemo(() => {
-    const now = Date.now();
-    const currentIds = new Set(visibleForms.map((f) => f.id));
-    const newIds = newIdsRef.current;
-
-    // Mark genuinely new points (not seen before in any cycle)
-    for (const id of currentIds) {
-      if (!seenIdsRef.current.has(id) && !newIds.has(id)) {
-        newIds.set(id, now);
-      }
-    }
-
-    // Update seen set for next cycle
-    seenIdsRef.current = currentIds;
-
-    // Prune expired entries
-    for (const [id, ts] of newIds) {
-      if (now - ts > NEW_POINT_PULSE_MS) newIds.delete(id);
-    }
-
-    return new Set(newIds.keys());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleForms]);
-
-  // Cleanup note: expired IDs are pruned on each poll cycle (5s) when
-  // visibleForms changes and the newPointIds useMemo re-runs.
-  // The pulse animation hook stops rendering when hasNewPoints becomes false.
-
   const formsGeoJson = useMemo(() => ({
     type: "FeatureCollection" as const,
     features: visibleForms.map((f) => {
@@ -133,25 +94,6 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
       };
     }),
   }), [visibleForms]);
-
-  // Separate GeoJSON source for pulsing new points (not clustered, individual rings)
-  const newPointsGeoJson = useMemo(() => ({
-    type: "FeatureCollection" as const,
-    features: visibleForms
-      .filter((f) => newPointIds.has(f.id))
-      .map((f) => {
-        const colorKey = `${f.agent_id ?? ""}:${f.encuestador ?? ""}:${f.telefono ?? ""}`;
-        const idx = stableHash(colorKey) % NEON_COLORS.length;
-        return {
-          type: "Feature" as const,
-          properties: {
-            point_color: NEON_COLORS[idx],
-            point_glow: NEON_GLOW_COLORS[idx],
-          },
-          geometry: { type: "Point" as const, coordinates: [f.lng, f.lat] },
-        };
-      }),
-  }), [visibleForms, newPointIds]);
 
   const barsGeoJson = useMemo(() => {
     type GridCell = { lngIndex: number; latIndex: number; count: number };
@@ -196,5 +138,5 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
     };
   }, [visibleForms, barsGridSizeDeg]);
 
-  return { formsGeoJson, barsGeoJson, newPointsGeoJson, hasNewPoints: newPointIds.size > 0 };
+  return { formsGeoJson, barsGeoJson };
 }
