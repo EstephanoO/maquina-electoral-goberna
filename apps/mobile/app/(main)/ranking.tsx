@@ -418,14 +418,17 @@ export default function RankingScreen() {
 
   const myDept = agentRanking?.departamento?.toUpperCase() ?? null;
 
-  // Derive hero KPI from available data
+  // Derive hero KPI from available data — scoped to agent's department
   const heroKPIs = useMemo(() => {
     // Active agents today: agents in my dept ranking who have today > 0
     const agentsActiveToday = agentRanking?.ranking?.filter((a) => a.today > 0).length ?? 0;
-    // Registros hoy: sum of today from ALL departments
-    const registrosHoy = departments.reduce((sum, d) => sum + d.today, 0);
+    // Registros hoy: only the agent's own department (not global sum)
+    const myDeptData = myDept
+      ? departments.find((d) => d.departamento.toUpperCase() === myDept)
+      : null;
+    const registrosHoy = myDeptData?.today ?? 0;
     return { agentsActiveToday, registrosHoy };
-  }, [agentRanking, departments]);
+  }, [agentRanking, departments, myDept]);
 
   // Agent ranking summary text
   const agentSummary = useMemo(() => {

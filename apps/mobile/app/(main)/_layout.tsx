@@ -32,7 +32,7 @@ export default function MainLayout() {
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,
-        tabBarActiveTintColor: secondary,
+        tabBarActiveTintColor: '#fbbf24',
         tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.6)',
         tabBarStyle: {
           backgroundColor: primary,
