@@ -26,6 +26,13 @@ let _pendingDeleteBtn = null;
 let _pendingCreateBtn = null;
 let _pendingDeleteCatBtn = null;
 
+// ── Preview player state ────────────────────────────────────────────
+let _previewAudio = null;       // HTMLAudioElement
+let _previewData = null;        // { audioBase64, mimeType, label, id }
+let _previewPlaying = false;
+let _previewLoadingId = null;   // id of item currently being fetched for preview
+let _previewRAF = null;         // requestAnimationFrame id for progress updates
+
 // ── Inline SVG icons ────────────────────────────────────────────────
 const I = {
   mic:     `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>`,
@@ -38,6 +45,9 @@ const I = {
   plus:    `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
   trash:   `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`,
   noaudio: `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+  play:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`,
+  pause:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`,
+  stop:    `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
 };
 
 // Category-specific icons
@@ -106,6 +116,18 @@ function _injectStyles() {
     .wc-lbl{font-size:10px;color:#666;font-weight:600;text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
     .wc-toast{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);padding:6px 14px;border-radius:20px;font-size:11px;font-weight:600;pointer-events:none;z-index:10;transition:opacity .3s;white-space:nowrap;max-width:90%}
     select.wc-input option{background:#1a1a1c;color:#e9edef}
+    .wc-preview{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#1a1a1c;border-top:1px solid rgba(255,255,255,.08);flex-shrink:0}
+    .wc-preview-play{width:30px;height:30px;border-radius:50%;border:none;background:#00a884;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .12s}
+    .wc-preview-play:hover{background:#00c49a}
+    .wc-preview-play:active{transform:scale(.92)}
+    .wc-preview-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+    .wc-preview-name{font-size:11px;font-weight:600;color:#e9edef;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .wc-preview-track{position:relative;width:100%;height:4px;background:rgba(255,255,255,.08);border-radius:2px;cursor:pointer}
+    .wc-preview-fill{position:absolute;left:0;top:0;height:100%;background:#00a884;border-radius:2px;transition:width .05s linear}
+    .wc-preview-time{font-size:9px;color:#666;font-variant-numeric:tabular-nums}
+    .wc-preview-send{height:28px;padding:0 10px;border-radius:14px;border:none;background:#00a884;color:#fff;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px;flex-shrink:0;transition:background .12s;font-family:inherit;white-space:nowrap}
+    .wc-preview-send:hover{background:#00c49a}
+    .wc-preview-send:active{transform:scale(.95)}
   `;
   (document.head || document.documentElement).appendChild(s);
 }
@@ -156,6 +178,7 @@ function toggleCatalogPanel() {
 }
 
 function _closePanel() {
+  _destroyPreview();
   const p = document.getElementById('wspp-cat-panel'); if (p) p.remove();
   _catalogPanelOpen = false; _catalogView = 'grid'; _catalogDetailId = null; _catalogCategory = null; _catalogEditingId = null;
   const fab = document.getElementById('wspp-catalog-btn');
@@ -173,6 +196,9 @@ function renderCatalogPanel() {
   else if (_catalogView === 'create') _renderCreate(panel);
   else if (_catalogView === 'category' && _catalogCategory) _renderCategory(panel);
   else { _catalogView = 'grid'; _renderGrid(panel); }
+
+  // Preview bar (persistent footer when audio is loaded or loading)
+  if (_previewData || _previewLoadingId) _renderPreviewBar(panel);
 }
 
 // ── Header builder ──────────────────────────────────────────────────
@@ -300,14 +326,17 @@ function _renderCategory(panel) {
     body.appendChild(_el('div', { color: '#666', textAlign: 'center', padding: '20px 0', fontSize: '11px' }, { txt: 'Sin plantillas aquí' }));
   } else {
     items.forEach(item => {
+      const isActive = _previewData?.id === item.id || _previewLoadingId === item.id;
       const row = _el('div', {}, { cls: 'wc-row' });
       row.style.cursor = item.has_audio ? 'pointer' : 'default';
+      if (isActive) row.style.background = 'rgba(0,168,132,.08)';
 
-      // Status dot
+      // Status dot (pulsing if active/loading)
       const dot = _el('div', {
         width: '8px', height: '8px', borderRadius: '50%', flexShrink: '0',
-        background: item.has_audio ? colors.accent : '#444',
+        background: isActive ? '#00a884' : item.has_audio ? colors.accent : '#444',
       });
+      if (_previewLoadingId === item.id) { dot.style.animation = 'wspp-sp .7s linear infinite'; }
       row.appendChild(dot);
 
       // Label + duration
@@ -476,12 +505,138 @@ function _handleDeleteCategory(catId, catKey, btn) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// AUDIO SEND (click item → fetch → send PTT)
+// PREVIEW PLAYER
+// ═══════════════════════════════════════════════════════════════════════
+function _destroyPreview() {
+  if (_previewRAF) { cancelAnimationFrame(_previewRAF); _previewRAF = null; }
+  if (_previewAudio) { _previewAudio.pause(); _previewAudio.src = ''; _previewAudio = null; }
+  _previewData = null; _previewPlaying = false; _previewLoadingId = null;
+}
+
+function _fmtTime(s) { if (!s || !isFinite(s)) return '0:00'; const sec = Math.floor(s); return `${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`; }
+
+function _renderPreviewBar(panel) {
+  const bar = _el('div', {}, { cls: 'wc-preview' });
+
+  // Loading state
+  if (_previewLoadingId && !_previewData) {
+    const item = _catalogItems.find(i => i.id === _previewLoadingId);
+    bar.appendChild(_spinner(16, '#00a884'));
+    bar.appendChild(_el('div', { flex: '1', fontSize: '11px', color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, { txt: item ? `Cargando ${item.label}...` : 'Cargando...' }));
+    const cancelBtn = _iconBtn(I.stop, '#666', 'Cancelar', () => { _destroyPreview(); if (_catalogPanelOpen) renderCatalogPanel(); });
+    bar.appendChild(cancelBtn);
+    panel.appendChild(bar);
+    return;
+  }
+
+  if (!_previewData || !_previewAudio) return;
+
+  // Play/Pause button
+  const playBtn = _el('button', {}, { cls: 'wc-preview-play', html: _previewPlaying ? I.pause : I.play });
+  playBtn.addEventListener('click', () => {
+    if (_previewPlaying) { _previewAudio.pause(); _previewPlaying = false; }
+    else { _previewAudio.play(); _previewPlaying = true; }
+    playBtn.innerHTML = _previewPlaying ? I.pause : I.play;
+  });
+  bar.appendChild(playBtn);
+
+  // Info column: name + track + time
+  const info = _el('div', {}, { cls: 'wc-preview-info' });
+  info.appendChild(_el('div', {}, { cls: 'wc-preview-name', txt: _previewData.label || 'Audio' }));
+
+  // Progress track
+  const track = _el('div', {}, { cls: 'wc-preview-track' });
+  const fill = _el('div', { width: '0%' }, { cls: 'wc-preview-fill' });
+  track.appendChild(fill);
+  track.addEventListener('click', (e) => {
+    if (!_previewAudio || !_previewAudio.duration) return;
+    const rect = track.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    _previewAudio.currentTime = pct * _previewAudio.duration;
+  });
+  info.appendChild(track);
+
+  // Time label
+  const timeEl = _el('div', {}, { cls: 'wc-preview-time', txt: `${_fmtTime(_previewAudio.currentTime)} / ${_fmtTime(_previewAudio.duration)}` });
+  info.appendChild(timeEl);
+  bar.appendChild(info);
+
+  // Live update progress via RAF
+  function _updateProgress() {
+    if (!_previewAudio) return;
+    const pct = _previewAudio.duration ? (_previewAudio.currentTime / _previewAudio.duration) * 100 : 0;
+    fill.style.width = pct + '%';
+    timeEl.textContent = `${_fmtTime(_previewAudio.currentTime)} / ${_fmtTime(_previewAudio.duration)}`;
+    playBtn.innerHTML = _previewPlaying ? I.pause : I.play;
+    _previewRAF = requestAnimationFrame(_updateProgress);
+  }
+  if (_previewRAF) cancelAnimationFrame(_previewRAF);
+  _previewRAF = requestAnimationFrame(_updateProgress);
+
+  // Close/discard button
+  const discardBtn = _iconBtn(I.stop, '#666', 'Descartar', () => { _destroyPreview(); if (_catalogPanelOpen) renderCatalogPanel(); });
+  bar.appendChild(discardBtn);
+
+  // Send button
+  const sendBtn = _el('button', {}, { cls: 'wc-preview-send', html: `${I.send} Enviar` });
+  sendBtn.addEventListener('click', () => {
+    if (!_previewData) return;
+    const { audioBase64, mimeType, label } = _previewData;
+    _previewAudio.pause(); _previewPlaying = false;
+    sendBtn.textContent = '...';
+    sendBtn.disabled = true;
+    _toast('Enviando nota de voz...', '#00a884');
+    sendAudioAsPTT(audioBase64, mimeType).then(ok => {
+      if (ok) { _toast((label || 'Audio') + ' enviado ✓', '#00a884', 2500); _destroyPreview(); }
+      else { _toast('Error — abre un chat primero', '#ef5350', 3000); sendBtn.innerHTML = `${I.send} Enviar`; sendBtn.disabled = false; }
+      if (_catalogPanelOpen) renderCatalogPanel();
+    });
+  });
+  bar.appendChild(sendBtn);
+
+  panel.appendChild(bar);
+}
+
+function _loadPreviewAudio(audioBase64, mimeType, label, id) {
+  _destroyPreview();
+  const mime = mimeType || 'audio/ogg; codecs=opus';
+  const binary = atob(audioBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: mime });
+  const url = URL.createObjectURL(blob);
+
+  _previewAudio = new Audio(url);
+  _previewData = { audioBase64, mimeType: mime, label, id };
+  _previewLoadingId = null;
+  _previewPlaying = false;
+
+  _previewAudio.addEventListener('ended', () => {
+    _previewPlaying = false;
+    if (_catalogPanelOpen) renderCatalogPanel();
+  });
+
+  // Auto-play preview
+  _previewAudio.play().then(() => { _previewPlaying = true; if (_catalogPanelOpen) renderCatalogPanel(); }).catch(() => {});
+
+  if (_catalogPanelOpen) renderCatalogPanel();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// AUDIO CLICK (click item → fetch → preview)
 // ═══════════════════════════════════════════════════════════════════════
 function handleCatalogItemClick(audioId, label) {
   if (!audioId) return;
-  _toast('Cargando audio...', '#8696a0');
-  document.querySelectorAll('.wc-row').forEach(el => { el.style.pointerEvents = 'none'; el.style.opacity = '0.5'; });
+  // If already previewing this audio, just toggle play
+  if (_previewData?.id === audioId && _previewAudio) {
+    if (_previewPlaying) { _previewAudio.pause(); _previewPlaying = false; }
+    else { _previewAudio.play(); _previewPlaying = true; }
+    if (_catalogPanelOpen) renderCatalogPanel();
+    return;
+  }
+  _destroyPreview();
+  _previewLoadingId = audioId;
+  if (_catalogPanelOpen) renderCatalogPanel();
   window.postMessage({ type: 'GET_CATALOG_AUDIO', id: audioId }, WA_ORIGIN);
 }
 
@@ -609,16 +764,12 @@ window.addEventListener('message', (e) => {
 
   if (e.data?.type === 'CATALOG_AUDIO_READY') {
     if (!e.data.ok || !e.data.audioBase64) {
+      _previewLoadingId = null;
       _toast('Error: ' + (e.data.error || 'audio no disponible'), '#ef5350', 3000);
-      document.querySelectorAll('.wc-row').forEach(el => { el.style.pointerEvents = ''; el.style.opacity = ''; });
+      if (_catalogPanelOpen) renderCatalogPanel();
       return;
     }
-    _toast('Enviando nota de voz...', '#00a884');
-    sendAudioAsPTT(e.data.audioBase64, e.data.mimeType).then(ok => {
-      if (ok) _toast((e.data.label || 'Audio') + ' enviado ✓', '#00a884', 2500);
-      else _toast('Error — abre un chat primero', '#ef5350', 3000);
-      setTimeout(() => { document.querySelectorAll('.wc-row').forEach(el => { el.style.pointerEvents = ''; el.style.opacity = ''; }); }, 800);
-    });
+    _loadPreviewAudio(e.data.audioBase64, e.data.mimeType, e.data.label || 'Audio', e.data.id);
     return;
   }
 
