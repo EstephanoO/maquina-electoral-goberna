@@ -9,7 +9,7 @@ type Props = {
 };
 
 export function DailyChart({ dailyUsers, primaryColor, secondaryColor }: Props) {
-  const sc = secondaryColor || "#94a3b8";
+  const sc = secondaryColor || "var(--color-text-tertiary)";
   const daysWithData = dailyUsers.filter((d) => d.newUsers > 0 || d.returningUsers > 0);
 
   if (daysWithData.length === 0) {
@@ -113,9 +113,9 @@ export function DailyChart({ dailyUsers, primaryColor, secondaryColor }: Props) 
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
     overflow: "hidden",
   },
@@ -124,7 +124,7 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     alignItems: "center",
     padding: "16px 20px",
-    borderBottom: "1px solid #f1f5f9",
+    borderBottom: "1px solid var(--color-surface-active)",
   },
   headerTitle: {
     display: "flex",
@@ -132,7 +132,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 10,
     fontSize: 15,
     fontWeight: 600,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
   },
   legend: {
     display: "flex",
@@ -150,12 +150,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   legendText: {
     fontSize: 12,
-    color: "#64748b",
+    color: "var(--color-text-secondary)",
   },
   legendValue: {
     fontSize: 12,
     fontWeight: 600,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
   },
   chartArea: {
     display: "flex",
@@ -171,7 +171,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   yLabel: {
     fontSize: 10,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     textAlign: "right" as const,
   },
   barsArea: {
@@ -189,7 +189,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   gridLine: {
     height: 1,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "var(--color-surface-active)",
   },
   bars: {
     position: "absolute" as const,
@@ -229,18 +229,18 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 8,
     fontSize: 11,
     fontWeight: 500,
-    color: "#64748b",
+    color: "var(--color-text-secondary)",
   },
   barValue: {
     fontSize: 12,
     fontWeight: 700,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
     marginTop: 2,
   },
   emptyState: {
     padding: 40,
     textAlign: "center" as const,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     fontSize: 13,
   },
 };

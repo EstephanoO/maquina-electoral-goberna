@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import type { CmsBrigadistaMetrics } from "@/lib/types";
+import { useTheme } from "@/lib/theme-context";
 
 /* ========== Types ========== */
 
@@ -24,15 +25,15 @@ type Props = {
 /* ========== Constants ========== */
 
 const COMPARE_COLOR_A_BG = "rgba(59, 130, 246, 0.06)"; // primary tint
-const COMPARE_COLOR_B = "#f59e0b"; // amber
-const COMPARE_COLOR_B_BG = "rgba(245, 158, 11, 0.06)"; // amber tint
-const MEDAL = ["#f59e0b", "#94a3b8", "#cd7f32"] as const;
+const COMPARE_COLOR_B = "#facc15"; // yellow
+const COMPARE_COLOR_B_BG = "rgba(250, 204, 21, 0.08)";
+const MEDAL = ["#facc15", "#94a3b8", "#cd7f32"] as const;
 
 const STATUS_CONFIG = {
-  done: { color: "#10b981", bg: "#10b98118", label: "Meta cumplida" },
+  done: { color: "#38d97a", bg: "rgba(56, 217, 122, 0.18)", label: "Meta cumplida" },
   ahead: { color: "#3b82f6", bg: "#3b82f618", label: "Adelante" },
-  on_track: { color: "#f59e0b", bg: "#f59e0b18", label: "En ritmo" },
-  behind: { color: "#ef4444", bg: "#ef444418", label: "Atras" },
+  on_track: { color: "#facc15", bg: "rgba(250, 204, 21, 0.18)", label: "En ritmo" },
+  behind: { color: "#ff6b6b", bg: "rgba(255, 107, 107, 0.18)", label: "Atras" },
 } as const;
 
 const PERIOD_LABELS: Record<Props["period"], string> = {
@@ -45,6 +46,8 @@ const PERIOD_LABELS: Record<Props["period"], string> = {
 /* ========== Component ========== */
 
 export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, goalPerBrigadistaPerDay, periodGoalPerBrig, period, daysRemaining, compareIds, onToggleCompare }: Props) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("total_captures");
   const [sortAsc, setSortAsc] = useState(false);
@@ -94,18 +97,18 @@ export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* ── Toolbar (light) ── */}
-      <div className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-slate-200/80 shrink-0">
-        <div className="flex items-center gap-2 flex-1 py-1.5 px-3 rounded-lg bg-slate-50 border border-slate-200 focus-within:border-slate-300 transition-colors">
+      <div className={`flex items-center gap-3 px-4 py-2.5 shrink-0 ${isDark ? "bg-[#090D15] border-b border-[#2a303b]" : "bg-white border-b border-slate-200/80"}`}>
+        <div className={`flex items-center gap-2 flex-1 py-1.5 px-3 rounded-lg transition-colors ${isDark ? "bg-[#090D15] border border-[#2a303b] focus-within:border-slate-600" : "bg-slate-50 border border-slate-200 focus-within:border-slate-300"}`}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0" role="img" aria-label="Buscar"><title>Buscar</title><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar brigadista..."
-            className="flex-1 border-none outline-none bg-transparent text-[13px] text-slate-700 placeholder:text-slate-400"
+            className={`flex-1 border-none outline-none bg-transparent text-[13px] ${isDark ? "text-slate-100 placeholder:text-slate-400" : "text-slate-700 placeholder:text-slate-400"}`}
           />
           {search && (
-            <button type="button" onClick={() => setSearch("")} className="w-5 h-5 rounded-full border-none bg-slate-200 text-slate-500 cursor-pointer text-[10px] flex items-center justify-center hover:bg-slate-300 transition-colors" aria-label="Limpiar">x</button>
+            <button type="button" onClick={() => setSearch("")} className={`w-5 h-5 rounded-full border-none cursor-pointer text-[10px] flex items-center justify-center transition-colors ${isDark ? "bg-[#090D15] text-slate-300 hover:bg-[#090D15]" : "bg-slate-200 text-slate-400 hover:bg-slate-300"}`} aria-label="Limpiar">x</button>
           )}
         </div>
 
@@ -113,24 +116,24 @@ export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, 
         <div className="flex items-center gap-1.5 shrink-0">
           {summary.done > 0 && <Pill count={summary.done} color="#10b981" label="Meta" />}
           {summary.ahead > 0 && <Pill count={summary.ahead} color="#3b82f6" label="Adelante" />}
-          {summary.onTrack > 0 && <Pill count={summary.onTrack} color="#f59e0b" label="En ritmo" />}
+          {summary.onTrack > 0 && <Pill count={summary.onTrack} color="#facc15" label="En ritmo" />}
           {summary.behind > 0 && <Pill count={summary.behind} color="#ef4444" label="Atras" />}
         </div>
 
-        <span className="text-[11px] text-slate-400 shrink-0 tabular-nums font-semibold">
+        <span className={`text-[11px] shrink-0 tabular-nums font-semibold ${isDark ? "text-slate-400" : "text-slate-400"}`}>
           {filtered.length} brigadista{filtered.length !== 1 ? "s" : ""}
         </span>
       </div>
 
       {/* ── Goal reference strip (light) ── */}
       {periodGoalPerBrig > 0 && (
-        <div className="flex items-center gap-4 px-4 py-1.5 bg-slate-50 border-b border-slate-200/80 shrink-0">
+        <div className={`flex items-center gap-4 px-4 py-1.5 shrink-0 ${isDark ? "bg-[#090D15] border-b border-[#2a303b]" : "bg-slate-50 border-b border-slate-200/80"}`}>
           <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{PERIOD_LABELS[period]}:</span>
-          <span className="text-[12px] font-extrabold text-slate-700 tabular-nums">{periodGoalPerBrig.toLocaleString()}<span className="text-slate-400 font-semibold text-[10px]"> datos/brig</span></span>
-          <span className="text-slate-200">|</span>
+          <span className={`text-[12px] font-extrabold tabular-nums ${isDark ? "text-slate-100" : "text-slate-700"}`}>{periodGoalPerBrig.toLocaleString()}<span className="text-slate-400 font-semibold text-[10px]"> datos/brig</span></span>
+          <span className={isDark ? "text-slate-700" : "text-slate-200"}>|</span>
           <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Ritmo:</span>
-          <span className="text-[12px] font-extrabold text-slate-700 tabular-nums">{goalPerBrigadistaPerDay.toLocaleString()}<span className="text-slate-400 font-semibold text-[10px]">/dia</span></span>
-          <span className="text-slate-200">|</span>
+          <span className={`text-[12px] font-extrabold tabular-nums ${isDark ? "text-slate-100" : "text-slate-700"}`}>{goalPerBrigadistaPerDay.toLocaleString()}<span className="text-slate-400 font-semibold text-[10px]">/dia</span></span>
+          <span className={isDark ? "text-slate-700" : "text-slate-200"}>|</span>
           <span className={`text-[12px] font-extrabold tabular-nums ${daysRemaining <= 7 ? "text-red-500" : daysRemaining <= 14 ? "text-amber-500" : "text-emerald-500"}`}>
             {daysRemaining}d <span className="text-slate-400 font-semibold text-[10px]">restantes</span>
           </span>
@@ -138,24 +141,24 @@ export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, 
       )}
 
       {/* ── Table header ── */}
-      <div className="grid grid-cols-[28px_32px_1fr_120px_90px_70px] gap-2 px-4 py-2 border-b border-slate-200/80 bg-slate-50 shrink-0 items-center">
+      <div className={`grid grid-cols-[28px_32px_1fr_120px_90px_70px] gap-2 px-4 py-2 shrink-0 items-center ${isDark ? "border-b border-[#2a303b] bg-[#090D15]" : "border-b border-slate-200/80 bg-slate-50"}`}>
         <span /> {/* checkbox col */}
         <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 text-center">#</span>
         <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Brigadista</span>
-        <button type="button" onClick={() => handleSort("goal_pct")} className="text-[9px] font-bold uppercase tracking-wider text-center cursor-pointer bg-transparent border-none text-slate-500 hover:text-slate-800 transition-colors" title="Ordenar por % de meta">
+        <button type="button" onClick={() => handleSort("goal_pct")} className={`text-[9px] font-bold uppercase tracking-wider text-center cursor-pointer bg-transparent border-none transition-colors ${isDark ? "text-slate-300 hover:text-white" : "text-slate-400 hover:text-slate-800"}`} title="Ordenar por % de meta">
           Progreso{arrow("goal_pct")}
         </button>
-        <button type="button" onClick={() => handleSort("total_captures")} className="text-[9px] font-bold uppercase tracking-wider text-center cursor-pointer bg-transparent border-none text-slate-500 hover:text-slate-800 transition-colors" title="Ordenar por registros">
+        <button type="button" onClick={() => handleSort("total_captures")} className={`text-[9px] font-bold uppercase tracking-wider text-center cursor-pointer bg-transparent border-none transition-colors ${isDark ? "text-slate-300 hover:text-white" : "text-slate-400 hover:text-slate-800"}`} title="Ordenar por registros">
           Registros{arrow("total_captures")}
         </button>
         <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 text-center">Faltan</span>
       </div>
 
       {/* ── Rows ── */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="hide-scrollbar flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 p-12 text-center">
-            <span className="text-[14px] font-bold text-slate-500">Sin brigadistas</span>
+            <span className="text-[14px] font-bold text-slate-400">Sin brigadistas</span>
             <span className="text-[12px] text-slate-400">{search ? "Intenta con otra busqueda" : "Los brigadistas apareceran cuando capturen datos"}</span>
           </div>
         ) : (
@@ -171,6 +174,7 @@ export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, 
                 goal={periodGoalPerBrig}
                 compareIdx={compareIdx}
                 onToggle={() => onToggleCompare(b.brigadista_id)}
+                isDark={isDark}
               />
             );
           })
@@ -187,20 +191,20 @@ type EB = CmsBrigadistaMetrics & {
   status: "ahead" | "on_track" | "behind" | "done";
 };
 
-function Row({ b, rank, pc, even, goal, compareIdx, onToggle }: { b: EB; rank: number; pc: string; even: boolean; goal: number; compareIdx: number; onToggle: () => void }) {
+function Row({ b, rank, pc, even, goal, compareIdx, onToggle, isDark }: { b: EB; rank: number; pc: string; even: boolean; goal: number; compareIdx: number; onToggle: () => void; isDark: boolean }) {
   const isMedal = rank <= 3;
   const cfg = STATUS_CONFIG[b.status];
   const pct = Math.min(b.goalPct, 100);
   const statusLabel = b.status === "behind" ? `${b.needsPerDay}/dia` : cfg.label;
   const isSelected = compareIdx >= 0;
   const checkColor = compareIdx === 0 ? pc : compareIdx === 1 ? COMPARE_COLOR_B : undefined;
-  const rowBg = compareIdx === 0 ? COMPARE_COLOR_A_BG : compareIdx === 1 ? COMPARE_COLOR_B_BG : even ? "rgba(248,250,252,0.5)" : "#fff";
+  const rowBg = compareIdx === 0 ? COMPARE_COLOR_A_BG : compareIdx === 1 ? COMPARE_COLOR_B_BG : even ? (isDark ? "rgba(9,13,21,0.72)" : "rgba(248,250,252,0.5)") : (isDark ? "#090D15" : "#fff");
 
   return (
     <button
       type="button"
       onClick={onToggle}
-      className={`grid grid-cols-[28px_32px_1fr_120px_90px_70px] gap-2 px-4 items-center min-h-[48px] border-b border-slate-100/80 transition-colors hover:bg-slate-100/60 w-full text-left bg-transparent border-x-0 border-t-0 cursor-pointer`}
+      className={`grid grid-cols-[28px_32px_1fr_120px_90px_70px] gap-2 px-4 items-center min-h-[48px] transition-colors w-full text-left bg-transparent border-x-0 border-t-0 cursor-pointer ${isDark ? "border-b border-[#2a303b] hover:bg-[#090D15]" : "border-b border-slate-100/80 hover:bg-slate-100/60"}`}
       style={{ backgroundColor: rowBg }}
       title={`${b.full_name} — ${b.goalPct.toFixed(0)}% de meta`}
     >
@@ -229,14 +233,14 @@ function Row({ b, rank, pc, even, goal, compareIdx, onToggle }: { b: EB; rank: n
             {rank}
           </span>
         ) : (
-          <span className="text-[12px] font-bold text-slate-300 tabular-nums">{rank}</span>
+          <span className={`text-[12px] font-bold tabular-nums ${isDark ? "text-slate-400" : "text-slate-300"}`}>{rank}</span>
         )}
       </div>
 
       {/* Name + badge */}
       <div className="min-w-0 py-1.5">
         <div className="flex items-center gap-2">
-          <span className="text-[13px] font-bold text-slate-800 whitespace-nowrap overflow-hidden text-ellipsis leading-tight flex-1 min-w-0">
+            <span className={`text-[13px] font-bold whitespace-nowrap overflow-hidden text-ellipsis leading-tight flex-1 min-w-0 ${isDark ? "text-slate-100" : "text-slate-800"}`}>
             {b.full_name}
           </span>
           <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap" style={{ backgroundColor: cfg.bg, color: cfg.color }}>
@@ -247,7 +251,7 @@ function Row({ b, rank, pc, even, goal, compareIdx, onToggle }: { b: EB; rank: n
 
       {/* Progress bar */}
       <div className="flex items-center gap-2">
-        <div className="flex-1 h-2.5 rounded-full overflow-hidden bg-slate-100">
+          <div className={`flex-1 h-2.5 rounded-full overflow-hidden ${isDark ? "bg-[#090D15]" : "bg-slate-100"}`}>
           <div
             className="h-full rounded-full transition-[width] duration-500 ease-out"
             style={{
@@ -265,13 +269,13 @@ function Row({ b, rank, pc, even, goal, compareIdx, onToggle }: { b: EB; rank: n
       {/* Captures / Goal */}
       <div className="text-center">
         <span className="text-[14px] font-black tabular-nums" style={{ color: pc }}>{b.total_captures.toLocaleString()}</span>
-        {goal > 0 && <span className="text-[10px] text-slate-400 font-semibold tabular-nums"> / {goal.toLocaleString()}</span>}
+        {goal > 0 && <span className={`text-[10px] font-semibold tabular-nums ${isDark ? "text-slate-400" : "text-slate-400"}`}> / {goal.toLocaleString()}</span>}
       </div>
 
       {/* Remaining */}
       <div className="flex items-center justify-center">
         {b.remaining > 0 ? (
-          <span className="text-[12px] font-bold text-slate-400 tabular-nums">-{b.remaining.toLocaleString()}</span>
+          <span className={`text-[12px] font-bold tabular-nums ${isDark ? "text-slate-400" : "text-slate-400"}`}>-{b.remaining.toLocaleString()}</span>
         ) : (
           <span className="text-[12px] font-black text-emerald-500">OK</span>
         )}

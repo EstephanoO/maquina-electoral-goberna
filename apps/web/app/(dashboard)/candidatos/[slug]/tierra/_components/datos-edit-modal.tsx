@@ -75,7 +75,7 @@ export function DatosEditModal({ form, onSave, onClose }: Props) {
           <button type="button" onClick={onClose} className="px-4 py-2 text-[13px] font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
             Cancelar
           </button>
-          <button type="submit" disabled={saving} className="px-4 py-2 text-[13px] font-bold text-white bg-slate-900 border-none rounded-lg cursor-pointer hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed">
+          <button type="submit" disabled={saving} className="px-4 py-2 text-[13px] font-bold text-white bg-[#090D15] border-none rounded-lg cursor-pointer hover:bg-[#090D15] disabled:opacity-50 disabled:cursor-not-allowed">
             {saving ? "Guardando..." : "Guardar"}
           </button>
         </div>

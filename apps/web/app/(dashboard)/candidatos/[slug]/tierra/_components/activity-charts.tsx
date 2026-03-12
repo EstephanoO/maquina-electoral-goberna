@@ -19,6 +19,7 @@ import {
 import type { FormRecord } from "@/lib/services";
 import type { PipelinePeriod, PipelineDateRanges } from "./pipeline-filters";
 import { KpiCard, ChartIcon, UsersIcon, ClockIcon, TrendIcon } from "./kpi-cards";
+import { useTheme } from "@/lib/theme-context";
 
 /* ========== Types ========== */
 
@@ -54,6 +55,13 @@ function getDayKey(date: Date): string {
 
 function formatDayLabel(date: Date): string {
   return `${DAY_NAMES[date.getDay()]} ${date.getDate()}`;
+}
+
+function resolveAgentName(form: FormRecord): { shortName: string; fullName: string } {
+  const full = (form.encuestador || "").trim();
+  if (!full) return { shortName: "Agente", fullName: "Agente" };
+  const short = full.split(/\s+/)[0] || "Agente";
+  return { shortName: short, fullName: full };
 }
 
 function pctChange(current: number, prev: number): number | null {
@@ -98,14 +106,44 @@ function niceYMax(max: number): [number, number] {
 
 /* ========== Tooltip styles (inline required for Recharts) ========== */
 
-const tooltipStyle: React.CSSProperties = {
-  backgroundColor: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: 10,
-  fontSize: 11,
-  boxShadow: "0 4px 16px rgba(0,0,0,0.06)",
-  padding: "8px 14px",
-};
+function getTooltipStyle(isDark: boolean): React.CSSProperties {
+  return {
+    backgroundColor: isDark ? "#090D15" : "#ffffff",
+    border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+    borderRadius: 10,
+    fontSize: 11,
+    color: isDark ? "#e2e8f0" : "#07091D",
+    boxShadow: isDark ? "0 8px 24px rgba(0,0,0,0.24)" : "0 4px 16px rgba(0,0,0,0.06)",
+    padding: "8px 14px",
+  };
+}
+
+function RankingTooltip({
+  active,
+  payload,
+  isDark,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: { fullName: string; forms: number } }>;
+  isDark: boolean;
+}) {
+  if (!active || !payload?.[0]?.payload) return null;
+  const row = payload[0].payload;
+  return (
+    <div
+      style={{
+        backgroundColor: isDark ? "#090D15" : "#ffffff",
+        border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
+        borderRadius: 10,
+        padding: "8px 10px",
+        boxShadow: isDark ? "0 8px 24px rgba(0,0,0,0.24)" : "0 4px 16px rgba(0,0,0,0.06)",
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 700, color: isDark ? "#ffffff" : "#0f172a" }}>{row.fullName}</div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: isDark ? "#ffffff" : "#334155" }}>{row.forms} registros</div>
+    </div>
+  );
+}
 
 /* ========== Component ========== */
 
@@ -113,143 +151,74 @@ export const ActivityCharts = memo(function ActivityCharts({
   forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges, periodGoalPerBrig,
   compareIds, onToggleCompare, onClearCompare, serverPeriodCount,
 }: Props) {
-  const accentColor = secondaryColor || "#0d9488";
-  const compareColorB = "#f59e0b"; // amber for second agent
-  const hasPrev = prevForms.length > 0 && period !== "all";
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const chartPrimary = isDark ? "#38d97a" : primaryColor;
+  const accentColor = isDark ? "#facc15" : (secondaryColor || "#0d9488");
+  const compareColorB = "#facc15"; // yellow for second agent
+  const hasPrev = prevForms.length > 0;
   const selectedAgentId = compareIds.length === 1 ? compareIds[0] : null;
-  const handleAgentClick = useCallback((agentId: string) => {
-    onToggleCompare(agentId);
+
+  const handleAgentClick = useCallback((id: string) => {
+    onToggleCompare(id);
   }, [onToggleCompare]);
 
-  /* ── Time series — buckets match actual period dates ── */
-  const timeSeriesData = useMemo((): TimeSeriesPoint[] => {
-    const now = new Date();
+  /* ── Ranking colors ── */
+  const rankingColors = useMemo(() => {
+    if (isDark) {
+      return [
+        "#facc15", "#facc15", "#facc15",
+        "#38d97a", "#38d97a",
+        "#63e39d", "#63e39d",
+        "#475569", "#334155", "#1e293b",
+      ];
+    }
+    return [
+      "#facc15", "#facc15", "#facc15",
+      primaryColor, primaryColor,
+      secondaryColor || "#0d9488", secondaryColor || "#0d9488",
+      "#64748b", "#94a3b8", "#cbd5e1",
+    ];
+  }, [isDark, primaryColor, secondaryColor]);
 
-    /* TODAY: hour buckets 0..currentHour */
+  /* ── Time series data (Forms & Agents per day) ── */
+  const timeSeriesData = useMemo(() => {
     if (period === "today") {
+      const now = new Date();
       const currentHour = now.getHours();
       const hourMap = new Map<number, { forms: number; agents: Set<string> }>();
       for (let h = 0; h <= currentHour; h++) hourMap.set(h, { forms: 0, agents: new Set() });
-
-      for (const form of forms) {
-        const d = new Date(form.created_at);
-        const bucket = hourMap.get(d.getHours());
-        if (bucket) {
-          bucket.forms++;
-          const agentKey = form.agent_id || form.encuestador_id;
-          if (agentKey) bucket.agents.add(agentKey);
+      for (const f of forms) {
+        const d = new Date(f.created_at);
+        const h = d.getHours();
+        if (hourMap.has(h)) {
+          const b = hourMap.get(h)!;
+          b.forms++;
+          b.agents.add(f.agent_id || f.encuestador_id || "anon");
         }
       }
-
-      const result: TimeSeriesPoint[] = [];
-      for (let h = 0; h <= currentHour; h++) {
-        const bucket = hourMap.get(h)!;
-        result.push({ label: `${h.toString().padStart(2, "0")}:00`, forms: bucket.forms, agents: bucket.agents.size });
-      }
-      return result;
+      return [...hourMap.entries()].map(([h, b]) => ({ label: `${h.toString().padStart(2, "0")}:00`, forms: b.forms, agents: b.agents.size }));
     }
-
-    /* WEEK / MONTH: use actual period boundaries from dateRanges */
-    if (period === "week" || period === "month") {
-      const from = new Date(dateRanges.current.from);
-      const to = new Date(dateRanges.current.to);
-      const dayMap = buildDayBuckets(from, to);
-
-      for (const form of forms) {
-        const d = new Date(form.created_at);
-        const bucket = dayMap.get(getDayKey(d));
-        if (bucket) {
-          bucket.forms++;
-          const agentKey = form.agent_id || form.encuestador_id;
-          if (agentKey) bucket.agents.add(agentKey);
-        }
-      }
-
-      return dayMapToSeries(dayMap);
-    }
-
-    /* ALL: derive range from actual form data (earliest → today) */
-    if (forms.length === 0) return [];
-
-    let earliest = now.getTime();
-    let latest = 0;
-    for (const form of forms) {
-      const ts = new Date(form.created_at).getTime();
-      if (ts < earliest) earliest = ts;
-      if (ts > latest) latest = ts;
-    }
-
-    const from = new Date(earliest);
-    from.setHours(0, 0, 0, 0);
-    const to = new Date(latest);
-    to.setDate(to.getDate() + 1);
-    to.setHours(0, 0, 0, 0);
-
-    const dayMap = buildDayBuckets(from, to);
-
-    for (const form of forms) {
-      const d = new Date(form.created_at);
-      const bucket = dayMap.get(getDayKey(d));
-      if (bucket) {
-        bucket.forms++;
-        const agentKey = form.agent_id || form.encuestador_id;
-        if (agentKey) bucket.agents.add(agentKey);
+    const buckets = buildDayBuckets(new Date(dateRanges.current.from), new Date(dateRanges.current.to));
+    for (const f of forms) {
+      const k = getDayKey(new Date(f.created_at));
+      if (buckets.has(k)) {
+        const b = buckets.get(k)!;
+        b.forms++;
+        b.agents.add(f.agent_id || f.encuestador_id || "anon");
       }
     }
-
-    return dayMapToSeries(dayMap);
+    return dayMapToSeries(buckets);
   }, [forms, period, dateRanges]);
 
-  /* ── Agent ranking (top 10) — computed from filtered forms, not unfiltered agents ── */
-  const agentRanking = useMemo(() => {
-    const countMap = new Map<string, { id: string; name: string; count: number }>();
-    for (const form of forms) {
-      const agentId = form.agent_id || form.encuestador_id;
-      const agentName = form.encuestador || "Desconocido";
-      if (!agentId) continue;
-      const existing = countMap.get(agentId);
-      if (existing) {
-        existing.count++;
-      } else {
-        countMap.set(agentId, { id: agentId, name: agentName, count: 1 });
-      }
-    }
-
-    return [...countMap.values()]
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10)
-      .map((entry) => {
-        const firstName = entry.name.split(" ")[0];
-        return {
-          id: entry.id,
-          name: firstName.length > 10 ? `${firstName.slice(0, 9)}…` : firstName,
-          fullName: entry.name,
-          forms: entry.count,
-        };
-      });
-  }, [forms]);
-
-  /* ── Stats ── */
+  /* ── Stats calculation ── */
   const stats = useMemo(() => {
     const totalForms = serverPeriodCount ?? forms.length;
+    const uniqueAgents = new Set(forms.map((f) => f.agent_id || f.encuestador_id || "anon"));
     const prevTotal = prevForms.length;
-
-    const uniqueAgents = new Set<string>();
-    for (const f of forms) {
-      const key = f.agent_id || f.encuestador_id;
-      if (key) uniqueAgents.add(key);
-    }
-
-    const prevUniqueAgents = new Set<string>();
-    for (const f of prevForms) {
-      const key = f.agent_id || f.encuestador_id;
-      if (key) prevUniqueAgents.add(key);
-    }
-
+    const prevUniqueAgents = new Set(prevForms.map((f) => f.agent_id || f.encuestador_id || "anon"));
     const avgPerAgent = uniqueAgents.size > 0 ? Math.round(totalForms / uniqueAgents.size) : 0;
-    const peak = timeSeriesData.length > 0
-      ? timeSeriesData.reduce((max, d) => d.forms > max.forms ? d : max, timeSeriesData[0])
-      : undefined;
+    const peak = [...timeSeriesData].sort((a, b) => b.forms - a.forms)[0] ?? null;
 
     return {
       totalForms, prevTotal, avgPerAgent,
@@ -259,13 +228,59 @@ export const ActivityCharts = memo(function ActivityCharts({
     };
   }, [forms, prevForms, timeSeriesData, serverPeriodCount]);
 
-  /* ── Ranking colors ── */
-  const rankingColors = useMemo(() => [
-    "#f59e0b", "#f59e0b", "#f59e0b",
-    primaryColor, primaryColor,
-    accentColor, accentColor,
-    "#64748b", "#94a3b8", "#cbd5e1",
-  ], [primaryColor, accentColor]);
+  /* ── Agent ranking (by total captures in period) ── */
+  const agentRanking = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; fullName: string; forms: number }>();
+    for (const f of forms) {
+      const id = f.agent_id || f.encuestador_id || "anon";
+      if (!map.has(id)) {
+        const { shortName, fullName } = resolveAgentName(f);
+        map.set(id, { id, name: shortName, fullName, forms: 0 });
+      }
+      map.get(id)!.forms++;
+    }
+    return [...map.values()].sort((a, b) => b.forms - a.forms).slice(0, 10);
+  }, [forms]);
+
+  /* ── Trend Line Calculation ── */
+  const chartData = useMemo(() => {
+    if (!timeSeriesData.length) return [];
+    if (timeSeriesData.length < 2) return timeSeriesData;
+    const n = timeSeriesData.length;
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    for (let i = 0; i < n; i++) {
+      sumX += i;
+      sumY += timeSeriesData[i].forms;
+      sumXY += i * timeSeriesData[i].forms;
+      sumX2 += i * i;
+    }
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+    return timeSeriesData.map((d, i) => ({
+      ...d,
+      trend: Math.max(0, slope * i + intercept)
+    }));
+  }, [timeSeriesData]);
+
+  /* DEPRECATED: const trendData = useMemo(() => {
+    if (timeSeriesData.length < 2) return null;
+    const n = timeSeriesData.length;
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+    for (let i = 0; i < n; i++) {
+      sumX += i;
+      sumY += timeSeriesData[i].forms;
+      sumXY += i * timeSeriesData[i].forms;
+      sumX2 += i * i;
+    }
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+    
+    return timeSeriesData.map((d, i) => ({
+      label: d.label,
+      trend: Math.max(0, slope * i + intercept)
+    }));
+  }, [timeSeriesData]);
+
 
   /* ── Selected agent info ── */
   const selectedAgent = useMemo(() => {
@@ -425,46 +440,46 @@ export const ActivityCharts = memo(function ActivityCharts({
     <div className="flex flex-col gap-2.5 px-4 py-3">
       {/* ═══ KPI strip ═══ */}
       <div className="grid grid-cols-4 gap-2.5">
-        <KpiCard label="Registros" value={stats.totalForms} color={primaryColor} delta={hasPrev ? stats.formsDelta : undefined} deltaLabel={periodLabel} icon={<ChartIcon />} />
-        <KpiCard label="Brigadistas" value={stats.totalAgents} color="#2563eb" delta={hasPrev ? stats.agentsDelta : undefined} deltaLabel={periodLabel} icon={<UsersIcon />} />
+        <KpiCard label="Registros" value={stats.totalForms} color={chartPrimary} delta={hasPrev ? stats.formsDelta : undefined} deltaLabel={periodLabel} icon={<ChartIcon />} />
+        <KpiCard label="Brigadistas" value={stats.totalAgents} color={isDark ? "#facc15" : "#2563eb"} delta={hasPrev ? stats.agentsDelta : undefined} deltaLabel={periodLabel} icon={<UsersIcon />} />
         <KpiCard label="Prom/agente" value={stats.avgPerAgent} color={accentColor} subtitle={stats.peak && stats.peak.forms > 0 ? `pico: ${stats.peak.label}` : undefined} icon={<ClockIcon />} />
-        <KpiCard label="Top agente" value={agentRanking[0]?.forms ?? 0} color="#8b5cf6" subtitle={agentRanking[0]?.fullName} icon={<TrendIcon />} />
+        <KpiCard label="Top agente" value={agentRanking[0]?.forms ?? 0} color={isDark ? "#facc15" : "#8b5cf6"} subtitle={agentRanking[0]?.fullName} icon={<TrendIcon />} />
       </div>
 
       {/* ═══ Charts row (2/3 timeline + 1/3 ranking) ═══ */}
       <div className="grid gap-3" style={{ gridTemplateColumns: "2fr 1fr" }}>
         {/* Left: Activity timeline / agent drill-down / compare */}
-        <div className="bg-slate-50/60 rounded-xl border border-slate-100 px-4 py-3 flex flex-col min-w-0">
+        <div className={`rounded-xl px-4 py-3 flex flex-col min-w-0 ${isDark ? "bg-[#090D15] border border-[#1d2f43]" : "bg-slate-50/60 border border-slate-100"}`}>
           {compareData && compareNames ? (
             /* ── COMPARE MODE (2 agents) ── */
             <>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Comparacion</span>
+                <span className={`text-[10px] font-semibold uppercase tracking-wider ${isDark ? "text-slate-300" : "text-slate-400"}`}>Comparacion</span>
                 <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-bold tabular-nums" style={{ color: primaryColor }}>{compareNames.a.split(" ")[0]}: {compareData.totalA}</span>
+                  <span className="text-[10px] font-bold tabular-nums" style={{ color: chartPrimary }}>{compareNames.a.split(" ")[0]}: {compareData.totalA}</span>
                   <span className="text-[10px] font-bold tabular-nums" style={{ color: compareColorB }}>{compareNames.b.split(" ")[0]}: {compareData.totalB}</span>
                   {compareData.goal > 0 && (
-                    <span className="text-[10px] text-slate-400 tabular-nums">meta: {compareData.goal.toLocaleString()}</span>
+                    <span className={`text-[10px] tabular-nums ${isDark ? "text-slate-400" : "text-slate-400"}`}>meta: {compareData.goal.toLocaleString()}</span>
                   )}
                 </div>
               </div>
               <div className="flex items-center gap-4 mb-1">
                 <div className="flex items-center gap-1.5">
-                  <div className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: primaryColor }} />
-                  <span className="text-[9px] text-slate-400 truncate max-w-[80px]">{compareNames.a.split(" ")[0]}</span>
+                  <div className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: chartPrimary }} />
+                    <span className={`text-[9px] truncate max-w-[80px] ${isDark ? "text-slate-400" : "text-slate-400"}`}>{compareNames.a.split(" ")[0]}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <div className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: compareColorB }} />
-                  <span className="text-[9px] text-slate-400 truncate max-w-[80px]">{compareNames.b.split(" ")[0]}</span>
+                    <span className={`text-[9px] truncate max-w-[80px] ${isDark ? "text-slate-400" : "text-slate-400"}`}>{compareNames.b.split(" ")[0]}</span>
                 </div>
               </div>
               <ResponsiveContainer width="100%" height={170}>
                 <LineChart data={compareData.series} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval={xInterval} />
-                  <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} domain={compareYDomain} />
-                  <Tooltip contentStyle={tooltipStyle} formatter={(value, name) => [String(value ?? 0), name === "agentA" ? compareNames.a : name === "agentB" ? compareNames.b : "Meta"]} />
-                  <Line type="monotone" dataKey="agentA" stroke={primaryColor} strokeWidth={2.5} dot={{ r: 2.5, fill: primaryColor }} name="agentA" animationDuration={800} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={isDark ? "#2d3440" : "#f1f5f9"} vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 9, fill: isDark ? "#94a3b8" : "#94a3b8" }} axisLine={false} tickLine={false} interval={xInterval} />
+                  <YAxis tick={{ fontSize: 9, fill: isDark ? "#94a3b8" : "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} domain={compareYDomain} />
+                  <Tooltip contentStyle={getTooltipStyle(isDark)} formatter={(value, name) => [String(value ?? 0), name === "agentA" ? compareNames.a : name === "agentB" ? compareNames.b : "Meta"]} />
+                  <Line type="monotone" dataKey="agentA" stroke={chartPrimary} strokeWidth={2.5} dot={{ r: 2.5, fill: chartPrimary }} name="agentA" animationDuration={800} />
                   <Line type="monotone" dataKey="agentB" stroke={compareColorB} strokeWidth={2.5} dot={{ r: 2.5, fill: compareColorB }} name="agentB" animationDuration={800} />
                 </LineChart>
               </ResponsiveContainer>
@@ -477,21 +492,21 @@ export const ActivityCharts = memo(function ActivityCharts({
                   <button
                     type="button"
                     onClick={onClearCompare}
-                    className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 text-[10px] cursor-pointer border-none hover:bg-slate-300 transition-colors"
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] cursor-pointer border-none transition-colors ${isDark ? "bg-[#090D15] text-slate-300 hover:bg-[#090D15]" : "bg-slate-200 text-slate-400 hover:bg-slate-300"}`}
                     aria-label="Volver"
                   >
                     &larr;
                   </button>
-                  <span className="text-[10px] font-semibold text-slate-700 uppercase tracking-wider truncate">
+                    <span className={`text-[10px] font-semibold uppercase tracking-wider truncate ${isDark ? "text-slate-100" : "text-slate-700"}`}>
                     {selectedAgent.fullName}
                   </span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-[10px] font-bold tabular-nums" style={{ color: primaryColor }}>
+                  <span className="text-[10px] font-bold tabular-nums" style={{ color: chartPrimary }}>
                     {agentDrillData.total} registros
                   </span>
                   {agentDrillData.goal > 0 && (
-                    <span className="text-[10px] text-slate-400 tabular-nums">
+                    <span className={`text-[10px] tabular-nums ${isDark ? "text-slate-400" : "text-slate-400"}`}>
                       meta: {agentDrillData.goal}
                     </span>
                   )}
@@ -499,17 +514,17 @@ export const ActivityCharts = memo(function ActivityCharts({
               </div>
               <div className="flex items-center gap-4 mb-1">
                 <div className="flex items-center gap-1.5">
-                  <div className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: primaryColor }} />
-                  <span className="text-[9px] text-slate-400">Acumulado</span>
+                  <div className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: chartPrimary }} />
+                    <span className={`text-[9px] ${isDark ? "text-slate-400" : "text-slate-400"}`}>Acumulado</span>
                 </div>
               </div>
               <ResponsiveContainer width="100%" height={170}>
                 <LineChart data={agentDrillData.series} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={isDark ? "#2d3440" : "#f1f5f9"} vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval={xInterval} />
                   <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} domain={drillYDomain} />
-                  <Tooltip contentStyle={tooltipStyle} formatter={(value) => [String(value ?? 0), "Registros"]} />
-                  <Line type="monotone" dataKey="actual" stroke={primaryColor} strokeWidth={2.5} dot={{ r: 2.5, fill: primaryColor }} name="actual" animationDuration={800} />
+                  <Tooltip contentStyle={getTooltipStyle(isDark)} formatter={(value) => [String(value ?? 0), "Registros"]} />
+                  <Line type="monotone" dataKey="actual" stroke={chartPrimary} strokeWidth={2.5} dot={{ r: 2.5, fill: chartPrimary }} name="actual" animationDuration={800} />
                 </LineChart>
               </ResponsiveContainer>
             </>
@@ -517,57 +532,58 @@ export const ActivityCharts = memo(function ActivityCharts({
             /* ── GLOBAL MODE (0 selected) ── */
             <>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
+                <span className={`text-[10px] font-semibold uppercase tracking-wider ${isDark ? "text-slate-300" : "text-slate-400"}`}>
                   Actividad {period === "today" ? "de hoy" : period === "week" ? "semanal" : period === "month" ? "mensual" : "general"}
                 </span>
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: primaryColor }} />
-                    <span className="text-[9px] text-slate-400">Registros</span>
+                    <div className="w-2.5 h-0.5 rounded-full" style={{ backgroundColor: chartPrimary }} />
+                    <span className={`text-[9px] ${isDark ? "text-slate-400" : "text-slate-400"}`}>Registros</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <div className="w-2.5 h-0.5 rounded-full border-b border-dashed" style={{ borderColor: accentColor }} />
-                    <span className="text-[9px] text-slate-400">Agentes</span>
+                    <span className={`text-[9px] ${isDark ? "text-slate-400" : "text-slate-400"}`}>Agentes</span>
                   </div>
                 </div>
               </div>
               {timeSeriesData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={170}>
-                  <AreaChart data={timeSeriesData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                  <AreaChart data={chartData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="areaGradPipeline" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={primaryColor} stopOpacity={0.25} />
-                        <stop offset="100%" stopColor={primaryColor} stopOpacity={0.01} />
+                        <stop offset="0%" stopColor={chartPrimary} stopOpacity={0.25} />
+                        <stop offset="100%" stopColor={chartPrimary} stopOpacity={0.01} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={isDark ? "#2d3440" : "#f1f5f9"} vertical={false} />
                     <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval={xInterval} />
                     <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} allowDecimals={false} />
-                    <Tooltip contentStyle={tooltipStyle} formatter={(value, name) => [String(value ?? 0), name === "forms" ? "Registros" : "Agentes"]} />
-                    <Area type="monotone" dataKey="forms" stroke={primaryColor} strokeWidth={2} fill="url(#areaGradPipeline)" name="forms" animationDuration={800} />
+                    <Tooltip contentStyle={getTooltipStyle(isDark)} formatter={(value, name) => [String(value ?? 0), name === "forms" ? "Registros" : "Agentes"]} />
+                    <Line type="monotone" dataKey="trend" stroke={isDark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.1)"} strokeWidth={1.5} strokeDasharray="5 5" dot={false} name="Tendencia" animationDuration={800} />
+                    <Area type="monotone" dataKey="forms" stroke={chartPrimary} strokeWidth={2} fill="url(#areaGradPipeline)" name="forms" animationDuration={800} />
                     <Area type="monotone" dataKey="agents" stroke={accentColor} strokeWidth={1.5} fill="transparent" strokeDasharray="4 2" name="agents" animationDuration={800} />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="flex items-center justify-center h-[170px] text-xs text-slate-400">Sin registros en este periodo</div>
+                <div className={`flex items-center justify-center h-[170px] text-xs ${isDark ? "text-slate-400" : "text-slate-400"}`}>Sin registros en este periodo</div>
               )}
             </>
           )}
         </div>
 
         {/* Right: Agent ranking bars (clickable) */}
-        <div className="bg-slate-50/60 rounded-xl border border-slate-100 px-4 py-3 flex flex-col min-w-0 max-h-[260px] overflow-y-auto">
+        <div className={`hide-scrollbar rounded-xl px-4 py-3 flex flex-col min-w-0 max-h-[260px] overflow-y-auto ${isDark ? "bg-[#090D15] border border-[#1d2f43]" : "bg-slate-50/60 border border-slate-100"}`}>
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Rendimiento</span>
-            <span className="text-[10px] text-slate-400 tabular-nums">{stats.totalAgents} agentes</span>
+            <span className={`text-[10px] font-semibold uppercase tracking-wider ${isDark ? "text-slate-300" : "text-slate-400"}`}>Rendimiento</span>
+            <span className={`text-[10px] tabular-nums ${isDark ? "text-slate-400" : "text-slate-400"}`}>{stats.totalAgents} agentes</span>
           </div>
           {agentRanking.length > 0 ? (
             <ResponsiveContainer width="100%" height={Math.max(170, agentRanking.length * 24)}>
               <BarChart data={agentRanking} layout="vertical" margin={{ top: 4, right: 12, left: 4, bottom: 0 }} onClick={(state: Record<string, unknown>) => { const ap = (state as { activePayload?: { payload: (typeof agentRanking)[number] }[] })?.activePayload; if (ap?.[0]) handleAgentClick(ap[0].payload.id); }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke={isDark ? "#2d3440" : "#f1f5f9"} horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 9, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "#475569" }} axisLine={false} tickLine={false} width={80} interval={0} />
-                <Tooltip contentStyle={tooltipStyle} formatter={(value, _name, props) => { const entry = props.payload as (typeof agentRanking)[number]; return [String(value ?? 0), entry.fullName]; }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: isDark ? "#cbd5e1" : "#475569" }} axisLine={false} tickLine={false} width={80} interval={0} />
+                <Tooltip content={({ active, payload }) => <RankingTooltip active={active} payload={payload as Array<{ payload: { fullName: string; forms: number } }>} isDark={isDark} />} />
                 <Bar dataKey="forms" radius={[0, 6, 6, 0]} maxBarSize={18} animationDuration={600} cursor="pointer">
                   {agentRanking.map((entry, idx) => {
                     const isA = compareIds[0] === entry.id;
@@ -588,7 +604,7 @@ export const ActivityCharts = memo(function ActivityCharts({
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex items-center justify-center flex-1 text-xs text-slate-400">Sin datos de agentes</div>
+            <div className={`flex items-center justify-center flex-1 text-xs ${isDark ? "text-slate-400" : "text-slate-400"}`}>Sin datos de agentes</div>
           )}
         </div>
       </div>

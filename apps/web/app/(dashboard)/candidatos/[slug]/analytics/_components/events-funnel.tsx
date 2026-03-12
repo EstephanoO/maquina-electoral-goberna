@@ -114,7 +114,7 @@ export function EventsFunnel({ events, primaryColor }: Props) {
                   <div style={S.dropOffLine} />
                   <span style={{
                     ...S.dropOffText,
-                    color: evt.dropOff < -80 ? "#dc2626" : evt.dropOff < -50 ? "#f59e0b" : "#64748b",
+                    color: evt.dropOff < -80 ? "#dc2626" : evt.dropOff < -50 ? "#f59e0b" : "var(--color-text-secondary)",
                   }}>
                     {evt.dropOff.toFixed(0)}%
                   </span>
@@ -189,9 +189,9 @@ export function EventsFunnel({ events, primaryColor }: Props) {
 
 const S: Record<string, React.CSSProperties> = {
   container: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     padding: 20,
     height: "100%",
     display: "flex",
@@ -207,13 +207,13 @@ const S: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: 14,
     fontWeight: 700,
-    color: "#0f172a",
+    color: "var(--color-text-primary)",
   },
   badge: {
     fontSize: 11,
     fontWeight: 500,
-    color: "#64748b",
-    backgroundColor: "#f1f5f9",
+    color: "var(--color-text-secondary)",
+    backgroundColor: "var(--color-surface-active)",
     padding: "3px 8px",
     borderRadius: 4,
   },
@@ -241,12 +241,12 @@ const S: Record<string, React.CSSProperties> = {
   },
   eventName: {
     fontSize: 12,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
     lineHeight: 1.3,
   },
   eventCode: {
     fontSize: 9,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     fontFamily: "monospace",
   },
   barsCol: {
@@ -264,7 +264,7 @@ const S: Record<string, React.CSSProperties> = {
   barBg: {
     flex: 1,
     height: 6,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "var(--color-surface-active)",
     borderRadius: 3,
     overflow: "hidden",
   },
@@ -276,13 +276,13 @@ const S: Record<string, React.CSSProperties> = {
   barValue: {
     fontSize: 11,
     fontWeight: 600,
-    color: "#334155",
+    color: "var(--color-text-secondary)",
     minWidth: 50,
     textAlign: "right" as const,
   },
   barValueLight: {
     fontSize: 10,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     minWidth: 50,
     textAlign: "right" as const,
   },
@@ -297,11 +297,11 @@ const S: Record<string, React.CSSProperties> = {
   metricValue: {
     fontSize: 13,
     fontWeight: 700,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
   },
   metricLabel: {
     fontSize: 9,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
   },
   dropOff: {
     display: "flex",
@@ -312,7 +312,7 @@ const S: Record<string, React.CSSProperties> = {
   dropOffLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "#e2e8f0",
+    backgroundColor: "var(--color-border)",
   },
   dropOffText: {
     fontSize: 10,
@@ -324,14 +324,14 @@ const S: Record<string, React.CSSProperties> = {
     gap: 16,
     marginTop: 12,
     paddingTop: 12,
-    borderTop: "1px solid #f1f5f9",
+    borderTop: "1px solid var(--color-surface-active)",
   },
   legendItem: {
     display: "flex",
     alignItems: "center",
     gap: 6,
     fontSize: 11,
-    color: "#64748b",
+    color: "var(--color-text-secondary)",
   },
   legendDot: {
     width: 8,
@@ -350,7 +350,7 @@ const S: Record<string, React.CSSProperties> = {
   emptyText: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
   },
   emptyHint: {
     fontSize: 11,

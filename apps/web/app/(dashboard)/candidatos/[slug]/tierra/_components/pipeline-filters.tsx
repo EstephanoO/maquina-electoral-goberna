@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useTheme } from "@/lib/theme-context";
 
 /* ========== Types ========== */
 
@@ -150,6 +151,8 @@ const PERIODS: { key: PipelinePeriod; label: string }[] = [
 ];
 
 export function PipelineFilters({ period, onChange, primaryColor, offset, onOffsetChange }: Props) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const ranges = useMemo(() => getDateRanges(period, offset), [period, offset]);
   const canGoForward = period !== "all" && offset < 0;
 
@@ -172,7 +175,7 @@ export function PipelineFilters({ period, onChange, primaryColor, offset, onOffs
   return (
     <div className="flex items-center gap-3 px-4 py-2.5">
       {/* Period pills */}
-      <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+      <div className={`flex rounded-lg overflow-hidden ${isDark ? "border border-[#2a303b] bg-[#090D15]" : "border border-slate-200 bg-white"}`}>
         {PERIODS.map((p) => {
           const active = period === p.key;
           return (
@@ -181,7 +184,7 @@ export function PipelineFilters({ period, onChange, primaryColor, offset, onOffs
               type="button"
               onClick={() => onChange(p.key)}
               className="px-3.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors"
-              style={active ? { backgroundColor: primaryColor, color: "#fff" } : { color: "#64748b" }}
+              style={active ? { backgroundColor: primaryColor, color: "#fff" } : { color: isDark ? "#cbd5e1" : "#64748b" }}
             >
               {p.label}
             </button>
@@ -195,13 +198,13 @@ export function PipelineFilters({ period, onChange, primaryColor, offset, onOffs
           <button
             type="button"
             onClick={() => onOffsetChange(offset - 1)}
-            className="w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer border-none bg-transparent"
+            className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors cursor-pointer border-none bg-transparent ${isDark ? "text-slate-400 hover:text-white hover:bg-[#090D15]" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"}`}
             aria-label="Periodo anterior"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Anterior"><title>Anterior</title><polyline points="15 18 9 12 15 6" /></svg>
           </button>
 
-          <span className="text-[11px] font-semibold text-slate-600 tabular-nums min-w-[100px] text-center select-none">
+          <span className={`text-[11px] font-semibold tabular-nums min-w-[100px] text-center select-none ${isDark ? "text-slate-200" : "text-slate-600"}`}>
             {navLabel}
           </span>
 
@@ -209,7 +212,7 @@ export function PipelineFilters({ period, onChange, primaryColor, offset, onOffs
             type="button"
             onClick={() => onOffsetChange(offset + 1)}
             disabled={!canGoForward}
-            className="w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer border-none bg-transparent"
+            className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer border-none bg-transparent ${isDark ? "text-slate-400 hover:text-white hover:bg-[#090D15]" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"}`}
             aria-label="Periodo siguiente"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Siguiente"><title>Siguiente</title><polyline points="9 18 15 12 9 6" /></svg>
@@ -219,7 +222,7 @@ export function PipelineFilters({ period, onChange, primaryColor, offset, onOffs
             <button
               type="button"
               onClick={() => onOffsetChange(0)}
-              className="ml-1 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded border border-slate-200 cursor-pointer transition-colors hover:bg-slate-50 bg-white"
+              className={`ml-1 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded cursor-pointer transition-colors ${isDark ? "border border-[#343b47] hover:bg-[#090D15] bg-[#090D15]" : "border border-slate-200 hover:bg-slate-50 bg-white"}`}
               style={{ color: primaryColor }}
             >
               Actual
@@ -230,13 +233,13 @@ export function PipelineFilters({ period, onChange, primaryColor, offset, onOffs
 
       {/* Human-friendly label + comparison */}
       {period !== "all" && offset !== 0 && (
-        <span className="text-[11px] font-medium text-slate-400">
+        <span className={`text-[11px] font-medium ${isDark ? "text-slate-400" : "text-slate-400"}`}>
           {ranges.label}
         </span>
       )}
       {period !== "all" && offset === 0 && ranges.previousLabel && (
-        <span className="text-[11px] font-medium text-slate-400">
-          vs <span className="text-slate-300">{ranges.previousLabel}</span>
+        <span className={`text-[11px] font-medium ${isDark ? "text-slate-400" : "text-slate-400"}`}>
+          vs <span className={isDark ? "text-slate-200" : "text-slate-300"}>{ranges.previousLabel}</span>
         </span>
       )}
     </div>

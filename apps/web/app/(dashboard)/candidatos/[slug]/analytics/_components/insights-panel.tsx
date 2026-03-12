@@ -55,7 +55,7 @@ export function InsightsPanel({ data, gscData, primaryColor }: Props) {
         {insights.map((insight) => {
           const typeColor = insight.type === "positive" ? "#10b981" :
                             insight.type === "warning" ? "#f59e0b" :
-                            insight.type === "negative" ? "#ef4444" : "#64748b";
+                            insight.type === "negative" ? "#ef4444" : "var(--color-text-secondary)";
           return (
             <div key={`${insight.category}-${insight.title}`} style={{ ...S.insightCard, borderLeftColor: typeColor }}>
               <div style={S.insightHeader}>
@@ -429,9 +429,9 @@ function formatTime(seconds: number): string {
 
 const S: Record<string, React.CSSProperties> = {
   container: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     padding: 20,
     display: "flex",
     flexDirection: "column" as const,
@@ -446,13 +446,13 @@ const S: Record<string, React.CSSProperties> = {
     margin: 0,
     fontSize: 14,
     fontWeight: 700,
-    color: "#0f172a",
+    color: "var(--color-text-primary)",
   },
   badge: {
     fontSize: 11,
     fontWeight: 500,
-    color: "#64748b",
-    backgroundColor: "#f1f5f9",
+    color: "var(--color-text-secondary)",
+    backgroundColor: "var(--color-surface-active)",
     padding: "3px 8px",
     borderRadius: 4,
   },
@@ -464,8 +464,8 @@ const S: Record<string, React.CSSProperties> = {
   insightCard: {
     padding: "14px 14px 14px 16px",
     borderRadius: 10,
-    backgroundColor: "#f8fafc",
-    border: "1px solid #e2e8f0",
+    backgroundColor: "var(--color-surface-hover)",
+    border: "1px solid var(--color-border)",
     borderLeft: "3px solid transparent",
   },
   insightHeader: {
@@ -483,20 +483,20 @@ const S: Record<string, React.CSSProperties> = {
   insightCategory: {
     fontSize: 10,
     fontWeight: 600,
-    color: "#64748b",
+    color: "var(--color-text-secondary)",
     textTransform: "uppercase" as const,
     letterSpacing: "0.04em",
   },
   insightTitle: {
     fontSize: 13,
     fontWeight: 700,
-    color: "#1e293b",
+    color: "var(--color-text-primary)",
     lineHeight: 1.4,
     marginBottom: 4,
   },
   insightDetail: {
     fontSize: 12,
-    color: "#475569",
+    color: "var(--color-text-secondary)",
     lineHeight: 1.5,
   },
   empty: {
@@ -510,7 +510,7 @@ const S: Record<string, React.CSSProperties> = {
   emptyText: {
     fontSize: 13,
     fontWeight: 600,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
   },
   emptyHint: {
     fontSize: 11,

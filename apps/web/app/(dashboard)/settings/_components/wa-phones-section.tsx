@@ -166,7 +166,7 @@ function PhoneRow({
               border: "1.5px solid var(--goberna-blue-500)",
               borderRadius: 6,
               fontFamily: fontStack,
-              background: "var(--goberna-blue-50)",
+              background: "var(--color-surface-hover)",
               color: "var(--color-text-primary)",
               outline: "none",
               width: "100%",
@@ -299,7 +299,7 @@ function AddPhoneForm({
   const inputStyle: React.CSSProperties = {
     flex: 1, fontSize: 13, padding: "7px 10px",
     border: "1.5px solid var(--color-border)", borderRadius: 6,
-    fontFamily: fontStack, background: "var(--goberna-blue-50)",
+    fontFamily: fontStack, background: "var(--color-surface-hover)",
     color: "var(--color-text-primary)", outline: "none",
   };
 

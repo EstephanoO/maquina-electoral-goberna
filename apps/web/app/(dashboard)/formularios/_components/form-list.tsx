@@ -24,8 +24,8 @@ type FormListProps = {
 
 const STATUS_STYLE: Record<string, CSSProperties> = {
   active: { background: "#dcfce7", color: "#15803d" },
-  draft: { background: "#f1f5f9", color: "#64748b" },
-  archived: { background: "#f1f5f9", color: "#94a3b8" },
+  draft: { background: "var(--color-surface-active)", color: "var(--color-text-secondary)" },
+  archived: { background: "var(--color-surface-active)", color: "var(--color-text-tertiary)" },
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -185,8 +185,8 @@ export function FormList({
                           fontSize: 12,
                           padding: "1px 6px",
                           borderRadius: 4,
-                          background: "#f1f5f9",
-                          color: "#64748b",
+                          background: "var(--color-surface-active)",
+                          color: "var(--color-text-secondary)",
                         }}
                       >
                         {getFieldTypeIcon(type)}

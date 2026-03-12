@@ -11,7 +11,7 @@ export const SCROLL_MAX = "max-h-[240px] overflow-y-auto";
 
 /* ========== Primitives ========== */
 
-export function Glass({ children, mapTheme = "light" }: { children: React.ReactNode; mapTheme?: MapTheme }) {
+export function Glass({ children, mapTheme = "voyager" }: { children: React.ReactNode; mapTheme?: MapTheme }) {
   const isDark = mapTheme === "dark";
   return (
     <div
@@ -29,7 +29,7 @@ export function Glass({ children, mapTheme = "light" }: { children: React.ReactN
   );
 }
 
-export function Kpi({ value, label, color, dotColor, pulse, sub, mapTheme = "light" }: {
+export function Kpi({ value, label, color, dotColor, pulse, sub, mapTheme = "voyager" }: {
   value: number; label: string; color?: string; dotColor?: string; pulse?: boolean; sub?: React.ReactNode; mapTheme?: MapTheme;
 }) {
   const isDark = mapTheme === "dark";
@@ -54,7 +54,7 @@ export function Kpi({ value, label, color, dotColor, pulse, sub, mapTheme = "lig
   );
 }
 
-export function CardHeader({ children, onClick, open, mapTheme = "light" }: { children: React.ReactNode; onClick: () => void; open: boolean; mapTheme?: MapTheme }) {
+export function CardHeader({ children, onClick, open, mapTheme = "voyager" }: { children: React.ReactNode; onClick: () => void; open: boolean; mapTheme?: MapTheme }) {
   const isDark = mapTheme === "dark";
   return (
     <button type="button" onClick={onClick} className="w-full flex items-center px-3 py-2 cursor-pointer">
@@ -66,7 +66,7 @@ export function CardHeader({ children, onClick, open, mapTheme = "light" }: { ch
   );
 }
 
-export function AgentRow({ agent, primaryColor, selected, onClick, mapTheme = "light" }: { agent: EnrichedAgent; primaryColor: string; selected: boolean; onClick: (id: string) => void; mapTheme?: MapTheme }) {
+export function AgentRow({ agent, primaryColor, selected, onClick, mapTheme = "voyager" }: { agent: EnrichedAgent; primaryColor: string; selected: boolean; onClick: (id: string) => void; mapTheme?: MapTheme }) {
   const cfg = STATUS_CFG[agent.status];
   const isDark = mapTheme === "dark";
   const rowBg = selected
@@ -91,7 +91,7 @@ export function AgentRow({ agent, primaryColor, selected, onClick, mapTheme = "l
   );
 }
 
-export function RankingRow({ agent, rank, primaryColor, selected, onClick, mapTheme = "light" }: { agent: EnrichedAgent; rank: number; primaryColor: string; selected: boolean; onClick: (id: string) => void; mapTheme?: MapTheme }) {
+export function RankingRow({ agent, rank, primaryColor, selected, onClick, mapTheme = "voyager" }: { agent: EnrichedAgent; rank: number; primaryColor: string; selected: boolean; onClick: (id: string) => void; mapTheme?: MapTheme }) {
   const isMedal = rank <= 3;
   const isDark = mapTheme === "dark";
   const rowBg = selected
@@ -124,7 +124,7 @@ export function RankingRow({ agent, rank, primaryColor, selected, onClick, mapTh
   );
 }
 
-export function LogRow({ entry, onLogEntryClick, mapTheme = "light" }: { entry: LogEntry; onLogEntryClick: (e: LogEntry) => void; mapTheme?: MapTheme }) {
+export function LogRow({ entry, onLogEntryClick, mapTheme = "voyager" }: { entry: LogEntry; onLogEntryClick: (e: LogEntry) => void; mapTheme?: MapTheme }) {
   const hasLoc = entry.lat != null && entry.lng != null;
   const isDark = mapTheme === "dark";
   const hoverBg = isDark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.3)";
@@ -151,7 +151,7 @@ export function LogRow({ entry, onLogEntryClick, mapTheme = "light" }: { entry: 
   );
 }
 
-export function MoreBtn({ count, color, onClick, mapTheme = "light" }: { count: number; color: string; onClick: () => void; mapTheme?: MapTheme }) {
+export function MoreBtn({ count, color, onClick, mapTheme = "voyager" }: { count: number; color: string; onClick: () => void; mapTheme?: MapTheme }) {
   const hoverBg = mapTheme === "dark" ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.2)";
   return (
     <button

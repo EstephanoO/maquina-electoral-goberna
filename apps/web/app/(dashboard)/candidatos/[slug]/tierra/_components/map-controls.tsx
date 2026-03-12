@@ -84,7 +84,7 @@ function ThemeModeIcon({ mode }: { mode: MapTheme }) {
     );
   }
 
-  if (mode === "light") {
+  if (mode === "voyager") {
     return (
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <circle cx="12" cy="12" r="4" />
@@ -110,8 +110,7 @@ function ThemeModeIcon({ mode }: { mode: MapTheme }) {
 
 const THEME_MODES: Array<{ id: MapTheme; label: string }> = [
   { id: "dark", label: "Oscuro" },
-  { id: "light", label: "Claro" },
-  { id: "voyager", label: "Voyager" },
+  { id: "voyager", label: "Claro" },
 ];
 
 export function MapControls({
@@ -188,13 +187,13 @@ export function MapControls({
               className="cursor-pointer rounded-md border px-0 py-1 h-7 flex items-center justify-center transition-all duration-150"
               style={{
                 backgroundColor: mapTheme === mode.id
-                  ? (isDark ? "#0f172a" : "#0f172a")
-                  : (isDark ? "rgba(2,6,23,0.55)" : "#ffffff"),
+                  ? (isDark ? "#090D15" : "#07091D")
+                  : (isDark ? "rgba(9,13,21,0.55)" : "#ffffff"),
                 color: mapTheme === mode.id
                   ? "#ffffff"
                   : (isDark ? "#cbd5e1" : "#475569"),
                 borderColor: mapTheme === mode.id
-                  ? (isDark ? "#334155" : "#0f172a")
+                  ? (isDark ? "#334155" : "#07091D")
                   : (isDark ? "#334155" : "#e2e8f0"),
               }}
               title={mode.label}
@@ -219,7 +218,7 @@ export function MapControls({
                 style={{
                   backgroundColor: datosVizMode === mode.id
                     ? C.datos
-                    : (isDark ? "rgba(2,6,23,0.5)" : "#ffffff"),
+                    : (isDark ? "rgba(9,13,21,0.5)" : "#ffffff"),
                   color: datosVizMode === mode.id ? "#ffffff" : (isDark ? "#cbd5e1" : "#475569"),
                   borderColor: datosVizMode === mode.id ? C.datos : (isDark ? "#334155" : "#e2e8f0"),
                 }}
@@ -251,7 +250,7 @@ export function MapControls({
                   }}
                   className={`w-[58px] rounded border px-1.5 py-0.5 text-[10px] font-semibold outline-none ${
                     isDark
-                      ? "border-slate-600 bg-slate-900 text-slate-100 focus:border-blue-400"
+                      ? "border-slate-600 bg-[#090D15] text-slate-100 focus:border-blue-400"
                       : "border-slate-300 bg-white text-slate-700 focus:border-blue-500"
                   }`}
                 />
@@ -284,7 +283,7 @@ export function MapControls({
                   }}
                   className={`w-[58px] rounded border px-1.5 py-0.5 text-[10px] font-semibold outline-none ${
                     isDark
-                      ? "border-slate-600 bg-slate-900 text-slate-100 focus:border-blue-400"
+                      ? "border-slate-600 bg-[#090D15] text-slate-100 focus:border-blue-400"
                       : "border-slate-300 bg-white text-slate-700 focus:border-blue-500"
                   }`}
                 />

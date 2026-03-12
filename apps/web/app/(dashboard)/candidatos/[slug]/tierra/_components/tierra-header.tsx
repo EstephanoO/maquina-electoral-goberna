@@ -47,7 +47,7 @@ export function TierraHeader({
 
   return (
     <header className={`flex items-center justify-between h-16 px-5 border-b shrink-0 gap-5 z-20 ${
-      isDark ? "bg-slate-950 border-slate-800" : "bg-white border-slate-200/80"
+      isDark ? "bg-[#090D15] border-slate-700" : "bg-white border-slate-200/80"
     }`}>
       {/* Left: back + candidate identity */}
       <div className="flex items-center gap-3 min-w-0">
@@ -57,7 +57,7 @@ export function TierraHeader({
             onClick={() => router.back()}
             className={`w-8 h-8 rounded-lg border cursor-pointer flex items-center justify-center shrink-0 transition-colors ${
               isDark
-                ? "border-slate-700 bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                ? "border-slate-600 bg-[#090D15] text-slate-200 hover:bg-[#090D15] hover:text-white"
                 : "border-slate-200 bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
             }`}
             aria-label="Volver"
@@ -79,9 +79,9 @@ export function TierraHeader({
 
         <div className="min-w-0">
           <div className={`text-sm font-bold whitespace-nowrap overflow-hidden text-ellipsis ${isDark ? "text-slate-100" : "text-slate-900"}`}>{campaign.name}</div>
-          <div className="flex gap-2 text-[11px] text-slate-400">
+          <div className={`flex gap-2 text-[11px] ${isDark ? "text-slate-300" : "text-slate-400"}`}>
             {campaign.cargo && <span>{campaign.cargo}</span>}
-            {campaign.numero && <span className={`font-semibold ${isDark ? "text-slate-300" : "text-slate-500"}`}>N.° {campaign.numero}</span>}
+            {campaign.numero && <span className={`font-semibold ${isDark ? "text-slate-100" : "text-slate-500"}`}>N.° {campaign.numero}</span>}
             {campaign.partido && <span className="italic">{campaign.partido}</span>}
           </div>
         </div>
@@ -90,7 +90,7 @@ export function TierraHeader({
       {/* Center: segmented control */}
       <div className="flex items-center gap-5">
         {/* Segmented control — pill style */}
-        <div className={`flex rounded-full p-0.5 ${isDark ? "bg-slate-900/95 border border-slate-700" : "bg-slate-100"}`}>
+        <div className={`flex rounded-full p-0.5 ${isDark ? "bg-[#090D15]/95 border border-slate-700" : "bg-slate-100"}`}>
           <SegmentButton
             active={viewMode === "campo"}
             onClick={() => onViewModeChange("campo")}
@@ -125,10 +125,10 @@ export function TierraHeader({
         {showHeaderProfileLogout ? (
           <div
             className={`group flex items-center rounded-full px-2 py-1 transition-transform duration-200 hover:translate-x-1 focus-within:translate-x-1 ${
-              isDark ? "border border-slate-700 bg-slate-900/90" : "border border-slate-300/70 bg-white/90"
+              isDark ? "border border-slate-700 bg-[#090D15]/90" : "border border-slate-300/70 bg-white/90"
             }`}
           >
-            <div className={`w-7 h-7 rounded-full text-white text-[11px] font-bold flex items-center justify-center shrink-0 ${isDark ? "bg-slate-700" : "bg-slate-900"}`}>
+            <div className={`w-7 h-7 rounded-full text-white text-[11px] font-bold flex items-center justify-center shrink-0 ${isDark ? "bg-slate-700" : "bg-[#07091D]"}`}>
               {profileLabel.charAt(0).toUpperCase() || "?"}
             </div>
             <span className={`ml-2 mr-1 max-w-[120px] truncate text-[11px] font-semibold ${isDark ? "text-slate-100" : "text-slate-700"}`}>
@@ -140,7 +140,7 @@ export function TierraHeader({
                 onClick={() => { void onLogout(); }}
                 className={`w-7 h-7 rounded-full transition-colors duration-150 cursor-pointer flex items-center justify-center ${
                   isDark
-                    ? "border border-slate-600 bg-slate-800 text-slate-300 hover:text-red-400 hover:border-red-500"
+                    ? "border border-slate-600 bg-[#090D15] text-slate-300 hover:text-red-400 hover:border-red-500"
                     : "border border-slate-300 bg-white text-slate-600 hover:text-red-600 hover:border-red-300"
                 }`}
                 aria-label="Cerrar sesion"
@@ -174,7 +174,7 @@ function SegmentButton({ active, onClick, icon, label, activeColor, mapTheme }: 
       className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] font-semibold tracking-wide transition-all duration-200 cursor-pointer border-none ${
         active
           ? "text-white shadow-sm"
-          : (isDark ? "text-slate-300 hover:text-white" : "text-slate-500 hover:text-slate-700")
+          : (isDark ? "text-slate-100 hover:text-white" : "text-slate-500 hover:text-slate-700")
       }`}
       style={active ? { backgroundColor: activeColor } : undefined}
     >
@@ -201,7 +201,7 @@ function MetaBar({ label, current, target, pct, color, mapTheme }: {
         <span className={`text-[9px] font-semibold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-400"}`}>{label}</span>
         <span className="text-xs font-bold tabular-nums" style={{ color }}>{target > 0 ? `${pct.toFixed(0)}%` : "—"}</span>
       </div>
-      <div className={`h-2 rounded-full overflow-hidden ${isDark ? "bg-slate-800" : "bg-slate-100"}`}>
+      <div className={`h-2 rounded-full overflow-hidden ${isDark ? "bg-slate-700/60" : "bg-slate-200"}`}>
         <div className="h-full rounded-full transition-[width] duration-500 ease-out" style={{ width: `${pct}%`, backgroundColor: color }} />
       </div>
       <div className="mt-1 text-[11px]">

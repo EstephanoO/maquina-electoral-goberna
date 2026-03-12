@@ -350,12 +350,12 @@ export default function FormulariosPage() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#f8fafc"
+        background: "var(--color-surface-hover)"
       }}>
         <div style={{
           width: 40,
           height: 40,
-          border: "3px solid #e2e8f0",
+          border: "3px solid var(--color-border)",
           borderTopColor: "#163960",
           borderRadius: "50%",
           animation: "goberna-spin 1s linear infinite"
@@ -369,7 +369,7 @@ export default function FormulariosPage() {
       <style dangerouslySetInnerHTML={{ __html: INJECTED_STYLES }} />
       <div style={{
         minHeight: "100vh",
-        background: "#f8fafc",
+        background: "var(--color-surface-hover)",
         padding: "24px"
       }}>
         {/* Header */}
@@ -388,7 +388,7 @@ export default function FormulariosPage() {
             📋 Formularios Dinámicos
           </h1>
           <p style={{
-            color: "#64748b",
+            color: "var(--color-text-secondary)",
             marginTop: 8,
             fontSize: 15
           }}>
@@ -413,8 +413,8 @@ export default function FormulariosPage() {
               fontWeight: 600,
               fontSize: 14,
               cursor: "pointer",
-              background: activeTab === "formularios" ? "#163960" : "#e2e8f0",
-              color: activeTab === "formularios" ? "white" : "#475569",
+              background: activeTab === "formularios" ? "#163960" : "var(--color-border)",
+              color: activeTab === "formularios" ? "var(--color-surface)" : "var(--color-text-secondary)",
               transition: "all 0.2s"
             }}
           >
@@ -437,8 +437,8 @@ export default function FormulariosPage() {
               fontWeight: 600,
               fontSize: 14,
               cursor: "pointer",
-              background: activeTab === "crear" ? "#163960" : "#e2e8f0",
-              color: activeTab === "crear" ? "white" : "#475569",
+              background: activeTab === "crear" ? "#163960" : "var(--color-border)",
+              color: activeTab === "crear" ? "var(--color-surface)" : "var(--color-text-secondary)",
               transition: "all 0.2s"
             }}
           >
@@ -456,7 +456,7 @@ export default function FormulariosPage() {
             display: "block",
             fontSize: 13,
             fontWeight: 600,
-            color: "#475569",
+            color: "var(--color-text-secondary)",
             marginBottom: 8
           }}>
             Filtrar por candidato
@@ -467,9 +467,9 @@ export default function FormulariosPage() {
             style={{
               padding: "10px 14px",
               borderRadius: 8,
-              border: "1px solid #e2e8f0",
+              border: "1px solid var(--color-border)",
               fontSize: 14,
-              background: "white",
+              background: "var(--color-surface)",
               minWidth: 280,
               cursor: "pointer"
             }}
@@ -487,19 +487,19 @@ export default function FormulariosPage() {
           /* Lista de Formularios */
           <div style={{ maxWidth: 1200, margin: "0 auto" }}>
             {loading ? (
-              <div style={{ textAlign: "center", padding: 40, color: "#64748b" }}>
+              <div style={{ textAlign: "center", padding: 40, color: "var(--color-text-secondary)" }}>
                 Cargando...
               </div>
             ) : forms.length === 0 ? (
               <div style={{
                 textAlign: "center",
                 padding: 60,
-                background: "white",
+                background: "var(--color-surface)",
                 borderRadius: 12,
-                border: "2px dashed #e2e8f0"
+                border: "2px dashed var(--color-border)"
               }}>
                 <div style={{ fontSize: 48, marginBottom: 16 }}>📝</div>
-                <p style={{ color: "#64748b", margin: 0 }}>
+                <p style={{ color: "var(--color-text-secondary)", margin: 0 }}>
                   No hay formularios para este candidato
                 </p>
                 <button
@@ -508,7 +508,7 @@ export default function FormulariosPage() {
                     marginTop: 16,
                     padding: "10px 20px",
                     background: "#163960",
-                    color: "white",
+                    color: "var(--color-text-on-primary)",
                     border: "none",
                     borderRadius: 8,
                     fontWeight: 600,
@@ -524,10 +524,10 @@ export default function FormulariosPage() {
                   <div
                     key={form.id}
                     style={{
-                      background: "white",
+                      background: "var(--color-surface)",
                       borderRadius: 12,
                       padding: 20,
-                      border: "1px solid #e2e8f0",
+                      border: "1px solid var(--color-border)",
                       animation: "goberna-fade-in 0.3s ease-out"
                     }}
                   >
@@ -548,7 +548,7 @@ export default function FormulariosPage() {
                         <p style={{
                           margin: "4px 0 0",
                           fontSize: 13,
-                          color: "#64748b"
+                          color: "var(--color-text-secondary)"
                         }}>
                           {form.campaign_name} • {form.schema?.fields?.length || 0} campos
                         </p>
@@ -556,7 +556,7 @@ export default function FormulariosPage() {
                           <p style={{
                             margin: "8px 0 0",
                             fontSize: 14,
-                            color: "#475569"
+                            color: "var(--color-text-secondary)"
                           }}>
                             {form.description}
                           </p>
@@ -592,13 +592,13 @@ export default function FormulariosPage() {
                           onClick={() => handleEditForm(form)}
                           style={{
                             padding: "6px 12px",
-                            border: "1px solid #e2e8f0",
+                            border: "1px solid var(--color-border)",
                             borderRadius: 6,
                             fontSize: 12,
                             fontWeight: 600,
                             cursor: "pointer",
-                            background: "white",
-                            color: "#475569"
+                            background: "var(--color-surface)",
+                            color: "var(--color-text-secondary)"
                           }}
                         >
                           ✏️ Editar
@@ -612,7 +612,7 @@ export default function FormulariosPage() {
                             fontSize: 12,
                             fontWeight: 600,
                             cursor: "pointer",
-                            background: "white",
+                            background: "var(--color-surface)",
                             color: "#dc2626"
                           }}
                         >
@@ -637,10 +637,10 @@ export default function FormulariosPage() {
               <div>
                 {/* Form Info */}
                 <div style={{
-                  background: "white",
+                  background: "var(--color-surface)",
                   borderRadius: 12,
                   padding: 24,
-                  border: "1px solid #e2e8f0",
+                  border: "1px solid var(--color-border)",
                   marginBottom: 24
                 }}>
                   <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 700, color: "#163960" }}>
@@ -648,7 +648,7 @@ export default function FormulariosPage() {
                   </h3>
                   
                   <div style={{ marginBottom: 16 }}>
-                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6 }}>
                       Candidato *
                     </label>
                     <select
@@ -659,9 +659,9 @@ export default function FormulariosPage() {
                         width: "100%",
                         padding: "10px 14px",
                         borderRadius: 8,
-                        border: "1px solid #e2e8f0",
+                        border: "1px solid var(--color-border)",
                         fontSize: 14,
-                        background: editForm ? "#f1f5f9" : "white"
+                        background: editForm ? "var(--color-surface-active)" : "var(--color-surface)"
                       }}
                     >
                       <option value="">Seleccionar candidato</option>
@@ -674,7 +674,7 @@ export default function FormulariosPage() {
                   </div>
 
                   <div style={{ marginBottom: 16 }}>
-                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6 }}>
                       Nombre del Formulario *
                     </label>
                     <input
@@ -686,14 +686,14 @@ export default function FormulariosPage() {
                         width: "100%",
                         padding: "10px 14px",
                         borderRadius: 8,
-                        border: "1px solid #e2e8f0",
+                        border: "1px solid var(--color-border)",
                         fontSize: 14
                       }}
                     />
                   </div>
 
                   <div style={{ marginBottom: 16 }}>
-                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6 }}>
                       Slug (URL) *
                     </label>
                     <input
@@ -705,7 +705,7 @@ export default function FormulariosPage() {
                         width: "100%",
                         padding: "10px 14px",
                         borderRadius: 8,
-                        border: "1px solid #e2e8f0",
+                        border: "1px solid var(--color-border)",
                         fontSize: 14,
                         fontFamily: "monospace"
                       }}
@@ -713,7 +713,7 @@ export default function FormulariosPage() {
                   </div>
 
                   <div style={{ marginBottom: 16 }}>
-                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6 }}>
                       Descripción
                     </label>
                     <textarea
@@ -725,7 +725,7 @@ export default function FormulariosPage() {
                         width: "100%",
                         padding: "10px 14px",
                         borderRadius: 8,
-                        border: "1px solid #e2e8f0",
+                        border: "1px solid var(--color-border)",
                         fontSize: 14,
                         resize: "vertical"
                       }}
@@ -733,7 +733,7 @@ export default function FormulariosPage() {
                   </div>
 
                   <div>
-                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+                    <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6 }}>
                       Estado
                     </label>
                     <div style={{ display: "flex", gap: 12 }}>
@@ -759,10 +759,10 @@ export default function FormulariosPage() {
 
                 {/* Fields List */}
                 <div style={{
-                  background: "white",
+                  background: "var(--color-surface)",
                   borderRadius: 12,
                   padding: 24,
-                  border: "1px solid #e2e8f0"
+                  border: "1px solid var(--color-border)"
                 }}>
                   <div style={{
                     display: "flex",
@@ -778,13 +778,13 @@ export default function FormulariosPage() {
                         onClick={importJson}
                         style={{
                           padding: "6px 12px",
-                          border: "1px solid #e2e8f0",
+                          border: "1px solid var(--color-border)",
                           borderRadius: 6,
                           fontSize: 12,
                           fontWeight: 600,
                           cursor: "pointer",
-                          background: "white",
-                          color: "#475569"
+                          background: "var(--color-surface)",
+                          color: "var(--color-text-secondary)"
                         }}
                       >
                         📥 Importar JSON
@@ -794,13 +794,13 @@ export default function FormulariosPage() {
                         disabled={formFields.length === 0}
                         style={{
                           padding: "6px 12px",
-                          border: "1px solid #e2e8f0",
+                          border: "1px solid var(--color-border)",
                           borderRadius: 6,
                           fontSize: 12,
                           fontWeight: 600,
                           cursor: formFields.length === 0 ? "not-allowed" : "pointer",
-                          background: formFields.length === 0 ? "#f1f5f9" : "white",
-                          color: formFields.length === 0 ? "#94a3b8" : "#475569"
+                          background: formFields.length === 0 ? "var(--color-surface-active)" : "var(--color-surface)",
+                          color: formFields.length === 0 ? "var(--color-text-tertiary)" : "var(--color-text-secondary)"
                         }}
                       >
                         📤 Exportar JSON
@@ -812,9 +812,9 @@ export default function FormulariosPage() {
                     <div style={{
                       textAlign: "center",
                       padding: 32,
-                      border: "2px dashed #e2e8f0",
+                      border: "2px dashed var(--color-border)",
                       borderRadius: 8,
-                      color: "#94a3b8"
+                      color: "var(--color-text-tertiary)"
                     }}>
                       No hay campos. Agrega el primer campo.
                     </div>
@@ -825,7 +825,7 @@ export default function FormulariosPage() {
                           key={field.id}
                           style={{
                             padding: 12,
-                            border: "1px solid #e2e8f0",
+                            border: "1px solid var(--color-border)",
                             borderRadius: 8,
                             display: "flex",
                             justifyContent: "space-between",
@@ -836,7 +836,7 @@ export default function FormulariosPage() {
                             <span style={{ fontWeight: 600, color: "#163960" }}>
                               {field.label}
                             </span>
-                            <span style={{ marginLeft: 8, color: "#64748b", fontSize: 12 }}>
+                            <span style={{ marginLeft: 8, color: "var(--color-text-secondary)", fontSize: 12 }}>
                               {field.type} {field.required && "• requerido"}
                             </span>
                           </div>
@@ -851,7 +851,7 @@ export default function FormulariosPage() {
                                 fontSize: 12,
                                 cursor: index === 0 ? "not-allowed" : "pointer",
                                 background: "transparent",
-                                color: index === 0 ? "#cbd5e1" : "#64748b"
+                                color: index === 0 ? "#cbd5e1" : "var(--color-text-secondary)"
                               }}
                             >
                               ↑
@@ -866,7 +866,7 @@ export default function FormulariosPage() {
                                 fontSize: 12,
                                 cursor: index === formFields.length - 1 ? "not-allowed" : "pointer",
                                 background: "transparent",
-                                color: index === formFields.length - 1 ? "#cbd5e1" : "#64748b"
+                                color: index === formFields.length - 1 ? "#cbd5e1" : "var(--color-text-secondary)"
                               }}
                             >
                               ↓
@@ -880,7 +880,7 @@ export default function FormulariosPage() {
                                 fontSize: 12,
                                 cursor: "pointer",
                                 background: "transparent",
-                                color: "#64748b"
+                                color: "var(--color-text-secondary)"
                               }}
                             >
                               ✏️
@@ -911,7 +911,7 @@ export default function FormulariosPage() {
                       width: "100%",
                       marginTop: 16,
                       padding: 12,
-                      border: "2px dashed #e2e8f0",
+                      border: "2px dashed var(--color-border)",
                       borderRadius: 8,
                       fontSize: 14,
                       fontWeight: 600,
@@ -928,10 +928,10 @@ export default function FormulariosPage() {
               {/* Right: Preview */}
               <div>
                 <div style={{
-                  background: "white",
+                  background: "var(--color-surface)",
                   borderRadius: 12,
                   padding: 24,
-                  border: "1px solid #e2e8f0",
+                  border: "1px solid var(--color-border)",
                   position: "sticky",
                   top: 24
                 }}>
@@ -943,7 +943,7 @@ export default function FormulariosPage() {
                     <div style={{
                       textAlign: "center",
                       padding: 40,
-                      color: "#94a3b8"
+                      color: "var(--color-text-tertiary)"
                     }}>
                       Agrega campos para ver la preview
                     </div>
@@ -1075,9 +1075,9 @@ export default function FormulariosPage() {
                       ? "not-allowed"
                       : "pointer",
                     background: saving || !formName || !formSlug || formFields.length === 0 || !selectedCampaign
-                      ? "#94a3b8"
+                      ? "var(--color-text-tertiary)"
                       : "#163960",
-                    color: "white",
+                    color: "var(--color-text-on-primary)",
                     transition: "all 0.2s"
                   }}
                 >
@@ -1100,7 +1100,7 @@ export default function FormulariosPage() {
             zIndex: 1200
           }}>
             <div style={{
-              background: "white",
+              background: "var(--color-surface)",
               borderRadius: 16,
               padding: 24,
               width: "90%",
@@ -1113,7 +1113,7 @@ export default function FormulariosPage() {
               </h3>
 
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6 }}>
                   Tipo de Campo *
                 </label>
                 <select
@@ -1123,7 +1123,7 @@ export default function FormulariosPage() {
                     width: "100%",
                     padding: "10px 14px",
                     borderRadius: 8,
-                    border: "1px solid #e2e8f0",
+                    border: "1px solid var(--color-border)",
                     fontSize: 14
                   }}
                 >
@@ -1134,7 +1134,7 @@ export default function FormulariosPage() {
               </div>
 
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6 }}>
                   Etiqueta (Label) *
                 </label>
                 <input
@@ -1146,14 +1146,14 @@ export default function FormulariosPage() {
                     width: "100%",
                     padding: "10px 14px",
                     borderRadius: 8,
-                    border: "1px solid #e2e8f0",
+                    border: "1px solid var(--color-border)",
                     fontSize: 14
                   }}
                 />
               </div>
 
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6 }}>
                   Placeholder
                 </label>
                 <input
@@ -1165,14 +1165,14 @@ export default function FormulariosPage() {
                     width: "100%",
                     padding: "10px 14px",
                     borderRadius: 8,
-                    border: "1px solid #e2e8f0",
+                    border: "1px solid var(--color-border)",
                     fontSize: 14
                   }}
                 />
               </div>
 
               <div style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6 }}>
                   Texto de Ayuda
                 </label>
                 <input
@@ -1184,7 +1184,7 @@ export default function FormulariosPage() {
                     width: "100%",
                     padding: "10px 14px",
                     borderRadius: 8,
-                    border: "1px solid #e2e8f0",
+                    border: "1px solid var(--color-border)",
                     fontSize: 14
                   }}
                 />
@@ -1204,7 +1204,7 @@ export default function FormulariosPage() {
               {/* Options for select/radio/checkbox */}
               {["select", "radio", "checkbox"].includes(editingField.type) && (
                 <div style={{ marginBottom: 16 }}>
-                  <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6 }}>
                     Opciones *
                   </label>
                   <div style={{ display: "grid", gap: 8 }}>
@@ -1219,7 +1219,7 @@ export default function FormulariosPage() {
                             setEditingField({ ...editingField, options: newOptions });
                           }}
                           placeholder="Label"
-                          style={{ flex: 1, padding: "8px 12px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 13 }}
+                          style={{ flex: 1, padding: "8px 12px", borderRadius: 6, border: "1px solid var(--color-border)", fontSize: 13 }}
                         />
                         <button
                           onClick={() => {
@@ -1237,7 +1237,7 @@ export default function FormulariosPage() {
                         const newOptions = [...(editingField.options || []), { value: "", label: "" }];
                         setEditingField({ ...editingField, options: newOptions });
                       }}
-                      style={{ padding: "8px", border: "1px dashed #e2e8f0", borderRadius: 6, background: "transparent", color: "#163960", cursor: "pointer", fontSize: 13 }}
+                      style={{ padding: "8px", border: "1px dashed var(--color-border)", borderRadius: 6, background: "transparent", color: "#163960", cursor: "pointer", fontSize: 13 }}
                     >
                       + Agregar opción
                     </button>
@@ -1248,12 +1248,12 @@ export default function FormulariosPage() {
               {/* Validation for text/number */}
               {["text", "number", "textarea"].includes(editingField.type) && (
                 <div style={{ marginBottom: 16 }}>
-                  <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#475569", marginBottom: 6 }}>
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: 6 }}>
                     Validación
                   </label>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <div>
-                      <label style={{ fontSize: 12, color: "#64748b" }}>Mínimo</label>
+                      <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Mínimo</label>
                       <input
                         type="number"
                         value={editingField.validation?.min || ""}
@@ -1261,11 +1261,11 @@ export default function FormulariosPage() {
                           ...editingField,
                           validation: { ...editingField.validation, min: e.target.value ? Number(e.target.value) : undefined }
                         })}
-                        style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 13 }}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--color-border)", fontSize: 13 }}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 12, color: "#64748b" }}>Máximo</label>
+                      <label style={{ fontSize: 12, color: "var(--color-text-secondary)" }}>Máximo</label>
                       <input
                         type="number"
                         value={editingField.validation?.max || ""}
@@ -1273,7 +1273,7 @@ export default function FormulariosPage() {
                           ...editingField,
                           validation: { ...editingField.validation, max: e.target.value ? Number(e.target.value) : undefined }
                         })}
-                        style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 13 }}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--color-border)", fontSize: 13 }}
                       />
                     </div>
                   </div>
@@ -1286,13 +1286,13 @@ export default function FormulariosPage() {
                   style={{
                     flex: 1,
                     padding: 12,
-                    border: "1px solid #e2e8f0",
+                    border: "1px solid var(--color-border)",
                     borderRadius: 8,
                     fontSize: 14,
                     fontWeight: 600,
                     cursor: "pointer",
-                    background: "white",
-                    color: "#475569"
+                    background: "var(--color-surface)",
+                    color: "var(--color-text-secondary)"
                   }}
                 >
                   Cancelar
@@ -1308,8 +1308,8 @@ export default function FormulariosPage() {
                     fontSize: 14,
                     fontWeight: 600,
                     cursor: !editingField.label ? "not-allowed" : "pointer",
-                    background: !editingField.label ? "#94a3b8" : "#163960",
-                    color: "white"
+                    background: !editingField.label ? "var(--color-text-tertiary)" : "#163960",
+                    color: "var(--color-text-on-primary)"
                   }}
                 >
                   Guardar Campo

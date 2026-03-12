@@ -379,6 +379,7 @@ export default function TierraPage() {
             agents={filteredAgents}
             connectedCount={connectedCount}
             formCount={drillRegion ? filteredFormPoints.length : stats.totals.forms_count}
+            forms={drillRegion ? filteredFormPoints : formPoints}
             primaryColor={campaign.color_primario}
             selectedAgentId={selectedAgentId}
             onAgentClick={handleAgentListClick}

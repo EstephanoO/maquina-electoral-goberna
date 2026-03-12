@@ -88,7 +88,7 @@ function getSourceColor(source: string, medium: string): string {
   if (s.includes("youtube")) return "#ff0000";
   if (s.includes("whatsapp")) return "#25d366";
   if (s.includes("twitter")) return "#1da1f2";
-  return "#94a3b8";
+  return "var(--color-text-tertiary)";
 }
 
 function getMediumBadge(medium: string): { label: string; color: string; bg: string } | null {
@@ -296,7 +296,7 @@ export function SeoReport({ data, gscData, primaryColor, secondaryColor = "#10b9
                   <span style={{ ...S.geoColRank, fontWeight: medal ? 700 : 400 }}>
                     {medal || (i + 1)}
                   </span>
-                  <span style={{ ...S.geoColName, fontWeight: i < 3 ? 600 : 400, color: i < 3 ? "#0f172a" : "#334155" }}>
+                  <span style={{ ...S.geoColName, fontWeight: i < 3 ? 600 : 400, color: i < 3 ? "var(--color-text-primary)" : "var(--color-text-secondary)" }}>
                     {geo.name}
                   </span>
                   <div style={S.geoColBar}>
@@ -308,7 +308,7 @@ export function SeoReport({ data, gscData, primaryColor, secondaryColor = "#10b9
                       }} />
                     </div>
                   </div>
-                  <span style={{ ...S.geoColUsers, color: i < 3 ? primaryColor : "#475569", fontWeight: i < 3 ? 700 : 500 }}>
+                  <span style={{ ...S.geoColUsers, color: i < 3 ? primaryColor : "var(--color-text-secondary)", fontWeight: i < 3 ? 700 : 500 }}>
                     {fmtNum(geo.users)}
                   </span>
                   <span style={S.geoColShare}>{pct.toFixed(1)}%</span>
@@ -327,7 +327,7 @@ export function SeoReport({ data, gscData, primaryColor, secondaryColor = "#10b9
 
           {isRegionBased && (
             <div style={S.geoNote}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
               </svg>
               Datos por región de Perú (departamento). Lima Province y Lima Region se reportan por separado.
@@ -403,7 +403,7 @@ export function SeoReport({ data, gscData, primaryColor, secondaryColor = "#10b9
                       {p.label}
                     </span>
                   </div>
-                  <span style={{ ...S.pageColViews, color: i < 3 ? primaryColor : "#475569", fontWeight: i < 3 ? 700 : 500 }}>
+                  <span style={{ ...S.pageColViews, color: i < 3 ? primaryColor : "var(--color-text-secondary)", fontWeight: i < 3 ? 700 : 500 }}>
                     {fmtNum(p.views)}
                   </span>
                   <div style={S.pageColBar}>
@@ -433,7 +433,7 @@ export function SeoReport({ data, gscData, primaryColor, secondaryColor = "#10b9
         ) : (
           <div style={S.gscPlaceholder}>
             <div style={S.gscIcon}>
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
               </svg>
@@ -452,7 +452,7 @@ export function SeoReport({ data, gscData, primaryColor, secondaryColor = "#10b9
                 "Consultas de búsqueda que llevan tráfico",
               ].map((f) => (
                 <div key={f} style={S.gscFeatureRow}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <polyline points="9 18 15 12 9 6" />
                   </svg>
                   <span style={S.gscFeatureText}>{f}</span>
@@ -508,6 +508,7 @@ function ChannelMixBar({ sources, total, primaryColor }: {
   primaryColor: string;
 }) {
   const segments = sources.slice(0, 6).map((s) => ({
+    id: `${s.source}-${s.medium}`,
     color: getSourceColor(s.source, s.medium),
     pct: total > 0 ? (s.users / total) * 100 : 0,
     label: getSourceLabel(s.source, s.medium),
@@ -519,7 +520,7 @@ function ChannelMixBar({ sources, total, primaryColor }: {
       <div style={S.mixBar}>
         {segments.map((seg) => (
           <div
-            key={seg.label}
+            key={`${seg.id}-bar`}
             style={{
               ...S.mixSegment,
               width: `${seg.pct}%`,
@@ -531,7 +532,7 @@ function ChannelMixBar({ sources, total, primaryColor }: {
       </div>
       <div style={S.mixLegend}>
         {segments.map((seg) => (
-          <div key={seg.label} style={S.mixLegendItem}>
+          <div key={`${seg.id}-legend`} style={S.mixLegendItem}>
             <div style={{ ...S.mixLegendDot, backgroundColor: seg.color }} />
             <span style={S.mixLegendName}>{seg.label}</span>
             <span style={S.mixLegendPct}>{seg.pct.toFixed(0)}%</span>
@@ -545,7 +546,7 @@ function ChannelMixBar({ sources, total, primaryColor }: {
 /* ── Icon helpers ──────────────────────────────────────────────── */
 
 function SectionIconSvg({ icon }: { icon: string }) {
-  const p = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "#64748b", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  const p = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "var(--color-text-secondary)", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   switch (icon) {
     case "chart": return <svg {...p} aria-hidden="true"><path d="M12 20V10" /><path d="M18 20V4" /><path d="M6 20v-4" /></svg>;
     case "map": return <svg {...p} aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" /><line x1="8" y1="2" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="22" /></svg>;
@@ -594,14 +595,14 @@ function GscSummary({ gscData, primaryColor }: { gscData: GSCData; primaryColor:
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
         {[
           { label: "Clics totales", value: fmtNum(totals.clicks), sub: gscData.period, color: primaryColor },
-          { label: "Impresiones", value: fmtNum(totals.impressions), sub: "apariciones en Google", color: "#64748b" },
+          { label: "Impresiones", value: fmtNum(totals.impressions), sub: "apariciones en Google", color: "var(--color-text-secondary)" },
           { label: "CTR promedio", value: fmtPct(totals.ctr), sub: "ratio de clics", color: ctrColor },
           { label: "Posición media", value: totals.avgPosition.toFixed(1), sub: "en resultados", color: posColor },
         ].map((k) => (
-          <div key={k.label} style={{ padding: "12px 16px", backgroundColor: "#fafbfc", borderRadius: 10, border: "1px solid #f1f5f9" }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}</div>
+          <div key={k.label} style={{ padding: "12px 16px", backgroundColor: "var(--color-surface-hover)", borderRadius: 10, border: "1px solid var(--color-surface-active)" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 4 }}>{k.label}</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: k.color, lineHeight: 1 }}>{k.value}</div>
-            <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3 }}>{k.sub}</div>
+            <div style={{ fontSize: 10, color: "var(--color-text-tertiary)", marginTop: 3 }}>{k.sub}</div>
           </div>
         ))}
       </div>
@@ -609,16 +610,16 @@ function GscSummary({ gscData, primaryColor }: { gscData: GSCData; primaryColor:
       {/* Top queries */}
       {topQueries.length > 0 && (
         <div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--color-text-tertiary)", textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 8 }}>
             Consultas con más clics
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {topQueries.map((q, i) => (
               <div key={q.query} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 8, backgroundColor: i === 0 ? `${primaryColor}08` : "transparent" }}>
-                <span style={{ minWidth: 20, fontSize: 11, fontWeight: 700, color: i < 3 ? primaryColor : "#94a3b8", textAlign: "right" as const }}>{i + 1}</span>
-                <span style={{ flex: 1, fontSize: 12, color: "#1e293b", fontWeight: i === 0 ? 600 : 400 }}>{q.query}</span>
+                <span style={{ minWidth: 20, fontSize: 11, fontWeight: 700, color: i < 3 ? primaryColor : "var(--color-text-tertiary)", textAlign: "right" as const }}>{i + 1}</span>
+                <span style={{ flex: 1, fontSize: 12, color: "var(--color-text-primary)", fontWeight: i === 0 ? 600 : 400 }}>{q.query}</span>
                 <span style={{ fontSize: 12, fontWeight: 700, color: primaryColor }}>{q.clicks} clics</span>
-                <span style={{ fontSize: 11, color: "#94a3b8" }}>pos. {q.position.toFixed(1)}</span>
+                <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>pos. {q.position.toFixed(1)}</span>
               </div>
             ))}
           </div>
@@ -626,8 +627,8 @@ function GscSummary({ gscData, primaryColor }: { gscData: GSCData; primaryColor:
       )}
 
       {/* GSC badge */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#94a3b8", paddingTop: 4 }}>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--color-text-tertiary)", paddingTop: 4 }}>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
         Google Search Console · {gscData.period} · búsqueda web
@@ -653,9 +654,9 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "18px 24px",
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     borderLeft: "4px solid",
     boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
   },
@@ -664,15 +665,15 @@ const S: Record<string, React.CSSProperties> = {
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: "#f8fafc",
-    border: "1px solid #e2e8f0",
+    backgroundColor: "var(--color-surface-hover)",
+    border: "1px solid var(--color-border)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
   },
-  reportTitle: { fontSize: 16, fontWeight: 700, color: "#0f172a" },
-  reportSubtitle: { fontSize: 12, color: "#64748b", marginTop: 2 },
+  reportTitle: { fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)" },
+  reportSubtitle: { fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 },
   reportBadge: {
     display: "flex",
     alignItems: "center",
@@ -681,16 +682,16 @@ const S: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     color: "#92400e",
     padding: "6px 12px",
-    backgroundColor: "#fff7ed",
+    backgroundColor: "var(--color-warning-bg)",
     borderRadius: 8,
     border: "1px solid #fed7aa",
   },
 
   /* Sections */
   section: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     overflow: "hidden",
     boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
   },
@@ -699,10 +700,10 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 10,
     padding: "14px 20px",
-    borderBottom: "1px solid #f1f5f9",
-    backgroundColor: "#fafbfc",
+    borderBottom: "1px solid var(--color-surface-active)",
+    backgroundColor: "var(--color-surface-hover)",
   },
-  sectionTitle: { fontSize: 14, fontWeight: 700, color: "#0f172a" },
+  sectionTitle: { fontSize: 14, fontWeight: 700, color: "var(--color-text-primary)" },
   sectionBody: { padding: 20 },
 
   /* Executive KPIs */
@@ -718,8 +719,8 @@ const S: Record<string, React.CSSProperties> = {
     gap: 12,
     padding: "14px 16px",
     borderRadius: 12,
-    border: "1px solid #f1f5f9",
-    backgroundColor: "#fafbfc",
+    border: "1px solid var(--color-surface-active)",
+    backgroundColor: "var(--color-surface-hover)",
   },
   execKpiIconBg: {
     width: 40,
@@ -731,18 +732,18 @@ const S: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   execKpiContent: { minWidth: 0 },
-  execKpiLabel: { fontSize: 10, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em" },
+  execKpiLabel: { fontSize: 10, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.04em" },
   execKpiValue: { fontSize: 22, fontWeight: 700, lineHeight: 1.1, marginTop: 2 },
-  execKpiSub: { fontSize: 11, color: "#64748b", marginTop: 2 },
+  execKpiSub: { fontSize: 11, color: "var(--color-text-secondary)", marginTop: 2 },
 
   /* Narrative */
   narrative: {
     padding: "14px 16px",
-    backgroundColor: "#f8fafc",
+    backgroundColor: "var(--color-surface-hover)",
     borderRadius: 10,
-    border: "1px solid #f1f5f9",
+    border: "1px solid var(--color-surface-active)",
   },
-  narrativeText: { margin: 0, fontSize: 13, color: "#475569", lineHeight: 1.65 },
+  narrativeText: { margin: 0, fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.65 },
 
   /* Geography table */
   geoTable: { display: "flex", flexDirection: "column", gap: 0, marginBottom: 12 },
@@ -753,36 +754,36 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: "center",
     padding: "8px 12px",
     fontSize: 13,
-    color: "#475569",
+    color: "var(--color-text-secondary)",
     borderRadius: 6,
   },
   geoRowHeader: {
     fontSize: 10,
     fontWeight: 700,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     textTransform: "uppercase",
     letterSpacing: "0.04em",
-    backgroundColor: "#f8fafc",
-    borderBottom: "1px solid #f1f5f9",
+    backgroundColor: "var(--color-surface-hover)",
+    borderBottom: "1px solid var(--color-surface-active)",
     borderRadius: "6px 6px 0 0",
     marginBottom: 4,
   },
-  geoRowEven: { backgroundColor: "#fafbfc" },
-  geoColRank: { fontSize: 13, color: "#94a3b8", textAlign: "center" as const },
+  geoRowEven: { backgroundColor: "var(--color-surface-hover)" },
+  geoColRank: { fontSize: 13, color: "var(--color-text-tertiary)", textAlign: "center" as const },
   geoColName: { fontSize: 13, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" },
   geoColBar: { display: "flex", alignItems: "center" },
-  geoBarTrack: { width: "100%", height: 4, backgroundColor: "#f1f5f9", borderRadius: 2, overflow: "hidden" },
+  geoBarTrack: { width: "100%", height: 4, backgroundColor: "var(--color-surface-active)", borderRadius: 2, overflow: "hidden" },
   geoBarFill: { height: "100%", borderRadius: 2, transition: "width 0.3s ease" },
   geoColUsers: { textAlign: "right" as const, fontVariantNumeric: "tabular-nums" },
-  geoColShare: { textAlign: "right" as const, fontSize: 12, color: "#94a3b8" },
-  geoColTime: { textAlign: "right" as const, fontSize: 12, color: "#64748b" },
-  geoColEng: { textAlign: "right" as const, fontSize: 12, color: "#64748b" },
+  geoColShare: { textAlign: "right" as const, fontSize: 12, color: "var(--color-text-tertiary)" },
+  geoColTime: { textAlign: "right" as const, fontSize: 12, color: "var(--color-text-secondary)" },
+  geoColEng: { textAlign: "right" as const, fontSize: 12, color: "var(--color-text-secondary)" },
   geoNote: {
     display: "flex",
     alignItems: "center",
     gap: 6,
     fontSize: 11,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     padding: "8px 0 0",
   },
 
@@ -796,8 +797,8 @@ const S: Record<string, React.CSSProperties> = {
   sourceCard: {
     padding: 14,
     borderRadius: 12,
-    border: "1px solid #f1f5f9",
-    backgroundColor: "#fafbfc",
+    border: "1px solid var(--color-surface-active)",
+    backgroundColor: "var(--color-surface-hover)",
   },
   sourceCardTop: { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 },
   sourceIcon: {
@@ -811,7 +812,7 @@ const S: Record<string, React.CSSProperties> = {
     flexShrink: 0,
   },
   sourceInfo: { flex: 1, minWidth: 0 },
-  sourceName: { fontSize: 13, fontWeight: 600, color: "#1e293b" },
+  sourceName: { fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" },
   sourceMediumBadge: {
     display: "inline-flex",
     marginTop: 2,
@@ -824,20 +825,20 @@ const S: Record<string, React.CSSProperties> = {
   },
   sourceRight: { textAlign: "right" as const },
   sourceUsers: { fontSize: 18, fontWeight: 700, lineHeight: 1 },
-  sourcePct: { fontSize: 11, color: "#94a3b8", marginTop: 2 },
-  sourceBarTrack: { width: "100%", height: 3, backgroundColor: "#f1f5f9", borderRadius: 2, overflow: "hidden" },
+  sourcePct: { fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 2 },
+  sourceBarTrack: { width: "100%", height: 3, backgroundColor: "var(--color-surface-active)", borderRadius: 2, overflow: "hidden" },
   sourceBarFill: { height: "100%", borderRadius: 2, transition: "width 0.4s ease" },
 
   /* Channel mix bar */
   mixWrapper: { padding: "14px 0 4px" },
-  mixLabel: { fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 },
+  mixLabel: { fontSize: 11, fontWeight: 600, color: "var(--color-text-tertiary)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 },
   mixBar: { display: "flex", height: 8, borderRadius: 4, overflow: "hidden", gap: 1 },
   mixSegment: { height: "100%", minWidth: 2, transition: "width 0.4s ease" },
   mixLegend: { display: "flex", flexWrap: "wrap", gap: "6px 16px", marginTop: 10 },
   mixLegendItem: { display: "flex", alignItems: "center", gap: 6 },
   mixLegendDot: { width: 8, height: 8, borderRadius: "50%", flexShrink: 0 },
-  mixLegendName: { fontSize: 11, color: "#475569" },
-  mixLegendPct: { fontSize: 11, fontWeight: 600, color: "#1e293b" },
+  mixLegendName: { fontSize: 11, color: "var(--color-text-secondary)" },
+  mixLegendPct: { fontSize: 11, fontWeight: 600, color: "var(--color-text-primary)" },
 
   /* Pages table */
   pagesTable: { display: "flex", flexDirection: "column", gap: 0 },
@@ -848,29 +849,29 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: "center",
     padding: "8px 12px",
     fontSize: 13,
-    color: "#475569",
+    color: "var(--color-text-secondary)",
     borderRadius: 6,
   },
   pageRowHeader: {
     fontSize: 10,
     fontWeight: 700,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     textTransform: "uppercase",
     letterSpacing: "0.04em",
-    backgroundColor: "#f8fafc",
+    backgroundColor: "var(--color-surface-hover)",
     borderRadius: "6px 6px 0 0",
     marginBottom: 4,
   },
-  pageRowEven: { backgroundColor: "#fafbfc" },
+  pageRowEven: { backgroundColor: "var(--color-surface-hover)" },
   pageColPage: { minWidth: 0, overflow: "hidden" },
-  pageLabel: { fontSize: 12, color: "#334155", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 6 },
+  pageLabel: { fontSize: 12, color: "var(--color-text-secondary)", whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 6 },
   pageHomeBadge: {
     display: "inline-flex",
     fontSize: 9,
     fontWeight: 700,
     padding: "1px 5px",
     borderRadius: 4,
-    backgroundColor: "#dbeafe",
+    backgroundColor: "var(--color-surface-active)",
     color: "#1e40af",
     textTransform: "uppercase" as const,
     letterSpacing: "0.03em",
@@ -878,10 +879,10 @@ const S: Record<string, React.CSSProperties> = {
   },
   pageColViews: { textAlign: "right" as const, fontWeight: 600, fontVariantNumeric: "tabular-nums" },
   pageColBar: { display: "flex", alignItems: "center" },
-  pageBarTrack: { width: "100%", height: 4, backgroundColor: "#f1f5f9", borderRadius: 2, overflow: "hidden" },
+  pageBarTrack: { width: "100%", height: 4, backgroundColor: "var(--color-surface-active)", borderRadius: 2, overflow: "hidden" },
   pageBarFill: { height: "100%", borderRadius: 2, transition: "width 0.3s ease" },
-  pageColUsers: { textAlign: "right" as const, fontSize: 12, color: "#64748b", fontVariantNumeric: "tabular-nums" },
-  pageColTime: { textAlign: "right" as const, fontSize: 12, color: "#64748b" },
+  pageColUsers: { textAlign: "right" as const, fontSize: 12, color: "var(--color-text-secondary)", fontVariantNumeric: "tabular-nums" },
+  pageColTime: { textAlign: "right" as const, fontSize: 12, color: "var(--color-text-secondary)" },
 
   /* GSC placeholder */
   gscPlaceholder: {
@@ -896,23 +897,23 @@ const S: Record<string, React.CSSProperties> = {
     width: 64,
     height: 64,
     borderRadius: "50%",
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "var(--color-surface-active)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
   },
-  gscTitle: { fontSize: 16, fontWeight: 700, color: "#1e293b" },
-  gscDesc: { fontSize: 13, color: "#64748b", maxWidth: 420, lineHeight: 1.6 },
+  gscTitle: { fontSize: 16, fontWeight: 700, color: "var(--color-text-primary)" },
+  gscDesc: { fontSize: 13, color: "var(--color-text-secondary)", maxWidth: 420, lineHeight: 1.6 },
   gscFeatures: { display: "flex", flexDirection: "column", gap: 8, textAlign: "left" as const, width: "100%", maxWidth: 380 },
   gscFeatureRow: { display: "flex", alignItems: "center", gap: 8 },
-  gscFeatureText: { fontSize: 13, color: "#475569" },
+  gscFeatureText: { fontSize: 13, color: "var(--color-text-secondary)" },
   gscNote: {
     fontSize: 12,
-    color: "#94a3b8",
+    color: "var(--color-text-tertiary)",
     padding: "10px 16px",
-    backgroundColor: "#f8fafc",
+    backgroundColor: "var(--color-surface-hover)",
     borderRadius: 8,
-    border: "1px solid #f1f5f9",
+    border: "1px solid var(--color-surface-active)",
     width: "100%",
     maxWidth: 420,
     textAlign: "center" as const,

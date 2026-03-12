@@ -126,6 +126,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     lockedBounds ? boundsToInitialViewState(lockedBounds).zoom : PERU_VIEW.zoom,
   );
   const skipNextFitRef = useRef(false);
+  const skipLoadFitRef = useRef(false);
   const isZoomingRef = useRef(false);
   const zoomEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
@@ -216,9 +217,9 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   const depLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
     "line-color": drillState.level === 0 ? zonePalette.line : zonePalette.ghost,
-    "line-width": drillState.level === 0 ? 1.2 : 0.6,
-    "line-opacity": drillState.level === 0 ? 0.82 : 0.45,
-  }), [drillState.level, zonePalette]);
+    "line-width": drillState.level === 0 ? (mapTheme === "dark" ? 1.2 : 1.7) : (mapTheme === "dark" ? 0.6 : 0.9),
+    "line-opacity": drillState.level === 0 ? (mapTheme === "dark" ? 0.82 : 0.95) : (mapTheme === "dark" ? 0.45 : 0.62),
+  }), [drillState.level, mapTheme, zonePalette]);
 
   const provFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
     "fill-color": drillState.level === 1
@@ -231,9 +232,9 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   const provLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
     "line-color": drillState.level === 1 ? zonePalette.line : zonePalette.ghost,
-    "line-width": drillState.level === 1 ? 1 : 0.5,
-    "line-opacity": drillState.level === 1 ? 0.8 : 0.38,
-  }), [drillState.level, zonePalette]);
+    "line-width": drillState.level === 1 ? (mapTheme === "dark" ? 1 : 1.4) : (mapTheme === "dark" ? 0.5 : 0.8),
+    "line-opacity": drillState.level === 1 ? (mapTheme === "dark" ? 0.8 : 0.92) : (mapTheme === "dark" ? 0.38 : 0.56),
+  }), [drillState.level, mapTheme, zonePalette]);
 
   const distFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
     "fill-color": drillState.level === 2
@@ -246,8 +247,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   const distLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
     "line-color": zonePalette.line,
-    "line-width": drillState.level >= 3 ? 1.2 : 0.8,
-    "line-opacity": mapTheme === "dark" ? 0.78 : 0.62,
+    "line-width": drillState.level >= 3 ? (mapTheme === "dark" ? 1.2 : 1.6) : (mapTheme === "dark" ? 0.8 : 1.15),
+    "line-opacity": mapTheme === "dark" ? 0.78 : 0.88,
   }), [drillState.level, mapTheme, zonePalette]);
 
   // ─── P2: Agent paint objects that depend on primaryColor ───
@@ -351,6 +352,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   useImperativeHandle(ref, () => ({
     flyToPoint(lng: number, lat: number, zoom = 17, withDrill = true) {
       skipNextFitRef.current = true;
+      skipLoadFitRef.current = true;
       pendingDrillRef.current = withDrill;
       mapRef.current?.flyTo({ center: [lng, lat], zoom, duration: FLY_DURATION, essential: true });
     },
@@ -361,6 +363,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     resetCameraPosition,
     fitToBounds(bounds: [[number, number], [number, number]], padding = 40) {
       skipNextFitRef.current = true;
+      skipLoadFitRef.current = true;
       pendingDrillRef.current = false;
       mapRef.current?.fitBounds(bounds, { padding, duration: FLY_DURATION, essential: true });
     },
@@ -383,14 +386,19 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
     applyFluidMapInteractions(map);
 
-    if (lockedBounds) {
-      // Hard-pin the camera to the locked district — duration:0 = instant, no animation.
-      // This is the final revalidator: even if initialViewState drifted slightly due to
-      // MapLibre's internal projection math, this corrects it with zero flash.
-      map.fitBounds(lockedBounds, { padding: 30, duration: 0 });
-    } else if (!disableAutoFitRef.current) {
-      // Normal mode: start at Peru overview.
-      map.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
+    const skipInitialFit = skipLoadFitRef.current;
+    skipLoadFitRef.current = false;
+
+    if (!skipInitialFit) {
+      if (lockedBounds) {
+        // Hard-pin the camera to the locked district — duration:0 = instant, no animation.
+        // This is the final revalidator: even if initialViewState drifted slightly due to
+        // MapLibre's internal projection math, this corrects it with zero flash.
+        map.fitBounds(lockedBounds, { padding: 30, duration: 0 });
+      } else if (!disableAutoFitRef.current) {
+        // Normal mode: start at Peru overview.
+        map.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
+      }
     }
 
     if (tileUrl) {
@@ -616,7 +624,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: mapTheme === "dark" ? "#0b1220" : "#e5e7eb",
+          backgroundColor: mapTheme === "dark" ? "#090D15" : "#e5e7eb",
         }}
       >
         <span style={{ color: "#64748b", fontSize: 13 }}>Cargando mapa...</span>
@@ -625,7 +633,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   }
 
   return (
-    <div ref={containerRef} style={{ position: "absolute", inset: 0, backgroundColor: mapTheme === "dark" ? "#0b1220" : "#e5e7eb" }}>
+    <div ref={containerRef} style={{ position: "absolute", inset: 0, backgroundColor: mapTheme === "dark" ? "#090D15" : "#e5e7eb" }}>
       <MapLibre
         ref={mapRef}
         initialViewState={lockedBounds ? boundsToInitialViewState(lockedBounds) : PERU_VIEW}

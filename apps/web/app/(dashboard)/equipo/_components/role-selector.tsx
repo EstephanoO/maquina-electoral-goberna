@@ -9,6 +9,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import { useTheme } from "../../../../lib/theme-context";
 import { IconChevronDown, IconCheck } from "../../../../lib/ui";
 import { ROLES, getRoleConfig } from "./role-config";
 import { RoleBadge } from "./role-badge";
@@ -21,6 +22,8 @@ type RoleSelectorProps = {
 };
 
 export function RoleSelector({ value, onChange, disabled, allowedRoles }: RoleSelectorProps) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [open, setOpen] = useState(false);
   const [dropdownStyle, setDropdownStyle] = useState<CSSProperties>({});
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -63,8 +66,14 @@ export function RoleSelector({ value, onChange, disabled, allowedRoles }: RoleSe
   }, [open]);
 
   if (disabled || availableRoles.length <= 1) {
-    return <RoleBadge role={value} />;
+    return <RoleBadge role={value} uniform />;
   }
+
+  const darkNeonMap: Record<string, string> = {
+    consultor: "#c4b5fd",
+    candidato: "#7dd3fc",
+    agente_digital: "#e9d5ff",
+  };
 
   const dropdown = open ? (
     <>
@@ -108,7 +117,9 @@ export function RoleSelector({ value, onChange, disabled, allowedRoles }: RoleSe
                 alignItems: "flex-start",
                 gap: 12,
                 padding: "12px 14px",
-                background: isSelected ? "var(--goberna-blue-50)" : "transparent",
+                background: isSelected
+                  ? (isDark ? "#1a2a40" : "var(--goberna-blue-50)")
+                  : "transparent",
                 border: "none",
                 borderBottom: "1px solid var(--color-border)",
                 cursor: "pointer",
@@ -130,7 +141,7 @@ export function RoleSelector({ value, onChange, disabled, allowedRoles }: RoleSe
                 {role.icon({ size: 18, color: "#fff" })}
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: role.color, marginBottom: 2 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: isDark ? "#ffffff" : role.color, marginBottom: 2 }}>
                   {role.label}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--color-text-tertiary)", lineHeight: 1.3 }}>
@@ -157,8 +168,10 @@ export function RoleSelector({ value, onChange, disabled, allowedRoles }: RoleSe
         style={{
           display: "flex",
           alignItems: "center",
+          justifyContent: "space-between",
           gap: 8,
           padding: "6px 12px",
+          minWidth: 118,
           background: "var(--color-surface)",
           border: "1px solid var(--color-border)",
           borderRadius: 8,
@@ -169,8 +182,10 @@ export function RoleSelector({ value, onChange, disabled, allowedRoles }: RoleSe
           transition: "all 0.15s ease",
         }}
       >
-        {config.icon({ size: 14, color: config.color })}
-        {config.shortLabel}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          {config.icon({ size: 14, color: isDark ? (darkNeonMap[value] ?? config.color) : config.color })}
+          <span style={{ color: isDark ? "#ffffff" : "inherit" }}>{config.shortLabel}</span>
+        </span>
         <IconChevronDown size={14} />
       </button>
       {typeof document !== "undefined" && dropdown ? createPortal(dropdown, document.body) : null}

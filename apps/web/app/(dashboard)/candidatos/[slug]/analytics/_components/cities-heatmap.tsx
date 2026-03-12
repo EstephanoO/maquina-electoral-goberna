@@ -22,6 +22,7 @@ import type {
   StyleSpecification,
 } from "maplibre-gl";
 import type { GA4City } from "./types";
+import { useTheme } from "@/lib/theme-context";
 
 /* ═══════════════════════════════════════════════════════════════════
    Types
@@ -171,6 +172,25 @@ const MAP_STYLE: StyleSpecification = {
   ],
 };
 
+const MAP_STYLE_DARK: StyleSpecification = {
+  version: 8,
+  name: "Peru Digital Dark",
+  sources: {
+    "carto-dark": {
+      type: "raster",
+      tiles: [
+        "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
+        "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png",
+      ],
+      tileSize: 256,
+      attribution: "&copy; CARTO &copy; OSM",
+    },
+  },
+  layers: [
+    { id: "carto-dark", type: "raster", source: "carto-dark", minzoom: 0, maxzoom: 20 },
+  ],
+};
+
 const INTERACTIVE_LAYERS = ["cities-circles"] as const;
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -195,12 +215,6 @@ const LABELS_LAYOUT: SymbolLayerSpecification["layout"] = {
   "text-optional": true,
 };
 
-const LABELS_PAINT: SymbolLayerSpecification["paint"] = {
-  "text-color": "#1e293b",
-  "text-halo-color": "#ffffff",
-  "text-halo-width": 1.8,
-};
-
 /* ═══════════════════════════════════════════════════════════════════
    Component
    ═══════════════════════════════════════════════════════════════════ */
@@ -211,6 +225,8 @@ export const CitiesHeatmap = memo(function CitiesHeatmap({
   highlightCity,
   clickedCity,
 }: Props) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const mapRef = useRef<MapRef | null>(null);
   const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
 
@@ -274,10 +290,19 @@ export const CitiesHeatmap = memo(function CitiesHeatmap({
       ],
       "circle-opacity": ["interpolate", ["linear"], ["zoom"], 4, 0.5, 7, 0.75, 10, 0.85],
       "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 4, 1, 7, 2],
-      "circle-stroke-color": "#ffffff",
+      "circle-stroke-color": isDark ? "#090D15" : "#ffffff",
       "circle-stroke-opacity": 0.9,
     }),
-    [maxUsers, primaryColor],
+    [isDark, maxUsers, primaryColor],
+  );
+
+  const labelsPaint = useMemo(
+    (): SymbolLayerSpecification["paint"] => ({
+      "text-color": isDark ? "#e2ecff" : "#1e293b",
+      "text-halo-color": isDark ? "#090D15" : "#ffffff",
+      "text-halo-width": 1.8,
+    }),
+    [isDark],
   );
 
   // ── Hover handler (stable via useCallback) ──
@@ -344,7 +369,7 @@ export const CitiesHeatmap = memo(function CitiesHeatmap({
         ref={mapRef}
         initialViewState={{ longitude: DEFAULT_CENTER[0], latitude: DEFAULT_CENTER[1], zoom: DEFAULT_ZOOM }}
         style={STYLES.map}
-        mapStyle={MAP_STYLE}
+        mapStyle={isDark ? MAP_STYLE_DARK : MAP_STYLE}
         minZoom={3}
         maxZoom={14}
         dragRotate={false}
@@ -360,7 +385,7 @@ export const CitiesHeatmap = memo(function CitiesHeatmap({
         <Source id="cities" type="geojson" data={geojsonData}>
           <Layer id="cities-heat" type="heatmap" maxzoom={11} paint={heatmapPaint} />
           <Layer id="cities-circles" type="circle" minzoom={4} paint={circlesPaint} />
-          <Layer id="cities-labels" type="symbol" minzoom={6.5} layout={LABELS_LAYOUT} paint={LABELS_PAINT} />
+          <Layer id="cities-labels" type="symbol" minzoom={6.5} layout={LABELS_LAYOUT} paint={labelsPaint} />
         </Source>
 
         {/* React Popup — declarative, no raw HTML injection */}
@@ -382,7 +407,7 @@ export const CitiesHeatmap = memo(function CitiesHeatmap({
       <button
         type="button"
         onClick={handleReset}
-        style={STYLES.resetBtn}
+        style={{ ...STYLES.resetBtn, ...(isDark ? { backgroundColor: "rgba(9,13,21,0.92)", border: "1px solid #2c425d", color: "#e2ecff" } : null) }}
         title="Ver todo Peru"
         aria-label="Ver todo Peru"
       >
@@ -414,14 +439,14 @@ function PopupContent({
 
   return (
     <div style={{ padding: "4px 4px", fontFamily: "system-ui, sans-serif", minWidth: 140 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a" }}>{city.city}</div>
+      <div style={{ fontWeight: 700, fontSize: 13, color: "var(--color-text-primary)" }}>{city.city}</div>
       <div style={{ fontSize: 20, fontWeight: 800, color: primaryColor, margin: "3px 0" }}>
         {city.activeUsers.toLocaleString()}
       </div>
-      <div style={{ fontSize: 11, color: "#64748b" }}>usuarios activos · {pct}%</div>
+      <div style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>usuarios activos · {pct}%</div>
 
       {hasEnriched && (
-        <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #e2e8f0", fontSize: 11, display: "flex", flexDirection: "column", gap: 3 }}>
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--color-border)", fontSize: 11, display: "flex", flexDirection: "column", gap: 3 }}>
           {city.newUsers !== undefined && (
             <Row label="Nuevos" value={`${city.newUsers.toLocaleString()} (${city.activeUsers > 0 ? ((city.newUsers / city.activeUsers) * 100).toFixed(0) : 0}%)`} />
           )}
@@ -443,8 +468,8 @@ function PopupContent({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
-      <span style={{ color: "#94a3b8" }}>{label}</span>
-      <span style={{ color: "#334155", fontWeight: 500 }}>{value}</span>
+      <span style={{ color: "var(--color-text-tertiary)" }}>{label}</span>
+      <span style={{ color: "var(--color-text-secondary)", fontWeight: 500 }}>{value}</span>
     </div>
   );
 }
@@ -462,9 +487,9 @@ function formatTime(seconds: number): string {
 const STYLES = {
   container: {
     position: "relative" as const,
-    backgroundColor: "#ffffff",
+    backgroundColor: "var(--color-surface)",
     borderRadius: 16,
-    border: "1px solid #e2e8f0",
+    border: "1px solid var(--color-border)",
     boxShadow: "0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03)",
     overflow: "hidden",
     height: "100%",
@@ -482,8 +507,8 @@ const STYLES = {
     borderRadius: 8,
     backgroundColor: "rgba(255,255,255,0.95)",
     backdropFilter: "blur(8px)",
-    border: "1px solid #e2e8f0",
-    color: "#64748b",
+    border: "1px solid var(--color-border)",
+    color: "var(--color-text-secondary)",
     cursor: "pointer",
     display: "flex" as const,
     alignItems: "center" as const,
