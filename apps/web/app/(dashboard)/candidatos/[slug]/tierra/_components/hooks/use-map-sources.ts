@@ -145,33 +145,41 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
 
 export type NewPoint = { id: string; lng: number; lat: number; color: string };
 
-const PULSE_DURATION_MS = 2_500;
+/** 3 pulses × 0.7s each = 2.1s, plus a small buffer */
+const PULSE_DURATION_MS = 2_400;
 
 /**
  * useNewPoints — detects newly ingested forms between polls.
- * Returns their coordinates + color so the map can render a pulsing
- * Marker on top of each new point for PULSE_DURATION_MS, then auto-clears.
  *
- * The Marker visually IS the point — same color, same position — but with
- * a CSS blink animation. When it disappears, the real circle layer point
- * is already rendered underneath. Seamless.
+ * Returns coordinates + color of new points so the map can overlay a
+ * pulsing Marker (sonar ring × 3) on each. After ~2.4s it auto-clears
+ * and the real circle-layer point underneath is all that remains.
  *
- * First render (empty → full) is skipped to avoid pulsing the entire dataset.
+ * Seeding logic: the hook waits until `forms` has been non-empty AND
+ * changed at least once before it starts diffing. This prevents the
+ * initial query result ([] → fullDataset) from marking everything new.
  */
 export function useNewPoints(forms: FormPoint[]): NewPoint[] {
-  const prevIdsRef = useRef<Set<string> | null>(null);
+  /** 0 = waiting for first non-empty data, 1 = seeded, ready to diff */
+  const phaseRef = useRef<0 | 1>(0);
+  const prevIdsRef = useRef<Set<string>>(new Set());
   const [newPoints, setNewPoints] = useState<NewPoint[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    // Ignore empty arrays (query still loading / no data yet)
+    if (forms.length === 0) return;
+
     const currentIds = new Set(forms.map((f) => f.id));
 
-    // Skip first render — don't pulse the initial dataset load.
-    if (prevIdsRef.current === null) {
+    // Phase 0: first time we see real data — seed and move to phase 1.
+    if (phaseRef.current === 0) {
       prevIdsRef.current = currentIds;
+      phaseRef.current = 1;
       return;
     }
 
+    // Phase 1: diff against previous snapshot.
     const prevIds = prevIdsRef.current;
     const detected: NewPoint[] = [];
     for (const f of forms) {
@@ -188,7 +196,6 @@ export function useNewPoints(forms: FormPoint[]): NewPoint[] {
 
     setNewPoints(detected);
 
-    // Auto-clear after pulse duration
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       setNewPoints([]);
@@ -196,7 +203,6 @@ export function useNewPoints(forms: FormPoint[]): NewPoint[] {
     }, PULSE_DURATION_MS);
   }, [forms]);
 
-  // Cleanup on unmount
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);
   }, []);

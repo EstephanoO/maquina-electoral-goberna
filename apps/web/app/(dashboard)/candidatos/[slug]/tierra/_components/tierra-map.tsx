@@ -718,13 +718,13 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
           <Layer id="agents-count" type="symbol" minzoom={8} layout={agentCountLayoutWithVis} paint={AGENT_COUNT_PAINT} />
         </Source>
 
-        {/* ── New-point pulse — Markers that blink over real points for 2.5s ── */}
+        {/* ── New-point sonar — expanding rings over each new point × 3 pulses ── */}
         {showDatos && datosVizMode === "points" && newPoints.map((p) => (
           <Marker key={p.id} longitude={p.lng} latitude={p.lat} anchor="center">
-            <div
-              className="tierra-new-point"
-              style={{ backgroundColor: p.color, "--pulse-color": p.color } as React.CSSProperties}
-            />
+            <div className="tierra-new-point" style={{ "--ring-color": p.color } as React.CSSProperties}>
+              <div className="tierra-new-point-ring" />
+              <div className="tierra-new-point-ring" />
+            </div>
           </Marker>
         ))}
 
