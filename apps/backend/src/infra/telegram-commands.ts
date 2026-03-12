@@ -931,7 +931,8 @@ function buildAdminHelp(): string {
     `🔐 *Comandos de administración*`,
     ``,
     `🔑 *Contraseñas:*`,
-    `• \`/resetpass 955135501\` — resetea contraseña por teléfono`,
+    `• \`/resetpass 955135501\` — resetea contraseña (genera una random)`,
+    `• \`/setpass 955135501 miClave123\` — setea contraseña específica`,
     `• \`/resetpass maria@email.com\` — resetea por email`,
     ``,
     `🎯 *Metas:*`,
@@ -980,6 +981,33 @@ async function handleResetPass(identifier: string): Promise<string> {
     `🔑 Nueva contraseña: \`${newPass}\``,
     ``,
     `⚠️ _Comparte la contraseña de forma segura._`,
+  ].join("\n");
+}
+
+async function handleSetPass(identifier: string, newPass: string): Promise<string> {
+  if (newPass.length < 4) return `❌ La contraseña debe tener al menos 4 caracteres.`;
+
+  const isEmail = identifier.includes("@");
+  const { rows } = await pool.query(
+    isEmail
+      ? `SELECT id, full_name, email, phone FROM users WHERE email = $1`
+      : `SELECT id, full_name, email, phone FROM users WHERE phone LIKE $1`,
+    [isEmail ? identifier : `%${identifier}`],
+  );
+
+  if (rows.length === 0) return `❌ No se encontró usuario con ${isEmail ? "email" : "teléfono"}: ${identifier}`;
+  if (rows.length > 1) return `⚠️ Se encontraron ${rows.length} usuarios. Sé más específico.`;
+
+  const user = rows[0] as Record<string, unknown>;
+  const hash = await Bun.password.hash(newPass, { algorithm: "bcrypt", cost: 10 });
+  await pool.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [hash, user.id]);
+
+  return [
+    `✅ *Contraseña establecida*`,
+    ``,
+    `👤 *${user.full_name}*`,
+    `📞 ${user.phone ?? "—"}`,
+    `🔑 Nueva contraseña: \`${newPass}\``,
   ].join("\n");
 }
 
@@ -1402,6 +1430,13 @@ async function handleMessage(chatId: number, userText: string, userId?: number) 
     return;
   }
 
+  const setpassMatch = userText.match(/^\/setpass\s+(\S+)\s+(\S+)$/i);
+  if (setpassMatch) {
+    if (!isAdmin(userId)) { await reply(chatId, `🔒 No autorizado.`); return; }
+    await reply(chatId, await handleSetPass(setpassMatch[1]!.trim(), setpassMatch[2]!.trim()));
+    return;
+  }
+
   const setmetaMatch = userText.match(/^\/setmeta\s+(.+)$/i);
   if (setmetaMatch) {
     if (!isAdmin(userId)) { await reply(chatId, `🔒 No autorizado.`); return; }
@@ -1726,6 +1761,10 @@ async function pollOnce() {
         continue;
       }
       if (lower.startsWith("/resetpass")) {
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
+        continue;
+      }
+      if (lower.startsWith("/setpass")) {
         handleMessage(msg.chat.id, raw, fromId).catch(() => {});
         continue;
       }
