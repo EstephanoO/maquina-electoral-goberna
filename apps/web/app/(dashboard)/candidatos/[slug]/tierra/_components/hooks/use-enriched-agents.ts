@@ -7,7 +7,8 @@ import type { AgentLocation } from "@/lib/hooks";
 import type { GeoBounds } from "@/lib/services/geo";
 import { formCoordsToLatLng } from "@/lib/utils";
 import type { EnrichedAgent, FormPoint } from "../types";
-import { getAgentStatus } from "../utils";
+import { getAgentStatus, pointInGeometry } from "../utils";
+import type { DrillRegion } from "./use-drill-bounds";
 
 /** Default coords (Lima) for agents with no location data at all */
 const DEFAULT_LAT = -12.046;
@@ -19,12 +20,30 @@ function inBounds(lat: number, lng: number, b: GeoBounds): boolean {
 }
 
 /**
+ * Test whether a point is inside the drill region.
+ * Uses polygon geometry when available (accurate point-in-polygon),
+ * falls back to bounding box (fast but may include neighboring regions).
+ */
+function inDrillRegion(lat: number, lng: number, region: DrillRegion): boolean {
+  if (region.geometry) {
+    // Fast pre-check: skip polygon test if point is outside bounding box
+    if (!inBounds(lat, lng, region.bounds)) return false;
+    return pointInGeometry(lng, lat, region.geometry);
+  }
+  // Fallback: bounding box only (when geometry fetch failed)
+  return inBounds(lat, lng, region.bounds);
+}
+
+/**
  * Derive enriched agents, form points, connected count, and drill-filtered subsets
- * from the raw stats, locations, forms, and optional geographic bounds.
+ * from the raw stats, locations, forms, and optional drill region.
  *
- * When drillBounds is provided (user clicked a zone), filteredAgents and
- * filteredFormPoints only contain items inside that bounding box.
+ * When drillRegion is provided (user clicked a zone), filteredAgents and
+ * filteredFormPoints only contain items inside that polygon.
  * All counts are derived from the filtered sets so the UI stays consistent.
+ *
+ * Uses point-in-polygon when the polygon geometry is available (accurate),
+ * falling back to bounding-box filtering when geometry is unavailable.
  *
  * Optimization: pre-indexes forms by agent_id/encuestador_id into a Map so
  * the agent loop is O(agents + forms) instead of O(agents * forms).
@@ -34,7 +53,7 @@ export function useEnrichedAgents(
   locations: AgentLocation[],
   forms: FormRecord[],
   backgroundAgentIds: Set<string> = new Set(),
-  drillBounds: GeoBounds | null = null,
+  drillRegion: DrillRegion | null = null,
 ) {
   // ── Pre-index: forms by agent_id → most recent form with coords (O(forms)) ──
   const agentFormIndex = useMemo(() => {
@@ -138,16 +157,17 @@ export function useEnrichedAgents(
   );
 
   // ── Drill-filtered subsets — used by panel, KPIs, and overlay ──
-  // When drillBounds is null (level 0), returns the full sets unchanged.
+  // When drillRegion is null (level 0), returns the full sets unchanged.
+  // Uses point-in-polygon when geometry is available for accurate filtering.
   const filteredFormPoints = useMemo((): FormPoint[] => {
-    if (!drillBounds) return formPoints;
-    return formPoints.filter((p) => inBounds(p.lat, p.lng, drillBounds));
-  }, [formPoints, drillBounds]);
+    if (!drillRegion) return formPoints;
+    return formPoints.filter((p) => inDrillRegion(p.lat, p.lng, drillRegion));
+  }, [formPoints, drillRegion]);
 
   const filteredAgents = useMemo((): EnrichedAgent[] => {
-    if (!drillBounds) return enrichedAgents;
-    return enrichedAgents.filter((a) => inBounds(a.lat, a.lng, drillBounds));
-  }, [enrichedAgents, drillBounds]);
+    if (!drillRegion) return enrichedAgents;
+    return enrichedAgents.filter((a) => inDrillRegion(a.lat, a.lng, drillRegion));
+  }, [enrichedAgents, drillRegion]);
 
   const connectedCount = useMemo(
     () => filteredAgents.filter((a) => a.status === "connected").length,

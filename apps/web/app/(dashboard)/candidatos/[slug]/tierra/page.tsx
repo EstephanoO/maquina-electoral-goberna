@@ -22,7 +22,7 @@ import { useAgentSSE } from "./_components/hooks/use-agent-sse";
 import { usePipelineState } from "./_components/hooks/use-pipeline-state";
 import { useEnrichedAgents } from "./_components/hooks/use-enriched-agents";
 import { useSSELocations } from "./_components/hooks/use-sse-locations";
-import { useDrillBounds } from "./_components/hooks/use-drill-bounds";
+import { useDrillRegion } from "./_components/hooks/use-drill-bounds";
 
 /* ─── Demo: Carmen de la Legua (Callao) ─── */
 
@@ -153,13 +153,15 @@ export default function TierraPage() {
   }, [forms]);
 
   // ─── Geo drill filter ───
-  const drillBounds = useDrillBounds(drillState);
+  const drillRegion = useDrillRegion(drillState);
 
   // ─── Derived data ───
   // enrichedAgents / formPoints = full dataset → always passed to TierraMap
   // filteredAgents / filteredFormPoints = geo-filtered by drill zone → used by panel/KPIs
+  // Uses point-in-polygon (via drillRegion.geometry) instead of bounding-box to avoid
+  // overlap issues between neighboring irregular polygons (e.g. Cajamarca / La Libertad).
   const { enrichedAgents, formPoints, filteredAgents, filteredFormPoints, connectedCount } =
-    useEnrichedAgents(stats, locations, forms, backgroundAgentIds, drillBounds);
+    useEnrichedAgents(stats, locations, forms, backgroundAgentIds, drillRegion);
   const enrichedAgentsRef = useRef(enrichedAgents);
   enrichedAgentsRef.current = enrichedAgents;
 
@@ -335,7 +337,7 @@ export default function TierraPage() {
             slug={slug}
             primaryColor={campaign.color_primario}
             agents={enrichedAgents}
-            forms={drillBounds ? filteredFormPoints : formPoints}
+            forms={drillRegion ? filteredFormPoints : formPoints}
             selectedAgentId={selectedAgentId}
             onSelectAgent={handleSelectAgent}
             showTracking={showTracking}
@@ -376,7 +378,7 @@ export default function TierraPage() {
           <CampoOverlay
             agents={filteredAgents}
             connectedCount={connectedCount}
-            formCount={drillBounds ? filteredFormPoints.length : stats.totals.forms_count}
+            formCount={drillRegion ? filteredFormPoints.length : stats.totals.forms_count}
             primaryColor={campaign.color_primario}
             selectedAgentId={selectedAgentId}
             onAgentClick={handleAgentListClick}

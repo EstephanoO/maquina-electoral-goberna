@@ -145,6 +145,58 @@ export function prewarmTiles(templateUrl: string) {
   fetchBatch();
 }
 
+/* ─── Point-in-Polygon (ray-casting algorithm) ─── */
+
+/**
+ * Test whether a point lies inside a single ring (array of [lng, lat] pairs).
+ * Uses the even-odd (ray-casting) rule: cast a ray from the point to +X∞
+ * and count edge crossings — odd = inside, even = outside.
+ *
+ * O(n) where n = number of vertices in the ring.
+ */
+function pointInRing(px: number, py: number, ring: number[][]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], yi = ring[i][1];
+    const xj = ring[j][0], yj = ring[j][1];
+    if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * Test whether a point [lng, lat] is inside a GeoJSON Polygon.
+ * First ring is the exterior, subsequent rings are holes.
+ */
+function pointInPolygon(lng: number, lat: number, coords: number[][][]): boolean {
+  // Must be inside the outer ring
+  if (!pointInRing(lng, lat, coords[0])) return false;
+  // Must NOT be inside any hole
+  for (let h = 1; h < coords.length; h++) {
+    if (pointInRing(lng, lat, coords[h])) return false;
+  }
+  return true;
+}
+
+/**
+ * Test whether a point [lng, lat] is inside a GeoJSON Polygon or MultiPolygon.
+ * Handles both geometry types transparently.
+ */
+export function pointInGeometry(lng: number, lat: number, geometry: GeoJSON.Geometry): boolean {
+  if (geometry.type === "Polygon") {
+    return pointInPolygon(lng, lat, geometry.coordinates);
+  }
+  if (geometry.type === "MultiPolygon") {
+    for (const poly of geometry.coordinates) {
+      if (pointInPolygon(lng, lat, poly)) return true;
+    }
+    return false;
+  }
+  return false;
+}
+
 /* ─── Internal ─── */
 
 function boundsFromCoords(coords: number[][]): Bounds | null {

@@ -622,6 +622,77 @@ export async function validateAndEnrichUbigeo(ubigeo: string): Promise<{
   };
 }
 
+/* ========== Geometry Endpoints (GeoJSON polygon for client-side PiP) ========== */
+
+export type AdminLevel = "dep" | "prov" | "dist";
+
+/** GeoJSON geometry shape returned by ST_AsGeoJSON (Polygon or MultiPolygon) */
+type GeoJSONGeometry = {
+  type: string;
+  coordinates: unknown;
+};
+
+/**
+ * Fetch the GeoJSON geometry for a single administrative unit.
+ * Used by the frontend to do client-side point-in-polygon filtering
+ * instead of bounding-box filtering (which has overlap issues between
+ * neighboring irregular polygons like Cajamarca / La Libertad).
+ *
+ * Returns a GeoJSON Polygon or MultiPolygon, cached 24h in Redis.
+ */
+export async function getAdminGeometry(
+  level: AdminLevel,
+  code: string,
+): Promise<GeoJSONGeometry | null> {
+  const cacheKey = `${CACHE_PREFIX}geom:${level}:${code}`;
+
+  // Try cache
+  try {
+    const cached = await redisClient.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch {
+    // Redis error, fall through
+  }
+
+  let sql: string;
+  let params: string[];
+
+  switch (level) {
+    case "dep":
+      if (code.length !== 2) return null;
+      sql = `SELECT ST_AsGeoJSON(geom, 5)::text AS geojson FROM peru_departamentos WHERE coddep = $1 LIMIT 1`;
+      params = [code];
+      break;
+    case "prov":
+      if (code.length !== 4) return null;
+      sql = `SELECT ST_AsGeoJSON(geom, 5)::text AS geojson FROM peru_provincias WHERE coddep = $1 AND codprov = $2 LIMIT 1`;
+      params = [code.slice(0, 2), code.slice(2, 4)];
+      break;
+    case "dist":
+      if (code.length !== 6) return null;
+      sql = `SELECT ST_AsGeoJSON(geom, 5)::text AS geojson FROM peru_distritos WHERE ubigeo = $1 LIMIT 1`;
+      params = [code];
+      break;
+    default:
+      return null;
+  }
+
+  const result = await pool.query<{ geojson: string }>(sql, params);
+  const row = result.rows[0];
+  if (!row?.geojson) return null;
+
+  const geometry: GeoJSONGeometry = JSON.parse(row.geojson);
+
+  // Cache for 24h — geographic boundaries are static
+  try {
+    await redisClient.setEx(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(geometry));
+  } catch {
+    // Cache write failed, continue
+  }
+
+  return geometry;
+}
+
 /* ========== Tile Cache ========== */
 // Tile caching: Tegola Redis cache (max_zoom=14) + Nginx disk cache (zoom-tiered TTL).
 // The backend only proxies tiles to Tegola — no second Redis cache layer needed.

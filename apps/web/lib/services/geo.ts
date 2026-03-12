@@ -213,6 +213,41 @@ export async function reverseGeocode(lng: number, lat: number): Promise<{
   return { ok: false, error: res.error?.message ?? "Error en reverse geocode" };
 }
 
+/* ========== Geometry (GeoJSON polygon for client-side PiP) ========== */
+
+export type AdminLevel = "dep" | "prov" | "dist";
+
+/**
+ * Fetch the GeoJSON geometry for a single administrative unit.
+ * Used for accurate client-side point-in-polygon filtering instead
+ * of bounding-box filtering (which has overlap issues between
+ * neighboring irregular polygons like Cajamarca / La Libertad).
+ *
+ * Results are cached in memory for 5 minutes.
+ */
+export async function getAdminGeometry(
+  level: AdminLevel,
+  code: string,
+): Promise<{ ok: boolean; geometry?: GeoJSON.Geometry; error?: string }> {
+  const cacheKey = `geo:geom:${level}:${code}`;
+  const cached = getCached<GeoJSON.Geometry>(cacheKey);
+  if (cached) {
+    return { ok: true, geometry: cached };
+  }
+
+  const res = await api.get<{
+    ok: boolean;
+    geometry: GeoJSON.Geometry;
+  }>(`/api/geo/geometry/${level}/${code}`);
+
+  if (res.ok && res.data?.geometry) {
+    setCache(cacheKey, res.data.geometry);
+    return { ok: true, geometry: res.data.geometry };
+  }
+
+  return { ok: false, error: res.error?.message ?? "Error fetching geometry" };
+}
+
 /* ========== Preload Functions ========== */
 
 // Preload all departamentos on app start

@@ -11,6 +11,8 @@ import {
   reverseGeocode,
   searchDistritos,
   getAllDistritos,
+  getAdminGeometry,
+  type AdminLevel,
 } from "./geo-cache";
 
 const layersContract = [
@@ -140,6 +142,26 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
       const results = await getAllDistritos();
       reply.header("Cache-Control", "public, max-age=86400, stale-while-revalidate=3600");
       return { ok: true, distritos: results, count: results.length };
+    });
+
+    // Get GeoJSON geometry for a single administrative unit — public, cached 24h.
+    // Used for client-side point-in-polygon filtering (replaces bounding-box filtering
+    // which has overlap issues between neighboring irregular polygons).
+    app.get<{ Params: { level: string; code: string } }>("/api/geo/geometry/:level/:code", async (request, reply) => {
+      const { level, code } = request.params;
+
+      const validLevels: AdminLevel[] = ["dep", "prov", "dist"];
+      if (!validLevels.includes(level as AdminLevel)) {
+        return reply.code(400).send({ ok: false, error: "level debe ser 'dep', 'prov' o 'dist'" });
+      }
+
+      const geometry = await getAdminGeometry(level as AdminLevel, code);
+      if (!geometry) {
+        return reply.code(404).send({ ok: false, error: "Unidad administrativa no encontrada" });
+      }
+
+      reply.header("Cache-Control", "public, max-age=86400, stale-while-revalidate=3600");
+      return { ok: true, geometry };
     });
 
     /* ========== Tile Proxy (passthrough to Tegola) ========== */
