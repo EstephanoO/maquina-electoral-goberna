@@ -141,54 +141,59 @@ export function useFormSources(forms: FormPoint[], selectedAgentId: string | nul
   return { formsGeoJson, barsGeoJson };
 }
 
-/* ─── New-point halo detection ─── */
+/* ─── New-point detection ─── */
 
-export type HaloPoint = { id: string; lng: number; lat: number };
+export type NewPoint = { id: string; lng: number; lat: number; color: string };
 
-const HALO_DURATION_MS = 2_000;
+const PULSE_DURATION_MS = 2_500;
 
 /**
- * useNewPoints — detects newly ingested forms between polls and emits
- * their coordinates for a brief halo animation. Each batch of new points
- * lives for HALO_DURATION_MS then auto-clears.
+ * useNewPoints — detects newly ingested forms between polls.
+ * Returns their coordinates + color so the map can render a pulsing
+ * Marker on top of each new point for PULSE_DURATION_MS, then auto-clears.
  *
- * Uses a Set<id> diff: previous IDs vs current IDs → new entries get halos.
- * First render (empty → full) is skipped to avoid halo-ing the entire dataset.
+ * The Marker visually IS the point — same color, same position — but with
+ * a CSS blink animation. When it disappears, the real circle layer point
+ * is already rendered underneath. Seamless.
+ *
+ * First render (empty → full) is skipped to avoid pulsing the entire dataset.
  */
-export function useNewPoints(forms: FormPoint[]): HaloPoint[] {
+export function useNewPoints(forms: FormPoint[]): NewPoint[] {
   const prevIdsRef = useRef<Set<string> | null>(null);
-  const [haloPoints, setHaloPoints] = useState<HaloPoint[]>([]);
+  const [newPoints, setNewPoints] = useState<NewPoint[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const currentIds = new Set(forms.map((f) => f.id));
 
-    // Skip first render — don't halo the initial dataset load.
+    // Skip first render — don't pulse the initial dataset load.
     if (prevIdsRef.current === null) {
       prevIdsRef.current = currentIds;
       return;
     }
 
     const prevIds = prevIdsRef.current;
-    const newPoints: HaloPoint[] = [];
+    const detected: NewPoint[] = [];
     for (const f of forms) {
       if (f.lat && f.lng && !prevIds.has(f.id)) {
-        newPoints.push({ id: f.id, lng: f.lng, lat: f.lat });
+        const colorKey = `${f.agent_id ?? ""}:${f.encuestador ?? ""}:${f.telefono ?? ""}`;
+        const idx = stableHash(colorKey) % NEON_COLORS.length;
+        detected.push({ id: f.id, lng: f.lng, lat: f.lat, color: NEON_COLORS[idx] });
       }
     }
 
     prevIdsRef.current = currentIds;
 
-    if (newPoints.length === 0) return;
+    if (detected.length === 0) return;
 
-    setHaloPoints(newPoints);
+    setNewPoints(detected);
 
-    // Auto-clear after animation duration
+    // Auto-clear after pulse duration
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      setHaloPoints([]);
+      setNewPoints([]);
       timerRef.current = null;
-    }, HALO_DURATION_MS);
+    }, PULSE_DURATION_MS);
   }, [forms]);
 
   // Cleanup on unmount
@@ -196,5 +201,5 @@ export function useNewPoints(forms: FormPoint[]): HaloPoint[] {
     if (timerRef.current) clearTimeout(timerRef.current);
   }, []);
 
-  return haloPoints;
+  return newPoints;
 }
