@@ -1109,7 +1109,7 @@
     _injectStyles();
     let panel = document.getElementById("wspp-cat-panel");
     if (!panel) {
-      panel = _el("div", { position: "relative" });
+      panel = _el("div");
       panel.id = "wspp-cat-panel";
       document.body.appendChild(panel);
     }

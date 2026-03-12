@@ -166,7 +166,7 @@ function _closePanel() {
 function renderCatalogPanel() {
   _injectStyles();
   let panel = document.getElementById('wspp-cat-panel');
-  if (!panel) { panel = _el('div', { position: 'relative' }); panel.id = 'wspp-cat-panel'; document.body.appendChild(panel); }
+  if (!panel) { panel = _el('div'); panel.id = 'wspp-cat-panel'; document.body.appendChild(panel); }
   panel.innerHTML = '';
 
   if (_catalogView === 'detail' && _catalogDetailId) _renderDetail(panel);
