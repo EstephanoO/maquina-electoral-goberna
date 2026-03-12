@@ -542,10 +542,16 @@ export default function DashboardScreen() {
       // Server total is the source of truth — includes all synced submissions ever sent,
       // even those already cleaned up from local SQLite (>7 days old).
       // Uses phone dedup (DISTINCT ON telefono) consistent with Pipeline/web dashboard.
-      const serverTotal = serverStats.ok ? (serverStats.data?.stats.total ?? 0) : 0;
+      //
+      // IMPORTANT: When serverStats.ok === true, ALWAYS trust the server count (even if 0).
+      // The local SQLite "synced" count is unreliable because the write-behind queue
+      // returns 202 (accepted) before persisting — forms may be deduped or lost downstream.
+      // Only fall back to SQLite counts when the API call fails (offline scenario).
+      const serverOk = serverStats.ok === true;
+      const serverTotal = serverOk ? (serverStats.data?.stats.total ?? 0) : 0;
       const newStats = {
-        total: serverTotal > 0 ? serverTotal + formsPending : formsPending + (queueStats.forms?.synced ?? 0),
-        synced: serverTotal > 0 ? serverTotal : (queueStats.forms?.synced ?? 0),
+        total: serverOk ? serverTotal + formsPending : formsPending + (queueStats.forms?.synced ?? 0),
+        synced: serverOk ? serverTotal : (queueStats.forms?.synced ?? 0),
         pending: formsPending,
         rejected: formsRejected,
       };
