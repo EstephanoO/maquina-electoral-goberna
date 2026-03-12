@@ -16,6 +16,9 @@ export interface FormRecord {
   x: number;
   y: number;
   zona: string;
+  departamento: string;
+  provincia: string;
+  distrito: string;
   encuestador: string;
   encuestador_id: string;
   agent_id?: string;

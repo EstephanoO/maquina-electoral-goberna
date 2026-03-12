@@ -83,21 +83,52 @@ export async function insertBatch(
               AND ex.deleted_at IS NULL
           )
       ),
+      -- Reverse-geocode: enrich JSONB data with departamento/provincia/distrito
+      -- when lat/lng are valid GPS coordinates and the fields are not already present
+      -- (distrito picker submissions already have them — we don't overwrite).
+      geocoded AS (
+        SELECT
+          d.*,
+          CASE
+            WHEN d.lat IS NOT NULL AND d.lng IS NOT NULL
+              AND d.lat <> 0 AND d.lng <> 0
+              AND COALESCE(d.data::jsonb->>'departamento', '') = ''
+            THEN (
+              SELECT jsonb_build_object(
+                'departamento', dep.nomdep,
+                'provincia', prov.nomprov,
+                'distrito', dist.nomdist,
+                'ubigeo', dist.ubigeo
+              )
+              FROM peru_distritos dist
+              JOIN peru_departamentos dep ON dep.coddep = dist.coddep
+              JOIN peru_provincias prov ON prov.coddep = dist.coddep AND prov.codprov = dist.codprov
+              WHERE ST_Contains(dist.geom, ST_SetSRID(ST_Point(d.lng, d.lat), 4326))
+              LIMIT 1
+            )
+            ELSE NULL
+          END AS geo_data
+        FROM deduped d
+      ),
       inserted AS (
         INSERT INTO form_submissions (
           form_definition_id, campaign_id, meet_id, meet_group_id, submitted_by,
           data, lat, lng, client_id, synced_at
         )
         SELECT
-          d.form_definition_id, d.campaign_id, d.meet_id, d.meet_group_id, d.submitted_by,
-          d.data::jsonb, d.lat, d.lng, d.client_id, now()
-        FROM deduped d
+          g.form_definition_id, g.campaign_id, g.meet_id, g.meet_group_id, g.submitted_by,
+          CASE WHEN g.geo_data IS NOT NULL
+            THEN g.data::jsonb || g.geo_data
+            ELSE g.data::jsonb
+          END,
+          g.lat, g.lng, g.client_id, now()
+        FROM geocoded g
         -- Skip phones already in the DB for this campaign
         WHERE NOT EXISTS (
           SELECT 1 FROM public.form_submissions ex
-          WHERE ex.campaign_id = d.campaign_id
-            AND ex.data->>'telefono' = d.data::jsonb->>'telefono'
-            AND COALESCE(d.data::jsonb->>'telefono', '') <> ''
+          WHERE ex.campaign_id = g.campaign_id
+            AND ex.data->>'telefono' = g.data::jsonb->>'telefono'
+            AND COALESCE(g.data::jsonb->>'telefono', '') <> ''
             AND ex.deleted_at IS NULL
         )
         -- client_id dedup (idempotent retries) + phone unique index as safety net

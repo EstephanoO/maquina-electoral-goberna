@@ -66,6 +66,8 @@ export type AppEnv = {
   telegramChatId: string;
   // Gemini — clasificacion AI de mensajes (opcional, Gemini 2.5 Flash Lite)
   geminiApiKey: string;
+  // Telegram — IDs de usuarios autorizados para comandos de escritura (comma-separated)
+  telegramAdminIds: number[];
   // ElevenLabs — TTS proxy para notas de voz (opcional)
   elevenlabsApiKey: string;
 };
@@ -184,6 +186,8 @@ export function getEnv(): AppEnv {
     telegramBotToken: (process.env.TELEGRAM_BOT_TOKEN ?? "").trim(),
     telegramChatId: (process.env.TELEGRAM_CHAT_ID ?? "").trim(),
     geminiApiKey: (process.env.GEMINI_API_KEY ?? "").trim(),
+    telegramAdminIds: (process.env.TELEGRAM_ADMIN_IDS ?? "")
+      .split(",").map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)),
     elevenlabsApiKey: (process.env.ELEVENLABS_API_KEY ?? "").trim(),
   };
 }

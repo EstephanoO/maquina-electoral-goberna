@@ -12,6 +12,9 @@ export interface FormRecord {
   x: number;
   y: number;
   zona: string;
+  departamento: string;
+  provincia: string;
+  distrito: string;
   encuestador: string;
   encuestador_id: string;
   candidato_preferido: string;
@@ -220,21 +223,50 @@ export async function insertFormsIdempotentBatch(forms: FormInput[]): Promise<Ba
               lng double precision,
               client_id text
             )
+          ),
+          -- Reverse-geocode: enrich JSONB data with departamento/provincia/distrito
+          geocoded AS (
+            SELECT
+              i.*,
+              CASE
+                WHEN i.lat IS NOT NULL AND i.lng IS NOT NULL
+                  AND i.lat <> 0 AND i.lng <> 0
+                  AND COALESCE(i.data::jsonb->>'departamento', '') = ''
+                THEN (
+                  SELECT jsonb_build_object(
+                    'departamento', dep.nomdep,
+                    'provincia', prov.nomprov,
+                    'distrito', dist.nomdist,
+                    'ubigeo', dist.ubigeo
+                  )
+                  FROM peru_distritos dist
+                  JOIN peru_departamentos dep ON dep.coddep = dist.coddep
+                  JOIN peru_provincias prov ON prov.coddep = dist.coddep AND prov.codprov = dist.codprov
+                  WHERE ST_Contains(dist.geom, ST_SetSRID(ST_Point(i.lng, i.lat), 4326))
+                  LIMIT 1
+                )
+                ELSE NULL
+              END AS geo_data
+            FROM incoming i
           )
           INSERT INTO form_submissions (
             form_definition_id, campaign_id, meet_id, meet_group_id, submitted_by,
             data, lat, lng, client_id, synced_at
           )
           SELECT
-            i.form_definition_id, i.campaign_id, i.meet_id, i.meet_group_id,
-            CASE WHEN i.submitted_by ~ '^[0-9a-f-]{36}$' THEN i.submitted_by::uuid ELSE NULL END,
-            i.data::jsonb, i.lat, i.lng, i.client_id, now()
-          FROM incoming i
+            g.form_definition_id, g.campaign_id, g.meet_id, g.meet_group_id,
+            CASE WHEN g.submitted_by ~ '^[0-9a-f-]{36}$' THEN g.submitted_by::uuid ELSE NULL END,
+            CASE WHEN g.geo_data IS NOT NULL
+              THEN g.data::jsonb || g.geo_data
+              ELSE g.data::jsonb
+            END,
+            g.lat, g.lng, g.client_id, now()
+          FROM geocoded g
           WHERE NOT EXISTS (
             SELECT 1 FROM public.form_submissions ex
-            WHERE ex.campaign_id = i.campaign_id::uuid
-              AND ex.data->>'telefono' = i.data::jsonb->>'telefono'
-              AND COALESCE(i.data::jsonb->>'telefono', '') <> ''
+            WHERE ex.campaign_id = g.campaign_id::uuid
+              AND ex.data->>'telefono' = g.data::jsonb->>'telefono'
+              AND COALESCE(g.data::jsonb->>'telefono', '') <> ''
               AND ex.deleted_at IS NULL
           )
           ON CONFLICT (client_id) DO NOTHING
@@ -326,6 +358,7 @@ export async function getRecentForms(
       -- Legacy forms table
       SELECT 
         id, client_id, nombre, telefono, fecha, x, y, zona,
+        '' as departamento, '' as provincia, '' as distrito,
         encuestador, encuestador_id, candidato_preferido, 
         comentarios, campaign_id, created_at,
         NULL::uuid as agent_id
@@ -344,6 +377,9 @@ export async function getRecentForms(
         fs.lng as x,
         fs.lat as y,
         COALESCE(fs.data->>'zona', 'Sin zona') as zona,
+        COALESCE(fs.data->>'departamento', '') as departamento,
+        COALESCE(fs.data->>'provincia', '') as provincia,
+        COALESCE(fs.data->>'distrito', '') as distrito,
         COALESCE(fs.data->>'encuestador', u.full_name, 'Agente') as encuestador,
         COALESCE(fs.submitted_by::text, '') as encuestador_id,
         COALESCE(fs.data->>'candidato_preferido', '') as candidato_preferido,
@@ -367,6 +403,7 @@ export async function getRecentForms(
     )
     SELECT
       id, client_id, nombre, telefono, fecha, x, y, zona,
+      departamento, provincia, distrito,
       encuestador, encuestador_id, candidato_preferido, comentarios,
       campaign_id, created_at, agent_id
     FROM deduped`,

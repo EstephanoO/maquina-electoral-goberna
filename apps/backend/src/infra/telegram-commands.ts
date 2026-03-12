@@ -251,7 +251,7 @@ async function geminiGenerateSQL(userMessage: string): Promise<GeminiSqlResult> 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT + "\n\n" + COMPARATIVE_PROMPT_ADDON }] },
           contents: [{ parts: [{ text: userMessage }] }],
           generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
         }),
@@ -919,6 +919,328 @@ async function buildMetaReport(campaignSlug: string): Promise<string> {
   return lines.join("\n");
 }
 
+// ── Comandos de escritura (whitelist por Telegram user ID) ──────────
+
+function isAdmin(userId?: number): boolean {
+  if (!userId || !_env?.telegramAdminIds?.length) return false;
+  return _env.telegramAdminIds.includes(userId);
+}
+
+function buildAdminHelp(): string {
+  return [
+    `🔐 *Comandos de administración*`,
+    ``,
+    `🔑 *Contraseñas:*`,
+    `• \`/resetpass 955135501\` — resetea contraseña por teléfono`,
+    `• \`/resetpass maria@email.com\` — resetea por email`,
+    ``,
+    `🎯 *Metas:*`,
+    `• \`/setmeta cesar vasquez 250000\` — cambia meta total`,
+    `• \`/setbuffer cesar vasquez 30\` — cambia buffer %`,
+    ``,
+    `👤 *Usuarios:*`,
+    `• \`/suspender 955135501\` — suspende usuario`,
+    `• \`/activar 955135501\` — reactiva usuario`,
+    ``,
+    `📅 *Reportes programados:*`,
+    `• \`/programar diario cesar vasquez 8am 2pm 8pm\``,
+    `• \`/programar meta cesar vasquez 6pm\``,
+    `• \`/programados\` — ver reportes programados`,
+    `• \`/desprogramar 1\` — quitar por número`,
+    ``,
+    `_Solo usuarios autorizados pueden usar estos comandos._`,
+  ].join("\n");
+}
+
+async function handleResetPass(identifier: string): Promise<string> {
+  const isEmail = identifier.includes("@");
+  const { rows } = await pool.query(
+    isEmail
+      ? `SELECT id, full_name, email, phone FROM users WHERE email = $1`
+      : `SELECT id, full_name, email, phone FROM users WHERE phone LIKE $1`,
+    [isEmail ? identifier : `%${identifier}`],
+  );
+
+  if (rows.length === 0) return `❌ No se encontró usuario con ${isEmail ? "email" : "teléfono"}: ${identifier}`;
+  if (rows.length > 1) return `⚠️ Se encontraron ${rows.length} usuarios. Sé más específico.`;
+
+  const user = rows[0] as Record<string, unknown>;
+  const newPass = "goberna" + Math.floor(1000 + Math.random() * 9000);
+
+  // Hash with bcrypt (Bun has built-in)
+  const hash = await Bun.password.hash(newPass, { algorithm: "bcrypt", cost: 10 });
+  await pool.query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [hash, user.id]);
+
+  return [
+    `✅ *Contraseña reseteada*`,
+    ``,
+    `👤 *${user.full_name}*`,
+    `📞 ${user.phone ?? "—"}`,
+    `📧 ${user.email ?? "—"}`,
+    `🔑 Nueva contraseña: \`${newPass}\``,
+    ``,
+    `⚠️ _Comparte la contraseña de forma segura._`,
+  ].join("\n");
+}
+
+async function handleSetMeta(args: string): Promise<string> {
+  // /setmeta cesar vasquez 250000
+  const parts = args.match(/^(.+?)\s+(\d+)$/);
+  if (!parts) return `❌ Formato: \`/setmeta <campaña> <número>\`\nEj: \`/setmeta cesar vasquez 250000\``;
+
+  const slug = slugFromInput(parts[1]!);
+  const metaTotal = parseInt(parts[2]!, 10);
+
+  const { rowCount } = await pool.query(
+    `UPDATE campaigns SET config = config || $1::jsonb WHERE slug = $2`,
+    [JSON.stringify({ meta_total: metaTotal }), slug],
+  );
+
+  if (rowCount === 0) return `❌ No se encontró la campaña: ${parts[1]}`;
+
+  const meta = await calcularMeta(slug!);
+  if (!meta) return `✅ Meta actualizada a *${metaTotal.toLocaleString()}* pero no se pudo recalcular.`;
+
+  return [
+    `✅ *Meta actualizada*`,
+    `📋 ${meta.campana}`,
+    `🎯 Nueva meta: *${metaTotal.toLocaleString()}* registros`,
+    `⚡ Cuota diaria: *${meta.meta_diaria_agente}* reg/agente`,
+    `📅 ${meta.dias_restantes} días restantes`,
+  ].join("\n");
+}
+
+async function handleSetBuffer(args: string): Promise<string> {
+  const parts = args.match(/^(.+?)\s+(\d+)$/);
+  if (!parts) return `❌ Formato: \`/setbuffer <campaña> <porcentaje>\`\nEj: \`/setbuffer cesar vasquez 30\``;
+
+  const slug = slugFromInput(parts[1]!);
+  const buffer = parseInt(parts[2]!, 10);
+
+  const { rowCount } = await pool.query(
+    `UPDATE campaigns SET config = config || $1::jsonb WHERE slug = $2`,
+    [JSON.stringify({ buffer_pct: buffer }), slug],
+  );
+
+  if (rowCount === 0) return `❌ No se encontró la campaña: ${parts[1]}`;
+  return `✅ Buffer actualizado a *+${buffer}%* para ${parts[1]}`;
+}
+
+async function handleSuspender(identifier: string, suspend: boolean): Promise<string> {
+  const isEmail = identifier.includes("@");
+  const { rows } = await pool.query(
+    isEmail
+      ? `SELECT id, full_name, status FROM users WHERE email = $1`
+      : `SELECT id, full_name, status FROM users WHERE phone LIKE $1`,
+    [isEmail ? identifier : `%${identifier}`],
+  );
+
+  if (rows.length === 0) return `❌ No se encontró usuario: ${identifier}`;
+  if (rows.length > 1) return `⚠️ Se encontraron ${rows.length} usuarios. Sé más específico.`;
+
+  const user = rows[0] as Record<string, unknown>;
+  const newStatus = suspend ? "suspended" : "active";
+  await pool.query(`UPDATE users SET status = $1 WHERE id = $2`, [newStatus, user.id]);
+
+  return `${suspend ? "🔴" : "✅"} *${user.full_name}* — ${suspend ? "suspendido" : "reactivado"}`;
+}
+
+// ── Reportes programados ────────────────────────────────────────────
+
+type ScheduledReport = {
+  id: number;
+  chatId: number;
+  command: string;         // "diario", "meta", "semana", "top", "inactivos"
+  campaignSlug: string;
+  hours: number[];         // horas Lima (0-23)
+  createdBy: number;       // Telegram user ID
+};
+
+let _scheduledReports: ScheduledReport[] = [];
+let _scheduledTimers: ReturnType<typeof setTimeout>[] = [];
+let _nextScheduleId = 1;
+
+function scheduleReports(): void {
+  // Limpiar timers anteriores
+  for (const t of _scheduledTimers) clearTimeout(t);
+  _scheduledTimers = [];
+
+  if (_scheduledReports.length === 0) return;
+
+  // Check cada minuto si hay reportes que enviar
+  const checkInterval = setInterval(async () => {
+    if (!_running) { clearInterval(checkInterval); return; }
+
+    const now = new Date();
+    const limaHour = parseInt(now.toLocaleString("en-US", { timeZone: "America/Lima", hour: "numeric", hour12: false }), 10);
+    const limaMinute = now.getMinutes();
+
+    // Solo ejecutar en el minuto :00
+    if (limaMinute !== 0) return;
+
+    for (const report of _scheduledReports) {
+      if (!report.hours.includes(limaHour)) continue;
+
+      try {
+        await tgApi("sendChatAction", { chat_id: report.chatId, action: "typing" }).catch(() => {});
+        let msg: string;
+        switch (report.command) {
+          case "diario": msg = await buildDiarioReport(report.campaignSlug); break;
+          case "meta": msg = await buildMetaReport(report.campaignSlug); break;
+          case "semana": msg = await buildSemanaReport(report.campaignSlug); break;
+          case "top": msg = await buildTopReport(report.campaignSlug); break;
+          case "inactivos": msg = await buildInactivosReport(report.campaignSlug); break;
+          default: continue;
+        }
+        await reply(report.chatId, msg);
+      } catch { /* skip */ }
+    }
+  }, 60_000);
+
+  _scheduledTimers.push(checkInterval as unknown as ReturnType<typeof setTimeout>);
+}
+
+function parseHours(hoursStr: string): number[] {
+  const hours: number[] = [];
+  for (const part of hoursStr.split(/\s+/)) {
+    const match = part.match(/^(\d{1,2})\s*(am|pm)?$/i);
+    if (!match) continue;
+    let h = parseInt(match[1]!, 10);
+    if (match[2]?.toLowerCase() === "pm" && h < 12) h += 12;
+    if (match[2]?.toLowerCase() === "am" && h === 12) h = 0;
+    if (h >= 0 && h <= 23) hours.push(h);
+  }
+  return hours;
+}
+
+function formatHour(h: number): string {
+  if (h === 0) return "12am";
+  if (h < 12) return `${h}am`;
+  if (h === 12) return "12pm";
+  return `${h - 12}pm`;
+}
+
+function handleProgramar(chatId: number, userId: number, args: string): string {
+  // /programar diario cesar vasquez 8am 2pm 8pm
+  const match = args.match(/^(\w+)\s+(.+?)\s+(\d{1,2}\s*(?:am|pm)(?:\s+\d{1,2}\s*(?:am|pm))*)$/i);
+  if (!match) {
+    return [
+      `❌ Formato: \`/programar <comando> <campaña> <horas>\``,
+      ``,
+      `Ejemplos:`,
+      `• \`/programar diario cesar vasquez 8am 2pm 8pm\``,
+      `• \`/programar meta cesar vasquez 6pm\``,
+      `• \`/programar top cesar vasquez 12pm 6pm\``,
+      ``,
+      `Comandos: diario, meta, semana, top, inactivos`,
+    ].join("\n");
+  }
+
+  const command = match[1]!.toLowerCase();
+  if (!["diario", "meta", "semana", "top", "inactivos"].includes(command)) {
+    return `❌ Comando no válido: ${command}. Usa: diario, meta, semana, top, inactivos`;
+  }
+
+  const slug = slugFromInput(match[2]!);
+  const hours = parseHours(match[3]!);
+  if (hours.length === 0) return `❌ No se reconocieron las horas. Usa formato: 8am, 2pm, 8pm`;
+
+  const report: ScheduledReport = {
+    id: _nextScheduleId++,
+    chatId,
+    command,
+    campaignSlug: slug!,
+    hours,
+    createdBy: userId,
+  };
+
+  _scheduledReports.push(report);
+  scheduleReports();
+
+  return [
+    `✅ *Reporte programado #${report.id}*`,
+    ``,
+    `📋 Comando: /${command}`,
+    `🏷️ Campaña: ${match[2]}`,
+    `🕐 Horas (Lima): ${hours.map(formatHour).join(", ")}`,
+    ``,
+    `_Se enviará automáticamente a este chat._`,
+  ].join("\n");
+}
+
+function handleDesprogramar(reportId: number, userId: number): string {
+  const idx = _scheduledReports.findIndex(r => r.id === reportId);
+  if (idx === -1) return `❌ No se encontró reporte programado #${reportId}`;
+
+  const report = _scheduledReports[idx]!;
+  if (report.createdBy !== userId && !isAdmin(userId)) {
+    return `❌ Solo quien creó el reporte o un admin puede eliminarlo.`;
+  }
+
+  _scheduledReports.splice(idx, 1);
+  scheduleReports();
+
+  return `✅ Reporte #${reportId} eliminado (/${report.command} ${report.campaignSlug} a las ${report.hours.map(formatHour).join(", ")})`;
+}
+
+function buildProgramados(): string {
+  if (_scheduledReports.length === 0) {
+    return `📭 No hay reportes programados.\n\n_Usa \`/programar <comando> <campaña> <horas>\` para crear uno._`;
+  }
+
+  const lines: string[] = [`📅 *Reportes programados*`, ``];
+  for (const r of _scheduledReports) {
+    lines.push(`*#${r.id}* — /${r.command} ${r.campaignSlug}`);
+    lines.push(`   🕐 ${r.hours.map(formatHour).join(", ")}`);
+  }
+  lines.push(``);
+  lines.push(`_Usa \`/desprogramar <número>\` para quitar._`);
+
+  return lines.join("\n");
+}
+
+// ── Análisis comparativo ────────────────────────────────────────────
+// Se inyecta en el system prompt de Gemini para que genere queries con comparativas
+
+const COMPARATIVE_PROMPT_ADDON = `
+ANÁLISIS COMPARATIVO — Cuando el usuario pida comparaciones, tendencias o análisis:
+- Siempre compara con el período anterior (hoy vs ayer, esta semana vs la pasada, este mes vs el anterior).
+- Calcula el delta (diferencia) y porcentaje de cambio.
+- Identifica agentes que dejaron de subir datos (estaban activos en período anterior, no en el actual).
+- Identifica agentes nuevos (no estaban en período anterior, sí en el actual).
+- Si hay caídas significativas (>20%), menciona posibles causas.
+- Usa subqueries o CTEs para hacer las comparaciones en una sola query.
+
+Ejemplo de query comparativa:
+WITH esta_semana AS (
+  SELECT submitted_by, COUNT(*) as registros
+  FROM form_submissions fs
+  WHERE campaign_id = (SELECT id FROM campaigns WHERE slug = 'cesar-vasquez')
+  AND created_at >= date_trunc('week', now() AT TIME ZONE 'America/Lima')
+  AND deleted_at IS NULL
+  GROUP BY submitted_by
+),
+semana_pasada AS (
+  SELECT submitted_by, COUNT(*) as registros
+  FROM form_submissions fs
+  WHERE campaign_id = (SELECT id FROM campaigns WHERE slug = 'cesar-vasquez')
+  AND created_at >= date_trunc('week', now() AT TIME ZONE 'America/Lima') - interval '7 days'
+  AND created_at < date_trunc('week', now() AT TIME ZONE 'America/Lima')
+  AND deleted_at IS NULL
+  GROUP BY submitted_by
+)
+SELECT
+  COALESCE(u.full_name, 'Desconocido') as agente,
+  COALESCE(es.registros, 0) as esta_semana,
+  COALESCE(sp.registros, 0) as semana_pasada,
+  COALESCE(es.registros, 0) - COALESCE(sp.registros, 0) as delta
+FROM (SELECT submitted_by FROM esta_semana UNION SELECT submitted_by FROM semana_pasada) todos
+LEFT JOIN esta_semana es ON es.submitted_by = todos.submitted_by
+LEFT JOIN semana_pasada sp ON sp.submitted_by = todos.submitted_by
+LEFT JOIN users u ON u.id = todos.submitted_by
+ORDER BY delta ASC LIMIT 30
+`;
+
 // ── Alertas automáticas (cron 8pm Lima) ─────────────────────────────
 
 async function checkMetasAlerts(): Promise<void> {
@@ -1042,7 +1364,7 @@ async function executeCampaignCommand(chatId: number, command: string, slug: str
   }
 }
 
-async function handleMessage(chatId: number, userText: string) {
+async function handleMessage(chatId: number, userText: string, userId?: number) {
   await tgApi("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
 
   const state = getChatState(chatId);
@@ -1063,6 +1385,68 @@ async function handleMessage(chatId: number, userText: string) {
   }
   if (userText === "/ayuda" || userText === "/help" || userText === "/start") {
     await reply(chatId, buildAyuda());
+    return;
+  }
+
+  // ── Admin commands (requieren TELEGRAM_ADMIN_IDS) ──
+  if (userText === "/admin") {
+    if (!isAdmin(userId)) { await reply(chatId, `🔒 No autorizado.`); return; }
+    await reply(chatId, buildAdminHelp());
+    return;
+  }
+
+  const resetMatch = userText.match(/^\/resetpass\s+(.+)$/i);
+  if (resetMatch) {
+    if (!isAdmin(userId)) { await reply(chatId, `🔒 No autorizado.`); return; }
+    await reply(chatId, await handleResetPass(resetMatch[1]!.trim()));
+    return;
+  }
+
+  const setmetaMatch = userText.match(/^\/setmeta\s+(.+)$/i);
+  if (setmetaMatch) {
+    if (!isAdmin(userId)) { await reply(chatId, `🔒 No autorizado.`); return; }
+    await reply(chatId, await handleSetMeta(setmetaMatch[1]!.trim()));
+    return;
+  }
+
+  const setbufferMatch = userText.match(/^\/setbuffer\s+(.+)$/i);
+  if (setbufferMatch) {
+    if (!isAdmin(userId)) { await reply(chatId, `🔒 No autorizado.`); return; }
+    await reply(chatId, await handleSetBuffer(setbufferMatch[1]!.trim()));
+    return;
+  }
+
+  const suspenderMatch = userText.match(/^\/suspender\s+(.+)$/i);
+  if (suspenderMatch) {
+    if (!isAdmin(userId)) { await reply(chatId, `🔒 No autorizado.`); return; }
+    await reply(chatId, await handleSuspender(suspenderMatch[1]!.trim(), true));
+    return;
+  }
+
+  const activarMatch = userText.match(/^\/activar\s+(.+)$/i);
+  if (activarMatch) {
+    if (!isAdmin(userId)) { await reply(chatId, `🔒 No autorizado.`); return; }
+    await reply(chatId, await handleSuspender(activarMatch[1]!.trim(), false));
+    return;
+  }
+
+  // ── Scheduled reports (admin-only) ──
+  const programarMatch = userText.match(/^\/programar\s+(.+)$/i);
+  if (programarMatch) {
+    if (!isAdmin(userId)) { await reply(chatId, `🔒 No autorizado.`); return; }
+    await reply(chatId, handleProgramar(chatId, userId!, programarMatch[1]!.trim()));
+    return;
+  }
+
+  if (userText === "/programados") {
+    await reply(chatId, buildProgramados());
+    return;
+  }
+
+  const desprogramarMatch = userText.match(/^\/desprogramar\s+(\d+)$/i);
+  if (desprogramarMatch) {
+    if (!isAdmin(userId)) { await reply(chatId, `🔒 No autorizado.`); return; }
+    await reply(chatId, handleDesprogramar(parseInt(desprogramarMatch[1]!, 10), userId!));
     return;
   }
 
@@ -1199,8 +1583,14 @@ function buildAyuda(): string {
     `• \`/g busca al usuario 955135501\``,
     `• \`/g datos de María López\``,
     ``,
+    `📅 *Reportes programados:*`,
+    `• \`/programar diario cesar vasquez 8am 2pm 8pm\``,
+    `• \`/programados\` — ver programados`,
+    `• \`/desprogramar 1\` — quitar por número`,
+    ``,
     `🔧 *Sistema:*`,
     `• \`/health\` — estado del servidor`,
+    `• \`/admin\` — comandos de administración 🔐`,
     ``,
     `🌙 *Alerta automática diaria a las 8pm Lima*`,
   ].join("\n");
@@ -1303,7 +1693,7 @@ async function pollOnce() {
       ok: boolean;
       result: Array<{
         update_id: number;
-        message?: { chat: { id: number }; text?: string };
+        message?: { chat: { id: number }; from?: { id: number }; text?: string };
       }>;
     };
 
@@ -1316,59 +1706,100 @@ async function pollOnce() {
 
       const raw = msg.text.trim();
       const lower = raw.toLowerCase();
+      const fromId = msg.from?.id;
 
       // /health
       if (lower === "/health" || lower.startsWith("/health@")) {
-        handleMessage(msg.chat.id, "/health").catch(() => {});
+        handleMessage(msg.chat.id, "/health", fromId).catch(() => {});
         continue;
       }
 
       // /ayuda, /help, /start
       if (lower === "/ayuda" || lower === "/help" || lower === "/start" || lower.startsWith("/ayuda@")) {
-        handleMessage(msg.chat.id, "/ayuda").catch(() => {});
+        handleMessage(msg.chat.id, "/ayuda", fromId).catch(() => {});
+        continue;
+      }
+
+      // ── Admin commands ──
+      if (lower === "/admin" || lower.startsWith("/admin@")) {
+        handleMessage(msg.chat.id, "/admin", fromId).catch(() => {});
+        continue;
+      }
+      if (lower.startsWith("/resetpass")) {
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
+        continue;
+      }
+      if (lower.startsWith("/setmeta")) {
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
+        continue;
+      }
+      if (lower.startsWith("/setbuffer")) {
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
+        continue;
+      }
+      if (lower.startsWith("/suspender")) {
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
+        continue;
+      }
+      if (lower.startsWith("/activar")) {
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
+        continue;
+      }
+
+      // ── Scheduled reports ──
+      if (lower.startsWith("/programar")) {
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
+        continue;
+      }
+      if (lower === "/programados" || lower.startsWith("/programados@")) {
+        handleMessage(msg.chat.id, "/programados", fromId).catch(() => {});
+        continue;
+      }
+      if (lower.startsWith("/desprogramar")) {
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
         continue;
       }
 
       // /meta [campaña]
       if (lower.startsWith("/meta")) {
-        handleMessage(msg.chat.id, raw).catch(() => {});
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
         continue;
       }
 
       // /diario [campaña]
       if (lower.startsWith("/diario")) {
-        handleMessage(msg.chat.id, raw).catch(() => {});
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
         continue;
       }
 
       // /semana [campaña]
       if (lower.startsWith("/semana")) {
-        handleMessage(msg.chat.id, raw).catch(() => {});
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
         continue;
       }
 
       // /inactivos [campaña]
       if (lower.startsWith("/inactivos")) {
-        handleMessage(msg.chat.id, raw).catch(() => {});
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
         continue;
       }
 
       // /top [campaña]
       if (lower.startsWith("/top")) {
-        handleMessage(msg.chat.id, raw).catch(() => {});
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
         continue;
       }
 
       // /g <pregunta> — IA
       const gMatch = raw.match(/^\/[gG](?:@\w+)?\s+([\s\S]+)/);
       if (gMatch) {
-        handleMessage(msg.chat.id, gMatch[1]!.trim()).catch(() => {});
+        handleMessage(msg.chat.id, gMatch[1]!.trim(), fromId).catch(() => {});
         continue;
       }
 
       // Respuesta a pending command (texto libre sin /)
       if (!raw.startsWith("/") && getChatState(msg.chat.id)?.pendingCommand) {
-        handleMessage(msg.chat.id, raw).catch(() => {});
+        handleMessage(msg.chat.id, raw, fromId).catch(() => {});
         continue;
       }
 
