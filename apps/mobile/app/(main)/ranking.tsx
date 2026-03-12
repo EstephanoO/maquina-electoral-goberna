@@ -2,21 +2,22 @@
  * Ranking — Material Design 3 aligned ranking screen.
  *
  * Sections:
- * 1. Hero card — agent's position, department, personal count (prominent)
- * 2. Agent ranking — top agents in the agent's department with medals, progress bars
- * 3. Department ranking — all departments ranked by total, with progress bars
+ * 1. Hero KPI — today's active agents + today's total registrations (department scope)
+ * 2. Agent ranking — collapsible accordion, top agents in dept with medals + progress bars
+ * 3. Department ranking — collapsible accordion, all departments with progress bars
  *
  * M3 compliance:
  * - 48dp+ touch targets (R6.5)
  * - Color + icon + text status indicators, never color alone (R6.8)
  * - Semantic accessibility labels (R6.1, R6.2, R6.3)
- * - Haptic feedback on pull-to-refresh
- * - Reanimated enter animations
+ * - Haptic feedback on pull-to-refresh and accordion toggle
+ * - Reanimated enter animations + accordion expand/collapse
  */
 
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import {
   FlatList,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
@@ -26,7 +27,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 import { useCandidate, useAgent } from '@/lib/app-context';
 import { getMyDeptRanking, getDepartmentsRanking } from '@/lib/api';
@@ -46,10 +47,10 @@ type RankingData = {
 type DeptSummary = { departamento: string; total: number; today: number; agents: number };
 
 // Medal config for top 3
-const MEDALS: Record<number, { icon: string; bg: string; fg: string }> = {
-  0: { icon: '1', bg: '#fbbf24', fg: '#78350f' },  // gold
-  1: { icon: '2', bg: '#94a3b8', fg: '#1e293b' },  // silver
-  2: { icon: '3', bg: '#d97706', fg: '#fff7ed' },  // bronze
+const MEDALS: Record<number, { bg: string; fg: string }> = {
+  0: { bg: '#fbbf24', fg: '#78350f' },  // gold
+  1: { bg: '#94a3b8', fg: '#1e293b' },  // silver
+  2: { bg: '#d97706', fg: '#fff7ed' },  // bronze
 };
 
 // ─── Progress Bar ───────────────────────────────────────────────
@@ -88,76 +89,77 @@ const progStyles = StyleSheet.create({
   },
 });
 
-// ─── Hero Card ──────────────────────────────────────────────────
+// ─── Hero KPI Card ──────────────────────────────────────────────
 
-const HeroCard = memo(function HeroCard({
-  ranking,
+const HeroKPI = memo(function HeroKPI({
+  agentsActiveToday,
+  registrosHoy,
+  departamento,
   primaryColor,
 }: {
-  ranking: RankingData | null;
+  agentsActiveToday: number;
+  registrosHoy: number;
+  departamento: string | null;
   primaryColor: string;
 }) {
-  if (!ranking || !ranking.departamento) {
-    return (
-      <View
-        style={s.heroEmpty}
-        accessibilityRole="summary"
-        accessibilityLabel="Sin departamento asignado. Registra datos para aparecer en el ranking."
-      >
-        <View style={s.heroEmptyIcon}>
-          <MaterialIcons name="emoji-events" size={40} color="#cbd5e1" />
-        </View>
-        <Text style={s.heroEmptyTitle}>Sin departamento asignado</Text>
-        <Text style={s.heroEmptyHint}>
-          Registra datos para aparecer en el ranking de tu departamento
-        </Text>
-      </View>
-    );
-  }
-
-  const posLabel = ranking.my_position > 0
-    ? `#${ranking.my_position}`
-    : '--';
-  const ofLabel = ranking.total_agents > 0
-    ? `de ${ranking.total_agents} agente${ranking.total_agents !== 1 ? 's' : ''}`
-    : '';
-
   return (
     <Animated.View
       entering={FadeInDown.duration(400).delay(100)}
       style={[s.hero, { backgroundColor: primaryColor }]}
       accessibilityRole="summary"
-      accessibilityLabel={`Tu posicion: numero ${ranking.my_position} de ${ranking.total_agents} agentes en ${ranking.departamento}. ${ranking.my_count} registros.`}
+      accessibilityLabel={`Hoy: ${agentsActiveToday} agentes activos, ${registrosHoy} registros${departamento ? `, departamento ${departamento}` : ''}`}
     >
       {/* Department label */}
-      <View style={s.heroDeptRow}>
-        <MaterialIcons name="location-on" size={14} color="rgba(255,255,255,0.7)" />
-        <Text style={s.heroDeptText}>{ranking.departamento}</Text>
-      </View>
+      {departamento && (
+        <View style={s.heroDeptRow}>
+          <MaterialIcons name="location-on" size={14} color="rgba(255,255,255,0.7)" />
+          <Text style={s.heroDeptText}>{departamento}</Text>
+        </View>
+      )}
 
-      {/* Main stats row */}
+      {/* KPI row */}
       <View style={s.heroStatsRow}>
-        {/* Position */}
+        {/* Active agents today */}
         <View style={s.heroStatBlock}>
-          <Text style={s.heroPosition}>{posLabel}</Text>
-          <Text style={s.heroStatSubtitle}>{ofLabel}</Text>
+          <Text style={s.heroNumber}>{agentsActiveToday}</Text>
+          <Text style={s.heroLabel}>Agentes activos hoy</Text>
         </View>
 
         {/* Divider */}
         <View style={s.heroDivider} />
 
-        {/* Count */}
+        {/* Registrations today */}
         <View style={s.heroStatBlock}>
-          <Text style={s.heroCount}>{ranking.my_count}</Text>
-          <Text style={s.heroStatSubtitle}>registros</Text>
+          <Text style={s.heroNumber}>{registrosHoy}</Text>
+          <Text style={s.heroLabel}>Registros hoy</Text>
         </View>
       </View>
 
-      {/* Trophy icon watermark */}
+      {/* Watermark */}
       <View style={s.heroWatermark} pointerEvents="none">
-        <MaterialIcons name="emoji-events" size={80} color="rgba(255,255,255,0.08)" />
+        <MaterialIcons name="trending-up" size={80} color="rgba(255,255,255,0.08)" />
       </View>
     </Animated.View>
+  );
+});
+
+// ─── Hero Empty State ───────────────────────────────────────────
+
+const HeroEmpty = memo(function HeroEmpty() {
+  return (
+    <View
+      style={s.heroEmpty}
+      accessibilityRole="summary"
+      accessibilityLabel="Sin departamento asignado. Registra datos para aparecer en el ranking."
+    >
+      <View style={s.heroEmptyIcon}>
+        <MaterialIcons name="emoji-events" size={40} color="#cbd5e1" />
+      </View>
+      <Text style={s.heroEmptyTitle}>Sin departamento asignado</Text>
+      <Text style={s.heroEmptyHint}>
+        Registra datos para aparecer en el ranking de tu departamento
+      </Text>
+    </View>
   );
 });
 
@@ -182,47 +184,30 @@ const AgentRow = memo(function AgentRow({
 
   return (
     <View
-      style={[s.agentRow, isMe && { backgroundColor: `${primaryColor}0D` }]}
+      style={[s.row, isMe && { backgroundColor: `${primaryColor}0D` }]}
       accessibilityRole="text"
       accessibilityLabel={`Posicion ${idx + 1}: ${isMe ? 'Tu' : agent.name}, ${agent.count} registros${agent.today > 0 ? `, ${agent.today} hoy` : ''}`}
     >
       {/* Rank badge */}
-      <View
-        style={[
-          s.rankBadge,
-          medal
-            ? { backgroundColor: medal.bg }
-            : { backgroundColor: '#f1f5f9' },
-        ]}
-      >
-        <Text
-          style={[
-            s.rankNum,
-            medal
-              ? { color: medal.fg }
-              : { color: '#64748b' },
-          ]}
-        >
+      <View style={[s.rankBadge, { backgroundColor: medal?.bg ?? '#f1f5f9' }]}>
+        <Text style={[s.rankNum, { color: medal?.fg ?? '#64748b' }]}>
           {idx + 1}
         </Text>
       </View>
 
       {/* Name + progress */}
-      <View style={s.agentContent}>
-        <View style={s.agentNameRow}>
+      <View style={s.rowContent}>
+        <View style={s.nameRow}>
           <Text
-            style={[
-              s.agentName,
-              isMe && { color: primaryColor, fontWeight: '700' },
-            ]}
+            style={[s.nameText, isMe && { color: primaryColor, fontWeight: '700' }]}
             numberOfLines={1}
           >
             {displayName}
           </Text>
           {isMe && (
-            <View style={[s.youBadge, { backgroundColor: `${primaryColor}1A` }]}>
+            <View style={[s.tagBadge, { backgroundColor: `${primaryColor}1A` }]}>
               <MaterialIcons name="person" size={10} color={primaryColor} />
-              <Text style={[s.youBadgeText, { color: primaryColor }]}>Tu</Text>
+              <Text style={[s.tagText, { color: primaryColor }]}>Tu</Text>
             </View>
           )}
           {agent.today > 0 && (
@@ -233,77 +218,15 @@ const AgentRow = memo(function AgentRow({
         </View>
         <ProgressBar
           ratio={ratio}
-          color={isMe ? primaryColor : (medal ? medal.bg : '#cbd5e1')}
+          color={isMe ? primaryColor : (medal?.bg ?? '#cbd5e1')}
         />
       </View>
 
       {/* Count */}
-      <Text style={[s.agentCount, isMe && { color: primaryColor }]}>
+      <Text style={[s.countText, isMe && { color: primaryColor }]}>
         {agent.count}
       </Text>
     </View>
-  );
-});
-
-// ─── Agent Ranking Section ──────────────────────────────────────
-
-const AgentRankingSection = memo(function AgentRankingSection({
-  ranking,
-  myUserId,
-  primaryColor,
-}: {
-  ranking: RankingData | null;
-  myUserId: string;
-  primaryColor: string;
-}) {
-  if (!ranking || !ranking.departamento) return null;
-
-  if (ranking.ranking.length === 0) {
-    return (
-      <View style={s.card}>
-        <View style={s.sectionHeader}>
-          <MaterialIcons name="group" size={18} color={primaryColor} />
-          <View style={s.sectionHeaderText}>
-            <Text style={[s.sectionTitle, { color: primaryColor }]}>
-              Agentes en {ranking.departamento}
-            </Text>
-            <Text style={s.sectionSubtitle}>Aun no hay registros en este departamento</Text>
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  const maxCount = ranking.ranking[0]?.count ?? 1;
-
-  return (
-    <Animated.View
-      entering={FadeInDown.duration(400).delay(200)}
-      style={s.card}
-    >
-      <View style={s.sectionHeader}>
-        <MaterialIcons name="group" size={18} color={primaryColor} />
-        <View style={s.sectionHeaderText}>
-          <Text style={[s.sectionTitle, { color: primaryColor }]}>
-            Agentes en {ranking.departamento}
-          </Text>
-          <Text style={s.sectionSubtitle}>
-            Clasificacion por registros unicos (telefono)
-          </Text>
-        </View>
-      </View>
-
-      {ranking.ranking.map((agent, idx) => (
-        <AgentRow
-          key={agent.id}
-          agent={agent}
-          idx={idx}
-          isMe={agent.id === myUserId}
-          maxCount={maxCount}
-          primaryColor={primaryColor}
-        />
-      ))}
-    </Animated.View>
   );
 });
 
@@ -327,55 +250,38 @@ const DeptRow = memo(function DeptRow({
 
   return (
     <View
-      style={[s.deptRow, isMyDept && { backgroundColor: `${primaryColor}0D` }]}
+      style={[s.row, isMyDept && { backgroundColor: `${primaryColor}0D` }]}
       accessibilityRole="text"
-      accessibilityLabel={`Departamento ${dept.departamento}: posicion ${idx + 1}, ${dept.total} registros, ${dept.agents} agente${dept.agents !== 1 ? 's' : ''}${dept.today > 0 ? `, ${dept.today} hoy` : ''}`}
+      accessibilityLabel={`Departamento ${dept.departamento}: posicion ${idx + 1}, ${dept.total} registros, ${dept.agents} agentes${dept.today > 0 ? `, ${dept.today} hoy` : ''}`}
     >
       {/* Rank */}
-      <View
-        style={[
-          s.rankBadge,
-          medal
-            ? { backgroundColor: medal.bg }
-            : { backgroundColor: '#f1f5f9' },
-        ]}
-      >
-        <Text
-          style={[
-            s.rankNum,
-            medal
-              ? { color: medal.fg }
-              : { color: '#64748b' },
-          ]}
-        >
+      <View style={[s.rankBadge, { backgroundColor: medal?.bg ?? '#f1f5f9' }]}>
+        <Text style={[s.rankNum, { color: medal?.fg ?? '#64748b' }]}>
           {idx + 1}
         </Text>
       </View>
 
       {/* Content */}
-      <View style={s.deptContent}>
-        <View style={s.deptNameRow}>
+      <View style={s.rowContent}>
+        <View style={s.nameRow}>
           <Text
-            style={[
-              s.deptName,
-              isMyDept && { color: primaryColor, fontWeight: '700' },
-            ]}
+            style={[s.nameText, isMyDept && { color: primaryColor, fontWeight: '700' }]}
             numberOfLines={1}
           >
             {dept.departamento}
           </Text>
           {isMyDept && (
-            <View style={[s.youBadge, { backgroundColor: `${primaryColor}1A` }]}>
+            <View style={[s.tagBadge, { backgroundColor: `${primaryColor}1A` }]}>
               <MaterialIcons name="home" size={10} color={primaryColor} />
-              <Text style={[s.youBadgeText, { color: primaryColor }]}>Tu dept.</Text>
+              <Text style={[s.tagText, { color: primaryColor }]}>Tu dept.</Text>
             </View>
           )}
         </View>
         <ProgressBar
           ratio={ratio}
-          color={isMyDept ? primaryColor : (medal ? medal.bg : '#cbd5e1')}
+          color={isMyDept ? primaryColor : (medal?.bg ?? '#cbd5e1')}
         />
-        <Text style={s.deptMeta}>
+        <Text style={s.metaText}>
           {dept.agents} agente{dept.agents !== 1 ? 's' : ''}
           {dept.today > 0 ? `  ·  +${dept.today} hoy` : ''}
         </Text>
@@ -389,48 +295,76 @@ const DeptRow = memo(function DeptRow({
   );
 });
 
-// ─── Departments Section ────────────────────────────────────────
+// ─── Collapsible Accordion Card ─────────────────────────────────
 
-const DepartmentsSection = memo(function DepartmentsSection({
-  departments,
-  myDept,
+const AccordionCard = memo(function AccordionCard({
+  icon,
+  title,
+  subtitle,
+  summaryText,
   primaryColor,
+  children,
+  defaultExpanded = false,
+  delay = 200,
 }: {
-  departments: DeptSummary[];
-  myDept: string | null;
+  icon: keyof typeof MaterialIcons.glyphMap;
+  title: string;
+  subtitle: string;
+  summaryText: string;
   primaryColor: string;
+  children: React.ReactNode;
+  defaultExpanded?: boolean;
+  delay?: number;
 }) {
-  if (departments.length === 0) return null;
+  const [expanded, setExpanded] = useState(defaultExpanded);
 
-  const maxTotal = departments[0]?.total ?? 1;
+  const toggle = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setExpanded((prev) => !prev);
+  }, []);
 
   return (
     <Animated.View
-      entering={FadeInDown.duration(400).delay(300)}
+      entering={FadeInDown.duration(400).delay(delay)}
+      layout={LinearTransition.springify().damping(20).stiffness(200)}
       style={s.card}
     >
-      <View style={s.sectionHeader}>
-        <MaterialIcons name="map" size={18} color={primaryColor} />
-        <View style={s.sectionHeaderText}>
-          <Text style={[s.sectionTitle, { color: primaryColor }]}>
-            Ranking por departamento
-          </Text>
-          <Text style={s.sectionSubtitle}>
-            Total de registros unicos por region
+      {/* Tappable header */}
+      <Pressable
+        onPress={toggle}
+        style={s.accordionHeader}
+        android_ripple={{ color: `${primaryColor}15` }}
+        accessibilityRole="button"
+        accessibilityLabel={`${title}. ${summaryText}. ${expanded ? 'Toca para colapsar' : 'Toca para expandir'}`}
+        accessibilityState={{ expanded }}
+      >
+        <View style={[s.accordionIconWrap, { backgroundColor: `${primaryColor}12` }]}>
+          <MaterialIcons name={icon} size={20} color={primaryColor} />
+        </View>
+        <View style={s.accordionText}>
+          <Text style={[s.accordionTitle, { color: primaryColor }]}>{title}</Text>
+          <Text style={s.accordionSubtitle} numberOfLines={1}>{subtitle}</Text>
+          {/* Summary line visible always */}
+          <Text style={[s.accordionSummary, { color: primaryColor }]} numberOfLines={1}>
+            {summaryText}
           </Text>
         </View>
-      </View>
-
-      {departments.map((dept, idx) => (
-        <DeptRow
-          key={dept.departamento}
-          dept={dept}
-          idx={idx}
-          maxTotal={maxTotal}
-          primaryColor={primaryColor}
-          isMyDept={dept.departamento.toUpperCase() === myDept}
+        <MaterialIcons
+          name={expanded ? 'expand-less' : 'expand-more'}
+          size={24}
+          color="#94a3b8"
         />
-      ))}
+      </Pressable>
+
+      {/* Expanded content */}
+      {expanded && (
+        <Animated.View
+          entering={FadeIn.duration(250)}
+          exiting={FadeOut.duration(150)}
+        >
+          {children}
+        </Animated.View>
+      )}
     </Animated.View>
   );
 });
@@ -500,30 +434,107 @@ export default function RankingScreen() {
 
   const myDept = agentRanking?.departamento?.toUpperCase() ?? null;
 
-  // Use a single-item FlatList to get pull-to-refresh on all content
+  // Derive hero KPI from available data
+  const heroKPIs = useMemo(() => {
+    // Active agents today: agents in my dept ranking who have today > 0
+    const agentsActiveToday = agentRanking?.ranking?.filter((a) => a.today > 0).length ?? 0;
+    // Registros hoy: sum of today from ALL departments
+    const registrosHoy = departments.reduce((sum, d) => sum + d.today, 0);
+    return { agentsActiveToday, registrosHoy };
+  }, [agentRanking, departments]);
+
+  // Agent ranking summary text
+  const agentSummary = useMemo(() => {
+    if (!agentRanking || !agentRanking.departamento) return '';
+    if (agentRanking.ranking.length === 0) return 'Sin registros aun';
+    const top = agentRanking.ranking[0];
+    const myPos = agentRanking.my_position;
+    if (myPos > 0) {
+      return `Tu posicion: #${myPos} de ${agentRanking.total_agents}  ·  ${agentRanking.my_count} registros`;
+    }
+    return `${agentRanking.total_agents} agentes  ·  Lider: ${top.name.split(' ')[0]} (${top.count})`;
+  }, [agentRanking]);
+
+  // Department summary text
+  const deptSummary = useMemo(() => {
+    if (departments.length === 0) return 'Sin datos';
+    const totalRegs = departments.reduce((sum, d) => sum + d.total, 0);
+    return `${departments.length} departamentos  ·  ${totalRegs} registros totales`;
+  }, [departments]);
+
+  // Agent ranking content
+  const agentMaxCount = agentRanking?.ranking?.[0]?.count ?? 1;
+
+  // Dept ranking content
+  const deptMaxTotal = departments[0]?.total ?? 1;
+
+  // Render all content
   const renderContent = useCallback(() => (
     <>
-      {/* Hero card */}
-      <HeroCard ranking={agentRanking} primaryColor={primary} />
+      {/* Hero KPI card */}
+      {agentRanking?.departamento ? (
+        <HeroKPI
+          agentsActiveToday={heroKPIs.agentsActiveToday}
+          registrosHoy={heroKPIs.registrosHoy}
+          departamento={agentRanking.departamento}
+          primaryColor={primary}
+        />
+      ) : (
+        <HeroEmpty />
+      )}
 
-      {/* Agent ranking */}
-      <AgentRankingSection
-        ranking={agentRanking}
-        myUserId={agent.id}
-        primaryColor={primary}
-      />
+      {/* Agent ranking — collapsible */}
+      {agentRanking?.departamento && agentRanking.ranking.length > 0 && (
+        <AccordionCard
+          icon="group"
+          title={`Agentes — ${agentRanking.departamento}`}
+          subtitle="Clasificacion por registros unicos (telefono)"
+          summaryText={agentSummary}
+          primaryColor={primary}
+          defaultExpanded={false}
+          delay={200}
+        >
+          {agentRanking.ranking.map((ag, idx) => (
+            <AgentRow
+              key={ag.id}
+              agent={ag}
+              idx={idx}
+              isMe={ag.id === agent.id}
+              maxCount={agentMaxCount}
+              primaryColor={primary}
+            />
+          ))}
+        </AccordionCard>
+      )}
 
-      {/* Departments */}
-      <DepartmentsSection
-        departments={departments}
-        myDept={myDept}
-        primaryColor={primary}
-      />
+      {/* Departments ranking — collapsible */}
+      {departments.length > 0 && (
+        <AccordionCard
+          icon="map"
+          title="Ranking por departamento"
+          subtitle="Total de registros unicos por region"
+          summaryText={deptSummary}
+          primaryColor={primary}
+          defaultExpanded={false}
+          delay={300}
+        >
+          {departments.map((dept, idx) => (
+            <DeptRow
+              key={dept.departamento}
+              dept={dept}
+              idx={idx}
+              maxTotal={deptMaxTotal}
+              primaryColor={primary}
+              isMyDept={dept.departamento.toUpperCase() === myDept}
+            />
+          ))}
+        </AccordionCard>
+      )}
 
       {/* Bottom spacer */}
       <View style={{ height: 40 }} />
     </>
-  ), [agentRanking, agent.id, primary, departments, myDept]);
+  ), [agentRanking, heroKPIs, primary, agent.id, agentMaxCount, agentSummary, departments, deptSummary, deptMaxTotal, myDept]);
 
   if (loading) {
     return (
@@ -561,7 +572,7 @@ const s = StyleSheet.create({
     paddingTop: 8,
   },
 
-  // ── Hero card ──────────────────────────────────────────────────
+  // ── Hero KPI ───────────────────────────────────────────────────
 
   hero: {
     marginHorizontal: 16,
@@ -599,25 +610,19 @@ const s = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
-  heroPosition: {
+  heroNumber: {
     fontSize: 40,
     fontFamily: FONT,
     color: '#ffffff',
     fontVariant: ['tabular-nums'],
     lineHeight: 48,
   },
-  heroCount: {
-    fontSize: 40,
-    fontFamily: FONT,
-    color: '#ffffff',
-    fontVariant: ['tabular-nums'],
-    lineHeight: 48,
-  },
-  heroStatSubtitle: {
-    fontSize: 12,
+  heroLabel: {
+    fontSize: 11,
     fontFamily: FONT,
     color: 'rgba(255,255,255,0.7)',
-    marginTop: 2,
+    marginTop: 4,
+    textAlign: 'center',
   },
   heroDivider: {
     width: 1,
@@ -678,36 +683,47 @@ const s = StyleSheet.create({
     elevation: 1,
   },
 
-  // ── Section header ─────────────────────────────────────────────
+  // ── Accordion header ───────────────────────────────────────────
 
-  sectionHeader: {
+  accordionHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
+    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
+    paddingVertical: 14,
+    gap: 12,
+    minHeight: 72,
   },
-  sectionHeaderText: {
+  accordionIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accordionText: {
     flex: 1,
   },
-  sectionTitle: {
+  accordionTitle: {
     fontSize: 13,
     fontFamily: FONT,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  sectionSubtitle: {
+  accordionSubtitle: {
     fontSize: 11,
     fontFamily: FONT,
     color: '#94a3b8',
-    marginTop: 2,
-    lineHeight: 16,
+    marginTop: 1,
+  },
+  accordionSummary: {
+    fontSize: 12,
+    fontFamily: FONT,
+    marginTop: 4,
   },
 
-  // ── Agent row ──────────────────────────────────────────────────
+  // ── Shared row ─────────────────────────────────────────────────
 
-  agentRow: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
@@ -728,22 +744,22 @@ const s = StyleSheet.create({
     fontSize: 12,
     fontFamily: FONT,
   },
-  agentContent: {
+  rowContent: {
     flex: 1,
     gap: 4,
   },
-  agentNameRow: {
+  nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  agentName: {
+  nameText: {
     fontSize: 14,
     fontFamily: FONT,
     color: '#1e293b',
     flexShrink: 1,
   },
-  youBadge: {
+  tagBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
@@ -751,7 +767,7 @@ const s = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
   },
-  youBadgeText: {
+  tagText: {
     fontSize: 9,
     fontFamily: FONT,
     textTransform: 'uppercase',
@@ -768,7 +784,7 @@ const s = StyleSheet.create({
     fontFamily: FONT,
     color: '#16a34a',
   },
-  agentCount: {
+  countText: {
     fontSize: 16,
     fontFamily: FONT,
     color: '#334155',
@@ -777,34 +793,7 @@ const s = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     marginLeft: 10,
   },
-
-  // ── Department row ─────────────────────────────────────────────
-
-  deptRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#f1f5f9',
-    minHeight: 56,
-  },
-  deptContent: {
-    flex: 1,
-    gap: 4,
-  },
-  deptNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  deptName: {
-    fontSize: 14,
-    fontFamily: FONT,
-    color: '#1e293b',
-    flexShrink: 1,
-  },
-  deptMeta: {
+  metaText: {
     fontSize: 11,
     fontFamily: FONT,
     color: '#94a3b8',
