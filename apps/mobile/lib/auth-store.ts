@@ -19,6 +19,7 @@ const KEYS = {
   CAMPAIGNS_JSON: 'goberna_campaigns',
   DEVICE_UUID: 'goberna_device_uuid',
   ACTIVE_CAMPAIGN_ID: 'goberna_active_campaign_id',
+  FORM_CONFIG_JSON: 'goberna_form_config',
 } as const;
 
 // ─── Access Token ───────────────────────────────────────────
@@ -104,6 +105,26 @@ function generateUUID(): string {
   });
 }
 
+// ─── Cached Form Config (survives network failures) ─────────
+
+export async function getStoredFormConfig(): Promise<unknown | null> {
+  const json = await SecureStore.getItemAsync(KEYS.FORM_CONFIG_JSON);
+  if (!json) return null;
+  try {
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+export async function setStoredFormConfig(formDef: unknown): Promise<void> {
+  if (!formDef) {
+    await SecureStore.deleteItemAsync(KEYS.FORM_CONFIG_JSON);
+    return;
+  }
+  await SecureStore.setItemAsync(KEYS.FORM_CONFIG_JSON, JSON.stringify(formDef));
+}
+
 // ─── Save all auth data at once (after login) ──────────────
 
 export async function saveAuthData(data: {
@@ -138,6 +159,7 @@ export async function clearAuthData(): Promise<void> {
     SecureStore.deleteItemAsync(KEYS.USER_JSON),
     SecureStore.deleteItemAsync(KEYS.CAMPAIGNS_JSON),
     SecureStore.deleteItemAsync(KEYS.ACTIVE_CAMPAIGN_ID),
+    SecureStore.deleteItemAsync(KEYS.FORM_CONFIG_JSON),
     // Note: DEVICE_UUID is NOT cleared on logout (it's per-install, not per-session)
   ]);
 }

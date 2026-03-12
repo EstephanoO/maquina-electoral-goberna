@@ -25,6 +25,7 @@ import type {
   AppConfig,
   AuthUser,
   CampaignMembership,
+  FormDefinition,
   LoginRequest,
   RegisterRequest,
   ApiResult,
@@ -92,10 +93,21 @@ async function buildAppConfig(
   // Extract campaign config for colors
   const campaignConfig = campaignResult.ok ? campaignResult.data.campaign : null;
 
-  // Get first active form definition
-  const formDef = formDefsResult.ok
-    ? formDefsResult.data.form_definitions[0] ?? null
-    : null;
+  // Get first active form definition — with cache fallback for intermittent connectivity
+  let formDef: FormDefinition | null = null;
+  if (formDefsResult.ok) {
+    formDef = formDefsResult.data.form_definitions[0] ?? null;
+    // Cache successful fetch for offline fallback
+    if (formDef) {
+      authStore.setStoredFormConfig(formDef).catch(() => {});
+    }
+  } else {
+    // Network failed — try cached form config
+    const cached = await authStore.getStoredFormConfig();
+    if (cached && typeof cached === 'object' && 'id' in (cached as Record<string, unknown>)) {
+      formDef = cached as FormDefinition;
+    }
+  }
 
   // Build composed config
   const config: AppConfig = {
