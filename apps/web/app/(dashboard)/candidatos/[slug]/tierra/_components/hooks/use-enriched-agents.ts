@@ -150,6 +150,7 @@ export function useEnrichedAgents(
             nombre: f.nombre, telefono: f.telefono ?? "",
             encuestador: f.encuestador ?? "", created_at: f.created_at,
             agent_id: f.agent_id || f.encuestador_id,
+            departamento: f.departamento || undefined,
           };
         })
         .filter((p): p is NonNullable<typeof p> => p !== null),

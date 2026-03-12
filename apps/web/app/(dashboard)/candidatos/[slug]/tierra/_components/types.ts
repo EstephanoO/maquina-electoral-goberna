@@ -27,6 +27,7 @@ export type FormPoint = {
   encuestador: string;
   created_at: string;
   agent_id?: string;
+  departamento?: string;
 };
 
 export type DatosVizMode = "points" | "heatmap" | "bars3d";

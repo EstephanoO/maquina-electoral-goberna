@@ -108,7 +108,7 @@ function extract(layerId: string, props: Record<string, unknown>): ZoneInfo | nu
 
 // ─── HTML builder — minimal ───────────────────────────────────────────────────
 
-function buildHTML(zone: ZoneInfo, totalForms: number): string {
+function buildHTML(zone: ZoneInfo, totalForms: number, depCounts: Map<string, number>): string {
   const dep = zone.depName ? getDep(zone.depName) : null;
 
   // Level label
@@ -120,11 +120,14 @@ function buildHTML(zone: ZoneInfo, totalForms: number): string {
 
   // For dep level: show progress toward goal
   if (dep && zone.level === "dep") {
-    const TOTAL_NAC = DEP_INDEX.size > 0
-      ? DEP_DATA.reduce((s, d) => s + d.datos_necesita, 0)
-      : 1;
-    const peso = dep.datos_necesita / TOTAL_NAC;
-    const captured = Math.round(totalForms * peso);
+    // Use real count from enriched departamento field when available,
+    // fall back to proportional estimate only when no enriched data exists.
+    const depKey = zone.depName!.toUpperCase().trim();
+    const realCount = depCounts.get(ALIASES[depKey] ?? depKey) ?? depCounts.get(depKey);
+    const hasRealData = depCounts.size > 0;
+    const captured = hasRealData
+      ? (realCount ?? 0)
+      : Math.round(totalForms * (dep.datos_necesita / DEP_DATA.reduce((s, d) => s + d.datos_necesita, 0)));
     const pct = dep.datos_necesita > 0
       ? Math.min(100, (captured / dep.datos_necesita) * 100)
       : 0;
@@ -198,6 +201,21 @@ export function useZoneTooltip(
 
   const totalForms = options?.forms?.length ?? 0;
 
+  // Build real count per department from enriched form data
+  const depCounts = useRef<Map<string, number>>(new Map());
+  const prevFormsLen = useRef(0);
+  if ((options?.forms?.length ?? 0) !== prevFormsLen.current) {
+    prevFormsLen.current = options?.forms?.length ?? 0;
+    const m = new Map<string, number>();
+    for (const f of options?.forms ?? []) {
+      if (f.departamento) {
+        const key = f.departamento.toUpperCase().trim();
+        m.set(key, (m.get(key) ?? 0) + 1);
+      }
+    }
+    depCounts.current = m;
+  }
+
   const flushPosition = useCallback(() => {
     const el = tooltipRef.current;
     const s = state.current;
@@ -230,7 +248,7 @@ export function useZoneTooltip(
 
     if (zone.key !== state.current.currentKey) {
       state.current.currentKey = zone.key;
-      el.innerHTML = buildHTML(zone, totalForms);
+      el.innerHTML = buildHTML(zone, totalForms, depCounts.current);
       el.style.opacity = "1";
     }
 
@@ -240,7 +258,7 @@ export function useZoneTooltip(
       state.current.rafPending = true;
       requestAnimationFrame(flushPosition);
     }
-  }, [isZoomingRef, flushPosition, totalForms]);
+  }, [isZoomingRef, flushPosition, totalForms, depCounts]);
 
   const onMouseLeave = useCallback(() => {
     const el = tooltipRef.current;
