@@ -2,7 +2,44 @@
 
 import { createContext, useContext } from "react";
 
-const MONITOR_THEME_LIGHT = {
+type MonitorThemePalette = {
+  brandBlue: string;
+  brandBlueStrong: string;
+  brandBlueSoft: string;
+  brandGold: string;
+  brandGoldSoft: string;
+  bg: string;
+  surface: string;
+  surfaceUp: string;
+  surfaceAlt: string;
+  surfaceSoft: string;
+  border: string;
+  borderStrong: string;
+  text: string;
+  textMid: string;
+  textDim: string;
+  green: string;
+  greenSoft: string;
+  orange: string;
+  orangeSoft: string;
+  red: string;
+  redSoft: string;
+  sky: string;
+  skySoft: string;
+  teal: string;
+  tealSoft: string;
+  purple: string;
+  purpleSoft: string;
+  shadow: string;
+  gold: string;
+  goldDim: string;
+  goldFaint: string;
+  goldBorder: string;
+  blue: string;
+  cyan: string;
+};
+
+const MONITOR_THEME_LIGHT: MonitorThemePalette = {
   brandBlue: "#163960",
   brandBlueStrong: "#102a47",
   brandBlueSoft: "#4f6f90",
@@ -37,9 +74,9 @@ const MONITOR_THEME_LIGHT = {
   goldBorder: "#f1d97a",
   blue: "#5f83aa",
   cyan: "#3d8a94",
-} as const;
+};
 
-const MONITOR_THEME_DARK = {
+const MONITOR_THEME_DARK: MonitorThemePalette = {
   brandBlue: "#8fb2da",
   brandBlueStrong: "#dbe8f6",
   brandBlueSoft: "#6b8db4",
@@ -74,10 +111,10 @@ const MONITOR_THEME_DARK = {
   goldBorder: "rgba(255, 200, 0, 0.24)",
   blue: "#7aa9d8",
   cyan: "#5fb7b1",
-} as const;
+};
 
 export type MonitorThemeMode = "light" | "dark";
-export type MonitorTheme = typeof MONITOR_THEME_LIGHT | typeof MONITOR_THEME_DARK;
+export type MonitorTheme = MonitorThemePalette;
 export let MONITOR_THEME: MonitorTheme = MONITOR_THEME_LIGHT;
 
 export function getMonitorTheme(mode: MonitorThemeMode): MonitorTheme {
