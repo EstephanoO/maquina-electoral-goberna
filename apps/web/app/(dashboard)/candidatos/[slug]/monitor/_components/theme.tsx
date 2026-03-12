@@ -77,7 +77,7 @@ const MONITOR_THEME_DARK = {
 } as const;
 
 export type MonitorThemeMode = "light" | "dark";
-export type MonitorTheme = typeof MONITOR_THEME_LIGHT;
+export type MonitorTheme = typeof MONITOR_THEME_LIGHT | typeof MONITOR_THEME_DARK;
 export let MONITOR_THEME: MonitorTheme = MONITOR_THEME_LIGHT;
 
 export function getMonitorTheme(mode: MonitorThemeMode): MonitorTheme {
