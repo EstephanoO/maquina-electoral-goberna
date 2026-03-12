@@ -923,10 +923,17 @@
     const cat = _catalogCategories.find((c) => c.key === catKey);
     return cat?.label || catKey;
   }
+  function _hexToRgba(hex, alpha) {
+    const h = hex.replace("#", "");
+    const r = parseInt(h.substring(0, 2), 16);
+    const g = parseInt(h.substring(2, 4), 16);
+    const b = parseInt(h.substring(4, 6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
   function _getCatColors(catKey) {
     const cat = _catalogCategories.find((c) => c.key === catKey);
     const accent = cat?.color || _DEFAULT_ACCENT;
-    return { bg: `${accent}18`, accent };
+    return { bg: _hexToRgba(accent, 0.15), accent };
   }
   function _getCatIcon(catKey) {
     const cat = _catalogCategories.find((c) => c.key === catKey);
@@ -1253,7 +1260,7 @@
           justifyContent: "center",
           color: colors.accent,
           marginBottom: "5px",
-          boxShadow: `0 2px 8px ${colors.accent}28`
+          boxShadow: `0 2px 8px ${_hexToRgba(colors.accent, 0.16)}`
         });
         iconWrap.innerHTML = catSvg;
         iconWrap.querySelector("svg").setAttribute("width", "20");
@@ -1331,7 +1338,7 @@
         width: "26px",
         height: "26px",
         borderRadius: "50%",
-        background: `${colors.accent}22`,
+        background: _hexToRgba(colors.accent, 0.13),
         border: "none",
         color: colors.accent,
         cursor: "pointer",
@@ -1466,7 +1473,7 @@
           });
           const _eAccent = colors.accent;
           editBtn.addEventListener("mouseenter", () => {
-            editBtn.style.background = `${_eAccent}22`;
+            editBtn.style.background = _hexToRgba(_eAccent, 0.13);
             editBtn.style.color = _eAccent;
           });
           editBtn.addEventListener("mouseleave", () => {
@@ -1620,6 +1627,7 @@
     body.appendChild(descInput);
     body.appendChild(_mkDetailLabel("Categor\xEDa"));
     const catSel = document.createElement("select");
+    catSel.className = "wspp-edit-area";
     Object.assign(catSel.style, {
       width: "100%",
       padding: "10px 12px",
@@ -1628,7 +1636,12 @@
       borderRadius: "12px",
       color: "#e9edef",
       fontSize: "13px",
-      cursor: "pointer"
+      cursor: "pointer",
+      fontFamily: "inherit",
+      boxSizing: "border-box",
+      outline: "none",
+      WebkitAppearance: "none",
+      appearance: "none"
     });
     CATEGORY_OPTIONS.forEach((opt) => {
       const o = document.createElement("option");
@@ -1658,6 +1671,7 @@
     body.appendChild(scriptArea);
     body.appendChild(_mkDetailLabel("Orden de aparici\xF3n"));
     const sortInput = document.createElement("input");
+    sortInput.className = "wspp-edit-area";
     sortInput.type = "number";
     sortInput.min = "0";
     sortInput.max = "999";
@@ -1750,7 +1764,7 @@
       padding: "11px",
       borderRadius: "12px",
       border: "none",
-      background: `${color}22`,
+      background: _hexToRgba(color, 0.13),
       color,
       fontSize: "13px",
       fontWeight: "700",
@@ -1761,10 +1775,10 @@
       transition: "background .15s"
     });
     btn.addEventListener("mouseenter", () => {
-      btn.style.background = `${color}33`;
+      btn.style.background = _hexToRgba(color, 0.2);
     });
     btn.addEventListener("mouseleave", () => {
-      btn.style.background = `${color}22`;
+      btn.style.background = _hexToRgba(color, 0.13);
     });
     return btn;
   }

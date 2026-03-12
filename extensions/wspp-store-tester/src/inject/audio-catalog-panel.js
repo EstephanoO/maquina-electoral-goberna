@@ -69,10 +69,18 @@ function _getCatLabel(catKey) {
   return cat?.label || catKey;
 }
 
+function _hexToRgba(hex, alpha) {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function _getCatColors(catKey) {
   const cat = _catalogCategories.find(c => c.key === catKey);
   const accent = cat?.color || _DEFAULT_ACCENT;
-  return { bg: `${accent}18`, accent };
+  return { bg: _hexToRgba(accent, 0.15), accent };
 }
 
 function _getCatIcon(catKey) {
@@ -389,7 +397,7 @@ function _renderGridView(panel) {
         width: '38px', height: '38px', borderRadius: '11px',
         background: colors.bg, display: 'flex', alignItems: 'center',
         justifyContent: 'center', color: colors.accent, marginBottom: '5px',
-        boxShadow: `0 2px 8px ${colors.accent}28`,
+        boxShadow: `0 2px 8px ${_hexToRgba(colors.accent, 0.16)}`,
       });
       iconWrap.innerHTML = catSvg;
       iconWrap.querySelector('svg').setAttribute('width','20');
@@ -458,7 +466,7 @@ function _renderCategoryView(panel) {
     addBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
     Object.assign(addBtn.style, {
       width: '26px', height: '26px', borderRadius: '50%',
-      background: `${colors.accent}22`, border: 'none',
+      background: _hexToRgba(colors.accent, 0.13), border: 'none',
       color: colors.accent, cursor: 'pointer',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     });
@@ -563,7 +571,7 @@ function _renderCategoryView(panel) {
           flexShrink: '0', transition: 'background .12s, color .12s',
         });
         const _eAccent = colors.accent; // capture for closure
-        editBtn.addEventListener('mouseenter', () => { editBtn.style.background = `${_eAccent}22`; editBtn.style.color = _eAccent; });
+        editBtn.addEventListener('mouseenter', () => { editBtn.style.background = _hexToRgba(_eAccent, 0.13); editBtn.style.color = _eAccent; });
         editBtn.addEventListener('mouseleave', () => { editBtn.style.background = 'rgba(255,255,255,.06)'; editBtn.style.color = '#8696a0'; });
         editBtn.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -701,10 +709,13 @@ function _renderCreateView(panel) {
 
   body.appendChild(_mkDetailLabel('Categoría'));
   const catSel = document.createElement('select');
+  catSel.className = 'wspp-edit-area';
   Object.assign(catSel.style, {
     width: '100%', padding: '10px 12px', background: '#2c2c2e',
     border: '1px solid rgba(255,255,255,.08)', borderRadius: '12px',
     color: '#e9edef', fontSize: '13px', cursor: 'pointer',
+    fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none',
+    WebkitAppearance: 'none', appearance: 'none',
   });
   CATEGORY_OPTIONS.forEach(opt => {
     const o = document.createElement('option');
@@ -729,6 +740,7 @@ function _renderCreateView(panel) {
   // ── Order (sort_order) ──────────────────────────────────────────────
   body.appendChild(_mkDetailLabel('Orden de aparición'));
   const sortInput = document.createElement('input');
+  sortInput.className = 'wspp-edit-area';
   sortInput.type = 'number'; sortInput.min = '0'; sortInput.max = '999'; sortInput.value = '0';
   sortInput.placeholder = '0';
   Object.assign(sortInput.style, {
@@ -805,13 +817,13 @@ function _mkActionBtn(label, color, iconSvg) {
   btn.innerHTML = `<span style="display:flex;align-items:center;gap:6px;">${iconSvg}<span>${label}</span></span>`;
   Object.assign(btn.style, {
     width: '100%', padding: '11px', borderRadius: '12px', border: 'none',
-    background: `${color}22`, color,
+    background: _hexToRgba(color, 0.13), color,
     fontSize: '13px', fontWeight: '700', cursor: 'pointer',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     transition: 'background .15s',
   });
-  btn.addEventListener('mouseenter', () => { btn.style.background = `${color}33`; });
-  btn.addEventListener('mouseleave', () => { btn.style.background = `${color}22`; });
+  btn.addEventListener('mouseenter', () => { btn.style.background = _hexToRgba(color, 0.2); });
+  btn.addEventListener('mouseleave', () => { btn.style.background = _hexToRgba(color, 0.13); });
   return btn;
 }
 
