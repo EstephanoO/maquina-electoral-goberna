@@ -152,8 +152,13 @@ const PULSE_DURATION_MS = 4_400;
  * useNewPoints — detects newly ingested forms between polls.
  *
  * Returns coordinates + color of new points so the map can overlay a
- * pulsing Marker (sonar ring × 3) on each. After ~2.4s it auto-clears
+ * pulsing Marker (sonar ring × 4) on each. After ~4.4s it auto-clears
  * and the real circle-layer point underneath is all that remains.
+ *
+ * Uses an **accumulative** seen-set that only grows — never shrinks.
+ * This prevents false positives when geo filters hide/show points:
+ * removing a filter re-exposes old points whose IDs are already in
+ * the seen-set, so they are NOT treated as new.
  *
  * Seeding logic: the hook waits until `forms` has been non-empty AND
  * changed at least once before it starts diffing. This prevents the
@@ -162,7 +167,8 @@ const PULSE_DURATION_MS = 4_400;
 export function useNewPoints(forms: FormPoint[]): NewPoint[] {
   /** 0 = waiting for first non-empty data, 1 = seeded, ready to diff */
   const phaseRef = useRef<0 | 1>(0);
-  const prevIdsRef = useRef<Set<string>>(new Set());
+  /** Accumulative: every ID we have ever seen — never shrinks */
+  const seenIdsRef = useRef<Set<string>>(new Set());
   const [newPoints, setNewPoints] = useState<NewPoint[]>([]);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -170,27 +176,26 @@ export function useNewPoints(forms: FormPoint[]): NewPoint[] {
     // Ignore empty arrays (query still loading / no data yet)
     if (forms.length === 0) return;
 
-    const currentIds = new Set(forms.map((f) => f.id));
-
     // Phase 0: first time we see real data — seed and move to phase 1.
     if (phaseRef.current === 0) {
-      prevIdsRef.current = currentIds;
+      for (const f of forms) seenIdsRef.current.add(f.id);
       phaseRef.current = 1;
       return;
     }
 
-    // Phase 1: diff against previous snapshot.
-    const prevIds = prevIdsRef.current;
+    // Phase 1: diff against everything we have ever seen.
+    const seen = seenIdsRef.current;
     const detected: NewPoint[] = [];
     for (const f of forms) {
-      if (f.lat && f.lng && !prevIds.has(f.id)) {
-        const colorKey = `${f.agent_id ?? ""}:${f.encuestador ?? ""}:${f.telefono ?? ""}`;
-        const idx = stableHash(colorKey) % NEON_COLORS.length;
-        detected.push({ id: f.id, lng: f.lng, lat: f.lat, color: NEON_COLORS[idx] });
+      if (!seen.has(f.id)) {
+        seen.add(f.id);
+        if (f.lat && f.lng) {
+          const colorKey = `${f.agent_id ?? ""}:${f.encuestador ?? ""}:${f.telefono ?? ""}`;
+          const idx = stableHash(colorKey) % NEON_COLORS.length;
+          detected.push({ id: f.id, lng: f.lng, lat: f.lat, color: NEON_COLORS[idx] });
+        }
       }
     }
-
-    prevIdsRef.current = currentIds;
 
     if (detected.length === 0) return;
 
