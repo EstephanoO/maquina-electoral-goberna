@@ -43,7 +43,7 @@ export function RegionalLeadersSection() {
     })) ?? [];
 
   const uniformFieldStyle = {
-    minHeight: 44,
+    height: 44,
   } as const;
 
   function setField<K extends keyof LeaderFormValues>(field: K, value: LeaderFormValues[K]) {
@@ -165,7 +165,7 @@ export function RegionalLeadersSection() {
                 label="Nombres"
                 placeholder="Ej. Juan Carlos"
                 value={values.nombres}
-                onChange={(e) => setField("nombres", e.target.value)}
+                onChange={(e) => setField("nombres", e.target.value.toUpperCase())}
                 error={errors.nombres}
                 autoComplete="given-name"
                 style={uniformFieldStyle}
@@ -176,7 +176,7 @@ export function RegionalLeadersSection() {
                 label="Apellidos"
                 placeholder="Ej. Perez Quispe"
                 value={values.apellidos}
-                onChange={(e) => setField("apellidos", e.target.value)}
+                onChange={(e) => setField("apellidos", e.target.value.toUpperCase())}
                 error={errors.apellidos}
                 autoComplete="family-name"
                 style={uniformFieldStyle}
