@@ -52,7 +52,7 @@ nexus6.0/
           env.ts               <- Fuente de verdad de variables de entorno
         contracts/             <- Tipos compartidos entre modulos
         infra/                 <- Infraestructura transversal (auth, redis, metrics, etc)
-        modules/               <- 22 modulos de dominio
+        modules/               <- 23 modulos de dominio
     web/                       <- Next.js Admin Dashboard (Vercel)
       AGENTS.md                <- Hereda de root
     mobile/                    <- Expo App (agentes de campo)
@@ -198,6 +198,7 @@ Todo endpoint del backend responde en este formato:
 | `POST /api/webhooks/twilio/whatsapp` | Webhook Twilio (valida firma X-Twilio-Signature) |
 | `POST /api/auth/reset-password` | Reset password con flag activo |
 | `POST /api/api/auth/reset-password` | Alias compat mobile (path duplicado) |
+| `POST /api/regional-leaders` | Registro publico de lideres regionales |
 
 ### Endpoints Autenticados (JWT Bearer o httpOnly Cookie)
 
@@ -296,6 +297,8 @@ Todo endpoint del backend responde en este formato:
 | **Voluntarios** | |
 | `GET /api/voluntarios` | Listar voluntarios de campana |
 | `POST /api/voluntarios` | Registrar voluntario |
+| **Regional Leaders** | |
+| `GET /api/regional-leaders` | Listar lideres regionales (admin) |
 | **Metrics / Ops** | |
 | `GET /api/metrics` | Metricas operativas (admin) — latencias p50/p90/p95/p99 por ruta |
 
@@ -557,7 +560,7 @@ app.post("/api/cms/contacts/:id/claim", {
 | `crypto.ts` | Cifrado AES para auth_tokens de Twilio en DB |
 | `telegram.ts` | Cliente Telegram para notificaciones de leads |
 
-### 10.4 Modulos Registrados (22 total)
+### 10.4 Modulos Registrados (23 total)
 
 | Modulo | Prefijo API | Descripcion |
 |--------|-------------|-------------|
@@ -583,6 +586,7 @@ app.post("/api/cms/contacts/:id/claim", {
 | `support` | `/api/support/*` | Tickets de soporte interno |
 | `validacion` | `/api/validacion/*` | Validacion de datos de campo |
 | `voluntarios` | `/api/voluntarios/*` | Registro de voluntarios |
+| `regional-leaders` | `/api/regional-leaders/*` | Registro de lideres regionales |
 
 **Ruta especial:** `GET /api/metrics` definida directamente en `app.ts` (no en un modulo).
 
@@ -908,7 +912,7 @@ Cualquier cambio debe cumplir:
 
 > **IMPORTANTE:** Este estado manda sobre cualquier supuesto viejo en AGENTS.md locales.
 
-1. Backend productivo activo en `apps/backend/` (22 modulos registrados en `app.ts`)
+1. Backend productivo activo en `apps/backend/` (23 modulos registrados en `app.ts`)
 2. Web productivo activo en `apps/web/` (Vercel, Next.js 16.1)
 3. Mobile en desarrollo en `apps/mobile/` (Expo SDK 54, RN 0.81)
 4. Ingesta de tracking y forms con write-behind en Redis Streams + DLQ

@@ -19,7 +19,7 @@ Ver `/CMS_DEVELOPER_GUIDE.md` para guia tecnica del modulo CMS + Twilio.
 - Sin dependencia circular entre modulos.
 - Endpoints y payloads explicitos; cero contratos implicitos.
 
-## Modulos registrados en app.ts (22 total)
+## Modulos registrados en app.ts (23 total)
 
 | Modulo | Prefijo API | Tipo |
 |--------|-------------|------|
@@ -45,6 +45,7 @@ Ver `/CMS_DEVELOPER_GUIDE.md` para guia tecnica del modulo CMS + Twilio.
 | `support` | `/api/support/*` | Soporte interno |
 | `validacion` | `/api/validacion/*` | Campo |
 | `voluntarios` | `/api/voluntarios/*` | Campo |
+| `regional-leaders` | `/api/regional-leaders/*` | Campo |
 
 **Ruta de metricas:** `GET /api/metrics` esta definido directamente en `app.ts` (no en un modulo).
 

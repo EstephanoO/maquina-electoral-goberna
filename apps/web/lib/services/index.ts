@@ -17,3 +17,4 @@ export * from "./invitations";
 export * from "./access-codes";
 export * from "./conversations";
 export * from "./voter-profiles";
+export * from "./regional-leaders";

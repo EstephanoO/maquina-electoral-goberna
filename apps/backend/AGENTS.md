@@ -41,7 +41,7 @@ CMS de contactos con SSE realtime. Integracion WhatsApp via Twilio.
 | Upstream (Tegola) | `src/infra/upstream.ts` |
 | DB migrations | `src/infra/database/` |
 
-### Modulos por dominio (22 modulos)
+### Modulos por dominio (23 modulos)
 ```
 src/modules/
   health/           <- /api/health, /api/ready, /api/ops/system
@@ -66,6 +66,7 @@ src/modules/
   support/          <- tickets de soporte interno + WebSocket bridge
   validacion/       <- validacion de datos de campo
   voluntarios/      <- registro de voluntarios
+  regional-leaders/ <- registro de lideres regionales
 ```
 
 ---

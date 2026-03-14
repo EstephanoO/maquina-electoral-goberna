@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { peruUbigeo } from "@/lib/data/peru-ubigeo";
 import { Button, Card, SelectInput, TextInput } from "@/lib/ui";
 import { FONT_STACK } from "@/lib/constants";
+import { createRegionalLeader } from "@/lib/services";
 import {
   INITIAL_VALUES,
   onlyDigits,
@@ -16,6 +17,8 @@ export function RegionalLeadersSection() {
   const [values, setValues] = useState<LeaderFormValues>(INITIAL_VALUES);
   const [errors, setErrors] = useState<LeaderFormErrors>({});
   const [submitted, setSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const selectedDepartamento = peruUbigeo.find(
     (dep) => dep.departamento === values.departamento,
@@ -50,6 +53,7 @@ export function RegionalLeadersSection() {
     setValues((prev) => ({ ...prev, [field]: value }));
     setErrors((prev) => ({ ...prev, [field]: undefined }));
     setSubmitted(false);
+    setSubmitError("");
   }
 
   function handleDepartamentoChange(departamento: string) {
@@ -66,6 +70,7 @@ export function RegionalLeadersSection() {
       distrito: undefined,
     }));
     setSubmitted(false);
+    setSubmitError("");
   }
 
   function handleProvinciaChange(provincia: string) {
@@ -80,20 +85,50 @@ export function RegionalLeadersSection() {
       distrito: undefined,
     }));
     setSubmitted(false);
+    setSubmitError("");
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const validationErrors = validateForm(values);
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       setSubmitted(false);
+      setSubmitError("");
       return;
     }
 
-    setErrors({});
-    setSubmitted(true);
+    setSubmitting(true);
+    setSubmitError("");
+
+    try {
+      const response = await createRegionalLeader({
+        nombres: values.nombres.trim(),
+        apellidos: values.apellidos.trim(),
+        departamento: values.departamento,
+        provincia: values.provincia,
+        distrito: values.distrito,
+        dni: values.dni,
+        celular: values.celular,
+        direccion_domicilio: values.direccion_domicilio.trim(),
+      });
+
+      if (!response.ok) {
+        setSubmitError(response.error?.message ?? "No se pudo enviar el registro. Intenta de nuevo.");
+        setSubmitted(false);
+        return;
+      }
+
+      setErrors({});
+      setValues(INITIAL_VALUES);
+      setSubmitted(true);
+    } catch {
+      setSubmitError("Error de red. Intenta nuevamente.");
+      setSubmitted(false);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -129,7 +164,7 @@ export function RegionalLeadersSection() {
               lineHeight: 1.2,
             }}
           >
-            Registro de <span style={{ color: "var(--goberna-blue-700)" }}>líderes regionales</span>
+            Formulario <span style={{ color: "var(--goberna-blue-700)" }}>Líderes Territoriales</span>
           </h2>
           <p
             style={{
@@ -266,10 +301,26 @@ export function RegionalLeadersSection() {
                 type="submit"
                 variant="accent"
                 size="lg"
+                disabled={submitting}
                 style={{ width: "min(340px, 100%)" }}
               >
-                Enviar registro
+                {submitting ? "Enviando..." : "Enviar registro"}
               </Button>
+
+              {submitError ? (
+                <p
+                  role="alert"
+                  style={{
+                    margin: 0,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "var(--color-error)",
+                    textAlign: "center",
+                  }}
+                >
+                  {submitError}
+                </p>
+              ) : null}
 
               {submitted && (
                 <p
@@ -282,7 +333,7 @@ export function RegionalLeadersSection() {
                     textAlign: "center",
                   }}
                 >
-                  Registro validado correctamente.
+                  Registro enviado correctamente.
                 </p>
               )}
             </div>
