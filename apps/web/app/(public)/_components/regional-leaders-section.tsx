@@ -42,6 +42,10 @@ export function RegionalLeadersSection() {
       label: dist,
     })) ?? [];
 
+  const uniformFieldStyle = {
+    minHeight: 44,
+  } as const;
+
   function setField<K extends keyof LeaderFormValues>(field: K, value: LeaderFormValues[K]) {
     setValues((prev) => ({ ...prev, [field]: value }));
     setErrors((prev) => ({ ...prev, [field]: undefined }));
@@ -142,7 +146,7 @@ export function RegionalLeadersSection() {
         <Card
           padding="lg"
           style={{
-            maxWidth: 900,
+            maxWidth: 1080,
             margin: "0 auto",
             border: "1px solid var(--goberna-blue-100)",
             boxShadow: "var(--shadow-md)",
@@ -152,7 +156,7 @@ export function RegionalLeadersSection() {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
                 gap: 16,
               }}
             >
@@ -164,6 +168,7 @@ export function RegionalLeadersSection() {
                 onChange={(e) => setField("nombres", e.target.value)}
                 error={errors.nombres}
                 autoComplete="given-name"
+                style={uniformFieldStyle}
               />
 
               <TextInput
@@ -174,6 +179,7 @@ export function RegionalLeadersSection() {
                 onChange={(e) => setField("apellidos", e.target.value)}
                 error={errors.apellidos}
                 autoComplete="family-name"
+                style={uniformFieldStyle}
               />
 
               <SelectInput
@@ -184,6 +190,7 @@ export function RegionalLeadersSection() {
                 options={departamentoOptions}
                 placeholder="Selecciona un departamento"
                 error={errors.departamento}
+                style={uniformFieldStyle}
               />
 
               <SelectInput
@@ -195,6 +202,7 @@ export function RegionalLeadersSection() {
                 placeholder="Selecciona una provincia"
                 error={errors.provincia}
                 disabled={!values.departamento}
+                style={uniformFieldStyle}
               />
 
               <SelectInput
@@ -206,6 +214,7 @@ export function RegionalLeadersSection() {
                 placeholder="Selecciona un distrito"
                 error={errors.distrito}
                 disabled={!values.provincia}
+                style={uniformFieldStyle}
               />
 
               <TextInput
@@ -217,6 +226,7 @@ export function RegionalLeadersSection() {
                 error={errors.dni}
                 inputMode="numeric"
                 maxLength={8}
+                style={uniformFieldStyle}
               />
 
               <TextInput
@@ -228,6 +238,7 @@ export function RegionalLeadersSection() {
                 error={errors.celular}
                 inputMode="numeric"
                 maxLength={9}
+                style={uniformFieldStyle}
               />
 
               <TextInput
@@ -238,6 +249,7 @@ export function RegionalLeadersSection() {
                 onChange={(e) => setField("direccion_domicilio", e.target.value)}
                 error={errors.direccion_domicilio}
                 autoComplete="street-address"
+                style={uniformFieldStyle}
               />
             </div>
 
@@ -247,9 +259,15 @@ export function RegionalLeadersSection() {
                 display: "flex",
                 flexDirection: "column",
                 gap: 12,
+                alignItems: "center",
               }}
             >
-              <Button type="submit" variant="accent" size="lg" fullWidth>
+              <Button
+                type="submit"
+                variant="accent"
+                size="lg"
+                style={{ width: "min(340px, 100%)" }}
+              >
                 Enviar registro
               </Button>
 
