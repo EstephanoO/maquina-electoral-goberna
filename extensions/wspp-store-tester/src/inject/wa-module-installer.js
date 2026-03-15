@@ -223,11 +223,16 @@ const WA_REQUIRED_MODULES = [
   'WAWebContactCollection',
 ];
 const WA_OPTIONAL_MODULES = [
-  'WAWebMediaOpaqueData',      // PTT: media opaque data wrapper
-  'WAWebPrepRawMedia',         // PTT: prepRawMedia({ isPtt: true }) pipeline
-  'WAWebSendMsgChatAction',    // PTT: addAndSendMsgToChat
-  'WAWebWidFactory',           // @lid resolution + chat lookup
-  'WAWebFindChatAction',       // PTT: fallback chat resolver
+  // PTT pipeline — each has fallback alternatives checked at runtime
+  'WAWebMediaOpaqueData',           // or WAWebMediaOpaqueDataUtils
+  'WAWebPrepRawMedia',              // or WAWebPrepareMediaUtils
+  'WAWebSendMsgChatAction',         // PTT: addAndSendMsgToChat
+  'WAWebWidFactory',                // @lid resolution + chat lookup
+  'WAWebFindChatAction',            // PTT: fallback chat resolver
+  'WAWebMediaMmsV4Upload',          // or WAWebMediaUploadUtils / WAWebUploadManager
+  'WAWebMediaStorage',              // or WAWebMediaStorageUtils
+  'WAWebMmsMediaTypes',             // or WAWebMediaTypes
+  'WAWebGetEphemeralFieldsMsgActionsUtils', // optional: disappearing msgs
 ];
 
 function runModuleHealthCheck() {
