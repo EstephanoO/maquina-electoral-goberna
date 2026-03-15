@@ -8,13 +8,13 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "JPVK6a0xrV-FYVFWRgn_1ruofUhPcxkY5proTSBEmULYrActHJaU_8a99p2pf8Bq"
+        "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "254c108f56727599de6fd11e3d3e46d899a8b605bf6cfedd"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "JPVK6a0xrV-FYVFWRgn_1ruofUhPcxkY5proTSBEmULYrActHJaU_8a99p2pf8Bq"
+        "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "254c108f56727599de6fd11e3d3e46d899a8b605bf6cfedd"
       }
     },
     "ios-ipa": {
@@ -24,7 +24,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "JPVK6a0xrV-FYVFWRgn_1ruofUhPcxkY5proTSBEmULYrActHJaU_8a99p2pf8Bq"
+        "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "254c108f56727599de6fd11e3d3e46d899a8b605bf6cfedd"
       },
       "ios": {},
       "android": {
@@ -34,7 +34,7 @@
     "production2": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "JPVK6a0xrV-FYVFWRgn_1ruofUhPcxkY5proTSBEmULYrActHJaU_8a99p2pf8Bq"
+        "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "254c108f56727599de6fd11e3d3e46d899a8b605bf6cfedd"
       },
       "ios": {},
       "android": {
