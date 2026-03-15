@@ -18,6 +18,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import * as Network from 'expo-network';
 
 import * as api from './api';
 import * as authStore from './auth-store';
@@ -162,7 +163,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Active user — try to fetch fresh data from /auth/me first
+      // Active user — check connectivity before firing network requests
+      let isOnline = false;
+      try {
+        const netState = await Network.getNetworkStateAsync();
+        isOnline = netState.isConnected === true && netState.isInternetReachable === true;
+      } catch {
+        isOnline = false;
+      }
+
+      if (!isOnline) {
+        // Device is offline — use stale stored data immediately without waiting 30s for timeouts
+        if (campaigns.length > 0) {
+          const config = await buildAppConfig(user, campaigns);
+          if (config) {
+            setAuth({ status: 'active', user, campaigns, config });
+            return;
+          }
+        }
+        setAuth({ status: 'unauthenticated' });
+        return;
+      }
+
+      // Online — try to fetch fresh data from /auth/me
       const meResult = await api.getMe();
       if (meResult.ok) {
         const freshUser = meResult.data.user;
@@ -192,7 +215,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await authStore.clearAuthData();
         setAuth({ status: 'unauthenticated' });
       } else {
-        // Network error — try with stale stored data
+        // Unexpected network error while online — fall back to stale data
         if (campaigns.length > 0) {
           const config = await buildAppConfig(user, campaigns);
           if (config) {
@@ -200,7 +223,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             return;
           }
         }
-        // Can't build config offline, go to unauthenticated
         setAuth({ status: 'unauthenticated' });
       }
     })();
@@ -257,6 +279,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Logout ────────────────────────────────────────────────
   const logout = useCallback(async () => {
+    // Best-effort: revoke refresh tokens on server (fire-and-forget with 5s cap)
+    // Don't await — always clear local data regardless of network state
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5_000);
+    api.logout(controller.signal).finally(() => clearTimeout(timeoutId)).catch(() => {});
+
     await authStore.clearAuthData();
     setAuth({ status: 'unauthenticated' });
   }, []);
@@ -267,6 +295,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Re-fetch /auth/me + rebuild config
     const meResult = await api.getMe();
+    if (!meResult.ok) {
+      if (meResult.status === 401 || meResult.code === 'AUTH_TOKEN_EXPIRED') {
+        await authStore.clearAuthData();
+        setAuth({ status: 'unauthenticated' });
+      }
+      return;
+    }
     if (meResult.ok) {
       const freshUser = meResult.data.user;
       const freshCampaigns = meResult.data.campaigns;
@@ -289,7 +324,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (auth.status !== 'pending') return;
 
     const meResult = await api.getMe();
-    if (!meResult.ok) return;
+    if (!meResult.ok) {
+      // Token invalid or expired (e.g. JWT_SECRET rotated) — force re-login
+      if (meResult.status === 401 || meResult.code === 'AUTH_TOKEN_EXPIRED') {
+        await authStore.clearAuthData();
+        setAuth({ status: 'unauthenticated' });
+      }
+      return;
+    }
 
     const freshUser = meResult.data.user;
     const freshCampaigns = meResult.data.campaigns;
