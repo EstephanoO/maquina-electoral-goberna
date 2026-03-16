@@ -13,29 +13,36 @@
 import { pool } from "../../db";
 
 // ── Ensure tables ─────────────────────────────────────────────────────
+// blast_log may already exist with a legacy schema (columns: jid, phone, own_number).
+// We ADD the new columns we need (IF NOT EXISTS) and create new indexes safely.
 export async function ensureBlastTables(): Promise<void> {
-  // Log de mensajes enviados por el blast
+  // blast_log: create if missing, or migrate existing legacy table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS blast_log (
       id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
       campaign_id   uuid        NOT NULL REFERENCES campaigns(id),
-      wa_number     text        NOT NULL,   -- número del celular que envió (ej: 51901938157)
-      contact_phone text        NOT NULL,   -- número del destinatario
+      contact_phone text        NOT NULL DEFAULT '',
       contact_name  text,
-      contact_id    uuid,                   -- FK a form_submissions.id si aplica
       message_text  text,
-      status        text        NOT NULL DEFAULT 'sent',  -- sent | failed | bounced
+      status        text        NOT NULL DEFAULT 'sent',
       error_msg     text,
       sent_at       timestamptz NOT NULL DEFAULT now(),
       created_at    timestamptz NOT NULL DEFAULT now()
     )
   `);
 
-  // Índices para queries rápidas de progreso por número
+  // Add wa_number column if it doesn't exist yet (legacy table had 'own_number')
+  await pool.query(`
+    ALTER TABLE blast_log
+      ADD COLUMN IF NOT EXISTS wa_number text NOT NULL DEFAULT ''
+  `);
+
+  // Indexes — only on columns that are guaranteed to exist
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_blast_log_campaign_number
     ON blast_log(campaign_id, wa_number, sent_at DESC)
   `);
+  // Note: partial unique index on status='sent' — safe because status has a DEFAULT
   await pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_blast_log_unique_send
     ON blast_log(campaign_id, wa_number, contact_phone)
@@ -48,11 +55,11 @@ export async function ensureBlastTables(): Promise<void> {
       id          uuid  PRIMARY KEY DEFAULT gen_random_uuid(),
       campaign_id uuid  NOT NULL REFERENCES campaigns(id),
       wa_number   text  NOT NULL,
-      label       text,                     -- ej: 'Celular 1 — Lima Norte'
-      segment_idx int   NOT NULL DEFAULT 0, -- 0-5 para 6 celulares
-      total_slots int   NOT NULL DEFAULT 6, -- cuántos celulares en total
+      label       text,
+      segment_idx int   NOT NULL DEFAULT 0,
+      total_slots int   NOT NULL DEFAULT 6,
       active      bool  NOT NULL DEFAULT true,
-      warmup_day  int   NOT NULL DEFAULT 1, -- día de warmup (1-14)
+      warmup_day  int   NOT NULL DEFAULT 1,
       created_at  timestamptz NOT NULL DEFAULT now(),
       UNIQUE(campaign_id, wa_number)
     )
