@@ -11,7 +11,7 @@
 
 import { Image } from 'expo-image';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Modal, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Linking, Modal, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -20,6 +20,24 @@ import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 
 import { useCandidate, useAgent, useApp, useActiveCampaign } from '@/lib/app-context';
+
+// ── WA Contact Helper ────────────────────────────────────────────────
+function buildValidationWaLink(
+  telefono: string,
+  agentName: string,
+  candidateName: string,
+  waTarget: string
+): string {
+  const firstName  = agentName.split(' ')[0] ?? agentName;
+  const rawPhone   = telefono.replace(/\D/g, '');
+  const contactNum = rawPhone.length === 9 ? '51' + rawPhone : rawPhone;
+  // Opens WA chat with the contact's number with a pre-loaded message
+  const msg = encodeURIComponent(
+    `Hola, soy ${firstName} de la campaña de ${candidateName}. ` +
+    `Por favor comunícate al número de campaña: ${waTarget} para más información. ¡Gracias!`
+  );
+  return `https://wa.me/${contactNum}?text=${msg}`;
+}
 import { useAgentTracking } from '@/hooks/useAgentTracking';
 import { getQueueStats, getLocalFormsByCampaign, getSyncedClientIds, markFormsAsGhost, deleteLocalForm, type PendingForm } from '@/lib/offline-queue';
 import { getMySubmissionStats, getMyClientIds } from '@/lib/api';
@@ -28,8 +46,12 @@ import type { CampaignMembership } from '@/lib/types';
 
 const FONT = 'Montserrat-Bold';
 
-// Base URL for candidate photos (served from Vercel web app)
-const PHOTO_BASE_URL = 'https://maquina-electoral-goberna-web.vercel.app';
+// Base URL para fotos de candidatos. Se lee del mismo config que la API.
+// Así si el proyecto Vercel cambia de nombre solo hay que actualizar app.json.
+import Constants from 'expo-constants';
+const _apiBase: string = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_API_URL ?? 'https://api.goberna.us/api';
+// La URL de fotos es el origen del API sin el path /api
+const PHOTO_BASE_URL = _apiBase.replace(/\/api$/, '');
 
 // ─── Memoized Header Component ─────────────────────────────────
 
@@ -252,7 +274,7 @@ const STATUS_MAP: Record<FormStatus, StatusConfig> = {
     fgColor: '#16a34a',
     badgeBg: '#dcfce7',
     iconBg: '#f0fdf4',
-    tappable: false,
+    tappable: true,   // tappable to open WA contact action
     canEdit: false,
     canDelete: false,
   },
@@ -326,6 +348,9 @@ interface ActionSheetProps {
   onEdit: (form: PendingForm) => void;
   onDelete: (form: PendingForm) => void;
   primaryColor: string;
+  agentName: string;
+  candidateName: string;
+  waTarget: string;
 }
 
 const FormActionSheet = memo(function FormActionSheet({
@@ -334,18 +359,28 @@ const FormActionSheet = memo(function FormActionSheet({
   onEdit,
   onDelete,
   primaryColor,
+  agentName,
+  candidateName,
+  waTarget,
 }: ActionSheetProps) {
-  if (!form) return null;
+  // Mantener el último form en un ref para que la animación de salida
+  // pueda renderizar el contenido mientras el Modal se cierra.
+  // El guard "if (!form) return null" mataba la animación exiting.
+  const lastFormRef = useRef<PendingForm | null>(null);
+  if (form) lastFormRef.current = form;
+  const displayForm = form ?? lastFormRef.current;
 
-  const status = STATUS_MAP[form.sync_status as FormStatus] ?? STATUS_MAP.failed;
+  if (!displayForm) return null;
+
+  const status = STATUS_MAP[displayForm.sync_status as FormStatus] ?? STATUS_MAP.failed;
 
   let data: { nombre?: string; telefono?: string } = {};
-  try { data = JSON.parse(form.payload); } catch { /* ignore */ }
+  try { data = JSON.parse(displayForm.payload); } catch { /* ignore */ }
 
-  const detailMessage = form.sync_status === 'rejected'
-    ? (form.reject_reason || status.description)
-    : form.sync_status === 'failed'
-    ? (form.last_error || status.description)
+  const detailMessage = displayForm.sync_status === 'rejected'
+    ? (displayForm.reject_reason || status.description)
+    : displayForm.sync_status === 'failed'
+    ? (displayForm.last_error || status.description)
     : status.description;
 
   const handleDelete = () => {
@@ -358,19 +393,36 @@ const FormActionSheet = memo(function FormActionSheet({
         {
           text: 'Eliminar',
           style: 'destructive',
-          onPress: () => { onDelete(form); onClose(); },
+          onPress: () => { onDelete(displayForm); onClose(); },
         },
       ],
     );
   };
 
   const handleEdit = () => {
-    onEdit(form);
+    onEdit(displayForm);
+    onClose();
+  };
+
+  // ── Open WA with pre-loaded validation message ──────────────
+  const handleWriteWA = () => {
+    const tel = data.telefono ?? '';
+    if (!tel) {
+      Alert.alert('Sin teléfono', 'Este registro no tiene número de teléfono.');
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const url = buildValidationWaLink(tel, agentName, candidateName, waTarget);
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Error', 'No se pudo abrir WhatsApp. Verificá que esté instalado.');
+    });
     onClose();
   };
 
   return (
-    <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
+    // visible={!!form}: cuando form se vuelve null, Modal sigue montado brevemente
+    // para permitir que SlideOutDown se ejecute antes del unmount
+    <Modal visible={!!form} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={sheetStyles.backdrop} onPress={onClose}>
         <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)} style={sheetStyles.backdropFill} />
       </Pressable>
@@ -410,6 +462,20 @@ const FormActionSheet = memo(function FormActionSheet({
 
         {/* Actions */}
         <View style={sheetStyles.actions}>
+          {/* WA button — always available when there's a phone number */}
+          {!!data.telefono && (
+            <Pressable
+              style={[sheetStyles.actionBtn, sheetStyles.actionBtnWa]}
+              onPress={handleWriteWA}
+              android_ripple={{ color: 'rgba(37,211,102,0.15)' }}
+              accessibilityLabel="Escribir por WhatsApp"
+            >
+              <MaterialIcons name="chat" size={18} color="#16a34a" />
+              <Text style={sheetStyles.actionBtnTextWa}>
+                Escribirle por WhatsApp
+              </Text>
+            </Pressable>
+          )}
           {status.canEdit && (
             <Pressable
               style={[sheetStyles.actionBtn, { backgroundColor: primaryColor }]}
@@ -536,6 +602,9 @@ const sheetStyles = StyleSheet.create({
   actionBtnCancel: {
     backgroundColor: '#f1f5f9',
   },
+  actionBtnWa: {
+    backgroundColor: '#dcfce7',
+  },
   actionBtnTextPrimary: {
     fontSize: 15,
     fontFamily: FONT,
@@ -550,6 +619,11 @@ const sheetStyles = StyleSheet.create({
     fontSize: 15,
     fontFamily: FONT,
     color: '#64748b',
+  },
+  actionBtnTextWa: {
+    fontSize: 15,
+    fontFamily: FONT,
+    color: '#16a34a',
   },
 });
 
@@ -749,6 +823,9 @@ export default function DashboardScreen() {
   const secondary = candidate.color_secundario;
 
   const [refreshing, setRefreshing] = useState(false);
+  // initialLoading: true hasta que loadData completa la primera vez
+  // Evita mostrar el "EmptyState" falso mientras los datos están cargando
+  const [initialLoading, setInitialLoading] = useState(true);
   const [stats, setStats] = useState({ total: 0, synced: 0, pending: 0, rejected: 0 });
   const [localForms, setLocalForms] = useState<PendingForm[]>([]);
   const [showMenu, setShowMenu] = useState(false);
@@ -835,13 +912,15 @@ export default function DashboardScreen() {
 
     } catch (err) {
       console.warn('Failed to load data:', err);
+    } finally {
+      setInitialLoading(false);
     }
   }, [campaign.id]);
 
   // Reload when tab gains focus (coming back from new-form, other tabs, etc.)
   useFocusEffect(
     useCallback(() => {
-      loadData();
+      void loadData();
     }, [loadData]),
   );
 
@@ -876,7 +955,7 @@ export default function DashboardScreen() {
   const handleDeleteForm = useCallback(async (form: PendingForm) => {
     await deleteLocalForm(form.id);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    loadData();
+    await loadData();
   }, [loadData]);
 
   const renderItem = useCallback(({ item }: { item: PendingForm }) => (
@@ -911,9 +990,17 @@ export default function DashboardScreen() {
     </>
   ), [candidate, photoUrl, primary, secondary, agent.full_name, agent.role, trackingActive, stats, localForms.length]);
 
-  const renderEmpty = useCallback(() => (
-    <EmptyState primaryColor={primary} />
-  ), [primary]);
+  const renderEmpty = useCallback(() => {
+    // No mostrar "Sin registros" mientras está cargando el primer batch
+    if (initialLoading) {
+      return (
+        <View style={styles.emptyState}>
+          <ActivityIndicator color={primary} size="large" />
+        </View>
+      );
+    }
+    return <EmptyState primaryColor={primary} />;
+  }, [primary, initialLoading]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -978,6 +1065,9 @@ export default function DashboardScreen() {
         onEdit={handleEditForm}
         onDelete={handleDeleteForm}
         primaryColor={primary}
+        agentName={agent.full_name}
+        candidateName={candidate.name}
+        waTarget={(campaign as Record<string, unknown>).whatsapp_number as string ?? '51999999999'}
       />
     </SafeAreaView>
   );

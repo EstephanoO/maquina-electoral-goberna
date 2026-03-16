@@ -323,62 +323,194 @@
   // src/inject/validation-overlay.js
   var _currentOverlay = null;
   var _spamOverlay = null;
+  var _spamBlocker = null;
+  var _cooldownTimer = null;
+  var _cooldownRemain = 0;
   function showSpamWarning(data) {
     if (!data || !data.warnings || data.warnings.length === 0) return;
     removeSpamWarning();
-    const overlay = document.createElement("div");
-    overlay.id = "wspp-spam-warning";
     const isCritical = data.risk_level === "critical";
     const isHigh = data.risk_level === "high";
+    const isMedium = data.risk_level === "medium";
+    const bgColor = isCritical ? "#7f1d1d" : isHigh ? "#78350f" : "#713f12";
+    const borderColor = isCritical ? "#dc2626" : isHigh ? "#ea580c" : "#ca8a04";
+    const accentColor = isCritical ? "#fca5a5" : isHigh ? "#fed7aa" : "#fde68a";
+    const cooldownSec = data.cooldown_sec || (isCritical ? 180 : isHigh ? 90 : 30);
+    const actions = data.actions || [];
+    const isServer = data.source === "server";
+    if (isCritical) {
+      _spamBlocker = document.createElement("div");
+      _spamBlocker.id = "wspp-spam-blocker";
+      Object.assign(_spamBlocker.style, {
+        position: "fixed",
+        inset: "0",
+        zIndex: "99996",
+        background: "rgba(127,29,29,.25)",
+        backdropFilter: "blur(1px)",
+        pointerEvents: "none"
+        // doesn't block clicks — just visual warning
+      });
+      document.body.appendChild(_spamBlocker);
+      setTimeout(() => {
+        if (_spamBlocker) {
+          _spamBlocker.remove();
+          _spamBlocker = null;
+        }
+      }, cooldownSec * 1e3);
+    }
+    const overlay = document.createElement("div");
+    overlay.id = "wspp-spam-warning";
     Object.assign(overlay.style, {
       position: "fixed",
       top: "16px",
       left: "50%",
       transform: "translateX(-50%)",
       zIndex: "99999",
-      background: isCritical ? "#dc2626" : isHigh ? "#ea580c" : "#ca8a04",
+      background: bgColor,
+      border: `1px solid ${borderColor}`,
       color: "#fff",
-      padding: "12px 20px",
-      borderRadius: "12px",
-      boxShadow: "0 4px 20px rgba(0,0,0,.3)",
+      padding: "14px 18px",
+      borderRadius: "14px",
+      boxShadow: "0 8px 32px rgba(0,0,0,.5)",
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      fontSize: "13px",
-      maxWidth: "500px",
-      cursor: "pointer",
-      transition: "opacity .3s"
+      fontSize: "12px",
+      maxWidth: "480px",
+      minWidth: "300px",
+      userSelect: "none",
+      transition: "opacity .3s, transform .3s"
     });
+    const header = document.createElement("div");
+    Object.assign(header.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "10px",
+      marginBottom: "10px"
+    });
+    const icon = document.createElement("div");
+    icon.style.cssText = `font-size:22px;line-height:1;flex-shrink:0;`;
+    icon.textContent = isCritical ? "\u{1F6A8}" : isHigh ? "\u26A0\uFE0F" : "\u{1F4E2}";
+    header.appendChild(icon);
+    const titleWrap = document.createElement("div");
+    titleWrap.style.flex = "1";
     const title = document.createElement("div");
-    title.style.fontWeight = "800";
-    title.style.marginBottom = "4px";
-    title.style.fontSize = "14px";
-    title.textContent = isCritical ? "RIESGO CRITICO DE BLOQUEO" : isHigh ? "RIESGO ALTO \u2014 Reducir velocidad" : "Advertencia de spam";
-    overlay.appendChild(title);
-    for (const w of data.warnings.slice(0, 3)) {
+    title.style.cssText = `font-weight:800;font-size:14px;letter-spacing:-.3px;`;
+    title.textContent = isCritical ? "RIESGO CR\xCDTICO DE BLOQUEO" : isHigh ? "RIESGO ALTO \u2014 Reducir velocidad" : "Advertencia de spam";
+    titleWrap.appendChild(title);
+    const meta = document.createElement("div");
+    meta.style.cssText = `font-size:10px;opacity:.6;margin-top:2px;`;
+    meta.textContent = `Score ${data.risk_score}/100 \xB7 ${data.message_count} msgs \xB7 ${isServer ? "An\xE1lisis servidor" : "An\xE1lisis local"}`;
+    titleWrap.appendChild(meta);
+    header.appendChild(titleWrap);
+    const closeBtn = document.createElement("button");
+    closeBtn.style.cssText = `background:none;border:none;color:rgba(255,255,255,.4);font-size:16px;cursor:pointer;padding:0 4px;line-height:1;flex-shrink:0;`;
+    closeBtn.textContent = "\u2715";
+    if (isCritical) {
+      closeBtn.style.opacity = "0.2";
+      closeBtn.style.pointerEvents = "none";
+      setTimeout(() => {
+        closeBtn.style.opacity = "0.6";
+        closeBtn.style.pointerEvents = "auto";
+      }, 3e4);
+    }
+    closeBtn.addEventListener("click", removeSpamWarning);
+    header.appendChild(closeBtn);
+    overlay.appendChild(header);
+    for (const w of data.warnings.slice(0, 4)) {
       const line = document.createElement("div");
-      line.style.fontSize = "12px";
-      line.style.opacity = "0.9";
-      line.textContent = w;
+      line.style.cssText = `
+      display:flex;gap:6px;align-items:flex-start;
+      padding:5px 8px;margin-bottom:4px;
+      background:rgba(255,255,255,.06);border-radius:7px;
+      font-size:12px;line-height:1.4;
+    `;
+      const dot = document.createElement("span");
+      dot.style.cssText = `color:${accentColor};margin-top:1px;flex-shrink:0;font-size:11px;`;
+      dot.textContent = "\u25CF";
+      const txt = document.createElement("span");
+      txt.style.opacity = "0.85";
+      txt.textContent = w;
+      line.appendChild(dot);
+      line.appendChild(txt);
       overlay.appendChild(line);
     }
-    const score = document.createElement("div");
-    score.style.fontSize = "10px";
-    score.style.opacity = "0.7";
-    score.style.marginTop = "4px";
-    score.textContent = `Score: ${data.risk_score}/100 | ${data.message_count} msgs recientes`;
-    overlay.appendChild(score);
-    overlay.addEventListener("click", () => removeSpamWarning());
+    if (actions.length > 0) {
+      const actHeader = document.createElement("div");
+      actHeader.style.cssText = `font-size:10px;font-weight:700;color:${accentColor};text-transform:uppercase;letter-spacing:.5px;margin:8px 0 4px;`;
+      actHeader.textContent = "QU\xC9 HACER:";
+      overlay.appendChild(actHeader);
+      for (const a of actions.slice(0, 3)) {
+        const line = document.createElement("div");
+        line.style.cssText = `
+        display:flex;gap:6px;align-items:flex-start;
+        padding:4px 8px;margin-bottom:3px;
+        background:rgba(255,255,255,.04);border-radius:6px;
+        font-size:11px;line-height:1.4;color:rgba(255,255,255,.8);
+      `;
+        line.innerHTML = `<span style="color:${accentColor};flex-shrink:0;">\u2192</span> ${a}`;
+        overlay.appendChild(line);
+      }
+    }
+    if (cooldownSec > 0) {
+      const barWrap = document.createElement("div");
+      barWrap.style.cssText = `margin-top:10px;`;
+      const barLabel = document.createElement("div");
+      barLabel.style.cssText = `display:flex;justify-content:space-between;font-size:10px;color:rgba(255,255,255,.5);margin-bottom:4px;`;
+      const barText = document.createElement("span");
+      barText.id = "wspp-spam-cooldown-label";
+      barText.textContent = `Cooldown recomendado: ${cooldownSec}s`;
+      const barPct = document.createElement("span");
+      barPct.id = "wspp-spam-cooldown-pct";
+      barPct.textContent = "100%";
+      barLabel.appendChild(barText);
+      barLabel.appendChild(barPct);
+      barWrap.appendChild(barLabel);
+      const barTrack = document.createElement("div");
+      barTrack.style.cssText = `background:rgba(255,255,255,.1);border-radius:4px;height:5px;overflow:hidden;`;
+      const barFill = document.createElement("div");
+      barFill.id = "wspp-spam-cooldown-bar";
+      barFill.style.cssText = `background:${borderColor};width:100%;height:100%;border-radius:4px;transition:width .5s linear;`;
+      barTrack.appendChild(barFill);
+      barWrap.appendChild(barTrack);
+      overlay.appendChild(barWrap);
+      _cooldownRemain = cooldownSec;
+      clearInterval(_cooldownTimer);
+      _cooldownTimer = setInterval(() => {
+        _cooldownRemain = Math.max(0, _cooldownRemain - 1);
+        const pct = Math.round(_cooldownRemain / cooldownSec * 100);
+        const fillEl = document.getElementById("wspp-spam-cooldown-bar");
+        const labelEl = document.getElementById("wspp-spam-cooldown-label");
+        const pctEl = document.getElementById("wspp-spam-cooldown-pct");
+        if (fillEl) fillEl.style.width = pct + "%";
+        if (pctEl) pctEl.textContent = pct + "%";
+        if (labelEl) labelEl.textContent = _cooldownRemain > 0 ? `Cooldown: ${_cooldownRemain}s restantes` : "\u2705 Listo para reanudar";
+        if (_cooldownRemain <= 0) {
+          clearInterval(_cooldownTimer);
+          if (!isCritical) setTimeout(removeSpamWarning, 2e3);
+        }
+      }, 1e3);
+    }
     document.body.appendChild(overlay);
     _spamOverlay = overlay;
-    const dismissMs = isCritical ? 3e4 : isHigh ? 15e3 : 8e3;
-    setTimeout(() => removeSpamWarning(), dismissMs);
+    if (!isCritical) {
+      const autoDismiss = (cooldownSec + (isHigh ? cooldownSec : 0)) * 1e3;
+      setTimeout(() => removeSpamWarning(), autoDismiss);
+    }
   }
   function removeSpamWarning() {
+    clearInterval(_cooldownTimer);
+    _cooldownRemain = 0;
     if (_spamOverlay) {
       _spamOverlay.remove();
       _spamOverlay = null;
     }
+    if (_spamBlocker) {
+      _spamBlocker.remove();
+      _spamBlocker = null;
+    }
     const existing = document.getElementById("wspp-spam-warning");
     if (existing) existing.remove();
+    const blocker = document.getElementById("wspp-spam-blocker");
+    if (blocker) blocker.remove();
   }
   function showValidationOverlay(data) {
     removeValidationOverlay();
@@ -526,8 +658,7 @@
   window.addEventListener("message", (e) => {
     if (e.source !== window) return;
     if (e.data?.type === "WSPP_VALIDATION_DATA") {
-      const data = e.data.payload;
-      showValidationOverlay(data);
+      showValidationOverlay(e.data.payload);
       return;
     }
     if (e.data?.type === "WSPP_VALIDATION_CLEAR") {
@@ -1774,19 +1905,24 @@
       const mediaPrep = prepRawMedia(opaqueData, { isPtt: true, asSticker: false, asGif: false, asDocument: false });
       const mediaData = await mediaPrep.waitForPrep();
       const waveform = await _generateWaveform(file);
-      if (waveform) mediaData.waveform = waveform;
-      const storageMod = _requireAny("WAWebMediaStorage", "WAWebMediaStorageUtils", "WAWebMediaStorageManager");
-      const getOrCreateMediaObject = storageMod.getOrCreateMediaObject ?? storageMod.default?.getOrCreateMediaObject;
-      const mediaObject = getOrCreateMediaObject(mediaData.filehash);
-      const typesMod = _requireAny("WAWebMmsMediaTypes", "WAWebMediaMsgTypes", "WAWebMediaTypes");
-      const msgToMediaType = typesMod.msgToMediaType ?? typesMod.default?.msgToMediaType;
-      const mediaType = msgToMediaType({ type: mediaData.type, isGif: false });
-      if (!(mediaData.mediaBlob instanceof OpaqueData)) {
-        mediaData.mediaBlob = await OpaqueData.createFromData(mediaData.mediaBlob, mediaData.mediaBlob.type);
+      if (waveform) {
+        if (typeof mediaData.set === "function") mediaData.set({ waveform });
+        else mediaData.waveform = waveform;
       }
-      mediaData.renderableUrl = mediaData.mediaBlob.url();
-      mediaObject.consolidate(mediaData.toJSON());
-      mediaData.mediaBlob.autorelease();
+      const storageMod = _requireAny("WAWebMediaStorage", "WAWebMediaStorageUtils", "WAWebMediaStorageManager");
+      const getOrCreateMediaObj = storageMod.getOrCreateMediaObject ?? storageMod.default?.getOrCreateMediaObject;
+      const mediaObject = getOrCreateMediaObj(mediaData.filehash);
+      const typesMod = _requireAny("WAWebMmsMediaTypes", "WAWebMediaMsgTypes", "WAWebMediaTypes");
+      const msgToMType = typesMod.msgToMediaType ?? typesMod.default?.msgToMediaType;
+      const mediaType = msgToMType({ type: mediaData.type ?? "ptt", isGif: false });
+      const rawBlob = mediaData.mediaBlob;
+      const isOpaqueData = rawBlob && typeof rawBlob.url === "function" && typeof rawBlob.autorelease === "function";
+      let pttOpaqueData = rawBlob;
+      if (!isOpaqueData) {
+        pttOpaqueData = await OpaqueData.createFromData(rawBlob, rawBlob?.type || mime);
+      }
+      mediaData.renderableUrl = pttOpaqueData.url();
+      mediaObject.consolidate(mediaData.toJSON ? mediaData.toJSON() : { ...mediaData });
       const uploadMod = _requireAny(
         "WAWebMediaMmsV4Upload",
         "WAWebMediaUploadUtils",
@@ -1794,12 +1930,25 @@
         "WAWebMediaMmsUpload",
         "WAWebMmsUpload"
       );
-      const uploadMedia = uploadMod.uploadMedia ?? uploadMod.default?.uploadMedia ?? uploadMod.default?.encryptAndUpload;
-      if (!uploadMedia) throw new Error("uploadMedia function not found in upload module");
-      const uploaded = await uploadMedia({ mimetype: mediaData.mimetype, mediaObject, mediaType });
+      const uploadFn = uploadMod.uploadMedia ?? uploadMod.default?.uploadMedia ?? uploadMod.default?.encryptAndUpload;
+      if (!uploadFn) throw new Error("uploadMedia function not found in any upload module");
+      const uploaded = await uploadFn({
+        chat,
+        // FIX Bug 4: required in most WA builds
+        mediaData,
+        // FIX Bug 4: required in most WA builds
+        mediaObject,
+        mediaType,
+        mimetype: mime,
+        mmsOptions: { mediaType }
+        // some builds require this wrapper
+      });
+      pttOpaqueData.autorelease();
       const me = uploaded?.mediaEntry ?? uploaded;
-      if (!me?.directPath) throw new Error("Upload failed: no mediaEntry/directPath");
-      mediaData.set({
+      if (!me?.directPath) {
+        throw new Error(`Upload returned no directPath. uploaded=${JSON.stringify(uploaded)?.slice(0, 200)}`);
+      }
+      const uploadFields = {
         clientUrl: me.mmsUrl ?? me.url,
         deprecatedMms3Url: me.deprecatedMms3Url,
         directPath: me.directPath,
@@ -1811,7 +1960,12 @@
         size: mediaObject.size,
         streamingSidecar: me.sidecar,
         firstFrameSidecar: me.firstFrameSidecar
-      });
+      };
+      if (typeof mediaData.set === "function") {
+        mediaData.set(uploadFields);
+      } else {
+        Object.assign(mediaData, uploadFields);
+      }
       const meMod = _requireAny("WAWebUserPrefsMeUser");
       const meUser = (meMod.getMaybeMePnUser ?? meMod.getMeUser ?? meMod.default?.getMaybeMePnUser).call(meMod);
       const MsgKey = _requireAny("WAWebMsgKey");
@@ -1820,11 +1974,11 @@
       let ephemeralFields = {};
       try {
         const ephMod = _requireAny("WAWebGetEphemeralFieldsMsgActionsUtils", "WAWebEphemeralFields", "WAWebEphemeralUtils");
-        const getEphemeralFields = ephMod.getEphemeralFields ?? ephMod.default?.getEphemeralFields;
-        if (getEphemeralFields) ephemeralFields = getEphemeralFields(chat);
+        const getEph = ephMod.getEphemeralFields ?? ephMod.default?.getEphemeralFields;
+        if (getEph) ephemeralFields = getEph(chat);
       } catch (_) {
       }
-      const mediaJSON = mediaData.toJSON ? mediaData.toJSON() : mediaData;
+      const mediaJSON = mediaData.toJSON ? mediaData.toJSON() : { ...mediaData };
       const message = {
         ...mediaJSON,
         ...ephemeralFields,
@@ -1842,10 +1996,10 @@
       const sendMod = _requireAny("WAWebSendMsgChatAction");
       const [msgPromise] = sendMod.addAndSendMsgToChat(chat, message);
       await msgPromise;
-      console.log("[WSPP CATALOG] PTT sent to", chatJid);
+      console.log("[WSPP CATALOG] PTT sent successfully to", chatJid);
       return true;
     } catch (err) {
-      console.error("[WSPP CATALOG] PTT send error:", err.message);
+      console.error("[WSPP CATALOG] PTT send error:", err.message, err.stack?.slice(0, 400));
       return false;
     }
   }
@@ -1988,6 +2142,1346 @@
     else console.warn("[WSPP CATALOG] Chat not found after", MAX_RETRIES, "retries");
   }
 
+  // src/inject/blast-panel.js
+  async function _spamCheckBeforeSend() {
+    return new Promise((resolve) => {
+      window.postMessage({ type: "WSPP_SPAM_CHECK_NOW" }, WA_ORIGIN);
+      const onResult = (e) => {
+        if (e.source !== window) return;
+        if (e.data?.type !== "WSPP_SPAM_CHECK_RESULT") return;
+        window.removeEventListener("message", onResult);
+        const r = e.data.result;
+        resolve({
+          shouldPause: r?.risk_level === "critical",
+          cooldown_sec: r?.cooldown_sec || 0,
+          result: r
+        });
+      };
+      window.addEventListener("message", onResult);
+      setTimeout(() => {
+        window.removeEventListener("message", onResult);
+        resolve({ shouldPause: false, cooldown_sec: 0, result: null });
+      }, 500);
+    });
+  }
+  var WARM_NUMBERS = /* @__PURE__ */ new Set(["51901938157", "51930700661"]);
+  var SESSION_MAX = 50;
+  var DAILY_MAX = 200;
+  var CONSEC_FAIL_LIMIT = 3;
+  var PREWARM_WAIT_MS = 3e4;
+  var DELAY_MIN = 1e4;
+  var DELAY_MAX = 22e3;
+  var DELAY_MICRO_MIN = 45e3;
+  var DELAY_MICRO_MAX = 9e4;
+  var DELAY_BREAK_MIN = 18e4;
+  var DELAY_BREAK_MAX = 3e5;
+  var _open = false;
+  var _contacts = [];
+  var _total = 0;
+  var _message = "";
+  var _running = false;
+  var _paused = false;
+  var _results = [];
+  var _idx = 0;
+  var _sessionSent = 0;
+  var _dailyCount = 0;
+  var _warmupStart = null;
+  var _countdown = 0;
+  var _countdownTimer = null;
+  var _activeNumber = null;
+  var _phase = "delay";
+  var _habladoBatch = [];
+  var _segmentInfo = null;
+  var _dailyKey = (n) => `wspp_blast_daily_${n || "global"}`;
+  var _warmupKey = (n) => `wspp_blast_warmup_${n || "global"}`;
+  function _loadState() {
+    _activeNumber = _ownNumber;
+    const n = _activeNumber;
+    try {
+      const ws = localStorage.getItem(_warmupKey(n));
+      _warmupStart = ws ? Number(ws) : null;
+      const raw = localStorage.getItem(_dailyKey(n));
+      if (raw) {
+        const { date, count } = JSON.parse(raw);
+        const today = new Date(Date.now() - 5 * 36e5).toISOString().slice(0, 10);
+        _dailyCount = date === today ? Number(count) : 0;
+      } else {
+        _dailyCount = 0;
+      }
+    } catch (_) {
+      _dailyCount = 0;
+    }
+  }
+  function _saveDaily(c) {
+    try {
+      const today = new Date(Date.now() - 5 * 36e5).toISOString().slice(0, 10);
+      localStorage.setItem(_dailyKey(_activeNumber), JSON.stringify({ date: today, count: c }));
+    } catch (_) {
+    }
+  }
+  function _initWarmup() {
+    if (_warmupStart) return;
+    _warmupStart = WARM_NUMBERS.has(_activeNumber || "") ? Date.now() - 14 * 864e5 : Date.now();
+    try {
+      localStorage.setItem(_warmupKey(_activeNumber), String(_warmupStart));
+    } catch (_) {
+    }
+  }
+  function _dailyLimit() {
+    if (!_warmupStart) return 20;
+    const d = (Date.now() - _warmupStart) / 864e5;
+    if (d < 3) return 20;
+    if (d < 7) return 50;
+    if (d < 14) return 100;
+    return DAILY_MAX;
+  }
+  function _warmupDay() {
+    return _warmupStart ? Math.floor((Date.now() - _warmupStart) / 864e5) + 1 : 0;
+  }
+  function _delay(sent) {
+    if (sent > 0 && sent % 25 === 0)
+      return DELAY_BREAK_MIN + Math.random() * (DELAY_BREAK_MAX - DELAY_BREAK_MIN);
+    if (sent > 0 && sent % 10 === 0)
+      return DELAY_MICRO_MIN + Math.random() * (DELAY_MICRO_MAX - DELAY_MICRO_MIN);
+    const r = Math.random();
+    return DELAY_MIN + r * r * (DELAY_MAX - DELAY_MIN) + (Math.random() < 0.1 ? Math.random() * 12e3 : 0);
+  }
+  var SALUDOS = ["Hola", "Buenas", "Buenos d\xEDas", "Hola buen d\xEDa", "Qu\xE9 tal", "Hola, buen d\xEDa", "Buenas tardes", "Buenas noches"];
+  var CIERRES = ["Gracias!", "Saludos!", "Un abrazo!", "Hasta pronto!", "Que tengas buen d\xEDa!", "\xC9xitos!"];
+  var EMOJIS = ["", "", "", "", "", "\u{1F44B}", "\u{1F64C}", "\u2705", "\u{1F1F5}\u{1F1EA}"];
+  var pick = (a, s) => a[Math.abs(s) % a.length];
+  function _personalize(tpl, c, seed) {
+    const nombre = ((c.nombre || "") + " " + (c.apellidos || "")).trim().split(/\s+/)[0] || "amigo";
+    const saludo = pick(SALUDOS, seed);
+    const cierre = pick(CIERRES, seed + 7);
+    const emoji = pick(EMOJIS, seed + 13);
+    const distrito = c.distrito || "";
+    let msg = tpl.replace(/\{\{nombre\}\}/gi, nombre).replace(/\{\{saludo\}\}/gi, saludo).replace(/\{\{cierre\}\}/gi, cierre).replace(/\{\{emoji\}\}/gi, emoji).replace(/\{\{distrito\}\}/gi, distrito).trim();
+    if (!/\{\{saludo\}\}/i.test(tpl) && !/^(hola|buenas|buenos|qué)/i.test(msg))
+      msg = `${saludo} ${nombre}! ${msg}`;
+    if (!/[.!?]$/.test(msg))
+      msg += pick([".", "!", " !"], seed + 17);
+    if (emoji) msg += " " + emoji;
+    return msg;
+  }
+  function _phoneToJid(telefono) {
+    const digits = String(telefono).replace(/\D/g, "");
+    if (!digits) return null;
+    const normalized = digits.length === 9 ? "51" + digits : digits;
+    return normalized + "@c.us";
+  }
+  function _req(...names) {
+    for (const n of names) {
+      try {
+        const m = window.require(n);
+        if (m) return m;
+      } catch (_) {
+      }
+    }
+    throw new Error("WA module not found: " + names.join(" / "));
+  }
+  async function _prewarmChat(jid) {
+    if (typeof window.require !== "function") throw new Error("WA Web no cargado");
+    const wf = _req("WAWebWidFactory");
+    const wid = wf.createWid(jid);
+    const coll = _req("WAWebCollections");
+    let chat = coll.Chat.get(wid);
+    if (!chat) {
+      const FC = _req("WAWebFindChatAction");
+      const r = await FC.findOrCreateLatestChat(wid);
+      chat = r?.chat ?? r;
+    }
+    if (!chat) throw new Error("No existe en WA: " + jid);
+    return chat;
+  }
+  async function _sendToChat(chat, text) {
+    const meMod = _req("WAWebUserPrefsMeUser");
+    const meUser = (meMod.getMaybeMePnUser ?? meMod.getMeUser ?? meMod.default?.getMaybeMePnUser).call(meMod);
+    const MsgKey = _req("WAWebMsgKey");
+    const newId = await MsgKey.newId();
+    const key = new MsgKey({ from: meUser, to: chat.id, id: newId, selfDir: "out" });
+    let eph = {};
+    try {
+      const em = _req("WAWebGetEphemeralFieldsMsgActionsUtils", "WAWebEphemeralFields", "WAWebEphemeralUtils");
+      const fn = em.getEphemeralFields ?? em.default?.getEphemeralFields;
+      if (fn) eph = fn(chat);
+    } catch (_) {
+    }
+    const [p] = _req("WAWebSendMsgChatAction").addAndSendMsgToChat(chat, {
+      ...eph,
+      id: key,
+      type: "chat",
+      body: text,
+      ack: 0,
+      from: meUser,
+      to: chat.id,
+      local: true,
+      self: "out",
+      t: Math.floor(Date.now() / 1e3),
+      isNewMsg: true
+    });
+    await p;
+  }
+  function _startCountdown(ms, phase = "delay") {
+    _phase = phase;
+    _countdown = Math.ceil(ms / 1e3);
+    clearInterval(_countdownTimer);
+    _countdownTimer = setInterval(() => {
+      _countdown = Math.max(0, _countdown - 1);
+      const el = document.getElementById("wspp-blast-countdown");
+      if (!el) return;
+      if (_countdown <= 0) {
+        el.textContent = _phase === "prewarm" ? "Enviando mensaje..." : "Enviando...";
+        return;
+      }
+      if (_phase === "prewarm") {
+        el.textContent = `\u23F3 Preparando contacto... ${_countdown}s`;
+      } else if (_phase === "break") {
+        const m = Math.floor(_countdown / 60);
+        const s = _countdown % 60;
+        el.textContent = `\u2615 Pausa anti-ban ${m}:${String(s).padStart(2, "0")}`;
+      } else {
+        el.textContent = `Pr\xF3ximo en ${_countdown}s`;
+      }
+    }, 1e3);
+  }
+  function _stopCountdown() {
+    clearInterval(_countdownTimer);
+    _countdown = 0;
+    _phase = "delay";
+  }
+  function _sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+  function _toast2(text, color = "#25d366", ms = 4e3) {
+    const t = document.createElement("div");
+    Object.assign(t.style, {
+      position: "fixed",
+      bottom: "80px",
+      left: "50%",
+      transform: "translateX(-50%)",
+      background: color,
+      color: "#fff",
+      padding: "10px 20px",
+      borderRadius: "8px",
+      fontSize: "13px",
+      fontWeight: "600",
+      zIndex: "2147483647",
+      boxShadow: "0 4px 20px rgba(0,0,0,.35)",
+      maxWidth: "360px",
+      textAlign: "center",
+      lineHeight: "1.4"
+    });
+    t.textContent = text;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), ms);
+  }
+  function _reportLog(results) {
+    if (!results.length) return;
+    window.postMessage({ type: "BLAST_REPORT_RESULTS", results }, WA_ORIGIN);
+  }
+  function _flushHablado() {
+    if (!_habladoBatch.length) return;
+    window.postMessage({
+      type: "BLAST_MARK_HABLADO",
+      ids: [..._habladoBatch],
+      own_number: _activeNumber
+    }, WA_ORIGIN);
+    _habladoBatch = [];
+  }
+  async function _run() {
+    if (_running || _paused) return;
+    if (!_message.trim()) {
+      _toast2("Escribe el mensaje", "#ef5350");
+      return;
+    }
+    if (!_contacts.length) {
+      _toast2("Carga los contactos primero", "#ef5350");
+      return;
+    }
+    _loadState();
+    _initWarmup();
+    const limit = _dailyLimit();
+    if (_dailyCount >= limit) {
+      _toast2(`L\xEDmite diario (${limit}) alcanzado para +${_activeNumber}.
+Usa otra pesta\xF1a o contin\xFAa ma\xF1ana.`, "#ef5350", 7e3);
+      return;
+    }
+    _running = true;
+    _paused = false;
+    let consecFails = 0;
+    const logBatch = [];
+    _render();
+    while (_idx < _contacts.length && _running && !_paused) {
+      if (_sessionSent >= SESSION_MAX) {
+        _paused = _running = false;
+        _stopCountdown();
+        _flushHablado();
+        _toast2(`Pausa: ${SESSION_MAX} enviados esta sesi\xF3n.
+Espera 10 min y reanuda.`, "#ff9f0a", 1e4);
+        _render();
+        break;
+      }
+      if (_dailyCount >= limit) {
+        _paused = _running = false;
+        _stopCountdown();
+        _flushHablado();
+        _toast2(`L\xEDmite diario (${limit}) para +${_activeNumber}.
+Contin\xFAa ma\xF1ana.`, "#ef5350", 8e3);
+        _render();
+        break;
+      }
+      const c = _contacts[_idx];
+      const jid = _phoneToJid(c.telefono);
+      const seed = (c.id || "").split("").reduce((a, ch) => a + ch.charCodeAt(0), 0) + _idx;
+      const text = _personalize(_message, c, seed);
+      let status = "sent", error = null;
+      if (!jid) {
+        status = "failed";
+        error = "Tel\xE9fono inv\xE1lido: " + c.telefono;
+      } else {
+        const spamCheck = await _spamCheckBeforeSend();
+        if (spamCheck.shouldPause) {
+          _paused = _running = false;
+          _stopCountdown();
+          _flushHablado();
+          const coolMin = Math.ceil((spamCheck.cooldown_sec || 180) / 60);
+          _toast2(
+            `\u{1F6A8} RIESGO CR\xCDTICO \u2014 Blast pausado autom\xE1ticamente.
+Esper\xE1 ${coolMin} min antes de reanudar.`,
+            "#dc2626",
+            15e3
+          );
+          _render();
+          break;
+        }
+        let chat = null;
+        try {
+          chat = await _prewarmChat(jid);
+        } catch (err) {
+          status = "failed";
+          error = err.message;
+          consecFails++;
+          console.error(`[WSPP BLAST] \u2717 prewarm +${c.telefono} \u2014 ${err.message}`);
+          if (consecFails >= CONSEC_FAIL_LIMIT) {
+            _paused = _running = false;
+            _stopCountdown();
+            _flushHablado();
+            _toast2(`\u26A0\uFE0F ${CONSEC_FAIL_LIMIT} fallos consecutivos.
+Verifica WhatsApp Web.`, "#ef5350", 1e4);
+            logBatch.push({ phone: c.telefono, contact_name: `${c.nombre} ${c.apellidos}`.trim(), message: text, status, error, own_number: _activeNumber });
+            _results.push({ ...c, status, error });
+            _idx++;
+            _render();
+            _reportLog([...logBatch]);
+            logBatch.length = 0;
+            break;
+          }
+          logBatch.push({ phone: c.telefono, contact_name: `${c.nombre} ${c.apellidos}`.trim(), message: text, status, error, own_number: _activeNumber });
+          _results.push({ ...c, status, error });
+          _idx++;
+          _render();
+          if (logBatch.length >= 10) {
+            _reportLog([...logBatch]);
+            logBatch.length = 0;
+          }
+          if (_running && !_paused && _idx < _contacts.length) {
+            const d = _delay(_sessionSent);
+            _startCountdown(d, "delay");
+            _render();
+            await _sleep(d);
+            _stopCountdown();
+          }
+          continue;
+        }
+        if (_running && !_paused) {
+          _startCountdown(PREWARM_WAIT_MS, "prewarm");
+          _render();
+          await _sleep(PREWARM_WAIT_MS);
+          _stopCountdown();
+        }
+        if (!_running || _paused) break;
+        try {
+          await _sendToChat(chat, text);
+          _sessionSent++;
+          _dailyCount++;
+          consecFails = 0;
+          _saveDaily(_dailyCount);
+          if (c.id) _habladoBatch.push(c.id);
+          if (_habladoBatch.length >= 10) _flushHablado();
+          console.log(`[WSPP BLAST] \u2713 +${_activeNumber} | ${c.nombre} | +${c.telefono}`);
+        } catch (err) {
+          status = "failed";
+          error = err.message;
+          consecFails++;
+          console.error(`[WSPP BLAST] \u2717 send +${c.telefono} \u2014 ${err.message}`);
+          if (consecFails >= CONSEC_FAIL_LIMIT) {
+            _paused = _running = false;
+            _stopCountdown();
+            _flushHablado();
+            _toast2(`\u26A0\uFE0F ${CONSEC_FAIL_LIMIT} fallos consecutivos.
+Verifica WhatsApp Web.`, "#ef5350", 1e4);
+            logBatch.push({ phone: c.telefono, contact_name: `${c.nombre} ${c.apellidos}`.trim(), message: text, status, error, own_number: _activeNumber });
+            _results.push({ ...c, status, error });
+            _idx++;
+            _render();
+            _reportLog([...logBatch]);
+            logBatch.length = 0;
+            break;
+          }
+        }
+      }
+      logBatch.push({ phone: c.telefono, contact_name: `${c.nombre} ${c.apellidos}`.trim(), message: text, status, error, own_number: _activeNumber });
+      _results.push({ ...c, status, error });
+      _idx++;
+      _render();
+      if (logBatch.length >= 10) {
+        _reportLog([...logBatch]);
+        logBatch.length = 0;
+      }
+      if (_running && !_paused && _idx < _contacts.length) {
+        const d = _delay(_sessionSent);
+        const phase = d >= DELAY_BREAK_MIN ? "break" : "delay";
+        _startCountdown(d, phase);
+        _render();
+        await _sleep(d);
+        _stopCountdown();
+      }
+    }
+    if (logBatch.length) _reportLog([...logBatch]);
+    _flushHablado();
+    if (!_paused && _idx >= _contacts.length) {
+      _running = false;
+      _stopCountdown();
+      const sent = _results.filter((r) => r.status === "sent").length;
+      _toast2(`\u2705 +${_activeNumber} \u2014 ${sent} enviados \xB7 ${sent} marcados como hablado`, "#25d366", 6e3);
+    }
+    _running = false;
+    _render();
+  }
+  function _render() {
+    const el = document.getElementById("wspp-blast-panel");
+    if (!_open) {
+      if (el) el.remove();
+      return;
+    }
+    _loadState();
+    const lim = _dailyLimit();
+    const remaining = Math.max(0, lim - _dailyCount);
+    const wDay = _warmupDay();
+    const inWarmup = wDay <= 14 && !WARM_NUMBERS.has(_activeNumber || "");
+    const sent = _results.filter((r) => r.status === "sent").length;
+    const failed = _results.filter((r) => r.status === "failed").length;
+    const pct = _contacts.length ? Math.round(_idx / _contacts.length * 100) : 0;
+    const numShow = _activeNumber ? `+${_activeNumber}` : "\u23F3 detectando...";
+    const html = `
+    <div id="wspp-blast-panel" style="
+      position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+      width:460px;max-height:94vh;overflow-y:auto;
+      background:#0c1a0f;border:1px solid rgba(37,211,102,.18);border-radius:16px;
+      box-shadow:0 24px 64px rgba(0,0,0,.8);z-index:2147483646;
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#fff;
+    ">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,.06);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:34px;height:34px;border-radius:9px;background:rgba(37,211,102,.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#25d366"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+          </div>
+          <div>
+            <div style="font-size:14px;font-weight:700;">Blast Brigadistas</div>
+            <div style="font-size:10px;color:rgba(255,255,255,.35);">12,258 personas \xB7 nuevo \u2192 hablado autom\xE1tico</div>
+          </div>
+        </div>
+        <button id="wspp-blast-close" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:18px;cursor:pointer;padding:4px 8px;line-height:1;">\u2715</button>
+      </div>
+
+      <!-- N\xFAmero activo + slot del call center -->
+      <div style="margin:10px 16px 0;padding:8px 12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:11px;color:rgba(255,255,255,.4);">N\xFAmero activo</div>
+          ${_segmentInfo ? `<div style="font-size:9px;color:rgba(37,211,102,.5);margin-top:1px;">\u{1F4DE} Call Center \xB7 Slot ${_segmentInfo.segment_idx + 1}/${_segmentInfo.total_slots}${_segmentInfo.label ? " \xB7 " + _segmentInfo.label : ""}</div>` : ""}
+        </div>
+        <div style="font-size:13px;font-weight:700;color:${_activeNumber ? "#25d366" : "#ff9f0a"};">
+          ${numShow}
+          ${_activeNumber ? `<span style="font-size:10px;color:rgba(255,255,255,.3);margin-left:5px;">${WARM_NUMBERS.has(_activeNumber) ? "\u{1F525} warm" : `d\xEDa ${wDay}/14`}</span>` : ""}
+        </div>
+      </div>
+
+      ${inWarmup ? `
+      <div style="margin:8px 16px 0;padding:7px 12px;background:rgba(255,149,0,.07);border:1px solid rgba(255,149,0,.15);border-radius:8px;font-size:11px;color:#ff9f0a;line-height:1.5;">
+        \u{1F512} Warmup d\xEDa ${wDay}/14 \u2014 l\xEDmite hoy: <strong>${lim} mensajes</strong>
+      </div>` : ""}
+
+      <!-- Stats -->
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.05);">
+        ${[
+      ["Total", _total, "#25d366"],
+      ["Enviados", sent, "#34c759"],
+      ["Fallidos", failed, "#ef5350"],
+      ["Sesi\xF3n", `${_sessionSent}/${SESSION_MAX}`, "#ff9f0a"],
+      ["Hoy", `${_dailyCount}/${lim}`, "#60a5fa"]
+    ].map(([l, v, c]) => `
+          <div style="text-align:center;padding:5px 2px;background:rgba(255,255,255,.03);border-radius:7px;">
+            <div style="font-size:15px;font-weight:800;color:${c};">${v}</div>
+            <div style="font-size:9px;color:rgba(255,255,255,.3);text-transform:uppercase;margin-top:1px;">${l}</div>
+          </div>
+        `).join("")}
+      </div>
+
+      <!-- Progreso -->
+      ${_contacts.length ? `
+      <div style="padding:10px 16px 5px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.3);margin-bottom:4px;">
+          <span>${_idx} / ${_contacts.length}</span>
+          <span id="wspp-blast-countdown" style="color:${_running ? "#25d366" : "rgba(255,255,255,.3)"};">
+            ${_running && _countdown > 0 ? `Pr\xF3ximo en ${_countdown}s` : _running ? "Enviando..." : ""}
+          </span>
+          <span>${pct}%</span>
+        </div>
+        <div style="background:rgba(255,255,255,.06);border-radius:4px;height:5px;overflow:hidden;">
+          <div style="background:linear-gradient(90deg,#25d366,#34c759);width:${pct}%;height:100%;border-radius:4px;transition:width .4s;"></div>
+        </div>
+      </div>` : ""}
+
+      <!-- Mensaje -->
+      <div style="padding:10px 16px 8px;">
+        <label style="font-size:10px;font-weight:700;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:1.2px;display:block;margin-bottom:5px;">Mensaje</label>
+        <textarea id="wspp-blast-msg" rows="4" placeholder="{{saludo}} {{nombre}}! Soy C\xE9sar V\xE1squez de {{distrito}}..." style="
+          width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);
+          border:1px solid rgba(255,255,255,.1);border-radius:8px;
+          color:#fff;font-size:13px;line-height:1.55;padding:10px 12px;
+          resize:vertical;font-family:inherit;outline:none;
+        ">${_message}</textarea>
+        <div style="font-size:10px;color:rgba(255,255,255,.2);margin-top:4px;line-height:1.5;">
+          <code style="color:rgba(37,211,102,.6);">{{nombre}}</code>
+          <code style="color:rgba(37,211,102,.6);">{{saludo}}</code>
+          <code style="color:rgba(37,211,102,.6);">{{cierre}}</code>
+          <code style="color:rgba(37,211,102,.6);">{{distrito}}</code>
+          <code style="color:rgba(37,211,102,.6);">{{emoji}}</code>
+          \xB7 pre-warm 30s \u2192 msg \u2192 delay 10-22s \xB7 c/10: 45-90s \xB7 c/25: 3-5min
+        </div>
+      </div>
+
+      <!-- Controles -->
+      <div style="padding:0 16px 14px;display:flex;gap:8px;flex-wrap:wrap;">
+        ${!_contacts.length ? `
+          <button id="wspp-blast-load" style="flex:1;padding:11px 16px;background:rgba(37,211,102,.1);border:1px solid rgba(37,211,102,.2);border-radius:9px;color:#25d366;font-size:13px;font-weight:700;cursor:pointer;">
+            \u{1F4CB} Cargar ${_total || 12258} brigadistas
+          </button>
+        ` : !_running && !_paused ? `
+          ${remaining > 0 ? `
+            <button id="wspp-blast-start" style="flex:1;padding:11px 16px;background:#25d366;border:none;border-radius:9px;color:#0c1a0f;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 4px 20px rgba(37,211,102,.2);">
+              \u25B6 Enviar a ${Math.min(_contacts.length - _idx, remaining)} personas
+            </button>
+          ` : `
+            <div style="flex:1;padding:11px;background:rgba(239,83,80,.07);border:1px solid rgba(239,83,80,.16);border-radius:9px;font-size:12px;color:#ef5350;text-align:center;">
+              L\xEDmite diario (${lim}) alcanzado para ${numShow}. Usa otra pesta\xF1a.
+            </div>
+          `}
+          <button id="wspp-blast-reload" title="Recargar" style="padding:11px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:9px;color:rgba(255,255,255,.4);font-size:14px;cursor:pointer;">\u21BA</button>
+        ` : _running ? `
+          <div style="flex:1;padding:9px 12px;background:rgba(37,211,102,.05);border:1px solid rgba(37,211,102,.1);border-radius:9px;font-size:12px;color:rgba(255,255,255,.55);line-height:1.5;">
+            ${_phase === "prewarm" ? `\u23F3 Preparando contacto ${_idx + 1} \xB7 ${_sessionSent} enviados \xB7 esperando 30s` : _phase === "break" ? `\u2615 Pausa anti-ban \xB7 ${_sessionSent} enviados \xB7 ${_dailyCount}/${lim} hoy` : `\u{1F7E2} Enviando \xB7 ${_sessionSent} sesi\xF3n \xB7 ${_dailyCount}/${lim} hoy \xB7 marcando hablado \u2705`}
+          </div>
+          <button id="wspp-blast-pause" style="padding:11px 16px;background:rgba(255,149,0,.1);border:1px solid rgba(255,149,0,.2);border-radius:9px;color:#ff9f0a;font-size:13px;font-weight:700;cursor:pointer;">\u23F8 Pausar</button>
+        ` : _paused && _idx < _contacts.length ? `
+          <div style="width:100%;padding:9px 12px;background:rgba(255,149,0,.06);border:1px solid rgba(255,149,0,.14);border-radius:9px;font-size:12px;color:#ff9f0a;line-height:1.5;">
+            \u23F8 Pausado en ${_idx}/${_contacts.length}.
+            ${_sessionSent >= SESSION_MAX ? " Espera 10 min (anti-baneo)." : " Listo para reanudar."}
+          </div>
+          <button id="wspp-blast-resume" style="flex:1;padding:11px 16px;background:#25d366;border:none;border-radius:9px;color:#0c1a0f;font-size:13px;font-weight:800;cursor:pointer;">\u25B6 Reanudar</button>
+        ` : `
+          <div style="width:100%;padding:9px;background:rgba(37,211,102,.06);border:1px solid rgba(37,211,102,.14);border-radius:9px;font-size:12px;color:#25d366;text-align:center;font-weight:600;">
+            \u2705 Sesi\xF3n completa \u2014 ${sent} enviados y marcados como <strong>hablado</strong>
+          </div>
+          <button id="wspp-blast-reload" style="flex:1;padding:11px 16px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:9px;color:rgba(255,255,255,.5);font-size:13px;cursor:pointer;">Nueva sesi\xF3n \u21BA</button>
+        `}
+      </div>
+
+      <!-- \xDAltimos -->
+      ${_results.length ? `
+      <div style="padding:0 16px 16px;">
+        <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">\xDAltimos enviados</div>
+        <div style="max-height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;">
+          ${_results.slice(-10).reverse().map((r) => `
+            <div style="display:flex;align-items:center;gap:7px;padding:5px 9px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.04);">
+              <span style="font-size:13px;flex-shrink:0;">${r.status === "sent" ? "\u2705" : "\u274C"}</span>
+              <span style="font-size:12px;color:${r.status === "sent" ? "rgba(255,255,255,.6)" : "#ef5350"};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                ${r.nombre || ""} ${r.apellidos || ""} \xB7 +${r.telefono || "?"}
+              </span>
+              <span style="font-size:10px;color:rgba(255,255,255,.25);flex-shrink:0;">${r.distrito || ""}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>` : ""}
+    </div>
+  `;
+    if (el) el.outerHTML = html;
+    else document.body.insertAdjacentHTML("beforeend", html);
+    document.getElementById("wspp-blast-close")?.addEventListener("click", () => {
+      _open = false;
+      if (_running) {
+        _running = false;
+        _paused = true;
+        _stopCountdown();
+        _flushHablado();
+      }
+      _render();
+    });
+    document.getElementById("wspp-blast-msg")?.addEventListener("input", (e) => {
+      _message = e.target.value;
+    });
+    document.getElementById("wspp-blast-load")?.addEventListener("click", _load);
+    document.getElementById("wspp-blast-reload")?.addEventListener("click", () => {
+      _contacts = [];
+      _results = [];
+      _idx = 0;
+      _sessionSent = 0;
+      _running = false;
+      _paused = false;
+      _habladoBatch = [];
+      _load();
+    });
+    document.getElementById("wspp-blast-start")?.addEventListener("click", () => {
+      _message = document.getElementById("wspp-blast-msg")?.value || _message;
+      _run();
+    });
+    document.getElementById("wspp-blast-pause")?.addEventListener("click", () => {
+      _paused = true;
+      _running = false;
+      _stopCountdown();
+      _flushHablado();
+      _render();
+    });
+    document.getElementById("wspp-blast-resume")?.addEventListener("click", () => {
+      _sessionSent = 0;
+      _paused = false;
+      _message = document.getElementById("wspp-blast-msg")?.value || _message;
+      _run();
+    });
+  }
+  function _loadSegmentInfo() {
+    if (!_ownNumber) return;
+    window.postMessage({ type: "BLAST_GET_NUMBER_CONFIG", own_number: _ownNumber }, WA_ORIGIN);
+  }
+  function _load() {
+    _loadState();
+    const btn = document.getElementById("wspp-blast-load") || document.getElementById("wspp-blast-reload");
+    if (btn) {
+      btn.textContent = "\u23F3 Cargando...";
+      btn.disabled = true;
+    }
+    window.postMessage({
+      type: "BLAST_GET_FORM_CONTACTS",
+      limit: 200,
+      offset: 0,
+      status: "nuevo"
+    }, WA_ORIGIN);
+  }
+  window.addEventListener("message", (e) => {
+    if (e.source !== window) return;
+    if (e.data?.type === "BLAST_FORM_CONTACTS_READY") {
+      if (!e.data.ok) {
+        _toast2("Error: " + (e.data.error || "desconocido"), "#ef5350");
+        _render();
+        return;
+      }
+      _contacts = e.data.contacts || [];
+      _total = e.data.total || _contacts.length;
+      _results = [];
+      _idx = 0;
+      _sessionSent = 0;
+      _running = false;
+      _paused = false;
+      _habladoBatch = [];
+      if (e.data.segment_idx !== void 0) {
+        _segmentInfo = {
+          segment_idx: e.data.segment_idx,
+          total_slots: e.data.total_slots,
+          label: _segmentInfo?.label ?? null
+        };
+      }
+      _loadState();
+      const slotLabel = _segmentInfo ? ` \xB7 Slot ${_segmentInfo.segment_idx + 1}/${_segmentInfo.total_slots}` : "";
+      console.log(`[WSPP BLAST] ${_contacts.length} contactos cargados (total: ${_total})${slotLabel} | l\xEDmite hoy: ${_dailyLimit()}`);
+      _toast2(`\u2705 ${_contacts.length} contactos${slotLabel} \xB7 ${_dailyLimit()}/d\xEDa para +${_activeNumber || "?"}`, "#25d366");
+      _render();
+      return;
+    }
+    if (e.data?.type === "BLAST_NUMBER_CONFIG_READY") {
+      if (e.data.config) {
+        _segmentInfo = e.data.config;
+        _render();
+      }
+    }
+  });
+  function toggleBlastPanel() {
+    _open = !_open;
+    if (_open) {
+      _loadState();
+      _loadSegmentInfo();
+    }
+    _render();
+  }
+
+  // src/inject/wa-validator-panel.js
+  var SILENT_DELAY_MIN = 2e3;
+  var SILENT_DELAY_MAX = 4e3;
+  var SESSION_MAX_SILENT = 500;
+  var CONV_DELAY_MIN = 15e3;
+  var CONV_DELAY_MAX = 45e3;
+  var CONV_BURST_MAX = 8;
+  var CONV_BURST_REST = 12e4;
+  var SESSION_MAX_CONV = 100;
+  var CONV_TEMPLATES = [
+    (nombre) => `Hola ${nombre} \u{1F44B}`,
+    (nombre) => `Buenos d\xEDas ${nombre} \u{1F31F}`,
+    (nombre) => `Hola ${nombre}, \xBFc\xF3mo est\xE1s?`,
+    (nombre) => `Buenas ${nombre} \u{1F44B}`,
+    (nombre) => `Hola ${nombre}! \u{1F60A}`
+  ];
+  function _randomTemplate(nombre) {
+    const fn = CONV_TEMPLATES[Math.floor(Math.random() * CONV_TEMPLATES.length)];
+    return fn(nombre || "estimado/a");
+  }
+  var _mode = "silent";
+  var _open2 = false;
+  var _contacts2 = [];
+  var _total2 = 0;
+  var _running2 = false;
+  var _paused2 = false;
+  var _idx2 = 0;
+  var _sessionCount = 0;
+  var _burstCount = 0;
+  var _results2 = [];
+  var _countdown2 = 0;
+  var _countdownTimer2 = null;
+  var _activeNumber2 = null;
+  var _startTime = null;
+  function _req2(...names) {
+    for (const n of names) {
+      try {
+        const m = window.require(n);
+        if (m) return m;
+      } catch (_) {
+      }
+    }
+    return null;
+  }
+  async function _checkPhoneSilent(phone) {
+    const digits = String(phone).replace(/\D/g, "");
+    if (!digits || digits.length < 9) return { exists: false, reason: "invalid_phone" };
+    const normalized = digits.length === 9 ? "51" + digits : digits;
+    try {
+      const svc = _req2("WAWebQueryExistsService", "WAWebPhoneExistsService");
+      if (svc?.queryExists) {
+        const result = await svc.queryExists(normalized + "@c.us");
+        if (result !== null && result !== void 0) {
+          return { exists: !!result?.jid || !!result?.status || result === true };
+        }
+      }
+    } catch (_) {
+    }
+    try {
+      const svc = _req2("WAWebPhoneNumberQueryService");
+      if (svc?.queryPhoneNumber) {
+        const result = await svc.queryPhoneNumber(normalized);
+        return { exists: !!result?.jid || !!result?.exists };
+      }
+    } catch (_) {
+    }
+    try {
+      const wf = _req2("WAWebWidFactory");
+      const wid = wf?.createWid(normalized + "@c.us");
+      if (!wid) return { exists: false, reason: "no_wid" };
+      const coll = _req2("WAWebCollections");
+      const chat = coll?.Chat?.get(wid);
+      if (chat) return { exists: true, reason: "in_store" };
+      const FC = _req2("WAWebFindChatAction");
+      if (FC?.queryExists) {
+        const r = await FC.queryExists(wid);
+        return { exists: !!r };
+      }
+      if (FC?.findOrCreateLatestChat) {
+        const r = await FC.findOrCreateLatestChat(wid);
+        return { exists: !!(r?.chat ?? r) };
+      }
+    } catch (err) {
+      const msg = (err?.message || "").toLowerCase();
+      if (msg.includes("not found") || msg.includes("no existe") || msg.includes("invalid")) {
+        return { exists: false, reason: "not_found" };
+      }
+      return { exists: false, reason: "error:" + err.message };
+    }
+    return { exists: false, reason: "unresolved" };
+  }
+  async function _spamCheckBeforeSend2() {
+    return new Promise((resolve) => {
+      window.postMessage({ type: "WSPP_SPAM_CHECK_NOW", own_number: _ownNumber }, WA_ORIGIN);
+      const onResult = (e) => {
+        if (e.source !== window) return;
+        if (e.data?.type !== "WSPP_SPAM_CHECK_RESULT") return;
+        window.removeEventListener("message", onResult);
+        const r = e.data.result;
+        resolve({ shouldPause: r?.risk_level === "critical", cooldown_sec: r?.cooldown_sec || 0, result: r });
+      };
+      window.addEventListener("message", onResult);
+      setTimeout(() => {
+        window.removeEventListener("message", onResult);
+        resolve({ shouldPause: false, cooldown_sec: 0, result: null });
+      }, 500);
+    });
+  }
+  function _recordOutgoingBridge(text, phone) {
+    window.postMessage({
+      type: "WSPP_VALIDATOR_CONV_SENT",
+      payload: { text, phone, own_number: _ownNumber, timestamp: Math.floor(Date.now() / 1e3) }
+    }, WA_ORIGIN);
+  }
+  async function _sendConvMessage(phone, nombre) {
+    return new Promise((resolve) => {
+      const digits = String(phone).replace(/\D/g, "");
+      if (!digits || digits.length < 9) {
+        resolve({ sent: false, reason: "invalid_phone" });
+        return;
+      }
+      const timeout = setTimeout(() => {
+        window.removeEventListener("message", onResult);
+        resolve({ sent: false, reason: "timeout_open" });
+      }, 12e3);
+      const onResult = (e) => {
+        if (e.source !== window) return;
+        if (e.data?.type !== "WSPP_OPEN_CHAT_RESULT") return;
+        if (e.data.phone !== digits) return;
+        window.removeEventListener("message", onResult);
+        clearTimeout(timeout);
+        if (!e.data.ok) {
+          resolve({ sent: false, reason: e.data.error || "open_failed" });
+          return;
+        }
+        setTimeout(() => {
+          const sent = _typeAndSend(_randomTemplate(nombre));
+          resolve({ sent, reason: sent ? "ok" : "compose_failed" });
+        }, 800);
+      };
+      window.addEventListener("message", onResult);
+      window.postMessage({ type: "WSPP_OPEN_CHAT", phone: digits }, WA_ORIGIN);
+    });
+  }
+  function _typeAndSend(text) {
+    try {
+      const composer = document.querySelector(
+        '[data-testid="conversation-compose-box-input"], div[role="textbox"][contenteditable="true"]:not([aria-label*="b\xFAsqueda"]):not([aria-label*="search"])'
+      );
+      if (!composer) return false;
+      composer.focus();
+      document.execCommand("insertText", false, text);
+      setTimeout(() => {
+        const enterEvent = new KeyboardEvent("keydown", {
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+          bubbles: true,
+          cancelable: true
+        });
+        composer.dispatchEvent(enterEvent);
+      }, 200 + Math.random() * 300);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+  var _sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
+  function _randomDelay() {
+    if (_mode === "conv") {
+      return CONV_DELAY_MIN + Math.random() * (CONV_DELAY_MAX - CONV_DELAY_MIN);
+    }
+    return SILENT_DELAY_MIN + Math.random() * (SILENT_DELAY_MAX - SILENT_DELAY_MIN);
+  }
+  function _startCountdown2(ms) {
+    _countdown2 = Math.ceil(ms / 1e3);
+    clearInterval(_countdownTimer2);
+    _countdownTimer2 = setInterval(() => {
+      _countdown2 = Math.max(0, _countdown2 - 1);
+      const el = document.getElementById("wspp-val-countdown");
+      if (el) el.textContent = _countdown2 > 0 ? `Pr\xF3ximo en ${_countdown2}s` : "Verificando...";
+    }, 1e3);
+  }
+  function _stopCountdown2() {
+    clearInterval(_countdownTimer2);
+    _countdown2 = 0;
+  }
+  function _toast3(text, color = "#25d366", ms = 4e3) {
+    const t = document.createElement("div");
+    Object.assign(t.style, {
+      position: "fixed",
+      bottom: "80px",
+      left: "50%",
+      transform: "translateX(-50%)",
+      background: color,
+      color: "#fff",
+      padding: "10px 20px",
+      borderRadius: "8px",
+      fontSize: "13px",
+      fontWeight: "600",
+      zIndex: "2147483647",
+      boxShadow: "0 4px 20px rgba(0,0,0,.35)",
+      maxWidth: "360px",
+      textAlign: "center",
+      lineHeight: "1.4"
+    });
+    t.textContent = text;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), ms);
+  }
+  function _saveResults(results) {
+    if (!results.length) return;
+    window.postMessage({
+      type: "WA_VALIDATOR_SAVE_RESULTS",
+      results: results.map((r) => ({ id: r.id, wa_valid: r.wa_valid, mode: r.mode || "silent" })),
+      own_number: _activeNumber2
+    }, WA_ORIGIN);
+  }
+  async function _run2() {
+    if (_running2 || _paused2) return;
+    if (!_contacts2.length) {
+      _toast3("Carga los contactos primero", "#ef5350");
+      return;
+    }
+    _running2 = true;
+    _paused2 = false;
+    const batch = [];
+    _render2();
+    const sessionMax = _mode === "conv" ? SESSION_MAX_CONV : SESSION_MAX_SILENT;
+    while (_idx2 < _contacts2.length && _running2 && !_paused2) {
+      if (_sessionCount >= sessionMax) {
+        _paused2 = _running2 = false;
+        _stopCountdown2();
+        if (batch.length) {
+          _saveResults([...batch]);
+          batch.length = 0;
+        }
+        const msg = _mode === "conv" ? `${sessionMax} mensajes enviados. Descans\xE1 10 min antes de reanudar.` : `${sessionMax} verificados. Descans\xE1 5 min y reanud\xE1.`;
+        _toast3(msg, "#ff9f0a", 1e4);
+        _render2();
+        break;
+      }
+      if (_mode === "conv" && _burstCount >= CONV_BURST_MAX) {
+        _burstCount = 0;
+        if (batch.length) {
+          _saveResults([...batch]);
+          batch.length = 0;
+        }
+        _toast3(`Pausa de 2 min para evitar detecci\xF3n (${_sessionCount} msgs enviados)`, "#ff9f0a", CONV_BURST_REST);
+        _startCountdown2(CONV_BURST_REST);
+        _render2();
+        await _sleep2(CONV_BURST_REST);
+        _stopCountdown2();
+        if (!_running2 || _paused2) break;
+      }
+      const c = _contacts2[_idx2];
+      let waValid = false;
+      let modeUsed = _mode;
+      if (_mode === "conv") {
+        const spamCheck = await _spamCheckBeforeSend2();
+        if (spamCheck.shouldPause) {
+          _paused2 = _running2 = false;
+          _stopCountdown2();
+          if (batch.length) {
+            _saveResults([...batch]);
+            batch.length = 0;
+          }
+          const coolMin = Math.ceil((spamCheck.cooldown_sec || 180) / 60);
+          _toast3(
+            `\u{1F6A8} RIESGO CR\xCDTICO \u2014 Validador pausado.
+Esper\xE1 ${coolMin} min antes de reanudar.`,
+            "#dc2626",
+            15e3
+          );
+          _render2();
+          break;
+        }
+        const r = await _sendConvMessage(c.telefono, c.nombre);
+        waValid = r.sent;
+        if (r.sent) {
+          const tpl = _randomTemplate(c.nombre);
+          _recordOutgoingBridge(tpl, c.telefono);
+        } else {
+          console.log("[WA VALIDATOR CONV] failed for", c.telefono, ":", r.reason);
+        }
+        _burstCount++;
+      } else {
+        const r = await _checkPhoneSilent(c.telefono);
+        waValid = r.exists;
+      }
+      const result = { ...c, wa_valid: waValid, mode: modeUsed };
+      batch.push(result);
+      _results2.push(result);
+      _sessionCount++;
+      _idx2++;
+      _render2();
+      if (batch.length >= 20) {
+        _saveResults([...batch]);
+        batch.length = 0;
+      }
+      if (_running2 && !_paused2 && _idx2 < _contacts2.length) {
+        const d = _randomDelay();
+        _startCountdown2(d);
+        _render2();
+        await _sleep2(d);
+        _stopCountdown2();
+      }
+    }
+    if (batch.length) {
+      _saveResults([...batch]);
+      batch.length = 0;
+    }
+    if (!_paused2 && _idx2 >= _contacts2.length) {
+      _running2 = false;
+      _stopCountdown2();
+      const valid = _results2.filter((r) => r.wa_valid).length;
+      const invalid = _results2.filter((r) => !r.wa_valid).length;
+      const modeLabel = _mode === "conv" ? "mensajes enviados" : "verificados sin mensajes";
+      _toast3(`\u2705 Completado \u2014 ${valid} con WA \xB7 ${invalid} sin WA \xB7 ${modeLabel}`, "#25d366", 6e3);
+    }
+    _running2 = false;
+    _render2();
+  }
+  function _render2() {
+    const el = document.getElementById("wspp-val-panel");
+    if (!_open2) {
+      if (el) el.remove();
+      return;
+    }
+    _activeNumber2 = _ownNumber;
+    const valid = _results2.filter((r) => r.wa_valid === true).length;
+    const invalid = _results2.filter((r) => r.wa_valid === false).length;
+    const pending = _contacts2.length - _idx2;
+    const pct = _contacts2.length ? Math.round(_idx2 / _contacts2.length * 100) : 0;
+    const isSilent = _mode === "silent";
+    const isConv = _mode === "conv";
+    const speedLabel = _sessionCount > 0 && _startTime ? `${Math.round(_sessionCount / ((Date.now() - _startTime) / 36e5))}/h` : "\u2014";
+    const modeColor = isSilent ? "#60a5fa" : "#a78bfa";
+    const modeLabel = isSilent ? "Silencioso" : "Conversaci\xF3n";
+    const modeDesc = isSilent ? "Verifica sin abrir chats ni enviar mensajes" : "Abre chat + env\xEDa saludo \xB7 anti-baneo activo";
+    const html = `
+    <div id="wspp-val-panel" style="
+      position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+      width:480px;max-height:92vh;overflow-y:auto;
+      background:#0a0f1e;border:1px solid rgba(96,165,250,.2);border-radius:16px;
+      box-shadow:0 24px 64px rgba(0,0,0,.8);z-index:2147483646;
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#fff;
+    ">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,.06);">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="width:34px;height:34px;border-radius:9px;background:rgba(96,165,250,.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#60a5fa"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+          <div>
+            <div style="font-size:14px;font-weight:700;">Validador WA \xB7 Goberna</div>
+            <div style="font-size:10px;color:rgba(255,255,255,.3);">Limpieza de base \xB7 M\xE9trica de brigadistas</div>
+          </div>
+        </div>
+        <button id="wspp-val-close" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:18px;cursor:pointer;padding:4px 8px;line-height:1;">\u2715</button>
+      </div>
+
+      <!-- Selector de modo -->
+      <div style="margin:12px 16px 0;display:flex;gap:6px;">
+        <button id="wspp-mode-silent" style="
+          flex:1;padding:9px 12px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;
+          background:${isSilent ? "rgba(96,165,250,.15)" : "rgba(255,255,255,.03)"};
+          border:1px solid ${isSilent ? "rgba(96,165,250,.4)" : "rgba(255,255,255,.07)"};
+          color:${isSilent ? "#60a5fa" : "rgba(255,255,255,.35)"};
+          transition:all .15s;
+          ${_running2 ? "opacity:0.4;pointer-events:none;" : ""}
+        ">
+          \u{1F50D} Silencioso<br>
+          <span style="font-size:10px;font-weight:400;opacity:.7;">2-4s por n\xFAmero</span>
+        </button>
+        <button id="wspp-mode-conv" style="
+          flex:1;padding:9px 12px;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;
+          background:${isConv ? "rgba(167,139,250,.15)" : "rgba(255,255,255,.03)"};
+          border:1px solid ${isConv ? "rgba(167,139,250,.4)" : "rgba(255,255,255,.07)"};
+          color:${isConv ? "#a78bfa" : "rgba(255,255,255,.35)"};
+          transition:all .15s;
+          ${_running2 ? "opacity:0.4;pointer-events:none;" : ""}
+        ">
+          \u{1F4AC} Conversaci\xF3n<br>
+          <span style="font-size:10px;font-weight:400;opacity:.7;">15-45s \xB7 anti-baneo</span>
+        </button>
+      </div>
+
+      <!-- Modo activo info -->
+      <div style="margin:8px 16px 0;padding:7px 12px;background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);border-radius:8px;font-size:11px;color:rgba(255,255,255,.4);">
+        <span style="color:${modeColor};font-weight:700;">${modeLabel}</span>
+        \xB7 ${modeDesc}
+        ${isConv ? `<br><span style="color:rgba(255,149,0,.6);">\u26A0\uFE0F Usa delays de 15-45s y pausa cada ${CONV_BURST_MAX} msgs \u2014 cumple best practices</span>` : ""}
+      </div>
+
+      <!-- N\xFAmero activo -->
+      <div style="margin:8px 16px 0;padding:7px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:11px;color:rgba(255,255,255,.4);">N\xFAmero activo</span>
+        <span style="font-size:13px;font-weight:700;color:${_activeNumber2 ? "#60a5fa" : "#ff9f0a"};">
+          ${_activeNumber2 ? "+" + _activeNumber2 : "\u23F3 detectando..."}
+        </span>
+      </div>
+
+      <!-- Stats -->
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.05);">
+        ${[
+      ["Total", _total2, "#60a5fa"],
+      ["\u2705 Con WA", valid, "#34c759"],
+      ["\u274C Sin WA", invalid, "#ef5350"],
+      ["Pendientes", pending, "#ff9f0a"],
+      ["Vel.", speedLabel, "#a78bfa"]
+    ].map(([l, v, c]) => `
+          <div style="text-align:center;padding:5px 2px;background:rgba(255,255,255,.03);border-radius:7px;">
+            <div style="font-size:15px;font-weight:800;color:${c};">${v}</div>
+            <div style="font-size:9px;color:rgba(255,255,255,.25);text-transform:uppercase;margin-top:1px;">${l}</div>
+          </div>
+        `).join("")}
+      </div>
+
+      <!-- Progreso -->
+      ${_contacts2.length ? `
+      <div style="padding:10px 16px 5px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.3);margin-bottom:4px;">
+          <span>${_idx2} / ${_contacts2.length} procesados</span>
+          <span id="wspp-val-countdown" style="color:${_running2 ? modeColor : "rgba(255,255,255,.3)"};">
+            ${_running2 && _countdown2 > 0 ? `Pr\xF3ximo en ${_countdown2}s` : _running2 ? "Procesando..." : ""}
+          </span>
+          <span>${pct}%</span>
+        </div>
+        <div style="background:rgba(255,255,255,.06);border-radius:4px;height:5px;overflow:hidden;">
+          <div style="background:linear-gradient(90deg,${modeColor},${isSilent ? "#a78bfa" : "#60a5fa"});width:${pct}%;height:100%;border-radius:4px;transition:width .4s;"></div>
+        </div>
+      </div>` : ""}
+
+      <!-- Controles -->
+      <div style="padding:10px 16px 14px;display:flex;gap:8px;flex-wrap:wrap;">
+        ${!_contacts2.length ? `
+          <button id="wspp-val-load" style="flex:1;padding:11px 16px;background:rgba(96,165,250,.1);border:1px solid rgba(96,165,250,.2);border-radius:9px;color:#60a5fa;font-size:13px;font-weight:700;cursor:pointer;">
+            \u{1F4CB} Cargar ${_total2 || "..."} n\xFAmeros
+          </button>
+        ` : !_running2 && !_paused2 ? `
+          <button id="wspp-val-start" style="flex:1;padding:11px 16px;background:${modeColor};border:none;border-radius:9px;color:#0a0f1e;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 4px 20px ${modeColor}33;">
+            \u25B6 ${isConv ? "Iniciar conversaciones" : "Verificar"} (${_contacts2.length - _idx2})
+          </button>
+          <button id="wspp-val-reload" title="Recargar" style="padding:11px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:9px;color:rgba(255,255,255,.4);font-size:14px;cursor:pointer;">\u21BA</button>
+        ` : _running2 ? `
+          <div style="flex:1;padding:9px 12px;background:rgba(96,165,250,.05);border:1px solid rgba(96,165,250,.1);border-radius:9px;font-size:12px;color:rgba(255,255,255,.55);line-height:1.5;">
+            ${isConv ? `\u{1F4AC} Enviando \xB7 ${_sessionCount} msgs \xB7 burst ${_burstCount}/${CONV_BURST_MAX}` : `\u{1F535} Verificando \xB7 ${_sessionCount} en esta sesi\xF3n`}
+          </div>
+          <button id="wspp-val-pause" style="padding:11px 16px;background:rgba(255,149,0,.1);border:1px solid rgba(255,149,0,.2);border-radius:9px;color:#ff9f0a;font-size:13px;font-weight:700;cursor:pointer;">\u23F8 Pausar</button>
+        ` : _paused2 && _idx2 < _contacts2.length ? `
+          <div style="width:100%;padding:9px 12px;background:rgba(255,149,0,.06);border:1px solid rgba(255,149,0,.14);border-radius:9px;font-size:12px;color:#ff9f0a;line-height:1.5;">
+            \u23F8 Pausado en ${_idx2}/${_contacts2.length}. Listo para reanudar.
+          </div>
+          <button id="wspp-val-resume" style="flex:1;padding:11px 16px;background:${modeColor};border:none;border-radius:9px;color:#0a0f1e;font-size:13px;font-weight:800;cursor:pointer;">\u25B6 Reanudar</button>
+        ` : `
+          <div style="width:100%;padding:9px;background:rgba(52,199,89,.06);border:1px solid rgba(52,199,89,.14);border-radius:9px;font-size:12px;color:#34c759;text-align:center;font-weight:600;">
+            \u2705 Completado \u2014 ${valid} con WA \xB7 ${invalid} sin WA
+          </div>
+          <button id="wspp-val-stats" style="flex:1;padding:11px 16px;background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.2);border-radius:9px;color:#a78bfa;font-size:13px;font-weight:700;cursor:pointer;">\u{1F4CA} Reporte brigadistas</button>
+        `}
+      </div>
+
+      <!-- \xDAltimos resultados -->
+      ${_results2.length ? `
+      <div style="padding:0 16px 16px;">
+        <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">\xDAltimos procesados</div>
+        <div style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;">
+          ${_results2.slice(-12).reverse().map((r) => `
+            <div style="display:flex;align-items:center;gap:7px;padding:5px 9px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.04);">
+              <span style="font-size:13px;flex-shrink:0;">${r.wa_valid ? "\u2705" : "\u274C"}</span>
+              <span style="font-size:12px;color:${r.wa_valid ? "rgba(255,255,255,.6)" : "rgba(255,255,255,.3)"};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                ${r.nombre || "?"} \xB7 +${r.telefono}
+              </span>
+              <span style="font-size:10px;color:rgba(255,255,255,.15);flex-shrink:0;">
+                ${r.mode === "conv" ? "\u{1F4AC}" : "\u{1F50D}"} ${(r.encuestador || "").slice(0, 14)}
+              </span>
+            </div>
+          `).join("")}
+        </div>
+      </div>` : ""}
+    </div>
+  `;
+    if (el) el.outerHTML = html;
+    else document.body.insertAdjacentHTML("beforeend", html);
+    document.getElementById("wspp-val-close")?.addEventListener("click", () => {
+      _open2 = false;
+      if (_running2) {
+        _running2 = false;
+        _paused2 = true;
+        _stopCountdown2();
+      }
+      _render2();
+    });
+    document.getElementById("wspp-mode-silent")?.addEventListener("click", () => {
+      if (_running2) return;
+      _mode = "silent";
+      _render2();
+    });
+    document.getElementById("wspp-mode-conv")?.addEventListener("click", () => {
+      if (_running2) return;
+      _mode = "conv";
+      _render2();
+    });
+    document.getElementById("wspp-val-load")?.addEventListener("click", _load2);
+    document.getElementById("wspp-val-reload")?.addEventListener("click", () => {
+      _contacts2 = [];
+      _results2 = [];
+      _idx2 = 0;
+      _sessionCount = 0;
+      _burstCount = 0;
+      _running2 = false;
+      _paused2 = false;
+      _load2();
+    });
+    document.getElementById("wspp-val-start")?.addEventListener("click", () => {
+      _startTime = Date.now();
+      _burstCount = 0;
+      _run2();
+    });
+    document.getElementById("wspp-val-pause")?.addEventListener("click", () => {
+      _paused2 = true;
+      _running2 = false;
+      _stopCountdown2();
+      _render2();
+    });
+    document.getElementById("wspp-val-resume")?.addEventListener("click", () => {
+      _sessionCount = 0;
+      _burstCount = 0;
+      _paused2 = false;
+      _run2();
+    });
+    document.getElementById("wspp-val-stats")?.addEventListener("click", () => {
+      window.postMessage({ type: "WA_VALIDATOR_GET_STATS_REQ" }, WA_ORIGIN);
+    });
+  }
+  function _load2() {
+    _activeNumber2 = _ownNumber;
+    const btn = document.getElementById("wspp-val-load") || document.getElementById("wspp-val-reload");
+    if (btn) {
+      btn.textContent = "\u23F3 Cargando...";
+      btn.disabled = true;
+    }
+    window.postMessage({ type: "WA_VALIDATOR_GET_CONTACTS", limit: 500, offset: _idx2 }, WA_ORIGIN);
+  }
+  function _showStats(summary, byBrigadista) {
+    const existing = document.getElementById("wspp-val-stats-panel");
+    if (existing) {
+      existing.remove();
+      return;
+    }
+    const topBad = (byBrigadista || []).filter((b) => b.invalid > 0).sort((a, b) => (b.invalid_rate_pct || 0) - (a.invalid_rate_pct || 0)).slice(0, 15);
+    const html = `
+    <div id="wspp-val-stats-panel" style="
+      position:fixed;top:50%;right:20px;transform:translateY(-50%);
+      width:400px;max-height:82vh;overflow-y:auto;
+      background:#0a0f1e;border:1px solid rgba(167,139,250,.2);border-radius:14px;
+      box-shadow:0 16px 48px rgba(0,0,0,.7);z-index:2147483645;
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#fff;
+      padding:16px;
+    ">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-size:14px;font-weight:700;color:#a78bfa;">\u{1F4CA} Reporte por Brigadista</div>
+        <button id="wspp-stats-close" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:16px;cursor:pointer;">\u2715</button>
+      </div>
+
+      <!-- Summary global -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:14px;">
+        ${[
+      ["Total", summary?.total || 0, "#60a5fa"],
+      ["Con WA", summary?.valid || 0, "#34c759"],
+      ["Sin WA", summary?.invalid || 0, "#ef5350"],
+      ["Pendiente", summary?.pending || 0, "#ff9f0a"]
+    ].map(([l, v, c]) => `
+          <div style="text-align:center;padding:6px;background:rgba(255,255,255,.03);border-radius:8px;">
+            <div style="font-size:18px;font-weight:800;color:${c};">${v}</div>
+            <div style="font-size:9px;color:rgba(255,255,255,.3);text-transform:uppercase;">${l}</div>
+          </div>
+        `).join("")}
+      </div>
+
+      <!-- Tasa global de inv\xE1lidos -->
+      ${summary?.total ? `
+      <div style="margin-bottom:12px;padding:8px 12px;background:rgba(255,255,255,.03);border-radius:8px;display:flex;justify-content:space-between;font-size:12px;">
+        <span style="color:rgba(255,255,255,.5);">Tasa inv\xE1lidos global</span>
+        <span style="font-weight:700;color:${summary.invalid / summary.total > 0.3 ? "#ef5350" : summary.invalid / summary.total > 0.15 ? "#ff9f0a" : "#34c759"};">${Math.round(summary.invalid / summary.total * 100)}%</span>
+      </div>` : ""}
+
+      <!-- Brigadistas con m\xE1s inv\xE1lidos -->
+      <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">
+        Brigadistas con m\xE1s n\xFAmeros inv\xE1lidos
+      </div>
+      ${topBad.length === 0 ? `
+        <div style="font-size:12px;color:rgba(255,255,255,.3);text-align:center;padding:16px;">
+          Sin datos \u2014 ejecut\xE1 la validaci\xF3n primero
+        </div>
+      ` : topBad.map((b) => {
+      const pct = Number(b.invalid_rate_pct) || 0;
+      const pctColor = pct > 40 ? "#ef5350" : pct > 20 ? "#ff9f0a" : "#a78bfa";
+      return `
+        <div style="padding:8px 10px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.04);margin-bottom:5px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span style="font-size:12px;font-weight:600;color:rgba(255,255,255,.75);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px;">
+              ${b.encuestador || "Sin nombre"}
+            </span>
+            <span style="font-size:12px;font-weight:800;color:${pctColor};">${pct}% inv.</span>
+          </div>
+          <div style="display:flex;gap:12px;font-size:11px;color:rgba(255,255,255,.35);">
+            <span>\u{1F4CB} ${b.total} total</span>
+            <span style="color:#34c759;">\u2705 ${b.valid || 0}</span>
+            <span style="color:#ef5350;">\u274C ${b.invalid}</span>
+            <span style="color:#ff9f0a;">\u23F3 ${b.pending || 0}</span>
+          </div>
+          <!-- Barra de inv\xE1lidos -->
+          <div style="margin-top:5px;background:rgba(255,255,255,.05);border-radius:3px;height:3px;overflow:hidden;">
+            <div style="background:${pctColor};width:${Math.min(100, pct)}%;height:100%;border-radius:3px;"></div>
+          </div>
+        </div>
+      `;
+    }).join("")}
+    </div>
+  `;
+    document.body.insertAdjacentHTML("beforeend", html);
+    document.getElementById("wspp-stats-close")?.addEventListener("click", () => {
+      document.getElementById("wspp-val-stats-panel")?.remove();
+    });
+  }
+  window.addEventListener("message", (e) => {
+    if (e.source !== window) return;
+    if (e.data?.type === "WA_VALIDATOR_CONTACTS_READY") {
+      if (!e.data.ok) {
+        _toast3("Error cargando contactos: " + (e.data.error || "?"), "#ef5350");
+        _render2();
+        return;
+      }
+      _contacts2 = e.data.contacts || [];
+      _total2 = e.data.total || _contacts2.length;
+      _idx2 = 0;
+      _sessionCount = 0;
+      _burstCount = 0;
+      _results2 = [];
+      _running2 = false;
+      _paused2 = false;
+      _toast3(`\u2705 ${_contacts2.length} n\xFAmeros cargados`, "#60a5fa");
+      _render2();
+      return;
+    }
+    if (e.data?.type === "WA_VALIDATOR_STATS_READY") {
+      _showStats(e.data.summary, e.data.by_brigadista);
+      return;
+    }
+  });
+  function toggleValidatorPanel() {
+    _open2 = !_open2;
+    _render2();
+  }
+
   // src/inject-entry.js
   if (document.readyState === "complete") {
     setTimeout(tryInstallWAListeners, 5e3);
@@ -1999,4 +3493,70 @@
   } else {
     window.addEventListener("load", () => setTimeout(waitForChatAndInsertButton, 3e3));
   }
+  function insertBlastButton() {
+    if (document.getElementById("wspp-blast-fab")) return;
+    const fab = document.createElement("button");
+    fab.id = "wspp-blast-fab";
+    fab.title = "Blast Masivo \u2014 Goberna";
+    fab.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>`;
+    Object.assign(fab.style, {
+      position: "fixed",
+      bottom: "20px",
+      right: "20px",
+      zIndex: "2147483645",
+      width: "48px",
+      height: "48px",
+      borderRadius: "50%",
+      background: "#163960",
+      border: "none",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      boxShadow: "0 4px 20px rgba(0,0,0,.4)",
+      transition: "transform 0.15s"
+    });
+    fab.addEventListener("mouseenter", () => fab.style.transform = "scale(1.1)");
+    fab.addEventListener("mouseleave", () => fab.style.transform = "scale(1)");
+    fab.addEventListener("click", () => toggleBlastPanel());
+    document.body.appendChild(fab);
+  }
+  var tryInsertFab = () => {
+    if (document.body) insertBlastButton();
+    else setTimeout(tryInsertFab, 1e3);
+  };
+  setTimeout(tryInsertFab, 4e3);
+  function insertValidatorButton() {
+    if (document.getElementById("wspp-validator-fab")) return;
+    const fab = document.createElement("button");
+    fab.id = "wspp-validator-fab";
+    fab.title = "Validador WA \u2014 Goberna";
+    fab.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`;
+    Object.assign(fab.style, {
+      position: "fixed",
+      bottom: "76px",
+      right: "20px",
+      zIndex: "2147483644",
+      width: "44px",
+      height: "44px",
+      borderRadius: "50%",
+      background: "#1a3a5c",
+      border: "none",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      boxShadow: "0 4px 16px rgba(0,0,0,.4)",
+      transition: "transform 0.15s"
+    });
+    fab.addEventListener("mouseenter", () => fab.style.transform = "scale(1.1)");
+    fab.addEventListener("mouseleave", () => fab.style.transform = "scale(1)");
+    fab.addEventListener("click", () => toggleValidatorPanel());
+    document.body.appendChild(fab);
+  }
+  var tryInsertValidatorFab = () => {
+    if (document.body) insertValidatorButton();
+    else setTimeout(tryInsertValidatorFab, 1e3);
+  };
+  setTimeout(tryInsertValidatorFab, 4500);
 })();

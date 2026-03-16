@@ -106,8 +106,14 @@ async function callElevenLabsTTS(
   voiceId: string,
   scriptText: string,
 ): Promise<{ base64: string; size: number; durationMs: number } | { error: string; status: number }> {
+  // output_format MUST be "ogg_48000_32" — this produces a valid OGG/Opus container
+  // (magic bytes "OggS" + OpusHead page) that WhatsApp PTT requires.
+  //
+  // DO NOT use "opus_48000_32" — that produces raw Opus bitstream (no OGG container),
+  // which makes the OGG duration parser fall back to bitrate estimation AND causes
+  // WhatsApp to silently reject the PTT (mime/container mismatch).
   const ttsRes = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=opus_48000_32`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=ogg_48000_32`,
     {
       method: "POST",
       headers: {
@@ -127,11 +133,27 @@ async function callElevenLabsTTS(
   }
 
   const buffer = await ttsRes.arrayBuffer();
+
+  // Validate that the buffer is a real OGG container (magic: "OggS" = 0x4f676753).
+  // If ElevenLabs returns raw Opus instead (no OggS header), reject early with a
+  // clear error so we don't store unusable audio in the DB.
+  const magic = new Uint8Array(buffer.slice(0, 4));
+  const isOgg = magic[0] === 0x4f && magic[1] === 0x67 && magic[2] === 0x67 && magic[3] === 0x53;
+  if (!isOgg) {
+    return {
+      error: `ElevenLabs returned non-OGG audio (magic: ${Array.from(magic).map(b => b.toString(16).padStart(2,'0')).join(' ')}). Use output_format=ogg_48000_32, not opus_48000_32.`,
+      status: 502,
+    };
+  }
+
   const base64 = Buffer.from(buffer).toString("base64");
   const size = buffer.byteLength;
   const durationMs = parseOggOpusDurationMs(buffer);
 
-  return { base64, size, durationMs };
+  // Guard: durationMs must be positive — fallback estimation can return 0 for tiny buffers
+  const safeDurationMs = durationMs > 0 ? durationMs : Math.round((size * 8 / (32 * 1000)) * 1000);
+
+  return { base64, size, durationMs: safeDurationMs };
 }
 
 // ═══════════════════════════════════════════════════════════════════════

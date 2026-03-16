@@ -32,7 +32,10 @@ export default function MainLayout() {
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,
-        tabBarActiveTintColor: '#fbbf24',
+        // Usar el color secundario de la campaña para el ícono activo.
+        // Fallback a amber si secondary es undefined o el mismo que primary
+        // (para evitar íconos invisibles sobre el fondo del tab bar).
+        tabBarActiveTintColor: secondary !== primary ? secondary : '#fbbf24',
         tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.6)',
         tabBarStyle: {
           backgroundColor: primary,
@@ -66,6 +69,14 @@ export default function MainLayout() {
           href: showSolicitudes ? undefined : null,
           tabBarIcon: ({ color }) => (
             <MaterialIcons name="assignment-ind" size={28} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="qr-code"
+        options={{
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="qr-code-2" size={28} color={color} />
           ),
         }}
       />

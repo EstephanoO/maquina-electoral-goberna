@@ -753,6 +753,30 @@ function _requireAny(...names) {
 }
 
 // ── Send PTT via WA internal modules ────────────────────────────────
+//
+// Bug history and fixes:
+//
+// Bug 1 (FIXED server-side): ElevenLabs was called with output_format=opus_48000_32
+//   which returns raw Opus (no OGG container). WA requires OGG/Opus. Fixed by
+//   changing to output_format=ogg_48000_32 in the backend routes.ts.
+//
+// Bug 2 (FIXED here): instanceof OpaqueData fails across module instances because
+//   the WA module loader may return a different class reference each time.
+//   Replaced with duck-typing: check for .url() and .autorelease() methods.
+//
+// Bug 3 (FIXED here): mediaData.mediaBlob.autorelease() was called BEFORE uploadMedia.
+//   autorelease() frees the Blob URL immediately. If WA's upload pipeline reads the
+//   blob after the call, it gets null → upload fails or audio can't be reproduced
+//   in the sender's UI. Moved autorelease() to AFTER upload completes.
+//
+// Bug 4 (FIXED here): uploadMedia was called with {mimetype, mediaObject, mediaType}
+//   but the actual WA module signature requires {chat, mediaData, mediaObject, mediaType}.
+//   Missing `chat` and `mediaData` caused the upload to return undefined → no directPath.
+//
+// Bug 5 (FIXED here): mediaData.set({...}) assumes mediaData is a Backbone model with
+//   a .set() method. After waitForPrep(), mediaData can be a plain object in some WA
+//   builds. Added duck-type guard: use .set() if available, fall back to Object.assign.
+//
 async function sendAudioAsPTT(audioBase64, mimeType) {
   const mime = mimeType || 'audio/ogg; codecs=opus';
   try {
@@ -764,53 +788,67 @@ async function sendAudioAsPTT(audioBase64, mimeType) {
     let chat = null;
     try {
       const Collections = _requireAny('WAWebCollections');
-      const widFactory = _requireAny('WAWebWidFactory');
+      const widFactory   = _requireAny('WAWebWidFactory');
       const wid = widFactory.createWid(chatJid);
       chat = Collections.Chat.get(wid);
       if (!chat) {
         const FC = _requireAny('WAWebFindChatAction');
-        const r = await FC.findOrCreateLatestChat(wid);
+        const r  = await FC.findOrCreateLatestChat(wid);
         chat = r?.chat ?? r;
       }
     } catch (err) { console.error('[WSPP CATALOG] Failed to resolve chat:', err); return false; }
     if (!chat) { console.error('[WSPP CATALOG] Chat not found for:', chatJid); return false; }
 
-    // ── Step 2: Build File ───────────────────────────────────────────
+    // ── Step 2: Build File object ────────────────────────────────────
     const binary = atob(audioBase64);
-    const bytes = new Uint8Array(binary.length);
+    const bytes  = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
     const blob = new Blob([bytes], { type: mime });
     const file = new File([blob], 'voice_cesar_vasquez.ogg', { type: mime, lastModified: Date.now() });
 
-    // ── Step 3: Opaque data + media prep ────────────────────────────
+    // ── Step 3: OpaqueData + MediaPrep ──────────────────────────────
     const OpaqueData = _requireAny('WAWebMediaOpaqueData', 'WAWebMediaOpaqueDataUtils');
     const opaqueData = await OpaqueData.createFromData(file, mime);
 
-    const prepMod = _requireAny('WAWebPrepRawMedia', 'WAWebPrepareMediaUtils');
+    const prepMod      = _requireAny('WAWebPrepRawMedia', 'WAWebPrepareMediaUtils');
     const prepRawMedia = prepMod.prepRawMedia ?? prepMod.default?.prepRawMedia ?? prepMod.default;
-    const mediaPrep = prepRawMedia(opaqueData, { isPtt: true, asSticker: false, asGif: false, asDocument: false });
-    const mediaData = await mediaPrep.waitForPrep();
+    const mediaPrep    = prepRawMedia(opaqueData, { isPtt: true, asSticker: false, asGif: false, asDocument: false });
+    const mediaData    = await mediaPrep.waitForPrep();
 
+    // Add waveform for the green visualisation bar in the PTT bubble
     const waveform = await _generateWaveform(file);
-    if (waveform) mediaData.waveform = waveform;
-
-    // ── Step 4: Media object + type ─────────────────────────────────
-    const storageMod = _requireAny('WAWebMediaStorage', 'WAWebMediaStorageUtils', 'WAWebMediaStorageManager');
-    const getOrCreateMediaObject = storageMod.getOrCreateMediaObject ?? storageMod.default?.getOrCreateMediaObject;
-    const mediaObject = getOrCreateMediaObject(mediaData.filehash);
-
-    const typesMod = _requireAny('WAWebMmsMediaTypes', 'WAWebMediaMsgTypes', 'WAWebMediaTypes');
-    const msgToMediaType = typesMod.msgToMediaType ?? typesMod.default?.msgToMediaType;
-    const mediaType = msgToMediaType({ type: mediaData.type, isGif: false });
-
-    if (!(mediaData.mediaBlob instanceof OpaqueData)) {
-      mediaData.mediaBlob = await OpaqueData.createFromData(mediaData.mediaBlob, mediaData.mediaBlob.type);
+    if (waveform) {
+      if (typeof mediaData.set === 'function') mediaData.set({ waveform });
+      else mediaData.waveform = waveform;
     }
-    mediaData.renderableUrl = mediaData.mediaBlob.url();
-    mediaObject.consolidate(mediaData.toJSON());
-    mediaData.mediaBlob.autorelease();
 
-    // ── Step 5: Upload (most frequently renamed module) ─────────────
+    // ── Step 4: Media object + type ──────────────────────────────────
+    const storageMod          = _requireAny('WAWebMediaStorage', 'WAWebMediaStorageUtils', 'WAWebMediaStorageManager');
+    const getOrCreateMediaObj = storageMod.getOrCreateMediaObject ?? storageMod.default?.getOrCreateMediaObject;
+    const mediaObject         = getOrCreateMediaObj(mediaData.filehash);
+
+    const typesMod      = _requireAny('WAWebMmsMediaTypes', 'WAWebMediaMsgTypes', 'WAWebMediaTypes');
+    const msgToMType    = typesMod.msgToMediaType ?? typesMod.default?.msgToMediaType;
+    const mediaType     = msgToMType({ type: mediaData.type ?? 'ptt', isGif: false });
+
+    // FIX Bug 2: use duck-typing instead of instanceof (module identity is unstable)
+    const rawBlob = mediaData.mediaBlob;
+    const isOpaqueData = rawBlob && typeof rawBlob.url === 'function' && typeof rawBlob.autorelease === 'function';
+    let pttOpaqueData = rawBlob;
+    if (!isOpaqueData) {
+      // mediaBlob is a regular Blob — wrap it in OpaqueData
+      pttOpaqueData = await OpaqueData.createFromData(rawBlob, rawBlob?.type || mime);
+    }
+
+    // renderableUrl for local preview (sender's UI only — not sent to server)
+    mediaData.renderableUrl = pttOpaqueData.url();
+
+    // Consolidate into mediaObject BEFORE autorelease
+    mediaObject.consolidate(mediaData.toJSON ? mediaData.toJSON() : { ...mediaData });
+
+    // ── Step 5: Upload ───────────────────────────────────────────────
+    // FIX Bug 4: pass chat + mediaData as required by the actual WA signature.
+    // Different builds use different module names — try all known ones.
     const uploadMod = _requireAny(
       'WAWebMediaMmsV4Upload',
       'WAWebMediaUploadUtils',
@@ -818,56 +856,87 @@ async function sendAudioAsPTT(audioBase64, mimeType) {
       'WAWebMediaMmsUpload',
       'WAWebMmsUpload',
     );
-    const uploadMedia = uploadMod.uploadMedia ?? uploadMod.default?.uploadMedia ?? uploadMod.default?.encryptAndUpload;
-    if (!uploadMedia) throw new Error('uploadMedia function not found in upload module');
+    const uploadFn = uploadMod.uploadMedia
+      ?? uploadMod.default?.uploadMedia
+      ?? uploadMod.default?.encryptAndUpload;
+    if (!uploadFn) throw new Error('uploadMedia function not found in any upload module');
 
-    const uploaded = await uploadMedia({ mimetype: mediaData.mimetype, mediaObject, mediaType });
-    const me = uploaded?.mediaEntry ?? uploaded;
-    if (!me?.directPath) throw new Error('Upload failed: no mediaEntry/directPath');
-
-    mediaData.set({
-      clientUrl: me.mmsUrl ?? me.url,
-      deprecatedMms3Url: me.deprecatedMms3Url,
-      directPath: me.directPath,
-      mediaKey: me.mediaKey,
-      mediaKeyTimestamp: me.mediaKeyTimestamp,
-      filehash: mediaObject.filehash,
-      encFilehash: me.encFilehash,
-      uploadhash: me.uploadHash ?? me.uploadhash,
-      size: mediaObject.size,
-      streamingSidecar: me.sidecar,
-      firstFrameSidecar: me.firstFrameSidecar,
+    const uploaded = await uploadFn({
+      chat,        // FIX Bug 4: required in most WA builds
+      mediaData,   // FIX Bug 4: required in most WA builds
+      mediaObject,
+      mediaType,
+      mimetype: mime,
+      mmsOptions: { mediaType },  // some builds require this wrapper
     });
 
-    // ── Step 6: Build + send message ────────────────────────────────
-    const meMod = _requireAny('WAWebUserPrefsMeUser');
+    // FIX Bug 3: autorelease AFTER upload (not before)
+    pttOpaqueData.autorelease();
+
+    const me = uploaded?.mediaEntry ?? uploaded;
+    if (!me?.directPath) {
+      throw new Error(`Upload returned no directPath. uploaded=${JSON.stringify(uploaded)?.slice(0, 200)}`);
+    }
+
+    // ── Step 5b: Set upload metadata on mediaData ────────────────────
+    // FIX Bug 5: .set() may not exist if mediaData is a plain object
+    const uploadFields = {
+      clientUrl:           me.mmsUrl ?? me.url,
+      deprecatedMms3Url:   me.deprecatedMms3Url,
+      directPath:          me.directPath,
+      mediaKey:            me.mediaKey,
+      mediaKeyTimestamp:   me.mediaKeyTimestamp,
+      filehash:            mediaObject.filehash,
+      encFilehash:         me.encFilehash,
+      uploadhash:          me.uploadHash ?? me.uploadhash,
+      size:                mediaObject.size,
+      streamingSidecar:    me.sidecar,
+      firstFrameSidecar:   me.firstFrameSidecar,
+    };
+    if (typeof mediaData.set === 'function') {
+      mediaData.set(uploadFields);
+    } else {
+      Object.assign(mediaData, uploadFields);
+    }
+
+    // ── Step 6: Build and send the PTT message ───────────────────────
+    const meMod  = _requireAny('WAWebUserPrefsMeUser');
     const meUser = (meMod.getMaybeMePnUser ?? meMod.getMeUser ?? meMod.default?.getMaybeMePnUser).call(meMod);
     const MsgKey = _requireAny('WAWebMsgKey');
-    const newId = await MsgKey.newId();
+    const newId  = await MsgKey.newId();
     const newMsgKey = new MsgKey({ from: meUser, to: chat.id, id: newId, selfDir: 'out' });
 
     let ephemeralFields = {};
     try {
       const ephMod = _requireAny('WAWebGetEphemeralFieldsMsgActionsUtils', 'WAWebEphemeralFields', 'WAWebEphemeralUtils');
-      const getEphemeralFields = ephMod.getEphemeralFields ?? ephMod.default?.getEphemeralFields;
-      if (getEphemeralFields) ephemeralFields = getEphemeralFields(chat);
-    } catch (_) { /* ephemeral is optional — chats without disappearing messages work fine without it */ }
+      const getEph = ephMod.getEphemeralFields ?? ephMod.default?.getEphemeralFields;
+      if (getEph) ephemeralFields = getEph(chat);
+    } catch (_) { /* ephemeral fields are optional */ }
 
-    const mediaJSON = mediaData.toJSON ? mediaData.toJSON() : mediaData;
+    const mediaJSON = mediaData.toJSON ? mediaData.toJSON() : { ...mediaData };
     const message = {
-      ...mediaJSON, ...ephemeralFields,
-      id: newMsgKey, ack: 0, from: meUser, to: chat.id,
-      local: true, self: 'out', t: Math.floor(Date.now() / 1000),
-      isNewMsg: true, type: 'ptt', mimetype: mime,
+      ...mediaJSON,
+      ...ephemeralFields,
+      id:       newMsgKey,
+      ack:      0,
+      from:     meUser,
+      to:       chat.id,
+      local:    true,
+      self:     'out',
+      t:        Math.floor(Date.now() / 1000),
+      isNewMsg: true,
+      type:     'ptt',
+      mimetype: mime,
     };
 
     const sendMod = _requireAny('WAWebSendMsgChatAction');
     const [msgPromise] = sendMod.addAndSendMsgToChat(chat, message);
     await msgPromise;
-    console.log('[WSPP CATALOG] PTT sent to', chatJid);
+    console.log('[WSPP CATALOG] PTT sent successfully to', chatJid);
     return true;
+
   } catch (err) {
-    console.error('[WSPP CATALOG] PTT send error:', err.message);
+    console.error('[WSPP CATALOG] PTT send error:', err.message, err.stack?.slice(0, 400));
     return false;
   }
 }

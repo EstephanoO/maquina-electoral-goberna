@@ -1,0 +1,303 @@
+// blast/routes.ts — Endpoints para el call center masivo WA
+//
+// Arquitectura:
+//   GET  /api/blast/form-contacts  → contactos del segmento del número activo
+//   PUT  /api/blast/mark-hablado   → marcar contactos como hablado post-envío
+//   POST /api/blast/report         → guardar log de mensajes enviados/fallidos
+//   GET  /api/blast/stats          → progreso global + por número
+//   POST /api/blast/number-config  → registrar/actualizar configuración de un celular
+//   GET  /api/blast/number-config  → obtener configuración del número activo
+
+import type { FastifyPluginAsync } from "fastify";
+import type { AppEnv } from "../../config/env";
+import type { AuthenticatedRequest } from "../../infra/auth";
+import { authorize } from "../../infra/authorize";
+import { errorPayload } from "../../infra/http";
+import {
+  markHabladoSchema,
+  blastReportSchema,
+  numberConfigSchema,
+} from "./schemas";
+import * as repo from "./repository";
+
+// Default segmentation: 6 slots (one per candidate phone)
+const DEFAULT_TOTAL_SLOTS = 6;
+
+export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
+  return async (app) => {
+    await repo.ensureBlastTables();
+
+    // ──────────────────────────────────────────────────────────────────
+    // GET /api/blast/form-contacts
+    // Returns contacts for the calling WA number's segment.
+    // The extension passes x-wa-number header to identify the celular.
+    // Falls back to auto-assignment if no config exists yet.
+    // ──────────────────────────────────────────────────────────────────
+    app.get(
+      "/api/blast/form-contacts",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const req       = request as AuthenticatedRequest;
+        const requestId = String(request.id);
+        const campaignId = req.activeCampaignId!;
+
+        const qs     = request.query as Record<string, string>;
+        const limit  = Math.min(500, Math.max(1, parseInt(qs.limit  ?? "200", 10)));
+        const offset = Math.max(0,             parseInt(qs.offset ?? "0",   10));
+        const status = qs.status  ?? "nuevo";
+        const district = qs.district ?? "";
+
+        // Identify which WA number is sending this request
+        const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "");
+
+        // Look up or create segment config for this number
+        let config = waNumber
+          ? await repo.getNumberConfig(campaignId, waNumber)
+          : null;
+
+        // Auto-assign segment if not configured yet
+        // Uses a deterministic slot based on a hash of the wa_number
+        let segmentIdx  = 0;
+        let totalSlots  = DEFAULT_TOTAL_SLOTS;
+
+        if (config) {
+          segmentIdx = config.segment_idx;
+          totalSlots = config.total_slots;
+        } else if (waNumber) {
+          // Auto-register with a hash-based slot
+          const hash = waNumber.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+          segmentIdx = hash % DEFAULT_TOTAL_SLOTS;
+          await repo.upsertNumberConfig({
+            campaign_id: campaignId,
+            wa_number:   waNumber,
+            segment_idx: segmentIdx,
+            total_slots: DEFAULT_TOTAL_SLOTS,
+          }).catch(() => {}); // best-effort
+        }
+
+        try {
+          const { contacts, total } = await repo.getFormContactsForNumber({
+            campaign_id: campaignId,
+            wa_number:   waNumber || "unknown",
+            segment_idx: segmentIdx,
+            total_slots: totalSlots,
+            status:      status || undefined,
+            district:    district || undefined,
+            limit,
+            offset,
+          });
+
+          app.log.info(
+            { campaignId, waNumber, segmentIdx, totalSlots, returned: contacts.length, total },
+            "[blast] form-contacts"
+          );
+
+          return reply.code(200).send({
+            ok:          true,
+            request_id:  requestId,
+            contacts,
+            total,
+            segment_idx: segmentIdx,
+            total_slots: totalSlots,
+          });
+        } catch (err) {
+          app.log.error({ err }, "[blast] getFormContactsForNumber failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "Error al obtener contactos")
+          );
+        }
+      }
+    );
+
+    // ──────────────────────────────────────────────────────────────────
+    // PUT /api/blast/mark-hablado
+    // Called after each batch of messages is sent.
+    // Marks form_submission IDs as cms_status = 'hablado'.
+    // ──────────────────────────────────────────────────────────────────
+    app.put(
+      "/api/blast/mark-hablado",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const req       = request as AuthenticatedRequest;
+        const requestId = String(request.id);
+        const campaignId = req.activeCampaignId!;
+
+        const parsed = markHabladoSchema.safeParse(request.body);
+        if (!parsed.success) {
+          return reply.code(400).send(
+            errorPayload(requestId, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "Payload inválido")
+          );
+        }
+
+        const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "") || null;
+
+        try {
+          const updated = await repo.markHablado(campaignId, parsed.data.ids, waNumber);
+          app.log.info({ campaignId, waNumber, ids: parsed.data.ids.length, updated }, "[blast] mark-hablado");
+          return reply.code(200).send({ ok: true, request_id: requestId, updated });
+        } catch (err) {
+          app.log.error({ err }, "[blast] markHablado failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "Error al marcar hablado")
+          );
+        }
+      }
+    );
+
+    // ──────────────────────────────────────────────────────────────────
+    // POST /api/blast/report
+    // Saves a batch of blast results (sent/failed) to blast_log.
+    // Used for audit trail and progress tracking.
+    // ──────────────────────────────────────────────────────────────────
+    app.post(
+      "/api/blast/report",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const req        = request as AuthenticatedRequest;
+        const requestId  = String(request.id);
+        const campaignId = req.activeCampaignId!;
+
+        const parsed = blastReportSchema.safeParse(request.body);
+        if (!parsed.success) {
+          return reply.code(400).send(
+            errorPayload(requestId, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "Payload inválido")
+          );
+        }
+
+        try {
+          const saved = await repo.saveBastReport(campaignId, parsed.data.results);
+          return reply.code(200).send({ ok: true, request_id: requestId, saved });
+        } catch (err) {
+          app.log.error({ err }, "[blast] saveBlastReport failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "Error al guardar reporte")
+          );
+        }
+      }
+    );
+
+    // ──────────────────────────────────────────────────────────────────
+    // GET /api/blast/stats
+    // Returns global stats + per-number breakdown.
+    // Used by the popup "Call Center" tab to show progress of all 6 phones.
+    // ──────────────────────────────────────────────────────────────────
+    app.get(
+      "/api/blast/stats",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const req        = request as AuthenticatedRequest;
+        const requestId  = String(request.id);
+        const campaignId = req.activeCampaignId!;
+
+        try {
+          const result = await repo.getBlastStats(campaignId);
+          return reply.code(200).send({
+            ok:         true,
+            request_id: requestId,
+            ...result,
+          });
+        } catch (err) {
+          app.log.error({ err }, "[blast] getBlastStats failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "Error al obtener estadísticas")
+          );
+        }
+      }
+    );
+
+    // ──────────────────────────────────────────────────────────────────
+    // POST /api/blast/number-config
+    // Registers or updates a WA number as a blast slot.
+    // Coordinators use this to set up the 6 phones before the campaign.
+    // Auth: candidato+
+    // ──────────────────────────────────────────────────────────────────
+    app.post(
+      "/api/blast/number-config",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["candidato"], requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const req        = request as AuthenticatedRequest;
+        const requestId  = String(request.id);
+        const campaignId = req.activeCampaignId!;
+
+        const parsed = numberConfigSchema.safeParse(request.body);
+        if (!parsed.success) {
+          return reply.code(400).send(
+            errorPayload(requestId, "VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "Payload inválido")
+          );
+        }
+
+        try {
+          await repo.upsertNumberConfig({
+            campaign_id: campaignId,
+            ...parsed.data,
+          });
+          return reply.code(200).send({ ok: true, request_id: requestId });
+        } catch (err) {
+          app.log.error({ err }, "[blast] upsertNumberConfig failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "Error al guardar configuración")
+          );
+        }
+      }
+    );
+
+    // ──────────────────────────────────────────────────────────────────
+    // GET /api/blast/number-config
+    // Returns config for the calling WA number.
+    // The extension uses this to know its segment_idx at startup.
+    // ──────────────────────────────────────────────────────────────────
+    app.get(
+      "/api/blast/number-config",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const req        = request as AuthenticatedRequest;
+        const requestId  = String(request.id);
+        const campaignId = req.activeCampaignId!;
+
+        const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "");
+        if (!waNumber) {
+          return reply.code(400).send(
+            errorPayload(requestId, "VALIDATION_ERROR", "Falta header x-wa-number")
+          );
+        }
+
+        const config = await repo.getNumberConfig(campaignId, waNumber);
+        return reply.code(200).send({
+          ok:         true,
+          request_id: requestId,
+          config:     config ?? null,
+        });
+      }
+    );
+  };
+}

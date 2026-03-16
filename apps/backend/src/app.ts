@@ -40,6 +40,9 @@ import { buildConversationRoutes } from "./modules/conversations/routes";
 import { buildVoterProfileRoutes } from "./modules/voter-profiles/routes";
 import { buildAudioCatalogRoutes } from "./modules/audio-catalog/routes";
 import { buildRegionalLeadersRoutes } from "./modules/regional-leaders/routes";
+import { buildWaValidatorRoutes } from "./modules/wa-validator/routes";
+import { buildQrLeadsRoutes } from "./modules/qr-leads/routes";
+import { buildBlastRoutes } from "./modules/blast/routes";
 
 export function buildApp(env: AppEnv) {
   const app = Fastify({
@@ -190,6 +193,9 @@ export function buildApp(env: AppEnv) {
   app.register(buildVoterProfileRoutes(env));
   app.register(buildAudioCatalogRoutes(env));
   app.register(buildRegionalLeadersRoutes(env));
+  app.register(buildWaValidatorRoutes(env));
+  app.register(buildQrLeadsRoutes(env));
+  app.register(buildBlastRoutes(env));
 
   app.get("/api/metrics", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, async (_request, reply) => {
     reply.header("Cache-Control", "no-store");

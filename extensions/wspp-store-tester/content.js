@@ -261,6 +261,135 @@ window.addEventListener('message', (e) => {
     return;
   }
 
+  // --- BLAST_GET_FORM_CONTACTS (form_submissions: inject → background → inject) ---
+  if (e.data?.type === 'BLAST_GET_FORM_CONTACTS') {
+    const { limit, offset, status, district } = e.data;
+    chrome.runtime.sendMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit, offset, status, district }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'BLAST_FORM_CONTACTS_READY', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({
+        type: 'BLAST_FORM_CONTACTS_READY',
+        ok: response?.ok ?? false,
+        contacts: response?.contacts ?? [],
+        total: response?.total ?? 0,
+        error: response?.error ?? null,
+      }, WA_ORIGIN);
+    });
+    return;
+  }
+
+  // --- BLAST_GET_CONTACTS (CMS conversations — legacy) ---
+  if (e.data?.type === 'BLAST_GET_CONTACTS') {
+    const { limit, offset, own_number } = e.data;
+    chrome.runtime.sendMessage({ type: 'BLAST_GET_CONTACTS', limit, offset, own_number }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'BLAST_CONTACTS_READY', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({
+        type: 'BLAST_CONTACTS_READY',
+        ok: response?.ok ?? false,
+        contacts: response?.contacts ?? [],
+        total: response?.total ?? 0,
+        error: response?.error ?? null,
+      }, WA_ORIGIN);
+    });
+    return;
+  }
+
+  // --- BLAST_MARK_HABLADO (inject → background, fire-and-forget) ---
+  if (e.data?.type === 'BLAST_MARK_HABLADO') {
+    chrome.runtime.sendMessage({ type: 'BLAST_MARK_HABLADO', ids: e.data.ids, own_number: e.data.own_number }, () => {});
+    return;
+  }
+
+  // --- BLAST_GET_NUMBER_CONFIG (inject → background → inject) ---
+  if (e.data?.type === 'BLAST_GET_NUMBER_CONFIG') {
+    const own_number = e.data.own_number;
+    chrome.runtime.sendMessage({ type: 'BLAST_GET_NUMBER_CONFIG', own_number }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'BLAST_NUMBER_CONFIG_READY', config: null }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({ type: 'BLAST_NUMBER_CONFIG_READY', config: response?.config ?? null }, WA_ORIGIN);
+    });
+    return;
+  }
+
+  // --- BLAST_REPORT_RESULTS (inject → background, fire-and-forget) ---
+  if (e.data?.type === 'BLAST_REPORT_RESULTS') {
+    chrome.runtime.sendMessage({ type: 'BLAST_REPORT', results: e.data.results }, () => {});
+    return;
+  }
+
+  // ── VALIDATOR CONV SENT — record outgoing for spam detector ─────────
+  // Called by wa-validator-panel conv mode after each successful message send.
+  if (e.data?.type === 'WSPP_VALIDATOR_CONV_SENT') {
+    chrome.runtime.sendMessage({ type: 'WSPP_VALIDATOR_CONV_SENT', payload: e.data.payload }, () => {});
+    return;
+  }
+
+  // ── SPAM CHECK BRIDGE (inject → background, synchronous-like) ────────
+  // Blast panel calls this before each send. Background runs checkSpamNow()
+  // and replies so blast can pause if critical.
+  if (e.data?.type === 'WSPP_SPAM_CHECK_NOW') {
+    chrome.runtime.sendMessage({ type: 'WSPP_SPAM_CHECK_NOW', own_number: e.data.own_number }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'WSPP_SPAM_CHECK_RESULT', result: null }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({ type: 'WSPP_SPAM_CHECK_RESULT', result: response?.result || null }, WA_ORIGIN);
+    });
+    return;
+  }
+
+  // ── WA VALIDATOR BRIDGE ──────────────────────────────────────────────
+  // WA_VALIDATOR_GET_CONTACTS — inject requests contacts from backend
+  if (e.data?.type === 'WA_VALIDATOR_GET_CONTACTS') {
+    const { limit, offset } = e.data;
+    chrome.runtime.sendMessage({ type: 'WA_VALIDATOR_GET_CONTACTS', limit, offset }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'WA_VALIDATOR_CONTACTS_READY', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({
+        type: 'WA_VALIDATOR_CONTACTS_READY',
+        ok: response?.ok ?? false,
+        contacts: response?.contacts ?? [],
+        total: response?.total ?? 0,
+        error: response?.error ?? null,
+      }, WA_ORIGIN);
+    });
+    return;
+  }
+
+  // WA_VALIDATOR_SAVE_RESULTS — inject sends batch of { id, wa_valid } to persist
+  if (e.data?.type === 'WA_VALIDATOR_SAVE_RESULTS') {
+    const { results, own_number } = e.data;
+    chrome.runtime.sendMessage({ type: 'WA_VALIDATOR_SAVE_RESULTS', results, own_number }, () => {});
+    return;
+  }
+
+  // WA_VALIDATOR_GET_STATS_REQ — inject requests brigadista stats
+  if (e.data?.type === 'WA_VALIDATOR_GET_STATS_REQ') {
+    chrome.runtime.sendMessage({ type: 'WA_VALIDATOR_GET_STATS' }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'WA_VALIDATOR_STATS_READY', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({
+        type: 'WA_VALIDATOR_STATS_READY',
+        ok: response?.ok ?? false,
+        summary: response?.summary ?? null,
+        by_brigadista: response?.by_brigadista ?? [],
+        error: response?.error ?? null,
+      }, WA_ORIGIN);
+    });
+    return;
+  }
+
   // --- WSPP_RECEIVED (mensaje entrante detectado) ---
   // Uses retry logic (like WSPP_SENT) because the MV3 service worker
   // may be sleeping and needs time to wake up.

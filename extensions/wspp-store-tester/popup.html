@@ -166,6 +166,33 @@
       text-align: center;
     }
 
+    /* ── Spam tab ── */
+    .spam-alert-card {
+      margin: 4px 10px;
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(42,57,66,.7);
+      background: #111b21;
+      cursor: default;
+    }
+    .spam-alert-card.critical { border-color: rgba(220,38,38,.3); background: rgba(127,29,29,.2); }
+    .spam-alert-card.high     { border-color: rgba(234,88,12,.3); background: rgba(120,53,15,.15); }
+    .spam-alert-card.medium   { border-color: rgba(202,138,4,.3);  background: rgba(113,63,18,.1); }
+    .spam-alert-header {
+      display: flex; align-items: center; gap: 6px; margin-bottom: 5px;
+    }
+    .spam-alert-level {
+      font-size: 9px; font-weight: 800; padding: 2px 7px; border-radius: 10px;
+      text-transform: uppercase; letter-spacing: .4px;
+    }
+    .spam-alert-level.critical { background: rgba(220,38,38,.2); color: #fca5a5; }
+    .spam-alert-level.high     { background: rgba(234,88,12,.2); color: #fed7aa; }
+    .spam-alert-level.medium   { background: rgba(202,138,4,.2);  color: #fde68a; }
+    .spam-alert-time { font-size: 10px; color: #667781; flex: 1; text-align: right; }
+    .spam-alert-score { font-size: 11px; font-weight: 700; }
+    .spam-alert-warnings { font-size: 11px; color: #8696a0; line-height: 1.5; }
+    .spam-alert-actions { font-size: 10px; color: #5ac8fa; margin-top: 3px; line-height: 1.5; }
+
     /* ── Validacion tab ── */
     .val-header {
       display: flex; align-items: center; gap: 6px;
@@ -280,6 +307,78 @@
       border-radius: 50%; margin-right: 3px; vertical-align: middle;
     }
     .val-stat-num { font-weight: 700; color: #e9edef; }
+
+    /* ── Call Center tab ── */
+    .cc-section { padding: 10px 12px; border-bottom: 1px solid #2a3942; }
+    .cc-section-title {
+      font-size: 10px; font-weight: 700; color: #8696a0;
+      text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px;
+    }
+    /* Global progress bar */
+    .cc-progress-bar {
+      height: 6px; background: #2a3942; border-radius: 3px; overflow: hidden; margin-bottom: 6px;
+    }
+    .cc-progress-fill {
+      height: 100%; background: linear-gradient(90deg,#00a884,#25d366);
+      border-radius: 3px; transition: width .4s;
+    }
+    .cc-global-stats {
+      display: grid; grid-template-columns: repeat(4,1fr); gap: 5px; margin-bottom: 4px;
+    }
+    .cc-stat-box {
+      text-align: center; padding: 7px 4px;
+      background: #1f2c34; border-radius: 8px;
+    }
+    .cc-stat-num { font-size: 16px; font-weight: 700; color: #e9edef; }
+    .cc-stat-lbl { font-size: 9px; color: #8696a0; text-transform: uppercase; margin-top: 2px; }
+    /* Per-number rows */
+    .cc-number-row {
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(42,57,66,.5);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .cc-number-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .cc-number-info { flex: 1; }
+    .cc-number-label { font-size: 12px; font-weight: 600; color: #e9edef; }
+    .cc-number-sub { font-size: 10px; color: #8696a0; margin-top: 1px; }
+    .cc-number-stats {
+      display: flex; gap: 8px; font-size: 10px;
+    }
+    .cc-number-sent  { color: #00a884; font-weight: 700; }
+    .cc-number-today { color: #5ac8fa; }
+    .cc-number-pct   { color: #8696a0; }
+    /* Mini progress */
+    .cc-mini-bar {
+      height: 3px; background: #2a3942; border-radius: 2px; overflow: hidden; margin-top: 3px;
+    }
+    .cc-mini-fill { height: 100%; background: #00a884; border-radius: 2px; }
+    /* Refresh btn */
+    .cc-refresh-btn {
+      background: none; border: 1px solid #2a3942; border-radius: 8px;
+      color: #8696a0; padding: 5px 9px; cursor: pointer; font-size: 11px;
+    }
+    .cc-refresh-btn:hover { border-color: #00a884; color: #00a884; }
+    /* ETA / velocity info */
+    .cc-eta-row {
+      padding: 6px 12px; font-size: 10px; color: #667781;
+      border-bottom: 1px solid #2a3942;
+      display: flex; justify-content: space-between;
+    }
+    .cc-eta-val { color: #e9edef; font-weight: 600; }
+    /* Limits guide */
+    .cc-limits { padding: 8px 12px; }
+    .cc-limit-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 4px 0; border-bottom: 1px solid rgba(42,57,66,.3);
+      font-size: 11px;
+    }
+    .cc-limit-row:last-child { border-bottom: none; }
+    .cc-limit-key { color: #8696a0; }
+    .cc-limit-val { color: #e9edef; font-weight: 600; }
+    .cc-limit-val.warn { color: #ff9f0a; }
+    .cc-limit-val.ok   { color: #30d158; }
   </style>
 </head>
 <body>
@@ -307,7 +406,9 @@
     <!-- Tabs -->
     <div class="tabs">
       <button class="tab active" data-tab="home">Inicio</button>
-      <button class="tab" data-tab="validacion">Validacion</button>
+      <button class="tab" data-tab="callcenter">📞 CC</button>
+      <button class="tab" data-tab="validacion">Validac.</button>
+      <button class="tab" data-tab="spam">Spam <span id="spam-badge" style="display:none;background:#ef5350;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:10px;margin-left:3px;vertical-align:1px;"></span></button>
     </div>
 
     <!-- HOME TAB -->
@@ -341,6 +442,96 @@
 
       <button class="reset-btn" id="btn-reset">Reiniciar contador</button>
       <div class="wa-status" id="wa-status">Abre WhatsApp Web para empezar</div>
+    </div>
+
+    <!-- CALL CENTER TAB -->
+    <div class="tab-content" id="tab-callcenter">
+
+      <!-- Header row: title + refresh -->
+      <div class="cc-section" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;">
+        <div style="font-size:13px;font-weight:700;color:#e9edef;">Call Center · 6 celulares</div>
+        <button class="cc-refresh-btn" id="cc-refresh">&#x21bb; Actualizar</button>
+      </div>
+
+      <!-- Global progress -->
+      <div class="cc-section">
+        <div class="cc-section-title">Progreso global</div>
+        <div class="cc-global-stats" id="cc-global-stats">
+          <div class="cc-stat-box"><div class="cc-stat-num" id="cc-total">—</div><div class="cc-stat-lbl">Total</div></div>
+          <div class="cc-stat-box"><div class="cc-stat-num" id="cc-sent" style="color:#00a884">—</div><div class="cc-stat-lbl">Enviados</div></div>
+          <div class="cc-stat-box"><div class="cc-stat-num" id="cc-pending" style="color:#ff9f0a">—</div><div class="cc-stat-lbl">Pendientes</div></div>
+          <div class="cc-stat-box"><div class="cc-stat-num" id="cc-failed" style="color:#ef5350">—</div><div class="cc-stat-lbl">Fallidos</div></div>
+        </div>
+        <div class="cc-progress-bar">
+          <div class="cc-progress-fill" id="cc-progress-fill" style="width:0%"></div>
+        </div>
+        <div style="font-size:10px;color:#8696a0;text-align:right;" id="cc-pct-label">0% completado</div>
+      </div>
+
+      <!-- ETA / velocity -->
+      <div class="cc-eta-row">
+        <span>Velocidad diaria (6 cel.)</span>
+        <span class="cc-eta-val" id="cc-velocity">2,400–3,000 msg/día</span>
+      </div>
+      <div class="cc-eta-row">
+        <span>ETA a 20k contactos</span>
+        <span class="cc-eta-val" id="cc-eta">—</span>
+      </div>
+
+      <!-- Per-number breakdown -->
+      <div style="padding:8px 12px 4px;border-bottom:1px solid #2a3942;">
+        <div class="cc-section-title">Estado por celular</div>
+      </div>
+      <div id="cc-numbers-list" style="max-height:220px;overflow-y:auto;">
+        <div style="padding:20px;text-align:center;font-size:11px;color:#8696a0;">Cargando...</div>
+      </div>
+
+      <!-- Límites anti-ban -->
+      <div style="padding:8px 12px 4px;border-top:1px solid #2a3942;">
+        <div class="cc-section-title" style="margin-top:4px;">Límites anti-ban recomendados</div>
+      </div>
+      <div class="cc-limits">
+        <div class="cc-limit-row">
+          <span class="cc-limit-key">Por celular / hora</span>
+          <span class="cc-limit-val ok">80–100 msgs</span>
+        </div>
+        <div class="cc-limit-row">
+          <span class="cc-limit-key">Por celular / día</span>
+          <span class="cc-limit-val ok">400–500 msgs</span>
+        </div>
+        <div class="cc-limit-row">
+          <span class="cc-limit-key">6 celulares / día</span>
+          <span class="cc-limit-val ok">2,400–3,000 msgs</span>
+        </div>
+        <div class="cc-limit-row">
+          <span class="cc-limit-key">20k contactos en</span>
+          <span class="cc-limit-val ok">7 días</span>
+        </div>
+        <div class="cc-limit-row">
+          <span class="cc-limit-key">Delay entre msgs</span>
+          <span class="cc-limit-val warn">10–22s (+ pausas)</span>
+        </div>
+        <div class="cc-limit-row">
+          <span class="cc-limit-key">Pausa c/10 msgs</span>
+          <span class="cc-limit-val warn">45–90s</span>
+        </div>
+        <div class="cc-limit-row">
+          <span class="cc-limit-key">Pausa c/25 msgs</span>
+          <span class="cc-limit-val warn">3–5 min</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- SPAM TAB -->
+    <div class="tab-content" id="tab-spam">
+      <div id="spam-risk-bar" style="padding:8px 12px;border-bottom:1px solid #2a3942;display:flex;align-items:center;gap:8px;">
+        <div style="font-size:10px;color:#8696a0;text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;">Estado número</div>
+        <div id="spam-risk-indicator" style="flex:1;font-size:12px;font-weight:700;color:#30d158;">✅ OK — Sin riesgo detectado</div>
+        <button id="spam-clear-history" style="background:none;border:1px solid #2a3942;border-radius:6px;color:#8696a0;font-size:10px;padding:3px 7px;cursor:pointer;">Limpiar</button>
+      </div>
+      <div id="spam-history-list" style="max-height:400px;overflow-y:auto;padding:6px 0;">
+        <div style="padding:24px 14px;text-align:center;font-size:12px;color:#8696a0;">Sin alertas registradas</div>
+      </div>
     </div>
 
     <!-- VALIDACION TAB -->

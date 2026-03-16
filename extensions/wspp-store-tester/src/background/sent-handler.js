@@ -10,7 +10,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import { apiFetch } from './api-client.js';
-import { recordOutgoing } from './spam-detector.js';
+import { recordOutgoing, checkSpamNow } from './spam-detector.js';
 import { recordConversation } from './gemini-fallback.js';
 import { reportConversation } from './received-handler.js';
 
@@ -162,6 +162,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   setTimeout(() => _sentDedup.delete(dedupKey), 3000);
 
   sendResponse({ ok: true, source: 'rich' });
+  return true;
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// WSPP_VALIDATOR_CONV_SENT — validator conv mode records each sent msg
+// for spam detector (same pipeline as WSPP_SENT_RICH)
+// ═══════════════════════════════════════════════════════════════════════
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type !== 'WSPP_VALIDATOR_CONV_SENT') return;
+  const { text, phone, own_number, timestamp } = msg.payload || {};
+  recordOutgoing(text || phone || '?', timestamp || Math.floor(Date.now() / 1000), phone, own_number);
+  sendResponse({ ok: true });
+  return true;
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// WSPP_SPAM_CHECK_NOW — synchronous spam check requested by blast/validator
+// before each send. Returns current risk level so inject can pause if critical.
+// ═══════════════════════════════════════════════════════════════════════
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type !== 'WSPP_SPAM_CHECK_NOW') return;
+  const result = checkSpamNow(msg.own_number || null);
+  sendResponse({ result: result || null });
   return true;
 });
 

@@ -2,6 +2,12 @@
 
 const API = 'https://api.goberna.us';
 const STORAGE_KEYS = ['wspp_token', 'wspp_user', 'wspp_user_role', 'wspp_audio_admin', 'wspp_count', 'wspp_campaign_id', 'wspp_own_number', 'wspp_campaigns'];
+const SPAM_RISK_COLORS = {
+  low:      { text: '✅ OK — Sin riesgo detectado',  color: '#30d158' },
+  medium:   { text: '⚠️ Riesgo medio — Reducir velocidad', color: '#ff9f0a' },
+  high:     { text: '🔶 Riesgo alto — Detener envíos', color: '#ff6b35' },
+  critical: { text: '🚨 CRÍTICO — Número en riesgo de bloqueo', color: '#ff453a' },
+};
 
 function $(id) { return document.getElementById(id); }
 
@@ -45,6 +51,204 @@ function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + tab));
   if (tab === 'validacion' && _valItems.length === 0) fetchValidations();
+  if (tab === 'spam') renderSpamHistory();
+  if (tab === 'callcenter') fetchCallCenterStats();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// CALL CENTER TAB
+// ═══════════════════════════════════════════════════════════════════════
+
+let _ccStats    = null;  // { stats, by_number }
+let _ccLoading  = false;
+
+// Colors for the 6 number slots
+const CC_COLORS = ['#00a884','#5ac8fa','#bf5af2','#ff9f0a','#ff6b35','#30d158'];
+const CC_NUMBER_LABELS = [
+  'Celular 1','Celular 2','Celular 3',
+  'Celular 4','Celular 5','Celular 6',
+];
+
+async function fetchCallCenterStats() {
+  if (_ccLoading) return;
+  _ccLoading = true;
+
+  const res = await apiFetchPopup('/api/blast/stats');
+  _ccLoading = false;
+
+  if (res.ok) {
+    _ccStats = { stats: res.stats, by_number: res.by_number };
+    renderCallCenter();
+  } else {
+    const list = $('cc-numbers-list');
+    if (list) list.innerHTML = `<div style="padding:16px;text-align:center;font-size:11px;color:#8696a0;">Error al cargar: ${esc(res.error || res.message || '?')}</div>`;
+  }
+}
+
+function renderCallCenter() {
+  if (!_ccStats) return;
+
+  const { stats, by_number } = _ccStats;
+
+  // ── Global stats ──────────────────────────────────────────────
+  const total   = stats?.total_contacts || 0;
+  const sent    = stats?.total_sent     || 0;
+  const pending = stats?.total_pending  || 0;
+  const failed  = stats?.total_failed   || 0;
+  const pct     = total > 0 ? Math.round((sent / total) * 100) : 0;
+
+  const elTotal   = $('cc-total');   if (elTotal)   elTotal.textContent   = total.toLocaleString('es-PE');
+  const elSent    = $('cc-sent');    if (elSent)     elSent.textContent    = sent.toLocaleString('es-PE');
+  const elPending = $('cc-pending'); if (elPending)  elPending.textContent = pending.toLocaleString('es-PE');
+  const elFailed  = $('cc-failed');  if (elFailed)   elFailed.textContent  = failed.toLocaleString('es-PE');
+
+  const fill = $('cc-progress-fill');
+  if (fill) fill.style.width = pct + '%';
+
+  const pctLabel = $('cc-pct-label');
+  if (pctLabel) pctLabel.textContent = `${pct}% completado · ${(total - sent).toLocaleString('es-PE')} restantes`;
+
+  // ETA: assuming 2700 msgs/día (midpoint 2400–3000) with 6 celulares
+  const remaining = Math.max(0, total - sent);
+  const DAILY_RATE = 2700;
+  const etaDays    = remaining > 0 ? Math.ceil(remaining / DAILY_RATE) : 0;
+  const etaEl = $('cc-eta');
+  if (etaEl) etaEl.textContent = etaDays > 0
+    ? `~${etaDays} día${etaDays !== 1 ? 's' : ''} (${remaining.toLocaleString('es-PE')} msgs)`
+    : '✅ Completado';
+
+  // ── Per-number rows ───────────────────────────────────────────
+  const list = $('cc-numbers-list');
+  if (!list) return;
+
+  const entries = Object.entries(by_number || {});
+
+  if (entries.length === 0) {
+    list.innerHTML = `<div style="padding:20px;text-align:center;font-size:11px;color:#8696a0;">
+      Sin datos aún. Abrí WhatsApp Web y ejecutá el blast para ver el progreso de cada celular.
+    </div>`;
+    return;
+  }
+
+  let html = '';
+  entries
+    .sort((a, b) => (b[1].sent || 0) - (a[1].sent || 0))
+    .forEach(([num, data], i) => {
+      const color    = CC_COLORS[i % CC_COLORS.length];
+      const slotIdx  = i;
+      // Each number handles ~1/6 of total contacts
+      const slotTotal = Math.round(total / Math.max(entries.length, 6));
+      const numPct   = slotTotal > 0 ? Math.min(100, Math.round(((data.sent || 0) / slotTotal) * 100)) : 0;
+      const label    = data.label || CC_NUMBER_LABELS[slotIdx] || `Celular ${slotIdx + 1}`;
+      const display  = num.length > 6 ? '+' + num.slice(-9) : num;
+
+      html += `<div class="cc-number-row">
+        <div class="cc-number-dot" style="background:${color}"></div>
+        <div class="cc-number-info">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <div class="cc-number-label">${esc(label)}</div>
+            <div class="cc-number-stats">
+              <span class="cc-number-sent">✓ ${(data.sent || 0).toLocaleString('es-PE')}</span>
+              <span class="cc-number-today">hoy: ${(data.today || 0)}</span>
+              <span class="cc-number-pct">${numPct}%</span>
+            </div>
+          </div>
+          <div class="cc-number-sub">+${esc(display)} · ${(data.failed || 0)} fallidos</div>
+          <div class="cc-mini-bar">
+            <div class="cc-mini-fill" style="width:${numPct}%;background:${color}"></div>
+          </div>
+        </div>
+      </div>`;
+    });
+
+  list.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SPAM TAB
+// ═══════════════════════════════════════════════════════════════════════
+
+function _timeAgo(ts) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60)   return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}min`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
+function renderSpamHistory() {
+  chrome.storage.local.get(['wspp_spam_alerts', 'wspp_spam_risk', 'wspp_own_number'], (data) => {
+    const history  = data.wspp_spam_alerts || [];
+    const riskMap  = data.wspp_spam_risk   || {};
+    const ownNum   = data.wspp_own_number  || null;
+
+    // ── Risk indicator ────────────────────────────────────────────
+    const riskKey   = ownNum || 'global';
+    const riskState = riskMap[riskKey] || { level: 'low', score: 0 };
+    const riskCfg   = SPAM_RISK_COLORS[riskState.level] || SPAM_RISK_COLORS.low;
+    const indicator = $('spam-risk-indicator');
+    if (indicator) {
+      indicator.textContent = riskCfg.text + (riskState.score > 0 ? ` (score ${riskState.score}/100)` : '');
+      indicator.style.color = riskCfg.color;
+    }
+
+    // ── Badge on tab ──────────────────────────────────────────────
+    const badge = $('spam-badge');
+    if (badge) {
+      const recentAlerts = history.filter(a => Date.now() - a.ts < 600_000); // last 10 min
+      const hasHigh = recentAlerts.some(a => a.level === 'critical' || a.level === 'high');
+      badge.style.display = hasHigh ? 'inline' : 'none';
+      badge.textContent   = recentAlerts.length > 0 ? String(recentAlerts.length) : '';
+    }
+
+    // ── History list ──────────────────────────────────────────────
+    const list = $('spam-history-list');
+    if (!list) return;
+
+    if (history.length === 0) {
+      list.innerHTML = `<div style="padding:24px 14px;text-align:center;font-size:12px;color:#8696a0;">Sin alertas registradas</div>`;
+      return;
+    }
+
+    let html = '';
+    for (const alert of history.slice(0, 20)) {
+      const levelCss = alert.level;
+      const scoreColor =
+        alert.score >= 70 ? '#ff453a' :
+        alert.score >= 45 ? '#ff6b35' :
+        alert.score >= 25 ? '#ff9f0a' : '#30d158';
+
+      html += `<div class="spam-alert-card ${levelCss}">`;
+      html += `<div class="spam-alert-header">`;
+      html += `<span class="spam-alert-level ${levelCss}">${alert.level}</span>`;
+      html += `<span class="spam-alert-score" style="color:${scoreColor}">Score ${alert.score}/100</span>`;
+      html += `<span class="spam-alert-time">${_timeAgo(alert.ts)} · ${alert.msg_count} msgs</span>`;
+      html += `</div>`;
+
+      if (alert.warnings?.length) {
+        html += `<div class="spam-alert-warnings">${alert.warnings.slice(0, 2).map(w => esc(w)).join('<br>')}</div>`;
+      }
+      if (alert.actions?.length) {
+        html += `<div class="spam-alert-actions">→ ${alert.actions.slice(0, 1).map(a => esc(a)).join('')}</div>`;
+      }
+      html += `</div>`;
+    }
+
+    list.innerHTML = html;
+  });
+}
+
+// Update spam badge whenever storage changes
+function updateSpamBadge() {
+  chrome.storage.local.get(['wspp_spam_alerts'], (data) => {
+    const history     = data.wspp_spam_alerts || [];
+    const badge       = $('spam-badge');
+    if (!badge) return;
+    const recentAlerts = history.filter(a => Date.now() - a.ts < 600_000);
+    const hasHigh      = recentAlerts.some(a => a.level === 'critical' || a.level === 'high');
+    badge.style.display = hasHigh ? 'inline' : 'none';
+    badge.textContent   = recentAlerts.length > 0 ? String(recentAlerts.length) : '';
+  });
 }
 
 // ── Phone number ─────────────────────────────────────────────────────
@@ -431,6 +635,11 @@ chrome.storage.onChanged.addListener((changes) => {
     _valItems = [];
     if (_activeTab === 'validacion') fetchValidations();
   }
+  // Update spam badge/tab when risk changes
+  if (changes.wspp_spam_alerts !== undefined || changes.wspp_spam_risk !== undefined) {
+    updateSpamBadge();
+    if (_activeTab === 'spam') renderSpamHistory();
+  }
 });
 
 // ── Init ─────────────────────────────────────────────────────────────
@@ -521,6 +730,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Call Center refresh button
+  $('cc-refresh')?.addEventListener('click', () => {
+    _ccStats = null;
+    fetchCallCenterStats();
+  });
+
+  // Spam clear history button
+  $('spam-clear-history')?.addEventListener('click', () => {
+    chrome.storage.local.remove(['wspp_spam_alerts', 'wspp_spam_risk'], () => {
+      renderSpamHistory();
+    });
+  });
+
   // Init view
   chrome.storage.local.get([...STORAGE_KEYS, 'wspp_wa_active'], (saved) => {
     if (saved.wspp_token && saved.wspp_user) {
@@ -536,5 +758,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (saved.wspp_wa_active) {
       $('wa-status').textContent = 'WhatsApp Web conectado';
     }
+    // Initialize spam badge on load
+    updateSpamBadge();
   });
 });

@@ -15,11 +15,9 @@ import Constants from 'expo-constants';
 
 import {
   getAccessToken,
-  getRefreshToken,
-  setAccessToken,
-  setRefreshToken,
   clearAuthData,
   getActiveCampaignId,
+  refreshTokens,
 } from './auth-store';
 
 import type {
@@ -32,7 +30,6 @@ import type {
   ValidateInvitationResponse,
   ValidateAccessCodeResponse,
   RegisterWithAccessCodeRequest,
-  RefreshResponse,
   CandidateInfo,
   CampaignConfig,
   FormDefinition,
@@ -159,38 +156,9 @@ async function request<T>(
   }
 }
 
-// Track if we're already refreshing to avoid concurrent refresh calls
-let refreshPromise: Promise<boolean> | null = null;
-
-async function tryRefresh(): Promise<boolean> {
-  // Dedupe concurrent refresh attempts
-  if (refreshPromise) return refreshPromise;
-
-  refreshPromise = (async () => {
-    try {
-      const refreshToken = await getRefreshToken();
-      if (!refreshToken) return false;
-
-      const response = await fetch(`${API_BASE}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      });
-
-      if (!response.ok) return false;
-
-      const data: RefreshResponse = await response.json();
-      await setAccessToken(data.access_token);
-      await setRefreshToken(data.refresh_token);
-      return true;
-    } catch {
-      return false;
-    } finally {
-      refreshPromise = null;
-    }
-  })();
-
-  return refreshPromise;
+// Delegate to shared auth-store implementation (deduplication + timeout handled there)
+function tryRefresh(): Promise<boolean> {
+  return refreshTokens(API_BASE);
 }
 
 // ─── Auth endpoints (no auth header needed) ─────────────────
@@ -201,6 +169,27 @@ export async function login(body: LoginRequest): Promise<ApiResult<LoginResponse
 
 export async function register(body: RegisterRequest): Promise<ApiResult<RegisterResponse>> {
   return request<RegisterResponse>('POST', '/auth/register', body, false);
+}
+
+/**
+ * POST /api/auth/logout — revokes all refresh tokens for this user on the server.
+ * Accepts an optional AbortSignal so the caller can enforce a timeout.
+ * Best-effort: the local session is cleared regardless of whether this succeeds.
+ */
+export async function logout(signal?: AbortSignal): Promise<ApiResult<void>> {
+  const token = await getAccessToken();
+  if (!token) return { ok: true, data: undefined };
+  try {
+    const response = await fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      signal,
+    });
+    if (!response.ok) return { ok: false, error: 'Logout server error', status: response.status };
+    return { ok: true, data: undefined };
+  } catch {
+    return { ok: false, error: 'Network error during logout' };
+  }
 }
 
 // ─── Invitations ────────────────────────────────────────────
@@ -539,4 +528,29 @@ export async function sendLocation(payload: {
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+// ─── QR Leads ────────────────────────────────────────────────
+
+/**
+ * POST /api/qr-leads/scan
+ * Records that someone scanned the brigadista's QR and opened WA.
+ * brigadista_id = JWT userId (server-side). campaign_id = x-campaign-id header.
+ */
+export function recordQrScan(params?: {
+  phone?: string;
+  message_text?: string;
+  scan_source?: 'qr' | 'link' | 'manual';
+}): Promise<ApiResult<{ id: string; scanned_at: string }>> {
+  return request('POST', '/qr-leads/scan', params ?? { scan_source: 'qr' });
+}
+
+/**
+ * GET /api/qr-leads/my-stats
+ * Returns total / today / this_week scan counts for the current brigadista.
+ */
+export function getMyQrStats(): Promise<ApiResult<{
+  stats: { total: number; today: number; this_week: number };
+}>> {
+  return request('GET', '/qr-leads/my-stats');
 }
