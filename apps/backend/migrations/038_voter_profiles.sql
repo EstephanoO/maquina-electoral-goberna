@@ -82,6 +82,10 @@ CREATE INDEX IF NOT EXISTS idx_voter_profiles_campaign_vote
 CREATE INDEX IF NOT EXISTS idx_voter_profiles_campaign_updated
   ON voter_profiles (campaign_id, updated_at DESC);
 
+-- pg_trgm is required for gin_trgm_ops index operator class.
+-- Already enabled in production; this guard ensures CI/fresh-DB environments work too.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE INDEX IF NOT EXISTS idx_voter_profiles_name_search
   ON voter_profiles USING gin (canonical_name gin_trgm_ops);
 
