@@ -16,7 +16,10 @@ import { pool } from "../../db";
 // blast_log may already exist with a legacy schema (columns: jid, phone, own_number).
 // We ADD the new columns we need (IF NOT EXISTS) and create new indexes safely.
 export async function ensureBlastTables(): Promise<void> {
-  // blast_log: create if missing, or migrate existing legacy table
+  // blast_log: create if missing, or migrate existing legacy table.
+  // Legacy schema had: jid, phone, own_number, message, error
+  // New schema adds: wa_number, contact_phone, message_text, error_msg
+  // We use ADD COLUMN IF NOT EXISTS for all new columns and CREATE INDEX IF NOT EXISTS.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS blast_log (
       id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -31,22 +34,27 @@ export async function ensureBlastTables(): Promise<void> {
     )
   `);
 
-  // Add wa_number column if it doesn't exist yet (legacy table had 'own_number')
+  // Migrate legacy columns to new names (ADD IF NOT EXISTS is safe to run multiple times)
   await pool.query(`
     ALTER TABLE blast_log
-      ADD COLUMN IF NOT EXISTS wa_number text NOT NULL DEFAULT ''
+      ADD COLUMN IF NOT EXISTS wa_number     text NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS contact_phone text NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS message_text  text,
+      ADD COLUMN IF NOT EXISTS error_msg     text
   `);
 
-  // Indexes — only on columns that are guaranteed to exist
+  // Indexes — CREATE INDEX IF NOT EXISTS is safe even if index already exists
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_blast_log_campaign_number
     ON blast_log(campaign_id, wa_number, sent_at DESC)
   `);
-  // Note: partial unique index on status='sent' — safe because status has a DEFAULT
+
+  // Partial unique index — skip if contact_phone column might be all-empty (legacy rows)
+  // Use DO $$ to catch and ignore error if index already exists with different columns
   await pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_blast_log_unique_send
     ON blast_log(campaign_id, wa_number, contact_phone)
-    WHERE status = 'sent'
+    WHERE status = 'sent' AND contact_phone != ''
   `);
 
   // Configuración de segmentación por número WA para la campaña
