@@ -22,7 +22,7 @@ async function _spamCheck() {
 // CONFIG
 // ══════════════════════════════════════════════════════════════════════
 const CFG_KEY = 'wspp_blast_cfg_v3';
-const TPL_KEY = 'wspp_blast_tpls_v3';
+const TPL_KEY = 'wspp_blast_tpls_v4'; // v4: spintax + 3 plantillas César
 
 const DEFAULTS = {
   batchSize:    25,   // personas por tanda — el usuario lo cambia en la UI
@@ -39,10 +39,16 @@ function _loadCfg() {
 function _saveCfg(c) { try { localStorage.setItem(CFG_KEY, JSON.stringify(c)); } catch (_) {} }
 let cfg = _loadCfg();
 
-const DEFAULT_TPL = '[Hola|Buenas|Hola, qué tal] {{nombre}}! [te escribo de parte de Goberna|soy parte del equipo de Goberna|te contacto desde Goberna].\n---\n[¿Tienes un momento?|¿Podemos conversar?|¿Estás disponible?] [{{cierre}}|Saludos!|Un abrazo!]';
+// 3 plantillas predeterminadas para César Vásquez — se rotan 1→2→3→1→2→3
+// Plantilla 1: 3 mensajes separados
+const DEFAULT_TPL  = '[Buenas tardes|Buenas|Hola|Buen día] {{nombre}}, ¿[cómo te encuentras?|cómo estás?|todo bien?|cómo te va?]\n---\nSoy el doctor César Vásquez\n---\n[Candidato al Senado Nacional|Postulante al Senado de la República|Candidato al Senado de la República] 🇵🇪';
+// Plantilla 2: 2 mensajes
+const DEFAULT_TPL2 = '[Hola|Buenas|Buenas tardes] {{nombre}} 👋 ¿[cómo estás?|todo bien?|cómo te va?]\n---\nSoy el doctor César Vásquez, [candidato al Senado Nacional|postulante al Senado de la República|candidato al Senado] 🇵🇪';
+// Plantilla 3: 1 mensaje
+const DEFAULT_TPL3 = '[Hola|Buenas|Buenas tardes] {{nombre}}, ¿[cómo te encuentras?|todo bien?|cómo estás?] Soy el doctor César Vásquez, [candidato al Senado Nacional|postulante al Senado de la República] 🇵🇪';
 function _loadTpls() {
   try { const r = localStorage.getItem(TPL_KEY); if (r) { const p = JSON.parse(r); if (p.length) return p; } } catch (_) {}
-  return [DEFAULT_TPL];
+  return [DEFAULT_TPL, DEFAULT_TPL2, DEFAULT_TPL3];
 }
 function _saveTpls(t) { try { localStorage.setItem(TPL_KEY, JSON.stringify(t)); } catch (_) {} }
 let tpls = _loadTpls();
@@ -73,6 +79,13 @@ let _trackedMsgs = [];    // { msgModel, contactName, telefono } — live ack tr
 const _sentThisSession = new Set();  // Set de telefono normalizado
 const _sentIds = new Set();          // Set de form_submission.id
 
+// ── Índice de plantilla de sesión ─────────────────────────────────────
+// Contador global que SOLO avanza cuando un envío fue exitoso.
+// Es independiente de `i` y de `globalSent` para que skips (dedup, no_wa,
+// jid inválido) no desincronicen la rotación ni causen que 2 contactos
+// reciban la misma plantilla o que 1 contacto reciba 2 plantillas.
+let _tplIndex = 0;
+
 // ══════════════════════════════════════════════════════════════════════
 // EXPORTS
 // ══════════════════════════════════════════════════════════════════════
@@ -89,6 +102,7 @@ export function getTotalPending() { return _totalPending; }
 export function getKpis() { return { ..._kpis }; }
 export function getLastResults() { return _lastResults; }
 export function setOnUpdate(fn) { _onUpdate = fn; }
+export function getTplIndex() { return _tplIndex; } // índice actual de rotación
 
 function _notify() { if (_onUpdate) _onUpdate(); }
 
@@ -466,16 +480,23 @@ export async function startBlast() {
 
     const logBatch = [];
     let batchSent = 0;
-    const globalSent = _kpis.pending + _kpis.sent + _kpis.delivered + _kpis.read;
 
     // 2. Send each contact
     for (let i = 0; i < batch.length && _running && !_paused; i++) {
       const c = batch[i];
       const normalizedPhone = _normalizePhone(c.telefono);
       const jid = normalizedPhone ? normalizedPhone + '@c.us' : null;
-      const tpl = tpls.length > 1 ? tpls[(globalSent + i) % tpls.length] : tpls[0];
+
+      // ── Selección de plantilla robusta ────────────────────────────────
+      // _tplIndex es un contador de sesión que SOLO avanza al enviar exitoso.
+      // Garantiza:
+      //   - 1 plantilla por contacto (no importa cuántos skips haya)
+      //   - Rotación pareja: 1→2→3→1→2→3...
+      //   - Sin desincronización por dedup/no_wa/jid inválido
+      const tpl = tpls[_tplIndex % tpls.length];
+
       // _spinMessage retorna array: 1 elemento si no hay '---', N si hay cortes
-      const parts = _spinMessage(tpl, c, globalSent + i);
+      const parts = _spinMessage(tpl, c, _tplIndex);
       const text = parts[0]; // para logs y fallback
       const cName = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim();
       let status = 'sent', error = null;
@@ -566,7 +587,9 @@ export async function startBlast() {
           if (partModel) _trackMessage(partModel, cName, c.telefono);
         }
 
-        batchSent++; _consecFails = 0;
+        batchSent++;
+        _tplIndex++;   // ← avanza SOLO en envío exitoso
+        _consecFails = 0;
 
         // Marcar hablado inmediatamente tras enviar todos los mensajes de este contacto
         if (c.id) _markHablado([c.id]);
@@ -637,6 +660,7 @@ export function resumeBlast() {
 export function resetSession() {
   _sentThisSession.clear();
   _sentIds.clear();
+  _tplIndex = 0;
   _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
   _lastResults = []; _trackedMsgs = []; _totalPending = null;
   _running = false; _paused = false; _stopCountdown(); _stopAckTracking(); _notify();

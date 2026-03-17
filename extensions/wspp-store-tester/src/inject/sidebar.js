@@ -8,7 +8,7 @@ import {
   isRunning, isPaused, getCountdown, getPhase,
   getKpis, getTotalPending, getLastResults,
   startBlast, pauseBlast, resumeBlast, resetSession,
-  refreshPendingCount, setOnUpdate,
+  refreshPendingCount, setOnUpdate, getTplIndex,
   toggleBlastPanel, isBlastPanelOpen,
 } from './blast-panel.js';
 import { toggleValidatorPanel } from './wa-validator-panel.js';
@@ -337,7 +337,14 @@ function _blastHTML() {
     <!-- PLANTILLAS -->
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <span style="font-size:12px;font-weight:700;">Mensaje${tpls.length > 1 ? 's (' + tpls.length + ')' : ''}</span>
+        <div>
+          <span style="font-size:12px;font-weight:700;">Mensajes (${tpls.length})</span>
+          ${tpls.length > 1 ? `<span style="
+            margin-left:8px;font-size:10px;font-weight:700;
+            background:${S.accentBg};color:${S.accent};
+            padding:2px 7px;border-radius:10px;
+          ">próxima: #${(getTplIndex() % tpls.length) + 1}</span>` : ''}
+        </div>
         ${tpls.length < 5 ? `<button id="sb-tpl-add" style="${_smallBtn(S.accent, S.accentBg)}">+ Nuevo</button>` : ''}
       </div>
 
@@ -575,7 +582,8 @@ function _bindContent() {
   });
   $('sb-tpl-add')?.addEventListener('click', () => {
     const t = getTemplates();
-    t.push('[Hola|Buenas] {{nombre}}!\n---\n[¿Cómo estás?|¿Todo bien?] [Saludos!|Un abrazo!]');
+    const n = t.length + 1;
+    t.push(`[Hola|Buenas|Buenas tardes] {{nombre}} ¿[cómo estás?|todo bien?|cómo te va?]\n---\n[Mensaje ${n} — editá este bloque|Variante ${n} — cambiá este texto]`);
     setTemplates(t); _renderContent();
   });
 

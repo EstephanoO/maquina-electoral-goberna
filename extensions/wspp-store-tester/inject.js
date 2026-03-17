@@ -2157,7 +2157,7 @@
     });
   }
   var CFG_KEY = "wspp_blast_cfg_v3";
-  var TPL_KEY = "wspp_blast_tpls_v3";
+  var TPL_KEY = "wspp_blast_tpls_v4";
   var DEFAULTS = {
     batchSize: 25,
     // personas por tanda — el usuario lo cambia en la UI
@@ -2182,7 +2182,9 @@
     }
   }
   var cfg = _loadCfg();
-  var DEFAULT_TPL = "[Hola|Buenas|Hola, qu\xE9 tal] {{nombre}}! [te escribo de parte de Goberna|soy parte del equipo de Goberna|te contacto desde Goberna].\n---\n[\xBFTienes un momento?|\xBFPodemos conversar?|\xBFEst\xE1s disponible?] [{{cierre}}|Saludos!|Un abrazo!]";
+  var DEFAULT_TPL = "[Buenas tardes|Buenas|Hola|Buen d\xEDa] {{nombre}}, \xBF[c\xF3mo te encuentras?|c\xF3mo est\xE1s?|todo bien?|c\xF3mo te va?]\n---\nSoy el doctor C\xE9sar V\xE1squez\n---\n[Candidato al Senado Nacional|Postulante al Senado de la Rep\xFAblica|Candidato al Senado de la Rep\xFAblica] \u{1F1F5}\u{1F1EA}";
+  var DEFAULT_TPL2 = "[Hola|Buenas|Buenas tardes] {{nombre}} \u{1F44B} \xBF[c\xF3mo est\xE1s?|todo bien?|c\xF3mo te va?]\n---\nSoy el doctor C\xE9sar V\xE1squez, [candidato al Senado Nacional|postulante al Senado de la Rep\xFAblica|candidato al Senado] \u{1F1F5}\u{1F1EA}";
+  var DEFAULT_TPL3 = "[Hola|Buenas|Buenas tardes] {{nombre}}, \xBF[c\xF3mo te encuentras?|todo bien?|c\xF3mo est\xE1s?] Soy el doctor C\xE9sar V\xE1squez, [candidato al Senado Nacional|postulante al Senado de la Rep\xFAblica] \u{1F1F5}\u{1F1EA}";
   function _loadTpls() {
     try {
       const r = localStorage.getItem(TPL_KEY);
@@ -2192,7 +2194,7 @@
       }
     } catch (_) {
     }
-    return [DEFAULT_TPL];
+    return [DEFAULT_TPL, DEFAULT_TPL2, DEFAULT_TPL3];
   }
   function _saveTpls(t) {
     try {
@@ -2214,6 +2216,7 @@
   var _trackedMsgs = [];
   var _sentThisSession = /* @__PURE__ */ new Set();
   var _sentIds = /* @__PURE__ */ new Set();
+  var _tplIndex = 0;
   function getConfig() {
     return cfg;
   }
@@ -2251,6 +2254,9 @@
   }
   function setOnUpdate(fn) {
     _onUpdate = fn;
+  }
+  function getTplIndex() {
+    return _tplIndex;
   }
   function _notify() {
     if (_onUpdate) _onUpdate();
@@ -2523,13 +2529,12 @@
       }
       const logBatch = [];
       let batchSent = 0;
-      const globalSent = _kpis.pending + _kpis.sent + _kpis.delivered + _kpis.read;
       for (let i = 0; i < batch.length && _running && !_paused; i++) {
         const c = batch[i];
         const normalizedPhone = _normalizePhone(c.telefono);
         const jid = normalizedPhone ? normalizedPhone + "@c.us" : null;
-        const tpl = tpls.length > 1 ? tpls[(globalSent + i) % tpls.length] : tpls[0];
-        const parts = _spinMessage(tpl, c, globalSent + i);
+        const tpl = tpls[_tplIndex % tpls.length];
+        const parts = _spinMessage(tpl, c, _tplIndex);
         const text = parts[0];
         const cName = ((c.nombre || "") + " " + (c.apellidos || "")).trim();
         let status = "sent", error = null;
@@ -2612,6 +2617,7 @@
             if (partModel) _trackMessage(partModel, cName, c.telefono);
           }
           batchSent++;
+          _tplIndex++;
           _consecFails = 0;
           if (c.id) _markHablado([c.id]);
           if (normalizedPhone) _sentThisSession.add(normalizedPhone);
@@ -2693,6 +2699,7 @@
   function resetSession() {
     _sentThisSession.clear();
     _sentIds.clear();
+    _tplIndex = 0;
     _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
     _lastResults = [];
     _trackedMsgs = [];
@@ -3728,7 +3735,14 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     <!-- PLANTILLAS -->
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <span style="font-size:12px;font-weight:700;">Mensaje${tpls2.length > 1 ? "s (" + tpls2.length + ")" : ""}</span>
+        <div>
+          <span style="font-size:12px;font-weight:700;">Mensajes (${tpls2.length})</span>
+          ${tpls2.length > 1 ? `<span style="
+            margin-left:8px;font-size:10px;font-weight:700;
+            background:${S.accentBg};color:${S.accent};
+            padding:2px 7px;border-radius:10px;
+          ">pr\xF3xima: #${getTplIndex() % tpls2.length + 1}</span>` : ""}
+        </div>
         ${tpls2.length < 5 ? `<button id="sb-tpl-add" style="${_smallBtn(S.accent, S.accentBg)}">+ Nuevo</button>` : ""}
       </div>
 
@@ -3949,7 +3963,10 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     });
     $("sb-tpl-add")?.addEventListener("click", () => {
       const t = getTemplates();
-      t.push("[Hola|Buenas] {{nombre}}!\n---\n[\xBFC\xF3mo est\xE1s?|\xBFTodo bien?] [Saludos!|Un abrazo!]");
+      const n = t.length + 1;
+      t.push(`[Hola|Buenas|Buenas tardes] {{nombre}} \xBF[c\xF3mo est\xE1s?|todo bien?|c\xF3mo te va?]
+---
+[Mensaje ${n} \u2014 edit\xE1 este bloque|Variante ${n} \u2014 cambi\xE1 este texto]`);
       setTemplates(t);
       _renderContent();
     });
