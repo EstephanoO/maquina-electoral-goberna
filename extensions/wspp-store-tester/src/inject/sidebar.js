@@ -2,14 +2,13 @@
 // Light mode. Blast = tab principal. Audios + Validación = secundarios.
 // Contactos vienen del backend en batches. Sin localStorage de contactos.
 
-import { WA_ORIGIN, getOwnNumber, isCatalogConsultor } from './bootstrap.js';
+import { WA_ORIGIN, getOwnNumber } from './bootstrap.js';
 import {
   getConfig, setConfig, getTemplates, setTemplates,
   isRunning, isPaused, getCountdown, getPhase,
   getKpis, getTotalPending, getLastResults,
   startBlast, pauseBlast, resumeBlast, resetSession,
   refreshPendingCount, setOnUpdate, getTplIndex,
-  toggleBlastPanel, isBlastPanelOpen,
 } from './blast-panel.js';
 import { toggleValidatorPanel } from './wa-validator-panel.js';
 import { sendAudioAsPTT } from './audio-catalog-panel.js';
@@ -239,7 +238,7 @@ function _blastHTML() {
   const pending = getTotalPending();
   const results = getLastResults();
   const totalSent = kpis.pending + kpis.sent + kpis.delivered + kpis.read;
-  const totalProcessed = totalSent + kpis.failed;
+  const totalProcessed = totalSent + kpis.failed + (kpis.no_wa || 0);
   const hasActivity = totalProcessed > 0 || running;
 
   // Timer
@@ -254,16 +253,6 @@ function _blastHTML() {
 
   const pendingLabel = pending === null ? '...' : pending.toLocaleString('es-PE');
   const hasPending = pending === null || pending > 0;
-
-  // Ack icon helper
-  function _ackIcon(ack) {
-    if (ack === -1) return '✗';
-    if (ack === 0) return '🕐';  // pending/clock
-    if (ack === 1) return '✓';   // sent
-    if (ack === 2) return '✓✓';  // delivered
-    if (ack >= 3) return '<span style="color:#53bdeb;">✓✓</span>'; // read (blue)
-    return '🕐';
-  }
 
   return `<div style="padding:14px;display:flex;flex-direction:column;gap:12px;">
 
@@ -280,11 +269,11 @@ function _blastHTML() {
     ${hasActivity ? `
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">
       ${[
-        ['🕐', kpis.pending,   'Pending',   '#f59e0b'],
-        ['✓',  kpis.sent,      'Enviado',   '#6b7280'],
-        ['✓✓', kpis.delivered, 'Entregado', S.accent],
+        ['✓',   kpis.sent,           'Enviado',   '#6b7280'],
+        ['✓✓',  kpis.delivered,      'Entregado', S.accent],
         ['<span style="color:#53bdeb;">✓✓</span>', kpis.read, 'Leído', '#53bdeb'],
-        ['✗',  kpis.failed,    'Fallido',   S.danger],
+        ['✗',   kpis.failed,         'Fallido',   S.danger],
+        ['📵',  kpis.no_wa || 0,     'Sin WA',    '#9ca3af'],
       ].map(([icon, val, label, color]) => `
         <div style="background:${S.card};border:1px solid ${S.border};border-radius:8px;padding:8px 4px;text-align:center;">
           <div style="font-size:16px;font-weight:800;color:${color};">${val}</div>
@@ -375,7 +364,6 @@ function _blastHTML() {
         </div>
       `).join('')}
 
-      ${tpls.length < 5 ? '' : ''}
     </div>
 
     <!-- TIMER + LOG -->
@@ -426,6 +414,16 @@ function _blastHTML() {
     ` : ''}
 
   </div>`;
+}
+
+// ── ACK icon — fuera de _blastHTML para no recrearla en cada render ──
+function _ackIcon(ack) {
+  if (ack === -1) return '✗';
+  if (ack === 0)  return '🕐';
+  if (ack === 1)  return '✓';
+  if (ack === 2)  return '✓✓';
+  if (ack >= 3)   return '<span style="color:#53bdeb;">✓✓</span>';
+  return '🕐';
 }
 
 // ── Style helpers ─────────────────────────────────────────────────────
@@ -660,10 +658,12 @@ window.addEventListener('message', (e) => {
   }
 });
 
-// ── Legacy exports ────────────────────────────────────────────────────
+// ── Legacy exports — mantenidos por compatibilidad con inject-entry.js ─
 export function updateContactsList() {}
 export function updateAudioList() {}
 export function updateSpamRisk() {}
 export function updateDayStats() {}
 export function renderContactRow() { return ''; }
 export function renderAudioRow() { return ''; }
+export function toggleBlastPanel() {}
+export function isBlastPanelOpen() { return false; }

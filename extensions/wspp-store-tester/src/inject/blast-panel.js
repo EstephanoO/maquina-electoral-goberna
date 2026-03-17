@@ -257,7 +257,7 @@ function _reportLog(results) {
 //
 const SALUDOS = ['Hola', 'Buenas', 'Buenos días', 'Hola buen día', 'Qué tal', 'Buenas tardes'];
 const CIERRES = ['Gracias!', 'Saludos!', 'Un abrazo!', 'Hasta pronto!', 'Éxitos!'];
-const EMOJIS  = ['', '', '', '👋', '🙌', '✅'];
+const EMOJIS  = ['👋', '🙌', '✅', '😊', '🌟', '💬'];
 
 // Genera un número pseudo-random estable para un (contacto, posicion) dado
 // Usamos un hash simple para que el mismo contacto siempre reciba variantes distintas
@@ -323,12 +323,7 @@ function _req(...names) {
   throw new Error('WA module: ' + names.join('/'));
 }
 
-function _phoneToJid(tel) {
-  const d = String(tel).replace(/\D/g, '');
-  if (!d) return null;
-  return (d.length === 9 ? '51' + d : d) + '@c.us';
-}
-
+// Normaliza a string de dígitos con prefijo 51 si son 9 dígitos peruanos
 function _normalizePhone(tel) {
   const d = String(tel).replace(/\D/g, '');
   if (!d) return null;
@@ -583,8 +578,12 @@ export async function startBlast() {
           }
 
           const partModel = await _sendToChat(chat, partText);
-          if (p === 0) msgModel = partModel; // trackear ACK del primer mensaje
-          if (partModel) _trackMessage(partModel, cName, c.telefono);
+          if (p === 0) {
+            msgModel = partModel;
+            // Solo trackear ACK del primer mensaje por contacto
+            // (cada parte cuenta como 1 KPI si se trackearan todas = inflación)
+            if (partModel) _trackMessage(partModel, cName, c.telefono);
+          }
         }
 
         batchSent++;
@@ -666,6 +665,4 @@ export function resetSession() {
   _running = false; _paused = false; _stopCountdown(); _stopAckTracking(); _notify();
 }
 
-// ── Legacy ────────────────────────────────────────────────────────────
-export function toggleBlastPanel() {}
-export function isBlastPanelOpen() { return false; }
+

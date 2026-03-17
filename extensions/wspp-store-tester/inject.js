@@ -2365,7 +2365,7 @@
   }
   var SALUDOS = ["Hola", "Buenas", "Buenos d\xEDas", "Hola buen d\xEDa", "Qu\xE9 tal", "Buenas tardes"];
   var CIERRES = ["Gracias!", "Saludos!", "Un abrazo!", "Hasta pronto!", "\xC9xitos!"];
-  var EMOJIS = ["", "", "", "\u{1F44B}", "\u{1F64C}", "\u2705"];
+  var EMOJIS = ["\u{1F44B}", "\u{1F64C}", "\u2705", "\u{1F60A}", "\u{1F31F}", "\u{1F4AC}"];
   function _hashSeed(str, offset) {
     let h = offset * 2654435761;
     for (let i = 0; i < str.length; i++) {
@@ -2613,8 +2613,10 @@
               await _sleep(partDelay);
             }
             const partModel = await _sendToChat(chat, partText);
-            if (p === 0) msgModel = partModel;
-            if (partModel) _trackMessage(partModel, cName, c.telefono);
+            if (p === 0) {
+              msgModel = partModel;
+              if (partModel) _trackMessage(partModel, cName, c.telefono);
+            }
           }
           batchSent++;
           _tplIndex++;
@@ -3642,7 +3644,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     const pending = getTotalPending();
     const results = getLastResults();
     const totalSent = kpis.pending + kpis.sent + kpis.delivered + kpis.read;
-    const totalProcessed = totalSent + kpis.failed;
+    const totalProcessed = totalSent + kpis.failed + (kpis.no_wa || 0);
     const hasActivity = totalProcessed > 0 || running;
     let timerLabel = "";
     if (countdown > 0) {
@@ -3655,14 +3657,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     }
     const pendingLabel = pending === null ? "..." : pending.toLocaleString("es-PE");
     const hasPending = pending === null || pending > 0;
-    function _ackIcon(ack) {
-      if (ack === -1) return "\u2717";
-      if (ack === 0) return "\u{1F550}";
-      if (ack === 1) return "\u2713";
-      if (ack === 2) return "\u2713\u2713";
-      if (ack >= 3) return '<span style="color:#53bdeb;">\u2713\u2713</span>';
-      return "\u{1F550}";
-    }
     return `<div style="padding:14px;display:flex;flex-direction:column;gap:12px;">
 
     <!-- PENDIENTES -->
@@ -3678,11 +3672,11 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     ${hasActivity ? `
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">
       ${[
-      ["\u{1F550}", kpis.pending, "Pending", "#f59e0b"],
       ["\u2713", kpis.sent, "Enviado", "#6b7280"],
       ["\u2713\u2713", kpis.delivered, "Entregado", S.accent],
       ['<span style="color:#53bdeb;">\u2713\u2713</span>', kpis.read, "Le\xEDdo", "#53bdeb"],
-      ["\u2717", kpis.failed, "Fallido", S.danger]
+      ["\u2717", kpis.failed, "Fallido", S.danger],
+      ["\u{1F4F5}", kpis.no_wa || 0, "Sin WA", "#9ca3af"]
     ].map(([icon, val, label, color]) => `
         <div style="background:${S.card};border:1px solid ${S.border};border-radius:8px;padding:8px 4px;text-align:center;">
           <div style="font-size:16px;font-weight:800;color:${color};">${val}</div>
@@ -3773,7 +3767,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         </div>
       `).join("")}
 
-      ${tpls2.length < 5 ? "" : ""}
     </div>
 
     <!-- TIMER + LOG -->
@@ -3824,6 +3817,14 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     ` : ""}
 
   </div>`;
+  }
+  function _ackIcon(ack) {
+    if (ack === -1) return "\u2717";
+    if (ack === 0) return "\u{1F550}";
+    if (ack === 1) return "\u2713";
+    if (ack === 2) return "\u2713\u2713";
+    if (ack >= 3) return '<span style="color:#53bdeb;">\u2713\u2713</span>';
+    return "\u{1F550}";
   }
   function _smallBtn(color, bg) {
     return `padding:5px 10px;border-radius:6px;border:none;background:${bg};color:${color};font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap`;
