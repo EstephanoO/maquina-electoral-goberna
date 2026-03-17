@@ -1864,90 +1864,116 @@
   }
   async function sendAudioAsPTT(audioBase64, mimeType) {
     const mime = mimeType || "audio/ogg; codecs=opus";
+    const L = (step, ...args) => console.log(`[WSPP PTT] ${step}`, ...args);
+    const E = (step, err) => console.error(`[WSPP PTT] \u2717 ${step}:`, err?.message ?? err, err?.stack?.slice(0, 300));
     try {
       if (typeof window.require !== "function") {
-        console.error("[WSPP CATALOG] window.require not available");
+        E("init", "window.require not available");
         return false;
       }
       const chatJid = _lastActiveChatJid;
       if (!chatJid) {
-        console.error("[WSPP CATALOG] No active chat JID");
+        E("init", "No active chat JID \u2014 open a chat first");
         return false;
       }
+      L("start", `jid=${chatJid} mime=${mime} base64len=${audioBase64?.length}`);
       let chat = null;
       try {
-        const Collections = _requireAny("WAWebCollections");
         const widFactory = _requireAny("WAWebWidFactory");
         const wid = widFactory.createWid(chatJid);
-        chat = Collections.Chat.get(wid);
+        L("1a wid", wid?._serialized ?? wid);
+        const coll = _requireAny("WAWebCollections");
+        chat = coll.Chat.get(wid);
         if (!chat) {
+          L("1b findOrCreate", "not in store, calling findOrCreateLatestChat");
           const FC = _requireAny("WAWebFindChatAction");
           const r = await FC.findOrCreateLatestChat(wid);
           chat = r?.chat ?? r;
         }
       } catch (err) {
-        console.error("[WSPP CATALOG] Failed to resolve chat:", err);
+        E("Step 1 chat", err);
         return false;
       }
       if (!chat) {
-        console.error("[WSPP CATALOG] Chat not found for:", chatJid);
+        E("Step 1 chat", "chat is null after resolve");
         return false;
       }
+      L("1 \u2713 chat resolved", chat.id?._serialized ?? chat.id);
       const binary = atob(audioBase64);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       const blob = new Blob([bytes], { type: mime });
-      const file = new File([blob], "voice_cesar_vasquez.ogg", { type: mime, lastModified: Date.now() });
+      const file = new File([blob], "voz_goberna.ogg", { type: mime, lastModified: Date.now() });
+      L("2 \u2713 file", `${file.size} bytes`);
       const OpaqueData = _requireAny("WAWebMediaOpaqueData", "WAWebMediaOpaqueDataUtils");
+      L("3a OpaqueData module", Object.keys(OpaqueData).join(", "));
       const opaqueData = await OpaqueData.createFromData(file, mime);
+      L("3 \u2713 opaqueData", typeof opaqueData);
       const prepMod = _requireAny("WAWebPrepRawMedia", "WAWebPrepareMediaUtils");
       const prepRawMedia = prepMod.prepRawMedia ?? prepMod.default?.prepRawMedia ?? prepMod.default;
+      L("4a prepRawMedia fn", typeof prepRawMedia, `length=${prepRawMedia?.length}`);
       const mediaPrep = prepRawMedia(opaqueData, { isPtt: true, asSticker: false, asGif: false, asDocument: false });
+      L("4b mediaPrep", typeof mediaPrep, Object.keys(mediaPrep).join(", "));
       const mediaData = await mediaPrep.waitForPrep();
-      const waveform = await _generateWaveform(file);
-      if (waveform) {
-        if (typeof mediaData.set === "function") mediaData.set({ waveform });
-        else mediaData.waveform = waveform;
+      L("4 \u2713 mediaData", `type=${mediaData.type ?? mediaData.get?.("type")} filehash=${(mediaData.filehash ?? mediaData.get?.("filehash"))?.slice(0, 16)}`);
+      try {
+        const waveform = await _generateWaveform(file);
+        if (waveform) {
+          if (typeof mediaData.set === "function") mediaData.set({ waveform });
+          else mediaData.waveform = waveform;
+          L("5 \u2713 waveform", waveform.length, "samples");
+        }
+      } catch (_) {
+        L("5 waveform skip");
       }
       const storageMod = _requireAny("WAWebMediaStorage", "WAWebMediaStorageUtils", "WAWebMediaStorageManager");
-      const getOrCreateMediaObj = storageMod.getOrCreateMediaObject ?? storageMod.default?.getOrCreateMediaObject;
-      const mediaObject = getOrCreateMediaObj(mediaData.filehash);
+      L("6a storage module", Object.keys(storageMod).join(", "));
+      const getOrCreate = storageMod.getOrCreateMediaObject ?? storageMod.default?.getOrCreateMediaObject;
+      const filehash = mediaData.filehash ?? mediaData.get?.("filehash");
+      const mediaObject = getOrCreate(filehash);
+      L("6 \u2713 mediaObject", typeof mediaObject, Object.keys(mediaObject).slice(0, 8).join(", "));
       const typesMod = _requireAny("WAWebMmsMediaTypes", "WAWebMediaMsgTypes", "WAWebMediaTypes");
-      const msgToMType = typesMod.msgToMediaType ?? typesMod.default?.msgToMediaType;
-      const mediaType = msgToMType({ type: mediaData.type ?? "ptt", isGif: false });
-      const rawBlob = mediaData.mediaBlob;
-      const isOpaqueData = rawBlob && typeof rawBlob.url === "function" && typeof rawBlob.autorelease === "function";
-      let pttOpaqueData = rawBlob;
-      if (!isOpaqueData) {
-        pttOpaqueData = await OpaqueData.createFromData(rawBlob, rawBlob?.type || mime);
+      const msgToType = typesMod.msgToMediaType ?? typesMod.default?.msgToMediaType;
+      const mdType = mediaData.type ?? mediaData.get?.("type") ?? "ptt";
+      const mediaType = msgToType({ type: mdType, isGif: false });
+      L("7 \u2713 mediaType", mediaType, `from type=${mdType}`);
+      const rawBlob = mediaData.mediaBlob ?? mediaData.get?.("mediaBlob");
+      const isOpaque = rawBlob && typeof rawBlob.url === "function" && typeof rawBlob.autorelease === "function";
+      let pttBlob = rawBlob;
+      if (!isOpaque) {
+        L("8 re-wrap mediaBlob as OpaqueData");
+        pttBlob = await OpaqueData.createFromData(rawBlob, rawBlob?.type || mime);
       }
-      mediaData.renderableUrl = pttOpaqueData.url();
-      mediaObject.consolidate(mediaData.toJSON ? mediaData.toJSON() : { ...mediaData });
-      const uploadMod = _requireAny(
-        "WAWebMediaMmsV4Upload",
-        "WAWebMediaUploadUtils",
-        "WAWebUploadManager",
-        "WAWebMediaMmsUpload",
-        "WAWebMmsUpload"
-      );
+      mediaData.renderableUrl = pttBlob.url();
+      L("8 \u2713 renderableUrl set");
+      const mdJson = mediaData.toJSON ? mediaData.toJSON() : { ...mediaData };
+      mediaObject.consolidate(mdJson);
+      L("8b \u2713 consolidated");
+      let uploadMod = null, uploadModName = null;
+      for (const name of ["WAWebMediaMmsV4Upload", "WAWebMediaUploadUtils", "WAWebUploadManager", "WAWebMediaMmsUpload", "WAWebMmsUpload"]) {
+        try {
+          uploadMod = window.require(name);
+          uploadModName = name;
+          break;
+        } catch (_) {
+        }
+      }
+      if (!uploadMod) throw new Error("No upload module found");
+      L("9a upload module", uploadModName, Object.keys(uploadMod).join(", "));
       const uploadFn = uploadMod.uploadMedia ?? uploadMod.default?.uploadMedia ?? uploadMod.default?.encryptAndUpload;
-      if (!uploadFn) throw new Error("uploadMedia function not found in any upload module");
-      const uploaded = await uploadFn({
-        chat,
-        // FIX Bug 4: required in most WA builds
-        mediaData,
-        // FIX Bug 4: required in most WA builds
-        mediaObject,
-        mediaType,
-        mimetype: mime,
-        mmsOptions: { mediaType }
-        // some builds require this wrapper
-      });
-      pttOpaqueData.autorelease();
+      if (!uploadFn) throw new Error(`No uploadMedia fn in ${uploadModName}`);
+      L("9b uploadFn found", typeof uploadFn, `length=${uploadFn.length}`);
+      const uploadArgs = { chat, mediaData, mediaObject, mediaType, mimetype: mime };
+      L("9c calling uploadFn with", Object.keys(uploadArgs).join(", "));
+      const uploaded = await uploadFn(uploadArgs);
+      L("9d uploaded raw", JSON.stringify(uploaded)?.slice(0, 300));
+      pttBlob.autorelease();
       const me = uploaded?.mediaEntry ?? uploaded;
+      L("9e mediaEntry", JSON.stringify(me)?.slice(0, 300));
       if (!me?.directPath) {
-        throw new Error(`Upload returned no directPath. uploaded=${JSON.stringify(uploaded)?.slice(0, 200)}`);
+        throw new Error(`Upload OK but no directPath. me=${JSON.stringify(me)?.slice(0, 200)}`);
       }
+      L("9 \u2713 upload done", `directPath=${me.directPath?.slice(0, 40)}`);
       const uploadFields = {
         clientUrl: me.mmsUrl ?? me.url,
         deprecatedMms3Url: me.deprecatedMms3Url,
@@ -1961,21 +1987,22 @@
         streamingSidecar: me.sidecar,
         firstFrameSidecar: me.firstFrameSidecar
       };
-      if (typeof mediaData.set === "function") {
-        mediaData.set(uploadFields);
-      } else {
-        Object.assign(mediaData, uploadFields);
-      }
+      if (typeof mediaData.set === "function") mediaData.set(uploadFields);
+      else Object.assign(mediaData, uploadFields);
+      L("10 \u2713 mediaData patched");
       const meMod = _requireAny("WAWebUserPrefsMeUser");
       const meUser = (meMod.getMaybeMePnUser ?? meMod.getMeUser ?? meMod.default?.getMaybeMePnUser).call(meMod);
+      L("11a meUser", meUser?._serialized ?? meUser);
       const MsgKey = _requireAny("WAWebMsgKey");
       const newId = await MsgKey.newId();
       const newMsgKey = new MsgKey({ from: meUser, to: chat.id, id: newId, selfDir: "out" });
+      L("11b msgKey", newId);
       let ephemeralFields = {};
       try {
         const ephMod = _requireAny("WAWebGetEphemeralFieldsMsgActionsUtils", "WAWebEphemeralFields", "WAWebEphemeralUtils");
         const getEph = ephMod.getEphemeralFields ?? ephMod.default?.getEphemeralFields;
         if (getEph) ephemeralFields = getEph(chat);
+        L("11c ephemeral", Object.keys(ephemeralFields).join(", ") || "none");
       } catch (_) {
       }
       const mediaJSON = mediaData.toJSON ? mediaData.toJSON() : { ...mediaData };
@@ -1993,13 +2020,15 @@
         type: "ptt",
         mimetype: mime
       };
+      L("11d message keys", Object.keys(message).join(", "));
       const sendMod = _requireAny("WAWebSendMsgChatAction");
+      L("11e sendMod", Object.keys(sendMod).join(", "));
       const [msgPromise] = sendMod.addAndSendMsgToChat(chat, message);
       await msgPromise;
-      console.log("[WSPP CATALOG] PTT sent successfully to", chatJid);
+      L("\u2705 PTT sent to", chatJid);
       return true;
     } catch (err) {
-      console.error("[WSPP CATALOG] PTT send error:", err.message, err.stack?.slice(0, 400));
+      E("sendAudioAsPTT", err);
       return false;
     }
   }
