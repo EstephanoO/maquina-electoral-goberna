@@ -777,7 +777,7 @@ function _requireAny(...names) {
 //   a .set() method. After waitForPrep(), mediaData can be a plain object in some WA
 //   builds. Added duck-type guard: use .set() if available, fall back to Object.assign.
 //
-async function sendAudioAsPTT(audioBase64, mimeType) {
+export async function sendAudioAsPTT(audioBase64, mimeType) {
   const mime = mimeType || 'audio/ogg; codecs=opus';
   const L = (step, ...args) => console.log(`[WSPP PTT] ${step}`, ...args);
   const E = (step, err) => console.error(`[WSPP PTT] ✗ ${step}:`, err?.message ?? err, err?.stack?.slice(0, 300));

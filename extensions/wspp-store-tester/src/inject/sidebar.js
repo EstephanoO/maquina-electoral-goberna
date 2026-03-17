@@ -14,7 +14,7 @@
 import { WA_ORIGIN, getOwnNumber, isCatalogConsultor } from './bootstrap.js';
 import { toggleBlastPanel, isBlastPanelOpen } from './blast-panel.js';
 import { toggleValidatorPanel, isValidatorPanelOpen } from './wa-validator-panel.js';
-import { toggleCatalogPanel, isCatalogPanelOpen  } from './audio-catalog-panel.js';
+import { toggleCatalogPanel, isCatalogPanelOpen, sendAudioAsPTT } from './audio-catalog-panel.js';
 import { fullSendFlow } from './chat-opener.js';
 
 // ── Constantes ────────────────────────────────────────────────────────
@@ -1076,7 +1076,38 @@ function _bindContentEvents() {
   document.querySelectorAll('[data-audio-send]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      window.postMessage({ type: 'SIDEBAR_SEND_AUDIO_PTT', id: btn.dataset.audioSend }, WA_ORIGIN);
+      const audioId = btn.dataset.audioSend;
+      btn.textContent = '⏳';
+      btn.disabled = true;
+
+      // Fetch audio base64 from background cache, then send as PTT
+      // Uses the same bridge as the catalog panel: GET_CATALOG_AUDIO → CATALOG_AUDIO_READY
+      const onAudioReady = (ev) => {
+        if (ev.source !== window) return;
+        if (ev.data?.type !== 'CATALOG_AUDIO_READY') return;
+        if (!ev.data.ok || ev.data.id !== audioId) return;
+        window.removeEventListener('message', onAudioReady);
+
+        sendAudioAsPTT(ev.data.audioBase64, ev.data.mimeType).then(ok => {
+          if (ok) {
+            btn.textContent = '✅ Enviado';
+            btn.style.color = '#34c759';
+            setTimeout(() => { btn.textContent = 'Enviar PTT'; btn.disabled = false; btn.style.color = ''; }, 3000);
+          } else {
+            btn.textContent = '❌ Error';
+            btn.style.color = '#ef5350';
+            setTimeout(() => { btn.textContent = 'Enviar PTT'; btn.disabled = false; btn.style.color = ''; }, 3000);
+          }
+        });
+      };
+      window.addEventListener('message', onAudioReady);
+      // Timeout fallback
+      setTimeout(() => {
+        window.removeEventListener('message', onAudioReady);
+        if (btn.disabled) { btn.textContent = 'Enviar PTT'; btn.disabled = false; }
+      }, 15000);
+
+      window.postMessage({ type: 'GET_CATALOG_AUDIO', id: audioId }, WA_ORIGIN);
     });
   });
 

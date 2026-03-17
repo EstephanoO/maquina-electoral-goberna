@@ -115,6 +115,7 @@ window.addEventListener('message', (e) => {
       }
       window.postMessage({
         type: 'CATALOG_AUDIO_READY',
+        id: audioId,
         ok: response?.ok ?? false,
         audioBase64: response?.audioBase64 ?? null,
         mimeType: response?.mimeType ?? null,

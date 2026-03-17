@@ -4611,7 +4611,43 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     document.querySelectorAll("[data-audio-send]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        window.postMessage({ type: "SIDEBAR_SEND_AUDIO_PTT", id: btn.dataset.audioSend }, WA_ORIGIN);
+        const audioId = btn.dataset.audioSend;
+        btn.textContent = "\u23F3";
+        btn.disabled = true;
+        const onAudioReady = (ev) => {
+          if (ev.source !== window) return;
+          if (ev.data?.type !== "CATALOG_AUDIO_READY") return;
+          if (!ev.data.ok || ev.data.id !== audioId) return;
+          window.removeEventListener("message", onAudioReady);
+          sendAudioAsPTT(ev.data.audioBase64, ev.data.mimeType).then((ok) => {
+            if (ok) {
+              btn.textContent = "\u2705 Enviado";
+              btn.style.color = "#34c759";
+              setTimeout(() => {
+                btn.textContent = "Enviar PTT";
+                btn.disabled = false;
+                btn.style.color = "";
+              }, 3e3);
+            } else {
+              btn.textContent = "\u274C Error";
+              btn.style.color = "#ef5350";
+              setTimeout(() => {
+                btn.textContent = "Enviar PTT";
+                btn.disabled = false;
+                btn.style.color = "";
+              }, 3e3);
+            }
+          });
+        };
+        window.addEventListener("message", onAudioReady);
+        setTimeout(() => {
+          window.removeEventListener("message", onAudioReady);
+          if (btn.disabled) {
+            btn.textContent = "Enviar PTT";
+            btn.disabled = false;
+          }
+        }, 15e3);
+        window.postMessage({ type: "GET_CATALOG_AUDIO", id: audioId }, WA_ORIGIN);
       });
     });
     document.querySelectorAll("[data-audio-regen]").forEach((btn) => {
