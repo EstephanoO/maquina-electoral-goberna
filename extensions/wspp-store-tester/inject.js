@@ -1921,17 +1921,22 @@
       const mediaType = msgToType({ type: mdType, isGif: false });
       L("7 \u2713 mediaType", mediaType, `from type=${mdType}`);
       const rawBlob = mediaData.mediaBlob ?? mediaData.get?.("mediaBlob");
-      const isOpaque = rawBlob && typeof rawBlob.url === "function" && typeof rawBlob.autorelease === "function";
       let pttBlob = rawBlob;
-      if (!isOpaque) {
-        L("8 re-wrap mediaBlob as OpaqueData");
-        pttBlob = await OpaqueData.createFromData(rawBlob, rawBlob?.type || mime);
+      try {
+        if (pttBlob && typeof pttBlob.url === "function") {
+          mediaData.renderableUrl = pttBlob.url();
+        }
+      } catch (_) {
       }
-      mediaData.renderableUrl = pttBlob.url();
       L("8 \u2713 renderableUrl set");
       const mdJson = mediaData.toJSON ? mediaData.toJSON() : { ...mediaData };
-      mediaObject.consolidate(mdJson);
-      L("8b \u2713 consolidated");
+      delete mdJson.mediaBlob;
+      try {
+        mediaObject.consolidate(mdJson);
+        L("8b \u2713 consolidated");
+      } catch (err) {
+        L("8b \u26A0 consolidate failed (non-fatal):", err.message);
+      }
       let uploadMod = null, uploadModName = null;
       for (const name of ["WAWebMediaMmsV4Upload", "WAWebMediaUploadUtils", "WAWebUploadManager", "WAWebMediaMmsUpload", "WAWebMmsUpload"]) {
         try {

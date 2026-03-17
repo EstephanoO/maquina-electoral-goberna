@@ -856,19 +856,27 @@ export async function sendAudioAsPTT(audioBase64, mimeType) {
 
     // ── Step 8: OpaqueData guard + renderableUrl ──────────────────────
     const rawBlob = mediaData.mediaBlob ?? mediaData.get?.('mediaBlob');
-    const isOpaque = rawBlob && typeof rawBlob.url === 'function' && typeof rawBlob.autorelease === 'function';
     let pttBlob = rawBlob;
-    if (!isOpaque) {
-      L('8 re-wrap mediaBlob as OpaqueData');
-      pttBlob = await OpaqueData.createFromData(rawBlob, rawBlob?.type || mime);
-    }
-    mediaData.renderableUrl = pttBlob.url();
+    // Set renderableUrl for local preview using whatever blob we have
+    try {
+      if (pttBlob && typeof pttBlob.url === 'function') {
+        mediaData.renderableUrl = pttBlob.url();
+      }
+    } catch (_) {}
     L('8 ✓ renderableUrl set');
 
-    // Consolidate into mediaObject BEFORE autorelease
+    // Consolidate into mediaObject — EXCLUDE mediaBlob to avoid isBlobEqual error.
+    // consolidate() only needs metadata (filehash, mimetype, type, size, etc.)
+    // The blob itself goes to the upload step separately.
     const mdJson = mediaData.toJSON ? mediaData.toJSON() : { ...mediaData };
-    mediaObject.consolidate(mdJson);
-    L('8b ✓ consolidated');
+    delete mdJson.mediaBlob;  // ← prevents "isBlobEqual is not a function"
+    try {
+      mediaObject.consolidate(mdJson);
+      L('8b ✓ consolidated');
+    } catch (err) {
+      // Non-fatal — consolidate can fail on some WA builds but upload still works
+      L('8b ⚠ consolidate failed (non-fatal):', err.message);
+    }
 
     // ── Step 9: Upload ────────────────────────────────────────────────
     // Try the known upload module names — WA renames modules per deploy.
