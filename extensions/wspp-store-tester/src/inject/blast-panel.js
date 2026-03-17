@@ -41,11 +41,11 @@ let cfg = _loadCfg();
 
 // 3 plantillas predeterminadas para César Vásquez — se rotan 1→2→3→1→2→3
 // Plantilla 1: 3 mensajes separados
-const DEFAULT_TPL  = '[Buenas tardes|Buenas|Hola|Buen día] {{nombre}}, ¿[cómo te encuentras?|cómo estás?|todo bien?|cómo te va?]\n---\nSoy el doctor César Vásquez\n---\n[Candidato al Senado Nacional|Postulante al Senado de la República|Candidato al Senado de la República] 🇵🇪';
+const DEFAULT_TPL  = '[Buenas tardes|Buenas|Hola|Buen día] {{nombre}}, ¿[cómo te encuentras?|cómo estás?|todo bien?|cómo te va?]\n---\nSoy el doctor César Vásquez\n---\n[Candidato al Senado Nacional|Postulante al Senado Nacional] 🇵🇪';
 // Plantilla 2: 2 mensajes
-const DEFAULT_TPL2 = '[Hola|Buenas|Buenas tardes] {{nombre}} 👋 ¿[cómo estás?|todo bien?|cómo te va?]\n---\nSoy el doctor César Vásquez, [candidato al Senado Nacional|postulante al Senado de la República|candidato al Senado] 🇵🇪';
+const DEFAULT_TPL2 = '[Hola|Buenas|Buenas tardes] {{nombre}} 👋 ¿[cómo estás?|todo bien?|cómo te va?]\n---\nSoy el doctor César Vásquez, [candidato al Senado Nacional|postulante al Senado Nacional] 🇵🇪';
 // Plantilla 3: 1 mensaje
-const DEFAULT_TPL3 = '[Hola|Buenas|Buenas tardes] {{nombre}}, ¿[cómo te encuentras?|todo bien?|cómo estás?] Soy el doctor César Vásquez, [candidato al Senado Nacional|postulante al Senado de la República] 🇵🇪';
+const DEFAULT_TPL3 = '[Hola|Buenas|Buenas tardes] {{nombre}}, ¿[cómo te encuentras?|todo bien?|cómo estás?] Soy el doctor César Vásquez, [candidato al Senado Nacional|postulante al Senado Nacional] 🇵🇪';
 function _loadTpls() {
   try { const r = localStorage.getItem(TPL_KEY); if (r) { const p = JSON.parse(r); if (p.length) return p; } } catch (_) {}
   return [DEFAULT_TPL, DEFAULT_TPL2, DEFAULT_TPL3];

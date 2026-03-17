@@ -2182,9 +2182,9 @@
     }
   }
   var cfg = _loadCfg();
-  var DEFAULT_TPL = "[Buenas tardes|Buenas|Hola|Buen d\xEDa] {{nombre}}, \xBF[c\xF3mo te encuentras?|c\xF3mo est\xE1s?|todo bien?|c\xF3mo te va?]\n---\nSoy el doctor C\xE9sar V\xE1squez\n---\n[Candidato al Senado Nacional|Postulante al Senado de la Rep\xFAblica|Candidato al Senado de la Rep\xFAblica] \u{1F1F5}\u{1F1EA}";
-  var DEFAULT_TPL2 = "[Hola|Buenas|Buenas tardes] {{nombre}} \u{1F44B} \xBF[c\xF3mo est\xE1s?|todo bien?|c\xF3mo te va?]\n---\nSoy el doctor C\xE9sar V\xE1squez, [candidato al Senado Nacional|postulante al Senado de la Rep\xFAblica|candidato al Senado] \u{1F1F5}\u{1F1EA}";
-  var DEFAULT_TPL3 = "[Hola|Buenas|Buenas tardes] {{nombre}}, \xBF[c\xF3mo te encuentras?|todo bien?|c\xF3mo est\xE1s?] Soy el doctor C\xE9sar V\xE1squez, [candidato al Senado Nacional|postulante al Senado de la Rep\xFAblica] \u{1F1F5}\u{1F1EA}";
+  var DEFAULT_TPL = "[Buenas tardes|Buenas|Hola|Buen d\xEDa] {{nombre}}, \xBF[c\xF3mo te encuentras?|c\xF3mo est\xE1s?|todo bien?|c\xF3mo te va?]\n---\nSoy el doctor C\xE9sar V\xE1squez\n---\n[Candidato al Senado Nacional|Postulante al Senado Nacional] \u{1F1F5}\u{1F1EA}";
+  var DEFAULT_TPL2 = "[Hola|Buenas|Buenas tardes] {{nombre}} \u{1F44B} \xBF[c\xF3mo est\xE1s?|todo bien?|c\xF3mo te va?]\n---\nSoy el doctor C\xE9sar V\xE1squez, [candidato al Senado Nacional|postulante al Senado Nacional] \u{1F1F5}\u{1F1EA}";
+  var DEFAULT_TPL3 = "[Hola|Buenas|Buenas tardes] {{nombre}}, \xBF[c\xF3mo te encuentras?|todo bien?|c\xF3mo est\xE1s?] Soy el doctor C\xE9sar V\xE1squez, [candidato al Senado Nacional|postulante al Senado Nacional] \u{1F1F5}\u{1F1EA}";
   function _loadTpls() {
     try {
       const r = localStorage.getItem(TPL_KEY);
