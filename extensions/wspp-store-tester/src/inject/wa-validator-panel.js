@@ -1,7 +1,8 @@
 // wa-validator-panel.js — WA phone number validator for Goberna
 //
-// MODO SILENCIOSO: verifica existencia vía WAWebQueryExistsService (sin abrir chat, sin mensaje)
-//   Velocidad: 2-4s por número
+// MODO SILENCIOSO: verifica existencia vía WAWebUsync (USyncQuery batch, sin abrir chat, sin mensaje)
+//   API interna verificada 2026-03-17: contact.type 'in' = existe, 'out'/'invalid' = no tiene WA
+//   Velocidad: batch de hasta 20 números por request → ~900 checks/hora por dispositivo
 //   6 celulares × ~900 checks/hora = 5,400/hora
 //
 // MODO CONVERSACIÓN: abre chat, envía mensaje personalizado, marca wa_valid=true al enviar
@@ -69,64 +70,108 @@ function _req(...names) {
   return null;
 }
 
-// ── MODO SILENCIOSO: check si el número tiene WA ──────────────────────
-// Strategy 1: WAWebQueryExistsService.queryExists (más confiable, sin UI)
-// Strategy 2: WAWebPhoneNumberQueryService (fallback)
-// Strategy 3: WAWebWidFactory + WAWebFindChatAction (sin mensaje enviado)
+// ── USyncQuery batch validation cache ────────────────────────────────
+// Evita re-validar el mismo número en la misma sesión
+const _usyncCache = new Map(); // normalized_phone → { exists, ts }
+const USYNC_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+
+// ── MODO SILENCIOSO BATCH: verifica hasta 20 números de una vez ────────
+// Usa WAWebUsync / USyncQuery — verificado en producción el 2026-03-17.
+// Resultado: contact.type
+//   'in'      → registrado en WhatsApp ✅
+//   'out'     → número válido pero NO en WhatsApp ❌
+//   'invalid' → número inválido ❌
+//
+// Fallback: si USyncQuery no está disponible, intenta WAWebWidFactory
+// como check de si el chat ya existe en el store local.
+async function _checkPhonesSilentBatch(phones) {
+  // phones = array de strings de dígitos ya normalizados (ej: '51999999999')
+  const results = {}; // phone → { exists, reason }
+  const toQuery = [];
+
+  // 1. Servir desde cache los que ya tenemos frescos
+  const now = Date.now();
+  for (const phone of phones) {
+    const cached = _usyncCache.get(phone);
+    if (cached && (now - cached.ts) < USYNC_CACHE_TTL_MS) {
+      results[phone] = { exists: cached.exists, reason: 'cache' };
+    } else {
+      toQuery.push(phone);
+    }
+  }
+
+  if (!toQuery.length) return results;
+
+  // 2. Intentar WAWebUsync (API interna — más confiable y silenciosa)
+  let usyncOk = false;
+  try {
+    const { USyncQuery } = window.require('WAWebUsync');
+    const { USyncUser }  = window.require('WAWebUsyncUser');
+
+    if (USyncQuery && USyncUser) {
+      const query = new USyncQuery()
+        .withContext('interactive')
+        .withContactProtocol();
+
+      for (const phone of toQuery) {
+        query.withUser(new USyncUser().withPhone(phone));
+      }
+
+      const response = await query.execute();
+      const list = response?.list || [];
+
+      // list[i] matches toQuery[i] por orden (la API respeta el orden del request)
+      // Pero para seguridad también matcheamos por content
+      const byPhone = {};
+      for (const item of list) {
+        const phone = item?.contact?.content;
+        const type  = item?.contact?.type;   // 'in' | 'out' | 'invalid'
+        if (phone) byPhone[phone] = type;
+      }
+
+      for (const phone of toQuery) {
+        const type = byPhone[phone];
+        const exists = type === 'in';
+        const reason = type || 'no_response';
+        results[phone] = { exists, reason };
+        _usyncCache.set(phone, { exists, ts: now });
+      }
+      usyncOk = true;
+    }
+  } catch (_) {}
+
+  // 3. Fallback: WAWebCollections store local (solo sabe de chats ya abiertos)
+  if (!usyncOk) {
+    for (const phone of toQuery) {
+      if (results[phone]) continue; // ya resuelto
+      try {
+        const wf   = _req('WAWebWidFactory');
+        const coll = _req('WAWebCollections');
+        if (wf && coll) {
+          const wid  = wf.createWid(phone + '@c.us');
+          const chat = coll.Chat?.get(wid);
+          if (chat) {
+            results[phone] = { exists: true, reason: 'in_store' };
+            _usyncCache.set(phone, { exists: true, ts: now });
+            continue;
+          }
+        }
+      } catch (_) {}
+      // Si el fallback también falla: marcamos como desconocido (no como inválido)
+      results[phone] = { exists: false, reason: 'usync_unavailable' };
+    }
+  }
+
+  return results;
+}
+
+// ── MODO SILENCIOSO: wrapper single-phone (mantiene API de _run) ───────
 async function _checkPhoneSilent(phone) {
   const digits = String(phone).replace(/\D/g, '');
   if (!digits || digits.length < 9) return { exists: false, reason: 'invalid_phone' };
-
   const normalized = digits.length === 9 ? '51' + digits : digits;
-
-  // Strategy 1
-  try {
-    const svc = _req('WAWebQueryExistsService', 'WAWebPhoneExistsService');
-    if (svc?.queryExists) {
-      const result = await svc.queryExists(normalized + '@c.us');
-      if (result !== null && result !== undefined) {
-        return { exists: !!result?.jid || !!result?.status || result === true };
-      }
-    }
-  } catch (_) {}
-
-  // Strategy 2
-  try {
-    const svc = _req('WAWebPhoneNumberQueryService');
-    if (svc?.queryPhoneNumber) {
-      const result = await svc.queryPhoneNumber(normalized);
-      return { exists: !!result?.jid || !!result?.exists };
-    }
-  } catch (_) {}
-
-  // Strategy 3
-  try {
-    const wf  = _req('WAWebWidFactory');
-    const wid = wf?.createWid(normalized + '@c.us');
-    if (!wid) return { exists: false, reason: 'no_wid' };
-
-    const coll = _req('WAWebCollections');
-    const chat = coll?.Chat?.get(wid);
-    if (chat) return { exists: true, reason: 'in_store' };
-
-    const FC = _req('WAWebFindChatAction');
-    if (FC?.queryExists) {
-      const r = await FC.queryExists(wid);
-      return { exists: !!r };
-    }
-    if (FC?.findOrCreateLatestChat) {
-      const r = await FC.findOrCreateLatestChat(wid);
-      return { exists: !!(r?.chat ?? r) };
-    }
-  } catch (err) {
-    const msg = (err?.message || '').toLowerCase();
-    if (msg.includes('not found') || msg.includes('no existe') || msg.includes('invalid')) {
-      return { exists: false, reason: 'not_found' };
-    }
-    return { exists: false, reason: 'error:' + err.message };
-  }
-
-  return { exists: false, reason: 'unresolved' };
+  const results = await _checkPhonesSilentBatch([normalized]);
+  return results[normalized] || { exists: false, reason: 'unresolved' };
 }
 
 // ── Spam check bridge (same pattern as blast-panel) ───────────────────
@@ -269,6 +314,9 @@ function _saveResults(results) {
   }, WA_ORIGIN);
 }
 
+// ── Tamaño de batch para USyncQuery (máx recomendado: 20) ────────────
+const USYNC_BATCH_SIZE = 20;
+
 // ── Motor principal ───────────────────────────────────────────────────
 async function _run() {
   if (_running || _paused) return;
@@ -293,8 +341,60 @@ async function _run() {
       _render(); break;
     }
 
-    // Descanso de burst (solo modo conversación)
-    if (_mode === 'conv' && _burstCount >= CONV_BURST_MAX) {
+    // ── MODO SILENCIOSO: batch de hasta USYNC_BATCH_SIZE números ──────
+    // USyncQuery puede verificar N números en una sola llamada → mucho más rápido
+    if (_mode === 'silent') {
+      const remaining = Math.min(
+        USYNC_BATCH_SIZE,
+        sessionMax - _sessionCount,
+        _contacts.length - _idx
+      );
+      const slice = _contacts.slice(_idx, _idx + remaining);
+
+      // Normalizar teléfonos
+      const normalized = slice.map(c => {
+        const d = String(c.telefono).replace(/\D/g, '');
+        return d.length === 9 ? '51' + d : d;
+      });
+
+      _phase = `Verificando batch ${_idx + 1}–${_idx + slice.length}`;
+      _render();
+
+      let batchResults = {};
+      try {
+        batchResults = await _checkPhonesSilentBatch(normalized);
+      } catch (_) {}
+
+      for (let i = 0; i < slice.length; i++) {
+        if (!_running || _paused) break;
+        const c      = slice[i];
+        const norm   = normalized[i];
+        const r      = batchResults[norm] || { exists: false, reason: 'error' };
+        const result = { ...c, wa_valid: r.exists, mode: 'silent' };
+        batch.push(result);
+        _results.push(result);
+        _sessionCount++;
+      }
+      _idx += slice.length;
+      _render();
+
+      if (batch.length >= 20) {
+        _saveResults([...batch]);
+        batch.length = 0;
+      }
+
+      // Delay corto entre batches para no saturar la API interna
+      if (_running && !_paused && _idx < _contacts.length) {
+        const d = SILENT_DELAY_MIN + Math.random() * (SILENT_DELAY_MAX - SILENT_DELAY_MIN);
+        _startCountdown(d); _render();
+        await _sleep(d); _stopCountdown();
+      }
+      continue;
+    }
+
+    // ── MODO CONVERSACIÓN: uno por uno con delays anti-baneo ──────────
+    // Descanso de burst
+    if (_burstCount >= CONV_BURST_MAX) {
       _burstCount = 0;
       if (batch.length) { _saveResults([...batch]); batch.length = 0; }
       _toast(`Pausa de 2 min para evitar detección (${_sessionCount} msgs enviados)`, '#ff9f0a', CONV_BURST_REST);
@@ -306,40 +406,31 @@ async function _run() {
     }
 
     const c = _contacts[_idx];
-    let waValid = false;
-    let modeUsed = _mode;
 
-    if (_mode === 'conv') {
-      // Spam check BEFORE sending
-      const spamCheck = await _spamCheckBeforeSend();
-      if (spamCheck.shouldPause) {
-        _paused = _running = false;
-        _stopCountdown();
-        if (batch.length) { _saveResults([...batch]); batch.length = 0; }
-        const coolMin = Math.ceil((spamCheck.cooldown_sec || 180) / 60);
-        _toast(
-          `🚨 RIESGO CRÍTICO — Validador pausado.\nEsperá ${coolMin} min antes de reanudar.`,
-          '#dc2626', 15000
-        );
-        _render(); break;
-      }
-
-      const r = await _sendConvMessage(c.telefono, c.nombre);
-      waValid = r.sent;
-      if (r.sent) {
-        // Record for spam detector
-        const tpl = _randomTemplate(c.nombre);
-        _recordOutgoingBridge(tpl, c.telefono);
-      } else {
-        console.log('[WA VALIDATOR CONV] failed for', c.telefono, ':', r.reason);
-      }
-      _burstCount++;
-    } else {
-      const r = await _checkPhoneSilent(c.telefono);
-      waValid = r.exists;
+    // Spam check BEFORE sending
+    const spamCheck = await _spamCheckBeforeSend();
+    if (spamCheck.shouldPause) {
+      _paused = _running = false;
+      _stopCountdown();
+      if (batch.length) { _saveResults([...batch]); batch.length = 0; }
+      const coolMin = Math.ceil((spamCheck.cooldown_sec || 180) / 60);
+      _toast(
+        `🚨 RIESGO CRÍTICO — Validador pausado.\nEsperá ${coolMin} min antes de reanudar.`,
+        '#dc2626', 15000
+      );
+      _render(); break;
     }
 
-    const result = { ...c, wa_valid: waValid, mode: modeUsed };
+    const r = await _sendConvMessage(c.telefono, c.nombre);
+    if (r.sent) {
+      const tpl = _randomTemplate(c.nombre);
+      _recordOutgoingBridge(tpl, c.telefono);
+    } else {
+      console.log('[WA VALIDATOR CONV] failed for', c.telefono, ':', r.reason);
+    }
+    _burstCount++;
+
+    const result = { ...c, wa_valid: r.sent, mode: 'conv' };
     batch.push(result);
     _results.push(result);
     _sessionCount++;

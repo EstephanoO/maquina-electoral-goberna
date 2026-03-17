@@ -227,15 +227,23 @@ const WA_REQUIRED_MODULES = [
   'WAWebContactCollection',
 ];
 const WA_OPTIONAL_MODULES = [
-  // PTT pipeline — each has fallback alternatives checked at runtime
-  'WAWebMediaOpaqueData',           // or WAWebMediaOpaqueDataUtils
-  'WAWebPrepRawMedia',              // or WAWebPrepareMediaUtils
-  'WAWebSendMsgChatAction',         // PTT: addAndSendMsgToChat
-  'WAWebWidFactory',                // @lid resolution + chat lookup
-  'WAWebFindChatAction',            // PTT: fallback chat resolver
-  'WAWebMediaMmsV4Upload',          // or WAWebMediaUploadUtils / WAWebUploadManager
-  'WAWebMediaStorage',              // or WAWebMediaStorageUtils
-  'WAWebMmsMediaTypes',             // or WAWebMediaTypes
+  // Envío de mensajes
+  'WAWebSendMsgChatAction',         // addAndSendMsgToChat
+  'WAWebWidFactory',                // createWid, @lid resolution
+  'WAWebFindChatAction',            // findOrCreateLatestChat
+  'WAWebUserPrefsMeUser',           // getMeUser — identidad propia
+  'WAWebMsgKey',                    // newId — IDs de mensajes
+  // Validación de números (verificado 2026-03-17)
+  'WAWebUsync',                     // USyncQuery — check si número tiene WA
+  'WAWebUsyncUser',                 // USyncUser — builder de query
+  // Typing indicators
+  'WAWebChatStateBridge',           // sendChatStateComposing/Recording/Paused
+  // PTT pipeline
+  'WAWebMediaOpaqueData',           // createFromData
+  'WAWebPrepRawMedia',              // prepRawMedia
+  'WAWebMediaMmsV4Upload',          // uploadMedia
+  'WAWebMediaStorage',              // getOrCreateMediaObject
+  'WAWebMmsMediaTypes',             // msgToMediaType
   'WAWebGetEphemeralFieldsMsgActionsUtils', // optional: disappearing msgs
 ];
 

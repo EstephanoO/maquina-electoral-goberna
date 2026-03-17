@@ -591,10 +591,10 @@
       { vote: "flotante", bg: "rgba(167,139,250,.12)", color: "#a78bfa", border: "rgba(167,139,250,.3)", label: "Flotante" },
       { vote: "invalido", bg: "rgba(239,83,80,.12)", color: "#ef5350", border: "rgba(239,83,80,.3)", label: "Imposible" }
     ];
-    for (const cfg of btnConfigs) {
-      const btn = el("button", { background: cfg.bg, color: cfg.color, border: "1px solid " + cfg.border, borderRadius: "6px", padding: "4px 10px", fontSize: "10px", fontWeight: "700", cursor: "pointer" }, cfg.label);
+    for (const cfg2 of btnConfigs) {
+      const btn = el("button", { background: cfg2.bg, color: cfg2.color, border: "1px solid " + cfg2.border, borderRadius: "6px", padding: "4px 10px", fontSize: "10px", fontWeight: "700", cursor: "pointer" }, cfg2.label);
       btn.className = "wspp-classify-btn";
-      btn.setAttribute("data-vote", cfg.vote);
+      btn.setAttribute("data-vote", cfg2.vote);
       btnContainer.appendChild(btn);
     }
     classifyPanel.appendChild(btnContainer);
@@ -858,23 +858,36 @@
     "WAWebContactCollection"
   ];
   var WA_OPTIONAL_MODULES = [
-    // PTT pipeline — each has fallback alternatives checked at runtime
-    "WAWebMediaOpaqueData",
-    // or WAWebMediaOpaqueDataUtils
-    "WAWebPrepRawMedia",
-    // or WAWebPrepareMediaUtils
+    // Envío de mensajes
     "WAWebSendMsgChatAction",
-    // PTT: addAndSendMsgToChat
+    // addAndSendMsgToChat
     "WAWebWidFactory",
-    // @lid resolution + chat lookup
+    // createWid, @lid resolution
     "WAWebFindChatAction",
-    // PTT: fallback chat resolver
+    // findOrCreateLatestChat
+    "WAWebUserPrefsMeUser",
+    // getMeUser — identidad propia
+    "WAWebMsgKey",
+    // newId — IDs de mensajes
+    // Validación de números (verificado 2026-03-17)
+    "WAWebUsync",
+    // USyncQuery — check si número tiene WA
+    "WAWebUsyncUser",
+    // USyncUser — builder de query
+    // Typing indicators
+    "WAWebChatStateBridge",
+    // sendChatStateComposing/Recording/Paused
+    // PTT pipeline
+    "WAWebMediaOpaqueData",
+    // createFromData
+    "WAWebPrepRawMedia",
+    // prepRawMedia
     "WAWebMediaMmsV4Upload",
-    // or WAWebMediaUploadUtils / WAWebUploadManager
+    // uploadMedia
     "WAWebMediaStorage",
-    // or WAWebMediaStorageUtils
+    // getOrCreateMediaObject
     "WAWebMmsMediaTypes",
-    // or WAWebMediaTypes
+    // msgToMediaType
     "WAWebGetEphemeralFieldsMsgActionsUtils"
     // optional: disappearing msgs
   ];
@@ -1217,25 +1230,6 @@
       onClick(e);
     });
     return b;
-  }
-  function _toggleCatalogPanelInternal() {
-    const existing = document.getElementById("wspp-cat-panel");
-    if (existing) {
-      _closePanel();
-      return;
-    }
-    _catalogPanelOpen = true;
-    const fab = document.getElementById("wspp-catalog-btn");
-    if (fab) fab.style.boxShadow = "0 0 0 3px rgba(0,168,132,.35), 0 3px 12px rgba(0,168,132,.4)";
-    if (_catalogItems.length === 0 && !_catalogLoading) {
-      _catalogLoading = true;
-      window.postMessage({ type: "FETCH_AUDIO_CATALOG" }, WA_ORIGIN);
-    }
-    if (_catalogCategories.length === 0 && !_catalogCategoriesLoading) {
-      _catalogCategoriesLoading = true;
-      window.postMessage({ type: "FETCH_CATALOG_CATEGORIES" }, WA_ORIGIN);
-    }
-    renderCatalogPanel();
   }
   function _closePanel() {
     _destroyPreview();
@@ -2145,141 +2139,232 @@
       return;
     }
   });
-  function toggleCatalogPanel() {
-    if (_catalogPanelOpen) {
-      _closePanel();
-    } else {
-      _toggleCatalogPanelInternal();
-    }
-  }
 
   // src/inject/blast-panel.js
-  async function _spamCheckBeforeSend() {
+  async function _spamCheck() {
     return new Promise((resolve) => {
       window.postMessage({ type: "WSPP_SPAM_CHECK_NOW" }, WA_ORIGIN);
-      const onResult = (e) => {
-        if (e.source !== window) return;
-        if (e.data?.type !== "WSPP_SPAM_CHECK_RESULT") return;
-        window.removeEventListener("message", onResult);
-        const r = e.data.result;
-        resolve({
-          shouldPause: r?.risk_level === "critical",
-          cooldown_sec: r?.cooldown_sec || 0,
-          result: r
-        });
+      const h = (e) => {
+        if (e.source !== window || e.data?.type !== "WSPP_SPAM_CHECK_RESULT") return;
+        window.removeEventListener("message", h);
+        resolve({ shouldPause: e.data.result?.risk_level === "critical" });
       };
-      window.addEventListener("message", onResult);
+      window.addEventListener("message", h);
       setTimeout(() => {
-        window.removeEventListener("message", onResult);
-        resolve({ shouldPause: false, cooldown_sec: 0, result: null });
+        window.removeEventListener("message", h);
+        resolve({ shouldPause: false });
       }, 500);
     });
   }
-  var WARM_NUMBERS = /* @__PURE__ */ new Set(["51901938157", "51930700661"]);
-  var SESSION_MAX = 50;
-  var DAILY_MAX = 200;
-  var CONSEC_FAIL_LIMIT = 3;
-  var PREWARM_WAIT_MS = 3e4;
-  var DELAY_MIN = 1e4;
-  var DELAY_MAX = 22e3;
-  var DELAY_MICRO_MIN = 45e3;
-  var DELAY_MICRO_MAX = 9e4;
-  var DELAY_BREAK_MIN = 18e4;
-  var DELAY_BREAK_MAX = 3e5;
-  var _open = false;
-  var _contacts = [];
-  var _total = 0;
-  var _message = "";
-  var _running = false;
-  var _paused = false;
-  var _results = [];
-  var _idx = 0;
-  var _sessionSent = 0;
-  var _dailyCount = 0;
-  var _warmupStart = null;
-  var _countdown = 0;
-  var _countdownTimer = null;
-  var _activeNumber = null;
-  var _phase = "delay";
-  var _habladoBatch = [];
-  var _segmentInfo = null;
-  var _dailyKey = (n) => `wspp_blast_daily_${n || "global"}`;
-  var _warmupKey = (n) => `wspp_blast_warmup_${n || "global"}`;
-  function _loadState() {
-    _activeNumber = getOwnNumber();
-    const n = _activeNumber;
+  var CFG_KEY = "wspp_blast_cfg_v3";
+  var TPL_KEY = "wspp_blast_tpls_v3";
+  var DEFAULTS = {
+    batchSize: 25,
+    // personas por tanda — el usuario lo cambia en la UI
+    delaySec: 15,
+    prewarmSec: 30,
+    pausaCada: 10,
+    pausaSec: 60,
+    descansoSec: 300
+  };
+  function _loadCfg() {
     try {
-      const ws = localStorage.getItem(_warmupKey(n));
-      _warmupStart = ws ? Number(ws) : null;
-      const raw = localStorage.getItem(_dailyKey(n));
-      if (raw) {
-        const { date, count } = JSON.parse(raw);
-        const today = new Date(Date.now() - 5 * 36e5).toISOString().slice(0, 10);
-        _dailyCount = date === today ? Number(count) : 0;
-      } else {
-        _dailyCount = 0;
+      const r = localStorage.getItem(CFG_KEY);
+      return r ? { ...DEFAULTS, ...JSON.parse(r) } : { ...DEFAULTS };
+    } catch (_) {
+      return { ...DEFAULTS };
+    }
+  }
+  function _saveCfg(c) {
+    try {
+      localStorage.setItem(CFG_KEY, JSON.stringify(c));
+    } catch (_) {
+    }
+  }
+  var cfg = _loadCfg();
+  var DEFAULT_TPL = "{{saludo}} {{nombre}}, te escribo para conversar contigo. \xBFTienes un momento? {{cierre}}";
+  function _loadTpls() {
+    try {
+      const r = localStorage.getItem(TPL_KEY);
+      if (r) {
+        const p = JSON.parse(r);
+        if (p.length) return p;
       }
     } catch (_) {
-      _dailyCount = 0;
     }
+    return [DEFAULT_TPL];
   }
-  function _saveDaily(c) {
+  function _saveTpls(t) {
     try {
-      const today = new Date(Date.now() - 5 * 36e5).toISOString().slice(0, 10);
-      localStorage.setItem(_dailyKey(_activeNumber), JSON.stringify({ date: today, count: c }));
+      localStorage.setItem(TPL_KEY, JSON.stringify(t));
     } catch (_) {
     }
   }
-  function _initWarmup() {
-    if (_warmupStart) return;
-    _warmupStart = WARM_NUMBERS.has(_activeNumber || "") ? Date.now() - 14 * 864e5 : Date.now();
-    try {
-      localStorage.setItem(_warmupKey(_activeNumber), String(_warmupStart));
-    } catch (_) {
+  var tpls = _loadTpls();
+  var _running = false;
+  var _paused = false;
+  var _countdown = 0;
+  var _countdownTimer = null;
+  var _phase2 = "";
+  var _consecFails = 0;
+  var _totalPending = null;
+  var _onUpdate = null;
+  var _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
+  var _lastResults = [];
+  var _trackedMsgs = [];
+  var _sentThisSession = /* @__PURE__ */ new Set();
+  var _sentIds = /* @__PURE__ */ new Set();
+  function getConfig() {
+    return cfg;
+  }
+  function setConfig(c) {
+    cfg = { ...cfg, ...c };
+    _saveCfg(cfg);
+  }
+  function getTemplates() {
+    return tpls;
+  }
+  function setTemplates(t) {
+    tpls = t;
+    _saveTpls(t);
+  }
+  function isRunning() {
+    return _running;
+  }
+  function isPaused() {
+    return _paused;
+  }
+  function getCountdown() {
+    return _countdown;
+  }
+  function getPhase() {
+    return _phase2;
+  }
+  function getTotalPending() {
+    return _totalPending;
+  }
+  function getKpis() {
+    return { ..._kpis };
+  }
+  function getLastResults() {
+    return _lastResults;
+  }
+  function setOnUpdate(fn) {
+    _onUpdate = fn;
+  }
+  function _notify() {
+    if (_onUpdate) _onUpdate();
+  }
+  var _ackInterval = null;
+  function _startAckTracking() {
+    if (_ackInterval) return;
+    _ackInterval = setInterval(_pollAcks, 5e3);
+  }
+  function _stopAckTracking() {
+    if (_ackInterval) {
+      clearInterval(_ackInterval);
+      _ackInterval = null;
     }
   }
-  function _dailyLimit() {
-    if (!_warmupStart) return 20;
-    const d = (Date.now() - _warmupStart) / 864e5;
-    if (d < 3) return 20;
-    if (d < 7) return 50;
-    if (d < 14) return 100;
-    return DAILY_MAX;
+  function _pollAcks() {
+    let changed = false;
+    for (const entry of _trackedMsgs) {
+      if (!entry.msgModel) continue;
+      const ack = typeof entry.msgModel.get === "function" ? entry.msgModel.get("ack") : entry.msgModel.ack;
+      const newAck = Number(ack) || 0;
+      if (newAck !== entry.lastAck) {
+        const oldKey = _ackToKey(entry.lastAck);
+        const newKey = _ackToKey(newAck);
+        if (oldKey) _kpis[oldKey] = Math.max(0, _kpis[oldKey] - 1);
+        if (newKey) _kpis[newKey] = (_kpis[newKey] || 0) + 1;
+        entry.lastAck = newAck;
+        const result = _lastResults.find((r) => r.telefono === entry.telefono && r.status !== "failed");
+        if (result) result.ack = newAck;
+        changed = true;
+      }
+    }
+    const now = Date.now();
+    _trackedMsgs = _trackedMsgs.filter((e) => {
+      if (e.lastAck >= 3 && now - e.ts > 12e4) return false;
+      return true;
+    });
+    if (!_trackedMsgs.length) _stopAckTracking();
+    if (changed) _notify();
   }
-  function _warmupDay() {
-    return _warmupStart ? Math.floor((Date.now() - _warmupStart) / 864e5) + 1 : 0;
+  function _ackToKey(ack) {
+    if (ack <= 0) return "pending";
+    if (ack === 1) return "sent";
+    if (ack === 2) return "delivered";
+    if (ack >= 3) return "read";
+    return "pending";
   }
-  function _delay(sent) {
-    if (sent > 0 && sent % 25 === 0)
-      return DELAY_BREAK_MIN + Math.random() * (DELAY_BREAK_MAX - DELAY_BREAK_MIN);
-    if (sent > 0 && sent % 10 === 0)
-      return DELAY_MICRO_MIN + Math.random() * (DELAY_MICRO_MAX - DELAY_MICRO_MIN);
-    const r = Math.random();
-    return DELAY_MIN + r * r * (DELAY_MAX - DELAY_MIN) + (Math.random() < 0.1 ? Math.random() * 12e3 : 0);
+  function _trackMessage(msgModel, contactName, telefono) {
+    const ack = typeof msgModel.get === "function" ? msgModel.get("ack") : msgModel.ack || 0;
+    const key = _ackToKey(Number(ack) || 0);
+    _kpis[key] = (_kpis[key] || 0) + 1;
+    _trackedMsgs.push({ msgModel, contactName, telefono, lastAck: Number(ack) || 0, ts: Date.now() });
+    _startAckTracking();
   }
-  var SALUDOS = ["Hola", "Buenas", "Buenos d\xEDas", "Hola buen d\xEDa", "Qu\xE9 tal", "Hola, buen d\xEDa", "Buenas tardes", "Buenas noches"];
-  var CIERRES = ["Gracias!", "Saludos!", "Un abrazo!", "Hasta pronto!", "Que tengas buen d\xEDa!", "\xC9xitos!"];
-  var EMOJIS = ["", "", "", "", "", "\u{1F44B}", "\u{1F64C}", "\u2705", "\u{1F1F5}\u{1F1EA}"];
-  var pick = (a, s) => a[Math.abs(s) % a.length];
-  function _personalize(tpl, c, seed) {
+  var _reqIdCounter = 0;
+  function _nextReqId() {
+    return "blast_" + ++_reqIdCounter + "_" + Date.now();
+  }
+  var _pendingRequests = /* @__PURE__ */ new Map();
+  window.addEventListener("message", (e) => {
+    if (e.source !== window || e.data?.type !== "BLAST_FORM_CONTACTS_READY") return;
+    const reqId = e.data.reqId;
+    if (!reqId) return;
+    const pending = _pendingRequests.get(reqId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    _pendingRequests.delete(reqId);
+    if (e.data.ok) {
+      _totalPending = e.data.total ?? _totalPending;
+      pending.resolve(e.data.contacts || []);
+      _notify();
+    } else {
+      pending.resolve([]);
+    }
+  });
+  function refreshPendingCount() {
+    const reqId = _nextReqId();
+    const timer = setTimeout(() => {
+      _pendingRequests.delete(reqId);
+    }, 1e4);
+    _pendingRequests.set(reqId, {
+      resolve: (contacts) => {
+      },
+      timer
+    });
+    window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit: 1, offset: 0, status: "nuevo", reqId }, WA_ORIGIN);
+  }
+  function _fetchBatch(limit) {
+    return new Promise((resolve) => {
+      const reqId = _nextReqId();
+      const timer = setTimeout(() => {
+        if (_pendingRequests.has(reqId)) {
+          _pendingRequests.delete(reqId);
+          resolve([]);
+        }
+      }, 15e3);
+      _pendingRequests.set(reqId, { resolve, timer });
+      window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit, offset: 0, status: "nuevo", reqId }, WA_ORIGIN);
+    });
+  }
+  function _markHablado(ids) {
+    if (ids.length) window.postMessage({ type: "BLAST_MARK_HABLADO", ids, own_number: getOwnNumber() }, WA_ORIGIN);
+  }
+  function _reportLog(results) {
+    if (results.length) window.postMessage({ type: "BLAST_REPORT_RESULTS", results }, WA_ORIGIN);
+  }
+  var SALUDOS = ["Hola", "Buenas", "Buenos d\xEDas", "Hola buen d\xEDa", "Qu\xE9 tal", "Buenas tardes"];
+  var CIERRES = ["Gracias!", "Saludos!", "Un abrazo!", "Hasta pronto!", "\xC9xitos!"];
+  var EMOJIS = ["", "", "", "\u{1F44B}", "\u{1F64C}", "\u2705"];
+  function _personalize(tpl, c, idx) {
     const nombre = ((c.nombre || "") + " " + (c.apellidos || "")).trim().split(/\s+/)[0] || "amigo";
-    const saludo = pick(SALUDOS, seed);
-    const cierre = pick(CIERRES, seed + 7);
-    const emoji = pick(EMOJIS, seed + 13);
-    const distrito = c.distrito || "";
-    let msg = tpl.replace(/\{\{nombre\}\}/gi, nombre).replace(/\{\{saludo\}\}/gi, saludo).replace(/\{\{cierre\}\}/gi, cierre).replace(/\{\{emoji\}\}/gi, emoji).replace(/\{\{distrito\}\}/gi, distrito).trim();
-    if (!/\{\{saludo\}\}/i.test(tpl) && !/^(hola|buenas|buenos|qué)/i.test(msg))
-      msg = `${saludo} ${nombre}! ${msg}`;
-    if (!/[.!?]$/.test(msg))
-      msg += pick([".", "!", " !"], seed + 17);
-    if (emoji) msg += " " + emoji;
-    return msg;
-  }
-  function _phoneToJid(telefono) {
-    const digits = String(telefono).replace(/\D/g, "");
-    if (!digits) return null;
-    const normalized = digits.length === 9 ? "51" + digits : digits;
-    return normalized + "@c.us";
+    const seed = idx + (c.id || "").length;
+    const now = /* @__PURE__ */ new Date();
+    return tpl.replace(/\{\{nombre\}\}/gi, nombre).replace(/\{\{saludo\}\}/gi, SALUDOS[seed % SALUDOS.length]).replace(/\{\{cierre\}\}/gi, CIERRES[(seed + 3) % CIERRES.length]).replace(/\{\{emoji\}\}/gi, EMOJIS[(seed + 7) % EMOJIS.length]).replace(/\{\{distrito\}\}/gi, c.distrito || "").replace(/\{\{fecha\}\}/gi, now.toLocaleDateString("es-PE")).replace(/\{\{hora\}\}/gi, now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })).trim();
   }
   function _req(...names) {
     for (const n of names) {
@@ -2289,28 +2374,54 @@
       } catch (_) {
       }
     }
-    throw new Error("WA module not found: " + names.join(" / "));
+    throw new Error("WA module: " + names.join("/"));
+  }
+  function _normalizePhone(tel) {
+    const d = String(tel).replace(/\D/g, "");
+    if (!d) return null;
+    return d.length === 9 ? "51" + d : d;
+  }
+  async function _checkExistsOnWA(normalizedPhone) {
+    try {
+      const { USyncQuery } = window.require("WAWebUsync");
+      const { USyncUser } = window.require("WAWebUsyncUser");
+      if (!USyncQuery || !USyncUser) return null;
+      const query = new USyncQuery().withContext("interactive").withContactProtocol().withUser(new USyncUser().withPhone(normalizedPhone));
+      const response = await query.execute();
+      const item = response?.list?.[0];
+      const type = item?.contact?.type;
+      if (!type) return null;
+      return type === "in";
+    } catch (_) {
+      return null;
+    }
   }
   async function _prewarmChat(jid) {
-    if (typeof window.require !== "function") throw new Error("WA Web no cargado");
     const wf = _req("WAWebWidFactory");
     const wid = wf.createWid(jid);
     const coll = _req("WAWebCollections");
     let chat = coll.Chat.get(wid);
-    if (!chat) {
-      const FC = _req("WAWebFindChatAction");
-      const r = await FC.findOrCreateLatestChat(wid);
-      chat = r?.chat ?? r;
-    }
-    if (!chat) throw new Error("No existe en WA: " + jid);
-    return chat;
+    if (chat) return { chat, alreadyInStore: true };
+    const FC = _req("WAWebFindChatAction");
+    const r = await FC.findOrCreateLatestChat(wid);
+    chat = r?.chat ?? r;
+    if (!chat) throw new Error("N\xFAmero no existe en WA");
+    return { chat, alreadyInStore: false };
   }
   async function _sendToChat(chat, text) {
     const meMod = _req("WAWebUserPrefsMeUser");
-    const meUser = (meMod.getMaybeMePnUser ?? meMod.getMeUser ?? meMod.default?.getMaybeMePnUser).call(meMod);
+    const meUser = (meMod.getMaybeMePnUser ?? meMod.getMeUser).call(meMod);
     const MsgKey = _req("WAWebMsgKey");
-    const newId = await MsgKey.newId();
-    const key = new MsgKey({ from: meUser, to: chat.id, id: newId, selfDir: "out" });
+    const { unproxy } = _req("WAWebStateUtils");
+    const { MsgCollection } = _req("WAWebMsgCollection");
+    const idStr = await MsgKey.newId();
+    const key = MsgKey.from({
+      fromMe: true,
+      remote: chat.id,
+      // Wid object — puede ser @lid o @c.us
+      id: idStr
+      // string hexadecimal
+    });
     let eph = {};
     try {
       const em = _req("WAWebGetEphemeralFieldsMsgActionsUtils", "WAWebEphemeralFields", "WAWebEphemeralUtils");
@@ -2318,523 +2429,241 @@
       if (fn) eph = fn(chat);
     } catch (_) {
     }
-    const [p] = _req("WAWebSendMsgChatAction").addAndSendMsgToChat(chat, {
-      ...eph,
-      id: key,
-      type: "chat",
-      body: text,
-      ack: 0,
-      from: meUser,
-      to: chat.id,
-      local: true,
-      self: "out",
-      t: Math.floor(Date.now() / 1e3),
-      isNewMsg: true
-    });
-    await p;
+    let capturedModel = null;
+    const onAdd = (msg) => {
+      if (msg.get?.("id")?.id === idStr && msg.get?.("id")?.fromMe) {
+        capturedModel = msg;
+      }
+    };
+    MsgCollection.on("add", onAdd);
+    try {
+      const [p0] = _req("WAWebSendMsgChatAction").addAndSendMsgToChat(unproxy(chat), {
+        ...eph,
+        id: key,
+        type: "chat",
+        body: text,
+        from: meUser,
+        to: chat.id,
+        local: true,
+        self: "out",
+        t: Math.floor(Date.now() / 1e3),
+        isNewMsg: true
+      });
+      await p0;
+    } finally {
+      MsgCollection.off("add", onAdd);
+    }
+    if (!capturedModel) {
+      capturedModel = MsgCollection._models.find(
+        (m) => m.get?.("id")?.id === idStr && m.get?.("id")?.fromMe
+      ) || null;
+    }
+    return capturedModel;
   }
-  function _startCountdown(ms, phase = "delay") {
-    _phase = phase;
-    _countdown = Math.ceil(ms / 1e3);
+  function _sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+  function _startCountdown(sec, phase) {
+    _phase2 = phase;
+    _countdown = sec;
     clearInterval(_countdownTimer);
     _countdownTimer = setInterval(() => {
       _countdown = Math.max(0, _countdown - 1);
-      const el = document.getElementById("wspp-blast-countdown");
-      if (!el) return;
-      if (_countdown <= 0) {
-        el.textContent = _phase === "prewarm" ? "Enviando mensaje..." : "Enviando...";
-        return;
-      }
-      if (_phase === "prewarm") {
-        el.textContent = `\u23F3 Preparando contacto... ${_countdown}s`;
-      } else if (_phase === "break") {
-        const m = Math.floor(_countdown / 60);
-        const s = _countdown % 60;
-        el.textContent = `\u2615 Pausa anti-ban ${m}:${String(s).padStart(2, "0")}`;
-      } else {
-        el.textContent = `Pr\xF3ximo en ${_countdown}s`;
-      }
+      _notify();
+      if (_countdown <= 0) clearInterval(_countdownTimer);
     }, 1e3);
   }
   function _stopCountdown() {
     clearInterval(_countdownTimer);
     _countdown = 0;
-    _phase = "delay";
+    _phase2 = "";
   }
-  function _sleep(ms) {
-    return new Promise((r) => setTimeout(r, ms));
-  }
-  function _toast2(text, color = "#25d366", ms = 4e3) {
-    const t = document.createElement("div");
-    Object.assign(t.style, {
-      position: "fixed",
-      bottom: "80px",
-      left: "50%",
-      transform: "translateX(-50%)",
-      background: color,
-      color: "#fff",
-      padding: "10px 20px",
-      borderRadius: "8px",
-      fontSize: "13px",
-      fontWeight: "600",
-      zIndex: "2147483647",
-      boxShadow: "0 4px 20px rgba(0,0,0,.35)",
-      maxWidth: "360px",
-      textAlign: "center",
-      lineHeight: "1.4"
-    });
-    t.textContent = text;
-    document.body.appendChild(t);
-    setTimeout(() => t.remove(), ms);
-  }
-  function _reportLog(results) {
-    if (!results.length) return;
-    window.postMessage({ type: "BLAST_REPORT_RESULTS", results }, WA_ORIGIN);
-  }
-  function _flushHablado() {
-    if (!_habladoBatch.length) return;
-    window.postMessage({
-      type: "BLAST_MARK_HABLADO",
-      ids: [..._habladoBatch],
-      own_number: _activeNumber
-    }, WA_ORIGIN);
-    _habladoBatch = [];
-  }
-  async function _run() {
-    if (_running || _paused) return;
-    if (!_message.trim()) {
-      _toast2("Escribe el mensaje", "#ef5350");
-      return;
-    }
-    if (!_contacts.length) {
-      _toast2("Carga los contactos primero", "#ef5350");
-      return;
-    }
-    _loadState();
-    _initWarmup();
-    const limit = _dailyLimit();
-    if (_dailyCount >= limit) {
-      _toast2(`L\xEDmite diario (${limit}) alcanzado para +${_activeNumber}.
-Usa otra pesta\xF1a o contin\xFAa ma\xF1ana.`, "#ef5350", 7e3);
-      return;
-    }
+  async function startBlast() {
+    if (_running) return;
+    if (!tpls.length || !tpls[0].trim()) return;
     _running = true;
     _paused = false;
-    let consecFails = 0;
-    const logBatch = [];
-    _render();
-    while (_idx < _contacts.length && _running && !_paused) {
-      if (_sessionSent >= SESSION_MAX) {
-        _paused = _running = false;
+    _consecFails = 0;
+    const activeNumber = getOwnNumber();
+    _notify();
+    while (_running && !_paused) {
+      _phase2 = "cargando";
+      _notify();
+      const batch = await _fetchBatch(cfg.batchSize);
+      if (!batch.length) {
+        _running = false;
         _stopCountdown();
-        _flushHablado();
-        _toast2(`Pausa: ${SESSION_MAX} enviados esta sesi\xF3n.
-Espera 10 min y reanuda.`, "#ff9f0a", 1e4);
-        _render();
+        _notify();
         break;
       }
-      if (_dailyCount >= limit) {
-        _paused = _running = false;
-        _stopCountdown();
-        _flushHablado();
-        _toast2(`L\xEDmite diario (${limit}) para +${_activeNumber}.
-Contin\xFAa ma\xF1ana.`, "#ef5350", 8e3);
-        _render();
-        break;
-      }
-      const c = _contacts[_idx];
-      const jid = _phoneToJid(c.telefono);
-      const seed = (c.id || "").split("").reduce((a, ch) => a + ch.charCodeAt(0), 0) + _idx;
-      const text = _personalize(_message, c, seed);
-      let status = "sent", error = null;
-      if (!jid) {
-        status = "failed";
-        error = "Tel\xE9fono inv\xE1lido: " + c.telefono;
-      } else {
-        const spamCheck = await _spamCheckBeforeSend();
-        if (spamCheck.shouldPause) {
-          _paused = _running = false;
+      const logBatch = [];
+      let batchSent = 0;
+      const globalSent = _kpis.pending + _kpis.sent + _kpis.delivered + _kpis.read;
+      for (let i = 0; i < batch.length && _running && !_paused; i++) {
+        const c = batch[i];
+        const normalizedPhone = _normalizePhone(c.telefono);
+        const jid = normalizedPhone ? normalizedPhone + "@c.us" : null;
+        const tpl = tpls.length > 1 ? tpls[(globalSent + i) % tpls.length] : tpls[0];
+        const text = _personalize(tpl, c, globalSent + i);
+        const cName = ((c.nombre || "") + " " + (c.apellidos || "")).trim();
+        let status = "sent", error = null;
+        if (normalizedPhone && _sentThisSession.has(normalizedPhone) || c.id && _sentIds.has(c.id)) {
+          console.log("[BLAST] Dedup local \u2014 ya enviado a:", normalizedPhone || c.id);
+          continue;
+        }
+        if (!jid) {
+          status = "failed";
+          error = "Tel inv\xE1lido";
+          _kpis.failed++;
+          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error });
+          if (_lastResults.length > 30) _lastResults.length = 30;
+          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
+          _notify();
+          continue;
+        }
+        const sc = await _spamCheck();
+        if (sc.shouldPause) {
+          _running = false;
           _stopCountdown();
-          _flushHablado();
-          const coolMin = Math.ceil((spamCheck.cooldown_sec || 180) / 60);
-          _toast2(
-            `\u{1F6A8} RIESGO CR\xCDTICO \u2014 Blast pausado autom\xE1ticamente.
-Esper\xE1 ${coolMin} min antes de reanudar.`,
-            "#dc2626",
-            15e3
-          );
-          _render();
+          _lastResults.unshift({ nombre: "\u{1F6A8} RIESGO CR\xCDTICO", telefono: "", status: "failed", ack: -1, error: "Pausado por spam" });
+          _notify();
           break;
         }
+        if (normalizedPhone) {
+          const hasWA = await _checkExistsOnWA(normalizedPhone);
+          if (hasWA === false) {
+            _kpis.no_wa = (_kpis.no_wa || 0) + 1;
+            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "no_wa", ack: -1, error: "Sin WhatsApp" });
+            if (_lastResults.length > 30) _lastResults.length = 30;
+            logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status: "no_wa", error: "Sin WhatsApp", own_number: activeNumber });
+            if (c.id) _markHablado([c.id]);
+            if (normalizedPhone) _sentThisSession.add(normalizedPhone);
+            if (c.id) _sentIds.add(c.id);
+            _notify();
+            continue;
+          }
+        }
         let chat = null;
+        let alreadyInStore = false;
         try {
-          chat = await _prewarmChat(jid);
+          const pw = await _prewarmChat(jid);
+          chat = pw.chat;
+          alreadyInStore = pw.alreadyInStore;
         } catch (err) {
           status = "failed";
           error = err.message;
-          consecFails++;
-          console.error(`[WSPP BLAST] \u2717 prewarm +${c.telefono} \u2014 ${err.message}`);
-          if (consecFails >= CONSEC_FAIL_LIMIT) {
-            _paused = _running = false;
+          _consecFails++;
+          _kpis.failed++;
+          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error });
+          if (_lastResults.length > 30) _lastResults.length = 30;
+          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
+          _notify();
+          if (_consecFails >= 3) {
+            _running = false;
             _stopCountdown();
-            _flushHablado();
-            _toast2(`\u26A0\uFE0F ${CONSEC_FAIL_LIMIT} fallos consecutivos.
-Verifica WhatsApp Web.`, "#ef5350", 1e4);
-            logBatch.push({ phone: c.telefono, contact_name: `${c.nombre} ${c.apellidos}`.trim(), message: text, status, error, own_number: _activeNumber });
-            _results.push({ ...c, status, error });
-            _idx++;
-            _render();
             _reportLog([...logBatch]);
-            logBatch.length = 0;
             break;
-          }
-          logBatch.push({ phone: c.telefono, contact_name: `${c.nombre} ${c.apellidos}`.trim(), message: text, status, error, own_number: _activeNumber });
-          _results.push({ ...c, status, error });
-          _idx++;
-          _render();
-          if (logBatch.length >= 10) {
-            _reportLog([...logBatch]);
-            logBatch.length = 0;
-          }
-          if (_running && !_paused && _idx < _contacts.length) {
-            const d = _delay(_sessionSent);
-            _startCountdown(d, "delay");
-            _render();
-            await _sleep(d);
-            _stopCountdown();
           }
           continue;
         }
-        if (_running && !_paused) {
-          _startCountdown(PREWARM_WAIT_MS, "prewarm");
-          _render();
-          await _sleep(PREWARM_WAIT_MS);
+        if (_running && !_paused && !alreadyInStore && cfg.prewarmSec > 0) {
+          _startCountdown(cfg.prewarmSec, "prewarm");
+          _notify();
+          await _sleep(cfg.prewarmSec * 1e3);
           _stopCountdown();
         }
         if (!_running || _paused) break;
+        let msgModel = null;
         try {
-          await _sendToChat(chat, text);
-          _sessionSent++;
-          _dailyCount++;
-          consecFails = 0;
-          _saveDaily(_dailyCount);
-          if (c.id) _habladoBatch.push(c.id);
-          if (_habladoBatch.length >= 10) _flushHablado();
-          console.log(`[WSPP BLAST] \u2713 +${_activeNumber} | ${c.nombre} | +${c.telefono}`);
+          msgModel = await _sendToChat(chat, text);
+          batchSent++;
+          _consecFails = 0;
+          if (c.id) _markHablado([c.id]);
+          if (normalizedPhone) _sentThisSession.add(normalizedPhone);
+          if (c.id) _sentIds.add(c.id);
+          if (msgModel) {
+            _trackMessage(msgModel, cName, c.telefono);
+            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "sent", ack: msgModel.get?.("ack") ?? 0, error: null });
+          } else {
+            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "sent", ack: 0, error: null });
+          }
         } catch (err) {
           status = "failed";
           error = err.message;
-          consecFails++;
-          console.error(`[WSPP BLAST] \u2717 send +${c.telefono} \u2014 ${err.message}`);
-          if (consecFails >= CONSEC_FAIL_LIMIT) {
-            _paused = _running = false;
+          _consecFails++;
+          _kpis.failed++;
+          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error });
+          if (_consecFails >= 3) {
+            _running = false;
             _stopCountdown();
-            _flushHablado();
-            _toast2(`\u26A0\uFE0F ${CONSEC_FAIL_LIMIT} fallos consecutivos.
-Verifica WhatsApp Web.`, "#ef5350", 1e4);
-            logBatch.push({ phone: c.telefono, contact_name: `${c.nombre} ${c.apellidos}`.trim(), message: text, status, error, own_number: _activeNumber });
-            _results.push({ ...c, status, error });
-            _idx++;
-            _render();
+            logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
             _reportLog([...logBatch]);
-            logBatch.length = 0;
             break;
           }
         }
+        if (_lastResults.length > 30) _lastResults.length = 30;
+        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
+        _notify();
+        if (logBatch.length >= 10) {
+          _reportLog([...logBatch]);
+          logBatch.length = 0;
+        }
+        if (_running && !_paused && i < batch.length - 1) {
+          if (batchSent > 0 && batchSent % 25 === 0 && cfg.descansoSec > 0) {
+            _startCountdown(cfg.descansoSec, "descanso");
+            _notify();
+            await _sleep(cfg.descansoSec * 1e3);
+            _stopCountdown();
+          } else if (batchSent > 0 && cfg.pausaCada > 0 && batchSent % cfg.pausaCada === 0 && cfg.pausaSec > 0) {
+            _startCountdown(cfg.pausaSec, "pausa");
+            _notify();
+            await _sleep(cfg.pausaSec * 1e3);
+            _stopCountdown();
+          } else if (cfg.delaySec > 0) {
+            const v = cfg.delaySec * 0.3;
+            const actual = Math.max(1, Math.round(cfg.delaySec + (Math.random() * 2 - 1) * v));
+            _startCountdown(actual, "delay");
+            _notify();
+            await _sleep(actual * 1e3);
+            _stopCountdown();
+          }
+        }
       }
-      logBatch.push({ phone: c.telefono, contact_name: `${c.nombre} ${c.apellidos}`.trim(), message: text, status, error, own_number: _activeNumber });
-      _results.push({ ...c, status, error });
-      _idx++;
-      _render();
-      if (logBatch.length >= 10) {
-        _reportLog([...logBatch]);
-        logBatch.length = 0;
-      }
-      if (_running && !_paused && _idx < _contacts.length) {
-        const d = _delay(_sessionSent);
-        const phase = d >= DELAY_BREAK_MIN ? "break" : "delay";
-        _startCountdown(d, phase);
-        _render();
-        await _sleep(d);
-        _stopCountdown();
-      }
-    }
-    if (logBatch.length) _reportLog([...logBatch]);
-    _flushHablado();
-    if (!_paused && _idx >= _contacts.length) {
-      _running = false;
+      if (logBatch.length) _reportLog([...logBatch]);
+      if (_totalPending !== null) _totalPending = Math.max(0, _totalPending - batchSent);
+      _notify();
+      if (!_running || _paused) break;
+      _startCountdown(5, "cargando");
+      _notify();
+      await _sleep(5e3);
       _stopCountdown();
-      const sent = _results.filter((r) => r.status === "sent").length;
-      _toast2(`\u2705 +${_activeNumber} \u2014 ${sent} enviados \xB7 ${sent} marcados como hablado`, "#25d366", 6e3);
     }
     _running = false;
-    _render();
+    _stopCountdown();
+    _notify();
   }
-  function _render() {
-    const el = document.getElementById("wspp-blast-panel");
-    if (!_open) {
-      if (el) el.remove();
-      return;
-    }
-    _loadState();
-    const lim = _dailyLimit();
-    const remaining = Math.max(0, lim - _dailyCount);
-    const wDay = _warmupDay();
-    const inWarmup = wDay <= 14 && !WARM_NUMBERS.has(_activeNumber || "");
-    const sent = _results.filter((r) => r.status === "sent").length;
-    const failed = _results.filter((r) => r.status === "failed").length;
-    const pct = _contacts.length ? Math.round(_idx / _contacts.length * 100) : 0;
-    const numShow = _activeNumber ? `+${_activeNumber}` : "\u23F3 detectando...";
-    const html = `
-    <div id="wspp-blast-panel" style="
-      position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-      width:460px;max-height:94vh;overflow-y:auto;
-      background:#0c1a0f;border:1px solid rgba(37,211,102,.18);border-radius:16px;
-      box-shadow:0 24px 64px rgba(0,0,0,.8);z-index:2147483646;/* blast modal */
-      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#fff;
-    ">
-      <!-- Header -->
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid rgba(255,255,255,.06);">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <div style="width:34px;height:34px;border-radius:9px;background:rgba(37,211,102,.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="#25d366"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
-          </div>
-          <div>
-            <div style="font-size:14px;font-weight:700;">Blast Brigadistas</div>
-            <div style="font-size:10px;color:rgba(255,255,255,.35);">12,258 personas \xB7 nuevo \u2192 hablado autom\xE1tico</div>
-          </div>
-        </div>
-        <button id="wspp-blast-close" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:18px;cursor:pointer;padding:4px 8px;line-height:1;">\u2715</button>
-      </div>
-
-      <!-- N\xFAmero activo + slot del call center -->
-      <div style="margin:10px 16px 0;padding:8px 12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;display:flex;align-items:center;justify-content:space-between;">
-        <div>
-          <div style="font-size:11px;color:rgba(255,255,255,.4);">N\xFAmero activo</div>
-          ${_segmentInfo ? `<div style="font-size:11px;color:rgba(37,211,102,.5);margin-top:1px;">\u{1F4DE} Call Center \xB7 Slot ${_segmentInfo.segment_idx + 1}/${_segmentInfo.total_slots}${_segmentInfo.label ? " \xB7 " + _segmentInfo.label : ""}</div>` : ""}
-        </div>
-        <div style="font-size:13px;font-weight:700;color:${_activeNumber ? "#25d366" : "#ff9f0a"};">
-          ${numShow}
-          ${_activeNumber ? `<span style="font-size:10px;color:rgba(255,255,255,.5);margin-left:5px;">${WARM_NUMBERS.has(_activeNumber) ? "\u{1F525} warm" : `d\xEDa ${wDay}/14`}</span>` : ""}
-        </div>
-      </div>
-
-      ${inWarmup ? `
-      <div style="margin:8px 16px 0;padding:7px 12px;background:rgba(255,149,0,.07);border:1px solid rgba(255,149,0,.15);border-radius:8px;font-size:11px;color:#ff9f0a;line-height:1.5;">
-        \u{1F512} Warmup d\xEDa ${wDay}/14 \u2014 l\xEDmite hoy: <strong>${lim} mensajes</strong>
-      </div>` : ""}
-
-      <!-- Stats -->
-      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.05);">
-        ${[
-      ["Total", _total, "#25d366"],
-      ["Enviados", sent, "#34c759"],
-      ["Fallidos", failed, "#ef5350"],
-      ["Sesi\xF3n", `${_sessionSent}/${SESSION_MAX}`, "#ff9f0a"],
-      ["Hoy", `${_dailyCount}/${lim}`, "#60a5fa"]
-    ].map(([l, v, c]) => `
-          <div style="text-align:center;padding:5px 2px;background:rgba(255,255,255,.03);border-radius:7px;">
-            <div style="font-size:15px;font-weight:800;color:${c};">${v}</div>
-            <div style="font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;margin-top:1px;">${l}</div>
-          </div>
-        `).join("")}
-      </div>
-
-      <!-- Progreso -->
-      ${_contacts.length ? `
-      <div style="padding:10px 16px 5px;">
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px;">
-          <span>${_idx} / ${_contacts.length}</span>
-          <span id="wspp-blast-countdown" style="color:${_running ? "#25d366" : "rgba(255,255,255,.5)"};">
-            ${_running && _countdown > 0 ? `Pr\xF3ximo en ${_countdown}s` : _running ? "Enviando..." : ""}
-          </span>
-          <span>${pct}%</span>
-        </div>
-        <div style="background:rgba(255,255,255,.06);border-radius:4px;height:5px;overflow:hidden;">
-          <div style="background:linear-gradient(90deg,#25d366,#34c759);width:${pct}%;height:100%;border-radius:4px;transition:width .4s;"></div>
-        </div>
-      </div>` : ""}
-
-      <!-- Mensaje -->
-      <div style="padding:10px 16px 8px;">
-        <label style="font-size:10px;font-weight:700;color:rgba(255,255,255,.35);text-transform:uppercase;letter-spacing:1.2px;display:block;margin-bottom:5px;">Mensaje</label>
-        <textarea id="wspp-blast-msg" rows="4" placeholder="{{saludo}} {{nombre}}! Soy C\xE9sar V\xE1squez de {{distrito}}..." style="
-          width:100%;box-sizing:border-box;background:rgba(255,255,255,.05);
-          border:1px solid rgba(255,255,255,.1);border-radius:8px;
-          color:#fff;font-size:13px;line-height:1.55;padding:10px 12px;
-          resize:vertical;font-family:inherit;outline:none;
-        ">${_message}</textarea>
-        <div style="font-size:10px;color:rgba(255,255,255,.2);margin-top:4px;line-height:1.5;">
-          <code style="color:rgba(37,211,102,.6);">{{nombre}}</code>
-          <code style="color:rgba(37,211,102,.6);">{{saludo}}</code>
-          <code style="color:rgba(37,211,102,.6);">{{cierre}}</code>
-          <code style="color:rgba(37,211,102,.6);">{{distrito}}</code>
-          <code style="color:rgba(37,211,102,.6);">{{emoji}}</code>
-          \xB7 pre-warm 30s \u2192 msg \u2192 delay 10-22s \xB7 c/10: 45-90s \xB7 c/25: 3-5min
-        </div>
-      </div>
-
-      <!-- Controles -->
-      <div style="padding:0 16px 14px;display:flex;gap:8px;flex-wrap:wrap;">
-        ${!_contacts.length ? `
-          <button id="wspp-blast-load" style="flex:1;padding:11px 16px;background:rgba(37,211,102,.1);border:1px solid rgba(37,211,102,.2);border-radius:9px;color:#25d366;font-size:13px;font-weight:700;cursor:pointer;">
-            \u{1F4CB} Cargar ${_total || 12258} brigadistas
-          </button>
-        ` : !_running && !_paused ? `
-          ${remaining > 0 ? `
-            <button id="wspp-blast-start" style="flex:1;padding:11px 16px;background:#25d366;border:none;border-radius:9px;color:#0c1a0f;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 4px 20px rgba(37,211,102,.2);">
-              \u25B6 Enviar a ${Math.min(_contacts.length - _idx, remaining)} personas
-            </button>
-          ` : `
-            <div style="flex:1;padding:11px;background:rgba(239,83,80,.07);border:1px solid rgba(239,83,80,.16);border-radius:9px;font-size:12px;color:#ef5350;text-align:center;">
-              L\xEDmite diario (${lim}) alcanzado para ${numShow}. Usa otra pesta\xF1a.
-            </div>
-          `}
-          <button id="wspp-blast-reload" title="Recargar" style="padding:11px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:9px;color:rgba(255,255,255,.4);font-size:14px;cursor:pointer;">\u21BA</button>
-        ` : _running ? `
-          <div style="flex:1;padding:9px 12px;background:rgba(37,211,102,.05);border:1px solid rgba(37,211,102,.1);border-radius:9px;font-size:12px;color:rgba(255,255,255,.55);line-height:1.5;">
-            ${_phase === "prewarm" ? `\u23F3 Preparando contacto ${_idx + 1} \xB7 ${_sessionSent} enviados \xB7 esperando 30s` : _phase === "break" ? `\u2615 Pausa anti-ban \xB7 ${_sessionSent} enviados \xB7 ${_dailyCount}/${lim} hoy` : `\u{1F7E2} Enviando \xB7 ${_sessionSent} sesi\xF3n \xB7 ${_dailyCount}/${lim} hoy \xB7 marcando hablado \u2705`}
-          </div>
-          <button id="wspp-blast-pause" style="padding:11px 16px;background:rgba(255,149,0,.1);border:1px solid rgba(255,149,0,.2);border-radius:9px;color:#ff9f0a;font-size:13px;font-weight:700;cursor:pointer;">\u23F8 Pausar</button>
-        ` : _paused && _idx < _contacts.length ? `
-          <div style="width:100%;padding:9px 12px;background:rgba(255,149,0,.06);border:1px solid rgba(255,149,0,.14);border-radius:9px;font-size:12px;color:#ff9f0a;line-height:1.5;">
-            \u23F8 Pausado en ${_idx}/${_contacts.length}.
-            ${_sessionSent >= SESSION_MAX ? " Espera 10 min (anti-baneo)." : " Listo para reanudar."}
-          </div>
-          <button id="wspp-blast-resume" style="flex:1;padding:11px 16px;background:#25d366;border:none;border-radius:9px;color:#0c1a0f;font-size:13px;font-weight:800;cursor:pointer;">\u25B6 Reanudar</button>
-        ` : `
-          <div style="width:100%;padding:9px;background:rgba(37,211,102,.06);border:1px solid rgba(37,211,102,.14);border-radius:9px;font-size:12px;color:#25d366;text-align:center;font-weight:600;">
-            \u2705 Sesi\xF3n completa \u2014 ${sent} enviados y marcados como <strong>hablado</strong>
-          </div>
-          <button id="wspp-blast-reload" style="flex:1;padding:11px 16px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:9px;color:rgba(255,255,255,.5);font-size:13px;cursor:pointer;">Nueva sesi\xF3n \u21BA</button>
-        `}
-      </div>
-
-      <!-- \xDAltimos -->
-      ${_results.length ? `
-      <div style="padding:0 16px 16px;">
-        <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">\xDAltimos enviados</div>
-        <div style="max-height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;">
-          ${_results.slice(-10).reverse().map((r) => `
-            <div style="display:flex;align-items:center;gap:7px;padding:5px 9px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.04);">
-              <span style="font-size:13px;flex-shrink:0;">${r.status === "sent" ? "\u2705" : "\u274C"}</span>
-              <span style="font-size:12px;color:${r.status === "sent" ? "rgba(255,255,255,.6)" : "#ef5350"};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                ${r.nombre || ""} ${r.apellidos || ""} \xB7 +${r.telefono || "?"}
-              </span>
-              <span style="font-size:10px;color:rgba(255,255,255,.55);flex-shrink:0;">${r.distrito || ""}</span>
-            </div>
-          `).join("")}
-        </div>
-      </div>` : ""}
-    </div>
-  `;
-    if (el) el.outerHTML = html;
-    else document.body.insertAdjacentHTML("beforeend", html);
-    document.getElementById("wspp-blast-close")?.addEventListener("click", () => {
-      _open = false;
-      if (_running) {
-        _running = false;
-        _paused = true;
-        _stopCountdown();
-        _flushHablado();
-      }
-      _render();
-    });
-    document.getElementById("wspp-blast-msg")?.addEventListener("input", (e) => {
-      _message = e.target.value;
-    });
-    document.getElementById("wspp-blast-load")?.addEventListener("click", _load);
-    document.getElementById("wspp-blast-reload")?.addEventListener("click", () => {
-      _contacts = [];
-      _results = [];
-      _idx = 0;
-      _sessionSent = 0;
-      _running = false;
-      _paused = false;
-      _habladoBatch = [];
-      _load();
-    });
-    document.getElementById("wspp-blast-start")?.addEventListener("click", () => {
-      _message = document.getElementById("wspp-blast-msg")?.value || _message;
-      _run();
-    });
-    document.getElementById("wspp-blast-pause")?.addEventListener("click", () => {
-      _paused = true;
-      _running = false;
-      _stopCountdown();
-      _flushHablado();
-      _render();
-    });
-    document.getElementById("wspp-blast-resume")?.addEventListener("click", () => {
-      _sessionSent = 0;
-      _paused = false;
-      _message = document.getElementById("wspp-blast-msg")?.value || _message;
-      _run();
-    });
+  function pauseBlast() {
+    _paused = true;
+    _running = false;
+    _stopCountdown();
+    _notify();
   }
-  function _loadSegmentInfo() {
-    const own = getOwnNumber();
-    if (!own) return;
-    window.postMessage({ type: "BLAST_GET_NUMBER_CONFIG", own_number: own }, WA_ORIGIN);
+  function resumeBlast() {
+    _paused = false;
+    startBlast();
   }
-  function _load() {
-    _loadState();
-    const btn = document.getElementById("wspp-blast-load") || document.getElementById("wspp-blast-reload");
-    if (btn) {
-      btn.textContent = "\u23F3 Cargando...";
-      btn.disabled = true;
-    }
-    window.postMessage({
-      type: "BLAST_GET_FORM_CONTACTS",
-      limit: 200,
-      offset: 0,
-      status: "nuevo"
-    }, WA_ORIGIN);
-  }
-  window.addEventListener("message", (e) => {
-    if (e.source !== window) return;
-    if (e.data?.type === "BLAST_FORM_CONTACTS_READY") {
-      if (!e.data.ok) {
-        _toast2("Error: " + (e.data.error || "desconocido"), "#ef5350");
-        _render();
-        return;
-      }
-      _contacts = e.data.contacts || [];
-      _total = e.data.total || _contacts.length;
-      _results = [];
-      _idx = 0;
-      _sessionSent = 0;
-      _running = false;
-      _paused = false;
-      _habladoBatch = [];
-      if (e.data.segment_idx !== void 0) {
-        _segmentInfo = {
-          segment_idx: e.data.segment_idx,
-          total_slots: e.data.total_slots,
-          label: _segmentInfo?.label ?? null
-        };
-      }
-      _loadState();
-      const slotLabel = _segmentInfo ? ` \xB7 Slot ${_segmentInfo.segment_idx + 1}/${_segmentInfo.total_slots}` : "";
-      console.log(`[WSPP BLAST] ${_contacts.length} contactos cargados (total: ${_total})${slotLabel} | l\xEDmite hoy: ${_dailyLimit()}`);
-      _toast2(`\u2705 ${_contacts.length} contactos${slotLabel} \xB7 ${_dailyLimit()}/d\xEDa para +${_activeNumber || "?"}`, "#25d366");
-      _render();
-      return;
-    }
-    if (e.data?.type === "BLAST_NUMBER_CONFIG_READY") {
-      if (e.data.config) {
-        _segmentInfo = e.data.config;
-        _render();
-      }
-    }
-  });
-  function toggleBlastPanel() {
-    _open = !_open;
-    if (_open) {
-      _loadState();
-      _loadSegmentInfo();
-    }
-    _render();
+  function resetSession() {
+    _sentThisSession.clear();
+    _sentIds.clear();
+    _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
+    _lastResults = [];
+    _trackedMsgs = [];
+    _totalPending = null;
+    _running = false;
+    _paused = false;
+    _stopCountdown();
+    _stopAckTracking();
+    _notify();
   }
 
   // src/inject/wa-validator-panel.js
@@ -2858,18 +2687,18 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
     return fn(nombre || "estimado/a");
   }
   var _mode = "silent";
-  var _open2 = false;
-  var _contacts2 = [];
-  var _total2 = 0;
+  var _open = false;
+  var _contacts = [];
+  var _total = 0;
   var _running2 = false;
   var _paused2 = false;
-  var _idx2 = 0;
+  var _idx = 0;
   var _sessionCount = 0;
   var _burstCount = 0;
-  var _results2 = [];
+  var _results = [];
   var _countdown2 = 0;
   var _countdownTimer2 = null;
-  var _activeNumber2 = null;
+  var _activeNumber = null;
   var _startTime = null;
   function _req2(...names) {
     for (const n of names) {
@@ -2881,54 +2710,72 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
     }
     return null;
   }
-  async function _checkPhoneSilent(phone) {
-    const digits = String(phone).replace(/\D/g, "");
-    if (!digits || digits.length < 9) return { exists: false, reason: "invalid_phone" };
-    const normalized = digits.length === 9 ? "51" + digits : digits;
+  var _usyncCache = /* @__PURE__ */ new Map();
+  var USYNC_CACHE_TTL_MS = 30 * 60 * 1e3;
+  async function _checkPhonesSilentBatch(phones) {
+    const results = {};
+    const toQuery = [];
+    const now = Date.now();
+    for (const phone of phones) {
+      const cached = _usyncCache.get(phone);
+      if (cached && now - cached.ts < USYNC_CACHE_TTL_MS) {
+        results[phone] = { exists: cached.exists, reason: "cache" };
+      } else {
+        toQuery.push(phone);
+      }
+    }
+    if (!toQuery.length) return results;
+    let usyncOk = false;
     try {
-      const svc = _req2("WAWebQueryExistsService", "WAWebPhoneExistsService");
-      if (svc?.queryExists) {
-        const result = await svc.queryExists(normalized + "@c.us");
-        if (result !== null && result !== void 0) {
-          return { exists: !!result?.jid || !!result?.status || result === true };
+      const { USyncQuery } = window.require("WAWebUsync");
+      const { USyncUser } = window.require("WAWebUsyncUser");
+      if (USyncQuery && USyncUser) {
+        const query = new USyncQuery().withContext("interactive").withContactProtocol();
+        for (const phone of toQuery) {
+          query.withUser(new USyncUser().withPhone(phone));
         }
+        const response = await query.execute();
+        const list = response?.list || [];
+        const byPhone = {};
+        for (const item of list) {
+          const phone = item?.contact?.content;
+          const type = item?.contact?.type;
+          if (phone) byPhone[phone] = type;
+        }
+        for (const phone of toQuery) {
+          const type = byPhone[phone];
+          const exists = type === "in";
+          const reason = type || "no_response";
+          results[phone] = { exists, reason };
+          _usyncCache.set(phone, { exists, ts: now });
+        }
+        usyncOk = true;
       }
     } catch (_) {
     }
-    try {
-      const svc = _req2("WAWebPhoneNumberQueryService");
-      if (svc?.queryPhoneNumber) {
-        const result = await svc.queryPhoneNumber(normalized);
-        return { exists: !!result?.jid || !!result?.exists };
+    if (!usyncOk) {
+      for (const phone of toQuery) {
+        if (results[phone]) continue;
+        try {
+          const wf = _req2("WAWebWidFactory");
+          const coll = _req2("WAWebCollections");
+          if (wf && coll) {
+            const wid = wf.createWid(phone + "@c.us");
+            const chat = coll.Chat?.get(wid);
+            if (chat) {
+              results[phone] = { exists: true, reason: "in_store" };
+              _usyncCache.set(phone, { exists: true, ts: now });
+              continue;
+            }
+          }
+        } catch (_) {
+        }
+        results[phone] = { exists: false, reason: "usync_unavailable" };
       }
-    } catch (_) {
     }
-    try {
-      const wf = _req2("WAWebWidFactory");
-      const wid = wf?.createWid(normalized + "@c.us");
-      if (!wid) return { exists: false, reason: "no_wid" };
-      const coll = _req2("WAWebCollections");
-      const chat = coll?.Chat?.get(wid);
-      if (chat) return { exists: true, reason: "in_store" };
-      const FC = _req2("WAWebFindChatAction");
-      if (FC?.queryExists) {
-        const r = await FC.queryExists(wid);
-        return { exists: !!r };
-      }
-      if (FC?.findOrCreateLatestChat) {
-        const r = await FC.findOrCreateLatestChat(wid);
-        return { exists: !!(r?.chat ?? r) };
-      }
-    } catch (err) {
-      const msg = (err?.message || "").toLowerCase();
-      if (msg.includes("not found") || msg.includes("no existe") || msg.includes("invalid")) {
-        return { exists: false, reason: "not_found" };
-      }
-      return { exists: false, reason: "error:" + err.message };
-    }
-    return { exists: false, reason: "unresolved" };
+    return results;
   }
-  async function _spamCheckBeforeSend2() {
+  async function _spamCheckBeforeSend() {
     return new Promise((resolve) => {
       window.postMessage({ type: "WSPP_SPAM_CHECK_NOW", own_number: getOwnNumber() }, WA_ORIGIN);
       const onResult = (e) => {
@@ -3024,7 +2871,7 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
     clearInterval(_countdownTimer2);
     _countdown2 = 0;
   }
-  function _toast3(text, color = "#25d366", ms = 4e3) {
+  function _toast2(text, color = "#25d366", ms = 4e3) {
     const t = document.createElement("div");
     Object.assign(t.style, {
       position: "fixed",
@@ -3052,21 +2899,22 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
     window.postMessage({
       type: "WA_VALIDATOR_SAVE_RESULTS",
       results: results.map((r) => ({ id: r.id, wa_valid: r.wa_valid, mode: r.mode || "silent" })),
-      own_number: _activeNumber2
+      own_number: _activeNumber
     }, WA_ORIGIN);
   }
-  async function _run2() {
+  var USYNC_BATCH_SIZE = 20;
+  async function _run() {
     if (_running2 || _paused2) return;
-    if (!_contacts2.length) {
-      _toast3("Carga los contactos primero", "#ef5350");
+    if (!_contacts.length) {
+      _toast2("Carga los contactos primero", "#ef5350");
       return;
     }
     _running2 = true;
     _paused2 = false;
     const batch = [];
-    _render2();
+    _render();
     const sessionMax = _mode === "conv" ? SESSION_MAX_CONV : SESSION_MAX_SILENT;
-    while (_idx2 < _contacts2.length && _running2 && !_paused2) {
+    while (_idx < _contacts.length && _running2 && !_paused2) {
       if (_sessionCount >= sessionMax) {
         _paused2 = _running2 = false;
         _stopCountdown2();
@@ -3075,72 +2923,107 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
           batch.length = 0;
         }
         const msg = _mode === "conv" ? `${sessionMax} mensajes enviados. Descans\xE1 10 min antes de reanudar.` : `${sessionMax} verificados. Descans\xE1 5 min y reanud\xE1.`;
-        _toast3(msg, "#ff9f0a", 1e4);
-        _render2();
+        _toast2(msg, "#ff9f0a", 1e4);
+        _render();
         break;
       }
-      if (_mode === "conv" && _burstCount >= CONV_BURST_MAX) {
+      if (_mode === "silent") {
+        const remaining = Math.min(
+          USYNC_BATCH_SIZE,
+          sessionMax - _sessionCount,
+          _contacts.length - _idx
+        );
+        const slice = _contacts.slice(_idx, _idx + remaining);
+        const normalized = slice.map((c2) => {
+          const d = String(c2.telefono).replace(/\D/g, "");
+          return d.length === 9 ? "51" + d : d;
+        });
+        _phase = `Verificando batch ${_idx + 1}\u2013${_idx + slice.length}`;
+        _render();
+        let batchResults = {};
+        try {
+          batchResults = await _checkPhonesSilentBatch(normalized);
+        } catch (_) {
+        }
+        for (let i = 0; i < slice.length; i++) {
+          if (!_running2 || _paused2) break;
+          const c2 = slice[i];
+          const norm = normalized[i];
+          const r2 = batchResults[norm] || { exists: false, reason: "error" };
+          const result2 = { ...c2, wa_valid: r2.exists, mode: "silent" };
+          batch.push(result2);
+          _results.push(result2);
+          _sessionCount++;
+        }
+        _idx += slice.length;
+        _render();
+        if (batch.length >= 20) {
+          _saveResults([...batch]);
+          batch.length = 0;
+        }
+        if (_running2 && !_paused2 && _idx < _contacts.length) {
+          const d = SILENT_DELAY_MIN + Math.random() * (SILENT_DELAY_MAX - SILENT_DELAY_MIN);
+          _startCountdown2(d);
+          _render();
+          await _sleep2(d);
+          _stopCountdown2();
+        }
+        continue;
+      }
+      if (_burstCount >= CONV_BURST_MAX) {
         _burstCount = 0;
         if (batch.length) {
           _saveResults([...batch]);
           batch.length = 0;
         }
-        _toast3(`Pausa de 2 min para evitar detecci\xF3n (${_sessionCount} msgs enviados)`, "#ff9f0a", CONV_BURST_REST);
+        _toast2(`Pausa de 2 min para evitar detecci\xF3n (${_sessionCount} msgs enviados)`, "#ff9f0a", CONV_BURST_REST);
         _startCountdown2(CONV_BURST_REST);
-        _render2();
+        _render();
         await _sleep2(CONV_BURST_REST);
         _stopCountdown2();
         if (!_running2 || _paused2) break;
       }
-      const c = _contacts2[_idx2];
-      let waValid = false;
-      let modeUsed = _mode;
-      if (_mode === "conv") {
-        const spamCheck = await _spamCheckBeforeSend2();
-        if (spamCheck.shouldPause) {
-          _paused2 = _running2 = false;
-          _stopCountdown2();
-          if (batch.length) {
-            _saveResults([...batch]);
-            batch.length = 0;
-          }
-          const coolMin = Math.ceil((spamCheck.cooldown_sec || 180) / 60);
-          _toast3(
-            `\u{1F6A8} RIESGO CR\xCDTICO \u2014 Validador pausado.
+      const c = _contacts[_idx];
+      const spamCheck = await _spamCheckBeforeSend();
+      if (spamCheck.shouldPause) {
+        _paused2 = _running2 = false;
+        _stopCountdown2();
+        if (batch.length) {
+          _saveResults([...batch]);
+          batch.length = 0;
+        }
+        const coolMin = Math.ceil((spamCheck.cooldown_sec || 180) / 60);
+        _toast2(
+          `\u{1F6A8} RIESGO CR\xCDTICO \u2014 Validador pausado.
 Esper\xE1 ${coolMin} min antes de reanudar.`,
-            "#dc2626",
-            15e3
-          );
-          _render2();
-          break;
-        }
-        const r = await _sendConvMessage(c.telefono, c.nombre);
-        waValid = r.sent;
-        if (r.sent) {
-          const tpl = _randomTemplate(c.nombre);
-          _recordOutgoingBridge(tpl, c.telefono);
-        } else {
-          console.log("[WA VALIDATOR CONV] failed for", c.telefono, ":", r.reason);
-        }
-        _burstCount++;
-      } else {
-        const r = await _checkPhoneSilent(c.telefono);
-        waValid = r.exists;
+          "#dc2626",
+          15e3
+        );
+        _render();
+        break;
       }
-      const result = { ...c, wa_valid: waValid, mode: modeUsed };
+      const r = await _sendConvMessage(c.telefono, c.nombre);
+      if (r.sent) {
+        const tpl = _randomTemplate(c.nombre);
+        _recordOutgoingBridge(tpl, c.telefono);
+      } else {
+        console.log("[WA VALIDATOR CONV] failed for", c.telefono, ":", r.reason);
+      }
+      _burstCount++;
+      const result = { ...c, wa_valid: r.sent, mode: "conv" };
       batch.push(result);
-      _results2.push(result);
+      _results.push(result);
       _sessionCount++;
-      _idx2++;
-      _render2();
+      _idx++;
+      _render();
       if (batch.length >= 20) {
         _saveResults([...batch]);
         batch.length = 0;
       }
-      if (_running2 && !_paused2 && _idx2 < _contacts2.length) {
+      if (_running2 && !_paused2 && _idx < _contacts.length) {
         const d = _randomDelay();
         _startCountdown2(d);
-        _render2();
+        _render();
         await _sleep2(d);
         _stopCountdown2();
       }
@@ -3149,28 +3032,28 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       _saveResults([...batch]);
       batch.length = 0;
     }
-    if (!_paused2 && _idx2 >= _contacts2.length) {
+    if (!_paused2 && _idx >= _contacts.length) {
       _running2 = false;
       _stopCountdown2();
-      const valid = _results2.filter((r) => r.wa_valid).length;
-      const invalid = _results2.filter((r) => !r.wa_valid).length;
+      const valid = _results.filter((r) => r.wa_valid).length;
+      const invalid = _results.filter((r) => !r.wa_valid).length;
       const modeLabel = _mode === "conv" ? "mensajes enviados" : "verificados sin mensajes";
-      _toast3(`\u2705 Completado \u2014 ${valid} con WA \xB7 ${invalid} sin WA \xB7 ${modeLabel}`, "#25d366", 6e3);
+      _toast2(`\u2705 Completado \u2014 ${valid} con WA \xB7 ${invalid} sin WA \xB7 ${modeLabel}`, "#25d366", 6e3);
     }
     _running2 = false;
-    _render2();
+    _render();
   }
-  function _render2() {
+  function _render() {
     const el = document.getElementById("wspp-val-panel");
-    if (!_open2) {
+    if (!_open) {
       if (el) el.remove();
       return;
     }
-    _activeNumber2 = getOwnNumber();
-    const valid = _results2.filter((r) => r.wa_valid === true).length;
-    const invalid = _results2.filter((r) => r.wa_valid === false).length;
-    const pending = _contacts2.length - _idx2;
-    const pct = _contacts2.length ? Math.round(_idx2 / _contacts2.length * 100) : 0;
+    _activeNumber = getOwnNumber();
+    const valid = _results.filter((r) => r.wa_valid === true).length;
+    const invalid = _results.filter((r) => r.wa_valid === false).length;
+    const pending = _contacts.length - _idx;
+    const pct = _contacts.length ? Math.round(_idx / _contacts.length * 100) : 0;
     const isSilent = _mode === "silent";
     const isConv = _mode === "conv";
     const speedLabel = _sessionCount > 0 && _startTime ? `${Math.round(_sessionCount / ((Date.now() - _startTime) / 36e5))}/h` : "\u2014";
@@ -3235,15 +3118,15 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       <!-- N\xFAmero activo -->
       <div style="margin:8px 16px 0;padding:7px 12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:8px;display:flex;justify-content:space-between;align-items:center;">
         <span style="font-size:11px;color:rgba(255,255,255,.4);">N\xFAmero activo</span>
-        <span style="font-size:13px;font-weight:700;color:${_activeNumber2 ? "#60a5fa" : "#ff9f0a"};">
-          ${_activeNumber2 ? "+" + _activeNumber2 : "\u23F3 detectando..."}
+        <span style="font-size:13px;font-weight:700;color:${_activeNumber ? "#60a5fa" : "#ff9f0a"};">
+          ${_activeNumber ? "+" + _activeNumber : "\u23F3 detectando..."}
         </span>
       </div>
 
       <!-- Stats -->
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.05);">
         ${[
-      ["Total", _total2, "#60a5fa"],
+      ["Total", _total, "#60a5fa"],
       ["\u2705 Con WA", valid, "#34c759"],
       ["\u274C Sin WA", invalid, "#ef5350"],
       ["Pendientes", pending, "#ff9f0a"],
@@ -3257,10 +3140,10 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       </div>
 
       <!-- Progreso -->
-      ${_contacts2.length ? `
+      ${_contacts.length ? `
       <div style="padding:10px 16px 5px;">
         <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px;">
-          <span>${_idx2} / ${_contacts2.length} procesados</span>
+          <span>${_idx} / ${_contacts.length} procesados</span>
           <span id="wspp-val-countdown" style="color:${_running2 ? modeColor : "rgba(255,255,255,.5)"};">
             ${_running2 && _countdown2 > 0 ? `Pr\xF3ximo en ${_countdown2}s` : _running2 ? "Procesando..." : ""}
           </span>
@@ -3273,13 +3156,13 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
 
       <!-- Controles -->
       <div style="padding:10px 16px 14px;display:flex;gap:8px;flex-wrap:wrap;">
-        ${!_contacts2.length ? `
+        ${!_contacts.length ? `
           <button id="wspp-val-load" style="flex:1;padding:11px 16px;background:rgba(96,165,250,.1);border:1px solid rgba(96,165,250,.2);border-radius:9px;color:#60a5fa;font-size:13px;font-weight:700;cursor:pointer;">
-            \u{1F4CB} Cargar ${_total2 || "..."} n\xFAmeros
+            \u{1F4CB} Cargar ${_total || "..."} n\xFAmeros
           </button>
         ` : !_running2 && !_paused2 ? `
           <button id="wspp-val-start" style="flex:1;padding:11px 16px;background:${modeColor};border:none;border-radius:9px;color:#0a0f1e;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 4px 20px ${modeColor}33;">
-            \u25B6 ${isConv ? "Iniciar conversaciones" : "Verificar"} (${_contacts2.length - _idx2})
+            \u25B6 ${isConv ? "Iniciar conversaciones" : "Verificar"} (${_contacts.length - _idx})
           </button>
           <button id="wspp-val-reload" title="Recargar" style="padding:11px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:9px;color:rgba(255,255,255,.4);font-size:14px;cursor:pointer;">\u21BA</button>
         ` : _running2 ? `
@@ -3287,9 +3170,9 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
             ${isConv ? `\u{1F4AC} Enviando \xB7 ${_sessionCount} msgs \xB7 burst ${_burstCount}/${CONV_BURST_MAX}` : `\u{1F535} Verificando \xB7 ${_sessionCount} en esta sesi\xF3n`}
           </div>
           <button id="wspp-val-pause" style="padding:11px 16px;background:rgba(255,149,0,.1);border:1px solid rgba(255,149,0,.2);border-radius:9px;color:#ff9f0a;font-size:13px;font-weight:700;cursor:pointer;">\u23F8 Pausar</button>
-        ` : _paused2 && _idx2 < _contacts2.length ? `
+        ` : _paused2 && _idx < _contacts.length ? `
           <div style="width:100%;padding:9px 12px;background:rgba(255,149,0,.06);border:1px solid rgba(255,149,0,.14);border-radius:9px;font-size:12px;color:#ff9f0a;line-height:1.5;">
-            \u23F8 Pausado en ${_idx2}/${_contacts2.length}. Listo para reanudar.
+            \u23F8 Pausado en ${_idx}/${_contacts.length}. Listo para reanudar.
           </div>
           <button id="wspp-val-resume" style="flex:1;padding:11px 16px;background:${modeColor};border:none;border-radius:9px;color:#0a0f1e;font-size:13px;font-weight:800;cursor:pointer;">\u25B6 Reanudar</button>
         ` : `
@@ -3301,11 +3184,11 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       </div>
 
       <!-- \xDAltimos resultados -->
-      ${_results2.length ? `
+      ${_results.length ? `
       <div style="padding:0 16px 16px;">
         <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">\xDAltimos procesados</div>
         <div style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;">
-          ${_results2.slice(-12).reverse().map((r) => `
+          ${_results.slice(-12).reverse().map((r) => `
             <div style="display:flex;align-items:center;gap:7px;padding:5px 9px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.04);">
               <span style="font-size:13px;flex-shrink:0;">${r.wa_valid ? "\u2705" : "\u274C"}</span>
               <span style="font-size:12px;color:${r.wa_valid ? "rgba(255,255,255,.6)" : "rgba(255,255,255,.5)"};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
@@ -3323,64 +3206,64 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     if (el) el.outerHTML = html;
     else document.body.insertAdjacentHTML("beforeend", html);
     document.getElementById("wspp-val-close")?.addEventListener("click", () => {
-      _open2 = false;
+      _open = false;
       if (_running2) {
         _running2 = false;
         _paused2 = true;
         _stopCountdown2();
       }
-      _render2();
+      _render();
     });
     document.getElementById("wspp-mode-silent")?.addEventListener("click", () => {
       if (_running2) return;
       _mode = "silent";
-      _render2();
+      _render();
     });
     document.getElementById("wspp-mode-conv")?.addEventListener("click", () => {
       if (_running2) return;
       _mode = "conv";
-      _render2();
+      _render();
     });
-    document.getElementById("wspp-val-load")?.addEventListener("click", _load2);
+    document.getElementById("wspp-val-load")?.addEventListener("click", _load);
     document.getElementById("wspp-val-reload")?.addEventListener("click", () => {
-      _contacts2 = [];
-      _results2 = [];
-      _idx2 = 0;
+      _contacts = [];
+      _results = [];
+      _idx = 0;
       _sessionCount = 0;
       _burstCount = 0;
       _running2 = false;
       _paused2 = false;
-      _load2();
+      _load();
     });
     document.getElementById("wspp-val-start")?.addEventListener("click", () => {
       _startTime = Date.now();
       _burstCount = 0;
-      _run2();
+      _run();
     });
     document.getElementById("wspp-val-pause")?.addEventListener("click", () => {
       _paused2 = true;
       _running2 = false;
       _stopCountdown2();
-      _render2();
+      _render();
     });
     document.getElementById("wspp-val-resume")?.addEventListener("click", () => {
       _sessionCount = 0;
       _burstCount = 0;
       _paused2 = false;
-      _run2();
+      _run();
     });
     document.getElementById("wspp-val-stats")?.addEventListener("click", () => {
       window.postMessage({ type: "WA_VALIDATOR_GET_STATS_REQ" }, WA_ORIGIN);
     });
   }
-  function _load2() {
-    _activeNumber2 = getOwnNumber();
+  function _load() {
+    _activeNumber = getOwnNumber();
     const btn = document.getElementById("wspp-val-load") || document.getElementById("wspp-val-reload");
     if (btn) {
       btn.textContent = "\u23F3 Cargando...";
       btn.disabled = true;
     }
-    window.postMessage({ type: "WA_VALIDATOR_GET_CONTACTS", limit: 500, offset: _idx2 }, WA_ORIGIN);
+    window.postMessage({ type: "WA_VALIDATOR_GET_CONTACTS", limit: 500, offset: _idx }, WA_ORIGIN);
   }
   function _showStats(summary, byBrigadista) {
     const existing = document.getElementById("wspp-val-stats-panel");
@@ -3468,20 +3351,20 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     if (e.source !== window) return;
     if (e.data?.type === "WA_VALIDATOR_CONTACTS_READY") {
       if (!e.data.ok) {
-        _toast3("Error cargando contactos: " + (e.data.error || "?"), "#ef5350");
-        _render2();
+        _toast2("Error cargando contactos: " + (e.data.error || "?"), "#ef5350");
+        _render();
         return;
       }
-      _contacts2 = e.data.contacts || [];
-      _total2 = e.data.total || _contacts2.length;
-      _idx2 = 0;
+      _contacts = e.data.contacts || [];
+      _total = e.data.total || _contacts.length;
+      _idx = 0;
       _sessionCount = 0;
       _burstCount = 0;
-      _results2 = [];
+      _results = [];
       _running2 = false;
       _paused2 = false;
-      _toast3(`\u2705 ${_contacts2.length} n\xFAmeros cargados`, "#60a5fa");
-      _render2();
+      _toast2(`\u2705 ${_contacts.length} n\xFAmeros cargados`, "#60a5fa");
+      _render();
       return;
     }
     if (e.data?.type === "WA_VALIDATOR_STATS_READY") {
@@ -3490,548 +3373,128 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     }
   });
   function toggleValidatorPanel() {
-    _open2 = !_open2;
-    _render2();
-  }
-
-  // src/inject/chat-opener.js
-  var SEL = {
-    // Botón "Nuevo chat" — el ícono de conversación en el sidebar de WA
-    newChatBtn: [
-      '[data-testid="chat-list-search"]',
-      // search icon in header
-      '[data-testid="new-chat-btn"]',
-      // some builds
-      'button[aria-label="Nuevo chat"]',
-      'button[aria-label="New chat"]',
-      'span[data-testid="menu-bar-new-chat"]',
-      "header button:nth-child(3)"
-      // fallback position-based
-    ],
-    // Input de búsqueda que aparece al tocar "Nuevo chat"
-    searchInput: [
-      '[data-testid="chat-list-search-input"]',
-      '[data-testid="search-input"]',
-      'div[role="textbox"][data-tab="3"]',
-      'div[contenteditable="true"][data-tab="3"]',
-      'input[title="Buscar o iniciar un nuevo chat"]',
-      'input[title="Search or start a new chat"]'
-    ],
-    // Resultado de búsqueda: la fila del contacto que aparece al buscar
-    searchResult: [
-      // WA muestra el número formateado en un span dentro del resultado
-      '[data-testid="cell-frame-container"]',
-      '[data-testid="search-result"]',
-      'div[role="listitem"]',
-      'span[data-testid="search-result-contact"]'
-    ],
-    // Composer: el input del chat donde se escribe el mensaje
-    composer: [
-      '[data-testid="conversation-compose-box-input"]',
-      'div[role="textbox"][contenteditable="true"][data-tab="10"]',
-      'div[role="textbox"][contenteditable="true"]:not([data-tab="3"])',
-      'footer div[contenteditable="true"]'
-    ],
-    // Botón enviar del composer
-    sendBtn: [
-      '[data-testid="send"]',
-      'button[aria-label="Enviar"]',
-      'button[aria-label="Send"]',
-      'span[data-testid="send"]'
-    ]
-  };
-  function _find(selectors) {
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      if (el) return el;
-    }
-    return null;
-  }
-  function _sleep3(ms) {
-    return new Promise((r) => setTimeout(r, ms));
-  }
-  function _waitFor(selectors, timeoutMs = 8e3) {
-    return new Promise((resolve) => {
-      const start = Date.now();
-      const check = () => {
-        const el = _find(selectors);
-        if (el) return resolve(el);
-        if (Date.now() - start > timeoutMs) return resolve(null);
-        requestAnimationFrame(check);
-      };
-      check();
-    });
-  }
-  async function _typeInElement(el, text) {
-    el.focus();
-    if (el.tagName === "INPUT") {
-      el.value = "";
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-    } else {
-      el.textContent = "";
-      el.dispatchEvent(new InputEvent("input", { bubbles: true, data: "" }));
-    }
-    await _sleep3(100);
-    let i = 0;
-    while (i < text.length) {
-      const chunk = text.slice(i, i + 3 + Math.floor(Math.random() * 3));
-      if (el.tagName === "INPUT") {
-        el.value += chunk;
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-      } else {
-        document.execCommand("insertText", false, chunk);
-      }
-      i += chunk.length;
-      await _sleep3(40 + Math.random() * 80);
-    }
-  }
-  async function openChatDOM(phone) {
-    const digits = String(phone).replace(/\D/g, "");
-    if (!digits || digits.length < 9) {
-      return { ok: false, error: "N\xFAmero inv\xE1lido: " + phone };
-    }
-    const normalized = digits.length === 9 ? "51" + digits : digits;
-    const L = (step, ...args) => console.log(`[CHAT-OPENER] ${step}`, ...args);
-    try {
-      L("1", "buscando bot\xF3n nuevo chat...");
-      const newChatBtn = _find(SEL.newChatBtn);
-      if (!newChatBtn) {
-        return { ok: false, error: 'Bot\xF3n "Nuevo chat" no encontrado' };
-      }
-      newChatBtn.click();
-      L("1 \u2713", "bot\xF3n clickeado");
-      L("2", "esperando search input...");
-      const searchInput = await _waitFor(SEL.searchInput, 5e3);
-      if (!searchInput) {
-        return { ok: false, error: "Search input no apareci\xF3 despu\xE9s de 5s" };
-      }
-      await _sleep3(300);
-      L("2 \u2713", "search input visible");
-      L("3", `escribiendo +${normalized}...`);
-      await _typeInElement(searchInput, normalized);
-      L("3 \u2713", "n\xFAmero escrito");
-      L("4", "esperando resultado de b\xFAsqueda...");
-      await _sleep3(2e3);
-      const result = await _waitFor(SEL.searchResult, 6e3);
-      if (!result) {
-        const altResult = document.querySelector(
-          `span[title*="${normalized}"], span[title*="+${normalized}"], [data-testid="search-no-results"]`
-        );
-        if (altResult?.getAttribute("data-testid") === "search-no-results") {
-          L("4 \u2717", "n\xFAmero no encontrado en WA");
-          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-          return { ok: false, error: "N\xFAmero no tiene WhatsApp: " + normalized };
-        }
-        if (!altResult) {
-          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-          return { ok: false, error: "Sin resultado de b\xFAsqueda para: " + normalized };
-        }
-        altResult.click();
-        L("4 \u2713", "resultado alternativo clickeado");
-      } else {
-        result.click();
-        L("4 \u2713", "resultado clickeado");
-      }
-      L("5", "esperando composer...");
-      await _sleep3(800);
-      const composer = await _waitFor(SEL.composer, 5e3);
-      if (!composer) {
-        return { ok: false, error: "El chat se abri\xF3 pero el composer no apareci\xF3" };
-      }
-      L("5 \u2713", "chat abierto, composer listo");
-      return { ok: true, chatReady: true };
-    } catch (err) {
-      console.error("[CHAT-OPENER] error:", err);
-      return { ok: false, error: err.message || "Error desconocido" };
-    }
-  }
-  async function typeAndSendMessage(text) {
-    const L = (step, ...args) => console.log(`[CHAT-OPENER] ${step}`, ...args);
-    try {
-      const composer = _find(SEL.composer);
-      if (!composer) {
-        return { ok: false, error: "Composer no visible \u2014 \xBFel chat est\xE1 abierto?" };
-      }
-      L("send-1", "escribiendo mensaje...");
-      await _typeInElement(composer, text);
-      await _sleep3(200 + Math.random() * 300);
-      L("send-2", "enviando...");
-      const sendBtn = _find(SEL.sendBtn);
-      if (sendBtn) {
-        sendBtn.click();
-      } else {
-        composer.dispatchEvent(new KeyboardEvent("keydown", {
-          key: "Enter",
-          code: "Enter",
-          keyCode: 13,
-          bubbles: true,
-          cancelable: true
-        }));
-      }
-      await _sleep3(300);
-      L("send \u2713", "mensaje enviado");
-      return { ok: true };
-    } catch (err) {
-      console.error("[CHAT-OPENER] send error:", err);
-      return { ok: false, error: err.message };
-    }
-  }
-  async function fullSendFlow(phone, messageText, onProgress) {
-    const report = (phase, detail) => {
-      if (onProgress) onProgress({ phase, detail, phone });
-    };
-    report("opening", "Abriendo chat...");
-    const openResult = await openChatDOM(phone);
-    if (!openResult.ok) {
-      report("error", openResult.error);
-      return { ok: false, error: openResult.error, phase: "open" };
-    }
-    report("opened", "Chat abierto");
-    report("waiting", "Preparando contacto (30s)...");
-    const PREWARM = 3e4;
-    const start = Date.now();
-    while (Date.now() - start < PREWARM) {
-      const remaining = Math.ceil((PREWARM - (Date.now() - start)) / 1e3);
-      report("waiting", `Preparando contacto... ${remaining}s`);
-      await _sleep3(1e3);
-    }
-    report("ready", "Listo para enviar");
-    report("sending", "Escribiendo mensaje...");
-    const sendResult = await typeAndSendMessage(messageText);
-    if (!sendResult.ok) {
-      report("error", sendResult.error);
-      return { ok: false, error: sendResult.error, phase: "send" };
-    }
-    report("done", "\u2705 Mensaje enviado");
-    return { ok: true };
+    _open = !_open;
+    _render();
   }
 
   // src/inject/sidebar.js
-  var SIDEBAR_WIDTH = 360;
+  var SIDEBAR_W = 380;
   var SIDEBAR_ID = "wspp-sidebar";
   var FAB_ID = "wspp-sidebar-fab";
-  var WA_APP_SEL = "#app";
-  var STORAGE_KEY = "wspp_sidebar_tab";
+  var TAB_KEY = "wspp_sidebar_tab";
   var Z = {
     fab: 2147483647,
-    // FAB siempre encima de todo
     toasts: 2147483647,
-    // toasts al mismo nivel que FAB (temporales, no se solapan con FAB)
     blast: 2147483646,
-    // blast modal encima del sidebar
     validator: 2147483645,
-    // validator modal debajo del blast, encima del sidebar
     sidebar: 2147483644,
-    // sidebar debajo de modales
     valOverlay: 2147483643,
-    // validation overlay debajo del sidebar pero encima de WA
     valStats: 2147483642,
-    // validator stats panel
     spamWarning: 2147483641,
-    // spam warning
     spamBlocker: 2147483640,
-    // semitransparent blocker
     catalogPanel: 2147483639
-    // catálogo panel legacy
   };
-  var C = {
-    bg: "#0f1923",
-    bgTab: "#0a1118",
-    border: "rgba(255,255,255,0.07)",
+  var S = {
+    bg: "#ffffff",
+    card: "#f7f8fa",
+    border: "#e5e7eb",
+    text: "#1a1a1a",
+    muted: "#6b7280",
     accent: "#25d366",
-    accentDim: "rgba(37,211,102,0.15)",
-    text: "#e9edef",
-    muted: "rgba(255,255,255,0.4)",
-    danger: "#ef5350",
-    warn: "#ff9f0a"
+    accentBg: "#ecfdf5",
+    danger: "#ef4444",
+    dangerBg: "#fef2f2",
+    warn: "#f59e0b",
+    warnBg: "#fffbeb",
+    blue: "#3b82f6",
+    blueBg: "#eff6ff"
   };
-  var _open3 = false;
-  var _activeTab = localStorage.getItem(STORAGE_KEY) || "contacts";
-  var _allContacts = [];
-  var _filteredList = [];
-  var _totalContacts = 0;
-  var _contactsLoading = false;
-  var _contactsLoaded = false;
-  var _activeFilter = "";
-  var _searchQuery = "";
-  var _searchTimer = null;
-  var ROW_HEIGHT = 56;
-  var OVERSCAN = 8;
-  var VIEWPORT_ROWS = 12;
+  var _open2 = false;
+  var _tab = localStorage.getItem(TAB_KEY) || "blast";
   var _audioItems = [];
-  var _audioLoading = false;
   var _audioLoaded = false;
-  var TEMPLATE_KEY = "wspp_sidebar_template";
-  var DEFAULT_TEMPLATE = `{{saludo}} {{nombre}}, te escribo de parte de la campa\xF1a del Dr. C\xE9sar V\xE1squez. Nos gustar\xEDa conversar contigo sobre las necesidades de {{distrito}}. \xBFTienes un momento?`;
-  var _messageTemplate = localStorage.getItem(TEMPLATE_KEY) || DEFAULT_TEMPLATE;
-  var _sendingPhone = null;
-  var _sendPhase = "";
-  var _sendDetail = "";
+  var _audioLoading = false;
   var $ = (id) => document.getElementById(id);
-  function _escHtml(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  function _esc(s) {
+    return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
-  function _setTab(tab) {
-    _activeTab = tab;
-    localStorage.setItem(STORAGE_KEY, tab);
-    _renderTabs();
-    _renderContent();
-    if (tab === "contacts" && !_contactsLoaded && !_contactsLoading) _loadContacts();
-    if (tab === "audios" && !_audioLoaded && !_audioLoading) _loadAudios();
-  }
-  function _loadContacts() {
-    _contactsLoading = true;
-    const countEl = $("wspp-contacts-count");
-    if (countEl) countEl.textContent = "Cargando contactos...";
-    window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit: 500, offset: 0, status: "" }, WA_ORIGIN);
-  }
-  function _loadAudios() {
-    _audioLoading = true;
-    window.postMessage({ type: "FETCH_AUDIO_CATALOG" }, WA_ORIGIN);
-  }
-  function _applyFilters() {
-    let list = _allContacts;
-    if (_activeFilter) {
-      list = list.filter((c) => {
-        const status = c.cms_status || "pendiente";
-        const vote = c.vote_class || "";
-        return status === _activeFilter || vote === _activeFilter;
-      });
-    }
-    if (_searchQuery.length >= 2) {
-      const q = _searchQuery.toLowerCase();
-      list = list.filter((c) => {
-        const name = ((c.nombre || "") + " " + (c.apellidos || "")).toLowerCase();
-        const tel = c.telefono || "";
-        return name.includes(q) || tel.includes(q);
-      });
-    }
-    _filteredList = list;
-    _renderVirtualList();
-  }
-  function _renderVirtualList() {
-    const container = $("wspp-contacts-list");
-    const countEl = $("wspp-contacts-count");
-    if (!container) return;
-    const total = _filteredList.length;
-    if (countEl) {
-      const filterLabel = _activeFilter ? ` \xB7 ${_activeFilter}` : "";
-      const searchLabel = _searchQuery ? ` \xB7 "${_searchQuery}"` : "";
-      countEl.textContent = `${total.toLocaleString("es-PE")} contactos${filterLabel}${searchLabel}`;
-    }
-    if (total === 0) {
-      container.innerHTML = `<div style="text-align:center;padding:24px 12px;color:${C.muted};font-size:12px;">
-      ${_contactsLoading ? "Cargando..." : _searchQuery ? 'Sin resultados para "' + _searchQuery + '"' : "Sin contactos con este filtro"}
-    </div>`;
-      container.style.height = "auto";
-      return;
-    }
-    const totalHeight = total * ROW_HEIGHT;
-    container.style.height = Math.min(totalHeight, VIEWPORT_ROWS * ROW_HEIGHT) + "px";
-    container.style.overflowY = "auto";
-    container.style.position = "relative";
-    container.style.overscrollBehavior = "contain";
-    container.innerHTML = `<div id="wspp-vscroll-spacer" style="height:${totalHeight}px;position:relative;"></div>`;
-    const spacer = $("wspp-vscroll-spacer");
-    const renderVisible = () => {
-      const scrollTop = container.scrollTop;
-      const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-      const endIdx = Math.min(total, startIdx + VIEWPORT_ROWS + OVERSCAN * 2);
-      let html = "";
-      for (let i = startIdx; i < endIdx; i++) {
-        const c = _filteredList[i];
-        html += `<div style="position:absolute;top:${i * ROW_HEIGHT}px;left:0;right:0;height:${ROW_HEIGHT}px;padding:0 4px;">${renderContactRow(c)}</div>`;
-      }
-      spacer.innerHTML = html;
-      _bindContactRowEvents(spacer);
-    };
-    renderVisible();
-    let _scrollRAF = null;
-    container.addEventListener("scroll", () => {
-      if (_scrollRAF) cancelAnimationFrame(_scrollRAF);
-      _scrollRAF = requestAnimationFrame(renderVisible);
-    }, { passive: true });
-  }
-  function _bindContactRowEvents(root) {
-    root.querySelectorAll(".wspp-contact-row").forEach((row) => {
-      row.addEventListener("click", (e) => {
-        if (e.target.closest("[data-action]")) return;
-        const actions = row.querySelector(".wspp-contact-actions");
-        if (!actions) return;
-        const isOpen = actions.style.display === "flex";
-        root.querySelectorAll(".wspp-contact-actions").forEach((a) => a.style.display = "none");
-        actions.style.display = isOpen ? "none" : "flex";
-      });
-    });
-    root.querySelectorAll("[data-action]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const action = btn.dataset.action;
-        const id = btn.dataset.id;
-        const phone = btn.dataset.phone;
-        if (action === "send") {
-          const contact = _allContacts.find((c) => (c.telefono || "") === phone) || { nombre: "", distrito: "" };
-          const msg = _personalizeTemplate(_messageTemplate, contact);
-          btn.textContent = "\u23F3";
-          btn.disabled = true;
-          btn.style.opacity = "0.5";
-          _sendingPhone = phone;
-          _sendPhase = "opening";
-          _sendDetail = "Iniciando...";
-          _renderContent();
-          fullSendFlow(phone, msg, ({ phase, detail }) => {
-            _sendPhase = phase;
-            _sendDetail = detail;
-            _renderContent();
-          }).then((result) => {
-            if (result.ok) {
-              const row2 = btn.closest(".wspp-contact-row");
-              if (row2) {
-                row2.style.opacity = "0.4";
-                row2.style.pointerEvents = "none";
-              }
-              const contactObj = _allContacts.find((c) => (c.telefono || "") === phone);
-              if (contactObj?.id) {
-                window.postMessage({ type: "BLAST_MARK_HABLADO", ids: [contactObj.id], own_number: getOwnNumber() }, WA_ORIGIN);
-              }
-            } else {
-              btn.textContent = "\u{1F4AC} Reintentar";
-              btn.disabled = false;
-              btn.style.opacity = "1";
-            }
-            setTimeout(() => {
-              _sendingPhone = null;
-              _sendPhase = "";
-              _sendDetail = "";
-              _renderContent();
-            }, 3e3);
-          });
-          return;
-        }
-        const voteMap = { duro: "duro", blando: "blando", flotante: "flotante", invalido: "" };
-        const statusMap = { duro: "respondido", blando: "respondido", flotante: "respondido", invalido: "invalido" };
-        window.postMessage({
-          type: "WSPP_CLASSIFY",
-          payload: { validation_id: id, vote_class: voteMap[action], status: statusMap[action], _phone: phone || null }
-        }, WA_ORIGIN);
-        const row = btn.closest(".wspp-contact-row");
-        if (row) {
-          row.style.opacity = "0.4";
-          row.style.pointerEvents = "none";
-        }
-      });
-    });
-  }
-  window.addEventListener("message", (e) => {
-    if (e.source !== window) return;
-    if (e.data?.type === "BLAST_FORM_CONTACTS_READY") {
-      _contactsLoading = false;
-      _contactsLoaded = true;
-      if (e.data.ok) {
-        _allContacts = e.data.contacts || [];
-        _totalContacts = e.data.total || _allContacts.length;
-        console.log(`[SIDEBAR] ${_allContacts.length} contactos cargados (total: ${_totalContacts})`);
-        _applyFilters();
-      } else {
-        const countEl = $("wspp-contacts-count");
-        if (countEl) countEl.textContent = "Error al cargar: " + (e.data.error || "?");
-      }
-      return;
-    }
-    if (e.data?.type === "AUDIO_CATALOG_READY") {
-      _audioLoading = false;
-      _audioLoaded = true;
-      if (e.data.ok) {
-        _audioItems = e.data.items || [];
-        console.log(`[SIDEBAR] ${_audioItems.length} audios cargados`);
-        updateAudioList(_audioItems);
-      }
-      return;
-    }
-    if (e.data?.type === "GENERATE_CATALOG_AUDIO_DONE") {
-      if (e.data.ok) {
-        _audioLoaded = false;
-        if (_activeTab === "audios") _loadAudios();
-      }
-      return;
-    }
+  setOnUpdate(() => {
+    if (_open2 && _tab === "blast") _renderContent();
   });
-  function _pushWaLayout(open) {
-    const app = document.querySelector(WA_APP_SEL);
-    if (!app) return;
-    if (open) {
-      app.style.transition = "padding-right 0.25s ease";
-      app.style.paddingRight = SIDEBAR_WIDTH + "px";
-    } else {
-      app.style.paddingRight = "0";
-    }
-  }
   function insertSidebarFAB() {
     if ($(FAB_ID)) return;
     const fab = document.createElement("button");
     fab.id = FAB_ID;
-    fab.title = "Goberna \u2014 Panel lateral";
-    fab.innerHTML = _fabIcon(false);
+    fab.title = "Goberna Blast";
+    fab.textContent = "WA";
     Object.assign(fab.style, {
+      // Posición: pegado a la derecha, centrado verticalmente
       position: "fixed",
-      bottom: "20px",
-      right: "20px",
+      right: "0",
+      top: "50%",
+      transform: "translateY(-50%)",
       zIndex: String(Z.fab),
-      width: "48px",
-      height: "48px",
-      borderRadius: "50%",
-      background: "#163960",
+      // Forma: rectángulo vertical pegado al borde
+      width: "28px",
+      height: "64px",
+      borderRadius: "6px 0 0 6px",
+      // Estilo
+      background: S.accent,
+      color: "#fff",
       border: "none",
       cursor: "pointer",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      boxShadow: "0 4px 20px rgba(0,0,0,.5)",
-      transition: "transform 0.15s, background 0.15s"
+      fontSize: "11px",
+      fontWeight: "800",
+      fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
+      letterSpacing: "0",
+      boxShadow: "-2px 0 12px rgba(0,0,0,.15)",
+      // Solo responde a click directo — sin hover que cause click accidental
+      userSelect: "none",
+      WebkitUserSelect: "none",
+      // Bloquear propagación de eventos hacia WA
+      pointerEvents: "auto"
     });
-    fab.addEventListener("mouseenter", () => {
-      fab.style.transform = "scale(1.12)";
+    fab.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      toggleSidebar();
     });
-    fab.addEventListener("mouseleave", () => {
-      fab.style.transform = "scale(1)";
+    fab.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
     });
-    fab.addEventListener("click", toggleSidebar);
     document.body.appendChild(fab);
   }
-  function _fabIcon(open) {
-    if (open) {
-      return `<svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-    </svg>`;
-    }
-    return `<svg width="20" height="20" viewBox="0 0 24 24" fill="white">
-    <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
-  </svg>`;
-  }
   function toggleSidebar() {
-    _open3 = !_open3;
+    _open2 = !_open2;
     const fab = $(FAB_ID);
-    if (fab) {
-      fab.innerHTML = _fabIcon(_open3);
-      fab.style.transition = "right 0.25s ease, background 0.15s ease";
-      fab.style.background = _open3 ? "#0d2137" : "#163960";
-      if (_open3) {
-        fab.style.right = SIDEBAR_WIDTH + 12 + "px";
-      } else {
-        setTimeout(() => {
-          if (!_open3) fab.style.right = "20px";
-        }, 250);
+    if (_open2) {
+      if (fab) {
+        fab.style.right = SIDEBAR_W + "px";
+        fab.style.background = "#374151";
+        fab.textContent = "\u2715";
       }
-    }
-    _pushWaLayout(_open3);
-    if (_open3) {
+      const app = document.querySelector("#app");
+      if (app) {
+        app.style.transition = "margin-right .25s ease";
+        app.style.marginRight = SIDEBAR_W + "px";
+      }
       _renderSidebar();
-      if (_activeTab === "contacts" && !_contactsLoaded && !_contactsLoading) _loadContacts();
-      if (_activeTab === "audios" && !_audioLoaded && !_audioLoading) _loadAudios();
+      if (!isRunning()) refreshPendingCount();
     } else {
+      if (fab) {
+        fab.style.right = "0";
+        fab.style.background = S.accent;
+        fab.textContent = "WA";
+      }
+      const app = document.querySelector("#app");
+      if (app) {
+        app.style.transition = "margin-right .25s ease";
+        app.style.marginRight = "0";
+      }
       const el = $(SIDEBAR_ID);
       if (el) {
-        el.style.transform = `translateX(${SIDEBAR_WIDTH}px)`;
+        el.style.transform = `translateX(${SIDEBAR_W}px)`;
         el.style.opacity = "0";
         setTimeout(() => el.remove(), 260);
       }
@@ -4046,21 +3509,23 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         position: "fixed",
         top: "0",
         right: "0",
-        width: SIDEBAR_WIDTH + "px",
+        width: SIDEBAR_W + "px",
         height: "100vh",
         zIndex: String(Z.sidebar),
-        background: C.bg,
-        borderLeft: `1px solid ${C.border}`,
-        boxShadow: "-8px 0 32px rgba(0,0,0,.4)",
+        background: S.bg,
+        borderLeft: `1px solid ${S.border}`,
+        boxShadow: "-4px 0 24px rgba(0,0,0,.08)",
         display: "flex",
         flexDirection: "column",
-        fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif,'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji'",
-        color: C.text,
-        transform: `translateX(${SIDEBAR_WIDTH}px)`,
+        fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
+        color: S.text,
+        transform: `translateX(${SIDEBAR_W}px)`,
         opacity: "0",
-        transition: "transform 0.25s ease, opacity 0.2s ease",
+        transition: "transform .25s ease, opacity .2s ease",
         overflowX: "hidden"
       });
+      el.addEventListener("click", (e) => e.stopPropagation());
+      el.addEventListener("mousedown", (e) => e.stopPropagation());
       document.body.appendChild(el);
       requestAnimationFrame(() => {
         el.style.transform = "translateX(0)";
@@ -4068,591 +3533,383 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       });
     }
     el.innerHTML = `
-    ${_headerHTML()}
-    ${_tabBarHTML()}
-    <div id="wspp-sidebar-content" style="flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;">
+    <div style="padding:14px 16px 10px;border-bottom:1px solid ${S.border};display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+      <div>
+        <div style="font-size:15px;font-weight:700;">Goberna</div>
+        <div style="font-size:11px;color:${S.muted};">${getOwnNumber() ? "+" + getOwnNumber() : "Detectando..."}</div>
+      </div>
+      <button id="sb-close" style="background:none;border:none;color:${S.muted};font-size:18px;cursor:pointer;padding:4px;">\u2715</button>
+    </div>
+    <div style="display:flex;border-bottom:1px solid ${S.border};flex-shrink:0;">
+      ${_tabBtn("blast", "\u{1F4E8}", "Blast")}
+      ${_tabBtn("audios", "\u{1F399}", "Audios")}
+      ${_tabBtn("validar", "\u2705", "Validar")}
+    </div>
+    <div id="sb-content" style="flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;">
       ${_contentHTML()}
     </div>
-    ${_footerHTML()}
   `;
-    _bindEvents();
+    _bindShell();
+    _bindContent();
   }
-  function _headerHTML() {
-    const own = getOwnNumber();
-    const ownLabel = own ? `+${own}` : "\u23F3 detectando...";
-    return `
-    <div style="
-      padding:12px 16px 8px;
-      border-bottom:1px solid ${C.border};
-      display:flex;align-items:center;justify-content:space-between;
-      flex-shrink:0;
-    ">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <div style="
-          width:28px;height:28px;border-radius:7px;
-          background:rgba(37,211,102,.12);
-          display:flex;align-items:center;justify-content:center;
-        ">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="${C.accent}">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
-          </svg>
-        </div>
-        <div>
-          <div style="font-size:12px;font-weight:700;letter-spacing:-.3px;">Goberna</div>
-          <div style="font-size:11px;color:${C.muted};">${ownLabel}</div>
-        </div>
-      </div>
-      <button id="wspp-sidebar-close" style="
-        background:none;border:none;color:${C.muted};
-        font-size:16px;cursor:pointer;padding:4px;line-height:1;
-        border-radius:4px;
-      ">\u2715</button>
-    </div>
-  `;
-  }
-  var TABS = [
-    { id: "contacts", icon: "\u{1F4CB}", label: "Contactos" },
-    { id: "audios", icon: "\u{1F399}", label: "Audios" },
-    { id: "status", icon: "\u{1F4CA}", label: "Estado" }
-  ];
-  function _tabBarHTML() {
-    return `
-    <div style="
-      display:flex;border-bottom:1px solid ${C.border};
-      flex-shrink:0;background:${C.bgTab};
-    ">
-      ${TABS.map((t) => {
-      const active = _activeTab === t.id;
-      return `
-          <button data-tab="${t.id}" style="
-            flex:1;padding:10px 4px;border:none;cursor:pointer;
-            background:${active ? C.bg : "transparent"};
-            color:${active ? C.accent : C.muted};
-            font-size:11px;font-weight:${active ? "700" : "500"};
-            border-bottom:2px solid ${active ? C.accent : "transparent"};
-            transition:all .15s;
-          ">
-            <div style="font-size:14px;margin-bottom:2px;">${t.icon}</div>
-            ${t.label}
-          </button>
-        `;
-    }).join("")}
-    </div>
-  `;
-  }
-  function _contentHTML() {
-    if (_activeTab === "contacts") return _contactsTabHTML();
-    if (_activeTab === "audios") return _audiosTabHTML();
-    if (_activeTab === "status") return _statusTabHTML();
-    return "";
-  }
-  function _footerHTML() {
-    return `
-    <div style="
-      padding:8px 12px;border-top:1px solid ${C.border};
-      display:flex;gap:6px;flex-shrink:0;
-    ">
-      <button id="wspp-sidebar-blast-btn" style="
-        flex:1;padding:9px;border-radius:8px;border:none;cursor:pointer;
-        background:${C.accentDim};color:${C.accent};
-        font-size:11px;font-weight:700;
-      ">\u26A1 Blast</button>
-      <button id="wspp-sidebar-val-btn" style="
-        flex:1;padding:9px;border-radius:8px;border:none;cursor:pointer;
-        background:rgba(96,165,250,.1);color:#60a5fa;
-        font-size:11px;font-weight:700;
-      ">\u2705 Validar</button>
-      ${isCatalogConsultor() ? `
-      <button id="wspp-sidebar-catalog-btn" style="
-        flex:1;padding:9px;border-radius:8px;border:none;cursor:pointer;
-        background:rgba(167,139,250,.1);color:#a78bfa;
-        font-size:11px;font-weight:700;
-      ">\u{1F3B5} Cat\xE1logo</button>
-      ` : ""}
-    </div>
-  `;
-  }
-  var _SALUDOS = ["Hola", "Buenas", "Buenos d\xEDas", "Hola buen d\xEDa", "Buenas tardes"];
-  function _personalizeTemplate(tpl, contact) {
-    const nombre = ((contact.nombre || "") + " " + (contact.apellidos || "")).trim().split(/\s+/)[0] || "amigo";
-    const distrito = contact.distrito || contact.zona || "";
-    const saludo = _SALUDOS[Math.floor(Math.random() * _SALUDOS.length)];
-    return tpl.replace(/\{\{nombre\}\}/gi, nombre).replace(/\{\{distrito\}\}/gi, distrito).replace(/\{\{saludo\}\}/gi, saludo).trim();
-  }
-  function _contactsTabHTML() {
-    const isEditing = false;
-    return `
-    <div style="padding:10px 12px 4px;">
-
-      <!-- Template de mensaje editable -->
-      <div style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-          <span style="font-size:11px;color:${C.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Plantilla de mensaje</span>
-          <button id="wspp-tpl-toggle" style="
-            background:none;border:1px solid ${C.border};border-radius:6px;
-            color:${C.muted};font-size:10px;padding:2px 8px;cursor:pointer;
-          ">\u270F\uFE0F Editar</button>
-        </div>
-        <div id="wspp-tpl-preview" style="
-          font-size:11px;color:rgba(255,255,255,.65);line-height:1.5;
-          padding:8px 10px;border-radius:8px;
-          background:rgba(255,255,255,.04);border:1px solid ${C.border};
-          max-height:60px;overflow:hidden;
-          cursor:pointer;
-        ">${_escHtml(_messageTemplate).replace(/\{\{(\w+)\}\}/gi, '<span style="color:${C.accent};font-weight:700;">{{$1}}</span>')}</div>
-        <textarea id="wspp-tpl-editor" style="
-          display:none;width:100%;min-height:80px;margin-top:4px;
-          background:rgba(255,255,255,.06);border:1px solid rgba(37,211,102,.3);
-          border-radius:8px;padding:8px 10px;color:${C.text};
-          font-size:11px;line-height:1.5;font-family:inherit;resize:vertical;
-          outline:none;
-        ">${_escHtml(_messageTemplate)}</textarea>
-        <div style="font-size:10px;color:${C.muted};margin-top:3px;">
-          Variables: <span style="color:${C.accent};">{{nombre}}</span> \xB7 <span style="color:${C.accent};">{{distrito}}</span> \xB7 <span style="color:${C.accent};">{{saludo}}</span>
-        </div>
-      </div>
-
-      ${_sendingPhone ? `
-      <!-- Progreso de env\xEDo actual -->
-      <div style="
-        margin-bottom:10px;padding:8px 12px;border-radius:8px;
-        background:${_sendPhase === "error" ? "rgba(239,83,80,.1)" : _sendPhase === "done" ? "rgba(52,199,89,.1)" : "rgba(37,211,102,.08)"};
-        border:1px solid ${_sendPhase === "error" ? "rgba(239,83,80,.3)" : _sendPhase === "done" ? "rgba(52,199,89,.3)" : "rgba(37,211,102,.2)"};
-        font-size:12px;color:${_sendPhase === "error" ? C.danger : C.accent};line-height:1.5;
-      ">
-        <div style="font-weight:700;">
-          ${_sendPhase === "opening" ? "\u{1F50D} Abriendo chat..." : _sendPhase === "waiting" ? "\u23F3 Preparando contacto..." : _sendPhase === "sending" ? "\u270D\uFE0F Escribiendo mensaje..." : _sendPhase === "done" ? "\u2705 Enviado" : _sendPhase === "error" ? "\u274C Error" : "..."}
-        </div>
-        <div style="font-size:11px;opacity:.8;margin-top:2px;">
-          +${_sendingPhone} \xB7 ${_sendDetail}
-        </div>
-      </div>
-      ` : ""}
-
-      <!-- Barra de b\xFAsqueda -->
-      <div style="
-        display:flex;gap:6px;align-items:center;
-        background:rgba(255,255,255,.05);border:1px solid ${C.border};
-        border-radius:8px;padding:6px 10px;margin-bottom:8px;
-      ">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="${C.muted}">
-          <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
-        </svg>
-        <input
-          id="wspp-contacts-search"
-          placeholder="Buscar por nombre o n\xFAmero..."
-          style="
-            background:none;border:none;outline:none;
-            color:${C.text};font-size:12px;flex:1;
-          "
-        />
-      </div>
-
-      <!-- Filtros r\xE1pidos -->
-      <div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap;">
-        ${[
-      { key: "pendiente", label: "\u23F3 Pendiente", color: "#ff9f0a" },
-      { key: "hablado", label: "\u{1F4AC} Hablado", color: "#60a5fa" },
-      { key: "duro", label: "\u2705 Duro", color: "#34c759" },
-      { key: "blando", label: "\u{1F7E1} Blando", color: "#fde68a" },
-      { key: "flotante", label: "\u{1F7E3} Flotante", color: "#a78bfa" }
-    ].map((f) => `
-          <button data-filter="${f.key}" style="
-            padding:3px 8px;border-radius:12px;border:1px solid ${f.color}33;
-            background:${f.color}11;color:${f.color};
-            font-size:10px;cursor:pointer;font-weight:600;
-            white-space:nowrap;
-          ">${f.label}</button>
-        `).join("")}
-      </div>
-
-      <!-- Subt\xEDtulo con conteo -->
-      <div id="wspp-contacts-count" style="
-        font-size:10px;color:${C.muted};
-        text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;
-      ">Cargando contactos...</div>
-    </div>
-
-    <!-- Lista de contactos (scrollable) -->
-    <div id="wspp-contacts-list" style="
-      padding:0 8px 8px;
-      display:flex;flex-direction:column;gap:3px;
-    ">
-      <div style="text-align:center;padding:24px 12px;color:${C.muted};font-size:12px;line-height:1.6;">
-        Toc\xE1 <strong style="color:${C.accent};">\u26A1 Blast</strong> o <strong style="color:#60a5fa;">\u2705 Validar</strong> abajo para cargar contactos
-      </div>
-    </div>
-  `;
-  }
-  function renderContactRow(contact) {
-    const nombre = ((contact.nombre || "") + " " + (contact.apellidos || "")).trim() || "\u2014";
-    const tel = contact.telefono || "\u2014";
-    const dist = contact.distrito || "";
-    const status = contact.cms_status || "pendiente";
-    const vote = contact.vote_class || "";
-    const waOk = contact.wa_valid === true;
-    const waNull = contact.wa_valid === null || contact.wa_valid === void 0;
-    const statusColor = {
-      pendiente: "#ff9f0a",
-      hablado: "#60a5fa",
-      respondido: "#a78bfa",
-      invalido: "#ef5350"
-    }[status] || C.muted;
-    const voteColor = {
-      duro: "#34c759",
-      blando: "#fde68a",
-      flotante: "#a78bfa"
-    }[vote] || "transparent";
-    const voteLabel = { duro: "Duro", blando: "Blando", flotante: "Flotante" }[vote] || "";
-    const waIcon = waNull ? "\u2753" : waOk ? "\u2705" : "\u274C";
-    return `
-    <div
-      data-contact-id="${contact.id}"
-      data-phone="${tel}"
-      class="wspp-contact-row"
-      style="
-        padding:8px 10px;border-radius:8px;
-        background:rgba(255,255,255,.03);
-        border:1px solid ${C.border};
-        cursor:pointer;
-        transition:background .1s;
-      "
-    >
-      <!-- Fila principal -->
-      <div style="display:flex;align-items:center;gap:8px;">
-        <!-- Indicador de vote_class -->
-        <div style="
-          width:3px;height:32px;border-radius:2px;flex-shrink:0;
-          background:${vote ? voteColor : C.border};
-        "></div>
-
-        <!-- Info -->
-        <div style="flex:1;min-width:0;">
-          <div style="
-            font-size:12px;font-weight:600;color:${C.text};
-            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-          ">${nombre}</div>
-          <div style="font-size:10px;color:${C.muted};margin-top:1px;">
-            ${tel}${dist ? " \xB7 " + dist : ""}
-          </div>
-        </div>
-
-        <!-- Badges derecha -->
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0;">
-          <span style="font-size:10px;color:${statusColor};font-weight:600;">${status}</span>
-          <div style="display:flex;align-items:center;gap:4px;">
-            <span style="font-size:11px;" title="WhatsApp: ${waNull ? "sin verificar" : waOk ? "tiene WA" : "sin WA"}">${waIcon}</span>
-            ${vote ? `<span style="font-size:11px;font-weight:700;color:${voteColor};background:${voteColor}22;padding:1px 5px;border-radius:8px;">${voteLabel}</span>` : ""}
-          </div>
-        </div>
-      </div>
-
-      <!-- Acciones (colapsadas \u2014 se expanden al click en la fila) -->
-      <div class="wspp-contact-actions" style="
-        display:none;margin-top:7px;padding-top:6px;
-        border-top:1px solid ${C.border};
-        gap:4px;flex-wrap:wrap;
-      ">
-        <button data-action="send" data-phone="${tel}" data-name="${nombre}" style="
-          flex:1;min-width:60px;padding:5px 6px;border-radius:6px;border:none;cursor:pointer;
-          background:rgba(37,211,102,.12);color:${C.accent};font-size:10px;font-weight:700;
-        ">\u{1F4AC} Escribir</button>
-        <button data-action="duro" data-id="${contact.id}" style="
-          padding:5px 8px;border-radius:6px;border:none;cursor:pointer;
-          background:rgba(52,199,89,.1);color:#34c759;font-size:10px;font-weight:700;
-        ">\u2705 Duro</button>
-        <button data-action="blando" data-id="${contact.id}" style="
-          padding:5px 8px;border-radius:6px;border:none;cursor:pointer;
-          background:rgba(253,230,138,.1);color:#fde68a;font-size:10px;font-weight:700;
-        ">\u{1F7E1} Blando</button>
-        <button data-action="flotante" data-id="${contact.id}" style="
-          padding:5px 8px;border-radius:6px;border:none;cursor:pointer;
-          background:rgba(167,139,250,.1);color:#a78bfa;font-size:10px;font-weight:700;
-        ">\u{1F7E3} Float.</button>
-        <button data-action="invalido" data-id="${contact.id}" style="
-          padding:5px 8px;border-radius:6px;border:none;cursor:pointer;
-          background:rgba(239,83,80,.1);color:${C.danger};font-size:10px;font-weight:700;
-        ">\u274C Desc.</button>
-      </div>
-    </div>
-  `;
-  }
-  function _audiosTabHTML() {
-    return `
-    <div style="padding:10px 12px 4px;">
-      <div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">
-        Cat\xE1logo de audios \xB7 Toc\xE1 para previsualizar \xB7 Envi\xE1 al chat activo
-      </div>
-
-      <!-- Filtro por categor\xEDa -->
-      <div id="wspp-audio-cat-filter" style="
-        display:flex;gap:4px;overflow-x:auto;padding-bottom:4px;margin-bottom:8px;
-      ">
-        <button data-audio-cat="all" style="
-          padding:3px 10px;border-radius:12px;border:1px solid ${C.accent}55;
-          background:${C.accentDim};color:${C.accent};
-          font-size:10px;cursor:pointer;white-space:nowrap;font-weight:700;
-        ">Todos</button>
-      </div>
-    </div>
-
-    <!-- Lista de audios -->
-    <div id="wspp-audio-list" style="padding:0 8px 8px;display:flex;flex-direction:column;gap:3px;">
-      <div style="text-align:center;padding:24px 0;color:${C.muted};font-size:12px;">
-        Cargando cat\xE1logo...
-      </div>
-    </div>
-  `;
-  }
-  function renderAudioRow(item) {
-    const dur = item.duration_ms ? _fmtDuration(item.duration_ms) : "\u2014";
-    const size = item.audio_size ? _fmtSize(item.audio_size) : "";
-    const hasAudio = !!item.has_audio;
-    return `
-    <div
-      data-audio-id="${item.id}"
-      class="wspp-audio-row"
-      style="
-        padding:8px 10px;border-radius:8px;
-        background:rgba(255,255,255,.03);
-        border:1px solid ${C.border};
-        display:flex;align-items:center;gap:8px;
-        cursor:${hasAudio ? "pointer" : "default"};
-        opacity:${hasAudio ? "1" : "0.5"};
-      "
-    >
-      <!-- Play / Sin audio -->
-      <div style="
-        width:32px;height:32px;border-radius:50%;flex-shrink:0;
-        background:${hasAudio ? C.accentDim : "rgba(255,255,255,.05)"};
-        display:flex;align-items:center;justify-content:center;
-      ">
-        ${hasAudio ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="${C.accent}"><path d="M8 5v14l11-7z"/></svg>` : `<span style="font-size:14px;color:${C.muted};">\u2014</span>`}
-      </div>
-
-      <!-- Info -->
-      <div style="flex:1;min-width:0;">
-        <div style="
-          font-size:12px;font-weight:600;color:${C.text};
-          white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-        ">${item.label}</div>
-        <div style="font-size:10px;color:${C.muted};margin-top:1px;">
-          ${item.category}${dur !== "\u2014" ? " \xB7 " + dur : ""}${size ? " \xB7 " + size : ""}
-        </div>
-      </div>
-
-      <!-- Bot\xF3n enviar -->
-      ${hasAudio ? `
-        <button data-audio-send="${item.id}" style="
-          padding:5px 10px;border-radius:6px;border:1px solid rgba(37,211,102,.3);cursor:pointer;
-          background:${C.accentDim};color:${C.accent};
-          font-size:10px;font-weight:700;flex-shrink:0;
-          white-space:nowrap;
-        ">Enviar PTT</button>
-      ` : `
-        <button data-audio-regen="${item.id}" style="
-          padding:5px 8px;border-radius:6px;border:1px solid rgba(255,149,0,.3);
-          background:rgba(255,149,0,.08);color:${C.warn};cursor:pointer;
-          font-size:10px;font-weight:700;flex-shrink:0;
-        ">Generar</button>
-      `}
-    </div>
-  `;
-  }
-  function _fmtDuration(ms) {
-    const s = Math.floor(ms / 1e3);
-    return s < 60 ? s + "s" : Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
-  }
-  function _fmtSize(bytes) {
-    return bytes < 1024 ? bytes + "B" : bytes < 1048576 ? Math.round(bytes / 1024) + "KB" : (bytes / 1048576).toFixed(1) + "MB";
-  }
-  function _statusTabHTML() {
-    const own = getOwnNumber();
-    return `
-    <div style="padding:12px;">
-
-      <!-- N\xFAmero activo -->
-      <div style="
-        padding:10px 12px;border-radius:10px;
-        background:rgba(255,255,255,.04);border:1px solid ${C.border};
-        margin-bottom:8px;
-      ">
-        <div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">
-          N\xFAmero activo
-        </div>
-        <div style="font-size:18px;font-weight:800;color:${own ? C.accent : C.warn};">
-          ${own ? "+" + own : "\u23F3 Detectando..."}
-        </div>
-        ${own ? `<div style="font-size:10px;color:${C.muted};margin-top:2px;">
-          ${/* warmup info injected by caller */
-    ""}
-        </div>` : ""}
-      </div>
-
-      <!-- Spam risk indicator -->
-      <div id="wspp-sidebar-spam-status" style="
-        padding:10px 12px;border-radius:10px;
-        background:rgba(255,255,255,.04);border:1px solid ${C.border};
-        margin-bottom:8px;
-      ">
-        <div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">
-          Riesgo de spam
-        </div>
-        <div id="wspp-sidebar-risk-text" style="font-size:13px;font-weight:700;color:#34c759;">
-          \u2705 Sin riesgo detectado
-        </div>
-      </div>
-
-      <!-- Stats del d\xEDa -->
-      <div style="
-        display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;
-      ">
-        ${[
-      { id: "stat-sent", label: "Enviados hoy", color: C.accent },
-      { id: "stat-limit", label: "L\xEDmite hoy", color: "#60a5fa" },
-      { id: "stat-valid", label: "Validados WA", color: "#34c759" },
-      { id: "stat-pending", label: "Pendientes", color: C.warn }
-    ].map((s) => `
-          <div style="
-            padding:10px;border-radius:8px;
-            background:rgba(255,255,255,.04);border:1px solid ${C.border};
-            text-align:center;
-          ">
-            <div id="wspp-${s.id}" style="font-size:20px;font-weight:800;color:${s.color};">\u2014</div>
-            <div style="font-size:11px;color:${C.muted};margin-top:2px;text-transform:uppercase;">${s.label}</div>
-          </div>
-        `).join("")}
-      </div>
-
-      <!-- Alertas de spam recientes -->
-      <div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">
-        Alertas recientes
-      </div>
-      <div id="wspp-sidebar-spam-alerts" style="
-        display:flex;flex-direction:column;gap:3px;
-      ">
-        <div style="font-size:11px;color:${C.muted};padding:8px 0;">Sin alertas</div>
-      </div>
-
-    </div>
-  `;
-  }
-  function _renderTabs() {
-    const el = $(SIDEBAR_ID);
-    if (!el) return;
-    const tabBar = el.querySelector("[data-tab]")?.closest("div");
-    if (tabBar) tabBar.outerHTML = _tabBarHTML();
+  function _tabBtn(id, icon, label) {
+    const active = _tab === id;
+    return `<button data-tab="${id}" style="
+    flex:1;padding:10px 4px;border:none;cursor:pointer;
+    background:${active ? S.bg : S.card};color:${active ? S.accent : S.muted};
+    font-size:11px;font-weight:${active ? "700" : "500"};
+    border-bottom:2px solid ${active ? S.accent : "transparent"};
+  "><div style="font-size:14px;">${icon}</div>${label}</button>`;
   }
   function _renderContent() {
-    const content = $("wspp-sidebar-content");
-    if (content) {
-      content.innerHTML = _contentHTML();
-      _bindContentEvents();
+    const el = $("sb-content");
+    if (el) {
+      el.innerHTML = _contentHTML();
+      _bindContent();
     }
   }
-  function _bindEvents() {
-    $("wspp-sidebar-close")?.addEventListener("click", toggleSidebar);
-    document.querySelectorAll("[data-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => _setTab(btn.dataset.tab));
-    });
-    $("wspp-sidebar-blast-btn")?.addEventListener("click", () => {
-      toggleBlastPanel();
-    });
-    $("wspp-sidebar-val-btn")?.addEventListener("click", () => {
-      toggleValidatorPanel();
-    });
-    $("wspp-sidebar-catalog-btn")?.addEventListener("click", () => {
-      toggleCatalogPanel();
-    });
-    _bindContentEvents();
+  function _contentHTML() {
+    if (_tab === "blast") return _blastHTML();
+    if (_tab === "audios") return _audiosHTML();
+    if (_tab === "validar") return _validarHTML();
+    return "";
   }
-  function _bindContentEvents() {
-    document.querySelectorAll(".wspp-contact-row").forEach((row) => {
-      row.addEventListener("click", (e) => {
-        if (e.target.closest("[data-action]")) return;
-        const actions = row.querySelector(".wspp-contact-actions");
-        if (!actions) return;
-        const isOpen = actions.style.display === "flex";
-        document.querySelectorAll(".wspp-contact-actions").forEach((a) => a.style.display = "none");
-        actions.style.display = isOpen ? "none" : "flex";
+  function _bindShell() {
+    $("sb-close")?.addEventListener("click", toggleSidebar);
+    document.querySelectorAll("[data-tab]").forEach((b) => {
+      b.addEventListener("click", () => {
+        _tab = b.dataset.tab;
+        localStorage.setItem(TAB_KEY, _tab);
+        _renderSidebar();
+        if (_tab === "audios" && !_audioLoaded && !_audioLoading) _loadAudios();
+        if (_tab === "blast" && !isRunning()) refreshPendingCount();
       });
     });
-    document.querySelectorAll("[data-action]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const action = btn.dataset.action;
-        const id = btn.dataset.id;
-        const phone = btn.dataset.phone;
-        const name = btn.dataset.name || "";
-        if (action === "send") {
-          window.postMessage({ type: "WSPP_OPEN_CHAT", phone }, WA_ORIGIN);
-          return;
-        }
-        const voteMap = { duro: "duro", blando: "blando", flotante: "flotante", invalido: "" };
-        const statusMap = { duro: "respondido", blando: "respondido", flotante: "respondido", invalido: "invalido" };
-        window.postMessage({
-          type: "WSPP_CLASSIFY",
-          payload: {
-            validation_id: id,
-            vote_class: voteMap[action],
-            status: statusMap[action],
-            _phone: phone || null
-          }
-        }, WA_ORIGIN);
-        const row = btn.closest(".wspp-contact-row");
-        if (row) {
-          row.style.opacity = "0.5";
-          row.style.pointerEvents = "none";
+  }
+  function _blastHTML() {
+    const cfg2 = getConfig();
+    const tpls2 = getTemplates();
+    const running = isRunning();
+    const paused = isPaused();
+    const countdown = getCountdown();
+    const phase = getPhase();
+    const kpis = getKpis();
+    const pending = getTotalPending();
+    const results = getLastResults();
+    const totalSent = kpis.pending + kpis.sent + kpis.delivered + kpis.read;
+    const totalProcessed = totalSent + kpis.failed;
+    const hasActivity = totalProcessed > 0 || running;
+    let timerLabel = "";
+    if (countdown > 0) {
+      const m = Math.floor(countdown / 60);
+      const s = countdown % 60;
+      const labels = { prewarm: "\u23F3 Preparando", delay: "\u23F1\uFE0F Pr\xF3ximo", pausa: "\u2615 Pausa", descanso: "\u{1F634} Descanso", cargando: "\u{1F4E5} Cargando" };
+      timerLabel = `${labels[phase] || "\u23F1\uFE0F"} ${m > 0 ? m + "m " : ""}${s}s`;
+    } else if (phase === "cargando") {
+      timerLabel = "\u{1F4E5} Cargando...";
+    }
+    const pendingLabel = pending === null ? "..." : pending.toLocaleString("es-PE");
+    const hasPending = pending === null || pending > 0;
+    function _ackIcon(ack) {
+      if (ack === -1) return "\u2717";
+      if (ack === 0) return "\u{1F550}";
+      if (ack === 1) return "\u2713";
+      if (ack === 2) return "\u2713\u2713";
+      if (ack >= 3) return '<span style="color:#53bdeb;">\u2713\u2713</span>';
+      return "\u{1F550}";
+    }
+    return `<div style="padding:14px;display:flex;flex-direction:column;gap:12px;">
+
+    <!-- PENDIENTES -->
+    <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:14px;display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:11px;color:${S.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Pendientes en el servidor</div>
+        <div style="font-size:28px;font-weight:800;color:${S.accent};margin-top:2px;">${pendingLabel}</div>
+      </div>
+      <button id="sb-refresh" style="padding:6px 12px;border-radius:6px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:12px;cursor:pointer;">\u21BB</button>
+    </div>
+
+    <!-- KPIs -->
+    ${hasActivity ? `
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">
+      ${[
+      ["\u{1F550}", kpis.pending, "Pending", "#f59e0b"],
+      ["\u2713", kpis.sent, "Enviado", "#6b7280"],
+      ["\u2713\u2713", kpis.delivered, "Entregado", S.accent],
+      ['<span style="color:#53bdeb;">\u2713\u2713</span>', kpis.read, "Le\xEDdo", "#53bdeb"],
+      ["\u2717", kpis.failed, "Fallido", S.danger]
+    ].map(([icon, val, label, color]) => `
+        <div style="background:${S.card};border:1px solid ${S.border};border-radius:8px;padding:8px 4px;text-align:center;">
+          <div style="font-size:16px;font-weight:800;color:${color};">${val}</div>
+          <div style="font-size:9px;color:${S.muted};margin-top:2px;">${icon} ${label}</div>
+        </div>
+      `).join("")}
+    </div>
+    ` : ""}
+
+    <!-- TANDA -->
+    <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px;">\xBFA cu\xE1ntos envi\xE1s por tanda?</div>
+      <div style="display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap;">
+        ${[10, 25, 50, 100, 200].map((n) => `
+          <button data-preset="${n}" style="
+            flex:1;min-width:40px;padding:7px 4px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;
+            border:2px solid ${cfg2.batchSize === n ? S.accent : S.border};
+            background:${cfg2.batchSize === n ? S.accentBg : S.bg};
+            color:${cfg2.batchSize === n ? S.accent : S.muted};
+            transition:all .1s;
+          ">${n}</button>
+        `).join("")}
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:11px;color:${S.muted};white-space:nowrap;">O escrib\xED:</span>
+        <input type="number" data-cfg="batchSize" value="${cfg2.batchSize}" min="1" max="500" style="
+          flex:1;padding:6px 8px;border:1px solid ${S.border};border-radius:6px;
+          background:${S.bg};color:${S.text};font-size:13px;font-weight:700;
+          outline:none;text-align:center;box-sizing:border-box;
+        " />
+        <span style="font-size:11px;color:${S.muted};white-space:nowrap;">personas</span>
+      </div>
+    </div>
+
+    <!-- CONFIG AVANZADA -->
+    <details style="background:${S.card};border:1px solid ${S.border};border-radius:10px;overflow:hidden;">
+      <summary style="padding:12px;font-size:12px;font-weight:700;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">
+        <span>\u2699\uFE0F Timing anti-baneo</span>
+        <span style="font-size:10px;color:${S.muted};">\u25BE</span>
+      </summary>
+      <div style="padding:0 12px 12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        ${_cfgField("delaySec", "Espera entre msgs (seg)", cfg2.delaySec, 3, 120)}
+        ${_cfgField("prewarmSec", "Pre-warm (seg)", cfg2.prewarmSec, 0, 120)}
+        ${_cfgField("pausaCada", "Pausa cada N msgs", cfg2.pausaCada, 3, 50)}
+        ${_cfgField("pausaSec", "Duraci\xF3n pausa (seg)", cfg2.pausaSec, 10, 600)}
+        ${_cfgField("descansoSec", "Descanso c/25 (seg)", cfg2.descansoSec, 30, 900)}
+      </div>
+    </details>
+
+    <!-- PLANTILLAS -->
+    <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-size:12px;font-weight:700;">Plantilla${tpls2.length > 1 ? "s (" + tpls2.length + ")" : ""}</span>
+        ${tpls2.length < 5 ? `<button id="sb-tpl-add" style="${_smallBtn(S.accent, S.accentBg)}">+ Nueva</button>` : ""}
+      </div>
+      ${tpls2.map((t, i) => `
+        <div style="margin-bottom:6px;display:flex;gap:4px;align-items:start;">
+          <textarea data-tpl="${i}" rows="2" style="
+            flex:1;border:1px solid ${S.border};border-radius:8px;background:${S.bg};
+            color:${S.text};font-size:12px;padding:8px 10px;line-height:1.5;
+            font-family:inherit;resize:vertical;outline:none;box-sizing:border-box;
+          ">${_esc(t)}</textarea>
+          ${tpls2.length > 1 ? `<button data-tpl-del="${i}" style="background:none;border:none;color:${S.danger};cursor:pointer;font-size:12px;padding:8px 4px;">\u2715</button>` : ""}
+        </div>
+      `).join("")}
+      <div style="font-size:10px;color:${S.muted};line-height:1.6;">
+        <code style="color:${S.accent};">{{nombre}}</code>
+        <code style="color:${S.accent};">{{saludo}}</code>
+        <code style="color:${S.accent};">{{cierre}}</code>
+        <code style="color:${S.accent};">{{distrito}}</code>
+        <code style="color:${S.accent};">{{emoji}}</code>
+        <code style="color:${S.accent};">{{fecha}}</code>
+        <code style="color:${S.accent};">{{hora}}</code>
+        \xB7 Se rotan autom\xE1ticamente
+      </div>
+    </div>
+
+    <!-- TIMER + LOG -->
+    ${hasActivity ? `
+    <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
+      ${timerLabel ? `<div style="font-size:12px;color:${S.accent};font-weight:600;margin-bottom:8px;">${timerLabel}</div>` : ""}
+      ${results.length ? `
+      <div style="font-size:10px;color:${S.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">\xDAltimos enviados</div>
+      <div style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;">
+        ${results.slice(0, 12).map((r) => `
+          <div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:${r.status === "failed" ? S.dangerBg : S.bg};border:1px solid ${r.status === "failed" ? "#fecaca" : S.border};border-radius:5px;font-size:11px;">
+            <span style="flex-shrink:0;font-size:10px;min-width:20px;">${_ackIcon(r.ack ?? -1)}</span>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${r.status === "failed" ? S.danger : S.text};">
+              ${_esc(r.nombre || "?")}
+            </span>
+            <span style="font-size:10px;color:${S.muted};flex-shrink:0;">${r.telefono ? "+" + r.telefono : ""}</span>
+          </div>
+        `).join("")}
+      </div>
+      ` : ""}
+      ${!running && totalProcessed > 0 ? `
+        <button id="sb-reset" style="margin-top:8px;width:100%;padding:6px;border-radius:6px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:11px;cursor:pointer;">Limpiar sesi\xF3n</button>
+      ` : ""}
+    </div>
+    ` : ""}
+
+    <!-- CONTROLES -->
+    ${!running && !paused && hasPending ? `
+      <button id="sb-start" style="
+        width:100%;padding:14px;border-radius:10px;border:none;
+        background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+        box-shadow:0 2px 12px ${S.accent}40;
+      ">\u25B6 Enviar a ${cfg2.batchSize} personas</button>
+    ` : running ? `
+      <button id="sb-pause" style="
+        width:100%;padding:14px;border-radius:10px;border:1px solid ${S.warn}40;
+        background:${S.warnBg};color:${S.warn};font-size:15px;font-weight:700;cursor:pointer;
+      ">\u23F8 Pausar</button>
+    ` : paused ? `
+      <button id="sb-resume" style="
+        width:100%;padding:14px;border-radius:10px;border:none;
+        background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+      ">\u25B6 Reanudar</button>
+    ` : !hasPending && pending !== null ? `
+      <div style="text-align:center;padding:12px;background:${S.accentBg};border-radius:10px;font-size:13px;color:${S.accent};font-weight:600;">
+        \u2705 No hay m\xE1s pendientes
+      </div>
+    ` : ""}
+
+  </div>`;
+  }
+  function _smallBtn(color, bg) {
+    return `padding:5px 10px;border-radius:6px;border:none;background:${bg};color:${color};font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap`;
+  }
+  function _cfgField(key, label, value, min, max) {
+    return `<div>
+    <label style="font-size:11px;color:${S.muted};display:block;margin-bottom:2px;">${label}</label>
+    <input type="number" data-cfg="${key}" value="${value}" min="${min}" max="${max}" style="
+      width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid ${S.border};
+      border-radius:6px;background:${S.bg};color:${S.text};font-size:13px;font-weight:600;
+      outline:none;text-align:center;
+    " />
+  </div>`;
+  }
+  function _audiosHTML() {
+    if (_audioLoading) return `<div style="padding:40px;text-align:center;color:${S.muted};font-size:12px;">Cargando audios...</div>`;
+    if (!_audioItems.length) return `<div style="padding:40px;text-align:center;color:${S.muted};font-size:12px;">Sin audios</div>`;
+    return `<div style="padding:10px;display:flex;flex-direction:column;gap:4px;">
+    ${_audioItems.map((item) => {
+      const dur = item.duration_ms ? Math.floor(item.duration_ms / 1e3) + "s" : "";
+      const has = !!item.has_audio;
+      return `<div data-audio-id="${item.id}" style="
+        display:flex;align-items:center;gap:8px;padding:8px 10px;
+        background:${S.card};border:1px solid ${S.border};border-radius:8px;
+        cursor:${has ? "pointer" : "default"};opacity:${has ? "1" : ".5"};
+      ">
+        <div style="width:28px;height:28px;border-radius:50%;background:${has ? S.accentBg : S.card};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;">
+          ${has ? "\u25B6" : "\u2014"}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_esc(item.label)}</div>
+          <div style="font-size:10px;color:${S.muted};">${_esc(item.category)}${dur ? " \xB7 " + dur : ""}</div>
+        </div>
+        ${has ? `<button data-audio-send="${item.id}" style="${_smallBtn(S.accent, S.accentBg)}">Enviar</button>` : `<button data-audio-regen="${item.id}" style="${_smallBtn(S.warn, S.warnBg)}">Generar</button>`}
+      </div>`;
+    }).join("")}
+  </div>`;
+  }
+  function _loadAudios() {
+    _audioLoading = true;
+    _renderContent();
+    window.postMessage({ type: "FETCH_AUDIO_CATALOG" }, WA_ORIGIN);
+  }
+  function _validarHTML() {
+    return `<div style="padding:40px 20px;text-align:center;">
+    <div style="font-size:36px;margin-bottom:12px;">\u2705</div>
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px;">Validaci\xF3n de n\xFAmeros</div>
+    <div style="font-size:12px;color:${S.muted};margin-bottom:16px;">Verifica qu\xE9 n\xFAmeros tienen WhatsApp activo</div>
+    <button id="sb-open-validator" style="
+      padding:10px 24px;border-radius:8px;border:none;
+      background:${S.blueBg};color:${S.blue};font-size:13px;font-weight:600;cursor:pointer;
+    ">Abrir Validador</button>
+  </div>`;
+  }
+  function _bindContent() {
+    $("sb-refresh")?.addEventListener("click", () => {
+      refreshPendingCount();
+      _toast3("Actualizando...");
+    });
+    $("sb-start")?.addEventListener("click", startBlast);
+    $("sb-pause")?.addEventListener("click", pauseBlast);
+    $("sb-resume")?.addEventListener("click", resumeBlast);
+    $("sb-reset")?.addEventListener("click", () => {
+      resetSession();
+      refreshPendingCount();
+      _renderContent();
+    });
+    document.querySelectorAll("[data-preset]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const n = Number(btn.dataset.preset);
+        setConfig({ batchSize: n });
+        const inp = document.querySelector('[data-cfg="batchSize"]');
+        if (inp) inp.value = n;
+        document.querySelectorAll("[data-preset]").forEach((b) => {
+          const active = Number(b.dataset.preset) === n;
+          b.style.borderColor = active ? S.accent : S.border;
+          b.style.background = active ? S.accentBg : S.bg;
+          b.style.color = active ? S.accent : S.muted;
+        });
+        const startBtn = $("sb-start");
+        if (startBtn) startBtn.textContent = `\u25B6 Enviar a ${n} personas`;
+      });
+    });
+    document.querySelectorAll("[data-cfg]").forEach((inp) => {
+      inp.addEventListener("change", () => {
+        const v = Math.max(Number(inp.min || 1), Math.min(Number(inp.max || 9999), Number(inp.value)));
+        inp.value = v;
+        setConfig({ [inp.dataset.cfg]: v });
+        if (inp.dataset.cfg === "batchSize") {
+          document.querySelectorAll("[data-preset]").forEach((b) => {
+            const active = Number(b.dataset.preset) === v;
+            b.style.borderColor = active ? S.accent : S.border;
+            b.style.background = active ? S.accentBg : S.bg;
+            b.style.color = active ? S.accent : S.muted;
+          });
+          const startBtn = $("sb-start");
+          if (startBtn) startBtn.textContent = `\u25B6 Enviar a ${v} personas`;
         }
       });
     });
-    document.querySelectorAll(".wspp-audio-row").forEach((row) => {
-      row.addEventListener("click", (e) => {
-        if (e.target.closest("[data-audio-send]") || e.target.closest("[data-audio-regen]")) return;
-        const id = row.dataset.audioId;
-        if (id) window.postMessage({ type: "GET_CATALOG_AUDIO", id }, WA_ORIGIN);
+    document.querySelectorAll("[data-tpl]").forEach((ta) => {
+      ta.addEventListener("input", () => {
+        const t = getTemplates();
+        t[Number(ta.dataset.tpl)] = ta.value;
+        setTemplates(t);
       });
+    });
+    document.querySelectorAll("[data-tpl-del]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const t = getTemplates();
+        if (t.length > 1) {
+          t.splice(Number(btn.dataset.tplDel), 1);
+          setTemplates(t);
+          _renderContent();
+        }
+      });
+    });
+    $("sb-tpl-add")?.addEventListener("click", () => {
+      const t = getTemplates();
+      t.push("{{saludo}} {{nombre}}, ...");
+      setTemplates(t);
+      _renderContent();
     });
     document.querySelectorAll("[data-audio-send]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        const audioId = btn.dataset.audioSend;
+        const id = btn.dataset.audioSend;
         btn.textContent = "\u23F3";
         btn.disabled = true;
-        const onAudioReady = (ev) => {
-          if (ev.source !== window) return;
-          if (ev.data?.type !== "CATALOG_AUDIO_READY") return;
-          if (!ev.data.ok || ev.data.id !== audioId) return;
-          window.removeEventListener("message", onAudioReady);
+        const h = (ev) => {
+          if (ev.source !== window || ev.data?.type !== "CATALOG_AUDIO_READY" || ev.data.id !== id) return;
+          window.removeEventListener("message", h);
           sendAudioAsPTT(ev.data.audioBase64, ev.data.mimeType).then((ok) => {
-            if (ok) {
-              btn.textContent = "\u2705 Enviado";
-              btn.style.color = "#34c759";
-              setTimeout(() => {
-                btn.textContent = "Enviar PTT";
-                btn.disabled = false;
-                btn.style.color = "";
-              }, 3e3);
-            } else {
-              btn.textContent = "\u274C Error";
-              btn.style.color = "#ef5350";
-              setTimeout(() => {
-                btn.textContent = "Enviar PTT";
-                btn.disabled = false;
-                btn.style.color = "";
-              }, 3e3);
-            }
+            btn.textContent = ok ? "\u2713" : "\u2717";
+            setTimeout(() => {
+              btn.textContent = "Enviar";
+              btn.disabled = false;
+            }, 3e3);
           });
         };
-        window.addEventListener("message", onAudioReady);
+        window.addEventListener("message", h);
         setTimeout(() => {
-          window.removeEventListener("message", onAudioReady);
-          if (btn.disabled) {
-            btn.textContent = "Enviar PTT";
-            btn.disabled = false;
-          }
+          window.removeEventListener("message", h);
+          btn.textContent = "Enviar";
+          btn.disabled = false;
         }, 15e3);
-        window.postMessage({ type: "GET_CATALOG_AUDIO", id: audioId }, WA_ORIGIN);
+        window.postMessage({ type: "GET_CATALOG_AUDIO", id }, WA_ORIGIN);
       });
     });
     document.querySelectorAll("[data-audio-regen]").forEach((btn) => {
@@ -4663,97 +3920,30 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         window.postMessage({ type: "GENERATE_CATALOG_AUDIO", id: btn.dataset.audioRegen }, WA_ORIGIN);
       });
     });
-    document.querySelectorAll("[data-filter]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll("[data-filter]").forEach((b) => {
-          b.style.fontWeight = "600";
-          b.style.opacity = "0.7";
-          b.style.background = b.style.background.replace(/11$/, "11");
-        });
-        const f = btn.dataset.filter;
-        if (_activeFilter === f) {
-          _activeFilter = "";
-        } else {
-          _activeFilter = f;
-          btn.style.fontWeight = "800";
-          btn.style.opacity = "1";
-        }
-        _applyFilters();
-      });
-    });
-    $("wspp-tpl-toggle")?.addEventListener("click", () => {
-      const preview = $("wspp-tpl-preview");
-      const editor = $("wspp-tpl-editor");
-      if (!preview || !editor) return;
-      const isEditing = editor.style.display !== "none";
-      if (isEditing) {
-        _messageTemplate = editor.value.trim() || DEFAULT_TEMPLATE;
-        localStorage.setItem(TEMPLATE_KEY, _messageTemplate);
-        editor.style.display = "none";
-        preview.style.display = "block";
-        preview.innerHTML = _escHtml(_messageTemplate).replace(
-          /\{\{(\w+)\}\}/gi,
-          `<span style="color:${C.accent};font-weight:700;">{{$1}}</span>`
-        );
-        $("wspp-tpl-toggle").textContent = "\u270F\uFE0F Editar";
-      } else {
-        editor.style.display = "block";
-        editor.value = _messageTemplate;
-        preview.style.display = "none";
-        $("wspp-tpl-toggle").textContent = "\u{1F4BE} Guardar";
-        editor.focus();
+    $("sb-open-validator")?.addEventListener("click", toggleValidatorPanel);
+  }
+  function _toast3(text, bg = S.accent) {
+    const t = document.createElement("div");
+    Object.assign(t.style, { position: "fixed", bottom: "80px", left: "50%", transform: "translateX(-50%)", background: bg, color: "#fff", padding: "8px 18px", borderRadius: "8px", fontSize: "12px", fontWeight: "600", zIndex: "2147483647", boxShadow: "0 4px 16px rgba(0,0,0,.2)" });
+    t.textContent = text;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3e3);
+  }
+  window.addEventListener("message", (e) => {
+    if (e.source !== window) return;
+    if (e.data?.type === "AUDIO_CATALOG_READY") {
+      _audioLoading = false;
+      _audioLoaded = true;
+      if (e.data.ok) _audioItems = e.data.items || [];
+      if (_tab === "audios") _renderContent();
+    }
+    if (e.data?.type === "GENERATE_CATALOG_AUDIO_DONE") {
+      if (e.data.ok) {
+        _audioLoaded = false;
+        if (_tab === "audios") _loadAudios();
       }
-    });
-    $("wspp-tpl-preview")?.addEventListener("click", () => {
-      $("wspp-tpl-toggle")?.click();
-    });
-    $("wspp-contacts-search")?.addEventListener("input", (e) => {
-      clearTimeout(_searchTimer);
-      _searchTimer = setTimeout(() => {
-        _searchQuery = (e.target.value || "").trim();
-        _applyFilters();
-      }, 200);
-    });
-  }
-  function updateAudioList(items) {
-    const list = $("wspp-audio-list");
-    if (!list) return;
-    if (!items.length) {
-      list.innerHTML = `<div style="text-align:center;padding:24px 0;color:${C.muted};font-size:12px;">Sin audios en el cat\xE1logo</div>`;
-      return;
     }
-    list.innerHTML = items.map(renderAudioRow).join("");
-    const catFilter = $("wspp-audio-cat-filter");
-    if (catFilter) {
-      const cats = [...new Set(items.map((i) => i.category))].sort();
-      catFilter.innerHTML = `
-      <button data-audio-cat="all" style="
-        padding:3px 10px;border-radius:12px;border:1px solid ${C.accent}55;
-        background:${C.accentDim};color:${C.accent};
-        font-size:10px;cursor:pointer;white-space:nowrap;font-weight:700;
-      ">Todos</button>
-      ${cats.map((c) => `
-        <button data-audio-cat="${c}" style="
-          padding:3px 10px;border-radius:12px;
-          border:1px solid ${C.border};background:rgba(255,255,255,.04);color:${C.muted};
-          font-size:10px;cursor:pointer;white-space:nowrap;
-        ">${c}</button>
-      `).join("")}
-    `;
-      catFilter.querySelectorAll("[data-audio-cat]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const cat = btn.dataset.audioCat;
-          const filtered = cat === "all" ? items : items.filter((i) => i.category === cat);
-          const list2 = $("wspp-audio-list");
-          if (list2) {
-            list2.innerHTML = filtered.map(renderAudioRow).join("");
-            _bindContentEvents();
-          }
-        });
-      });
-    }
-    _bindContentEvents();
-  }
+  });
 
   // src/inject-entry.js
   if (document.readyState === "complete") {
