@@ -15,6 +15,7 @@ import { WA_ORIGIN, getOwnNumber, isCatalogConsultor } from './bootstrap.js';
 import { toggleBlastPanel, isBlastPanelOpen } from './blast-panel.js';
 import { toggleValidatorPanel, isValidatorPanelOpen } from './wa-validator-panel.js';
 import { toggleCatalogPanel, isCatalogPanelOpen  } from './audio-catalog-panel.js';
+import { fullSendFlow } from './chat-opener.js';
 
 // ── Constantes ────────────────────────────────────────────────────────
 const SIDEBAR_WIDTH  = 360;          // px
@@ -78,8 +79,20 @@ let _audioItems       = [];
 let _audioLoading     = false;
 let _audioLoaded      = false;
 
+// ── Message template (editable, persisted) ────────────────────────────
+const TEMPLATE_KEY = 'wspp_sidebar_template';
+const DEFAULT_TEMPLATE = `{{saludo}} {{nombre}}, te escribo de parte de la campaña del Dr. César Vásquez. Nos gustaría conversar contigo sobre las necesidades de {{distrito}}. ¿Tienes un momento?`;
+let _messageTemplate = localStorage.getItem(TEMPLATE_KEY) || DEFAULT_TEMPLATE;
+
+// ── Send flow state ───────────────────────────────────────────────────
+let _sendingPhone    = null;   // phone currently being processed
+let _sendPhase       = '';     // 'opening' | 'waiting' | 'sending' | 'done' | 'error'
+let _sendDetail      = '';     // detail text for UI
+let _sendQueue       = [];     // phones queued for sequential send
+
 // ── Helpers DOM ────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
+function _escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 function _setTab(tab) {
   _activeTab = tab;
@@ -218,7 +231,47 @@ function _bindContactRowEvents(root) {
       const phone  = btn.dataset.phone;
 
       if (action === 'send') {
-        window.postMessage({ type: 'WSPP_OPEN_CHAT', phone }, WA_ORIGIN);
+        // Full send flow: open chat DOM → wait 30s → type template → send
+        const contact = _allContacts.find(c => (c.telefono || '') === phone) || { nombre: '', distrito: '' };
+        const msg = _personalizeTemplate(_messageTemplate, contact);
+
+        // Disable button visually
+        btn.textContent = '⏳';
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+
+        _sendingPhone = phone;
+        _sendPhase = 'opening';
+        _sendDetail = 'Iniciando...';
+        _renderContent(); // update progress bar
+
+        fullSendFlow(phone, msg, ({ phase, detail }) => {
+          _sendPhase = phase;
+          _sendDetail = detail;
+          _renderContent();
+        }).then(result => {
+          if (result.ok) {
+            // Mark row as sent visually
+            const row = btn.closest('.wspp-contact-row');
+            if (row) { row.style.opacity = '0.4'; row.style.pointerEvents = 'none'; }
+            // Mark as hablado in backend
+            const contactObj = _allContacts.find(c => (c.telefono || '') === phone);
+            if (contactObj?.id) {
+              window.postMessage({ type: 'BLAST_MARK_HABLADO', ids: [contactObj.id], own_number: getOwnNumber() }, WA_ORIGIN);
+            }
+          } else {
+            btn.textContent = '💬 Reintentar';
+            btn.disabled = false;
+            btn.style.opacity = '1';
+          }
+          // Clear send state after 3s
+          setTimeout(() => {
+            _sendingPhone = null;
+            _sendPhase = '';
+            _sendDetail = '';
+            _renderContent();
+          }, 3000);
+        });
         return;
       }
 
@@ -518,9 +571,72 @@ function _footerHTML() {
 // TAB: CONTACTOS
 // Lista de contactos pendientes con blast progresivo + clasificación
 // ══════════════════════════════════════════════════════════════════════
+// Template personalizer — same as blast-panel but simpler
+const _SALUDOS = ['Hola','Buenas','Buenos días','Hola buen día','Buenas tardes'];
+function _personalizeTemplate(tpl, contact) {
+  const nombre   = ((contact.nombre || '') + ' ' + (contact.apellidos || '')).trim().split(/\s+/)[0] || 'amigo';
+  const distrito = contact.distrito || contact.zona || '';
+  const saludo   = _SALUDOS[Math.floor(Math.random() * _SALUDOS.length)];
+  return tpl
+    .replace(/\{\{nombre\}\}/gi, nombre)
+    .replace(/\{\{distrito\}\}/gi, distrito)
+    .replace(/\{\{saludo\}\}/gi, saludo)
+    .trim();
+}
+
 function _contactsTabHTML() {
+  const isEditing = false; // toggle via button
   return `
     <div style="padding:10px 12px 4px;">
+
+      <!-- Template de mensaje editable -->
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="font-size:11px;color:${C.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Plantilla de mensaje</span>
+          <button id="wspp-tpl-toggle" style="
+            background:none;border:1px solid ${C.border};border-radius:6px;
+            color:${C.muted};font-size:10px;padding:2px 8px;cursor:pointer;
+          ">✏️ Editar</button>
+        </div>
+        <div id="wspp-tpl-preview" style="
+          font-size:11px;color:rgba(255,255,255,.65);line-height:1.5;
+          padding:8px 10px;border-radius:8px;
+          background:rgba(255,255,255,.04);border:1px solid ${C.border};
+          max-height:60px;overflow:hidden;
+          cursor:pointer;
+        ">${_escHtml(_messageTemplate).replace(/\{\{(\w+)\}\}/gi, '<span style="color:${C.accent};font-weight:700;">{{$1}}</span>')}</div>
+        <textarea id="wspp-tpl-editor" style="
+          display:none;width:100%;min-height:80px;margin-top:4px;
+          background:rgba(255,255,255,.06);border:1px solid rgba(37,211,102,.3);
+          border-radius:8px;padding:8px 10px;color:${C.text};
+          font-size:11px;line-height:1.5;font-family:inherit;resize:vertical;
+          outline:none;
+        ">${_escHtml(_messageTemplate)}</textarea>
+        <div style="font-size:10px;color:${C.muted};margin-top:3px;">
+          Variables: <span style="color:${C.accent};">{{nombre}}</span> · <span style="color:${C.accent};">{{distrito}}</span> · <span style="color:${C.accent};">{{saludo}}</span>
+        </div>
+      </div>
+
+      ${_sendingPhone ? `
+      <!-- Progreso de envío actual -->
+      <div style="
+        margin-bottom:10px;padding:8px 12px;border-radius:8px;
+        background:${_sendPhase === 'error' ? 'rgba(239,83,80,.1)' : _sendPhase === 'done' ? 'rgba(52,199,89,.1)' : 'rgba(37,211,102,.08)'};
+        border:1px solid ${_sendPhase === 'error' ? 'rgba(239,83,80,.3)' : _sendPhase === 'done' ? 'rgba(52,199,89,.3)' : 'rgba(37,211,102,.2)'};
+        font-size:12px;color:${_sendPhase === 'error' ? C.danger : C.accent};line-height:1.5;
+      ">
+        <div style="font-weight:700;">
+          ${_sendPhase === 'opening' ? '🔍 Abriendo chat...' :
+            _sendPhase === 'waiting' ? '⏳ Preparando contacto...' :
+            _sendPhase === 'sending' ? '✍️ Escribiendo mensaje...' :
+            _sendPhase === 'done'    ? '✅ Enviado' :
+            _sendPhase === 'error'   ? '❌ Error' : '...'}
+        </div>
+        <div style="font-size:11px;opacity:.8;margin-top:2px;">
+          +${_sendingPhone} · ${_sendDetail}
+        </div>
+      </div>
+      ` : ''}
 
       <!-- Barra de búsqueda -->
       <div style="
@@ -992,6 +1108,38 @@ function _bindContentEvents() {
       }
       _applyFilters();
     });
+  });
+
+  // Template editor toggle
+  $('wspp-tpl-toggle')?.addEventListener('click', () => {
+    const preview = $('wspp-tpl-preview');
+    const editor  = $('wspp-tpl-editor');
+    if (!preview || !editor) return;
+    const isEditing = editor.style.display !== 'none';
+    if (isEditing) {
+      // Save
+      _messageTemplate = editor.value.trim() || DEFAULT_TEMPLATE;
+      localStorage.setItem(TEMPLATE_KEY, _messageTemplate);
+      editor.style.display = 'none';
+      preview.style.display = 'block';
+      preview.innerHTML = _escHtml(_messageTemplate).replace(
+        /\{\{(\w+)\}\}/gi,
+        `<span style="color:${C.accent};font-weight:700;">{{$1}}</span>`
+      );
+      $('wspp-tpl-toggle').textContent = '✏️ Editar';
+    } else {
+      // Open editor
+      editor.style.display = 'block';
+      editor.value = _messageTemplate;
+      preview.style.display = 'none';
+      $('wspp-tpl-toggle').textContent = '💾 Guardar';
+      editor.focus();
+    }
+  });
+
+  // Template preview click also opens editor
+  $('wspp-tpl-preview')?.addEventListener('click', () => {
+    $('wspp-tpl-toggle')?.click();
   });
 
   // Search input — debounced 200ms

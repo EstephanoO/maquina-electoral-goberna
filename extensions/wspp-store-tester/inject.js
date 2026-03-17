@@ -3489,6 +3489,218 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     _render2();
   }
 
+  // src/inject/chat-opener.js
+  var SEL = {
+    // Botón "Nuevo chat" — el ícono de conversación en el sidebar de WA
+    newChatBtn: [
+      '[data-testid="chat-list-search"]',
+      // search icon in header
+      '[data-testid="new-chat-btn"]',
+      // some builds
+      'button[aria-label="Nuevo chat"]',
+      'button[aria-label="New chat"]',
+      'span[data-testid="menu-bar-new-chat"]',
+      "header button:nth-child(3)"
+      // fallback position-based
+    ],
+    // Input de búsqueda que aparece al tocar "Nuevo chat"
+    searchInput: [
+      '[data-testid="chat-list-search-input"]',
+      '[data-testid="search-input"]',
+      'div[role="textbox"][data-tab="3"]',
+      'div[contenteditable="true"][data-tab="3"]',
+      'input[title="Buscar o iniciar un nuevo chat"]',
+      'input[title="Search or start a new chat"]'
+    ],
+    // Resultado de búsqueda: la fila del contacto que aparece al buscar
+    searchResult: [
+      // WA muestra el número formateado en un span dentro del resultado
+      '[data-testid="cell-frame-container"]',
+      '[data-testid="search-result"]',
+      'div[role="listitem"]',
+      'span[data-testid="search-result-contact"]'
+    ],
+    // Composer: el input del chat donde se escribe el mensaje
+    composer: [
+      '[data-testid="conversation-compose-box-input"]',
+      'div[role="textbox"][contenteditable="true"][data-tab="10"]',
+      'div[role="textbox"][contenteditable="true"]:not([data-tab="3"])',
+      'footer div[contenteditable="true"]'
+    ],
+    // Botón enviar del composer
+    sendBtn: [
+      '[data-testid="send"]',
+      'button[aria-label="Enviar"]',
+      'button[aria-label="Send"]',
+      'span[data-testid="send"]'
+    ]
+  };
+  function _find(selectors) {
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (el) return el;
+    }
+    return null;
+  }
+  function _sleep3(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+  function _waitFor(selectors, timeoutMs = 8e3) {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const check = () => {
+        const el = _find(selectors);
+        if (el) return resolve(el);
+        if (Date.now() - start > timeoutMs) return resolve(null);
+        requestAnimationFrame(check);
+      };
+      check();
+    });
+  }
+  async function _typeInElement(el, text) {
+    el.focus();
+    if (el.tagName === "INPUT") {
+      el.value = "";
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    } else {
+      el.textContent = "";
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, data: "" }));
+    }
+    await _sleep3(100);
+    let i = 0;
+    while (i < text.length) {
+      const chunk = text.slice(i, i + 3 + Math.floor(Math.random() * 3));
+      if (el.tagName === "INPUT") {
+        el.value += chunk;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      } else {
+        document.execCommand("insertText", false, chunk);
+      }
+      i += chunk.length;
+      await _sleep3(40 + Math.random() * 80);
+    }
+  }
+  async function openChatDOM(phone) {
+    const digits = String(phone).replace(/\D/g, "");
+    if (!digits || digits.length < 9) {
+      return { ok: false, error: "N\xFAmero inv\xE1lido: " + phone };
+    }
+    const normalized = digits.length === 9 ? "51" + digits : digits;
+    const L = (step, ...args) => console.log(`[CHAT-OPENER] ${step}`, ...args);
+    try {
+      L("1", "buscando bot\xF3n nuevo chat...");
+      const newChatBtn = _find(SEL.newChatBtn);
+      if (!newChatBtn) {
+        return { ok: false, error: 'Bot\xF3n "Nuevo chat" no encontrado' };
+      }
+      newChatBtn.click();
+      L("1 \u2713", "bot\xF3n clickeado");
+      L("2", "esperando search input...");
+      const searchInput = await _waitFor(SEL.searchInput, 5e3);
+      if (!searchInput) {
+        return { ok: false, error: "Search input no apareci\xF3 despu\xE9s de 5s" };
+      }
+      await _sleep3(300);
+      L("2 \u2713", "search input visible");
+      L("3", `escribiendo +${normalized}...`);
+      await _typeInElement(searchInput, normalized);
+      L("3 \u2713", "n\xFAmero escrito");
+      L("4", "esperando resultado de b\xFAsqueda...");
+      await _sleep3(2e3);
+      const result = await _waitFor(SEL.searchResult, 6e3);
+      if (!result) {
+        const altResult = document.querySelector(
+          `span[title*="${normalized}"], span[title*="+${normalized}"], [data-testid="search-no-results"]`
+        );
+        if (altResult?.getAttribute("data-testid") === "search-no-results") {
+          L("4 \u2717", "n\xFAmero no encontrado en WA");
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+          return { ok: false, error: "N\xFAmero no tiene WhatsApp: " + normalized };
+        }
+        if (!altResult) {
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+          return { ok: false, error: "Sin resultado de b\xFAsqueda para: " + normalized };
+        }
+        altResult.click();
+        L("4 \u2713", "resultado alternativo clickeado");
+      } else {
+        result.click();
+        L("4 \u2713", "resultado clickeado");
+      }
+      L("5", "esperando composer...");
+      await _sleep3(800);
+      const composer = await _waitFor(SEL.composer, 5e3);
+      if (!composer) {
+        return { ok: false, error: "El chat se abri\xF3 pero el composer no apareci\xF3" };
+      }
+      L("5 \u2713", "chat abierto, composer listo");
+      return { ok: true, chatReady: true };
+    } catch (err) {
+      console.error("[CHAT-OPENER] error:", err);
+      return { ok: false, error: err.message || "Error desconocido" };
+    }
+  }
+  async function typeAndSendMessage(text) {
+    const L = (step, ...args) => console.log(`[CHAT-OPENER] ${step}`, ...args);
+    try {
+      const composer = _find(SEL.composer);
+      if (!composer) {
+        return { ok: false, error: "Composer no visible \u2014 \xBFel chat est\xE1 abierto?" };
+      }
+      L("send-1", "escribiendo mensaje...");
+      await _typeInElement(composer, text);
+      await _sleep3(200 + Math.random() * 300);
+      L("send-2", "enviando...");
+      const sendBtn = _find(SEL.sendBtn);
+      if (sendBtn) {
+        sendBtn.click();
+      } else {
+        composer.dispatchEvent(new KeyboardEvent("keydown", {
+          key: "Enter",
+          code: "Enter",
+          keyCode: 13,
+          bubbles: true,
+          cancelable: true
+        }));
+      }
+      await _sleep3(300);
+      L("send \u2713", "mensaje enviado");
+      return { ok: true };
+    } catch (err) {
+      console.error("[CHAT-OPENER] send error:", err);
+      return { ok: false, error: err.message };
+    }
+  }
+  async function fullSendFlow(phone, messageText, onProgress) {
+    const report = (phase, detail) => {
+      if (onProgress) onProgress({ phase, detail, phone });
+    };
+    report("opening", "Abriendo chat...");
+    const openResult = await openChatDOM(phone);
+    if (!openResult.ok) {
+      report("error", openResult.error);
+      return { ok: false, error: openResult.error, phase: "open" };
+    }
+    report("opened", "Chat abierto");
+    report("waiting", "Preparando contacto (30s)...");
+    const PREWARM = 3e4;
+    const start = Date.now();
+    while (Date.now() - start < PREWARM) {
+      const remaining = Math.ceil((PREWARM - (Date.now() - start)) / 1e3);
+      report("waiting", `Preparando contacto... ${remaining}s`);
+      await _sleep3(1e3);
+    }
+    report("ready", "Listo para enviar");
+    report("sending", "Escribiendo mensaje...");
+    const sendResult = await typeAndSendMessage(messageText);
+    if (!sendResult.ok) {
+      report("error", sendResult.error);
+      return { ok: false, error: sendResult.error, phase: "send" };
+    }
+    report("done", "\u2705 Mensaje enviado");
+    return { ok: true };
+  }
+
   // src/inject/sidebar.js
   var SIDEBAR_WIDTH = 360;
   var SIDEBAR_ID = "wspp-sidebar";
@@ -3544,7 +3756,16 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   var _audioItems = [];
   var _audioLoading = false;
   var _audioLoaded = false;
+  var TEMPLATE_KEY = "wspp_sidebar_template";
+  var DEFAULT_TEMPLATE = `{{saludo}} {{nombre}}, te escribo de parte de la campa\xF1a del Dr. C\xE9sar V\xE1squez. Nos gustar\xEDa conversar contigo sobre las necesidades de {{distrito}}. \xBFTienes un momento?`;
+  var _messageTemplate = localStorage.getItem(TEMPLATE_KEY) || DEFAULT_TEMPLATE;
+  var _sendingPhone = null;
+  var _sendPhase = "";
+  var _sendDetail = "";
   var $ = (id) => document.getElementById(id);
+  function _escHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
   function _setTab(tab) {
     _activeTab = tab;
     localStorage.setItem(STORAGE_KEY, tab);
@@ -3644,7 +3865,42 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         const id = btn.dataset.id;
         const phone = btn.dataset.phone;
         if (action === "send") {
-          window.postMessage({ type: "WSPP_OPEN_CHAT", phone }, WA_ORIGIN);
+          const contact = _allContacts.find((c) => (c.telefono || "") === phone) || { nombre: "", distrito: "" };
+          const msg = _personalizeTemplate(_messageTemplate, contact);
+          btn.textContent = "\u23F3";
+          btn.disabled = true;
+          btn.style.opacity = "0.5";
+          _sendingPhone = phone;
+          _sendPhase = "opening";
+          _sendDetail = "Iniciando...";
+          _renderContent();
+          fullSendFlow(phone, msg, ({ phase, detail }) => {
+            _sendPhase = phase;
+            _sendDetail = detail;
+            _renderContent();
+          }).then((result) => {
+            if (result.ok) {
+              const row2 = btn.closest(".wspp-contact-row");
+              if (row2) {
+                row2.style.opacity = "0.4";
+                row2.style.pointerEvents = "none";
+              }
+              const contactObj = _allContacts.find((c) => (c.telefono || "") === phone);
+              if (contactObj?.id) {
+                window.postMessage({ type: "BLAST_MARK_HABLADO", ids: [contactObj.id], own_number: getOwnNumber() }, WA_ORIGIN);
+              }
+            } else {
+              btn.textContent = "\u{1F4AC} Reintentar";
+              btn.disabled = false;
+              btn.style.opacity = "1";
+            }
+            setTimeout(() => {
+              _sendingPhone = null;
+              _sendPhase = "";
+              _sendDetail = "";
+              _renderContent();
+            }, 3e3);
+          });
           return;
         }
         const voteMap = { duro: "duro", blando: "blando", flotante: "flotante", invalido: "" };
@@ -3911,9 +4167,62 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     </div>
   `;
   }
+  var _SALUDOS = ["Hola", "Buenas", "Buenos d\xEDas", "Hola buen d\xEDa", "Buenas tardes"];
+  function _personalizeTemplate(tpl, contact) {
+    const nombre = ((contact.nombre || "") + " " + (contact.apellidos || "")).trim().split(/\s+/)[0] || "amigo";
+    const distrito = contact.distrito || contact.zona || "";
+    const saludo = _SALUDOS[Math.floor(Math.random() * _SALUDOS.length)];
+    return tpl.replace(/\{\{nombre\}\}/gi, nombre).replace(/\{\{distrito\}\}/gi, distrito).replace(/\{\{saludo\}\}/gi, saludo).trim();
+  }
   function _contactsTabHTML() {
+    const isEditing = false;
     return `
     <div style="padding:10px 12px 4px;">
+
+      <!-- Template de mensaje editable -->
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="font-size:11px;color:${C.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Plantilla de mensaje</span>
+          <button id="wspp-tpl-toggle" style="
+            background:none;border:1px solid ${C.border};border-radius:6px;
+            color:${C.muted};font-size:10px;padding:2px 8px;cursor:pointer;
+          ">\u270F\uFE0F Editar</button>
+        </div>
+        <div id="wspp-tpl-preview" style="
+          font-size:11px;color:rgba(255,255,255,.65);line-height:1.5;
+          padding:8px 10px;border-radius:8px;
+          background:rgba(255,255,255,.04);border:1px solid ${C.border};
+          max-height:60px;overflow:hidden;
+          cursor:pointer;
+        ">${_escHtml(_messageTemplate).replace(/\{\{(\w+)\}\}/gi, '<span style="color:${C.accent};font-weight:700;">{{$1}}</span>')}</div>
+        <textarea id="wspp-tpl-editor" style="
+          display:none;width:100%;min-height:80px;margin-top:4px;
+          background:rgba(255,255,255,.06);border:1px solid rgba(37,211,102,.3);
+          border-radius:8px;padding:8px 10px;color:${C.text};
+          font-size:11px;line-height:1.5;font-family:inherit;resize:vertical;
+          outline:none;
+        ">${_escHtml(_messageTemplate)}</textarea>
+        <div style="font-size:10px;color:${C.muted};margin-top:3px;">
+          Variables: <span style="color:${C.accent};">{{nombre}}</span> \xB7 <span style="color:${C.accent};">{{distrito}}</span> \xB7 <span style="color:${C.accent};">{{saludo}}</span>
+        </div>
+      </div>
+
+      ${_sendingPhone ? `
+      <!-- Progreso de env\xEDo actual -->
+      <div style="
+        margin-bottom:10px;padding:8px 12px;border-radius:8px;
+        background:${_sendPhase === "error" ? "rgba(239,83,80,.1)" : _sendPhase === "done" ? "rgba(52,199,89,.1)" : "rgba(37,211,102,.08)"};
+        border:1px solid ${_sendPhase === "error" ? "rgba(239,83,80,.3)" : _sendPhase === "done" ? "rgba(52,199,89,.3)" : "rgba(37,211,102,.2)"};
+        font-size:12px;color:${_sendPhase === "error" ? C.danger : C.accent};line-height:1.5;
+      ">
+        <div style="font-weight:700;">
+          ${_sendPhase === "opening" ? "\u{1F50D} Abriendo chat..." : _sendPhase === "waiting" ? "\u23F3 Preparando contacto..." : _sendPhase === "sending" ? "\u270D\uFE0F Escribiendo mensaje..." : _sendPhase === "done" ? "\u2705 Enviado" : _sendPhase === "error" ? "\u274C Error" : "..."}
+        </div>
+        <div style="font-size:11px;opacity:.8;margin-top:2px;">
+          +${_sendingPhone} \xB7 ${_sendDetail}
+        </div>
+      </div>
+      ` : ""}
 
       <!-- Barra de b\xFAsqueda -->
       <div style="
@@ -4330,6 +4639,32 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         }
         _applyFilters();
       });
+    });
+    $("wspp-tpl-toggle")?.addEventListener("click", () => {
+      const preview = $("wspp-tpl-preview");
+      const editor = $("wspp-tpl-editor");
+      if (!preview || !editor) return;
+      const isEditing = editor.style.display !== "none";
+      if (isEditing) {
+        _messageTemplate = editor.value.trim() || DEFAULT_TEMPLATE;
+        localStorage.setItem(TEMPLATE_KEY, _messageTemplate);
+        editor.style.display = "none";
+        preview.style.display = "block";
+        preview.innerHTML = _escHtml(_messageTemplate).replace(
+          /\{\{(\w+)\}\}/gi,
+          `<span style="color:${C.accent};font-weight:700;">{{$1}}</span>`
+        );
+        $("wspp-tpl-toggle").textContent = "\u270F\uFE0F Editar";
+      } else {
+        editor.style.display = "block";
+        editor.value = _messageTemplate;
+        preview.style.display = "none";
+        $("wspp-tpl-toggle").textContent = "\u{1F4BE} Guardar";
+        editor.focus();
+      }
+    });
+    $("wspp-tpl-preview")?.addEventListener("click", () => {
+      $("wspp-tpl-toggle")?.click();
     });
     $("wspp-contacts-search")?.addEventListener("input", (e) => {
       clearTimeout(_searchTimer);

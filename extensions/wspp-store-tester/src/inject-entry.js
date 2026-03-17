@@ -26,7 +26,10 @@ import './inject/blast-panel.js';
 // 8. WA Validator panel: verificación de números (silencioso + conversación)
 import './inject/wa-validator-panel.js';
 
-// 9. Sidebar: panel lateral unificado (reemplaza los 3 FABs separados)
+// 9. Chat opener: flujo DOM para abrir chats con números nuevos
+import './inject/chat-opener.js';
+
+// 10. Sidebar: panel lateral unificado (reemplaza los 3 FABs separados)
 import './inject/sidebar.js';
 
 // ── Bootstrap WA listeners ────────────────────────────────────────────
