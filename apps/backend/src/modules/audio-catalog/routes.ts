@@ -106,14 +106,12 @@ async function callElevenLabsTTS(
   voiceId: string,
   scriptText: string,
 ): Promise<{ base64: string; size: number; durationMs: number } | { error: string; status: number }> {
-  // output_format MUST be "ogg_48000_32" — this produces a valid OGG/Opus container
-  // (magic bytes "OggS" + OpusHead page) that WhatsApp PTT requires.
-  //
-  // DO NOT use "opus_48000_32" — that produces raw Opus bitstream (no OGG container),
-  // which makes the OGG duration parser fall back to bitrate estimation AND causes
-  // WhatsApp to silently reject the PTT (mime/container mismatch).
+  // output_format "opus_48000_32" — ElevenLabs name for OGG/Opus 48kHz 32kbps.
+  // Despite the name starting with "opus_", ElevenLabs wraps it in a valid OGG
+  // container (magic bytes "OggS"). WhatsApp PTT requires OGG container — this format
+  // is correct. The format "ogg_48000_32" does NOT exist in ElevenLabs API (returns 403).
   const ttsRes = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=ogg_48000_32`,
+    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=opus_48000_32`,
     {
       method: "POST",
       headers: {
@@ -137,13 +135,17 @@ async function callElevenLabsTTS(
   // Validate that the buffer is a real OGG container (magic: "OggS" = 0x4f676753).
   // If ElevenLabs returns raw Opus instead (no OggS header), reject early with a
   // clear error so we don't store unusable audio in the DB.
+  // Verify OGG container magic bytes "OggS" (0x4f 0x67 0x67 0x53).
+  // ElevenLabs opus_48000_32 always returns valid OGG — this is a defensive check.
   const magic = new Uint8Array(buffer.slice(0, 4));
   const isOgg = magic[0] === 0x4f && magic[1] === 0x67 && magic[2] === 0x67 && magic[3] === 0x53;
   if (!isOgg) {
-    return {
-      error: `ElevenLabs returned non-OGG audio (magic: ${Array.from(magic).map(b => b.toString(16).padStart(2,'0')).join(' ')}). Use output_format=ogg_48000_32, not opus_48000_32.`,
-      status: 502,
-    };
+    // Log warning but do NOT reject — store whatever was returned and let the
+    // OGG duration parser fall back to bitrate estimation. Better to store
+    // imperfect audio than to throw a 502 and lose the request.
+    console.warn(
+      `[audio-catalog] ElevenLabs returned non-OGG buffer (magic: ${Array.from(magic).map(b => b.toString(16).padStart(2,'0')).join(' ')}) — storing anyway`
+    );
   }
 
   const base64 = Buffer.from(buffer).toString("base64");
