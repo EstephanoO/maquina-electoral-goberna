@@ -4,7 +4,7 @@
 // Agente digital: send-only.
 
 import { WA_ORIGIN, _catalogIsConsultor } from './bootstrap.js';
-import { _lastActiveChatJid } from './wa-module-installer.js';
+import { getLastActiveChatJid } from './wa-module-installer.js';
 
 // ── State ───────────────────────────────────────────────────────────
 let _catalogItems = [];
@@ -784,7 +784,7 @@ async function sendAudioAsPTT(audioBase64, mimeType) {
 
   try {
     if (typeof window.require !== 'function') { E('init', 'window.require not available'); return false; }
-    const chatJid = _lastActiveChatJid;
+    const chatJid = getLastActiveChatJid();
     if (!chatJid) { E('init', 'No active chat JID — open a chat first'); return false; }
     L('start', `jid=${chatJid} mime=${mime} base64len=${audioBase64?.length}`);
 

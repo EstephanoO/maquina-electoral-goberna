@@ -684,6 +684,9 @@
   var _msgListenerInstalled = false;
   var _chatWatcherInstalled = false;
   var _lastActiveChatJid = null;
+  function getLastActiveChatJid() {
+    return _lastActiveChatJid;
+  }
   function installIncomingMessageListener() {
     if (_msgListenerInstalled) return;
     try {
@@ -1871,7 +1874,7 @@
         E("init", "window.require not available");
         return false;
       }
-      const chatJid = _lastActiveChatJid;
+      const chatJid = getLastActiveChatJid();
       if (!chatJid) {
         E("init", "No active chat JID \u2014 open a chat first");
         return false;

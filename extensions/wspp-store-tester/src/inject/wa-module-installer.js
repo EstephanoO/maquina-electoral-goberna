@@ -6,7 +6,11 @@ import { jidToNumber, resolvePhoneFromLid, getContactIndex, getChatIndex, getOwn
 
 let _msgListenerInstalled = false;
 let _chatWatcherInstalled = false;
-export let _lastActiveChatJid = null;
+// NOTE: exported as a getter function, not a value — esbuild IIFE bundles
+// snapshot the value at import time, so a direct `export let` would always
+// be null in consumers. Use getLastActiveChatJid() to get the live value.
+let _lastActiveChatJid = null;
+export function getLastActiveChatJid() { return _lastActiveChatJid; }
 
 /**
  * Instala el listener de mensajes entrantes usando WAWebMsgCollection.
