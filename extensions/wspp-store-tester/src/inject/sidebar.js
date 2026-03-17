@@ -336,30 +336,39 @@ function _blastHTML() {
 
     <!-- PLANTILLAS -->
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-size:12px;font-weight:700;">Plantilla${tpls.length > 1 ? 's (' + tpls.length + ')' : ''}</span>
-        ${tpls.length < 5 ? `<button id="sb-tpl-add" style="${_smallBtn(S.accent, S.accentBg)}">+ Nueva</button>` : ''}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-size:12px;font-weight:700;">Mensaje${tpls.length > 1 ? 's (' + tpls.length + ')' : ''}</span>
+        ${tpls.length < 5 ? `<button id="sb-tpl-add" style="${_smallBtn(S.accent, S.accentBg)}">+ Nuevo</button>` : ''}
       </div>
+
+      <!-- Hint de sintaxis -->
+      <div style="background:rgba(37,211,102,0.06);border:1px solid rgba(37,211,102,0.15);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:11px;color:${S.muted};line-height:1.8;">
+        <div style="color:${S.accent};font-weight:700;margin-bottom:4px;">Sintaxis de variaciones</div>
+        <div><code style="color:#fff;background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px;">[Hola!|Buenas!|Qué tal!]</code> → elige una al azar</div>
+        <div><code style="color:#fff;background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px;">---</code> → corte: envía como mensaje separado</div>
+        <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">
+          ${['{{nombre}}','{{saludo}}','{{cierre}}','{{emoji}}','{{distrito}}','{{fecha}}'].map(v =>
+            `<code style="color:${S.accent};background:rgba(37,211,102,0.08);padding:1px 5px;border-radius:3px;">${v}</code>`
+          ).join('')}
+        </div>
+      </div>
+
       ${tpls.map((t, i) => `
-        <div style="margin-bottom:6px;display:flex;gap:4px;align-items:start;">
-          <textarea data-tpl="${i}" rows="2" style="
-            flex:1;border:1px solid ${S.border};border-radius:8px;background:${S.bg};
-            color:${S.text};font-size:12px;padding:8px 10px;line-height:1.5;
-            font-family:inherit;resize:vertical;outline:none;box-sizing:border-box;
+        <div style="margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span style="font-size:10px;color:${S.muted};font-weight:600;">MENSAJE ${i + 1}</span>
+            ${tpls.length > 1 ? `<button data-tpl-del="${i}" style="background:none;border:none;color:${S.danger};cursor:pointer;font-size:11px;padding:2px 4px;">✕ Borrar</button>` : ''}
+          </div>
+          <textarea data-tpl="${i}" rows="5" style="
+            width:100%;box-sizing:border-box;border:1px solid ${S.border};border-radius:8px;background:${S.bg};
+            color:${S.text};font-size:12px;padding:10px;line-height:1.6;
+            font-family:inherit;resize:vertical;outline:none;
           ">${_esc(t)}</textarea>
-          ${tpls.length > 1 ? `<button data-tpl-del="${i}" style="background:none;border:none;color:${S.danger};cursor:pointer;font-size:12px;padding:8px 4px;">✕</button>` : ''}
+          <div id="sb-tpl-preview-${i}" style="margin-top:4px;font-size:10px;color:${S.muted};line-height:1.5;font-style:italic;min-height:14px;"></div>
         </div>
       `).join('')}
-      <div style="font-size:10px;color:${S.muted};line-height:1.6;">
-        <code style="color:${S.accent};">{{nombre}}</code>
-        <code style="color:${S.accent};">{{saludo}}</code>
-        <code style="color:${S.accent};">{{cierre}}</code>
-        <code style="color:${S.accent};">{{distrito}}</code>
-        <code style="color:${S.accent};">{{emoji}}</code>
-        <code style="color:${S.accent};">{{fecha}}</code>
-        <code style="color:${S.accent};">{{hora}}</code>
-        · Se rotan automáticamente
-      </div>
+
+      ${tpls.length < 5 ? '' : ''}
     </div>
 
     <!-- TIMER + LOG -->
@@ -528,12 +537,36 @@ function _bindContent() {
     });
   });
 
-  // Templates
+  // Templates — edit + live preview
   document.querySelectorAll('[data-tpl]').forEach(ta => {
+    const idx = Number(ta.dataset.tpl);
+
+    // Preview inline: muestra cómo se vería el mensaje con variantes resueltas
+    const _updatePreview = () => {
+      const preview = document.getElementById('sb-tpl-preview-' + idx);
+      if (!preview) return;
+      const raw = ta.value;
+      if (!raw.trim()) { preview.textContent = ''; return; }
+      // Simulamos con un contacto de ejemplo
+      const fakeParts = _previewSpin(raw);
+      if (fakeParts.length === 1) {
+        preview.textContent = '▶ ' + fakeParts[0].slice(0, 80) + (fakeParts[0].length > 80 ? '…' : '');
+      } else {
+        preview.innerHTML = fakeParts.map((p, i) =>
+          `<span style="display:block;margin-bottom:1px;">✉️ ${(i+1)}: ${_esc(p.slice(0, 60))}${p.length > 60 ? '…' : ''}</span>`
+        ).join('');
+      }
+    };
+
     ta.addEventListener('input', () => {
-      const t = getTemplates(); t[Number(ta.dataset.tpl)] = ta.value; setTemplates(t);
+      const t = getTemplates(); t[idx] = ta.value; setTemplates(t);
+      _updatePreview();
     });
+
+    // Mostrar preview al cargar
+    _updatePreview();
   });
+
   document.querySelectorAll('[data-tpl-del]').forEach(btn => {
     btn.addEventListener('click', () => {
       const t = getTemplates();
@@ -541,7 +574,9 @@ function _bindContent() {
     });
   });
   $('sb-tpl-add')?.addEventListener('click', () => {
-    const t = getTemplates(); t.push('{{saludo}} {{nombre}}, ...'); setTemplates(t); _renderContent();
+    const t = getTemplates();
+    t.push('[Hola|Buenas] {{nombre}}!\n---\n[¿Cómo estás?|¿Todo bien?] [Saludos!|Un abrazo!]');
+    setTemplates(t); _renderContent();
   });
 
   // ── Audios ──
@@ -573,6 +608,26 @@ function _bindContent() {
 
   // ── Validar ──
   $('sb-open-validator')?.addEventListener('click', toggleValidatorPanel);
+}
+
+// ── Preview spin (versión simplificada para mostrar cómo queda el template) ─
+function _previewSpin(tpl) {
+  const fakeContact = { nombre: 'María', apellidos: '', distrito: 'Chiclayo', id: 'abc' };
+  const now = new Date();
+  const parts = tpl.split(/^[ \t]*---[ \t]*$/m);
+  return parts.map(part => {
+    // Resolver [opción1|opción2] — elegir siempre la primera para que sea predecible
+    const spun = part.replace(/\[([^\]]+)\]/g, (_, inner) => inner.split('|')[0]);
+    return spun
+      .replace(/\{\{nombre\}\}/gi, fakeContact.nombre)
+      .replace(/\{\{saludo\}\}/gi, 'Hola')
+      .replace(/\{\{cierre\}\}/gi, 'Saludos!')
+      .replace(/\{\{emoji\}\}/gi, '👋')
+      .replace(/\{\{distrito\}\}/gi, fakeContact.distrito)
+      .replace(/\{\{fecha\}\}/gi, now.toLocaleDateString('es-PE'))
+      .replace(/\{\{hora\}\}/gi, now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }))
+      .trim();
+  }).filter(p => p.length > 0);
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────

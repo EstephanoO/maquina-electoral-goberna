@@ -39,7 +39,7 @@ function _loadCfg() {
 function _saveCfg(c) { try { localStorage.setItem(CFG_KEY, JSON.stringify(c)); } catch (_) {} }
 let cfg = _loadCfg();
 
-const DEFAULT_TPL = '{{saludo}} {{nombre}}, te escribo para conversar contigo. ¿Tienes un momento? {{cierre}}';
+const DEFAULT_TPL = '[Hola|Buenas|Hola, qué tal] {{nombre}}! [te escribo de parte de Goberna|soy parte del equipo de Goberna|te contacto desde Goberna].\n---\n[¿Tienes un momento?|¿Podemos conversar?|¿Estás disponible?] [{{cierre}}|Saludos!|Un abrazo!]';
 function _loadTpls() {
   try { const r = localStorage.getItem(TPL_KEY); if (r) { const p = JSON.parse(r); if (p.length) return p; } } catch (_) {}
   return [DEFAULT_TPL];
@@ -224,25 +224,81 @@ function _reportLog(results) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// MESSAGE VARIATION
+// MESSAGE VARIATION — Spintax por bloques
 // ══════════════════════════════════════════════════════════════════════
+//
+// Sintaxis del template:
+//   [opción1|opción2|opción3]  → elige una variante al azar
+//   {{nombre}}  {{saludo}}  {{cierre}}  {{emoji}}  {{distrito}}  {{fecha}}  {{hora}}
+//   ---  (línea sola)           → corte de mensaje: genera múltiples mensajes separados
+//
+// Ejemplo:
+//   [Hola!|Buenas!|Qué tal!] {{nombre}}
+//   [Soy de Goberna|Te escribe el equipo Goberna]
+//   ---
+//   [¿Cómo estás?|¿Todo bien?]
+//   [Saludos!|Un abrazo!] {{emoji}}
+//
+// Resultado: 2 mensajes separados, cada uno con variantes distintas
+//
 const SALUDOS = ['Hola', 'Buenas', 'Buenos días', 'Hola buen día', 'Qué tal', 'Buenas tardes'];
 const CIERRES = ['Gracias!', 'Saludos!', 'Un abrazo!', 'Hasta pronto!', 'Éxitos!'];
 const EMOJIS  = ['', '', '', '👋', '🙌', '✅'];
 
-function _personalize(tpl, c, idx) {
+// Genera un número pseudo-random estable para un (contacto, posicion) dado
+// Usamos un hash simple para que el mismo contacto siempre reciba variantes distintas
+// pero deterministas (no cambian si se reintenta)
+function _hashSeed(str, offset) {
+  let h = offset * 2654435761;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 2246822519);
+    h ^= h >>> 13;
+  }
+  return Math.abs(h);
+}
+
+// Procesa [opción1|opción2|opción3] eligiendo una variante usando el seed
+function _spinVariants(text, seed) {
+  let counter = 0;
+  return text.replace(/\[([^\]]+)\]/g, (_, inner) => {
+    const opts = inner.split('|');
+    const chosen = opts[_hashSeed(String(seed + counter), counter) % opts.length];
+    counter++;
+    return chosen;
+  });
+}
+
+// Reemplaza variables {{nombre}}, {{saludo}}, etc.
+function _applyVars(text, c, seed) {
   const nombre = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim().split(/\s+/)[0] || 'amigo';
-  const seed = idx + (c.id || '').length;
   const now = new Date();
-  return tpl
+  return text
     .replace(/\{\{nombre\}\}/gi, nombre)
-    .replace(/\{\{saludo\}\}/gi, SALUDOS[seed % SALUDOS.length])
-    .replace(/\{\{cierre\}\}/gi, CIERRES[(seed + 3) % CIERRES.length])
-    .replace(/\{\{emoji\}\}/gi, EMOJIS[(seed + 7) % EMOJIS.length])
+    .replace(/\{\{saludo\}\}/gi, SALUDOS[_hashSeed(String(seed), 1) % SALUDOS.length])
+    .replace(/\{\{cierre\}\}/gi, CIERRES[_hashSeed(String(seed), 2) % CIERRES.length])
+    .replace(/\{\{emoji\}\}/gi,  EMOJIS[_hashSeed(String(seed),  3) % EMOJIS.length])
     .replace(/\{\{distrito\}\}/gi, c.distrito || '')
     .replace(/\{\{fecha\}\}/gi, now.toLocaleDateString('es-PE'))
-    .replace(/\{\{hora\}\}/gi, now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
-    .trim();
+    .replace(/\{\{hora\}\}/gi, now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }));
+}
+
+// Retorna array de strings — uno por mensaje a enviar.
+// Si el template no tiene '---', retorna array de 1 elemento.
+// Cada parte puede tener múltiples líneas y variantes [x|y].
+function _spinMessage(tpl, c, idx) {
+  const seed = idx * 137 + (c.id ? c.id.charCodeAt(0) : 0);
+
+  // Separar por '---' en línea sola (con o sin espacios alrededor)
+  const parts = tpl.split(/^[ \t]*---[ \t]*$/m);
+
+  return parts
+    .map(part => {
+      // Para cada parte: procesar variantes, luego variables
+      const spun = _spinVariants(part.trim(), seed);
+      const resolved = _applyVars(spun, c, seed);
+      return resolved.trim();
+    })
+    .filter(p => p.length > 0); // Ignorar partes vacías
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -418,7 +474,9 @@ export async function startBlast() {
       const normalizedPhone = _normalizePhone(c.telefono);
       const jid = normalizedPhone ? normalizedPhone + '@c.us' : null;
       const tpl = tpls.length > 1 ? tpls[(globalSent + i) % tpls.length] : tpls[0];
-      const text = _personalize(tpl, c, globalSent + i);
+      // _spinMessage retorna array: 1 elemento si no hay '---', N si hay cortes
+      const parts = _spinMessage(tpl, c, globalSent + i);
+      const text = parts[0]; // para logs y fallback
       const cName = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim();
       let status = 'sent', error = null;
 
@@ -490,27 +548,36 @@ export async function startBlast() {
       }
       if (!_running || _paused) break;
 
-      // Send — captura el msgModel para ACK tracking en tiempo real
+      // Send — uno o varios mensajes según los '---' del template
       let msgModel = null;
       try {
-        msgModel = await _sendToChat(chat, text);
+        for (let p = 0; p < parts.length && _running && !_paused; p++) {
+          const partText = parts[p];
+
+          // Delay entre partes del mismo contacto (simula escritura humana)
+          // Entre 1s y 4s, crece levemente con cada parte para dar sensación natural
+          if (p > 0) {
+            const partDelay = 1000 + Math.random() * 3000 + p * 500;
+            await _sleep(partDelay);
+          }
+
+          const partModel = await _sendToChat(chat, partText);
+          if (p === 0) msgModel = partModel; // trackear ACK del primer mensaje
+          if (partModel) _trackMessage(partModel, cName, c.telefono);
+        }
+
         batchSent++; _consecFails = 0;
 
-        // ── MARCAR HABLADO INMEDIATAMENTE — no esperar al final del batch ──
-        // Evita que el backend devuelva el mismo contacto en el siguiente fetch
-        // si hay lag o si el blast se interrumpe antes de completar el batch.
+        // Marcar hablado inmediatamente tras enviar todos los mensajes de este contacto
         if (c.id) _markHablado([c.id]);
-
-        // Guardar en dedup local
         if (normalizedPhone) _sentThisSession.add(normalizedPhone);
         if (c.id) _sentIds.add(c.id);
 
-        if (msgModel) {
-          _trackMessage(msgModel, cName, c.telefono);
-          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'sent', ack: msgModel.get?.('ack') ?? 0, error: null });
-        } else {
-          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'sent', ack: 0, error: null });
-        }
+        _lastResults.unshift({
+          nombre: cName, telefono: c.telefono, status: 'sent',
+          ack: msgModel?.get?.('ack') ?? 0, error: null,
+          parts: parts.length, // cuántos mensajes se enviaron
+        });
       } catch (err) {
         status = 'failed'; error = err.message; _consecFails++;
         _kpis.failed++;

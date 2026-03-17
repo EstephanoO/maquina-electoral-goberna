@@ -2182,7 +2182,7 @@
     }
   }
   var cfg = _loadCfg();
-  var DEFAULT_TPL = "{{saludo}} {{nombre}}, te escribo para conversar contigo. \xBFTienes un momento? {{cierre}}";
+  var DEFAULT_TPL = "[Hola|Buenas|Hola, qu\xE9 tal] {{nombre}}! [te escribo de parte de Goberna|soy parte del equipo de Goberna|te contacto desde Goberna].\n---\n[\xBFTienes un momento?|\xBFPodemos conversar?|\xBFEst\xE1s disponible?] [{{cierre}}|Saludos!|Un abrazo!]";
   function _loadTpls() {
     try {
       const r = localStorage.getItem(TPL_KEY);
@@ -2360,11 +2360,36 @@
   var SALUDOS = ["Hola", "Buenas", "Buenos d\xEDas", "Hola buen d\xEDa", "Qu\xE9 tal", "Buenas tardes"];
   var CIERRES = ["Gracias!", "Saludos!", "Un abrazo!", "Hasta pronto!", "\xC9xitos!"];
   var EMOJIS = ["", "", "", "\u{1F44B}", "\u{1F64C}", "\u2705"];
-  function _personalize(tpl, c, idx) {
+  function _hashSeed(str, offset) {
+    let h = offset * 2654435761;
+    for (let i = 0; i < str.length; i++) {
+      h = Math.imul(h ^ str.charCodeAt(i), 2246822519);
+      h ^= h >>> 13;
+    }
+    return Math.abs(h);
+  }
+  function _spinVariants(text, seed) {
+    let counter = 0;
+    return text.replace(/\[([^\]]+)\]/g, (_, inner) => {
+      const opts = inner.split("|");
+      const chosen = opts[_hashSeed(String(seed + counter), counter) % opts.length];
+      counter++;
+      return chosen;
+    });
+  }
+  function _applyVars(text, c, seed) {
     const nombre = ((c.nombre || "") + " " + (c.apellidos || "")).trim().split(/\s+/)[0] || "amigo";
-    const seed = idx + (c.id || "").length;
     const now = /* @__PURE__ */ new Date();
-    return tpl.replace(/\{\{nombre\}\}/gi, nombre).replace(/\{\{saludo\}\}/gi, SALUDOS[seed % SALUDOS.length]).replace(/\{\{cierre\}\}/gi, CIERRES[(seed + 3) % CIERRES.length]).replace(/\{\{emoji\}\}/gi, EMOJIS[(seed + 7) % EMOJIS.length]).replace(/\{\{distrito\}\}/gi, c.distrito || "").replace(/\{\{fecha\}\}/gi, now.toLocaleDateString("es-PE")).replace(/\{\{hora\}\}/gi, now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit" })).trim();
+    return text.replace(/\{\{nombre\}\}/gi, nombre).replace(/\{\{saludo\}\}/gi, SALUDOS[_hashSeed(String(seed), 1) % SALUDOS.length]).replace(/\{\{cierre\}\}/gi, CIERRES[_hashSeed(String(seed), 2) % CIERRES.length]).replace(/\{\{emoji\}\}/gi, EMOJIS[_hashSeed(String(seed), 3) % EMOJIS.length]).replace(/\{\{distrito\}\}/gi, c.distrito || "").replace(/\{\{fecha\}\}/gi, now.toLocaleDateString("es-PE")).replace(/\{\{hora\}\}/gi, now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" }));
+  }
+  function _spinMessage(tpl, c, idx) {
+    const seed = idx * 137 + (c.id ? c.id.charCodeAt(0) : 0);
+    const parts = tpl.split(/^[ \t]*---[ \t]*$/m);
+    return parts.map((part) => {
+      const spun = _spinVariants(part.trim(), seed);
+      const resolved = _applyVars(spun, c, seed);
+      return resolved.trim();
+    }).filter((p) => p.length > 0);
   }
   function _req(...names) {
     for (const n of names) {
@@ -2504,7 +2529,8 @@
         const normalizedPhone = _normalizePhone(c.telefono);
         const jid = normalizedPhone ? normalizedPhone + "@c.us" : null;
         const tpl = tpls.length > 1 ? tpls[(globalSent + i) % tpls.length] : tpls[0];
-        const text = _personalize(tpl, c, globalSent + i);
+        const parts = _spinMessage(tpl, c, globalSent + i);
+        const text = parts[0];
         const cName = ((c.nombre || "") + " " + (c.apellidos || "")).trim();
         let status = "sent", error = null;
         if (normalizedPhone && _sentThisSession.has(normalizedPhone) || c.id && _sentIds.has(c.id)) {
@@ -2575,18 +2601,30 @@
         if (!_running || _paused) break;
         let msgModel = null;
         try {
-          msgModel = await _sendToChat(chat, text);
+          for (let p = 0; p < parts.length && _running && !_paused; p++) {
+            const partText = parts[p];
+            if (p > 0) {
+              const partDelay = 1e3 + Math.random() * 3e3 + p * 500;
+              await _sleep(partDelay);
+            }
+            const partModel = await _sendToChat(chat, partText);
+            if (p === 0) msgModel = partModel;
+            if (partModel) _trackMessage(partModel, cName, c.telefono);
+          }
           batchSent++;
           _consecFails = 0;
           if (c.id) _markHablado([c.id]);
           if (normalizedPhone) _sentThisSession.add(normalizedPhone);
           if (c.id) _sentIds.add(c.id);
-          if (msgModel) {
-            _trackMessage(msgModel, cName, c.telefono);
-            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "sent", ack: msgModel.get?.("ack") ?? 0, error: null });
-          } else {
-            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "sent", ack: 0, error: null });
-          }
+          _lastResults.unshift({
+            nombre: cName,
+            telefono: c.telefono,
+            status: "sent",
+            ack: msgModel?.get?.("ack") ?? 0,
+            error: null,
+            parts: parts.length
+            // cuántos mensajes se enviaron
+          });
         } catch (err) {
           status = "failed";
           error = err.message;
@@ -3689,30 +3727,39 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
 
     <!-- PLANTILLAS -->
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-        <span style="font-size:12px;font-weight:700;">Plantilla${tpls2.length > 1 ? "s (" + tpls2.length + ")" : ""}</span>
-        ${tpls2.length < 5 ? `<button id="sb-tpl-add" style="${_smallBtn(S.accent, S.accentBg)}">+ Nueva</button>` : ""}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-size:12px;font-weight:700;">Mensaje${tpls2.length > 1 ? "s (" + tpls2.length + ")" : ""}</span>
+        ${tpls2.length < 5 ? `<button id="sb-tpl-add" style="${_smallBtn(S.accent, S.accentBg)}">+ Nuevo</button>` : ""}
       </div>
+
+      <!-- Hint de sintaxis -->
+      <div style="background:rgba(37,211,102,0.06);border:1px solid rgba(37,211,102,0.15);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:11px;color:${S.muted};line-height:1.8;">
+        <div style="color:${S.accent};font-weight:700;margin-bottom:4px;">Sintaxis de variaciones</div>
+        <div><code style="color:#fff;background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px;">[Hola!|Buenas!|Qu\xE9 tal!]</code> \u2192 elige una al azar</div>
+        <div><code style="color:#fff;background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px;">---</code> \u2192 corte: env\xEDa como mensaje separado</div>
+        <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">
+          ${["{{nombre}}", "{{saludo}}", "{{cierre}}", "{{emoji}}", "{{distrito}}", "{{fecha}}"].map(
+      (v) => `<code style="color:${S.accent};background:rgba(37,211,102,0.08);padding:1px 5px;border-radius:3px;">${v}</code>`
+    ).join("")}
+        </div>
+      </div>
+
       ${tpls2.map((t, i) => `
-        <div style="margin-bottom:6px;display:flex;gap:4px;align-items:start;">
-          <textarea data-tpl="${i}" rows="2" style="
-            flex:1;border:1px solid ${S.border};border-radius:8px;background:${S.bg};
-            color:${S.text};font-size:12px;padding:8px 10px;line-height:1.5;
-            font-family:inherit;resize:vertical;outline:none;box-sizing:border-box;
+        <div style="margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span style="font-size:10px;color:${S.muted};font-weight:600;">MENSAJE ${i + 1}</span>
+            ${tpls2.length > 1 ? `<button data-tpl-del="${i}" style="background:none;border:none;color:${S.danger};cursor:pointer;font-size:11px;padding:2px 4px;">\u2715 Borrar</button>` : ""}
+          </div>
+          <textarea data-tpl="${i}" rows="5" style="
+            width:100%;box-sizing:border-box;border:1px solid ${S.border};border-radius:8px;background:${S.bg};
+            color:${S.text};font-size:12px;padding:10px;line-height:1.6;
+            font-family:inherit;resize:vertical;outline:none;
           ">${_esc(t)}</textarea>
-          ${tpls2.length > 1 ? `<button data-tpl-del="${i}" style="background:none;border:none;color:${S.danger};cursor:pointer;font-size:12px;padding:8px 4px;">\u2715</button>` : ""}
+          <div id="sb-tpl-preview-${i}" style="margin-top:4px;font-size:10px;color:${S.muted};line-height:1.5;font-style:italic;min-height:14px;"></div>
         </div>
       `).join("")}
-      <div style="font-size:10px;color:${S.muted};line-height:1.6;">
-        <code style="color:${S.accent};">{{nombre}}</code>
-        <code style="color:${S.accent};">{{saludo}}</code>
-        <code style="color:${S.accent};">{{cierre}}</code>
-        <code style="color:${S.accent};">{{distrito}}</code>
-        <code style="color:${S.accent};">{{emoji}}</code>
-        <code style="color:${S.accent};">{{fecha}}</code>
-        <code style="color:${S.accent};">{{hora}}</code>
-        \xB7 Se rotan autom\xE1ticamente
-      </div>
+
+      ${tpls2.length < 5 ? "" : ""}
     </div>
 
     <!-- TIMER + LOG -->
@@ -3864,11 +3911,31 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       });
     });
     document.querySelectorAll("[data-tpl]").forEach((ta) => {
+      const idx = Number(ta.dataset.tpl);
+      const _updatePreview = () => {
+        const preview = document.getElementById("sb-tpl-preview-" + idx);
+        if (!preview) return;
+        const raw = ta.value;
+        if (!raw.trim()) {
+          preview.textContent = "";
+          return;
+        }
+        const fakeParts = _previewSpin(raw);
+        if (fakeParts.length === 1) {
+          preview.textContent = "\u25B6 " + fakeParts[0].slice(0, 80) + (fakeParts[0].length > 80 ? "\u2026" : "");
+        } else {
+          preview.innerHTML = fakeParts.map(
+            (p, i) => `<span style="display:block;margin-bottom:1px;">\u2709\uFE0F ${i + 1}: ${_esc(p.slice(0, 60))}${p.length > 60 ? "\u2026" : ""}</span>`
+          ).join("");
+        }
+      };
       ta.addEventListener("input", () => {
         const t = getTemplates();
-        t[Number(ta.dataset.tpl)] = ta.value;
+        t[idx] = ta.value;
         setTemplates(t);
+        _updatePreview();
       });
+      _updatePreview();
     });
     document.querySelectorAll("[data-tpl-del]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -3882,7 +3949,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     });
     $("sb-tpl-add")?.addEventListener("click", () => {
       const t = getTemplates();
-      t.push("{{saludo}} {{nombre}}, ...");
+      t.push("[Hola|Buenas] {{nombre}}!\n---\n[\xBFC\xF3mo est\xE1s?|\xBFTodo bien?] [Saludos!|Un abrazo!]");
       setTemplates(t);
       _renderContent();
     });
@@ -3921,6 +3988,15 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       });
     });
     $("sb-open-validator")?.addEventListener("click", toggleValidatorPanel);
+  }
+  function _previewSpin(tpl) {
+    const fakeContact = { nombre: "Mar\xEDa", apellidos: "", distrito: "Chiclayo", id: "abc" };
+    const now = /* @__PURE__ */ new Date();
+    const parts = tpl.split(/^[ \t]*---[ \t]*$/m);
+    return parts.map((part) => {
+      const spun = part.replace(/\[([^\]]+)\]/g, (_, inner) => inner.split("|")[0]);
+      return spun.replace(/\{\{nombre\}\}/gi, fakeContact.nombre).replace(/\{\{saludo\}\}/gi, "Hola").replace(/\{\{cierre\}\}/gi, "Saludos!").replace(/\{\{emoji\}\}/gi, "\u{1F44B}").replace(/\{\{distrito\}\}/gi, fakeContact.distrito).replace(/\{\{fecha\}\}/gi, now.toLocaleDateString("es-PE")).replace(/\{\{hora\}\}/gi, now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })).trim();
+    }).filter((p) => p.length > 0);
   }
   function _toast3(text, bg = S.accent) {
     const t = document.createElement("div");
