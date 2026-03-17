@@ -58,6 +58,26 @@ const C = {
 let _open     = false;
 let _activeTab = localStorage.getItem(STORAGE_KEY) || 'contacts';
 
+// ── Contacts state (owned by sidebar) ─────────────────────────────────
+let _allContacts   = [];    // full dataset from backend
+let _filteredList  = [];    // after search + filter
+let _totalContacts = 0;
+let _contactsLoading = false;
+let _contactsLoaded  = false;
+let _activeFilter  = '';     // '' = all, 'pendiente', 'hablado', etc.
+let _searchQuery   = '';
+let _searchTimer   = null;
+
+// ── Virtual scroll state ──────────────────────────────────────────────
+const ROW_HEIGHT      = 56;   // px per row (collapsed)
+const OVERSCAN        = 8;    // extra rows above/below viewport
+const VIEWPORT_ROWS   = 12;   // visible at once (~672px)
+
+// ── Audio state ───────────────────────────────────────────────────────
+let _audioItems       = [];
+let _audioLoading     = false;
+let _audioLoaded      = false;
+
 // ── Helpers DOM ────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 
@@ -66,7 +86,197 @@ function _setTab(tab) {
   localStorage.setItem(STORAGE_KEY, tab);
   _renderTabs();
   _renderContent();
+  // Auto-load data when switching to a tab
+  if (tab === 'contacts' && !_contactsLoaded && !_contactsLoading) _loadContacts();
+  if (tab === 'audios'   && !_audioLoaded   && !_audioLoading)     _loadAudios();
 }
+
+// ══════════════════════════════════════════════════════════════════════
+// DATA LOADING — contacts + audios via postMessage bridge
+// ══════════════════════════════════════════════════════════════════════
+
+function _loadContacts() {
+  _contactsLoading = true;
+  const countEl = $('wspp-contacts-count');
+  if (countEl) countEl.textContent = 'Cargando contactos...';
+  // Request ALL contacts (backend paginates, but we request a large batch for client-side filter)
+  window.postMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit: 500, offset: 0, status: '' }, WA_ORIGIN);
+}
+
+function _loadAudios() {
+  _audioLoading = true;
+  window.postMessage({ type: 'FETCH_AUDIO_CATALOG' }, WA_ORIGIN);
+}
+
+// ── Filter + search (client-side, instant) ────────────────────────────
+function _applyFilters() {
+  let list = _allContacts;
+
+  // Filter by status / vote_class
+  if (_activeFilter) {
+    list = list.filter(c => {
+      const status = c.cms_status || 'pendiente';
+      const vote   = c.vote_class || '';
+      return status === _activeFilter || vote === _activeFilter;
+    });
+  }
+
+  // Search by name or phone
+  if (_searchQuery.length >= 2) {
+    const q = _searchQuery.toLowerCase();
+    list = list.filter(c => {
+      const name = ((c.nombre || '') + ' ' + (c.apellidos || '')).toLowerCase();
+      const tel  = (c.telefono || '');
+      return name.includes(q) || tel.includes(q);
+    });
+  }
+
+  _filteredList = list;
+  _renderVirtualList();
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// VIRTUAL SCROLL — only renders visible rows
+// ══════════════════════════════════════════════════════════════════════
+
+function _renderVirtualList() {
+  const container = $('wspp-contacts-list');
+  const countEl   = $('wspp-contacts-count');
+  if (!container) return;
+
+  const total = _filteredList.length;
+  if (countEl) {
+    const filterLabel = _activeFilter ? ` · ${_activeFilter}` : '';
+    const searchLabel = _searchQuery  ? ` · "${_searchQuery}"` : '';
+    countEl.textContent = `${total.toLocaleString('es-PE')} contactos${filterLabel}${searchLabel}`;
+  }
+
+  if (total === 0) {
+    container.innerHTML = `<div style="text-align:center;padding:24px 12px;color:${C.muted};font-size:12px;">
+      ${_contactsLoading ? 'Cargando...' : _searchQuery ? 'Sin resultados para "' + _searchQuery + '"' : 'Sin contactos con este filtro'}
+    </div>`;
+    container.style.height = 'auto';
+    return;
+  }
+
+  // Virtual scroll: fixed-height container with spacer
+  const totalHeight = total * ROW_HEIGHT;
+  container.style.height = Math.min(totalHeight, VIEWPORT_ROWS * ROW_HEIGHT) + 'px';
+  container.style.overflowY = 'auto';
+  container.style.position = 'relative';
+  container.style.overscrollBehavior = 'contain';
+
+  // Inner spacer to maintain scroll height
+  container.innerHTML = `<div id="wspp-vscroll-spacer" style="height:${totalHeight}px;position:relative;"></div>`;
+  const spacer = $('wspp-vscroll-spacer');
+
+  const renderVisible = () => {
+    const scrollTop = container.scrollTop;
+    const startIdx  = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+    const endIdx    = Math.min(total, startIdx + VIEWPORT_ROWS + OVERSCAN * 2);
+
+    // Build only visible rows
+    let html = '';
+    for (let i = startIdx; i < endIdx; i++) {
+      const c = _filteredList[i];
+      html += `<div style="position:absolute;top:${i * ROW_HEIGHT}px;left:0;right:0;height:${ROW_HEIGHT}px;padding:0 4px;">${renderContactRow(c)}</div>`;
+    }
+    // Keep spacer height, replace content
+    spacer.innerHTML = html;
+    _bindContactRowEvents(spacer);
+  };
+
+  renderVisible();
+  // Debounced scroll handler
+  let _scrollRAF = null;
+  container.addEventListener('scroll', () => {
+    if (_scrollRAF) cancelAnimationFrame(_scrollRAF);
+    _scrollRAF = requestAnimationFrame(renderVisible);
+  }, { passive: true });
+}
+
+function _bindContactRowEvents(root) {
+  // Expand/collapse
+  root.querySelectorAll('.wspp-contact-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('[data-action]')) return;
+      const actions = row.querySelector('.wspp-contact-actions');
+      if (!actions) return;
+      const isOpen = actions.style.display === 'flex';
+      root.querySelectorAll('.wspp-contact-actions').forEach(a => a.style.display = 'none');
+      actions.style.display = isOpen ? 'none' : 'flex';
+      // Expanding changes row height — re-render would be complex, just let it overflow
+    });
+  });
+
+  // Action buttons
+  root.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const action = btn.dataset.action;
+      const id     = btn.dataset.id;
+      const phone  = btn.dataset.phone;
+
+      if (action === 'send') {
+        window.postMessage({ type: 'WSPP_OPEN_CHAT', phone }, WA_ORIGIN);
+        return;
+      }
+
+      const voteMap   = { duro: 'duro', blando: 'blando', flotante: 'flotante', invalido: '' };
+      const statusMap = { duro: 'respondido', blando: 'respondido', flotante: 'respondido', invalido: 'invalido' };
+      window.postMessage({
+        type: 'WSPP_CLASSIFY',
+        payload: { validation_id: id, vote_class: voteMap[action], status: statusMap[action], _phone: phone || null },
+      }, WA_ORIGIN);
+
+      const row = btn.closest('.wspp-contact-row');
+      if (row) { row.style.opacity = '0.4'; row.style.pointerEvents = 'none'; }
+    });
+  });
+}
+
+// ── Bridge listener — receives data from background via content ───────
+window.addEventListener('message', (e) => {
+  if (e.source !== window) return;
+
+  // Contacts loaded from backend (shared with blast-panel)
+  if (e.data?.type === 'BLAST_FORM_CONTACTS_READY') {
+    _contactsLoading = false;
+    _contactsLoaded  = true;
+    if (e.data.ok) {
+      _allContacts   = e.data.contacts || [];
+      _totalContacts = e.data.total || _allContacts.length;
+      console.log(`[SIDEBAR] ${_allContacts.length} contactos cargados (total: ${_totalContacts})`);
+      _applyFilters();
+    } else {
+      const countEl = $('wspp-contacts-count');
+      if (countEl) countEl.textContent = 'Error al cargar: ' + (e.data.error || '?');
+    }
+    return;
+  }
+
+  // Audio catalog loaded
+  if (e.data?.type === 'AUDIO_CATALOG_READY') {
+    _audioLoading = false;
+    _audioLoaded  = true;
+    if (e.data.ok) {
+      _audioItems = e.data.items || [];
+      console.log(`[SIDEBAR] ${_audioItems.length} audios cargados`);
+      updateAudioList(_audioItems);
+    }
+    return;
+  }
+
+  // Audio regenerated
+  if (e.data?.type === 'GENERATE_CATALOG_AUDIO_DONE') {
+    if (e.data.ok) {
+      // Bust cache + reload audios
+      _audioLoaded = false;
+      if (_activeTab === 'audios') _loadAudios();
+    }
+    return;
+  }
+});
 
 // ── WA layout adaptation ───────────────────────────────────────────────
 // Empuja el layout de WA Web hacia la izquierda para no tapar los chats.
@@ -141,6 +351,9 @@ export function toggleSidebar() {
   _pushWaLayout(_open);
   if (_open) {
     _renderSidebar();
+    // Auto-load data for the active tab
+    if (_activeTab === 'contacts' && !_contactsLoaded && !_contactsLoading) _loadContacts();
+    if (_activeTab === 'audios'   && !_audioLoaded   && !_audioLoading)     _loadAudios();
   } else {
     const el = $(SIDEBAR_ID);
     if (el) {
@@ -760,22 +973,34 @@ function _bindContentEvents() {
     });
   });
 
-  // Filter buttons in contacts tab
+  // Filter buttons — client-side, instant
   document.querySelectorAll('[data-filter]').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('[data-filter]').forEach(b => {
         b.style.fontWeight = '600';
         b.style.opacity = '0.7';
+        b.style.background = b.style.background.replace(/11$/, '11'); // keep base
       });
-      btn.style.fontWeight = '800';
-      btn.style.opacity = '1';
-      window.postMessage({ type: 'SIDEBAR_FILTER_CONTACTS', filter: btn.dataset.filter }, WA_ORIGIN);
+      const f = btn.dataset.filter;
+      if (_activeFilter === f) {
+        // Toggle off
+        _activeFilter = '';
+      } else {
+        _activeFilter = f;
+        btn.style.fontWeight = '800';
+        btn.style.opacity = '1';
+      }
+      _applyFilters();
     });
   });
 
-  // Search input
+  // Search input — debounced 200ms
   $('wspp-contacts-search')?.addEventListener('input', (e) => {
-    window.postMessage({ type: 'SIDEBAR_SEARCH_CONTACTS', query: e.target.value }, WA_ORIGIN);
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(() => {
+      _searchQuery = (e.target.value || '').trim();
+      _applyFilters();
+    }, 200);
   });
 }
 

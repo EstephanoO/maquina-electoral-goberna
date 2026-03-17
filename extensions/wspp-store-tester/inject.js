@@ -3530,13 +3530,171 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   };
   var _open3 = false;
   var _activeTab = localStorage.getItem(STORAGE_KEY) || "contacts";
+  var _allContacts = [];
+  var _filteredList = [];
+  var _totalContacts = 0;
+  var _contactsLoading = false;
+  var _contactsLoaded = false;
+  var _activeFilter = "";
+  var _searchQuery = "";
+  var _searchTimer = null;
+  var ROW_HEIGHT = 56;
+  var OVERSCAN = 8;
+  var VIEWPORT_ROWS = 12;
+  var _audioItems = [];
+  var _audioLoading = false;
+  var _audioLoaded = false;
   var $ = (id) => document.getElementById(id);
   function _setTab(tab) {
     _activeTab = tab;
     localStorage.setItem(STORAGE_KEY, tab);
     _renderTabs();
     _renderContent();
+    if (tab === "contacts" && !_contactsLoaded && !_contactsLoading) _loadContacts();
+    if (tab === "audios" && !_audioLoaded && !_audioLoading) _loadAudios();
   }
+  function _loadContacts() {
+    _contactsLoading = true;
+    const countEl = $("wspp-contacts-count");
+    if (countEl) countEl.textContent = "Cargando contactos...";
+    window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit: 500, offset: 0, status: "" }, WA_ORIGIN);
+  }
+  function _loadAudios() {
+    _audioLoading = true;
+    window.postMessage({ type: "FETCH_AUDIO_CATALOG" }, WA_ORIGIN);
+  }
+  function _applyFilters() {
+    let list = _allContacts;
+    if (_activeFilter) {
+      list = list.filter((c) => {
+        const status = c.cms_status || "pendiente";
+        const vote = c.vote_class || "";
+        return status === _activeFilter || vote === _activeFilter;
+      });
+    }
+    if (_searchQuery.length >= 2) {
+      const q = _searchQuery.toLowerCase();
+      list = list.filter((c) => {
+        const name = ((c.nombre || "") + " " + (c.apellidos || "")).toLowerCase();
+        const tel = c.telefono || "";
+        return name.includes(q) || tel.includes(q);
+      });
+    }
+    _filteredList = list;
+    _renderVirtualList();
+  }
+  function _renderVirtualList() {
+    const container = $("wspp-contacts-list");
+    const countEl = $("wspp-contacts-count");
+    if (!container) return;
+    const total = _filteredList.length;
+    if (countEl) {
+      const filterLabel = _activeFilter ? ` \xB7 ${_activeFilter}` : "";
+      const searchLabel = _searchQuery ? ` \xB7 "${_searchQuery}"` : "";
+      countEl.textContent = `${total.toLocaleString("es-PE")} contactos${filterLabel}${searchLabel}`;
+    }
+    if (total === 0) {
+      container.innerHTML = `<div style="text-align:center;padding:24px 12px;color:${C.muted};font-size:12px;">
+      ${_contactsLoading ? "Cargando..." : _searchQuery ? 'Sin resultados para "' + _searchQuery + '"' : "Sin contactos con este filtro"}
+    </div>`;
+      container.style.height = "auto";
+      return;
+    }
+    const totalHeight = total * ROW_HEIGHT;
+    container.style.height = Math.min(totalHeight, VIEWPORT_ROWS * ROW_HEIGHT) + "px";
+    container.style.overflowY = "auto";
+    container.style.position = "relative";
+    container.style.overscrollBehavior = "contain";
+    container.innerHTML = `<div id="wspp-vscroll-spacer" style="height:${totalHeight}px;position:relative;"></div>`;
+    const spacer = $("wspp-vscroll-spacer");
+    const renderVisible = () => {
+      const scrollTop = container.scrollTop;
+      const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+      const endIdx = Math.min(total, startIdx + VIEWPORT_ROWS + OVERSCAN * 2);
+      let html = "";
+      for (let i = startIdx; i < endIdx; i++) {
+        const c = _filteredList[i];
+        html += `<div style="position:absolute;top:${i * ROW_HEIGHT}px;left:0;right:0;height:${ROW_HEIGHT}px;padding:0 4px;">${renderContactRow(c)}</div>`;
+      }
+      spacer.innerHTML = html;
+      _bindContactRowEvents(spacer);
+    };
+    renderVisible();
+    let _scrollRAF = null;
+    container.addEventListener("scroll", () => {
+      if (_scrollRAF) cancelAnimationFrame(_scrollRAF);
+      _scrollRAF = requestAnimationFrame(renderVisible);
+    }, { passive: true });
+  }
+  function _bindContactRowEvents(root) {
+    root.querySelectorAll(".wspp-contact-row").forEach((row) => {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest("[data-action]")) return;
+        const actions = row.querySelector(".wspp-contact-actions");
+        if (!actions) return;
+        const isOpen = actions.style.display === "flex";
+        root.querySelectorAll(".wspp-contact-actions").forEach((a) => a.style.display = "none");
+        actions.style.display = isOpen ? "none" : "flex";
+      });
+    });
+    root.querySelectorAll("[data-action]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        const id = btn.dataset.id;
+        const phone = btn.dataset.phone;
+        if (action === "send") {
+          window.postMessage({ type: "WSPP_OPEN_CHAT", phone }, WA_ORIGIN);
+          return;
+        }
+        const voteMap = { duro: "duro", blando: "blando", flotante: "flotante", invalido: "" };
+        const statusMap = { duro: "respondido", blando: "respondido", flotante: "respondido", invalido: "invalido" };
+        window.postMessage({
+          type: "WSPP_CLASSIFY",
+          payload: { validation_id: id, vote_class: voteMap[action], status: statusMap[action], _phone: phone || null }
+        }, WA_ORIGIN);
+        const row = btn.closest(".wspp-contact-row");
+        if (row) {
+          row.style.opacity = "0.4";
+          row.style.pointerEvents = "none";
+        }
+      });
+    });
+  }
+  window.addEventListener("message", (e) => {
+    if (e.source !== window) return;
+    if (e.data?.type === "BLAST_FORM_CONTACTS_READY") {
+      _contactsLoading = false;
+      _contactsLoaded = true;
+      if (e.data.ok) {
+        _allContacts = e.data.contacts || [];
+        _totalContacts = e.data.total || _allContacts.length;
+        console.log(`[SIDEBAR] ${_allContacts.length} contactos cargados (total: ${_totalContacts})`);
+        _applyFilters();
+      } else {
+        const countEl = $("wspp-contacts-count");
+        if (countEl) countEl.textContent = "Error al cargar: " + (e.data.error || "?");
+      }
+      return;
+    }
+    if (e.data?.type === "AUDIO_CATALOG_READY") {
+      _audioLoading = false;
+      _audioLoaded = true;
+      if (e.data.ok) {
+        _audioItems = e.data.items || [];
+        console.log(`[SIDEBAR] ${_audioItems.length} audios cargados`);
+        updateAudioList(_audioItems);
+      }
+      return;
+    }
+    if (e.data?.type === "GENERATE_CATALOG_AUDIO_DONE") {
+      if (e.data.ok) {
+        _audioLoaded = false;
+        if (_activeTab === "audios") _loadAudios();
+      }
+      return;
+    }
+  });
   function _pushWaLayout(open) {
     const app = document.querySelector(WA_APP_SEL);
     if (!app) return;
@@ -3607,6 +3765,8 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     _pushWaLayout(_open3);
     if (_open3) {
       _renderSidebar();
+      if (_activeTab === "contacts" && !_contactsLoaded && !_contactsLoading) _loadContacts();
+      if (_activeTab === "audios" && !_audioLoaded && !_audioLoading) _loadAudios();
     } else {
       const el = $(SIDEBAR_ID);
       if (el) {
@@ -3810,6 +3970,99 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     </div>
   `;
   }
+  function renderContactRow(contact) {
+    const nombre = ((contact.nombre || "") + " " + (contact.apellidos || "")).trim() || "\u2014";
+    const tel = contact.telefono || "\u2014";
+    const dist = contact.distrito || "";
+    const status = contact.cms_status || "pendiente";
+    const vote = contact.vote_class || "";
+    const waOk = contact.wa_valid === true;
+    const waNull = contact.wa_valid === null || contact.wa_valid === void 0;
+    const statusColor = {
+      pendiente: "#ff9f0a",
+      hablado: "#60a5fa",
+      respondido: "#a78bfa",
+      invalido: "#ef5350"
+    }[status] || C.muted;
+    const voteColor = {
+      duro: "#34c759",
+      blando: "#fde68a",
+      flotante: "#a78bfa"
+    }[vote] || "transparent";
+    const voteLabel = { duro: "Duro", blando: "Blando", flotante: "Flotante" }[vote] || "";
+    const waIcon = waNull ? "\u2753" : waOk ? "\u2705" : "\u274C";
+    return `
+    <div
+      data-contact-id="${contact.id}"
+      data-phone="${tel}"
+      class="wspp-contact-row"
+      style="
+        padding:8px 10px;border-radius:8px;
+        background:rgba(255,255,255,.03);
+        border:1px solid ${C.border};
+        cursor:pointer;
+        transition:background .1s;
+      "
+    >
+      <!-- Fila principal -->
+      <div style="display:flex;align-items:center;gap:8px;">
+        <!-- Indicador de vote_class -->
+        <div style="
+          width:3px;height:32px;border-radius:2px;flex-shrink:0;
+          background:${vote ? voteColor : C.border};
+        "></div>
+
+        <!-- Info -->
+        <div style="flex:1;min-width:0;">
+          <div style="
+            font-size:12px;font-weight:600;color:${C.text};
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+          ">${nombre}</div>
+          <div style="font-size:10px;color:${C.muted};margin-top:1px;">
+            ${tel}${dist ? " \xB7 " + dist : ""}
+          </div>
+        </div>
+
+        <!-- Badges derecha -->
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0;">
+          <span style="font-size:10px;color:${statusColor};font-weight:600;">${status}</span>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <span style="font-size:11px;" title="WhatsApp: ${waNull ? "sin verificar" : waOk ? "tiene WA" : "sin WA"}">${waIcon}</span>
+            ${vote ? `<span style="font-size:11px;font-weight:700;color:${voteColor};background:${voteColor}22;padding:1px 5px;border-radius:8px;">${voteLabel}</span>` : ""}
+          </div>
+        </div>
+      </div>
+
+      <!-- Acciones (colapsadas \u2014 se expanden al click en la fila) -->
+      <div class="wspp-contact-actions" style="
+        display:none;margin-top:7px;padding-top:6px;
+        border-top:1px solid ${C.border};
+        gap:4px;flex-wrap:wrap;
+      ">
+        <button data-action="send" data-phone="${tel}" data-name="${nombre}" style="
+          flex:1;min-width:60px;padding:5px 6px;border-radius:6px;border:none;cursor:pointer;
+          background:rgba(37,211,102,.12);color:${C.accent};font-size:10px;font-weight:700;
+        ">\u{1F4AC} Escribir</button>
+        <button data-action="duro" data-id="${contact.id}" style="
+          padding:5px 8px;border-radius:6px;border:none;cursor:pointer;
+          background:rgba(52,199,89,.1);color:#34c759;font-size:10px;font-weight:700;
+        ">\u2705 Duro</button>
+        <button data-action="blando" data-id="${contact.id}" style="
+          padding:5px 8px;border-radius:6px;border:none;cursor:pointer;
+          background:rgba(253,230,138,.1);color:#fde68a;font-size:10px;font-weight:700;
+        ">\u{1F7E1} Blando</button>
+        <button data-action="flotante" data-id="${contact.id}" style="
+          padding:5px 8px;border-radius:6px;border:none;cursor:pointer;
+          background:rgba(167,139,250,.1);color:#a78bfa;font-size:10px;font-weight:700;
+        ">\u{1F7E3} Float.</button>
+        <button data-action="invalido" data-id="${contact.id}" style="
+          padding:5px 8px;border-radius:6px;border:none;cursor:pointer;
+          background:rgba(239,83,80,.1);color:${C.danger};font-size:10px;font-weight:700;
+        ">\u274C Desc.</button>
+      </div>
+    </div>
+  `;
+  }
   function _audiosTabHTML() {
     return `
     <div style="padding:10px 12px 4px;">
@@ -3836,6 +4089,68 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       </div>
     </div>
   `;
+  }
+  function renderAudioRow(item) {
+    const dur = item.duration_ms ? _fmtDuration(item.duration_ms) : "\u2014";
+    const size = item.audio_size ? _fmtSize(item.audio_size) : "";
+    const hasAudio = !!item.has_audio;
+    return `
+    <div
+      data-audio-id="${item.id}"
+      class="wspp-audio-row"
+      style="
+        padding:8px 10px;border-radius:8px;
+        background:rgba(255,255,255,.03);
+        border:1px solid ${C.border};
+        display:flex;align-items:center;gap:8px;
+        cursor:${hasAudio ? "pointer" : "default"};
+        opacity:${hasAudio ? "1" : "0.5"};
+      "
+    >
+      <!-- Play / Sin audio -->
+      <div style="
+        width:32px;height:32px;border-radius:50%;flex-shrink:0;
+        background:${hasAudio ? C.accentDim : "rgba(255,255,255,.05)"};
+        display:flex;align-items:center;justify-content:center;
+      ">
+        ${hasAudio ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="${C.accent}"><path d="M8 5v14l11-7z"/></svg>` : `<span style="font-size:14px;color:${C.muted};">\u2014</span>`}
+      </div>
+
+      <!-- Info -->
+      <div style="flex:1;min-width:0;">
+        <div style="
+          font-size:12px;font-weight:600;color:${C.text};
+          white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+        ">${item.label}</div>
+        <div style="font-size:10px;color:${C.muted};margin-top:1px;">
+          ${item.category}${dur !== "\u2014" ? " \xB7 " + dur : ""}${size ? " \xB7 " + size : ""}
+        </div>
+      </div>
+
+      <!-- Bot\xF3n enviar -->
+      ${hasAudio ? `
+        <button data-audio-send="${item.id}" style="
+          padding:5px 10px;border-radius:6px;border:1px solid rgba(37,211,102,.3);cursor:pointer;
+          background:${C.accentDim};color:${C.accent};
+          font-size:10px;font-weight:700;flex-shrink:0;
+          white-space:nowrap;
+        ">Enviar PTT</button>
+      ` : `
+        <button data-audio-regen="${item.id}" style="
+          padding:5px 8px;border-radius:6px;border:1px solid rgba(255,149,0,.3);
+          background:rgba(255,149,0,.08);color:${C.warn};cursor:pointer;
+          font-size:10px;font-weight:700;flex-shrink:0;
+        ">Generar</button>
+      `}
+    </div>
+  `;
+  }
+  function _fmtDuration(ms) {
+    const s = Math.floor(ms / 1e3);
+    return s < 60 ? s + "s" : Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  }
+  function _fmtSize(bytes) {
+    return bytes < 1024 ? bytes + "B" : bytes < 1048576 ? Math.round(bytes / 1024) + "KB" : (bytes / 1048576).toFixed(1) + "MB";
   }
   function _statusTabHTML() {
     const own = getOwnNumber();
@@ -4003,15 +4318,65 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         document.querySelectorAll("[data-filter]").forEach((b) => {
           b.style.fontWeight = "600";
           b.style.opacity = "0.7";
+          b.style.background = b.style.background.replace(/11$/, "11");
         });
-        btn.style.fontWeight = "800";
-        btn.style.opacity = "1";
-        window.postMessage({ type: "SIDEBAR_FILTER_CONTACTS", filter: btn.dataset.filter }, WA_ORIGIN);
+        const f = btn.dataset.filter;
+        if (_activeFilter === f) {
+          _activeFilter = "";
+        } else {
+          _activeFilter = f;
+          btn.style.fontWeight = "800";
+          btn.style.opacity = "1";
+        }
+        _applyFilters();
       });
     });
     $("wspp-contacts-search")?.addEventListener("input", (e) => {
-      window.postMessage({ type: "SIDEBAR_SEARCH_CONTACTS", query: e.target.value }, WA_ORIGIN);
+      clearTimeout(_searchTimer);
+      _searchTimer = setTimeout(() => {
+        _searchQuery = (e.target.value || "").trim();
+        _applyFilters();
+      }, 200);
     });
+  }
+  function updateAudioList(items) {
+    const list = $("wspp-audio-list");
+    if (!list) return;
+    if (!items.length) {
+      list.innerHTML = `<div style="text-align:center;padding:24px 0;color:${C.muted};font-size:12px;">Sin audios en el cat\xE1logo</div>`;
+      return;
+    }
+    list.innerHTML = items.map(renderAudioRow).join("");
+    const catFilter = $("wspp-audio-cat-filter");
+    if (catFilter) {
+      const cats = [...new Set(items.map((i) => i.category))].sort();
+      catFilter.innerHTML = `
+      <button data-audio-cat="all" style="
+        padding:3px 10px;border-radius:12px;border:1px solid ${C.accent}55;
+        background:${C.accentDim};color:${C.accent};
+        font-size:10px;cursor:pointer;white-space:nowrap;font-weight:700;
+      ">Todos</button>
+      ${cats.map((c) => `
+        <button data-audio-cat="${c}" style="
+          padding:3px 10px;border-radius:12px;
+          border:1px solid ${C.border};background:rgba(255,255,255,.04);color:${C.muted};
+          font-size:10px;cursor:pointer;white-space:nowrap;
+        ">${c}</button>
+      `).join("")}
+    `;
+      catFilter.querySelectorAll("[data-audio-cat]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const cat = btn.dataset.audioCat;
+          const filtered = cat === "all" ? items : items.filter((i) => i.category === cat);
+          const list2 = $("wspp-audio-list");
+          if (list2) {
+            list2.innerHTML = filtered.map(renderAudioRow).join("");
+            _bindContentEvents();
+          }
+        });
+      });
+    }
+    _bindContentEvents();
   }
 
   // src/inject-entry.js
