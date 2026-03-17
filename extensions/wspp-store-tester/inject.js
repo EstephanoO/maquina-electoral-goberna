@@ -2216,7 +2216,9 @@
   var _trackedMsgs = [];
   var _sentThisSession = /* @__PURE__ */ new Set();
   var _sentIds = /* @__PURE__ */ new Set();
+  var _inFlight = /* @__PURE__ */ new Set();
   var _tplIndex = 0;
+  var _loopRunning = false;
   function getConfig() {
     return cfg;
   }
@@ -2511,10 +2513,12 @@
   }
   async function startBlast() {
     if (_running) return;
+    if (_loopRunning) return;
     if (!tpls.length || !tpls[0].trim()) return;
     _running = true;
     _paused = false;
     _consecFails = 0;
+    _loopRunning = true;
     const activeNumber = getOwnNumber();
     _notify();
     while (_running && !_paused) {
@@ -2538,10 +2542,14 @@
         const text = parts[0];
         const cName = ((c.nombre || "") + " " + (c.apellidos || "")).trim();
         let status = "sent", error = null;
-        if (normalizedPhone && _sentThisSession.has(normalizedPhone) || c.id && _sentIds.has(c.id)) {
-          console.log("[BLAST] Dedup local \u2014 ya enviado a:", normalizedPhone || c.id);
+        const lockKey = (normalizedPhone || "") + ":" + (c.id || "");
+        if (normalizedPhone && _sentThisSession.has(normalizedPhone) || c.id && _sentIds.has(c.id) || lockKey && _inFlight.has(lockKey)) {
+          console.log("[BLAST] Dedup local \u2014 ya enviado/en vuelo:", normalizedPhone || c.id);
           continue;
         }
+        if (normalizedPhone) _sentThisSession.add(normalizedPhone);
+        if (c.id) _sentIds.add(c.id);
+        if (lockKey) _inFlight.add(lockKey);
         if (!jid) {
           status = "failed";
           error = "Tel inv\xE1lido";
@@ -2568,8 +2576,7 @@
             if (_lastResults.length > 30) _lastResults.length = 30;
             logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status: "no_wa", error: "Sin WhatsApp", own_number: activeNumber });
             if (c.id) _markHablado([c.id]);
-            if (normalizedPhone) _sentThisSession.add(normalizedPhone);
-            if (c.id) _sentIds.add(c.id);
+            if (lockKey) _inFlight.delete(lockKey);
             _notify();
             continue;
           }
@@ -2589,6 +2596,7 @@
           if (_lastResults.length > 30) _lastResults.length = 30;
           logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
           _notify();
+          if (lockKey) _inFlight.delete(lockKey);
           if (_consecFails >= 3) {
             _running = false;
             _stopCountdown();
@@ -2622,8 +2630,6 @@
           _tplIndex++;
           _consecFails = 0;
           if (c.id) _markHablado([c.id]);
-          if (normalizedPhone) _sentThisSession.add(normalizedPhone);
-          if (c.id) _sentIds.add(c.id);
           _lastResults.unshift({
             nombre: cName,
             telefono: c.telefono,
@@ -2631,7 +2637,6 @@
             ack: msgModel?.get?.("ack") ?? 0,
             error: null,
             parts: parts.length
-            // cuántos mensajes se enviaron
           });
         } catch (err) {
           status = "failed";
@@ -2646,6 +2651,8 @@
             _reportLog([...logBatch]);
             break;
           }
+        } finally {
+          if (lockKey) _inFlight.delete(lockKey);
         }
         if (_lastResults.length > 30) _lastResults.length = 30;
         logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
@@ -2685,6 +2692,7 @@
       _stopCountdown();
     }
     _running = false;
+    _loopRunning = false;
     _stopCountdown();
     _notify();
   }
@@ -2695,12 +2703,15 @@
     _notify();
   }
   function resumeBlast() {
+    if (_loopRunning) return;
     _paused = false;
     startBlast();
   }
   function resetSession() {
     _sentThisSession.clear();
     _sentIds.clear();
+    _inFlight.clear();
+    _loopRunning = false;
     _tplIndex = 0;
     _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
     _lastResults = [];

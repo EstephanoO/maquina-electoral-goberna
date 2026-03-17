@@ -79,12 +79,19 @@ let _trackedMsgs = [];    // { msgModel, contactName, telefono } — live ack tr
 const _sentThisSession = new Set();  // Set de telefono normalizado
 const _sentIds = new Set();          // Set de form_submission.id
 
+// ── Send lock — protege contra envíos concurrentes al mismo contacto ──
+// Se registra ANTES del envío y se limpia al terminar (éxito o error).
+// Si el mismo teléfono o ID ya está en vuelo, el loop lo salta.
+const _inFlight = new Set(); // Set de 'phone:ID' en vuelo
+
 // ── Índice de plantilla de sesión ─────────────────────────────────────
 // Contador global que SOLO avanza cuando un envío fue exitoso.
-// Es independiente de `i` y de `globalSent` para que skips (dedup, no_wa,
-// jid inválido) no desincronicen la rotación ni causen que 2 contactos
-// reciban la misma plantilla o que 1 contacto reciba 2 plantillas.
 let _tplIndex = 0;
+
+// ── Guard para evitar loops simultáneos ───────────────────────────────
+// resumeBlast puede llamar startBlast() mientras el loop anterior
+// todavía está resolviendo una promise → dos loops en paralelo.
+let _loopRunning = false;
 
 // ══════════════════════════════════════════════════════════════════════
 // EXPORTS
@@ -460,9 +467,10 @@ function _stopCountdown() { clearInterval(_countdownTimer); _countdown = 0; _pha
 // ══════════════════════════════════════════════════════════════════════
 export async function startBlast() {
   if (_running) return;
+  if (_loopRunning) return; // previene segundo loop si resume llega antes de que el primero termine
   if (!tpls.length || !tpls[0].trim()) return;
 
-  _running = true; _paused = false; _consecFails = 0;
+  _running = true; _paused = false; _consecFails = 0; _loopRunning = true;
   const activeNumber = getOwnNumber();
   _notify();
 
@@ -498,11 +506,21 @@ export async function startBlast() {
 
       // ── DEDUP local: skip si ya enviamos a este teléfono o ID en esta sesión ──
       // Protege contra el lag del servidor al marcar hablado — sin esperar al backend.
-      if ((normalizedPhone && _sentThisSession.has(normalizedPhone)) ||
-          (c.id && _sentIds.has(c.id))) {
-        console.log('[BLAST] Dedup local — ya enviado a:', normalizedPhone || c.id);
+      const lockKey = (normalizedPhone || '') + ':' + (c.id || '');
+      if (
+        (normalizedPhone && _sentThisSession.has(normalizedPhone)) ||
+        (c.id && _sentIds.has(c.id)) ||
+        (lockKey && _inFlight.has(lockKey))
+      ) {
+        console.log('[BLAST] Dedup local — ya enviado/en vuelo:', normalizedPhone || c.id);
         continue;
       }
+
+      // Registrar en dedup ANTES del envío — no después
+      // Así, si el send falla a mitad, el contacto no vuelve a aparecer en este batch
+      if (normalizedPhone) _sentThisSession.add(normalizedPhone);
+      if (c.id) _sentIds.add(c.id);
+      if (lockKey) _inFlight.add(lockKey);
 
       if (!jid) {
         status = 'failed'; error = 'Tel inválido';
@@ -530,10 +548,9 @@ export async function startBlast() {
           _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'no_wa', ack: -1, error: 'Sin WhatsApp' });
           if (_lastResults.length > 30) _lastResults.length = 30;
           logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status: 'no_wa', error: 'Sin WhatsApp', own_number: activeNumber });
-          // Marcar hablado en el servidor para que no vuelva a aparecer
+          // Marcar hablado — dedup ya se agregó arriba antes de este bloque
           if (c.id) _markHablado([c.id]);
-          if (normalizedPhone) _sentThisSession.add(normalizedPhone);
-          if (c.id) _sentIds.add(c.id);
+          if (lockKey) _inFlight.delete(lockKey);
           _notify();
           continue;
         }
@@ -553,6 +570,7 @@ export async function startBlast() {
         if (_lastResults.length > 30) _lastResults.length = 30;
         logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
         _notify();
+        if (lockKey) _inFlight.delete(lockKey);
         if (_consecFails >= 3) { _running = false; _stopCountdown(); _reportLog([...logBatch]); break; }
         continue;
       }
@@ -571,7 +589,6 @@ export async function startBlast() {
           const partText = parts[p];
 
           // Delay entre partes del mismo contacto (simula escritura humana)
-          // Entre 1s y 4s, crece levemente con cada parte para dar sensación natural
           if (p > 0) {
             const partDelay = 1000 + Math.random() * 3000 + p * 500;
             await _sleep(partDelay);
@@ -580,25 +597,21 @@ export async function startBlast() {
           const partModel = await _sendToChat(chat, partText);
           if (p === 0) {
             msgModel = partModel;
-            // Solo trackear ACK del primer mensaje por contacto
-            // (cada parte cuenta como 1 KPI si se trackearan todas = inflación)
             if (partModel) _trackMessage(partModel, cName, c.telefono);
           }
         }
 
         batchSent++;
-        _tplIndex++;   // ← avanza SOLO en envío exitoso
+        _tplIndex++;
         _consecFails = 0;
 
-        // Marcar hablado inmediatamente tras enviar todos los mensajes de este contacto
+        // Marcar hablado en el servidor
         if (c.id) _markHablado([c.id]);
-        if (normalizedPhone) _sentThisSession.add(normalizedPhone);
-        if (c.id) _sentIds.add(c.id);
 
         _lastResults.unshift({
           nombre: cName, telefono: c.telefono, status: 'sent',
           ack: msgModel?.get?.('ack') ?? 0, error: null,
-          parts: parts.length, // cuántos mensajes se enviaron
+          parts: parts.length,
         });
       } catch (err) {
         status = 'failed'; error = err.message; _consecFails++;
@@ -609,6 +622,10 @@ export async function startBlast() {
           logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
           _reportLog([...logBatch]); break;
         }
+      } finally {
+        // Liberar el lock de vuelo — el contacto ya está en _sentThisSession/_sentIds
+        // así que aunque se libere el inFlight, el dedup principal lo sigue bloqueando
+        if (lockKey) _inFlight.delete(lockKey);
       }
 
       if (_lastResults.length > 30) _lastResults.length = 30;
@@ -645,20 +662,25 @@ export async function startBlast() {
     await _sleep(5000); _stopCountdown();
   }
 
-  _running = false; _stopCountdown(); _notify();
+  _running = false; _loopRunning = false; _stopCountdown(); _notify();
 }
 
 export function pauseBlast() {
   _paused = true; _running = false; _stopCountdown(); _notify();
+  // _loopRunning se limpia cuando el loop llega al break/fin de iteración
 }
 
 export function resumeBlast() {
-  _paused = false; startBlast();
+  if (_loopRunning) return; // el loop anterior todavía termina — ignorar
+  _paused = false;
+  startBlast();
 }
 
 export function resetSession() {
   _sentThisSession.clear();
   _sentIds.clear();
+  _inFlight.clear();
+  _loopRunning = false;
   _tplIndex = 0;
   _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
   _lastResults = []; _trackedMsgs = []; _totalPending = null;
