@@ -23,6 +23,24 @@ const FAB_ID         = 'wspp-sidebar-fab';
 const WA_APP_SEL     = '#app';       // contenedor raíz de WA Web
 const STORAGE_KEY    = 'wspp_sidebar_tab';
 
+// z-index hierarchy — orden determinístico, nunca mismo nivel
+// Más alto = más encima visualmente
+const Z = {
+  fab:          2147483647,  // FAB siempre encima de todo
+  toasts:       2147483647,  // toasts al mismo nivel que FAB (temporales, no se solapan con FAB)
+  blast:        2147483646,  // blast modal encima del sidebar
+  validator:    2147483645,  // validator modal debajo del blast, encima del sidebar
+  sidebar:      2147483644,  // sidebar debajo de modales
+  valOverlay:   2147483643,  // validation overlay debajo del sidebar pero encima de WA
+  valStats:     2147483642,  // validator stats panel
+  spamWarning:  2147483641,  // spam warning
+  spamBlocker:  2147483640,  // semitransparent blocker
+  catalogPanel: 2147483639,  // catálogo panel legacy
+};
+
+// Exportar para que otros módulos usen los mismos z-index
+export { Z as ZINDEX };
+
 // Colores base
 const C = {
   bg:        '#0f1923',
@@ -75,7 +93,7 @@ export function insertSidebarFAB() {
     position:       'fixed',
     bottom:         '20px',
     right:          '20px',
-    zIndex:         '2147483647',
+    zIndex:         String(Z.fab),
     width:          '48px',
     height:         '48px',
     borderRadius:   '50%',
@@ -111,8 +129,14 @@ export function toggleSidebar() {
   const fab = $(FAB_ID);
   if (fab) {
     fab.innerHTML = _fabIcon(_open);
+    fab.style.transition = 'right 0.25s ease, background 0.15s ease';
     fab.style.background = _open ? '#0d2137' : '#163960';
-    fab.style.right = _open ? (SIDEBAR_WIDTH + 12) + 'px' : '20px';
+    if (_open) {
+      fab.style.right = (SIDEBAR_WIDTH + 12) + 'px';
+    } else {
+      // Delay FAB move until sidebar slide-out animation finishes
+      setTimeout(() => { if (!_open) fab.style.right = '20px'; }, 250);
+    }
   }
   _pushWaLayout(_open);
   if (_open) {
@@ -122,7 +146,7 @@ export function toggleSidebar() {
     if (el) {
       el.style.transform = `translateX(${SIDEBAR_WIDTH}px)`;
       el.style.opacity = '0';
-      setTimeout(() => el.remove(), 250);
+      setTimeout(() => el.remove(), 260);
     }
   }
 }
@@ -141,13 +165,13 @@ function _renderSidebar() {
       right:          '0',
       width:          SIDEBAR_WIDTH + 'px',
       height:         '100vh',
-      zIndex:         '2147483646',
+      zIndex:         String(Z.sidebar),
       background:     C.bg,
       borderLeft:     `1px solid ${C.border}`,
       boxShadow:      '-8px 0 32px rgba(0,0,0,.4)',
       display:        'flex',
       flexDirection:  'column',
-      fontFamily:     "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
+      fontFamily:     "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif,'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji'",
       color:          C.text,
       transform:      `translateX(${SIDEBAR_WIDTH}px)`,
       opacity:        '0',
@@ -164,7 +188,7 @@ function _renderSidebar() {
   el.innerHTML = `
     ${_headerHTML()}
     ${_tabBarHTML()}
-    <div id="wspp-sidebar-content" style="flex:1;overflow-y:auto;overflow-x:hidden;">
+    <div id="wspp-sidebar-content" style="flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;">
       ${_contentHTML()}
     </div>
     ${_footerHTML()}
@@ -196,7 +220,7 @@ function _headerHTML() {
         </div>
         <div>
           <div style="font-size:12px;font-weight:700;letter-spacing:-.3px;">Goberna</div>
-          <div style="font-size:9px;color:${C.muted};">${ownLabel}</div>
+          <div style="font-size:11px;color:${C.muted};">${ownLabel}</div>
         </div>
       </div>
       <button id="wspp-sidebar-close" style="
@@ -334,8 +358,8 @@ function _contactsTabHTML() {
       padding:0 8px 8px;
       display:flex;flex-direction:column;gap:3px;
     ">
-      <div style="text-align:center;padding:24px 0;color:${C.muted};font-size:12px;">
-        Abrí un chat para ver los contactos de ese tipo
+      <div style="text-align:center;padding:24px 12px;color:${C.muted};font-size:12px;line-height:1.6;">
+        Tocá <strong style="color:${C.accent};">⚡ Blast</strong> o <strong style="color:#60a5fa;">✅ Validar</strong> abajo para cargar contactos
       </div>
     </div>
   `;
@@ -405,16 +429,16 @@ export function renderContactRow(contact) {
           <span style="font-size:10px;color:${statusColor};font-weight:600;">${status}</span>
           <div style="display:flex;align-items:center;gap:4px;">
             <span style="font-size:11px;" title="WhatsApp: ${waNull?'sin verificar':waOk?'tiene WA':'sin WA'}">${waIcon}</span>
-            ${vote ? `<span style="font-size:9px;font-weight:700;color:${voteColor};background:${voteColor}22;padding:1px 5px;border-radius:8px;">${voteLabel}</span>` : ''}
+            ${vote ? `<span style="font-size:11px;font-weight:700;color:${voteColor};background:${voteColor}22;padding:1px 5px;border-radius:8px;">${voteLabel}</span>` : ''}
           </div>
         </div>
       </div>
 
-      <!-- Acciones (ocultas hasta hover — se muestran al expandir) -->
+      <!-- Acciones (colapsadas — se expanden al click en la fila) -->
       <div class="wspp-contact-actions" style="
         display:none;margin-top:7px;padding-top:6px;
         border-top:1px solid ${C.border};
-        display:flex;gap:4px;flex-wrap:wrap;
+        gap:4px;flex-wrap:wrap;
       ">
         <button data-action="send" data-phone="${tel}" data-name="${nombre}" style="
           flex:1;min-width:60px;padding:5px 6px;border-radius:6px;border:none;cursor:pointer;
@@ -519,7 +543,7 @@ export function renderAudioRow(item) {
       <!-- Botón enviar -->
       ${hasAudio ? `
         <button data-audio-send="${item.id}" style="
-          padding:5px 10px;border-radius:6px;border:none;cursor:pointer;
+          padding:5px 10px;border-radius:6px;border:1px solid rgba(37,211,102,.3);cursor:pointer;
           background:${C.accentDim};color:${C.accent};
           font-size:10px;font-weight:700;flex-shrink:0;
           white-space:nowrap;
@@ -600,7 +624,7 @@ function _statusTabHTML() {
             text-align:center;
           ">
             <div id="wspp-${s.id}" style="font-size:20px;font-weight:800;color:${s.color};">—</div>
-            <div style="font-size:9px;color:${C.muted};margin-top:2px;text-transform:uppercase;">${s.label}</div>
+            <div style="font-size:11px;color:${C.muted};margin-top:2px;text-transform:uppercase;">${s.label}</div>
           </div>
         `).join('')}
       </div>
@@ -663,12 +687,14 @@ function _bindContentEvents() {
   // Contact rows — expand/collapse on click + action buttons
   document.querySelectorAll('.wspp-contact-row').forEach(row => {
     row.addEventListener('click', (e) => {
-      if (e.target.closest('[data-action]')) return; // action btn handled separately
+      if (e.target.closest('[data-action]')) return;
       const actions = row.querySelector('.wspp-contact-actions');
       if (!actions) return;
-      const visible = actions.style.display !== 'none' && actions.style.display !== '';
+      const isOpen = actions.style.display === 'flex';
+      // Close all others first
       document.querySelectorAll('.wspp-contact-actions').forEach(a => a.style.display = 'none');
-      actions.style.display = visible ? 'none' : 'flex';
+      // Toggle this one
+      actions.style.display = isOpen ? 'none' : 'flex';
     });
   });
 

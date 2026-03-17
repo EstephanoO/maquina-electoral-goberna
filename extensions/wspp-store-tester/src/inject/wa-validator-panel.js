@@ -398,7 +398,7 @@ function _render() {
       position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
       width:480px;max-height:92vh;overflow-y:auto;
       background:#0a0f1e;border:1px solid rgba(96,165,250,.2);border-radius:16px;
-      box-shadow:0 24px 64px rgba(0,0,0,.8);z-index:2147483646;
+      box-shadow:0 24px 64px rgba(0,0,0,.8);z-index:2147483645;
       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#fff;
     ">
       <!-- Header -->
@@ -409,10 +409,10 @@ function _render() {
           </div>
           <div>
             <div style="font-size:14px;font-weight:700;">Validador WA · Goberna</div>
-            <div style="font-size:10px;color:rgba(255,255,255,.3);">Limpieza de base · Métrica de brigadistas</div>
+            <div style="font-size:10px;color:rgba(255,255,255,.5);">Limpieza de base · Métrica de brigadistas</div>
           </div>
         </div>
-        <button id="wspp-val-close" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:18px;cursor:pointer;padding:4px 8px;line-height:1;">✕</button>
+        <button id="wspp-val-close" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:18px;cursor:pointer;padding:4px 8px;line-height:1;">✕</button>
       </div>
 
       <!-- Selector de modo -->
@@ -467,7 +467,7 @@ function _render() {
         ].map(([l,v,c]) => `
           <div style="text-align:center;padding:5px 2px;background:rgba(255,255,255,.03);border-radius:7px;">
             <div style="font-size:15px;font-weight:800;color:${c};">${v}</div>
-            <div style="font-size:9px;color:rgba(255,255,255,.25);text-transform:uppercase;margin-top:1px;">${l}</div>
+            <div style="font-size:11px;color:rgba(255,255,255,.55);text-transform:uppercase;margin-top:1px;">${l}</div>
           </div>
         `).join('')}
       </div>
@@ -475,9 +475,9 @@ function _render() {
       <!-- Progreso -->
       ${_contacts.length ? `
       <div style="padding:10px 16px 5px;">
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.3);margin-bottom:4px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px;">
           <span>${_idx} / ${_contacts.length} procesados</span>
-          <span id="wspp-val-countdown" style="color:${_running?modeColor:'rgba(255,255,255,.3)'};">
+          <span id="wspp-val-countdown" style="color:${_running?modeColor:'rgba(255,255,255,.5)'};">
             ${_running && _countdown > 0 ? `Próximo en ${_countdown}s` : _running ? 'Procesando...' : ''}
           </span>
           <span>${pct}%</span>
@@ -521,12 +521,12 @@ function _render() {
       <!-- Últimos resultados -->
       ${_results.length ? `
       <div style="padding:0 16px 16px;">
-        <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Últimos procesados</div>
+        <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Últimos procesados</div>
         <div style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;">
           ${_results.slice(-12).reverse().map(r => `
             <div style="display:flex;align-items:center;gap:7px;padding:5px 9px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.04);">
               <span style="font-size:13px;flex-shrink:0;">${r.wa_valid ? '✅' : '❌'}</span>
-              <span style="font-size:12px;color:${r.wa_valid?'rgba(255,255,255,.6)':'rgba(255,255,255,.3)'};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              <span style="font-size:12px;color:${r.wa_valid?'rgba(255,255,255,.6)':'rgba(255,255,255,.5)'};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                 ${r.nombre || '?'} · +${r.telefono}
               </span>
               <span style="font-size:10px;color:rgba(255,255,255,.15);flex-shrink:0;">
@@ -603,13 +603,13 @@ function _showStats(summary, byBrigadista) {
       position:fixed;top:50%;right:20px;transform:translateY(-50%);
       width:400px;max-height:82vh;overflow-y:auto;
       background:#0a0f1e;border:1px solid rgba(167,139,250,.2);border-radius:14px;
-      box-shadow:0 16px 48px rgba(0,0,0,.7);z-index:2147483645;
+      box-shadow:0 16px 48px rgba(0,0,0,.7);z-index:2147483642;
       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#fff;
       padding:16px;
     ">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
         <div style="font-size:14px;font-weight:700;color:#a78bfa;">📊 Reporte por Brigadista</div>
-        <button id="wspp-stats-close" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:16px;cursor:pointer;">✕</button>
+        <button id="wspp-stats-close" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:16px;cursor:pointer;">✕</button>
       </div>
 
       <!-- Summary global -->
@@ -622,7 +622,7 @@ function _showStats(summary, byBrigadista) {
         ].map(([l,v,c]) => `
           <div style="text-align:center;padding:6px;background:rgba(255,255,255,.03);border-radius:8px;">
             <div style="font-size:18px;font-weight:800;color:${c};">${v}</div>
-            <div style="font-size:9px;color:rgba(255,255,255,.3);text-transform:uppercase;">${l}</div>
+            <div style="font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;">${l}</div>
           </div>
         `).join('')}
       </div>
@@ -642,7 +642,7 @@ function _showStats(summary, byBrigadista) {
         Brigadistas con más números inválidos
       </div>
       ${topBad.length === 0 ? `
-        <div style="font-size:12px;color:rgba(255,255,255,.3);text-align:center;padding:16px;">
+        <div style="font-size:12px;color:rgba(255,255,255,.5);text-align:center;padding:16px;">
           Sin datos — ejecutá la validación primero
         </div>
       ` : topBad.map(b => {

@@ -470,7 +470,7 @@ function _render() {
       position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
       width:460px;max-height:94vh;overflow-y:auto;
       background:#0c1a0f;border:1px solid rgba(37,211,102,.18);border-radius:16px;
-      box-shadow:0 24px 64px rgba(0,0,0,.8);z-index:2147483646;
+      box-shadow:0 24px 64px rgba(0,0,0,.8);z-index:2147483646;/* blast modal */
       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#fff;
     ">
       <!-- Header -->
@@ -484,18 +484,18 @@ function _render() {
             <div style="font-size:10px;color:rgba(255,255,255,.35);">12,258 personas · nuevo → hablado automático</div>
           </div>
         </div>
-        <button id="wspp-blast-close" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:18px;cursor:pointer;padding:4px 8px;line-height:1;">✕</button>
+        <button id="wspp-blast-close" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:18px;cursor:pointer;padding:4px 8px;line-height:1;">✕</button>
       </div>
 
       <!-- Número activo + slot del call center -->
       <div style="margin:10px 16px 0;padding:8px 12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;display:flex;align-items:center;justify-content:space-between;">
         <div>
           <div style="font-size:11px;color:rgba(255,255,255,.4);">Número activo</div>
-          ${_segmentInfo ? `<div style="font-size:9px;color:rgba(37,211,102,.5);margin-top:1px;">📞 Call Center · Slot ${_segmentInfo.segment_idx + 1}/${_segmentInfo.total_slots}${_segmentInfo.label ? ' · ' + _segmentInfo.label : ''}</div>` : ''}
+          ${_segmentInfo ? `<div style="font-size:11px;color:rgba(37,211,102,.5);margin-top:1px;">📞 Call Center · Slot ${_segmentInfo.segment_idx + 1}/${_segmentInfo.total_slots}${_segmentInfo.label ? ' · ' + _segmentInfo.label : ''}</div>` : ''}
         </div>
         <div style="font-size:13px;font-weight:700;color:${_activeNumber ? '#25d366' : '#ff9f0a'};">
           ${numShow}
-          ${_activeNumber ? `<span style="font-size:10px;color:rgba(255,255,255,.3);margin-left:5px;">${WARM_NUMBERS.has(_activeNumber) ? '🔥 warm' : `día ${wDay}/14`}</span>` : ''}
+          ${_activeNumber ? `<span style="font-size:10px;color:rgba(255,255,255,.5);margin-left:5px;">${WARM_NUMBERS.has(_activeNumber) ? '🔥 warm' : `día ${wDay}/14`}</span>` : ''}
         </div>
       </div>
 
@@ -515,7 +515,7 @@ function _render() {
         ].map(([l,v,c]) => `
           <div style="text-align:center;padding:5px 2px;background:rgba(255,255,255,.03);border-radius:7px;">
             <div style="font-size:15px;font-weight:800;color:${c};">${v}</div>
-            <div style="font-size:9px;color:rgba(255,255,255,.3);text-transform:uppercase;margin-top:1px;">${l}</div>
+            <div style="font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;margin-top:1px;">${l}</div>
           </div>
         `).join('')}
       </div>
@@ -523,9 +523,9 @@ function _render() {
       <!-- Progreso -->
       ${_contacts.length ? `
       <div style="padding:10px 16px 5px;">
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.3);margin-bottom:4px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px;">
           <span>${_idx} / ${_contacts.length}</span>
-          <span id="wspp-blast-countdown" style="color:${_running?'#25d366':'rgba(255,255,255,.3)'};">
+          <span id="wspp-blast-countdown" style="color:${_running?'#25d366':'rgba(255,255,255,.5)'};">
             ${_running && _countdown > 0 ? `Próximo en ${_countdown}s` : _running ? 'Enviando...' : ''}
           </span>
           <span>${pct}%</span>
@@ -598,7 +598,7 @@ function _render() {
       <!-- Últimos -->
       ${_results.length ? `
       <div style="padding:0 16px 16px;">
-        <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Últimos enviados</div>
+        <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">Últimos enviados</div>
         <div style="max-height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;">
           ${_results.slice(-10).reverse().map(r => `
             <div style="display:flex;align-items:center;gap:7px;padding:5px 9px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.04);">
@@ -606,7 +606,7 @@ function _render() {
               <span style="font-size:12px;color:${r.status==='sent'?'rgba(255,255,255,.6)':'#ef5350'};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                 ${r.nombre || ''} ${r.apellidos || ''} · +${r.telefono || '?'}
               </span>
-              <span style="font-size:10px;color:rgba(255,255,255,.25);flex-shrink:0;">${r.distrito || ''}</span>
+              <span style="font-size:10px;color:rgba(255,255,255,.55);flex-shrink:0;">${r.distrito || ''}</span>
             </div>
           `).join('')}
         </div>

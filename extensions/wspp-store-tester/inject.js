@@ -351,7 +351,8 @@
       Object.assign(_spamBlocker.style, {
         position: "fixed",
         inset: "0",
-        zIndex: "99996",
+        zIndex: "2147483640",
+        // spamBlocker — below everything
         background: "rgba(127,29,29,.25)",
         backdropFilter: "blur(1px)",
         pointerEvents: "none"
@@ -372,7 +373,8 @@
       top: "16px",
       left: "50%",
       transform: "translateX(-50%)",
-      zIndex: "99999",
+      zIndex: "2147483641",
+      // spamWarning — above blocker, below sidebar
       background: bgColor,
       border: `1px solid ${borderColor}`,
       color: "#fff",
@@ -523,10 +525,10 @@
     removeValidationOverlay();
     if (!data || !data.id) return;
     const statusColors = {
-      pendiente: { bg: "#f1f5f9", text: "#64748b", label: "PENDIENTE" },
-      contactado: { bg: "#dbeafe", text: "#2563eb", label: "CONTACTADO" },
-      respondido: { bg: "#e0f2fe", text: "#0891b2", label: "RESPONDIDO" },
-      invalido: { bg: "#fee2e2", text: "#dc2626", label: "IMPOSIBLE" }
+      pendiente: { bg: "rgba(255,149,0,.12)", text: "#ff9f0a", label: "PENDIENTE" },
+      contactado: { bg: "rgba(96,165,250,.12)", text: "#60a5fa", label: "CONTACTADO" },
+      respondido: { bg: "rgba(167,139,250,.12)", text: "#a78bfa", label: "RESPONDIDO" },
+      invalido: { bg: "rgba(239,83,80,.12)", text: "#ef5350", label: "IMPOSIBLE" }
     };
     const voteColors = {
       duro: { bg: "#dcfce7", text: "#15803d", label: "VOTO DURO" },
@@ -541,12 +543,14 @@
     Object.assign(overlay.style, {
       position: "fixed",
       top: "72px",
-      right: "24px",
-      zIndex: "99998",
-      background: "#ffffff",
+      // Push right when sidebar is open (360px + gap)
+      right: document.getElementById("wspp-sidebar") ? "384px" : "24px",
+      zIndex: "2147483643",
+      // validationOverlay — above WA, below sidebar
+      background: "#0f1923",
       borderRadius: "12px",
-      boxShadow: "0 4px 20px rgba(0,0,0,.15)",
-      border: "1px solid #e2e8f0",
+      boxShadow: "0 4px 24px rgba(0,0,0,.5)",
+      border: "1px solid rgba(255,255,255,.08)",
       padding: "12px 16px",
       minWidth: "220px",
       maxWidth: "300px",
@@ -568,24 +572,24 @@
     }
     const headerRow = el("div", { display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }, [
       el("div", { background: displayStatus.bg, color: displayStatus.text, padding: "2px 8px", borderRadius: "6px", fontWeight: "700", fontSize: "10px", letterSpacing: ".5px" }, displayStatus.label),
-      el("span", { color: "#94a3b8", fontSize: "10px" }, data.zona || "")
+      el("span", { color: "rgba(255,255,255,.4)", fontSize: "10px" }, data.zona || "")
     ]);
     overlay.appendChild(headerRow);
-    overlay.appendChild(el("div", { fontWeight: "600", color: "#1e293b", fontSize: "13px", marginBottom: "2px" }, data.nombre || "Sin nombre"));
+    overlay.appendChild(el("div", { fontWeight: "600", color: "#e9edef", fontSize: "13px", marginBottom: "2px" }, data.nombre || "Sin nombre"));
     const infoText = (data.telefono || "") + (data.encuestador ? " | Enc: " + data.encuestador : "");
-    overlay.appendChild(el("div", { color: "#64748b", fontSize: "11px", marginBottom: "4px" }, infoText));
+    overlay.appendChild(el("div", { color: "rgba(255,255,255,.55)", fontSize: "11px", marginBottom: "4px" }, infoText));
     if (data.claimed_by_name) {
-      overlay.appendChild(el("div", { color: "#94a3b8", fontSize: "10px" }, "Reclamado: " + data.claimed_by_name));
+      overlay.appendChild(el("div", { color: "rgba(255,255,255,.4)", fontSize: "10px" }, "Reclamado: " + data.claimed_by_name));
     }
     const classifyPanel = el("div", { display: "none", marginTop: "8px", paddingTop: "8px", borderTop: "1px solid #e2e8f0" });
     classifyPanel.id = "wspp-classify-panel";
-    classifyPanel.appendChild(el("div", { fontSize: "10px", color: "#64748b", fontWeight: "600", marginBottom: "6px" }, "CLASIFICAR:"));
+    classifyPanel.appendChild(el("div", { fontSize: "10px", color: "rgba(255,255,255,.55)", fontWeight: "600", marginBottom: "6px" }, "CLASIFICAR:"));
     const btnContainer = el("div", { display: "flex", flexWrap: "wrap", gap: "4px" });
     const btnConfigs = [
-      { vote: "duro", bg: "#dcfce7", color: "#15803d", border: "#bbf7d0", label: "Voto Duro" },
-      { vote: "blando", bg: "#fef9c3", color: "#ca8a04", border: "#fde68a", label: "Voto Blando" },
-      { vote: "flotante", bg: "#ede9fe", color: "#7c3aed", border: "#ddd6fe", label: "Flotante" },
-      { vote: "invalido", bg: "#fee2e2", color: "#dc2626", border: "#fecaca", label: "Imposible" }
+      { vote: "duro", bg: "rgba(52,199,89,.12)", color: "#34c759", border: "rgba(52,199,89,.3)", label: "Voto Duro" },
+      { vote: "blando", bg: "rgba(253,230,138,.12)", color: "#fde68a", border: "rgba(253,230,138,.3)", label: "Voto Blando" },
+      { vote: "flotante", bg: "rgba(167,139,250,.12)", color: "#a78bfa", border: "rgba(167,139,250,.3)", label: "Flotante" },
+      { vote: "invalido", bg: "rgba(239,83,80,.12)", color: "#ef5350", border: "rgba(239,83,80,.3)", label: "Imposible" }
     ];
     for (const cfg of btnConfigs) {
       const btn = el("button", { background: cfg.bg, color: cfg.color, border: "1px solid " + cfg.border, borderRadius: "6px", padding: "4px 10px", fontSize: "10px", fontWeight: "700", cursor: "pointer" }, cfg.label);
@@ -648,7 +652,7 @@
     const toast = document.getElementById("wspp-overlay-toast");
     if (!toast) return;
     toast.style.display = "block";
-    toast.style.background = type === "success" ? "#dcfce7" : "#fee2e2";
+    toast.style.background = type === "success" ? "rgba(52,199,89,.15)" : "rgba(239,83,80,.15)";
     toast.style.color = type === "success" ? "#15803d" : "#dc2626";
     toast.textContent = message;
     const overlay = document.getElementById("wspp-validation-overlay");
@@ -1213,6 +1217,25 @@
       onClick(e);
     });
     return b;
+  }
+  function _toggleCatalogPanelInternal() {
+    const existing = document.getElementById("wspp-cat-panel");
+    if (existing) {
+      _closePanel();
+      return;
+    }
+    _catalogPanelOpen = true;
+    const fab = document.getElementById("wspp-catalog-btn");
+    if (fab) fab.style.boxShadow = "0 0 0 3px rgba(0,168,132,.35), 0 3px 12px rgba(0,168,132,.4)";
+    if (_catalogItems.length === 0 && !_catalogLoading) {
+      _catalogLoading = true;
+      window.postMessage({ type: "FETCH_AUDIO_CATALOG" }, WA_ORIGIN);
+    }
+    if (_catalogCategories.length === 0 && !_catalogCategoriesLoading) {
+      _catalogCategoriesLoading = true;
+      window.postMessage({ type: "FETCH_CATALOG_CATEGORIES" }, WA_ORIGIN);
+    }
+    renderCatalogPanel();
   }
   function _closePanel() {
     _destroyPreview();
@@ -2119,11 +2142,9 @@
   });
   function toggleCatalogPanel() {
     if (_catalogPanelOpen) {
-      _catalogPanelOpen = false;
-      document.getElementById("wspp-catalog-panel")?.remove();
+      _closePanel();
     } else {
-      _catalogPanelOpen = true;
-      renderCatalogPanel();
+      _toggleCatalogPanelInternal();
     }
   }
 
@@ -2564,7 +2585,7 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
       position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
       width:460px;max-height:94vh;overflow-y:auto;
       background:#0c1a0f;border:1px solid rgba(37,211,102,.18);border-radius:16px;
-      box-shadow:0 24px 64px rgba(0,0,0,.8);z-index:2147483646;
+      box-shadow:0 24px 64px rgba(0,0,0,.8);z-index:2147483646;/* blast modal */
       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#fff;
     ">
       <!-- Header -->
@@ -2578,18 +2599,18 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
             <div style="font-size:10px;color:rgba(255,255,255,.35);">12,258 personas \xB7 nuevo \u2192 hablado autom\xE1tico</div>
           </div>
         </div>
-        <button id="wspp-blast-close" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:18px;cursor:pointer;padding:4px 8px;line-height:1;">\u2715</button>
+        <button id="wspp-blast-close" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:18px;cursor:pointer;padding:4px 8px;line-height:1;">\u2715</button>
       </div>
 
       <!-- N\xFAmero activo + slot del call center -->
       <div style="margin:10px 16px 0;padding:8px 12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:8px;display:flex;align-items:center;justify-content:space-between;">
         <div>
           <div style="font-size:11px;color:rgba(255,255,255,.4);">N\xFAmero activo</div>
-          ${_segmentInfo ? `<div style="font-size:9px;color:rgba(37,211,102,.5);margin-top:1px;">\u{1F4DE} Call Center \xB7 Slot ${_segmentInfo.segment_idx + 1}/${_segmentInfo.total_slots}${_segmentInfo.label ? " \xB7 " + _segmentInfo.label : ""}</div>` : ""}
+          ${_segmentInfo ? `<div style="font-size:11px;color:rgba(37,211,102,.5);margin-top:1px;">\u{1F4DE} Call Center \xB7 Slot ${_segmentInfo.segment_idx + 1}/${_segmentInfo.total_slots}${_segmentInfo.label ? " \xB7 " + _segmentInfo.label : ""}</div>` : ""}
         </div>
         <div style="font-size:13px;font-weight:700;color:${_activeNumber ? "#25d366" : "#ff9f0a"};">
           ${numShow}
-          ${_activeNumber ? `<span style="font-size:10px;color:rgba(255,255,255,.3);margin-left:5px;">${WARM_NUMBERS.has(_activeNumber) ? "\u{1F525} warm" : `d\xEDa ${wDay}/14`}</span>` : ""}
+          ${_activeNumber ? `<span style="font-size:10px;color:rgba(255,255,255,.5);margin-left:5px;">${WARM_NUMBERS.has(_activeNumber) ? "\u{1F525} warm" : `d\xEDa ${wDay}/14`}</span>` : ""}
         </div>
       </div>
 
@@ -2609,7 +2630,7 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
     ].map(([l, v, c]) => `
           <div style="text-align:center;padding:5px 2px;background:rgba(255,255,255,.03);border-radius:7px;">
             <div style="font-size:15px;font-weight:800;color:${c};">${v}</div>
-            <div style="font-size:9px;color:rgba(255,255,255,.3);text-transform:uppercase;margin-top:1px;">${l}</div>
+            <div style="font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;margin-top:1px;">${l}</div>
           </div>
         `).join("")}
       </div>
@@ -2617,9 +2638,9 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
       <!-- Progreso -->
       ${_contacts.length ? `
       <div style="padding:10px 16px 5px;">
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.3);margin-bottom:4px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px;">
           <span>${_idx} / ${_contacts.length}</span>
-          <span id="wspp-blast-countdown" style="color:${_running ? "#25d366" : "rgba(255,255,255,.3)"};">
+          <span id="wspp-blast-countdown" style="color:${_running ? "#25d366" : "rgba(255,255,255,.5)"};">
             ${_running && _countdown > 0 ? `Pr\xF3ximo en ${_countdown}s` : _running ? "Enviando..." : ""}
           </span>
           <span>${pct}%</span>
@@ -2687,7 +2708,7 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
       <!-- \xDAltimos -->
       ${_results.length ? `
       <div style="padding:0 16px 16px;">
-        <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">\xDAltimos enviados</div>
+        <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">\xDAltimos enviados</div>
         <div style="max-height:150px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;">
           ${_results.slice(-10).reverse().map((r) => `
             <div style="display:flex;align-items:center;gap:7px;padding:5px 9px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.04);">
@@ -2695,7 +2716,7 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
               <span style="font-size:12px;color:${r.status === "sent" ? "rgba(255,255,255,.6)" : "#ef5350"};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                 ${r.nombre || ""} ${r.apellidos || ""} \xB7 +${r.telefono || "?"}
               </span>
-              <span style="font-size:10px;color:rgba(255,255,255,.25);flex-shrink:0;">${r.distrito || ""}</span>
+              <span style="font-size:10px;color:rgba(255,255,255,.55);flex-shrink:0;">${r.distrito || ""}</span>
             </div>
           `).join("")}
         </div>
@@ -3156,7 +3177,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
       width:480px;max-height:92vh;overflow-y:auto;
       background:#0a0f1e;border:1px solid rgba(96,165,250,.2);border-radius:16px;
-      box-shadow:0 24px 64px rgba(0,0,0,.8);z-index:2147483646;
+      box-shadow:0 24px 64px rgba(0,0,0,.8);z-index:2147483645;
       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#fff;
     ">
       <!-- Header -->
@@ -3167,10 +3188,10 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
           </div>
           <div>
             <div style="font-size:14px;font-weight:700;">Validador WA \xB7 Goberna</div>
-            <div style="font-size:10px;color:rgba(255,255,255,.3);">Limpieza de base \xB7 M\xE9trica de brigadistas</div>
+            <div style="font-size:10px;color:rgba(255,255,255,.5);">Limpieza de base \xB7 M\xE9trica de brigadistas</div>
           </div>
         </div>
-        <button id="wspp-val-close" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:18px;cursor:pointer;padding:4px 8px;line-height:1;">\u2715</button>
+        <button id="wspp-val-close" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:18px;cursor:pointer;padding:4px 8px;line-height:1;">\u2715</button>
       </div>
 
       <!-- Selector de modo -->
@@ -3225,7 +3246,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     ].map(([l, v, c]) => `
           <div style="text-align:center;padding:5px 2px;background:rgba(255,255,255,.03);border-radius:7px;">
             <div style="font-size:15px;font-weight:800;color:${c};">${v}</div>
-            <div style="font-size:9px;color:rgba(255,255,255,.25);text-transform:uppercase;margin-top:1px;">${l}</div>
+            <div style="font-size:11px;color:rgba(255,255,255,.55);text-transform:uppercase;margin-top:1px;">${l}</div>
           </div>
         `).join("")}
       </div>
@@ -3233,9 +3254,9 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       <!-- Progreso -->
       ${_contacts2.length ? `
       <div style="padding:10px 16px 5px;">
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.3);margin-bottom:4px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.5);margin-bottom:4px;">
           <span>${_idx2} / ${_contacts2.length} procesados</span>
-          <span id="wspp-val-countdown" style="color:${_running2 ? modeColor : "rgba(255,255,255,.3)"};">
+          <span id="wspp-val-countdown" style="color:${_running2 ? modeColor : "rgba(255,255,255,.5)"};">
             ${_running2 && _countdown2 > 0 ? `Pr\xF3ximo en ${_countdown2}s` : _running2 ? "Procesando..." : ""}
           </span>
           <span>${pct}%</span>
@@ -3277,12 +3298,12 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       <!-- \xDAltimos resultados -->
       ${_results2.length ? `
       <div style="padding:0 16px 16px;">
-        <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">\xDAltimos procesados</div>
+        <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">\xDAltimos procesados</div>
         <div style="max-height:180px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;">
           ${_results2.slice(-12).reverse().map((r) => `
             <div style="display:flex;align-items:center;gap:7px;padding:5px 9px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.04);">
               <span style="font-size:13px;flex-shrink:0;">${r.wa_valid ? "\u2705" : "\u274C"}</span>
-              <span style="font-size:12px;color:${r.wa_valid ? "rgba(255,255,255,.6)" : "rgba(255,255,255,.3)"};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              <span style="font-size:12px;color:${r.wa_valid ? "rgba(255,255,255,.6)" : "rgba(255,255,255,.5)"};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
                 ${r.nombre || "?"} \xB7 +${r.telefono}
               </span>
               <span style="font-size:10px;color:rgba(255,255,255,.15);flex-shrink:0;">
@@ -3368,13 +3389,13 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       position:fixed;top:50%;right:20px;transform:translateY(-50%);
       width:400px;max-height:82vh;overflow-y:auto;
       background:#0a0f1e;border:1px solid rgba(167,139,250,.2);border-radius:14px;
-      box-shadow:0 16px 48px rgba(0,0,0,.7);z-index:2147483645;
+      box-shadow:0 16px 48px rgba(0,0,0,.7);z-index:2147483642;
       font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#fff;
       padding:16px;
     ">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
         <div style="font-size:14px;font-weight:700;color:#a78bfa;">\u{1F4CA} Reporte por Brigadista</div>
-        <button id="wspp-stats-close" style="background:none;border:none;color:rgba(255,255,255,.3);font-size:16px;cursor:pointer;">\u2715</button>
+        <button id="wspp-stats-close" style="background:none;border:none;color:rgba(255,255,255,.5);font-size:16px;cursor:pointer;">\u2715</button>
       </div>
 
       <!-- Summary global -->
@@ -3387,7 +3408,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     ].map(([l, v, c]) => `
           <div style="text-align:center;padding:6px;background:rgba(255,255,255,.03);border-radius:8px;">
             <div style="font-size:18px;font-weight:800;color:${c};">${v}</div>
-            <div style="font-size:9px;color:rgba(255,255,255,.3);text-transform:uppercase;">${l}</div>
+            <div style="font-size:11px;color:rgba(255,255,255,.5);text-transform:uppercase;">${l}</div>
           </div>
         `).join("")}
       </div>
@@ -3404,7 +3425,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         Brigadistas con m\xE1s n\xFAmeros inv\xE1lidos
       </div>
       ${topBad.length === 0 ? `
-        <div style="font-size:12px;color:rgba(255,255,255,.3);text-align:center;padding:16px;">
+        <div style="font-size:12px;color:rgba(255,255,255,.5);text-align:center;padding:16px;">
           Sin datos \u2014 ejecut\xE1 la validaci\xF3n primero
         </div>
       ` : topBad.map((b) => {
@@ -3474,6 +3495,28 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   var FAB_ID = "wspp-sidebar-fab";
   var WA_APP_SEL = "#app";
   var STORAGE_KEY = "wspp_sidebar_tab";
+  var Z = {
+    fab: 2147483647,
+    // FAB siempre encima de todo
+    toasts: 2147483647,
+    // toasts al mismo nivel que FAB (temporales, no se solapan con FAB)
+    blast: 2147483646,
+    // blast modal encima del sidebar
+    validator: 2147483645,
+    // validator modal debajo del blast, encima del sidebar
+    sidebar: 2147483644,
+    // sidebar debajo de modales
+    valOverlay: 2147483643,
+    // validation overlay debajo del sidebar pero encima de WA
+    valStats: 2147483642,
+    // validator stats panel
+    spamWarning: 2147483641,
+    // spam warning
+    spamBlocker: 2147483640,
+    // semitransparent blocker
+    catalogPanel: 2147483639
+    // catálogo panel legacy
+  };
   var C = {
     bg: "#0f1923",
     bgTab: "#0a1118",
@@ -3514,7 +3557,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       position: "fixed",
       bottom: "20px",
       right: "20px",
-      zIndex: "2147483647",
+      zIndex: String(Z.fab),
       width: "48px",
       height: "48px",
       borderRadius: "50%",
@@ -3551,8 +3594,15 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     const fab = $(FAB_ID);
     if (fab) {
       fab.innerHTML = _fabIcon(_open3);
+      fab.style.transition = "right 0.25s ease, background 0.15s ease";
       fab.style.background = _open3 ? "#0d2137" : "#163960";
-      fab.style.right = _open3 ? SIDEBAR_WIDTH + 12 + "px" : "20px";
+      if (_open3) {
+        fab.style.right = SIDEBAR_WIDTH + 12 + "px";
+      } else {
+        setTimeout(() => {
+          if (!_open3) fab.style.right = "20px";
+        }, 250);
+      }
     }
     _pushWaLayout(_open3);
     if (_open3) {
@@ -3562,7 +3612,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       if (el) {
         el.style.transform = `translateX(${SIDEBAR_WIDTH}px)`;
         el.style.opacity = "0";
-        setTimeout(() => el.remove(), 250);
+        setTimeout(() => el.remove(), 260);
       }
     }
   }
@@ -3577,13 +3627,13 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         right: "0",
         width: SIDEBAR_WIDTH + "px",
         height: "100vh",
-        zIndex: "2147483646",
+        zIndex: String(Z.sidebar),
         background: C.bg,
         borderLeft: `1px solid ${C.border}`,
         boxShadow: "-8px 0 32px rgba(0,0,0,.4)",
         display: "flex",
         flexDirection: "column",
-        fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
+        fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif,'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji'",
         color: C.text,
         transform: `translateX(${SIDEBAR_WIDTH}px)`,
         opacity: "0",
@@ -3599,7 +3649,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     el.innerHTML = `
     ${_headerHTML()}
     ${_tabBarHTML()}
-    <div id="wspp-sidebar-content" style="flex:1;overflow-y:auto;overflow-x:hidden;">
+    <div id="wspp-sidebar-content" style="flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;">
       ${_contentHTML()}
     </div>
     ${_footerHTML()}
@@ -3628,7 +3678,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         </div>
         <div>
           <div style="font-size:12px;font-weight:700;letter-spacing:-.3px;">Goberna</div>
-          <div style="font-size:9px;color:${C.muted};">${ownLabel}</div>
+          <div style="font-size:11px;color:${C.muted};">${ownLabel}</div>
         </div>
       </div>
       <button id="wspp-sidebar-close" style="
@@ -3754,8 +3804,8 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       padding:0 8px 8px;
       display:flex;flex-direction:column;gap:3px;
     ">
-      <div style="text-align:center;padding:24px 0;color:${C.muted};font-size:12px;">
-        Abr\xED un chat para ver los contactos de ese tipo
+      <div style="text-align:center;padding:24px 12px;color:${C.muted};font-size:12px;line-height:1.6;">
+        Toc\xE1 <strong style="color:${C.accent};">\u26A1 Blast</strong> o <strong style="color:#60a5fa;">\u2705 Validar</strong> abajo para cargar contactos
       </div>
     </div>
   `;
@@ -3840,7 +3890,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
             text-align:center;
           ">
             <div id="wspp-${s.id}" style="font-size:20px;font-weight:800;color:${s.color};">\u2014</div>
-            <div style="font-size:9px;color:${C.muted};margin-top:2px;text-transform:uppercase;">${s.label}</div>
+            <div style="font-size:11px;color:${C.muted};margin-top:2px;text-transform:uppercase;">${s.label}</div>
           </div>
         `).join("")}
       </div>
@@ -3893,9 +3943,9 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         if (e.target.closest("[data-action]")) return;
         const actions = row.querySelector(".wspp-contact-actions");
         if (!actions) return;
-        const visible = actions.style.display !== "none" && actions.style.display !== "";
+        const isOpen = actions.style.display === "flex";
         document.querySelectorAll(".wspp-contact-actions").forEach((a) => a.style.display = "none");
-        actions.style.display = visible ? "none" : "flex";
+        actions.style.display = isOpen ? "none" : "flex";
       });
     });
     document.querySelectorAll("[data-action]").forEach((btn) => {

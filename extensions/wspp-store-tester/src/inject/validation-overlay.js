@@ -52,7 +52,7 @@ export function showSpamWarning(data) {
     Object.assign(_spamBlocker.style, {
       position:        'fixed',
       inset:           '0',
-      zIndex:          '99996',
+      zIndex:          '2147483640',  // spamBlocker — below everything
       background:      'rgba(127,29,29,.25)',
       backdropFilter:  'blur(1px)',
       pointerEvents:   'none', // doesn't block clicks — just visual warning
@@ -71,7 +71,7 @@ export function showSpamWarning(data) {
     top:         '16px',
     left:        '50%',
     transform:   'translateX(-50%)',
-    zIndex:      '99999',
+    zIndex:      '2147483641',  // spamWarning — above blocker, below sidebar
     background:  bgColor,
     border:      `1px solid ${borderColor}`,
     color:       '#fff',
@@ -254,10 +254,10 @@ export function showValidationOverlay(data) {
   if (!data || !data.id) return;
 
   const statusColors = {
-    pendiente:  { bg: '#f1f5f9', text: '#64748b', label: 'PENDIENTE' },
-    contactado: { bg: '#dbeafe', text: '#2563eb', label: 'CONTACTADO' },
-    respondido: { bg: '#e0f2fe', text: '#0891b2', label: 'RESPONDIDO' },
-    invalido:   { bg: '#fee2e2', text: '#dc2626', label: 'IMPOSIBLE' },
+    pendiente:  { bg: 'rgba(255,149,0,.12)', text: '#ff9f0a', label: 'PENDIENTE' },
+    contactado: { bg: 'rgba(96,165,250,.12)', text: '#60a5fa', label: 'CONTACTADO' },
+    respondido: { bg: 'rgba(167,139,250,.12)', text: '#a78bfa', label: 'RESPONDIDO' },
+    invalido:   { bg: 'rgba(239,83,80,.12)', text: '#ef5350', label: 'IMPOSIBLE' },
   };
 
   const voteColors = {
@@ -275,12 +275,13 @@ export function showValidationOverlay(data) {
   Object.assign(overlay.style, {
     position:    'fixed',
     top:         '72px',
-    right:       '24px',
-    zIndex:      '99998',
-    background:  '#ffffff',
+    // Push right when sidebar is open (360px + gap)
+    right:       document.getElementById('wspp-sidebar') ? '384px' : '24px',
+    zIndex:      '2147483643',  // validationOverlay — above WA, below sidebar
+    background:  '#0f1923',
     borderRadius:'12px',
-    boxShadow:   '0 4px 20px rgba(0,0,0,.15)',
-    border:      '1px solid #e2e8f0',
+    boxShadow:   '0 4px 24px rgba(0,0,0,.5)',
+    border:      '1px solid rgba(255,255,255,.08)',
     padding:     '12px 16px',
     minWidth:    '220px',
     maxWidth:    '300px',
@@ -302,29 +303,29 @@ export function showValidationOverlay(data) {
 
   const headerRow = el('div', { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }, [
     el('div', { background: displayStatus.bg, color: displayStatus.text, padding: '2px 8px', borderRadius: '6px', fontWeight: '700', fontSize: '10px', letterSpacing: '.5px' }, displayStatus.label),
-    el('span', { color: '#94a3b8', fontSize: '10px' }, data.zona || ''),
+    el('span', { color: 'rgba(255,255,255,.4)', fontSize: '10px' }, data.zona || ''),
   ]);
   overlay.appendChild(headerRow);
 
-  overlay.appendChild(el('div', { fontWeight: '600', color: '#1e293b', fontSize: '13px', marginBottom: '2px' }, data.nombre || 'Sin nombre'));
+  overlay.appendChild(el('div', { fontWeight: '600', color: '#e9edef', fontSize: '13px', marginBottom: '2px' }, data.nombre || 'Sin nombre'));
 
   const infoText = (data.telefono || '') + (data.encuestador ? ' | Enc: ' + data.encuestador : '');
-  overlay.appendChild(el('div', { color: '#64748b', fontSize: '11px', marginBottom: '4px' }, infoText));
+  overlay.appendChild(el('div', { color: 'rgba(255,255,255,.55)', fontSize: '11px', marginBottom: '4px' }, infoText));
 
   if (data.claimed_by_name) {
-    overlay.appendChild(el('div', { color: '#94a3b8', fontSize: '10px' }, 'Reclamado: ' + data.claimed_by_name));
+    overlay.appendChild(el('div', { color: 'rgba(255,255,255,.4)', fontSize: '10px' }, 'Reclamado: ' + data.claimed_by_name));
   }
 
   const classifyPanel = el('div', { display: 'none', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #e2e8f0' });
   classifyPanel.id = 'wspp-classify-panel';
-  classifyPanel.appendChild(el('div', { fontSize: '10px', color: '#64748b', fontWeight: '600', marginBottom: '6px' }, 'CLASIFICAR:'));
+  classifyPanel.appendChild(el('div', { fontSize: '10px', color: 'rgba(255,255,255,.55)', fontWeight: '600', marginBottom: '6px' }, 'CLASIFICAR:'));
 
   const btnContainer = el('div', { display: 'flex', flexWrap: 'wrap', gap: '4px' });
   const btnConfigs = [
-    { vote: 'duro',     bg: '#dcfce7', color: '#15803d', border: '#bbf7d0', label: 'Voto Duro' },
-    { vote: 'blando',   bg: '#fef9c3', color: '#ca8a04', border: '#fde68a', label: 'Voto Blando' },
-    { vote: 'flotante', bg: '#ede9fe', color: '#7c3aed', border: '#ddd6fe', label: 'Flotante' },
-    { vote: 'invalido', bg: '#fee2e2', color: '#dc2626', border: '#fecaca', label: 'Imposible' },
+    { vote: 'duro',     bg: 'rgba(52,199,89,.12)', color: '#34c759', border: 'rgba(52,199,89,.3)', label: 'Voto Duro' },
+    { vote: 'blando',   bg: 'rgba(253,230,138,.12)', color: '#fde68a', border: 'rgba(253,230,138,.3)', label: 'Voto Blando' },
+    { vote: 'flotante', bg: 'rgba(167,139,250,.12)', color: '#a78bfa', border: 'rgba(167,139,250,.3)', label: 'Flotante' },
+    { vote: 'invalido', bg: 'rgba(239,83,80,.12)', color: '#ef5350', border: 'rgba(239,83,80,.3)', label: 'Imposible' },
   ];
   for (const cfg of btnConfigs) {
     const btn = el('button', { background: cfg.bg, color: cfg.color, border: '1px solid ' + cfg.border, borderRadius: '6px', padding: '4px 10px', fontSize: '10px', fontWeight: '700', cursor: 'pointer' }, cfg.label);
@@ -392,7 +393,7 @@ export function showOverlayToast(message, type) {
   const toast = document.getElementById('wspp-overlay-toast');
   if (!toast) return;
   toast.style.display    = 'block';
-  toast.style.background = type === 'success' ? '#dcfce7' : '#fee2e2';
+  toast.style.background = type === 'success' ? 'rgba(52,199,89,.15)' : 'rgba(239,83,80,.15)';
   toast.style.color      = type === 'success' ? '#15803d' : '#dc2626';
   toast.textContent      = message;
   const overlay = document.getElementById('wspp-validation-overlay');

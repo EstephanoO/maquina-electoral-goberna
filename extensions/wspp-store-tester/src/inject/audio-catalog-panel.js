@@ -1074,11 +1074,9 @@ let _retries = 0;
 
 export function toggleCatalogPanel() {
   if (_catalogPanelOpen) {
-    _catalogPanelOpen = false;
-    document.getElementById('wspp-catalog-panel')?.remove();
+    _closePanel();
   } else {
-    _catalogPanelOpen = true;
-    renderCatalogPanel();
+    _toggleCatalogPanelInternal();
   }
 }
 export function isCatalogPanelOpen() { return _catalogPanelOpen; }
