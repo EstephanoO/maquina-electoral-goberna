@@ -9,7 +9,10 @@ import {
   getKpis, getTotalPending, getLastResults,
   startBlast, pauseBlast, resumeBlast, resetSession,
   refreshPendingCount, setOnUpdate, getTplIndex,
+  isWithinBlastWindow, getPeruTimeStr,
+  getNumberHealth, isNumberAuthorized, fetchNumberHealth, fetchNumberConfig,
 } from './blast-panel.js';
+import { analyzeTemplates } from './template-analyzer.js';
 import { toggleValidatorPanel } from './wa-validator-panel.js';
 import { sendAudioAsPTT } from './audio-catalog-panel.js';
 
@@ -122,6 +125,8 @@ export function toggleSidebar() {
     }
     _renderSidebar();
     if (!isRunning()) refreshPendingCount();
+    fetchNumberHealth();
+    fetchNumberConfig();
   } else {
     // Restaurar botón
     if (fab) {
@@ -241,20 +246,61 @@ function _blastHTML() {
   const totalProcessed = totalSent + kpis.failed + (kpis.no_wa || 0);
   const hasActivity = totalProcessed > 0 || running;
 
-  // Timer
+  // Timer — incluye micro-descansos stealth
   let timerLabel = '';
   if (countdown > 0) {
     const m = Math.floor(countdown / 60); const s = countdown % 60;
-    const labels = { prewarm: '⏳ Preparando', delay: '⏱️ Próximo', pausa: '☕ Pausa', descanso: '😴 Descanso', cargando: '📥 Cargando' };
+    const labels = { prewarm: '⏳ Preparando', delay: '⏱️ Próximo', pausa: '☕ Pausa', descanso: '😴 Descanso', cargando: '📥 Cargando', micro: '🫖 Micro-pausa' };
     timerLabel = `${labels[phase] || '⏱️'} ${m > 0 ? m + 'm ' : ''}${s}s`;
   } else if (phase === 'cargando') {
     timerLabel = '📥 Cargando...';
   }
 
+  // Template risk analysis
+  const analysis = analyzeTemplates(tpls);
+
+  // Session stats
+  const sessionStart = window.__blastSessionStart || Date.now();
+  if (!window.__blastSessionStart && running) window.__blastSessionStart = Date.now();
+  const elapsedMin = Math.max(1, (Date.now() - sessionStart) / 60000);
+  const msgPerMin = totalProcessed > 0 ? (totalSent / elapsedMin).toFixed(1) : '0';
+  const estRemaining = pending !== null && totalSent > 0 ? Math.round(pending / (totalSent / elapsedMin)) : null;
+
+  // Ventana horaria
+  const inWindow = isWithinBlastWindow();
+  const peruTime = getPeruTimeStr();
+
+  // Number health
+  const ownNum = getOwnNumber();
+  const nHealth = getNumberHealth();
+  const nAuth = isNumberAuthorized();
+
   const pendingLabel = pending === null ? '...' : pending.toLocaleString('es-PE');
   const hasPending = pending === null || pending > 0;
 
   return `<div style="padding:14px;display:flex;flex-direction:column;gap:12px;">
+
+    <!-- ESTADO DEL NÚMERO -->
+    <div style="background:${!ownNum ? S.dangerBg : nAuth === false ? S.warnBg : nHealth && !nHealth.can_send ? S.dangerBg : S.card};border:1px solid ${!ownNum ? '#fecaca' : nAuth === false ? '#fde68a' : S.border};border-radius:10px;padding:10px 12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:${nHealth ? '6' : '0'}px;">
+        <span style="font-size:16px;">${!ownNum ? '❌' : nAuth === false ? '🚫' : '📱'}</span>
+        <div style="flex:1;">
+          <div style="font-size:12px;font-weight:700;color:${!ownNum ? S.danger : nAuth === false ? S.warn : S.text};">
+            ${!ownNum ? 'Número no detectado' : nAuth === false ? 'Número no autorizado' : '+' + ownNum}
+          </div>
+          <div style="font-size:10px;color:${S.muted};">
+            ${!ownNum ? 'Recargá WhatsApp Web para detectar el celular' : nAuth === false ? 'Este celular no está registrado para blast' : nAuth === true ? '✅ Registrado' : 'Verificando...'}
+          </div>
+        </div>
+      </div>
+      ${nHealth ? `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-size:10px;color:${S.muted};margin-top:4px;">
+        <div>Hora: <b style="color:${nHealth.sent_last_hour >= nHealth.hourly_limit * 0.8 ? S.danger : S.text};">${nHealth.sent_last_hour}/${nHealth.hourly_limit}</b></div>
+        <div>Hoy: <b style="color:${nHealth.sent_today >= nHealth.daily_limit * 0.8 ? S.danger : S.text};">${nHealth.sent_today}/${nHealth.daily_limit}</b></div>
+        <div>Edad: <b>${nHealth.age_days}d</b></div>
+      </div>
+      ` : ''}
+    </div>
 
     <!-- PENDIENTES -->
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:14px;display:flex;align-items:center;justify-content:space-between;">
@@ -280,6 +326,48 @@ function _blastHTML() {
           <div style="font-size:9px;color:${S.muted};margin-top:2px;">${icon} ${label}</div>
         </div>
       `).join('')}
+    </div>
+    ` : ''}
+
+    <!-- VENTANA HORARIA + STEALTH STATS -->
+    <div style="background:${inWindow ? S.accentBg : S.dangerBg};border:1px solid ${inWindow ? 'rgba(37,211,102,0.3)' : '#fecaca'};border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:18px;">${inWindow ? '🟢' : '🔴'}</span>
+      <div style="flex:1;">
+        <div style="font-size:11px;font-weight:700;color:${inWindow ? S.accent : S.danger};">${inWindow ? 'Ventana activa' : 'Fuera de horario'}</div>
+        <div style="font-size:10px;color:${S.muted};">Perú ${peruTime} · Lun-Vie 8-20h · Sáb 9-14h</div>
+      </div>
+    </div>
+
+    <!-- STEALTH STATS (solo con actividad) -->
+    ${hasActivity ? `
+    <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:10px 12px;">
+      <div style="font-size:10px;color:${S.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Sesión actual</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:11px;">
+        <div><span style="color:${S.muted};">Velocidad</span><br><b>${msgPerMin} msg/min</b></div>
+        <div><span style="color:${S.muted};">Est. restante</span><br><b>${estRemaining !== null ? (estRemaining > 60 ? Math.round(estRemaining / 60) + 'h' : estRemaining + ' min') : '—'}</b></div>
+        <div><span style="color:${S.muted};">Plantilla</span><br><b>#${(getTplIndex() % tpls.length) + 1} de ${tpls.length}</b></div>
+      </div>
+    </div>
+    ` : ''}
+
+    <!-- TEMPLATE RISK ANALYSIS -->
+    ${analysis.score > 0 ? `
+    <div style="background:${analysis.level === 'danger' ? S.dangerBg : analysis.level === 'warning' ? S.warnBg : S.card};border:1px solid ${analysis.level === 'danger' ? '#fecaca' : analysis.level === 'warning' ? '#fde68a' : S.border};border-radius:10px;padding:10px 12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:14px;">${analysis.level === 'danger' ? '🚨' : analysis.level === 'warning' ? '⚠️' : '✅'}</span>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:${analysis.level === 'danger' ? S.danger : analysis.level === 'warning' ? S.warn : S.accent};">
+            Riesgo: ${analysis.level === 'danger' ? 'ALTO' : analysis.level === 'warning' ? 'MEDIO' : 'BAJO'} (${analysis.score} pts)
+          </div>
+        </div>
+      </div>
+      ${analysis.suggestions.length ? `
+      <div style="display:flex;flex-direction:column;gap:3px;">
+        ${analysis.suggestions.slice(0, 4).map(s => `
+          <div style="font-size:10px;color:${S.muted};padding-left:22px;">→ ${_esc(s)}</div>
+        `).join('')}
+      </div>
+      ` : ''}
     </div>
     ` : ''}
 
@@ -392,11 +480,25 @@ function _blastHTML() {
 
     <!-- CONTROLES -->
     ${!running && !paused && hasPending ? `
-      <button id="sb-start" style="
-        width:100%;padding:14px;border-radius:10px;border:none;
-        background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
-        box-shadow:0 2px 12px ${S.accent}40;
-      ">▶ Enviar a ${cfg.batchSize} personas</button>
+      ${!inWindow ? `
+        <div style="text-align:center;padding:12px;background:${S.dangerBg};border:1px solid #fecaca;border-radius:10px;font-size:12px;color:${S.danger};font-weight:600;">
+          🔴 No se puede enviar fuera de horario (${peruTime})
+        </div>
+      ` : analysis.level === 'danger' ? `
+        <div style="margin-bottom:6px;text-align:center;padding:8px;background:${S.dangerBg};border:1px solid #fecaca;border-radius:8px;font-size:11px;color:${S.danger};">
+          ⚠️ Las plantillas tienen riesgo ALTO — revisá las sugerencias arriba
+        </div>
+        <button id="sb-start" data-force="true" style="
+          width:100%;padding:14px;border-radius:10px;border:1px solid ${S.danger};
+          background:${S.dangerBg};color:${S.danger};font-size:15px;font-weight:700;cursor:pointer;
+        ">⚠️ Enviar igual a ${cfg.batchSize} personas</button>
+      ` : `
+        <button id="sb-start" style="
+          width:100%;padding:14px;border-radius:10px;border:none;
+          background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+          box-shadow:0 2px 12px ${S.accent}40;
+        ">▶ Enviar a ${cfg.batchSize} personas</button>
+      `}
     ` : running ? `
       <button id="sb-pause" style="
         width:100%;padding:14px;border-radius:10px;border:1px solid ${S.warn}40;

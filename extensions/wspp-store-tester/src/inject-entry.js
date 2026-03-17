@@ -20,16 +20,19 @@ import './inject/wa-module-installer.js';
 // 6. Audio catalog panel: panel UI + PTT send
 import './inject/audio-catalog-panel.js';
 
-// 7. Blast panel: motor de blast masivo + anti-ban
+// 7. Template analyzer: análisis de riesgo de plantillas pre-envío
+import './inject/template-analyzer.js';
+
+// 8. Blast panel: motor de blast masivo + anti-ban
 import './inject/blast-panel.js';
 
-// 8. WA Validator panel: verificación de números (silencioso + conversación)
+// 9. WA Validator panel: verificación de números (silencioso + conversación)
 import './inject/wa-validator-panel.js';
 
-// 9. Chat opener: flujo DOM para abrir chats con números nuevos
+// 10. Chat opener: flujo DOM para abrir chats con números nuevos
 import './inject/chat-opener.js';
 
-// 10. Sidebar: panel lateral unificado (reemplaza los 3 FABs separados)
+// 11. Sidebar: panel lateral unificado (reemplaza los 3 FABs separados)
 import './inject/sidebar.js';
 
 // ── Bootstrap WA listeners ────────────────────────────────────────────

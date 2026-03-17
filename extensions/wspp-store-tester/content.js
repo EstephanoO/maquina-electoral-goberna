@@ -264,8 +264,8 @@ window.addEventListener('message', (e) => {
 
   // --- BLAST_GET_FORM_CONTACTS (form_submissions: inject → background → inject) ---
   if (e.data?.type === 'BLAST_GET_FORM_CONTACTS') {
-    const { limit, offset, status, district, reqId } = e.data;
-    chrome.runtime.sendMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit, offset, status, district }, (response) => {
+    const { limit, offset, status, district, reqId, own_number } = e.data;
+    chrome.runtime.sendMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit, offset, status, district, own_number }, (response) => {
       if (chrome.runtime.lastError) {
         window.postMessage({ type: 'BLAST_FORM_CONTACTS_READY', ok: false, error: chrome.runtime.lastError.message, reqId }, WA_ORIGIN);
         return;
@@ -323,6 +323,19 @@ window.addEventListener('message', (e) => {
   // --- BLAST_REPORT_RESULTS (inject → background, fire-and-forget) ---
   if (e.data?.type === 'BLAST_REPORT_RESULTS') {
     chrome.runtime.sendMessage({ type: 'BLAST_REPORT', results: e.data.results }, () => {});
+    return;
+  }
+
+  // --- BLAST_GET_NUMBER_HEALTH (inject → background → inject) ---
+  if (e.data?.type === 'BLAST_GET_NUMBER_HEALTH') {
+    const own_number = e.data.own_number;
+    chrome.runtime.sendMessage({ type: 'BLAST_GET_NUMBER_HEALTH', own_number }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'BLAST_NUMBER_HEALTH_READY', ok: false, can_send: true }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({ type: 'BLAST_NUMBER_HEALTH_READY', ...response }, WA_ORIGIN);
+    });
     return;
   }
 

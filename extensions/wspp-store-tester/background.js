@@ -1756,12 +1756,14 @@
   // src/background/blast-handlers.js
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type !== "BLAST_GET_FORM_CONTACTS") return;
-    const { limit = 200, offset = 0, status = "nuevo", district } = msg;
+    const { limit = 200, offset = 0, status = "nuevo", district, own_number } = msg;
     const qs = new URLSearchParams({ limit, offset, status });
     if (district) qs.set("district", district);
     (async () => {
       try {
-        const result = await apiFetch(`/api/blast/form-contacts?${qs}`);
+        const result = await apiFetch(`/api/blast/form-contacts?${qs}`, {
+          headers: own_number ? { "x-wa-number": own_number } : {}
+        });
         if (!result.ok) {
           sendResponse({ ok: false, error: result.message || result.error || "Failed" });
           return;
@@ -1858,6 +1860,25 @@
         sendResponse({ ok: result.ok, config: result.config || null });
       } catch (err) {
         sendResponse({ ok: false, config: null, error: err.message });
+      }
+    })();
+    return true;
+  });
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg.type !== "BLAST_GET_NUMBER_HEALTH") return;
+    const { own_number } = msg;
+    if (!own_number) {
+      sendResponse({ ok: false, error: "No own_number", can_send: false });
+      return true;
+    }
+    (async () => {
+      try {
+        const result = await apiFetch("/api/blast/number-health", {
+          headers: { "x-wa-number": own_number }
+        });
+        sendResponse(result);
+      } catch (err) {
+        sendResponse({ ok: false, error: err.message, can_send: true });
       }
     })();
     return true;

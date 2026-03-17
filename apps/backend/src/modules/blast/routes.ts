@@ -299,5 +299,46 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
         });
       }
     );
+
+    // ──────────────────────────────────────────────────────────────────
+    // GET /api/blast/number-health
+    // Returns health/limits for the calling WA number (hourly, daily,
+    // warm-up status). Used by the extension to enforce cooldowns.
+    // ──────────────────────────────────────────────────────────────────
+    app.get(
+      "/api/blast/number-health",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const req        = request as AuthenticatedRequest;
+        const requestId  = String(request.id);
+        const campaignId = req.activeCampaignId!;
+
+        const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "");
+        if (!waNumber) {
+          return reply.code(400).send(
+            errorPayload(requestId, "VALIDATION_ERROR", "Falta header x-wa-number")
+          );
+        }
+
+        try {
+          const health = await repo.getNumberHealth(campaignId, waNumber);
+          return reply.code(200).send({
+            ok:         true,
+            request_id: requestId,
+            ...health,
+          });
+        } catch (err) {
+          app.log.error({ err }, "[blast] getNumberHealth failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "Error al obtener salud del número")
+          );
+        }
+      }
+    );
   };
 }

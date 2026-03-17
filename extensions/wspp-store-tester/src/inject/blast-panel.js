@@ -84,6 +84,9 @@ const _sentIds = new Set();          // Set de form_submission.id
 // Si el mismo teléfono o ID ya está en vuelo, el loop lo salta.
 const _inFlight = new Set(); // Set de 'phone:ID' en vuelo
 
+// ── Auto-exclusión: contactos que respondieron no reciben más blast ───
+const _respondedPhones = new Set();  // Set de teléfonos normalizados que respondieron
+
 // ── Índice de plantilla de sesión ─────────────────────────────────────
 // Contador global que SOLO avanza cuando un envío fue exitoso.
 let _tplIndex = 0;
@@ -110,6 +113,59 @@ export function getKpis() { return { ..._kpis }; }
 export function getLastResults() { return _lastResults; }
 export function setOnUpdate(fn) { _onUpdate = fn; }
 export function getTplIndex() { return _tplIndex; } // índice actual de rotación
+export function getRespondedCount() { return _respondedPhones.size; }
+
+// ── Number Health: estado del número activo ──────────────────────────
+let _numberHealth = null; // { sent_last_hour, sent_today, daily_limit, hourly_limit, can_send, risk_level, age_days }
+let _numberAuthorized = null; // null=unknown, true=registrado, false=no registrado
+export function getNumberHealth() { return _numberHealth; }
+export function isNumberAuthorized() { return _numberAuthorized; }
+
+// Fetch number health desde el backend
+export function fetchNumberHealth() {
+  const num = getOwnNumber();
+  if (!num) {
+    _numberHealth = null;
+    _numberAuthorized = null;
+    _notify();
+    return;
+  }
+  window.postMessage({ type: 'BLAST_GET_NUMBER_HEALTH', own_number: num }, WA_ORIGIN);
+}
+
+// También verificar config (si existe = número registrado)
+export function fetchNumberConfig() {
+  const num = getOwnNumber();
+  if (!num) return;
+  window.postMessage({ type: 'BLAST_GET_NUMBER_CONFIG', own_number: num }, WA_ORIGIN);
+}
+
+// Listeners para respuestas
+window.addEventListener('message', (e) => {
+  if (e.source !== window) return;
+  if (e.data?.type === 'BLAST_NUMBER_HEALTH_READY') {
+    if (e.data.ok) {
+      _numberHealth = {
+        sent_last_hour: e.data.sent_last_hour ?? 0,
+        sent_today: e.data.sent_today ?? 0,
+        daily_limit: e.data.daily_limit ?? 200,
+        hourly_limit: e.data.hourly_limit ?? 50,
+        can_send: e.data.can_send ?? true,
+        risk_level: e.data.risk_level ?? 'low',
+        age_days: e.data.age_days ?? 0,
+        warm_up_limit: e.data.warm_up_limit ?? 200,
+      };
+    }
+    _notify();
+    return;
+  }
+  if (e.data?.type === 'BLAST_NUMBER_CONFIG_READY') {
+    // Si config existe, el número está registrado en el sistema
+    _numberAuthorized = e.data.config !== null;
+    _notify();
+    return;
+  }
+});
 
 function _notify() { if (_onUpdate) _onUpdate(); }
 
@@ -173,6 +229,7 @@ function _trackMessage(msgModel, contactName, telefono) {
   _kpis[key] = (_kpis[key] || 0) + 1;
   _trackedMsgs.push({ msgModel, contactName, telefono, lastAck: Number(ack) || 0, ts: Date.now() });
   _startAckTracking();
+  _notify(); // Actualizar sidebar inmediatamente con el nuevo KPI
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -219,7 +276,7 @@ export function refreshPendingCount() {
     },
     timer,
   });
-  window.postMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit: 1, offset: 0, status: 'nuevo', reqId }, WA_ORIGIN);
+  window.postMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit: 1, offset: 0, status: 'nuevo', reqId, own_number: getOwnNumber() }, WA_ORIGIN);
 }
 
 function _fetchBatch(limit) {
@@ -232,7 +289,7 @@ function _fetchBatch(limit) {
       }
     }, 15000);
     _pendingRequests.set(reqId, { resolve, timer });
-    window.postMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit, offset: 0, status: 'nuevo', reqId }, WA_ORIGIN);
+    window.postMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit, offset: 0, status: 'nuevo', reqId, own_number: getOwnNumber() }, WA_ORIGIN);
   });
 }
 
@@ -243,6 +300,17 @@ function _markHablado(ids) {
 function _reportLog(results) {
   if (results.length) window.postMessage({ type: 'BLAST_REPORT_RESULTS', results }, WA_ORIGIN);
 }
+
+// ── Auto-exclusión por respuesta: si un contacto responde, sacarlo ───
+// Escucha msgs entrantes. Si el número está en _sentThisSession, lo marca.
+window.addEventListener('message', (e) => {
+  if (e.source !== window || e.data?.type !== 'WSPP_INCOMING_MSG') return;
+  const phone = (e.data.phone || '').replace(/\D/g, '');
+  if (phone && _sentThisSession.has(phone)) {
+    _respondedPhones.add(phone);
+    console.log('[BLAST] Auto-exclusión: contacto respondió →', phone);
+  }
+});
 
 // ══════════════════════════════════════════════════════════════════════
 // MESSAGE VARIATION — Spintax por bloques
@@ -380,6 +448,22 @@ async function _prewarmChat(jid) {
   return { chat, alreadyInStore: false };
 }
 
+// ── Typing indicator: simula "escribiendo..." como un humano ──────────
+// Delay proporcional al largo del texto: 30ms/char, min 800ms, max 4000ms
+async function _simulateTyping(chat, text) {
+  try {
+    const csb = _req('WAWebChatStateBridge');
+    if (csb.sendChatStateComposing) {
+      await csb.sendChatStateComposing(chat.id);
+      const typingMs = Math.max(800, Math.min(4000, text.length * 30));
+      await _sleep(typingMs);
+      if (csb.sendChatStatePaused) await csb.sendChatStatePaused(chat.id);
+    }
+  } catch (_) {
+    // WAWebChatStateBridge no disponible — continuar sin typing
+  }
+}
+
 // Returns the msg model so we can track ack later
 // FIX 2026-03-17:
 //   - MsgKey.newId() es async — await obligatorio para obtener el string ID
@@ -387,6 +471,9 @@ async function _prewarmChat(jid) {
 //   - p1 no es el msgModel — capturar el modelo vía MsgCollection.on('add') por ID
 //   - unproxy(chat) necesario para que addAndSendMsgToChat funcione con @lid chats
 async function _sendToChat(chat, text) {
+  // Stealth: enviar "escribiendo..." antes del mensaje
+  await _simulateTyping(chat, text);
+
   const meMod   = _req('WAWebUserPrefsMeUser');
   const meUser  = (meMod.getMaybeMePnUser ?? meMod.getMeUser).call(meMod);
   const MsgKey  = _req('WAWebMsgKey');
@@ -439,13 +526,96 @@ async function _sendToChat(chat, text) {
   }
 
   // Si no capturamos el modelo via 'add', buscarlo en la colección por ID
+  // Backbone usa .models (no ._models) — intentar ambos por seguridad
   if (!capturedModel) {
-    capturedModel = MsgCollection._models.find(m =>
-      m.get?.('id')?.id === idStr && m.get?.('id')?.fromMe
-    ) || null;
+    const models = MsgCollection.models || MsgCollection._models || [];
+    try {
+      capturedModel = (Array.isArray(models) ? models : Array.from(models)).find(m =>
+        m.get?.('id')?.id === idStr && m.get?.('id')?.fromMe
+      ) || null;
+    } catch (_) {
+      capturedModel = null;
+    }
+  }
+
+  // Último recurso: esperar 500ms y reintentar (el 'add' event puede ser async)
+  if (!capturedModel) {
+    await new Promise(r => setTimeout(r, 500));
+    const models2 = MsgCollection.models || MsgCollection._models || [];
+    try {
+      capturedModel = (Array.isArray(models2) ? models2 : Array.from(models2)).find(m =>
+        m.get?.('id')?.id === idStr && m.get?.('id')?.fromMe
+      ) || null;
+    } catch (_) {}
   }
 
   return capturedModel; // Backbone model con ack en tiempo real vía .on('change:ack')
+}
+
+// ── Stealth: Gaussian delay + micro-breaks ────────────────────────────
+// Box-Muller transform: genera distribución gaussiana a partir de uniforme
+function _gaussianRandom(mean, stddev) {
+  let u, v, s;
+  do {
+    u = Math.random() * 2 - 1;
+    v = Math.random() * 2 - 1;
+    s = u * u + v * v;
+  } while (s >= 1 || s === 0);
+  const mul = Math.sqrt(-2 * Math.log(s) / s);
+  return mean + stddev * u * mul;
+}
+
+// Delay gaussiano: media = delaySec, stddev = 40%, clamp [5s, delaySec*3]
+function _gaussianDelay(delaySec) {
+  const raw = _gaussianRandom(delaySec, delaySec * 0.4);
+  return Math.max(5, Math.min(delaySec * 3, Math.round(raw)));
+}
+
+// Micro-descanso: cada 3-7 msgs, pausa de 30-90s ("se distrajo, tomó agua")
+let _msgsSinceBreak = 0;
+let _nextBreakAt = 3 + Math.floor(Math.random() * 5); // 3-7
+
+function _shouldMicroBreak() {
+  _msgsSinceBreak++;
+  if (_msgsSinceBreak >= _nextBreakAt) {
+    _msgsSinceBreak = 0;
+    _nextBreakAt = 3 + Math.floor(Math.random() * 5);
+    return true;
+  }
+  return false;
+}
+
+function _microBreakDuration() {
+  return 30 + Math.floor(Math.random() * 61); // 30-90 seconds
+}
+
+// ── Stealth: ventana horaria (hora Perú UTC-5) ───────────────────────
+// Lun-Vie: 8:00-20:00 | Sáb: 9:00-14:00 | Dom: NO
+function _getPeruTime() {
+  const now = new Date();
+  // UTC-5 (Perú no tiene daylight saving)
+  const peruOffset = -5 * 60;
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  return new Date(utc + peruOffset * 60000);
+}
+
+function _isWithinBlastWindow() {
+  const peru = _getPeruTime();
+  const day = peru.getDay(); // 0=dom, 6=sáb
+  const hour = peru.getHours();
+  const minute = peru.getMinutes();
+  const timeDecimal = hour + minute / 60;
+
+  if (day === 0) return false;                    // Domingo: NO enviar
+  if (day === 6) return timeDecimal >= 9 && timeDecimal < 14;  // Sábado: 9-14
+  return timeDecimal >= 8 && timeDecimal < 20;     // Lun-Vie: 8-20
+}
+
+// Exportar para sidebar
+export function isWithinBlastWindow() { return _isWithinBlastWindow(); }
+export function getPeruTimeStr() {
+  const p = _getPeruTime();
+  return p.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 // ── Timers ────────────────────────────────────────────────────────────
@@ -470,8 +640,37 @@ export async function startBlast() {
   if (_loopRunning) return; // previene segundo loop si resume llega antes de que el primero termine
   if (!tpls.length || !tpls[0].trim()) return;
 
-  _running = true; _paused = false; _consecFails = 0; _loopRunning = true;
+  // Guard: número no detectado
   const activeNumber = getOwnNumber();
+  if (!activeNumber) {
+    _lastResults.unshift({ nombre: '❌ Sin número', telefono: '', status: 'blocked', ack: -1, error: 'No se detectó el número de este dispositivo. Recargá WhatsApp Web.' });
+    _notify();
+    return;
+  }
+
+  // Guard: número no autorizado (no es uno de los 6 de César)
+  if (_numberAuthorized === false) {
+    _lastResults.unshift({ nombre: '🚫 No autorizado', telefono: '+' + activeNumber, status: 'blocked', ack: -1, error: 'Este número no está registrado como celular de blast. Contactá al coordinador.' });
+    _notify();
+    return;
+  }
+
+  // Guard: number health — cooldown activo
+  if (_numberHealth && !_numberHealth.can_send) {
+    _lastResults.unshift({ nombre: '⚠️ Límite alcanzado', telefono: '+' + activeNumber, status: 'blocked', ack: -1, error: `Hoy: ${_numberHealth.sent_today}/${_numberHealth.daily_limit} msgs. Hora: ${_numberHealth.sent_last_hour}/${_numberHealth.hourly_limit}. Esperá.` });
+    _notify();
+    return;
+  }
+
+  // Stealth: no enviar fuera de ventana horaria (Perú UTC-5)
+  if (!_isWithinBlastWindow()) {
+    _lastResults.unshift({ nombre: '🕐 Fuera de horario', telefono: '', status: 'blocked', ack: -1, error: 'Horario no permitido (' + getPeruTimeStr() + '). Lun-Vie 8-20h, Sáb 9-14h, Dom no.' });
+    _notify();
+    return;
+  }
+
+  _running = true; _paused = false; _consecFails = 0; _loopRunning = true;
+  _msgsSinceBreak = 0; // reset micro-break counter
   _notify();
 
   while (_running && !_paused) {
@@ -513,6 +712,12 @@ export async function startBlast() {
         (lockKey && _inFlight.has(lockKey))
       ) {
         console.log('[BLAST] Dedup local — ya enviado/en vuelo:', normalizedPhone || c.id);
+        continue;
+      }
+
+      // ── Auto-exclusión: si el contacto ya respondió, no enviar más ──
+      if (normalizedPhone && _respondedPhones.has(normalizedPhone)) {
+        console.log('[BLAST] Auto-exclusión — contacto respondió:', normalizedPhone);
         continue;
       }
 
@@ -597,7 +802,13 @@ export async function startBlast() {
           const partModel = await _sendToChat(chat, partText);
           if (p === 0) {
             msgModel = partModel;
-            if (partModel) _trackMessage(partModel, cName, c.telefono);
+            if (partModel) {
+              _trackMessage(partModel, cName, c.telefono);
+            } else {
+              // Fallback: contar como pending aunque no tengamos el modelo
+              // Esto mantiene los KPIs visibles incluso si la captura del modelo falla
+              _kpis.pending++;
+            }
           }
         }
 
@@ -633,17 +844,31 @@ export async function startBlast() {
       _notify();
       if (logBatch.length >= 10) { _reportLog([...logBatch]); logBatch.length = 0; }
 
-      // Delays
+      // Delays — gaussiano + micro-descansos stealth
       if (_running && !_paused && i < batch.length - 1) {
+        // Check ventana horaria — pausar si se salió del horario permitido
+        if (!_isWithinBlastWindow()) {
+          _paused = true; _running = false; _stopCountdown();
+          _lastResults.unshift({ nombre: '🕐 Fuera de horario', telefono: '', status: 'paused', ack: -1, error: 'Pausa por ventana horaria (' + getPeruTimeStr() + ')' });
+          _notify(); break;
+        }
+
         if (batchSent > 0 && batchSent % 25 === 0 && cfg.descansoSec > 0) {
-          _startCountdown(cfg.descansoSec, 'descanso'); _notify();
-          await _sleep(cfg.descansoSec * 1000); _stopCountdown();
+          // Descanso largo cada 25 — gaussiano alrededor del config
+          const descanso = _gaussianDelay(cfg.descansoSec);
+          _startCountdown(descanso, 'descanso'); _notify();
+          await _sleep(descanso * 1000); _stopCountdown();
         } else if (batchSent > 0 && cfg.pausaCada > 0 && batchSent % cfg.pausaCada === 0 && cfg.pausaSec > 0) {
           _startCountdown(cfg.pausaSec, 'pausa'); _notify();
           await _sleep(cfg.pausaSec * 1000); _stopCountdown();
+        } else if (_shouldMicroBreak()) {
+          // Micro-descanso: simula que el humano se distrajo
+          const breakSec = _microBreakDuration();
+          _startCountdown(breakSec, 'micro'); _notify();
+          await _sleep(breakSec * 1000); _stopCountdown();
         } else if (cfg.delaySec > 0) {
-          const v = cfg.delaySec * 0.3;
-          const actual = Math.max(1, Math.round(cfg.delaySec + (Math.random() * 2 - 1) * v));
+          // Delay gaussiano entre contactos (reemplaza el uniforme ±30%)
+          const actual = _gaussianDelay(cfg.delaySec);
           _startCountdown(actual, 'delay'); _notify();
           await _sleep(actual * 1000); _stopCountdown();
         }
@@ -680,6 +905,7 @@ export function resetSession() {
   _sentThisSession.clear();
   _sentIds.clear();
   _inFlight.clear();
+  _respondedPhones.clear();
   _loopRunning = false;
   _tplIndex = 0;
   _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };

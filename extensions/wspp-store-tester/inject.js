@@ -2140,6 +2140,147 @@
     }
   });
 
+  // src/inject/template-analyzer.js
+  var SPAM_WORDS = [
+    "oferta",
+    "descuento",
+    "gratis",
+    "promo",
+    "promoci\xF3n",
+    "promocion",
+    "sorteo",
+    "regalo",
+    "gana",
+    "ganar",
+    "premios",
+    "premio",
+    "click aqu\xED",
+    "haz click",
+    "compra ya",
+    "aprovecha",
+    "\xFAltimo d\xEDa",
+    "\xFAltimas horas",
+    "time limited",
+    "oferta limitada"
+  ];
+  function _levenshteinNorm(a, b) {
+    if (!a.length || !b.length) return 1;
+    const maxLen = Math.max(a.length, b.length);
+    const matrix = [];
+    for (let i = 0; i <= a.length; i++) {
+      matrix[i] = [i];
+      for (let j = 1; j <= b.length; j++) {
+        if (i === 0) {
+          matrix[i][j] = j;
+          continue;
+        }
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + (a[i - 1] !== b[j - 1] ? 1 : 0)
+        );
+      }
+    }
+    return 1 - matrix[a.length][b.length] / maxLen;
+  }
+  function _stripSpintax(tpl) {
+    return tpl.replace(/\[([^\]]+)\]/g, (_, inner) => inner.split("|")[0]).trim();
+  }
+  function _countEmojis(text) {
+    const emojiRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{200D}\u{20E3}]/gu;
+    const matches = text.match(emojiRegex);
+    return matches ? matches.length : 0;
+  }
+  function _minSpintaxOptions(tpl) {
+    const matches = tpl.match(/\[([^\]]+)\]/g);
+    if (!matches || !matches.length) return 0;
+    return Math.min(...matches.map((m) => m.slice(1, -1).split("|").length));
+  }
+  function _analyzeOneTemplate(tpl) {
+    const stripped = _stripSpintax(tpl);
+    const signals = [];
+    let score = 0;
+    if (/https?:\/\/|www\.|\.com\b|\.pe\b|bit\.ly|goo\.gl/i.test(stripped)) {
+      score += 30;
+      signals.push({ points: 30, signal: "Tiene URL/link", suggestion: "Elimin\xE1 el link \u2014 envialo despu\xE9s de que respondan" });
+    }
+    const emojiCount = _countEmojis(stripped);
+    if (emojiCount > 3) {
+      score += 10;
+      signals.push({ points: 10, signal: `${emojiCount} emojis (>3)`, suggestion: "Reduc\xED los emojis a m\xE1ximo 2-3" });
+    }
+    const fullText = stripped.replace(/\n---\n/g, " ");
+    if (fullText.length > 300) {
+      score += 10;
+      signals.push({ points: 10, signal: `Texto largo (${fullText.length} chars)`, suggestion: "Reduc\xED a menos de 200 caracteres \u2014 la gente no lee msgs largos de desconocidos" });
+    }
+    if (!/\{\{nombre\}\}/i.test(tpl)) {
+      score += 20;
+      signals.push({ points: 20, signal: "Sin personalizaci\xF3n {{nombre}}", suggestion: "Agreg\xE1 {{nombre}} al inicio del saludo \u2014 personalizaci\xF3n = legitimidad" });
+    }
+    const minOpts = _minSpintaxOptions(tpl);
+    const spintaxGroups = (tpl.match(/\[([^\]]+)\]/g) || []).length;
+    if (spintaxGroups > 0 && minOpts < 3) {
+      score += 10;
+      signals.push({ points: 10, signal: `Spintax con pocas opciones (m\xEDn ${minOpts})`, suggestion: "Agreg\xE1 m\xE1s variantes \u2014 m\xEDnimo 3 opciones por cada [...]" });
+    }
+    const lowerText = stripped.toLowerCase();
+    const foundSpam = SPAM_WORDS.filter((w) => lowerText.includes(w));
+    if (foundSpam.length) {
+      score += 25;
+      signals.push({ points: 25, signal: `Palabras spam: ${foundSpam.join(", ")}`, suggestion: 'Evit\xE1 palabras comerciales \u2014 WA penaliza "oferta", "descuento", etc.' });
+    }
+    if (/\b\d{9,}\b/.test(stripped.replace(/\{\{[^}]+\}\}/g, ""))) {
+      score += 15;
+      signals.push({ points: 15, signal: "Contiene n\xFAmero de tel\xE9fono", suggestion: "Sac\xE1 el n\xFAmero \u2014 redirecci\xF3n en primer contacto = sospechoso" });
+    }
+    if (!tpl.includes("---")) {
+      score += 5;
+      signals.push({ points: 5, signal: "Un solo mensaje (sin ---)", suggestion: "Divid\xED en 2-3 mensajes con --- para parecer m\xE1s natural" });
+    }
+    return { score, signals };
+  }
+  function analyzeTemplates(templates) {
+    if (!templates || !templates.length) {
+      return { score: 0, level: "ok", signals: [], suggestions: [] };
+    }
+    const analyses = templates.map((t) => _analyzeOneTemplate(t));
+    let maxScore = Math.max(...analyses.map((a) => a.score));
+    const allSignals = analyses.flatMap((a) => a.signals);
+    if (templates.length > 1) {
+      const stripped = templates.map(_stripSpintax);
+      let maxSimilarity = 0;
+      for (let i = 0; i < stripped.length; i++) {
+        for (let j = i + 1; j < stripped.length; j++) {
+          const sim = _levenshteinNorm(stripped[i], stripped[j]);
+          maxSimilarity = Math.max(maxSimilarity, sim);
+        }
+      }
+      if (maxSimilarity > 0.7) {
+        maxScore += 15;
+        allSignals.push({ points: 15, signal: `Plantillas muy similares (${Math.round(maxSimilarity * 100)}%)`, suggestion: "Las plantillas deben ser m\xE1s diferentes entre s\xED \u2014 vari\xE1 estructura, largo y tono" });
+      }
+    }
+    const seenSuggestions = /* @__PURE__ */ new Set();
+    const suggestions = [];
+    for (const s of allSignals) {
+      if (!seenSuggestions.has(s.suggestion)) {
+        seenSuggestions.add(s.suggestion);
+        suggestions.push(s.suggestion);
+      }
+    }
+    let level = "ok";
+    if (maxScore > 40) level = "danger";
+    else if (maxScore > 20) level = "warning";
+    return {
+      score: maxScore,
+      level,
+      signals: allSignals,
+      suggestions,
+      perTemplate: analyses
+    };
+  }
+
   // src/inject/blast-panel.js
   async function _spamCheck() {
     return new Promise((resolve) => {
@@ -2217,6 +2358,7 @@
   var _sentThisSession = /* @__PURE__ */ new Set();
   var _sentIds = /* @__PURE__ */ new Set();
   var _inFlight = /* @__PURE__ */ new Set();
+  var _respondedPhones = /* @__PURE__ */ new Set();
   var _tplIndex = 0;
   var _loopRunning = false;
   function getConfig() {
@@ -2260,6 +2402,53 @@
   function getTplIndex() {
     return _tplIndex;
   }
+  var _numberHealth = null;
+  var _numberAuthorized = null;
+  function getNumberHealth() {
+    return _numberHealth;
+  }
+  function isNumberAuthorized() {
+    return _numberAuthorized;
+  }
+  function fetchNumberHealth() {
+    const num = getOwnNumber();
+    if (!num) {
+      _numberHealth = null;
+      _numberAuthorized = null;
+      _notify();
+      return;
+    }
+    window.postMessage({ type: "BLAST_GET_NUMBER_HEALTH", own_number: num }, WA_ORIGIN);
+  }
+  function fetchNumberConfig() {
+    const num = getOwnNumber();
+    if (!num) return;
+    window.postMessage({ type: "BLAST_GET_NUMBER_CONFIG", own_number: num }, WA_ORIGIN);
+  }
+  window.addEventListener("message", (e) => {
+    if (e.source !== window) return;
+    if (e.data?.type === "BLAST_NUMBER_HEALTH_READY") {
+      if (e.data.ok) {
+        _numberHealth = {
+          sent_last_hour: e.data.sent_last_hour ?? 0,
+          sent_today: e.data.sent_today ?? 0,
+          daily_limit: e.data.daily_limit ?? 200,
+          hourly_limit: e.data.hourly_limit ?? 50,
+          can_send: e.data.can_send ?? true,
+          risk_level: e.data.risk_level ?? "low",
+          age_days: e.data.age_days ?? 0,
+          warm_up_limit: e.data.warm_up_limit ?? 200
+        };
+      }
+      _notify();
+      return;
+    }
+    if (e.data?.type === "BLAST_NUMBER_CONFIG_READY") {
+      _numberAuthorized = e.data.config !== null;
+      _notify();
+      return;
+    }
+  });
   function _notify() {
     if (_onUpdate) _onUpdate();
   }
@@ -2312,6 +2501,7 @@
     _kpis[key] = (_kpis[key] || 0) + 1;
     _trackedMsgs.push({ msgModel, contactName, telefono, lastAck: Number(ack) || 0, ts: Date.now() });
     _startAckTracking();
+    _notify();
   }
   var _reqIdCounter = 0;
   function _nextReqId() {
@@ -2344,7 +2534,7 @@
       },
       timer
     });
-    window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit: 1, offset: 0, status: "nuevo", reqId }, WA_ORIGIN);
+    window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit: 1, offset: 0, status: "nuevo", reqId, own_number: getOwnNumber() }, WA_ORIGIN);
   }
   function _fetchBatch(limit) {
     return new Promise((resolve) => {
@@ -2356,7 +2546,7 @@
         }
       }, 15e3);
       _pendingRequests.set(reqId, { resolve, timer });
-      window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit, offset: 0, status: "nuevo", reqId }, WA_ORIGIN);
+      window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit, offset: 0, status: "nuevo", reqId, own_number: getOwnNumber() }, WA_ORIGIN);
     });
   }
   function _markHablado(ids) {
@@ -2365,6 +2555,14 @@
   function _reportLog(results) {
     if (results.length) window.postMessage({ type: "BLAST_REPORT_RESULTS", results }, WA_ORIGIN);
   }
+  window.addEventListener("message", (e) => {
+    if (e.source !== window || e.data?.type !== "WSPP_INCOMING_MSG") return;
+    const phone = (e.data.phone || "").replace(/\D/g, "");
+    if (phone && _sentThisSession.has(phone)) {
+      _respondedPhones.add(phone);
+      console.log("[BLAST] Auto-exclusi\xF3n: contacto respondi\xF3 \u2192", phone);
+    }
+  });
   var SALUDOS = ["Hola", "Buenas", "Buenos d\xEDas", "Hola buen d\xEDa", "Qu\xE9 tal", "Buenas tardes"];
   var CIERRES = ["Gracias!", "Saludos!", "Un abrazo!", "Hasta pronto!", "\xC9xitos!"];
   var EMOJIS = ["\u{1F44B}", "\u{1F64C}", "\u2705", "\u{1F60A}", "\u{1F31F}", "\u{1F4AC}"];
@@ -2441,7 +2639,20 @@
     if (!chat) throw new Error("N\xFAmero no existe en WA");
     return { chat, alreadyInStore: false };
   }
+  async function _simulateTyping(chat, text) {
+    try {
+      const csb = _req("WAWebChatStateBridge");
+      if (csb.sendChatStateComposing) {
+        await csb.sendChatStateComposing(chat.id);
+        const typingMs = Math.max(800, Math.min(4e3, text.length * 30));
+        await _sleep(typingMs);
+        if (csb.sendChatStatePaused) await csb.sendChatStatePaused(chat.id);
+      }
+    } catch (_) {
+    }
+  }
   async function _sendToChat(chat, text) {
+    await _simulateTyping(chat, text);
     const meMod = _req("WAWebUserPrefsMeUser");
     const meUser = (meMod.getMaybeMePnUser ?? meMod.getMeUser).call(meMod);
     const MsgKey = _req("WAWebMsgKey");
@@ -2487,11 +2698,77 @@
       MsgCollection.off("add", onAdd);
     }
     if (!capturedModel) {
-      capturedModel = MsgCollection._models.find(
-        (m) => m.get?.("id")?.id === idStr && m.get?.("id")?.fromMe
-      ) || null;
+      const models = MsgCollection.models || MsgCollection._models || [];
+      try {
+        capturedModel = (Array.isArray(models) ? models : Array.from(models)).find(
+          (m) => m.get?.("id")?.id === idStr && m.get?.("id")?.fromMe
+        ) || null;
+      } catch (_) {
+        capturedModel = null;
+      }
+    }
+    if (!capturedModel) {
+      await new Promise((r) => setTimeout(r, 500));
+      const models2 = MsgCollection.models || MsgCollection._models || [];
+      try {
+        capturedModel = (Array.isArray(models2) ? models2 : Array.from(models2)).find(
+          (m) => m.get?.("id")?.id === idStr && m.get?.("id")?.fromMe
+        ) || null;
+      } catch (_) {
+      }
     }
     return capturedModel;
+  }
+  function _gaussianRandom(mean, stddev) {
+    let u, v, s;
+    do {
+      u = Math.random() * 2 - 1;
+      v = Math.random() * 2 - 1;
+      s = u * u + v * v;
+    } while (s >= 1 || s === 0);
+    const mul = Math.sqrt(-2 * Math.log(s) / s);
+    return mean + stddev * u * mul;
+  }
+  function _gaussianDelay(delaySec) {
+    const raw = _gaussianRandom(delaySec, delaySec * 0.4);
+    return Math.max(5, Math.min(delaySec * 3, Math.round(raw)));
+  }
+  var _msgsSinceBreak = 0;
+  var _nextBreakAt = 3 + Math.floor(Math.random() * 5);
+  function _shouldMicroBreak() {
+    _msgsSinceBreak++;
+    if (_msgsSinceBreak >= _nextBreakAt) {
+      _msgsSinceBreak = 0;
+      _nextBreakAt = 3 + Math.floor(Math.random() * 5);
+      return true;
+    }
+    return false;
+  }
+  function _microBreakDuration() {
+    return 30 + Math.floor(Math.random() * 61);
+  }
+  function _getPeruTime() {
+    const now = /* @__PURE__ */ new Date();
+    const peruOffset = -5 * 60;
+    const utc = now.getTime() + now.getTimezoneOffset() * 6e4;
+    return new Date(utc + peruOffset * 6e4);
+  }
+  function _isWithinBlastWindow() {
+    const peru = _getPeruTime();
+    const day = peru.getDay();
+    const hour = peru.getHours();
+    const minute = peru.getMinutes();
+    const timeDecimal = hour + minute / 60;
+    if (day === 0) return false;
+    if (day === 6) return timeDecimal >= 9 && timeDecimal < 14;
+    return timeDecimal >= 8 && timeDecimal < 20;
+  }
+  function isWithinBlastWindow() {
+    return _isWithinBlastWindow();
+  }
+  function getPeruTimeStr() {
+    const p = _getPeruTime();
+    return p.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", hour12: false });
   }
   function _sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
@@ -2515,11 +2792,32 @@
     if (_running) return;
     if (_loopRunning) return;
     if (!tpls.length || !tpls[0].trim()) return;
+    const activeNumber = getOwnNumber();
+    if (!activeNumber) {
+      _lastResults.unshift({ nombre: "\u274C Sin n\xFAmero", telefono: "", status: "blocked", ack: -1, error: "No se detect\xF3 el n\xFAmero de este dispositivo. Recarg\xE1 WhatsApp Web." });
+      _notify();
+      return;
+    }
+    if (_numberAuthorized === false) {
+      _lastResults.unshift({ nombre: "\u{1F6AB} No autorizado", telefono: "+" + activeNumber, status: "blocked", ack: -1, error: "Este n\xFAmero no est\xE1 registrado como celular de blast. Contact\xE1 al coordinador." });
+      _notify();
+      return;
+    }
+    if (_numberHealth && !_numberHealth.can_send) {
+      _lastResults.unshift({ nombre: "\u26A0\uFE0F L\xEDmite alcanzado", telefono: "+" + activeNumber, status: "blocked", ack: -1, error: `Hoy: ${_numberHealth.sent_today}/${_numberHealth.daily_limit} msgs. Hora: ${_numberHealth.sent_last_hour}/${_numberHealth.hourly_limit}. Esper\xE1.` });
+      _notify();
+      return;
+    }
+    if (!_isWithinBlastWindow()) {
+      _lastResults.unshift({ nombre: "\u{1F550} Fuera de horario", telefono: "", status: "blocked", ack: -1, error: "Horario no permitido (" + getPeruTimeStr() + "). Lun-Vie 8-20h, S\xE1b 9-14h, Dom no." });
+      _notify();
+      return;
+    }
     _running = true;
     _paused = false;
     _consecFails = 0;
     _loopRunning = true;
-    const activeNumber = getOwnNumber();
+    _msgsSinceBreak = 0;
     _notify();
     while (_running && !_paused) {
       _phase2 = "cargando";
@@ -2545,6 +2843,10 @@
         const lockKey = (normalizedPhone || "") + ":" + (c.id || "");
         if (normalizedPhone && _sentThisSession.has(normalizedPhone) || c.id && _sentIds.has(c.id) || lockKey && _inFlight.has(lockKey)) {
           console.log("[BLAST] Dedup local \u2014 ya enviado/en vuelo:", normalizedPhone || c.id);
+          continue;
+        }
+        if (normalizedPhone && _respondedPhones.has(normalizedPhone)) {
+          console.log("[BLAST] Auto-exclusi\xF3n \u2014 contacto respondi\xF3:", normalizedPhone);
           continue;
         }
         if (normalizedPhone) _sentThisSession.add(normalizedPhone);
@@ -2623,7 +2925,11 @@
             const partModel = await _sendToChat(chat, partText);
             if (p === 0) {
               msgModel = partModel;
-              if (partModel) _trackMessage(partModel, cName, c.telefono);
+              if (partModel) {
+                _trackMessage(partModel, cName, c.telefono);
+              } else {
+                _kpis.pending++;
+              }
             }
           }
           batchSent++;
@@ -2662,19 +2968,33 @@
           logBatch.length = 0;
         }
         if (_running && !_paused && i < batch.length - 1) {
-          if (batchSent > 0 && batchSent % 25 === 0 && cfg.descansoSec > 0) {
-            _startCountdown(cfg.descansoSec, "descanso");
+          if (!_isWithinBlastWindow()) {
+            _paused = true;
+            _running = false;
+            _stopCountdown();
+            _lastResults.unshift({ nombre: "\u{1F550} Fuera de horario", telefono: "", status: "paused", ack: -1, error: "Pausa por ventana horaria (" + getPeruTimeStr() + ")" });
             _notify();
-            await _sleep(cfg.descansoSec * 1e3);
+            break;
+          }
+          if (batchSent > 0 && batchSent % 25 === 0 && cfg.descansoSec > 0) {
+            const descanso = _gaussianDelay(cfg.descansoSec);
+            _startCountdown(descanso, "descanso");
+            _notify();
+            await _sleep(descanso * 1e3);
             _stopCountdown();
           } else if (batchSent > 0 && cfg.pausaCada > 0 && batchSent % cfg.pausaCada === 0 && cfg.pausaSec > 0) {
             _startCountdown(cfg.pausaSec, "pausa");
             _notify();
             await _sleep(cfg.pausaSec * 1e3);
             _stopCountdown();
+          } else if (_shouldMicroBreak()) {
+            const breakSec = _microBreakDuration();
+            _startCountdown(breakSec, "micro");
+            _notify();
+            await _sleep(breakSec * 1e3);
+            _stopCountdown();
           } else if (cfg.delaySec > 0) {
-            const v = cfg.delaySec * 0.3;
-            const actual = Math.max(1, Math.round(cfg.delaySec + (Math.random() * 2 - 1) * v));
+            const actual = _gaussianDelay(cfg.delaySec);
             _startCountdown(actual, "delay");
             _notify();
             await _sleep(actual * 1e3);
@@ -2711,6 +3031,7 @@
     _sentThisSession.clear();
     _sentIds.clear();
     _inFlight.clear();
+    _respondedPhones.clear();
     _loopRunning = false;
     _tplIndex = 0;
     _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
@@ -3539,6 +3860,8 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       }
       _renderSidebar();
       if (!isRunning()) refreshPendingCount();
+      fetchNumberHealth();
+      fetchNumberConfig();
     } else {
       if (fab) {
         fab.style.right = "0";
@@ -3661,14 +3984,47 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     if (countdown > 0) {
       const m = Math.floor(countdown / 60);
       const s = countdown % 60;
-      const labels = { prewarm: "\u23F3 Preparando", delay: "\u23F1\uFE0F Pr\xF3ximo", pausa: "\u2615 Pausa", descanso: "\u{1F634} Descanso", cargando: "\u{1F4E5} Cargando" };
+      const labels = { prewarm: "\u23F3 Preparando", delay: "\u23F1\uFE0F Pr\xF3ximo", pausa: "\u2615 Pausa", descanso: "\u{1F634} Descanso", cargando: "\u{1F4E5} Cargando", micro: "\u{1FAD6} Micro-pausa" };
       timerLabel = `${labels[phase] || "\u23F1\uFE0F"} ${m > 0 ? m + "m " : ""}${s}s`;
     } else if (phase === "cargando") {
       timerLabel = "\u{1F4E5} Cargando...";
     }
+    const analysis = analyzeTemplates(tpls2);
+    const sessionStart = window.__blastSessionStart || Date.now();
+    if (!window.__blastSessionStart && running) window.__blastSessionStart = Date.now();
+    const elapsedMin = Math.max(1, (Date.now() - sessionStart) / 6e4);
+    const msgPerMin = totalProcessed > 0 ? (totalSent / elapsedMin).toFixed(1) : "0";
+    const estRemaining = pending !== null && totalSent > 0 ? Math.round(pending / (totalSent / elapsedMin)) : null;
+    const inWindow = isWithinBlastWindow();
+    const peruTime = getPeruTimeStr();
+    const ownNum = getOwnNumber();
+    const nHealth = getNumberHealth();
+    const nAuth = isNumberAuthorized();
     const pendingLabel = pending === null ? "..." : pending.toLocaleString("es-PE");
     const hasPending = pending === null || pending > 0;
     return `<div style="padding:14px;display:flex;flex-direction:column;gap:12px;">
+
+    <!-- ESTADO DEL N\xDAMERO -->
+    <div style="background:${!ownNum ? S.dangerBg : nAuth === false ? S.warnBg : nHealth && !nHealth.can_send ? S.dangerBg : S.card};border:1px solid ${!ownNum ? "#fecaca" : nAuth === false ? "#fde68a" : S.border};border-radius:10px;padding:10px 12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:${nHealth ? "6" : "0"}px;">
+        <span style="font-size:16px;">${!ownNum ? "\u274C" : nAuth === false ? "\u{1F6AB}" : "\u{1F4F1}"}</span>
+        <div style="flex:1;">
+          <div style="font-size:12px;font-weight:700;color:${!ownNum ? S.danger : nAuth === false ? S.warn : S.text};">
+            ${!ownNum ? "N\xFAmero no detectado" : nAuth === false ? "N\xFAmero no autorizado" : "+" + ownNum}
+          </div>
+          <div style="font-size:10px;color:${S.muted};">
+            ${!ownNum ? "Recarg\xE1 WhatsApp Web para detectar el celular" : nAuth === false ? "Este celular no est\xE1 registrado para blast" : nAuth === true ? "\u2705 Registrado" : "Verificando..."}
+          </div>
+        </div>
+      </div>
+      ${nHealth ? `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-size:10px;color:${S.muted};margin-top:4px;">
+        <div>Hora: <b style="color:${nHealth.sent_last_hour >= nHealth.hourly_limit * 0.8 ? S.danger : S.text};">${nHealth.sent_last_hour}/${nHealth.hourly_limit}</b></div>
+        <div>Hoy: <b style="color:${nHealth.sent_today >= nHealth.daily_limit * 0.8 ? S.danger : S.text};">${nHealth.sent_today}/${nHealth.daily_limit}</b></div>
+        <div>Edad: <b>${nHealth.age_days}d</b></div>
+      </div>
+      ` : ""}
+    </div>
 
     <!-- PENDIENTES -->
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:14px;display:flex;align-items:center;justify-content:space-between;">
@@ -3694,6 +4050,48 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
           <div style="font-size:9px;color:${S.muted};margin-top:2px;">${icon} ${label}</div>
         </div>
       `).join("")}
+    </div>
+    ` : ""}
+
+    <!-- VENTANA HORARIA + STEALTH STATS -->
+    <div style="background:${inWindow ? S.accentBg : S.dangerBg};border:1px solid ${inWindow ? "rgba(37,211,102,0.3)" : "#fecaca"};border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:18px;">${inWindow ? "\u{1F7E2}" : "\u{1F534}"}</span>
+      <div style="flex:1;">
+        <div style="font-size:11px;font-weight:700;color:${inWindow ? S.accent : S.danger};">${inWindow ? "Ventana activa" : "Fuera de horario"}</div>
+        <div style="font-size:10px;color:${S.muted};">Per\xFA ${peruTime} \xB7 Lun-Vie 8-20h \xB7 S\xE1b 9-14h</div>
+      </div>
+    </div>
+
+    <!-- STEALTH STATS (solo con actividad) -->
+    ${hasActivity ? `
+    <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:10px 12px;">
+      <div style="font-size:10px;color:${S.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Sesi\xF3n actual</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:11px;">
+        <div><span style="color:${S.muted};">Velocidad</span><br><b>${msgPerMin} msg/min</b></div>
+        <div><span style="color:${S.muted};">Est. restante</span><br><b>${estRemaining !== null ? estRemaining > 60 ? Math.round(estRemaining / 60) + "h" : estRemaining + " min" : "\u2014"}</b></div>
+        <div><span style="color:${S.muted};">Plantilla</span><br><b>#${getTplIndex() % tpls2.length + 1} de ${tpls2.length}</b></div>
+      </div>
+    </div>
+    ` : ""}
+
+    <!-- TEMPLATE RISK ANALYSIS -->
+    ${analysis.score > 0 ? `
+    <div style="background:${analysis.level === "danger" ? S.dangerBg : analysis.level === "warning" ? S.warnBg : S.card};border:1px solid ${analysis.level === "danger" ? "#fecaca" : analysis.level === "warning" ? "#fde68a" : S.border};border-radius:10px;padding:10px 12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:14px;">${analysis.level === "danger" ? "\u{1F6A8}" : analysis.level === "warning" ? "\u26A0\uFE0F" : "\u2705"}</span>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:${analysis.level === "danger" ? S.danger : analysis.level === "warning" ? S.warn : S.accent};">
+            Riesgo: ${analysis.level === "danger" ? "ALTO" : analysis.level === "warning" ? "MEDIO" : "BAJO"} (${analysis.score} pts)
+          </div>
+        </div>
+      </div>
+      ${analysis.suggestions.length ? `
+      <div style="display:flex;flex-direction:column;gap:3px;">
+        ${analysis.suggestions.slice(0, 4).map((s) => `
+          <div style="font-size:10px;color:${S.muted};padding-left:22px;">\u2192 ${_esc(s)}</div>
+        `).join("")}
+      </div>
+      ` : ""}
     </div>
     ` : ""}
 
@@ -3806,11 +4204,25 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
 
     <!-- CONTROLES -->
     ${!running && !paused && hasPending ? `
-      <button id="sb-start" style="
-        width:100%;padding:14px;border-radius:10px;border:none;
-        background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
-        box-shadow:0 2px 12px ${S.accent}40;
-      ">\u25B6 Enviar a ${cfg2.batchSize} personas</button>
+      ${!inWindow ? `
+        <div style="text-align:center;padding:12px;background:${S.dangerBg};border:1px solid #fecaca;border-radius:10px;font-size:12px;color:${S.danger};font-weight:600;">
+          \u{1F534} No se puede enviar fuera de horario (${peruTime})
+        </div>
+      ` : analysis.level === "danger" ? `
+        <div style="margin-bottom:6px;text-align:center;padding:8px;background:${S.dangerBg};border:1px solid #fecaca;border-radius:8px;font-size:11px;color:${S.danger};">
+          \u26A0\uFE0F Las plantillas tienen riesgo ALTO \u2014 revis\xE1 las sugerencias arriba
+        </div>
+        <button id="sb-start" data-force="true" style="
+          width:100%;padding:14px;border-radius:10px;border:1px solid ${S.danger};
+          background:${S.dangerBg};color:${S.danger};font-size:15px;font-weight:700;cursor:pointer;
+        ">\u26A0\uFE0F Enviar igual a ${cfg2.batchSize} personas</button>
+      ` : `
+        <button id="sb-start" style="
+          width:100%;padding:14px;border-radius:10px;border:none;
+          background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+          box-shadow:0 2px 12px ${S.accent}40;
+        ">\u25B6 Enviar a ${cfg2.batchSize} personas</button>
+      `}
     ` : running ? `
       <button id="sb-pause" style="
         width:100%;padding:14px;border-radius:10px;border:1px solid ${S.warn}40;

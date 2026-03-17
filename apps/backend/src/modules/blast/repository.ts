@@ -363,3 +363,81 @@ export async function getNumberConfig(
   );
   return result.rows[0] ?? null;
 }
+
+// ── Number health: limits + warm-up ────────────────────────────────────
+export async function getNumberHealth(
+  campaign_id: string,
+  wa_number: string
+): Promise<{
+  sent_last_hour: number;
+  sent_today: number;
+  hourly_limit: number;
+  daily_limit: number;
+  age_days: number;
+  warm_up_limit: number;
+  risk_level: string;
+  can_send: boolean;
+  next_available_at: string | null;
+}> {
+  const [hourResult, todayResult, configResult] = await Promise.all([
+    pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM blast_log
+       WHERE campaign_id = $1
+         AND wa_number = $2
+         AND status = 'sent'
+         AND sent_at >= NOW() - INTERVAL '1 hour'`,
+      [campaign_id, wa_number]
+    ),
+    pool.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM blast_log
+       WHERE campaign_id = $1
+         AND wa_number = $2
+         AND status = 'sent'
+         AND sent_at >= CURRENT_DATE`,
+      [campaign_id, wa_number]
+    ),
+    pool.query<{ warmup_day: number; created_at: string }>(
+      `SELECT warmup_day, created_at::text
+       FROM blast_number_config
+       WHERE campaign_id = $1 AND wa_number = $2 AND active = true`,
+      [campaign_id, wa_number]
+    ),
+  ]);
+
+  const sentLastHour = parseInt(hourResult.rows[0]?.count ?? "0", 10);
+  const sentToday = parseInt(todayResult.rows[0]?.count ?? "0", 10);
+
+  // Calculate age in days
+  const configRow = configResult.rows[0];
+  const createdAt = configRow?.created_at ? new Date(configRow.created_at) : new Date();
+  const ageDays = Math.max(1, Math.floor((Date.now() - createdAt.getTime()) / 86400000));
+
+  // Warm-up limits
+  const HOURLY_LIMIT = 50;
+  const DAILY_LIMIT = ageDays <= 1 ? 30 : ageDays <= 2 ? 80 : 200;
+  const warmUpLimit = DAILY_LIMIT;
+
+  // Risk assessment
+  const hourlyPct = sentLastHour / HOURLY_LIMIT;
+  const dailyPct = sentToday / DAILY_LIMIT;
+  let riskLevel = "low";
+  if (hourlyPct > 0.9 || dailyPct > 0.9) riskLevel = "critical";
+  else if (hourlyPct > 0.7 || dailyPct > 0.7) riskLevel = "high";
+  else if (hourlyPct > 0.5 || dailyPct > 0.5) riskLevel = "medium";
+
+  const canSend = sentLastHour < HOURLY_LIMIT && sentToday < DAILY_LIMIT;
+
+  return {
+    sent_last_hour: sentLastHour,
+    sent_today: sentToday,
+    hourly_limit: HOURLY_LIMIT,
+    daily_limit: DAILY_LIMIT,
+    age_days: ageDays,
+    warm_up_limit: warmUpLimit,
+    risk_level: riskLevel,
+    can_send: canSend,
+    next_available_at: canSend ? null : new Date(Date.now() + 3600000).toISOString(),
+  };
+}
