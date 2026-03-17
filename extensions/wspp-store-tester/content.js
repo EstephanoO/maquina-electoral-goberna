@@ -326,6 +326,33 @@ window.addEventListener('message', (e) => {
     return;
   }
 
+  // --- BLAST_DEDUP_ADD (inject → storage, fire-and-forget) ---
+  if (e.data?.type === 'BLAST_DEDUP_ADD') {
+    const phone = e.data.phone;
+    if (!phone) return;
+    chrome.storage.local.get({ blast_dedup: [] }, (data) => {
+      const arr = data.blast_dedup || [];
+      if (arr.length > 5000) arr.splice(0, arr.length - 4000); // keep last 4000
+      if (!arr.includes(phone)) arr.push(phone);
+      chrome.storage.local.set({ blast_dedup: arr });
+    });
+    return;
+  }
+
+  // --- BLAST_DEDUP_REQUEST (inject asks for persisted dedup on load) ---
+  if (e.data?.type === 'BLAST_DEDUP_REQUEST') {
+    chrome.storage.local.get({ blast_dedup: [] }, (data) => {
+      window.postMessage({ type: 'BLAST_DEDUP_LOADED', phones: data.blast_dedup || [] }, WA_ORIGIN);
+    });
+    return;
+  }
+
+  // --- BLAST_DEDUP_CLEAR (inject asks to clear persisted dedup) ---
+  if (e.data?.type === 'BLAST_DEDUP_CLEAR') {
+    chrome.storage.local.set({ blast_dedup: [] });
+    return;
+  }
+
   // --- BLAST_GET_NUMBER_HEALTH (inject → background → inject) ---
   if (e.data?.type === 'BLAST_GET_NUMBER_HEALTH') {
     const own_number = e.data.own_number;

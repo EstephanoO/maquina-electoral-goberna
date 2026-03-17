@@ -2357,6 +2357,24 @@
   var _trackedMsgs = [];
   var _sentThisSession = /* @__PURE__ */ new Set();
   var _sentIds = /* @__PURE__ */ new Set();
+  function _persistDedup(phone) {
+    window.postMessage({ type: "BLAST_DEDUP_ADD", phone }, WA_ORIGIN);
+  }
+  function _loadPersistedDedup(phones) {
+    if (Array.isArray(phones)) {
+      for (const p of phones) {
+        _sentThisSession.add(p);
+      }
+      console.log("[BLAST] Loaded", phones.length, "persisted dedup entries");
+    }
+  }
+  window.addEventListener("message", (e) => {
+    if (e.source !== window) return;
+    if (e.data?.type === "BLAST_DEDUP_LOADED") {
+      _loadPersistedDedup(e.data.phones || []);
+    }
+  });
+  window.postMessage({ type: "BLAST_DEDUP_REQUEST" }, WA_ORIGIN);
   var _inFlight = /* @__PURE__ */ new Set();
   var _respondedPhones = /* @__PURE__ */ new Set();
   var _tplIndex = 0;
@@ -2483,6 +2501,7 @@
     const now = Date.now();
     _trackedMsgs = _trackedMsgs.filter((e) => {
       if (e.lastAck >= 3 && now - e.ts > 12e4) return false;
+      if (now - e.ts > 6e5) return false;
       return true;
     });
     if (!_trackedMsgs.length) _stopAckTracking();
@@ -2820,6 +2839,7 @@
     _msgsSinceBreak = 0;
     _notify();
     while (_running && !_paused) {
+      fetchNumberHealth();
       _phase2 = "cargando";
       _notify();
       const batch = await _fetchBatch(cfg.batchSize);
@@ -2849,8 +2869,14 @@
           console.log("[BLAST] Auto-exclusi\xF3n \u2014 contacto respondi\xF3:", normalizedPhone);
           continue;
         }
-        if (normalizedPhone) _sentThisSession.add(normalizedPhone);
-        if (c.id) _sentIds.add(c.id);
+        if (normalizedPhone) {
+          _sentThisSession.add(normalizedPhone);
+          _persistDedup(normalizedPhone);
+        }
+        if (c.id) {
+          _sentIds.add(c.id);
+          _persistDedup(c.id);
+        }
         if (lockKey) _inFlight.add(lockKey);
         if (!jid) {
           status = "failed";
@@ -2933,6 +2959,23 @@
             }
           }
           batchSent++;
+          if (batchSent > 0 && batchSent % 10 === 0 && _numberHealth) {
+            _numberHealth.sent_today += 10;
+            _numberHealth.sent_last_hour += 10;
+            if (_numberHealth.sent_today >= _numberHealth.daily_limit || _numberHealth.sent_last_hour >= _numberHealth.hourly_limit) {
+              _running = false;
+              _stopCountdown();
+              _lastResults.unshift({
+                nombre: "\u26A0\uFE0F L\xEDmite alcanzado",
+                telefono: "",
+                status: "paused",
+                ack: -1,
+                error: `Hoy: ${_numberHealth.sent_today}/${_numberHealth.daily_limit} | Hora: ${_numberHealth.sent_last_hour}/${_numberHealth.hourly_limit}. Pausa autom\xE1tica.`
+              });
+              _notify();
+              break;
+            }
+          }
           _tplIndex++;
           _consecFails = 0;
           if (c.id) _markHablado([c.id]);
@@ -3031,6 +3074,7 @@
     _sentThisSession.clear();
     _sentIds.clear();
     _inFlight.clear();
+    window.postMessage({ type: "BLAST_DEDUP_CLEAR" }, WA_ORIGIN);
     _respondedPhones.clear();
     _loopRunning = false;
     _tplIndex = 0;
@@ -3762,16 +3806,16 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   var FAB_ID = "wspp-sidebar-fab";
   var TAB_KEY = "wspp_sidebar_tab";
   var Z = {
-    fab: 2147483647,
-    toasts: 2147483647,
-    blast: 2147483646,
-    validator: 2147483645,
-    sidebar: 2147483644,
-    valOverlay: 2147483643,
-    valStats: 2147483642,
-    spamWarning: 2147483641,
-    spamBlocker: 2147483640,
-    catalogPanel: 2147483639
+    fab: 10010,
+    toasts: 10010,
+    blast: 10009,
+    validator: 10008,
+    sidebar: 10007,
+    valOverlay: 10006,
+    valStats: 10005,
+    spamWarning: 10004,
+    spamBlocker: 10003,
+    catalogPanel: 10002
   };
   var S = {
     bg: "#ffffff",
@@ -3853,11 +3897,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         fab.style.background = "#374151";
         fab.textContent = "\u2715";
       }
-      const app = document.querySelector("#app");
-      if (app) {
-        app.style.transition = "margin-right .25s ease";
-        app.style.marginRight = SIDEBAR_W + "px";
-      }
       _renderSidebar();
       if (!isRunning()) refreshPendingCount();
       fetchNumberHealth();
@@ -3867,11 +3906,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         fab.style.right = "0";
         fab.style.background = S.accent;
         fab.textContent = "WA";
-      }
-      const app = document.querySelector("#app");
-      if (app) {
-        app.style.transition = "margin-right .25s ease";
-        app.style.marginRight = "0";
       }
       const el = $(SIDEBAR_ID);
       if (el) {
@@ -3895,7 +3929,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         zIndex: String(Z.sidebar),
         background: S.bg,
         borderLeft: `1px solid ${S.border}`,
-        boxShadow: "-4px 0 24px rgba(0,0,0,.08)",
+        boxShadow: "-8px 0 32px rgba(0,0,0,0.15), -2px 0 8px rgba(0,0,0,0.08)",
         display: "flex",
         flexDirection: "column",
         fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
@@ -3905,8 +3939,12 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         transition: "transform .25s ease, opacity .2s ease",
         overflowX: "hidden"
       });
-      el.addEventListener("click", (e) => e.stopPropagation());
-      el.addEventListener("mousedown", (e) => e.stopPropagation());
+      el.addEventListener("click", (e) => {
+        if (e.target.closest('button, input, textarea, select, a, [role="button"]')) e.stopPropagation();
+      });
+      el.addEventListener("mousedown", (e) => {
+        if (e.target.closest('button, input, textarea, select, a, [role="button"]')) e.stopPropagation();
+      });
       document.body.appendChild(el);
       requestAnimationFrame(() => {
         el.style.transform = "translateX(0)";
@@ -4152,8 +4190,8 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       <!-- Hint de sintaxis -->
       <div style="background:rgba(37,211,102,0.06);border:1px solid rgba(37,211,102,0.15);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:11px;color:${S.muted};line-height:1.8;">
         <div style="color:${S.accent};font-weight:700;margin-bottom:4px;">Sintaxis de variaciones</div>
-        <div><code style="color:#fff;background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px;">[Hola!|Buenas!|Qu\xE9 tal!]</code> \u2192 elige una al azar</div>
-        <div><code style="color:#fff;background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px;">---</code> \u2192 corte: env\xEDa como mensaje separado</div>
+        <div><code style="color:${S.accent};background:rgba(37,211,102,0.1);padding:1px 5px;border-radius:3px;font-weight:600;">[Hola!|Buenas!|Qu\xE9 tal!]</code> \u2192 elige una al azar</div>
+        <div><code style="color:${S.accent};background:rgba(37,211,102,0.1);padding:1px 5px;border-radius:3px;font-weight:600;">---</code> \u2192 corte: env\xEDa como mensaje separado</div>
         <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">
           ${["{{nombre}}", "{{saludo}}", "{{cierre}}", "{{emoji}}", "{{distrito}}", "{{fecha}}"].map(
       (v) => `<code style="color:${S.accent};background:rgba(37,211,102,0.08);padding:1px 5px;border-radius:3px;">${v}</code>`
@@ -4441,7 +4479,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   }
   function _toast3(text, bg = S.accent) {
     const t = document.createElement("div");
-    Object.assign(t.style, { position: "fixed", bottom: "80px", left: "50%", transform: "translateX(-50%)", background: bg, color: "#fff", padding: "8px 18px", borderRadius: "8px", fontSize: "12px", fontWeight: "600", zIndex: "2147483647", boxShadow: "0 4px 16px rgba(0,0,0,.2)" });
+    Object.assign(t.style, { position: "fixed", bottom: "80px", left: "50%", transform: "translateX(-50%)", background: bg, color: "#fff", padding: "8px 18px", borderRadius: "8px", fontSize: "12px", fontWeight: "600", zIndex: String(Z.toasts), boxShadow: "0 4px 16px rgba(0,0,0,.2)" });
     t.textContent = text;
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 3e3);

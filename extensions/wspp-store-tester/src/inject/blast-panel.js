@@ -79,6 +79,33 @@ let _trackedMsgs = [];    // { msgModel, contactName, telefono } — live ack tr
 const _sentThisSession = new Set();  // Set de telefono normalizado
 const _sentIds = new Set();          // Set de form_submission.id
 
+// ── Persist dedup across page reloads via chrome.storage ──────────────
+// On each send, we postMessage to content.js which saves to chrome.storage.
+// On load, content.js pushes back the saved set.
+function _persistDedup(phone) {
+  window.postMessage({ type: 'BLAST_DEDUP_ADD', phone }, WA_ORIGIN);
+}
+
+function _loadPersistedDedup(phones) {
+  if (Array.isArray(phones)) {
+    for (const p of phones) {
+      _sentThisSession.add(p);
+    }
+    console.log('[BLAST] Loaded', phones.length, 'persisted dedup entries');
+  }
+}
+
+// Listen for persisted dedup from content.js on page load
+window.addEventListener('message', (e) => {
+  if (e.source !== window) return;
+  if (e.data?.type === 'BLAST_DEDUP_LOADED') {
+    _loadPersistedDedup(e.data.phones || []);
+  }
+});
+
+// Request persisted dedup on module load
+window.postMessage({ type: 'BLAST_DEDUP_REQUEST' }, WA_ORIGIN);
+
 // ── Send lock — protege contra envíos concurrentes al mismo contacto ──
 // Se registra ANTES del envío y se limpia al terminar (éxito o error).
 // Si el mismo teléfono o ID ya está en vuelo, el loop lo salta.
@@ -208,7 +235,10 @@ function _pollAcks() {
   // Cleanup: remove fully-read messages from tracking after 2 min
   const now = Date.now();
   _trackedMsgs = _trackedMsgs.filter(e => {
-    if (e.lastAck >= 3 && now - e.ts > 120000) return false; // read + 2min = done
+    // Remove read messages after 2 minutes
+    if (e.lastAck >= 3 && now - e.ts > 120000) return false;
+    // Remove ALL messages after 10 minutes regardless of ack (prevent memory leak)
+    if (now - e.ts > 600000) return false;
     return true;
   });
   if (!_trackedMsgs.length) _stopAckTracking();
@@ -674,6 +704,9 @@ export async function startBlast() {
   _notify();
 
   while (_running && !_paused) {
+    // Re-check number health from server between batches
+    fetchNumberHealth();
+
     // 1. Fetch batch
     _phase = 'cargando'; _notify();
     const batch = await _fetchBatch(cfg.batchSize);
@@ -723,8 +756,8 @@ export async function startBlast() {
 
       // Registrar en dedup ANTES del envío — no después
       // Así, si el send falla a mitad, el contacto no vuelve a aparecer en este batch
-      if (normalizedPhone) _sentThisSession.add(normalizedPhone);
-      if (c.id) _sentIds.add(c.id);
+      if (normalizedPhone) { _sentThisSession.add(normalizedPhone); _persistDedup(normalizedPhone); }
+      if (c.id) { _sentIds.add(c.id); _persistDedup(c.id); }
       if (lockKey) _inFlight.add(lockKey);
 
       if (!jid) {
@@ -813,6 +846,20 @@ export async function startBlast() {
         }
 
         batchSent++;
+
+        // Stealth: re-check warm-up limits every 10 messages
+        if (batchSent > 0 && batchSent % 10 === 0 && _numberHealth) {
+          // Update local counters (sent_today and sent_last_hour)
+          _numberHealth.sent_today += 10;
+          _numberHealth.sent_last_hour += 10;
+          if (_numberHealth.sent_today >= _numberHealth.daily_limit || _numberHealth.sent_last_hour >= _numberHealth.hourly_limit) {
+            _running = false; _stopCountdown();
+            _lastResults.unshift({ nombre: '⚠️ Límite alcanzado', telefono: '', status: 'paused', ack: -1,
+              error: `Hoy: ${_numberHealth.sent_today}/${_numberHealth.daily_limit} | Hora: ${_numberHealth.sent_last_hour}/${_numberHealth.hourly_limit}. Pausa automática.` });
+            _notify(); break;
+          }
+        }
+
         _tplIndex++;
         _consecFails = 0;
 
@@ -905,6 +952,7 @@ export function resetSession() {
   _sentThisSession.clear();
   _sentIds.clear();
   _inFlight.clear();
+  window.postMessage({ type: 'BLAST_DEDUP_CLEAR' }, WA_ORIGIN);
   _respondedPhones.clear();
   _loopRunning = false;
   _tplIndex = 0;

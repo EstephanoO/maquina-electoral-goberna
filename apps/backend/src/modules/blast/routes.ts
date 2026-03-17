@@ -180,7 +180,7 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
         }
 
         try {
-          const saved = await repo.saveBastReport(campaignId, parsed.data.results);
+          const saved = await repo.saveBlastReport(campaignId, parsed.data.results);
           return reply.code(200).send({ ok: true, request_id: requestId, saved });
         } catch (err) {
           app.log.error({ err }, "[blast] saveBlastReport failed");

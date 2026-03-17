@@ -23,10 +23,16 @@ const FAB_ID = 'wspp-sidebar-fab';
 const TAB_KEY = 'wspp_sidebar_tab';
 
 const Z = {
-  fab: 2147483647, toasts: 2147483647, blast: 2147483646,
-  validator: 2147483645, sidebar: 2147483644, valOverlay: 2147483643,
-  valStats: 2147483642, spamWarning: 2147483641, spamBlocker: 2147483640,
-  catalogPanel: 2147483639,
+  fab: 10010,
+  toasts: 10010,
+  blast: 10009,
+  validator: 10008,
+  sidebar: 10007,
+  valOverlay: 10006,
+  valStats: 10005,
+  spamWarning: 10004,
+  spamBlocker: 10003,
+  catalogPanel: 10002,
 };
 export { Z as ZINDEX };
 
@@ -117,12 +123,7 @@ export function toggleSidebar() {
       fab.style.background = '#374151';
       fab.textContent  = '✕';
     }
-    // Empujar el layout de WA
-    const app = document.querySelector('#app');
-    if (app) {
-      app.style.transition  = 'margin-right .25s ease';
-      app.style.marginRight = SIDEBAR_W + 'px';
-    }
+    // Sidebar purely overlays — no mutation of WA Web's #app layout
     _renderSidebar();
     if (!isRunning()) refreshPendingCount();
     fetchNumberHealth();
@@ -134,12 +135,7 @@ export function toggleSidebar() {
       fab.style.background = S.accent;
       fab.textContent      = 'WA';
     }
-    // Restaurar layout de WA
-    const app = document.querySelector('#app');
-    if (app) {
-      app.style.transition  = 'margin-right .25s ease';
-      app.style.marginRight = '0';
-    }
+    // No #app layout restoration needed — sidebar is overlay-only
     const el = $(SIDEBAR_ID);
     if (el) {
       el.style.transform = `translateX(${SIDEBAR_W}px)`;
@@ -161,14 +157,14 @@ function _renderSidebar() {
     Object.assign(el.style, {
       position: 'fixed', top: '0', right: '0', width: SIDEBAR_W + 'px', height: '100vh',
       zIndex: String(Z.sidebar), background: S.bg, borderLeft: `1px solid ${S.border}`,
-      boxShadow: '-4px 0 24px rgba(0,0,0,.08)', display: 'flex', flexDirection: 'column',
+      boxShadow: '-8px 0 32px rgba(0,0,0,0.15), -2px 0 8px rgba(0,0,0,0.08)', display: 'flex', flexDirection: 'column',
       fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
       color: S.text, transform: `translateX(${SIDEBAR_W}px)`, opacity: '0',
       transition: 'transform .25s ease, opacity .2s ease', overflowX: 'hidden',
     });
-    // Stop clicks inside sidebar from reaching WA Web underneath
-    el.addEventListener('click', (e) => e.stopPropagation());
-    el.addEventListener('mousedown', (e) => e.stopPropagation());
+    // Only stop propagation for interactive elements inside sidebar, not the container itself
+    el.addEventListener('click', (e) => { if (e.target.closest('button, input, textarea, select, a, [role="button"]')) e.stopPropagation(); });
+    el.addEventListener('mousedown', (e) => { if (e.target.closest('button, input, textarea, select, a, [role="button"]')) e.stopPropagation(); });
     document.body.appendChild(el);
     requestAnimationFrame(() => { el.style.transform = 'translateX(0)'; el.style.opacity = '1'; });
   }
@@ -428,8 +424,8 @@ function _blastHTML() {
       <!-- Hint de sintaxis -->
       <div style="background:rgba(37,211,102,0.06);border:1px solid rgba(37,211,102,0.15);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:11px;color:${S.muted};line-height:1.8;">
         <div style="color:${S.accent};font-weight:700;margin-bottom:4px;">Sintaxis de variaciones</div>
-        <div><code style="color:#fff;background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px;">[Hola!|Buenas!|Qué tal!]</code> → elige una al azar</div>
-        <div><code style="color:#fff;background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:3px;">---</code> → corte: envía como mensaje separado</div>
+        <div><code style="color:${S.accent};background:rgba(37,211,102,0.1);padding:1px 5px;border-radius:3px;font-weight:600;">[Hola!|Buenas!|Qué tal!]</code> → elige una al azar</div>
+        <div><code style="color:${S.accent};background:rgba(37,211,102,0.1);padding:1px 5px;border-radius:3px;font-weight:600;">---</code> → corte: envía como mensaje separado</div>
         <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">
           ${['{{nombre}}','{{saludo}}','{{cierre}}','{{emoji}}','{{distrito}}','{{fecha}}'].map(v =>
             `<code style="color:${S.accent};background:rgba(37,211,102,0.08);padding:1px 5px;border-radius:3px;">${v}</code>`
@@ -741,7 +737,7 @@ function _previewSpin(tpl) {
 // ── Toast ─────────────────────────────────────────────────────────────
 function _toast(text, bg = S.accent) {
   const t = document.createElement('div');
-  Object.assign(t.style, { position: 'fixed', bottom: '80px', left: '50%', transform: 'translateX(-50%)', background: bg, color: '#fff', padding: '8px 18px', borderRadius: '8px', fontSize: '12px', fontWeight: '600', zIndex: '2147483647', boxShadow: '0 4px 16px rgba(0,0,0,.2)' });
+  Object.assign(t.style, { position: 'fixed', bottom: '80px', left: '50%', transform: 'translateX(-50%)', background: bg, color: '#fff', padding: '8px 18px', borderRadius: '8px', fontSize: '12px', fontWeight: '600', zIndex: String(Z.toasts), boxShadow: '0 4px 16px rgba(0,0,0,.2)' });
   t.textContent = text;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 3000);

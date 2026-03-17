@@ -8,7 +8,7 @@ export const blastReportItemSchema = z.object({
   phone:        z.string().max(20),
   contact_name: z.string().max(200).optional(),
   message:      z.string().max(600).optional(),
-  status:       z.enum(["sent", "failed"]),
+  status:       z.enum(["sent", "failed", "no_wa"]),
   error:        z.string().max(300).nullable().optional(),
   own_number:   z.string().max(20).nullable().optional(),
 });

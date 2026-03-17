@@ -39,6 +39,7 @@ export async function ensureBlastTables(): Promise<void> {
     ALTER TABLE blast_log
       ADD COLUMN IF NOT EXISTS wa_number     text NOT NULL DEFAULT '',
       ADD COLUMN IF NOT EXISTS contact_phone text NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS contact_id    uuid,
       ADD COLUMN IF NOT EXISTS message_text  text,
       ADD COLUMN IF NOT EXISTS error_msg     text
   `);
@@ -202,48 +203,74 @@ export async function markHablado(
 }
 
 // ── Save blast log batch ───────────────────────────────────────────────
-export async function saveBastReport(
+export async function saveBlastReport(
   campaign_id: string,
   results: Array<{
     phone:        string;
     contact_name?: string;
     message?:     string;
-    status:       'sent' | 'failed';
+    status:       'sent' | 'failed' | 'no_wa';
     error?:       string | null;
     own_number?:  string | null;
   }>
 ): Promise<number> {
   if (!results.length) return 0;
 
-  let saved = 0;
-  for (const r of results) {
-    const phone = r.phone?.replace(/\D/g, '') ?? '';
-    if (!phone) continue;
-    try {
-      await pool.query(
-        `INSERT INTO blast_log
-           (campaign_id, wa_number, contact_phone, contact_name, message_text, status, error_msg)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent'
-         DO UPDATE SET
-           contact_name = EXCLUDED.contact_name,
-           message_text = EXCLUDED.message_text,
-           sent_at      = now()`,
-        [
-          campaign_id,
-          r.own_number ?? 'unknown',
-          phone,
-          r.contact_name ?? null,
-          r.message?.slice(0, 500) ?? null,
-          r.status,
-          r.error ?? null,
-        ]
-      );
-      saved++;
-    } catch { /* ignore individual failures */ }
-  }
+  // Filter and clean results
+  const clean = results
+    .map(r => ({
+      phone: r.phone?.replace(/\D/g, '') ?? '',
+      wa_number: r.own_number ?? 'unknown',
+      contact_name: r.contact_name ?? null,
+      message_text: r.message?.slice(0, 500) ?? null,
+      status: r.status,
+      error_msg: r.error ?? null,
+    }))
+    .filter(r => r.phone);
 
-  return saved;
+  if (!clean.length) return 0;
+
+  // Batch INSERT with unnest arrays
+  const phones = clean.map(r => r.phone);
+  const waNumbers = clean.map(r => r.wa_number);
+  const names = clean.map(r => r.contact_name);
+  const messages = clean.map(r => r.message_text);
+  const statuses = clean.map(r => r.status);
+  const errors = clean.map(r => r.error_msg);
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO blast_log
+         (campaign_id, wa_number, contact_phone, contact_name, message_text, status, error_msg)
+       SELECT $1, unnest($2::text[]), unnest($3::text[]), unnest($4::text[]), unnest($5::text[]), unnest($6::text[]), unnest($7::text[])
+       ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent'
+       DO UPDATE SET
+         contact_name = EXCLUDED.contact_name,
+         message_text = EXCLUDED.message_text,
+         status       = EXCLUDED.status,
+         error_msg    = EXCLUDED.error_msg,
+         sent_at      = now()`,
+      [campaign_id, waNumbers, phones, names, messages, statuses, errors]
+    );
+    return result.rowCount ?? 0;
+  } catch (err) {
+    // Fallback to individual inserts if batch fails
+    let saved = 0;
+    for (const r of clean) {
+      try {
+        await pool.query(
+          `INSERT INTO blast_log
+             (campaign_id, wa_number, contact_phone, contact_name, message_text, status, error_msg)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent'
+           DO UPDATE SET contact_name = EXCLUDED.contact_name, message_text = EXCLUDED.message_text, sent_at = now()`,
+          [campaign_id, r.wa_number, r.phone, r.contact_name, r.message_text, r.status, r.error_msg]
+        );
+        saved++;
+      } catch { /* ignore individual failures */ }
+    }
+    return saved;
+  }
 }
 
 // ── Stats: global + per WA number ─────────────────────────────────────
@@ -253,6 +280,7 @@ export async function getBlastStats(campaign_id: string): Promise<{
     total_sent:      number;
     total_pending:   number;
     total_failed:    number;
+    total_no_wa:     number;
   };
   by_number: Record<string, {
     sent:    number;
@@ -262,12 +290,13 @@ export async function getBlastStats(campaign_id: string): Promise<{
   }>;
 }> {
   const [globalResult, byNumberResult, configResult] = await Promise.all([
-    pool.query<{ total: string; sent: string; failed: string }>(
+    pool.query<{ total: string; sent: string; failed: string; no_wa: string }>(
       `SELECT
          (SELECT COUNT(*) FROM form_submissions WHERE campaign_id = $1 AND deleted_at IS NULL
             AND COALESCE(data->>'telefono','') != '') AS total,
          (SELECT COUNT(*) FROM blast_log WHERE campaign_id = $1 AND status = 'sent') AS sent,
-         (SELECT COUNT(*) FROM blast_log WHERE campaign_id = $1 AND status = 'failed') AS failed`,
+         (SELECT COUNT(*) FROM blast_log WHERE campaign_id = $1 AND status = 'failed') AS failed,
+         (SELECT COUNT(*) FROM blast_log WHERE campaign_id = $1 AND status = 'no_wa') AS no_wa`,
       [campaign_id]
     ),
     pool.query<{ wa_number: string; sent: string; failed: string; today: string }>(
@@ -293,6 +322,7 @@ export async function getBlastStats(campaign_id: string): Promise<{
   const total      = parseInt(row?.total  ?? "0", 10);
   const totalSent  = parseInt(row?.sent   ?? "0", 10);
   const totalFailed= parseInt(row?.failed ?? "0", 10);
+  const totalNoWa  = parseInt(row?.no_wa  ?? "0", 10);
 
   const labelMap: Record<string, string> = {};
   for (const c of configResult.rows) labelMap[c.wa_number] = c.label;
@@ -311,8 +341,9 @@ export async function getBlastStats(campaign_id: string): Promise<{
     stats: {
       total_contacts: total,
       total_sent:     totalSent,
-      total_pending:  Math.max(0, total - totalSent),
+      total_pending:  Math.max(0, total - totalSent - totalNoWa),
       total_failed:   totalFailed,
+      total_no_wa:    totalNoWa,
     },
     by_number: byNumber,
   };
