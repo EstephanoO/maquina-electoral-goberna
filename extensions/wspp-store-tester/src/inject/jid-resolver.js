@@ -1,6 +1,6 @@
 // jid-resolver.js — JID→phone cache e indexes para resolución O(1).
 
-import { _ownNumber } from './bootstrap.js';
+import { getOwnNumber as _getBootstrapOwnNumber } from './bootstrap.js';
 
 // ─── JID→phone cache ──────────────────────────────────────────────────────
 // Persists successful @lid→phone resolutions so we don't re-resolve every time.
@@ -217,7 +217,8 @@ export function getActiveContactName() {
  * M-7: Removed webpack fallback — WA uses Metro, not webpack.
  */
 export function getOwnNumber() {
-  if (_ownNumber) return _ownNumber;
+  const fromStorage = _getBootstrapOwnNumber();
+  if (fromStorage) return fromStorage;
 
   // Live fallback: try WA modules directly
   try {

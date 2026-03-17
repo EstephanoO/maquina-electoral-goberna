@@ -13,8 +13,7 @@
 // L7. addAndSendMsgToChat (no DOM, no clicks)
 // ═══════════════════════════════════════════════════════
 
-import { WA_ORIGIN } from './bootstrap.js';
-import { _ownNumber } from './bootstrap.js';
+import { WA_ORIGIN, getOwnNumber } from './bootstrap.js';
 
 // Spam check — called before each send via bridge to background
 // Returns a Promise<{ shouldPause, cooldown_sec, result }>
@@ -92,7 +91,7 @@ const _dailyKey  = n => `wspp_blast_daily_${n || 'global'}`;
 const _warmupKey = n => `wspp_blast_warmup_${n || 'global'}`;
 
 function _loadState() {
-  _activeNumber = _ownNumber;
+  _activeNumber = getOwnNumber();
   const n = _activeNumber;
   try {
     const ws = localStorage.getItem(_warmupKey(n));
@@ -646,8 +645,9 @@ function _render() {
 
 // ── Cargar configuración del segmento del número activo ───────────────
 function _loadSegmentInfo() {
-  if (!_ownNumber) return;
-  window.postMessage({ type: 'BLAST_GET_NUMBER_CONFIG', own_number: _ownNumber }, WA_ORIGIN);
+  const own = getOwnNumber();
+  if (!own) return;
+  window.postMessage({ type: 'BLAST_GET_NUMBER_CONFIG', own_number: own }, WA_ORIGIN);
 }
 
 // ── Cargar contactos ──────────────────────────────────────────────────

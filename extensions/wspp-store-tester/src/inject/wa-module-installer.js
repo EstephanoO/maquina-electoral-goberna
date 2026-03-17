@@ -1,7 +1,7 @@
 // wa-module-installer.js — instala listeners de módulos internos de WA.
 // Maneja: incoming messages, chat watcher, health check.
 
-import { WA_ORIGIN, _ownNumber, setOwnNumber } from './bootstrap.js';
+import { WA_ORIGIN, setOwnNumber } from './bootstrap.js';
 import { jidToNumber, resolvePhoneFromLid, getContactIndex, getChatIndex, getOwnNumber } from './jid-resolver.js';
 
 let _msgListenerInstalled = false;
@@ -299,7 +299,7 @@ function showHealthBadge(level, message) {
  */
 function detectOwnNumber() {
   // Skip if already set (from storage via content.js)
-  if (_ownNumber) return;
+  if (getOwnNumber()) return;
 
   let phone = null;
 

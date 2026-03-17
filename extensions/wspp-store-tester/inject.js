@@ -3,6 +3,12 @@
   var WA_ORIGIN = "https://web.whatsapp.com";
   var _ownNumber = null;
   var _catalogIsConsultor = false;
+  function getOwnNumber() {
+    return _ownNumber;
+  }
+  function isCatalogConsultor() {
+    return _catalogIsConsultor;
+  }
   function setOwnNumber(num) {
     _ownNumber = num || null;
   }
@@ -196,8 +202,9 @@
     }
     return null;
   }
-  function getOwnNumber() {
-    if (_ownNumber) return _ownNumber;
+  function getOwnNumber2() {
+    const fromStorage = getOwnNumber();
+    if (fromStorage) return fromStorage;
     try {
       const mod = window.require("WAWebUserPrefsMeUser");
       const me = mod?.getMeUser?.() || mod?.getMaybeMeUser?.();
@@ -284,7 +291,7 @@
     const now = Date.now();
     if (now - _lastEmit < 300) return;
     _lastEmit = now;
-    const own = getOwnNumber();
+    const own = getOwnNumber2();
     const name = getActiveContactName();
     window.postMessage({
       type: "WSPP_SENT",
@@ -721,7 +728,7 @@
               payload: {
                 phone: phone2,
                 contact_name: contactName2 || getActiveContactName_local(),
-                own_number: getOwnNumber(),
+                own_number: getOwnNumber2(),
                 to_jid: to,
                 timestamp: msg.get("t") || Math.floor(Date.now() / 1e3),
                 body: outBody.substring(0, 500)
@@ -758,7 +765,7 @@
               from_jid: from,
               preview: body.substring(0, 500),
               msg_type: msgType,
-              own_number: getOwnNumber(),
+              own_number: getOwnNumber2(),
               timestamp
             }
           }, WA_ORIGIN);
@@ -926,7 +933,7 @@
     }, 15e3);
   }
   function detectOwnNumber() {
-    if (_ownNumber) return;
+    if (getOwnNumber2()) return;
     let phone = null;
     try {
       const mod = window.require("WAWebUserPrefsMeUser");
@@ -1207,56 +1214,6 @@
     });
     return b;
   }
-  function createCatalogButton() {
-    const btn = _el("button", {
-      position: "fixed",
-      bottom: "72px",
-      right: "18px",
-      zIndex: "99999",
-      width: "44px",
-      height: "44px",
-      borderRadius: "50%",
-      border: "none",
-      background: "linear-gradient(135deg,#00a884,#008f72)",
-      color: "#fff",
-      cursor: "pointer",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      boxShadow: "0 3px 12px rgba(0,168,132,.4), 0 1px 3px rgba(0,0,0,.3)",
-      transition: "box-shadow .2s, transform .15s"
-    }, { html: I.mic });
-    btn.id = "wspp-catalog-btn";
-    btn.title = "Audios C\xE9sar V\xE1squez";
-    btn.addEventListener("mouseenter", () => {
-      if (!_catalogPanelOpen) btn.style.transform = "scale(1.08)";
-    });
-    btn.addEventListener("mouseleave", () => {
-      btn.style.transform = "scale(1)";
-    });
-    btn.addEventListener("click", toggleCatalogPanel);
-    document.body.appendChild(btn);
-    return btn;
-  }
-  function toggleCatalogPanel() {
-    const existing = document.getElementById("wspp-cat-panel");
-    if (existing) {
-      _closePanel();
-      return;
-    }
-    _catalogPanelOpen = true;
-    const fab = document.getElementById("wspp-catalog-btn");
-    if (fab) fab.style.boxShadow = "0 0 0 3px rgba(0,168,132,.35), 0 3px 12px rgba(0,168,132,.4)";
-    if (_catalogItems.length === 0 && !_catalogLoading) {
-      _catalogLoading = true;
-      window.postMessage({ type: "FETCH_AUDIO_CATALOG" }, WA_ORIGIN);
-    }
-    if (_catalogCategories.length === 0 && !_catalogCategoriesLoading) {
-      _catalogCategoriesLoading = true;
-      window.postMessage({ type: "FETCH_CATALOG_CATEGORIES" }, WA_ORIGIN);
-    }
-    renderCatalogPanel();
-  }
   function _closePanel() {
     _destroyPreview();
     const p = document.getElementById("wspp-cat-panel");
@@ -1321,7 +1278,7 @@
   function _renderGrid(panel) {
     const loading = _catalogLoading && _catalogItems.length === 0;
     const rightBtns = [];
-    if (_catalogIsConsultor) {
+    if (isCatalogConsultor()) {
       rightBtns.push(_iconBtn(I.plus, "#00a884", "Crear plantilla", () => {
         _catalogCategory = null;
         _catalogView = "create";
@@ -1402,7 +1359,7 @@
     const items = _catalogItems.filter((i) => i.category === cat).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
     const colors = _getCatColors(cat);
     const rightBtns = [];
-    if (_catalogIsConsultor) {
+    if (isCatalogConsultor()) {
       rightBtns.push(_iconBtn(I.plus, colors.accent, "Agregar plantilla", () => {
         _catalogView = "create";
         renderCatalogPanel();
@@ -1454,7 +1411,7 @@
         const dur = _fmtDur(item.duration_ms);
         if (dur) txt.appendChild(_el("div", { fontSize: "10px", color: "#555" }, { txt: dur }));
         row.appendChild(txt);
-        if (_catalogIsConsultor) {
+        if (isCatalogConsultor()) {
           row.appendChild(_iconBtn(I.edit, "#666", "Editar", () => {
             _catalogDetailId = item.id;
             _catalogView = "detail";
@@ -2160,18 +2117,14 @@
       return;
     }
   });
-  var MAX_RETRIES = 30;
-  var _retries = 0;
-  function waitForChatAndInsertButton() {
-    if (document.getElementById("wspp-catalog-btn")) return;
-    if (document.querySelector("#main") || document.querySelector(".two")) {
-      createCatalogButton();
-      console.log("[WSPP CATALOG] Button inserted");
-      return;
+  function toggleCatalogPanel() {
+    if (_catalogPanelOpen) {
+      _catalogPanelOpen = false;
+      document.getElementById("wspp-catalog-panel")?.remove();
+    } else {
+      _catalogPanelOpen = true;
+      renderCatalogPanel();
     }
-    _retries++;
-    if (_retries < MAX_RETRIES) setTimeout(waitForChatAndInsertButton, 2e3);
-    else console.warn("[WSPP CATALOG] Chat not found after", MAX_RETRIES, "retries");
   }
 
   // src/inject/blast-panel.js
@@ -2227,7 +2180,7 @@
   var _dailyKey = (n) => `wspp_blast_daily_${n || "global"}`;
   var _warmupKey = (n) => `wspp_blast_warmup_${n || "global"}`;
   function _loadState() {
-    _activeNumber = _ownNumber;
+    _activeNumber = getOwnNumber();
     const n = _activeNumber;
     try {
       const ws = localStorage.getItem(_warmupKey(n));
@@ -2794,8 +2747,9 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
     });
   }
   function _loadSegmentInfo() {
-    if (!_ownNumber) return;
-    window.postMessage({ type: "BLAST_GET_NUMBER_CONFIG", own_number: _ownNumber }, WA_ORIGIN);
+    const own = getOwnNumber();
+    if (!own) return;
+    window.postMessage({ type: "BLAST_GET_NUMBER_CONFIG", own_number: own }, WA_ORIGIN);
   }
   function _load() {
     _loadState();
@@ -2950,7 +2904,7 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
   }
   async function _spamCheckBeforeSend2() {
     return new Promise((resolve) => {
-      window.postMessage({ type: "WSPP_SPAM_CHECK_NOW", own_number: _ownNumber }, WA_ORIGIN);
+      window.postMessage({ type: "WSPP_SPAM_CHECK_NOW", own_number: getOwnNumber() }, WA_ORIGIN);
       const onResult = (e) => {
         if (e.source !== window) return;
         if (e.data?.type !== "WSPP_SPAM_CHECK_RESULT") return;
@@ -2968,7 +2922,7 @@ Verifica WhatsApp Web.`, "#ef5350", 1e4);
   function _recordOutgoingBridge(text, phone) {
     window.postMessage({
       type: "WSPP_VALIDATOR_CONV_SENT",
-      payload: { text, phone, own_number: _ownNumber, timestamp: Math.floor(Date.now() / 1e3) }
+      payload: { text, phone, own_number: getOwnNumber(), timestamp: Math.floor(Date.now() / 1e3) }
     }, WA_ORIGIN);
   }
   async function _sendConvMessage(phone, nombre) {
@@ -3186,7 +3140,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       if (el) el.remove();
       return;
     }
-    _activeNumber2 = _ownNumber;
+    _activeNumber2 = getOwnNumber();
     const valid = _results2.filter((r) => r.wa_valid === true).length;
     const invalid = _results2.filter((r) => r.wa_valid === false).length;
     const pending = _contacts2.length - _idx2;
@@ -3394,7 +3348,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     });
   }
   function _load2() {
-    _activeNumber2 = _ownNumber;
+    _activeNumber2 = getOwnNumber();
     const btn = document.getElementById("wspp-val-load") || document.getElementById("wspp-val-reload");
     if (btn) {
       btn.textContent = "\u23F3 Cargando...";
@@ -3514,28 +3468,53 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     _render2();
   }
 
-  // src/inject-entry.js
-  if (document.readyState === "complete") {
-    setTimeout(tryInstallWAListeners, 5e3);
-  } else {
-    window.addEventListener("load", () => setTimeout(tryInstallWAListeners, 5e3));
+  // src/inject/sidebar.js
+  var SIDEBAR_WIDTH = 360;
+  var SIDEBAR_ID = "wspp-sidebar";
+  var FAB_ID = "wspp-sidebar-fab";
+  var WA_APP_SEL = "#app";
+  var STORAGE_KEY = "wspp_sidebar_tab";
+  var C = {
+    bg: "#0f1923",
+    bgTab: "#0a1118",
+    border: "rgba(255,255,255,0.07)",
+    accent: "#25d366",
+    accentDim: "rgba(37,211,102,0.15)",
+    text: "#e9edef",
+    muted: "rgba(255,255,255,0.4)",
+    danger: "#ef5350",
+    warn: "#ff9f0a"
+  };
+  var _open3 = false;
+  var _activeTab = localStorage.getItem(STORAGE_KEY) || "contacts";
+  var $ = (id) => document.getElementById(id);
+  function _setTab(tab) {
+    _activeTab = tab;
+    localStorage.setItem(STORAGE_KEY, tab);
+    _renderTabs();
+    _renderContent();
   }
-  if (document.readyState === "complete") {
-    setTimeout(waitForChatAndInsertButton, 3e3);
-  } else {
-    window.addEventListener("load", () => setTimeout(waitForChatAndInsertButton, 3e3));
+  function _pushWaLayout(open) {
+    const app = document.querySelector(WA_APP_SEL);
+    if (!app) return;
+    if (open) {
+      app.style.transition = "padding-right 0.25s ease";
+      app.style.paddingRight = SIDEBAR_WIDTH + "px";
+    } else {
+      app.style.paddingRight = "0";
+    }
   }
-  function insertBlastButton() {
-    if (document.getElementById("wspp-blast-fab")) return;
+  function insertSidebarFAB() {
+    if ($(FAB_ID)) return;
     const fab = document.createElement("button");
-    fab.id = "wspp-blast-fab";
-    fab.title = "Blast Masivo \u2014 Goberna";
-    fab.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>`;
+    fab.id = FAB_ID;
+    fab.title = "Goberna \u2014 Panel lateral";
+    fab.innerHTML = _fabIcon(false);
     Object.assign(fab.style, {
       position: "fixed",
       bottom: "20px",
       right: "20px",
-      zIndex: "2147483645",
+      zIndex: "2147483647",
       width: "48px",
       height: "48px",
       borderRadius: "50%",
@@ -3545,50 +3524,455 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      boxShadow: "0 4px 20px rgba(0,0,0,.4)",
-      transition: "transform 0.15s"
+      boxShadow: "0 4px 20px rgba(0,0,0,.5)",
+      transition: "transform 0.15s, background 0.15s"
     });
-    fab.addEventListener("mouseenter", () => fab.style.transform = "scale(1.1)");
-    fab.addEventListener("mouseleave", () => fab.style.transform = "scale(1)");
-    fab.addEventListener("click", () => toggleBlastPanel());
+    fab.addEventListener("mouseenter", () => {
+      fab.style.transform = "scale(1.12)";
+    });
+    fab.addEventListener("mouseleave", () => {
+      fab.style.transform = "scale(1)";
+    });
+    fab.addEventListener("click", toggleSidebar);
     document.body.appendChild(fab);
   }
-  var tryInsertFab = () => {
-    if (document.body) insertBlastButton();
-    else setTimeout(tryInsertFab, 1e3);
-  };
-  setTimeout(tryInsertFab, 4e3);
-  function insertValidatorButton() {
-    if (document.getElementById("wspp-validator-fab")) return;
-    const fab = document.createElement("button");
-    fab.id = "wspp-validator-fab";
-    fab.title = "Validador WA \u2014 Goberna";
-    fab.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`;
-    Object.assign(fab.style, {
-      position: "fixed",
-      bottom: "76px",
-      right: "20px",
-      zIndex: "2147483644",
-      width: "44px",
-      height: "44px",
-      borderRadius: "50%",
-      background: "#1a3a5c",
-      border: "none",
-      cursor: "pointer",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      boxShadow: "0 4px 16px rgba(0,0,0,.4)",
-      transition: "transform 0.15s"
-    });
-    fab.addEventListener("mouseenter", () => fab.style.transform = "scale(1.1)");
-    fab.addEventListener("mouseleave", () => fab.style.transform = "scale(1)");
-    fab.addEventListener("click", () => toggleValidatorPanel());
-    document.body.appendChild(fab);
+  function _fabIcon(open) {
+    if (open) {
+      return `<svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+    </svg>`;
+    }
+    return `<svg width="20" height="20" viewBox="0 0 24 24" fill="white">
+    <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+  </svg>`;
   }
-  var tryInsertValidatorFab = () => {
-    if (document.body) insertValidatorButton();
-    else setTimeout(tryInsertValidatorFab, 1e3);
+  function toggleSidebar() {
+    _open3 = !_open3;
+    const fab = $(FAB_ID);
+    if (fab) {
+      fab.innerHTML = _fabIcon(_open3);
+      fab.style.background = _open3 ? "#0d2137" : "#163960";
+      fab.style.right = _open3 ? SIDEBAR_WIDTH + 12 + "px" : "20px";
+    }
+    _pushWaLayout(_open3);
+    if (_open3) {
+      _renderSidebar();
+    } else {
+      const el = $(SIDEBAR_ID);
+      if (el) {
+        el.style.transform = `translateX(${SIDEBAR_WIDTH}px)`;
+        el.style.opacity = "0";
+        setTimeout(() => el.remove(), 250);
+      }
+    }
+  }
+  function _renderSidebar() {
+    let el = $(SIDEBAR_ID);
+    if (!el) {
+      el = document.createElement("div");
+      el.id = SIDEBAR_ID;
+      Object.assign(el.style, {
+        position: "fixed",
+        top: "0",
+        right: "0",
+        width: SIDEBAR_WIDTH + "px",
+        height: "100vh",
+        zIndex: "2147483646",
+        background: C.bg,
+        borderLeft: `1px solid ${C.border}`,
+        boxShadow: "-8px 0 32px rgba(0,0,0,.4)",
+        display: "flex",
+        flexDirection: "column",
+        fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
+        color: C.text,
+        transform: `translateX(${SIDEBAR_WIDTH}px)`,
+        opacity: "0",
+        transition: "transform 0.25s ease, opacity 0.2s ease",
+        overflowX: "hidden"
+      });
+      document.body.appendChild(el);
+      requestAnimationFrame(() => {
+        el.style.transform = "translateX(0)";
+        el.style.opacity = "1";
+      });
+    }
+    el.innerHTML = `
+    ${_headerHTML()}
+    ${_tabBarHTML()}
+    <div id="wspp-sidebar-content" style="flex:1;overflow-y:auto;overflow-x:hidden;">
+      ${_contentHTML()}
+    </div>
+    ${_footerHTML()}
+  `;
+    _bindEvents();
+  }
+  function _headerHTML() {
+    const own = getOwnNumber();
+    const ownLabel = own ? `+${own}` : "\u23F3 detectando...";
+    return `
+    <div style="
+      padding:12px 16px 8px;
+      border-bottom:1px solid ${C.border};
+      display:flex;align-items:center;justify-content:space-between;
+      flex-shrink:0;
+    ">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="
+          width:28px;height:28px;border-radius:7px;
+          background:rgba(37,211,102,.12);
+          display:flex;align-items:center;justify-content:center;
+        ">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="${C.accent}">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
+          </svg>
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:700;letter-spacing:-.3px;">Goberna</div>
+          <div style="font-size:9px;color:${C.muted};">${ownLabel}</div>
+        </div>
+      </div>
+      <button id="wspp-sidebar-close" style="
+        background:none;border:none;color:${C.muted};
+        font-size:16px;cursor:pointer;padding:4px;line-height:1;
+        border-radius:4px;
+      ">\u2715</button>
+    </div>
+  `;
+  }
+  var TABS = [
+    { id: "contacts", icon: "\u{1F4CB}", label: "Contactos" },
+    { id: "audios", icon: "\u{1F399}", label: "Audios" },
+    { id: "status", icon: "\u{1F4CA}", label: "Estado" }
+  ];
+  function _tabBarHTML() {
+    return `
+    <div style="
+      display:flex;border-bottom:1px solid ${C.border};
+      flex-shrink:0;background:${C.bgTab};
+    ">
+      ${TABS.map((t) => {
+      const active = _activeTab === t.id;
+      return `
+          <button data-tab="${t.id}" style="
+            flex:1;padding:10px 4px;border:none;cursor:pointer;
+            background:${active ? C.bg : "transparent"};
+            color:${active ? C.accent : C.muted};
+            font-size:11px;font-weight:${active ? "700" : "500"};
+            border-bottom:2px solid ${active ? C.accent : "transparent"};
+            transition:all .15s;
+          ">
+            <div style="font-size:14px;margin-bottom:2px;">${t.icon}</div>
+            ${t.label}
+          </button>
+        `;
+    }).join("")}
+    </div>
+  `;
+  }
+  function _contentHTML() {
+    if (_activeTab === "contacts") return _contactsTabHTML();
+    if (_activeTab === "audios") return _audiosTabHTML();
+    if (_activeTab === "status") return _statusTabHTML();
+    return "";
+  }
+  function _footerHTML() {
+    return `
+    <div style="
+      padding:8px 12px;border-top:1px solid ${C.border};
+      display:flex;gap:6px;flex-shrink:0;
+    ">
+      <button id="wspp-sidebar-blast-btn" style="
+        flex:1;padding:9px;border-radius:8px;border:none;cursor:pointer;
+        background:${C.accentDim};color:${C.accent};
+        font-size:11px;font-weight:700;
+      ">\u26A1 Blast</button>
+      <button id="wspp-sidebar-val-btn" style="
+        flex:1;padding:9px;border-radius:8px;border:none;cursor:pointer;
+        background:rgba(96,165,250,.1);color:#60a5fa;
+        font-size:11px;font-weight:700;
+      ">\u2705 Validar</button>
+      ${isCatalogConsultor() ? `
+      <button id="wspp-sidebar-catalog-btn" style="
+        flex:1;padding:9px;border-radius:8px;border:none;cursor:pointer;
+        background:rgba(167,139,250,.1);color:#a78bfa;
+        font-size:11px;font-weight:700;
+      ">\u{1F3B5} Cat\xE1logo</button>
+      ` : ""}
+    </div>
+  `;
+  }
+  function _contactsTabHTML() {
+    return `
+    <div style="padding:10px 12px 4px;">
+
+      <!-- Barra de b\xFAsqueda -->
+      <div style="
+        display:flex;gap:6px;align-items:center;
+        background:rgba(255,255,255,.05);border:1px solid ${C.border};
+        border-radius:8px;padding:6px 10px;margin-bottom:8px;
+      ">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="${C.muted}">
+          <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+        </svg>
+        <input
+          id="wspp-contacts-search"
+          placeholder="Buscar por nombre o n\xFAmero..."
+          style="
+            background:none;border:none;outline:none;
+            color:${C.text};font-size:12px;flex:1;
+          "
+        />
+      </div>
+
+      <!-- Filtros r\xE1pidos -->
+      <div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap;">
+        ${[
+      { key: "pendiente", label: "\u23F3 Pendiente", color: "#ff9f0a" },
+      { key: "hablado", label: "\u{1F4AC} Hablado", color: "#60a5fa" },
+      { key: "duro", label: "\u2705 Duro", color: "#34c759" },
+      { key: "blando", label: "\u{1F7E1} Blando", color: "#fde68a" },
+      { key: "flotante", label: "\u{1F7E3} Flotante", color: "#a78bfa" }
+    ].map((f) => `
+          <button data-filter="${f.key}" style="
+            padding:3px 8px;border-radius:12px;border:1px solid ${f.color}33;
+            background:${f.color}11;color:${f.color};
+            font-size:10px;cursor:pointer;font-weight:600;
+            white-space:nowrap;
+          ">${f.label}</button>
+        `).join("")}
+      </div>
+
+      <!-- Subt\xEDtulo con conteo -->
+      <div id="wspp-contacts-count" style="
+        font-size:10px;color:${C.muted};
+        text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;
+      ">Cargando contactos...</div>
+    </div>
+
+    <!-- Lista de contactos (scrollable) -->
+    <div id="wspp-contacts-list" style="
+      padding:0 8px 8px;
+      display:flex;flex-direction:column;gap:3px;
+    ">
+      <div style="text-align:center;padding:24px 0;color:${C.muted};font-size:12px;">
+        Abr\xED un chat para ver los contactos de ese tipo
+      </div>
+    </div>
+  `;
+  }
+  function _audiosTabHTML() {
+    return `
+    <div style="padding:10px 12px 4px;">
+      <div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">
+        Cat\xE1logo de audios \xB7 Toc\xE1 para previsualizar \xB7 Envi\xE1 al chat activo
+      </div>
+
+      <!-- Filtro por categor\xEDa -->
+      <div id="wspp-audio-cat-filter" style="
+        display:flex;gap:4px;overflow-x:auto;padding-bottom:4px;margin-bottom:8px;
+      ">
+        <button data-audio-cat="all" style="
+          padding:3px 10px;border-radius:12px;border:1px solid ${C.accent}55;
+          background:${C.accentDim};color:${C.accent};
+          font-size:10px;cursor:pointer;white-space:nowrap;font-weight:700;
+        ">Todos</button>
+      </div>
+    </div>
+
+    <!-- Lista de audios -->
+    <div id="wspp-audio-list" style="padding:0 8px 8px;display:flex;flex-direction:column;gap:3px;">
+      <div style="text-align:center;padding:24px 0;color:${C.muted};font-size:12px;">
+        Cargando cat\xE1logo...
+      </div>
+    </div>
+  `;
+  }
+  function _statusTabHTML() {
+    const own = getOwnNumber();
+    return `
+    <div style="padding:12px;">
+
+      <!-- N\xFAmero activo -->
+      <div style="
+        padding:10px 12px;border-radius:10px;
+        background:rgba(255,255,255,.04);border:1px solid ${C.border};
+        margin-bottom:8px;
+      ">
+        <div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">
+          N\xFAmero activo
+        </div>
+        <div style="font-size:18px;font-weight:800;color:${own ? C.accent : C.warn};">
+          ${own ? "+" + own : "\u23F3 Detectando..."}
+        </div>
+        ${own ? `<div style="font-size:10px;color:${C.muted};margin-top:2px;">
+          ${/* warmup info injected by caller */
+    ""}
+        </div>` : ""}
+      </div>
+
+      <!-- Spam risk indicator -->
+      <div id="wspp-sidebar-spam-status" style="
+        padding:10px 12px;border-radius:10px;
+        background:rgba(255,255,255,.04);border:1px solid ${C.border};
+        margin-bottom:8px;
+      ">
+        <div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">
+          Riesgo de spam
+        </div>
+        <div id="wspp-sidebar-risk-text" style="font-size:13px;font-weight:700;color:#34c759;">
+          \u2705 Sin riesgo detectado
+        </div>
+      </div>
+
+      <!-- Stats del d\xEDa -->
+      <div style="
+        display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;
+      ">
+        ${[
+      { id: "stat-sent", label: "Enviados hoy", color: C.accent },
+      { id: "stat-limit", label: "L\xEDmite hoy", color: "#60a5fa" },
+      { id: "stat-valid", label: "Validados WA", color: "#34c759" },
+      { id: "stat-pending", label: "Pendientes", color: C.warn }
+    ].map((s) => `
+          <div style="
+            padding:10px;border-radius:8px;
+            background:rgba(255,255,255,.04);border:1px solid ${C.border};
+            text-align:center;
+          ">
+            <div id="wspp-${s.id}" style="font-size:20px;font-weight:800;color:${s.color};">\u2014</div>
+            <div style="font-size:9px;color:${C.muted};margin-top:2px;text-transform:uppercase;">${s.label}</div>
+          </div>
+        `).join("")}
+      </div>
+
+      <!-- Alertas de spam recientes -->
+      <div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">
+        Alertas recientes
+      </div>
+      <div id="wspp-sidebar-spam-alerts" style="
+        display:flex;flex-direction:column;gap:3px;
+      ">
+        <div style="font-size:11px;color:${C.muted};padding:8px 0;">Sin alertas</div>
+      </div>
+
+    </div>
+  `;
+  }
+  function _renderTabs() {
+    const el = $(SIDEBAR_ID);
+    if (!el) return;
+    const tabBar = el.querySelector("[data-tab]")?.closest("div");
+    if (tabBar) tabBar.outerHTML = _tabBarHTML();
+  }
+  function _renderContent() {
+    const content = $("wspp-sidebar-content");
+    if (content) {
+      content.innerHTML = _contentHTML();
+      _bindContentEvents();
+    }
+  }
+  function _bindEvents() {
+    $("wspp-sidebar-close")?.addEventListener("click", toggleSidebar);
+    document.querySelectorAll("[data-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => _setTab(btn.dataset.tab));
+    });
+    $("wspp-sidebar-blast-btn")?.addEventListener("click", () => {
+      toggleBlastPanel();
+    });
+    $("wspp-sidebar-val-btn")?.addEventListener("click", () => {
+      toggleValidatorPanel();
+    });
+    $("wspp-sidebar-catalog-btn")?.addEventListener("click", () => {
+      toggleCatalogPanel();
+    });
+    _bindContentEvents();
+  }
+  function _bindContentEvents() {
+    document.querySelectorAll(".wspp-contact-row").forEach((row) => {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest("[data-action]")) return;
+        const actions = row.querySelector(".wspp-contact-actions");
+        if (!actions) return;
+        const visible = actions.style.display !== "none" && actions.style.display !== "";
+        document.querySelectorAll(".wspp-contact-actions").forEach((a) => a.style.display = "none");
+        actions.style.display = visible ? "none" : "flex";
+      });
+    });
+    document.querySelectorAll("[data-action]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        const id = btn.dataset.id;
+        const phone = btn.dataset.phone;
+        const name = btn.dataset.name || "";
+        if (action === "send") {
+          window.postMessage({ type: "WSPP_OPEN_CHAT", phone }, WA_ORIGIN);
+          return;
+        }
+        const voteMap = { duro: "duro", blando: "blando", flotante: "flotante", invalido: "" };
+        const statusMap = { duro: "respondido", blando: "respondido", flotante: "respondido", invalido: "invalido" };
+        window.postMessage({
+          type: "WSPP_CLASSIFY",
+          payload: {
+            validation_id: id,
+            vote_class: voteMap[action],
+            status: statusMap[action],
+            _phone: phone || null
+          }
+        }, WA_ORIGIN);
+        const row = btn.closest(".wspp-contact-row");
+        if (row) {
+          row.style.opacity = "0.5";
+          row.style.pointerEvents = "none";
+        }
+      });
+    });
+    document.querySelectorAll(".wspp-audio-row").forEach((row) => {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest("[data-audio-send]") || e.target.closest("[data-audio-regen]")) return;
+        const id = row.dataset.audioId;
+        if (id) window.postMessage({ type: "GET_CATALOG_AUDIO", id }, WA_ORIGIN);
+      });
+    });
+    document.querySelectorAll("[data-audio-send]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        window.postMessage({ type: "SIDEBAR_SEND_AUDIO_PTT", id: btn.dataset.audioSend }, WA_ORIGIN);
+      });
+    });
+    document.querySelectorAll("[data-audio-regen]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        btn.textContent = "\u23F3";
+        btn.disabled = true;
+        window.postMessage({ type: "GENERATE_CATALOG_AUDIO", id: btn.dataset.audioRegen }, WA_ORIGIN);
+      });
+    });
+    document.querySelectorAll("[data-filter]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-filter]").forEach((b) => {
+          b.style.fontWeight = "600";
+          b.style.opacity = "0.7";
+        });
+        btn.style.fontWeight = "800";
+        btn.style.opacity = "1";
+        window.postMessage({ type: "SIDEBAR_FILTER_CONTACTS", filter: btn.dataset.filter }, WA_ORIGIN);
+      });
+    });
+    $("wspp-contacts-search")?.addEventListener("input", (e) => {
+      window.postMessage({ type: "SIDEBAR_SEARCH_CONTACTS", query: e.target.value }, WA_ORIGIN);
+    });
+  }
+
+  // src/inject-entry.js
+  if (document.readyState === "complete") {
+    setTimeout(tryInstallWAListeners, 5e3);
+  } else {
+    window.addEventListener("load", () => setTimeout(tryInstallWAListeners, 5e3));
+  }
+  var tryInsertFAB = () => {
+    if (document.body) insertSidebarFAB();
+    else setTimeout(tryInsertFAB, 1e3);
   };
-  setTimeout(tryInsertValidatorFab, 4500);
+  setTimeout(tryInsertFAB, 3500);
 })();

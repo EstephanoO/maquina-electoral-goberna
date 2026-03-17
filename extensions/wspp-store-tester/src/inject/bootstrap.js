@@ -6,10 +6,26 @@
 export const WA_ORIGIN = 'https://web.whatsapp.com';
 
 // ─── own_number y user_role desde storage (via content.js) ──────────────────
-export let _ownNumber = null;
-export let _catalogIsConsultor = false; // true when user can CRUD audio catalog (consultor+, admin, or perm_audio_admin)
+//
+// IMPORTANTE — esbuild IIFE live bindings:
+// esbuild compila todos los módulos inject en un solo IIFE. Cuando otro módulo
+// hace `import { _ownNumber } from './bootstrap.js'`, esbuild captura el valor
+// en el momento de la compilación (null/false), NO una referencia viva.
+// Por eso estas variables se exportan como funciones getter, no como `export let`.
+// Los consumidores deben llamar getOwnNumber() / isCatalogConsultor().
+//
+// El setter setOwnNumber() sí funciona como función (las funciones son estables).
 
-/** Setter for _ownNumber — used by wa-module-installer auto-detection */
+let _ownNumber = null;
+let _catalogIsConsultor = false;
+
+/** Número de WA propio del operador (ej: "51901938157") o null si no detectado */
+export function getOwnNumber() { return _ownNumber; }
+
+/** true cuando el usuario puede crear/editar/borrar items del catálogo de audio */
+export function isCatalogConsultor() { return _catalogIsConsultor; }
+
+/** Setter para _ownNumber — llamado por wa-module-installer al detectar el número */
 export function setOwnNumber(num) {
   _ownNumber = num || null;
 }

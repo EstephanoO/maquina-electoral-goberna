@@ -3,7 +3,7 @@
 // Consultor / audio_admin: crear, editar guión, regenerar audio, eliminar.
 // Agente digital: send-only.
 
-import { WA_ORIGIN, _catalogIsConsultor } from './bootstrap.js';
+import { WA_ORIGIN, isCatalogConsultor } from './bootstrap.js';
 import { getLastActiveChatJid } from './wa-module-installer.js';
 
 // ── State ───────────────────────────────────────────────────────────
@@ -160,13 +160,13 @@ function createCatalogButton() {
   btn.title = 'Audios César Vásquez';
   btn.addEventListener('mouseenter', () => { if (!_catalogPanelOpen) btn.style.transform = 'scale(1.08)'; });
   btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
-  btn.addEventListener('click', toggleCatalogPanel);
+  btn.addEventListener('click', _toggleCatalogPanelInternal);
   document.body.appendChild(btn);
   return btn;
 }
 
-// ── Toggle panel ────────────────────────────────────────────────────
-function toggleCatalogPanel() {
+// ── Toggle panel (interno — usado por el botón FAB del catálogo) ─────
+function _toggleCatalogPanelInternal() {
   const existing = document.getElementById('wspp-cat-panel');
   if (existing) { _closePanel(); return; }
   _catalogPanelOpen = true;
@@ -238,7 +238,7 @@ function _spinner(size, color) {
 function _renderGrid(panel) {
   const loading = _catalogLoading && _catalogItems.length === 0;
   const rightBtns = [];
-  if (_catalogIsConsultor) {
+  if (isCatalogConsultor()) {
     rightBtns.push(_iconBtn(I.plus, '#00a884', 'Crear plantilla', () => { _catalogCategory = null; _catalogView = 'create'; renderCatalogPanel(); }));
   }
   panel.appendChild(_mkHdr('César Vásquez', null, rightBtns));
@@ -309,7 +309,7 @@ function _renderCategory(panel) {
   const colors = _getCatColors(cat);
 
   const rightBtns = [];
-  if (_catalogIsConsultor) {
+  if (isCatalogConsultor()) {
     rightBtns.push(_iconBtn(I.plus, colors.accent, 'Agregar plantilla', () => { _catalogView = 'create'; renderCatalogPanel(); }));
     rightBtns.push(_iconBtn(I.trash, '#ef5350', 'Eliminar categoría', () => {
       if (!confirm(`¿Eliminar "${_getCatLabel(cat)}" y TODOS sus audios?`)) return;
@@ -351,7 +351,7 @@ function _renderCategory(panel) {
       row.appendChild(txt);
 
       // Edit button (consultor)
-      if (_catalogIsConsultor) {
+      if (isCatalogConsultor()) {
         row.appendChild(_iconBtn(I.edit, '#666', 'Editar', () => { _catalogDetailId = item.id; _catalogView = 'detail'; renderCatalogPanel(); }));
       }
 
@@ -1071,6 +1071,17 @@ window.addEventListener('message', (e) => {
 // ── Insert FAB when WA Web is ready ─────────────────────────────────
 const MAX_RETRIES = 30;
 let _retries = 0;
+
+export function toggleCatalogPanel() {
+  if (_catalogPanelOpen) {
+    _catalogPanelOpen = false;
+    document.getElementById('wspp-catalog-panel')?.remove();
+  } else {
+    _catalogPanelOpen = true;
+    renderCatalogPanel();
+  }
+}
+export function isCatalogPanelOpen() { return _catalogPanelOpen; }
 
 export function waitForChatAndInsertButton() {
   if (document.getElementById('wspp-catalog-btn')) return;

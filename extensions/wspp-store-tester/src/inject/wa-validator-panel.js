@@ -13,8 +13,7 @@
 //   wa_valid = false → no tiene WA → descartado
 //   Reporte por brigadista: quién subió números malos
 
-import { WA_ORIGIN } from './bootstrap.js';
-import { _ownNumber } from './bootstrap.js';
+import { WA_ORIGIN, getOwnNumber } from './bootstrap.js';
 
 // ── Constantes modo silencioso ────────────────────────────────────────
 const SILENT_DELAY_MIN = 2000;
@@ -133,7 +132,7 @@ async function _checkPhoneSilent(phone) {
 // ── Spam check bridge (same pattern as blast-panel) ───────────────────
 async function _spamCheckBeforeSend() {
   return new Promise((resolve) => {
-    window.postMessage({ type: 'WSPP_SPAM_CHECK_NOW', own_number: _ownNumber }, WA_ORIGIN);
+    window.postMessage({ type: 'WSPP_SPAM_CHECK_NOW', own_number: getOwnNumber() }, WA_ORIGIN);
     const onResult = (e) => {
       if (e.source !== window) return;
       if (e.data?.type !== 'WSPP_SPAM_CHECK_RESULT') return;
@@ -153,7 +152,7 @@ async function _spamCheckBeforeSend() {
 function _recordOutgoingBridge(text, phone) {
   window.postMessage({
     type: 'WSPP_VALIDATOR_CONV_SENT',
-    payload: { text, phone, own_number: _ownNumber, timestamp: Math.floor(Date.now() / 1000) },
+    payload: { text, phone, own_number: getOwnNumber(), timestamp: Math.floor(Date.now() / 1000) },
   }, WA_ORIGIN);
 }
 
@@ -376,7 +375,7 @@ function _render() {
   const el = document.getElementById('wspp-val-panel');
   if (!_open) { if (el) el.remove(); return; }
 
-  _activeNumber = _ownNumber;
+  _activeNumber = getOwnNumber();
   const valid   = _results.filter(r => r.wa_valid === true).length;
   const invalid = _results.filter(r => r.wa_valid === false).length;
   const pending = _contacts.length - _idx;
@@ -583,7 +582,7 @@ function _render() {
 
 // ── Load contacts ─────────────────────────────────────────────────────
 function _load() {
-  _activeNumber = _ownNumber;
+  _activeNumber = getOwnNumber();
   const btn = document.getElementById('wspp-val-load') || document.getElementById('wspp-val-reload');
   if (btn) { btn.textContent = '⏳ Cargando...'; btn.disabled = true; }
   window.postMessage({ type: 'WA_VALIDATOR_GET_CONTACTS', limit: 500, offset: _idx }, WA_ORIGIN);
