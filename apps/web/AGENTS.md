@@ -87,12 +87,14 @@ apps/web/
 ```typescript
 // CORRECTO: Importar desde indices
 import { Button, Spinner, Avatar } from "@/lib/ui";
-import { slugify, formatDate } from "@/lib/utils";
+import { cn, slugify, formatDate } from "@/lib/utils";
 import { listCampaigns, createCampaign } from "@/lib/services";
 import type { Campaign, User } from "@/lib/types";
+import { Users, MapPin } from "lucide-react";
 
 // INCORRECTO: Importar archivos directos
 import { Button } from "@/lib/ui/button";  // No hacer
+import { cn } from "@/lib/utils/index";    // No hacer
 ```
 
 ### 3. Tamano de Archivos
@@ -329,6 +331,119 @@ Al encontrar archivos grandes (>300 lineas):
 - Lazy load de componentes pesados (mapas)
 - Imagenes con `unoptimized` para URLs externas
 - TanStack Query para cache y dedup de requests
+
+---
+
+## UI Component Library
+
+### Stack
+
+| Herramienta | Proposito |
+|-------------|-----------|
+| `tailwind-merge` + `clsx` | `cn()` utility para componer clases sin conflictos |
+| `class-variance-authority` (cva) | Variant system type-safe para componentes con multiples estilos |
+| `lucide-react` | Iconos — NO crear SVGs manuales, usar Lucide |
+| `shadcn/ui` | CLI para instalar componentes accesibles (Radix + Tailwind) |
+| `components.json` | Configuracion de shadcn — define paths y aliases |
+
+### Convenciones de Estilo
+
+```typescript
+// CORRECTO: Usar cn() para className composition
+import { cn } from "@/lib/utils";
+
+<div className={cn("bg-surface rounded-lg border border-border", isActive && "border-primary", className)} />
+
+// CORRECTO: Usar tokens semanticos de Tailwind
+<p className="text-text-secondary text-sm" />
+<div className="bg-surface-elevated shadow-md rounded-lg" />
+
+// INCORRECTO: Inline styles con CSS vars
+<div style={{ background: "var(--color-surface)", color: "var(--color-text-secondary)" }} />
+
+// INCORRECTO: Clases Tailwind raw que rompen dark mode
+<div className="bg-white text-slate-700 border-slate-200" />
+
+// INCORRECTO: Hex hardcodeados
+<div style={{ background: "#ecfdf5", color: "#166534" }} />
+```
+
+### Tokens Semanticos Disponibles (Tailwind)
+
+Todos los tokens respetan dark mode automaticamente via CSS variables.
+
+| Categoria | Utilidades Tailwind |
+|-----------|-------------------|
+| **Surfaces** | `bg-background`, `bg-surface`, `bg-surface-elevated`, `bg-surface-hover`, `bg-surface-active` |
+| **Text** | `text-foreground`, `text-text-primary`, `text-text-secondary`, `text-text-tertiary`, `text-text-on-primary` |
+| **Borders** | `border-border`, `border-border-strong`, `border-border-hover` |
+| **Primary** | `bg-primary`, `bg-primary-hover`, `text-primary` |
+| **Accent** | `bg-accent`, `text-accent`, `bg-accent-subtle` |
+| **Status** | `text-success`, `bg-success-bg`, `border-success-border` (idem warning, error, info) |
+| **Brand** | `bg-goberna-blue-{50-950}`, `bg-goberna-gold`, `text-goberna-gold-{50-700}` |
+| **Shadows** | `shadow-xs`, `shadow-sm`, `shadow-md`, `shadow-lg`, `shadow-xl` |
+| **Radii** | `rounded-xs` (4px), `rounded-sm` (6px), `rounded-md` (8px), `rounded-lg` (12px), `rounded-xl` (16px) |
+
+### Iconos
+
+```typescript
+// CORRECTO: Importar de lucide-react
+import { Users, MapPin, ChevronDown } from "lucide-react";
+<Users className="size-4 text-text-secondary" />
+
+// INCORRECTO: SVG inline manual
+<svg width="16" height="16" viewBox="0 0 24 24">...</svg>
+
+// LEGACY (tolerable por ahora): Importar de lib/ui/icons.tsx
+import { IconUsers } from "@/lib/ui";
+// Se migrara a lucide-react gradualmente
+```
+
+### Crear Componentes con cva
+
+```typescript
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "@/lib/utils";
+
+const badgeVariants = cva(
+  "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold",
+  {
+    variants: {
+      variant: {
+        default: "bg-primary text-text-on-primary",
+        success: "bg-success-bg text-success border border-success-border",
+        warning: "bg-warning-bg text-warning border border-warning-border",
+        error: "bg-error-bg text-error border border-error-border",
+      },
+    },
+    defaultVariants: { variant: "default" },
+  },
+);
+
+type BadgeProps = React.HTMLAttributes<HTMLSpanElement> & VariantProps<typeof badgeVariants>;
+
+export function Badge({ className, variant, ...props }: BadgeProps) {
+  return <span className={cn(badgeVariants({ variant }), className)} {...props} />;
+}
+```
+
+### Instalar Componentes shadcn
+
+```bash
+# Instalar un componente (se coloca en lib/ui/ segun components.json)
+bunx --bun shadcn@latest add dialog
+bunx --bun shadcn@latest add dropdown-menu
+bunx --bun shadcn@latest add tooltip
+```
+
+### Reglas (No Negociables)
+
+1. **NUNCA** crear SVGs manuales — usar `lucide-react`
+2. **NUNCA** usar `bg-white`, `bg-slate-*`, `text-slate-*` — usar tokens semanticos
+3. **NUNCA** usar hex hardcodeados en estilos — usar tokens
+4. **SIEMPRE** usar `cn()` para componer className (nunca template literals con clases)
+5. **SIEMPRE** que un componente acepte `className` prop, pasarlo a `cn()` como ultimo argumento
+6. Los componentes en `lib/ui/` son la unica fuente de verdad — NO duplicar en features
 
 ---
 

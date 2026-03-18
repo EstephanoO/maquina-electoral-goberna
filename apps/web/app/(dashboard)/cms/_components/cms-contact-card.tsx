@@ -5,7 +5,7 @@
  * WhatsApp-style compact layout with name, phone, status badge, preview text.
  */
 
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import type { CmsContact, CmsStatus } from "@/lib/services/cms";
 
 type CmsContactCardProps = {
@@ -70,7 +70,7 @@ function getRelevantTimestamp(c: CmsContact): string | null {
   return c.created_at;
 }
 
-export function CmsContactCard({ contact, selected, onSelect, onOpenProfile }: CmsContactCardProps) {
+export const CmsContactCard = memo(function CmsContactCard({ contact, selected, onSelect, onOpenProfile }: CmsContactCardProps) {
   const status = STATUS_CONFIG[contact.cms_status] || STATUS_CONFIG.nuevo;
   const initials = useMemo(() => getInitials(contact.nombre || "?"), [contact.nombre]);
   const preview = useMemo(() => getPreview(contact), [contact]);
@@ -79,10 +79,10 @@ export function CmsContactCard({ contact, selected, onSelect, onOpenProfile }: C
 
   return (
     <div
-      className={`flex items-start gap-3 px-3 py-2.5 cursor-pointer transition-colors border-b border-slate-100 ${
+      className={`flex items-start gap-3 px-3 py-2.5 cursor-pointer transition-colors border-b border-surface-active ${
         selected
           ? "bg-[var(--goberna-blue-50)] border-l-2 border-l-[var(--goberna-blue-500)]"
-          : "hover:bg-slate-50/80 border-l-2 border-l-transparent"
+          : "hover:bg-surface-hover/80 border-l-2 border-l-transparent"
       }`}
     >
       {/* Avatar */}
@@ -103,11 +103,11 @@ export function CmsContactCard({ contact, selected, onSelect, onOpenProfile }: C
       >
         {/* Row 1: Name + timestamp */}
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[13px] font-semibold text-slate-800 truncate">
+          <span className="text-[13px] font-semibold text-text-primary truncate">
             {contact.nombre || "Sin nombre"}
           </span>
           {timestamp && (
-            <span className="text-[10px] text-slate-400 tabular-nums shrink-0">{timestamp}</span>
+            <span className="text-[10px] text-text-tertiary tabular-nums shrink-0">{timestamp}</span>
           )}
         </div>
 
@@ -118,7 +118,7 @@ export function CmsContactCard({ contact, selected, onSelect, onOpenProfile }: C
 
         {/* Row 3: Preview + status badge */}
         <div className="flex items-center justify-between gap-2 mt-0.5">
-          <p className="text-[11px] text-slate-400 truncate flex-1">{preview}</p>
+          <p className="text-[11px] text-text-tertiary truncate flex-1">{preview}</p>
           <span className="flex items-center gap-1 shrink-0">
             <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
             <span className={`text-[10px] font-medium ${status.text}`}>{status.label}</span>
@@ -131,17 +131,17 @@ export function CmsContactCard({ contact, selected, onSelect, onOpenProfile }: C
             {contact.cms_tags.slice(0, 3).map((tag) => (
               <span
                 key={tag}
-                className="px-1.5 py-px text-[9px] font-medium rounded-full bg-slate-100 text-slate-500 truncate max-w-[80px]"
+                className="px-1.5 py-px text-[9px] font-medium rounded-full bg-surface-active text-text-tertiary truncate max-w-[80px]"
               >
                 {tag}
               </span>
             ))}
             {contact.cms_tags.length > 3 && (
-              <span className="text-[9px] text-slate-400">+{contact.cms_tags.length - 3}</span>
+              <span className="text-[9px] text-text-tertiary">+{contact.cms_tags.length - 3}</span>
             )}
           </div>
         )}
       </button>
     </div>
   );
-}
+});

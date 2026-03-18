@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import type { CmsContact } from "@/lib/services/cms";
 import { getInitials, formatPhone, formatDateShort, getLastInteractionMs, formatRelative, getTagColor } from "./pipeline-utils";
 
@@ -8,26 +9,26 @@ type Props = {
   accent: string;
 };
 
-export function ContactCard({ contact, accent }: Props) {
+export const ContactCard = memo(function ContactCard({ contact, accent }: Props) {
   const name = contact.nombre?.trim() || "Sin nombre";
   const zone = contact.zona || contact.distrito || "Sin zona";
   const lastMs = getLastInteractionMs(contact);
   const tags = (contact.cms_tags ?? []).slice(0, 3);
 
   return (
-    <article className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_2px_8px_rgba(15,23,42,0.05)]">
+    <article className="rounded-xl border border-border bg-surface p-2.5 shadow-[0_2px_8px_rgba(15,23,42,0.05)]">
       {/* Row 1: avatar + name + date */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-[34px] h-[34px] rounded-full border border-slate-200 bg-slate-100 text-slate-800 text-[12px] font-extrabold inline-flex items-center justify-center shrink-0">
+          <div className="w-[34px] h-[34px] rounded-full border border-border bg-surface-active text-text-primary text-[12px] font-extrabold inline-flex items-center justify-center shrink-0">
             {getInitials(name)}
           </div>
           <div className="min-w-0">
-            <div className="text-[13px] font-bold text-slate-900 leading-tight truncate">{name}</div>
-            <div className="text-[11px] text-slate-500 mt-0.5 truncate">{zone}</div>
+            <div className="text-[13px] font-bold text-text-primary leading-tight truncate">{name}</div>
+            <div className="text-[11px] text-text-tertiary mt-0.5 truncate">{zone}</div>
           </div>
         </div>
-        <span className="shrink-0 text-[11px] text-slate-400 font-semibold">{formatDateShort(contact.created_at)}</span>
+        <span className="shrink-0 text-[11px] text-text-tertiary font-semibold">{formatDateShort(contact.created_at)}</span>
       </div>
 
       {/* Row 2: phone */}
@@ -47,7 +48,7 @@ export function ContactCard({ contact, accent }: Props) {
           {tags.map((tag) => (
             <span
               key={tag}
-              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold max-w-[110px] truncate"
+              className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-hover px-2 py-0.5 text-[10px] font-semibold max-w-[110px] truncate"
               style={{ color: getTagColor(tag) }}
             >
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: getTagColor(tag) }} />
@@ -55,11 +56,11 @@ export function ContactCard({ contact, accent }: Props) {
             </span>
           ))}
         </div>
-        <span className="inline-flex items-center gap-1 shrink-0 text-[11px] font-bold text-slate-500" title="Ultima interaccion">
+        <span className="inline-flex items-center gap-1 shrink-0 text-[11px] font-bold text-text-tertiary" title="Ultima interaccion">
           <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: accent }} />
           {formatRelative(lastMs)}
         </span>
       </div>
     </article>
   );
-}
+});

@@ -148,7 +148,7 @@ export function DraggableCard({
         aria-label={item.nombre || "Contacto"}
         {...(compact ? { ...listeners, ...attributes } : {})}
         className={`
-          relative rounded-lg bg-white
+          relative rounded-lg bg-surface
           transition-shadow duration-200
           group
           ${isDragging
@@ -171,7 +171,7 @@ export function DraggableCard({
             <div className="flex-1 min-w-0">
               {/* Name + badges */}
               <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-[13px] text-slate-800 truncate leading-tight" title={item.nombre}>
+                <span className="font-semibold text-[13px] text-text-primary truncate leading-tight" title={item.nombre}>
                   {item.nombre || "\u2014"}
                 </span>
                 {voteBadge && (
@@ -183,7 +183,7 @@ export function DraggableCard({
                   </span>
                 )}
                 {item.notes && (
-                  <span className="shrink-0 text-slate-400" title={item.notes}>
+                  <span className="shrink-0 text-text-tertiary" title={item.notes}>
                     <NoteIcon />
                   </span>
                 )}
@@ -229,7 +229,7 @@ export function DraggableCard({
                 className="
                   mt-0.5 w-6 h-6 rounded-md flex items-center justify-center shrink-0
                   cursor-grab active:cursor-grabbing
-                  text-slate-300 hover:text-slate-500 hover:bg-slate-100
+                  text-text-tertiary hover:text-text-tertiary hover:bg-surface-active
                   transition-colors duration-150
                   touch-none
                 "
@@ -250,7 +250,7 @@ export function DraggableCard({
                 </span>
               )}
               {item.zona && item.zona !== "Sin zona" && (
-                <span className="flex items-center gap-0.5 text-[10px] text-slate-400 bg-slate-50 rounded px-1.5 py-0.5">
+                <span className="flex items-center gap-0.5 text-[10px] text-text-tertiary bg-surface-hover rounded px-1.5 py-0.5">
                   {item.zona}
                 </span>
               )}
@@ -271,7 +271,7 @@ export function DraggableCard({
             <>
               {/* CONTACTADO: Respondio + Imposible */}
               {isContactado && (
-                <div className="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-slate-100/80">
+                <div className="flex items-center gap-1.5 mt-2.5 pt-2 border-t border-border/80">
                   <button
                     type="button"
                     onPointerDown={(e) => e.stopPropagation()}
@@ -297,7 +297,7 @@ export function DraggableCard({
 
               {/* RESPONDIDO: imposible button */}
               {isRespondido && (
-                <div className="mt-2 pt-2 border-t border-slate-100/80">
+                <div className="mt-2 pt-2 border-t border-border/80">
                   <button
                     type="button"
                     onPointerDown={(e) => e.stopPropagation()}
@@ -313,13 +313,13 @@ export function DraggableCard({
 
               {/* IMPOSIBLE: reabrir */}
               {isImposible && (
-                <div className="mt-2.5 pt-2 border-t border-slate-100/80">
+                <div className="mt-2.5 pt-2 border-t border-border/80">
                   <button
                     type="button"
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); onAction(item, { type: "status", status: "pendiente" }); toast("Devuelto a pendiente", "info"); }}
                     disabled={isUpdating}
-                    className="w-full py-1.5 rounded-md bg-slate-50 text-slate-500 text-[11px] font-semibold hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer border-none disabled:opacity-40 flex items-center justify-center gap-1"
+                    className="w-full py-1.5 rounded-md bg-surface-hover text-text-tertiary text-[11px] font-semibold hover:bg-surface-active hover:text-text-secondary transition-colors cursor-pointer border-none disabled:opacity-40 flex items-center justify-center gap-1"
                   >
                     <UndoIcon />
                     Reabrir
@@ -331,11 +331,11 @@ export function DraggableCard({
 
           {/* Footer: encuestador + date */}
           {!compact && (
-            <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-slate-400">
-              <span className="font-medium text-slate-500 truncate">
+            <div className="flex items-center gap-1.5 mt-1.5 text-[10px] text-text-tertiary">
+              <span className="font-medium text-text-tertiary truncate">
                 {item.encuestador?.split(" ")[0] || "\u2014"}
               </span>
-              <span className="text-slate-300">{"\u00b7"}</span>
+              <span className="text-text-tertiary">{"\u00b7"}</span>
               <span>{fmtDateShort(item.created_at)}</span>
             </div>
           )}

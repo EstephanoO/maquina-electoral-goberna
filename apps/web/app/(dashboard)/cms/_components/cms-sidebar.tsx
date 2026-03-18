@@ -5,7 +5,7 @@
  * Supports infinite scroll and keyboard navigation.
  */
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { memo, useState, useRef, useCallback, useEffect } from "react";
 import type { CmsContact, CmsStats, CmsTabFilter } from "@/lib/services/cms";
 import { CmsContactCard } from "./cms-contact-card";
 import { CmsTagManager } from "./cms-tag-manager";
@@ -44,7 +44,7 @@ const TABS: Tab[] = [
   { key: "archivado", label: "Archivados", statKey: "archivados" },
 ];
 
-export function CmsSidebar({
+export const CmsSidebar = memo(function CmsSidebar({
   contacts,
   total,
   loading,
@@ -98,11 +98,11 @@ export function CmsSidebar({
   );
 
   return (
-    <div className="flex flex-col h-full bg-white border-r border-slate-200/80">
+    <div className="flex flex-col h-full bg-surface border-r border-border/80">
       {/* Header */}
-      <div className="shrink-0 px-4 pt-3 pb-2 border-b border-slate-100">
+      <div className="shrink-0 px-4 pt-3 pb-2 border-b border-border">
         <div className="flex items-center justify-between mb-2.5">
-          <h2 className="text-sm font-bold text-slate-800">Contactos CMS</h2>
+          <h2 className="text-sm font-bold text-text-primary">Contactos CMS</h2>
           <div className="flex items-center gap-1.5">
             <CmsTagManager
               availableTags={availableTags}
@@ -113,7 +113,7 @@ export function CmsSidebar({
             <button
               type="button"
               onClick={onOpenTwilioConfig}
-              className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+              className="p-1.5 rounded-lg text-text-tertiary hover:bg-surface-hover hover:text-text-secondary transition-colors"
               title="Configurar Twilio"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -127,9 +127,9 @@ export function CmsSidebar({
 
         {/* Search */}
         <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-colors ${
-          searchFocused ? "border-[var(--goberna-blue-400)] bg-white" : "border-slate-200 bg-slate-50"
+          searchFocused ? "border-[var(--goberna-blue-400)] bg-surface" : "border-border bg-surface-hover"
         }`}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-slate-400 shrink-0" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary shrink-0" aria-hidden="true">
             <title>Buscar</title>
             <circle cx="11" cy="11" r="8" />
             <path d="m21 21-4.35-4.35" />
@@ -141,13 +141,13 @@ export function CmsSidebar({
             onFocus={() => setSearchFocused(true)}
             onBlur={() => setSearchFocused(false)}
             placeholder="Buscar nombre, telefono..."
-            className="flex-1 text-[12px] bg-transparent outline-none placeholder:text-slate-300 text-slate-700"
+            className="flex-1 text-[12px] bg-transparent outline-none placeholder:text-text-tertiary text-text-secondary"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => onSearchChange("")}
-              className="text-[10px] text-slate-400 hover:text-slate-600"
+              className="text-[10px] text-text-tertiary hover:text-text-secondary"
             >
               x
             </button>
@@ -167,12 +167,12 @@ export function CmsSidebar({
                 className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium whitespace-nowrap transition-colors ${
                   isActive
                     ? "bg-[var(--goberna-blue-900)] text-white"
-                    : "text-slate-500 hover:bg-slate-100"
+                    : "text-text-tertiary hover:bg-surface-hover"
                 }`}
               >
                 {tab.label}
                 {count !== null && count !== undefined && (
-                  <span className={`text-[10px] tabular-nums ${isActive ? "text-white/70" : "text-slate-400"}`}>
+                  <span className={`text-[10px] tabular-nums ${isActive ? "text-white/70" : "text-text-tertiary"}`}>
                     {count}
                   </span>
                 )}
@@ -192,11 +192,11 @@ export function CmsSidebar({
           <div className="flex flex-col gap-3 p-4">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={`skeleton-${String(i)}`} className="flex items-start gap-3 animate-pulse">
-                <div className="w-10 h-10 rounded-full bg-slate-100 shrink-0" />
+                <div className="w-10 h-10 rounded-full bg-surface-active shrink-0" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-3 bg-slate-100 rounded w-3/4" />
-                  <div className="h-2.5 bg-slate-100 rounded w-1/2" />
-                  <div className="h-2 bg-slate-50 rounded w-full" />
+                  <div className="h-3 bg-surface-active rounded w-3/4" />
+                  <div className="h-2.5 bg-surface-active rounded w-1/2" />
+                  <div className="h-2 bg-surface-hover rounded w-full" />
                 </div>
               </div>
             ))}
@@ -223,9 +223,9 @@ export function CmsSidebar({
         {contacts.length > 0 && contacts.length < total && (
           <div ref={sentinelRef} className="py-3 text-center">
             {loadingMore ? (
-              <div className="inline-block w-4 h-4 border-2 border-slate-200 border-t-[var(--goberna-blue-500)] rounded-full animate-spin" />
+              <div className="inline-block w-4 h-4 border-2 border-border border-t-[var(--goberna-blue-500)] rounded-full animate-spin" />
             ) : (
-              <span className="text-[11px] text-slate-300">
+              <span className="text-[11px] text-text-tertiary">
                 {contacts.length} de {total}
               </span>
             )}
@@ -234,4 +234,4 @@ export function CmsSidebar({
       </div>
     </div>
   );
-}
+});

@@ -100,6 +100,19 @@
   --radius-2xl: 20px;
   --radius-full: 9999px;
 
+  /* ── shadcn compat tokens ──────────────────────────────────── */
+  --color-popover: var(--color-surface);
+  --color-popover-foreground: var(--color-text-primary);
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: var(--color-text-secondary);
+  --color-secondary: #f1f5f9;
+  --color-secondary-foreground: var(--color-text-primary);
+  --color-destructive: var(--color-error);
+  --color-accent-foreground: var(--color-text-primary);
+  --color-primary-foreground: var(--color-text-on-primary);
+  --color-ring: var(--goberna-blue-400);
+  --radius: var(--radius-md);
+
   /* ── Transitions ─────────────────────────────────────────── */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
@@ -155,6 +168,17 @@ body[data-theme="dark"] {
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.38), 0 8px 10px -6px rgb(0 0 0 / 0.24);
   --shadow-ring: 0 0 0 3px rgba(90, 154, 208, 0.24);
   --shadow-ring-gold: 0 0 0 3px rgba(255, 200, 0, 0.18);
+
+  --color-popover: var(--color-surface);
+  --color-popover-foreground: var(--color-text-primary);
+  --color-muted: #1e293b;
+  --color-muted-foreground: var(--color-text-secondary);
+  --color-secondary: #1e293b;
+  --color-secondary-foreground: var(--color-text-primary);
+  --color-destructive: var(--color-error);
+  --color-accent-foreground: var(--color-text-primary);
+  --color-primary-foreground: var(--color-text-on-primary);
+  --color-ring: var(--goberna-blue-400);
 }
 
 body[data-theme="dark"] .bg-white,
@@ -217,55 +241,6 @@ html[data-theme="dark"] .hover\:bg-slate-100\/60:hover {
   background-color: var(--color-surface-active) !important;
 }
 
-body[data-theme="dark"] .cms-page-root,
-html[data-theme="dark"] .cms-page-root {
-  background: var(--color-background) !important;
-  color: var(--color-text-primary) !important;
-}
-
-body[data-theme="dark"] .cms-chat-sidebar,
-body[data-theme="dark"] .cms-chat-main,
-body[data-theme="dark"] .cms-chat-contact-list,
-body[data-theme="dark"] .cms-chat-sidebar-head,
-body[data-theme="dark"] .cms-chat-sidebar-footer,
-html[data-theme="dark"] .cms-chat-sidebar,
-html[data-theme="dark"] .cms-chat-main,
-html[data-theme="dark"] .cms-chat-contact-list,
-html[data-theme="dark"] .cms-chat-sidebar-head,
-html[data-theme="dark"] .cms-chat-sidebar-footer {
-  background: var(--color-surface) !important;
-  color: var(--color-text-primary) !important;
-  border-color: var(--color-border) !important;
-}
-
-body[data-theme="dark"] .cms-chat-tab-btn,
-html[data-theme="dark"] .cms-chat-tab-btn {
-  border-color: var(--color-border) !important;
-}
-
-body[data-theme="dark"] .cms-chat-root input,
-body[data-theme="dark"] .cms-chat-root select,
-body[data-theme="dark"] .cms-chat-root textarea,
-html[data-theme="dark"] .cms-chat-root input,
-html[data-theme="dark"] .cms-chat-root select,
-html[data-theme="dark"] .cms-chat-root textarea {
-  background: var(--color-surface-hover) !important;
-  color: var(--color-text-primary) !important;
-  border-color: var(--color-border) !important;
-}
-
-body[data-theme="dark"] .cms-chat-root input::placeholder,
-body[data-theme="dark"] .cms-chat-root textarea::placeholder,
-html[data-theme="dark"] .cms-chat-root input::placeholder,
-html[data-theme="dark"] .cms-chat-root textarea::placeholder {
-  color: var(--color-text-tertiary) !important;
-}
-
-body[data-theme="dark"] .cms-chat-root button,
-html[data-theme="dark"] .cms-chat-root button {
-  color: inherit;
-}
-
 body[data-theme="dark"] .tierra-pipeline-view,
 html[data-theme="dark"] .tierra-pipeline-view {
   background: var(--color-background) !important;
@@ -326,40 +301,116 @@ html[data-theme="dark"] .tierra-pipeline-view .text-slate-700 {
   color: var(--color-text-primary) !important;
 }
 
-body[data-theme="dark"] .equipo-page,
-html[data-theme="dark"] .equipo-page {
-  color: var(--color-text-primary);
-}
-
-body[data-theme="dark"] .equipo-page button:hover,
-html[data-theme="dark"] .equipo-page button:hover {
-  color: var(--color-text-primary);
-}
-
-body[data-theme="dark"] .equipo-page .equipo-hierarchy-btn.btn-secondary:not(:disabled):hover,
-html[data-theme="dark"] .equipo-page .equipo-hierarchy-btn.btn-secondary:not(:disabled):hover {
-  background: var(--color-surface) !important;
-  border-color: var(--color-border) !important;
-  color: var(--color-text-primary) !important;
-  box-shadow: none !important;
-}
-
-body[data-theme="dark"] .equipo-page [style*="linear-gradient(135deg, #fffbeb, #fef3c7)"],
-html[data-theme="dark"] .equipo-page [style*="linear-gradient(135deg, #fffbeb, #fef3c7)"] {
-  background: var(--color-warning-bg) !important;
-}
-
 /* ── Tailwind v4 theme bridge ──────────────────────────────── */
+/* Maps ALL semantic CSS vars into Tailwind so utilities like
+   bg-surface-elevated, text-secondary, border-strong, shadow-lg
+   work out of the box and respect dark mode automatically.       */
 
 @theme inline {
+  /* ── Fonts ──────────────────────────────────────────────── */
+  --font-sans: var(--font-montserrat), system-ui, sans-serif;
+
+  /* ── Brand palette (for one-off brand usage) ───────────── */
+  --color-goberna-blue-50: var(--goberna-blue-50);
+  --color-goberna-blue-100: var(--goberna-blue-100);
+  --color-goberna-blue-200: var(--goberna-blue-200);
+  --color-goberna-blue-300: var(--goberna-blue-300);
+  --color-goberna-blue-400: var(--goberna-blue-400);
+  --color-goberna-blue-500: var(--goberna-blue-500);
+  --color-goberna-blue-600: var(--goberna-blue-600);
+  --color-goberna-blue-700: var(--goberna-blue-700);
+  --color-goberna-blue-800: var(--goberna-blue-800);
+  --color-goberna-blue-900: var(--goberna-blue-900);
+  --color-goberna-blue-950: var(--goberna-blue-950);
+  --color-goberna-gold: var(--goberna-gold);
+  --color-goberna-gold-50: var(--goberna-gold-50);
+  --color-goberna-gold-100: var(--goberna-gold-100);
+  --color-goberna-gold-200: var(--goberna-gold-200);
+  --color-goberna-gold-300: var(--goberna-gold-300);
+  --color-goberna-gold-500: var(--goberna-gold-500);
+  --color-goberna-gold-600: var(--goberna-gold-600);
+  --color-goberna-gold-700: var(--goberna-gold-700);
+
+  /* ── Semantic: Surfaces ────────────────────────────────── */
   --color-background: var(--color-background);
   --color-foreground: var(--color-text-primary);
   --color-surface: var(--color-surface);
+  --color-surface-elevated: var(--color-surface-elevated);
+  --color-surface-hover: var(--color-surface-hover);
+  --color-surface-active: var(--color-surface-active);
+
+  /* ── Semantic: Primary / Accent ────────────────────────── */
   --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-active: var(--color-primary-active);
   --color-accent: var(--color-accent);
+  --color-accent-hover: var(--color-accent-hover);
+  --color-accent-subtle: var(--color-accent-subtle);
+
+  /* ── Semantic: Borders ─────────────────────────────────── */
   --color-border: var(--color-border);
-  --color-muted: var(--color-text-tertiary);
-  --font-sans: var(--font-montserrat), system-ui, sans-serif;
+  --color-border-strong: var(--color-border-strong);
+  --color-border-hover: var(--color-border-hover);
+
+  /* ── Semantic: Text ────────────────────────────────────── */
+  --color-text-primary: var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-tertiary: var(--color-text-tertiary);
+  --color-text-on-primary: var(--color-text-on-primary);
+  --color-text-on-accent: var(--color-text-on-accent);
+
+  /* ── shadcn compat (Tailwind class targets) ────────────── */
+  --color-popover: var(--color-popover);
+  --color-popover-foreground: var(--color-popover-foreground);
+  --color-muted: var(--color-muted);
+  --color-muted-foreground: var(--color-muted-foreground);
+  --color-secondary: var(--color-secondary);
+  --color-secondary-foreground: var(--color-secondary-foreground);
+  --color-destructive: var(--color-destructive);
+  --color-accent-foreground: var(--color-accent-foreground);
+  --color-primary-foreground: var(--color-primary-foreground);
+  --color-ring: var(--color-ring);
+
+  /* ── Semantic: Status ──────────────────────────────────── */
+  --color-success: var(--color-success);
+  --color-success-bg: var(--color-success-bg);
+  --color-success-border: var(--color-success-border);
+  --color-warning: var(--color-warning);
+  --color-warning-bg: var(--color-warning-bg);
+  --color-warning-border: var(--color-warning-border);
+  --color-error: var(--color-error);
+  --color-error-bg: var(--color-error-bg);
+  --color-error-border: var(--color-error-border);
+  --color-info: var(--color-info);
+  --color-info-bg: var(--color-info-bg);
+  --color-info-border: var(--color-info-border);
+
+  /* ── Semantic: Sidebar ─────────────────────────────────── */
+  --color-sidebar-bg: var(--sidebar-bg);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-sidebar-text-hover: var(--sidebar-text-hover);
+  --color-sidebar-text-active: var(--sidebar-text-active);
+  --color-sidebar-active-bg: var(--sidebar-active-bg);
+  --color-sidebar-hover-bg: var(--sidebar-hover-bg);
+
+  /* ── Shadows ───────────────────────────────────────────── */
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-ring: var(--shadow-ring);
+  --shadow-ring-gold: var(--shadow-ring-gold);
+
+  /* ── Radii ─────────────────────────────────────────────── */
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-2xl: var(--radius-2xl);
+  --radius-full: var(--radius-full);
 }
 
 /* ═══════════════════════════════════════════════════════════════

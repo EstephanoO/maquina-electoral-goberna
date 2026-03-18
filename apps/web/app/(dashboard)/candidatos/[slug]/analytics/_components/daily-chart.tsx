@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, useMemo } from "react";
 import type { GA4DailyUsers } from "./types";
 
 type Props = {
@@ -8,9 +9,18 @@ type Props = {
   secondaryColor?: string;
 };
 
-export function DailyChart({ dailyUsers, primaryColor, secondaryColor }: Props) {
+export const DailyChart = memo(function DailyChart({ dailyUsers, primaryColor, secondaryColor }: Props) {
   const sc = secondaryColor || "var(--color-text-tertiary)";
-  const daysWithData = dailyUsers.filter((d) => d.newUsers > 0 || d.returningUsers > 0);
+  const daysWithData = useMemo(
+    () => dailyUsers.filter((d) => d.newUsers > 0 || d.returningUsers > 0),
+    [dailyUsers],
+  );
+
+  const { maxValue, totalNew, totalReturning } = useMemo(() => ({
+    maxValue: Math.max(...daysWithData.map((d) => d.newUsers + d.returningUsers), 1),
+    totalNew: daysWithData.reduce((sum, d) => sum + d.newUsers, 0),
+    totalReturning: daysWithData.reduce((sum, d) => sum + d.returningUsers, 0),
+  }), [daysWithData]);
 
   if (daysWithData.length === 0) {
     return (
@@ -32,10 +42,6 @@ export function DailyChart({ dailyUsers, primaryColor, secondaryColor }: Props) 
       </div>
     );
   }
-
-  const maxValue = Math.max(...daysWithData.map((d) => d.newUsers + d.returningUsers), 1);
-  const totalNew = daysWithData.reduce((sum, d) => sum + d.newUsers, 0);
-  const totalReturning = daysWithData.reduce((sum, d) => sum + d.returningUsers, 0);
 
   return (
     <div style={styles.container}>
@@ -109,7 +115,7 @@ export function DailyChart({ dailyUsers, primaryColor, secondaryColor }: Props) 
       </div>
     </div>
   );
-}
+});
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
@@ -244,3 +250,5 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
   },
 };
+
+

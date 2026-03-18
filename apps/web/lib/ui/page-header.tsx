@@ -1,10 +1,6 @@
-/**
- * GOBERNA — PageHeader Component
- * Consistent page title with optional breadcrumbs and actions.
- */
-
-import type { CSSProperties, ReactNode } from "react";
-import { FONT_STACK } from "../constants";
+import type { ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type Breadcrumb = {
   label: string;
@@ -17,79 +13,23 @@ type PageHeaderProps = {
   breadcrumbs?: Breadcrumb[];
   actions?: ReactNode;
   badge?: ReactNode;
+  className?: string;
 };
 
-export function PageHeader({ title, description, breadcrumbs, actions, badge }: PageHeaderProps) {
-  const containerStyle: CSSProperties = {
-    marginBottom: 28,
-  };
-
-  const breadcrumbStyle: CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    fontSize: 12,
-    fontWeight: 500,
-    color: "var(--color-text-tertiary)",
-    marginBottom: 8,
-    fontFamily: FONT_STACK,
-  };
-
-  const titleRowStyle: CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 16,
-    flexWrap: "wrap",
-  };
-
-  const titleStyle: CSSProperties = {
-    fontSize: 24,
-    fontWeight: 800,
-    color: "var(--color-text-primary)",
-    margin: 0,
-    letterSpacing: "-0.02em",
-    lineHeight: 1.2,
-    fontFamily: FONT_STACK,
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-  };
-
-  const descriptionStyle: CSSProperties = {
-    fontSize: 14,
-    color: "var(--color-text-secondary)",
-    margin: 0,
-    marginTop: 4,
-    lineHeight: 1.5,
-  };
-
+export function PageHeader({ title, description, breadcrumbs, actions, badge, className }: PageHeaderProps) {
   return (
-    <div style={containerStyle} className="animate-fade-in">
+    <div className={cn("mb-7 animate-fade-in", className)}>
       {breadcrumbs && breadcrumbs.length > 0 && (
-        <nav style={breadcrumbStyle} aria-label="Breadcrumb">
+        <nav className="flex items-center gap-1.5 text-xs font-medium text-text-tertiary mb-2 font-sans" aria-label="Breadcrumb">
           {breadcrumbs.map((crumb, i) => (
-            <span key={crumb.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              {i > 0 && (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ opacity: 0.4 }}>
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
-              )}
+            <span key={crumb.label} className="flex items-center gap-1.5">
+              {i > 0 && <ChevronRight className="size-3 opacity-40" />}
               {crumb.href ? (
-                <a
-                  href={crumb.href}
-                  style={{
-                    color: "var(--color-text-tertiary)",
-                    textDecoration: "none",
-                    transition: "color var(--duration-fast) ease",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--goberna-blue-600)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--color-text-tertiary)"; }}
-                >
+                <a href={crumb.href} className="text-text-tertiary no-underline hover:text-goberna-blue-600 transition-colors">
                   {crumb.label}
                 </a>
               ) : (
-                <span style={{ color: i === breadcrumbs.length - 1 ? "var(--color-text-secondary)" : undefined }}>
+                <span className={cn(i === breadcrumbs.length - 1 && "text-text-secondary")}>
                   {crumb.label}
                 </span>
               )}
@@ -98,18 +38,18 @@ export function PageHeader({ title, description, breadcrumbs, actions, badge }: 
         </nav>
       )}
 
-      <div style={titleRowStyle}>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 style={titleStyle}>
+          <h1 className="text-2xl font-extrabold text-text-primary m-0 tracking-tight leading-tight font-sans flex items-center gap-2.5">
             {title}
             {badge}
           </h1>
-          {description && <p style={descriptionStyle}>{description}</p>}
+          {description && (
+            <p className="text-sm text-text-secondary m-0 mt-1 leading-normal">{description}</p>
+          )}
         </div>
         {actions && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            {actions}
-          </div>
+          <div className="flex items-center gap-2 shrink-0">{actions}</div>
         )}
       </div>
     </div>

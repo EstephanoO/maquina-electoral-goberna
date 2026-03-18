@@ -1,93 +1,42 @@
-/**
- * GOBERNA — Skeleton Component
- * Shimmer loading placeholders for content areas.
- */
-
-import type { CSSProperties } from "react";
+import { cn } from "@/lib/utils";
 
 type SkeletonProps = {
-  width?: number | string;
-  height?: number | string;
-  borderRadius?: string;
   className?: string;
-  style?: CSSProperties;
 };
 
-export function Skeleton({
-  width = "100%",
-  height = 16,
-  borderRadius = "var(--radius-sm)",
-  className,
-  style,
-}: SkeletonProps) {
-  return (
-    <div
-      className={`skeleton${className ? ` ${className}` : ""}`}
-      style={{
-        width,
-        height,
-        borderRadius,
-        ...style,
-      }}
-      aria-hidden="true"
-    />
-  );
+export function Skeleton({ className }: SkeletonProps) {
+  return <div className={cn("skeleton rounded-sm", className)} aria-hidden="true" />;
 }
-
-/**
- * Pre-built skeleton patterns for common layouts.
- */
 
 export function SkeletonCard() {
   return (
-    <div
-      style={{
-        background: "var(--color-surface)",
-        border: "1px solid var(--color-border)",
-        borderRadius: "var(--radius-lg)",
-        padding: "16px 20px",
-      }}
-    >
-      <Skeleton width={120} height={12} style={{ marginBottom: 12 }} />
-      <Skeleton width={80} height={28} style={{ marginBottom: 8 }} />
-      <Skeleton width={160} height={12} />
+    <div className="bg-surface border border-border rounded-lg px-5 py-4">
+      <Skeleton className="w-[120px] h-3 mb-3" />
+      <Skeleton className="w-[80px] h-7 mb-2" />
+      <Skeleton className="w-[160px] h-3" />
     </div>
   );
 }
 
 export function SkeletonTable({ rows = 5 }: { rows?: number }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          gap: 16,
-          padding: "12px 16px",
-          borderBottom: "1px solid var(--color-border)",
-        }}
-      >
-        <Skeleton width={120} height={12} />
-        <Skeleton width={80} height={12} />
-        <Skeleton width={100} height={12} />
-        <Skeleton width={60} height={12} />
+    <div className="flex flex-col gap-0.5">
+      <div className="flex gap-4 px-4 py-3 border-b border-border">
+        <Skeleton className="w-[120px] h-3" />
+        <Skeleton className="w-[80px] h-3" />
+        <Skeleton className="w-[100px] h-3" />
+        <Skeleton className="w-[60px] h-3" />
       </div>
-      {/* Rows */}
       {Array.from({ length: rows }).map((_, i) => (
         <div
           key={i}
-          style={{
-            display: "flex",
-            gap: 16,
-            padding: "14px 16px",
-            borderBottom: "1px solid var(--color-border)",
-            opacity: 1 - i * 0.12,
-          }}
+          className="flex gap-4 px-4 py-3.5 border-b border-border"
+          style={{ opacity: 1 - i * 0.12 }}
         >
-          <Skeleton width={120} height={14} />
-          <Skeleton width={80} height={14} />
-          <Skeleton width={100} height={14} />
-          <Skeleton width={60} height={14} />
+          <Skeleton className="w-[120px] h-3.5" />
+          <Skeleton className="w-[80px] h-3.5" />
+          <Skeleton className="w-[100px] h-3.5" />
+          <Skeleton className="w-[60px] h-3.5" />
         </div>
       ))}
     </div>
@@ -96,22 +45,17 @@ export function SkeletonTable({ rows = 5 }: { rows?: number }) {
 
 export function SkeletonList({ items = 4 }: { items?: number }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div className="flex flex-col gap-3">
       {Array.from({ length: items }).map((_, i) => (
         <div
           key={i}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: "12px 0",
-            opacity: 1 - i * 0.15,
-          }}
+          className="flex items-center gap-3 py-3"
+          style={{ opacity: 1 - i * 0.15 }}
         >
-          <Skeleton width={40} height={40} borderRadius="50%" />
-          <div style={{ flex: 1 }}>
-            <Skeleton width="60%" height={14} style={{ marginBottom: 6 }} />
-            <Skeleton width="40%" height={11} />
+          <Skeleton className="size-10 rounded-full" />
+          <div className="flex-1">
+            <Skeleton className="w-3/5 h-3.5 mb-1.5" />
+            <Skeleton className="w-2/5 h-[11px]" />
           </div>
         </div>
       ))}

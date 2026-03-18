@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { memo, useState, useMemo, useCallback } from "react";
 import type { CmsBrigadistaMetrics } from "@/lib/types";
 import { useTheme } from "@/lib/theme-context";
 
@@ -88,10 +88,10 @@ export function BrigadistaTable({ brigadistas, primaryColor, goalPerBrigadista, 
     return { done, ahead, onTrack, behind };
   }, [enriched]);
 
-  const handleSort = (key: SortKey) => {
-    if (sortKey === key) setSortAsc(!sortAsc);
+  const handleSort = useCallback((key: SortKey) => {
+    if (sortKey === key) setSortAsc((prev) => !prev);
     else { setSortKey(key); setSortAsc(false); }
-  };
+  }, [sortKey]);
   const arrow = (key: SortKey) => sortKey === key ? (sortAsc ? " \u2191" : " \u2193") : "";
 
   return (
@@ -191,7 +191,7 @@ type EB = CmsBrigadistaMetrics & {
   status: "ahead" | "on_track" | "behind" | "done";
 };
 
-function Row({ b, rank, pc, even, goal, compareIdx, onToggle, isDark }: { b: EB; rank: number; pc: string; even: boolean; goal: number; compareIdx: number; onToggle: () => void; isDark: boolean }) {
+const Row = memo(function Row({ b, rank, pc, even, goal, compareIdx, onToggle, isDark }: { b: EB; rank: number; pc: string; even: boolean; goal: number; compareIdx: number; onToggle: () => void; isDark: boolean }) {
   const isMedal = rank <= 3;
   const cfg = STATUS_CONFIG[b.status];
   const pct = Math.min(b.goalPct, 100);
@@ -282,7 +282,7 @@ function Row({ b, rank, pc, even, goal, compareIdx, onToggle, isDark }: { b: EB;
       </div>
     </button>
   );
-}
+});
 
 /* ========== Pill ========== */
 

@@ -8,7 +8,7 @@
  * This is the center panel of the 3-pane CMS layout.
  */
 
-import { useEffect, useRef, useMemo, useState, useCallback } from "react";
+import { memo, useEffect, useRef, useMemo, useState, useCallback } from "react";
 import type { CmsContact, CmsStatus, CmsTwilioMessage, CmsTwilioStatus } from "@/lib/services/cms";
 import { CmsEmptyState } from "./cms-empty-state";
 
@@ -102,7 +102,7 @@ function getStatusIcon(status: CmsTwilioStatus): { symbol: string; color: string
   }
 }
 
-export function CmsConversationPane({
+export const CmsConversationPane = memo(function CmsConversationPane({
   contact,
   messages,
   loadingMessages,
@@ -130,14 +130,14 @@ export function CmsConversationPane({
   const [showTagPanel, setShowTagPanel] = useState(false);
   const [newTagInput, setNewTagInput] = useState("");
 
-  // Scroll to bottom on new messages — use ref to avoid dependency lint issues
+  // Scroll to bottom on new messages
   const prevMsgCount = useRef(0);
   useEffect(() => {
     if (messages.length !== prevMsgCount.current) {
       prevMsgCount.current = messages.length;
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  });
+  }, [messages.length]);
 
   // Focus input when contact changes
   useEffect(() => {
@@ -199,9 +199,9 @@ export function CmsConversationPane({
   const isArchived = contact.cms_status === "archivado";
 
   return (
-    <div className="flex flex-col h-full bg-[#f0f2f5]">
+    <div className="flex flex-col h-full bg-background">
       {/* ── Header ── */}
-      <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-white border-b border-slate-200/80">
+      <div className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-surface border-b border-border/80">
         <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
@@ -211,7 +211,7 @@ export function CmsConversationPane({
             {(contact.nombre || "?").split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("")}
           </button>
           <div className="min-w-0">
-            <p className="text-[13px] font-semibold text-slate-800 truncate">{contact.nombre || "Sin nombre"}</p>
+            <p className="text-[13px] font-semibold text-text-primary truncate">{contact.nombre || "Sin nombre"}</p>
             {phone && (
               <button
                 type="button"
@@ -235,7 +235,7 @@ export function CmsConversationPane({
             type="button"
             onClick={() => setShowTagPanel(!showTagPanel)}
             className={`p-1.5 rounded-lg transition-colors ${
-              showTagPanel ? "bg-[var(--goberna-blue-100)] text-[var(--goberna-blue-700)]" : "text-slate-400 hover:bg-slate-100"
+              showTagPanel ? "bg-[var(--goberna-blue-100)] text-[var(--goberna-blue-700)]" : "text-text-tertiary hover:bg-surface-active"
             }`}
             title="Etiquetas"
           >
@@ -252,7 +252,7 @@ export function CmsConversationPane({
               type="button"
               onClick={() => handleAction(actions.secondaryAction!)}
               disabled={!!actionLoading}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 disabled:opacity-40 transition-colors"
+              className="px-2.5 py-1 rounded-lg text-[11px] font-medium text-text-tertiary bg-surface-active hover:bg-surface-active disabled:opacity-40 transition-colors"
             >
               {actionLoading === actions.secondaryAction ? "..." : actions.secondary}
             </button>
@@ -270,7 +270,7 @@ export function CmsConversationPane({
 
       {/* ── Tags panel (inline, below header) ── */}
       {showTagPanel && (
-        <div className="shrink-0 px-4 py-2 bg-white border-b border-slate-100 flex items-center gap-2 flex-wrap">
+        <div className="shrink-0 px-4 py-2 bg-surface border-b border-surface-active flex items-center gap-2 flex-wrap">
           {contactTags.map((tag) => (
             <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--goberna-blue-50)] text-[var(--goberna-blue-700)] text-[10px] font-medium">
               {tag}
@@ -283,7 +283,7 @@ export function CmsConversationPane({
               type="button"
               key={tag}
               onClick={() => onAssignTag(contact.id, tag)}
-              className="px-2 py-0.5 rounded-full border border-dashed border-slate-300 text-[10px] text-slate-400 hover:border-[var(--goberna-blue-400)] hover:text-[var(--goberna-blue-600)] transition-colors"
+              className="px-2 py-0.5 rounded-full border border-dashed border-border-strong text-[10px] text-text-tertiary hover:border-[var(--goberna-blue-400)] hover:text-[var(--goberna-blue-600)] transition-colors"
             >
               + {tag}
             </button>
@@ -296,7 +296,7 @@ export function CmsConversationPane({
               onChange={(e) => setNewTagInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleCreateAndAssignTag(); }}
               placeholder="Nueva..."
-              className="w-20 text-[10px] px-1.5 py-0.5 rounded border border-slate-200 outline-none focus:border-[var(--goberna-blue-400)] placeholder:text-slate-300"
+              className="w-20 text-[10px] px-1.5 py-0.5 rounded border border-border outline-none focus:border-[var(--goberna-blue-400)] placeholder:text-text-tertiary"
             />
           </div>
         </div>
@@ -306,7 +306,7 @@ export function CmsConversationPane({
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {loadingMessages && (
           <div className="flex items-center justify-center py-8">
-            <div className="w-5 h-5 border-2 border-slate-200 border-t-[var(--goberna-blue-500)] rounded-full animate-spin" />
+            <div className="w-5 h-5 border-2 border-border border-t-[var(--goberna-blue-500)] rounded-full animate-spin" />
           </div>
         )}
 
@@ -321,8 +321,8 @@ export function CmsConversationPane({
 
         {!loadingMessages && !messagesError && messages.length === 0 && (
           <div className="text-center py-8">
-            <p className="text-xs text-slate-400 mb-1">Sin mensajes WhatsApp</p>
-            <p className="text-[11px] text-slate-300">Envia un mensaje via Twilio o abre WhatsApp Web</p>
+            <p className="text-xs text-text-tertiary mb-1">Sin mensajes WhatsApp</p>
+            <p className="text-[11px] text-text-tertiary">Envia un mensaje via Twilio o abre WhatsApp Web</p>
           </div>
         )}
 
@@ -330,7 +330,7 @@ export function CmsConversationPane({
           if (row.type === "day") {
             return (
               <div key={`day-${row.label}`} className="flex items-center justify-center my-3">
-                <span className="px-3 py-1 bg-white rounded-full text-[10px] font-medium text-slate-500 shadow-sm">
+                <span className="px-3 py-1 bg-surface rounded-full text-[10px] font-medium text-text-tertiary shadow-sm">
                   {row.label}
                 </span>
               </div>
@@ -345,12 +345,12 @@ export function CmsConversationPane({
             <div key={msg.id || `msg-${String(idx)}`} className={`flex mb-1.5 ${isOutbound ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[75%] px-3 py-1.5 rounded-xl text-[13px] leading-relaxed ${
                 isOutbound
-                  ? "bg-[#d9fdd3] text-slate-800 rounded-tr-sm"
-                  : "bg-white text-slate-800 rounded-tl-sm shadow-sm"
+                  ? "bg-[#d9fdd3] text-text-primary rounded-tr-sm"
+                  : "bg-surface text-text-primary rounded-tl-sm shadow-sm"
               }`}>
                 <p className="whitespace-pre-wrap break-words">{msg.body}</p>
                 <div className={`flex items-center gap-1 mt-0.5 ${isOutbound ? "justify-end" : "justify-start"}`}>
-                  <span className="text-[10px] text-slate-400 tabular-nums">{formatMessageTime(msg.created_at)}</span>
+                  <span className="text-[10px] text-text-tertiary tabular-nums">{formatMessageTime(msg.created_at)}</span>
                   {statusIcon && (
                     <span className={`text-[10px] ${statusIcon.color}`} title={statusIcon.title}>{statusIcon.symbol}</span>
                   )}
@@ -365,7 +365,7 @@ export function CmsConversationPane({
 
       {/* ── Compose bar ── */}
       {!isArchived && (
-        <div className="shrink-0 px-4 py-2 bg-white border-t border-slate-200/80">
+        <div className="shrink-0 px-4 py-2 bg-surface border-t border-border/80">
           <div className="flex items-end gap-2">
             {/* Open WhatsApp button */}
             <button
@@ -378,7 +378,7 @@ export function CmsConversationPane({
             </button>
 
             {/* Text input */}
-            <div className="flex-1 flex items-end bg-slate-50 rounded-2xl border border-slate-200 focus-within:border-[var(--goberna-blue-400)] transition-colors">
+            <div className="flex-1 flex items-end bg-surface-hover rounded-2xl border border-border focus-within:border-[var(--goberna-blue-400)] transition-colors">
               <textarea
                 ref={inputRef}
                 value={draft}
@@ -386,7 +386,7 @@ export function CmsConversationPane({
                 onKeyDown={handleKeyDown}
                 placeholder="Escribe un mensaje..."
                 rows={1}
-                className="flex-1 px-3 py-2 text-[13px] bg-transparent outline-none resize-none max-h-24 placeholder:text-slate-300"
+                className="flex-1 px-3 py-2 text-[13px] bg-transparent outline-none resize-none max-h-24 placeholder:text-text-tertiary"
               />
             </div>
 
@@ -405,14 +405,14 @@ export function CmsConversationPane({
             </button>
           </div>
 
-          <p className="text-[9px] text-slate-300 mt-1 text-center">
+          <p className="text-[9px] text-text-tertiary mt-1 text-center">
             Boton verde = WhatsApp Web (extension) &middot; Boton azul = Twilio API
           </p>
         </div>
       )}
     </div>
   );
-}
+});
 
 function WhatsAppIcon({ size = 12 }: { size?: number }) {
   return (

@@ -14,12 +14,16 @@ import {
   Tooltip,
   CartesianGrid,
   Cell,
-  ReferenceLine,
 } from "recharts";
 import type { FormRecord } from "@/lib/services";
 import type { PipelinePeriod, PipelineDateRanges } from "./pipeline-filters";
 import { KpiCard, ChartIcon, UsersIcon, ClockIcon, TrendIcon } from "./kpi-cards";
 import { useTheme } from "@/lib/theme-context";
+import {
+  getDayKey, formatDayLabel, resolveAgentName, pctChange,
+  buildDayBuckets, dayMapToSeries, niceYMax,
+} from "./activity-chart-utils";
+import { getTooltipStyle, RankingTooltip } from "./activity-chart-tooltips";
 
 /* ========== Types ========== */
 
@@ -42,108 +46,6 @@ type Props = {
   /** Server-side authoritative count for the current period (overrides forms.length for KPI) */
   serverPeriodCount?: number;
 };
-
-type TimeSeriesPoint = { label: string; forms: number; agents: number };
-
-/* ========== Utils ========== */
-
-const DAY_NAMES = ["Dom", "Lun", "Mar", "Mie", "Jue", "Vie", "Sab"];
-
-function getDayKey(date: Date): string {
-  return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}`;
-}
-
-function formatDayLabel(date: Date): string {
-  return `${DAY_NAMES[date.getDay()]} ${date.getDate()}`;
-}
-
-function resolveAgentName(form: FormRecord): { shortName: string; fullName: string } {
-  const full = (form.encuestador || "").trim();
-  if (!full) return { shortName: "Agente", fullName: "Agente" };
-  const short = full.split(/\s+/)[0] || "Agente";
-  return { shortName: short, fullName: full };
-}
-
-function pctChange(current: number, prev: number): number | null {
-  if (prev === 0) return current > 0 ? 100 : null;
-  return Math.round(((current - prev) / prev) * 100);
-}
-
-/** Build day buckets between two dates (inclusive start, exclusive end). */
-function buildDayBuckets(from: Date, to: Date): Map<string, { forms: number; agents: Set<string> }> {
-  const map = new Map<string, { forms: number; agents: Set<string> }>();
-  const cursor = new Date(from);
-  cursor.setHours(0, 0, 0, 0);
-  const end = new Date(to);
-  end.setHours(0, 0, 0, 0);
-  while (cursor < end) {
-    map.set(getDayKey(cursor), { forms: 0, agents: new Set() });
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return map;
-}
-
-/** Sort day keys chronologically and produce TimeSeries. */
-function dayMapToSeries(dayMap: Map<string, { forms: number; agents: Set<string> }>): TimeSeriesPoint[] {
-  return [...dayMap.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, bucket]) => {
-      const [y, m, d] = key.split("-").map(Number);
-      const date = new Date(y, m - 1, d);
-      return { label: formatDayLabel(date), forms: bucket.forms, agents: bucket.agents.size };
-    });
-}
-
-/** Round up to a nice Y-axis ceiling (5, 10, 20, 50, 100…) with ~20% headroom */
-function niceYMax(max: number): [number, number] {
-  if (max === 0) return [0, 10];
-  const padded = Math.ceil(max * 1.2);
-  const mag = Math.pow(10, Math.floor(Math.log10(padded)));
-  const steps = [1, 2, 5, 10].map((s) => s * mag);
-  const nice = steps.find((s) => s >= padded) ?? padded;
-  return [0, nice];
-}
-
-/* ========== Tooltip styles (inline required for Recharts) ========== */
-
-function getTooltipStyle(isDark: boolean): React.CSSProperties {
-  return {
-    backgroundColor: isDark ? "#090D15" : "#ffffff",
-    border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
-    borderRadius: 10,
-    fontSize: 11,
-    color: isDark ? "#e2e8f0" : "#07091D",
-    boxShadow: isDark ? "0 8px 24px rgba(0,0,0,0.24)" : "0 4px 16px rgba(0,0,0,0.06)",
-    padding: "8px 14px",
-  };
-}
-
-function RankingTooltip({
-  active,
-  payload,
-  isDark,
-}: {
-  active?: boolean;
-  payload?: Array<{ payload: { fullName: string; forms: number } }>;
-  isDark: boolean;
-}) {
-  if (!active || !payload?.[0]?.payload) return null;
-  const row = payload[0].payload;
-  return (
-    <div
-      style={{
-        backgroundColor: isDark ? "#090D15" : "#ffffff",
-        border: isDark ? "1px solid #334155" : "1px solid #e2e8f0",
-        borderRadius: 10,
-        padding: "8px 10px",
-        boxShadow: isDark ? "0 8px 24px rgba(0,0,0,0.24)" : "0 4px 16px rgba(0,0,0,0.06)",
-      }}
-    >
-      <div style={{ fontSize: 11, fontWeight: 700, color: isDark ? "#ffffff" : "#0f172a" }}>{row.fullName}</div>
-      <div style={{ fontSize: 11, fontWeight: 600, color: isDark ? "#ffffff" : "#334155" }}>{row.forms} registros</div>
-    </div>
-  );
-}
 
 /* ========== Component ========== */
 
@@ -261,26 +163,6 @@ export const ActivityCharts = memo(function ActivityCharts({
       trend: Math.max(0, slope * i + intercept)
     }));
   }, [timeSeriesData]);
-
-  /* DEPRECATED: const trendData = useMemo(() => {
-    if (timeSeriesData.length < 2) return null;
-    const n = timeSeriesData.length;
-    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-    for (let i = 0; i < n; i++) {
-      sumX += i;
-      sumY += timeSeriesData[i].forms;
-      sumXY += i * timeSeriesData[i].forms;
-      sumX2 += i * i;
-    }
-    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
-    
-    return timeSeriesData.map((d, i) => ({
-      label: d.label,
-      trend: Math.max(0, slope * i + intercept)
-    }));
-  }, [timeSeriesData]);
-
 
   /* ── Selected agent info ── */
   const selectedAgent = useMemo(() => {

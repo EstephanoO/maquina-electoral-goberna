@@ -33,30 +33,33 @@
 import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Layer, Map as MapLibre, Marker, Source } from "@vis.gl/react-maplibre";
 import type { MapRef, MapLayerMouseEvent } from "@vis.gl/react-maplibre";
-import type { CircleLayerSpecification, DragPanOptions, FillLayerSpecification, LineLayerSpecification, Map as NativeMap } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { CameraNudge, TierraMapHandle, TierraMapProps } from "./types";
 import {
-  STATUS_COLORS, ZONE_FILL, ZONE_HOVER, ZONE_LINE, ZONE_LINE_GHOST, MASK_FILL, HOVER_LAYERS,
+  HOVER_LAYERS,
   PERU_VIEW, PERU_BOUNDS, PERU_BOUNDS_FLAT, PERU_MAX_BOUNDS, MAP_STYLES, DEFAULT_TILE_TEMPLATE, INTERACTIVE_LAYERS,
   FLY_DURATION,
 } from "./constants";
 import { prewarmTiles } from "./utils";
 import {
-  VIS_VISIBLE, VIS_NONE, PROMOTE_ID,
+  PROMOTE_ID,
   PRIORITY_FILL_PAINT, PRIORITY_DEP_LINE_PAINT, PRIORITY_PROV_LINE_PAINT, PRIORITY_DIST_LINE_PAINT,
   SECTOR_FILL_PAINT, SECTOR_LINE_PAINT,
-  getHeatmapPaint, getHeatmapDarkPaint, BARS_EXTRUSION_PAINT, BARS_LINE_PAINT,
+  BARS_EXTRUSION_PAINT, BARS_LINE_PAINT,
   HAS_POINT_COUNT, NOT_HAS_POINT_COUNT,
-  CLUSTER_RING_PAINT, CLUSTER_CIRCLE_PAINT, CLUSTER_RING_DARK_PAINT, CLUSTER_CIRCLE_DARK_PAINT,
-  CLUSTER_COUNT_LAYOUT, CLUSTER_COUNT_PAINT,
-  FORM_POINTS_PAINT, FORM_POINTS_DARK_PAINT, FORM_POINTS_DARK_GLOW_PAINT,
+  CLUSTER_COUNT_PAINT,
+  FORM_POINTS_DARK_GLOW_PAINT,
   AGENT_SELECTED_FILTER, AGENT_CONNECTED_FILTER, AGENT_PULSE_PAINT,
-  AGENT_LABELS_LAYOUT, AGENT_LABELS_PAINT, AGENT_COUNT_LAYOUT, AGENT_COUNT_PAINT,
-  ROUTE_LINE_PAINT, ROUTE_LINE_LAYOUT, ROUTE_CASING_PAINT,
+  AGENT_LABELS_PAINT, AGENT_COUNT_PAINT,
+  ROUTE_LINE_PAINT, ROUTE_CASING_PAINT,
   ROUTE_WAYPOINT_PAINT, ROUTE_WAYPOINT_START_PAINT, ROUTE_WAYPOINT_START_FILTER, ROUTE_WAYPOINT_MID_FILTER,
-  ROUTE_SEQ_LAYOUT, ROUTE_SEQ_PAINT,
+  ROUTE_SEQ_PAINT,
 } from "./map-paint-constants";
+import {
+  MAP_DRAG_PAN_OPTIONS, CAMERA_PITCH_MIN, CAMERA_PITCH_MAX,
+  clamp, boundsToInitialViewState, applyFluidMapInteractions,
+} from "./map-camera-helpers";
+import { useZonePaint, useLayerPaint } from "./hooks/use-zone-paint";
 
 import { useDrillFilters } from "./hooks/use-drill-filters";
 import { useAgentsSource, useFormSources, useNewPoints } from "./hooks/use-map-sources";
@@ -69,51 +72,6 @@ import { useMapResize } from "./hooks/use-map-resize";
 import { reverseGeocode } from "@/lib/services/geo";
 
 /* ========== Component (P6 — wrapped with memo) ========== */
-
-const MAP_DRAG_PAN_OPTIONS: DragPanOptions = {
-  linearity: 0.24,
-  maxSpeed: 1800,
-  deceleration: 2600,
-};
-
-const TRACKPAD_ZOOM_RATE = 1 / 130;
-const WHEEL_ZOOM_RATE = 1 / 680;
-const CAMERA_PITCH_MIN = 0;
-const CAMERA_PITCH_MAX = 60;
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-function applyFluidMapInteractions(map: NativeMap) {
-  map.dragPan.enable(MAP_DRAG_PAN_OPTIONS);
-  map.scrollZoom.enable();
-  map.scrollZoom.setZoomRate(TRACKPAD_ZOOM_RATE);
-  map.scrollZoom.setWheelZoomRate(WHEEL_ZOOM_RATE);
-  map.dragRotate.enable();
-  map.touchPitch.enable();
-  map.keyboard.enableRotation();
-  map.touchZoomRotate.enable({ around: "center" });
-
-  const canvas = map.getCanvas();
-  canvas.style.cursor = "grab";
-  map.on("dragstart", () => { canvas.style.cursor = "grabbing"; });
-  map.on("dragend", () => { canvas.style.cursor = "grab"; });
-}
-
-/**
- * Derives a MapLibre initialViewState from a bounding box.
- * Used when lockedBounds is provided so the map births at the right place
- * with no Peru flash — no animation needed.
- */
-function boundsToInitialViewState(bounds: [[number, number], [number, number]]) {
-  const [sw, ne] = bounds;
-  return {
-    longitude: (sw[0] + ne[0]) / 2,
-    latitude: (sw[1] + ne[1]) / 2,
-    zoom: 13, // safe zoom for a small district like Carmen de la Legua
-  };
-}
 
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
   { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange, onMapDoubleClick, lockedBounds },
@@ -167,135 +125,16 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   // ─── P5: Memoize tiles array (new array = new Source in react-maplibre) ───
   const tilesArray = useMemo(() => tileUrl ? [tileUrl] : [], [tileUrl]);
 
-  // ─── P2: Memoize dynamic paint objects that depend on drillState ───
-  const zonePalette = useMemo(() => (
-    mapTheme === "dark"
-      ? {
-          fill: "rgba(148, 163, 184, 0.2)",
-          hover: "rgba(148, 163, 184, 0.42)",
-          line: "#e2e8f0",
-          ghost: "#94a3b8",
-          mask: "rgba(2, 6, 23, 0.54)",
-        }
-      : {
-          fill: ZONE_FILL,
-          hover: ZONE_HOVER,
-          line: ZONE_LINE,
-          ghost: ZONE_LINE_GHOST,
-          mask: MASK_FILL,
-        }
-  ), [mapTheme]);
-
-  const clusterRingPaint = useMemo(
-    () => (mapTheme === "dark" ? CLUSTER_RING_DARK_PAINT : CLUSTER_RING_PAINT),
-    [mapTheme],
-  );
-  const clusterCirclePaint = useMemo(
-    () => (mapTheme === "dark" ? CLUSTER_CIRCLE_DARK_PAINT : CLUSTER_CIRCLE_PAINT),
-    [mapTheme],
-  );
-  const formPointsPaint = useMemo(
-    () => (mapTheme === "dark" ? FORM_POINTS_DARK_PAINT : FORM_POINTS_PAINT),
-    [mapTheme],
-  );
-  const heatmapPaint = useMemo(
-    () => (
-      mapTheme === "dark"
-        ? getHeatmapDarkPaint({ radius: heatmapRadius, opacity: heatmapOpacity })
-        : getHeatmapPaint({ radius: heatmapRadius, opacity: heatmapOpacity })
-    ),
-    [mapTheme, heatmapRadius, heatmapOpacity],
-  );
-
-  const depFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
-    "fill-color": drillState.level === 0
-      ? ["case", ["boolean", ["feature-state", "hover"], false], zonePalette.hover, zonePalette.fill]
-      : drillState.depCode
-        ? ["case", ["==", ["get", "coddep"], drillState.depCode], zonePalette.fill, zonePalette.mask]
-        : zonePalette.fill,
-    "fill-opacity": 1,
-  }), [drillState.level, drillState.depCode, zonePalette]);
-
-  const depLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
-    "line-color": drillState.level === 0 ? zonePalette.line : zonePalette.ghost,
-    "line-width": drillState.level === 0 ? (mapTheme === "dark" ? 1.2 : 1.7) : (mapTheme === "dark" ? 0.6 : 0.9),
-    "line-opacity": drillState.level === 0 ? (mapTheme === "dark" ? 0.82 : 0.95) : (mapTheme === "dark" ? 0.45 : 0.62),
-  }), [drillState.level, mapTheme, zonePalette]);
-
-  const provFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
-    "fill-color": drillState.level === 1
-      ? ["case", ["boolean", ["feature-state", "hover"], false], zonePalette.hover, zonePalette.fill]
-      : drillState.provCode
-        ? ["case", ["==", ["get", "codprov_full"], drillState.provCode], zonePalette.fill, zonePalette.mask]
-        : zonePalette.fill,
-    "fill-opacity": 1,
-  }), [drillState.level, drillState.provCode, zonePalette]);
-
-  const provLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
-    "line-color": drillState.level === 1 ? zonePalette.line : zonePalette.ghost,
-    "line-width": drillState.level === 1 ? (mapTheme === "dark" ? 1 : 1.4) : (mapTheme === "dark" ? 0.5 : 0.8),
-    "line-opacity": drillState.level === 1 ? (mapTheme === "dark" ? 0.8 : 0.92) : (mapTheme === "dark" ? 0.38 : 0.56),
-  }), [drillState.level, mapTheme, zonePalette]);
-
-  const distFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
-    "fill-color": drillState.level === 2
-      ? ["case", ["boolean", ["feature-state", "hover"], false], zonePalette.hover, zonePalette.fill]
-      : drillState.distCode
-        ? ["case", ["==", ["get", "ubigeo"], drillState.distCode], zonePalette.fill, zonePalette.mask]
-        : zonePalette.fill,
-    "fill-opacity": 1,
-  }), [drillState.level, drillState.distCode, zonePalette]);
-
-  const distLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
-    "line-color": zonePalette.line,
-    "line-width": drillState.level >= 3 ? (mapTheme === "dark" ? 1.2 : 1.6) : (mapTheme === "dark" ? 0.8 : 1.15),
-    "line-opacity": mapTheme === "dark" ? 0.78 : 0.88,
-  }), [drillState.level, mapTheme, zonePalette]);
-
-  // ─── P2: Agent paint objects that depend on primaryColor ───
-  const agentSelectedRingPaint = useMemo((): CircleLayerSpecification["paint"] => ({
-    "circle-radius": 24, "circle-color": primaryColor, "circle-opacity": 0.2,
-  }), [primaryColor]);
-
-  const agentCirclesPaint = useMemo((): CircleLayerSpecification["paint"] => ({
-    "circle-radius": ["case", ["==", ["get", "is_selected"], 1], 12, 9],
-    "circle-color": ["match", ["get", "status"], "connected", STATUS_COLORS.connected, "idle", STATUS_COLORS.idle, "inactive", STATUS_COLORS.inactive, primaryColor],
-    "circle-stroke-width": 2.5, "circle-stroke-color": "#ffffff",
-    "circle-opacity": 1,
-    "circle-stroke-opacity": 1,
-  }), [primaryColor]);
-
-  // ─── P1: Visibility layout objects for always-mounted Sources ───
-  const pointsVisibility = useMemo(() => showDatos && datosVizMode === "points" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
-  const pointsGlowVisibility = useMemo(() => showDatos && datosVizMode === "points" && mapTheme === "dark" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode, mapTheme]);
-  const heatmapVisibility = useMemo(() => showDatos && datosVizMode === "heatmap" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
-  const barsVisibility = useMemo(() => showDatos && datosVizMode === "bars3d" ? VIS_VISIBLE : VIS_NONE, [showDatos, datosVizMode]);
-  const trackingVisibility = useMemo(() => showTracking ? VIS_VISIBLE : VIS_NONE, [showTracking]);
-  const routesVisibility = useMemo(() => showRoutes ? VIS_VISIBLE : VIS_NONE, [showRoutes]);
-
-  // ─── Route line layout merged with visibility ───
-  const routeLineLayoutWithVis = useMemo(() => ({
-    ...ROUTE_LINE_LAYOUT,
-    ...(showRoutes ? {} : { visibility: "none" as const }),
-  }), [showRoutes]);
-  const routeSeqLayoutWithVis = useMemo(() => ({
-    ...ROUTE_SEQ_LAYOUT,
-    ...(showRoutes ? {} : { visibility: "none" as const }),
-  }), [showRoutes]);
-
-  // ─── Cluster count layout merged with visibility ───
-  const clusterCountLayoutWithVis = useMemo(() => ({
-    ...CLUSTER_COUNT_LAYOUT,
-    ...(showDatos && datosVizMode === "points" ? {} : { visibility: "none" as const }),
-  }), [showDatos, datosVizMode]);
-  const agentLabelsLayoutWithVis = useMemo(() => ({
-    ...AGENT_LABELS_LAYOUT,
-    ...(showTracking ? {} : { visibility: "none" as const }),
-  }), [showTracking]);
-  const agentCountLayoutWithVis = useMemo(() => ({
-    ...AGENT_COUNT_LAYOUT,
-    ...(showTracking ? {} : { visibility: "none" as const }),
-  }), [showTracking]);
+  // ─── P2: Memoized paint objects (extracted to hooks/use-zone-paint.ts) ───
+  const { depFillPaint, depLinePaint, provFillPaint, provLinePaint, distFillPaint, distLinePaint } = useZonePaint(drillState, mapTheme);
+  const {
+    clusterRingPaint, clusterCirclePaint, formPointsPaint, heatmapPaint,
+    agentSelectedRingPaint, agentCirclesPaint,
+    pointsVisibility, pointsGlowVisibility, heatmapVisibility, barsVisibility,
+    trackingVisibility, routesVisibility,
+    routeLineLayoutWithVis, routeSeqLayoutWithVis, clusterCountLayoutWithVis,
+    agentLabelsLayoutWithVis, agentCountLayoutWithVis,
+  } = useLayerPaint(mapTheme, primaryColor, showDatos, datosVizMode, showTracking, showRoutes, heatmapRadius, heatmapOpacity);
 
   const nudgeCamera = useCallback((delta: CameraNudge) => {
     const map = mapRef.current?.getMap();

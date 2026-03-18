@@ -63,9 +63,12 @@ function hasSessionCookie(): boolean {
   return getCookie("goberna_session") === "1";
 }
 
-// ── Context ─────────────────────────────────────────────────────────
+// ── Contexts (split to prevent unnecessary re-renders) ─────────────
+// Components that only need actions (login, logout, etc.) won't re-render
+// when state (user, campaigns, activeCampaignId) changes.
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+const AuthStateContext = createContext<AuthState | null>(null);
+const AuthActionsContext = createContext<AuthActions | null>(null);
 
 // ── Provider ────────────────────────────────────────────────────────
 
@@ -187,30 +190,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const value = useMemo<AuthContextValue>(
+  const stateValue = useMemo<AuthState>(
     () => ({
       user,
       campaigns,
       activeCampaignId,
       isAuthenticated: user !== null,
       isLoading,
-      login,
-      logout,
-      setActiveCampaign,
-      refreshSession,
     }),
-    [user, campaigns, activeCampaignId, isLoading, login, logout, setActiveCampaign, refreshSession],
+    [user, campaigns, activeCampaignId, isLoading],
   );
 
-  return <AuthContext value={value}>{children}</AuthContext>;
+  const actionsValue = useMemo<AuthActions>(
+    () => ({ login, logout, setActiveCampaign, refreshSession }),
+    [login, logout, setActiveCampaign, refreshSession],
+  );
+
+  return (
+    <AuthActionsContext value={actionsValue}>
+      <AuthStateContext value={stateValue}>{children}</AuthStateContext>
+    </AuthActionsContext>
+  );
 }
 
-// ── Hook ────────────────────────────────────────────────────────────
+// ── Hooks ───────────────────────────────────────────────────────────
 
+/** Full auth context (state + actions). Use when you need both. */
 export function useAuth(): AuthContextValue {
-  const context = useContext(AuthContext);
-  if (!context) {
+  const state = useContext(AuthStateContext);
+  const actions = useContext(AuthActionsContext);
+  if (!state || !actions) {
     throw new Error("useAuth must be used within an AuthProvider");
   }
+  return useMemo(() => ({ ...state, ...actions }), [state, actions]);
+}
+
+/** Only auth state — won't re-render when actions change (they rarely do). */
+export function useAuthState(): AuthState {
+  const context = useContext(AuthStateContext);
+  if (!context) throw new Error("useAuthState must be used within an AuthProvider");
+  return context;
+}
+
+/** Only auth actions — won't re-render when state changes (user, campaigns, etc.). */
+export function useAuthActions(): AuthActions {
+  const context = useContext(AuthActionsContext);
+  if (!context) throw new Error("useAuthActions must be used within an AuthProvider");
   return context;
 }

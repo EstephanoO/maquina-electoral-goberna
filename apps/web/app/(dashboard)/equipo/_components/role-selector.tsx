@@ -138,7 +138,7 @@ export function RoleSelector({ value, onChange, disabled, allowedRoles }: RoleSe
                 justifyContent: "center",
                 flexShrink: 0,
               }}>
-                {role.icon({ size: 18, color: "#fff" })}
+                <role.icon size={18} color="#fff" />
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: isDark ? "#ffffff" : role.color, marginBottom: 2 }}>
@@ -183,7 +183,7 @@ export function RoleSelector({ value, onChange, disabled, allowedRoles }: RoleSe
         }}
       >
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          {config.icon({ size: 14, color: isDark ? (darkNeonMap[value] ?? config.color) : config.color })}
+          <config.icon size={14} color={isDark ? (darkNeonMap[value] ?? config.color) : config.color} />
           <span style={{ color: isDark ? "#ffffff" : "inherit" }}>{config.shortLabel}</span>
         </span>
         <IconChevronDown size={14} />

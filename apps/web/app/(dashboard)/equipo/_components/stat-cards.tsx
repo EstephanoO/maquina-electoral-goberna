@@ -71,7 +71,7 @@ function RolePill({ role, count }: { role: string; count: number }) {
         justifyContent: "center",
         flexShrink: 0,
       }}>
-        {config.icon({ size: 16, color: "#fff" })}
+        <config.icon size={16} color="#fff" />
       </div>
 
       {/* Text */}
@@ -169,16 +169,16 @@ export function StatGrid({ total, statsByRole, pendingCount }: StatGridProps) {
             alignItems: "center",
             gap: 8,
             padding: "8px 14px",
-            background: "#FFF7ED",
-            border: "1px solid #FDBA74",
+            background: "var(--color-warning-bg)",
+            border: "1px solid var(--color-warning-border)",
             borderRadius: 10,
           }}>
-            <IconClock size={16} color="#C2410C" />
+            <IconClock size={16} color="var(--color-warning)" />
             <div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: "#C2410C", lineHeight: 1 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: "var(--color-warning)", lineHeight: 1 }}>
                 {pendingCount}
               </div>
-              <div style={{ fontSize: 9, fontWeight: 700, color: "#9A3412", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: "var(--color-warning)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
                 Pendientes
               </div>
             </div>

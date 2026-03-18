@@ -8,13 +8,9 @@ import { useTheme } from "@/lib/theme-context";
 import type { EnrichedAgent } from "./types";
 import { PipelineFilters, type PipelinePeriod, type PipelineDateRanges } from "./pipeline-filters";
 import { GeoRanking, type GeoDrillState, INITIAL_GEO_DRILL } from "./geo-ranking";
+import { ChartsSection, FunnelSkeleton, TableSkeleton } from "./pipeline-skeletons";
 
 /* ========== Lazy-loaded components ========== */
-
-const ActivityCharts = dynamic(
-  () => import("./activity-charts").then((m) => ({ default: m.ActivityCharts })),
-  { ssr: false, loading: () => <ChartsSkeleton /> },
-);
 
 const PipelineFunnel = dynamic(
   () => import("./pipeline-funnel").then((m) => ({ default: m.PipelineFunnel })),
@@ -239,19 +235,47 @@ export const PipelineView = memo(function PipelineView({
       )}
 
       {isEmpty ? (
-        <div className="flex flex-col items-center justify-center flex-1 gap-4 text-center p-16">
-          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isDark ? "bg-[#1e293b]" : "bg-slate-100"}`}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#94a3b8" : "#94a3b8"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Sin datos">
+        <div className="flex flex-col items-center justify-center flex-1 gap-5 text-center p-10 sm:p-16">
+          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${isDark ? "bg-[#1e293b]" : "bg-slate-100"}`}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#64748b" : "#94a3b8"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label="Sin datos">
               <title>Sin datos</title>
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              <path d="M3 3v18h18" />
+              <path d="M18 17V9" />
+              <path d="M13 17V5" />
+              <path d="M8 17v-3" />
             </svg>
           </div>
-          <div>
-            <span className={`text-base font-semibold block ${isDark ? "text-slate-200" : "text-slate-600"}`}>Sin datos en este periodo</span>
-            <span className={`text-sm mt-1 block max-w-xs ${isDark ? "text-slate-400" : "text-slate-400"}`}>Proba seleccionando &quot;Todo&quot; o un periodo mas amplio</span>
+          <div className="flex flex-col gap-1.5">
+            <span className={`text-base font-bold block ${isDark ? "text-slate-200" : "text-slate-700"}`}>Sin datos en este periodo</span>
+            <span className={`text-sm block max-w-sm ${isDark ? "text-slate-400" : "text-slate-400"}`}>
+              No hay capturas de brigadistas ni formularios registrados{periodLabel ? ` para "${periodLabel}"` : ""}.
+            </span>
+          </div>
+          <div className={`flex flex-col sm:flex-row items-center gap-3 mt-1 text-[12px] font-semibold ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+            <button
+              type="button"
+              onClick={() => onPeriodChange("all")}
+              className={`px-4 py-2 rounded-lg border cursor-pointer transition-colors ${
+                isDark
+                  ? "border-slate-700 bg-[#0f172a] text-slate-300 hover:bg-[#1e293b]"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              Ver periodo completo
+            </button>
+            {hasGeoFilter && (
+              <button
+                type="button"
+                onClick={() => onGeoDrillChange(INITIAL_GEO_DRILL)}
+                className={`px-4 py-2 rounded-lg border cursor-pointer transition-colors ${
+                  isDark
+                    ? "border-slate-700 bg-[#0f172a] text-slate-300 hover:bg-[#1e293b]"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                Quitar filtro geografico
+              </button>
+            )}
           </div>
         </div>
       ) : (
@@ -357,98 +381,4 @@ export const PipelineView = memo(function PipelineView({
   );
 });
 
-/* ========== Collapsible Charts Section ========== */
 
-function ChartsSection({ forms, prevForms, primaryColor, secondaryColor, periodLabel, period, dateRanges, periodGoalPerBrig, compareIds, onToggleCompare, onClearCompare, serverPeriodCount }: {
-  forms: FormRecord[]; prevForms: FormRecord[]; primaryColor: string; secondaryColor?: string;
-  periodLabel: string; period: PipelinePeriod; dateRanges: PipelineDateRanges; periodGoalPerBrig?: number;
-  compareIds: string[]; onToggleCompare: (id: string) => void; onClearCompare: () => void;
-  serverPeriodCount?: number;
-}) {
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
-  const [open, setOpen] = useState(true);
-  return (
-    <div className={`shrink-0 ${isDark ? "border-b border-[#2a303b] bg-[#090D15]" : "border-b border-slate-100"}`}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={`flex items-center gap-2 w-full px-4 py-2 text-left cursor-pointer border-none transition-colors ${isDark ? "bg-[#090D15] hover:bg-[#111827]" : "bg-slate-50/60 hover:bg-slate-100/60"}`}
-      >
-        <svg
-          width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#cbd5e1" : "#64748b"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-          className={`transition-transform duration-200 ${open ? "rotate-90" : ""}`}
-          role="img" aria-label="Toggle"
-        >
-          <title>Toggle</title>
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-        <span className={`text-[10px] font-semibold uppercase tracking-wider ${isDark ? "text-slate-300" : "text-slate-400"}`}>Actividad &amp; Rendimiento</span>
-        {!open && <span className={`text-[9px] ml-auto ${isDark ? "text-slate-400" : "text-slate-400"}`}>Mostrar graficos</span>}
-      </button>
-      {open && (
-        <ActivityCharts
-          forms={forms}
-          prevForms={prevForms}
-          primaryColor={primaryColor}
-          secondaryColor={secondaryColor}
-          periodLabel={periodLabel}
-          period={period}
-          dateRanges={dateRanges}
-          periodGoalPerBrig={periodGoalPerBrig}
-          compareIds={compareIds}
-          onToggleCompare={onToggleCompare}
-          onClearCompare={onClearCompare}
-          serverPeriodCount={serverPeriodCount}
-        />
-      )}
-    </div>
-  );
-}
-
-/* ========== Skeletons ========== */
-
-function ChartsSkeleton() {
-  return (
-    <div className="flex flex-col gap-3 px-4 py-3.5 animate-pulse">
-      <div className="grid grid-cols-4 gap-2.5">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={`kpi-skel-${i}`} className="px-3.5 py-3 bg-slate-100/80 rounded-xl h-[88px]" />
-        ))}
-      </div>
-      <div className="grid gap-3" style={{ gridTemplateColumns: "2fr 1fr" }}>
-        <div className="bg-slate-100/80 rounded-xl h-[260px]" />
-        <div className="bg-slate-100/80 rounded-xl h-[260px]" />
-      </div>
-    </div>
-  );
-}
-
-function FunnelSkeleton() {
-  return (
-    <div className="px-4 py-4 animate-pulse">
-      <div className="h-3 w-32 bg-slate-100 rounded mb-4" />
-      <div className="p-4 bg-slate-100/80 rounded-xl h-[120px]" />
-    </div>
-  );
-}
-
-function TableSkeleton() {
-  return (
-    <div className="flex flex-col animate-pulse">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100">
-        <div className="flex-1 h-8 bg-slate-100 rounded-lg" />
-        <div className="h-4 w-20 bg-slate-100 rounded" />
-      </div>
-      {[0, 1, 2, 3, 4, 5].map((i) => (
-        <div key={`table-skel-${i}`} className="flex items-center gap-3 px-4 h-[52px] border-b border-slate-50">
-          <div className="w-5 h-5 bg-slate-100 rounded-full" />
-          <div className="flex-1 h-3 bg-slate-100 rounded" />
-          <div className="w-24 h-3 bg-slate-100 rounded" />
-          <div className="w-16 h-3 bg-slate-100 rounded" />
-          <div className="w-12 h-3 bg-slate-100 rounded" />
-        </div>
-      ))}
-    </div>
-  );
-}

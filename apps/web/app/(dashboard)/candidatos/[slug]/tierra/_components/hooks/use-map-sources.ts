@@ -26,9 +26,10 @@ function stableHash(input: string): number {
 /* ─── Agent source ─── */
 
 export function useAgentsSource(agents: EnrichedAgent[], selectedAgentId: string | null) {
-  const visibleAgents = selectedAgentId
-    ? agents.filter((a) => a.id === selectedAgentId)
-    : agents;
+  const visibleAgents = useMemo(
+    () => selectedAgentId ? agents.filter((a) => a.id === selectedAgentId) : agents,
+    [agents, selectedAgentId],
+  );
 
   return useMemo(() => ({
     type: "FeatureCollection" as const,

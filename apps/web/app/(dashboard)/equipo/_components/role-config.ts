@@ -3,7 +3,7 @@
  * Centralized role hierarchy, types, and display config for the equipo module.
  */
 
-import type { ReactNode } from "react";
+import type { ComponentType } from "react";
 
 // ── Types ───────────────────────────────────────────────────────────
 
@@ -62,7 +62,7 @@ export type RoleConfig = {
   label: string;
   shortLabel: string;
   level: number;
-  icon: (props: { size?: number; color?: string }) => ReactNode;
+  icon: ComponentType<{ size?: number; color?: string }>;
   color: string;
   bgColor: string;
   borderColor: string;

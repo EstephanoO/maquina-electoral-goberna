@@ -110,7 +110,7 @@ export default function CmsPipelinePage() {
 
   /* ─── No campaign ─── */
   if (!activeCampaignId) {
-    return <div className="p-10 text-center text-slate-500 text-sm font-medium">Selecciona una campana para ver el pipeline.</div>;
+    return <div className="p-10 text-center text-text-tertiary text-sm font-medium">Selecciona una campana para ver el pipeline.</div>;
   }
 
   return (
@@ -119,7 +119,7 @@ export default function CmsPipelinePage() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <Link
           href="/cms"
-          className="inline-flex items-center gap-2 border border-slate-200 bg-white text-slate-800 no-underline rounded-xl px-3 py-2 text-[12px] font-bold whitespace-nowrap hover:bg-slate-50 transition-colors"
+          className="inline-flex items-center gap-2 border border-border bg-surface text-text-primary no-underline rounded-xl px-3 py-2 text-[12px] font-bold whitespace-nowrap hover:bg-surface-hover transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><title>Volver</title><path d="M15 18l-6-6 6-6" /></svg>
           Volver al chat CMS
@@ -127,11 +127,11 @@ export default function CmsPipelinePage() {
 
         <div className="inline-flex items-center gap-2">
           {/* View mode toggle */}
-          <div className="inline-flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
+          <div className="inline-flex items-center rounded-lg border border-border bg-surface overflow-hidden">
             <button
               type="button"
               onClick={() => setViewMode("board")}
-              className={`inline-flex items-center justify-center w-8 h-8 transition-colors ${viewMode === "board" ? "bg-slate-900 text-white" : "bg-white text-slate-400 hover:text-slate-700"}`}
+              className={`inline-flex items-center justify-center w-8 h-8 transition-colors ${viewMode === "board" ? "bg-text-primary text-surface" : "bg-surface text-text-tertiary hover:text-text-secondary"}`}
               title="Vista tarjetas"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Board</title><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /></svg>
@@ -139,7 +139,7 @@ export default function CmsPipelinePage() {
             <button
               type="button"
               onClick={() => setViewMode("compact")}
-              className={`inline-flex items-center justify-center w-8 h-8 transition-colors ${viewMode === "compact" ? "bg-slate-900 text-white" : "bg-white text-slate-400 hover:text-slate-700"}`}
+              className={`inline-flex items-center justify-center w-8 h-8 transition-colors ${viewMode === "compact" ? "bg-text-primary text-surface" : "bg-surface text-text-tertiary hover:text-text-secondary"}`}
               title="Vista compacta"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><title>Lista</title><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
@@ -147,9 +147,9 @@ export default function CmsPipelinePage() {
           </div>
 
           {/* Summary pill */}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 bg-white text-slate-700 text-[12px] font-semibold">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-surface text-text-secondary text-[12px] font-semibold">
             <span>Pipeline de 4 niveles</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+            <span className="w-1.5 h-1.5 rounded-full bg-text-tertiary" />
             <span className="tabular-nums">{totalAll} contactos</span>
           </div>
 
@@ -166,7 +166,7 @@ export default function CmsPipelinePage() {
             type="button"
             onClick={() => { void loadPipeline(); }}
             disabled={loading}
-            className="border border-slate-200 bg-white text-slate-700 rounded-xl px-2.5 py-2 text-[12px] font-bold cursor-pointer hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="border border-border bg-surface text-text-secondary rounded-xl px-2.5 py-2 text-[12px] font-bold cursor-pointer hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? "Cargando..." : "Recargar"}
           </button>
@@ -180,7 +180,7 @@ export default function CmsPipelinePage() {
 
       {/* ── Grid ── */}
       {loading ? (
-        <div className="flex-1 min-h-0 border border-slate-200 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 font-semibold text-sm">
+        <div className="flex-1 min-h-0 border border-border rounded-2xl bg-surface-hover flex items-center justify-center text-text-tertiary font-semibold text-sm">
           Cargando pipeline...
         </div>
       ) : (

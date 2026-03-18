@@ -70,9 +70,19 @@ export function useSSELocations(initialLocations: AgentLocation[] | undefined) {
 
   const handleAgentStatus = useCallback((payload: { agent_id: string; status: string }) => {
     if (payload.status === "background") {
-      setBackgroundAgentIds((prev) => { const next = new Set(prev); next.add(payload.agent_id); return next; });
+      setBackgroundAgentIds((prev) => {
+        if (prev.has(payload.agent_id)) return prev;
+        const next = new Set(prev);
+        next.add(payload.agent_id);
+        return next;
+      });
     } else if (payload.status === "foreground") {
-      setBackgroundAgentIds((prev) => { const next = new Set(prev); next.delete(payload.agent_id); return next; });
+      setBackgroundAgentIds((prev) => {
+        if (!prev.has(payload.agent_id)) return prev;
+        const next = new Set(prev);
+        next.delete(payload.agent_id);
+        return next;
+      });
     }
   }, []);
 

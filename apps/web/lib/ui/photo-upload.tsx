@@ -1,14 +1,11 @@
-/**
- * GOBERNA — PhotoUpload Component
- * Circular photo upload with preview.
- */
-
 "use client";
 
-import type { CSSProperties, ChangeEvent } from "react";
+import type { ChangeEvent } from "react";
 import Image from "next/image";
 import { useRef, useState } from "react";
-import { UPLOAD_CONFIG, FONT_STACK } from "../constants";
+import { ImagePlus } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { UPLOAD_CONFIG } from "../constants";
 import { formatBytes } from "../utils";
 
 type PhotoUploadProps = {
@@ -19,6 +16,7 @@ type PhotoUploadProps = {
   size?: number;
   fallbackInitial?: string;
   fallbackColor?: string;
+  className?: string;
 };
 
 export function PhotoUpload({
@@ -29,6 +27,7 @@ export function PhotoUpload({
   size = 120,
   fallbackInitial,
   fallbackColor = "var(--goberna-blue-600)",
+  className,
 }: PhotoUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [hover, setHover] = useState(false);
@@ -37,53 +36,18 @@ export function PhotoUpload({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate
     if (!UPLOAD_CONFIG.allowedTypes.includes(file.type as typeof UPLOAD_CONFIG.allowedTypes[number])) {
       onError?.("Tipo no permitido. Use JPG, PNG o WebP.");
       return;
     }
     if (file.size > UPLOAD_CONFIG.maxSizeBytes) {
-      onError?.(`Archivo muy grande. Máximo ${UPLOAD_CONFIG.maxSizeMB}MB.`);
+      onError?.(`Archivo muy grande. Maximo ${UPLOAD_CONFIG.maxSizeMB}MB.`);
       return;
     }
 
-    // Create preview
     const reader = new FileReader();
-    reader.onloadend = () => {
-      onChange(file, reader.result as string);
-    };
+    reader.onloadend = () => onChange(file, reader.result as string);
     reader.readAsDataURL(file);
-  };
-
-  const containerStyle: CSSProperties = {
-    width: size,
-    height: size,
-    borderRadius: "50%",
-    border: preview ? "none" : "2px dashed var(--color-border-strong)",
-    background: "var(--goberna-blue-50)",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    fontFamily: FONT_STACK,
-    color: "var(--color-text-tertiary)",
-    fontSize: 11,
-    gap: 4,
-    padding: 0,
-    overflow: "hidden",
-    position: "relative",
-  };
-
-  const overlayStyle: CSSProperties = {
-    position: "absolute",
-    inset: 0,
-    background: "rgba(0,0,0,0.4)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    opacity: hover ? 1 : 0,
-    transition: "opacity 0.2s ease",
   };
 
   return (
@@ -93,49 +57,43 @@ export function PhotoUpload({
         type="file"
         accept={UPLOAD_CONFIG.allowedTypes.join(",")}
         onChange={handleSelect}
-        style={{ display: "none" }}
+        className="hidden"
       />
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
-        style={containerStyle}
+        className={cn(
+          "rounded-full overflow-hidden relative flex flex-col items-center justify-center cursor-pointer font-sans text-text-tertiary text-[11px] gap-1 p-0",
+          !preview && "border-2 border-dashed border-border-strong bg-goberna-blue-50",
+          className,
+        )}
+        style={{ width: size, height: size }}
       >
         {preview ? (
           <>
-            <Image src={preview} alt="Preview" fill style={{ objectFit: "cover" }} unoptimized />
-            <div style={overlayStyle}>
-              <span style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>Cambiar</span>
+            <Image src={preview} alt="Preview" fill className="object-cover" unoptimized />
+            <div
+              className="absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity"
+              style={{ opacity: hover ? 1 : 0 }}
+            >
+              <span className="text-white text-xs font-semibold">Cambiar</span>
             </div>
           </>
         ) : fallbackInitial ? (
-          <span style={{ fontSize: size * 0.3, fontWeight: 800, color: fallbackColor }}>
+          <span className="font-extrabold" style={{ fontSize: size * 0.3, color: fallbackColor }}>
             {fallbackInitial.toUpperCase()}
           </span>
         ) : (
           <>
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <title>Subir foto</title>
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <polyline points="21 15 16 10 5 21" />
-            </svg>
+            <ImagePlus className="size-6" />
             <span>Click para subir</span>
           </>
         )}
       </button>
       {value && (
-        <p style={{ fontSize: 11, color: "var(--color-text-tertiary)", marginTop: 6 }}>
+        <p className="text-[11px] text-text-tertiary mt-1.5 m-0">
           {value.name} ({formatBytes(value.size)})
         </p>
       )}

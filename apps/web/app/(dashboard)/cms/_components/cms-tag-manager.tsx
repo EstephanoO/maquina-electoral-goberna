@@ -52,7 +52,7 @@ export function CmsTagManager({ availableTags, selectedTag, onSelectTag, onCreat
         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
           selectedTag
             ? "bg-[var(--goberna-blue-100)] text-[var(--goberna-blue-700)] hover:bg-[var(--goberna-blue-200)]"
-            : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+            : "bg-surface-active text-text-tertiary hover:bg-surface-active"
         }`}
       >
         <TagIcon />
@@ -69,9 +69,9 @@ export function CmsTagManager({ availableTags, selectedTag, onSelectTag, onCreat
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-56 bg-white rounded-xl shadow-lg border border-slate-200 z-50 py-1 animate-in fade-in-0 zoom-in-95">
+        <div className="absolute top-full left-0 mt-1 w-56 bg-surface rounded-xl shadow-lg border border-border z-50 py-1 animate-in fade-in-0 zoom-in-95">
           {/* Create new */}
-          <div className="px-3 py-2 border-b border-slate-100">
+          <div className="px-3 py-2 border-b border-border">
             <div className="flex items-center gap-1.5">
               <input
                 type="text"
@@ -79,7 +79,7 @@ export function CmsTagManager({ availableTags, selectedTag, onSelectTag, onCreat
                 onChange={(e) => setNewTag(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
                 placeholder="Nueva etiqueta..."
-                className="flex-1 text-[11px] px-2 py-1 rounded-md border border-slate-200 outline-none focus:border-[var(--goberna-blue-400)] placeholder:text-slate-300"
+                className="flex-1 text-[11px] px-2 py-1 rounded-md border border-border outline-none focus:border-[var(--goberna-blue-400)] placeholder:text-text-tertiary"
               />
               <button
                 type="button"
@@ -97,7 +97,7 @@ export function CmsTagManager({ availableTags, selectedTag, onSelectTag, onCreat
             <button
               type="button"
               onClick={() => { onSelectTag(null); setOpen(false); }}
-              className="w-full text-left px-3 py-1.5 text-[11px] text-slate-400 hover:bg-slate-50 transition-colors"
+              className="w-full text-left px-3 py-1.5 text-[11px] text-text-tertiary hover:bg-surface-hover transition-colors"
             >
               Quitar filtro
             </button>
@@ -106,7 +106,7 @@ export function CmsTagManager({ availableTags, selectedTag, onSelectTag, onCreat
           {/* Tag list */}
           <div className="max-h-48 overflow-y-auto">
             {availableTags.length === 0 && (
-              <p className="px-3 py-2 text-[11px] text-slate-300 text-center">Sin etiquetas</p>
+              <p className="px-3 py-2 text-[11px] text-text-tertiary text-center">Sin etiquetas</p>
             )}
             {availableTags.map((tag) => (
               <button
@@ -116,7 +116,7 @@ export function CmsTagManager({ availableTags, selectedTag, onSelectTag, onCreat
                 className={`w-full text-left px-3 py-1.5 text-[11px] font-medium transition-colors ${
                   tag === selectedTag
                     ? "bg-[var(--goberna-blue-50)] text-[var(--goberna-blue-700)]"
-                    : "text-slate-600 hover:bg-slate-50"
+                    : "text-text-secondary hover:bg-surface-hover"
                 }`}
               >
                 {tag}

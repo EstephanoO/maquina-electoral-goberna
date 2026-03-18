@@ -50,7 +50,7 @@ export function HierarchyDiagram() {
                 justifyContent: "center",
                 flexShrink: 0,
               }}>
-                {role.icon({ size: 18, color: "#fff" })}
+                <role.icon size={18} color="#fff" />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: role.color }}>

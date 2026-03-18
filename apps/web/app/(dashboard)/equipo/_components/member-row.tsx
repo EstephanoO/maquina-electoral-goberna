@@ -6,7 +6,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { CSSProperties } from "react";
 import { Avatar, IconPhone, IconWhatsApp, IconKey, IconTrash } from "../../../../lib/ui";
 import { useTheme } from "../../../../lib/theme-context";
@@ -30,7 +30,7 @@ type MemberRowProps = {
   allowedRoles: string[];
 };
 
-export function MemberRow({
+export const MemberRow = memo(function MemberRow({
   member,
   isSelf,
   canManage,
@@ -215,7 +215,7 @@ export function MemberRow({
       </div>
     </div>
   );
-}
+});
 
 // ── Icon-only action button ─────────────────────────────────────────
 

@@ -25,175 +25,26 @@ import {
   type ValidationStats,
   getValidationStats,
 } from "@/lib/services/validacion";
-import { ConfirmModal } from "./_components/confirm-modal";
 import {
+  ConfirmModal,
   COLUMNS,
   SearchIcon,
   toVisualColumn,
   toBackendStatus,
   voteClassForColumn,
   getAllowedTargets,
+  DroppableColumn,
+  DraggableCard,
+  DragOverlayCard,
+  ToastProvider,
+  useToast,
+  StatsPanel,
+  useFilters,
   type VisualColumn,
 } from "./_components";
-import { DroppableColumn } from "./_components/droppable-column";
-import { DraggableCard } from "./_components/draggable-card";
-import { DragOverlayCard } from "./_components/drag-overlay-card";
-import { ToastProvider, useToast } from "./_components/toast";
 
 /* ── Pagination config ── */
 const PAGE_LIMIT = 100;
-
-/* ── Stats expandable panel ── */
-function StatsPanel({
-  stats,
-  items,
-  total,
-  columnTotals,
-}: {
-  stats: ValidationStats;
-  items: ValidationItem[];
-  total: number;
-  columnTotals: Record<VisualColumn, { count: number; isPartial: boolean }>;
-}) {
-  // Totales reales del backend
-  const processed = stats.contactado + stats.respondido + stats.invalido;
-  const conversion = (stats.contactado + stats.respondido) > 0
-    ? Math.round((stats.respondido / (stats.contactado + stats.respondido)) * 100)
-    : 0;
-
-  // Desglose de votos — calculado desde items en memoria
-  // Si respondido no está todo cargado, los números son parciales (se indica con +)
-  const respondidoLoaded = items.filter((i) => i.status === "respondido" || i.status === ("validado" as string)).length;
-  const respondidoIsPartial = respondidoLoaded < stats.respondido;
-  const voteDuro   = items.filter((i) => i.vote_class === "duro").length;
-  const voteBlando = items.filter((i) => i.vote_class === "blando").length;
-  const voteFlotante = items.filter((i) => i.vote_class === "flotante").length;
-
-  // Top encuestadores — parcial si no están todos cargados
-  const byEncuestador: Record<string, number> = {};
-  for (const item of items) {
-    const name = item.encuestador?.split(" ")[0] || "Desconocido";
-    byEncuestador[name] = (byEncuestador[name] ?? 0) + 1;
-  }
-  const topEnc = Object.entries(byEncuestador)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
-
-  return (
-    <div className="absolute top-full right-0 mt-2 z-50 w-80 bg-white rounded-xl border border-slate-200 shadow-xl p-4 flex flex-col gap-3">
-      {/* Totales reales del backend — siempre correctos */}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-lg bg-slate-50 p-2.5">
-          <div className="text-[10px] text-slate-400 font-medium">Procesados</div>
-          <div className="text-lg font-black text-slate-700">
-            {processed}
-            <span className="text-[11px] font-medium text-slate-400">/{total}</span>
-          </div>
-        </div>
-        <div className="rounded-lg bg-slate-50 p-2.5">
-          <div className="text-[10px] text-slate-400 font-medium">Conversión</div>
-          <div className="text-lg font-black text-cyan-600">{conversion}%</div>
-        </div>
-        <div className="rounded-lg bg-blue-50 p-2.5">
-          <div className="text-[10px] text-blue-700 font-medium">Pendiente</div>
-          <div className="text-lg font-black text-blue-700">{stats.pendiente}</div>
-        </div>
-        <div className="rounded-lg bg-sky-50 p-2.5">
-          <div className="text-[10px] text-sky-700 font-medium">Contactado</div>
-          <div className="text-lg font-black text-sky-600">{stats.contactado}</div>
-        </div>
-      </div>
-
-      {/* Desglose de votos — desde items en memoria, puede ser parcial */}
-      <div>
-        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-          Respondidos — {stats.respondido} total
-          {respondidoIsPartial && <span className="text-slate-300 font-normal ml-1">(desglose parcial)</span>}
-        </div>
-        <div className="grid grid-cols-3 gap-1.5">
-          <div className="rounded-lg bg-emerald-50 p-2">
-            <div className="text-[9px] text-emerald-700 font-medium">Voto Duro</div>
-            <div className="text-base font-black text-emerald-700">
-              {voteDuro}{respondidoIsPartial ? "+" : ""}
-            </div>
-          </div>
-          <div className="rounded-lg bg-yellow-50 p-2">
-            <div className="text-[9px] text-yellow-700 font-medium">Voto Blando</div>
-            <div className="text-base font-black text-yellow-600">
-              {voteBlando}{respondidoIsPartial ? "+" : ""}
-            </div>
-          </div>
-          <div className="rounded-lg bg-violet-50 p-2">
-            <div className="text-[9px] text-violet-700 font-medium">Flotante</div>
-            <div className="text-base font-black text-violet-600">
-              {voteFlotante}{respondidoIsPartial ? "+" : ""}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Top encuestadores */}
-      {topEnc.length > 0 && (
-        <div>
-          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-            Top encuestadores
-            {items.length < total && <span className="text-slate-300 font-normal ml-1">(parcial)</span>}
-          </div>
-          {topEnc.map(([name, count]) => (
-            <div key={name} className="flex items-center gap-2 py-0.5">
-              <span className="text-[11px] text-slate-700 font-medium flex-1 truncate">{name}</span>
-              <div className="h-1.5 rounded-full bg-slate-100 w-16">
-                <div
-                  className="h-full rounded-full bg-indigo-400 transition-all"
-                  style={{ width: `${Math.min((count / (topEnc[0]?.[1] ?? 1)) * 100, 100)}%` }}
-                />
-              </div>
-              <span className="text-[10px] text-slate-400 tabular-nums w-4">{count}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ── Filters ── */
-function useFilters(items: ValidationItem[]) {
-  const [search, setSearch] = useState("");
-  const [filterZona, setFilterZona] = useState("");
-  const [filterEnc, setFilterEnc] = useState("");
-  const [filterDepto, setFilterDepto] = useState("");
-
-  const zonas = useMemo(() => {
-    const s = new Set(items.map((i) => i.zona).filter(Boolean));
-    return Array.from(s).sort();
-  }, [items]);
-
-  const encuestadores = useMemo(() => {
-    const s = new Set(items.map((i) => i.encuestador?.split(" ")[0]).filter(Boolean));
-    return Array.from(s).sort();
-  }, [items]);
-
-  const departamentos = useMemo(() => {
-    const s = new Set(items.map((i) => i.departamento).filter(Boolean) as string[]);
-    return Array.from(s).sort();
-  }, [items]);
-
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    return items.filter((i) => {
-      if (q && !i.nombre.toLowerCase().includes(q) && !i.telefono.includes(q) && !i.encuestador.toLowerCase().includes(q)) return false;
-      if (filterZona && i.zona !== filterZona) return false;
-      if (filterEnc && !i.encuestador.startsWith(filterEnc)) return false;
-      if (filterDepto && i.departamento !== filterDepto) return false;
-      return true;
-    });
-  }, [items, search, filterZona, filterEnc, filterDepto]);
-
-  const hasFilters = !!search || !!filterZona || !!filterEnc || !!filterDepto;
-
-  return { search, setSearch, filterZona, setFilterZona, filterEnc, setFilterEnc, filterDepto, setFilterDepto, zonas, encuestadores, departamentos, filtered, hasFilters };
-}
 
 /* ── Inner board (needs toast context) ── */
 
@@ -514,7 +365,7 @@ function ValidacionBoard() {
   const totalItems = items.length;
   const processed = stats.contactado + stats.respondido + stats.invalido;
 
-  if (!campaign) return <div className="flex items-center justify-center h-64 text-slate-400">Campana no encontrada</div>;
+  if (!campaign) return <div className="flex items-center justify-center h-64 text-text-tertiary">Campana no encontrada</div>;
 
   return (
     <>
@@ -532,12 +383,12 @@ function ValidacionBoard() {
         onCancel={() => setConfirmDndInvalido(null)}
       />
 
-      <div className="flex flex-col h-[calc(100vh-48px)] bg-slate-50/50">
+      <div className="flex flex-col h-[calc(100vh-48px)] bg-surface-hover/50">
         {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-3 bg-white border-b border-slate-200 shrink-0 flex-wrap gap-y-2">
+        <div className="flex items-center gap-3 px-5 py-3 bg-surface border-b border-border shrink-0 flex-wrap gap-y-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold text-slate-800">Validacion de Datos</h1>
+              <h1 className="text-base font-bold text-text-primary">Validacion de Datos</h1>
               <Link
                 href={`/candidatos/${slug}/validacion-wa`}
                 className="text-[11px] font-semibold text-blue-600 border border-blue-200 rounded-md px-2.5 py-0.5 hover:bg-blue-50 transition-colors"
@@ -545,7 +396,7 @@ function ValidacionBoard() {
                 WhatsApp
               </Link>
             </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">Arrastra las tarjetas entre columnas para clasificar</p>
+            <p className="text-[11px] text-text-tertiary mt-0.5">Arrastra las tarjetas entre columnas para clasificar</p>
           </div>
 
           {/* Filters */}
@@ -553,7 +404,7 @@ function ValidacionBoard() {
             <select
               value={filterDepto}
               onChange={(e) => setFilterDepto(e.target.value)}
-              className="text-[11px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-600 outline-none focus:border-slate-400 cursor-pointer"
+              className="text-[11px] border border-border rounded-lg px-2 py-1.5 bg-surface text-text-secondary outline-none focus:border-border-strong cursor-pointer"
             >
               <option value="">Todos los departamentos</option>
               {departamentos.map((d) => <option key={d} value={d}>{d.charAt(0) + d.slice(1).toLowerCase()}</option>)}
@@ -563,7 +414,7 @@ function ValidacionBoard() {
             <select
               value={filterZona}
               onChange={(e) => setFilterZona(e.target.value)}
-              className="text-[11px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-600 outline-none focus:border-slate-400 cursor-pointer"
+              className="text-[11px] border border-border rounded-lg px-2 py-1.5 bg-surface text-text-secondary outline-none focus:border-border-strong cursor-pointer"
             >
               <option value="">Todas las zonas</option>
               {zonas.map((z) => <option key={z} value={z}>{z}</option>)}
@@ -573,7 +424,7 @@ function ValidacionBoard() {
             <select
               value={filterEnc}
               onChange={(e) => setFilterEnc(e.target.value)}
-              className="text-[11px] border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-600 outline-none focus:border-slate-400 cursor-pointer"
+              className="text-[11px] border border-border rounded-lg px-2 py-1.5 bg-surface text-text-secondary outline-none focus:border-border-strong cursor-pointer"
             >
               <option value="">Todos los encuestadores</option>
               {encuestadores.map((e) => <option key={e} value={e}>{e}</option>)}
@@ -590,14 +441,14 @@ function ValidacionBoard() {
           )}
 
           {/* Search */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 focus-within:border-slate-400 focus-within:bg-white transition-all w-48">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-hover border border-border focus-within:border-border-strong focus-within:bg-surface transition-all w-48">
             <SearchIcon />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar nombre, tel..."
-              className="flex-1 border-none outline-none bg-transparent text-sm text-slate-700 placeholder:text-slate-400"
+              className="flex-1 border-none outline-none bg-transparent text-sm text-text-secondary placeholder:text-text-tertiary"
             />
           </div>
 
@@ -608,7 +459,7 @@ function ValidacionBoard() {
             title={compact ? "Vista detallada" : "Vista compacta"}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${compact
               ? "bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100"
-              : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"
+              : "bg-surface-hover text-text-tertiary border-border hover:bg-surface-active"
               }`}
           >
             {compact ? (
@@ -621,13 +472,13 @@ function ValidacionBoard() {
 
           {/* Stats counter + toggle */}
           <div className="relative flex items-center gap-2 shrink-0">
-            <span className="text-xs text-slate-500 font-semibold tabular-nums">
+            <span className="text-xs text-text-tertiary font-semibold tabular-nums">
               {totalItems}{hasMore ? `/${totalRecords}` : ""} registros
             </span>
             <button
               type="button"
               onClick={() => setStatsOpen((v: boolean) => !v)}
-              className="text-xs text-slate-400 font-medium hover:text-slate-600 transition-colors border-none bg-transparent cursor-pointer tabular-nums"
+              className="text-xs text-text-tertiary font-medium hover:text-text-secondary transition-colors border-none bg-transparent cursor-pointer tabular-nums"
               title="Ver estadisticas detalladas"
             >
               {totalRecords > 0 ? `${Math.round((processed / totalRecords) * 100)}%` : "0%"}
@@ -640,20 +491,20 @@ function ValidacionBoard() {
 
         {/* Stats mini-bar */}
         {!loading && (
-          <div className="flex items-center gap-4 px-4 py-1.5 border-b border-slate-100 bg-white text-[11px] shrink-0">
+          <div className="flex items-center gap-4 px-4 py-1.5 border-b border-border bg-surface text-[11px] shrink-0">
             {COLUMNS.map((col) => {
               const total = columnTotals[col.key];
               return (
                 <span key={col.key} className="flex items-center gap-1 font-semibold" style={{ color: col.accent }}>
                   <span style={{ color: col.accent }}>{col.icon()}</span>
-                  <span className="text-slate-500 font-normal">{col.label}</span>
+                  <span className="text-text-tertiary font-normal">{col.label}</span>
                   <span className="tabular-nums">
                     {total.count}{total.isPartial ? "+" : ""}
                   </span>
                 </span>
               );
             })}
-            <span className="ml-auto text-slate-400 tabular-nums">
+            <span className="ml-auto text-text-tertiary tabular-nums">
               {totalRecords > 0
                 ? `${Math.round(((stats.contactado + stats.respondido + stats.invalido) / totalRecords) * 100)}%`
                 : "0%"}{" "}procesado
@@ -664,8 +515,8 @@ function ValidacionBoard() {
         {/* Board */}
         {loading ? (
           <div className="flex items-center justify-center flex-1 gap-3">
-            <div className="w-5 h-5 border-2 border-slate-200 border-t-slate-600 rounded-full animate-spin" />
-            <span className="text-sm text-slate-400 font-medium">Cargando datos...</span>
+            <div className="w-5 h-5 border-2 border-border border-t-text-secondary rounded-full animate-spin" />
+            <span className="text-sm text-text-tertiary font-medium">Cargando datos...</span>
           </div>
         ) : (
           <DndContext

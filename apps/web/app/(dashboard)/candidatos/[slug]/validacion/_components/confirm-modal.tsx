@@ -27,20 +27,20 @@ export function ConfirmModal({
             style={{ background: "rgba(15,23,42,0.45)", backdropFilter: "blur(2px)" }}
         >
             <div
-                className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-sm p-6 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
+                className="bg-surface rounded-2xl shadow-2xl border border-border w-full max-w-sm p-6 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="modal-title"
             >
                 <div>
-                    <h2 id="modal-title" className="text-[15px] font-bold text-slate-800">{title}</h2>
-                    {description && <p className="text-[13px] text-slate-500 mt-1">{description}</p>}
+                    <h2 id="modal-title" className="text-[15px] font-bold text-text-primary">{title}</h2>
+                    {description && <p className="text-[13px] text-text-tertiary mt-1">{description}</p>}
                 </div>
                 <div className="flex gap-2 justify-end">
                     <button
                         type="button"
                         onClick={onCancel}
-                        className="px-4 py-2 rounded-lg text-[13px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors border-none cursor-pointer"
+                        className="px-4 py-2 rounded-lg text-[13px] font-semibold text-text-secondary bg-surface-active hover:bg-surface-active transition-colors border-none cursor-pointer"
                     >
                         Cancelar
                     </button>

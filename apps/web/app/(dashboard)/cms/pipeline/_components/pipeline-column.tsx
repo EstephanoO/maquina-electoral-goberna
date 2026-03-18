@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import type { CmsContact } from "@/lib/services/cms";
 import { AnimatedList } from "@/registry/magicui/animated-list";
 import { ContactCard } from "./contact-card";
@@ -19,16 +20,16 @@ type Props = {
   compact?: boolean;
 };
 
-export function PipelineColumn({ level, contacts, compact }: Props) {
+export const PipelineColumn = memo(function PipelineColumn({ level, contacts, compact }: Props) {
   return (
-    <section className="min-h-0 flex flex-col border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/80 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
+    <section className="min-h-0 flex flex-col border border-border rounded-2xl overflow-hidden bg-surface-hover/80 shadow-[0_4px_20px_rgba(15,23,42,0.04)]">
       {/* Header */}
-      <header className="flex items-start justify-between gap-2 px-3 py-3 bg-slate-100/80">
+      <header className="flex items-start justify-between gap-2 px-3 py-3 bg-surface-active/80">
         <div>
-          <div className="text-[16px] font-extrabold text-slate-900">{level.title}</div>
-          <div className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">{level.subtitle}</div>
+          <div className="text-[16px] font-extrabold text-text-primary">{level.title}</div>
+          <div className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-text-tertiary">{level.subtitle}</div>
         </div>
-        <span className="min-w-[28px] px-2 py-1 rounded-full text-center text-[12px] font-bold text-slate-800 border border-slate-200 bg-white tabular-nums">
+        <span className="min-w-[28px] px-2 py-1 rounded-full text-center text-[12px] font-bold text-text-primary border border-border bg-surface tabular-nums">
           {contacts.length}
         </span>
       </header>
@@ -39,7 +40,7 @@ export function PipelineColumn({ level, contacts, compact }: Props) {
       {/* Body */}
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         {contacts.length === 0 ? (
-          <div className="m-3 p-4 rounded-xl border border-dashed border-slate-300 text-center text-[12px] text-slate-400 font-medium">
+          <div className="m-3 p-4 rounded-xl border border-dashed border-border-strong text-center text-[12px] text-text-tertiary font-medium">
             {level.emptyLabel}
           </div>
         ) : compact ? (
@@ -58,4 +59,4 @@ export function PipelineColumn({ level, contacts, compact }: Props) {
       </div>
     </section>
   );
-}
+});

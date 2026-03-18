@@ -1,63 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { useParams, useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
 
-import type { FormRecord } from "@/lib/services";
-import { deleteForm, updateForm } from "@/lib/services";
 import { useCampaignStats, useRecentForms, useAgentLocationsSnapshot } from "@/lib/hooks";
-import { useAuth } from "@/lib/auth-context";
 
 import {
   TierraHeader, MapControls, PipelineView, DatosView, CampoOverlay,
-  INITIAL_DRILL,
-  type TierraMapHandle, type DrillState, type ActiveLayer, type DatosVizMode, type MapTheme, type PinnedTooltipData,
 } from "./_components";
 import { DemoLeguaBanner } from "./_components/demo-legua-banner";
-import { tierraKeys } from "@/lib/hooks";
-import type { TierraViewMode } from "./_components/tierra-header";
 import { useAgentSSE } from "./_components/hooks/use-agent-sse";
 import { usePipelineState } from "./_components/hooks/use-pipeline-state";
 import { useEnrichedAgents } from "./_components/hooks/use-enriched-agents";
 import { useSSELocations } from "./_components/hooks/use-sse-locations";
 import { useDrillRegion } from "./_components/hooks/use-drill-bounds";
-
-/* ─── Demo: Carmen de la Legua (Callao) ─── */
-
-/**
- * Slugs de campaña que activan la demo de Edwards Infante.
- * Agregá el slug real cuando se cree la campaña en el sistema.
- */
-const LEGUA_DEMO_SLUGS = ["edwards-infante", "carmen-de-la-legua", "legua-demo"] as const;
-
-/**
- * DrillState para Carmen de la Legua Reynoso.
- * Fuente: GET /api/geo/provincias/0701/distritos (DB producción, 2026-03-07)
- * Dep. Callao (07) → Prov. Callao (0701) → Dist. Carmen de la Legua (070103)
- */
-const LEGUA_DRILL: DrillState = {
-  level: 3,
-  depCode: "07",
-  depName: "CALLAO",
-  provCode: "0701",
-  provName: "CALLAO",
-  distCode: "070103",
-  distName: "Carmen de la Legua Reynoso",
-  sector: null,
-  sectorName: null,
-};
-
-/**
- * Bounds exactos de Carmen de la Legua Reynoso.
- * Fuente: GET /api/geo/provincias/0701/distritos — geometría PostGIS de producción.
- * [[minLng, minLat], [maxLng, maxLat]]
- */
-const LEGUA_BOUNDS: [[number, number], [number, number]] = [
-  [-77.09924822899995, -12.04841197199994],  // SW
-  [-77.08161107999996, -12.036319686999946], // NE
-];
+import {
+  LEGUA_BOUNDS, EMPTY_FORMS, TIERRA_FULLSCREEN_CLASS, LEFT_PANEL_W,
+} from "./tierra-constants";
+import { useTierraState } from "./use-tierra-state";
 
 /** Lazy-load TierraMap — keeps MapLibre GL out of the shared chunk */
 const TierraMap = dynamic(
@@ -65,246 +25,121 @@ const TierraMap = dynamic(
   { ssr: false },
 );
 
-const EMPTY_FORMS: FormRecord[] = [];
-const TIERRA_FULLSCREEN_CLASS = "tierra-fullscreen";
-const LEFT_PANEL_W = 176;
-const TABBAR_THEME_VARS = [
-  "--tierra-tabbar-bg",
-  "--tierra-tabbar-border",
-  "--tierra-tab-inactive-color",
-  "--tierra-tab-active-color",
-  "--tierra-tab-active-bg",
-  "--tierra-tab-hover-bg",
-  "--tierra-tab-indicator",
-] as const;
-
 /* ========== Page ========== */
 
 export default function TierraPage() {
   const params = useParams();
-  const router = useRouter();
   const slug = params.slug as string;
-  const mapHandleRef = useRef<TierraMapHandle | null>(null);
-  const { user, logout } = useAuth();
-  const queryClient = useQueryClient();
 
-  const handleHeaderLogout = useCallback(async () => {
-    await logout();
-    router.replace("/login");
-  }, [logout, router]);
-
-  // ─── Demo: detectar si este slug es de la demo de Carmen de la Legua ───
-  // Usamos `(arr as readonly string[]).includes(slug)` para evitar el narrowing
-  // estricto de TS en tuples const sin perder la intención.
-  const isLeguaDemo = (LEGUA_DEMO_SLUGS as readonly string[]).includes(slug);
-  const [showLeguaBanner, setShowLeguaBanner] = useState(false);
-
-  // ─── Data fetching ───
+  // ── Data fetching ──
   const { data: stats, isLoading: statsLoading, error: statsError, refetch: refetchStats } = useCampaignStats(slug);
   const campaignId = stats?.campaign.id;
   const { data: forms = EMPTY_FORMS } = useRecentForms(campaignId);
   const { data: initialLocations } = useAgentLocationsSnapshot(campaignId);
 
-  // ─── Pipeline state (period filter, metrics, form filtering) ───
+  // ── Pipeline state (period filter, metrics, form filtering) ──
   const pipeline = usePipelineState(campaignId, forms);
 
-  // ─── SSE: live agent locations, offline events, background status ───
+  // ── SSE: live agent locations, offline events, background status ──
   const { locations, backgroundAgentIds, handleSSEUpdate, handleAgentOffline, handleAgentStatus } =
     useSSELocations(initialLocations);
   useAgentSSE(campaignId ?? null, handleSSEUpdate, handleAgentOffline, handleAgentStatus);
 
-  // ─── UI state ───
-  const [viewMode, setViewMode] = useState<TierraViewMode>("campo");
-  const [activeLayer, setActiveLayer] = useState<ActiveLayer>("datos");
-  const [datosVizMode, setDatosVizMode] = useState<DatosVizMode>("points");
-  const [heatmapRadius, setHeatmapRadius] = useState(26);
-  const [heatmapOpacity, setHeatmapOpacity] = useState(0.88);
-  const [mapTheme, setMapTheme] = useState<MapTheme>("voyager");
-  const isFullscreen = true;
-  const [showControlsPanel, setShowControlsPanel] = useState(false);
-  const [rightPanelCloseSignal, setRightPanelCloseSignal] = useState(0);
-  const [rightPanelOpenSignal, setRightPanelOpenSignal] = useState(0);
-  const [isRightPanelVisible, setIsRightPanelVisible] = useState(false);
+  // ── All UI state + handlers (must be called before useDrillRegion since it owns drillState) ──
+  const state = useTierraState(slug, forms);
+  const {
+    user, mapHandleRef, formPointsRef, enrichedAgentsRef,
+    isLeguaDemo, showLeguaBanner, setShowLeguaBanner,
+    viewMode, setViewMode, activeLayer, datosVizMode, setDatosVizMode,
+    heatmapRadius, setHeatmapRadius, heatmapOpacity, setHeatmapOpacity,
+    mapTheme, setMapTheme, showControlsPanel, setShowControlsPanel,
+    rightPanelCloseSignal, rightPanelOpenSignal, setIsRightPanelVisible,
+    selectedAgentId, drillState, setDrillState, showRoutes, showTracking, showDatos,
+    routeSurveyorCount,
+    handleHeaderLogout, flyToFromDatos, handleLayerChange, handleRoutesToggle,
+    handleSelectAgent, handleAgentListClick, handleMapDoubleClick,
+    handleDeleteForm, handleUpdateForm, handleFormsChanged,
+  } = state;
 
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [drillState, setDrillState] = useState<DrillState>(
-    isLeguaDemo ? LEGUA_DRILL : INITIAL_DRILL,
-  );
-  const [showRoutes, setShowRoutes] = useState(false);
-
-  const showTracking = activeLayer === "agentes";
-  const showDatos = activeLayer === "datos";
-
-  // ─── Demo: para los slugs de Legua, el drillState arranca ya en el distrito ───
-  // No necesitamos polling ni handle. El mapa recibe lockedBounds como prop y
-  // se encarga de todo internamente: initialViewState correcto + revalidador en onLoad.
-
-  // ─── Count unique surveyors with routes (2+ geolocated forms) ───
-  const routeSurveyorCount = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const f of forms) {
-      if (f.encuestador && f.x && f.y) {
-        counts.set(f.encuestador, (counts.get(f.encuestador) ?? 0) + 1);
-      }
-    }
-    let n = 0;
-    for (const c of counts.values()) if (c >= 2) n++;
-    return n;
-  }, [forms]);
-
-  // ─── Geo drill filter ───
+  // ── Derived data (depends on drillState from useTierraState) ──
   const drillRegion = useDrillRegion(drillState);
-
-  // ─── Derived data ───
-  // enrichedAgents / formPoints = full dataset → always passed to TierraMap
-  // filteredAgents / filteredFormPoints = geo-filtered by drill zone → used by panel/KPIs
-  // Uses point-in-polygon (via drillRegion.geometry) instead of bounding-box to avoid
-  // overlap issues between neighboring irregular polygons (e.g. Cajamarca / La Libertad).
   const { enrichedAgents, formPoints, filteredAgents, filteredFormPoints, connectedCount } =
     useEnrichedAgents(stats, locations, forms, backgroundAgentIds, drillRegion);
-  const enrichedAgentsRef = useRef(enrichedAgents);
+
+  // Keep refs in sync for stable callbacks in useTierraState
+  formPointsRef.current = formPoints;
   enrichedAgentsRef.current = enrichedAgents;
 
-  const flyToFromDatos = useCallback((lng: number, lat: number, tooltipData?: PinnedTooltipData) => {
-    setViewMode("campo");
-    setActiveLayer("datos");
-    setTimeout(() => {
-      mapHandleRef.current?.flyToPoint(lng, lat, 16);
-      if (tooltipData) mapHandleRef.current?.showPinnedTooltip(tooltipData);
-    }, 120);
-  }, []);
+  const isFullscreen = true;
+  const leftPanelWidth = LEFT_PANEL_W;
 
-  // ─── Handlers ───
-  const handleLayerChange = useCallback((layer: ActiveLayer) => {
-    setActiveLayer(layer);
-    if (layer !== "agentes") { setSelectedAgentId(null); }
-  }, []);
-
-  const handleRoutesToggle = useCallback(() => {
-    setShowRoutes((prev) => !prev);
-  }, []);
-
-  const handleSelectAgent = useCallback((agentId: string | null) => {
-    if (agentId) {
-      setActiveLayer("agentes");
-      setDrillState(INITIAL_DRILL);
-    }
-    setSelectedAgentId(agentId);
-  }, []);
-
-  const handleAgentListClick = useCallback((agentId: string) => {
-    setActiveLayer("agentes");
-    setSelectedAgentId((prev) => {
-      if (prev === agentId) return null;
-
-      setDrillState(INITIAL_DRILL);
-
-      const latestAgentForm = formPoints
-        .filter((p) => p.agent_id === agentId)
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
-
-      if (latestAgentForm) {
-        mapHandleRef.current?.flyToPoint(latestAgentForm.lng, latestAgentForm.lat, 16, false);
-        return agentId;
-      }
-
-      const agent = enrichedAgentsRef.current.find((a) => a.id === agentId);
-      if (agent) {
-        mapHandleRef.current?.flyToPoint(agent.lng, agent.lat, 15, false);
-      }
-      return agentId;
-    });
-  }, [formPoints]);
-
-  const handleMapDoubleClick = useCallback(() => {
-    if (!showControlsPanel && !isRightPanelVisible) {
-      setShowControlsPanel(true);
-      setRightPanelOpenSignal((prev) => prev + 1);
-      return;
-    }
-    setShowControlsPanel(false);
-    setRightPanelCloseSignal((prev) => prev + 1);
-  }, [showControlsPanel, isRightPanelVisible]);
-
-  const handleDeleteForm = useCallback(async (formId: string, cId: string): Promise<boolean> => {
-    const res = await deleteForm(formId, cId);
-    if (res.ok) {
-      queryClient.invalidateQueries({ queryKey: tierraKeys.all });
-      return true;
-    }
-    return false;
-  }, [queryClient]);
-
-  const handleUpdateForm = useCallback(async (formId: string, cId: string, updates: Record<string, string>): Promise<boolean> => {
-    const res = await updateForm(formId, cId, updates);
-    if (res.ok) {
-      queryClient.invalidateQueries({ queryKey: tierraKeys.all });
-      return true;
-    }
-    return false;
-  }, [queryClient]);
-
-  // Sync candidato slug tabbar theme (top white bar) with map theme while Tierra is mounted.
-  useEffect(() => {
-    const root = document.documentElement;
-    const isDark = mapTheme === "dark";
-    root.style.setProperty("--tierra-tabbar-bg", isDark ? "#020617" : "#ffffff");
-    root.style.setProperty("--tierra-tabbar-border", isDark ? "#1e293b" : "#e2e8f0");
-    root.style.setProperty("--tierra-tab-inactive-color", isDark ? "#94a3b8" : "#64748b");
-    root.style.setProperty("--tierra-tab-active-color", isDark ? "#f8fafc" : "var(--goberna-blue-900)");
-    root.style.setProperty("--tierra-tab-active-bg", isDark ? "rgba(30,41,59,0.72)" : "rgba(15,23,42,0.05)");
-    root.style.setProperty("--tierra-tab-hover-bg", isDark ? "rgba(148,163,184,0.14)" : "rgba(15,23,42,0.04)");
-    root.style.setProperty("--tierra-tab-indicator", isDark ? "#60a5fa" : "var(--goberna-blue-900)");
-  }, [mapTheme]);
-
-  // Fullscreen mode: hide global dashboard chrome (sidebar + top tabbar) while this page is visible.
-  useEffect(() => {
-    document.body.classList.add(TIERRA_FULLSCREEN_CLASS);
-    return () => {
-      document.body.classList.remove(TIERRA_FULLSCREEN_CLASS);
-    };
-  }, []);
-
-  // Cleanup tabbar vars and fullscreen class when leaving Tierra route.
-  useEffect(() => {
-    return () => {
-      const root = document.documentElement;
-      for (const cssVar of TABBAR_THEME_VARS) root.style.removeProperty(cssVar);
-      document.body.classList.remove(TIERRA_FULLSCREEN_CLASS);
-    };
-  }, []);
-
-  // ─── Loading / Error ───
+  // ── Loading / Error ──
   if (statsLoading) {
     return (
       <div
-        className="fixed right-0 bottom-0 z-50 flex flex-col bg-slate-50 overflow-hidden transition-[left,top] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
-        style={{ top: isFullscreen ? 0 : 48, left: isFullscreen ? 0 : "var(--sidebar-current-width, 72px)" }}
+        className="fixed right-0 bottom-0 z-50 flex flex-col bg-slate-50 overflow-hidden"
+        style={{ top: 0, left: 0 }}
       >
-        <div className="flex flex-col items-center justify-center flex-1 gap-3 bg-slate-50">
-          <div className="w-8 h-8 border-[3px] border-slate-200 border-t-blue-700 rounded-full animate-spin" />
-          <span className="text-sm text-slate-500">Cargando campaña...</span>
+        {/* Skeleton header */}
+        <div className="flex items-center justify-between h-14 sm:h-16 px-3 sm:px-5 border-b border-slate-200/80 bg-white shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-slate-200 animate-pulse" />
+            <div className="hidden sm:flex flex-col gap-1.5">
+              <div className="w-28 h-3.5 rounded bg-slate-200 animate-pulse" />
+              <div className="w-20 h-2.5 rounded bg-slate-100 animate-pulse" />
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-full bg-slate-100 p-0.5">
+            <div className="w-16 sm:w-20 h-7 rounded-full bg-slate-200 animate-pulse" />
+            <div className="w-16 sm:w-20 h-7 rounded-full bg-slate-100" />
+            <div className="w-16 sm:w-20 h-7 rounded-full bg-slate-100" />
+          </div>
+          <div className="hidden lg:flex gap-4">
+            <div className="w-[172px] h-10 rounded bg-slate-100 animate-pulse" />
+            <div className="w-[172px] h-10 rounded bg-slate-100 animate-pulse" />
+          </div>
         </div>
+        {/* Skeleton map area */}
+        <div className="flex-1 relative bg-slate-100">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+            <div className="w-8 h-8 border-[3px] border-slate-200 border-t-blue-700 rounded-full animate-spin" />
+            <span className="text-sm text-slate-500 font-medium">Cargando mapa de campana...</span>
+          </div>
+          {/* Shimmer overlay */}
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-[shimmer_2s_infinite]" style={{ backgroundSize: "200% 100%" }} />
+        </div>
+        <style jsx>{`
+          @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+          }
+        `}</style>
       </div>
     );
   }
   if (statsError || !stats) {
     return (
       <div
-        className="fixed right-0 bottom-0 z-50 flex flex-col bg-slate-50 overflow-hidden transition-[left,top] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
-        style={{ top: isFullscreen ? 0 : 48, left: isFullscreen ? 0 : "var(--sidebar-current-width, 72px)" }}
+        className="fixed right-0 bottom-0 z-50 flex flex-col bg-slate-50 overflow-hidden"
+        style={{ top: 0, left: 0 }}
       >
-        <div className="flex flex-col items-center justify-center flex-1 gap-3 bg-slate-50">
-          <div className="text-lg font-semibold text-slate-800">No se pudo cargar</div>
-          <div className="text-sm text-slate-500">{statsError instanceof Error ? statsError.message : "Candidato no encontrado"}</div>
-          <button type="button" onClick={() => refetchStats()} className="mt-3 px-5 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-[13px] cursor-pointer hover:bg-slate-50">Reintentar</button>
+        <div className="flex flex-col items-center justify-center flex-1 gap-4 bg-slate-50 px-6">
+          <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          </div>
+          <div className="text-lg font-bold text-slate-800">No se pudo cargar la campana</div>
+          <div className="text-sm text-slate-500 text-center max-w-xs">{statsError instanceof Error ? statsError.message : "Candidato no encontrado. Verifica la URL o intenta de nuevo."}</div>
+          <button type="button" onClick={() => refetchStats()} className="mt-2 px-6 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-[13px] font-semibold cursor-pointer hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-sm">Reintentar</button>
         </div>
       </div>
     );
   }
 
   const { campaign } = stats;
-  const leftPanelWidth = LEFT_PANEL_W;
 
   return (
     <div
@@ -323,14 +158,9 @@ export default function TierraPage() {
 
       {viewMode === "campo" ? (
         <div className="flex-1 min-h-0 relative">
-          {/* ── Demo overlay: Carmen de la Legua ── */}
           {showLeguaBanner && (
-            <DemoLeguaBanner
-              mapTheme={mapTheme}
-              onDismiss={() => setShowLeguaBanner(false)}
-            />
+            <DemoLeguaBanner mapTheme={mapTheme} onDismiss={() => setShowLeguaBanner(false)} />
           )}
-
           <TierraMap
             ref={mapHandleRef}
             campaignId={campaign.id}
@@ -430,7 +260,7 @@ export default function TierraPage() {
           userRole={user?.role ?? "agente"}
           onUpdateForm={handleUpdateForm}
           onDeleteForm={handleDeleteForm}
-          onFormsChanged={() => { queryClient.invalidateQueries({ queryKey: tierraKeys.all }); }}
+          onFormsChanged={handleFormsChanged}
           onFlyTo={flyToFromDatos}
         />
       )}

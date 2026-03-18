@@ -46,23 +46,23 @@ export function KanbanCard({ card, onMove, canMoveLeft, canMoveRight }: {
   return (
     <div
       style={{
-        background: "#FFFFFF",
-        border: "1px solid #E8EDF5",
+        background: "var(--color-surface)",
+        border: "1px solid var(--color-border)",
         borderRadius: 10,
         padding: "12px 14px",
         display: "flex",
         flexDirection: "column",
         gap: 8,
-        boxShadow: "0 1px 3px rgba(22,57,96,0.06)",
+        boxShadow: "var(--shadow-sm)",
         transition: "box-shadow 0.15s ease, transform 0.15s ease",
         cursor: "default",
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLDivElement).style.boxShadow = "0 4px 12px rgba(22,57,96,0.12)";
+        (e.currentTarget as HTMLDivElement).style.boxShadow = "var(--shadow-md)";
         (e.currentTarget as HTMLDivElement).style.transform = "translateY(-1px)";
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLDivElement).style.boxShadow = "0 1px 3px rgba(22,57,96,0.06)";
+        (e.currentTarget as HTMLDivElement).style.boxShadow = "var(--shadow-sm)";
         (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)";
       }}
     >
@@ -87,8 +87,8 @@ export function KanbanCard({ card, onMove, canMoveLeft, canMoveRight }: {
             fontWeight: 700,
             padding: "2px 7px",
             borderRadius: 99,
-            background: card.badgeColor ? `${card.badgeColor}18` : "#F1F5F9",
-            color: card.badgeColor ?? "#64748B",
+            background: card.badgeColor ? `${card.badgeColor}18` : "var(--color-surface-active)",
+            color: card.badgeColor ?? "var(--color-text-tertiary)",
           }}>
             {card.badge}
           </span>
@@ -96,7 +96,7 @@ export function KanbanCard({ card, onMove, canMoveLeft, canMoveRight }: {
       </div>
 
       {/* Title */}
-      <div style={{ fontSize: 13, fontWeight: 600, color: "#163960", lineHeight: 1.4 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)", lineHeight: 1.4 }}>
         {card.href ? (
           <a href={card.href} style={{ color: "inherit", textDecoration: "none" }}>
             {card.title}
@@ -106,7 +106,7 @@ export function KanbanCard({ card, onMove, canMoveLeft, canMoveRight }: {
 
       {/* Subtitle */}
       {card.subtitle && (
-        <div style={{ fontSize: 12, color: "rgba(22,57,96,0.55)", lineHeight: 1.4 }}>
+        <div style={{ fontSize: 12, color: "var(--color-text-secondary)", lineHeight: 1.4 }}>
           {card.subtitle}
         </div>
       )}
@@ -133,7 +133,7 @@ export function KanbanCard({ card, onMove, canMoveLeft, canMoveRight }: {
       {/* Footer: meta + move buttons */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
         {card.meta && (
-          <span style={{ fontSize: 11, color: "rgba(22,57,96,0.4)" }}>{card.meta}</span>
+          <span style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{card.meta}</span>
         )}
         <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
           {canMoveLeft && (
@@ -143,16 +143,16 @@ export function KanbanCard({ card, onMove, canMoveLeft, canMoveRight }: {
               title="Mover a columna anterior"
               style={{
                 background: "none",
-                border: "1px solid #E8EDF5",
+                border: "1px solid var(--color-border)",
                 borderRadius: 6,
                 cursor: "pointer",
                 padding: "2px 7px",
                 fontSize: 12,
-                color: "#94A3B8",
+                color: "var(--color-text-tertiary)",
                 transition: "all 0.15s ease",
                 lineHeight: 1,
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#F1F5F9"; }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-surface-active)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "none"; }}
             >
               ←
@@ -165,16 +165,16 @@ export function KanbanCard({ card, onMove, canMoveLeft, canMoveRight }: {
               title="Mover a siguiente columna"
               style={{
                 background: "none",
-                border: "1px solid #E8EDF5",
+                border: "1px solid var(--color-border)",
                 borderRadius: 6,
                 cursor: "pointer",
                 padding: "2px 7px",
                 fontSize: 12,
-                color: "#94A3B8",
+                color: "var(--color-text-tertiary)",
                 transition: "all 0.15s ease",
                 lineHeight: 1,
               }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#F1F5F9"; }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-surface-active)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "none"; }}
             >
               →

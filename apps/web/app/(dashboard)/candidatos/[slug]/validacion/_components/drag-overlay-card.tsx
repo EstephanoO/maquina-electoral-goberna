@@ -21,7 +21,7 @@ export function DragOverlayCard({
 
   return (
     <div
-      className="w-[220px] rounded-lg bg-white pointer-events-none"
+      className="w-[220px] rounded-lg bg-surface pointer-events-none"
       style={{
         boxShadow: "0 12px 40px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.1)",
         transform: "rotate(2deg) scale(1.02)",
@@ -35,7 +35,7 @@ export function DragOverlayCard({
 
       <div className="pl-3.5 pr-2.5 py-2.5">
         <div className="flex items-center gap-1.5">
-          <span className="font-semibold text-[13px] text-slate-800 truncate leading-tight">
+          <span className="font-semibold text-[13px] text-text-primary truncate leading-tight">
             {item.nombre || "\u2014"}
           </span>
           {voteBadge && (
@@ -56,7 +56,7 @@ export function DragOverlayCard({
         {/* Target hint */}
         {colDef && (
           <div
-            className="mt-2 pt-1.5 border-t border-slate-100/80 flex items-center gap-1 text-[10px] font-semibold"
+            className="mt-2 pt-1.5 border-t border-border/80 flex items-center gap-1 text-[10px] font-semibold"
             style={{ color: accentColor }}
           >
             <span style={{ color: accentColor }}>{colDef.icon()}</span>

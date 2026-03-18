@@ -55,7 +55,7 @@ export function RoleBadge({ role, size = "md", uniform = false }: RoleBadgeProps
 
   return (
     <span style={style}>
-      {config.icon({ size: s.iconSize, color: "#fff" })}
+      <config.icon size={s.iconSize} color="#fff" />
       {config.shortLabel}
     </span>
   );

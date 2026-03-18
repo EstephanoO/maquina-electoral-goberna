@@ -6,6 +6,7 @@ import { STATUS_CFG } from "./constants";
 import {
   Glass, Kpi, CardHeader, AgentRow, RankingRow, MoreBtn, SCROLL_MAX,
 } from "./campo-overlay-parts";
+import { resolveDepartamento } from "./departamento-map";
 
 /* ========== Types ========== */
 
@@ -34,45 +35,20 @@ const TOGGLE_HEIGHT = 48;
 const AGENTS_COLLAPSED = 4;
 const RANKING_COLLAPSED = 5;
 const RANKING_EXPANDED = 15;
+const MD_BREAKPOINT = 768;
 
-const DEPARTAMENTO_BY_CODE: Record<string, string> = {
-  "01": "AMAZONAS",
-  "02": "ANCASH",
-  "03": "APURIMAC",
-  "04": "AREQUIPA",
-  "05": "AYACUCHO",
-  "06": "CAJAMARCA",
-  "07": "CALLAO",
-  "08": "CUSCO",
-  "09": "HUANCAVELICA",
-  "10": "HUANUCO",
-  "11": "ICA",
-  "12": "JUNIN",
-  "13": "LA LIBERTAD",
-  "14": "LAMBAYEQUE",
-  "15": "LIMA",
-  "16": "LORETO",
-  "17": "MADRE DE DIOS",
-  "18": "MOQUEGUA",
-  "19": "PASCO",
-  "20": "PIURA",
-  "21": "PUNO",
-  "22": "SAN MARTIN",
-  "23": "TACNA",
-  "24": "TUMBES",
-  "25": "UCAYALI",
-};
+/* ========== Responsive hook ========== */
 
-function resolveDepartamento(zona: string): string {
-  const raw = (zona || "").trim();
-  if (!raw) return "Sin region";
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length >= 2) {
-    const dep = DEPARTAMENTO_BY_CODE[digits.slice(0, 2)];
-    if (dep) return dep;
-  }
-  const first = raw.split(/[\-|/>,]/).map((p) => p.trim()).filter(Boolean)[0] || raw;
-  return first.replace(/\d+/g, "").trim().toUpperCase() || "Sin region";
+function useIsMobile() {
+  const [mobile, setMobile] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${MD_BREAKPOINT - 1}px)`);
+    setMobile(mql.matches);
+    const handler = (e: MediaQueryListEvent) => setMobile(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+  return mobile;
 }
 
 /* ========== Component ========== */
@@ -87,6 +63,7 @@ export function CampoOverlay({
   openSignal = 0,
   onVisibilityChange,
 }: Props) {
+  const isMobile = useIsMobile();
   const [visible, setVisible] = useState(initialVisible);
   const [agentsOpen, setAgentsOpen] = useState(false);
   const [rankingOpen, setRankingOpen] = useState(false);
@@ -212,35 +189,10 @@ export function CampoOverlay({
     onVisibilityChange?.(visible);
   }, [visible, onVisibilityChange]);
 
-  return (
-    <div
-      className="absolute top-3 bottom-3 z-10 flex items-start transition-[right] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
-      style={{ right: visible ? 12 : -(PANEL_W + 4) }}
-    >
-      {/* ─── Toggle tab ─── */}
-      <button
-        type="button"
-        onClick={() => setVisible(!visible)}
-        className="shrink-0 -mr-0.5 w-8 h-12 rounded-l-2xl flex items-center justify-center cursor-pointer shadow-lg transition-colors"
-        style={{
-          marginTop: toggleTopOffset,
-          background: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.35)",
-          backdropFilter: "blur(16px)",
-          WebkitBackdropFilter: "blur(16px)",
-          border: isDark ? "1px solid rgba(148,163,184,0.26)" : "1px solid rgba(226,232,240,0.6)",
-        }}
-        title={visible ? "Ocultar panel" : "Mostrar panel"}
-        aria-label={visible ? "Ocultar panel" : "Mostrar panel"}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#cbd5e1" : "#475569"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`transition-transform duration-300 ${visible ? "" : "rotate-180"}`}>
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-      </button>
-
-      {/* ─── Panel body ─── */}
-      <div ref={panelBodyRef} className="flex flex-col gap-2.5 overflow-y-auto overflow-x-hidden max-h-full" style={{ width: PANEL_W }}>
-
-        {/* ═══ Zone drill banner — shown when user has drilled into a zone ═══ */}
+  /* ─── Shared panel content (used by both layouts) ─── */
+  const panelContent = (
+    <>
+      {/* ═══ Zone drill banner — shown when user has drilled into a zone ═══ */}
         {activeZoneLabel && (
           <div
             className="flex items-center gap-2 px-3 py-2 rounded-2xl shadow-sm"
@@ -388,7 +340,86 @@ export function CampoOverlay({
             )}
           </div>
         </Glass>
+    </>
+  );
 
+  /* ─── Mobile: bottom sheet ─── */
+  if (isMobile) {
+    return (
+      <div
+        className="absolute left-0 right-0 z-10 transition-[bottom] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+        style={{ bottom: visible ? 0 : "-60vh" }}
+      >
+        {/* Drag handle / toggle */}
+        <button
+          type="button"
+          onClick={() => setVisible(!visible)}
+          className="mx-auto flex flex-col items-center gap-1 py-2 px-6 cursor-pointer rounded-t-2xl shadow-lg"
+          style={{
+            background: isDark ? "rgba(15,23,42,0.85)" : "rgba(255,255,255,0.85)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            border: isDark ? "1px solid rgba(148,163,184,0.26)" : "1px solid rgba(226,232,240,0.6)",
+            borderBottom: "none",
+          }}
+          aria-label={visible ? "Ocultar panel" : "Mostrar panel"}
+        >
+          <span
+            className="w-8 h-1 rounded-full"
+            style={{ backgroundColor: isDark ? "#475569" : "#cbd5e1" }}
+          />
+          <span className={`text-[10px] font-semibold ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+            {visible ? "Cerrar" : "Panel"}
+          </span>
+        </button>
+
+        {/* Sheet body */}
+        <div
+          ref={panelBodyRef}
+          className="flex flex-col gap-2.5 overflow-y-auto overflow-x-hidden px-3 pb-4 pt-2"
+          style={{
+            maxHeight: "60vh",
+            background: isDark ? "rgba(15,23,42,0.92)" : "rgba(255,255,255,0.92)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            borderTop: isDark ? "1px solid rgba(148,163,184,0.2)" : "1px solid rgba(226,232,240,0.6)",
+          }}
+        >
+          {panelContent}
+        </div>
+      </div>
+    );
+  }
+
+  /* ─── Desktop: right-side panel (original) ─── */
+  return (
+    <div
+      className="absolute top-3 bottom-3 z-10 flex items-start transition-[right] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+      style={{ right: visible ? 12 : -(PANEL_W + 4) }}
+    >
+      {/* ─── Toggle tab ─── */}
+      <button
+        type="button"
+        onClick={() => setVisible(!visible)}
+        className="shrink-0 -mr-0.5 w-8 h-12 rounded-l-2xl flex items-center justify-center cursor-pointer shadow-lg transition-colors"
+        style={{
+          marginTop: toggleTopOffset,
+          background: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.35)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          border: isDark ? "1px solid rgba(148,163,184,0.26)" : "1px solid rgba(226,232,240,0.6)",
+        }}
+        title={visible ? "Ocultar panel" : "Mostrar panel"}
+        aria-label={visible ? "Ocultar panel" : "Mostrar panel"}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isDark ? "#cbd5e1" : "#475569"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`transition-transform duration-300 ${visible ? "" : "rotate-180"}`}>
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      </button>
+
+      {/* ─── Panel body ─── */}
+      <div ref={panelBodyRef} className="flex flex-col gap-2.5 overflow-y-auto overflow-x-hidden max-h-full" style={{ width: PANEL_W }}>
+        {panelContent}
       </div>
     </div>
   );

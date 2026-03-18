@@ -1,109 +1,60 @@
-/**
- * GOBERNA — Button Component v2
- * Consistent button styling with proper CSS hover/active states.
- */
-
-import type { CSSProperties, ReactNode, ButtonHTMLAttributes } from "react";
-import { FONT_STACK } from "../constants";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { cva, type VariantProps } from "class-variance-authority";
+import { cn } from "@/lib/utils";
 import { Spinner } from "./spinner";
 
-type ButtonVariant = "primary" | "accent" | "secondary" | "danger" | "ghost";
-type ButtonSize = "xs" | "sm" | "md" | "lg";
-
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  loading?: boolean;
-  fullWidth?: boolean;
-  icon?: ReactNode;
-  children: ReactNode;
-};
-
-const VARIANT_STYLES: Record<ButtonVariant, CSSProperties> = {
-  primary: {
-    background: "var(--color-primary)",
-    color: "var(--color-text-on-primary)",
-    border: "none",
+const buttonVariants = cva(
+  "btn inline-flex items-center justify-center font-semibold font-sans tracking-[0.01em] leading-snug cursor-pointer disabled:cursor-not-allowed disabled:opacity-55 transition-all",
+  {
+    variants: {
+      variant: {
+        primary: "btn-primary bg-primary text-text-on-primary border-none",
+        accent: "btn-accent bg-accent text-text-on-accent border-none",
+        secondary: "btn-secondary bg-surface text-goberna-blue-700 border border-border",
+        danger: "btn-danger bg-error text-white border-none",
+        ghost: "btn-ghost bg-transparent text-text-secondary border border-transparent",
+      },
+      size: {
+        xs: "px-2.5 py-1 text-[11px] gap-1 rounded-sm",
+        sm: "px-3.5 py-1.5 text-xs gap-1.5 rounded-sm",
+        md: "px-5 py-2 text-[13px] gap-2 rounded-sm",
+        lg: "px-7 py-3 text-sm gap-2.5 rounded-md",
+      },
+      fullWidth: {
+        true: "w-full",
+      },
+    },
+    defaultVariants: { variant: "primary", size: "md" },
   },
-  accent: {
-    background: "var(--goberna-gold)",
-    color: "var(--color-text-on-accent)",
-    border: "none",
-  },
-  secondary: {
-    background: "var(--color-surface)",
-    color: "var(--goberna-blue-700)",
-    border: "1px solid var(--color-border)",
-  },
-  danger: {
-    background: "var(--color-error)",
-    color: "#fff",
-    border: "none",
-  },
-  ghost: {
-    background: "transparent",
-    color: "var(--color-text-secondary)",
-    border: "1px solid transparent",
-  },
-};
+);
 
-const SIZE_STYLES: Record<ButtonSize, CSSProperties> = {
-  xs: { padding: "4px 10px", fontSize: 11, gap: 4 },
-  sm: { padding: "6px 14px", fontSize: 12, gap: 6 },
-  md: { padding: "8px 20px", fontSize: 13, gap: 8 },
-  lg: { padding: "12px 28px", fontSize: 14, gap: 10 },
-};
-
-const VARIANT_CLASS: Record<ButtonVariant, string> = {
-  primary: "btn-primary",
-  accent: "btn-accent",
-  secondary: "btn-secondary",
-  danger: "btn-danger",
-  ghost: "btn-ghost",
-};
-
-export function Button({
-  variant = "primary",
-  size = "md",
-  loading,
-  fullWidth,
-  disabled,
-  icon,
-  children,
-  style,
-  className,
-  ...props
-}: ButtonProps) {
-  const isDisabled = disabled || loading;
-
-  const buttonStyle: CSSProperties = {
-    ...VARIANT_STYLES[variant],
-    ...SIZE_STYLES[size],
-    fontWeight: 600,
-    fontFamily: FONT_STACK,
-    borderRadius: "var(--radius-sm)",
-    cursor: isDisabled ? "not-allowed" : "pointer",
-    opacity: isDisabled ? 0.55 : 1,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: fullWidth ? "100%" : undefined,
-    lineHeight: 1.4,
-    letterSpacing: "0.01em",
-    ...style,
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
+  VariantProps<typeof buttonVariants> & {
+    loading?: boolean;
+    icon?: ReactNode;
   };
 
-  return (
-    <button
-      type="button"
-      disabled={isDisabled}
-      className={`btn ${VARIANT_CLASS[variant]}${className ? ` ${className}` : ""}`}
-      style={buttonStyle}
-      {...props}
-    >
-      {loading && <Spinner size={size === "lg" ? 16 : 14} color="currentColor" />}
-      {!loading && icon && <span style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>{icon}</span>}
-      {children}
-    </button>
-  );
-}
+const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ variant, size, fullWidth, loading, disabled, icon, children, className, ...props }, ref) => {
+    const isDisabled = disabled || loading;
+
+    return (
+      <button
+        ref={ref}
+        type="button"
+        disabled={isDisabled}
+        className={cn(buttonVariants({ variant, size, fullWidth }), className)}
+        {...props}
+      >
+        {loading && <Spinner size={size === "lg" ? "sm" : "xs"} className="border-current border-t-transparent" />}
+        {!loading && icon && <span className="flex items-center shrink-0">{icon}</span>}
+        {children}
+      </button>
+    );
+  },
+);
+
+Button.displayName = "Button";
+
+export { Button, buttonVariants };
+export type { ButtonProps };

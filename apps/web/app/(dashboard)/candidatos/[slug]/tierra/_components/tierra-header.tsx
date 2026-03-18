@@ -36,7 +36,6 @@ export function TierraHeader({
   const sc = campaign.color_secundario;
   const isDark = mapTheme === "dark";
   const metaDatos = metas.datos > 0 ? metas.datos : 200000;
-  // Progress bar always shows global totals (the goal doesn't change with drill)
   const datosProgress = Math.min((totals.forms_count / metaDatos) * 100, 100);
   const votosProgress = metas.votos > 0 ? Math.min((totals.forms_count / metas.votos) * 100, 100) : 0;
 
@@ -46,16 +45,16 @@ export function TierraHeader({
   const profileLabel = userName?.trim() || "Perfil";
 
   return (
-    <header className={`flex items-center justify-between h-16 px-5 border-b shrink-0 gap-5 z-20 ${
+    <header className={`flex items-center justify-between px-3 sm:px-5 border-b shrink-0 gap-2 sm:gap-4 z-20 h-14 sm:h-16 ${
       isDark ? "bg-[#090D15] border-slate-700" : "bg-white border-slate-200/80"
     }`}>
       {/* Left: back + candidate identity */}
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink-0">
         {showBackButton ? (
           <button
             type="button"
             onClick={() => router.back()}
-            className={`w-8 h-8 rounded-lg border cursor-pointer flex items-center justify-center shrink-0 transition-colors ${
+            className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg border cursor-pointer flex items-center justify-center shrink-0 transition-colors ${
               isDark
                 ? "border-slate-600 bg-[#090D15] text-slate-200 hover:bg-[#090D15] hover:text-white"
                 : "border-slate-200 bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
@@ -67,7 +66,7 @@ export function TierraHeader({
           </button>
         ) : null}
 
-        <div className="w-9 h-9 rounded-full overflow-hidden border-2 shrink-0" style={{ borderColor: sc || pc }}>
+        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full overflow-hidden border-2 shrink-0" style={{ borderColor: sc || pc }}>
           {campaign.foto_url ? (
             <Image src={campaign.foto_url} alt={`Foto de ${campaign.name}`} width={36} height={36} className="w-full h-full object-cover" unoptimized />
           ) : (
@@ -77,9 +76,9 @@ export function TierraHeader({
           )}
         </div>
 
-        <div className="min-w-0">
-          <div className={`text-sm font-bold whitespace-nowrap overflow-hidden text-ellipsis ${isDark ? "text-slate-100" : "text-slate-900"}`}>{campaign.name}</div>
-          <div className={`flex gap-2 text-[11px] ${isDark ? "text-slate-300" : "text-slate-400"}`}>
+        <div className="min-w-0 hidden sm:block">
+          <div className={`text-sm font-bold whitespace-nowrap overflow-hidden text-ellipsis max-w-[160px] lg:max-w-none ${isDark ? "text-slate-100" : "text-slate-900"}`}>{campaign.name}</div>
+          <div className={`hidden md:flex gap-2 text-[11px] ${isDark ? "text-slate-300" : "text-slate-400"}`}>
             {campaign.cargo && <span>{campaign.cargo}</span>}
             {campaign.numero && <span className={`font-semibold ${isDark ? "text-slate-100" : "text-slate-500"}`}>N.° {campaign.numero}</span>}
             {campaign.partido && <span className="italic">{campaign.partido}</span>}
@@ -88,40 +87,31 @@ export function TierraHeader({
       </div>
 
       {/* Center: segmented control */}
-      <div className="flex items-center gap-5">
-        {/* Segmented control — pill style */}
+      <div className="flex items-center gap-2 sm:gap-5">
         <div className={`flex rounded-full p-0.5 ${isDark ? "bg-[#090D15]/95 border border-slate-700" : "bg-slate-100"}`}>
-          <SegmentButton
-            active={viewMode === "campo"}
-            onClick={() => onViewModeChange("campo")}
-            icon={<MapPinIcon />}
-            label="Campo"
-            activeColor={pc}
-            mapTheme={mapTheme}
-          />
-          <SegmentButton
-            active={viewMode === "pipeline"}
-            onClick={() => onViewModeChange("pipeline")}
-            icon={<ChartBarIcon />}
-            label="Pipeline"
-            activeColor={pc}
-            mapTheme={mapTheme}
-          />
-          <SegmentButton
-            active={viewMode === "datos"}
-            onClick={() => onViewModeChange("datos")}
-            icon={<TableIcon />}
-            label="Datos"
-            activeColor={pc}
-            mapTheme={mapTheme}
-          />
+          <SegmentButton active={viewMode === "campo"} onClick={() => onViewModeChange("campo")} icon={<MapPinIcon />} label="Campo" activeColor={pc} mapTheme={mapTheme} />
+          <SegmentButton active={viewMode === "pipeline"} onClick={() => onViewModeChange("pipeline")} icon={<ChartBarIcon />} label="Pipeline" activeColor={pc} mapTheme={mapTheme} />
+          <SegmentButton active={viewMode === "datos"} onClick={() => onViewModeChange("datos")} icon={<TableIcon />} label="Datos" activeColor={pc} mapTheme={mapTheme} />
         </div>
       </div>
 
-      {/* Right: metas + brigadista logout (header-only) */}
-      <div className="flex gap-4 shrink-0 items-center">
-        <MetaBar label="Meta datos" current={totals.forms_count} target={metaDatos} pct={datosProgress} color={pc} mapTheme={mapTheme} />
-        <MetaBar label="Meta votos" current={null} target={metas.votos} pct={votosProgress} color={sc || pc} mapTheme={mapTheme} />
+      {/* Right: metas + brigadista logout */}
+      <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+        {/* Compact KPI pill (visible on small screens, hidden on lg+) */}
+        <CompactMetaPill
+          current={totals.forms_count}
+          target={metaDatos}
+          pct={datosProgress}
+          color={pc}
+          mapTheme={mapTheme}
+        />
+
+        {/* Full MetaBars (hidden below lg) */}
+        <div className="hidden lg:flex gap-4">
+          <MetaBar label="Meta datos" current={totals.forms_count} target={metaDatos} pct={datosProgress} color={pc} mapTheme={mapTheme} />
+          <MetaBar label="Meta votos" current={null} target={metas.votos} pct={votosProgress} color={sc || pc} mapTheme={mapTheme} />
+        </div>
+
         {showHeaderProfileLogout ? (
           <div
             className={`group flex items-center rounded-full px-2 py-1 transition-transform duration-200 hover:translate-x-1 focus-within:translate-x-1 ${
@@ -131,7 +121,7 @@ export function TierraHeader({
             <div className={`w-7 h-7 rounded-full text-white text-[11px] font-bold flex items-center justify-center shrink-0 ${isDark ? "bg-slate-700" : "bg-[#07091D]"}`}>
               {profileLabel.charAt(0).toUpperCase() || "?"}
             </div>
-            <span className={`ml-2 mr-1 max-w-[120px] truncate text-[11px] font-semibold ${isDark ? "text-slate-100" : "text-slate-700"}`}>
+            <span className={`ml-2 mr-1 max-w-[120px] truncate text-[11px] font-semibold hidden sm:inline ${isDark ? "text-slate-100" : "text-slate-700"}`}>
               {profileLabel}
             </span>
             <div className="inline-flex w-0 opacity-0 -translate-x-1 overflow-hidden pointer-events-none transition-all duration-200 group-hover:w-[34px] group-hover:opacity-100 group-hover:translate-x-0 group-hover:pointer-events-auto group-focus-within:w-[34px] group-focus-within:opacity-100 group-focus-within:translate-x-0 group-focus-within:pointer-events-auto">
@@ -171,7 +161,7 @@ function SegmentButton({ active, onClick, icon, label, activeColor, mapTheme }: 
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] font-semibold tracking-wide transition-all duration-200 cursor-pointer border-none ${
+      className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-4 py-1.5 rounded-full text-[11px] font-semibold tracking-wide transition-all duration-200 cursor-pointer border-none ${
         active
           ? "text-white shadow-sm"
           : (isDark ? "text-slate-100 hover:text-white" : "text-slate-500 hover:text-slate-700")
@@ -179,12 +169,55 @@ function SegmentButton({ active, onClick, icon, label, activeColor, mapTheme }: 
       style={active ? { backgroundColor: activeColor } : undefined}
     >
       {icon}
-      {label}
+      <span className="hidden sm:inline">{label}</span>
     </button>
   );
 }
 
-/* ========== Sub-components ========== */
+/* ========== Compact Meta Pill (mobile/tablet) ========== */
+
+function CompactMetaPill({ current, target, pct, color, mapTheme }: {
+  current: number;
+  target: number;
+  pct: number;
+  color: string;
+  mapTheme: MapTheme;
+}) {
+  const isDark = mapTheme === "dark";
+  return (
+    <div className={`flex lg:hidden items-center gap-2 rounded-full px-2.5 py-1 border ${
+      isDark ? "border-slate-700 bg-[#090D15]/80" : "border-slate-200 bg-slate-50"
+    }`}>
+      <div className="flex items-center gap-1.5">
+        <span className={`text-[11px] font-bold tabular-nums ${isDark ? "text-slate-100" : "text-slate-700"}`}>
+          {current.toLocaleString()}
+        </span>
+        <span className={`text-[10px] ${isDark ? "text-slate-500" : "text-slate-400"}`}>/</span>
+        <span className={`text-[10px] ${isDark ? "text-slate-400" : "text-slate-400"}`}>
+          {target > 0 ? target.toLocaleString() : "--"}
+        </span>
+      </div>
+      {/* Mini progress arc */}
+      <div className="relative w-5 h-5 shrink-0">
+        <svg viewBox="0 0 24 24" className="w-full h-full -rotate-90" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" fill="none" stroke={isDark ? "#1e293b" : "#e2e8f0"} strokeWidth="3" />
+          <circle
+            cx="12" cy="12" r="10" fill="none"
+            stroke={color}
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeDasharray={`${pct * 0.628} 62.8`}
+          />
+        </svg>
+        <span className="absolute inset-0 flex items-center justify-center text-[7px] font-black tabular-nums" style={{ color }}>
+          {pct.toFixed(0)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ========== Full MetaBar (desktop) ========== */
 
 function MetaBar({ label, current, target, pct, color, mapTheme }: {
   label: string;
@@ -196,17 +229,17 @@ function MetaBar({ label, current, target, pct, color, mapTheme }: {
 }) {
   const isDark = mapTheme === "dark";
   return (
-      <div className="min-w-[172px] py-1">
+    <div className="min-w-[172px] py-1">
       <div className="flex justify-between items-center mb-1">
         <span className={`text-[9px] font-semibold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-400"}`}>{label}</span>
-        <span className="text-xs font-bold tabular-nums" style={{ color }}>{target > 0 ? `${pct.toFixed(0)}%` : "—"}</span>
+        <span className="text-xs font-bold tabular-nums" style={{ color }}>{target > 0 ? `${pct.toFixed(0)}%` : "\u2014"}</span>
       </div>
       <div className={`h-2 rounded-full overflow-hidden ${isDark ? "bg-slate-700/60" : "bg-slate-200"}`}>
         <div className="h-full rounded-full transition-[width] duration-500 ease-out" style={{ width: `${pct}%`, backgroundColor: color }} />
       </div>
       <div className="mt-1 text-[11px]">
-        <span className={`font-bold ${isDark ? "text-slate-100" : "text-slate-700"}`}>{current !== null ? current.toLocaleString() : "—"}</span>
-        <span className={isDark ? "text-slate-500" : "text-slate-300"}> / {target > 0 ? target.toLocaleString() : "—"}</span>
+        <span className={`font-bold ${isDark ? "text-slate-100" : "text-slate-700"}`}>{current !== null ? current.toLocaleString() : "\u2014"}</span>
+        <span className={isDark ? "text-slate-500" : "text-slate-300"}> / {target > 0 ? target.toLocaleString() : "\u2014"}</span>
       </div>
     </div>
   );

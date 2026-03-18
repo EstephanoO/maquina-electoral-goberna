@@ -195,7 +195,7 @@ function PhoneRow({
               border: "none", display: "flex", alignItems: "center", gap: 5,
             }}
           >
-            {saving ? <Spinner size={12} /> : null}
+            {saving ? <Spinner size="xs" /> : null}
             Guardar
           </button>
           <button
@@ -236,7 +236,7 @@ function PhoneRow({
               cursor: deleting ? "default" : "pointer", display: "flex", alignItems: "center",
             }}
           >
-            {deleting ? <Spinner size={12} /> : <IconTrash />}
+            {deleting ? <Spinner size="xs" /> : <IconTrash />}
           </button>
         </div>
       )}
@@ -340,7 +340,7 @@ function AddPhoneForm({
             display: "flex", alignItems: "center", gap: 5,
           }}
         >
-          {saving ? <Spinner size={12} /> : null}
+          {saving ? <Spinner size="xs" /> : null}
           Guardar
         </button>
         <button
@@ -424,7 +424,7 @@ export function WaPhonesSection() {
 
       {loading ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--color-text-tertiary)", fontSize: 13, padding: "16px 0" }}>
-          <Spinner size={16} />
+          <Spinner size="sm" />
           Cargando celulares...
         </div>
       ) : (

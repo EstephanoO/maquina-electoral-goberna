@@ -31,20 +31,20 @@ export function KanbanColumn({
         display: "flex",
         flexDirection: "column",
         gap: 0,
-        background: "#F8FAFC",
+        background: "var(--color-surface-hover)",
         borderRadius: 14,
-        border: "1px solid #E8EDF5",
+        border: "1px solid var(--color-border)",
         overflow: "hidden",
       }}
     >
       {/* Column header */}
       <div style={{
         padding: "14px 16px 12px",
-        borderBottom: "1px solid #E8EDF5",
+        borderBottom: "1px solid var(--color-border)",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        background: "#FFFFFF",
+        background: "var(--color-surface)",
         flexShrink: 0,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -58,7 +58,7 @@ export function KanbanColumn({
           <span style={{
             fontSize: 12,
             fontWeight: 700,
-            color: "#163960",
+            color: "var(--color-text-primary)",
             textTransform: "uppercase",
             letterSpacing: 0.8,
           }}>
@@ -91,7 +91,7 @@ export function KanbanColumn({
           <div style={{
             textAlign: "center",
             padding: "32px 16px",
-            color: "rgba(22,57,96,0.3)",
+            color: "var(--color-text-tertiary)",
             fontSize: 13,
             fontStyle: "italic",
           }}>
@@ -119,11 +119,11 @@ export function KanbanColumn({
             width: "100%",
             padding: "8px",
             background: "none",
-            border: "1.5px dashed #D1D9E6",
+            border: "1.5px dashed var(--color-border)",
             borderRadius: 8,
             cursor: "pointer",
             fontSize: 12,
-            color: "rgba(22,57,96,0.4)",
+            color: "var(--color-text-tertiary)",
             fontWeight: 600,
             transition: "all 0.15s ease",
             display: "flex",
@@ -132,13 +132,13 @@ export function KanbanColumn({
             gap: 6,
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.borderColor = "#94A3B8";
-            (e.currentTarget as HTMLButtonElement).style.color = "rgba(22,57,96,0.7)";
-            (e.currentTarget as HTMLButtonElement).style.background = "#F1F5F9";
+            (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-border-strong)";
+            (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-secondary)";
+            (e.currentTarget as HTMLButtonElement).style.background = "var(--color-surface-active)";
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.borderColor = "#D1D9E6";
-            (e.currentTarget as HTMLButtonElement).style.color = "rgba(22,57,96,0.4)";
+            (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--color-border)";
+            (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-tertiary)";
             (e.currentTarget as HTMLButtonElement).style.background = "none";
           }}
         >

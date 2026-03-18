@@ -107,9 +107,9 @@ export function DroppableColumn({
         onClick={onToggleCollapse}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onToggleCollapse(); }}
         className={`
-          flex flex-col min-w-[40px] w-10 rounded-xl bg-white overflow-hidden
+          flex flex-col min-w-[40px] w-10 rounded-xl bg-surface overflow-hidden
           transition-all duration-300 cursor-pointer select-none border
-          ${isBlocked ? "opacity-20 border-slate-100" : "border-slate-200 hover:border-slate-300 hover:shadow-sm"}
+          ${isBlocked ? "opacity-20 border-border" : "border-border hover:border-border-strong hover:shadow-sm"}
         `}
         title={`Expandir ${col.label}`}
       >
@@ -141,9 +141,9 @@ export function DroppableColumn({
       <div
         ref={setNodeRef}
         className={`
-          flex flex-col min-w-[44px] w-11 rounded-xl bg-white overflow-hidden
+          flex flex-col min-w-[44px] w-11 rounded-xl bg-surface overflow-hidden
           transition-all duration-300 border
-          ${isBlocked ? "opacity-20 border-slate-100" : "border-slate-200 opacity-50 hover:opacity-70"}
+          ${isBlocked ? "opacity-20 border-border" : "border-border opacity-50 hover:opacity-70"}
         `}
         title={col.label}
       >
@@ -173,13 +173,13 @@ export function DroppableColumn({
     <div
       ref={setNodeRef}
       className={`
-        flex flex-col min-w-[220px] w-full rounded-xl bg-white overflow-hidden
+        flex flex-col min-w-[220px] w-full rounded-xl bg-surface overflow-hidden
         transition-all duration-200 border
         ${isBlocked
-          ? "opacity-30 saturate-0 border-slate-100 scale-[0.98]"
+          ? "opacity-30 saturate-0 border-border scale-[0.98]"
           : isOver
             ? "border-transparent shadow-lg scale-[1.01]"
-            : "border-slate-200 hover:border-slate-300"
+            : "border-border hover:border-border-strong"
         }
       `}
       style={{
@@ -239,9 +239,9 @@ export function DroppableColumn({
               </>
             ) : (
               <>
-                <span className="text-[11px] font-medium text-slate-300">Sin registros</span>
+                <span className="text-[11px] font-medium text-text-tertiary">Sin registros</span>
                 {FLOW_HINTS[col.key] && (
-                  <span className="text-[10px] leading-tight text-slate-300">
+                  <span className="text-[10px] leading-tight text-text-tertiary">
                     {FLOW_HINTS[col.key]}
                   </span>
                 )}
@@ -259,10 +259,10 @@ export function DroppableColumn({
             {loadingMore && visibleCount >= count ? (
               <>
                 <SpinnerIcon />
-                <span className="text-[10px] text-slate-400">Cargando...</span>
+                <span className="text-[10px] text-text-tertiary">Cargando...</span>
               </>
             ) : hiddenCount > 0 ? (
-              <span className="text-[10px] text-slate-300">+{hiddenCount} mas</span>
+              <span className="text-[10px] text-text-tertiary">+{hiddenCount} mas</span>
             ) : null}
           </div>
         )}

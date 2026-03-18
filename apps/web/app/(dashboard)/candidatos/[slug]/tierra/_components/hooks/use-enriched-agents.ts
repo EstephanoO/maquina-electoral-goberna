@@ -48,11 +48,13 @@ function inDrillRegion(lat: number, lng: number, region: DrillRegion): boolean {
  * Optimization: pre-indexes forms by agent_id/encuestador_id into a Map so
  * the agent loop is O(agents + forms) instead of O(agents * forms).
  */
+const EMPTY_SET = new Set<string>();
+
 export function useEnrichedAgents(
   stats: CampaignStats | undefined,
   locations: AgentLocation[],
   forms: FormRecord[],
-  backgroundAgentIds: Set<string> = new Set(),
+  backgroundAgentIds: Set<string> = EMPTY_SET,
   drillRegion: DrillRegion | null = null,
 ) {
   // ── Pre-index: forms by agent_id → most recent form with coords (O(forms)) ──
@@ -132,9 +134,11 @@ export function useEnrichedAgents(
       }
     }
 
+    const STATUS_ORDER: Record<string, number> = { connected: 0, idle: 1, inactive: 2 };
     return agents.sort((a, b) => {
-      const o = { connected: 0, idle: 1, inactive: 2 };
-      return o[a.status] !== o[b.status] ? o[a.status] - o[b.status] : b.forms_count - a.forms_count;
+      return STATUS_ORDER[a.status] !== STATUS_ORDER[b.status]
+        ? STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
+        : b.forms_count - a.forms_count;
     });
   }, [stats, locations, agentFormIndex, backgroundAgentIds]);
 
