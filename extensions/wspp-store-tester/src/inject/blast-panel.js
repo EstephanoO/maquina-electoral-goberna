@@ -406,12 +406,20 @@ function _spinVariants(text, seed) {
   });
 }
 
+// Convierte una palabra a Title Case: primera letra mayúscula, resto minúsculas.
+// Respeta caracteres acentuados (á, é, ñ, etc.).
+function _toTitleCase(word) {
+  if (!word) return '';
+  return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+}
+
 // Reemplaza variables {{nombre}}, {{saludo}}, {{brigadista}}, etc.
 function _applyVars(text, c, seed) {
-  const nombre = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim().split(/\s+/)[0] || 'amigo';
+  const rawNombre = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim().split(/\s+/)[0] || 'amigo';
+  const nombre = _toTitleCase(rawNombre);
   // Brigadista: primer nombre del encuestador que recogió el dato
   const rawBrigadista = (c.encuestador || '').trim();
-  const brigadista = rawBrigadista.split(/\s+/)[0] || 'un colaborador';
+  const brigadista = _toTitleCase(rawBrigadista.split(/\s+/)[0] || 'un colaborador');
   const now = new Date();
   return text
     .replace(/\{\{nombre\}\}/gi, nombre)

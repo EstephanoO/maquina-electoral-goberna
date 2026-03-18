@@ -2617,10 +2617,15 @@
       return chosen;
     });
   }
+  function _toTitleCase(word) {
+    if (!word) return "";
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  }
   function _applyVars(text, c, seed) {
-    const nombre = ((c.nombre || "") + " " + (c.apellidos || "")).trim().split(/\s+/)[0] || "amigo";
+    const rawNombre = ((c.nombre || "") + " " + (c.apellidos || "")).trim().split(/\s+/)[0] || "amigo";
+    const nombre = _toTitleCase(rawNombre);
     const rawBrigadista = (c.encuestador || "").trim();
-    const brigadista = rawBrigadista.split(/\s+/)[0] || "un colaborador";
+    const brigadista = _toTitleCase(rawBrigadista.split(/\s+/)[0] || "un colaborador");
     const now = /* @__PURE__ */ new Date();
     return text.replace(/\{\{nombre\}\}/gi, nombre).replace(/\{\{brigadista\}\}/gi, brigadista).replace(/\{\{departamento\}\}/gi, (c.departamento || c.distrito || "").trim() || "tu zona").replace(/\{\{saludo\}\}/gi, SALUDOS[_hashSeed(String(seed), 1) % SALUDOS.length]).replace(/\{\{cierre\}\}/gi, CIERRES[_hashSeed(String(seed), 2) % CIERRES.length]).replace(/\{\{emoji\}\}/gi, EMOJIS[_hashSeed(String(seed), 3) % EMOJIS.length]).replace(/\{\{distrito\}\}/gi, c.distrito || "").replace(/\{\{fecha\}\}/gi, now.toLocaleDateString("es-PE")).replace(/\{\{hora\}\}/gi, now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" }));
   }
