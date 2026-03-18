@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 export const markHabladoSchema = z.object({
-  ids: z.array(z.string().uuid()).min(1).max(200),
+  ids:       z.array(z.string().uuid()).min(1).max(200),
+  no_wa_ids: z.array(z.string().uuid()).max(200).optional(),  // sin WhatsApp — reintentar mañana
 });
 
 export const blastReportItemSchema = z.object({

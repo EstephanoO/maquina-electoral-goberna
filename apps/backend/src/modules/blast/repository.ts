@@ -102,7 +102,7 @@ export async function getFormContactsForNumber(params: {
     `COALESCE(fs.data->>'telefono', '') != ''`,
     // Deterministic segment assignment
     `ABS(hashtext(COALESCE(fs.data->>'telefono', fs.id::text))) % $2 = $3`,
-    // Skip contacts already successfully blasted from this wa_number
+    // Skip contacts already sent successfully by this wa_number (histórico)
     `NOT EXISTS (
        SELECT 1 FROM blast_log bl
        WHERE bl.campaign_id = $1
@@ -110,6 +110,9 @@ export async function getFormContactsForNumber(params: {
          AND bl.contact_phone = regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g')
          AND bl.status = 'sent'
      )`,
+    // Skip contacts marked no_wa HOY — se reintentarán mañana via retry-no-wa
+    `COALESCE(fs.cms_status, 'nuevo') != 'no_wa'
+     OR fs.cms_hablado_at < CURRENT_DATE`,
   ];
 
   const args: unknown[] = [campaign_id, total_slots, segment_idx, wa_number];
@@ -172,37 +175,70 @@ export interface ContactRow {
 }
 
 // ── Mark contacts as hablado ──────────────────────────────────────────
-// Updates cms_status in form_submissions for the given IDs.
+// ids     = contactos que recibieron mensaje exitosamente → cms_status='hablado'
+// no_wa_ids = contactos sin WhatsApp → cms_status='no_wa' (reintentables mañana)
 export async function markHablado(
   campaign_id: string,
   ids: string[],
-  wa_number?: string | null
+  wa_number?: string | null,
+  no_wa_ids?: string[]
 ): Promise<number> {
-  if (!ids.length) return 0;
+  let total = 0;
 
-  const result = await pool.query(
-    `UPDATE form_submissions
-     SET cms_status     = 'hablado',
-         cms_hablado_at = now()
-     WHERE id = ANY($1::uuid[])
-       AND campaign_id = $2
-       AND COALESCE(cms_status, 'nuevo') IN ('nuevo', 'hablado')`,
-    [ids, campaign_id]
-  );
+  // Marca enviados exitosos como 'hablado'
+  if (ids.length) {
+    const result = await pool.query(
+      `UPDATE form_submissions
+       SET cms_status     = 'hablado',
+           cms_hablado_at = now()
+       WHERE id = ANY($1::uuid[])
+         AND campaign_id = $2
+         AND COALESCE(cms_status, 'nuevo') IN ('nuevo', 'hablado', 'no_wa')`,
+      [ids, campaign_id]
+    );
+    total += result.rowCount ?? 0;
 
-  // Log who touched these contacts
-  if (wa_number && ids.length > 0) {
-    // Fire-and-forget insert to hablado audit log (best-effort)
-    pool.query(
-      `INSERT INTO blast_log (campaign_id, wa_number, contact_phone, contact_id, status)
-       SELECT $1, $2, COALESCE(fs.data->>'telefono',''), fs.id, 'sent'
-       FROM form_submissions fs
-       WHERE fs.id = ANY($3::uuid[]) AND fs.campaign_id = $1
-       ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent' DO NOTHING`,
-      [campaign_id, wa_number, ids]
-    ).catch(() => {});
+    // Audit log — best-effort
+    if (wa_number) {
+      pool.query(
+        `INSERT INTO blast_log (campaign_id, wa_number, contact_phone, contact_id, status)
+         SELECT $1, $2, COALESCE(fs.data->>'telefono',''), fs.id, 'sent'
+         FROM form_submissions fs
+         WHERE fs.id = ANY($3::uuid[]) AND fs.campaign_id = $1
+         ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent' DO NOTHING`,
+        [campaign_id, wa_number, ids]
+      ).catch(() => {});
+    }
   }
 
+  // Marca sin WhatsApp como 'no_wa' — se pueden reintentar pasadas 24h
+  if (no_wa_ids?.length) {
+    await pool.query(
+      `UPDATE form_submissions
+       SET cms_status     = 'no_wa',
+           cms_hablado_at = now()
+       WHERE id = ANY($1::uuid[])
+         AND campaign_id = $2
+         AND COALESCE(cms_status, 'nuevo') IN ('nuevo', 'no_wa')`,
+      [no_wa_ids, campaign_id]
+    );
+  }
+
+  return total;
+}
+
+// ── Retry no_wa: vuelve a 'nuevo' los contactos sin WA de más de 24h ──
+// Llamado al arrancar el blast — permite reintentar al día siguiente.
+export async function retryNoWaContacts(campaign_id: string): Promise<number> {
+  const result = await pool.query(
+    `UPDATE form_submissions
+     SET cms_status     = 'nuevo',
+         cms_hablado_at = NULL
+     WHERE campaign_id = $1
+       AND cms_status   = 'no_wa'
+       AND cms_hablado_at < NOW() - INTERVAL '24 hours'`,
+    [campaign_id]
+  );
   return result.rowCount ?? 0;
 }
 

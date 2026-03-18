@@ -402,10 +402,10 @@ function _fetchBatch(limit) {
 }
 
 // _markHablado — envía y ESPERA confirmación del servidor (máx 8s).
-// Retorna true si el servidor confirmó, false si timeout/error.
-// Usar await para garantizar que el mark llegó ANTES de pedir el siguiente batch.
-function _markHablado(ids) {
-  if (!ids.length) return Promise.resolve(false);
+// ids      = enviados con éxito → cms_status='hablado'
+// no_wa_ids = sin WhatsApp → cms_status='no_wa' (reintentables mañana)
+function _markHablado(ids, no_wa_ids) {
+  if (!ids.length && !(no_wa_ids?.length)) return Promise.resolve(false);
   return new Promise((resolve) => {
     const reqId = 'mh_' + Date.now() + '_' + Math.random().toString(36).slice(2);
     const timer = setTimeout(() => {
@@ -421,8 +421,14 @@ function _markHablado(ids) {
       setTimeout(fetchGlobalStats, 500);
     }
     window.addEventListener('message', onReply);
-    window.postMessage({ type: 'BLAST_MARK_HABLADO', ids, own_number: getOwnNumber(), reqId }, WA_ORIGIN);
+    window.postMessage({ type: 'BLAST_MARK_HABLADO', ids, no_wa_ids: no_wa_ids ?? [], own_number: getOwnNumber(), reqId }, WA_ORIGIN);
   });
+}
+
+// _retryNoWa — al arrancar el blast, resetea los no_wa de +24h a 'nuevo'
+// para que puedan ser reintentados en esta sesión.
+function _retryNoWa() {
+  window.postMessage({ type: 'BLAST_RETRY_NO_WA', own_number: getOwnNumber() }, WA_ORIGIN);
 }
 
 function _reportLog(results) {
@@ -839,6 +845,7 @@ export async function startBlast() {
 
   _running = true; _paused = false; _consecFails = 0; _loopRunning = true;
   _msgsSinceBreak = 0; // reset micro-break counter
+  _retryNoWa();         // resetear no_wa de +24h a 'nuevo' para reintentarlos hoy
   fetchGlobalStats();   // carga inmediata de stats globales al arrancar
   _startStatsRefresh(); // auto-refresh cada 30s mientras corre
   _notify();
@@ -869,8 +876,9 @@ export async function startBlast() {
 
     if (!batch.length) { _running = false; _stopCountdown(); _notify(); break; }
 
-    const logBatch = [];
-    const habladoBatch = []; // IDs a marcar hablado — se envían juntos al final del batch
+    const logBatch    = [];
+    const habladoBatch = []; // IDs enviados con éxito → cms_status='hablado'
+    const noWaBatch    = []; // IDs sin WhatsApp → cms_status='no_wa' (retry mañana)
     let batchSent = 0;
 
     // 2. Send each contact
@@ -969,8 +977,8 @@ export async function startBlast() {
           _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'no_wa', ack: -1, error: 'Sin WhatsApp' });
           if (_lastResults.length > 30) _lastResults.length = 30;
           logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status: 'no_wa', error: 'Sin WhatsApp', own_number: activeNumber });
-          // Acumular para mark hablado masivo al final del batch
-          if (c.id) habladoBatch.push(c.id);
+          // no_wa: va a noWaBatch — se marca 'no_wa' en DB, reintentable mañana
+          if (c.id) { _habladoIds.add(c.id); noWaBatch.push(c.id); }
           if (lockKey) _inFlight.delete(lockKey);
           _notify();
           continue;
@@ -1106,11 +1114,12 @@ export async function startBlast() {
     }
 
     // 3. Mark hablado masivo — AWAIT antes de pedir el siguiente batch
-    // Así el servidor tiene los IDs confirmados cuando llega el siguiente GET.
-    if (habladoBatch.length) {
+    // habladoBatch → cms_status='hablado' | noWaBatch → cms_status='no_wa'
+    if (habladoBatch.length || noWaBatch.length) {
       _phase = 'marcando'; _notify();
-      await _markHablado([...habladoBatch]);
+      await _markHablado([...habladoBatch], [...noWaBatch]);
       habladoBatch.length = 0;
+      noWaBatch.length    = 0;
     }
 
     // 4. Flush log restante

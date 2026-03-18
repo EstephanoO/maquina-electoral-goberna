@@ -142,8 +142,13 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
         const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "") || null;
 
         try {
-          const updated = await repo.markHablado(campaignId, parsed.data.ids, waNumber);
-          app.log.info({ campaignId, waNumber, ids: parsed.data.ids.length, updated }, "[blast] mark-hablado");
+          const updated = await repo.markHablado(
+            campaignId,
+            parsed.data.ids,
+            waNumber,
+            parsed.data.no_wa_ids ?? []
+          );
+          app.log.info({ campaignId, waNumber, ids: parsed.data.ids.length, no_wa: parsed.data.no_wa_ids?.length ?? 0, updated }, "[blast] mark-hablado");
           return reply.code(200).send({ ok: true, request_id: requestId, updated });
         } catch (err) {
           app.log.error({ err }, "[blast] markHablado failed");
@@ -336,6 +341,36 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
           app.log.error({ err }, "[blast] getNumberHealth failed");
           return reply.code(500).send(
             errorPayload(requestId, "UPSTREAM_ERROR", "Error al obtener salud del número")
+          );
+        }
+      }
+    );
+
+    // ──────────────────────────────────────────────────────────────────
+    // POST /api/blast/retry-no-wa
+    // Vuelve a 'nuevo' los contactos sin WhatsApp de más de 24h.
+    // Llamado al arrancar el blast para reintentarlos al día siguiente.
+    // ──────────────────────────────────────────────────────────────────
+    app.post(
+      "/api/blast/retry-no-wa",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const req        = request as AuthenticatedRequest;
+        const requestId  = String(request.id);
+        const campaignId = req.activeCampaignId!;
+        try {
+          const resetCount = await repo.retryNoWaContacts(campaignId);
+          app.log.info({ campaignId, resetCount }, "[blast] retry-no-wa");
+          return reply.code(200).send({ ok: true, request_id: requestId, reset: resetCount });
+        } catch (err) {
+          app.log.error({ err }, "[blast] retryNoWa failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "Error al reintentar no_wa")
           );
         }
       }

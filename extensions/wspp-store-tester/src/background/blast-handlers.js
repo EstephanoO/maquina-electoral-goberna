@@ -31,27 +31,47 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 // ── BLAST_MARK_HABLADO ────────────────────────────────────────────────
-// Marks form_submission IDs as 'hablado' after WA message sent.
+// ids      → cms_status='hablado' (enviados con éxito)
+// no_wa_ids → cms_status='no_wa'  (sin WhatsApp, reintentables mañana)
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type !== 'BLAST_MARK_HABLADO') return;
 
-  const { ids, own_number } = msg;
-  if (!ids?.length) { sendResponse({ ok: true, updated: 0 }); return true; }
+  const { ids, no_wa_ids, own_number } = msg;
+  if (!ids?.length && !no_wa_ids?.length) { sendResponse({ ok: true, updated: 0 }); return true; }
 
   (async () => {
     try {
+      const body = { ids: ids ?? [] };
+      if (no_wa_ids?.length) body.no_wa_ids = no_wa_ids;
       const result = await apiFetch('/api/blast/mark-hablado', {
         method: 'PUT',
         headers: own_number ? { 'x-wa-number': own_number } : {},
-        body: JSON.stringify({ ids }),
+        body: JSON.stringify(body),
       });
-      console.log(`[WSPP BLAST] marked hablado: ${result.updated} contacts`);
+      console.log(`[WSPP BLAST] marked hablado: ${result.updated} | no_wa: ${no_wa_ids?.length ?? 0}`);
       sendResponse({ ok: result.ok, updated: result.updated || 0, error: result.error });
     } catch (err) {
       sendResponse({ ok: false, error: err.message });
     }
   })();
   return true;
+});
+
+// ── BLAST_RETRY_NO_WA ─────────────────────────────────────────────────
+// Resetea contactos sin WhatsApp de +24h a 'nuevo' para reintentarlos.
+// Fire-and-forget — no bloquea el arranque del blast.
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type !== 'BLAST_RETRY_NO_WA') return;
+  const { own_number } = msg;
+  apiFetch('/api/blast/retry-no-wa', {
+    method: 'POST',
+    headers: own_number ? { 'x-wa-number': own_number } : {},
+    body: JSON.stringify({}),
+  }).then(r => {
+    if (r.reset > 0) console.log(`[WSPP BLAST] retry-no-wa: ${r.reset} contactos reseteados`);
+  }).catch(() => {});
+  sendResponse({ ok: true });
+  return false;
 });
 
 // ── BLAST_GET_CONTACTS (CMS conversations — legacy) ───────────────────

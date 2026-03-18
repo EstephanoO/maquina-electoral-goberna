@@ -304,13 +304,19 @@ window.addEventListener('message', (e) => {
   // --- BLAST_MARK_HABLADO (inject → background → inject con confirmación) ---
   if (e.data?.type === 'BLAST_MARK_HABLADO') {
     const reqId = e.data.reqId;
-    chrome.runtime.sendMessage({ type: 'BLAST_MARK_HABLADO', ids: e.data.ids, own_number: e.data.own_number }, (response) => {
+    chrome.runtime.sendMessage({ type: 'BLAST_MARK_HABLADO', ids: e.data.ids, no_wa_ids: e.data.no_wa_ids ?? [], own_number: e.data.own_number }, (response) => {
       if (chrome.runtime.lastError) {
         if (reqId) window.postMessage({ type: 'BLAST_MARK_HABLADO_DONE', ok: false, reqId }, WA_ORIGIN);
         return;
       }
       if (reqId) window.postMessage({ type: 'BLAST_MARK_HABLADO_DONE', ok: response?.ok ?? false, reqId }, WA_ORIGIN);
     });
+    return;
+  }
+
+  // --- BLAST_RETRY_NO_WA (inject → background, fire-and-forget) ---
+  if (e.data?.type === 'BLAST_RETRY_NO_WA') {
+    chrome.runtime.sendMessage({ type: 'BLAST_RETRY_NO_WA', own_number: e.data.own_number }, () => {});
     return;
   }
 
