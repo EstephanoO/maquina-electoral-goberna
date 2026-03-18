@@ -153,7 +153,7 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
             waNumber,
             parsed.data.no_wa_ids ?? []
           );
-          app.log.info({ campaignId, waNumber, ids: parsed.data.ids.length, no_wa: parsed.data.no_wa_ids?.length ?? 0, updated }, "[blast] mark-hablado");
+          app.log.info({ campaignId, waNumber, ids: parsed.data.ids.length, no_wa: parsed.data.no_wa_ids?.length ?? 0, updated, sample_ids: parsed.data.ids.slice(0,2) }, "[blast] mark-hablado");
           return reply.code(200).send({ ok: true, request_id: requestId, updated });
         } catch (err) {
           app.log.error({ err }, "[blast] markHablado failed");
