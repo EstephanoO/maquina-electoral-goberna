@@ -87,12 +87,13 @@ export async function getFormContactsForNumber(params: {
   total_slots:  number;
   status?:      string;   // 'nuevo' | 'hablado' | '' (todos)
   district?:    string;
+  brigadista?:  string;   // filtrar por nombre del encuestador/brigadista
   limit:        number;
   offset:       number;
 }): Promise<{ contacts: ContactRow[]; total: number }> {
   const {
     campaign_id, wa_number, segment_idx, total_slots,
-    status, district, limit, offset,
+    status, district, brigadista, limit, offset,
   } = params;
 
   // Base filter: contacts in this number's segment, not already sent by this number
@@ -127,6 +128,11 @@ export async function getFormContactsForNumber(params: {
   if (district) {
     conditions.push(`(fs.data->>'distrito' ILIKE $${argIdx} OR fs.data->>'zona' ILIKE $${argIdx})`);
     args.push(`%${district}%`);
+    argIdx++;
+  }
+  if (brigadista) {
+    conditions.push(`(fs.data->>'encuestador' ILIKE $${argIdx} OR fs.data->>'brigadista' ILIKE $${argIdx})`);
+    args.push(`%${brigadista}%`);
     argIdx++;
   }
 

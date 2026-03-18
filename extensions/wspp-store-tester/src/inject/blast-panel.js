@@ -42,6 +42,7 @@ const DEFAULTS = {
   pausaCada:    10,
   pausaSec:     60,
   descansoSec:  300,
+  brigadista:   '',   // filtrar por brigadista/encuestador (vacío = todos)
 };
 
 function _loadCfg() {
@@ -486,7 +487,7 @@ export function refreshPendingCount() {
     },
     timer,
   });
-  window.postMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit: 1, offset: 0, status: 'nuevo', reqId, own_number: getOwnNumber() }, WA_ORIGIN);
+  window.postMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit: 1, offset: 0, status: 'nuevo', brigadista: cfg.brigadista || '', reqId, own_number: getOwnNumber() }, WA_ORIGIN);
 }
 
 function _fetchBatch(limit) {
@@ -499,7 +500,7 @@ function _fetchBatch(limit) {
       }
     }, 15000);
     _pendingRequests.set(reqId, { resolve, timer });
-    window.postMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit, offset: 0, status: 'nuevo', reqId, own_number: getOwnNumber() }, WA_ORIGIN);
+    window.postMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit, offset: 0, status: 'nuevo', brigadista: cfg.brigadista || '', reqId, own_number: getOwnNumber() }, WA_ORIGIN);
   });
 }
 

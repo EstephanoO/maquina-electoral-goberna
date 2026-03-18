@@ -2339,7 +2339,9 @@
     prewarmSec: 30,
     pausaCada: 10,
     pausaSec: 60,
-    descansoSec: 300
+    descansoSec: 300,
+    brigadista: ""
+    // filtrar por brigadista/encuestador (vacío = todos)
   };
   function _loadCfg() {
     try {
@@ -2734,7 +2736,7 @@
       },
       timer
     });
-    window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit: 1, offset: 0, status: "nuevo", reqId, own_number: getOwnNumber() }, WA_ORIGIN);
+    window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit: 1, offset: 0, status: "nuevo", brigadista: cfg.brigadista || "", reqId, own_number: getOwnNumber() }, WA_ORIGIN);
   }
   function _fetchBatch(limit) {
     return new Promise((resolve) => {
@@ -2746,7 +2748,7 @@
         }
       }, 15e3);
       _pendingRequests.set(reqId, { resolve, timer });
-      window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit, offset: 0, status: "nuevo", reqId, own_number: getOwnNumber() }, WA_ORIGIN);
+      window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit, offset: 0, status: "nuevo", brigadista: cfg.brigadista || "", reqId, own_number: getOwnNumber() }, WA_ORIGIN);
     });
   }
   function _markHablado(ids, no_wa_ids) {
@@ -4568,6 +4570,21 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       </div>
     </div>
 
+    <!-- FILTRO BRIGADISTA -->
+    <div style="background:${S.card};border:1px solid ${cfg2.brigadista ? S.accent : S.border};border-radius:10px;padding:10px 12px;">
+      <div style="font-size:11px;font-weight:700;color:${S.muted};margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">
+        Filtrar por brigadista
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="text" id="sb-brigadista-input" placeholder="Ej: Ricardo Rea\xF1o" value="${_esc(cfg2.brigadista || "")}" style="
+          flex:1;padding:7px 10px;border:1px solid ${S.border};border-radius:6px;
+          background:${S.bg};color:${S.text};font-size:12px;outline:none;
+        " />
+        ${cfg2.brigadista ? `<button id="sb-brigadista-clear" style="padding:6px 10px;border-radius:6px;border:1px solid ${S.border};background:${S.bg};color:${S.danger};font-size:11px;font-weight:700;cursor:pointer;">\u2715</button>` : ""}
+      </div>
+      ${cfg2.brigadista ? `<div style="font-size:10px;color:${S.accent};margin-top:4px;font-weight:600;">Filtrando solo contactos de: ${_esc(cfg2.brigadista)}</div>` : ""}
+    </div>
+
     <!-- CONFIG AVANZADA -->
     <details style="background:${S.card};border:1px solid ${S.border};border-radius:10px;overflow:hidden;">
       <summary style="padding:12px;font-size:12px;font-weight:700;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">
@@ -4810,6 +4827,23 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       refreshPendingCount();
       fetchGlobalStats();
       _toast3("Actualizando...");
+    });
+    const brigadistaInput = $("sb-brigadista-input");
+    if (brigadistaInput) {
+      let _brigTimer = null;
+      brigadistaInput.addEventListener("input", () => {
+        clearTimeout(_brigTimer);
+        _brigTimer = setTimeout(() => {
+          setConfig({ brigadista: brigadistaInput.value.trim() });
+          refreshPendingCount();
+          _renderContent();
+        }, 600);
+      });
+    }
+    $("sb-brigadista-clear")?.addEventListener("click", () => {
+      setConfig({ brigadista: "" });
+      refreshPendingCount();
+      _renderContent();
     });
     $("sb-start")?.addEventListener("click", startBlast);
     $("sb-pause")?.addEventListener("click", pauseBlast);

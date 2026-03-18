@@ -485,6 +485,21 @@ function _blastHTML() {
       </div>
     </div>
 
+    <!-- FILTRO BRIGADISTA -->
+    <div style="background:${S.card};border:1px solid ${cfg.brigadista ? S.accent : S.border};border-radius:10px;padding:10px 12px;">
+      <div style="font-size:11px;font-weight:700;color:${S.muted};margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">
+        Filtrar por brigadista
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="text" id="sb-brigadista-input" placeholder="Ej: Ricardo Reaño" value="${_esc(cfg.brigadista || '')}" style="
+          flex:1;padding:7px 10px;border:1px solid ${S.border};border-radius:6px;
+          background:${S.bg};color:${S.text};font-size:12px;outline:none;
+        " />
+        ${cfg.brigadista ? `<button id="sb-brigadista-clear" style="padding:6px 10px;border-radius:6px;border:1px solid ${S.border};background:${S.bg};color:${S.danger};font-size:11px;font-weight:700;cursor:pointer;">✕</button>` : ''}
+      </div>
+      ${cfg.brigadista ? `<div style="font-size:10px;color:${S.accent};margin-top:4px;font-weight:600;">Filtrando solo contactos de: ${_esc(cfg.brigadista)}</div>` : ''}
+    </div>
+
     <!-- CONFIG AVANZADA -->
     <details style="background:${S.card};border:1px solid ${S.border};border-radius:10px;overflow:hidden;">
       <summary style="padding:12px;font-size:12px;font-weight:700;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">
@@ -742,6 +757,25 @@ function _validarHTML() {
 function _bindContent() {
   // ── Blast ──
   $('sb-refresh')?.addEventListener('click', () => { refreshPendingCount(); fetchGlobalStats(); _toast('Actualizando...'); });
+
+  // Filtro brigadista
+  const brigadistaInput = $('sb-brigadista-input');
+  if (brigadistaInput) {
+    let _brigTimer = null;
+    brigadistaInput.addEventListener('input', () => {
+      clearTimeout(_brigTimer);
+      _brigTimer = setTimeout(() => {
+        setConfig({ brigadista: brigadistaInput.value.trim() });
+        refreshPendingCount();
+        _renderContent();
+      }, 600);
+    });
+  }
+  $('sb-brigadista-clear')?.addEventListener('click', () => {
+    setConfig({ brigadista: '' });
+    refreshPendingCount();
+    _renderContent();
+  });
   $('sb-start')?.addEventListener('click', startBlast);
   $('sb-pause')?.addEventListener('click', pauseBlast);
   $('sb-resume')?.addEventListener('click', resumeBlast);

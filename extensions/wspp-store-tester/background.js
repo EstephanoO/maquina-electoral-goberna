@@ -1762,9 +1762,10 @@
   // src/background/blast-handlers.js
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type !== "BLAST_GET_FORM_CONTACTS") return;
-    const { limit = 200, offset = 0, status = "nuevo", district, own_number } = msg;
+    const { limit = 200, offset = 0, status = "nuevo", district, brigadista, own_number } = msg;
     const qs = new URLSearchParams({ limit, offset, status });
     if (district) qs.set("district", district);
+    if (brigadista) qs.set("brigadista", brigadista);
     (async () => {
       try {
         const result = await apiFetch(`/api/blast/form-contacts?${qs}`, {

@@ -49,8 +49,9 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
         const qs     = request.query as Record<string, string>;
         const limit  = Math.min(500, Math.max(1, parseInt(qs.limit  ?? "200", 10)));
         const offset = Math.max(0,             parseInt(qs.offset ?? "0",   10));
-        const status = qs.status  ?? "nuevo";
-        const district = qs.district ?? "";
+        const status     = qs.status     ?? "nuevo";
+        const district   = qs.district   ?? "";
+        const brigadista = qs.brigadista ?? "";
 
         // Identify which WA number is sending this request
         const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "");
@@ -91,8 +92,9 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
             wa_number:   waNumber || "unknown",
             segment_idx: segmentIdx,
             total_slots: totalSlots,
-            status:      status || undefined,
-            district:    district || undefined,
+            status:      status    || undefined,
+            district:    district  || undefined,
+            brigadista:  brigadista || undefined,
             limit,
             offset,
           });
