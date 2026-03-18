@@ -11,6 +11,7 @@ import {
   refreshPendingCount, setOnUpdate, getTplIndex,
   isWithinBlastWindow, getPeruTimeStr,
   getNumberHealth, isNumberAuthorized, fetchNumberHealth, fetchNumberConfig,
+  getLastSpamResult,
 } from './blast-panel.js';
 import { analyzeTemplates } from './template-analyzer.js';
 import { toggleValidatorPanel } from './wa-validator-panel.js';
@@ -343,6 +344,22 @@ function _blastHTML() {
         <div><span style="color:${S.muted};">Est. restante</span><br><b>${estRemaining !== null ? (estRemaining > 60 ? Math.round(estRemaining / 60) + 'h' : estRemaining + ' min') : '—'}</b></div>
         <div><span style="color:${S.muted};">Plantilla</span><br><b>#${(getTplIndex() % tpls.length) + 1} de ${tpls.length}</b></div>
       </div>
+      ${(() => {
+        const spam = getLastSpamResult();
+        if (!spam || spam.riskLevel === 'low' || !spam.score) return '';
+        const isHigh = spam.riskLevel === 'critical' || spam.riskLevel === 'high';
+        const color = isHigh ? S.danger : S.warn;
+        const bg = isHigh ? S.dangerBg : S.warnBg;
+        return `
+        <div style="margin-top:8px;background:${bg};border:1px solid ${isHigh ? '#fecaca' : '#fde68a'};border-radius:8px;padding:8px 10px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <span style="font-size:12px;">${isHigh ? '🚨' : '⚠️'}</span>
+            <span style="font-size:11px;font-weight:700;color:${color};">Spam: ${spam.riskLevel.toUpperCase()} (${spam.score}/100)</span>
+          </div>
+          ${spam.warnings.slice(0, 3).map(w => `<div style="font-size:10px;color:${S.muted};padding-left:20px;">● ${_esc(w)}</div>`).join('')}
+          ${spam.actions.length ? spam.actions.slice(0, 2).map(a => `<div style="font-size:10px;color:${color};padding-left:20px;font-weight:600;">→ ${_esc(a)}</div>`).join('') : ''}
+        </div>`;
+      })()}
     </div>
     ` : ''}
 

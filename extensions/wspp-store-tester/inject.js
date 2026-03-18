@@ -2288,13 +2288,21 @@
       const h = (e) => {
         if (e.source !== window || e.data?.type !== "WSPP_SPAM_CHECK_RESULT") return;
         window.removeEventListener("message", h);
-        resolve({ shouldPause: e.data.result?.risk_level === "critical" });
+        const r = e.data.result;
+        resolve({
+          shouldPause: r?.risk_level === "critical" || r?.risk_level === "high",
+          riskLevel: r?.risk_level || "low",
+          score: r?.risk_score || 0,
+          warnings: r?.warnings || [],
+          actions: r?.actions || [],
+          cooldown: r?.cooldown_sec || 0
+        });
       };
       window.addEventListener("message", h);
       setTimeout(() => {
         window.removeEventListener("message", h);
-        resolve({ shouldPause: false });
-      }, 500);
+        resolve({ shouldPause: false, riskLevel: "low", score: 0, warnings: [], actions: [], cooldown: 0 });
+      }, 1500);
     });
   }
   var CFG_KEY = "wspp_blast_cfg_v3";
@@ -2379,6 +2387,10 @@
   var _inFlight = /* @__PURE__ */ new Set();
   var _respondedPhones = /* @__PURE__ */ new Set();
   var _tplIndex = 0;
+  var _lastSpamResult = null;
+  function getLastSpamResult() {
+    return _lastSpamResult;
+  }
   var _loopRunning = false;
   function getConfig() {
     return cfg;
@@ -2892,10 +2904,19 @@
           continue;
         }
         const sc = await _spamCheck();
+        _lastSpamResult = sc;
         if (sc.shouldPause) {
           _running = false;
           _stopCountdown();
-          _lastResults.unshift({ nombre: "\u{1F6A8} RIESGO CR\xCDTICO", telefono: "", status: "failed", ack: -1, error: "Pausado por spam" });
+          const reasons = sc.warnings.length ? sc.warnings.slice(0, 3).join(" \xB7 ") : "Patr\xF3n de env\xEDo detectado como spam";
+          const whatToDo = sc.actions.length ? "\n\u2192 " + sc.actions.slice(0, 2).join("\n\u2192 ") : "";
+          _lastResults.unshift({
+            nombre: sc.riskLevel === "critical" ? "\u{1F6A8} RIESGO CR\xCDTICO" : "\u26A0\uFE0F RIESGO ALTO",
+            telefono: "",
+            status: "failed",
+            ack: -1,
+            error: `Score: ${sc.score}/100 | ${reasons}${whatToDo}`
+          });
           _notify();
           break;
         }
@@ -4112,6 +4133,22 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         <div><span style="color:${S.muted};">Est. restante</span><br><b>${estRemaining !== null ? estRemaining > 60 ? Math.round(estRemaining / 60) + "h" : estRemaining + " min" : "\u2014"}</b></div>
         <div><span style="color:${S.muted};">Plantilla</span><br><b>#${getTplIndex() % tpls2.length + 1} de ${tpls2.length}</b></div>
       </div>
+      ${(() => {
+      const spam = getLastSpamResult();
+      if (!spam || spam.riskLevel === "low" || !spam.score) return "";
+      const isHigh = spam.riskLevel === "critical" || spam.riskLevel === "high";
+      const color = isHigh ? S.danger : S.warn;
+      const bg = isHigh ? S.dangerBg : S.warnBg;
+      return `
+        <div style="margin-top:8px;background:${bg};border:1px solid ${isHigh ? "#fecaca" : "#fde68a"};border-radius:8px;padding:8px 10px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <span style="font-size:12px;">${isHigh ? "\u{1F6A8}" : "\u26A0\uFE0F"}</span>
+            <span style="font-size:11px;font-weight:700;color:${color};">Spam: ${spam.riskLevel.toUpperCase()} (${spam.score}/100)</span>
+          </div>
+          ${spam.warnings.slice(0, 3).map((w) => `<div style="font-size:10px;color:${S.muted};padding-left:20px;">\u25CF ${_esc(w)}</div>`).join("")}
+          ${spam.actions.length ? spam.actions.slice(0, 2).map((a) => `<div style="font-size:10px;color:${color};padding-left:20px;font-weight:600;">\u2192 ${_esc(a)}</div>`).join("") : ""}
+        </div>`;
+    })()}
     </div>
     ` : ""}
 

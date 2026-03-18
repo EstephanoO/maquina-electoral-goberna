@@ -5,16 +5,25 @@
 import { WA_ORIGIN, getOwnNumber } from './bootstrap.js';
 
 // ── Spam check ────────────────────────────────────────────────────────
+// Devuelve el resultado completo del spam detector (warnings, actions, score)
 async function _spamCheck() {
   return new Promise((resolve) => {
     window.postMessage({ type: 'WSPP_SPAM_CHECK_NOW' }, WA_ORIGIN);
     const h = (e) => {
       if (e.source !== window || e.data?.type !== 'WSPP_SPAM_CHECK_RESULT') return;
       window.removeEventListener('message', h);
-      resolve({ shouldPause: e.data.result?.risk_level === 'critical' });
+      const r = e.data.result;
+      resolve({
+        shouldPause: r?.risk_level === 'critical' || r?.risk_level === 'high',
+        riskLevel:   r?.risk_level || 'low',
+        score:       r?.risk_score || 0,
+        warnings:    r?.warnings || [],
+        actions:     r?.actions || [],
+        cooldown:    r?.cooldown_sec || 0,
+      });
     };
     window.addEventListener('message', h);
-    setTimeout(() => { window.removeEventListener('message', h); resolve({ shouldPause: false }); }, 500);
+    setTimeout(() => { window.removeEventListener('message', h); resolve({ shouldPause: false, riskLevel: 'low', score: 0, warnings: [], actions: [], cooldown: 0 }); }, 1500);
   });
 }
 
@@ -121,6 +130,10 @@ const _respondedPhones = new Set();  // Set de teléfonos normalizados que respo
 // ── Índice de plantilla de sesión ─────────────────────────────────────
 // Contador global que SOLO avanza cuando un envío fue exitoso.
 let _tplIndex = 0;
+
+// ── Último resultado del spam check (visible en sidebar) ──────────────
+let _lastSpamResult = null;
+export function getLastSpamResult() { return _lastSpamResult; }
 
 // ── Guard para evitar loops simultáneos ───────────────────────────────
 // resumeBlast puede llamar startBlast() mientras el loop anterior
@@ -779,11 +792,22 @@ export async function startBlast() {
         continue;
       }
 
-      // Spam check
+      // Spam check — muestra razones concretas de por qué es spam
       const sc = await _spamCheck();
+      _lastSpamResult = sc;
       if (sc.shouldPause) {
         _running = false; _stopCountdown();
-        _lastResults.unshift({ nombre: '🚨 RIESGO CRÍTICO', telefono: '', status: 'failed', ack: -1, error: 'Pausado por spam' });
+        const reasons = sc.warnings.length
+          ? sc.warnings.slice(0, 3).join(' · ')
+          : 'Patrón de envío detectado como spam';
+        const whatToDo = sc.actions.length
+          ? '\n→ ' + sc.actions.slice(0, 2).join('\n→ ')
+          : '';
+        _lastResults.unshift({
+          nombre: sc.riskLevel === 'critical' ? '🚨 RIESGO CRÍTICO' : '⚠️ RIESGO ALTO',
+          telefono: '', status: 'failed', ack: -1,
+          error: `Score: ${sc.score}/100 | ${reasons}${whatToDo}`
+        });
         _notify(); break;
       }
 
