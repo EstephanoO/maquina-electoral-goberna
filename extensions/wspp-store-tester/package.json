@@ -1,6 +1,6 @@
 {
   "name": "wspp-store-tester",
-  "version": "8.0.0",
+  "version": "9.3.0",
   "description": "Goberna Chrome Extension — modularized build",
   "private": true,
   "type": "module",

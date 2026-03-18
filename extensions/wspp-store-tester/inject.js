@@ -2368,13 +2368,19 @@
   var _trackedMsgs = [];
   var _sentThisSession = /* @__PURE__ */ new Set();
   var _sentIds = /* @__PURE__ */ new Set();
+  var _habladoIds = /* @__PURE__ */ new Set();
   function _persistDedup(phone) {
     window.postMessage({ type: "BLAST_DEDUP_ADD", phone }, WA_ORIGIN);
   }
   function _loadPersistedDedup(phones) {
     if (Array.isArray(phones)) {
       for (const p of phones) {
-        _sentThisSession.add(p);
+        if (p.includes("-")) {
+          _habladoIds.add(p);
+          _sentIds.add(p);
+        } else {
+          _sentThisSession.add(p);
+        }
       }
       console.log("[BLAST] Loaded", phones.length, "persisted dedup entries");
     }
@@ -2435,6 +2441,40 @@
   function getTplIndex() {
     return _tplIndex;
   }
+  var _globalStats = null;
+  var _globalStatsTimer = null;
+  function getGlobalStats() {
+    return _globalStats;
+  }
+  function fetchGlobalStats() {
+    window.postMessage({ type: "BLAST_GET_STATS" }, WA_ORIGIN);
+  }
+  function _startStatsRefresh() {
+    if (_globalStatsTimer) return;
+    _globalStatsTimer = setInterval(fetchGlobalStats, 3e4);
+  }
+  function _stopStatsRefresh() {
+    if (_globalStatsTimer) {
+      clearInterval(_globalStatsTimer);
+      _globalStatsTimer = null;
+    }
+  }
+  window.addEventListener("message", (e) => {
+    if (e.source !== window || e.data?.type !== "BLAST_STATS_READY") return;
+    if (e.data.ok && e.data.stats) {
+      _globalStats = {
+        total_contacts: e.data.stats.total_contacts ?? 0,
+        total_sent: e.data.stats.total_sent ?? 0,
+        total_pending: e.data.stats.total_pending ?? 0,
+        total_failed: e.data.stats.total_failed ?? 0,
+        total_no_wa: e.data.stats.total_no_wa ?? 0,
+        // hablado = total con cms_status hablado (= total - pending)
+        total_hablado: (e.data.stats.total_contacts ?? 0) - (e.data.stats.total_pending ?? 0),
+        by_number: e.data.by_number ?? {}
+      };
+    }
+    _notify();
+  });
   var _numberHealth = null;
   var _numberAuthorized = null;
   function getNumberHealth() {
@@ -2584,7 +2624,9 @@
     });
   }
   function _markHablado(ids) {
-    if (ids.length) window.postMessage({ type: "BLAST_MARK_HABLADO", ids, own_number: getOwnNumber() }, WA_ORIGIN);
+    if (!ids.length) return;
+    window.postMessage({ type: "BLAST_MARK_HABLADO", ids, own_number: getOwnNumber() }, WA_ORIGIN);
+    setTimeout(fetchGlobalStats, 1500);
   }
   function _reportLog(results) {
     if (results.length) window.postMessage({ type: "BLAST_REPORT_RESULTS", results }, WA_ORIGIN);
@@ -2621,13 +2663,17 @@
     if (!word) return "";
     return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
   }
+  function _titleCasePhrase(phrase) {
+    if (!phrase) return "";
+    return phrase.split(/\s+/).map(_toTitleCase).join(" ");
+  }
   function _applyVars(text, c, seed) {
     const rawNombre = ((c.nombre || "") + " " + (c.apellidos || "")).trim().split(/\s+/)[0] || "amigo";
     const nombre = _toTitleCase(rawNombre);
     const rawBrigadista = (c.encuestador || "").trim();
     const brigadista = _toTitleCase(rawBrigadista.split(/\s+/)[0] || "un colaborador");
     const now = /* @__PURE__ */ new Date();
-    return text.replace(/\{\{nombre\}\}/gi, nombre).replace(/\{\{brigadista\}\}/gi, brigadista).replace(/\{\{departamento\}\}/gi, (c.departamento || c.distrito || "").trim() || "tu zona").replace(/\{\{saludo\}\}/gi, SALUDOS[_hashSeed(String(seed), 1) % SALUDOS.length]).replace(/\{\{cierre\}\}/gi, CIERRES[_hashSeed(String(seed), 2) % CIERRES.length]).replace(/\{\{emoji\}\}/gi, EMOJIS[_hashSeed(String(seed), 3) % EMOJIS.length]).replace(/\{\{distrito\}\}/gi, c.distrito || "").replace(/\{\{fecha\}\}/gi, now.toLocaleDateString("es-PE")).replace(/\{\{hora\}\}/gi, now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" }));
+    return text.replace(/\{\{nombre\}\}/gi, nombre).replace(/\{\{brigadista\}\}/gi, brigadista).replace(/\{\{departamento\}\}/gi, _titleCasePhrase((c.departamento || c.distrito || "").trim()) || "tu zona").replace(/\{\{saludo\}\}/gi, SALUDOS[_hashSeed(String(seed), 1) % SALUDOS.length]).replace(/\{\{cierre\}\}/gi, CIERRES[_hashSeed(String(seed), 2) % CIERRES.length]).replace(/\{\{emoji\}\}/gi, EMOJIS[_hashSeed(String(seed), 3) % EMOJIS.length]).replace(/\{\{distrito\}\}/gi, c.distrito || "").replace(/\{\{fecha\}\}/gi, now.toLocaleDateString("es-PE")).replace(/\{\{hora\}\}/gi, now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" }));
   }
   function _spinMessage(tpl, c, idx) {
     const seed = idx * 137 + (c.id ? c.id.charCodeAt(0) : 0);
@@ -2859,12 +2905,26 @@
     _consecFails = 0;
     _loopRunning = true;
     _msgsSinceBreak = 0;
+    fetchGlobalStats();
+    _startStatsRefresh();
     _notify();
     while (_running && !_paused) {
       fetchNumberHealth();
       _phase2 = "cargando";
       _notify();
-      const batch = await _fetchBatch(cfg.batchSize);
+      const rawBatch = await _fetchBatch(cfg.batchSize);
+      const batch = rawBatch.filter((c) => {
+        if (c.id && _habladoIds.has(c.id)) {
+          console.log("[BLAST] Pre-filtro dedup \u2014 ya procesado:", c.id);
+          return false;
+        }
+        const np = _normalizePhone(c.telefono);
+        if (np && _sentThisSession.has(np)) {
+          console.log("[BLAST] Pre-filtro dedup \u2014 tel\xE9fono ya enviado:", np);
+          return false;
+        }
+        return true;
+      });
       if (!batch.length) {
         _running = false;
         _stopCountdown();
@@ -2882,6 +2942,26 @@
         const text = parts[0];
         const cName = ((c.nombre || "") + " " + (c.apellidos || "")).trim();
         let status = "sent", error = null;
+        const rawNombreCheck = ((c.nombre || "") + " " + (c.apellidos || "")).trim();
+        if (!rawNombreCheck) {
+          console.log("[BLAST] Skip sin nombre \u2014 tel:", c.telefono);
+          if (c.id) {
+            _habladoIds.add(c.id);
+            _markHablado([c.id]);
+          }
+          if (normalizedPhone) {
+            _sentThisSession.add(normalizedPhone);
+            _persistDedup(normalizedPhone);
+          }
+          if (c.id) {
+            _sentIds.add(c.id);
+            _persistDedup(c.id);
+          }
+          _lastResults.unshift({ nombre: "\u2014 Sin nombre", telefono: c.telefono, status: "skipped", ack: -1, error: "Sin nombre" });
+          if (_lastResults.length > 30) _lastResults.length = 30;
+          _notify();
+          continue;
+        }
         const lockKey = (normalizedPhone || "") + ":" + (c.id || "");
         if (normalizedPhone && _sentThisSession.has(normalizedPhone) || c.id && _sentIds.has(c.id) || lockKey && _inFlight.has(lockKey)) {
           console.log("[BLAST] Dedup local \u2014 ya enviado/en vuelo:", normalizedPhone || c.id);
@@ -2897,6 +2977,7 @@
         }
         if (c.id) {
           _sentIds.add(c.id);
+          _habladoIds.add(c.id);
           _persistDedup(c.id);
         }
         if (lockKey) _inFlight.add(lockKey);
@@ -3088,6 +3169,8 @@
     _running = false;
     _loopRunning = false;
     _stopCountdown();
+    _stopStatsRefresh();
+    fetchGlobalStats();
     _notify();
   }
   function pauseBlast() {
@@ -3104,6 +3187,7 @@
   function resetSession() {
     _sentThisSession.clear();
     _sentIds.clear();
+    _habladoIds.clear();
     _inFlight.clear();
     window.postMessage({ type: "BLAST_DEDUP_CLEAR" }, WA_ORIGIN);
     _respondedPhones.clear();
@@ -3117,6 +3201,8 @@
     _paused = false;
     _stopCountdown();
     _stopAckTracking();
+    _stopStatsRefresh();
+    fetchGlobalStats();
     _notify();
   }
 
@@ -3932,6 +4018,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       if (!isRunning()) refreshPendingCount();
       fetchNumberHealth();
       fetchNumberConfig();
+      fetchGlobalStats();
     } else {
       if (fab) {
         fab.style.right = "0";
@@ -4032,7 +4119,10 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         localStorage.setItem(TAB_KEY, _tab);
         _renderSidebar();
         if (_tab === "audios" && !_audioLoaded && !_audioLoading) _loadAudios();
-        if (_tab === "blast" && !isRunning()) refreshPendingCount();
+        if (_tab === "blast" && !isRunning()) {
+          refreshPendingCount();
+          fetchGlobalStats();
+        }
       });
     });
   }
@@ -4069,8 +4159,16 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     const ownNum = getOwnNumber();
     const nHealth = getNumberHealth();
     const nAuth = isNumberAuthorized();
+    const gs = getGlobalStats();
     const pendingLabel = pending === null ? "..." : pending.toLocaleString("es-PE");
     const hasPending = pending === null || pending > 0;
+    const gsTotal = gs?.total_contacts ?? 0;
+    const gsHablado = gs?.total_hablado ?? 0;
+    const gsPending = gs?.total_pending ?? 0;
+    const gsSent = gs?.total_sent ?? 0;
+    const gsPct = gsTotal > 0 ? Math.round(gsHablado / gsTotal * 100) : 0;
+    const byNum = gs?.by_number ?? {};
+    const byNumEntries = Object.entries(byNum).filter(([, v]) => v.today > 0 || v.sent > 0).sort(([, a], [, b]) => b.today - a.today).slice(0, 6);
     return `<div style="padding:14px;display:flex;flex-direction:column;gap:12px;">
 
     <!-- ESTADO DEL N\xDAMERO -->
@@ -4095,13 +4193,60 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       ` : ""}
     </div>
 
-    <!-- PENDIENTES -->
-    <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:14px;display:flex;align-items:center;justify-content:space-between;">
-      <div>
-        <div style="font-size:11px;color:${S.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Pendientes en el servidor</div>
-        <div style="font-size:28px;font-weight:800;color:${S.accent};margin-top:2px;">${pendingLabel}</div>
+    <!-- STATS GLOBALES DEL SERVIDOR -->
+    <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-size:11px;color:${S.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Progreso global \u2014 todos los celulares</div>
+        <button id="sb-refresh" style="padding:4px 10px;border-radius:6px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:11px;cursor:pointer;">\u21BB</button>
       </div>
-      <button id="sb-refresh" style="padding:6px 12px;border-radius:6px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:12px;cursor:pointer;">\u21BB</button>
+
+      <!-- Tres contadores grandes -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px;">
+        <div style="background:${S.bg};border:1px solid ${S.border};border-radius:8px;padding:10px 6px;text-align:center;">
+          <div style="font-size:22px;font-weight:800;color:${S.accent};">${gs ? gsPending.toLocaleString("es-PE") : "..."}</div>
+          <div style="font-size:10px;color:${S.muted};margin-top:2px;">Pendientes</div>
+        </div>
+        <div style="background:${S.bg};border:1px solid ${S.border};border-radius:8px;padding:10px 6px;text-align:center;">
+          <div style="font-size:22px;font-weight:800;color:#6b7280;">${gs ? gsHablado.toLocaleString("es-PE") : "..."}</div>
+          <div style="font-size:10px;color:${S.muted};margin-top:2px;">Hablados</div>
+        </div>
+        <div style="background:${S.bg};border:1px solid ${S.border};border-radius:8px;padding:10px 6px;text-align:center;">
+          <div style="font-size:22px;font-weight:800;color:${S.text};">${gs ? gsTotal.toLocaleString("es-PE") : "..."}</div>
+          <div style="font-size:10px;color:${S.muted};margin-top:2px;">Total</div>
+        </div>
+      </div>
+
+      <!-- Barra de progreso -->
+      ${gs ? `
+      <div style="margin-bottom:${byNumEntries.length ? "10" : "0"}px;">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:4px;">
+          <span>Completado</span>
+          <span style="font-weight:700;color:${gsPct >= 80 ? S.accent : S.text};">${gsPct}%</span>
+        </div>
+        <div style="height:6px;background:${S.border};border-radius:3px;overflow:hidden;">
+          <div style="height:100%;width:${gsPct}%;background:${gsPct >= 80 ? S.accent : gsPct >= 50 ? S.blue : S.warn};border-radius:3px;transition:width .4s ease;"></div>
+        </div>
+      </div>
+      ` : ""}
+
+      <!-- Desglose por celular (solo si hay datos hoy) -->
+      ${byNumEntries.length ? `
+      <div style="border-top:1px solid ${S.border};padding-top:8px;">
+        <div style="font-size:10px;color:${S.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Hoy por celular</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          ${byNumEntries.map(([num, v]) => `
+            <div style="display:flex;align-items:center;gap:6px;font-size:11px;">
+              <span style="color:${S.muted};font-size:10px;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="+${num}">${v.label ? _esc(v.label) : "+" + num.slice(-4)}</span>
+              <div style="flex:1;height:4px;background:${S.border};border-radius:2px;overflow:hidden;">
+                <div style="height:100%;width:${gsTotal > 0 ? Math.min(100, Math.round(v.sent / gsTotal * 100 * 6)) : 0}%;background:${S.accent};border-radius:2px;"></div>
+              </div>
+              <span style="font-weight:700;color:${S.text};min-width:28px;text-align:right;">${v.today}</span>
+              <span style="color:${S.muted};font-size:10px;">hoy</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+      ` : ""}
     </div>
 
     <!-- KPIs -->
@@ -4400,6 +4545,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   function _bindContent() {
     $("sb-refresh")?.addEventListener("click", () => {
       refreshPendingCount();
+      fetchGlobalStats();
       _toast3("Actualizando...");
     });
     $("sb-start")?.addEventListener("click", startBlast);

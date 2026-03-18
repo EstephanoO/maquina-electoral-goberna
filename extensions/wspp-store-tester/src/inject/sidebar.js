@@ -12,6 +12,7 @@ import {
   isWithinBlastWindow, getPeruTimeStr,
   getNumberHealth, isNumberAuthorized, fetchNumberHealth, fetchNumberConfig,
   getLastSpamResult,
+  getGlobalStats, fetchGlobalStats,
 } from './blast-panel.js';
 import { analyzeTemplates } from './template-analyzer.js';
 import { toggleValidatorPanel } from './wa-validator-panel.js';
@@ -129,6 +130,7 @@ export function toggleSidebar() {
     if (!isRunning()) refreshPendingCount();
     fetchNumberHealth();
     fetchNumberConfig();
+    fetchGlobalStats();
   } else {
     // Restaurar botón
     if (fab) {
@@ -221,7 +223,7 @@ function _bindShell() {
       localStorage.setItem(TAB_KEY, _tab);
       _renderSidebar();
       if (_tab === 'audios' && !_audioLoaded && !_audioLoading) _loadAudios();
-      if (_tab === 'blast' && !isRunning()) refreshPendingCount();
+      if (_tab === 'blast' && !isRunning()) { refreshPendingCount(); fetchGlobalStats(); }
     });
   });
 }
@@ -272,8 +274,23 @@ function _blastHTML() {
   const nHealth = getNumberHealth();
   const nAuth = isNumberAuthorized();
 
+  const gs = getGlobalStats();
   const pendingLabel = pending === null ? '...' : pending.toLocaleString('es-PE');
   const hasPending = pending === null || pending > 0;
+
+  // Barra de progreso global: % hablado sobre total
+  const gsTotal   = gs?.total_contacts ?? 0;
+  const gsHablado = gs?.total_hablado  ?? 0;
+  const gsPending = gs?.total_pending  ?? 0;
+  const gsSent    = gs?.total_sent     ?? 0;
+  const gsPct     = gsTotal > 0 ? Math.round((gsHablado / gsTotal) * 100) : 0;
+
+  // Desglose por celular (by_number) — mostrar los que tienen actividad hoy
+  const byNum = gs?.by_number ?? {};
+  const byNumEntries = Object.entries(byNum)
+    .filter(([, v]) => v.today > 0 || v.sent > 0)
+    .sort(([, a], [, b]) => b.today - a.today)
+    .slice(0, 6);
 
   return `<div style="padding:14px;display:flex;flex-direction:column;gap:12px;">
 
@@ -299,13 +316,60 @@ function _blastHTML() {
       ` : ''}
     </div>
 
-    <!-- PENDIENTES -->
-    <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:14px;display:flex;align-items:center;justify-content:space-between;">
-      <div>
-        <div style="font-size:11px;color:${S.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Pendientes en el servidor</div>
-        <div style="font-size:28px;font-weight:800;color:${S.accent};margin-top:2px;">${pendingLabel}</div>
+    <!-- STATS GLOBALES DEL SERVIDOR -->
+    <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="font-size:11px;color:${S.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Progreso global — todos los celulares</div>
+        <button id="sb-refresh" style="padding:4px 10px;border-radius:6px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:11px;cursor:pointer;">↻</button>
       </div>
-      <button id="sb-refresh" style="padding:6px 12px;border-radius:6px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:12px;cursor:pointer;">↻</button>
+
+      <!-- Tres contadores grandes -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px;">
+        <div style="background:${S.bg};border:1px solid ${S.border};border-radius:8px;padding:10px 6px;text-align:center;">
+          <div style="font-size:22px;font-weight:800;color:${S.accent};">${gs ? gsPending.toLocaleString('es-PE') : '...'}</div>
+          <div style="font-size:10px;color:${S.muted};margin-top:2px;">Pendientes</div>
+        </div>
+        <div style="background:${S.bg};border:1px solid ${S.border};border-radius:8px;padding:10px 6px;text-align:center;">
+          <div style="font-size:22px;font-weight:800;color:#6b7280;">${gs ? gsHablado.toLocaleString('es-PE') : '...'}</div>
+          <div style="font-size:10px;color:${S.muted};margin-top:2px;">Hablados</div>
+        </div>
+        <div style="background:${S.bg};border:1px solid ${S.border};border-radius:8px;padding:10px 6px;text-align:center;">
+          <div style="font-size:22px;font-weight:800;color:${S.text};">${gs ? gsTotal.toLocaleString('es-PE') : '...'}</div>
+          <div style="font-size:10px;color:${S.muted};margin-top:2px;">Total</div>
+        </div>
+      </div>
+
+      <!-- Barra de progreso -->
+      ${gs ? `
+      <div style="margin-bottom:${byNumEntries.length ? '10' : '0'}px;">
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:4px;">
+          <span>Completado</span>
+          <span style="font-weight:700;color:${gsPct >= 80 ? S.accent : S.text};">${gsPct}%</span>
+        </div>
+        <div style="height:6px;background:${S.border};border-radius:3px;overflow:hidden;">
+          <div style="height:100%;width:${gsPct}%;background:${gsPct >= 80 ? S.accent : gsPct >= 50 ? S.blue : S.warn};border-radius:3px;transition:width .4s ease;"></div>
+        </div>
+      </div>
+      ` : ''}
+
+      <!-- Desglose por celular (solo si hay datos hoy) -->
+      ${byNumEntries.length ? `
+      <div style="border-top:1px solid ${S.border};padding-top:8px;">
+        <div style="font-size:10px;color:${S.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Hoy por celular</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          ${byNumEntries.map(([num, v]) => `
+            <div style="display:flex;align-items:center;gap:6px;font-size:11px;">
+              <span style="color:${S.muted};font-size:10px;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="+${num}">${v.label ? _esc(v.label) : '+' + num.slice(-4)}</span>
+              <div style="flex:1;height:4px;background:${S.border};border-radius:2px;overflow:hidden;">
+                <div style="height:100%;width:${gsTotal > 0 ? Math.min(100, Math.round((v.sent / gsTotal) * 100 * 6)) : 0}%;background:${S.accent};border-radius:2px;"></div>
+              </div>
+              <span style="font-weight:700;color:${S.text};min-width:28px;text-align:right;">${v.today}</span>
+              <span style="color:${S.muted};font-size:10px;">hoy</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      ` : ''}
     </div>
 
     <!-- KPIs -->
@@ -620,7 +684,7 @@ function _validarHTML() {
 // ══════════════════════════════════════════════════════════════════════
 function _bindContent() {
   // ── Blast ──
-  $('sb-refresh')?.addEventListener('click', () => { refreshPendingCount(); _toast('Actualizando...'); });
+  $('sb-refresh')?.addEventListener('click', () => { refreshPendingCount(); fetchGlobalStats(); _toast('Actualizando...'); });
   $('sb-start')?.addEventListener('click', startBlast);
   $('sb-pause')?.addEventListener('click', pauseBlast);
   $('sb-resume')?.addEventListener('click', resumeBlast);

@@ -93,6 +93,11 @@ let _trackedMsgs = [];    // { msgModel, contactName, telefono } — live ack tr
 // extensión lo ignore sin volver a enviar.
 const _sentThisSession = new Set();  // Set de telefono normalizado
 const _sentIds = new Set();          // Set de form_submission.id
+// _habladoIds: IDs marcados como hablado en esta sesión (superset de _sentIds).
+// Filtra el batch que llega del backend ANTES de procesarlo — protege contra
+// el lag de mark-hablado en DB. Un contacto se agrega aquí en cuanto se envía
+// o se salta (sin nombre, no_wa, etc).
+const _habladoIds = new Set();       // Set de form_submission.id ya procesados
 
 // ── Persist dedup across page reloads via chrome.storage ──────────────
 // On each send, we postMessage to content.js which saves to chrome.storage.
@@ -104,7 +109,13 @@ function _persistDedup(phone) {
 function _loadPersistedDedup(phones) {
   if (Array.isArray(phones)) {
     for (const p of phones) {
-      _sentThisSession.add(p);
+      // UUIDs (contienen '-') van a _habladoIds + _sentIds; el resto son teléfonos
+      if (p.includes('-')) {
+        _habladoIds.add(p);
+        _sentIds.add(p);
+      } else {
+        _sentThisSession.add(p);
+      }
     }
     console.log('[BLAST] Loaded', phones.length, 'persisted dedup entries');
   }
@@ -160,6 +171,45 @@ export function getLastResults() { return _lastResults; }
 export function setOnUpdate(fn) { _onUpdate = fn; }
 export function getTplIndex() { return _tplIndex; } // índice actual de rotación
 export function getRespondedCount() { return _respondedPhones.size; }
+
+// ── Stats globales del servidor (compartidas entre todos los celulares) ──
+// Se actualiza al abrir el sidebar, cada 30s mientras corre, y tras cada mark-hablado.
+// { total_contacts, total_sent, total_pending, total_hablado, by_number }
+let _globalStats = null;
+let _globalStatsTimer = null;
+
+export function getGlobalStats() { return _globalStats; }
+
+export function fetchGlobalStats() {
+  window.postMessage({ type: 'BLAST_GET_STATS' }, WA_ORIGIN);
+}
+
+// Arrancar/parar el auto-refresh de stats globales (cada 30s)
+function _startStatsRefresh() {
+  if (_globalStatsTimer) return;
+  _globalStatsTimer = setInterval(fetchGlobalStats, 30000);
+}
+function _stopStatsRefresh() {
+  if (_globalStatsTimer) { clearInterval(_globalStatsTimer); _globalStatsTimer = null; }
+}
+
+// Listener para la respuesta del backend
+window.addEventListener('message', (e) => {
+  if (e.source !== window || e.data?.type !== 'BLAST_STATS_READY') return;
+  if (e.data.ok && e.data.stats) {
+    _globalStats = {
+      total_contacts: e.data.stats.total_contacts ?? 0,
+      total_sent:     e.data.stats.total_sent     ?? 0,
+      total_pending:  e.data.stats.total_pending  ?? 0,
+      total_failed:   e.data.stats.total_failed   ?? 0,
+      total_no_wa:    e.data.stats.total_no_wa    ?? 0,
+      // hablado = total con cms_status hablado (= total - pending)
+      total_hablado:  (e.data.stats.total_contacts ?? 0) - (e.data.stats.total_pending ?? 0),
+      by_number:      e.data.by_number ?? {},
+    };
+  }
+  _notify();
+});
 
 // ── Number Health: estado del número activo ──────────────────────────
 let _numberHealth = null; // { sent_last_hour, sent_today, daily_limit, hourly_limit, can_send, risk_level, age_days }
@@ -343,7 +393,10 @@ function _fetchBatch(limit) {
 }
 
 function _markHablado(ids) {
-  if (ids.length) window.postMessage({ type: 'BLAST_MARK_HABLADO', ids, own_number: getOwnNumber() }, WA_ORIGIN);
+  if (!ids.length) return;
+  window.postMessage({ type: 'BLAST_MARK_HABLADO', ids, own_number: getOwnNumber() }, WA_ORIGIN);
+  // Actualizar stats globales poco después de marcar — el servidor tarda ~200ms en commitear
+  setTimeout(fetchGlobalStats, 1500);
 }
 
 function _reportLog(results) {
@@ -413,6 +466,13 @@ function _toTitleCase(word) {
   return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
 }
 
+// Convierte una frase completa a Title Case palabra por palabra.
+// Ej: "LA LIBERTAD" → "La Libertad", "SAN MARTÍN" → "San Martín"
+function _titleCasePhrase(phrase) {
+  if (!phrase) return '';
+  return phrase.split(/\s+/).map(_toTitleCase).join(' ');
+}
+
 // Reemplaza variables {{nombre}}, {{saludo}}, {{brigadista}}, etc.
 function _applyVars(text, c, seed) {
   const rawNombre = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim().split(/\s+/)[0] || 'amigo';
@@ -424,7 +484,7 @@ function _applyVars(text, c, seed) {
   return text
     .replace(/\{\{nombre\}\}/gi, nombre)
     .replace(/\{\{brigadista\}\}/gi, brigadista)
-    .replace(/\{\{departamento\}\}/gi, (c.departamento || c.distrito || '').trim() || 'tu zona')
+    .replace(/\{\{departamento\}\}/gi, _titleCasePhrase((c.departamento || c.distrito || '').trim()) || 'tu zona')
     .replace(/\{\{saludo\}\}/gi, SALUDOS[_hashSeed(String(seed), 1) % SALUDOS.length])
     .replace(/\{\{cierre\}\}/gi, CIERRES[_hashSeed(String(seed), 2) % CIERRES.length])
     .replace(/\{\{emoji\}\}/gi,  EMOJIS[_hashSeed(String(seed),  3) % EMOJIS.length])
@@ -733,6 +793,8 @@ export async function startBlast() {
 
   _running = true; _paused = false; _consecFails = 0; _loopRunning = true;
   _msgsSinceBreak = 0; // reset micro-break counter
+  fetchGlobalStats();   // carga inmediata de stats globales al arrancar
+  _startStatsRefresh(); // auto-refresh cada 30s mientras corre
   _notify();
 
   while (_running && !_paused) {
@@ -741,7 +803,23 @@ export async function startBlast() {
 
     // 1. Fetch batch
     _phase = 'cargando'; _notify();
-    const batch = await _fetchBatch(cfg.batchSize);
+    const rawBatch = await _fetchBatch(cfg.batchSize);
+
+    // ── Filtro dedup local pre-proceso ──────────────────────────────────
+    // El servidor puede devolver contactos que ya procesamos en esta sesión
+    // por lag de mark-hablado en DB. Los filtramos aquí antes de procesarlos.
+    const batch = rawBatch.filter(c => {
+      if (c.id && _habladoIds.has(c.id)) {
+        console.log('[BLAST] Pre-filtro dedup — ya procesado:', c.id);
+        return false;
+      }
+      const np = _normalizePhone(c.telefono);
+      if (np && _sentThisSession.has(np)) {
+        console.log('[BLAST] Pre-filtro dedup — teléfono ya enviado:', np);
+        return false;
+      }
+      return true;
+    });
 
     if (!batch.length) { _running = false; _stopCountdown(); _notify(); break; }
 
@@ -768,6 +846,21 @@ export async function startBlast() {
       const cName = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim();
       let status = 'sent', error = null;
 
+      // ── Skip contactos sin nombre ─────────────────────────────────────
+      // Si el contacto no tiene nombre no mandamos mensaje.
+      // Lo marcamos hablado para sacarlo de la cola y no bloquearlo forever.
+      const rawNombreCheck = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim();
+      if (!rawNombreCheck) {
+        console.log('[BLAST] Skip sin nombre — tel:', c.telefono);
+        if (c.id) { _habladoIds.add(c.id); _markHablado([c.id]); }
+        if (normalizedPhone) { _sentThisSession.add(normalizedPhone); _persistDedup(normalizedPhone); }
+        if (c.id) { _sentIds.add(c.id); _persistDedup(c.id); }
+        _lastResults.unshift({ nombre: '— Sin nombre', telefono: c.telefono, status: 'skipped', ack: -1, error: 'Sin nombre' });
+        if (_lastResults.length > 30) _lastResults.length = 30;
+        _notify();
+        continue;
+      }
+
       // ── DEDUP local: skip si ya enviamos a este teléfono o ID en esta sesión ──
       // Protege contra el lag del servidor al marcar hablado — sin esperar al backend.
       const lockKey = (normalizedPhone || '') + ':' + (c.id || '');
@@ -789,7 +882,7 @@ export async function startBlast() {
       // Registrar en dedup ANTES del envío — no después
       // Así, si el send falla a mitad, el contacto no vuelve a aparecer en este batch
       if (normalizedPhone) { _sentThisSession.add(normalizedPhone); _persistDedup(normalizedPhone); }
-      if (c.id) { _sentIds.add(c.id); _persistDedup(c.id); }
+      if (c.id) { _sentIds.add(c.id); _habladoIds.add(c.id); _persistDedup(c.id); }
       if (lockKey) _inFlight.add(lockKey);
 
       if (!jid) {
@@ -977,7 +1070,9 @@ export async function startBlast() {
     await _sleep(5000); _stopCountdown();
   }
 
-  _running = false; _loopRunning = false; _stopCountdown(); _notify();
+  _running = false; _loopRunning = false; _stopCountdown(); _stopStatsRefresh();
+  fetchGlobalStats(); // snapshot final al terminar
+  _notify();
 }
 
 export function pauseBlast() {
@@ -994,6 +1089,7 @@ export function resumeBlast() {
 export function resetSession() {
   _sentThisSession.clear();
   _sentIds.clear();
+  _habladoIds.clear();
   _inFlight.clear();
   window.postMessage({ type: 'BLAST_DEDUP_CLEAR' }, WA_ORIGIN);
   _respondedPhones.clear();
@@ -1001,7 +1097,10 @@ export function resetSession() {
   _tplIndex = 0;
   _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
   _lastResults = []; _trackedMsgs = []; _totalPending = null;
-  _running = false; _paused = false; _stopCountdown(); _stopAckTracking(); _notify();
+  _running = false; _paused = false; _stopCountdown(); _stopAckTracking();
+  _stopStatsRefresh();
+  fetchGlobalStats(); // refrescar al limpiar para mostrar estado real
+  _notify();
 }
 
 

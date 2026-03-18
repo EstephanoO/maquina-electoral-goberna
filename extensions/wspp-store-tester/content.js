@@ -353,6 +353,20 @@ window.addEventListener('message', (e) => {
     return;
   }
 
+  // --- BLAST_GET_STATS (inject → background → inject) ---
+  // Devuelve stats globales del servidor: total/hablado/pendiente por campaña.
+  // Todos los celulares ven el mismo número porque viene del backend.
+  if (e.data?.type === 'BLAST_GET_STATS') {
+    chrome.runtime.sendMessage({ type: 'BLAST_GET_STATS' }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({ type: 'BLAST_STATS_READY', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
+        return;
+      }
+      window.postMessage({ type: 'BLAST_STATS_READY', ok: response?.ok ?? false, stats: response?.stats ?? null, by_number: response?.by_number ?? {} }, WA_ORIGIN);
+    });
+    return;
+  }
+
   // --- BLAST_GET_NUMBER_HEALTH (inject → background → inject) ---
   if (e.data?.type === 'BLAST_GET_NUMBER_HEALTH') {
     const own_number = e.data.own_number;
