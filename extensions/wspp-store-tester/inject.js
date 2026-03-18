@@ -2434,6 +2434,67 @@
   var _respondedPhones = /* @__PURE__ */ new Set();
   var _tplIndex = 0;
   var _sessionSent = 0;
+  var _previewContacts = [];
+  var _previewSkipped = /* @__PURE__ */ new Set();
+  var _previewLoading = false;
+  var _previewReady = false;
+  function getPreviewContacts() {
+    return _previewContacts;
+  }
+  function isPreviewLoading() {
+    return _previewLoading;
+  }
+  function isPreviewReady() {
+    return _previewReady;
+  }
+  function getPreviewSkipped() {
+    return _previewSkipped;
+  }
+  async function fetchPreview(n = 5) {
+    _previewLoading = true;
+    _previewReady = false;
+    _previewContacts = [];
+    _previewSkipped.clear();
+    _notify();
+    try {
+      const contacts = await _fetchBatch(n);
+      _previewContacts = contacts;
+    } catch (_) {
+      _previewContacts = [];
+    }
+    _previewLoading = false;
+    _notify();
+  }
+  function previewSkip(id) {
+    _previewSkipped.add(id);
+    _habladoIds.add(id);
+    _sentIds.add(id);
+    _notify();
+  }
+  function previewRestore(id) {
+    _previewSkipped.delete(id);
+    _habladoIds.delete(id);
+    _sentIds.delete(id);
+    _notify();
+  }
+  async function previewMarkHablado(id) {
+    _previewSkipped.add(id);
+    _habladoIds.add(id);
+    _sentIds.add(id);
+    await _markHablado([id], []);
+    _notify();
+  }
+  function previewConfirm() {
+    _previewReady = true;
+    _notify();
+  }
+  function previewCancel() {
+    _previewContacts = [];
+    _previewSkipped.clear();
+    _previewLoading = false;
+    _previewReady = false;
+    _notify();
+  }
   var _lastSpamResult = null;
   function getLastSpamResult() {
     return _lastSpamResult;
@@ -2949,6 +3010,12 @@
       _notify();
       await _dedupReadyPromise;
     }
+    if (!_previewReady) {
+      await fetchPreview(5);
+      return;
+    }
+    _previewContacts = [];
+    _previewReady = false;
     const activeNumber = getOwnNumber();
     if (!activeNumber) {
       _lastResults.unshift({ nombre: "\u274C Sin n\xFAmero", telefono: "", status: "blocked", ack: -1, error: "No se detect\xF3 el n\xFAmero de este dispositivo. Recarg\xE1 WhatsApp Web." });
@@ -3304,6 +3371,10 @@
     _loopRunning = false;
     _tplIndex = 0;
     _sessionSent = 0;
+    _previewContacts = [];
+    _previewSkipped.clear();
+    _previewLoading = false;
+    _previewReady = false;
     _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
     _lastResults = [];
     _trackedMsgs = [];
@@ -4553,8 +4624,63 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     </div>
     ` : ""}
 
+    <!-- PREVIEW \u2014 muestra pr\xF3ximos contactos antes de arrancar -->
+    ${isPreviewLoading() ? `
+      <div style="background:${S.card};border:1px solid ${S.border};border-radius:12px;padding:16px;text-align:center;">
+        <div style="font-size:13px;color:${S.muted};">Cargando preview...</div>
+      </div>
+    ` : getPreviewContacts().length > 0 && !isPreviewReady() && !running ? `
+      <div style="background:${S.card};border:1px solid ${S.border};border-radius:12px;padding:14px;">
+        <div style="font-size:12px;font-weight:700;color:${S.text};margin-bottom:10px;">
+          \u{1F441} Pr\xF3ximos a enviar \u2014 revis\xE1 antes de confirmar
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
+          ${getPreviewContacts().map((c) => {
+      const skipped = getPreviewSkipped().has(c.id);
+      const nombre = ((c.nombre || "") + " " + (c.apellidos || "")).trim() || "\u2014 Sin nombre";
+      return `
+            <div data-preview-id="${_esc(c.id)}" style="
+              display:flex;align-items:center;gap:8px;padding:8px 10px;
+              background:${skipped ? "#fef2f2" : S.bg};
+              border:1px solid ${skipped ? "#fecaca" : S.border};
+              border-radius:8px;opacity:${skipped ? "0.6" : "1"};
+              transition:all .15s;
+            ">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:12px;font-weight:600;color:${skipped ? S.danger : S.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  ${skipped ? "\u{1F6AB} " : ""}${_esc(nombre)}
+                </div>
+                <div style="font-size:10px;color:${S.muted};margin-top:1px;">
+                  +${_esc(c.telefono || "?")}
+                  ${c.departamento ? ` \xB7 ${_esc(c.departamento)}` : ""}
+                  ${c.heat_score === 2 ? " \u{1F525}" : ""}
+                </div>
+              </div>
+              ${skipped ? `
+                <button data-restore="${_esc(c.id)}" title="Restaurar" style="padding:3px 8px;border-radius:5px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:10px;cursor:pointer;flex-shrink:0;">\u21A9</button>
+              ` : `
+                <button data-skip="${_esc(c.id)}" title="Saltear" style="padding:3px 8px;border-radius:5px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:10px;cursor:pointer;flex-shrink:0;">Saltear</button>
+                <button data-markhablado="${_esc(c.id)}" title="Ya le hablamos" style="padding:3px 8px;border-radius:5px;border:1px solid #fecaca;background:#fef2f2;color:${S.danger};font-size:10px;cursor:pointer;flex-shrink:0;">\u2713 Hablado</button>
+              `}
+            </div>`;
+    }).join("")}
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button id="sb-preview-cancel" style="
+            flex:1;padding:10px;border-radius:8px;border:1px solid ${S.border};
+            background:${S.bg};color:${S.muted};font-size:13px;font-weight:600;cursor:pointer;
+          ">\u2715 Cancelar</button>
+          <button id="sb-preview-confirm" style="
+            flex:2;padding:10px;border-radius:8px;border:none;
+            background:${S.accent};color:#fff;font-size:13px;font-weight:700;cursor:pointer;
+            box-shadow:0 2px 8px ${S.accent}40;
+          ">\u25B6 Confirmar y enviar</button>
+        </div>
+      </div>
+    ` : ""}
+
     <!-- CONTROLES -->
-    ${!running && !paused && hasPending ? `
+    ${!running && !paused && hasPending && !isPreviewLoading() && getPreviewContacts().length === 0 ? `
       ${!inWindow ? `
         <div style="text-align:center;padding:12px;background:${S.dangerBg};border:1px solid #fecaca;border-radius:10px;font-size:12px;color:${S.danger};font-weight:600;">
           \u{1F534} No se puede enviar fuera de horario (${peruTime})
@@ -4666,6 +4792,34 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       resetSession();
       refreshPendingCount();
       _renderContent();
+    });
+    $("sb-preview-cancel")?.addEventListener("click", () => {
+      previewCancel();
+      _renderContent();
+    });
+    $("sb-preview-confirm")?.addEventListener("click", async () => {
+      previewConfirm();
+      await startBlast();
+    });
+    document.querySelectorAll("[data-skip]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        previewSkip(btn.dataset.skip);
+        _renderContent();
+      });
+    });
+    document.querySelectorAll("[data-restore]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        previewRestore(btn.dataset.restore);
+        _renderContent();
+      });
+    });
+    document.querySelectorAll("[data-markhablado]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        btn.textContent = "...";
+        await previewMarkHablado(btn.dataset.markhablado);
+        _renderContent();
+      });
     });
     document.querySelectorAll("[data-preset]").forEach((btn) => {
       btn.addEventListener("click", () => {

@@ -13,6 +13,8 @@ import {
   getNumberHealth, isNumberAuthorized, fetchNumberHealth, fetchNumberConfig,
   getLastSpamResult,
   getGlobalStats, fetchGlobalStats,
+  getPreviewContacts, isPreviewLoading, isPreviewReady, getPreviewSkipped,
+  previewSkip, previewRestore, previewMarkHablado, previewConfirm, previewCancel,
 } from './blast-panel.js';
 import { analyzeTemplates } from './template-analyzer.js';
 import { toggleValidatorPanel } from './wa-validator-panel.js';
@@ -565,8 +567,63 @@ function _blastHTML() {
     </div>
     ` : ''}
 
+    <!-- PREVIEW — muestra próximos contactos antes de arrancar -->
+    ${isPreviewLoading() ? `
+      <div style="background:${S.card};border:1px solid ${S.border};border-radius:12px;padding:16px;text-align:center;">
+        <div style="font-size:13px;color:${S.muted};">Cargando preview...</div>
+      </div>
+    ` : getPreviewContacts().length > 0 && !isPreviewReady() && !running ? `
+      <div style="background:${S.card};border:1px solid ${S.border};border-radius:12px;padding:14px;">
+        <div style="font-size:12px;font-weight:700;color:${S.text};margin-bottom:10px;">
+          👁 Próximos a enviar — revisá antes de confirmar
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
+          ${getPreviewContacts().map(c => {
+            const skipped = getPreviewSkipped().has(c.id);
+            const nombre = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim() || '— Sin nombre';
+            return `
+            <div data-preview-id="${_esc(c.id)}" style="
+              display:flex;align-items:center;gap:8px;padding:8px 10px;
+              background:${skipped ? '#fef2f2' : S.bg};
+              border:1px solid ${skipped ? '#fecaca' : S.border};
+              border-radius:8px;opacity:${skipped ? '0.6' : '1'};
+              transition:all .15s;
+            ">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:12px;font-weight:600;color:${skipped ? S.danger : S.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  ${skipped ? '🚫 ' : ''}${_esc(nombre)}
+                </div>
+                <div style="font-size:10px;color:${S.muted};margin-top:1px;">
+                  +${_esc(c.telefono || '?')}
+                  ${c.departamento ? ` · ${_esc(c.departamento)}` : ''}
+                  ${c.heat_score === 2 ? ' 🔥' : ''}
+                </div>
+              </div>
+              ${skipped ? `
+                <button data-restore="${_esc(c.id)}" title="Restaurar" style="padding:3px 8px;border-radius:5px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:10px;cursor:pointer;flex-shrink:0;">↩</button>
+              ` : `
+                <button data-skip="${_esc(c.id)}" title="Saltear" style="padding:3px 8px;border-radius:5px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:10px;cursor:pointer;flex-shrink:0;">Saltear</button>
+                <button data-markhablado="${_esc(c.id)}" title="Ya le hablamos" style="padding:3px 8px;border-radius:5px;border:1px solid #fecaca;background:#fef2f2;color:${S.danger};font-size:10px;cursor:pointer;flex-shrink:0;">✓ Hablado</button>
+              `}
+            </div>`;
+          }).join('')}
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button id="sb-preview-cancel" style="
+            flex:1;padding:10px;border-radius:8px;border:1px solid ${S.border};
+            background:${S.bg};color:${S.muted};font-size:13px;font-weight:600;cursor:pointer;
+          ">✕ Cancelar</button>
+          <button id="sb-preview-confirm" style="
+            flex:2;padding:10px;border-radius:8px;border:none;
+            background:${S.accent};color:#fff;font-size:13px;font-weight:700;cursor:pointer;
+            box-shadow:0 2px 8px ${S.accent}40;
+          ">▶ Confirmar y enviar</button>
+        </div>
+      </div>
+    ` : ''}
+
     <!-- CONTROLES -->
-    ${!running && !paused && hasPending ? `
+    ${!running && !paused && hasPending && !isPreviewLoading() && getPreviewContacts().length === 0 ? `
       ${!inWindow ? `
         <div style="text-align:center;padding:12px;background:${S.dangerBg};border:1px solid #fecaca;border-radius:10px;font-size:12px;color:${S.danger};font-weight:600;">
           🔴 No se puede enviar fuera de horario (${peruTime})
@@ -689,6 +746,27 @@ function _bindContent() {
   $('sb-pause')?.addEventListener('click', pauseBlast);
   $('sb-resume')?.addEventListener('click', resumeBlast);
   $('sb-reset')?.addEventListener('click', () => { resetSession(); refreshPendingCount(); _renderContent(); });
+
+  // ── Preview ──
+  $('sb-preview-cancel')?.addEventListener('click', () => { previewCancel(); _renderContent(); });
+  $('sb-preview-confirm')?.addEventListener('click', async () => {
+    previewConfirm();
+    await startBlast();  // arranca el blast con los contactos no salteados
+  });
+  // Botones skip / restore / markhablado por delegación de eventos
+  document.querySelectorAll('[data-skip]').forEach(btn => {
+    btn.addEventListener('click', () => { previewSkip(btn.dataset.skip); _renderContent(); });
+  });
+  document.querySelectorAll('[data-restore]').forEach(btn => {
+    btn.addEventListener('click', () => { previewRestore(btn.dataset.restore); _renderContent(); });
+  });
+  document.querySelectorAll('[data-markhablado]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = '...';
+      await previewMarkHablado(btn.dataset.markhablado);
+      _renderContent();
+    });
+  });
 
   // Presets de tanda
   document.querySelectorAll('[data-preset]').forEach(btn => {

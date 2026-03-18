@@ -157,6 +157,74 @@ let _tplIndex = 0;
 // Usado para el control de response_rate cada 100 msgs.
 let _sessionSent = 0;
 
+// ── Modo Preview ───────────────────────────────────────────────────────
+// Antes de arrancar el blast, muestra los próximos N contactos para
+// que el operador pueda revisar, saltear o marcar como hablado.
+// _previewContacts: lista de contactos que se van a enviar
+// _previewSkipped:  Set de IDs que el operador decidió saltear
+let _previewContacts = [];   // ContactRow[]
+let _previewSkipped  = new Set();  // IDs a saltear
+let _previewLoading  = false;
+let _previewReady    = false;  // true = el usuario confirmó y podemos arrancar
+
+export function getPreviewContacts()  { return _previewContacts; }
+export function isPreviewLoading()    { return _previewLoading; }
+export function isPreviewReady()      { return _previewReady; }
+export function getPreviewSkipped()   { return _previewSkipped; }
+
+// Carga los próximos N contactos sin enviarlos — para preview
+export async function fetchPreview(n = 5) {
+  _previewLoading = true; _previewReady = false; _previewContacts = []; _previewSkipped.clear();
+  _notify();
+  try {
+    const contacts = await _fetchBatch(n);
+    _previewContacts = contacts;
+  } catch (_) {
+    _previewContacts = [];
+  }
+  _previewLoading = false;
+  _notify();
+}
+
+// El operador decide saltear un contacto del preview
+export function previewSkip(id) {
+  _previewSkipped.add(id);
+  // Registrar en dedup para que no aparezca tampoco en el blast
+  _habladoIds.add(id);
+  _sentIds.add(id);
+  _notify();
+}
+
+// El operador decide restaurar un contacto del preview
+export function previewRestore(id) {
+  _previewSkipped.delete(id);
+  _habladoIds.delete(id);
+  _sentIds.delete(id);
+  _notify();
+}
+
+// El operador marca un contacto del preview como ya hablado en la DB
+export async function previewMarkHablado(id) {
+  _previewSkipped.add(id);
+  _habladoIds.add(id);
+  _sentIds.add(id);
+  await _markHablado([id], []);
+  _notify();
+}
+
+// El operador confirma el preview — el blast arrancará con los contactos no salteados
+export function previewConfirm() {
+  _previewReady = true;
+  _notify();
+}
+
+// Cancelar preview — limpiar todo
+export function previewCancel() {
+  _previewContacts = []; _previewSkipped.clear();
+  _previewLoading = false; _previewReady = false;
+  _notify();
+}
+
 // ── Último resultado del spam check (visible en sidebar) ──────────────
 let _lastSpamResult = null;
 export function getLastSpamResult() { return _lastSpamResult; }
@@ -808,15 +876,29 @@ function _stopCountdown() { clearInterval(_countdownTimer); _countdown = 0; _pha
 // ══════════════════════════════════════════════════════════════════════
 export async function startBlast() {
   if (_running) return;
-  if (_loopRunning) return; // previene segundo loop si resume llega antes de que el primero termine
+  if (_loopRunning) return;
   if (!tpls.length || !tpls[0].trim()) return;
 
   // Esperar que el dedup de chrome.storage haya cargado (máx 3s)
-  // Evita mandar a gente ya contactada cuando se recarga la página o se reinicia el blast
   if (!_dedupReady) {
     _phase = 'cargando'; _notify();
     await _dedupReadyPromise;
   }
+
+  // ── MODO PREVIEW ────────────────────────────────────────────────────
+  // Si el preview no está listo, cargar los próximos 5 contactos y esperar
+  // que el operador los revise y confirme antes de arrancar el blast.
+  if (!_previewReady) {
+    await fetchPreview(5);
+    // Esperar confirmación del operador (previewConfirm() pone _previewReady=true)
+    // El sidebar mostrará los contactos con botones de acción.
+    // El operador debe presionar "Confirmar y enviar" para continuar.
+    return; // salir — el sidebar llamará startBlast() de nuevo cuando confirme
+  }
+
+  // Preview confirmado — limpiar estado de preview
+  _previewContacts = [];
+  _previewReady = false;
 
   // Guard: número no detectado
   const activeNumber = getOwnNumber();
@@ -1193,6 +1275,8 @@ export function resetSession() {
   _loopRunning = false;
   _tplIndex = 0;
   _sessionSent = 0;
+  _previewContacts = []; _previewSkipped.clear();
+  _previewLoading = false; _previewReady = false;
   _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
   _lastResults = []; _trackedMsgs = []; _totalPending = null;
   _running = false; _paused = false; _stopCountdown(); _stopAckTracking();
