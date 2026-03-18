@@ -2298,7 +2298,7 @@
     });
   }
   var CFG_KEY = "wspp_blast_cfg_v3";
-  var TPL_KEY = "wspp_blast_tpls_v4";
+  var TPL_KEY = "wspp_blast_tpls_v5";
   var DEFAULTS = {
     batchSize: 25,
     // personas por tanda — el usuario lo cambia en la UI
@@ -2323,9 +2323,9 @@
     }
   }
   var cfg = _loadCfg();
-  var DEFAULT_TPL = "[Buenas tardes|Buenas|Hola|Buen d\xEDa] {{nombre}}, \xBF[c\xF3mo te encuentras?|c\xF3mo est\xE1s?|todo bien?|c\xF3mo te va?]\n---\nSoy el doctor C\xE9sar V\xE1squez\n---\n[Candidato al Senado Nacional|Postulante al Senado Nacional] \u{1F1F5}\u{1F1EA}";
-  var DEFAULT_TPL2 = "[Hola|Buenas|Buenas tardes] {{nombre}} \u{1F44B} \xBF[c\xF3mo est\xE1s?|todo bien?|c\xF3mo te va?]\n---\nSoy el doctor C\xE9sar V\xE1squez, [candidato al Senado Nacional|postulante al Senado Nacional] \u{1F1F5}\u{1F1EA}";
-  var DEFAULT_TPL3 = "[Hola|Buenas|Buenas tardes] {{nombre}}, \xBF[c\xF3mo te encuentras?|todo bien?|c\xF3mo est\xE1s?] Soy el doctor C\xE9sar V\xE1squez, [candidato al Senado Nacional|postulante al Senado Nacional] \u{1F1F5}\u{1F1EA}";
+  var DEFAULT_TPL = "[Buenas tardes|Buenas|Hola|Buen d\xEDa] {{nombre}}, \xBF[c\xF3mo te encuentras?|c\xF3mo est\xE1s?|todo bien?|c\xF3mo te va?]\n---\n[Tu n\xFAmero me lleg\xF3 gracias a|Me comunic\xF3 tu contacto|Tu n\xFAmero me lo comparti\xF3] {{brigadista}} [y quer\xEDa saludarte personalmente|y me pareci\xF3 importante escribirte|y quise comunicarme contigo]\n---\nSoy el doctor C\xE9sar V\xE1squez, [candidato al Senado Nacional #3|postulante al Senado Nacional #3|n\xFAmero 3 al Senado Nacional] \u{1F1F5}\u{1F1EA}";
+  var DEFAULT_TPL2 = "[Hola|Buenas|Buenas tardes] {{nombre}} \u{1F44B} [Tu n\xFAmero me lo pas\xF3|Me contact\xF3 de tu parte|Tu dato me lleg\xF3 por] {{brigadista}}\n---\nSoy el doctor C\xE9sar V\xE1squez, [candidato al Senado Nacional #3|postulante al Senado Nacional #3] \u{1F1F5}\u{1F1EA} [y quer\xEDa presentarme|y te escribo para saludarte]";
+  var DEFAULT_TPL3 = "[Hola|Buenas|Buenas tardes] {{nombre}}, [tu n\xFAmero me lleg\xF3 gracias a|me comunic\xF3 tu contacto|tu dato me lo pas\xF3] {{brigadista}}. Soy el doctor C\xE9sar V\xE1squez, [candidato al Senado Nacional #3|postulante al Senado Nacional #3] \u{1F1F5}\u{1F1EA}";
   function _loadTpls() {
     try {
       const r = localStorage.getItem(TPL_KEY);
@@ -2604,8 +2604,10 @@
   }
   function _applyVars(text, c, seed) {
     const nombre = ((c.nombre || "") + " " + (c.apellidos || "")).trim().split(/\s+/)[0] || "amigo";
+    const rawBrigadista = (c.encuestador || "").trim();
+    const brigadista = rawBrigadista.split(/\s+/)[0] || "un colaborador";
     const now = /* @__PURE__ */ new Date();
-    return text.replace(/\{\{nombre\}\}/gi, nombre).replace(/\{\{saludo\}\}/gi, SALUDOS[_hashSeed(String(seed), 1) % SALUDOS.length]).replace(/\{\{cierre\}\}/gi, CIERRES[_hashSeed(String(seed), 2) % CIERRES.length]).replace(/\{\{emoji\}\}/gi, EMOJIS[_hashSeed(String(seed), 3) % EMOJIS.length]).replace(/\{\{distrito\}\}/gi, c.distrito || "").replace(/\{\{fecha\}\}/gi, now.toLocaleDateString("es-PE")).replace(/\{\{hora\}\}/gi, now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" }));
+    return text.replace(/\{\{nombre\}\}/gi, nombre).replace(/\{\{brigadista\}\}/gi, brigadista).replace(/\{\{saludo\}\}/gi, SALUDOS[_hashSeed(String(seed), 1) % SALUDOS.length]).replace(/\{\{cierre\}\}/gi, CIERRES[_hashSeed(String(seed), 2) % CIERRES.length]).replace(/\{\{emoji\}\}/gi, EMOJIS[_hashSeed(String(seed), 3) % EMOJIS.length]).replace(/\{\{distrito\}\}/gi, c.distrito || "").replace(/\{\{fecha\}\}/gi, now.toLocaleDateString("es-PE")).replace(/\{\{hora\}\}/gi, now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" }));
   }
   function _spinMessage(tpl, c, idx) {
     const seed = idx * 137 + (c.id ? c.id.charCodeAt(0) : 0);
@@ -4193,7 +4195,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         <div><code style="color:${S.accent};background:rgba(37,211,102,0.1);padding:1px 5px;border-radius:3px;font-weight:600;">[Hola!|Buenas!|Qu\xE9 tal!]</code> \u2192 elige una al azar</div>
         <div><code style="color:${S.accent};background:rgba(37,211,102,0.1);padding:1px 5px;border-radius:3px;font-weight:600;">---</code> \u2192 corte: env\xEDa como mensaje separado</div>
         <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">
-          ${["{{nombre}}", "{{saludo}}", "{{cierre}}", "{{emoji}}", "{{distrito}}", "{{fecha}}"].map(
+          ${["{{nombre}}", "{{brigadista}}", "{{saludo}}", "{{cierre}}", "{{emoji}}", "{{distrito}}", "{{fecha}}"].map(
       (v) => `<code style="color:${S.accent};background:rgba(37,211,102,0.08);padding:1px 5px;border-radius:3px;">${v}</code>`
     ).join("")}
         </div>

@@ -22,7 +22,7 @@ async function _spamCheck() {
 // CONFIG
 // ══════════════════════════════════════════════════════════════════════
 const CFG_KEY = 'wspp_blast_cfg_v3';
-const TPL_KEY = 'wspp_blast_tpls_v4'; // v4: spintax + 3 plantillas César
+const TPL_KEY = 'wspp_blast_tpls_v5'; // v5: {{brigadista}} + Senado Nacional #3
 
 const DEFAULTS = {
   batchSize:    25,   // personas por tanda — el usuario lo cambia en la UI
@@ -40,12 +40,13 @@ function _saveCfg(c) { try { localStorage.setItem(CFG_KEY, JSON.stringify(c)); }
 let cfg = _loadCfg();
 
 // 3 plantillas predeterminadas para César Vásquez — se rotan 1→2→3→1→2→3
-// Plantilla 1: 3 mensajes separados
-const DEFAULT_TPL  = '[Buenas tardes|Buenas|Hola|Buen día] {{nombre}}, ¿[cómo te encuentras?|cómo estás?|todo bien?|cómo te va?]\n---\nSoy el doctor César Vásquez\n---\n[Candidato al Senado Nacional|Postulante al Senado Nacional] 🇵🇪';
-// Plantilla 2: 2 mensajes
-const DEFAULT_TPL2 = '[Hola|Buenas|Buenas tardes] {{nombre}} 👋 ¿[cómo estás?|todo bien?|cómo te va?]\n---\nSoy el doctor César Vásquez, [candidato al Senado Nacional|postulante al Senado Nacional] 🇵🇪';
-// Plantilla 3: 1 mensaje
-const DEFAULT_TPL3 = '[Hola|Buenas|Buenas tardes] {{nombre}}, ¿[cómo te encuentras?|todo bien?|cómo estás?] Soy el doctor César Vásquez, [candidato al Senado Nacional|postulante al Senado Nacional] 🇵🇪';
+// {{brigadista}} = encuestador que recogió el dato del contacto
+// Plantilla 1: 3 mensajes — mención del brigadista que nos dio su número
+const DEFAULT_TPL  = '[Buenas tardes|Buenas|Hola|Buen día] {{nombre}}, ¿[cómo te encuentras?|cómo estás?|todo bien?|cómo te va?]\n---\n[Tu número me llegó gracias a|Me comunicó tu contacto|Tu número me lo compartió] {{brigadista}} [y quería saludarte personalmente|y me pareció importante escribirte|y quise comunicarme contigo]\n---\nSoy el doctor César Vásquez, [candidato al Senado Nacional #3|postulante al Senado Nacional #3|número 3 al Senado Nacional] 🇵🇪';
+// Plantilla 2: 2 mensajes — brigadista + presentación directa
+const DEFAULT_TPL2 = '[Hola|Buenas|Buenas tardes] {{nombre}} 👋 [Tu número me lo pasó|Me contactó de tu parte|Tu dato me llegó por] {{brigadista}}\n---\nSoy el doctor César Vásquez, [candidato al Senado Nacional #3|postulante al Senado Nacional #3] 🇵🇪 [y quería presentarme|y te escribo para saludarte]';
+// Plantilla 3: 1 mensaje compacto — brigadista integrado
+const DEFAULT_TPL3 = '[Hola|Buenas|Buenas tardes] {{nombre}}, [tu número me llegó gracias a|me comunicó tu contacto|tu dato me lo pasó] {{brigadista}}. Soy el doctor César Vásquez, [candidato al Senado Nacional #3|postulante al Senado Nacional #3] 🇵🇪';
 function _loadTpls() {
   try { const r = localStorage.getItem(TPL_KEY); if (r) { const p = JSON.parse(r); if (p.length) return p; } } catch (_) {}
   return [DEFAULT_TPL, DEFAULT_TPL2, DEFAULT_TPL3];
@@ -387,12 +388,16 @@ function _spinVariants(text, seed) {
   });
 }
 
-// Reemplaza variables {{nombre}}, {{saludo}}, etc.
+// Reemplaza variables {{nombre}}, {{saludo}}, {{brigadista}}, etc.
 function _applyVars(text, c, seed) {
   const nombre = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim().split(/\s+/)[0] || 'amigo';
+  // Brigadista: primer nombre del encuestador que recogió el dato
+  const rawBrigadista = (c.encuestador || '').trim();
+  const brigadista = rawBrigadista.split(/\s+/)[0] || 'un colaborador';
   const now = new Date();
   return text
     .replace(/\{\{nombre\}\}/gi, nombre)
+    .replace(/\{\{brigadista\}\}/gi, brigadista)
     .replace(/\{\{saludo\}\}/gi, SALUDOS[_hashSeed(String(seed), 1) % SALUDOS.length])
     .replace(/\{\{cierre\}\}/gi, CIERRES[_hashSeed(String(seed), 2) % CIERRES.length])
     .replace(/\{\{emoji\}\}/gi,  EMOJIS[_hashSeed(String(seed),  3) % EMOJIS.length])
