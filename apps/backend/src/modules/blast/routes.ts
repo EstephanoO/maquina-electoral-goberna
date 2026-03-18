@@ -69,9 +69,14 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
           segmentIdx = config.segment_idx;
           totalSlots = config.total_slots;
         } else if (waNumber) {
-          // Auto-register with a hash-based slot
-          const hash = waNumber.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-          segmentIdx = hash % DEFAULT_TOTAL_SLOTS;
+          // Auto-register: asigna el primer slot libre para evitar solapamiento.
+          // Un hash débil puede asignar el mismo slot a dos números distintos.
+          const usedSlots = await repo.getUsedSegments(campaignId);
+          let freeSlot = 0;
+          for (let s = 0; s < DEFAULT_TOTAL_SLOTS; s++) {
+            if (!usedSlots.has(s)) { freeSlot = s; break; }
+          }
+          segmentIdx = freeSlot;
           await repo.upsertNumberConfig({
             campaign_id: campaignId,
             wa_number:   waNumber,

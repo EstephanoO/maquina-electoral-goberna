@@ -481,6 +481,15 @@ export async function upsertNumberConfig(params: {
   );
 }
 
+// ── Get used segment indexes for a campaign ───────────────────────────
+export async function getUsedSegments(campaign_id: string): Promise<Set<number>> {
+  const result = await pool.query<{ segment_idx: number }>(
+    `SELECT segment_idx FROM blast_number_config WHERE campaign_id = $1 AND active = true`,
+    [campaign_id]
+  );
+  return new Set(result.rows.map(r => r.segment_idx));
+}
+
 // ── Get config for a number ────────────────────────────────────────────
 export async function getNumberConfig(
   campaign_id: string,
