@@ -216,59 +216,72 @@ export async function saveBlastReport(
     status:       'sent' | 'failed' | 'no_wa';
     error?:       string | null;
     own_number?:  string | null;
+    contact_id?:  string | null;  // UUID de form_submissions — para trazabilidad completa
   }>
 ): Promise<number> {
   if (!results.length) return 0;
 
-  // Filter and clean results
   const clean = results
     .map(r => ({
-      phone: r.phone?.replace(/\D/g, '') ?? '',
-      wa_number: r.own_number ?? 'unknown',
+      phone:        r.phone?.replace(/\D/g, '') ?? '',
+      wa_number:    r.own_number ?? 'unknown',
       contact_name: r.contact_name ?? null,
       message_text: r.message?.slice(0, 500) ?? null,
-      status: r.status,
-      error_msg: r.error ?? null,
+      status:       r.status,
+      error_msg:    r.error ?? null,
+      contact_id:   r.contact_id ?? null,
     }))
     .filter(r => r.phone);
 
   if (!clean.length) return 0;
 
-  // Batch INSERT with unnest arrays
-  const phones = clean.map(r => r.phone);
-  const waNumbers = clean.map(r => r.wa_number);
-  const names = clean.map(r => r.contact_name);
-  const messages = clean.map(r => r.message_text);
-  const statuses = clean.map(r => r.status);
-  const errors = clean.map(r => r.error_msg);
+  const phones       = clean.map(r => r.phone);
+  const waNumbers    = clean.map(r => r.wa_number);
+  const names        = clean.map(r => r.contact_name);
+  const messages     = clean.map(r => r.message_text);
+  const statuses     = clean.map(r => r.status);
+  const errors       = clean.map(r => r.error_msg);
+  const contactIds   = clean.map(r => r.contact_id);
 
   try {
     const result = await pool.query(
       `INSERT INTO blast_log
-         (campaign_id, wa_number, contact_phone, contact_name, message_text, status, error_msg)
-       SELECT $1, unnest($2::text[]), unnest($3::text[]), unnest($4::text[]), unnest($5::text[]), unnest($6::text[]), unnest($7::text[])
+         (campaign_id, wa_number, contact_phone, contact_name, message_text, status, error_msg, contact_id)
+       SELECT $1,
+         unnest($2::text[]),
+         unnest($3::text[]),
+         unnest($4::text[]),
+         unnest($5::text[]),
+         unnest($6::text[]),
+         unnest($7::text[]),
+         unnest($8::uuid[])
        ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent'
        DO UPDATE SET
          contact_name = EXCLUDED.contact_name,
          message_text = EXCLUDED.message_text,
          status       = EXCLUDED.status,
          error_msg    = EXCLUDED.error_msg,
+         contact_id   = COALESCE(EXCLUDED.contact_id, blast_log.contact_id),
          sent_at      = now()`,
-      [campaign_id, waNumbers, phones, names, messages, statuses, errors]
+      [campaign_id, waNumbers, phones, names, messages, statuses, errors, contactIds]
     );
     return result.rowCount ?? 0;
   } catch (err) {
-    // Fallback to individual inserts if batch fails
+    // Fallback a inserts individuales
     let saved = 0;
     for (const r of clean) {
       try {
         await pool.query(
           `INSERT INTO blast_log
-             (campaign_id, wa_number, contact_phone, contact_name, message_text, status, error_msg)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+             (campaign_id, wa_number, contact_phone, contact_name, message_text, status, error_msg, contact_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent'
-           DO UPDATE SET contact_name = EXCLUDED.contact_name, message_text = EXCLUDED.message_text, sent_at = now()`,
-          [campaign_id, r.wa_number, r.phone, r.contact_name, r.message_text, r.status, r.error_msg]
+           DO UPDATE SET
+             contact_name = EXCLUDED.contact_name,
+             message_text = EXCLUDED.message_text,
+             contact_id   = COALESCE(EXCLUDED.contact_id, blast_log.contact_id),
+             sent_at      = now()`,
+          [campaign_id, r.wa_number, r.phone, r.contact_name, r.message_text, r.status, r.error_msg, r.contact_id]
         );
         saved++;
       } catch { /* ignore individual failures */ }
@@ -442,37 +455,63 @@ export async function getNumberHealth(
   ]);
 
   const sentLastHour = parseInt(hourResult.rows[0]?.count ?? "0", 10);
-  const sentToday = parseInt(todayResult.rows[0]?.count ?? "0", 10);
+  const sentToday    = parseInt(todayResult.rows[0]?.count ?? "0", 10);
 
-  // Calculate age in days
+  // Edad del número en días desde que fue registrado
   const configRow = configResult.rows[0];
   const createdAt = configRow?.created_at ? new Date(configRow.created_at) : new Date();
-  const ageDays = Math.max(1, Math.floor((Date.now() - createdAt.getTime()) / 86400000));
+  const ageDays   = Math.max(1, Math.floor((Date.now() - createdAt.getTime()) / 86400000));
 
-  // Warm-up limits
-  const HOURLY_LIMIT = 50;
-  const DAILY_LIMIT = ageDays <= 1 ? 30 : ageDays <= 2 ? 80 : 200;
-  const warmUpLimit = DAILY_LIMIT;
+  // Curva de calentamiento progresiva por día de vida del número.
+  // Día 1: 30 | Día 2: 80 | Día 3: 150 | Día 5: 200 | Día 10+: 300
+  // Límite horario: 20% del límite diario, mínimo 20, máximo 60
+  const DAILY_LIMIT =
+    ageDays <= 1 ? 30  :
+    ageDays <= 2 ? 80  :
+    ageDays <= 4 ? 150 :
+    ageDays <= 9 ? 200 : 300;
+  const HOURLY_LIMIT = Math.min(60, Math.max(20, Math.round(DAILY_LIMIT * 0.2)));
 
   // Risk assessment
-  const hourlyPct = sentLastHour / HOURLY_LIMIT;
-  const dailyPct = sentToday / DAILY_LIMIT;
+  const hourlyPct = HOURLY_LIMIT > 0 ? sentLastHour / HOURLY_LIMIT : 1;
+  const dailyPct  = DAILY_LIMIT  > 0 ? sentToday    / DAILY_LIMIT  : 1;
   let riskLevel = "low";
-  if (hourlyPct > 0.9 || dailyPct > 0.9) riskLevel = "critical";
+  if      (hourlyPct > 0.9 || dailyPct > 0.9) riskLevel = "critical";
   else if (hourlyPct > 0.7 || dailyPct > 0.7) riskLevel = "high";
   else if (hourlyPct > 0.5 || dailyPct > 0.5) riskLevel = "medium";
 
   const canSend = sentLastHour < HOURLY_LIMIT && sentToday < DAILY_LIMIT;
 
+  // next_available_at: calcula el tiempo exacto hasta que se libere cupo horario.
+  // Si el límite diario se alcanzó, retorna mañana a las 00:00 UTC-5 (Perú).
+  let nextAvailableAt: string | null = null;
+  if (!canSend) {
+    if (sentToday >= DAILY_LIMIT) {
+      // Mañana a las 00:01 hora Perú (UTC-5)
+      const tomorrow = new Date();
+      tomorrow.setUTCHours(5, 1, 0, 0); // 00:01 Perú = 05:01 UTC
+      if (tomorrow.getTime() <= Date.now()) tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      nextAvailableAt = tomorrow.toISOString();
+    } else {
+      // Límite horario — la hora más antigua del blast_log en la última hora
+      // Para simplificar: next = oldest_msg_in_last_hour + 60min
+      // Aproximación conservadora: now + (60 - minutos_transcurridos_en_hora_actual)
+      const now = new Date();
+      const msIntoCurrentHour = (now.getMinutes() * 60 + now.getSeconds()) * 1000;
+      const msUntilNextHour   = 3600000 - msIntoCurrentHour;
+      nextAvailableAt = new Date(Date.now() + msUntilNextHour).toISOString();
+    }
+  }
+
   return {
-    sent_last_hour: sentLastHour,
-    sent_today: sentToday,
-    hourly_limit: HOURLY_LIMIT,
-    daily_limit: DAILY_LIMIT,
-    age_days: ageDays,
-    warm_up_limit: warmUpLimit,
-    risk_level: riskLevel,
-    can_send: canSend,
-    next_available_at: canSend ? null : new Date(Date.now() + 3600000).toISOString(),
+    sent_last_hour:    sentLastHour,
+    sent_today:        sentToday,
+    hourly_limit:      HOURLY_LIMIT,
+    daily_limit:       DAILY_LIMIT,
+    age_days:          ageDays,
+    warm_up_limit:     DAILY_LIMIT,
+    risk_level:        riskLevel,
+    can_send:          canSend,
+    next_available_at: nextAvailableAt,
   };
 }

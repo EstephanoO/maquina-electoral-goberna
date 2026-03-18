@@ -426,7 +426,7 @@ function _markHablado(ids) {
 }
 
 function _reportLog(results) {
-  if (results.length) window.postMessage({ type: 'BLAST_REPORT_RESULTS', results }, WA_ORIGIN);
+  if (results.length) window.postMessage({ type: 'BLAST_REPORT_RESULTS', results, own_number: getOwnNumber() }, WA_ORIGIN);
 }
 
 // ── Auto-exclusión por respuesta: si un contacto responde, sacarlo ───
@@ -646,11 +646,14 @@ async function _sendToChat(chat, text) {
   } catch (_) {}
 
   // Capturar el msgModel vía MsgCollection.on('add') ANTES de enviar
-  // porque addAndSendMsgToChat[1] no es el model sino otra Promise
+  // porque addAndSendMsgToChat[1] no es el model sino otra Promise.
+  // PERF: off() inmediato al capturar — evita que el listener quede activo
+  // durante todo el await y procese mensajes entrantes de otros contactos.
   let capturedModel = null;
   const onAdd = (msg) => {
     if (msg.get?.('id')?.id === idStr && msg.get?.('id')?.fromMe) {
       capturedModel = msg;
+      MsgCollection.off('add', onAdd); // ← off inmediato al capturar
     }
   };
   MsgCollection.on('add', onAdd);
@@ -774,7 +777,17 @@ function _startCountdown(sec, phase) {
   clearInterval(_countdownTimer);
   _countdownTimer = setInterval(() => {
     _countdown = Math.max(0, _countdown - 1);
-    _notify();
+    // PERF: actualizar solo el label del timer en el DOM, no re-renderizar todo el panel.
+    // El re-render completo cuesta parsear + crear todos los KPIs, log y controles.
+    const timerEl = document.getElementById('sb-timer-label');
+    if (timerEl) {
+      const m = Math.floor(_countdown / 60), s = _countdown % 60;
+      const labels = { delay: '⏱️', prewarm: '🔥', descanso: '☕', pausa: '⏸️', cargando: '📡', micro: '🤫', marcando: '✅' };
+      timerEl.textContent = `${labels[_phase] || '⏱️'} ${m > 0 ? m + 'm ' : ''}${s}s`;
+    } else {
+      // Solo si el elemento no existe (panel no abierto o recién montado)
+      _notify();
+    }
     if (_countdown <= 0) clearInterval(_countdownTimer);
   }, 1000);
 }
@@ -924,7 +937,7 @@ export async function startBlast() {
         _kpis.failed++;
         _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'failed', ack: -1, error });
         if (_lastResults.length > 30) _lastResults.length = 30;
-        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
+        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
         _notify();
         continue;
       }
@@ -976,7 +989,7 @@ export async function startBlast() {
         _kpis.failed++;
         _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'failed', ack: -1, error });
         if (_lastResults.length > 30) _lastResults.length = 30;
-        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
+        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
         _notify();
         if (lockKey) _inFlight.delete(lockKey);
         if (_consecFails >= 3) { _running = false; _stopCountdown(); _reportLog([...logBatch]); break; }
@@ -1047,7 +1060,7 @@ export async function startBlast() {
         _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'failed', ack: -1, error });
         if (_consecFails >= 3) {
           _running = false; _stopCountdown();
-          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
+          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
           _reportLog([...logBatch]); break;
         }
       } finally {
@@ -1057,7 +1070,7 @@ export async function startBlast() {
       }
 
       if (_lastResults.length > 30) _lastResults.length = 30;
-      logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
+      logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
       _notify();
       if (logBatch.length >= 10) { _reportLog([...logBatch]); logBatch.length = 0; }
 

@@ -544,7 +544,7 @@ function _blastHTML() {
     <!-- TIMER + LOG -->
     ${hasActivity ? `
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
-      ${timerLabel ? `<div style="font-size:12px;color:${S.accent};font-weight:600;margin-bottom:8px;">${timerLabel}</div>` : ''}
+      ${timerLabel ? `<div id="sb-timer-label" style="font-size:12px;color:${S.accent};font-weight:600;margin-bottom:8px;">${timerLabel}</div>` : '<div id="sb-timer-label" style="display:none"></div>'}
       ${results.length ? `
       <div style="font-size:10px;color:${S.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Últimos enviados</div>
       <div style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;">

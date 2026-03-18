@@ -598,7 +598,11 @@ function _renderPreviewBar(panel) {
   const playBtn = _el('button', {}, { cls: 'wc-preview-play', html: _previewPlaying ? I.pause : I.play });
   playBtn.addEventListener('click', () => {
     if (_previewPlaying) { _previewAudio.pause(); _previewPlaying = false; }
-    else { _previewAudio.play(); _previewPlaying = true; }
+    else {
+      _previewAudio.play(); _previewPlaying = true;
+      // Reanudar RAF si estaba parado (se para cuando el audio se pausa)
+      if (!_previewRAF) _previewRAF = requestAnimationFrame(_updateProgress);
+    }
     playBtn.innerHTML = _previewPlaying ? I.pause : I.play;
   });
   bar.appendChild(playBtn);
@@ -624,13 +628,20 @@ function _renderPreviewBar(panel) {
   info.appendChild(timeEl);
   bar.appendChild(info);
 
-  // Live update progress via RAF
+  // Live update progress via RAF — parar cuando pausado para no quemar CPU
+  let _lastPlayingState = null;
   function _updateProgress() {
-    if (!_previewAudio) return;
+    if (!_previewAudio || !_previewData) { _previewRAF = null; return; }
     const pct = _previewAudio.duration ? (_previewAudio.currentTime / _previewAudio.duration) * 100 : 0;
     fill.style.width = pct + '%';
     timeEl.textContent = `${_fmtTime(_previewAudio.currentTime)} / ${_fmtTime(_previewAudio.duration)}`;
-    playBtn.innerHTML = _previewPlaying ? I.pause : I.play;
+    // Solo tocar innerHTML si el estado play/pause cambió — evita recrear el SVG 60x/seg
+    if (_lastPlayingState !== _previewPlaying) {
+      playBtn.innerHTML = _previewPlaying ? I.pause : I.play;
+      _lastPlayingState = _previewPlaying;
+    }
+    // Parar el RAF cuando está pausado — no hay nada que animar
+    if (!_previewPlaying) { _previewRAF = null; return; }
     _previewRAF = requestAnimationFrame(_updateProgress);
   }
   if (_previewRAF) cancelAnimationFrame(_previewRAF);

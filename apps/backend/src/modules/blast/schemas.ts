@@ -11,6 +11,7 @@ export const blastReportItemSchema = z.object({
   status:       z.enum(["sent", "failed", "no_wa"]),
   error:        z.string().max(300).nullable().optional(),
   own_number:   z.string().max(20).nullable().optional(),
+  contact_id:   z.string().uuid().nullable().optional(),  // UUID de form_submissions
 });
 
 export const blastReportSchema = z.object({

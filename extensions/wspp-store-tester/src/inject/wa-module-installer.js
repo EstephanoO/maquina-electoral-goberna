@@ -159,9 +159,15 @@ function installChatWatcher() {
       return;
     }
 
-    function handleActiveChatChange() {
+    // PERF: Backbone pasa el modelo que cambió como primer argumento.
+    // Usar directamente en vez de hacer .find() O(n) sobre todos los chats.
+    function handleActiveChatChange(changedModel) {
       try {
-        const active = ChatCollection._models.find(c => c.active);
+        // changedModel es el chat que cambió — si active=false lo ignoramos
+        // Si no hay argumento (polling fallback), buscamos en la colección
+        const active = (changedModel?.active === true)
+          ? changedModel
+          : ChatCollection._models.find(c => c.active);
         if (!active) return;
 
         const jid = active.id?._serialized;

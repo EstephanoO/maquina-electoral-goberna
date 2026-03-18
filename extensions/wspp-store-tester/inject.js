@@ -801,9 +801,9 @@
   function installChatWatcher() {
     if (_chatWatcherInstalled) return;
     try {
-      let handleActiveChatChange = function() {
+      let handleActiveChatChange = function(changedModel) {
         try {
-          const active = ChatCollection._models.find((c) => c.active);
+          const active = changedModel?.active === true ? changedModel : ChatCollection._models.find((c) => c.active);
           if (!active) return;
           const jid = active.id?._serialized;
           if (!jid || jid === _lastActiveChatJid) return;
@@ -1710,6 +1710,7 @@
       } else {
         _previewAudio.play();
         _previewPlaying = true;
+        if (!_previewRAF) _previewRAF = requestAnimationFrame(_updateProgress);
       }
       playBtn.innerHTML = _previewPlaying ? I.pause : I.play;
     });
@@ -1729,12 +1730,23 @@
     const timeEl = _el("div", {}, { cls: "wc-preview-time", txt: `${_fmtTime(_previewAudio.currentTime)} / ${_fmtTime(_previewAudio.duration)}` });
     info.appendChild(timeEl);
     bar.appendChild(info);
+    let _lastPlayingState = null;
     function _updateProgress() {
-      if (!_previewAudio) return;
+      if (!_previewAudio || !_previewData) {
+        _previewRAF = null;
+        return;
+      }
       const pct = _previewAudio.duration ? _previewAudio.currentTime / _previewAudio.duration * 100 : 0;
       fill.style.width = pct + "%";
       timeEl.textContent = `${_fmtTime(_previewAudio.currentTime)} / ${_fmtTime(_previewAudio.duration)}`;
-      playBtn.innerHTML = _previewPlaying ? I.pause : I.play;
+      if (_lastPlayingState !== _previewPlaying) {
+        playBtn.innerHTML = _previewPlaying ? I.pause : I.play;
+        _lastPlayingState = _previewPlaying;
+      }
+      if (!_previewPlaying) {
+        _previewRAF = null;
+        return;
+      }
       _previewRAF = requestAnimationFrame(_updateProgress);
     }
     if (_previewRAF) cancelAnimationFrame(_previewRAF);
@@ -2670,7 +2682,7 @@
     });
   }
   function _reportLog(results) {
-    if (results.length) window.postMessage({ type: "BLAST_REPORT_RESULTS", results }, WA_ORIGIN);
+    if (results.length) window.postMessage({ type: "BLAST_REPORT_RESULTS", results, own_number: getOwnNumber() }, WA_ORIGIN);
   }
   window.addEventListener("message", (e) => {
     if (e.source !== window || e.data?.type !== "WSPP_INCOMING_MSG") return;
@@ -2805,6 +2817,7 @@
     const onAdd = (msg) => {
       if (msg.get?.("id")?.id === idStr && msg.get?.("id")?.fromMe) {
         capturedModel = msg;
+        MsgCollection.off("add", onAdd);
       }
     };
     MsgCollection.on("add", onAdd);
@@ -2907,7 +2920,14 @@
     clearInterval(_countdownTimer);
     _countdownTimer = setInterval(() => {
       _countdown = Math.max(0, _countdown - 1);
-      _notify();
+      const timerEl = document.getElementById("sb-timer-label");
+      if (timerEl) {
+        const m = Math.floor(_countdown / 60), s = _countdown % 60;
+        const labels = { delay: "\u23F1\uFE0F", prewarm: "\u{1F525}", descanso: "\u2615", pausa: "\u23F8\uFE0F", cargando: "\u{1F4E1}", micro: "\u{1F92B}", marcando: "\u2705" };
+        timerEl.textContent = `${labels[_phase2] || "\u23F1\uFE0F"} ${m > 0 ? m + "m " : ""}${s}s`;
+      } else {
+        _notify();
+      }
       if (_countdown <= 0) clearInterval(_countdownTimer);
     }, 1e3);
   }
@@ -3034,7 +3054,7 @@
           _kpis.failed++;
           _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error });
           if (_lastResults.length > 30) _lastResults.length = 30;
-          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
+          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
           _notify();
           continue;
         }
@@ -3081,7 +3101,7 @@
           _kpis.failed++;
           _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error });
           if (_lastResults.length > 30) _lastResults.length = 30;
-          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
+          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
           _notify();
           if (lockKey) _inFlight.delete(lockKey);
           if (_consecFails >= 3) {
@@ -3155,7 +3175,7 @@
           if (_consecFails >= 3) {
             _running = false;
             _stopCountdown();
-            logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
+            logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
             _reportLog([...logBatch]);
             break;
           }
@@ -3163,7 +3183,7 @@
           if (lockKey) _inFlight.delete(lockKey);
         }
         if (_lastResults.length > 30) _lastResults.length = 30;
-        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber });
+        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
         _notify();
         if (logBatch.length >= 10) {
           _reportLog([...logBatch]);
@@ -4474,7 +4494,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     <!-- TIMER + LOG -->
     ${hasActivity ? `
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
-      ${timerLabel ? `<div style="font-size:12px;color:${S.accent};font-weight:600;margin-bottom:8px;">${timerLabel}</div>` : ""}
+      ${timerLabel ? `<div id="sb-timer-label" style="font-size:12px;color:${S.accent};font-weight:600;margin-bottom:8px;">${timerLabel}</div>` : '<div id="sb-timer-label" style="display:none"></div>'}
       ${results.length ? `
       <div style="font-size:10px;color:${S.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">\xDAltimos enviados</div>
       <div style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;">
