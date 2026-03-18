@@ -835,9 +835,8 @@
       try {
         if (typeof ChatCollection.on === "function") {
           ChatCollection.on("change:active", handleActiveChatChange);
-          ChatCollection.on("change", handleActiveChatChange);
           eventDriven = true;
-          console.log("[WSPP] \u2713 Chat watcher instalado (event-driven: ChatCollection.on)");
+          console.log("[WSPP] \u2713 Chat watcher instalado (event-driven: change:active)");
         }
       } catch (_) {
       }

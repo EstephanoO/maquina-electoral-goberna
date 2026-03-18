@@ -193,18 +193,19 @@ function installChatWatcher() {
       } catch (_) {}
     }
 
-    // M-6: Primary — event-driven via ChatCollection.on('change')
+    // M-6: Primary — SOLO 'change:active', nunca 'change' genérico.
+    // 'change' dispara en CADA cambio de cualquier propiedad de cualquier chat
+    // (mensajes, typing, presencia...) → congela WA Web con miles de chats.
     let eventDriven = false;
     try {
       if (typeof ChatCollection.on === 'function') {
         ChatCollection.on('change:active', handleActiveChatChange);
-        ChatCollection.on('change', handleActiveChatChange); // broader fallback
         eventDriven = true;
-        console.log('[WSPP] ✓ Chat watcher instalado (event-driven: ChatCollection.on)');
+        console.log('[WSPP] ✓ Chat watcher instalado (event-driven: change:active)');
       }
     } catch (_) {}
 
-    // M-6: Fallback — polling at 2s (reduced frequency since events handle most cases)
+    // Fallback — polling a 2s solo si el evento no está disponible
     if (!eventDriven) {
       setInterval(handleActiveChatChange, 2000);
       console.log('[WSPP] ✓ Chat watcher instalado (polling fallback cada 2s)');
