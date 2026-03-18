@@ -180,8 +180,8 @@ export async function markHablado(
 
   const result = await pool.query(
     `UPDATE form_submissions
-     SET cms_status  = 'hablado',
-         updated_at  = now()
+     SET cms_status     = 'hablado',
+         cms_hablado_at = now()
      WHERE id = ANY($1::uuid[])
        AND campaign_id = $2
        AND COALESCE(cms_status, 'nuevo') IN ('nuevo', 'hablado')`,
