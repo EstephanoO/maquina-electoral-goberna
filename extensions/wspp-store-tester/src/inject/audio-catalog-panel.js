@@ -899,14 +899,20 @@ export async function sendAudioAsPTT(audioBase64, mimeType) {
     const uploaded = await uploadFn(uploadArgs);
     L('9d uploaded raw', JSON.stringify(uploaded)?.slice(0, 300));
 
-    // autorelease AFTER upload
-    pttBlob.autorelease();
+    // autorelease AFTER upload (guard: pttBlob can be null in plain-object mediaData builds)
+    if (pttBlob && typeof pttBlob.autorelease === 'function') pttBlob.autorelease();
 
-    // Extract mediaEntry — different builds return different shapes
-    const me = uploaded?.mediaEntry ?? uploaded;
+    // Extract mediaEntry — different builds return different shapes:
+    // { mediaEntry: { directPath, ... } }  OR  { directPath, ... }  OR  [{ directPath, ... }]
+    let me = uploaded?.mediaEntry ?? uploaded;
+    if (Array.isArray(me)) me = me[0];
     L('9e mediaEntry', JSON.stringify(me)?.slice(0, 300));
     if (!me?.directPath) {
-      throw new Error(`Upload OK but no directPath. me=${JSON.stringify(me)?.slice(0,200)}`);
+      // Last resort: check if mediaData already has directPath from a side-effect upload
+      const mdDirectPath = mediaData.directPath ?? mediaData.get?.('directPath');
+      if (!mdDirectPath) throw new Error(`Upload OK but no directPath. uploaded=${JSON.stringify(uploaded)?.slice(0,200)}`);
+      L('9f ✓ directPath from mediaData side-effect', mdDirectPath?.slice(0,40));
+      me = mediaData.toJSON ? mediaData.toJSON() : { ...mediaData };
     }
     L('9 ✓ upload done', `directPath=${me.directPath?.slice(0,40)}`);
 
