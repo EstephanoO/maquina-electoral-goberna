@@ -140,10 +140,24 @@ export async function getFormContactsForNumber(params: {
          COALESCE(fs.data->>'distrito',  fs.data->>'zona', '') AS distrito,
          COALESCE(fs.data->>'departamento', '') AS departamento,
          COALESCE(fs.data->>'encuestador','') AS encuestador,
-         COALESCE(fs.cms_status, 'nuevo') AS cms_status
+         COALESCE(fs.cms_status, 'nuevo') AS cms_status,
+         -- Heat score: 2=caliente (respondieron alguna vez), 1=normal, 0=frío (no_wa pasado)
+         CASE
+           WHEN EXISTS (SELECT 1 FROM form_submissions fs2
+                        WHERE fs2.data->>'telefono' = fs.data->>'telefono'
+                          AND fs2.cms_status = 'respondieron'
+                          AND fs2.campaign_id = $1) THEN 2
+           WHEN fs.cms_status = 'no_wa' THEN 0
+           ELSE 1
+         END AS heat_score
        FROM form_submissions fs
        WHERE ${where}
         ORDER BY
+          -- Priorizar calientes (heat_score DESC), luego los nunca tocados (NULLS FIRST)
+          CASE WHEN EXISTS (SELECT 1 FROM form_submissions fs2
+                            WHERE fs2.data->>'telefono' = fs.data->>'telefono'
+                              AND fs2.cms_status = 'respondieron'
+                              AND fs2.campaign_id = $1) THEN 0 ELSE 1 END ASC,
           fs.cms_hablado_at NULLS FIRST,
           fs.created_at ASC
         LIMIT $${argIdx} OFFSET $${argIdx + 1}`,
@@ -171,6 +185,7 @@ export interface ContactRow {
   distrito:     string;
   departamento: string;
   encuestador:  string;
+  heat_score:   number;  // 2=caliente, 1=normal, 0=frío
   cms_status:   string;
 }
 
@@ -326,14 +341,20 @@ export async function saveBlastReport(
   }
 }
 
-// ── Stats: global + per WA number ─────────────────────────────────────
+// ── Stats: global + per WA number + quality rating ────────────────────
 export async function getBlastStats(campaign_id: string): Promise<{
   stats: {
-    total_contacts:  number;
-    total_sent:      number;
-    total_pending:   number;
-    total_failed:    number;
-    total_no_wa:     number;
+    total_contacts:   number;
+    total_sent:       number;
+    total_pending:    number;
+    total_failed:     number;
+    total_no_wa:      number;
+    // Quality rating metrics
+    total_responded:  number;   // cms_status='respondieron' que fueron blasted
+    response_rate:    number;   // responded / sent (0-1)
+    no_response_rate: number;   // (sent - responded) / sent (0-1)
+    quality_rating:   'green' | 'yellow' | 'red';
+    can_scale:        boolean;  // response_rate>40% AND no_response_rate<50%
   };
   by_number: Record<string, {
     sent:    number;
@@ -343,13 +364,24 @@ export async function getBlastStats(campaign_id: string): Promise<{
   }>;
 }> {
   const [globalResult, byNumberResult, configResult] = await Promise.all([
-    pool.query<{ total: string; sent: string; failed: string; no_wa: string }>(
+    pool.query<{ total: string; sent: string; failed: string; no_wa: string; responded: string }>(
       `SELECT
          (SELECT COUNT(*) FROM form_submissions WHERE campaign_id = $1 AND deleted_at IS NULL
             AND COALESCE(data->>'telefono','') != '') AS total,
          (SELECT COUNT(*) FROM blast_log WHERE campaign_id = $1 AND status = 'sent') AS sent,
          (SELECT COUNT(*) FROM blast_log WHERE campaign_id = $1 AND status = 'failed') AS failed,
-         (SELECT COUNT(*) FROM blast_log WHERE campaign_id = $1 AND status = 'no_wa') AS no_wa`,
+         (SELECT COUNT(*) FROM blast_log WHERE campaign_id = $1 AND status = 'no_wa') AS no_wa,
+         -- Respondieron: contactos blasted que luego cambiaron a 'respondieron'
+         (SELECT COUNT(*) FROM form_submissions fs
+          WHERE fs.campaign_id = $1
+            AND fs.cms_status = 'respondieron'
+            AND EXISTS (
+              SELECT 1 FROM blast_log bl
+              WHERE bl.campaign_id = $1
+                AND bl.status = 'sent'
+                AND bl.contact_phone = regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g')
+            )
+         ) AS responded`,
       [campaign_id]
     ),
     pool.query<{ wa_number: string; sent: string; failed: string; today: string }>(
@@ -372,10 +404,24 @@ export async function getBlastStats(campaign_id: string): Promise<{
   ]);
 
   const row        = globalResult.rows[0];
-  const total      = parseInt(row?.total  ?? "0", 10);
-  const totalSent  = parseInt(row?.sent   ?? "0", 10);
-  const totalFailed= parseInt(row?.failed ?? "0", 10);
-  const totalNoWa  = parseInt(row?.no_wa  ?? "0", 10);
+  const total         = parseInt(row?.total     ?? "0", 10);
+  const totalSent     = parseInt(row?.sent      ?? "0", 10);
+  const totalFailed   = parseInt(row?.failed    ?? "0", 10);
+  const totalNoWa     = parseInt(row?.no_wa     ?? "0", 10);
+  const totalResponded= parseInt(row?.responded ?? "0", 10);
+
+  // Quality rating — basado en métricas reales de WA quality system
+  const responseRate    = totalSent > 0 ? totalResponded / totalSent : 0;
+  const noResponseRate  = totalSent > 0 ? (totalSent - totalResponded) / totalSent : 0;
+
+  // quality_rating: green/yellow/red basado en response_rate
+  // 🟢 ≥40% respuesta | 🟡 25-40% | 🔴 <25%
+  const qualityRating: 'green' | 'yellow' | 'red' =
+    responseRate >= 0.40 ? 'green' :
+    responseRate >= 0.25 ? 'yellow' : 'red';
+
+  // can_scale: puede aumentar volumen +20% si cumple las 3 condiciones PRO
+  const canScale = responseRate >= 0.40 && noResponseRate < 0.50;
 
   const labelMap: Record<string, string> = {};
   for (const c of configResult.rows) labelMap[c.wa_number] = c.label;
@@ -392,11 +438,16 @@ export async function getBlastStats(campaign_id: string): Promise<{
 
   return {
     stats: {
-      total_contacts: total,
-      total_sent:     totalSent,
-      total_pending:  Math.max(0, total - totalSent - totalNoWa),
-      total_failed:   totalFailed,
-      total_no_wa:    totalNoWa,
+      total_contacts:   total,
+      total_sent:       totalSent,
+      total_pending:    Math.max(0, total - totalSent - totalNoWa),
+      total_failed:     totalFailed,
+      total_no_wa:      totalNoWa,
+      total_responded:  totalResponded,
+      response_rate:    Math.round(responseRate  * 1000) / 1000,  // 3 decimales
+      no_response_rate: Math.round(noResponseRate * 1000) / 1000,
+      quality_rating:   qualityRating,
+      can_scale:        canScale,
     },
     by_number: byNumber,
   };
@@ -499,14 +550,39 @@ export async function getNumberHealth(
   const ageDays   = Math.max(1, Math.floor((Date.now() - createdAt.getTime()) / 86400000));
 
   // Curva de calentamiento progresiva por día de vida del número.
-  // Día 1: 30 | Día 2: 80 | Día 3: 150 | Día 5: 200 | Día 10+: 300
-  // Límite horario: 20% del límite diario, mínimo 20, máximo 60
-  const DAILY_LIMIT =
-    ageDays <= 1 ? 30  :
-    ageDays <= 2 ? 80  :
-    ageDays <= 4 ? 150 :
-    ageDays <= 9 ? 200 : 300;
-  const HOURLY_LIMIT = Math.min(60, Math.max(20, Math.round(DAILY_LIMIT * 0.2)));
+  // Escalado: +20%/día máximo según estrategia PRO de WhatsApp quality.
+  // Día 1: 30 | Día 2: 80 | Día 3: 150 | Día 5-9: 200 | Día 10-14: 250 | Día 15+: 300
+  const BASE_DAILY_LIMIT =
+    ageDays <= 1  ? 30  :
+    ageDays <= 2  ? 80  :
+    ageDays <= 4  ? 150 :
+    ageDays <= 9  ? 200 :
+    ageDays <= 14 ? 250 : 300;
+
+  // Quality bonus: si el quality rating es verde (≥40% respuesta), +20% de límite
+  // Esto implementa la regla de oro: response_rate>40% → PUEDES AUMENTAR VOLUMEN
+  let qualityMultiplier = 1.0;
+  try {
+    const qResult = await pool.query<{ response_rate: string; no_response_rate: string }>(
+      `SELECT
+         CASE WHEN sent.total > 0 THEN resp.total::numeric / sent.total ELSE 0 END AS response_rate,
+         CASE WHEN sent.total > 0 THEN (sent.total - resp.total)::numeric / sent.total ELSE 1 END AS no_response_rate
+       FROM
+         (SELECT COUNT(*) AS total FROM blast_log WHERE campaign_id = $1 AND status = 'sent') sent,
+         (SELECT COUNT(*) AS total FROM form_submissions
+          WHERE campaign_id = $1 AND cms_status = 'respondieron') resp`,
+      [campaign_id]
+    );
+    const rr  = parseFloat(qResult.rows[0]?.response_rate  ?? "0");
+    const nrr = parseFloat(qResult.rows[0]?.no_response_rate ?? "1");
+    // Regla de oro: response_rate>40% AND no_response_rate<50% → escalar
+    if (rr >= 0.40 && nrr < 0.50) qualityMultiplier = 1.20;
+    // Peligro: response_rate<25% → reducir 20%
+    else if (rr < 0.25 && rr > 0) qualityMultiplier = 0.80;
+  } catch { /* non-fatal — usar límite base */ }
+
+  const DAILY_LIMIT  = Math.round(BASE_DAILY_LIMIT * qualityMultiplier);
+  const HOURLY_LIMIT = Math.min(60, Math.max(20, Math.round(DAILY_LIMIT * 0.20)));
 
   // Risk assessment
   const hourlyPct = HOURLY_LIMIT > 0 ? sentLastHour / HOURLY_LIMIT : 1;

@@ -153,6 +153,10 @@ const _respondedPhones = new Set();  // Set de teléfonos normalizados que respo
 // Contador global que SOLO avanza cuando un envío fue exitoso.
 let _tplIndex = 0;
 
+// ── Contador de enviados en la sesión ─────────────────────────────────
+// Usado para el control de response_rate cada 100 msgs.
+let _sessionSent = 0;
+
 // ── Último resultado del spam check (visible en sidebar) ──────────────
 let _lastSpamResult = null;
 export function getLastSpamResult() { return _lastSpamResult; }
@@ -1037,6 +1041,7 @@ export async function startBlast() {
         }
 
         batchSent++;
+        _sessionSent++;
 
         // Stealth: re-check warm-up limits every 10 messages
         if (batchSent > 0 && batchSent % 10 === 0 && _numberHealth) {
@@ -1091,21 +1096,49 @@ export async function startBlast() {
           _notify(); break;
         }
 
-        if (batchSent > 0 && batchSent % 25 === 0 && cfg.descansoSec > 0) {
-          // Descanso largo cada 25 — gaussiano alrededor del config
-          const descanso = _gaussianDelay(cfg.descansoSec);
-          _startCountdown(descanso, 'descanso'); _notify();
-          await _sleep(descanso * 1000); _stopCountdown();
-        } else if (batchSent > 0 && cfg.pausaCada > 0 && batchSent % cfg.pausaCada === 0 && cfg.pausaSec > 0) {
-          _startCountdown(cfg.pausaSec, 'pausa'); _notify();
-          await _sleep(cfg.pausaSec * 1000); _stopCountdown();
+        // ── Sistema de bloques PRO ─────────────────────────────────────
+        // Estructura: 12 msgs → pausa corta 2-3min → 4 bloques = macro pausa 10-15min
+        // Objetivo: 60 msgs/hora distribuidos sin trigger de frecuencia alta.
+        // Los contadores son globales a la sesión (_msgsSinceBreak ya existía).
+        const BLOQUE_SIZE    = 12;  // msgs por bloque
+        const BLOQUES_X_HORA = 4;   // bloques antes de macro pausa
+        const HORA_SIZE      = BLOQUE_SIZE * BLOQUES_X_HORA; // ≈48 msgs/hora
+
+        // Control de response_rate cada 100 msgs — freno automático
+        if (_sessionSent > 0 && _sessionSent % 100 === 0 && _globalStats) {
+          const rr = _globalStats.response_rate ?? 0;
+          if (rr > 0 && rr < 0.25) {
+            // <25% respuesta → parar 1 hora
+            const breakSec = 3600;
+            _running = false; _stopCountdown();
+            _lastResults.unshift({ nombre: '🛑 Response rate crítico', telefono: '', status: 'paused', ack: -1,
+              error: `Response rate: ${Math.round(rr*100)}% (<25%). Pausando 1h para no arriesgar el número.` });
+            _notify(); break;
+          } else if (rr > 0 && rr < 0.35) {
+            // 25-35% → bajar ritmo: pausa extra de 5 min
+            _startCountdown(300, 'descanso'); _notify();
+            await _sleep(300000); _stopCountdown();
+          }
+        }
+
+        if (batchSent > 0 && batchSent % HORA_SIZE === 0) {
+          // Macro pausa cada hora de actividad (4 bloques de 12): 10-15 min
+          // Rompe detección de patrón de frecuencia alta
+          const macroSec = 600 + Math.floor(Math.random() * 300); // 10-15 min
+          _startCountdown(macroSec, 'descanso'); _notify();
+          await _sleep(macroSec * 1000); _stopCountdown();
+        } else if (batchSent > 0 && batchSent % BLOQUE_SIZE === 0) {
+          // Pausa corta entre bloques: 2-3 min gaussiano
+          const pausaSec = 120 + Math.floor(Math.random() * 60); // 2-3 min
+          _startCountdown(pausaSec, 'pausa'); _notify();
+          await _sleep(pausaSec * 1000); _stopCountdown();
         } else if (_shouldMicroBreak()) {
-          // Micro-descanso: simula que el humano se distrajo
+          // Micro-descanso aleatorio: simula distracción humana
           const breakSec = _microBreakDuration();
           _startCountdown(breakSec, 'micro'); _notify();
           await _sleep(breakSec * 1000); _stopCountdown();
         } else if (cfg.delaySec > 0) {
-          // Delay gaussiano entre contactos (reemplaza el uniforme ±30%)
+          // Delay gaussiano entre contactos dentro del bloque (5-8s)
           const actual = _gaussianDelay(cfg.delaySec);
           _startCountdown(actual, 'delay'); _notify();
           await _sleep(actual * 1000); _stopCountdown();
@@ -1159,6 +1192,7 @@ export function resetSession() {
   _respondedPhones.clear();
   _loopRunning = false;
   _tplIndex = 0;
+  _sessionSent = 0;
   _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
   _lastResults = []; _trackedMsgs = []; _totalPending = null;
   _running = false; _paused = false; _stopCountdown(); _stopAckTracking();

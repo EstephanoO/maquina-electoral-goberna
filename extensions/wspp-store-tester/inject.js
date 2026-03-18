@@ -2433,6 +2433,7 @@
   var _inFlight = /* @__PURE__ */ new Set();
   var _respondedPhones = /* @__PURE__ */ new Set();
   var _tplIndex = 0;
+  var _sessionSent = 0;
   var _lastSpamResult = null;
   function getLastSpamResult() {
     return _lastSpamResult;
@@ -3146,6 +3147,7 @@
             }
           }
           batchSent++;
+          _sessionSent++;
           if (batchSent > 0 && batchSent % 10 === 0 && _numberHealth) {
             _numberHealth.sent_today += 10;
             _numberHealth.sent_last_hour += 10;
@@ -3206,16 +3208,42 @@
             _notify();
             break;
           }
-          if (batchSent > 0 && batchSent % 25 === 0 && cfg.descansoSec > 0) {
-            const descanso = _gaussianDelay(cfg.descansoSec);
-            _startCountdown(descanso, "descanso");
+          const BLOQUE_SIZE = 12;
+          const BLOQUES_X_HORA = 4;
+          const HORA_SIZE = BLOQUE_SIZE * BLOQUES_X_HORA;
+          if (_sessionSent > 0 && _sessionSent % 100 === 0 && _globalStats) {
+            const rr = _globalStats.response_rate ?? 0;
+            if (rr > 0 && rr < 0.25) {
+              const breakSec = 3600;
+              _running = false;
+              _stopCountdown();
+              _lastResults.unshift({
+                nombre: "\u{1F6D1} Response rate cr\xEDtico",
+                telefono: "",
+                status: "paused",
+                ack: -1,
+                error: `Response rate: ${Math.round(rr * 100)}% (<25%). Pausando 1h para no arriesgar el n\xFAmero.`
+              });
+              _notify();
+              break;
+            } else if (rr > 0 && rr < 0.35) {
+              _startCountdown(300, "descanso");
+              _notify();
+              await _sleep(3e5);
+              _stopCountdown();
+            }
+          }
+          if (batchSent > 0 && batchSent % HORA_SIZE === 0) {
+            const macroSec = 600 + Math.floor(Math.random() * 300);
+            _startCountdown(macroSec, "descanso");
             _notify();
-            await _sleep(descanso * 1e3);
+            await _sleep(macroSec * 1e3);
             _stopCountdown();
-          } else if (batchSent > 0 && cfg.pausaCada > 0 && batchSent % cfg.pausaCada === 0 && cfg.pausaSec > 0) {
-            _startCountdown(cfg.pausaSec, "pausa");
+          } else if (batchSent > 0 && batchSent % BLOQUE_SIZE === 0) {
+            const pausaSec = 120 + Math.floor(Math.random() * 60);
+            _startCountdown(pausaSec, "pausa");
             _notify();
-            await _sleep(cfg.pausaSec * 1e3);
+            await _sleep(pausaSec * 1e3);
             _stopCountdown();
           } else if (_shouldMicroBreak()) {
             const breakSec = _microBreakDuration();
@@ -3275,6 +3303,7 @@
     _respondedPhones.clear();
     _loopRunning = false;
     _tplIndex = 0;
+    _sessionSent = 0;
     _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
     _lastResults = [];
     _trackedMsgs = [];
