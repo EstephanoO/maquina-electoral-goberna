@@ -181,9 +181,12 @@ export function localSpamCheck(forceNumber) {
     textToContacts.get(m.text).add(m.to_phone);
   }
   let maxBroadcast = 0;
-  for (const [, contacts] of textToContacts) {
+  const repeatedTexts = []; // textos que se repitieron a múltiples contactos
+  for (const [text, contacts] of textToContacts) {
     if (contacts.size > maxBroadcast) maxBroadcast = contacts.size;
+    if (contacts.size > 2) repeatedTexts.push({ text: text.slice(0, 120), count: contacts.size });
   }
+  repeatedTexts.sort((a, b) => b.count - a.count); // más repetidos primero
   if (maxBroadcast > 15) {
     riskScore += 30;
     warnings.push(`Mismo texto enviado a ${maxBroadcast} contactos distintos`);
@@ -220,6 +223,8 @@ export function localSpamCheck(forceNumber) {
     cooldown_sec,
     message_count: recent.length,
     own_number:    recent[recent.length - 1]?.own_number || null,
+    repeated_texts: repeatedTexts.slice(0, 5), // top 5 textos más repetidos
+    unique_rate:   texts.length > 0 ? Math.round((unique / texts.length) * 100) : 100,
   };
 }
 

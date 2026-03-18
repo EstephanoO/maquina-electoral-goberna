@@ -358,6 +358,16 @@ function _blastHTML() {
           </div>
           ${spam.warnings.slice(0, 3).map(w => `<div style="font-size:10px;color:${S.muted};padding-left:20px;">● ${_esc(w)}</div>`).join('')}
           ${spam.actions.length ? spam.actions.slice(0, 2).map(a => `<div style="font-size:10px;color:${color};padding-left:20px;font-weight:600;">→ ${_esc(a)}</div>`).join('') : ''}
+          ${spam.repeatedTexts?.length ? `
+            <div style="margin-top:6px;padding-left:20px;">
+              <div style="font-size:9px;color:${color};font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Mensajes repetidos:</div>
+              ${spam.repeatedTexts.slice(0, 3).map(rt => `
+                <div style="font-size:10px;color:${S.muted};padding:3px 6px;margin-bottom:2px;background:rgba(0,0,0,0.03);border-radius:4px;border-left:2px solid ${color};">
+                  <span style="color:${color};font-weight:600;">${rt.count}x</span> "${_esc(rt.text.length > 80 ? rt.text.slice(0, 80) + '…' : rt.text)}"
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
         </div>`;
       })()}
     </div>
@@ -733,18 +743,19 @@ function _bindContent() {
 
 // ── Preview spin (versión simplificada para mostrar cómo queda el template) ─
 function _previewSpin(tpl) {
-  const fakeContact = { nombre: 'María', apellidos: '', distrito: 'Chiclayo', id: 'abc' };
   const now = new Date();
   const parts = tpl.split(/^[ \t]*---[ \t]*$/m);
   return parts.map(part => {
     // Resolver [opción1|opción2] — elegir siempre la primera para que sea predecible
     const spun = part.replace(/\[([^\]]+)\]/g, (_, inner) => inner.split('|')[0]);
     return spun
-      .replace(/\{\{nombre\}\}/gi, fakeContact.nombre)
+      .replace(/\{\{nombre\}\}/gi, 'María')
+      .replace(/\{\{brigadista\}\}/gi, 'Alberto')
+      .replace(/\{\{departamento\}\}/gi, 'Lambayeque')
+      .replace(/\{\{distrito\}\}/gi, 'Chiclayo')
       .replace(/\{\{saludo\}\}/gi, 'Hola')
       .replace(/\{\{cierre\}\}/gi, 'Saludos!')
       .replace(/\{\{emoji\}\}/gi, '👋')
-      .replace(/\{\{distrito\}\}/gi, fakeContact.distrito)
       .replace(/\{\{fecha\}\}/gi, now.toLocaleDateString('es-PE'))
       .replace(/\{\{hora\}\}/gi, now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }))
       .trim();

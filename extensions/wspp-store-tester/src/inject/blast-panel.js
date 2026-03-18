@@ -14,12 +14,14 @@ async function _spamCheck() {
       window.removeEventListener('message', h);
       const r = e.data.result;
       resolve({
-        shouldPause: r?.risk_level === 'critical' || r?.risk_level === 'high',
-        riskLevel:   r?.risk_level || 'low',
-        score:       r?.risk_score || 0,
-        warnings:    r?.warnings || [],
-        actions:     r?.actions || [],
-        cooldown:    r?.cooldown_sec || 0,
+        shouldPause:    r?.risk_level === 'critical' || r?.risk_level === 'high',
+        riskLevel:      r?.risk_level || 'low',
+        score:          r?.risk_score || 0,
+        warnings:       r?.warnings || [],
+        actions:        r?.actions || [],
+        cooldown:       r?.cooldown_sec || 0,
+        repeatedTexts:  r?.repeated_texts || [],
+        uniqueRate:     r?.unique_rate ?? 100,
       });
     };
     window.addEventListener('message', h);

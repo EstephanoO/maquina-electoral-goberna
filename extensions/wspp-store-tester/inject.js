@@ -2295,7 +2295,9 @@
           score: r?.risk_score || 0,
           warnings: r?.warnings || [],
           actions: r?.actions || [],
-          cooldown: r?.cooldown_sec || 0
+          cooldown: r?.cooldown_sec || 0,
+          repeatedTexts: r?.repeated_texts || [],
+          uniqueRate: r?.unique_rate ?? 100
         });
       };
       window.addEventListener("message", h);
@@ -4147,6 +4149,16 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
           </div>
           ${spam.warnings.slice(0, 3).map((w) => `<div style="font-size:10px;color:${S.muted};padding-left:20px;">\u25CF ${_esc(w)}</div>`).join("")}
           ${spam.actions.length ? spam.actions.slice(0, 2).map((a) => `<div style="font-size:10px;color:${color};padding-left:20px;font-weight:600;">\u2192 ${_esc(a)}</div>`).join("") : ""}
+          ${spam.repeatedTexts?.length ? `
+            <div style="margin-top:6px;padding-left:20px;">
+              <div style="font-size:9px;color:${color};font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Mensajes repetidos:</div>
+              ${spam.repeatedTexts.slice(0, 3).map((rt) => `
+                <div style="font-size:10px;color:${S.muted};padding:3px 6px;margin-bottom:2px;background:rgba(0,0,0,0.03);border-radius:4px;border-left:2px solid ${color};">
+                  <span style="color:${color};font-weight:600;">${rt.count}x</span> "${_esc(rt.text.length > 80 ? rt.text.slice(0, 80) + "\u2026" : rt.text)}"
+                </div>
+              `).join("")}
+            </div>
+          ` : ""}
         </div>`;
     })()}
     </div>
@@ -4509,12 +4521,11 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     $("sb-open-validator")?.addEventListener("click", toggleValidatorPanel);
   }
   function _previewSpin(tpl) {
-    const fakeContact = { nombre: "Mar\xEDa", apellidos: "", distrito: "Chiclayo", id: "abc" };
     const now = /* @__PURE__ */ new Date();
     const parts = tpl.split(/^[ \t]*---[ \t]*$/m);
     return parts.map((part) => {
       const spun = part.replace(/\[([^\]]+)\]/g, (_, inner) => inner.split("|")[0]);
-      return spun.replace(/\{\{nombre\}\}/gi, fakeContact.nombre).replace(/\{\{saludo\}\}/gi, "Hola").replace(/\{\{cierre\}\}/gi, "Saludos!").replace(/\{\{emoji\}\}/gi, "\u{1F44B}").replace(/\{\{distrito\}\}/gi, fakeContact.distrito).replace(/\{\{fecha\}\}/gi, now.toLocaleDateString("es-PE")).replace(/\{\{hora\}\}/gi, now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })).trim();
+      return spun.replace(/\{\{nombre\}\}/gi, "Mar\xEDa").replace(/\{\{brigadista\}\}/gi, "Alberto").replace(/\{\{departamento\}\}/gi, "Lambayeque").replace(/\{\{distrito\}\}/gi, "Chiclayo").replace(/\{\{saludo\}\}/gi, "Hola").replace(/\{\{cierre\}\}/gi, "Saludos!").replace(/\{\{emoji\}\}/gi, "\u{1F44B}").replace(/\{\{fecha\}\}/gi, now.toLocaleDateString("es-PE")).replace(/\{\{hora\}\}/gi, now.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" })).trim();
     }).filter((p) => p.length > 0);
   }
   function _toast3(text, bg = S.accent) {
