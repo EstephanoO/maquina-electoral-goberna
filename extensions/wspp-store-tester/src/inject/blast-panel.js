@@ -121,16 +121,25 @@ function _loadPersistedDedup(phones) {
   }
 }
 
+// _dedupReady: Promise que resuelve cuando el dedup de chrome.storage llegó.
+// startBlast() espera esto antes de arrancar para no mandar a gente ya contactada.
+let _dedupReady = false;
+let _dedupReadyResolve = null;
+const _dedupReadyPromise = new Promise(res => { _dedupReadyResolve = res; });
+
 // Listen for persisted dedup from content.js on page load
 window.addEventListener('message', (e) => {
   if (e.source !== window) return;
   if (e.data?.type === 'BLAST_DEDUP_LOADED') {
     _loadPersistedDedup(e.data.phones || []);
+    if (!_dedupReady) { _dedupReady = true; _dedupReadyResolve?.(); }
   }
 });
 
 // Request persisted dedup on module load
 window.postMessage({ type: 'BLAST_DEDUP_REQUEST' }, WA_ORIGIN);
+// Fallback: si en 3s no llega el dedup (content.js lento), arrancar igual
+setTimeout(() => { if (!_dedupReady) { _dedupReady = true; _dedupReadyResolve?.(); } }, 3000);
 
 // ── Send lock — protege contra envíos concurrentes al mismo contacto ──
 // Se registra ANTES del envío y se limpia al terminar (éxito o error).
@@ -778,6 +787,13 @@ export async function startBlast() {
   if (_running) return;
   if (_loopRunning) return; // previene segundo loop si resume llega antes de que el primero termine
   if (!tpls.length || !tpls[0].trim()) return;
+
+  // Esperar que el dedup de chrome.storage haya cargado (máx 3s)
+  // Evita mandar a gente ya contactada cuando se recarga la página o se reinicia el blast
+  if (!_dedupReady) {
+    _phase = 'cargando'; _notify();
+    await _dedupReadyPromise;
+  }
 
   // Guard: número no detectado
   const activeNumber = getOwnNumber();

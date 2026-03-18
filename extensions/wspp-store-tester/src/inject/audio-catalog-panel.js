@@ -879,8 +879,17 @@ export async function sendAudioAsPTT(audioBase64, mimeType) {
     }
 
     // ── Step 9: Upload ────────────────────────────────────────────────
-    // Try the known upload module names — WA renames modules per deploy.
-    // Log which one responds.
+    // Pass the raw blob into mediaObject so the upload module can access it.
+    // In newer WA builds (WAWebMediaMmsV4Upload) the upload reads the blob from
+    // mediaObject.blob — without it, uploadMedia returns {kind:"error"}.
+    if (pttBlob) {
+      try {
+        // duck-type: OpaqueData blob has a .blob() method that returns the raw Blob
+        const rawBlobObj = typeof pttBlob.blob === 'function' ? await pttBlob.blob() : pttBlob;
+        if (rawBlobObj) mediaObject.blob = rawBlobObj;
+      } catch (_) {}
+    }
+
     let uploadMod = null, uploadModName = null;
     for (const name of ['WAWebMediaMmsV4Upload','WAWebMediaUploadUtils','WAWebUploadManager','WAWebMediaMmsUpload','WAWebMmsUpload']) {
       try { uploadMod = window.require(name); uploadModName = name; break; } catch (_) {}
@@ -888,32 +897,36 @@ export async function sendAudioAsPTT(audioBase64, mimeType) {
     if (!uploadMod) throw new Error('No upload module found');
     L('9a upload module', uploadModName, Object.keys(uploadMod).join(', '));
 
-    const uploadFn = uploadMod.uploadMedia ?? uploadMod.default?.uploadMedia ?? uploadMod.default?.encryptAndUpload;
+    // Try multiple function names — WA renames them per deploy
+    const uploadFn = uploadMod.uploadMedia
+      ?? uploadMod.encryptAndUploadMedia
+      ?? uploadMod.default?.uploadMedia
+      ?? uploadMod.default?.encryptAndUploadMedia
+      ?? uploadMod.default?.encryptAndUpload;
     if (!uploadFn) throw new Error(`No uploadMedia fn in ${uploadModName}`);
     L('9b uploadFn found', typeof uploadFn, `length=${uploadFn.length}`);
 
-    // Call with both the minimal args and the extended args.
-    // WA builds differ — log what we pass.
     const uploadArgs = { chat, mediaData, mediaObject, mediaType, mimetype: mime };
     L('9c calling uploadFn with', Object.keys(uploadArgs).join(', '));
     const uploaded = await uploadFn(uploadArgs);
     L('9d uploaded raw', JSON.stringify(uploaded)?.slice(0, 300));
 
-    // autorelease AFTER upload (guard: pttBlob can be null in plain-object mediaData builds)
+    // autorelease AFTER upload
     if (pttBlob && typeof pttBlob.autorelease === 'function') pttBlob.autorelease();
 
-    // Extract mediaEntry — different builds return different shapes:
-    // { mediaEntry: { directPath, ... } }  OR  { directPath, ... }  OR  [{ directPath, ... }]
+    // Extract mediaEntry — builds return different shapes:
+    // { mediaEntry: { directPath } }  |  { directPath }  |  [{directPath}]  |  {kind:"error"}
     let me = uploaded?.mediaEntry ?? uploaded;
     if (Array.isArray(me)) me = me[0];
-    L('9e mediaEntry', JSON.stringify(me)?.slice(0, 300));
-    if (!me?.directPath) {
-      // Last resort: check if mediaData already has directPath from a side-effect upload
-      const mdDirectPath = mediaData.directPath ?? mediaData.get?.('directPath');
-      if (!mdDirectPath) throw new Error(`Upload OK but no directPath. uploaded=${JSON.stringify(uploaded)?.slice(0,200)}`);
-      L('9f ✓ directPath from mediaData side-effect', mdDirectPath?.slice(0,40));
+    if (me?.kind === 'error') {
+      // Last resort: check if mediaData has directPath from a side-effect
+      const mdDp = mediaData.directPath ?? mediaData.get?.('directPath');
+      if (!mdDp) throw new Error(`Upload returned error. Check WA module logs.`);
+      L('9e ✓ directPath from mediaData side-effect');
       me = mediaData.toJSON ? mediaData.toJSON() : { ...mediaData };
     }
+    L('9e mediaEntry', JSON.stringify(me)?.slice(0, 300));
+    if (!me?.directPath) throw new Error(`No directPath in upload result: ${JSON.stringify(me)?.slice(0,200)}`);
     L('9 ✓ upload done', `directPath=${me.directPath?.slice(0,40)}`);
 
     // ── Step 10: Patch mediaData with upload result ───────────────────

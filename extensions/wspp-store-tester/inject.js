@@ -1931,6 +1931,13 @@
       } catch (err) {
         L("8b \u26A0 consolidate failed (non-fatal):", err.message);
       }
+      if (pttBlob) {
+        try {
+          const rawBlobObj = typeof pttBlob.blob === "function" ? await pttBlob.blob() : pttBlob;
+          if (rawBlobObj) mediaObject.blob = rawBlobObj;
+        } catch (_) {
+        }
+      }
       let uploadMod = null, uploadModName = null;
       for (const name of ["WAWebMediaMmsV4Upload", "WAWebMediaUploadUtils", "WAWebUploadManager", "WAWebMediaMmsUpload", "WAWebMmsUpload"]) {
         try {
@@ -1942,7 +1949,7 @@
       }
       if (!uploadMod) throw new Error("No upload module found");
       L("9a upload module", uploadModName, Object.keys(uploadMod).join(", "));
-      const uploadFn = uploadMod.uploadMedia ?? uploadMod.default?.uploadMedia ?? uploadMod.default?.encryptAndUpload;
+      const uploadFn = uploadMod.uploadMedia ?? uploadMod.encryptAndUploadMedia ?? uploadMod.default?.uploadMedia ?? uploadMod.default?.encryptAndUploadMedia ?? uploadMod.default?.encryptAndUpload;
       if (!uploadFn) throw new Error(`No uploadMedia fn in ${uploadModName}`);
       L("9b uploadFn found", typeof uploadFn, `length=${uploadFn.length}`);
       const uploadArgs = { chat, mediaData, mediaObject, mediaType, mimetype: mime };
@@ -1952,13 +1959,14 @@
       if (pttBlob && typeof pttBlob.autorelease === "function") pttBlob.autorelease();
       let me = uploaded?.mediaEntry ?? uploaded;
       if (Array.isArray(me)) me = me[0];
-      L("9e mediaEntry", JSON.stringify(me)?.slice(0, 300));
-      if (!me?.directPath) {
-        const mdDirectPath = mediaData.directPath ?? mediaData.get?.("directPath");
-        if (!mdDirectPath) throw new Error(`Upload OK but no directPath. uploaded=${JSON.stringify(uploaded)?.slice(0, 200)}`);
-        L("9f \u2713 directPath from mediaData side-effect", mdDirectPath?.slice(0, 40));
+      if (me?.kind === "error") {
+        const mdDp = mediaData.directPath ?? mediaData.get?.("directPath");
+        if (!mdDp) throw new Error(`Upload returned error. Check WA module logs.`);
+        L("9e \u2713 directPath from mediaData side-effect");
         me = mediaData.toJSON ? mediaData.toJSON() : { ...mediaData };
       }
+      L("9e mediaEntry", JSON.stringify(me)?.slice(0, 300));
+      if (!me?.directPath) throw new Error(`No directPath in upload result: ${JSON.stringify(me)?.slice(0, 200)}`);
       L("9 \u2713 upload done", `directPath=${me.directPath?.slice(0, 40)}`);
       const uploadFields = {
         clientUrl: me.mmsUrl ?? me.url,
@@ -2389,13 +2397,28 @@
       console.log("[BLAST] Loaded", phones.length, "persisted dedup entries");
     }
   }
+  var _dedupReady = false;
+  var _dedupReadyResolve = null;
+  var _dedupReadyPromise = new Promise((res) => {
+    _dedupReadyResolve = res;
+  });
   window.addEventListener("message", (e) => {
     if (e.source !== window) return;
     if (e.data?.type === "BLAST_DEDUP_LOADED") {
       _loadPersistedDedup(e.data.phones || []);
+      if (!_dedupReady) {
+        _dedupReady = true;
+        _dedupReadyResolve?.();
+      }
     }
   });
   window.postMessage({ type: "BLAST_DEDUP_REQUEST" }, WA_ORIGIN);
+  setTimeout(() => {
+    if (!_dedupReady) {
+      _dedupReady = true;
+      _dedupReadyResolve?.();
+    }
+  }, 3e3);
   var _inFlight = /* @__PURE__ */ new Set();
   var _respondedPhones = /* @__PURE__ */ new Set();
   var _tplIndex = 0;
@@ -2898,6 +2921,11 @@
     if (_running) return;
     if (_loopRunning) return;
     if (!tpls.length || !tpls[0].trim()) return;
+    if (!_dedupReady) {
+      _phase2 = "cargando";
+      _notify();
+      await _dedupReadyPromise;
+    }
     const activeNumber = getOwnNumber();
     if (!activeNumber) {
       _lastResults.unshift({ nombre: "\u274C Sin n\xFAmero", telefono: "", status: "blocked", ack: -1, error: "No se detect\xF3 el n\xFAmero de este dispositivo. Recarg\xE1 WhatsApp Web." });
