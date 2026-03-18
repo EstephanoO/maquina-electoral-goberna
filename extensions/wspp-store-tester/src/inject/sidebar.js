@@ -14,7 +14,7 @@ import {
   getLastSpamResult,
   getGlobalStats, fetchGlobalStats,
   getPreviewContacts, isPreviewLoading, isPreviewReady, getPreviewSkipped,
-  previewSkip, previewRestore, previewMarkHablado, previewConfirm, previewCancel,
+  previewSkip, previewSkipAndReplace, previewRestore, previewMarkHablado, previewConfirm, previewCancel,
 } from './blast-panel.js';
 import { analyzeTemplates } from './template-analyzer.js';
 import { toggleValidatorPanel } from './wa-validator-panel.js';
@@ -755,7 +755,11 @@ function _bindContent() {
   });
   // Botones skip / restore / markhablado por delegación de eventos
   document.querySelectorAll('[data-skip]').forEach(btn => {
-    btn.addEventListener('click', () => { previewSkip(btn.dataset.skip); _renderContent(); });
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = '...';
+      await previewSkipAndReplace(btn.dataset.skip);
+      _renderContent();
+    });
   });
   document.querySelectorAll('[data-restore]').forEach(btn => {
     btn.addEventListener('click', () => { previewRestore(btn.dataset.restore); _renderContent(); });

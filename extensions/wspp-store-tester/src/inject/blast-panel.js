@@ -204,11 +204,41 @@ export function previewRestore(id) {
 }
 
 // El operador marca un contacto del preview como ya hablado en la DB
+// y lo reemplaza por el siguiente contacto pendiente
 export async function previewMarkHablado(id) {
   _previewSkipped.add(id);
   _habladoIds.add(id);
   _sentIds.add(id);
+  // Marcar en servidor
   await _markHablado([id], []);
+  // Reemplazar en la lista: quitar este y traer 1 nuevo del servidor
+  _previewContacts = _previewContacts.filter(c => c.id !== id);
+  try {
+    const extra = await _fetchBatch(1);
+    // Filtrar para no agregar duplicados
+    for (const c of extra) {
+      if (!_habladoIds.has(c.id) && !_sentIds.has(c.id) && !_previewContacts.find(x => x.id === c.id)) {
+        _previewContacts.push(c);
+        break;
+      }
+    }
+  } catch (_) {}
+  _notify();
+}
+
+// El operador saltea un contacto del preview y lo reemplaza por el siguiente
+export async function previewSkipAndReplace(id) {
+  previewSkip(id);
+  _previewContacts = _previewContacts.filter(c => c.id !== id);
+  try {
+    const extra = await _fetchBatch(1);
+    for (const c of extra) {
+      if (!_habladoIds.has(c.id) && !_sentIds.has(c.id) && !_previewContacts.find(x => x.id === c.id)) {
+        _previewContacts.push(c);
+        break;
+      }
+    }
+  } catch (_) {}
   _notify();
 }
 

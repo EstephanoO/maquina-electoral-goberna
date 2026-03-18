@@ -113,6 +113,8 @@ export async function getFormContactsForNumber(params: {
     // Skip contacts marked no_wa HOY — se reintentarán mañana via retry-no-wa
     `COALESCE(fs.cms_status, 'nuevo') != 'no_wa'
      OR fs.cms_hablado_at < CURRENT_DATE`,
+    // Skip contacts que ya respondieron — ya están atendidos por el CMS
+    `COALESCE(fs.cms_status, 'nuevo') != 'respondieron'`,
   ];
 
   const args: unknown[] = [campaign_id, total_slots, segment_idx, wa_number];
@@ -201,6 +203,8 @@ export async function markHablado(
   let total = 0;
 
   // Marca enviados exitosos como 'hablado'
+  // Incluye 'respondieron' — si ya respondieron igual los marcamos hablado
+  // para que no vuelvan a aparecer en el blast
   if (ids.length) {
     const result = await pool.query(
       `UPDATE form_submissions
@@ -208,7 +212,7 @@ export async function markHablado(
            cms_hablado_at = now()
        WHERE id = ANY($1::uuid[])
          AND campaign_id = $2
-         AND COALESCE(cms_status, 'nuevo') IN ('nuevo', 'hablado', 'no_wa')`,
+         AND COALESCE(cms_status, 'nuevo') IN ('nuevo', 'hablado', 'no_wa', 'respondieron')`,
       [ids, campaign_id]
     );
     total += result.rowCount ?? 0;

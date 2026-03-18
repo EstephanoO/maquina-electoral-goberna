@@ -2482,6 +2482,32 @@
     _habladoIds.add(id);
     _sentIds.add(id);
     await _markHablado([id], []);
+    _previewContacts = _previewContacts.filter((c) => c.id !== id);
+    try {
+      const extra = await _fetchBatch(1);
+      for (const c of extra) {
+        if (!_habladoIds.has(c.id) && !_sentIds.has(c.id) && !_previewContacts.find((x) => x.id === c.id)) {
+          _previewContacts.push(c);
+          break;
+        }
+      }
+    } catch (_) {
+    }
+    _notify();
+  }
+  async function previewSkipAndReplace(id) {
+    previewSkip(id);
+    _previewContacts = _previewContacts.filter((c) => c.id !== id);
+    try {
+      const extra = await _fetchBatch(1);
+      for (const c of extra) {
+        if (!_habladoIds.has(c.id) && !_sentIds.has(c.id) && !_previewContacts.find((x) => x.id === c.id)) {
+          _previewContacts.push(c);
+          break;
+        }
+      }
+    } catch (_) {
+    }
     _notify();
   }
   function previewConfirm() {
@@ -4802,8 +4828,10 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       await startBlast();
     });
     document.querySelectorAll("[data-skip]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        previewSkip(btn.dataset.skip);
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        btn.textContent = "...";
+        await previewSkipAndReplace(btn.dataset.skip);
         _renderContent();
       });
     });
