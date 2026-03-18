@@ -301,9 +301,16 @@ window.addEventListener('message', (e) => {
     return;
   }
 
-  // --- BLAST_MARK_HABLADO (inject → background, fire-and-forget) ---
+  // --- BLAST_MARK_HABLADO (inject → background → inject con confirmación) ---
   if (e.data?.type === 'BLAST_MARK_HABLADO') {
-    chrome.runtime.sendMessage({ type: 'BLAST_MARK_HABLADO', ids: e.data.ids, own_number: e.data.own_number }, () => {});
+    const reqId = e.data.reqId;
+    chrome.runtime.sendMessage({ type: 'BLAST_MARK_HABLADO', ids: e.data.ids, own_number: e.data.own_number }, (response) => {
+      if (chrome.runtime.lastError) {
+        if (reqId) window.postMessage({ type: 'BLAST_MARK_HABLADO_DONE', ok: false, reqId }, WA_ORIGIN);
+        return;
+      }
+      if (reqId) window.postMessage({ type: 'BLAST_MARK_HABLADO_DONE', ok: response?.ok ?? false, reqId }, WA_ORIGIN);
+    });
     return;
   }
 

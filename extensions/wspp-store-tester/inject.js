@@ -2624,9 +2624,24 @@
     });
   }
   function _markHablado(ids) {
-    if (!ids.length) return;
-    window.postMessage({ type: "BLAST_MARK_HABLADO", ids, own_number: getOwnNumber() }, WA_ORIGIN);
-    setTimeout(fetchGlobalStats, 1500);
+    if (!ids.length) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const reqId = "mh_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+      const timer = setTimeout(() => {
+        window.removeEventListener("message", onReply);
+        console.warn("[BLAST] markHablado timeout \u2014 ids:", ids.length);
+        resolve(false);
+      }, 8e3);
+      function onReply(e) {
+        if (e.source !== window || e.data?.type !== "BLAST_MARK_HABLADO_DONE" || e.data.reqId !== reqId) return;
+        window.removeEventListener("message", onReply);
+        clearTimeout(timer);
+        resolve(e.data.ok ?? false);
+        setTimeout(fetchGlobalStats, 500);
+      }
+      window.addEventListener("message", onReply);
+      window.postMessage({ type: "BLAST_MARK_HABLADO", ids, own_number: getOwnNumber(), reqId }, WA_ORIGIN);
+    });
   }
   function _reportLog(results) {
     if (results.length) window.postMessage({ type: "BLAST_REPORT_RESULTS", results }, WA_ORIGIN);
@@ -2932,6 +2947,7 @@
         break;
       }
       const logBatch = [];
+      const habladoBatch = [];
       let batchSent = 0;
       for (let i = 0; i < batch.length && _running && !_paused; i++) {
         const c = batch[i];
@@ -2947,7 +2963,7 @@
           console.log("[BLAST] Skip sin nombre \u2014 tel:", c.telefono);
           if (c.id) {
             _habladoIds.add(c.id);
-            _markHablado([c.id]);
+            habladoBatch.push(c.id);
           }
           if (normalizedPhone) {
             _sentThisSession.add(normalizedPhone);
@@ -3015,7 +3031,7 @@
             _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "no_wa", ack: -1, error: "Sin WhatsApp" });
             if (_lastResults.length > 30) _lastResults.length = 30;
             logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status: "no_wa", error: "Sin WhatsApp", own_number: activeNumber });
-            if (c.id) _markHablado([c.id]);
+            if (c.id) habladoBatch.push(c.id);
             if (lockKey) _inFlight.delete(lockKey);
             _notify();
             continue;
@@ -3090,7 +3106,7 @@
           }
           _tplIndex++;
           _consecFails = 0;
-          if (c.id) _markHablado([c.id]);
+          if (c.id) habladoBatch.push(c.id);
           _lastResults.unshift({
             nombre: cName,
             telefono: c.telefono,
@@ -3156,6 +3172,12 @@
             _stopCountdown();
           }
         }
+      }
+      if (habladoBatch.length) {
+        _phase2 = "marcando";
+        _notify();
+        await _markHablado([...habladoBatch]);
+        habladoBatch.length = 0;
       }
       if (logBatch.length) _reportLog([...logBatch]);
       if (_totalPending !== null) _totalPending = Math.max(0, _totalPending - batchSent);

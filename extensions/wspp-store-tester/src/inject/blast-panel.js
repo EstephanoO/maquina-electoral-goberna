@@ -392,11 +392,28 @@ function _fetchBatch(limit) {
   });
 }
 
+// _markHablado — envía y ESPERA confirmación del servidor (máx 8s).
+// Retorna true si el servidor confirmó, false si timeout/error.
+// Usar await para garantizar que el mark llegó ANTES de pedir el siguiente batch.
 function _markHablado(ids) {
-  if (!ids.length) return;
-  window.postMessage({ type: 'BLAST_MARK_HABLADO', ids, own_number: getOwnNumber() }, WA_ORIGIN);
-  // Actualizar stats globales poco después de marcar — el servidor tarda ~200ms en commitear
-  setTimeout(fetchGlobalStats, 1500);
+  if (!ids.length) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const reqId = 'mh_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    const timer = setTimeout(() => {
+      window.removeEventListener('message', onReply);
+      console.warn('[BLAST] markHablado timeout — ids:', ids.length);
+      resolve(false);
+    }, 8000);
+    function onReply(e) {
+      if (e.source !== window || e.data?.type !== 'BLAST_MARK_HABLADO_DONE' || e.data.reqId !== reqId) return;
+      window.removeEventListener('message', onReply);
+      clearTimeout(timer);
+      resolve(e.data.ok ?? false);
+      setTimeout(fetchGlobalStats, 500);
+    }
+    window.addEventListener('message', onReply);
+    window.postMessage({ type: 'BLAST_MARK_HABLADO', ids, own_number: getOwnNumber(), reqId }, WA_ORIGIN);
+  });
 }
 
 function _reportLog(results) {
@@ -824,6 +841,7 @@ export async function startBlast() {
     if (!batch.length) { _running = false; _stopCountdown(); _notify(); break; }
 
     const logBatch = [];
+    const habladoBatch = []; // IDs a marcar hablado — se envían juntos al final del batch
     let batchSent = 0;
 
     // 2. Send each contact
@@ -852,7 +870,7 @@ export async function startBlast() {
       const rawNombreCheck = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim();
       if (!rawNombreCheck) {
         console.log('[BLAST] Skip sin nombre — tel:', c.telefono);
-        if (c.id) { _habladoIds.add(c.id); _markHablado([c.id]); }
+        if (c.id) { _habladoIds.add(c.id); habladoBatch.push(c.id); }
         if (normalizedPhone) { _sentThisSession.add(normalizedPhone); _persistDedup(normalizedPhone); }
         if (c.id) { _sentIds.add(c.id); _persistDedup(c.id); }
         _lastResults.unshift({ nombre: '— Sin nombre', telefono: c.telefono, status: 'skipped', ack: -1, error: 'Sin nombre' });
@@ -922,8 +940,8 @@ export async function startBlast() {
           _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'no_wa', ack: -1, error: 'Sin WhatsApp' });
           if (_lastResults.length > 30) _lastResults.length = 30;
           logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status: 'no_wa', error: 'Sin WhatsApp', own_number: activeNumber });
-          // Marcar hablado — dedup ya se agregó arriba antes de este bloque
-          if (c.id) _markHablado([c.id]);
+          // Acumular para mark hablado masivo al final del batch
+          if (c.id) habladoBatch.push(c.id);
           if (lockKey) _inFlight.delete(lockKey);
           _notify();
           continue;
@@ -999,8 +1017,8 @@ export async function startBlast() {
         _tplIndex++;
         _consecFails = 0;
 
-        // Marcar hablado en el servidor
-        if (c.id) _markHablado([c.id]);
+        // Acumular para mark hablado masivo al final del batch
+        if (c.id) habladoBatch.push(c.id);
 
         _lastResults.unshift({
           nombre: cName, telefono: c.telefono, status: 'sent',
@@ -1058,7 +1076,15 @@ export async function startBlast() {
       }
     }
 
-    // 3. Flush log restante (mark-hablado ya se hizo contacto por contacto)
+    // 3. Mark hablado masivo — AWAIT antes de pedir el siguiente batch
+    // Así el servidor tiene los IDs confirmados cuando llega el siguiente GET.
+    if (habladoBatch.length) {
+      _phase = 'marcando'; _notify();
+      await _markHablado([...habladoBatch]);
+      habladoBatch.length = 0;
+    }
+
+    // 4. Flush log restante
     if (logBatch.length) _reportLog([...logBatch]);
     if (_totalPending !== null) _totalPending = Math.max(0, _totalPending - batchSent);
     _notify();

@@ -140,8 +140,10 @@ export async function getFormContactsForNumber(params: {
          COALESCE(fs.cms_status, 'nuevo') AS cms_status
        FROM form_submissions fs
        WHERE ${where}
-       ORDER BY fs.created_at ASC
-       LIMIT $${argIdx} OFFSET $${argIdx + 1}`,
+        ORDER BY
+          fs.cms_hablado_at NULLS FIRST,
+          fs.created_at ASC
+        LIMIT $${argIdx} OFFSET $${argIdx + 1}`,
       [...args, limit, offset]
     ),
     pool.query<{ count: string }>(
