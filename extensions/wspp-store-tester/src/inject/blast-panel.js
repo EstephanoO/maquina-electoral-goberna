@@ -22,7 +22,7 @@ async function _spamCheck() {
 // CONFIG
 // ══════════════════════════════════════════════════════════════════════
 const CFG_KEY = 'wspp_blast_cfg_v3';
-const TPL_KEY = 'wspp_blast_tpls_v5'; // v5: {{brigadista}} + Senado Nacional #3
+const TPL_KEY = 'wspp_blast_tpls_v6'; // v6: plantilla César formal + departamento
 
 const DEFAULTS = {
   batchSize:    25,   // personas por tanda — el usuario lo cambia en la UI
@@ -39,17 +39,20 @@ function _loadCfg() {
 function _saveCfg(c) { try { localStorage.setItem(CFG_KEY, JSON.stringify(c)); } catch (_) {} }
 let cfg = _loadCfg();
 
-// 3 plantillas predeterminadas para César Vásquez — se rotan 1→2→3→1→2→3
-// {{brigadista}} = encuestador que recogió el dato del contacto
-// Plantilla 1: 3 mensajes — mención del brigadista que nos dio su número
-const DEFAULT_TPL  = '[Buenas tardes|Buenas|Hola|Buen día] {{nombre}}, ¿[cómo te encuentras?|cómo estás?|todo bien?|cómo te va?]\n---\n[Tu número me llegó gracias a|Me comunicó tu contacto|Tu número me lo compartió] {{brigadista}} [y quería saludarte personalmente|y me pareció importante escribirte|y quise comunicarme contigo]\n---\nSoy el doctor César Vásquez, [candidato al Senado Nacional #3|postulante al Senado Nacional #3|número 3 al Senado Nacional] 🇵🇪';
-// Plantilla 2: 2 mensajes — brigadista + presentación directa
-const DEFAULT_TPL2 = '[Hola|Buenas|Buenas tardes] {{nombre}} 👋 [Tu número me lo pasó|Me contactó de tu parte|Tu dato me llegó por] {{brigadista}}\n---\nSoy el doctor César Vásquez, [candidato al Senado Nacional #3|postulante al Senado Nacional #3] 🇵🇪 [y quería presentarme|y te escribo para saludarte]';
-// Plantilla 3: 1 mensaje compacto — brigadista integrado
-const DEFAULT_TPL3 = '[Hola|Buenas|Buenas tardes] {{nombre}}, [tu número me llegó gracias a|me comunicó tu contacto|tu dato me lo pasó] {{brigadista}}. Soy el doctor César Vásquez, [candidato al Senado Nacional #3|postulante al Senado Nacional #3] 🇵🇪';
+// 4 plantillas para César Vásquez — se rotan 1→2→3→4→1→2→3→4
+// Variables: {{nombre}} {{brigadista}} {{departamento}} {{distrito}}
+//
+// Plantilla 1: tono César formal — 2 mensajes (la que César aprobó)
+const DEFAULT_TPL  = '{{nombre}}, [buenas tardes|buen día|buenas]. Te saluda César Vásquez, candidato al Senado Nacional.\n---\n[Nos llegaron tus datos a través de|Tus datos nos llegaron por medio de|Tu contacto nos llegó gracias a] mi equipo de campaña en {{departamento}}, por medio de {{brigadista}}.';
+// Plantilla 2: variación — presentación primero, brigadista después
+const DEFAULT_TPL2 = '[Buenas tardes|Buen día|Buenas] {{nombre}}. Soy César Vásquez, candidato al Senado Nacional #3 🇵🇪\n---\n[Tu número me llegó a través de|Me contactó de tu parte|Tus datos nos llegaron por] {{brigadista}}, de [nuestro equipo en|mi equipo de campaña en] {{departamento}}.';
+// Plantilla 3: compacto 1 solo mensaje
+const DEFAULT_TPL3 = '{{nombre}}, [buenas tardes|buen día|buenas]. Soy César Vásquez, candidato al Senado Nacional. [Nos llegaron tus datos gracias a|Tu contacto nos llegó por medio de] {{brigadista}} de mi equipo en {{departamento}}.';
+// Plantilla 4: informal — pregunta + brigadista
+const DEFAULT_TPL4 = '[Hola|Buenas|Buenas tardes] {{nombre}}, ¿[cómo estás?|todo bien?|cómo te va?]\n---\nTe [saluda|escribe|habla] César Vásquez, candidato al Senado Nacional #3. [Tu número me llegó gracias a|Tus datos me los compartió] {{brigadista}} de {{departamento}}.';
 function _loadTpls() {
   try { const r = localStorage.getItem(TPL_KEY); if (r) { const p = JSON.parse(r); if (p.length) return p; } } catch (_) {}
-  return [DEFAULT_TPL, DEFAULT_TPL2, DEFAULT_TPL3];
+  return [DEFAULT_TPL, DEFAULT_TPL2, DEFAULT_TPL3, DEFAULT_TPL4];
 }
 function _saveTpls(t) { try { localStorage.setItem(TPL_KEY, JSON.stringify(t)); } catch (_) {} }
 let tpls = _loadTpls();
@@ -398,6 +401,7 @@ function _applyVars(text, c, seed) {
   return text
     .replace(/\{\{nombre\}\}/gi, nombre)
     .replace(/\{\{brigadista\}\}/gi, brigadista)
+    .replace(/\{\{departamento\}\}/gi, (c.departamento || c.distrito || '').trim() || 'tu zona')
     .replace(/\{\{saludo\}\}/gi, SALUDOS[_hashSeed(String(seed), 1) % SALUDOS.length])
     .replace(/\{\{cierre\}\}/gi, CIERRES[_hashSeed(String(seed), 2) % CIERRES.length])
     .replace(/\{\{emoji\}\}/gi,  EMOJIS[_hashSeed(String(seed),  3) % EMOJIS.length])

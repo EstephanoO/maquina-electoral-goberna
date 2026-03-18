@@ -427,7 +427,7 @@ function _blastHTML() {
         <div><code style="color:${S.accent};background:rgba(37,211,102,0.1);padding:1px 5px;border-radius:3px;font-weight:600;">[Hola!|Buenas!|Qué tal!]</code> → elige una al azar</div>
         <div><code style="color:${S.accent};background:rgba(37,211,102,0.1);padding:1px 5px;border-radius:3px;font-weight:600;">---</code> → corte: envía como mensaje separado</div>
         <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">
-          ${['{{nombre}}','{{brigadista}}','{{saludo}}','{{cierre}}','{{emoji}}','{{distrito}}','{{fecha}}'].map(v =>
+          ${['{{nombre}}','{{brigadista}}','{{departamento}}','{{distrito}}','{{saludo}}','{{cierre}}','{{emoji}}','{{fecha}}'].map(v =>
             `<code style="color:${S.accent};background:rgba(37,211,102,0.08);padding:1px 5px;border-radius:3px;">${v}</code>`
           ).join('')}
         </div>

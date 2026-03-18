@@ -129,12 +129,13 @@ export async function getFormContactsForNumber(params: {
 
   const [rowsResult, countResult] = await Promise.all([
     pool.query<ContactRow>(
-      `SELECT
+       `SELECT
          fs.id,
          COALESCE(fs.data->>'nombre',    '') AS nombre,
          COALESCE(fs.data->>'apellidos', '') AS apellidos,
          COALESCE(fs.data->>'telefono',  '') AS telefono,
          COALESCE(fs.data->>'distrito',  fs.data->>'zona', '') AS distrito,
+         COALESCE(fs.data->>'departamento', '') AS departamento,
          COALESCE(fs.data->>'encuestador','') AS encuestador,
          COALESCE(fs.cms_status, 'nuevo') AS cms_status
        FROM form_submissions fs
@@ -163,6 +164,7 @@ export interface ContactRow {
   apellidos:    string;
   telefono:     string;
   distrito:     string;
+  departamento: string;
   encuestador:  string;
   cms_status:   string;
 }
