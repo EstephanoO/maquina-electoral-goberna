@@ -2330,7 +2330,7 @@
       }, 1500);
     });
   }
-  var CFG_KEY = "wspp_blast_cfg_v3";
+  var CFG_KEY = "wspp_blast_cfg_v4";
   var TPL_KEY = "wspp_blast_tpls_v6";
   var DEFAULTS = {
     batchSize: 25,

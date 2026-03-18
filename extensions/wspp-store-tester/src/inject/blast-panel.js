@@ -32,7 +32,7 @@ async function _spamCheck() {
 // ══════════════════════════════════════════════════════════════════════
 // CONFIG
 // ══════════════════════════════════════════════════════════════════════
-const CFG_KEY = 'wspp_blast_cfg_v3';
+const CFG_KEY = 'wspp_blast_cfg_v4'; // v4: brigadista vacío por defecto
 const TPL_KEY = 'wspp_blast_tpls_v6'; // v6: plantilla César formal + departamento
 
 const DEFAULTS = {
