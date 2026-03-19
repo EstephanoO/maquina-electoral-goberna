@@ -650,19 +650,15 @@ function _blastHTML() {
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
           ${getPreviewContacts().map(c => {
-            const skipped = getPreviewSkipped().has(c.id);
             const nombre = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim() || '— Sin nombre';
             return `
-            <div data-preview-id="${_esc(c.id)}" style="
+            <div style="
               display:flex;align-items:center;gap:8px;padding:8px 10px;
-              background:${skipped ? '#fef2f2' : S.bg};
-              border:1px solid ${skipped ? '#fecaca' : S.border};
-              border-radius:8px;opacity:${skipped ? '0.6' : '1'};
-              transition:all .15s;
+              background:${S.bg};border:1px solid ${S.border};border-radius:8px;
             ">
               <div style="flex:1;min-width:0;">
-                <div style="font-size:12px;font-weight:600;color:${skipped ? S.danger : S.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                  ${skipped ? '🚫 ' : ''}${_esc(nombre)}
+                <div style="font-size:12px;font-weight:600;color:${S.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  ${_esc(nombre)}
                 </div>
                 <div style="font-size:10px;color:${S.muted};margin-top:1px;">
                   +${_esc(c.telefono || '?')}
@@ -670,12 +666,8 @@ function _blastHTML() {
                   ${c.heat_score === 2 ? ' 🔥' : ''}
                 </div>
               </div>
-              ${skipped ? `
-                <button data-restore="${_esc(c.id)}" title="Restaurar" style="padding:3px 8px;border-radius:5px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:10px;cursor:pointer;flex-shrink:0;">↩</button>
-              ` : `
-                <button data-skip="${_esc(c.id)}" title="Saltear" style="padding:3px 8px;border-radius:5px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:10px;cursor:pointer;flex-shrink:0;">Saltear</button>
-                <button data-markhablado="${_esc(c.id)}" title="Ya le hablamos" style="padding:3px 8px;border-radius:5px;border:1px solid #fecaca;background:#fef2f2;color:${S.danger};font-size:10px;cursor:pointer;flex-shrink:0;">✓ Hablado</button>
-              `}
+              <button data-skip="${_esc(c.id)}" title="Saltear (marca hablado)" style="padding:4px 10px;border-radius:5px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:10px;cursor:pointer;flex-shrink:0;">Saltear</button>
+              <button data-markhablado="${_esc(c.id)}" title="Ya le hablamos" style="padding:4px 10px;border-radius:5px;border:1px solid #fecaca;background:#fef2f2;color:${S.danger};font-size:10px;font-weight:600;cursor:pointer;flex-shrink:0;">✓ Hablado</button>
             </div>`;
           }).join('')}
         </div>
@@ -851,9 +843,7 @@ function _bindContent() {
       _renderContent();
     });
   });
-  document.querySelectorAll('[data-restore]').forEach(btn => {
-    btn.addEventListener('click', () => { previewRestore(btn.dataset.restore); _renderContent(); });
-  });
+  // data-restore removed — skip ahora marca como hablado en DB (irreversible)
   document.querySelectorAll('[data-markhablado]').forEach(btn => {
     btn.addEventListener('click', async () => {
       btn.disabled = true; btn.textContent = '...';

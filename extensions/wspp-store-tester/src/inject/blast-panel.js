@@ -174,12 +174,20 @@ export function isPreviewReady()      { return _previewReady; }
 export function getPreviewSkipped()   { return _previewSkipped; }
 
 // Carga los próximos N contactos sin enviarlos — para preview
+// Pide más del servidor y filtra localmente para excluir los ya procesados
 export async function fetchPreview(n = 5) {
   _previewLoading = true; _previewReady = false; _previewContacts = []; _previewSkipped.clear();
   _notify();
   try {
-    const contacts = await _fetchBatch(n);
-    _previewContacts = contacts;
+    const raw = await _fetchBatch(n * 4); // pedir 4× para tener margen de filtrado
+    const filtered = [];
+    for (const c of raw) {
+      if (c.id && !_habladoIds.has(c.id) && !_sentIds.has(c.id)) {
+        filtered.push(c);
+        if (filtered.length >= n) break;
+      }
+    }
+    _previewContacts = filtered;
   } catch (_) {
     _previewContacts = [];
   }
@@ -187,58 +195,54 @@ export async function fetchPreview(n = 5) {
   _notify();
 }
 
-// El operador decide saltear un contacto del preview
-export function previewSkip(id) {
-  _previewSkipped.add(id);
-  // Registrar en dedup para que no aparezca tampoco en el blast
-  _habladoIds.add(id);
-  _sentIds.add(id);
-  _notify();
-}
+// previewSkip y previewRestore están deprecados — todo va por previewSkipAndReplace
+// que marca en el servidor para que no vuelva nunca
+export function previewSkip(id) { /* no-op — usar previewSkipAndReplace */ }
+export function previewRestore(id) { /* no-op — no se puede restaurar un hablado en DB */ }
 
-// El operador decide restaurar un contacto del preview
-export function previewRestore(id) {
-  _previewSkipped.delete(id);
-  _habladoIds.delete(id);
-  _sentIds.delete(id);
-  _notify();
+// Buscar 1 contacto nuevo que no esté en el preview ni en los excluidos
+async function _fetchOneNew() {
+  // Pedir 20 del servidor y filtrar localmente
+  const extra = await _fetchBatch(20);
+  const currentIds = new Set(_previewContacts.map(c => c.id));
+  for (const c of extra) {
+    if (c.id && !_habladoIds.has(c.id) && !_sentIds.has(c.id) && !currentIds.has(c.id)) {
+      return c;
+    }
+  }
+  return null;
 }
 
 // El operador marca un contacto del preview como ya hablado en la DB
 // y lo reemplaza por el siguiente contacto pendiente
 export async function previewMarkHablado(id) {
-  _previewSkipped.add(id);
   _habladoIds.add(id);
   _sentIds.add(id);
-  // Marcar en servidor
-  await _markHablado([id], []);
-  // Reemplazar en la lista: quitar este y traer 1 nuevo del servidor
+  _persistDedup(id);
+  // Marcar en servidor — AWAIT para asegurar que la DB se actualiza
+  const ok = await _markHablado([id], []);
+  console.log('[BLAST] previewMarkHablado', id, 'ok:', ok);
+  // Quitar de la lista y traer reemplazo
   _previewContacts = _previewContacts.filter(c => c.id !== id);
   try {
-    const extra = await _fetchBatch(1);
-    // Filtrar para no agregar duplicados
-    for (const c of extra) {
-      if (!_habladoIds.has(c.id) && !_sentIds.has(c.id) && !_previewContacts.find(x => x.id === c.id)) {
-        _previewContacts.push(c);
-        break;
-      }
-    }
+    const replacement = await _fetchOneNew();
+    if (replacement) _previewContacts.push(replacement);
   } catch (_) {}
   _notify();
 }
 
-// El operador saltea un contacto del preview y lo reemplaza por el siguiente
+// El operador saltea un contacto del preview y lo reemplaza
 export async function previewSkipAndReplace(id) {
-  previewSkip(id);
+  // Marcar como hablado en el servidor para que no vuelva NUNCA
+  _habladoIds.add(id);
+  _sentIds.add(id);
+  _persistDedup(id);
+  await _markHablado([id], []);
+  // Quitar de la lista y traer reemplazo
   _previewContacts = _previewContacts.filter(c => c.id !== id);
   try {
-    const extra = await _fetchBatch(1);
-    for (const c of extra) {
-      if (!_habladoIds.has(c.id) && !_sentIds.has(c.id) && !_previewContacts.find(x => x.id === c.id)) {
-        _previewContacts.push(c);
-        break;
-      }
-    }
+    const replacement = await _fetchOneNew();
+    if (replacement) _previewContacts.push(replacement);
   } catch (_) {}
   _notify();
 }

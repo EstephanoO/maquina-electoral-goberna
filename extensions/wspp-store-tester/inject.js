@@ -2450,9 +2450,6 @@
   function isPreviewReady() {
     return _previewReady;
   }
-  function getPreviewSkipped() {
-    return _previewSkipped;
-  }
   async function fetchPreview(n = 5) {
     _previewLoading = true;
     _previewReady = false;
@@ -2460,55 +2457,54 @@
     _previewSkipped.clear();
     _notify();
     try {
-      const contacts = await _fetchBatch(n);
-      _previewContacts = contacts;
+      const raw = await _fetchBatch(n * 4);
+      const filtered = [];
+      for (const c of raw) {
+        if (c.id && !_habladoIds.has(c.id) && !_sentIds.has(c.id)) {
+          filtered.push(c);
+          if (filtered.length >= n) break;
+        }
+      }
+      _previewContacts = filtered;
     } catch (_) {
       _previewContacts = [];
     }
     _previewLoading = false;
     _notify();
   }
-  function previewSkip(id) {
-    _previewSkipped.add(id);
-    _habladoIds.add(id);
-    _sentIds.add(id);
-    _notify();
-  }
-  function previewRestore(id) {
-    _previewSkipped.delete(id);
-    _habladoIds.delete(id);
-    _sentIds.delete(id);
-    _notify();
+  async function _fetchOneNew() {
+    const extra = await _fetchBatch(20);
+    const currentIds = new Set(_previewContacts.map((c) => c.id));
+    for (const c of extra) {
+      if (c.id && !_habladoIds.has(c.id) && !_sentIds.has(c.id) && !currentIds.has(c.id)) {
+        return c;
+      }
+    }
+    return null;
   }
   async function previewMarkHablado(id) {
-    _previewSkipped.add(id);
     _habladoIds.add(id);
     _sentIds.add(id);
-    await _markHablado([id], []);
+    _persistDedup(id);
+    const ok = await _markHablado([id], []);
+    console.log("[BLAST] previewMarkHablado", id, "ok:", ok);
     _previewContacts = _previewContacts.filter((c) => c.id !== id);
     try {
-      const extra = await _fetchBatch(1);
-      for (const c of extra) {
-        if (!_habladoIds.has(c.id) && !_sentIds.has(c.id) && !_previewContacts.find((x) => x.id === c.id)) {
-          _previewContacts.push(c);
-          break;
-        }
-      }
+      const replacement = await _fetchOneNew();
+      if (replacement) _previewContacts.push(replacement);
     } catch (_) {
     }
     _notify();
   }
   async function previewSkipAndReplace(id) {
-    previewSkip(id);
+    _habladoIds.add(id);
+    _sentIds.add(id);
+    _persistDedup(id);
+    await _markHablado([id], []);
     _previewContacts = _previewContacts.filter((c) => c.id !== id);
     try {
-      const extra = await _fetchBatch(1);
-      for (const c of extra) {
-        if (!_habladoIds.has(c.id) && !_sentIds.has(c.id) && !_previewContacts.find((x) => x.id === c.id)) {
-          _previewContacts.push(c);
-          break;
-        }
-      }
+      const replacement = await _fetchOneNew();
+      if (replacement) _previewContacts.push(replacement);
     } catch (_) {
     }
     _notify();
@@ -4787,19 +4783,15 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
           ${getPreviewContacts().map((c) => {
-      const skipped = getPreviewSkipped().has(c.id);
       const nombre = ((c.nombre || "") + " " + (c.apellidos || "")).trim() || "\u2014 Sin nombre";
       return `
-            <div data-preview-id="${_esc(c.id)}" style="
+            <div style="
               display:flex;align-items:center;gap:8px;padding:8px 10px;
-              background:${skipped ? "#fef2f2" : S.bg};
-              border:1px solid ${skipped ? "#fecaca" : S.border};
-              border-radius:8px;opacity:${skipped ? "0.6" : "1"};
-              transition:all .15s;
+              background:${S.bg};border:1px solid ${S.border};border-radius:8px;
             ">
               <div style="flex:1;min-width:0;">
-                <div style="font-size:12px;font-weight:600;color:${skipped ? S.danger : S.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                  ${skipped ? "\u{1F6AB} " : ""}${_esc(nombre)}
+                <div style="font-size:12px;font-weight:600;color:${S.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  ${_esc(nombre)}
                 </div>
                 <div style="font-size:10px;color:${S.muted};margin-top:1px;">
                   +${_esc(c.telefono || "?")}
@@ -4807,12 +4799,8 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
                   ${c.heat_score === 2 ? " \u{1F525}" : ""}
                 </div>
               </div>
-              ${skipped ? `
-                <button data-restore="${_esc(c.id)}" title="Restaurar" style="padding:3px 8px;border-radius:5px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:10px;cursor:pointer;flex-shrink:0;">\u21A9</button>
-              ` : `
-                <button data-skip="${_esc(c.id)}" title="Saltear" style="padding:3px 8px;border-radius:5px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:10px;cursor:pointer;flex-shrink:0;">Saltear</button>
-                <button data-markhablado="${_esc(c.id)}" title="Ya le hablamos" style="padding:3px 8px;border-radius:5px;border:1px solid #fecaca;background:#fef2f2;color:${S.danger};font-size:10px;cursor:pointer;flex-shrink:0;">\u2713 Hablado</button>
-              `}
+              <button data-skip="${_esc(c.id)}" title="Saltear (marca hablado)" style="padding:4px 10px;border-radius:5px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:10px;cursor:pointer;flex-shrink:0;">Saltear</button>
+              <button data-markhablado="${_esc(c.id)}" title="Ya le hablamos" style="padding:4px 10px;border-radius:5px;border:1px solid #fecaca;background:#fef2f2;color:${S.danger};font-size:10px;font-weight:600;cursor:pointer;flex-shrink:0;">\u2713 Hablado</button>
             </div>`;
     }).join("")}
         </div>
@@ -4974,12 +4962,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         btn.disabled = true;
         btn.textContent = "...";
         await previewSkipAndReplace(btn.dataset.skip);
-        _renderContent();
-      });
-    });
-    document.querySelectorAll("[data-restore]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        previewRestore(btn.dataset.restore);
         _renderContent();
       });
     });

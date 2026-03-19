@@ -208,17 +208,16 @@ export async function markHablado(
 ): Promise<number> {
   let total = 0;
 
-  // Marca enviados exitosos como 'hablado'
-  // Incluye 'respondieron' — si ya respondieron igual los marcamos hablado
-  // para que no vuelvan a aparecer en el blast
+  // Marca como 'hablado' — SIN filtrar por cms_status.
+  // Si el operador dice "marcar hablado", se marca sin condiciones.
+  // Esto evita el bug de updated:0 con status desconocidos.
   if (ids.length) {
     const result = await pool.query(
       `UPDATE form_submissions
        SET cms_status     = 'hablado',
            cms_hablado_at = now()
        WHERE id = ANY($1::uuid[])
-         AND campaign_id = $2
-         AND COALESCE(cms_status, 'nuevo') IN ('nuevo', 'hablado', 'no_wa', 'respondieron')`,
+         AND campaign_id = $2`,
       [ids, campaign_id]
     );
     total += result.rowCount ?? 0;
@@ -250,6 +249,144 @@ export async function markHablado(
   }
 
   return total;
+}
+
+// ── Dashboard: stats completas por celular + quality + spam ────────────
+export async function getDashboardStats(campaign_id: string) {
+  // 1. Stats por segmento (celular) desde form_submissions (fuente real)
+  const perSegment = await pool.query<{
+    segmento: number; total: string; hablado: string;
+    respondieron: string; no_wa: string; pendiente: string;
+    hablado_hoy: string; respondieron_hoy: string;
+  }>(`
+    SELECT
+      ABS(hashtext(COALESCE(data->>'telefono', id::text))) % 6 AS segmento,
+      COUNT(*)::text AS total,
+      COUNT(*) FILTER (WHERE cms_status = 'hablado')::text AS hablado,
+      COUNT(*) FILTER (WHERE cms_status = 'respondieron')::text AS respondieron,
+      COUNT(*) FILTER (WHERE cms_status = 'no_wa')::text AS no_wa,
+      COUNT(*) FILTER (WHERE COALESCE(cms_status,'nuevo') = 'nuevo')::text AS pendiente,
+      COUNT(*) FILTER (WHERE cms_status = 'hablado' AND cms_hablado_at >= CURRENT_DATE)::text AS hablado_hoy,
+      COUNT(*) FILTER (WHERE cms_status = 'respondieron' AND cms_hablado_at >= CURRENT_DATE)::text AS respondieron_hoy
+    FROM form_submissions
+    WHERE campaign_id = $1 AND deleted_at IS NULL
+      AND COALESCE(data->>'telefono','') != ''
+    GROUP BY 1 ORDER BY 1
+  `, [campaign_id]);
+
+  // 2. Config de números (label, segment_idx)
+  const configs = await pool.query<{
+    wa_number: string; label: string; segment_idx: number;
+    created_at: string; active: boolean;
+  }>(`
+    SELECT wa_number, COALESCE(label, wa_number) AS label, segment_idx,
+           created_at::text, active
+    FROM blast_number_config
+    WHERE campaign_id = $1
+    ORDER BY segment_idx
+  `, [campaign_id]);
+
+  // 3. Blast log: últimos envíos y mensajes más repetidos (para spam check)
+  const topMessages = await pool.query<{ message_preview: string; veces: string }>(`
+    SELECT LEFT(message_text, 80) AS message_preview, COUNT(*)::text AS veces
+    FROM blast_log
+    WHERE campaign_id = $1 AND status = 'sent' AND message_text IS NOT NULL
+    GROUP BY LEFT(message_text, 80)
+    ORDER BY COUNT(*) DESC
+    LIMIT 10
+  `, [campaign_id]);
+
+  // 4. Ritmo por hora (últimas 24h) — para gráfica de actividad
+  const hourlyActivity = await pool.query<{ hora: string; enviados: string }>(`
+    SELECT
+      to_char(date_trunc('hour', cms_hablado_at AT TIME ZONE 'America/Lima'), 'HH24:00') AS hora,
+      COUNT(*)::text AS enviados
+    FROM form_submissions
+    WHERE campaign_id = $1 AND cms_status IN ('hablado','respondieron')
+      AND cms_hablado_at >= NOW() - INTERVAL '24 hours'
+    GROUP BY date_trunc('hour', cms_hablado_at AT TIME ZONE 'America/Lima')
+    ORDER BY date_trunc('hour', cms_hablado_at AT TIME ZONE 'America/Lima')
+  `, [campaign_id]);
+
+  // 5. Totales globales
+  const global = await pool.query<{
+    total: string; hablado: string; respondieron: string;
+    no_wa: string; pendiente: string;
+  }>(`
+    SELECT
+      COUNT(*)::text AS total,
+      COUNT(*) FILTER (WHERE cms_status = 'hablado')::text AS hablado,
+      COUNT(*) FILTER (WHERE cms_status = 'respondieron')::text AS respondieron,
+      COUNT(*) FILTER (WHERE cms_status = 'no_wa')::text AS no_wa,
+      COUNT(*) FILTER (WHERE COALESCE(cms_status,'nuevo') = 'nuevo')::text AS pendiente
+    FROM form_submissions
+    WHERE campaign_id = $1 AND deleted_at IS NULL
+      AND COALESCE(data->>'telefono','') != ''
+  `, [campaign_id]);
+
+  // Mapear configs por segment_idx
+  const configMap: Record<number, { wa_number: string; label: string; created_at: string; active: boolean }> = {};
+  for (const c of configs.rows) configMap[c.segment_idx] = c;
+
+  // Construir response por celular
+  const g = global.rows[0];
+  const totalContacts   = parseInt(g?.total ?? "0", 10);
+  const totalHablado    = parseInt(g?.hablado ?? "0", 10);
+  const totalRespondieron = parseInt(g?.respondieron ?? "0", 10);
+  const totalContactados = totalHablado + totalRespondieron;
+  const globalResponseRate = totalContactados > 0 ? totalRespondieron / totalContactados : 0;
+
+  const celulares = perSegment.rows.map(r => {
+    const seg    = r.segmento;
+    const cfg    = configMap[seg];
+    const total  = parseInt(r.total, 10);
+    const hab    = parseInt(r.hablado, 10);
+    const resp   = parseInt(r.respondieron, 10);
+    const noWa   = parseInt(r.no_wa, 10);
+    const pend   = parseInt(r.pendiente, 10);
+    const habHoy = parseInt(r.hablado_hoy, 10);
+    const respHoy= parseInt(r.respondieron_hoy, 10);
+    const contactados = hab + resp;
+    const responseRate = contactados > 0 ? resp / contactados : 0;
+
+    return {
+      segmento:        seg,
+      wa_number:       cfg?.wa_number ?? null,
+      label:           cfg?.label ?? `Celular ${seg + 1}`,
+      active:          cfg?.active ?? false,
+      age_days:        cfg?.created_at ? Math.max(1, Math.floor((Date.now() - new Date(cfg.created_at).getTime()) / 86400000)) : 0,
+      total,
+      hablado:         hab,
+      respondieron:    resp,
+      no_wa:           noWa,
+      pendiente:       pend,
+      hablado_hoy:     habHoy,
+      respondieron_hoy: respHoy,
+      response_rate:   Math.round(responseRate * 1000) / 1000,
+      quality_rating:  responseRate >= 0.40 ? 'green' as const : responseRate >= 0.25 ? 'yellow' as const : 'red' as const,
+    };
+  });
+
+  return {
+    global: {
+      total_contacts:    totalContacts,
+      total_hablado:     totalHablado,
+      total_respondieron: totalRespondieron,
+      total_no_wa:       parseInt(g?.no_wa ?? "0", 10),
+      total_pendiente:   parseInt(g?.pendiente ?? "0", 10),
+      response_rate:     Math.round(globalResponseRate * 1000) / 1000,
+      quality_rating:    globalResponseRate >= 0.40 ? 'green' as const : globalResponseRate >= 0.25 ? 'yellow' as const : 'red' as const,
+    },
+    celulares,
+    top_messages: topMessages.rows.map(r => ({
+      preview: r.message_preview,
+      count:   parseInt(r.veces, 10),
+    })),
+    hourly_activity: hourlyActivity.rows.map(r => ({
+      hour:  r.hora,
+      count: parseInt(r.enviados, 10),
+    })),
+  };
 }
 
 // ── Block stats: respuestas del bloque de 50 ──────────────────────────
