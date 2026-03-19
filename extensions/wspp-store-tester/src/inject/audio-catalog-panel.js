@@ -847,6 +847,39 @@ export async function sendAudioAsPTT(audioBase64, mimeType) {
     const mediaData = await mediaPrep.waitForPrep();
     L('4 ✓ mediaData', `type=${mediaData.type ?? (mediaData.get?.('type'))} filehash=${(mediaData.filehash ?? mediaData.get?.('filehash'))?.slice(0,16)}`);
 
+    // ── Step 4+ diagnostic: dump all mediaData keys to find where blob lives
+    const mdKeys = typeof mediaData.toJSON === 'function'
+      ? Object.keys(mediaData.toJSON())
+      : Object.keys(mediaData);
+    const mdGetKeys = typeof mediaData.get === 'function' ? '(Backbone model)' : '(plain object)';
+    L('4+ mediaData keys', mdGetKeys, mdKeys.join(', '));
+    // Check specific blob-related properties
+    const blobDirect = mediaData.mediaBlob;
+    const blobGet = typeof mediaData.get === 'function' ? mediaData.get('mediaBlob') : undefined;
+    const blobPreview = mediaData.preview;
+    const blobFull = mediaData.fullData;
+    L('4+ blob search',
+      `direct=${blobDirect ? typeof blobDirect : 'null'}`,
+      `get=${blobGet ? typeof blobGet : 'null'}`,
+      `preview=${blobPreview ? typeof blobPreview : 'null'}`,
+      `fullData=${blobFull ? typeof blobFull : 'null'}`,
+      `opaqueData=${mediaData.opaqueData ? typeof mediaData.opaqueData : 'null'}`);
+    // Deep inspect the mediaBlob object — what IS it now?
+    const inspectBlob = blobGet || blobDirect;
+    if (inspectBlob) {
+      const bKeys = Object.keys(inspectBlob).slice(0, 20);
+      const bProto = Object.getOwnPropertyNames(Object.getPrototypeOf(inspectBlob) || {}).slice(0, 20);
+      L('4+ mediaBlob inspect',
+        `keys=[${bKeys.join(',')}]`,
+        `proto=[${bProto.join(',')}]`,
+        `.url=${typeof inspectBlob.url}`,
+        `.blob=${typeof inspectBlob.blob}`,
+        `.forceUrl=${typeof inspectBlob.forceUrl}`,
+        `.getUrl=${typeof inspectBlob.getUrl}`,
+        `.toBase64=${typeof inspectBlob.toBase64}`,
+        `.constructor=${inspectBlob.constructor?.name || '?'}`);
+    }
+
     // ── Step 5: Waveform (optional) ───────────────────────────────────
     try {
       const waveform = await _generateWaveform(file);
@@ -873,8 +906,21 @@ export async function sendAudioAsPTT(audioBase64, mimeType) {
     L('7 ✓ mediaType', mediaType, `from type=${mdType}`);
 
     // ── Step 8: OpaqueData guard + renderableUrl ──────────────────────
-    const rawBlob = mediaData.mediaBlob ?? mediaData.get?.('mediaBlob');
-    let pttBlob = rawBlob;
+    // WA Web 2026-03: prepRawMedia now stores a raw File in mediaBlob instead
+    // of an OpaqueData wrapper. But uploadMedia internally calls
+    // mediaBlob.url() which only exists on OpaqueData. Fix: always replace
+    // mediaBlob with the opaqueData from Step 3 which has .url().
+    let pttBlob = mediaData.mediaBlob ?? mediaData.get?.('mediaBlob');
+    const hasUrlMethod = pttBlob && typeof pttBlob.url === 'function';
+    if (!hasUrlMethod) {
+      L('8 ⚠ mediaBlob has no .url() (is', pttBlob?.constructor?.name || typeof pttBlob, ') — replacing with opaqueData');
+      pttBlob = opaqueData;
+      if (typeof mediaData.set === 'function') {
+        try { mediaData.set({ mediaBlob: opaqueData }); } catch (_) {}
+      } else {
+        mediaData.mediaBlob = opaqueData;
+      }
+    }
     // Set renderableUrl for local preview using whatever blob we have
     try {
       if (pttBlob && typeof pttBlob.url === 'function') {
@@ -1138,23 +1184,58 @@ window.addEventListener('message', (e) => {
   }
 });
 
-// ── Insert FAB when WA Web is ready ─────────────────────────────────
-const MAX_RETRIES = 30;
-let _retries = 0;
+// ═══════════════════════════════════════════════════════════════════════
+// SIDEBAR INTEGRATION — render catalog inside any container
+// ═══════════════════════════════════════════════════════════════════════
 
-export function toggleCatalogPanel() {
-  if (_catalogPanelOpen) {
-    _closePanel();
-  } else {
-    _toggleCatalogPanelInternal();
+/**
+ * Render the full catalog UI (grid → category → detail → create)
+ * into a given container element. Used by sidebar.js tab "Audios".
+ * Replaces the old floating FAB panel approach.
+ */
+export function renderCatalogInto(container) {
+  _injectStyles();
+  _catalogPanelOpen = true;
+
+  // Load data if not yet loaded
+  if (_catalogItems.length === 0 && !_catalogLoading) {
+    _catalogLoading = true;
+    window.postMessage({ type: 'FETCH_AUDIO_CATALOG' }, WA_ORIGIN);
   }
-}
-export function isCatalogPanelOpen() { return _catalogPanelOpen; }
+  if (_catalogCategories.length === 0 && !_catalogCategoriesLoading) {
+    _catalogCategoriesLoading = true;
+    window.postMessage({ type: 'FETCH_CATALOG_CATEGORIES' }, WA_ORIGIN);
+  }
 
-export function waitForChatAndInsertButton() {
-  if (document.getElementById('wspp-catalog-btn')) return;
-  if (document.querySelector('#main') || document.querySelector('.two')) { createCatalogButton(); console.log('[WSPP CATALOG] Button inserted'); return; }
-  _retries++;
-  if (_retries < MAX_RETRIES) setTimeout(waitForChatAndInsertButton, 2000);
-  else console.warn('[WSPP CATALOG] Chat not found after', MAX_RETRIES, 'retries');
+  // Wrap content in a styled div that fills the sidebar content area
+  container.innerHTML = '';
+  const wrapper = _el('div', {
+    display: 'flex', flexDirection: 'column', height: '100%',
+    fontFamily: "-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif",
+    color: '#e9edef', fontSize: '13px',
+  });
+  wrapper.id = 'wspp-cat-panel'; // reuse ID so renderCatalogPanel() finds it
+
+  container.appendChild(wrapper);
+  renderCatalogPanel(); // renders into #wspp-cat-panel
 }
+
+/** Check if catalog data has been loaded at least once. */
+export function isCatalogDataLoaded() {
+  return _catalogItems.length > 0 || _catalogCategories.length > 0;
+}
+
+/** Reset catalog view state (when sidebar tab changes away). */
+export function resetCatalogView() {
+  _destroyPreview();
+  _catalogView = 'grid';
+  _catalogDetailId = null;
+  _catalogCategory = null;
+  _catalogEditingId = null;
+  _showNewCatForm = false;
+}
+
+// Legacy exports — kept for backward compat, no-op now
+export function toggleCatalogPanel() { /* no-op: sidebar handles this */ }
+export function isCatalogPanelOpen() { return _catalogPanelOpen; }
+export function waitForChatAndInsertButton() { /* no-op: FAB removed */ }

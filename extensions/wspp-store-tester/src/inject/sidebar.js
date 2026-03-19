@@ -19,7 +19,7 @@ import {
 } from './blast-panel.js';
 import { analyzeTemplates } from './template-analyzer.js';
 import { toggleValidatorPanel } from './wa-validator-panel.js';
-import { sendAudioAsPTT } from './audio-catalog-panel.js';
+import { sendAudioAsPTT, renderCatalogInto, resetCatalogView } from './audio-catalog-panel.js';
 
 // ── Cached template analysis ──────────────────────────────────────────
 let _cachedAnalysis = null;
@@ -56,9 +56,7 @@ const S = {
 // ── State ─────────────────────────────────────────────────────────────
 let _open = false;
 let _tab = localStorage.getItem(TAB_KEY) || 'blast';
-let _audioItems = [];
-let _audioLoaded = false;
-let _audioLoading = false;
+// Audio state moved to audio-catalog-panel.js — sidebar uses renderCatalogInto()
 
 const $ = id => document.getElementById(id);
 function _esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -218,6 +216,14 @@ let _delegationBound = false; // solo se registra UNA vez
 function _renderContent() {
   const el = $('sb-content');
   if (!el) return;
+
+  // Audios tab: the catalog panel renders directly into the container via DOM
+  // (not innerHTML) because it uses imperative DOM building with event listeners.
+  if (_tab === 'audios') {
+    _renderAudiosInline();
+    return;
+  }
+
   el.innerHTML = _contentHTML();
   _bindContentInputs(); // solo inputs/textareas (no clicks)
   if (!_delegationBound) {
@@ -283,26 +289,7 @@ async function _handleDelegatedClick(e) {
     const t = getTemplates();
     if (t.length > 1) { t.splice(Number(tplDel), 1); setTemplates(t); _renderContent(); }
   }
-  // Audio send
-  else if (btn.dataset?.audioSend) {
-    const aid = btn.dataset.audioSend;
-    btn.textContent = '⏳'; btn.disabled = true;
-    const h = (ev) => {
-      if (ev.source !== window || ev.data?.type !== 'CATALOG_AUDIO_READY' || ev.data.id !== aid) return;
-      window.removeEventListener('message', h);
-      sendAudioAsPTT(ev.data.audioBase64, ev.data.mimeType).then(ok => {
-        btn.textContent = ok ? '✓' : '✗';
-        setTimeout(() => { btn.textContent = 'Enviar'; btn.disabled = false; }, 3000);
-      });
-    };
-    window.addEventListener('message', h);
-    setTimeout(() => { window.removeEventListener('message', h); btn.textContent = 'Enviar'; btn.disabled = false; }, 15000);
-    window.postMessage({ type: 'GET_CATALOG_AUDIO', id: aid }, WA_ORIGIN);
-  }
-  else if (btn.dataset?.audioRegen) {
-    btn.textContent = '⏳'; btn.disabled = true;
-    window.postMessage({ type: 'GENERATE_CATALOG_AUDIO', id: btn.dataset.audioRegen }, WA_ORIGIN);
-  }
+  // Audio send/regen removed — handled by audio-catalog-panel.js own event listeners
 }
 
 function _handleDelegatedChange(e) {
@@ -374,7 +361,7 @@ function _bindContentInputs() {
 
 function _contentHTML() {
   if (_tab === 'blast') return _blastHTML();
-  if (_tab === 'audios') return _audiosHTML();
+  if (_tab === 'audios') return ''; // rendered by _renderAudiosInline() via DOM
   if (_tab === 'validar') return _validarHTML();
   return '';
 }
@@ -383,10 +370,12 @@ function _bindShell() {
   $('sb-close')?.addEventListener('click', toggleSidebar);
   document.querySelectorAll('[data-tab]').forEach(b => {
     b.addEventListener('click', () => {
+      const prevTab = _tab;
       _tab = b.dataset.tab;
       localStorage.setItem(TAB_KEY, _tab);
+      // Reset catalog view when leaving audios tab
+      if (prevTab === 'audios' && _tab !== 'audios') resetCatalogView();
       _renderSidebar();
-      if (_tab === 'audios' && !_audioLoaded && !_audioLoading) _loadAudios();
       if (_tab === 'blast' && !isRunning()) { refreshPendingCount(); fetchGlobalStats(); }
     });
   });
@@ -914,37 +903,12 @@ function _cfgField(key, label, value, min, max) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// TAB: AUDIOS
+// TAB: AUDIOS — renders full catalog panel with categories inline
 // ══════════════════════════════════════════════════════════════════════
-function _audiosHTML() {
-  if (_audioLoading) return `<div style="padding:40px;text-align:center;color:${S.muted};font-size:12px;">Cargando audios...</div>`;
-  if (!_audioItems.length) return `<div style="padding:40px;text-align:center;color:${S.muted};font-size:12px;">Sin audios</div>`;
-  return `<div style="padding:10px;display:flex;flex-direction:column;gap:4px;">
-    ${_audioItems.map(item => {
-      const dur = item.duration_ms ? Math.floor(item.duration_ms / 1000) + 's' : '';
-      const has = !!item.has_audio;
-      return `<div data-audio-id="${item.id}" style="
-        display:flex;align-items:center;gap:8px;padding:8px 10px;
-        background:${S.card};border:1px solid ${S.border};border-radius:8px;
-        cursor:${has ? 'pointer' : 'default'};opacity:${has ? '1' : '.5'};
-      ">
-        <div style="width:28px;height:28px;border-radius:50%;background:${has ? S.accentBg : S.card};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;">
-          ${has ? '▶' : '—'}
-        </div>
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_esc(item.label)}</div>
-          <div style="font-size:10px;color:${S.muted};">${_esc(item.category)}${dur ? ' · ' + dur : ''}</div>
-        </div>
-        ${has ? `<button data-audio-send="${item.id}" style="${_smallBtn(S.accent, S.accentBg)}">Enviar</button>`
-             : `<button data-audio-regen="${item.id}" style="${_smallBtn(S.warn, S.warnBg)}">Generar</button>`}
-      </div>`;
-    }).join('')}
-  </div>`;
-}
-
-function _loadAudios() {
-  _audioLoading = true; _renderContent();
-  window.postMessage({ type: 'FETCH_AUDIO_CATALOG' }, WA_ORIGIN);
+function _renderAudiosInline() {
+  const el = $('sb-content');
+  if (!el) return;
+  renderCatalogInto(el);
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -996,18 +960,9 @@ function _toast(text, bg = S.accent) {
   setTimeout(() => t.remove(), 3000);
 }
 
-// ── Bridge: audio catalog ─────────────────────────────────────────────
-window.addEventListener('message', (e) => {
-  if (e.source !== window) return;
-  if (e.data?.type === 'AUDIO_CATALOG_READY') {
-    _audioLoading = false; _audioLoaded = true;
-    if (e.data.ok) _audioItems = e.data.items || [];
-    if (_tab === 'audios') _renderContent();
-  }
-  if (e.data?.type === 'GENERATE_CATALOG_AUDIO_DONE') {
-    if (e.data.ok) { _audioLoaded = false; if (_tab === 'audios') _loadAudios(); }
-  }
-});
+// Audio catalog bridge moved to audio-catalog-panel.js — all message handlers
+// (AUDIO_CATALOG_READY, GENERATE_CATALOG_AUDIO_DONE, etc.) live there and
+// trigger renderCatalogPanel() which updates #wspp-cat-panel inside sb-content.
 
 // CD-1: Legacy exports removed — verified no imports exist in inject-entry.js or any module.
 // If a future module needs these, re-add as needed.

@@ -1915,6 +1915,37 @@
       L("4b mediaPrep", typeof mediaPrep, Object.keys(mediaPrep).join(", "));
       const mediaData = await mediaPrep.waitForPrep();
       L("4 \u2713 mediaData", `type=${mediaData.type ?? mediaData.get?.("type")} filehash=${(mediaData.filehash ?? mediaData.get?.("filehash"))?.slice(0, 16)}`);
+      const mdKeys = typeof mediaData.toJSON === "function" ? Object.keys(mediaData.toJSON()) : Object.keys(mediaData);
+      const mdGetKeys = typeof mediaData.get === "function" ? "(Backbone model)" : "(plain object)";
+      L("4+ mediaData keys", mdGetKeys, mdKeys.join(", "));
+      const blobDirect = mediaData.mediaBlob;
+      const blobGet = typeof mediaData.get === "function" ? mediaData.get("mediaBlob") : void 0;
+      const blobPreview = mediaData.preview;
+      const blobFull = mediaData.fullData;
+      L(
+        "4+ blob search",
+        `direct=${blobDirect ? typeof blobDirect : "null"}`,
+        `get=${blobGet ? typeof blobGet : "null"}`,
+        `preview=${blobPreview ? typeof blobPreview : "null"}`,
+        `fullData=${blobFull ? typeof blobFull : "null"}`,
+        `opaqueData=${mediaData.opaqueData ? typeof mediaData.opaqueData : "null"}`
+      );
+      const inspectBlob = blobGet || blobDirect;
+      if (inspectBlob) {
+        const bKeys = Object.keys(inspectBlob).slice(0, 20);
+        const bProto = Object.getOwnPropertyNames(Object.getPrototypeOf(inspectBlob) || {}).slice(0, 20);
+        L(
+          "4+ mediaBlob inspect",
+          `keys=[${bKeys.join(",")}]`,
+          `proto=[${bProto.join(",")}]`,
+          `.url=${typeof inspectBlob.url}`,
+          `.blob=${typeof inspectBlob.blob}`,
+          `.forceUrl=${typeof inspectBlob.forceUrl}`,
+          `.getUrl=${typeof inspectBlob.getUrl}`,
+          `.toBase64=${typeof inspectBlob.toBase64}`,
+          `.constructor=${inspectBlob.constructor?.name || "?"}`
+        );
+      }
       try {
         const waveform = await _generateWaveform(file);
         if (waveform) {
@@ -1936,8 +1967,20 @@
       const mdType = mediaData.type ?? mediaData.get?.("type") ?? "ptt";
       const mediaType = msgToType({ type: mdType, isGif: false });
       L("7 \u2713 mediaType", mediaType, `from type=${mdType}`);
-      const rawBlob = mediaData.mediaBlob ?? mediaData.get?.("mediaBlob");
-      let pttBlob = rawBlob;
+      let pttBlob = mediaData.mediaBlob ?? mediaData.get?.("mediaBlob");
+      const hasUrlMethod = pttBlob && typeof pttBlob.url === "function";
+      if (!hasUrlMethod) {
+        L("8 \u26A0 mediaBlob has no .url() (is", pttBlob?.constructor?.name || typeof pttBlob, ") \u2014 replacing with opaqueData");
+        pttBlob = opaqueData;
+        if (typeof mediaData.set === "function") {
+          try {
+            mediaData.set({ mediaBlob: opaqueData });
+          } catch (_) {
+          }
+        } else {
+          mediaData.mediaBlob = opaqueData;
+        }
+      }
       try {
         if (pttBlob && typeof pttBlob.url === "function") {
           mediaData.renderableUrl = pttBlob.url();
@@ -2199,6 +2242,38 @@
       return;
     }
   });
+  function renderCatalogInto(container) {
+    _injectStyles();
+    _catalogPanelOpen = true;
+    if (_catalogItems.length === 0 && !_catalogLoading) {
+      _catalogLoading = true;
+      window.postMessage({ type: "FETCH_AUDIO_CATALOG" }, WA_ORIGIN);
+    }
+    if (_catalogCategories.length === 0 && !_catalogCategoriesLoading) {
+      _catalogCategoriesLoading = true;
+      window.postMessage({ type: "FETCH_CATALOG_CATEGORIES" }, WA_ORIGIN);
+    }
+    container.innerHTML = "";
+    const wrapper = _el("div", {
+      display: "flex",
+      flexDirection: "column",
+      height: "100%",
+      fontFamily: "-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif",
+      color: "#e9edef",
+      fontSize: "13px"
+    });
+    wrapper.id = "wspp-cat-panel";
+    container.appendChild(wrapper);
+    renderCatalogPanel();
+  }
+  function resetCatalogView() {
+    _destroyPreview();
+    _catalogView = "grid";
+    _catalogDetailId = null;
+    _catalogCategory = null;
+    _catalogEditingId = null;
+    _showNewCatForm = false;
+  }
 
   // src/inject/template-analyzer.js
   var SPAM_WORDS = [
@@ -4254,9 +4329,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   };
   var _open2 = false;
   var _tab = localStorage.getItem(TAB_KEY) || "blast";
-  var _audioItems = [];
-  var _audioLoaded = false;
-  var _audioLoading = false;
   var $ = (id) => document.getElementById(id);
   function _esc(s) {
     return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -4404,6 +4476,10 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   function _renderContent() {
     const el = $("sb-content");
     if (!el) return;
+    if (_tab === "audios") {
+      _renderAudiosInline();
+      return;
+    }
     el.innerHTML = _contentHTML();
     _bindContentInputs();
     if (!_delegationBound2) {
@@ -4496,32 +4572,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         setTemplates(t);
         _renderContent();
       }
-    } else if (btn.dataset?.audioSend) {
-      const aid = btn.dataset.audioSend;
-      btn.textContent = "\u23F3";
-      btn.disabled = true;
-      const h = (ev) => {
-        if (ev.source !== window || ev.data?.type !== "CATALOG_AUDIO_READY" || ev.data.id !== aid) return;
-        window.removeEventListener("message", h);
-        sendAudioAsPTT(ev.data.audioBase64, ev.data.mimeType).then((ok) => {
-          btn.textContent = ok ? "\u2713" : "\u2717";
-          setTimeout(() => {
-            btn.textContent = "Enviar";
-            btn.disabled = false;
-          }, 3e3);
-        });
-      };
-      window.addEventListener("message", h);
-      setTimeout(() => {
-        window.removeEventListener("message", h);
-        btn.textContent = "Enviar";
-        btn.disabled = false;
-      }, 15e3);
-      window.postMessage({ type: "GET_CATALOG_AUDIO", id: aid }, WA_ORIGIN);
-    } else if (btn.dataset?.audioRegen) {
-      btn.textContent = "\u23F3";
-      btn.disabled = true;
-      window.postMessage({ type: "GENERATE_CATALOG_AUDIO", id: btn.dataset.audioRegen }, WA_ORIGIN);
     }
   }
   function _handleDelegatedChange(e) {
@@ -4589,7 +4639,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   }
   function _contentHTML() {
     if (_tab === "blast") return _blastHTML();
-    if (_tab === "audios") return _audiosHTML();
+    if (_tab === "audios") return "";
     if (_tab === "validar") return _validarHTML();
     return "";
   }
@@ -4597,10 +4647,11 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     $("sb-close")?.addEventListener("click", toggleSidebar);
     document.querySelectorAll("[data-tab]").forEach((b) => {
       b.addEventListener("click", () => {
+        const prevTab = _tab;
         _tab = b.dataset.tab;
         localStorage.setItem(TAB_KEY, _tab);
+        if (prevTab === "audios" && _tab !== "audios") resetCatalogView();
         _renderSidebar();
-        if (_tab === "audios" && !_audioLoaded && !_audioLoading) _loadAudios();
         if (_tab === "blast" && !isRunning()) {
           refreshPendingCount();
           fetchGlobalStats();
@@ -5105,34 +5156,10 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     " />
   </div>`;
   }
-  function _audiosHTML() {
-    if (_audioLoading) return `<div style="padding:40px;text-align:center;color:${S.muted};font-size:12px;">Cargando audios...</div>`;
-    if (!_audioItems.length) return `<div style="padding:40px;text-align:center;color:${S.muted};font-size:12px;">Sin audios</div>`;
-    return `<div style="padding:10px;display:flex;flex-direction:column;gap:4px;">
-    ${_audioItems.map((item) => {
-      const dur = item.duration_ms ? Math.floor(item.duration_ms / 1e3) + "s" : "";
-      const has = !!item.has_audio;
-      return `<div data-audio-id="${item.id}" style="
-        display:flex;align-items:center;gap:8px;padding:8px 10px;
-        background:${S.card};border:1px solid ${S.border};border-radius:8px;
-        cursor:${has ? "pointer" : "default"};opacity:${has ? "1" : ".5"};
-      ">
-        <div style="width:28px;height:28px;border-radius:50%;background:${has ? S.accentBg : S.card};display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;">
-          ${has ? "\u25B6" : "\u2014"}
-        </div>
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_esc(item.label)}</div>
-          <div style="font-size:10px;color:${S.muted};">${_esc(item.category)}${dur ? " \xB7 " + dur : ""}</div>
-        </div>
-        ${has ? `<button data-audio-send="${item.id}" style="${_smallBtn(S.accent, S.accentBg)}">Enviar</button>` : `<button data-audio-regen="${item.id}" style="${_smallBtn(S.warn, S.warnBg)}">Generar</button>`}
-      </div>`;
-    }).join("")}
-  </div>`;
-  }
-  function _loadAudios() {
-    _audioLoading = true;
-    _renderContent();
-    window.postMessage({ type: "FETCH_AUDIO_CATALOG" }, WA_ORIGIN);
+  function _renderAudiosInline() {
+    const el = $("sb-content");
+    if (!el) return;
+    renderCatalogInto(el);
   }
   function _validarHTML() {
     return `<div style="padding:40px 20px;text-align:center;">
@@ -5160,21 +5187,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     document.body.appendChild(t);
     setTimeout(() => t.remove(), 3e3);
   }
-  window.addEventListener("message", (e) => {
-    if (e.source !== window) return;
-    if (e.data?.type === "AUDIO_CATALOG_READY") {
-      _audioLoading = false;
-      _audioLoaded = true;
-      if (e.data.ok) _audioItems = e.data.items || [];
-      if (_tab === "audios") _renderContent();
-    }
-    if (e.data?.type === "GENERATE_CATALOG_AUDIO_DONE") {
-      if (e.data.ok) {
-        _audioLoaded = false;
-        if (_tab === "audios") _loadAudios();
-      }
-    }
-  });
 
   // src/inject-entry.js
   if (document.readyState === "complete") {
