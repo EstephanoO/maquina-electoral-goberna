@@ -354,6 +354,28 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ──────────────────────────────────────────────────────────────────
+    // GET /api/blast/block-stats/:blockId
+    // Devuelve cuántos del bloque respondieron — para el checkpoint.
+    // ──────────────────────────────────────────────────────────────────
+    app.get(
+      "/api/blast/block-stats/:blockId",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const req        = request as AuthenticatedRequest;
+        const requestId  = String(request.id);
+        const campaignId = req.activeCampaignId!;
+        const { blockId } = request.params as { blockId: string };
+        try {
+          const stats = await repo.getBlockStats(campaignId, blockId);
+          return reply.code(200).send({ ok: true, request_id: requestId, ...stats });
+        } catch (err) {
+          app.log.error({ err }, "[blast] getBlockStats failed");
+          return reply.code(500).send(errorPayload(requestId, "UPSTREAM_ERROR", "Error al obtener stats del bloque"));
+        }
+      }
+    );
+
+    // ──────────────────────────────────────────────────────────────────
     // POST /api/blast/retry-no-wa
     // Vuelve a 'nuevo' los contactos sin WhatsApp de más de 24h.
     // Llamado al arrancar el blast para reintentarlos al día siguiente.

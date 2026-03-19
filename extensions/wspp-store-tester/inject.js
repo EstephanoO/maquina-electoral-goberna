@@ -2527,6 +2527,58 @@
   function getLastSpamResult() {
     return _lastSpamResult;
   }
+  var BLOCK_SIZE = 50;
+  var BULK_SIZE = 5;
+  var BULK_DELAY_MIN = 20;
+  var BULK_DELAY_MAX = 25;
+  var _checkpoint = null;
+  var _checkpointPolling = null;
+  var _blockId = null;
+  var _blockSent = 0;
+  function getCheckpoint() {
+    return _checkpoint;
+  }
+  function getBlockSent() {
+    return _blockSent;
+  }
+  function _newBlockId() {
+    return `blk_${Date.now()}_${(getOwnNumber() || "x").slice(-4)}`;
+  }
+  function _fetchBlockStats(blockId) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        window.removeEventListener("message", onReply);
+        resolve(null);
+      }, 8e3);
+      function onReply(e) {
+        if (e.source !== window || e.data?.type !== "BLAST_BLOCK_STATS_READY") return;
+        window.removeEventListener("message", onReply);
+        clearTimeout(timer);
+        resolve(e.data.ok ? e.data : null);
+      }
+      window.addEventListener("message", onReply);
+      window.postMessage({ type: "BLAST_GET_BLOCK_STATS", block_id: blockId, own_number: getOwnNumber() }, WA_ORIGIN);
+    });
+  }
+  function _startCheckpointPolling(blockId) {
+    if (_checkpointPolling) clearInterval(_checkpointPolling);
+    const poll = async () => {
+      const stats = await _fetchBlockStats(blockId);
+      if (stats) {
+        _checkpoint = stats;
+        _notify();
+        if (stats.unlocked_50) _stopCheckpointPolling();
+      }
+    };
+    poll();
+    _checkpointPolling = setInterval(poll, 3e4);
+  }
+  function _stopCheckpointPolling() {
+    if (_checkpointPolling) {
+      clearInterval(_checkpointPolling);
+      _checkpointPolling = null;
+    }
+  }
   var _loopRunning = false;
   function getConfig() {
     return cfg;
@@ -3016,7 +3068,7 @@
       const timerEl = document.getElementById("sb-timer-label");
       if (timerEl) {
         const m = Math.floor(_countdown / 60), s = _countdown % 60;
-        const labels = { delay: "\u23F1\uFE0F", prewarm: "\u{1F525}", descanso: "\u2615", pausa: "\u23F8\uFE0F", cargando: "\u{1F4E1}", micro: "\u{1F92B}", marcando: "\u2705" };
+        const labels = { delay: "\u23F1\uFE0F", prewarm: "\u{1F525}", descanso: "\u2615", pausa: "\u23F8\uFE0F", cargando: "\u{1F4E1}", micro: "\u{1F92B}", marcando: "\u2705", checkpoint: "\u23F8 Checkpoint" };
         timerEl.textContent = `${labels[_phase2] || "\u23F1\uFE0F"} ${m > 0 ? m + "m " : ""}${s}s`;
       } else {
         _notify();
@@ -3101,6 +3153,33 @@
       const habladoBatch = [];
       const noWaBatch = [];
       let batchSent = 0;
+      if (!_blockId) {
+        _blockId = _newBlockId();
+        _blockSent = 0;
+        _checkpoint = null;
+      }
+      if (_blockSent >= BLOCK_SIZE) {
+        _phase2 = "checkpoint";
+        _notify();
+        _startCheckpointPolling(_blockId);
+        while (_running && !_paused) {
+          const stats = await _fetchBlockStats(_blockId);
+          if (stats) {
+            _checkpoint = stats;
+            _notify();
+          }
+          if (_checkpoint?.unlocked_50) break;
+          _startCountdown(30, "checkpoint");
+          _notify();
+          await _sleep(3e4);
+          _stopCountdown();
+        }
+        _stopCheckpointPolling();
+        _blockId = _newBlockId();
+        _blockSent = 0;
+        _checkpoint = null;
+        if (!_running || _paused) break;
+      }
       for (let i = 0; i < batch.length && _running && !_paused; i++) {
         const c = batch[i];
         const normalizedPhone = _normalizePhone(c.telefono);
@@ -3155,7 +3234,7 @@
           _kpis.failed++;
           _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error });
           if (_lastResults.length > 30) _lastResults.length = 30;
-          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
+          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null, block_id: _blockId });
           _notify();
           continue;
         }
@@ -3205,7 +3284,7 @@
           _kpis.failed++;
           _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error });
           if (_lastResults.length > 30) _lastResults.length = 30;
-          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
+          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null, block_id: _blockId });
           _notify();
           if (lockKey) _inFlight.delete(lockKey);
           if (_consecFails >= 3) {
@@ -3243,6 +3322,7 @@
           }
           batchSent++;
           _sessionSent++;
+          _blockSent++;
           if (batchSent > 0 && batchSent % 10 === 0 && _numberHealth) {
             _numberHealth.sent_today += 10;
             _numberHealth.sent_last_hour += 10;
@@ -3280,7 +3360,7 @@
           if (_consecFails >= 3) {
             _running = false;
             _stopCountdown();
-            logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
+            logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null, block_id: _blockId });
             _reportLog([...logBatch]);
             break;
           }
@@ -3288,7 +3368,7 @@
           if (lockKey) _inFlight.delete(lockKey);
         }
         if (_lastResults.length > 30) _lastResults.length = 30;
-        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
+        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null, block_id: _blockId });
         _notify();
         if (logBatch.length >= 10) {
           _reportLog([...logBatch]);
@@ -3303,42 +3383,11 @@
             _notify();
             break;
           }
-          const BLOQUE_SIZE = 12;
-          const BLOQUES_X_HORA = 4;
-          const HORA_SIZE = BLOQUE_SIZE * BLOQUES_X_HORA;
-          if (_sessionSent > 0 && _sessionSent % 100 === 0 && _globalStats) {
-            const rr = _globalStats.response_rate ?? 0;
-            if (rr > 0 && rr < 0.25) {
-              const breakSec = 3600;
-              _running = false;
-              _stopCountdown();
-              _lastResults.unshift({
-                nombre: "\u{1F6D1} Response rate cr\xEDtico",
-                telefono: "",
-                status: "paused",
-                ack: -1,
-                error: `Response rate: ${Math.round(rr * 100)}% (<25%). Pausando 1h para no arriesgar el n\xFAmero.`
-              });
-              _notify();
-              break;
-            } else if (rr > 0 && rr < 0.35) {
-              _startCountdown(300, "descanso");
-              _notify();
-              await _sleep(3e5);
-              _stopCountdown();
-            }
-          }
-          if (batchSent > 0 && batchSent % HORA_SIZE === 0) {
-            const macroSec = 600 + Math.floor(Math.random() * 300);
-            _startCountdown(macroSec, "descanso");
+          if (batchSent > 0 && batchSent % BULK_SIZE === 0) {
+            const bulkDelay = BULK_DELAY_MIN + Math.floor(Math.random() * (BULK_DELAY_MAX - BULK_DELAY_MIN + 1));
+            _startCountdown(bulkDelay, "pausa");
             _notify();
-            await _sleep(macroSec * 1e3);
-            _stopCountdown();
-          } else if (batchSent > 0 && batchSent % BLOQUE_SIZE === 0) {
-            const pausaSec = 120 + Math.floor(Math.random() * 60);
-            _startCountdown(pausaSec, "pausa");
-            _notify();
-            await _sleep(pausaSec * 1e3);
+            await _sleep(bulkDelay * 1e3);
             _stopCountdown();
           } else if (_shouldMicroBreak()) {
             const breakSec = _microBreakDuration();
@@ -3399,6 +3448,10 @@
     _loopRunning = false;
     _tplIndex = 0;
     _sessionSent = 0;
+    _blockId = null;
+    _blockSent = 0;
+    _checkpoint = null;
+    _stopCheckpointPolling();
     _previewContacts = [];
     _previewSkipped.clear();
     _previewLoading = false;
@@ -4642,6 +4695,60 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       `).join("")}
 
     </div>
+
+    <!-- CHECKPOINT UI -->
+    ${(() => {
+      const cp = getCheckpoint();
+      const bs = getBlockSent();
+      if (!running && !cp) return "";
+      const pct10 = cp ? Math.min(100, Math.round(cp.response_rate / 0.1 * 100)) : 0;
+      const pct50 = cp ? Math.min(100, Math.round(cp.response_rate / 0.5 * 100)) : 0;
+      const rPct = cp ? Math.round(cp.response_rate * 100) : 0;
+      const blockPct = Math.min(100, Math.round(bs / 50 * 100));
+      return `
+      <div style="background:${S.card};border:2px solid ${cp?.unlocked_50 ? S.accent : cp?.unlocked_10 ? S.warn : S.border};border-radius:12px;padding:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:12px;font-weight:700;color:${S.text};">
+            ${cp ? "\u23F8 Checkpoint \u2014 esperando respuestas" : `\u{1F4E6} Bloque actual: ${bs}/50`}
+          </div>
+          ${cp ? `<span style="font-size:14px;font-weight:800;color:${rPct >= 50 ? S.accent : rPct >= 10 ? S.warn : S.danger};">${rPct}%</span>` : ""}
+        </div>
+
+        ${!cp ? `
+          <!-- Progreso de env\xEDo hacia 50 -->
+          <div style="margin-bottom:4px;">
+            <div style="height:6px;background:${S.border};border-radius:3px;overflow:hidden;">
+              <div style="height:100%;width:${blockPct}%;background:${S.accent};border-radius:3px;transition:width .3s;"></div>
+            </div>
+            <div style="font-size:10px;color:${S.muted};margin-top:3px;">${bs} enviados de 50 \u2192 checkpoint autom\xE1tico</div>
+          </div>
+        ` : `
+          <!-- Barra hacia 10% (desbloqueo vista) -->
+          <div style="margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:3px;">
+              <span>Vista (10%)</span>
+              <span style="font-weight:700;color:${cp.unlocked_10 ? S.accent : S.muted};">${cp.unlocked_10 ? "\u2713 Desbloqueado" : "Esperando..."}</span>
+            </div>
+            <div style="height:5px;background:${S.border};border-radius:3px;overflow:hidden;">
+              <div style="height:100%;width:${pct10}%;background:${S.warn};border-radius:3px;transition:width .4s;"></div>
+            </div>
+          </div>
+          <!-- Barra hacia 50% (desbloqueo env\xEDo) -->
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:3px;">
+              <span>Enviar siguientes 50 (50%)</span>
+              <span style="font-weight:700;color:${cp.unlocked_50 ? S.accent : S.muted};">${cp.unlocked_50 ? "\u2713 Listo" : "${cp.responded}/${Math.ceil(cp.sent*0.5)} respuestas"}</span>
+            </div>
+            <div style="height:5px;background:${S.border};border-radius:3px;overflow:hidden;">
+              <div style="height:100%;width:${pct50}%;background:${cp.unlocked_50 ? S.accent : "#3b82f6"};border-radius:3px;transition:width .4s;"></div>
+            </div>
+          </div>
+          <div style="font-size:10px;color:${S.muted};margin-top:6px;">
+            ${cp.responded} de ${cp.sent} respondieron \xB7 actualizando cada 30s
+          </div>
+        `}
+      </div>`;
+    })()}
 
     <!-- TIMER + LOG -->
     ${hasActivity ? `

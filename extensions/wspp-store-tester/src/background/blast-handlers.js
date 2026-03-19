@@ -58,6 +58,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true;
 });
 
+// ── BLAST_GET_BLOCK_STATS ────────────────────────────────────────────
+// Consulta cuántos del bloque de 50 respondieron
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type !== 'BLAST_GET_BLOCK_STATS') return;
+  const { block_id, own_number } = msg;
+  if (!block_id) { sendResponse({ ok: false }); return true; }
+  apiFetch(`/api/blast/block-stats/${encodeURIComponent(block_id)}`, {
+    headers: own_number ? { 'x-wa-number': own_number } : {},
+  }).then(r => sendResponse({ ok: r.ok, ...r }))
+    .catch(() => sendResponse({ ok: false }));
+  return true;
+});
+
 // ── BLAST_RETRY_NO_WA ─────────────────────────────────────────────────
 // Resetea contactos sin WhatsApp de +24h a 'nuevo' para reintentarlos.
 // Fire-and-forget — no bloquea el arranque del blast.

@@ -15,6 +15,7 @@ import {
   getGlobalStats, fetchGlobalStats,
   getPreviewContacts, isPreviewLoading, isPreviewReady, getPreviewSkipped,
   previewSkip, previewSkipAndReplace, previewRestore, previewMarkHablado, previewConfirm, previewCancel,
+  getCheckpoint, getBlockSent,
 } from './blast-panel.js';
 import { analyzeTemplates } from './template-analyzer.js';
 import { toggleValidatorPanel } from './wa-validator-panel.js';
@@ -557,6 +558,61 @@ function _blastHTML() {
       `).join('')}
 
     </div>
+
+    <!-- CHECKPOINT UI -->
+    ${(() => {
+      const cp = getCheckpoint();
+      const bs = getBlockSent();
+      if (!running && !cp) return '';
+      const pct10 = cp ? Math.min(100, Math.round((cp.response_rate / 0.10) * 100)) : 0;
+      const pct50 = cp ? Math.min(100, Math.round((cp.response_rate / 0.50) * 100)) : 0;
+      const rPct  = cp ? Math.round(cp.response_rate * 100) : 0;
+      // Barra de progreso del bloque actual (enviados hacia 50)
+      const blockPct = Math.min(100, Math.round((bs / 50) * 100));
+      return `
+      <div style="background:${S.card};border:2px solid ${cp?.unlocked_50 ? S.accent : cp?.unlocked_10 ? S.warn : S.border};border-radius:12px;padding:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <div style="font-size:12px;font-weight:700;color:${S.text};">
+            ${cp ? '⏸ Checkpoint — esperando respuestas' : `📦 Bloque actual: ${bs}/50`}
+          </div>
+          ${cp ? `<span style="font-size:14px;font-weight:800;color:${rPct>=50?S.accent:rPct>=10?S.warn:S.danger};">${rPct}%</span>` : ''}
+        </div>
+
+        ${!cp ? `
+          <!-- Progreso de envío hacia 50 -->
+          <div style="margin-bottom:4px;">
+            <div style="height:6px;background:${S.border};border-radius:3px;overflow:hidden;">
+              <div style="height:100%;width:${blockPct}%;background:${S.accent};border-radius:3px;transition:width .3s;"></div>
+            </div>
+            <div style="font-size:10px;color:${S.muted};margin-top:3px;">${bs} enviados de 50 → checkpoint automático</div>
+          </div>
+        ` : `
+          <!-- Barra hacia 10% (desbloqueo vista) -->
+          <div style="margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:3px;">
+              <span>Vista (10%)</span>
+              <span style="font-weight:700;color:${cp.unlocked_10?S.accent:S.muted};">${cp.unlocked_10?'✓ Desbloqueado':'Esperando...'}</span>
+            </div>
+            <div style="height:5px;background:${S.border};border-radius:3px;overflow:hidden;">
+              <div style="height:100%;width:${pct10}%;background:${S.warn};border-radius:3px;transition:width .4s;"></div>
+            </div>
+          </div>
+          <!-- Barra hacia 50% (desbloqueo envío) -->
+          <div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:3px;">
+              <span>Enviar siguientes 50 (50%)</span>
+              <span style="font-weight:700;color:${cp.unlocked_50?S.accent:S.muted};">${cp.unlocked_50?'✓ Listo':'${cp.responded}/${Math.ceil(cp.sent*0.5)} respuestas'}</span>
+            </div>
+            <div style="height:5px;background:${S.border};border-radius:3px;overflow:hidden;">
+              <div style="height:100%;width:${pct50}%;background:${cp.unlocked_50?S.accent:'#3b82f6'};border-radius:3px;transition:width .4s;"></div>
+            </div>
+          </div>
+          <div style="font-size:10px;color:${S.muted};margin-top:6px;">
+            ${cp.responded} de ${cp.sent} respondieron · actualizando cada 30s
+          </div>
+        `}
+      </div>`;
+    })()}
 
     <!-- TIMER + LOG -->
     ${hasActivity ? `

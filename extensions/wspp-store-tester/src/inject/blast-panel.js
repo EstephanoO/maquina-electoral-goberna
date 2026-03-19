@@ -260,6 +260,65 @@ export function previewCancel() {
 let _lastSpamResult = null;
 export function getLastSpamResult() { return _lastSpamResult; }
 
+// ── Checkpoint de bloque ──────────────────────────────────────────────
+// Cada 50 enviados el blast se pausa hasta que el bloque tenga:
+//   - 10% respondido → se desbloquea para ver stats (UI)
+//   - 50% respondido → se desbloquea para enviar los siguientes 50
+const BLOCK_SIZE         = 50;   // contactos por bloque
+const BLOCK_UNLOCK_VIEW  = 0.10; // 10% para desbloquear vista
+const BLOCK_UNLOCK_SEND  = 0.50; // 50% para enviar el siguiente bloque
+const BULK_SIZE          = 5;    // enviar de a 5 por vez
+const BULK_DELAY_MIN     = 20;   // seg mínimo entre bulks
+const BULK_DELAY_MAX     = 25;   // seg máximo entre bulks
+
+let _checkpoint = null; // { block_id, sent, responded, response_rate, unlocked_10, unlocked_50 }
+let _checkpointPolling = null; // interval de polling
+let _blockId = null;    // ID del bloque actual (timestamp + número)
+let _blockSent = 0;     // enviados en el bloque actual
+
+export function getCheckpoint()  { return _checkpoint; }
+export function getBlockId()     { return _blockId; }
+export function getBlockSent()   { return _blockSent; }
+
+// Generar nuevo block_id al inicio de cada bloque
+function _newBlockId() {
+  return `blk_${Date.now()}_${(getOwnNumber() || 'x').slice(-4)}`;
+}
+
+// Consultar stats del bloque al servidor
+function _fetchBlockStats(blockId) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { window.removeEventListener('message', onReply); resolve(null); }, 8000);
+    function onReply(e) {
+      if (e.source !== window || e.data?.type !== 'BLAST_BLOCK_STATS_READY') return;
+      window.removeEventListener('message', onReply);
+      clearTimeout(timer);
+      resolve(e.data.ok ? e.data : null);
+    }
+    window.addEventListener('message', onReply);
+    window.postMessage({ type: 'BLAST_GET_BLOCK_STATS', block_id: blockId, own_number: getOwnNumber() }, WA_ORIGIN);
+  });
+}
+
+// Arrancar polling de stats del checkpoint (cada 30s)
+function _startCheckpointPolling(blockId) {
+  if (_checkpointPolling) clearInterval(_checkpointPolling);
+  const poll = async () => {
+    const stats = await _fetchBlockStats(blockId);
+    if (stats) {
+      _checkpoint = stats;
+      _notify();
+      // Si ya alcanzó 50% → parar polling, el loop puede continuar
+      if (stats.unlocked_50) _stopCheckpointPolling();
+    }
+  };
+  poll(); // inmediato
+  _checkpointPolling = setInterval(poll, 30000);
+}
+function _stopCheckpointPolling() {
+  if (_checkpointPolling) { clearInterval(_checkpointPolling); _checkpointPolling = null; }
+}
+
 // ── Guard para evitar loops simultáneos ───────────────────────────────
 // resumeBlast puede llamar startBlast() mientras el loop anterior
 // todavía está resolviendo una promise → dos loops en paralelo.
@@ -891,7 +950,7 @@ function _startCountdown(sec, phase) {
     const timerEl = document.getElementById('sb-timer-label');
     if (timerEl) {
       const m = Math.floor(_countdown / 60), s = _countdown % 60;
-      const labels = { delay: '⏱️', prewarm: '🔥', descanso: '☕', pausa: '⏸️', cargando: '📡', micro: '🤫', marcando: '✅' };
+      const labels = { delay: '⏱️', prewarm: '🔥', descanso: '☕', pausa: '⏸️', cargando: '📡', micro: '🤫', marcando: '✅', checkpoint: '⏸ Checkpoint' };
       timerEl.textContent = `${labels[_phase] || '⏱️'} ${m > 0 ? m + 'm ' : ''}${s}s`;
     } else {
       // Solo si el elemento no existe (panel no abierto o recién montado)
@@ -998,6 +1057,28 @@ export async function startBlast() {
     const noWaBatch    = []; // IDs sin WhatsApp → cms_status='no_wa' (retry mañana)
     let batchSent = 0;
 
+    // ── Inicializar bloque si es el primero ────────────────────────
+    if (!_blockId) { _blockId = _newBlockId(); _blockSent = 0; _checkpoint = null; }
+
+    // ── CHECKPOINT: si llegamos a BLOCK_SIZE, pausar y esperar respuestas ──
+    if (_blockSent >= BLOCK_SIZE) {
+      _phase = 'checkpoint'; _notify();
+      _startCheckpointPolling(_blockId);
+      // Esperar hasta que el bloque tenga 50% de respuesta
+      while (_running && !_paused) {
+        const stats = await _fetchBlockStats(_blockId);
+        if (stats) { _checkpoint = stats; _notify(); }
+        if (_checkpoint?.unlocked_50) break;
+        // Polling cada 30s — mostrar countdown
+        _startCountdown(30, 'checkpoint'); _notify();
+        await _sleep(30000); _stopCountdown();
+      }
+      _stopCheckpointPolling();
+      // Nuevo bloque
+      _blockId = _newBlockId(); _blockSent = 0; _checkpoint = null;
+      if (!_running || _paused) break;
+    }
+
     // 2. Send each contact
     for (let i = 0; i < batch.length && _running && !_paused; i++) {
       const c = batch[i];
@@ -1062,7 +1143,7 @@ export async function startBlast() {
         _kpis.failed++;
         _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'failed', ack: -1, error });
         if (_lastResults.length > 30) _lastResults.length = 30;
-        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
+        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null, block_id: _blockId });
         _notify();
         continue;
       }
@@ -1114,7 +1195,7 @@ export async function startBlast() {
         _kpis.failed++;
         _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'failed', ack: -1, error });
         if (_lastResults.length > 30) _lastResults.length = 30;
-        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
+        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null, block_id: _blockId });
         _notify();
         if (lockKey) _inFlight.delete(lockKey);
         if (_consecFails >= 3) { _running = false; _stopCountdown(); _reportLog([...logBatch]); break; }
@@ -1155,6 +1236,7 @@ export async function startBlast() {
 
         batchSent++;
         _sessionSent++;
+        _blockSent++;
 
         // Stealth: re-check warm-up limits every 10 messages
         if (batchSent > 0 && batchSent % 10 === 0 && _numberHealth) {
@@ -1186,7 +1268,7 @@ export async function startBlast() {
         _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'failed', ack: -1, error });
         if (_consecFails >= 3) {
           _running = false; _stopCountdown();
-          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
+          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null, block_id: _blockId });
           _reportLog([...logBatch]); break;
         }
       } finally {
@@ -1196,7 +1278,7 @@ export async function startBlast() {
       }
 
       if (_lastResults.length > 30) _lastResults.length = 30;
-      logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null });
+      logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null, block_id: _blockId });
       _notify();
       if (logBatch.length >= 10) { _reportLog([...logBatch]); logBatch.length = 0; }
 
@@ -1209,49 +1291,19 @@ export async function startBlast() {
           _notify(); break;
         }
 
-        // ── Sistema de bloques PRO ─────────────────────────────────────
-        // Estructura: 12 msgs → pausa corta 2-3min → 4 bloques = macro pausa 10-15min
-        // Objetivo: 60 msgs/hora distribuidos sin trigger de frecuencia alta.
-        // Los contadores son globales a la sesión (_msgsSinceBreak ya existía).
-        const BLOQUE_SIZE    = 12;  // msgs por bloque
-        const BLOQUES_X_HORA = 4;   // bloques antes de macro pausa
-        const HORA_SIZE      = BLOQUE_SIZE * BLOQUES_X_HORA; // ≈48 msgs/hora
-
-        // Control de response_rate cada 100 msgs — freno automático
-        if (_sessionSent > 0 && _sessionSent % 100 === 0 && _globalStats) {
-          const rr = _globalStats.response_rate ?? 0;
-          if (rr > 0 && rr < 0.25) {
-            // <25% respuesta → parar 1 hora
-            const breakSec = 3600;
-            _running = false; _stopCountdown();
-            _lastResults.unshift({ nombre: '🛑 Response rate crítico', telefono: '', status: 'paused', ack: -1,
-              error: `Response rate: ${Math.round(rr*100)}% (<25%). Pausando 1h para no arriesgar el número.` });
-            _notify(); break;
-          } else if (rr > 0 && rr < 0.35) {
-            // 25-35% → bajar ritmo: pausa extra de 5 min
-            _startCountdown(300, 'descanso'); _notify();
-            await _sleep(300000); _stopCountdown();
-          }
-        }
-
-        if (batchSent > 0 && batchSent % HORA_SIZE === 0) {
-          // Macro pausa cada hora de actividad (4 bloques de 12): 10-15 min
-          // Rompe detección de patrón de frecuencia alta
-          const macroSec = 600 + Math.floor(Math.random() * 300); // 10-15 min
-          _startCountdown(macroSec, 'descanso'); _notify();
-          await _sleep(macroSec * 1000); _stopCountdown();
-        } else if (batchSent > 0 && batchSent % BLOQUE_SIZE === 0) {
-          // Pausa corta entre bloques: 2-3 min gaussiano
-          const pausaSec = 120 + Math.floor(Math.random() * 60); // 2-3 min
-          _startCountdown(pausaSec, 'pausa'); _notify();
-          await _sleep(pausaSec * 1000); _stopCountdown();
+        // ── Delay de bulk (5 en 5) ─────────────────────────────────────
+        // Cada BULK_SIZE enviados → delay 20-25s entre bulks
+        // Dentro del bulk → delay gaussiano corto (cfg.delaySec, default 15s)
+        if (batchSent > 0 && batchSent % BULK_SIZE === 0) {
+          // Pausa entre bulks: 20-25s random
+          const bulkDelay = BULK_DELAY_MIN + Math.floor(Math.random() * (BULK_DELAY_MAX - BULK_DELAY_MIN + 1));
+          _startCountdown(bulkDelay, 'pausa'); _notify();
+          await _sleep(bulkDelay * 1000); _stopCountdown();
         } else if (_shouldMicroBreak()) {
-          // Micro-descanso aleatorio: simula distracción humana
           const breakSec = _microBreakDuration();
           _startCountdown(breakSec, 'micro'); _notify();
           await _sleep(breakSec * 1000); _stopCountdown();
         } else if (cfg.delaySec > 0) {
-          // Delay gaussiano entre contactos dentro del bloque (5-8s)
           const actual = _gaussianDelay(cfg.delaySec);
           _startCountdown(actual, 'delay'); _notify();
           await _sleep(actual * 1000); _stopCountdown();
@@ -1306,6 +1358,8 @@ export function resetSession() {
   _loopRunning = false;
   _tplIndex = 0;
   _sessionSent = 0;
+  _blockId = null; _blockSent = 0; _checkpoint = null;
+  _stopCheckpointPolling();
   _previewContacts = []; _previewSkipped.clear();
   _previewLoading = false; _previewReady = false;
   _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };

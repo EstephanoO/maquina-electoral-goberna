@@ -314,6 +314,14 @@ window.addEventListener('message', (e) => {
     return;
   }
 
+  // --- BLAST_GET_BLOCK_STATS (inject → background → inject) ---
+  if (e.data?.type === 'BLAST_GET_BLOCK_STATS') {
+    chrome.runtime.sendMessage({ type: 'BLAST_GET_BLOCK_STATS', block_id: e.data.block_id, own_number: e.data.own_number }, (response) => {
+      window.postMessage({ type: 'BLAST_BLOCK_STATS_READY', ...response }, WA_ORIGIN);
+    });
+    return;
+  }
+
   // --- BLAST_RETRY_NO_WA (inject → background, fire-and-forget) ---
   if (e.data?.type === 'BLAST_RETRY_NO_WA') {
     chrome.runtime.sendMessage({ type: 'BLAST_RETRY_NO_WA', own_number: e.data.own_number }, () => {});

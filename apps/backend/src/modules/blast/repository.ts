@@ -252,6 +252,41 @@ export async function markHablado(
   return total;
 }
 
+// ── Block stats: respuestas del bloque de 50 ──────────────────────────
+// Cuenta cuántos de los contact_ids del bloque respondieron (cms_status='respondieron')
+export async function getBlockStats(
+  campaign_id: string,
+  block_id: string
+): Promise<{ sent: number; responded: number; response_rate: number; unlocked_10: boolean; unlocked_50: boolean }> {
+  const result = await pool.query<{ sent: string; responded: string }>(
+    `SELECT
+       COUNT(*)::text AS sent,
+       COUNT(*) FILTER (
+         WHERE EXISTS (
+           SELECT 1 FROM form_submissions fs
+           WHERE fs.id = bl.contact_id
+             AND fs.campaign_id = $1
+             AND fs.cms_status = 'respondieron'
+         )
+       )::text AS responded
+     FROM blast_log bl
+     WHERE bl.campaign_id = $1
+       AND bl.block_id    = $2
+       AND bl.status      = 'sent'`,
+    [campaign_id, block_id]
+  );
+  const sent      = parseInt(result.rows[0]?.sent      ?? "0", 10);
+  const responded = parseInt(result.rows[0]?.responded ?? "0", 10);
+  const rate      = sent > 0 ? responded / sent : 0;
+  return {
+    sent,
+    responded,
+    response_rate:  Math.round(rate * 1000) / 1000,
+    unlocked_10:    rate >= 0.10,   // 10% → desbloqueado para ver resultados
+    unlocked_50:    rate >= 0.50,   // 50% → desbloqueado para enviar los siguientes 50
+  };
+}
+
 // ── Retry no_wa: vuelve a 'nuevo' los contactos sin WA de más de 24h ──
 // Llamado al arrancar el blast — permite reintentar al día siguiente.
 export async function retryNoWaContacts(campaign_id: string): Promise<number> {
@@ -277,7 +312,8 @@ export async function saveBlastReport(
     status:       'sent' | 'failed' | 'no_wa';
     error?:       string | null;
     own_number?:  string | null;
-    contact_id?:  string | null;  // UUID de form_submissions — para trazabilidad completa
+    contact_id?:  string | null;
+    block_id?:    string | null;  // ID del bloque de 50 para checkpoint
   }>
 ): Promise<number> {
   if (!results.length) return 0;
@@ -291,31 +327,29 @@ export async function saveBlastReport(
       status:       r.status,
       error_msg:    r.error ?? null,
       contact_id:   r.contact_id ?? null,
+      block_id:     r.block_id ?? null,
     }))
     .filter(r => r.phone);
 
   if (!clean.length) return 0;
 
-  const phones       = clean.map(r => r.phone);
-  const waNumbers    = clean.map(r => r.wa_number);
-  const names        = clean.map(r => r.contact_name);
-  const messages     = clean.map(r => r.message_text);
-  const statuses     = clean.map(r => r.status);
-  const errors       = clean.map(r => r.error_msg);
-  const contactIds   = clean.map(r => r.contact_id);
+  const phones     = clean.map(r => r.phone);
+  const waNumbers  = clean.map(r => r.wa_number);
+  const names      = clean.map(r => r.contact_name);
+  const messages   = clean.map(r => r.message_text);
+  const statuses   = clean.map(r => r.status);
+  const errors     = clean.map(r => r.error_msg);
+  const contactIds = clean.map(r => r.contact_id);
+  const blockIds   = clean.map(r => r.block_id);
 
   try {
     const result = await pool.query(
       `INSERT INTO blast_log
-         (campaign_id, wa_number, contact_phone, contact_name, message_text, status, error_msg, contact_id)
+         (campaign_id, wa_number, contact_phone, contact_name, message_text, status, error_msg, contact_id, block_id)
        SELECT $1,
-         unnest($2::text[]),
-         unnest($3::text[]),
-         unnest($4::text[]),
-         unnest($5::text[]),
-         unnest($6::text[]),
-         unnest($7::text[]),
-         unnest($8::uuid[])
+         unnest($2::text[]),  unnest($3::text[]),  unnest($4::text[]),
+         unnest($5::text[]),  unnest($6::text[]),  unnest($7::text[]),
+         unnest($8::uuid[]),  unnest($9::text[])
        ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent'
        DO UPDATE SET
          contact_name = EXCLUDED.contact_name,
@@ -323,29 +357,29 @@ export async function saveBlastReport(
          status       = EXCLUDED.status,
          error_msg    = EXCLUDED.error_msg,
          contact_id   = COALESCE(EXCLUDED.contact_id, blast_log.contact_id),
+         block_id     = COALESCE(EXCLUDED.block_id,   blast_log.block_id),
          sent_at      = now()`,
-      [campaign_id, waNumbers, phones, names, messages, statuses, errors, contactIds]
+      [campaign_id, waNumbers, phones, names, messages, statuses, errors, contactIds, blockIds]
     );
     return result.rowCount ?? 0;
   } catch (err) {
-    // Fallback a inserts individuales
     let saved = 0;
     for (const r of clean) {
       try {
         await pool.query(
           `INSERT INTO blast_log
-             (campaign_id, wa_number, contact_phone, contact_name, message_text, status, error_msg, contact_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             (campaign_id, wa_number, contact_phone, contact_name, message_text, status, error_msg, contact_id, block_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
            ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent'
            DO UPDATE SET
-             contact_name = EXCLUDED.contact_name,
-             message_text = EXCLUDED.message_text,
+             contact_name = EXCLUDED.contact_name, message_text = EXCLUDED.message_text,
              contact_id   = COALESCE(EXCLUDED.contact_id, blast_log.contact_id),
+             block_id     = COALESCE(EXCLUDED.block_id,   blast_log.block_id),
              sent_at      = now()`,
-          [campaign_id, r.wa_number, r.phone, r.contact_name, r.message_text, r.status, r.error_msg, r.contact_id]
+          [campaign_id, r.wa_number, r.phone, r.contact_name, r.message_text, r.status, r.error_msg, r.contact_id, r.block_id]
         );
         saved++;
-      } catch { /* ignore individual failures */ }
+      } catch { /* ignore */ }
     }
     return saved;
   }

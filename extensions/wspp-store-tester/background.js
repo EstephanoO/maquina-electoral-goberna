@@ -1808,6 +1808,18 @@
     return true;
   });
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg.type !== "BLAST_GET_BLOCK_STATS") return;
+    const { block_id, own_number } = msg;
+    if (!block_id) {
+      sendResponse({ ok: false });
+      return true;
+    }
+    apiFetch(`/api/blast/block-stats/${encodeURIComponent(block_id)}`, {
+      headers: own_number ? { "x-wa-number": own_number } : {}
+    }).then((r) => sendResponse({ ok: r.ok, ...r })).catch(() => sendResponse({ ok: false }));
+    return true;
+  });
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type !== "BLAST_RETRY_NO_WA") return;
     const { own_number } = msg;
     apiFetch("/api/blast/retry-no-wa", {
