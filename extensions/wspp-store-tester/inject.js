@@ -4358,12 +4358,180 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     border-bottom:2px solid ${active ? S.accent : "transparent"};
   "><div style="font-size:14px;">${icon}</div>${label}</button>`;
   }
+  var _delegationBound = false;
   function _renderContent() {
     const el = $("sb-content");
-    if (el) {
-      el.innerHTML = _contentHTML();
-      _bindContent();
+    if (!el) return;
+    el.innerHTML = _contentHTML();
+    _bindContentInputs();
+    if (!_delegationBound) {
+      _delegationBound = true;
+      el.addEventListener("click", _handleDelegatedClick);
+      el.addEventListener("change", _handleDelegatedChange);
+      el.addEventListener("input", _handleDelegatedInput);
     }
+  }
+  async function _handleDelegatedClick(e) {
+    const btn = e.target.closest("button, [data-action]");
+    if (!btn) return;
+    const id = btn.id;
+    const skip = btn.dataset?.skip;
+    const markH = btn.dataset?.markhablado;
+    const preset = btn.dataset?.preset;
+    const tplDel = btn.dataset?.tplDel;
+    if (id === "sb-refresh") {
+      refreshPendingCount();
+      fetchGlobalStats();
+      _toast3("Actualizando...");
+    } else if (id === "sb-brigadista-clear") {
+      setConfig({ brigadista: "" });
+      refreshPendingCount();
+      _renderContent();
+    } else if (id === "sb-start") {
+      startBlast();
+    } else if (id === "sb-pause") {
+      pauseBlast();
+    } else if (id === "sb-resume") {
+      resumeBlast();
+    } else if (id === "sb-reset") {
+      resetSession();
+      refreshPendingCount();
+      _renderContent();
+    } else if (id === "sb-preview-cancel") {
+      previewCancel();
+      _renderContent();
+    } else if (id === "sb-preview-confirm") {
+      previewConfirm();
+      await startBlast();
+    } else if (id === "sb-tpl-add") {
+      const t = getTemplates();
+      t.push(`[Hola|Buenas|Buenas tardes] {{nombre}} \xBF[c\xF3mo est\xE1s?|todo bien?|c\xF3mo te va?]
+---
+[Mensaje ${t.length + 1} \u2014 edit\xE1 este bloque]`);
+      setTemplates(t);
+      _renderContent();
+    } else if (id === "sb-open-validator") {
+      toggleValidatorPanel();
+    } else if (skip) {
+      btn.disabled = true;
+      btn.textContent = "...";
+      await previewSkipAndReplace(skip);
+      _renderContent();
+    } else if (markH) {
+      btn.disabled = true;
+      btn.textContent = "...";
+      await previewMarkHablado(markH);
+      _renderContent();
+    } else if (preset) {
+      const n = Number(preset);
+      setConfig({ batchSize: n });
+      const inp = document.querySelector('[data-cfg="batchSize"]');
+      if (inp) inp.value = n;
+      document.querySelectorAll("[data-preset]").forEach((b) => {
+        const active = Number(b.dataset.preset) === n;
+        b.style.borderColor = active ? S.accent : S.border;
+        b.style.background = active ? S.accentBg : S.bg;
+        b.style.color = active ? S.accent : S.muted;
+      });
+      const startBtn = $("sb-start");
+      if (startBtn) startBtn.textContent = `\u25B6 Enviar a ${n} personas`;
+    } else if (tplDel !== void 0) {
+      const t = getTemplates();
+      if (t.length > 1) {
+        t.splice(Number(tplDel), 1);
+        setTemplates(t);
+        _renderContent();
+      }
+    } else if (btn.dataset?.audioSend) {
+      const aid = btn.dataset.audioSend;
+      btn.textContent = "\u23F3";
+      btn.disabled = true;
+      const h = (ev) => {
+        if (ev.source !== window || ev.data?.type !== "CATALOG_AUDIO_READY" || ev.data.id !== aid) return;
+        window.removeEventListener("message", h);
+        sendAudioAsPTT(ev.data.audioBase64, ev.data.mimeType).then((ok) => {
+          btn.textContent = ok ? "\u2713" : "\u2717";
+          setTimeout(() => {
+            btn.textContent = "Enviar";
+            btn.disabled = false;
+          }, 3e3);
+        });
+      };
+      window.addEventListener("message", h);
+      setTimeout(() => {
+        window.removeEventListener("message", h);
+        btn.textContent = "Enviar";
+        btn.disabled = false;
+      }, 15e3);
+      window.postMessage({ type: "GET_CATALOG_AUDIO", id: aid }, WA_ORIGIN);
+    } else if (btn.dataset?.audioRegen) {
+      btn.textContent = "\u23F3";
+      btn.disabled = true;
+      window.postMessage({ type: "GENERATE_CATALOG_AUDIO", id: btn.dataset.audioRegen }, WA_ORIGIN);
+    }
+  }
+  function _handleDelegatedChange(e) {
+    const inp = e.target.closest("[data-cfg]");
+    if (!inp) return;
+    const v = Math.max(Number(inp.min || 1), Math.min(Number(inp.max || 9999), Number(inp.value)));
+    inp.value = v;
+    setConfig({ [inp.dataset.cfg]: v });
+    if (inp.dataset.cfg === "batchSize") {
+      document.querySelectorAll("[data-preset]").forEach((b) => {
+        const active = Number(b.dataset.preset) === v;
+        b.style.borderColor = active ? S.accent : S.border;
+        b.style.background = active ? S.accentBg : S.bg;
+        b.style.color = active ? S.accent : S.muted;
+      });
+      const startBtn = $("sb-start");
+      if (startBtn) startBtn.textContent = `\u25B6 Enviar a ${v} personas`;
+    }
+  }
+  var _brigTimer = null;
+  function _handleDelegatedInput(e) {
+    const tpl = e.target.closest("[data-tpl]");
+    const brig = e.target.id === "sb-brigadista-input" ? e.target : null;
+    if (tpl) {
+      const idx = Number(tpl.dataset.tpl);
+      const t = getTemplates();
+      t[idx] = tpl.value;
+      setTemplates(t);
+      const preview = document.getElementById("sb-tpl-preview-" + idx);
+      if (preview) {
+        const fakeParts = _previewSpin(tpl.value);
+        if (fakeParts.length === 1) {
+          preview.textContent = "\u25B6 " + fakeParts[0].slice(0, 80) + (fakeParts[0].length > 80 ? "\u2026" : "");
+        } else {
+          preview.innerHTML = fakeParts.map(
+            (p, i) => `<span style="display:block;margin-bottom:1px;">\u2709\uFE0F ${i + 1}: ${_esc(p.slice(0, 60))}${p.length > 60 ? "\u2026" : ""}</span>`
+          ).join("");
+        }
+      }
+    }
+    if (brig) {
+      clearTimeout(_brigTimer);
+      _brigTimer = setTimeout(() => {
+        setConfig({ brigadista: brig.value.trim() });
+        refreshPendingCount();
+        _renderContent();
+      }, 600);
+    }
+  }
+  function _bindContentInputs() {
+    document.querySelectorAll("[data-tpl]").forEach((ta) => {
+      const idx = Number(ta.dataset.tpl);
+      const preview = document.getElementById("sb-tpl-preview-" + idx);
+      if (preview) {
+        const fakeParts = _previewSpin(ta.value);
+        if (fakeParts.length === 1) {
+          preview.textContent = "\u25B6 " + fakeParts[0].slice(0, 80) + (fakeParts[0].length > 80 ? "\u2026" : "");
+        } else {
+          preview.innerHTML = fakeParts.map(
+            (p, i) => `<span style="display:block;margin-bottom:1px;">\u2709\uFE0F ${i + 1}: ${_esc(p.slice(0, 60))}${p.length > 60 ? "\u2026" : ""}</span>`
+          ).join("");
+        }
+      }
+    });
   }
   function _contentHTML() {
     if (_tab === "blast") return _blastHTML();
@@ -4917,176 +5085,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       background:${S.blueBg};color:${S.blue};font-size:13px;font-weight:600;cursor:pointer;
     ">Abrir Validador</button>
   </div>`;
-  }
-  function _bindContent() {
-    $("sb-refresh")?.addEventListener("click", () => {
-      refreshPendingCount();
-      fetchGlobalStats();
-      _toast3("Actualizando...");
-    });
-    const brigadistaInput = $("sb-brigadista-input");
-    if (brigadistaInput) {
-      let _brigTimer = null;
-      brigadistaInput.addEventListener("input", () => {
-        clearTimeout(_brigTimer);
-        _brigTimer = setTimeout(() => {
-          setConfig({ brigadista: brigadistaInput.value.trim() });
-          refreshPendingCount();
-          _renderContent();
-        }, 600);
-      });
-    }
-    $("sb-brigadista-clear")?.addEventListener("click", () => {
-      setConfig({ brigadista: "" });
-      refreshPendingCount();
-      _renderContent();
-    });
-    $("sb-start")?.addEventListener("click", startBlast);
-    $("sb-pause")?.addEventListener("click", pauseBlast);
-    $("sb-resume")?.addEventListener("click", resumeBlast);
-    $("sb-reset")?.addEventListener("click", () => {
-      resetSession();
-      refreshPendingCount();
-      _renderContent();
-    });
-    $("sb-preview-cancel")?.addEventListener("click", () => {
-      previewCancel();
-      _renderContent();
-    });
-    $("sb-preview-confirm")?.addEventListener("click", async () => {
-      previewConfirm();
-      await startBlast();
-    });
-    document.querySelectorAll("[data-skip]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        btn.disabled = true;
-        btn.textContent = "...";
-        await previewSkipAndReplace(btn.dataset.skip);
-        _renderContent();
-      });
-    });
-    document.querySelectorAll("[data-markhablado]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        btn.disabled = true;
-        btn.textContent = "...";
-        await previewMarkHablado(btn.dataset.markhablado);
-        _renderContent();
-      });
-    });
-    document.querySelectorAll("[data-preset]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const n = Number(btn.dataset.preset);
-        setConfig({ batchSize: n });
-        const inp = document.querySelector('[data-cfg="batchSize"]');
-        if (inp) inp.value = n;
-        document.querySelectorAll("[data-preset]").forEach((b) => {
-          const active = Number(b.dataset.preset) === n;
-          b.style.borderColor = active ? S.accent : S.border;
-          b.style.background = active ? S.accentBg : S.bg;
-          b.style.color = active ? S.accent : S.muted;
-        });
-        const startBtn = $("sb-start");
-        if (startBtn) startBtn.textContent = `\u25B6 Enviar a ${n} personas`;
-      });
-    });
-    document.querySelectorAll("[data-cfg]").forEach((inp) => {
-      inp.addEventListener("change", () => {
-        const v = Math.max(Number(inp.min || 1), Math.min(Number(inp.max || 9999), Number(inp.value)));
-        inp.value = v;
-        setConfig({ [inp.dataset.cfg]: v });
-        if (inp.dataset.cfg === "batchSize") {
-          document.querySelectorAll("[data-preset]").forEach((b) => {
-            const active = Number(b.dataset.preset) === v;
-            b.style.borderColor = active ? S.accent : S.border;
-            b.style.background = active ? S.accentBg : S.bg;
-            b.style.color = active ? S.accent : S.muted;
-          });
-          const startBtn = $("sb-start");
-          if (startBtn) startBtn.textContent = `\u25B6 Enviar a ${v} personas`;
-        }
-      });
-    });
-    document.querySelectorAll("[data-tpl]").forEach((ta) => {
-      const idx = Number(ta.dataset.tpl);
-      const _updatePreview = () => {
-        const preview = document.getElementById("sb-tpl-preview-" + idx);
-        if (!preview) return;
-        const raw = ta.value;
-        if (!raw.trim()) {
-          preview.textContent = "";
-          return;
-        }
-        const fakeParts = _previewSpin(raw);
-        if (fakeParts.length === 1) {
-          preview.textContent = "\u25B6 " + fakeParts[0].slice(0, 80) + (fakeParts[0].length > 80 ? "\u2026" : "");
-        } else {
-          preview.innerHTML = fakeParts.map(
-            (p, i) => `<span style="display:block;margin-bottom:1px;">\u2709\uFE0F ${i + 1}: ${_esc(p.slice(0, 60))}${p.length > 60 ? "\u2026" : ""}</span>`
-          ).join("");
-        }
-      };
-      ta.addEventListener("input", () => {
-        const t = getTemplates();
-        t[idx] = ta.value;
-        setTemplates(t);
-        _updatePreview();
-      });
-      _updatePreview();
-    });
-    document.querySelectorAll("[data-tpl-del]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const t = getTemplates();
-        if (t.length > 1) {
-          t.splice(Number(btn.dataset.tplDel), 1);
-          setTemplates(t);
-          _renderContent();
-        }
-      });
-    });
-    $("sb-tpl-add")?.addEventListener("click", () => {
-      const t = getTemplates();
-      const n = t.length + 1;
-      t.push(`[Hola|Buenas|Buenas tardes] {{nombre}} \xBF[c\xF3mo est\xE1s?|todo bien?|c\xF3mo te va?]
----
-[Mensaje ${n} \u2014 edit\xE1 este bloque|Variante ${n} \u2014 cambi\xE1 este texto]`);
-      setTemplates(t);
-      _renderContent();
-    });
-    document.querySelectorAll("[data-audio-send]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const id = btn.dataset.audioSend;
-        btn.textContent = "\u23F3";
-        btn.disabled = true;
-        const h = (ev) => {
-          if (ev.source !== window || ev.data?.type !== "CATALOG_AUDIO_READY" || ev.data.id !== id) return;
-          window.removeEventListener("message", h);
-          sendAudioAsPTT(ev.data.audioBase64, ev.data.mimeType).then((ok) => {
-            btn.textContent = ok ? "\u2713" : "\u2717";
-            setTimeout(() => {
-              btn.textContent = "Enviar";
-              btn.disabled = false;
-            }, 3e3);
-          });
-        };
-        window.addEventListener("message", h);
-        setTimeout(() => {
-          window.removeEventListener("message", h);
-          btn.textContent = "Enviar";
-          btn.disabled = false;
-        }, 15e3);
-        window.postMessage({ type: "GET_CATALOG_AUDIO", id }, WA_ORIGIN);
-      });
-    });
-    document.querySelectorAll("[data-audio-regen]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        btn.textContent = "\u23F3";
-        btn.disabled = true;
-        window.postMessage({ type: "GENERATE_CATALOG_AUDIO", id: btn.dataset.audioRegen }, WA_ORIGIN);
-      });
-    });
-    $("sb-open-validator")?.addEventListener("click", toggleValidatorPanel);
   }
   function _previewSpin(tpl) {
     const now = /* @__PURE__ */ new Date();

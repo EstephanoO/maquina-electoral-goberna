@@ -206,9 +206,161 @@ function _tabBtn(id, icon, label) {
   "><div style="font-size:14px;">${icon}</div>${label}</button>`;
 }
 
+let _delegationBound = false; // solo se registra UNA vez
+
 function _renderContent() {
   const el = $('sb-content');
-  if (el) { el.innerHTML = _contentHTML(); _bindContent(); }
+  if (!el) return;
+  el.innerHTML = _contentHTML();
+  _bindContentInputs(); // solo inputs/textareas (no clicks)
+  if (!_delegationBound) {
+    _delegationBound = true;
+    el.addEventListener('click', _handleDelegatedClick);
+    el.addEventListener('change', _handleDelegatedChange);
+    el.addEventListener('input', _handleDelegatedInput);
+  }
+}
+
+// ── Delegación de clicks — UN solo listener para todo ────────────────
+async function _handleDelegatedClick(e) {
+  const btn = e.target.closest('button, [data-action]');
+  if (!btn) return;
+
+  const id = btn.id;
+  const skip = btn.dataset?.skip;
+  const markH = btn.dataset?.markhablado;
+  const preset = btn.dataset?.preset;
+  const tplDel = btn.dataset?.tplDel;
+
+  if (id === 'sb-refresh') { refreshPendingCount(); fetchGlobalStats(); _toast('Actualizando...'); }
+  else if (id === 'sb-brigadista-clear') { setConfig({ brigadista: '' }); refreshPendingCount(); _renderContent(); }
+  else if (id === 'sb-start') { startBlast(); }
+  else if (id === 'sb-pause') { pauseBlast(); }
+  else if (id === 'sb-resume') { resumeBlast(); }
+  else if (id === 'sb-reset') { resetSession(); refreshPendingCount(); _renderContent(); }
+  else if (id === 'sb-preview-cancel') { previewCancel(); _renderContent(); }
+  else if (id === 'sb-preview-confirm') { previewConfirm(); await startBlast(); }
+  else if (id === 'sb-tpl-add') {
+    const t = getTemplates();
+    t.push(`[Hola|Buenas|Buenas tardes] {{nombre}} ¿[cómo estás?|todo bien?|cómo te va?]\n---\n[Mensaje ${t.length + 1} — editá este bloque]`);
+    setTemplates(t); _renderContent();
+  }
+  else if (id === 'sb-open-validator') { toggleValidatorPanel(); }
+  else if (skip) {
+    btn.disabled = true; btn.textContent = '...';
+    await previewSkipAndReplace(skip);
+    _renderContent();
+  }
+  else if (markH) {
+    btn.disabled = true; btn.textContent = '...';
+    await previewMarkHablado(markH);
+    _renderContent();
+  }
+  else if (preset) {
+    const n = Number(preset);
+    setConfig({ batchSize: n });
+    const inp = document.querySelector('[data-cfg="batchSize"]');
+    if (inp) inp.value = n;
+    document.querySelectorAll('[data-preset]').forEach(b => {
+      const active = Number(b.dataset.preset) === n;
+      b.style.borderColor = active ? S.accent : S.border;
+      b.style.background  = active ? S.accentBg : S.bg;
+      b.style.color       = active ? S.accent : S.muted;
+    });
+    const startBtn = $('sb-start');
+    if (startBtn) startBtn.textContent = `▶ Enviar a ${n} personas`;
+  }
+  else if (tplDel !== undefined) {
+    const t = getTemplates();
+    if (t.length > 1) { t.splice(Number(tplDel), 1); setTemplates(t); _renderContent(); }
+  }
+  // Audio send
+  else if (btn.dataset?.audioSend) {
+    const aid = btn.dataset.audioSend;
+    btn.textContent = '⏳'; btn.disabled = true;
+    const h = (ev) => {
+      if (ev.source !== window || ev.data?.type !== 'CATALOG_AUDIO_READY' || ev.data.id !== aid) return;
+      window.removeEventListener('message', h);
+      sendAudioAsPTT(ev.data.audioBase64, ev.data.mimeType).then(ok => {
+        btn.textContent = ok ? '✓' : '✗';
+        setTimeout(() => { btn.textContent = 'Enviar'; btn.disabled = false; }, 3000);
+      });
+    };
+    window.addEventListener('message', h);
+    setTimeout(() => { window.removeEventListener('message', h); btn.textContent = 'Enviar'; btn.disabled = false; }, 15000);
+    window.postMessage({ type: 'GET_CATALOG_AUDIO', id: aid }, WA_ORIGIN);
+  }
+  else if (btn.dataset?.audioRegen) {
+    btn.textContent = '⏳'; btn.disabled = true;
+    window.postMessage({ type: 'GENERATE_CATALOG_AUDIO', id: btn.dataset.audioRegen }, WA_ORIGIN);
+  }
+}
+
+function _handleDelegatedChange(e) {
+  const inp = e.target.closest('[data-cfg]');
+  if (!inp) return;
+  const v = Math.max(Number(inp.min || 1), Math.min(Number(inp.max || 9999), Number(inp.value)));
+  inp.value = v;
+  setConfig({ [inp.dataset.cfg]: v });
+  if (inp.dataset.cfg === 'batchSize') {
+    document.querySelectorAll('[data-preset]').forEach(b => {
+      const active = Number(b.dataset.preset) === v;
+      b.style.borderColor = active ? S.accent : S.border;
+      b.style.background  = active ? S.accentBg : S.bg;
+      b.style.color       = active ? S.accent : S.muted;
+    });
+    const startBtn = $('sb-start');
+    if (startBtn) startBtn.textContent = `▶ Enviar a ${v} personas`;
+  }
+}
+
+let _brigTimer = null;
+function _handleDelegatedInput(e) {
+  const tpl = e.target.closest('[data-tpl]');
+  const brig = e.target.id === 'sb-brigadista-input' ? e.target : null;
+
+  if (tpl) {
+    const idx = Number(tpl.dataset.tpl);
+    const t = getTemplates(); t[idx] = tpl.value; setTemplates(t);
+    // Update preview
+    const preview = document.getElementById('sb-tpl-preview-' + idx);
+    if (preview) {
+      const fakeParts = _previewSpin(tpl.value);
+      if (fakeParts.length === 1) {
+        preview.textContent = '▶ ' + fakeParts[0].slice(0, 80) + (fakeParts[0].length > 80 ? '…' : '');
+      } else {
+        preview.innerHTML = fakeParts.map((p, i) =>
+          `<span style="display:block;margin-bottom:1px;">✉️ ${(i+1)}: ${_esc(p.slice(0, 60))}${p.length > 60 ? '…' : ''}</span>`
+        ).join('');
+      }
+    }
+  }
+  if (brig) {
+    clearTimeout(_brigTimer);
+    _brigTimer = setTimeout(() => {
+      setConfig({ brigadista: brig.value.trim() });
+      refreshPendingCount();
+      _renderContent();
+    }, 600);
+  }
+}
+
+// Solo binds que requieren setup inicial (templates preview on load)
+function _bindContentInputs() {
+  document.querySelectorAll('[data-tpl]').forEach(ta => {
+    const idx = Number(ta.dataset.tpl);
+    const preview = document.getElementById('sb-tpl-preview-' + idx);
+    if (preview) {
+      const fakeParts = _previewSpin(ta.value);
+      if (fakeParts.length === 1) {
+        preview.textContent = '▶ ' + fakeParts[0].slice(0, 80) + (fakeParts[0].length > 80 ? '…' : '');
+      } else {
+        preview.innerHTML = fakeParts.map((p, i) =>
+          `<span style="display:block;margin-bottom:1px;">✉️ ${(i+1)}: ${_esc(p.slice(0, 60))}${p.length > 60 ? '…' : ''}</span>`
+        ).join('');
+      }
+    }
+  });
 }
 
 function _contentHTML() {
@@ -799,173 +951,9 @@ function _validarHTML() {
   </div>`;
 }
 
-// ══════════════════════════════════════════════════════════════════════
-// EVENTS
-// ══════════════════════════════════════════════════════════════════════
-function _bindContent() {
-  // ── Blast ──
-  $('sb-refresh')?.addEventListener('click', () => { refreshPendingCount(); fetchGlobalStats(); _toast('Actualizando...'); });
-
-  // Filtro brigadista
-  const brigadistaInput = $('sb-brigadista-input');
-  if (brigadistaInput) {
-    let _brigTimer = null;
-    brigadistaInput.addEventListener('input', () => {
-      clearTimeout(_brigTimer);
-      _brigTimer = setTimeout(() => {
-        setConfig({ brigadista: brigadistaInput.value.trim() });
-        refreshPendingCount();
-        _renderContent();
-      }, 600);
-    });
-  }
-  $('sb-brigadista-clear')?.addEventListener('click', () => {
-    setConfig({ brigadista: '' });
-    refreshPendingCount();
-    _renderContent();
-  });
-  $('sb-start')?.addEventListener('click', startBlast);
-  $('sb-pause')?.addEventListener('click', pauseBlast);
-  $('sb-resume')?.addEventListener('click', resumeBlast);
-  $('sb-reset')?.addEventListener('click', () => { resetSession(); refreshPendingCount(); _renderContent(); });
-
-  // ── Preview ──
-  $('sb-preview-cancel')?.addEventListener('click', () => { previewCancel(); _renderContent(); });
-  $('sb-preview-confirm')?.addEventListener('click', async () => {
-    previewConfirm();
-    await startBlast();  // arranca el blast con los contactos no salteados
-  });
-  // Botones skip / restore / markhablado por delegación de eventos
-  document.querySelectorAll('[data-skip]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      btn.disabled = true; btn.textContent = '...';
-      await previewSkipAndReplace(btn.dataset.skip);
-      _renderContent();
-    });
-  });
-  // data-restore removed — skip ahora marca como hablado en DB (irreversible)
-  document.querySelectorAll('[data-markhablado]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      btn.disabled = true; btn.textContent = '...';
-      await previewMarkHablado(btn.dataset.markhablado);
-      _renderContent();
-    });
-  });
-
-  // Presets de tanda
-  document.querySelectorAll('[data-preset]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const n = Number(btn.dataset.preset);
-      setConfig({ batchSize: n });
-      // Actualizar el input numérico sin re-renderizar todo
-      const inp = document.querySelector('[data-cfg="batchSize"]');
-      if (inp) inp.value = n;
-      // Actualizar estilos de todos los presets
-      document.querySelectorAll('[data-preset]').forEach(b => {
-        const active = Number(b.dataset.preset) === n;
-        b.style.borderColor = active ? S.accent : S.border;
-        b.style.background  = active ? S.accentBg : S.bg;
-        b.style.color       = active ? S.accent : S.muted;
-      });
-      // Actualizar el botón de inicio
-      const startBtn = $('sb-start');
-      if (startBtn) startBtn.textContent = `▶ Enviar a ${n} personas`;
-    });
-  });
-
-  // Config numérico
-  document.querySelectorAll('[data-cfg]').forEach(inp => {
-    inp.addEventListener('change', () => {
-      const v = Math.max(Number(inp.min || 1), Math.min(Number(inp.max || 9999), Number(inp.value)));
-      inp.value = v;
-      setConfig({ [inp.dataset.cfg]: v });
-      // Si cambiaron batchSize manualmente, sincronizar presets y botón
-      if (inp.dataset.cfg === 'batchSize') {
-        document.querySelectorAll('[data-preset]').forEach(b => {
-          const active = Number(b.dataset.preset) === v;
-          b.style.borderColor = active ? S.accent : S.border;
-          b.style.background  = active ? S.accentBg : S.bg;
-          b.style.color       = active ? S.accent : S.muted;
-        });
-        const startBtn = $('sb-start');
-        if (startBtn) startBtn.textContent = `▶ Enviar a ${v} personas`;
-      }
-    });
-  });
-
-  // Templates — edit + live preview
-  document.querySelectorAll('[data-tpl]').forEach(ta => {
-    const idx = Number(ta.dataset.tpl);
-
-    // Preview inline: muestra cómo se vería el mensaje con variantes resueltas
-    const _updatePreview = () => {
-      const preview = document.getElementById('sb-tpl-preview-' + idx);
-      if (!preview) return;
-      const raw = ta.value;
-      if (!raw.trim()) { preview.textContent = ''; return; }
-      // Simulamos con un contacto de ejemplo
-      const fakeParts = _previewSpin(raw);
-      if (fakeParts.length === 1) {
-        preview.textContent = '▶ ' + fakeParts[0].slice(0, 80) + (fakeParts[0].length > 80 ? '…' : '');
-      } else {
-        preview.innerHTML = fakeParts.map((p, i) =>
-          `<span style="display:block;margin-bottom:1px;">✉️ ${(i+1)}: ${_esc(p.slice(0, 60))}${p.length > 60 ? '…' : ''}</span>`
-        ).join('');
-      }
-    };
-
-    ta.addEventListener('input', () => {
-      const t = getTemplates(); t[idx] = ta.value; setTemplates(t);
-      _updatePreview();
-    });
-
-    // Mostrar preview al cargar
-    _updatePreview();
-  });
-
-  document.querySelectorAll('[data-tpl-del]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const t = getTemplates();
-      if (t.length > 1) { t.splice(Number(btn.dataset.tplDel), 1); setTemplates(t); _renderContent(); }
-    });
-  });
-  $('sb-tpl-add')?.addEventListener('click', () => {
-    const t = getTemplates();
-    const n = t.length + 1;
-    t.push(`[Hola|Buenas|Buenas tardes] {{nombre}} ¿[cómo estás?|todo bien?|cómo te va?]\n---\n[Mensaje ${n} — editá este bloque|Variante ${n} — cambiá este texto]`);
-    setTemplates(t); _renderContent();
-  });
-
-  // ── Audios ──
-  document.querySelectorAll('[data-audio-send]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = btn.dataset.audioSend;
-      btn.textContent = '⏳'; btn.disabled = true;
-      const h = (ev) => {
-        if (ev.source !== window || ev.data?.type !== 'CATALOG_AUDIO_READY' || ev.data.id !== id) return;
-        window.removeEventListener('message', h);
-        sendAudioAsPTT(ev.data.audioBase64, ev.data.mimeType).then(ok => {
-          btn.textContent = ok ? '✓' : '✗';
-          setTimeout(() => { btn.textContent = 'Enviar'; btn.disabled = false; }, 3000);
-        });
-      };
-      window.addEventListener('message', h);
-      setTimeout(() => { window.removeEventListener('message', h); btn.textContent = 'Enviar'; btn.disabled = false; }, 15000);
-      window.postMessage({ type: 'GET_CATALOG_AUDIO', id }, WA_ORIGIN);
-    });
-  });
-  document.querySelectorAll('[data-audio-regen]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      btn.textContent = '⏳'; btn.disabled = true;
-      window.postMessage({ type: 'GENERATE_CATALOG_AUDIO', id: btn.dataset.audioRegen }, WA_ORIGIN);
-    });
-  });
-
-  // ── Validar ──
-  $('sb-open-validator')?.addEventListener('click', toggleValidatorPanel);
-}
+// _bindContent eliminado — todos los eventos se manejan por delegación
+// en _handleDelegatedClick/_handleDelegatedChange/_handleDelegatedInput
+// registrados UNA sola vez en _renderContent()
 
 // ── Preview spin (versión simplificada para mostrar cómo queda el template) ─
 function _previewSpin(tpl) {
