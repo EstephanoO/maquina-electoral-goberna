@@ -2334,11 +2334,11 @@
   var TPL_KEY = "wspp_blast_tpls_v6";
   var DEFAULTS = {
     batchSize: 5,
-    // pedir de 5 en 5 — coincide con el bulk size
-    delaySec: 5,
-    // delay corto dentro del bulk (5s entre mensajes del mismo bulk)
+    // pedir de 5 en 5 — coincide con BULK_SIZE
+    delaySec: 2,
+    // 2s entre cada mensaje dentro del bulk (sprint rápido)
     prewarmSec: 0,
-    // sin prewarm — el delay entre bulks (20-25s) es el "respiro"
+    // sin prewarm — la pausa de 30s entre bulks es el respiro
     pausaCada: 10,
     pausaSec: 60,
     descansoSec: 300,
@@ -2526,8 +2526,8 @@
   }
   var BLOCK_SIZE = 50;
   var BULK_SIZE = 5;
-  var BULK_DELAY_MIN = 20;
-  var BULK_DELAY_MAX = 25;
+  var BULK_DELAY_MIN = 30;
+  var BULK_DELAY_MAX = 30;
   var _checkpoint = null;
   var _checkpointPolling = null;
   var _blockId = null;

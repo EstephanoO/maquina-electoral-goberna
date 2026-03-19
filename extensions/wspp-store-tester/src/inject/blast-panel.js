@@ -36,9 +36,9 @@ const CFG_KEY = 'wspp_blast_cfg_v4'; // v4: brigadista vacío por defecto
 const TPL_KEY = 'wspp_blast_tpls_v6'; // v6: plantilla César formal + departamento
 
 const DEFAULTS = {
-  batchSize:    5,    // pedir de 5 en 5 — coincide con el bulk size
-  delaySec:     5,    // delay corto dentro del bulk (5s entre mensajes del mismo bulk)
-  prewarmSec:   0,    // sin prewarm — el delay entre bulks (20-25s) es el "respiro"
+  batchSize:    5,    // pedir de 5 en 5 — coincide con BULK_SIZE
+  delaySec:     2,    // 2s entre cada mensaje dentro del bulk (sprint rápido)
+  prewarmSec:   0,    // sin prewarm — la pausa de 30s entre bulks es el respiro
   pausaCada:    10,
   pausaSec:     60,
   descansoSec:  300,
@@ -272,8 +272,8 @@ const BLOCK_SIZE         = 50;   // contactos por bloque
 const BLOCK_UNLOCK_VIEW  = 0.10; // 10% para desbloquear vista
 const BLOCK_UNLOCK_SEND  = 0.50; // 50% para enviar el siguiente bloque
 const BULK_SIZE          = 5;    // enviar de a 5 por vez
-const BULK_DELAY_MIN     = 20;   // seg mínimo entre bulks
-const BULK_DELAY_MAX     = 25;   // seg máximo entre bulks
+const BULK_DELAY_MIN     = 30;   // 30s pausa entre bulks
+const BULK_DELAY_MAX     = 30;   // fijo 30s
 
 let _checkpoint = null; // { block_id, sent, responded, response_rate, unlocked_10, unlocked_50 }
 let _checkpointPolling = null; // interval de polling
