@@ -4346,6 +4346,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         el.style.opacity = "1";
       });
     }
+    _delegationBound2 = false;
     el.innerHTML = `
     <div style="padding:14px 16px 10px;border-bottom:1px solid ${S.border};display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
       <div>

@@ -43,6 +43,7 @@ import { buildRegionalLeadersRoutes } from "./modules/regional-leaders/routes";
 import { buildWaValidatorRoutes } from "./modules/wa-validator/routes";
 import { buildQrLeadsRoutes } from "./modules/qr-leads/routes";
 import { buildBlastRoutes } from "./modules/blast/routes";
+import { buildBlastOrchestratorRoutes } from "./modules/blast-orchestrator/routes";
 
 export function buildApp(env: AppEnv) {
   const app = Fastify({
@@ -196,6 +197,7 @@ export function buildApp(env: AppEnv) {
   app.register(buildWaValidatorRoutes(env));
   app.register(buildQrLeadsRoutes(env));
   app.register(buildBlastRoutes(env));
+  app.register(buildBlastOrchestratorRoutes(env));
 
   app.get("/api/metrics", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, async (_request, reply) => {
     reply.header("Cache-Control", "no-store");

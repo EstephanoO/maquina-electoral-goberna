@@ -179,6 +179,11 @@ function _renderSidebar() {
     requestAnimationFrame(() => { el.style.transform = 'translateX(0)'; el.style.opacity = '1'; });
   }
 
+  // innerHTML replaces the DOM tree — the old sb-content (with its delegated
+  // listeners) is destroyed. We MUST reset the flag so _renderContent() can
+  // re-attach delegation to the NEW sb-content element.
+  _delegationBound = false;
+
   el.innerHTML = `
     <div style="padding:14px 16px 10px;border-bottom:1px solid ${S.border};display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
       <div>
