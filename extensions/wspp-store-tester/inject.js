@@ -3,11 +3,15 @@
   var WA_ORIGIN = "https://web.whatsapp.com";
   var _ownNumber = null;
   var _catalogIsConsultor = false;
+  var _userRole = "agente_digital";
   function getOwnNumber() {
     return _ownNumber;
   }
   function isCatalogConsultor() {
     return _catalogIsConsultor;
+  }
+  function isConsultorLevel() {
+    return ["admin", "consultor", "candidato"].includes(_userRole);
   }
   function setOwnNumber(num) {
     _ownNumber = num || null;
@@ -22,8 +26,9 @@
     if (e.data?.type === "WSPP_SET_USER_ROLE") {
       const role = e.data.role || "agente_digital";
       const audioAdmin = !!e.data.perm_audio_admin;
+      _userRole = role;
       _catalogIsConsultor = ["admin", "consultor"].includes(role) || audioAdmin;
-      console.log("[WSPP] user_role actualizado:", role, "| audio_admin:", audioAdmin, "| catalogCRUD:", _catalogIsConsultor);
+      console.log("[WSPP] user_role actualizado:", role, "| audio_admin:", audioAdmin, "| catalogCRUD:", _catalogIsConsultor, "| consultorLevel:", isConsultorLevel());
       return;
     }
   });
@@ -4366,6 +4371,14 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       e.preventDefault();
     });
     container.appendChild(audioFab);
+    _tryInsertWaFab(container);
+    document.body.appendChild(container);
+  }
+  function _tryInsertWaFab(container) {
+    if ($(FAB_ID)) return;
+    if (!isConsultorLevel()) return;
+    const ctr = container || document.getElementById("wspp-fab-container");
+    if (!ctr) return;
     const fab = document.createElement("button");
     fab.id = FAB_ID;
     fab.title = "Goberna Blast";
@@ -4395,9 +4408,12 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       e.stopPropagation();
       e.preventDefault();
     });
-    container.appendChild(fab);
-    document.body.appendChild(container);
+    ctr.appendChild(fab);
   }
+  window.addEventListener("message", (e) => {
+    if (e.source !== window || e.data?.type !== "WSPP_SET_USER_ROLE") return;
+    setTimeout(() => _tryInsertWaFab(), 100);
+  });
   function toggleSidebar() {
     _open2 = !_open2;
     const fab = $(FAB_ID);

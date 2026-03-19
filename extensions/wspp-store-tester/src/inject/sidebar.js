@@ -2,7 +2,7 @@
 // Light mode. Blast = tab principal. Audios + Validación = secundarios.
 // Contactos vienen del backend en batches. Sin localStorage de contactos.
 
-import { WA_ORIGIN, getOwnNumber } from './bootstrap.js';
+import { WA_ORIGIN, getOwnNumber, isConsultorLevel } from './bootstrap.js';
 import {
   getConfig, setConfig, getTemplates, setTemplates,
   isRunning, isPaused, getCountdown, getPhase,
@@ -87,7 +87,7 @@ export function insertSidebarFAB() {
     pointerEvents: 'auto',
   });
 
-  // ── Audio FAB (top, green mic) ──
+  // ── Audio FAB (top, green mic) — visible for ALL roles ──
   const audioFab = document.createElement('button');
   audioFab.id = AUDIO_FAB_ID;
   audioFab.title = 'Audios';
@@ -109,7 +109,21 @@ export function insertSidebarFAB() {
   audioFab.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
   container.appendChild(audioFab);
 
-  // ── WA FAB (bottom, sidebar toggle) ──
+  // ── WA FAB (bottom, sidebar toggle) — ONLY for consultor+ roles ──
+  // agente_campo / agente_digital only see the audio button.
+  // Insert immediately if role is known, otherwise wait for WSPP_SET_USER_ROLE.
+  _tryInsertWaFab(container);
+
+  document.body.appendChild(container);
+}
+
+function _tryInsertWaFab(container) {
+  if ($(FAB_ID)) return; // already inserted
+  if (!isConsultorLevel()) return; // not allowed
+
+  const ctr = container || document.getElementById('wspp-fab-container');
+  if (!ctr) return;
+
   const fab = document.createElement('button');
   fab.id = FAB_ID;
   fab.title = 'Goberna Blast';
@@ -131,10 +145,15 @@ export function insertSidebarFAB() {
     toggleSidebar();
   });
   fab.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
-  container.appendChild(fab);
-
-  document.body.appendChild(container);
+  ctr.appendChild(fab);
 }
+
+// Listen for role changes — insert WA FAB when role upgrades to consultor+
+window.addEventListener('message', (e) => {
+  if (e.source !== window || e.data?.type !== 'WSPP_SET_USER_ROLE') return;
+  // Role just arrived — try inserting WA FAB if now allowed
+  setTimeout(() => _tryInsertWaFab(), 100);
+});
 
 // ══════════════════════════════════════════════════════════════════════
 // TOGGLE

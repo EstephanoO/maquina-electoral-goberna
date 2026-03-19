@@ -18,12 +18,18 @@ export const WA_ORIGIN = 'https://web.whatsapp.com';
 
 let _ownNumber = null;
 let _catalogIsConsultor = false;
+let _userRole = 'agente_digital';
 
 /** Número de WA propio del operador (ej: "51901938157") o null si no detectado */
 export function getOwnNumber() { return _ownNumber; }
 
 /** true cuando el usuario puede crear/editar/borrar items del catálogo de audio */
 export function isCatalogConsultor() { return _catalogIsConsultor; }
+
+/** true when user has consultor-level access (can see blast panel, WA sidebar) */
+export function isConsultorLevel() {
+  return ['admin', 'consultor', 'candidato'].includes(_userRole);
+}
 
 /** Setter para _ownNumber — llamado por wa-module-installer al detectar el número */
 export function setOwnNumber(num) {
@@ -40,8 +46,9 @@ window.addEventListener('message', (e) => {
   if (e.data?.type === 'WSPP_SET_USER_ROLE') {
     const role = e.data.role || 'agente_digital';
     const audioAdmin = !!e.data.perm_audio_admin;
+    _userRole = role;
     _catalogIsConsultor = ['admin', 'consultor'].includes(role) || audioAdmin;
-    console.log('[WSPP] user_role actualizado:', role, '| audio_admin:', audioAdmin, '| catalogCRUD:', _catalogIsConsultor);
+    console.log('[WSPP] user_role actualizado:', role, '| audio_admin:', audioAdmin, '| catalogCRUD:', _catalogIsConsultor, '| consultorLevel:', isConsultorLevel());
     return;
   }
 });
