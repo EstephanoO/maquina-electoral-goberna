@@ -25,6 +25,21 @@ export async function claimValidation(id) {
 // ── Cache local de validaciones por teléfono ────────────────────────────────
 const _validationCache = new Map(); // phone → { item, ts }
 const CACHE_TTL = 5 * 60 * 1000;   // 5 minutos
+const CACHE_MAX = 200;              // ML-1: cap para evitar memory growth en sesiones largas
+
+function _evictStaleAndCap() {
+  // 1. Evict stale entries
+  const now = Date.now();
+  for (const [key, entry] of _validationCache) {
+    if (now - entry.ts >= CACHE_TTL) _validationCache.delete(key);
+  }
+  // 2. If still over cap, drop oldest
+  if (_validationCache.size > CACHE_MAX) {
+    const overflow = _validationCache.size - CACHE_MAX;
+    const iter = _validationCache.keys();
+    for (let i = 0; i < overflow; i++) _validationCache.delete(iter.next().value);
+  }
+}
 
 export async function getCachedValidation(phone) {
   if (!phone) return null;
@@ -32,6 +47,8 @@ export async function getCachedValidation(phone) {
   if (cached && (Date.now() - cached.ts) < CACHE_TTL) {
     return cached.item;
   }
+  // Evict stale on cache miss — amortized cleanup
+  if (cached) _validationCache.delete(phone);
   const item = await lookupValidation(phone);
   if (item) {
     _validationCache.set(phone, { item, ts: Date.now() });
@@ -39,6 +56,7 @@ export async function getCachedValidation(phone) {
     // M-3: Cache negativo corto (15s)
     _validationCache.set(phone, { item: null, ts: Date.now() - CACHE_TTL + 15000 });
   }
+  _evictStaleAndCap();
   return item;
 }
 

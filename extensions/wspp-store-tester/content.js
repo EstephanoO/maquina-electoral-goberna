@@ -264,8 +264,8 @@ window.addEventListener('message', (e) => {
 
   // --- BLAST_GET_FORM_CONTACTS (form_submissions: inject → background → inject) ---
   if (e.data?.type === 'BLAST_GET_FORM_CONTACTS') {
-    const { limit, offset, status, district, reqId, own_number } = e.data;
-    chrome.runtime.sendMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit, offset, status, district, own_number }, (response) => {
+    const { limit, offset, status, district, brigadista, reqId, own_number } = e.data;
+    chrome.runtime.sendMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit, offset, status, district, brigadista, own_number }, (response) => {
       if (chrome.runtime.lastError) {
         window.postMessage({ type: 'BLAST_FORM_CONTACTS_READY', ok: false, error: chrome.runtime.lastError.message, reqId }, WA_ORIGIN);
         return;

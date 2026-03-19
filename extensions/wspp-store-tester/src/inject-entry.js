@@ -49,8 +49,10 @@ if (document.readyState === 'complete') {
 // ── Un único FAB para todo el sistema ────────────────────────────────
 // Reemplaza los 3 FABs anteriores (blast, validador, catálogo)
 // El sidebar contiene todo: contactos, audios, estado.
+// RB-3: Max retries to prevent infinite loop if document.body never appears
+let _fabRetries = 0;
 const tryInsertFAB = () => {
   if (document.body) insertSidebarFAB();
-  else setTimeout(tryInsertFAB, 1000);
+  else if (++_fabRetries < 30) setTimeout(tryInsertFAB, 1000);
 };
 setTimeout(tryInsertFAB, 3500);

@@ -455,7 +455,11 @@
         background:rgba(255,255,255,.04);border-radius:6px;
         font-size:11px;line-height:1.4;color:rgba(255,255,255,.8);
       `;
-        line.innerHTML = `<span style="color:${accentColor};flex-shrink:0;">\u2192</span> ${a}`;
+        const arrow = document.createElement("span");
+        arrow.style.cssText = `color:${accentColor};flex-shrink:0;`;
+        arrow.textContent = "\u2192";
+        line.appendChild(arrow);
+        line.appendChild(document.createTextNode(" " + a));
         overlay.appendChild(line);
       }
     }
@@ -3501,6 +3505,7 @@
   }
   var _usyncCache = /* @__PURE__ */ new Map();
   var USYNC_CACHE_TTL_MS = 30 * 60 * 1e3;
+  var USYNC_CACHE_MAX = 600;
   async function _checkPhonesSilentBatch(phones) {
     const results = {};
     const toQuery = [];
@@ -3538,6 +3543,11 @@
           results[phone] = { exists, reason };
           _usyncCache.set(phone, { exists, ts: now });
         }
+        if (_usyncCache.size > USYNC_CACHE_MAX) {
+          const overflow = _usyncCache.size - USYNC_CACHE_MAX;
+          const iter = _usyncCache.keys();
+          for (let i = 0; i < overflow; i++) _usyncCache.delete(iter.next().value);
+        }
         usyncOk = true;
       }
     } catch (_) {
@@ -3561,6 +3571,11 @@
         }
         results[phone] = { exists: false, reason: "usync_unavailable" };
       }
+    }
+    if (_usyncCache.size > USYNC_CACHE_MAX) {
+      const overflow = _usyncCache.size - USYNC_CACHE_MAX;
+      const iter = _usyncCache.keys();
+      for (let i = 0; i < overflow; i++) _usyncCache.delete(iter.next().value);
     }
     return results;
   }
@@ -3994,7 +4009,22 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   `;
     if (el) el.outerHTML = html;
     else document.body.insertAdjacentHTML("beforeend", html);
-    document.getElementById("wspp-val-close")?.addEventListener("click", () => {
+    _ensureDelegation();
+  }
+  var _delegationBound = false;
+  function _ensureDelegation() {
+    if (_delegationBound) return;
+    document.addEventListener("click", _handleValClick);
+    _delegationBound = true;
+  }
+  function _handleValClick(e) {
+    const panel = document.getElementById("wspp-val-panel");
+    if (!panel) return;
+    if (!panel.contains(e.target)) return;
+    const btn = e.target.closest("button[id]") || e.target.closest("[id]");
+    if (!btn) return;
+    const id = btn.id;
+    if (id === "wspp-val-close") {
       _open = false;
       if (_running2) {
         _running2 = false;
@@ -4002,48 +4032,44 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         _stopCountdown2();
       }
       _render();
-    });
-    document.getElementById("wspp-mode-silent")?.addEventListener("click", () => {
-      if (_running2) return;
-      _mode = "silent";
-      _render();
-    });
-    document.getElementById("wspp-mode-conv")?.addEventListener("click", () => {
-      if (_running2) return;
-      _mode = "conv";
-      _render();
-    });
-    document.getElementById("wspp-val-load")?.addEventListener("click", _load);
-    document.getElementById("wspp-val-reload")?.addEventListener("click", () => {
-      _contacts = [];
-      _results = [];
-      _idx = 0;
-      _sessionCount = 0;
-      _burstCount = 0;
-      _running2 = false;
-      _paused2 = false;
+    } else if (id === "wspp-mode-silent") {
+      if (!_running2) {
+        _mode = "silent";
+        _render();
+      }
+    } else if (id === "wspp-mode-conv") {
+      if (!_running2) {
+        _mode = "conv";
+        _render();
+      }
+    } else if (id === "wspp-val-load" || id === "wspp-val-reload") {
+      if (id === "wspp-val-reload") {
+        _contacts = [];
+        _results = [];
+        _idx = 0;
+        _sessionCount = 0;
+        _burstCount = 0;
+        _running2 = false;
+        _paused2 = false;
+      }
       _load();
-    });
-    document.getElementById("wspp-val-start")?.addEventListener("click", () => {
+    } else if (id === "wspp-val-start") {
       _startTime = Date.now();
       _burstCount = 0;
       _run();
-    });
-    document.getElementById("wspp-val-pause")?.addEventListener("click", () => {
+    } else if (id === "wspp-val-pause") {
       _paused2 = true;
       _running2 = false;
       _stopCountdown2();
       _render();
-    });
-    document.getElementById("wspp-val-resume")?.addEventListener("click", () => {
+    } else if (id === "wspp-val-resume") {
       _sessionCount = 0;
       _burstCount = 0;
       _paused2 = false;
       _run();
-    });
-    document.getElementById("wspp-val-stats")?.addEventListener("click", () => {
+    } else if (id === "wspp-val-stats") {
       window.postMessage({ type: "WA_VALIDATOR_GET_STATS_REQ" }, WA_ORIGIN);
-    });
+    }
   }
   function _load() {
     _activeNumber = getOwnNumber();
@@ -4333,12 +4359,10 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       ${_tabBtn("audios", "\u{1F399}", "Audios")}
       ${_tabBtn("validar", "\u2705", "Validar")}
     </div>
-    <div id="sb-content" style="flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;">
-      ${_contentHTML()}
-    </div>
+    <div id="sb-content" style="flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;"></div>
   `;
     _bindShell();
-    _bindContent();
+    _renderContent();
   }
   function _tabBtn(id, icon, label) {
     const active = _tab === id;
@@ -4349,14 +4373,14 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     border-bottom:2px solid ${active ? S.accent : "transparent"};
   "><div style="font-size:14px;">${icon}</div>${label}</button>`;
   }
-  var _delegationBound = false;
+  var _delegationBound2 = false;
   function _renderContent() {
     const el = $("sb-content");
     if (!el) return;
     el.innerHTML = _contentHTML();
     _bindContentInputs();
-    if (!_delegationBound) {
-      _delegationBound = true;
+    if (!_delegationBound2) {
+      _delegationBound2 = true;
       el.addEventListener("click", _handleDelegatedClick);
       el.addEventListener("change", _handleDelegatedChange);
       el.addEventListener("input", _handleDelegatedInput);
@@ -5131,9 +5155,10 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   } else {
     window.addEventListener("load", () => setTimeout(tryInstallWAListeners, 5e3));
   }
+  var _fabRetries = 0;
   var tryInsertFAB = () => {
     if (document.body) insertSidebarFAB();
-    else setTimeout(tryInsertFAB, 1e3);
+    else if (++_fabRetries < 30) setTimeout(tryInsertFAB, 1e3);
   };
   setTimeout(tryInsertFAB, 3500);
 })();

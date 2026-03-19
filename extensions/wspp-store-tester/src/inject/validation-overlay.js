@@ -167,7 +167,12 @@ export function showSpamWarning(data) {
         background:rgba(255,255,255,.04);border-radius:6px;
         font-size:11px;line-height:1.4;color:rgba(255,255,255,.8);
       `;
-      line.innerHTML = `<span style="color:${accentColor};flex-shrink:0;">→</span> ${a}`;
+      // SC-1: Use createTextNode instead of innerHTML to avoid XSS from backend data
+      const arrow = document.createElement('span');
+      arrow.style.cssText = `color:${accentColor};flex-shrink:0;`;
+      arrow.textContent = '→';
+      line.appendChild(arrow);
+      line.appendChild(document.createTextNode(' ' + a));
       overlay.appendChild(line);
     }
   }

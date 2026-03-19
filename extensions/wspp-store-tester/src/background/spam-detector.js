@@ -331,7 +331,7 @@ setInterval(() => {
       // Server says ok — update risk state to ok
       _updateNumberRisk(ownNum, 'low', 0);
     }
-  }).catch(() => {});
+  }).catch((err) => { console.warn('[SPAM] Server spam report failed:', err?.message || err); });
 }, SPAM_REPORT_INTERVAL_MS);
 
 // ── Expose risk state query for background handlers ───────────────────

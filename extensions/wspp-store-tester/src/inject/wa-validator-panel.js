@@ -74,6 +74,7 @@ function _req(...names) {
 // Evita re-validar el mismo número en la misma sesión
 const _usyncCache = new Map(); // normalized_phone → { exists, ts }
 const USYNC_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+const USYNC_CACHE_MAX = 600; // ML-2: cap para evitar memory growth
 
 // ── MODO SILENCIOSO BATCH: verifica hasta 20 números de una vez ────────
 // Usa WAWebUsync / USyncQuery — verificado en producción el 2026-03-17.
@@ -136,6 +137,12 @@ async function _checkPhonesSilentBatch(phones) {
         results[phone] = { exists, reason };
         _usyncCache.set(phone, { exists, ts: now });
       }
+      // ML-2: LRU eviction when cache exceeds cap
+      if (_usyncCache.size > USYNC_CACHE_MAX) {
+        const overflow = _usyncCache.size - USYNC_CACHE_MAX;
+        const iter = _usyncCache.keys();
+        for (let i = 0; i < overflow; i++) _usyncCache.delete(iter.next().value);
+      }
       usyncOk = true;
     }
   } catch (_) {}
@@ -160,6 +167,13 @@ async function _checkPhonesSilentBatch(phones) {
       // Si el fallback también falla: marcamos como desconocido (no como inválido)
       results[phone] = { exists: false, reason: 'usync_unavailable' };
     }
+  }
+
+  // ML-2: LRU eviction after fallback path
+  if (_usyncCache.size > USYNC_CACHE_MAX) {
+    const overflow = _usyncCache.size - USYNC_CACHE_MAX;
+    const iter = _usyncCache.keys();
+    for (let i = 0; i < overflow; i++) _usyncCache.delete(iter.next().value);
   }
 
   return results;
@@ -633,42 +647,61 @@ function _render() {
   if (el) el.outerHTML = html;
   else document.body.insertAdjacentHTML('beforeend', html);
 
-  // ── Event listeners ──────────────────────────────────────────────────
-  document.getElementById('wspp-val-close')?.addEventListener('click', () => {
+  // RB-4: Register delegated click handler ONCE on the panel container
+  _ensureDelegation();
+}
+
+// ── Event delegation — single listener, registered once ──────────────
+let _delegationBound = false;
+function _ensureDelegation() {
+  if (_delegationBound) return;
+  // Use document-level delegation since the panel element gets replaced by outerHTML
+  document.addEventListener('click', _handleValClick);
+  _delegationBound = true;
+}
+
+function _handleValClick(e) {
+  const panel = document.getElementById('wspp-val-panel');
+  if (!panel) return;
+  // Only handle clicks inside the validator panel
+  if (!panel.contains(e.target)) return;
+
+  const btn = e.target.closest('button[id]') || e.target.closest('[id]');
+  if (!btn) return;
+  const id = btn.id;
+
+  if (id === 'wspp-val-close') {
     _open = false;
     if (_running) { _running = false; _paused = true; _stopCountdown(); }
     _render();
-  });
-
-  document.getElementById('wspp-mode-silent')?.addEventListener('click', () => {
-    if (_running) return;
-    _mode = 'silent'; _render();
-  });
-  document.getElementById('wspp-mode-conv')?.addEventListener('click', () => {
-    if (_running) return;
-    _mode = 'conv'; _render();
-  });
-
-  document.getElementById('wspp-val-load')?.addEventListener('click', _load);
-  document.getElementById('wspp-val-reload')?.addEventListener('click', () => {
-    _contacts = []; _results = []; _idx = 0; _sessionCount = 0; _burstCount = 0;
-    _running = false; _paused = false;
+  }
+  else if (id === 'wspp-mode-silent') {
+    if (!_running) { _mode = 'silent'; _render(); }
+  }
+  else if (id === 'wspp-mode-conv') {
+    if (!_running) { _mode = 'conv'; _render(); }
+  }
+  else if (id === 'wspp-val-load' || id === 'wspp-val-reload') {
+    if (id === 'wspp-val-reload') {
+      _contacts = []; _results = []; _idx = 0; _sessionCount = 0; _burstCount = 0;
+      _running = false; _paused = false;
+    }
     _load();
-  });
-  document.getElementById('wspp-val-start')?.addEventListener('click', () => {
+  }
+  else if (id === 'wspp-val-start') {
     _startTime = Date.now();
     _burstCount = 0;
     _run();
-  });
-  document.getElementById('wspp-val-pause')?.addEventListener('click', () => {
+  }
+  else if (id === 'wspp-val-pause') {
     _paused = true; _running = false; _stopCountdown(); _render();
-  });
-  document.getElementById('wspp-val-resume')?.addEventListener('click', () => {
+  }
+  else if (id === 'wspp-val-resume') {
     _sessionCount = 0; _burstCount = 0; _paused = false; _run();
-  });
-  document.getElementById('wspp-val-stats')?.addEventListener('click', () => {
+  }
+  else if (id === 'wspp-val-stats') {
     window.postMessage({ type: 'WA_VALIDATOR_GET_STATS_REQ' }, WA_ORIGIN);
-  });
+  }
 }
 
 // ── Load contacts ─────────────────────────────────────────────────────
@@ -762,6 +795,8 @@ function _showStats(summary, byBrigadista) {
     </div>
   `;
   document.body.insertAdjacentHTML('beforeend', html);
+  // RB-4: stats panel close uses delegation too — but it's created/destroyed rarely,
+  // so a one-shot listener is acceptable here (the panel is ephemeral).
   document.getElementById('wspp-stats-close')?.addEventListener('click', () => {
     document.getElementById('wspp-val-stats-panel')?.remove();
   });

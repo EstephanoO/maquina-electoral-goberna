@@ -192,12 +192,10 @@ function _renderSidebar() {
       ${_tabBtn('audios', '🎙', 'Audios')}
       ${_tabBtn('validar', '✅', 'Validar')}
     </div>
-    <div id="sb-content" style="flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;">
-      ${_contentHTML()}
-    </div>
+    <div id="sb-content" style="flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;"></div>
   `;
   _bindShell();
-  _bindContent();
+  _renderContent();
 }
 
 function _tabBtn(id, icon, label) {
@@ -1006,12 +1004,5 @@ window.addEventListener('message', (e) => {
   }
 });
 
-// ── Legacy exports — mantenidos por compatibilidad con inject-entry.js ─
-export function updateContactsList() {}
-export function updateAudioList() {}
-export function updateSpamRisk() {}
-export function updateDayStats() {}
-export function renderContactRow() { return ''; }
-export function renderAudioRow() { return ''; }
-export function toggleBlastPanel() {}
-export function isBlastPanelOpen() { return false; }
+// CD-1: Legacy exports removed — verified no imports exist in inject-entry.js or any module.
+// If a future module needs these, re-add as needed.

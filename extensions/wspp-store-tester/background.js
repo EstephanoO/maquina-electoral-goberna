@@ -338,18 +338,32 @@
   }
   var _validationCache = /* @__PURE__ */ new Map();
   var CACHE_TTL = 5 * 60 * 1e3;
+  var CACHE_MAX = 200;
+  function _evictStaleAndCap() {
+    const now = Date.now();
+    for (const [key, entry] of _validationCache) {
+      if (now - entry.ts >= CACHE_TTL) _validationCache.delete(key);
+    }
+    if (_validationCache.size > CACHE_MAX) {
+      const overflow = _validationCache.size - CACHE_MAX;
+      const iter = _validationCache.keys();
+      for (let i = 0; i < overflow; i++) _validationCache.delete(iter.next().value);
+    }
+  }
   async function getCachedValidation(phone) {
     if (!phone) return null;
     const cached = _validationCache.get(phone);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       return cached.item;
     }
+    if (cached) _validationCache.delete(phone);
     const item = await lookupValidation(phone);
     if (item) {
       _validationCache.set(phone, { item, ts: Date.now() });
     } else {
       _validationCache.set(phone, { item: null, ts: Date.now() - CACHE_TTL + 15e3 });
     }
+    _evictStaleAndCap();
     return item;
   }
   function invalidateCache(phone) {
@@ -1056,7 +1070,8 @@
       } else if (res.risk_level === "low") {
         _updateNumberRisk(ownNum, "low", 0);
       }
-    }).catch(() => {
+    }).catch((err) => {
+      console.warn("[SPAM] Server spam report failed:", err?.message || err);
     });
   }, SPAM_REPORT_INTERVAL_MS);
 
@@ -1828,7 +1843,8 @@
       body: JSON.stringify({})
     }).then((r) => {
       if (r.reset > 0) console.log(`[WSPP BLAST] retry-no-wa: ${r.reset} contactos reseteados`);
-    }).catch(() => {
+    }).catch((err) => {
+      console.warn("[BLAST] retry-no-wa failed:", err?.message || err);
     });
     sendResponse({ ok: true });
     return false;

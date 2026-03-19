@@ -83,7 +83,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     body: JSON.stringify({}),
   }).then(r => {
     if (r.reset > 0) console.log(`[WSPP BLAST] retry-no-wa: ${r.reset} contactos reseteados`);
-  }).catch(() => {});
+  }).catch((err) => { console.warn('[BLAST] retry-no-wa failed:', err?.message || err); });
   sendResponse({ ok: true });
   return false;
 });
