@@ -36,13 +36,13 @@ const CFG_KEY = 'wspp_blast_cfg_v4'; // v4: brigadista vacío por defecto
 const TPL_KEY = 'wspp_blast_tpls_v6'; // v6: plantilla César formal + departamento
 
 const DEFAULTS = {
-  batchSize:    25,   // personas por tanda — el usuario lo cambia en la UI
-  delaySec:     15,
-  prewarmSec:   30,
+  batchSize:    5,    // pedir de 5 en 5 — coincide con el bulk size
+  delaySec:     5,    // delay corto dentro del bulk (5s entre mensajes del mismo bulk)
+  prewarmSec:   0,    // sin prewarm — el delay entre bulks (20-25s) es el "respiro"
   pausaCada:    10,
   pausaSec:     60,
   descansoSec:  300,
-  brigadista:   '',   // filtrar por brigadista/encuestador (vacío = todos)
+  brigadista:   '',
 };
 
 function _loadCfg() {
@@ -1030,9 +1030,9 @@ export async function startBlast() {
     // Re-check number health from server between batches
     fetchNumberHealth();
 
-    // 1. Fetch batch
+    // 1. Fetch bulk — siempre de a BULK_SIZE (5) para mantener el ritmo
     _phase = 'cargando'; _notify();
-    const rawBatch = await _fetchBatch(cfg.batchSize);
+    const rawBatch = await _fetchBatch(BULK_SIZE);
 
     // ── Filtro dedup local pre-proceso ──────────────────────────────────
     // El servidor puede devolver contactos que ya procesamos en esta sesión

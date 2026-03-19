@@ -2333,15 +2333,16 @@
   var CFG_KEY = "wspp_blast_cfg_v4";
   var TPL_KEY = "wspp_blast_tpls_v6";
   var DEFAULTS = {
-    batchSize: 25,
-    // personas por tanda — el usuario lo cambia en la UI
-    delaySec: 15,
-    prewarmSec: 30,
+    batchSize: 5,
+    // pedir de 5 en 5 — coincide con el bulk size
+    delaySec: 5,
+    // delay corto dentro del bulk (5s entre mensajes del mismo bulk)
+    prewarmSec: 0,
+    // sin prewarm — el delay entre bulks (20-25s) es el "respiro"
     pausaCada: 10,
     pausaSec: 60,
     descansoSec: 300,
     brigadista: ""
-    // filtrar por brigadista/encuestador (vacío = todos)
   };
   function _loadCfg() {
     try {
@@ -3130,7 +3131,7 @@
       fetchNumberHealth();
       _phase2 = "cargando";
       _notify();
-      const rawBatch = await _fetchBatch(cfg.batchSize);
+      const rawBatch = await _fetchBatch(BULK_SIZE);
       const batch = rawBatch.filter((c) => {
         if (c.id && _habladoIds.has(c.id)) {
           console.log("[BLAST] Pre-filtro dedup \u2014 ya procesado:", c.id);
