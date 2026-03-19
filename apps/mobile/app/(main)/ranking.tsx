@@ -16,9 +16,9 @@
 
 import { memo, useCallback, useMemo, useState } from 'react';
 import {
-  FlatList,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -387,17 +387,22 @@ export default function RankingScreen() {
   const [agentRanking, setAgentRanking] = useState<RankingData | null>(null);
   const [departments, setDepartments] = useState<DeptSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  // Estado de error explícito — diferenciado del estado vacío legítimo
+  const [loadError, setLoadError] = useState(false);
 
   const loadData = useCallback(async () => {
+    setLoadError(false);
     try {
       const [rankRes, deptRes] = await Promise.all([
         getMyDeptRanking(),
         getDepartmentsRanking(),
       ]);
       if (rankRes.ok && rankRes.data) setAgentRanking(rankRes.data);
+      else if (!rankRes.ok) setLoadError(true);
       if (deptRes.ok && deptRes.data) setDepartments(deptRes.data.departments);
     } catch (err) {
       console.warn('Failed to load ranking data:', err);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -470,7 +475,7 @@ export default function RankingScreen() {
         <HeroEmpty />
       )}
 
-      {/* Agent ranking — collapsible */}
+      {/* Agent ranking — abierto por defecto: es la info principal que busca el agente */}
       {agentRanking?.departamento && agentRanking.ranking.length > 0 && (
         <AccordionCard
           icon="group"
@@ -478,7 +483,7 @@ export default function RankingScreen() {
           subtitle="Clasificacion por registros unicos (telefono)"
           summaryText={agentSummary}
           primaryColor={primary}
-          defaultExpanded={false}
+          defaultExpanded={true}
         >
           {agentRanking.ranking.map((ag, idx) => (
             <AgentRow
@@ -529,18 +534,38 @@ export default function RankingScreen() {
     );
   }
 
+  // Error explícito: red caída, 500 del servidor, etc.
+  // Diferenciado del caso legítimo "sin departamento asignado"
+  if (loadError && !agentRanking) {
+    return (
+      <SafeAreaView style={s.safe}>
+        <ScrollView
+          contentContainerStyle={s.listContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primary} />}
+        >
+          <View style={s.errorContainer}>
+            <MaterialIcons name="wifi-off" size={48} color="#94a3b8" />
+            <Text style={s.errorTitle}>Sin conexión</Text>
+            <Text style={s.errorHint}>Deslizá para actualizar cuando tengas red.</Text>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={s.safe}>
-      <FlatList
-        data={[1]}
-        keyExtractor={() => 'ranking-content'}
-        renderItem={renderContent}
+      {/* ScrollView con RefreshControl en lugar de FlatList data={[1]}
+          El FlatList era un anti-patrón: solo había 1 item, sin virtualización real */}
+      <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={s.listContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={primary} />
         }
-      />
+      >
+        {renderContent()}
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -551,6 +576,25 @@ const s = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: '#f8fafc',
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    gap: 12,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontFamily: FONT,
+    color: '#64748b',
+    textAlign: 'center',
+  },
+  errorHint: {
+    fontSize: 13,
+    color: '#94a3b8',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   listContent: {
     flexGrow: 1,

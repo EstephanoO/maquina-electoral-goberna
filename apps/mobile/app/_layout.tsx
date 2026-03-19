@@ -13,10 +13,14 @@ import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
 
 import 'react-native-reanimated';
 
 import { AppProvider, useApp } from '@/lib/app-context';
+
+// Keep the splash screen visible while fonts load
+SplashScreen.preventAutoHideAsync();
 
 function RouterGuard({ children }: { children: React.ReactNode }) {
   const { auth } = useApp();
@@ -57,7 +61,14 @@ function RouterGuard({ children }: { children: React.ReactNode }) {
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     'Montserrat-Bold': require('@/assets/fonts/Montserrat/Montserrat-Bold.ttf'),
+    'Montserrat-Regular': require('@/assets/fonts/Montserrat/Montserrat-Regular.ttf'),
   });
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
 
   if (!fontsLoaded) return null;
 

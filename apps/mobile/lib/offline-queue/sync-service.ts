@@ -23,13 +23,11 @@ import {
 } from '../tracking/ws-transport';
 import {
   getAccessToken,
-  getRefreshToken,
-  setAccessToken,
-  setRefreshToken,
   getActiveCampaignId,
+  refreshTokens,
 } from '../auth-store';
 
-import type { RefreshResponse } from '../types';
+
 
 import {
   getPendingLocations,
@@ -72,10 +70,11 @@ export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'error';
 
 let syncStatus: SyncStatus = 'idle';
 let lastSyncResult: SyncResult | null = null;
-let syncIntervalId: ReturnType<typeof setInterval> | null = null;
+let syncTimeoutId: ReturnType<typeof setTimeout> | null = null; // recursive setTimeout, not setInterval
+let autoSyncRunning = false;
 
-const SYNC_INTERVAL_MS = 30_000; // 30 seconds
-const MAX_BACKOFF_MS = 300_000; // 5 minutes
+const SYNC_INTERVAL_MS = 30_000; // 30 seconds base interval
+const MAX_BACKOFF_MS = 300_000; // 5 minutes max backoff
 let currentBackoff = SYNC_INTERVAL_MS;
 
 // ─── Network Check ────────────────────────────────────────────
@@ -194,34 +193,12 @@ async function syncLocations(): Promise<{ synced: number; failed: number }> {
 }
 
 // ─── Token Refresh (for sync service) ─────────────────────────
+// Delegates to shared auth-store implementation (deduplication + timeout included).
 
-/**
- * Attempt to refresh the access token.
- * Returns the new access token on success, null on failure.
- * This mirrors the tryRefresh logic in api.ts but is self-contained
- * so the sync service can recover from 401 without going through
- * the api.ts request wrapper.
- */
 async function tryRefreshToken(): Promise<string | null> {
-  try {
-    const refreshToken = await getRefreshToken();
-    if (!refreshToken) return null;
-
-    const response = await fetch(`${API_BASE}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-
-    if (!response.ok) return null;
-
-    const data: RefreshResponse = await response.json();
-    await setAccessToken(data.access_token);
-    await setRefreshToken(data.refresh_token);
-    return data.access_token;
-  } catch {
-    return null;
-  }
+  const ok = await refreshTokens(API_BASE);
+  if (!ok) return null;
+  return getAccessToken();
 }
 
 // ─── Form Sync ────────────────────────────────────────────────
@@ -385,28 +362,37 @@ export async function runSync(): Promise<SyncResult | null> {
 }
 
 // ─── Auto-sync Control ────────────────────────────────────────
+// Uses recursive setTimeout instead of setInterval so the backoff
+// value is actually respected between sync attempts.
+
+function scheduleNextSync(): void {
+  if (!autoSyncRunning) return;
+  syncTimeoutId = setTimeout(async () => {
+    await runSync();
+    scheduleNextSync(); // Reschedule after completion using current backoff
+  }, currentBackoff);
+}
 
 export function startAutoSync(): void {
-  if (syncIntervalId) return;
+  if (autoSyncRunning) return;
+  autoSyncRunning = true;
 
-  // Run immediately
-  runSync();
-
-  // Then run periodically
-  syncIntervalId = setInterval(() => {
-    runSync();
-  }, SYNC_INTERVAL_MS);
+  // Run immediately, then schedule
+  runSync().then(() => {
+    scheduleNextSync();
+  });
 }
 
 export function stopAutoSync(): void {
-  if (syncIntervalId) {
-    clearInterval(syncIntervalId);
-    syncIntervalId = null;
+  autoSyncRunning = false;
+  if (syncTimeoutId) {
+    clearTimeout(syncTimeoutId);
+    syncTimeoutId = null;
   }
 }
 
 export function isAutoSyncRunning(): boolean {
-  return syncIntervalId !== null;
+  return autoSyncRunning;
 }
 
 // ─── Status Getters ───────────────────────────────────────────

@@ -26,7 +26,12 @@ const POLL_INTERVAL_MS = 30_000; // 30 seconds
 
 export default function PendingScreen() {
   const { auth, checkApproval, logout } = useApp();
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // isMounted ref para no llamar setState sobre componente desmontado
+  const isMountedRef = useRef(true);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Mutex: evita que el poll automático y el manual corran concurrentemente
+  const isCheckingRef = useRef(false);
+
   const [checking, setChecking] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
   const initialCheckDone = useRef(false);
@@ -35,6 +40,15 @@ export default function PendingScreen() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const isSuspended = auth.status === 'suspended';
+
+  // Cleanup al desmontar
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
 
   // Start pulse animation
   useEffect(() => {
@@ -59,43 +73,54 @@ export default function PendingScreen() {
     return () => pulse.stop();
   }, [isSuspended, pulseAnim]);
 
-  // Core check function
+  // Core check — mutex via ref para evitar concurrencia manual+automático
   const doCheck = useCallback(async () => {
-    await checkApproval();
-    setLastChecked(new Date());
+    if (isCheckingRef.current) return; // ya hay un check en vuelo
+    isCheckingRef.current = true;
+    try {
+      await checkApproval();
+      if (isMountedRef.current) setLastChecked(new Date());
+    } finally {
+      isCheckingRef.current = false;
+    }
   }, [checkApproval]);
 
-  // Manual check with loading state
+  // Manual check: además actualiza el indicador visual
   const handleManualCheck = useCallback(async () => {
-    if (checking) return;
-    setChecking(true);
+    if (isCheckingRef.current) return;
+    if (isMountedRef.current) setChecking(true);
     try {
       await doCheck();
     } finally {
-      setChecking(false);
+      if (isMountedRef.current) setChecking(false);
     }
-  }, [doCheck, checking]);
+  }, [doCheck]);
 
-  // Initial check on mount
+  // Polling recursivo con setTimeout para respetar el intervalo entre llamadas completas
+  // (no cada 30s fijos con setInterval que puede solaparse)
+  const scheduleNextPoll = useCallback(() => {
+    if (!isMountedRef.current || isSuspended) return;
+    timeoutRef.current = setTimeout(async () => {
+      await doCheck();
+      scheduleNextPoll();
+    }, POLL_INTERVAL_MS);
+  }, [doCheck, isSuspended]);
+
+  // Initial check on mount + arrancar polling
   useEffect(() => {
     if (isSuspended || initialCheckDone.current) return;
     initialCheckDone.current = true;
-    setChecking(true);
-    doCheck().finally(() => setChecking(false));
-  }, [isSuspended, doCheck]);
 
-  // Poll for approval every 30s
-  useEffect(() => {
-    if (isSuspended) return;
-
-    intervalRef.current = setInterval(() => {
-      void doCheck();
-    }, POLL_INTERVAL_MS);
+    if (isMountedRef.current) setChecking(true);
+    doCheck().finally(() => {
+      if (isMountedRef.current) setChecking(false);
+      scheduleNextPoll();
+    });
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [isSuspended, doCheck]);
+  }, [isSuspended, doCheck, scheduleNextPoll]);
 
   const handleLogout = () => {
     Alert.alert(

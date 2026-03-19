@@ -60,8 +60,22 @@ type ScreenState =
   | { phase: 'registering' }
   | { phase: 'done' };
 
+// Friendly role labels for display
+const ROLE_LABELS: Record<string, string> = {
+  agente_campo: 'agente de campo',
+  agente_digital: 'agente digital',
+  brigadista_zonal: 'brigadista zonal',
+  candidato: 'candidato',
+  consultor: 'consultor',
+  admin: 'administrador',
+};
+
 export default function InviteScreen() {
-  const { code } = useLocalSearchParams<{ code: string }>();
+  // useLocalSearchParams can return string | string[] — always normalize to string
+  const params = useLocalSearchParams<{ code: string }>();
+  const rawCode = params.code;
+  const code = Array.isArray(rawCode) ? rawCode[0] : rawCode;
+
   const router = useRouter();
   const { login } = useApp();
 
@@ -88,13 +102,25 @@ export default function InviteScreen() {
       return;
     }
 
+    let cancelled = false;
+
+    // Timeout de 15s: si el backend no responde, mostramos error con opción de reintentar
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15_000);
+
     (async () => {
       const result = await validateInvitation(code);
+      clearTimeout(timeoutId);
+      if (cancelled) return;
 
       if (!result.ok) {
-        // Distinguish expired from not found
-        const reason =
-          result.code === 'INVITATION_EXPIRED'
+        const isTimeout =
+          result.error?.toLowerCase().includes('timeout') ||
+          result.error?.toLowerCase().includes('espera') ||
+          result.error?.toLowerCase().includes('aborted');
+        const reason = isTimeout
+          ? 'Sin conexión. Verificá tu red e intentá de nuevo.'
+          : result.code === 'INVITATION_EXPIRED'
             ? 'Este link ha expirado o ya fue usado el máximo de veces.'
             : 'El link de invitación no es válido.';
         setState({ phase: 'invalid', reason });
@@ -104,6 +130,12 @@ export default function InviteScreen() {
       invitationRef.current = result.data.invitation;
       setState({ phase: 'ready', invitation: result.data.invitation });
     })();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [code]);
 
   // ─── Form validation ─────────────────────────────────────────
@@ -123,6 +155,7 @@ export default function InviteScreen() {
     setState({ phase: 'registering' });
 
     const phoneTrimmed = phone.trim();
+    // Backend accepts phone OR synthesized email — use phone directly (simpler, no coupling)
     const email = `${phoneTrimmed}@goberna.pe`;
 
     const registerResult = await registerWithInvitation({
@@ -132,7 +165,7 @@ export default function InviteScreen() {
       phone: phoneTrimmed,
       region: 'Nacional',
       campaign_id: invitation.campaign_id,
-      invitation_code: code!,
+      invitation_code: code ?? '',
     });
 
     if (!registerResult.ok) {
@@ -155,8 +188,8 @@ export default function InviteScreen() {
       return;
     }
 
-    // Auto-login
-    const loginResult = await login({ identifier: email, password: password.trim() });
+    // Auto-login: use phone as identifier (backend supports it directly)
+    const loginResult = await login({ identifier: phoneTrimmed, password: password.trim() });
 
     if (!loginResult.ok) {
       setState({ phase: 'ready', invitation });
@@ -169,7 +202,7 @@ export default function InviteScreen() {
     }
 
     setState({ phase: 'done' });
-    // RouterGuard in _layout.tsx handles navigation to (main)/dashboard
+    // RouterGuard in _layout.tsx handles navigation to (main)/dashboard or (auth)/pending
   };
 
   // ─── Helpers ─────────────────────────────────────────────────
@@ -195,20 +228,30 @@ export default function InviteScreen() {
 
   // ─── Render: invalid / expired ───────────────────────────────
   if (state.phase === 'invalid') {
+    const isNetworkError = state.reason.includes('conexión') || state.reason.includes('red');
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.centered}>
           <View style={[styles.logoCircle, { backgroundColor: '#fee2e2' }]}>
-            <Ionicons name="close-circle" size={40} color="#dc2626" />
+            <Ionicons name={isNetworkError ? 'wifi-outline' : 'close-circle'} size={40} color="#dc2626" />
           </View>
-          <Text style={styles.errorTitle}>Link inválido</Text>
+          <Text style={styles.errorTitle}>{isNetworkError ? 'Sin conexión' : 'Link inválido'}</Text>
           <Text style={styles.errorBody}>{state.reason}</Text>
+          {isNetworkError && (
+            <Pressable
+              style={[styles.button, { backgroundColor: '#163960' }]}
+              onPress={() => setState({ phase: 'validating' })}
+            >
+              <Ionicons name="refresh-outline" size={20} color="#FFFFFF" />
+              <Text style={styles.buttonText}>Reintentar</Text>
+            </Pressable>
+          )}
           <Pressable
-            style={styles.button}
+            style={[styles.button, isNetworkError && { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#163960' }]}
             onPress={() => router.replace('/(auth)/login')}
           >
-            <Ionicons name="log-in-outline" size={20} color="#FFFFFF" />
-            <Text style={styles.buttonText}>Ir al login</Text>
+            <Ionicons name="log-in-outline" size={20} color={isNetworkError ? '#163960' : '#FFFFFF'} />
+            <Text style={[styles.buttonText, isNetworkError && { color: '#163960' }]}>Ir al login</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -257,7 +300,7 @@ export default function InviteScreen() {
             </View>
             <Text style={styles.heroTitle}>{invitation.campaign_name}</Text>
             <Text style={styles.heroSubtitle}>
-              Te invitan a unirte como agente de campo
+              Te invitan a unirte como {ROLE_LABELS[invitation.role] ?? invitation.role}
             </Text>
           </View>
 

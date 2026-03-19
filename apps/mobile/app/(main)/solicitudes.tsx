@@ -9,7 +9,7 @@
  * - Swipe to see more actions
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -116,7 +116,7 @@ export default function SolicitudesScreen() {
     } else {
       setError(result.error ?? 'Error al cargar solicitudes');
     }
-    setLoading(false);
+    setLoading(false); // siempre resetear loading al final
   }, []);
 
   const onRefresh = useCallback(async () => {
@@ -166,15 +166,24 @@ export default function SolicitudesScreen() {
         {
           text: 'Rechazar',
           style: 'destructive',
-          onPress: async () => {
+          onPress: () => {
+            // Envolver en función síncrona + manejo de errores correcto
+            // Alert.alert no propaga errores de onPress async
             setProcessingId(request.id);
-            const result = await api.resolveAccessRequest(request.id, { status: 'rejected' });
-            if (result.ok) {
-              setRequests((prev) => prev.filter((r) => r.id !== request.id));
-            } else {
-              Alert.alert('Error', result.error);
-            }
-            setProcessingId(null);
+            api.resolveAccessRequest(request.id, { status: 'rejected' })
+              .then((result) => {
+                if (result.ok) {
+                  setRequests((prev) => prev.filter((r) => r.id !== request.id));
+                } else {
+                  Alert.alert('Error al rechazar', result.error ?? 'Intenta de nuevo.');
+                }
+              })
+              .catch(() => {
+                Alert.alert('Error', 'Error de conexión. Intentá de nuevo.');
+              })
+              .finally(() => {
+                setProcessingId(null);
+              });
           },
         },
       ],
@@ -188,9 +197,12 @@ export default function SolicitudesScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={[styles.header, { backgroundColor: primary }]}>
         <Text style={styles.headerTitle}>Solicitudes de acceso</Text>
-        <Text style={styles.headerCount}>
-          {requests.length} pendiente{requests.length !== 1 ? 's' : ''}
-        </Text>
+        {/* Ocultar conteo mientras carga para no mostrar "0 pendientes" incorrecto */}
+        {!loading && (
+          <Text style={styles.headerCount}>
+            {requests.length} pendiente{requests.length !== 1 ? 's' : ''}
+          </Text>
+        )}
       </View>
 
       <FlatList
@@ -262,7 +274,7 @@ export default function SolicitudesScreen() {
               <>
                 <MaterialIcons name="error-outline" size={48} color="#DC2626" />
                 <Text style={styles.errorText}>{error}</Text>
-                <Pressable style={[styles.retryBtn, { backgroundColor: primary }]} onPress={loadRequests}>
+                <Pressable style={[styles.retryBtn, { backgroundColor: primary }]} onPress={() => { setLoading(true); void loadRequests(); }}>
                   <Text style={styles.retryText}>Reintentar</Text>
                 </Pressable>
               </>
@@ -315,10 +327,17 @@ function RoleSelectionModal({
   processing: boolean;
   primary: string;
 }) {
-  if (!request) return null;
+  // Mantener el último request para que la animación de slide-out
+  // pueda renderizar contenido mientras el Modal se cierra.
+  const lastRequestRef = useRef<AccessRequestRow | null>(null);
+  if (request) lastRequestRef.current = request;
+  const displayRequest = request ?? lastRequestRef.current;
+
+  if (!displayRequest) return null;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent>
+    // visible={!!request}: cuando request=null el Modal anima su cierre antes de desmontar
+    <Modal visible={!!request} animationType="slide" transparent>
       <View style={styles.modalOverlay}>
         <Pressable style={styles.modalDismiss} onPress={onCancel} />
         <View style={styles.modalContent}>
@@ -334,15 +353,15 @@ function RoleSelectionModal({
           <View style={styles.userInfoSection}>
             <View style={[styles.userAvatar, { backgroundColor: primary + '15' }]}>
               <Text style={[styles.userInitial, { color: primary }]}>
-                {request.full_name.charAt(0).toUpperCase()}
+                {displayRequest.full_name.charAt(0).toUpperCase()}
               </Text>
             </View>
-            <Text style={styles.userName}>{request.full_name}</Text>
-            {request.phone && <Text style={styles.userPhone}>{request.phone}</Text>}
-            {request.region && (
+            <Text style={styles.userName}>{displayRequest.full_name}</Text>
+            {displayRequest.phone && <Text style={styles.userPhone}>{displayRequest.phone}</Text>}
+            {displayRequest.region && (
               <View style={styles.userRegionBadge}>
                 <MaterialIcons name="place" size={12} color="#0369A1" />
-                <Text style={styles.userRegionText}>{request.region}</Text>
+                <Text style={styles.userRegionText}>{displayRequest.region}</Text>
               </View>
             )}
           </View>
@@ -446,9 +465,11 @@ const styles = StyleSheet.create({
   // Actions
   cardActions: { flexDirection: 'row', gap: 8 },
   actionBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    // 48dp: mínimo recomendado por Material Design para targets táctiles en campo
+    // Los 40dp anteriores eran muy chicos para dedos sucios o en movimiento
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },

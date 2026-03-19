@@ -125,36 +125,44 @@ export default function LoginScreen() {
     setLoading(true);
     
     try {
-      const response = await fetch(`${API_BASE}/api/auth/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          identifier: getIdentifier(),
-          current_password: password.trim(),
-          new_password: newPassword.trim(),
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.ok) {
-        Alert.alert(
-          'Contraseña actualizada', 
-          'Tu contraseña ha sido cambiada. Ahora puedes iniciar sesión.',
-          [{ 
-            text: 'OK', 
-            onPress: () => {
-              // Reset form and login with new password
-              setResetMode(false);
-              setPassword(newPassword);
-              setNewPassword('');
-              setConfirmPassword('');
-            }
-          }]
-        );
-      } else {
-        Alert.alert('Error', data.message || 'No se pudo cambiar la contraseña.');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30_000);
+      let data: { ok?: boolean; message?: string };
+      try {
+        const response = await fetch(`${API_BASE}/auth/reset-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identifier: getIdentifier(),
+            current_password: password.trim(),
+            new_password: newPassword.trim(),
+          }),
+          signal: controller.signal,
+        });
+        data = await response.json();
+        if (!response.ok || !data.ok) {
+          Alert.alert('Error', data.message || 'No se pudo cambiar la contraseña.');
+          setLoading(false);
+          return;
+        }
+      } finally {
+        clearTimeout(timeoutId);
       }
+
+      // If we reach here, response was ok
+      Alert.alert(
+        'Contraseña actualizada',
+        'Tu contraseña ha sido cambiada. Ahora puedes iniciar sesión.',
+        [{
+          text: 'OK',
+          onPress: () => {
+            setResetMode(false);
+            setPassword(newPassword);
+            setNewPassword('');
+            setConfirmPassword('');
+          },
+        }],
+      );
     } catch {
       Alert.alert('Error', 'Error de conexión. Intenta de nuevo.');
     }

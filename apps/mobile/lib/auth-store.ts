@@ -10,7 +10,7 @@
 
 import * as SecureStore from 'expo-secure-store';
 
-import type { AuthUser, CampaignMembership } from './types';
+import type { AuthUser, CampaignMembership, RefreshResponse } from './types';
 
 const KEYS = {
   ACCESS_TOKEN: 'goberna_access_token',
@@ -21,6 +21,12 @@ const KEYS = {
   ACTIVE_CAMPAIGN_ID: 'goberna_active_campaign_id',
   FORM_CONFIG_JSON: 'goberna_form_config',
 } as const;
+
+// ─── In-memory cache for hot-path reads ─────────────────────
+// Avoids SecureStore IPC (Keychain) on every authenticated request.
+// Invalidated on login, logout, switchCampaign, and token refresh.
+
+let _cachedCampaignId: string | null | undefined = undefined; // undefined = not loaded yet
 
 // ─── Access Token ───────────────────────────────────────────
 
@@ -74,13 +80,18 @@ export async function setStoredCampaigns(campaigns: CampaignMembership[]): Promi
   await SecureStore.setItemAsync(KEYS.CAMPAIGNS_JSON, JSON.stringify(campaigns));
 }
 
-// ─── Active Campaign ────────────────────────────────────────
+// ─── Active Campaign (cached in memory) ─────────────────────
 
 export async function getActiveCampaignId(): Promise<string | null> {
-  return SecureStore.getItemAsync(KEYS.ACTIVE_CAMPAIGN_ID);
+  // Serve from memory cache to avoid Keychain IPC on every request
+  if (_cachedCampaignId !== undefined) return _cachedCampaignId;
+  const id = await SecureStore.getItemAsync(KEYS.ACTIVE_CAMPAIGN_ID);
+  _cachedCampaignId = id;
+  return id;
 }
 
 export async function setActiveCampaignId(id: string): Promise<void> {
+  _cachedCampaignId = id; // Update cache immediately
   await SecureStore.setItemAsync(KEYS.ACTIVE_CAMPAIGN_ID, id);
 }
 
@@ -90,14 +101,17 @@ export async function getDeviceUUID(): Promise<string> {
   const existing = await SecureStore.getItemAsync(KEYS.DEVICE_UUID);
   if (existing) return existing;
 
-  // Generate once and persist
-  const uuid = generateUUID();
+  // Generate once and persist — use crypto.randomUUID() (available in Hermes/RN)
+  const uuid =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : _fallbackUUID();
   await SecureStore.setItemAsync(KEYS.DEVICE_UUID, uuid);
   return uuid;
 }
 
-function generateUUID(): string {
-  // Simple UUID v4 without crypto dependency
+/** Fallback for envs where crypto.randomUUID is unavailable (should not happen in Hermes). */
+function _fallbackUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
@@ -126,6 +140,7 @@ export async function setStoredFormConfig(formDef: unknown): Promise<void> {
 }
 
 // ─── Save all auth data at once (after login) ──────────────
+// Sequential writes to avoid concurrent Keychain IPC issues on iOS.
 
 export async function saveAuthData(data: {
   access_token: string;
@@ -133,14 +148,12 @@ export async function saveAuthData(data: {
   user: AuthUser;
   campaigns: CampaignMembership[];
 }): Promise<void> {
-  await Promise.all([
-    setAccessToken(data.access_token),
-    setRefreshToken(data.refresh_token),
-    setStoredUser(data.user),
-    setStoredCampaigns(data.campaigns),
-  ]);
+  await setAccessToken(data.access_token);
+  await setRefreshToken(data.refresh_token);
+  await setStoredUser(data.user);
+  await setStoredCampaigns(data.campaigns);
 
-  // Auto-select first campaign if none active
+  // Auto-select first campaign if none active or current is no longer valid
   if (data.campaigns.length > 0) {
     const currentActive = await getActiveCampaignId();
     const validIds = data.campaigns.map((c) => c.id);
@@ -151,17 +164,17 @@ export async function saveAuthData(data: {
 }
 
 // ─── Clear all (logout) ────────────────────────────────────
+// Sequential writes to avoid concurrent Keychain IPC issues on iOS.
 
 export async function clearAuthData(): Promise<void> {
-  await Promise.all([
-    SecureStore.deleteItemAsync(KEYS.ACCESS_TOKEN),
-    SecureStore.deleteItemAsync(KEYS.REFRESH_TOKEN),
-    SecureStore.deleteItemAsync(KEYS.USER_JSON),
-    SecureStore.deleteItemAsync(KEYS.CAMPAIGNS_JSON),
-    SecureStore.deleteItemAsync(KEYS.ACTIVE_CAMPAIGN_ID),
-    SecureStore.deleteItemAsync(KEYS.FORM_CONFIG_JSON),
-    // Note: DEVICE_UUID is NOT cleared on logout (it's per-install, not per-session)
-  ]);
+  _cachedCampaignId = undefined; // Invalidate memory cache
+  await SecureStore.deleteItemAsync(KEYS.ACCESS_TOKEN);
+  await SecureStore.deleteItemAsync(KEYS.REFRESH_TOKEN);
+  await SecureStore.deleteItemAsync(KEYS.USER_JSON);
+  await SecureStore.deleteItemAsync(KEYS.CAMPAIGNS_JSON);
+  await SecureStore.deleteItemAsync(KEYS.ACTIVE_CAMPAIGN_ID);
+  await SecureStore.deleteItemAsync(KEYS.FORM_CONFIG_JSON);
+  // Note: DEVICE_UUID is NOT cleared on logout (it's per-install, not per-session)
 }
 
 // ─── Check if we have a session ─────────────────────────────
@@ -169,4 +182,48 @@ export async function clearAuthData(): Promise<void> {
 export async function hasSession(): Promise<boolean> {
   const token = await getAccessToken();
   return token !== null;
+}
+
+// ─── Token refresh (shared by api.ts and sync-service.ts) ───
+// Single implementation to avoid drift. Both callers import from here.
+
+let _refreshPromise: Promise<boolean> | null = null;
+
+export async function refreshTokens(apiBase: string): Promise<boolean> {
+  // Deduplicate concurrent refresh attempts
+  if (_refreshPromise) return _refreshPromise;
+
+  _refreshPromise = (async () => {
+    try {
+      const refreshToken = await getRefreshToken();
+      if (!refreshToken) return false;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15_000);
+
+      try {
+        const response = await fetch(`${apiBase}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) return false;
+
+        const data = await response.json() as RefreshResponse;
+        await setAccessToken(data.access_token);
+        await setRefreshToken(data.refresh_token);
+        return true;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    } catch {
+      return false;
+    } finally {
+      _refreshPromise = null;
+    }
+  })();
+
+  return _refreshPromise;
 }

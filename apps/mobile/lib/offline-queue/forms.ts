@@ -305,32 +305,38 @@ export async function markFormsAsGhost(ids: number[]): Promise<void> {
   const db = await getDatabase();
   const placeholders = ids.map(() => '?').join(',');
 
-  // First: mark forms that have already retried as rejected (permanent)
-  await db.runAsync(
-    `UPDATE pending_forms
-     SET sync_status = 'rejected',
-         reject_reason = 'El servidor no aceptó este registro después de reintentarlo. Es posible que el número ya fue registrado por otro agente.'
-     WHERE id IN (${placeholders})
-       AND ghost_count >= ${MAX_GHOST_RETRIES}`,
-    ids,
-  );
+  // AMBAS operaciones deben ser atómicas: si el proceso muere entre ellas,
+  // los forms quedarían en estado inconsistente (synced para siempre, sin reconciliar).
+  await db.withTransactionAsync(async () => {
+    // Primero: marcar como rejected los que ya agotaron reintentos
+    await db.runAsync(
+      `UPDATE pending_forms
+       SET sync_status = 'rejected',
+           reject_reason = 'El servidor no aceptó este registro después de reintentarlo. Es posible que el número ya fue registrado por otro agente.'
+       WHERE id IN (${placeholders})
+         AND ghost_count >= ${MAX_GHOST_RETRIES}`,
+      ids,
+    );
 
-  // Then: mark the rest as ghost for retry (increment ghost_count)
-  await db.runAsync(
-    `UPDATE pending_forms
-     SET sync_status = 'ghost',
-         sync_attempts = 0,
-         ghost_count = ghost_count + 1,
-         last_error = 'No confirmado por el servidor — se reintentará'
-     WHERE id IN (${placeholders})
-       AND sync_status != 'rejected'`,
-    ids,
-  );
+    // Luego: marcar el resto como ghost para reintento (solo los que no se acaban de rechazar)
+    await db.runAsync(
+      `UPDATE pending_forms
+       SET sync_status = 'ghost',
+           sync_attempts = 0,
+           ghost_count = ghost_count + 1,
+           last_error = 'No confirmado por el servidor — se reintentará'
+       WHERE id IN (${placeholders})
+         AND sync_status != 'rejected'`,
+      ids,
+    );
+  });
 }
 
 /**
  * Get client_ids of locally "synced" forms for a campaign.
  * Used for reconciliation against server truth.
+ * Limitado a los últimos 30 días para evitar cargar miles de filas
+ * en agentes con meses de uso activo.
  */
 export async function getSyncedClientIds(campaignId: string): Promise<{ id: number; client_id: string }[]> {
   const db = await getDatabase();
@@ -338,7 +344,8 @@ export async function getSyncedClientIds(campaignId: string): Promise<{ id: numb
   const rows = await db.getAllAsync<{ id: number; client_id: string }>(
     `SELECT id, client_id FROM pending_forms
      WHERE campaign_id = ?
-       AND sync_status = 'synced'`,
+       AND sync_status = 'synced'
+       AND created_at >= datetime('now', '-30 day')`,
     [campaignId],
   );
 

@@ -183,12 +183,23 @@ const _normalized = ALL_DISTRITOS.map((d) => ({
  * @param query - Search text (min 1 char)
  * @param limit - Max individual distrito results (default 25). Provincia groups are NOT limited.
  */
+/**
+ * Cede el JS thread por un frame antes de ejecutar cómputo pesado.
+ * Evita que 1874 iteraciones con string operations freezeen la UI en Android low-end.
+ */
+function yieldToUI(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 export async function searchDistritosOffline(
   query: string,
   limit = 25,
 ): Promise<SearchResultItem[]> {
   const q = normalizeForSearch(query.trim());
   if (q.length < 1) return [];
+
+  // Ceder el thread antes de iniciar el cómputo pesado
+  await yieldToUI();
 
   // ── Phase 1: Find provincia matches ──────────────────
   // Group all distritos by codprov_full, detect which provincias match the query
@@ -245,6 +256,8 @@ export async function searchDistritosOffline(
   });
 
   // ── Phase 2: Find individual distrito matches (NOT in matched provincias) ──
+  // Ceder el thread entre fases para no acumular >50ms de bloqueo continuo
+  await yieldToUI();
   const distritoMatches: Array<SelectedDistrito & { _score: number }> = [];
 
   for (let i = 0; i < ALL_DISTRITOS.length; i++) {

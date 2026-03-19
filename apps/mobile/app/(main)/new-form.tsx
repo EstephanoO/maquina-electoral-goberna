@@ -211,15 +211,26 @@ function DynamicField({
           );
           return;
         }
+        // Timeout de 20s: en interiores o zonas rurales el GPS puede tardar indefinidamente.
+        // maximumAge=30s permite usar una ubicación reciente si ya está disponible.
         const position = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.High,
-        });
+          maximumAge: 30_000,
+          timeout: 20_000,
+        } as Location.LocationOptions);
         const { latitude, longitude } = position.coords;
         const utm = latLonToUtm(latitude, longitude);
         onChange(JSON.stringify(utm));
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Error desconocido';
-        Alert.alert('Error GPS', `No se pudo obtener la ubicacion: ${message}`);
+        // Timeout error: guiar al usuario a usar el picker de distrito
+        const isTimeout = message.toLowerCase().includes('timeout') || message.toLowerCase().includes('timed out');
+        Alert.alert(
+          isTimeout ? 'GPS no disponible' : 'Error GPS',
+          isTimeout
+            ? 'No se pudo obtener señal GPS. Podés usar "¿Dato tomado en papel?" para seleccionar el distrito manualmente.'
+            : `No se pudo obtener la ubicacion: ${message}`,
+        );
       } finally {
         setCapturandoGps(false);
       }
@@ -638,7 +649,8 @@ export default function NewFormScreen() {
   }, []);
 
   const handleSubmit = async () => {
-    if (!formConfig) return;
+    // Guard contra double-submit: el estado puede no propagarse antes de un segundo tap
+    if (enviando || !formConfig) return;
 
     const fields = formConfig.schema.fields;
     
@@ -769,21 +781,23 @@ export default function NewFormScreen() {
       appEvents.emit('forms:changed');
 
       // Try to sync immediately in background (non-blocking)
-      forceSyncNow().catch(() => {
-        // Ignore sync errors - data is safe in SQLite
+      forceSyncNow().catch((e) => {
+        console.warn('[new-form] forceSyncNow error:', e);
       });
 
-      // Reset form for next entry
-      setFormData({});
-      setUbicacionUtm(null);
-      setLugarRegistro(null);
+      // Navegar de vuelta PRIMERO — no dependemos del usuario tocando "OK" en el Alert.
+      // Si el Alert es descartado por el sistema (llamada entrante, etc.) la navegación
+      // ya ocurrió y el form no queda en estado vacío confuso.
+      router.back();
 
-      // Success - form is saved locally and will sync when online
-      Alert.alert(
-        'Guardado',
-        'Registro guardado. Se sincronizara automaticamente cuando haya conexion.',
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
+      // Mostrar feedback no-bloqueante después de navegar
+      // Usamos un setTimeout mínimo para que el Alert aparezca sobre la pantalla anterior
+      setTimeout(() => {
+        Alert.alert(
+          'Guardado',
+          'Registro guardado. Se sincronizara automaticamente cuando haya conexion.',
+        );
+      }, 300);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error desconocido';
       Alert.alert('Error', `No se pudo guardar el formulario: ${message}`);
@@ -844,6 +858,46 @@ export default function NewFormScreen() {
           </View>
 
           <View style={styles.form}>
+            {/* ── Lugar de registro al TOPE (hace GPS opcional) ─────
+                El agente que carga datos de papel debe poder indicar
+                el distrito PRIMERO, antes de rellenar los campos.
+                Así el GPS ya aparece como opcional desde el inicio. */}
+            <View
+              style={styles.lugarRegistroCard}
+              onLayout={(e) => handleFieldLayout('__lugar_registro__', e.nativeEvent.layout.y)}
+            >
+              <Text style={styles.lugarRegistroTitle}>
+                ¿Dato tomado en papel?
+              </Text>
+              <Text style={styles.lugarRegistroDesc}>
+                Si cargaste este registro desde casa, selecciona el distrito
+                donde recogiste el dato. Esto reemplaza la ubicacion GPS.
+              </Text>
+              <DistritoPicker
+                value={lugarRegistro}
+                onSelect={(d) => {
+                  setLugarRegistro(d);
+                  // Limpiar GPS si el agente selecciona un distrito
+                  // para evitar la ambigüedad GPS vs. distrito (GPS tiene prioridad)
+                  if (d) {
+                    const locationField = fields.find((f) => f.type === 'location');
+                    if (locationField) {
+                      handleLocationCaptured(locationField.id, '');
+                      setUbicacionUtm(null);
+                    }
+                  }
+                }}
+                onClear={() => setLugarRegistro(null)}
+                primaryColor={primary}
+                placeholder="Seleccionar distrito..."
+              />
+              {lugarRegistro && (
+                <Text style={styles.lugarRegistroHint}>
+                  GPS omitido — registrado en {lugarRegistro.distrito}, {lugarRegistro.provincia}.
+                </Text>
+              )}
+            </View>
+
             {fields.map((field) => (
               <DynamicField
                 key={field.id}
@@ -871,32 +925,6 @@ export default function NewFormScreen() {
               <Text style={[styles.candidatoDetail, { color: secondary }]}>
                 {candidate.cargo} · {candidate.partido}
               </Text>
-            </View>
-
-            {/* ── Lugar de registro (hace GPS opcional) ─────────── */}
-            <View
-              style={styles.lugarRegistroCard}
-              onLayout={(e) => handleFieldLayout('__lugar_registro__', e.nativeEvent.layout.y)}
-            >
-              <Text style={styles.lugarRegistroTitle}>
-                ¿Dato tomado en papel?
-              </Text>
-              <Text style={styles.lugarRegistroDesc}>
-                Si cargaste este registro desde casa, selecciona el distrito
-                donde recogiste el dato. Esto reemplaza la ubicacion GPS.
-              </Text>
-              <DistritoPicker
-                value={lugarRegistro}
-                onSelect={setLugarRegistro}
-                onClear={() => setLugarRegistro(null)}
-                primaryColor={primary}
-                placeholder="Seleccionar distrito..."
-              />
-              {lugarRegistro && (
-                <Text style={styles.lugarRegistroHint}>
-                  GPS omitido — registrado en {lugarRegistro.distrito}, {lugarRegistro.provincia}.
-                </Text>
-              )}
             </View>
           </View>
 

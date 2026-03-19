@@ -72,6 +72,9 @@ export default function RegisterScreen() {
   const [validatingCode, setValidatingCode] = useState(false);
   const [validatingAttempt, setValidatingAttempt] = useState(0); // 0=primer intento, 1+=reintento
   const [codeError, setCodeError] = useState<string | null>(null);
+  // retryCount: incrementar este valor fuerza el useEffect a re-ejecutar la validación
+  // sin el hack de agregar/quitar un espacio al input
+  const [retryCount, setRetryCount] = useState(0);
   const codeInputRefs = useRef<(TextInput | null)[]>([]);
 
   // ─── UI State ───────────────────────────────────────────────
@@ -88,6 +91,10 @@ export default function RegisterScreen() {
   //   2. Retry 3 intentos con backoff exponencial (0s → 1s → 3s)
   //   3. Distingue "código inválido" (404) de "sin red" (error de red)
   useEffect(() => {
+    // retryCount se lee aquí para que React lo incluya como dependencia válida.
+    // Al incrementarse desde el botón "reintentar", fuerza re-ejecución del efecto.
+    void retryCount;
+
     const code = accessCodeInput.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 4);
     if (code.length < 4) {
       setAccessCodeCampaign(null);
@@ -166,7 +173,9 @@ export default function RegisterScreen() {
       cancelled = true;
       clearTimeout(debounceTimer);
     };
-  }, [accessCodeInput]);
+  // retryCount incluido como dependencia: al incrementarlo se fuerza re-run
+  // sin tocar accessCodeInput (evita el hack del espacio)
+  }, [accessCodeInput, retryCount]);
 
   // ─── Validation ─────────────────────────────────────────────
   const step1Valid = useMemo(() => (
@@ -204,6 +213,14 @@ export default function RegisterScreen() {
 
   const handleBack = () => {
     if (step > 1) {
+      // Limpiar estado del Step 2 al volver: si el usuario cambia teléfono
+      // o contraseña en Step 1, el código validado ya no corresponde.
+      setRegion(null);
+      setAccessCodeInput('');
+      setAccessCodeCampaign(null);
+      setCodeError(null);
+      setValidatingCode(false);
+      setRetryCount(0);
       setStep(step - 1);
     } else {
       router.back();
@@ -224,7 +241,8 @@ export default function RegisterScreen() {
         phone: phone.trim(),
         region: region!,
         campaign_id: accessCodeCampaign.id,
-        access_code: accessCodeInput.toUpperCase().slice(0, 4),
+        // Sanitizar antes de enviar: eliminar cualquier carácter no alfanumérico
+        access_code: accessCodeInput.replace(/[^A-Z0-9]/g, '').toUpperCase().slice(0, 4),
       });
 
       if (!registerResult.ok) {
@@ -244,8 +262,8 @@ export default function RegisterScreen() {
         return;
       }
 
-      // Auto login
-      const loginResult = await login({ identifier: email, password: password.trim() });
+      // Auto login: usar teléfono como identificador (el backend lo soporta directamente)
+      const loginResult = await login({ identifier: phone.trim(), password: password.trim() });
       if (!loginResult.ok) {
         Alert.alert('Error', loginResult.error ?? 'Cuenta creada pero no se pudo iniciar sesión.');
         setLoading(false);
@@ -500,11 +518,7 @@ export default function RegisterScreen() {
                     {/* Botón reintentar — solo si el error es de red, no de código inválido */}
                     {codeError.includes('conexión') && (
                       <Pressable
-                        onPress={() => {
-                          // Forzar re-run del useEffect tocando el input (mismo valor)
-                          setAccessCodeInput((prev) => prev + ' ');
-                          setTimeout(() => setAccessCodeInput((prev) => prev.trimEnd()), 0);
-                        }}
+                        onPress={() => setRetryCount((c) => c + 1)}
                         style={styles.retryCodeBtn}
                         hitSlop={8}
                       >
