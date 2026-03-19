@@ -1945,34 +1945,39 @@
       } catch (_) {
       }
       L("8 \u2713 renderableUrl set");
-      const mdJson = mediaData.toJSON ? mediaData.toJSON() : { ...mediaData };
-      delete mdJson.mediaBlob;
       try {
-        mediaObject.consolidate(mdJson);
-        L("8b \u2713 consolidated");
+        mediaObject.consolidate(mediaData.toJSON ? mediaData.toJSON() : { ...mediaData });
+        L("8b \u2713 consolidated (with mediaBlob)");
       } catch (err) {
-        L("8b \u26A0 consolidate failed (non-fatal):", err.message);
+        try {
+          const mdClean = mediaData.toJSON ? mediaData.toJSON() : { ...mediaData };
+          delete mdClean.mediaBlob;
+          mediaObject.consolidate(mdClean);
+          L("8b \u2713 consolidated (without mediaBlob, fallback)");
+        } catch (err2) {
+          L("8b \u26A0 consolidate failed (non-fatal):", err2.message);
+        }
       }
       if (pttBlob) {
         try {
           mediaObject.mediaBlob = pttBlob;
-          const rawBlobObj = typeof pttBlob.blob === "function" ? await pttBlob.blob() : pttBlob;
-          if (rawBlobObj) mediaObject.blob = rawBlobObj;
-          L("9-pre \u2713 blob set on mediaObject (mediaBlob + blob)");
-        } catch (blobErr) {
-          L("9-pre \u26A0 blob set failed:", blobErr?.message);
+          L("9-pre \u2713 mediaBlob set on mediaObject");
+        } catch (_) {
         }
       }
-      if (pttBlob && !mediaData.mediaBlob && typeof mediaData.set === "function") {
-        try {
-          mediaData.set({ mediaBlob: pttBlob });
-        } catch (_) {
-        }
-      } else if (pttBlob && !mediaData.mediaBlob) {
-        try {
+      const hasMB = typeof mediaData.get === "function" ? mediaData.get("mediaBlob") : mediaData.mediaBlob;
+      if (!hasMB && pttBlob) {
+        if (typeof mediaData.set === "function") {
+          try {
+            mediaData.set({ mediaBlob: pttBlob });
+          } catch (_) {
+          }
+        } else {
           mediaData.mediaBlob = pttBlob;
-        } catch (_) {
         }
+        L("9-pre \u2713 mediaBlob restored on mediaData");
+      } else {
+        L("9-pre \u2713 mediaBlob already on mediaData");
       }
       let uploadMod = null, uploadModName = null;
       for (const name of ["WAWebMediaMmsV4Upload", "WAWebMediaUploadUtils", "WAWebUploadManager", "WAWebMediaMmsUpload", "WAWebMmsUpload"]) {
@@ -1988,8 +1993,15 @@
       const uploadFn = uploadMod.uploadMedia ?? uploadMod.encryptAndUploadMedia ?? uploadMod.default?.uploadMedia ?? uploadMod.default?.encryptAndUploadMedia ?? uploadMod.default?.encryptAndUpload;
       if (!uploadFn) throw new Error(`No uploadMedia fn in ${uploadModName}`);
       L("9b uploadFn found", typeof uploadFn, `length=${uploadFn.length}`);
-      const uploadArgs = { chat, mediaData, mediaObject, mediaType, mimetype: mime, mediaBlob: pttBlob };
-      L("9c calling uploadFn with", Object.keys(uploadArgs).join(", "));
+      const uploadArgs = { chat, mediaData, mediaObject, mediaType, mimetype: mime };
+      L(
+        "9c calling uploadFn with",
+        Object.keys(uploadArgs).join(", "),
+        "mediaData.mediaBlob?",
+        !!(typeof mediaData.get === "function" ? mediaData.get("mediaBlob") : mediaData.mediaBlob),
+        "mediaData.mediaBlob.url?",
+        typeof (typeof mediaData.get === "function" ? mediaData.get("mediaBlob") : mediaData.mediaBlob)?.url
+      );
       const uploaded = await uploadFn(uploadArgs);
       L("9d uploaded raw", JSON.stringify(uploaded)?.slice(0, 300));
       if (pttBlob && typeof pttBlob.autorelease === "function") pttBlob.autorelease();

@@ -883,45 +883,51 @@ export async function sendAudioAsPTT(audioBase64, mimeType) {
     } catch (_) {}
     L('8 ✓ renderableUrl set');
 
-    // Consolidate into mediaObject — EXCLUDE mediaBlob to avoid isBlobEqual error.
-    // consolidate() only needs metadata (filehash, mimetype, type, size, etc.)
-    // The blob itself goes to the upload step separately.
-    const mdJson = mediaData.toJSON ? mediaData.toJSON() : { ...mediaData };
-    delete mdJson.mediaBlob;  // ← prevents "isBlobEqual is not a function"
+    // Consolidate metadata into mediaObject.
+    // CRITICAL: keep mediaBlob on mediaData — WA's uploadMedia reads it via
+    // mediaData.mediaBlob.url(). Previous code deleted it to avoid isBlobEqual
+    // error in consolidate(), but that broke the upload pipeline.
+    // Instead, we try consolidate with the full object and catch any error
+    // (consolidate failure is non-fatal, upload can still work).
     try {
-      mediaObject.consolidate(mdJson);
-      L('8b ✓ consolidated');
+      mediaObject.consolidate(mediaData.toJSON ? mediaData.toJSON() : { ...mediaData });
+      L('8b ✓ consolidated (with mediaBlob)');
     } catch (err) {
-      // Non-fatal — consolidate can fail on some WA builds but upload still works
-      L('8b ⚠ consolidate failed (non-fatal):', err.message);
-    }
-
-    // ── Step 9: Upload ────────────────────────────────────────────────
-    // WA Web's upload module needs the raw blob accessible from mediaObject.
-    // Different WA builds look for it in different places:
-    //   - mediaObject.blob (raw Blob)
-    //   - mediaObject.mediaBlob (OpaqueData wrapper)
-    //   - via getOrDownloadBlob(mediaObject) which checks both
-    // We set ALL paths to maximize compatibility.
-    if (pttBlob) {
+      // isBlobEqual error or similar — try without mediaBlob as fallback
       try {
-        // Set the OpaqueData wrapper on mediaObject for getOrDownloadBlob()
-        mediaObject.mediaBlob = pttBlob;
-        // Also set raw Blob for direct access paths
-        const rawBlobObj = typeof pttBlob.blob === 'function' ? await pttBlob.blob() : pttBlob;
-        if (rawBlobObj) mediaObject.blob = rawBlobObj;
-        L('9-pre ✓ blob set on mediaObject (mediaBlob + blob)');
-      } catch (blobErr) {
-        L('9-pre ⚠ blob set failed:', blobErr?.message);
+        const mdClean = mediaData.toJSON ? mediaData.toJSON() : { ...mediaData };
+        delete mdClean.mediaBlob;
+        mediaObject.consolidate(mdClean);
+        L('8b ✓ consolidated (without mediaBlob, fallback)');
+      } catch (err2) {
+        L('8b ⚠ consolidate failed (non-fatal):', err2.message);
       }
     }
 
-    // Also ensure mediaData still has its mediaBlob (we deleted it from mdJson
-    // for consolidate, but the original mediaData object should keep it)
-    if (pttBlob && !mediaData.mediaBlob && typeof mediaData.set === 'function') {
-      try { mediaData.set({ mediaBlob: pttBlob }); } catch (_) {}
-    } else if (pttBlob && !mediaData.mediaBlob) {
-      try { mediaData.mediaBlob = pttBlob; } catch (_) {}
+    // ── Step 9: Upload ────────────────────────────────────────────────
+    // Ensure mediaObject has the blob for getOrDownloadBlob()
+    if (pttBlob) {
+      try {
+        mediaObject.mediaBlob = pttBlob;
+        L('9-pre ✓ mediaBlob set on mediaObject');
+      } catch (_) {}
+    }
+
+    // CRITICAL: Ensure mediaData.mediaBlob is intact — uploadMedia
+    // internally calls mediaData.mediaBlob.url() to get the renderable URL.
+    // If mediaData is a Backbone-like model, use .set(); otherwise direct assign.
+    const hasMB = (typeof mediaData.get === 'function')
+      ? mediaData.get('mediaBlob')
+      : mediaData.mediaBlob;
+    if (!hasMB && pttBlob) {
+      if (typeof mediaData.set === 'function') {
+        try { mediaData.set({ mediaBlob: pttBlob }); } catch (_) {}
+      } else {
+        mediaData.mediaBlob = pttBlob;
+      }
+      L('9-pre ✓ mediaBlob restored on mediaData');
+    } else {
+      L('9-pre ✓ mediaBlob already on mediaData');
     }
 
     let uploadMod = null, uploadModName = null;
@@ -940,10 +946,11 @@ export async function sendAudioAsPTT(audioBase64, mimeType) {
     if (!uploadFn) throw new Error(`No uploadMedia fn in ${uploadModName}`);
     L('9b uploadFn found', typeof uploadFn, `length=${uploadFn.length}`);
 
-    // Build upload args — include mediaBlob explicitly for newer WA builds
-    // that expect it as a top-level arg (not just inside mediaObject)
-    const uploadArgs = { chat, mediaData, mediaObject, mediaType, mimetype: mime, mediaBlob: pttBlob };
-    L('9c calling uploadFn with', Object.keys(uploadArgs).join(', '));
+    // Pass args WITHOUT mediaBlob at top level — WA reads it from mediaData
+    const uploadArgs = { chat, mediaData, mediaObject, mediaType, mimetype: mime };
+    L('9c calling uploadFn with', Object.keys(uploadArgs).join(', '),
+      'mediaData.mediaBlob?', !!(typeof mediaData.get === 'function' ? mediaData.get('mediaBlob') : mediaData.mediaBlob),
+      'mediaData.mediaBlob.url?', typeof ((typeof mediaData.get === 'function' ? mediaData.get('mediaBlob') : mediaData.mediaBlob)?.url));
     const uploaded = await uploadFn(uploadArgs);
     L('9d uploaded raw', JSON.stringify(uploaded)?.slice(0, 300));
 
