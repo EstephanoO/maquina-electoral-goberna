@@ -19,7 +19,7 @@ import {
 } from './blast-panel.js';
 import { analyzeTemplates } from './template-analyzer.js';
 import { toggleValidatorPanel } from './wa-validator-panel.js';
-import { sendAudioAsPTT, renderCatalogInto, resetCatalogView } from './audio-catalog-panel.js';
+import { sendAudioAsPTT, toggleCatalogPanel } from './audio-catalog-panel.js';
 
 // ── Cached template analysis ──────────────────────────────────────────
 let _cachedAnalysis = null;
@@ -55,8 +55,8 @@ const S = {
 
 // ── State ─────────────────────────────────────────────────────────────
 let _open = false;
-let _tab = localStorage.getItem(TAB_KEY) || 'blast';
-// Audio state moved to audio-catalog-panel.js — sidebar uses renderCatalogInto()
+const _savedTab = localStorage.getItem(TAB_KEY) || 'blast';
+let _tab = (_savedTab === 'audios') ? 'blast' : _savedTab; // audios tab removed
 
 const $ = id => document.getElementById(id);
 function _esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -67,53 +67,73 @@ setOnUpdate(() => { if (_open && _tab === 'blast') _renderContent(); });
 // ══════════════════════════════════════════════════════════════════════
 // FAB
 // ══════════════════════════════════════════════════════════════════════
+const AUDIO_FAB_ID = 'wspp-audio-fab';
+
 export function insertSidebarFAB() {
   if ($(FAB_ID)) return;
+
+  // Container for both FABs — stacked vertically, right edge
+  const container = document.createElement('div');
+  container.id = 'wspp-fab-container';
+  Object.assign(container.style, {
+    position: 'fixed',
+    right: '0',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    zIndex: String(Z.fab),
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    pointerEvents: 'auto',
+  });
+
+  // ── Audio FAB (top, green mic) ──
+  const audioFab = document.createElement('button');
+  audioFab.id = AUDIO_FAB_ID;
+  audioFab.title = 'Audios';
+  audioFab.innerHTML = '🎙';
+  Object.assign(audioFab.style, {
+    width: '28px', height: '36px',
+    borderRadius: '6px 0 0 6px',
+    background: '#00a884', color: '#fff',
+    border: 'none', cursor: 'pointer',
+    fontSize: '14px', lineHeight: '1',
+    boxShadow: '-2px 0 12px rgba(0,0,0,.15)',
+    userSelect: 'none', WebkitUserSelect: 'none',
+  });
+  audioFab.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    toggleCatalogPanel();
+  });
+  audioFab.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
+  container.appendChild(audioFab);
+
+  // ── WA FAB (bottom, sidebar toggle) ──
   const fab = document.createElement('button');
   fab.id = FAB_ID;
   fab.title = 'Goberna Blast';
   fab.textContent = 'WA';
   Object.assign(fab.style, {
-    // Posición: pegado a la derecha, centrado verticalmente
-    position:   'fixed',
-    right:      '0',
-    top:        '50%',
-    transform:  'translateY(-50%)',
-    zIndex:     String(Z.fab),
-    // Forma: rectángulo vertical pegado al borde
-    width:      '28px',
-    height:     '64px',
+    width: '28px', height: '48px',
     borderRadius: '6px 0 0 6px',
-    // Estilo
-    background: S.accent,
-    color:      '#fff',
-    border:     'none',
-    cursor:     'pointer',
-    fontSize:   '11px',
-    fontWeight: '800',
+    background: S.accent, color: '#fff',
+    border: 'none', cursor: 'pointer',
+    fontSize: '11px', fontWeight: '800',
     fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
     letterSpacing: '0',
-    boxShadow:  '-2px 0 12px rgba(0,0,0,.15)',
-    // Solo responde a click directo — sin hover que cause click accidental
-    userSelect: 'none',
-    WebkitUserSelect: 'none',
-    // Bloquear propagación de eventos hacia WA
-    pointerEvents: 'auto',
+    boxShadow: '-2px 0 12px rgba(0,0,0,.15)',
+    userSelect: 'none', WebkitUserSelect: 'none',
   });
-
-  // Solo abrir/cerrar con click directo en el botón
   fab.addEventListener('click', (e) => {
     e.stopPropagation();
     e.preventDefault();
     toggleSidebar();
   });
-  // Bloquear mousedown para que WA no lo procese
-  fab.addEventListener('mousedown', (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-  });
+  fab.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
+  container.appendChild(fab);
 
-  document.body.appendChild(fab);
+  document.body.appendChild(container);
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -122,28 +142,21 @@ export function insertSidebarFAB() {
 export function toggleSidebar() {
   _open = !_open;
   const fab = $(FAB_ID);
+  const container = document.getElementById('wspp-fab-container');
 
   if (_open) {
-    // Mover el botón para que no quede tapado por el sidebar
-    if (fab) {
-      fab.style.right  = SIDEBAR_W + 'px';
-      fab.style.background = '#374151';
-      fab.textContent  = '✕';
-    }
-    // Sidebar purely overlays — no mutation of WA Web's #app layout
+    // Move FAB container to sidebar edge
+    if (container) container.style.right = SIDEBAR_W + 'px';
+    if (fab) { fab.style.background = '#374151'; fab.textContent = '✕'; }
     _renderSidebar();
     if (!isRunning()) refreshPendingCount();
     fetchNumberHealth();
     fetchNumberConfig();
     fetchGlobalStats();
   } else {
-    // Restaurar botón
-    if (fab) {
-      fab.style.right      = '0';
-      fab.style.background = S.accent;
-      fab.textContent      = 'WA';
-    }
-    // No #app layout restoration needed — sidebar is overlay-only
+    // Restore FAB container to right edge
+    if (container) container.style.right = '0';
+    if (fab) { fab.style.background = S.accent; fab.textContent = 'WA'; }
     const el = $(SIDEBAR_ID);
     if (el) {
       el.style.transform = `translateX(${SIDEBAR_W}px)`;
@@ -192,7 +205,6 @@ function _renderSidebar() {
     </div>
     <div style="display:flex;border-bottom:1px solid ${S.border};flex-shrink:0;">
       ${_tabBtn('blast', '📨', 'Blast')}
-      ${_tabBtn('audios', '🎙', 'Audios')}
       ${_tabBtn('validar', '✅', 'Validar')}
     </div>
     <div id="sb-content" style="flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;"></div>
@@ -216,13 +228,6 @@ let _delegationBound = false; // solo se registra UNA vez
 function _renderContent() {
   const el = $('sb-content');
   if (!el) return;
-
-  // Audios tab: the catalog panel renders directly into the container via DOM
-  // (not innerHTML) because it uses imperative DOM building with event listeners.
-  if (_tab === 'audios') {
-    _renderAudiosInline();
-    return;
-  }
 
   el.innerHTML = _contentHTML();
   _bindContentInputs(); // solo inputs/textareas (no clicks)
@@ -361,7 +366,6 @@ function _bindContentInputs() {
 
 function _contentHTML() {
   if (_tab === 'blast') return _blastHTML();
-  if (_tab === 'audios') return ''; // rendered by _renderAudiosInline() via DOM
   if (_tab === 'validar') return _validarHTML();
   return '';
 }
@@ -370,11 +374,8 @@ function _bindShell() {
   $('sb-close')?.addEventListener('click', toggleSidebar);
   document.querySelectorAll('[data-tab]').forEach(b => {
     b.addEventListener('click', () => {
-      const prevTab = _tab;
       _tab = b.dataset.tab;
       localStorage.setItem(TAB_KEY, _tab);
-      // Reset catalog view when leaving audios tab
-      if (prevTab === 'audios' && _tab !== 'audios') resetCatalogView();
       _renderSidebar();
       if (_tab === 'blast' && !isRunning()) { refreshPendingCount(); fetchGlobalStats(); }
     });
@@ -902,14 +903,7 @@ function _cfgField(key, label, value, min, max) {
   </div>`;
 }
 
-// ══════════════════════════════════════════════════════════════════════
-// TAB: AUDIOS — renders full catalog panel with categories inline
-// ══════════════════════════════════════════════════════════════════════
-function _renderAudiosInline() {
-  const el = $('sb-content');
-  if (!el) return;
-  renderCatalogInto(el);
-}
+// Audio catalog tab removed — audios accessible via dedicated FAB button
 
 // ══════════════════════════════════════════════════════════════════════
 // TAB: VALIDAR

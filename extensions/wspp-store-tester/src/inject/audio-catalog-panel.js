@@ -188,8 +188,10 @@ function _closePanel() {
 // ── Render dispatcher ───────────────────────────────────────────────
 function renderCatalogPanel() {
   _injectStyles();
-  let panel = document.getElementById('wspp-cat-panel');
-  if (!panel) { panel = _el('div'); panel.id = 'wspp-cat-panel'; document.body.appendChild(panel); }
+  const panel = document.getElementById('wspp-cat-panel');
+  // NEVER create a floating panel — only render if the container exists
+  // (created by renderCatalogInto from sidebar.js or by a button click)
+  if (!panel) return;
   panel.innerHTML = '';
 
   if (_catalogView === 'detail' && _catalogDetailId) _renderDetail(panel);
@@ -1188,16 +1190,22 @@ window.addEventListener('message', (e) => {
 // SIDEBAR INTEGRATION — render catalog inside any container
 // ═══════════════════════════════════════════════════════════════════════
 
+// renderCatalogInto / isCatalogDataLoaded / resetCatalogView removed
+// — catalog now uses floating panel via toggleCatalogPanel()
+
 /**
- * Render the full catalog UI (grid → category → detail → create)
- * into a given container element. Used by sidebar.js tab "Audios".
- * Replaces the old floating FAB panel approach.
+ * Toggle the floating catalog panel (opened by the audio FAB button).
+ * Creates a fixed-position panel on document.body.
  */
-export function renderCatalogInto(container) {
-  _injectStyles();
+export function toggleCatalogPanel() {
+  const existing = document.getElementById('wspp-cat-panel');
+  if (existing) {
+    _closePanel();
+    return;
+  }
   _catalogPanelOpen = true;
 
-  // Load data if not yet loaded
+  // Load data if needed
   if (_catalogItems.length === 0 && !_catalogLoading) {
     _catalogLoading = true;
     window.postMessage({ type: 'FETCH_AUDIO_CATALOG' }, WA_ORIGIN);
@@ -1207,35 +1215,13 @@ export function renderCatalogInto(container) {
     window.postMessage({ type: 'FETCH_CATALOG_CATEGORIES' }, WA_ORIGIN);
   }
 
-  // Wrap content in a styled div that fills the sidebar content area
-  container.innerHTML = '';
-  const wrapper = _el('div', {
-    display: 'flex', flexDirection: 'column', height: '100%',
-    fontFamily: "-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif",
-    color: '#e9edef', fontSize: '13px',
-  });
-  wrapper.id = 'wspp-cat-panel'; // reuse ID so renderCatalogPanel() finds it
-
-  container.appendChild(wrapper);
-  renderCatalogPanel(); // renders into #wspp-cat-panel
+  // Create floating panel
+  _injectStyles();
+  const panel = _el('div');
+  panel.id = 'wspp-cat-panel';
+  document.body.appendChild(panel);
+  renderCatalogPanel();
 }
 
-/** Check if catalog data has been loaded at least once. */
-export function isCatalogDataLoaded() {
-  return _catalogItems.length > 0 || _catalogCategories.length > 0;
-}
-
-/** Reset catalog view state (when sidebar tab changes away). */
-export function resetCatalogView() {
-  _destroyPreview();
-  _catalogView = 'grid';
-  _catalogDetailId = null;
-  _catalogCategory = null;
-  _catalogEditingId = null;
-  _showNewCatForm = false;
-}
-
-// Legacy exports — kept for backward compat, no-op now
-export function toggleCatalogPanel() { /* no-op: sidebar handles this */ }
 export function isCatalogPanelOpen() { return _catalogPanelOpen; }
-export function waitForChatAndInsertButton() { /* no-op: FAB removed */ }
+export function waitForChatAndInsertButton() { /* no-op: FAB in sidebar.js */ }

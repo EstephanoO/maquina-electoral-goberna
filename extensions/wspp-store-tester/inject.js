@@ -1252,12 +1252,8 @@
   }
   function renderCatalogPanel() {
     _injectStyles();
-    let panel = document.getElementById("wspp-cat-panel");
-    if (!panel) {
-      panel = _el("div");
-      panel.id = "wspp-cat-panel";
-      document.body.appendChild(panel);
-    }
+    const panel = document.getElementById("wspp-cat-panel");
+    if (!panel) return;
     panel.innerHTML = "";
     if (_catalogView === "detail" && _catalogDetailId) _renderDetail(panel);
     else if (_catalogView === "create") _renderCreate(panel);
@@ -2242,8 +2238,12 @@
       return;
     }
   });
-  function renderCatalogInto(container) {
-    _injectStyles();
+  function toggleCatalogPanel() {
+    const existing = document.getElementById("wspp-cat-panel");
+    if (existing) {
+      _closePanel();
+      return;
+    }
     _catalogPanelOpen = true;
     if (_catalogItems.length === 0 && !_catalogLoading) {
       _catalogLoading = true;
@@ -2253,26 +2253,11 @@
       _catalogCategoriesLoading = true;
       window.postMessage({ type: "FETCH_CATALOG_CATEGORIES" }, WA_ORIGIN);
     }
-    container.innerHTML = "";
-    const wrapper = _el("div", {
-      display: "flex",
-      flexDirection: "column",
-      height: "100%",
-      fontFamily: "-apple-system,BlinkMacSystemFont,'SF Pro Text','Segoe UI',sans-serif",
-      color: "#e9edef",
-      fontSize: "13px"
-    });
-    wrapper.id = "wspp-cat-panel";
-    container.appendChild(wrapper);
+    _injectStyles();
+    const panel = _el("div");
+    panel.id = "wspp-cat-panel";
+    document.body.appendChild(panel);
     renderCatalogPanel();
-  }
-  function resetCatalogView() {
-    _destroyPreview();
-    _catalogView = "grid";
-    _catalogDetailId = null;
-    _catalogCategory = null;
-    _catalogEditingId = null;
-    _showNewCatForm = false;
   }
 
   // src/inject/template-analyzer.js
@@ -4328,7 +4313,8 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     blueBg: "#eff6ff"
   };
   var _open2 = false;
-  var _tab = localStorage.getItem(TAB_KEY) || "blast";
+  var _savedTab = localStorage.getItem(TAB_KEY) || "blast";
+  var _tab = _savedTab === "audios" ? "blast" : _savedTab;
   var $ = (id) => document.getElementById(id);
   function _esc(s) {
     return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -4336,24 +4322,58 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   setOnUpdate(() => {
     if (_open2 && _tab === "blast") _renderContent();
   });
+  var AUDIO_FAB_ID = "wspp-audio-fab";
   function insertSidebarFAB() {
     if ($(FAB_ID)) return;
-    const fab = document.createElement("button");
-    fab.id = FAB_ID;
-    fab.title = "Goberna Blast";
-    fab.textContent = "WA";
-    Object.assign(fab.style, {
-      // Posición: pegado a la derecha, centrado verticalmente
+    const container = document.createElement("div");
+    container.id = "wspp-fab-container";
+    Object.assign(container.style, {
       position: "fixed",
       right: "0",
       top: "50%",
       transform: "translateY(-50%)",
       zIndex: String(Z.fab),
-      // Forma: rectángulo vertical pegado al borde
+      display: "flex",
+      flexDirection: "column",
+      gap: "2px",
+      pointerEvents: "auto"
+    });
+    const audioFab = document.createElement("button");
+    audioFab.id = AUDIO_FAB_ID;
+    audioFab.title = "Audios";
+    audioFab.innerHTML = "\u{1F399}";
+    Object.assign(audioFab.style, {
       width: "28px",
-      height: "64px",
+      height: "36px",
       borderRadius: "6px 0 0 6px",
-      // Estilo
+      background: "#00a884",
+      color: "#fff",
+      border: "none",
+      cursor: "pointer",
+      fontSize: "14px",
+      lineHeight: "1",
+      boxShadow: "-2px 0 12px rgba(0,0,0,.15)",
+      userSelect: "none",
+      WebkitUserSelect: "none"
+    });
+    audioFab.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      toggleCatalogPanel();
+    });
+    audioFab.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+    });
+    container.appendChild(audioFab);
+    const fab = document.createElement("button");
+    fab.id = FAB_ID;
+    fab.title = "Goberna Blast";
+    fab.textContent = "WA";
+    Object.assign(fab.style, {
+      width: "28px",
+      height: "48px",
+      borderRadius: "6px 0 0 6px",
       background: S.accent,
       color: "#fff",
       border: "none",
@@ -4363,11 +4383,8 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
       letterSpacing: "0",
       boxShadow: "-2px 0 12px rgba(0,0,0,.15)",
-      // Solo responde a click directo — sin hover que cause click accidental
       userSelect: "none",
-      WebkitUserSelect: "none",
-      // Bloquear propagación de eventos hacia WA
-      pointerEvents: "auto"
+      WebkitUserSelect: "none"
     });
     fab.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -4378,14 +4395,16 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       e.stopPropagation();
       e.preventDefault();
     });
-    document.body.appendChild(fab);
+    container.appendChild(fab);
+    document.body.appendChild(container);
   }
   function toggleSidebar() {
     _open2 = !_open2;
     const fab = $(FAB_ID);
+    const container = document.getElementById("wspp-fab-container");
     if (_open2) {
+      if (container) container.style.right = SIDEBAR_W + "px";
       if (fab) {
-        fab.style.right = SIDEBAR_W + "px";
         fab.style.background = "#374151";
         fab.textContent = "\u2715";
       }
@@ -4395,8 +4414,8 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       fetchNumberConfig();
       fetchGlobalStats();
     } else {
+      if (container) container.style.right = "0";
       if (fab) {
-        fab.style.right = "0";
         fab.style.background = S.accent;
         fab.textContent = "WA";
       }
@@ -4455,7 +4474,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     </div>
     <div style="display:flex;border-bottom:1px solid ${S.border};flex-shrink:0;">
       ${_tabBtn("blast", "\u{1F4E8}", "Blast")}
-      ${_tabBtn("audios", "\u{1F399}", "Audios")}
       ${_tabBtn("validar", "\u2705", "Validar")}
     </div>
     <div id="sb-content" style="flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;"></div>
@@ -4476,10 +4494,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   function _renderContent() {
     const el = $("sb-content");
     if (!el) return;
-    if (_tab === "audios") {
-      _renderAudiosInline();
-      return;
-    }
     el.innerHTML = _contentHTML();
     _bindContentInputs();
     if (!_delegationBound2) {
@@ -4639,7 +4653,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   }
   function _contentHTML() {
     if (_tab === "blast") return _blastHTML();
-    if (_tab === "audios") return "";
     if (_tab === "validar") return _validarHTML();
     return "";
   }
@@ -4647,10 +4660,8 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     $("sb-close")?.addEventListener("click", toggleSidebar);
     document.querySelectorAll("[data-tab]").forEach((b) => {
       b.addEventListener("click", () => {
-        const prevTab = _tab;
         _tab = b.dataset.tab;
         localStorage.setItem(TAB_KEY, _tab);
-        if (prevTab === "audios" && _tab !== "audios") resetCatalogView();
         _renderSidebar();
         if (_tab === "blast" && !isRunning()) {
           refreshPendingCount();
@@ -5155,11 +5166,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       outline:none;text-align:center;
     " />
   </div>`;
-  }
-  function _renderAudiosInline() {
-    const el = $("sb-content");
-    if (!el) return;
-    renderCatalogInto(el);
   }
   function _validarHTML() {
     return `<div style="padding:40px 20px;text-align:center;">
