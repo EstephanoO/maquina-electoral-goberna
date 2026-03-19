@@ -707,6 +707,8 @@
         return;
       }
       MsgCollection.on("add", (msg) => {
+        const jid = msg.get?.("from")?._serialized || msg.get?.("to")?._serialized;
+        if (!jid || jid.includes("@g.us") || jid.includes("@broadcast")) return;
         try {
           const isFromMe = !!msg.get("id")?.fromMe;
           if (isFromMe) {
@@ -823,7 +825,8 @@
             }
           }, WA_ORIGIN);
           console.log("[WSPP] Chat abierto:", phone ?? jid, "| nombre:", name ?? "-");
-        } catch (_) {
+        } catch (err) {
+          console.warn("[WSPP] chat change error:", err?.message);
         }
       };
       const { ChatCollection } = window.require("WAWebChatCollection");
@@ -1674,8 +1677,10 @@
       _previewRAF = null;
     }
     if (_previewAudio) {
+      const oldUrl = _previewAudio.src;
       _previewAudio.pause();
       _previewAudio.src = "";
+      if (oldUrl && oldUrl.startsWith("blob:")) URL.revokeObjectURL(oldUrl);
       _previewAudio = null;
     }
     _previewData = null;
@@ -1835,6 +1840,8 @@
         fd.push(sum / bs);
       }
       const mult = Math.pow(Math.max(...fd), -1);
+      ctx.close().catch(() => {
+      });
       return new Uint8Array(fd.map((n) => Math.floor(100 * n * mult)));
     } catch {
       return void 0;
@@ -2451,6 +2458,7 @@
     return _previewReady;
   }
   async function fetchPreview(n = 5) {
+    console.log("[BLAST] fetchPreview start, n:", n);
     _previewLoading = true;
     _previewReady = false;
     _previewContacts = [];
@@ -2458,6 +2466,7 @@
     _notify();
     try {
       const raw = await _fetchBatch(n * 4);
+      console.log("[BLAST] fetchPreview raw:", raw.length, "contacts");
       const filtered = [];
       for (const c of raw) {
         if (c.id && !_habladoIds.has(c.id) && !_sentIds.has(c.id)) {
@@ -2466,16 +2475,22 @@
         }
       }
       _previewContacts = filtered;
-    } catch (_) {
+      console.log("[BLAST] fetchPreview filtered:", filtered.length, "contacts");
+    } catch (err) {
+      console.error("[BLAST] fetchPreview error:", err);
       _previewContacts = [];
     }
     _previewLoading = false;
     _notify();
   }
+  var _previewBuffer = [];
   async function _fetchOneNew() {
-    const extra = await _fetchBatch(20);
+    if (!_previewBuffer.length) {
+      _previewBuffer = await _fetchBatch(20);
+    }
     const currentIds = new Set(_previewContacts.map((c) => c.id));
-    for (const c of extra) {
+    while (_previewBuffer.length) {
+      const c = _previewBuffer.shift();
       if (c.id && !_habladoIds.has(c.id) && !_sentIds.has(c.id) && !currentIds.has(c.id)) {
         return c;
       }
@@ -2556,19 +2571,6 @@
       window.addEventListener("message", onReply);
       window.postMessage({ type: "BLAST_GET_BLOCK_STATS", block_id: blockId, own_number: getOwnNumber() }, WA_ORIGIN);
     });
-  }
-  function _startCheckpointPolling(blockId) {
-    if (_checkpointPolling) clearInterval(_checkpointPolling);
-    const poll = async () => {
-      const stats = await _fetchBlockStats(blockId);
-      if (stats) {
-        _checkpoint = stats;
-        _notify();
-        if (stats.unlocked_50) _stopCheckpointPolling();
-      }
-    };
-    poll();
-    _checkpointPolling = setInterval(poll, 3e4);
   }
   function _stopCheckpointPolling() {
     if (_checkpointPolling) {
@@ -3081,6 +3083,7 @@
   async function startBlast() {
     if (_running) return;
     if (_loopRunning) return;
+    if (_previewLoading) return;
     if (!tpls.length || !tpls[0].trim()) return;
     if (!_dedupReady) {
       _phase2 = "cargando";
@@ -3150,6 +3153,23 @@
       const habladoBatch = [];
       const noWaBatch = [];
       let batchSent = 0;
+      const sc = await _spamCheck();
+      _lastSpamResult = sc;
+      if (sc.shouldPause) {
+        _running = false;
+        _stopCountdown();
+        const reasons = sc.warnings.length ? sc.warnings.slice(0, 3).join(" \xB7 ") : "Patr\xF3n de env\xEDo detectado como spam";
+        const whatToDo = sc.actions.length ? "\n\u2192 " + sc.actions.slice(0, 2).join("\n\u2192 ") : "";
+        _lastResults.unshift({
+          nombre: sc.riskLevel === "critical" ? "\u{1F6A8} RIESGO CR\xCDTICO" : "\u26A0\uFE0F RIESGO ALTO",
+          telefono: "",
+          status: "failed",
+          ack: -1,
+          error: `Score: ${sc.score}/100 | ${reasons}${whatToDo}`
+        });
+        _notify();
+        break;
+      }
       if (!_blockId) {
         _blockId = _newBlockId();
         _blockSent = 0;
@@ -3158,7 +3178,6 @@
       if (_blockSent >= BLOCK_SIZE) {
         _phase2 = "checkpoint";
         _notify();
-        _startCheckpointPolling(_blockId);
         while (_running && !_paused) {
           const stats = await _fetchBlockStats(_blockId);
           if (stats) {
@@ -3171,7 +3190,6 @@
           await _sleep(3e4);
           _stopCountdown();
         }
-        _stopCheckpointPolling();
         _blockId = _newBlockId();
         _blockSent = 0;
         _checkpoint = null;
@@ -3234,23 +3252,6 @@
           logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null, block_id: _blockId });
           _notify();
           continue;
-        }
-        const sc = await _spamCheck();
-        _lastSpamResult = sc;
-        if (sc.shouldPause) {
-          _running = false;
-          _stopCountdown();
-          const reasons = sc.warnings.length ? sc.warnings.slice(0, 3).join(" \xB7 ") : "Patr\xF3n de env\xEDo detectado como spam";
-          const whatToDo = sc.actions.length ? "\n\u2192 " + sc.actions.slice(0, 2).join("\n\u2192 ") : "";
-          _lastResults.unshift({
-            nombre: sc.riskLevel === "critical" ? "\u{1F6A8} RIESGO CR\xCDTICO" : "\u26A0\uFE0F RIESGO ALTO",
-            telefono: "",
-            status: "failed",
-            ack: -1,
-            error: `Score: ${sc.score}/100 | ${reasons}${whatToDo}`
-          });
-          _notify();
-          break;
         }
         if (normalizedPhone) {
           const hasWA = await _checkExistsOnWA(normalizedPhone);
@@ -3320,22 +3321,8 @@
           batchSent++;
           _sessionSent++;
           _blockSent++;
-          if (batchSent > 0 && batchSent % 10 === 0 && _numberHealth) {
-            _numberHealth.sent_today += 10;
-            _numberHealth.sent_last_hour += 10;
-            if (_numberHealth.sent_today >= _numberHealth.daily_limit || _numberHealth.sent_last_hour >= _numberHealth.hourly_limit) {
-              _running = false;
-              _stopCountdown();
-              _lastResults.unshift({
-                nombre: "\u26A0\uFE0F L\xEDmite alcanzado",
-                telefono: "",
-                status: "paused",
-                ack: -1,
-                error: `Hoy: ${_numberHealth.sent_today}/${_numberHealth.daily_limit} | Hora: ${_numberHealth.sent_last_hour}/${_numberHealth.hourly_limit}. Pausa autom\xE1tica.`
-              });
-              _notify();
-              break;
-            }
+          if (batchSent > 0 && batchSent % 5 === 0 && _numberHealth) {
+            fetchNumberHealth();
           }
           _tplIndex++;
           _consecFails = 0;
@@ -3440,6 +3427,8 @@
     _sentIds.clear();
     _habladoIds.clear();
     _inFlight.clear();
+    delete window.__blastSessionStart;
+    _previewBuffer = [];
     window.postMessage({ type: "BLAST_DEDUP_CLEAR" }, WA_ORIGIN);
     _respondedPhones.clear();
     _loopRunning = false;
@@ -4178,6 +4167,8 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   }
 
   // src/inject/sidebar.js
+  var _cachedAnalysis = null;
+  var _cachedTplsHash = "";
   var SIDEBAR_W = 380;
   var SIDEBAR_ID = "wspp-sidebar";
   var FAB_ID = "wspp-sidebar-fab";
@@ -4379,6 +4370,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     const markH = btn.dataset?.markhablado;
     const preset = btn.dataset?.preset;
     const tplDel = btn.dataset?.tplDel;
+    console.log("[SIDEBAR] delegated click:", id || skip || markH || preset || tplDel || btn.dataset?.audioSend || "?");
     if (id === "sb-refresh") {
       refreshPendingCount();
       fetchGlobalStats();
@@ -4388,6 +4380,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       refreshPendingCount();
       _renderContent();
     } else if (id === "sb-start") {
+      console.log("[SIDEBAR] sb-start clicked");
       startBlast();
     } else if (id === "sb-pause") {
       pauseBlast();
@@ -4401,6 +4394,8 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       previewCancel();
       _renderContent();
     } else if (id === "sb-preview-confirm") {
+      btn.disabled = true;
+      btn.textContent = "Enviando...";
       previewConfirm();
       await startBlast();
     } else if (id === "sb-tpl-add") {
@@ -4415,12 +4410,20 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     } else if (skip) {
       btn.disabled = true;
       btn.textContent = "...";
-      await previewSkipAndReplace(skip);
+      try {
+        await previewSkipAndReplace(skip);
+      } catch (err) {
+        console.error("[SIDEBAR] skip error:", err);
+      }
       _renderContent();
     } else if (markH) {
       btn.disabled = true;
       btn.textContent = "...";
-      await previewMarkHablado(markH);
+      try {
+        await previewMarkHablado(markH);
+      } catch (err) {
+        console.error("[SIDEBAR] markHablado error:", err);
+      }
       _renderContent();
     } else if (preset) {
       const n = Number(preset);
@@ -4576,7 +4579,12 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     } else if (phase === "cargando") {
       timerLabel = "\u{1F4E5} Cargando...";
     }
-    const analysis = analyzeTemplates(tpls2);
+    const tplsHash = tpls2.join("\n");
+    if (_cachedTplsHash !== tplsHash) {
+      _cachedTplsHash = tplsHash;
+      _cachedAnalysis = analyzeTemplates(tpls2);
+    }
+    const analysis = _cachedAnalysis || { level: "ok", suggestions: [] };
     const sessionStart = window.__blastSessionStart || Date.now();
     if (!window.__blastSessionStart && running) window.__blastSessionStart = Date.now();
     const elapsedMin = Math.max(1, (Date.now() - sessionStart) / 6e4);
@@ -4902,7 +4910,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
           <div>
             <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:3px;">
               <span>Enviar siguientes 50 (50%)</span>
-              <span style="font-weight:700;color:${cp.unlocked_50 ? S.accent : S.muted};">${cp.unlocked_50 ? "\u2713 Listo" : "${cp.responded}/${Math.ceil(cp.sent*0.5)} respuestas"}</span>
+              <span style="font-weight:700;color:${cp.unlocked_50 ? S.accent : S.muted};">${cp.unlocked_50 ? "\u2713 Listo" : `${cp.responded}/${Math.ceil(cp.sent * 0.5)} respuestas`}</span>
             </div>
             <div style="height:5px;background:${S.border};border-radius:3px;overflow:hidden;">
               <div style="height:100%;width:${pct50}%;background:${cp.unlocked_50 ? S.accent : "#3b82f6"};border-radius:3px;transition:width .4s;"></div>

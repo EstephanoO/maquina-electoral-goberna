@@ -176,10 +176,12 @@ export function getPreviewSkipped()   { return _previewSkipped; }
 // Carga los próximos N contactos sin enviarlos — para preview
 // Pide más del servidor y filtra localmente para excluir los ya procesados
 export async function fetchPreview(n = 5) {
+  console.log('[BLAST] fetchPreview start, n:', n);
   _previewLoading = true; _previewReady = false; _previewContacts = []; _previewSkipped.clear();
   _notify();
   try {
-    const raw = await _fetchBatch(n * 4); // pedir 4× para tener margen de filtrado
+    const raw = await _fetchBatch(n * 4);
+    console.log('[BLAST] fetchPreview raw:', raw.length, 'contacts');
     const filtered = [];
     for (const c of raw) {
       if (c.id && !_habladoIds.has(c.id) && !_sentIds.has(c.id)) {
@@ -188,24 +190,24 @@ export async function fetchPreview(n = 5) {
       }
     }
     _previewContacts = filtered;
-  } catch (_) {
+    console.log('[BLAST] fetchPreview filtered:', filtered.length, 'contacts');
+  } catch (err) {
+    console.error('[BLAST] fetchPreview error:', err);
     _previewContacts = [];
   }
   _previewLoading = false;
   _notify();
 }
 
-// previewSkip y previewRestore están deprecados — todo va por previewSkipAndReplace
-// que marca en el servidor para que no vuelva nunca
-export function previewSkip(id) { /* no-op — usar previewSkipAndReplace */ }
-export function previewRestore(id) { /* no-op — no se puede restaurar un hablado en DB */ }
-
 // Buscar 1 contacto nuevo que no esté en el preview ni en los excluidos
+let _previewBuffer = [];
 async function _fetchOneNew() {
-  // Pedir 20 del servidor y filtrar localmente
-  const extra = await _fetchBatch(20);
+  if (!_previewBuffer.length) {
+    _previewBuffer = await _fetchBatch(20);
+  }
   const currentIds = new Set(_previewContacts.map(c => c.id));
-  for (const c of extra) {
+  while (_previewBuffer.length) {
+    const c = _previewBuffer.shift();
     if (c.id && !_habladoIds.has(c.id) && !_sentIds.has(c.id) && !currentIds.has(c.id)) {
       return c;
     }
@@ -971,6 +973,7 @@ function _stopCountdown() { clearInterval(_countdownTimer); _countdown = 0; _pha
 export async function startBlast() {
   if (_running) return;
   if (_loopRunning) return;
+  if (_previewLoading) return;
   if (!tpls.length || !tpls[0].trim()) return;
 
   // Esperar que el dedup de chrome.storage haya cargado (máx 3s)
@@ -1061,13 +1064,31 @@ export async function startBlast() {
     const noWaBatch    = []; // IDs sin WhatsApp → cms_status='no_wa' (retry mañana)
     let batchSent = 0;
 
+    // Spam check — una vez por batch, no por cada contacto
+    const sc = await _spamCheck();
+    _lastSpamResult = sc;
+    if (sc.shouldPause) {
+      _running = false; _stopCountdown();
+      const reasons = sc.warnings.length
+        ? sc.warnings.slice(0, 3).join(' · ')
+        : 'Patrón de envío detectado como spam';
+      const whatToDo = sc.actions.length
+        ? '\n→ ' + sc.actions.slice(0, 2).join('\n→ ')
+        : '';
+      _lastResults.unshift({
+        nombre: sc.riskLevel === 'critical' ? '🚨 RIESGO CRÍTICO' : '⚠️ RIESGO ALTO',
+        telefono: '', status: 'failed', ack: -1,
+        error: `Score: ${sc.score}/100 | ${reasons}${whatToDo}`
+      });
+      _notify(); break;
+    }
+
     // ── Inicializar bloque si es el primero ────────────────────────
     if (!_blockId) { _blockId = _newBlockId(); _blockSent = 0; _checkpoint = null; }
 
     // ── CHECKPOINT: si llegamos a BLOCK_SIZE, pausar y esperar respuestas ──
     if (_blockSent >= BLOCK_SIZE) {
       _phase = 'checkpoint'; _notify();
-      _startCheckpointPolling(_blockId);
       // Esperar hasta que el bloque tenga 50% de respuesta
       while (_running && !_paused) {
         const stats = await _fetchBlockStats(_blockId);
@@ -1077,7 +1098,6 @@ export async function startBlast() {
         _startCountdown(30, 'checkpoint'); _notify();
         await _sleep(30000); _stopCountdown();
       }
-      _stopCheckpointPolling();
       // Nuevo bloque
       _blockId = _newBlockId(); _blockSent = 0; _checkpoint = null;
       if (!_running || _paused) break;
@@ -1152,25 +1172,6 @@ export async function startBlast() {
         continue;
       }
 
-      // Spam check — muestra razones concretas de por qué es spam
-      const sc = await _spamCheck();
-      _lastSpamResult = sc;
-      if (sc.shouldPause) {
-        _running = false; _stopCountdown();
-        const reasons = sc.warnings.length
-          ? sc.warnings.slice(0, 3).join(' · ')
-          : 'Patrón de envío detectado como spam';
-        const whatToDo = sc.actions.length
-          ? '\n→ ' + sc.actions.slice(0, 2).join('\n→ ')
-          : '';
-        _lastResults.unshift({
-          nombre: sc.riskLevel === 'critical' ? '🚨 RIESGO CRÍTICO' : '⚠️ RIESGO ALTO',
-          telefono: '', status: 'failed', ack: -1,
-          error: `Score: ${sc.score}/100 | ${reasons}${whatToDo}`
-        });
-        _notify(); break;
-      }
-
       // ── USyncQuery pre-check: ¿tiene WhatsApp este número? ────────────
       if (normalizedPhone) {
         const hasWA = await _checkExistsOnWA(normalizedPhone);
@@ -1242,17 +1243,9 @@ export async function startBlast() {
         _sessionSent++;
         _blockSent++;
 
-        // Stealth: re-check warm-up limits every 10 messages
-        if (batchSent > 0 && batchSent % 10 === 0 && _numberHealth) {
-          // Update local counters (sent_today and sent_last_hour)
-          _numberHealth.sent_today += 10;
-          _numberHealth.sent_last_hour += 10;
-          if (_numberHealth.sent_today >= _numberHealth.daily_limit || _numberHealth.sent_last_hour >= _numberHealth.hourly_limit) {
-            _running = false; _stopCountdown();
-            _lastResults.unshift({ nombre: '⚠️ Límite alcanzado', telefono: '', status: 'paused', ack: -1,
-              error: `Hoy: ${_numberHealth.sent_today}/${_numberHealth.daily_limit} | Hora: ${_numberHealth.sent_last_hour}/${_numberHealth.hourly_limit}. Pausa automática.` });
-            _notify(); break;
-          }
+        // Stealth: re-check warm-up limits every 5 messages
+        if (batchSent > 0 && batchSent % 5 === 0 && _numberHealth) {
+          fetchNumberHealth();
         }
 
         _tplIndex++;
@@ -1357,6 +1350,8 @@ export function resetSession() {
   _sentIds.clear();
   _habladoIds.clear();
   _inFlight.clear();
+  delete window.__blastSessionStart;
+  _previewBuffer = [];
   window.postMessage({ type: 'BLAST_DEDUP_CLEAR' }, WA_ORIGIN);
   _respondedPhones.clear();
   _loopRunning = false;

@@ -26,6 +26,10 @@ function installIncomingMessageListener() {
     }
 
     MsgCollection.on('add', (msg) => {
+      // Fast filter: skip group and broadcast messages early
+      const jid = msg.get?.('from')?._serialized || msg.get?.('to')?._serialized;
+      if (!jid || jid.includes('@g.us') || jid.includes('@broadcast')) return;
+
       try {
         const isFromMe = !!msg.get('id')?.fromMe;
 
@@ -196,7 +200,7 @@ function installChatWatcher() {
         }, WA_ORIGIN);
 
         console.log('[WSPP] Chat abierto:', phone ?? jid, '| nombre:', name ?? '-');
-      } catch (_) {}
+      } catch (err) { console.warn('[WSPP] chat change error:', err?.message); }
     }
 
     // M-6: Primary — SOLO 'change:active', nunca 'change' genérico.

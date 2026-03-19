@@ -572,7 +572,13 @@ function _handleDeleteCategory(catId, catKey, btn) {
 // ═══════════════════════════════════════════════════════════════════════
 function _destroyPreview() {
   if (_previewRAF) { cancelAnimationFrame(_previewRAF); _previewRAF = null; }
-  if (_previewAudio) { _previewAudio.pause(); _previewAudio.src = ''; _previewAudio = null; }
+  if (_previewAudio) {
+    const oldUrl = _previewAudio.src;
+    _previewAudio.pause();
+    _previewAudio.src = '';
+    if (oldUrl && oldUrl.startsWith('blob:')) URL.revokeObjectURL(oldUrl);
+    _previewAudio = null;
+  }
   _previewData = null; _previewPlaying = false; _previewLoadingId = null;
 }
 
@@ -751,6 +757,7 @@ async function _generateWaveform(audioFile) {
     const samples = 64, bs = Math.floor(raw.length / samples), fd = [];
     for (let i = 0; i < samples; i++) { const start = bs*i; let sum = 0; for (let j = 0; j < bs; j++) sum += Math.abs(raw[start+j]); fd.push(sum/bs); }
     const mult = Math.pow(Math.max(...fd), -1);
+    ctx.close().catch(() => {});
     return new Uint8Array(fd.map(n => Math.floor(100 * n * mult)));
   } catch { return undefined; }
 }

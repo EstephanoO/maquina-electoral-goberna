@@ -54,7 +54,7 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
         const brigadista = qs.brigadista ?? "";
 
         // Identify which WA number is sending this request
-        const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "");
+        const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "").slice(0, 20);
 
         // Look up or create segment config for this number
         let config = waNumber
@@ -146,7 +146,7 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
           );
         }
 
-        const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "") || null;
+        const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "").slice(0, 20) || null;
 
         try {
           const updated = await repo.markHablado(
@@ -296,7 +296,7 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
         const requestId  = String(request.id);
         const campaignId = req.activeCampaignId!;
 
-        const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "");
+        const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "").slice(0, 20);
         if (!waNumber) {
           return reply.code(400).send(
             errorPayload(requestId, "VALIDATION_ERROR", "Falta header x-wa-number")
@@ -330,7 +330,7 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
         const requestId  = String(request.id);
         const campaignId = req.activeCampaignId!;
 
-        const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "");
+        const waNumber = (request.headers["x-wa-number"] as string ?? "").replace(/\D/g, "").slice(0, 20);
         if (!waNumber) {
           return reply.code(400).send(
             errorPayload(requestId, "VALIDATION_ERROR", "Falta header x-wa-number")
@@ -354,6 +354,27 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
     );
 
     // ──────────────────────────────────────────────────────────────────
+    // GET /api/blast/dashboard
+    // Dashboard completo: stats por celular + quality + spam + ritmo
+    // ──────────────────────────────────────────────────────────────────
+    app.get(
+      "/api/blast/dashboard",
+      { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
+      async (request, reply) => {
+        const req        = request as AuthenticatedRequest;
+        const requestId  = String(request.id);
+        const campaignId = req.activeCampaignId!;
+        try {
+          const data = await repo.getDashboardStats(campaignId);
+          return reply.code(200).send({ ok: true, request_id: requestId, ...data });
+        } catch (err) {
+          app.log.error({ err }, "[blast] getDashboardStats failed");
+          return reply.code(500).send(errorPayload(requestId, "UPSTREAM_ERROR", "Error al obtener dashboard"));
+        }
+      }
+    );
+
+    // ──────────────────────────────────────────────────────────────────
     // GET /api/blast/block-stats/:blockId
     // Devuelve cuántos del bloque respondieron — para el checkpoint.
     // ──────────────────────────────────────────────────────────────────
@@ -364,7 +385,10 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
         const req        = request as AuthenticatedRequest;
         const requestId  = String(request.id);
         const campaignId = req.activeCampaignId!;
-        const { blockId } = request.params as { blockId: string };
+        const blockId = String((request.params as { blockId: string }).blockId ?? "").slice(0, 50);
+        if (!blockId) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "blockId requerido"));
+        }
         try {
           const stats = await repo.getBlockStats(campaignId, blockId);
           return reply.code(200).send({ ok: true, request_id: requestId, ...stats });

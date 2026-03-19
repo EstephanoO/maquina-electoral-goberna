@@ -14,12 +14,16 @@ import {
   getLastSpamResult,
   getGlobalStats, fetchGlobalStats,
   getPreviewContacts, isPreviewLoading, isPreviewReady, getPreviewSkipped,
-  previewSkip, previewSkipAndReplace, previewRestore, previewMarkHablado, previewConfirm, previewCancel,
+  previewSkipAndReplace, previewMarkHablado, previewConfirm, previewCancel,
   getCheckpoint, getBlockSent,
 } from './blast-panel.js';
 import { analyzeTemplates } from './template-analyzer.js';
 import { toggleValidatorPanel } from './wa-validator-panel.js';
 import { sendAudioAsPTT } from './audio-catalog-panel.js';
+
+// ── Cached template analysis ──────────────────────────────────────────
+let _cachedAnalysis = null;
+let _cachedTplsHash = '';
 
 // ── Constants ─────────────────────────────────────────────────────────
 const SIDEBAR_W = 380;
@@ -232,14 +236,16 @@ async function _handleDelegatedClick(e) {
   const preset = btn.dataset?.preset;
   const tplDel = btn.dataset?.tplDel;
 
+  console.log('[SIDEBAR] delegated click:', id || skip || markH || preset || tplDel || btn.dataset?.audioSend || '?');
+
   if (id === 'sb-refresh') { refreshPendingCount(); fetchGlobalStats(); _toast('Actualizando...'); }
   else if (id === 'sb-brigadista-clear') { setConfig({ brigadista: '' }); refreshPendingCount(); _renderContent(); }
-  else if (id === 'sb-start') { startBlast(); }
+  else if (id === 'sb-start') { console.log('[SIDEBAR] sb-start clicked'); startBlast(); }
   else if (id === 'sb-pause') { pauseBlast(); }
   else if (id === 'sb-resume') { resumeBlast(); }
   else if (id === 'sb-reset') { resetSession(); refreshPendingCount(); _renderContent(); }
   else if (id === 'sb-preview-cancel') { previewCancel(); _renderContent(); }
-  else if (id === 'sb-preview-confirm') { previewConfirm(); await startBlast(); }
+  else if (id === 'sb-preview-confirm') { btn.disabled = true; btn.textContent = 'Enviando...'; previewConfirm(); await startBlast(); }
   else if (id === 'sb-tpl-add') {
     const t = getTemplates();
     t.push(`[Hola|Buenas|Buenas tardes] {{nombre}} ¿[cómo estás?|todo bien?|cómo te va?]\n---\n[Mensaje ${t.length + 1} — editá este bloque]`);
@@ -248,12 +254,12 @@ async function _handleDelegatedClick(e) {
   else if (id === 'sb-open-validator') { toggleValidatorPanel(); }
   else if (skip) {
     btn.disabled = true; btn.textContent = '...';
-    await previewSkipAndReplace(skip);
+    try { await previewSkipAndReplace(skip); } catch (err) { console.error('[SIDEBAR] skip error:', err); }
     _renderContent();
   }
   else if (markH) {
     btn.disabled = true; btn.textContent = '...';
-    await previewMarkHablado(markH);
+    try { await previewMarkHablado(markH); } catch (err) { console.error('[SIDEBAR] markHablado error:', err); }
     _renderContent();
   }
   else if (preset) {
@@ -410,8 +416,10 @@ function _blastHTML() {
     timerLabel = '📥 Cargando...';
   }
 
-  // Template risk analysis
-  const analysis = analyzeTemplates(tpls);
+  // Template risk analysis (cached — only recompute when templates change)
+  const tplsHash = tpls.join('\n');
+  if (_cachedTplsHash !== tplsHash) { _cachedTplsHash = tplsHash; _cachedAnalysis = analyzeTemplates(tpls); }
+  const analysis = _cachedAnalysis || { level: 'ok', suggestions: [] };
 
   // Session stats
   const sessionStart = window.__blastSessionStart || Date.now();
@@ -753,7 +761,7 @@ function _blastHTML() {
           <div>
             <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:3px;">
               <span>Enviar siguientes 50 (50%)</span>
-              <span style="font-weight:700;color:${cp.unlocked_50?S.accent:S.muted};">${cp.unlocked_50?'✓ Listo':'${cp.responded}/${Math.ceil(cp.sent*0.5)} respuestas'}</span>
+              <span style="font-weight:700;color:${cp.unlocked_50?S.accent:S.muted};">${cp.unlocked_50?'✓ Listo':`${cp.responded}/${Math.ceil(cp.sent*0.5)} respuestas`}</span>
             </div>
             <div style="height:5px;background:${S.border};border-radius:3px;overflow:hidden;">
               <div style="height:100%;width:${pct50}%;background:${cp.unlocked_50?S.accent:'#3b82f6'};border-radius:3px;transition:width .4s;"></div>

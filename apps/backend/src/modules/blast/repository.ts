@@ -41,7 +41,13 @@ export async function ensureBlastTables(): Promise<void> {
       ADD COLUMN IF NOT EXISTS contact_phone text NOT NULL DEFAULT '',
       ADD COLUMN IF NOT EXISTS contact_id    uuid,
       ADD COLUMN IF NOT EXISTS message_text  text,
-      ADD COLUMN IF NOT EXISTS error_msg     text
+      ADD COLUMN IF NOT EXISTS error_msg     text,
+      ADD COLUMN IF NOT EXISTS block_id      text
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_blast_log_block_id
+    ON blast_log(campaign_id, block_id) WHERE block_id IS NOT NULL
   `);
 
   // Indexes — CREATE INDEX IF NOT EXISTS is safe even if index already exists
@@ -140,32 +146,32 @@ export async function getFormContactsForNumber(params: {
 
   const [rowsResult, countResult] = await Promise.all([
     pool.query<ContactRow>(
-       `SELECT
-         fs.id,
-         COALESCE(fs.data->>'nombre',    '') AS nombre,
-         COALESCE(fs.data->>'apellidos', '') AS apellidos,
-         COALESCE(fs.data->>'telefono',  '') AS telefono,
-         COALESCE(fs.data->>'distrito',  fs.data->>'zona', '') AS distrito,
-         COALESCE(fs.data->>'departamento', '') AS departamento,
-         COALESCE(fs.data->>'encuestador','') AS encuestador,
-         COALESCE(fs.cms_status, 'nuevo') AS cms_status,
-         -- Heat score: 2=caliente (respondieron alguna vez), 1=normal, 0=frío (no_wa pasado)
-         CASE
-           WHEN EXISTS (SELECT 1 FROM form_submissions fs2
-                        WHERE fs2.data->>'telefono' = fs.data->>'telefono'
-                          AND fs2.cms_status = 'respondieron'
-                          AND fs2.campaign_id = $1) THEN 2
-           WHEN fs.cms_status = 'no_wa' THEN 0
-           ELSE 1
-         END AS heat_score
-       FROM form_submissions fs
-       WHERE ${where}
+       `WITH hot_phones AS (
+          SELECT DISTINCT data->>'telefono' AS tel
+          FROM form_submissions
+          WHERE campaign_id = $1
+            AND cms_status = 'respondieron'
+            AND COALESCE(data->>'telefono','') != ''
+        )
+        SELECT
+          fs.id,
+          COALESCE(fs.data->>'nombre',    '') AS nombre,
+          COALESCE(fs.data->>'apellidos', '') AS apellidos,
+          COALESCE(fs.data->>'telefono',  '') AS telefono,
+          COALESCE(fs.data->>'distrito',  fs.data->>'zona', '') AS distrito,
+          COALESCE(fs.data->>'departamento', '') AS departamento,
+          COALESCE(fs.data->>'encuestador','') AS encuestador,
+          COALESCE(fs.cms_status, 'nuevo') AS cms_status,
+          CASE
+            WHEN hp.tel IS NOT NULL THEN 2
+            WHEN fs.cms_status = 'no_wa' THEN 0
+            ELSE 1
+          END AS heat_score
+        FROM form_submissions fs
+        LEFT JOIN hot_phones hp ON hp.tel = fs.data->>'telefono'
+        WHERE ${where}
         ORDER BY
-          -- Priorizar calientes (heat_score DESC), luego los nunca tocados (NULLS FIRST)
-          CASE WHEN EXISTS (SELECT 1 FROM form_submissions fs2
-                            WHERE fs2.data->>'telefono' = fs.data->>'telefono'
-                              AND fs2.cms_status = 'respondieron'
-                              AND fs2.campaign_id = $1) THEN 0 ELSE 1 END ASC,
+          CASE WHEN hp.tel IS NOT NULL THEN 0 ELSE 1 END ASC,
           fs.cms_hablado_at NULLS FIRST,
           fs.created_at ASC
         LIMIT $${argIdx} OFFSET $${argIdx + 1}`,
@@ -231,7 +237,7 @@ export async function markHablado(
          WHERE fs.id = ANY($3::uuid[]) AND fs.campaign_id = $1
          ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent' DO NOTHING`,
         [campaign_id, wa_number, ids]
-      ).catch(() => {});
+      ).catch((err) => { console.warn("[blast] audit log insert failed", String(err)); });
     }
   }
 
@@ -308,31 +314,20 @@ export async function getDashboardStats(campaign_id: string) {
     ORDER BY date_trunc('hour', cms_hablado_at AT TIME ZONE 'America/Lima')
   `, [campaign_id]);
 
-  // 5. Totales globales
-  const global = await pool.query<{
-    total: string; hablado: string; respondieron: string;
-    no_wa: string; pendiente: string;
-  }>(`
-    SELECT
-      COUNT(*)::text AS total,
-      COUNT(*) FILTER (WHERE cms_status = 'hablado')::text AS hablado,
-      COUNT(*) FILTER (WHERE cms_status = 'respondieron')::text AS respondieron,
-      COUNT(*) FILTER (WHERE cms_status = 'no_wa')::text AS no_wa,
-      COUNT(*) FILTER (WHERE COALESCE(cms_status,'nuevo') = 'nuevo')::text AS pendiente
-    FROM form_submissions
-    WHERE campaign_id = $1 AND deleted_at IS NULL
-      AND COALESCE(data->>'telefono','') != ''
-  `, [campaign_id]);
-
   // Mapear configs por segment_idx
   const configMap: Record<number, { wa_number: string; label: string; created_at: string; active: boolean }> = {};
   for (const c of configs.rows) configMap[c.segment_idx] = c;
 
   // Construir response por celular
-  const g = global.rows[0];
-  const totalContacts   = parseInt(g?.total ?? "0", 10);
-  const totalHablado    = parseInt(g?.hablado ?? "0", 10);
-  const totalRespondieron = parseInt(g?.respondieron ?? "0", 10);
+  // Calcular globales desde perSegment (evita una query redundante)
+  let totalContacts = 0, totalHablado = 0, totalRespondieron = 0, totalNoWa = 0, totalPendiente = 0;
+  for (const r of perSegment.rows) {
+    totalContacts     += parseInt(r.total, 10);
+    totalHablado      += parseInt(r.hablado, 10);
+    totalRespondieron += parseInt(r.respondieron, 10);
+    totalNoWa         += parseInt(r.no_wa, 10);
+    totalPendiente    += parseInt(r.pendiente, 10);
+  }
   const totalContactados = totalHablado + totalRespondieron;
   const globalResponseRate = totalContactados > 0 ? totalRespondieron / totalContactados : 0;
 
@@ -372,8 +367,8 @@ export async function getDashboardStats(campaign_id: string) {
       total_contacts:    totalContacts,
       total_hablado:     totalHablado,
       total_respondieron: totalRespondieron,
-      total_no_wa:       parseInt(g?.no_wa ?? "0", 10),
-      total_pendiente:   parseInt(g?.pendiente ?? "0", 10),
+      total_no_wa:       totalNoWa,
+      total_pendiente:   totalPendiente,
       response_rate:     Math.round(globalResponseRate * 1000) / 1000,
       quality_rating:    globalResponseRate >= 0.40 ? 'green' as const : globalResponseRate >= 0.25 ? 'yellow' as const : 'red' as const,
     },
@@ -500,6 +495,7 @@ export async function saveBlastReport(
     );
     return result.rowCount ?? 0;
   } catch (err) {
+    console.error("[blast] batch insert failed, falling back to individual inserts", String(err));
     let saved = 0;
     for (const r of clean) {
       try {
@@ -516,7 +512,9 @@ export async function saveBlastReport(
           [campaign_id, r.wa_number, r.phone, r.contact_name, r.message_text, r.status, r.error_msg, r.contact_id, r.block_id]
         );
         saved++;
-      } catch { /* ignore */ }
+      } catch (rowErr) {
+        console.warn("[blast] individual insert failed", { phone: r.phone, error: String(rowErr) });
+      }
     }
     return saved;
   }
@@ -769,7 +767,7 @@ export async function getNumberHealth(
     if (rr >= 0.40 && nrr < 0.50) qualityMultiplier = 1.20;
     // Peligro: response_rate<25% → reducir 20%
     else if (rr < 0.25 && rr > 0) qualityMultiplier = 0.80;
-  } catch { /* non-fatal — usar límite base */ }
+  } catch (err) { console.warn("[blast] quality multiplier query failed", String(err)); }
 
   const DAILY_LIMIT  = Math.round(BASE_DAILY_LIMIT * qualityMultiplier);
   const HOURLY_LIMIT = Math.min(60, Math.max(20, Math.round(DAILY_LIMIT * 0.20)));
