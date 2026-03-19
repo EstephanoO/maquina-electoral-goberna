@@ -1955,8 +1955,22 @@
       }
       if (pttBlob) {
         try {
+          mediaObject.mediaBlob = pttBlob;
           const rawBlobObj = typeof pttBlob.blob === "function" ? await pttBlob.blob() : pttBlob;
           if (rawBlobObj) mediaObject.blob = rawBlobObj;
+          L("9-pre \u2713 blob set on mediaObject (mediaBlob + blob)");
+        } catch (blobErr) {
+          L("9-pre \u26A0 blob set failed:", blobErr?.message);
+        }
+      }
+      if (pttBlob && !mediaData.mediaBlob && typeof mediaData.set === "function") {
+        try {
+          mediaData.set({ mediaBlob: pttBlob });
+        } catch (_) {
+        }
+      } else if (pttBlob && !mediaData.mediaBlob) {
+        try {
+          mediaData.mediaBlob = pttBlob;
         } catch (_) {
         }
       }
@@ -1974,7 +1988,7 @@
       const uploadFn = uploadMod.uploadMedia ?? uploadMod.encryptAndUploadMedia ?? uploadMod.default?.uploadMedia ?? uploadMod.default?.encryptAndUploadMedia ?? uploadMod.default?.encryptAndUpload;
       if (!uploadFn) throw new Error(`No uploadMedia fn in ${uploadModName}`);
       L("9b uploadFn found", typeof uploadFn, `length=${uploadFn.length}`);
-      const uploadArgs = { chat, mediaData, mediaObject, mediaType, mimetype: mime };
+      const uploadArgs = { chat, mediaData, mediaObject, mediaType, mimetype: mime, mediaBlob: pttBlob };
       L("9c calling uploadFn with", Object.keys(uploadArgs).join(", "));
       const uploaded = await uploadFn(uploadArgs);
       L("9d uploaded raw", JSON.stringify(uploaded)?.slice(0, 300));

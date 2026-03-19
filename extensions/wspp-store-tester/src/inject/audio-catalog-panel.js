@@ -897,15 +897,31 @@ export async function sendAudioAsPTT(audioBase64, mimeType) {
     }
 
     // ── Step 9: Upload ────────────────────────────────────────────────
-    // Pass the raw blob into mediaObject so the upload module can access it.
-    // In newer WA builds (WAWebMediaMmsV4Upload) the upload reads the blob from
-    // mediaObject.blob — without it, uploadMedia returns {kind:"error"}.
+    // WA Web's upload module needs the raw blob accessible from mediaObject.
+    // Different WA builds look for it in different places:
+    //   - mediaObject.blob (raw Blob)
+    //   - mediaObject.mediaBlob (OpaqueData wrapper)
+    //   - via getOrDownloadBlob(mediaObject) which checks both
+    // We set ALL paths to maximize compatibility.
     if (pttBlob) {
       try {
-        // duck-type: OpaqueData blob has a .blob() method that returns the raw Blob
+        // Set the OpaqueData wrapper on mediaObject for getOrDownloadBlob()
+        mediaObject.mediaBlob = pttBlob;
+        // Also set raw Blob for direct access paths
         const rawBlobObj = typeof pttBlob.blob === 'function' ? await pttBlob.blob() : pttBlob;
         if (rawBlobObj) mediaObject.blob = rawBlobObj;
-      } catch (_) {}
+        L('9-pre ✓ blob set on mediaObject (mediaBlob + blob)');
+      } catch (blobErr) {
+        L('9-pre ⚠ blob set failed:', blobErr?.message);
+      }
+    }
+
+    // Also ensure mediaData still has its mediaBlob (we deleted it from mdJson
+    // for consolidate, but the original mediaData object should keep it)
+    if (pttBlob && !mediaData.mediaBlob && typeof mediaData.set === 'function') {
+      try { mediaData.set({ mediaBlob: pttBlob }); } catch (_) {}
+    } else if (pttBlob && !mediaData.mediaBlob) {
+      try { mediaData.mediaBlob = pttBlob; } catch (_) {}
     }
 
     let uploadMod = null, uploadModName = null;
@@ -924,7 +940,9 @@ export async function sendAudioAsPTT(audioBase64, mimeType) {
     if (!uploadFn) throw new Error(`No uploadMedia fn in ${uploadModName}`);
     L('9b uploadFn found', typeof uploadFn, `length=${uploadFn.length}`);
 
-    const uploadArgs = { chat, mediaData, mediaObject, mediaType, mimetype: mime };
+    // Build upload args — include mediaBlob explicitly for newer WA builds
+    // that expect it as a top-level arg (not just inside mediaObject)
+    const uploadArgs = { chat, mediaData, mediaObject, mediaType, mimetype: mime, mediaBlob: pttBlob };
     L('9c calling uploadFn with', Object.keys(uploadArgs).join(', '));
     const uploaded = await uploadFn(uploadArgs);
     L('9d uploaded raw', JSON.stringify(uploaded)?.slice(0, 300));
