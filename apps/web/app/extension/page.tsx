@@ -34,23 +34,27 @@ export default function ExtensionPage() {
             </div>
           </div>
           <h1 style={{ fontSize: "clamp(28px, 7vw, 40px)", fontWeight: 800, lineHeight: 1.1, color: "#fff", margin: "0 0 8px", letterSpacing: "-0.02em" }}>WhatsApp Helper</h1>
-          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", margin: 0, lineHeight: 1.5 }}>Extension de Chrome para Goberna <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(37,211,102,0.6)" }}>v9.4.0</span></p>
+          <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", margin: 0, lineHeight: 1.5 }}>
+            Extension de Chrome para Goberna{" "}
+            <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(37,211,102,0.6)" }}>v10.4.0</span>
+          </p>
         </div>
 
         {view === "intro" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {/* Features */}
             <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: 20 }}>
-              <Feature icon="tab" title="Una sola pestana" desc="Reutiliza WhatsApp Web en vez de abrir 100 pestanas" />
-              <Feature icon="speed" title="Cambio instantaneo" desc="Cambia de chat sin recargar toda la app" />
-              <Feature icon="detect" title="Deteccion de respuestas" desc="Detecta palabras clave en mensajes entrantes" />
-              <Feature icon="safe" title="Seguro" desc="Solo lee mensajes, no automatiza envios" />
+              <Feature icon="tab" title="Blast masivo" desc="Envia mensajes a miles de contactos automaticamente en loop" />
+              <Feature icon="speed" title="Delay variable" desc="1-5 segundos entre mensajes para evitar baneo" />
+              <Feature icon="detect" title="Detecta respuestas" desc="Reconoce cuando un contacto responde y para" />
+              <Feature icon="safe" title="Sin duplicados" desc="3 filtros anti-duplicado: backend, inmediato y WA local" />
+              <Feature icon="single" title="Una sola pestana" desc="Reutiliza WhatsApp Web en vez de abrir 100 pestanas" />
             </div>
 
             {/* Requirements */}
             <div style={{ background: "rgba(37,211,102,0.06)", border: "1px solid rgba(37,211,102,0.15)", borderRadius: 12, padding: "14px 16px" }}>
               <p style={{ fontSize: 13, color: "#25d366", margin: 0, lineHeight: 1.6, fontWeight: 500 }}>
-                Requisitos: Google Chrome en computadora. La extension funciona junto con el dashboard de Goberna.
+                Requisitos: Google Chrome en computadora. Cada numero de celular necesita su propia sesion de WhatsApp Web.
               </p>
             </div>
 
@@ -115,12 +119,6 @@ export default function ExtensionPage() {
               <p style={stepText}>
                 Veras el icono de WhatsApp Goberna en la barra de Chrome. Listo!
               </p>
-              <div style={{ background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.2)", borderRadius: 10, padding: "14px", marginTop: 8 }}>
-                <p style={{ fontSize: 13, fontWeight: 600, color: "#25d366", margin: 0 }}>
-                  Ahora cuando hagas clic en un numero de WhatsApp en Validacion, se abrira en la misma pestana.
-                </p>
-              </div>
-
               <div style={{ background: "rgba(255,149,0,0.08)", border: "1px solid rgba(255,149,0,0.2)", borderRadius: 10, padding: "14px", marginTop: 12 }}>
                 <p style={{ fontSize: 12, fontWeight: 700, color: "#ff9f0a", margin: "0 0 4px" }}>
                   Ya tenias una version anterior?
@@ -151,6 +149,7 @@ function Feature({ icon, title, desc }: { icon: string; title: string; desc: str
     speed: <SpeedIcon />,
     detect: <DetectIcon />,
     safe: <SafeIcon />,
+    single: <SingleTabIcon />,
   };
   return (
     <div style={{ display: "flex", gap: 14, padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
@@ -239,6 +238,16 @@ function TabIcon() {
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <line x1="3" y1="9" x2="21" y2="9" />
       <line x1="9" y1="3" x2="9" y2="9" />
+    </svg>
+  );
+}
+
+function SingleTabIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <line x1="8" y1="21" x2="16" y2="21" />
+      <line x1="12" y1="17" x2="12" y2="21" />
     </svg>
   );
 }

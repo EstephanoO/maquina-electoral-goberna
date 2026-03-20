@@ -2270,23 +2270,11 @@
     "oferta",
     "descuento",
     "gratis",
-    "promo",
-    "promoci\xF3n",
-    "promocion",
     "sorteo",
-    "regalo",
-    "gana",
-    "ganar",
-    "premios",
     "premio",
     "click aqu\xED",
     "haz click",
-    "compra ya",
-    "aprovecha",
-    "\xFAltimo d\xEDa",
-    "\xFAltimas horas",
-    "time limited",
-    "oferta limitada"
+    "compra ya"
   ];
   function _levenshteinNorm(a, b) {
     if (!a.length || !b.length) return 1;
@@ -2326,42 +2314,38 @@
     const signals = [];
     let score = 0;
     if (/https?:\/\/|www\.|\.com\b|\.pe\b|bit\.ly|goo\.gl/i.test(stripped)) {
-      score += 30;
-      signals.push({ points: 30, signal: "Tiene URL/link", suggestion: "Elimin\xE1 el link \u2014 envialo despu\xE9s de que respondan" });
+      score += 15;
+      signals.push({ points: 15, signal: "Contiene link", suggestion: "Si es largo, consider\xE1 quitarlo" });
     }
     const emojiCount = _countEmojis(stripped);
-    if (emojiCount > 3) {
-      score += 10;
-      signals.push({ points: 10, signal: `${emojiCount} emojis (>3)`, suggestion: "Reduc\xED los emojis a m\xE1ximo 2-3" });
+    if (emojiCount > 5) {
+      score += 5;
+      signals.push({ points: 5, signal: `${emojiCount} emojis (>5)`, suggestion: "Consider\xE1 reducir a 3-4 emojis" });
     }
     const fullText = stripped.replace(/\n---\n/g, " ");
-    if (fullText.length > 300) {
-      score += 10;
-      signals.push({ points: 10, signal: `Texto largo (${fullText.length} chars)`, suggestion: "Reduc\xED a menos de 200 caracteres \u2014 la gente no lee msgs largos de desconocidos" });
+    if (fullText.length > 500) {
+      score += 5;
+      signals.push({ points: 5, signal: `Texto largo (${fullText.length} chars)`, suggestion: "Consider\xE1 hacerlo m\xE1s conciso" });
     }
     if (!/\{\{nombre\}\}/i.test(tpl)) {
-      score += 20;
-      signals.push({ points: 20, signal: "Sin personalizaci\xF3n {{nombre}}", suggestion: "Agreg\xE1 {{nombre}} al inicio del saludo \u2014 personalizaci\xF3n = legitimidad" });
+      score += 10;
+      signals.push({ points: 10, signal: "Sin {{nombre}}", suggestion: "Agregar {{nombre}} mejora personalizaci\xF3n" });
     }
     const minOpts = _minSpintaxOptions(tpl);
     const spintaxGroups = (tpl.match(/\[([^\]]+)\]/g) || []).length;
     if (spintaxGroups > 0 && minOpts < 3) {
-      score += 10;
-      signals.push({ points: 10, signal: `Spintax con pocas opciones (m\xEDn ${minOpts})`, suggestion: "Agreg\xE1 m\xE1s variantes \u2014 m\xEDnimo 3 opciones por cada [...]" });
+      score += 5;
+      signals.push({ points: 5, signal: `Spintax con pocas opciones`, suggestion: "Idealmente 3+ opciones por grupo" });
     }
     const lowerText = stripped.toLowerCase();
     const foundSpam = SPAM_WORDS.filter((w) => lowerText.includes(w));
     if (foundSpam.length) {
-      score += 25;
-      signals.push({ points: 25, signal: `Palabras spam: ${foundSpam.join(", ")}`, suggestion: 'Evit\xE1 palabras comerciales \u2014 WA penaliza "oferta", "descuento", etc.' });
+      score += 10;
+      signals.push({ points: 10, signal: `Spam: ${foundSpam.join(", ")}`, suggestion: "Palabras comerciales que WA puede marcar" });
     }
     if (/\b\d{9,}\b/.test(stripped.replace(/\{\{[^}]+\}\}/g, ""))) {
-      score += 15;
-      signals.push({ points: 15, signal: "Contiene n\xFAmero de tel\xE9fono", suggestion: "Sac\xE1 el n\xFAmero \u2014 redirecci\xF3n en primer contacto = sospechoso" });
-    }
-    if (!tpl.includes("---")) {
       score += 5;
-      signals.push({ points: 5, signal: "Un solo mensaje (sin ---)", suggestion: "Divid\xED en 2-3 mensajes con --- para parecer m\xE1s natural" });
+      signals.push({ points: 5, signal: "Contiene n\xFAmero de tel\xE9fono", suggestion: "N\xFAmero de tel\xE9fono puede activar filtros" });
     }
     return { score, signals };
   }
@@ -2381,9 +2365,9 @@
           maxSimilarity = Math.max(maxSimilarity, sim);
         }
       }
-      if (maxSimilarity > 0.7) {
-        maxScore += 15;
-        allSignals.push({ points: 15, signal: `Plantillas muy similares (${Math.round(maxSimilarity * 100)}%)`, suggestion: "Las plantillas deben ser m\xE1s diferentes entre s\xED \u2014 vari\xE1 estructura, largo y tono" });
+      if (maxSimilarity > 0.85) {
+        maxScore += 5;
+        allSignals.push({ points: 5, signal: `Plantillas similares (${Math.round(maxSimilarity * 100)}%)`, suggestion: "Vari\xE1 estructura o tono entre plantillas" });
       }
     }
     const seenSuggestions = /* @__PURE__ */ new Set();
@@ -2391,12 +2375,12 @@
     for (const s of allSignals) {
       if (!seenSuggestions.has(s.suggestion)) {
         seenSuggestions.add(s.suggestion);
-        suggestions.push(s.suggestion);
+        suggestions.push(s);
       }
     }
     let level = "ok";
-    if (maxScore > 40) level = "danger";
-    else if (maxScore > 20) level = "warning";
+    if (maxScore > 90) level = "danger";
+    else if (maxScore > 60) level = "warning";
     return {
       score: maxScore,
       level,
@@ -2407,43 +2391,11 @@
   }
 
   // src/inject/blast-panel.js
-  async function _spamCheck() {
-    return new Promise((resolve) => {
-      window.postMessage({ type: "WSPP_SPAM_CHECK_NOW" }, WA_ORIGIN);
-      const h = (e) => {
-        if (e.source !== window || e.data?.type !== "WSPP_SPAM_CHECK_RESULT") return;
-        window.removeEventListener("message", h);
-        const r = e.data.result;
-        resolve({
-          shouldPause: r?.risk_level === "critical" || r?.risk_level === "high",
-          riskLevel: r?.risk_level || "low",
-          score: r?.risk_score || 0,
-          warnings: r?.warnings || [],
-          actions: r?.actions || [],
-          cooldown: r?.cooldown_sec || 0,
-          repeatedTexts: r?.repeated_texts || [],
-          uniqueRate: r?.unique_rate ?? 100
-        });
-      };
-      window.addEventListener("message", h);
-      setTimeout(() => {
-        window.removeEventListener("message", h);
-        resolve({ shouldPause: false, riskLevel: "low", score: 0, warnings: [], actions: [], cooldown: 0 });
-      }, 1500);
-    });
-  }
-  var CFG_KEY = "wspp_blast_cfg_v4";
+  var CFG_KEY = "wspp_blast_cfg_v7";
   var TPL_KEY = "wspp_blast_tpls_v6";
   var DEFAULTS = {
-    batchSize: 5,
-    // pedir de 5 en 5 — coincide con BULK_SIZE
-    delaySec: 2,
-    // 2s entre cada mensaje dentro del bulk (sprint rápido)
-    prewarmSec: 0,
-    // sin prewarm — la pausa de 30s entre bulks es el respiro
-    pausaCada: 10,
-    pausaSec: 60,
-    descansoSec: 300,
+    batchSize: 10,
+    // cuántos contactos pedir por fetch al backend
     brigadista: ""
   };
   function _loadCfg() {
@@ -2484,321 +2436,19 @@
   }
   var tpls = _loadTpls();
   var _running = false;
-  var _paused = false;
   var _countdown = 0;
   var _countdownTimer = null;
-  var _phase2 = "";
-  var _consecFails = 0;
-  var _totalPending = null;
   var _onUpdate = null;
-  var _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
+  var _kpis = { sent: 0, failed: 0, no_wa: 0, skipped: 0 };
   var _lastResults = [];
   var _trackedMsgs = [];
-  var _sentThisSession = /* @__PURE__ */ new Set();
-  var _sentIds = /* @__PURE__ */ new Set();
-  var _habladoIds = /* @__PURE__ */ new Set();
-  function _persistDedup(phone) {
-    window.postMessage({ type: "BLAST_DEDUP_ADD", phone }, WA_ORIGIN);
-  }
-  function _loadPersistedDedup(phones) {
-    if (Array.isArray(phones)) {
-      for (const p of phones) {
-        if (p.includes("-")) {
-          _habladoIds.add(p);
-          _sentIds.add(p);
-        } else {
-          _sentThisSession.add(p);
-        }
-      }
-      console.log("[BLAST] Loaded", phones.length, "persisted dedup entries");
-    }
-  }
-  var _dedupReady = false;
-  var _dedupReadyResolve = null;
-  var _dedupReadyPromise = new Promise((res) => {
-    _dedupReadyResolve = res;
-  });
-  window.addEventListener("message", (e) => {
-    if (e.source !== window) return;
-    if (e.data?.type === "BLAST_DEDUP_LOADED") {
-      _loadPersistedDedup(e.data.phones || []);
-      if (!_dedupReady) {
-        _dedupReady = true;
-        _dedupReadyResolve?.();
-      }
-    }
-  });
-  window.postMessage({ type: "BLAST_DEDUP_REQUEST" }, WA_ORIGIN);
-  setTimeout(() => {
-    if (!_dedupReady) {
-      _dedupReady = true;
-      _dedupReadyResolve?.();
-    }
-  }, 3e3);
-  var _inFlight = /* @__PURE__ */ new Set();
-  var _respondedPhones = /* @__PURE__ */ new Set();
   var _tplIndex = 0;
+  var _totalPending = null;
+  var _blastLimit = 0;
   var _sessionSent = 0;
-  var _previewContacts = [];
-  var _previewSkipped = /* @__PURE__ */ new Set();
-  var _previewLoading = false;
-  var _previewReady = false;
-  function getPreviewContacts() {
-    return _previewContacts;
-  }
-  function isPreviewLoading() {
-    return _previewLoading;
-  }
-  function isPreviewReady() {
-    return _previewReady;
-  }
-  async function fetchPreview(n = 5) {
-    console.log("[BLAST] fetchPreview start, n:", n);
-    _previewLoading = true;
-    _previewReady = false;
-    _previewContacts = [];
-    _previewSkipped.clear();
-    _notify();
-    try {
-      const raw = await _fetchBatch(n * 4);
-      console.log("[BLAST] fetchPreview raw:", raw.length, "contacts");
-      const filtered = [];
-      for (const c of raw) {
-        if (c.id && !_habladoIds.has(c.id) && !_sentIds.has(c.id)) {
-          filtered.push(c);
-          if (filtered.length >= n) break;
-        }
-      }
-      _previewContacts = filtered;
-      console.log("[BLAST] fetchPreview filtered:", filtered.length, "contacts");
-    } catch (err) {
-      console.error("[BLAST] fetchPreview error:", err);
-      _previewContacts = [];
-    }
-    _previewLoading = false;
-    _notify();
-  }
-  var _previewBuffer = [];
-  async function _fetchOneNew() {
-    if (!_previewBuffer.length) {
-      _previewBuffer = await _fetchBatch(20);
-    }
-    const currentIds = new Set(_previewContacts.map((c) => c.id));
-    while (_previewBuffer.length) {
-      const c = _previewBuffer.shift();
-      if (c.id && !_habladoIds.has(c.id) && !_sentIds.has(c.id) && !currentIds.has(c.id)) {
-        return c;
-      }
-    }
-    return null;
-  }
-  async function previewMarkHablado(id) {
-    _habladoIds.add(id);
-    _sentIds.add(id);
-    _persistDedup(id);
-    const ok = await _markHablado([id], []);
-    console.log("[BLAST] previewMarkHablado", id, "ok:", ok);
-    _previewContacts = _previewContacts.filter((c) => c.id !== id);
-    try {
-      const replacement = await _fetchOneNew();
-      if (replacement) _previewContacts.push(replacement);
-    } catch (_) {
-    }
-    _notify();
-  }
-  async function previewSkipAndReplace(id) {
-    _habladoIds.add(id);
-    _sentIds.add(id);
-    _persistDedup(id);
-    await _markHablado([id], []);
-    _previewContacts = _previewContacts.filter((c) => c.id !== id);
-    try {
-      const replacement = await _fetchOneNew();
-      if (replacement) _previewContacts.push(replacement);
-    } catch (_) {
-    }
-    _notify();
-  }
-  function previewConfirm() {
-    _previewReady = true;
-    _notify();
-  }
-  function previewCancel() {
-    _previewContacts = [];
-    _previewSkipped.clear();
-    _previewLoading = false;
-    _previewReady = false;
-    _notify();
-  }
-  var _lastSpamResult = null;
-  function getLastSpamResult() {
-    return _lastSpamResult;
-  }
-  var BLOCK_SIZE = 50;
-  var BULK_SIZE = 5;
-  var BULK_DELAY_MIN = 30;
-  var BULK_DELAY_MAX = 30;
-  var _checkpoint = null;
-  var _checkpointPolling = null;
-  var _blockId = null;
-  var _blockSent = 0;
-  function getCheckpoint() {
-    return _checkpoint;
-  }
-  function getBlockSent() {
-    return _blockSent;
-  }
-  function _newBlockId() {
-    return `blk_${Date.now()}_${(getOwnNumber() || "x").slice(-4)}`;
-  }
-  function _fetchBlockStats(blockId) {
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        window.removeEventListener("message", onReply);
-        resolve(null);
-      }, 8e3);
-      function onReply(e) {
-        if (e.source !== window || e.data?.type !== "BLAST_BLOCK_STATS_READY") return;
-        window.removeEventListener("message", onReply);
-        clearTimeout(timer);
-        resolve(e.data.ok ? e.data : null);
-      }
-      window.addEventListener("message", onReply);
-      window.postMessage({ type: "BLAST_GET_BLOCK_STATS", block_id: blockId, own_number: getOwnNumber() }, WA_ORIGIN);
-    });
-  }
-  function _stopCheckpointPolling() {
-    if (_checkpointPolling) {
-      clearInterval(_checkpointPolling);
-      _checkpointPolling = null;
-    }
-  }
-  var _loopRunning = false;
-  function getConfig() {
-    return cfg;
-  }
-  function setConfig(c) {
-    cfg = { ...cfg, ...c };
-    _saveCfg(cfg);
-  }
-  function getTemplates() {
-    return tpls;
-  }
-  function setTemplates(t) {
-    tpls = t;
-    _saveTpls(t);
-  }
-  function isRunning() {
-    return _running;
-  }
-  function isPaused() {
-    return _paused;
-  }
-  function getCountdown() {
-    return _countdown;
-  }
-  function getPhase() {
-    return _phase2;
-  }
-  function getTotalPending() {
-    return _totalPending;
-  }
-  function getKpis() {
-    return { ..._kpis };
-  }
-  function getLastResults() {
-    return _lastResults;
-  }
-  function setOnUpdate(fn) {
-    _onUpdate = fn;
-  }
-  function getTplIndex() {
-    return _tplIndex;
-  }
-  var _globalStats = null;
-  var _globalStatsTimer = null;
-  function getGlobalStats() {
-    return _globalStats;
-  }
-  function fetchGlobalStats() {
-    window.postMessage({ type: "BLAST_GET_STATS" }, WA_ORIGIN);
-  }
-  function _startStatsRefresh() {
-    if (_globalStatsTimer) return;
-    _globalStatsTimer = setInterval(fetchGlobalStats, 3e4);
-  }
-  function _stopStatsRefresh() {
-    if (_globalStatsTimer) {
-      clearInterval(_globalStatsTimer);
-      _globalStatsTimer = null;
-    }
-  }
-  window.addEventListener("message", (e) => {
-    if (e.source !== window || e.data?.type !== "BLAST_STATS_READY") return;
-    if (e.data.ok && e.data.stats) {
-      _globalStats = {
-        total_contacts: e.data.stats.total_contacts ?? 0,
-        total_sent: e.data.stats.total_sent ?? 0,
-        total_pending: e.data.stats.total_pending ?? 0,
-        total_failed: e.data.stats.total_failed ?? 0,
-        total_no_wa: e.data.stats.total_no_wa ?? 0,
-        // hablado = total con cms_status hablado (= total - pending)
-        total_hablado: (e.data.stats.total_contacts ?? 0) - (e.data.stats.total_pending ?? 0),
-        by_number: e.data.by_number ?? {}
-      };
-    }
-    _notify();
-  });
-  var _numberHealth = null;
-  var _numberAuthorized = null;
-  function getNumberHealth() {
-    return _numberHealth;
-  }
-  function isNumberAuthorized() {
-    return _numberAuthorized;
-  }
-  function fetchNumberHealth() {
-    const num = getOwnNumber();
-    if (!num) {
-      _numberHealth = null;
-      _numberAuthorized = null;
-      _notify();
-      return;
-    }
-    window.postMessage({ type: "BLAST_GET_NUMBER_HEALTH", own_number: num }, WA_ORIGIN);
-  }
-  function fetchNumberConfig() {
-    const num = getOwnNumber();
-    if (!num) return;
-    window.postMessage({ type: "BLAST_GET_NUMBER_CONFIG", own_number: num }, WA_ORIGIN);
-  }
-  window.addEventListener("message", (e) => {
-    if (e.source !== window) return;
-    if (e.data?.type === "BLAST_NUMBER_HEALTH_READY") {
-      if (e.data.ok) {
-        _numberHealth = {
-          sent_last_hour: e.data.sent_last_hour ?? 0,
-          sent_today: e.data.sent_today ?? 0,
-          daily_limit: e.data.daily_limit ?? 200,
-          hourly_limit: e.data.hourly_limit ?? 50,
-          can_send: e.data.can_send ?? true,
-          risk_level: e.data.risk_level ?? "low",
-          age_days: e.data.age_days ?? 0,
-          warm_up_limit: e.data.warm_up_limit ?? 200
-        };
-      }
-      _notify();
-      return;
-    }
-    if (e.data?.type === "BLAST_NUMBER_CONFIG_READY") {
-      _numberAuthorized = e.data.config !== null;
-      _notify();
-      return;
-    }
-  });
-  function _notify() {
-    if (_onUpdate) _onUpdate();
-  }
+  var _sentPhones = /* @__PURE__ */ new Set();
+  var _sentIds = /* @__PURE__ */ new Set();
+  var _inFlight = /* @__PURE__ */ new Set();
   var _ackInterval = null;
   function _startAckTracking() {
     if (_ackInterval) return;
@@ -2812,22 +2462,18 @@
   }
   function _pollAcks() {
     let changed = false;
+    const now = Date.now();
     for (const entry of _trackedMsgs) {
       if (!entry.msgModel) continue;
       const ack = typeof entry.msgModel.get === "function" ? entry.msgModel.get("ack") : entry.msgModel.ack;
       const newAck = Number(ack) || 0;
       if (newAck !== entry.lastAck) {
-        const oldKey = _ackToKey(entry.lastAck);
-        const newKey = _ackToKey(newAck);
-        if (oldKey) _kpis[oldKey] = Math.max(0, _kpis[oldKey] - 1);
-        if (newKey) _kpis[newKey] = (_kpis[newKey] || 0) + 1;
         entry.lastAck = newAck;
         const result = _lastResults.find((r) => r.telefono === entry.telefono && r.status !== "failed");
         if (result) result.ack = newAck;
         changed = true;
       }
     }
-    const now = Date.now();
     _trackedMsgs = _trackedMsgs.filter((e) => {
       if (e.lastAck >= 3 && now - e.ts > 12e4) return false;
       if (now - e.ts > 6e5) return false;
@@ -2836,101 +2482,14 @@
     if (!_trackedMsgs.length) _stopAckTracking();
     if (changed) _notify();
   }
-  function _ackToKey(ack) {
-    if (ack <= 0) return "pending";
-    if (ack === 1) return "sent";
-    if (ack === 2) return "delivered";
-    if (ack >= 3) return "read";
-    return "pending";
-  }
-  function _trackMessage(msgModel, contactName, telefono) {
+  function _trackMessage(msgModel, telefono2) {
     const ack = typeof msgModel.get === "function" ? msgModel.get("ack") : msgModel.ack || 0;
-    const key = _ackToKey(Number(ack) || 0);
-    _kpis[key] = (_kpis[key] || 0) + 1;
-    _trackedMsgs.push({ msgModel, contactName, telefono, lastAck: Number(ack) || 0, ts: Date.now() });
+    _trackedMsgs.push({ msgModel, telefono: telefono2, lastAck: Number(ack) || 0, ts: Date.now() });
     _startAckTracking();
-    _notify();
   }
-  var _reqIdCounter = 0;
-  function _nextReqId() {
-    return "blast_" + ++_reqIdCounter + "_" + Date.now();
+  function _notify() {
+    if (_onUpdate) _onUpdate();
   }
-  var _pendingRequests = /* @__PURE__ */ new Map();
-  window.addEventListener("message", (e) => {
-    if (e.source !== window || e.data?.type !== "BLAST_FORM_CONTACTS_READY") return;
-    const reqId = e.data.reqId;
-    if (!reqId) return;
-    const pending = _pendingRequests.get(reqId);
-    if (!pending) return;
-    clearTimeout(pending.timer);
-    _pendingRequests.delete(reqId);
-    if (e.data.ok) {
-      _totalPending = e.data.total ?? _totalPending;
-      pending.resolve(e.data.contacts || []);
-      _notify();
-    } else {
-      pending.resolve([]);
-    }
-  });
-  function refreshPendingCount() {
-    const reqId = _nextReqId();
-    const timer = setTimeout(() => {
-      _pendingRequests.delete(reqId);
-    }, 1e4);
-    _pendingRequests.set(reqId, {
-      resolve: (contacts) => {
-      },
-      timer
-    });
-    window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit: 1, offset: 0, status: "nuevo", brigadista: cfg.brigadista || "", reqId, own_number: getOwnNumber() }, WA_ORIGIN);
-  }
-  function _fetchBatch(limit) {
-    return new Promise((resolve) => {
-      const reqId = _nextReqId();
-      const timer = setTimeout(() => {
-        if (_pendingRequests.has(reqId)) {
-          _pendingRequests.delete(reqId);
-          resolve([]);
-        }
-      }, 15e3);
-      _pendingRequests.set(reqId, { resolve, timer });
-      window.postMessage({ type: "BLAST_GET_FORM_CONTACTS", limit, offset: 0, status: "nuevo", brigadista: cfg.brigadista || "", reqId, own_number: getOwnNumber() }, WA_ORIGIN);
-    });
-  }
-  function _markHablado(ids, no_wa_ids) {
-    if (!ids.length && !no_wa_ids?.length) return Promise.resolve(false);
-    return new Promise((resolve) => {
-      const reqId = "mh_" + Date.now() + "_" + Math.random().toString(36).slice(2);
-      const timer = setTimeout(() => {
-        window.removeEventListener("message", onReply);
-        console.warn("[BLAST] markHablado timeout \u2014 ids:", ids.length);
-        resolve(false);
-      }, 8e3);
-      function onReply(e) {
-        if (e.source !== window || e.data?.type !== "BLAST_MARK_HABLADO_DONE" || e.data.reqId !== reqId) return;
-        window.removeEventListener("message", onReply);
-        clearTimeout(timer);
-        resolve(e.data.ok ?? false);
-        setTimeout(fetchGlobalStats, 500);
-      }
-      window.addEventListener("message", onReply);
-      window.postMessage({ type: "BLAST_MARK_HABLADO", ids, no_wa_ids: no_wa_ids ?? [], own_number: getOwnNumber(), reqId }, WA_ORIGIN);
-    });
-  }
-  function _retryNoWa() {
-    window.postMessage({ type: "BLAST_RETRY_NO_WA", own_number: getOwnNumber() }, WA_ORIGIN);
-  }
-  function _reportLog(results) {
-    if (results.length) window.postMessage({ type: "BLAST_REPORT_RESULTS", results, own_number: getOwnNumber() }, WA_ORIGIN);
-  }
-  window.addEventListener("message", (e) => {
-    if (e.source !== window || e.data?.type !== "WSPP_INCOMING_MSG") return;
-    const phone = (e.data.phone || "").replace(/\D/g, "");
-    if (phone && _sentThisSession.has(phone)) {
-      _respondedPhones.add(phone);
-      console.log("[BLAST] Auto-exclusi\xF3n: contacto respondi\xF3 \u2192", phone);
-    }
-  });
   var SALUDOS = ["Hola", "Buenas", "Buenos d\xEDas", "Hola buen d\xEDa", "Qu\xE9 tal", "Buenas tardes"];
   var CIERRES = ["Gracias!", "Saludos!", "Un abrazo!", "Hasta pronto!", "\xC9xitos!"];
   var EMOJIS = ["\u{1F44B}", "\u{1F64C}", "\u2705", "\u{1F60A}", "\u{1F31F}", "\u{1F4AC}"];
@@ -2946,9 +2505,7 @@
     let counter = 0;
     return text.replace(/\[([^\]]+)\]/g, (_, inner) => {
       const opts = inner.split("|");
-      const chosen = opts[_hashSeed(String(seed + counter), counter) % opts.length];
-      counter++;
-      return chosen;
+      return opts[_hashSeed(String(seed + counter), counter) % opts.length];
     });
   }
   function _toTitleCase(word) {
@@ -2998,25 +2555,12 @@
       if (!USyncQuery || !USyncUser) return null;
       const query = new USyncQuery().withContext("interactive").withContactProtocol().withUser(new USyncUser().withPhone(normalizedPhone));
       const response = await query.execute();
-      const item = response?.list?.[0];
-      const type = item?.contact?.type;
+      const type = response?.list?.[0]?.contact?.type;
       if (!type) return null;
       return type === "in";
     } catch (_) {
       return null;
     }
-  }
-  async function _prewarmChat(jid) {
-    const wf = _req("WAWebWidFactory");
-    const wid = wf.createWid(jid);
-    const coll = _req("WAWebCollections");
-    let chat = coll.Chat.get(wid);
-    if (chat) return { chat, alreadyInStore: true };
-    const FC = _req("WAWebFindChatAction");
-    const r = await FC.findOrCreateLatestChat(wid);
-    chat = r?.chat ?? r;
-    if (!chat) throw new Error("N\xFAmero no existe en WA");
-    return { chat, alreadyInStore: false };
   }
   async function _simulateTyping(chat, text) {
     try {
@@ -3038,13 +2582,7 @@
     const { unproxy } = _req("WAWebStateUtils");
     const { MsgCollection } = _req("WAWebMsgCollection");
     const idStr = await MsgKey.newId();
-    const key = MsgKey.from({
-      fromMe: true,
-      remote: chat.id,
-      // Wid object — puede ser @lid o @c.us
-      id: idStr
-      // string hexadecimal
-    });
+    const key = MsgKey.from({ fromMe: true, remote: chat.id, id: idStr });
     let eph = {};
     try {
       const em = _req("WAWebGetEphemeralFieldsMsgActionsUtils", "WAWebEphemeralFields", "WAWebEphemeralUtils");
@@ -3099,71 +2637,20 @@
     }
     return capturedModel;
   }
-  function _gaussianRandom(mean, stddev) {
-    let u, v, s;
-    do {
-      u = Math.random() * 2 - 1;
-      v = Math.random() * 2 - 1;
-      s = u * u + v * v;
-    } while (s >= 1 || s === 0);
-    const mul = Math.sqrt(-2 * Math.log(s) / s);
-    return mean + stddev * u * mul;
-  }
-  function _gaussianDelay(delaySec) {
-    const raw = _gaussianRandom(delaySec, delaySec * 0.4);
-    return Math.max(5, Math.min(delaySec * 3, Math.round(raw)));
-  }
-  var _msgsSinceBreak = 0;
-  var _nextBreakAt = 3 + Math.floor(Math.random() * 5);
-  function _shouldMicroBreak() {
-    _msgsSinceBreak++;
-    if (_msgsSinceBreak >= _nextBreakAt) {
-      _msgsSinceBreak = 0;
-      _nextBreakAt = 3 + Math.floor(Math.random() * 5);
-      return true;
-    }
-    return false;
-  }
-  function _microBreakDuration() {
-    return 30 + Math.floor(Math.random() * 61);
-  }
-  function _getPeruTime() {
-    const now = /* @__PURE__ */ new Date();
-    const peruOffset = -5 * 60;
-    const utc = now.getTime() + now.getTimezoneOffset() * 6e4;
-    return new Date(utc + peruOffset * 6e4);
-  }
-  function _isWithinBlastWindow() {
-    const peru = _getPeruTime();
-    const day = peru.getDay();
-    const hour = peru.getHours();
-    const minute = peru.getMinutes();
-    const timeDecimal = hour + minute / 60;
-    if (day === 0) return false;
-    if (day === 6) return timeDecimal >= 9 && timeDecimal < 14;
-    return timeDecimal >= 8 && timeDecimal < 20;
-  }
-  function isWithinBlastWindow() {
-    return _isWithinBlastWindow();
-  }
-  function getPeruTimeStr() {
-    const p = _getPeruTime();
-    return p.toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", hour12: false });
+  function _variableDelay() {
+    return 1e3 + Math.floor(Math.random() * 4e3);
   }
   function _sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
   }
   function _startCountdown(sec, phase) {
-    _phase2 = phase;
     _countdown = sec;
     clearInterval(_countdownTimer);
     _countdownTimer = setInterval(() => {
       _countdown = Math.max(0, _countdown - 1);
       const timerEl = document.getElementById("sb-timer-label");
       if (timerEl) {
-        const m = Math.floor(_countdown / 60), s = _countdown % 60;
-        const labels = { delay: "\u23F1\uFE0F", prewarm: "\u{1F525}", descanso: "\u2615", pausa: "\u23F8\uFE0F", cargando: "\u{1F4E1}", micro: "\u{1F92B}", marcando: "\u2705", checkpoint: "\u23F8 Checkpoint" };
-        timerEl.textContent = `${labels[_phase2] || "\u23F1\uFE0F"} ${m > 0 ? m + "m " : ""}${s}s`;
+        timerEl.textContent = `\u23F1\uFE0F ${_countdown}s`;
       } else {
         _notify();
       }
@@ -3173,69 +2660,156 @@
   function _stopCountdown() {
     clearInterval(_countdownTimer);
     _countdown = 0;
-    _phase2 = "";
+  }
+  var _habladoIds = /* @__PURE__ */ new Set();
+  function _markHabladoIds(ids) {
+    for (const id of ids) _habladoIds.add(id);
+  }
+  var _reqIdCounter = 0;
+  function _nextReqId() {
+    return "blast_" + ++_reqIdCounter + "_" + Date.now();
+  }
+  var _pendingRequests = /* @__PURE__ */ new Map();
+  window.addEventListener("message", (e) => {
+    if (e.source !== window || e.data?.type !== "BLAST_FORM_CONTACTS_READY") return;
+    const reqId = e.data.reqId;
+    if (!reqId) return;
+    const pending = _pendingRequests.get(reqId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    _pendingRequests.delete(reqId);
+    if (e.data.ok) {
+      _totalPending = e.data.total ?? _totalPending;
+      pending.resolve(e.data.contacts || []);
+      _notify();
+    } else {
+      pending.resolve([]);
+    }
+  });
+  function _fetchBatch(limit) {
+    return new Promise((resolve) => {
+      const reqId = _nextReqId();
+      const timer = setTimeout(() => {
+        _pendingRequests.delete(reqId);
+        resolve([]);
+      }, 15e3);
+      _pendingRequests.set(reqId, { resolve, timer });
+      window.postMessage({
+        type: "BLAST_GET_FORM_CONTACTS",
+        limit,
+        offset: 0,
+        status: "nuevo",
+        brigadista: cfg.brigadista || "",
+        reqId,
+        own_number: getOwnNumber()
+      }, WA_ORIGIN);
+    });
+  }
+  function _markHablado(ids, no_wa_ids) {
+    if (!ids.length && !no_wa_ids?.length) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const reqId = "mh_" + Date.now();
+      const timer = setTimeout(() => {
+        window.removeEventListener("message", onReply);
+        resolve(false);
+      }, 8e3);
+      function onReply(e) {
+        if (e.source !== window || e.data?.type !== "BLAST_MARK_HABLADO_DONE" || e.data.reqId !== reqId) return;
+        window.removeEventListener("message", onReply);
+        clearTimeout(timer);
+        resolve(e.data.ok ?? false);
+      }
+      window.addEventListener("message", onReply);
+      window.postMessage({
+        type: "BLAST_MARK_HABLADO",
+        ids,
+        no_wa_ids: no_wa_ids ?? [],
+        own_number: getOwnNumber(),
+        reqId
+      }, WA_ORIGIN);
+    });
+  }
+  function getConfig() {
+    return cfg;
+  }
+  function setConfig(c) {
+    cfg = { ...cfg, ...c };
+    _saveCfg(cfg);
+  }
+  function getTemplates() {
+    return tpls;
+  }
+  function setTemplates(t) {
+    tpls = t;
+    _saveTpls(t);
+  }
+  function isRunning() {
+    return _running;
+  }
+  function getCountdown() {
+    return _countdown;
+  }
+  function getKpis() {
+    return { ..._kpis };
+  }
+  function getLastResults() {
+    return _lastResults;
+  }
+  function getTotalPending() {
+    return _totalPending;
+  }
+  function setOnUpdate(fn) {
+    _onUpdate = fn;
+  }
+  function getTplIndex() {
+    return _tplIndex;
+  }
+  function isWithinBlastWindow() {
+    return true;
+  }
+  function setBlastLimit(n) {
+    _blastLimit = n;
+  }
+  function getBlastLimit() {
+    return _blastLimit;
+  }
+  function getSessionSent() {
+    return _sessionSent;
   }
   async function startBlast() {
     if (_running) return;
-    if (_loopRunning) return;
-    if (_previewLoading) return;
     if (!tpls.length || !tpls[0].trim()) return;
-    if (!_dedupReady) {
-      _phase2 = "cargando";
-      _notify();
-      await _dedupReadyPromise;
-    }
-    if (!_previewReady) {
-      await fetchPreview(5);
-      return;
-    }
-    _previewContacts = [];
-    _previewReady = false;
     const activeNumber = getOwnNumber();
     if (!activeNumber) {
-      _lastResults.unshift({ nombre: "\u274C Sin n\xFAmero", telefono: "", status: "blocked", ack: -1, error: "No se detect\xF3 el n\xFAmero de este dispositivo. Recarg\xE1 WhatsApp Web." });
-      _notify();
-      return;
-    }
-    if (_numberAuthorized === false) {
-      _lastResults.unshift({ nombre: "\u{1F6AB} No autorizado", telefono: "+" + activeNumber, status: "blocked", ack: -1, error: "Este n\xFAmero no est\xE1 registrado como celular de blast. Contact\xE1 al coordinador." });
-      _notify();
-      return;
-    }
-    if (_numberHealth && !_numberHealth.can_send) {
-      _lastResults.unshift({ nombre: "\u26A0\uFE0F L\xEDmite alcanzado", telefono: "+" + activeNumber, status: "blocked", ack: -1, error: `Hoy: ${_numberHealth.sent_today}/${_numberHealth.daily_limit} msgs. Hora: ${_numberHealth.sent_last_hour}/${_numberHealth.hourly_limit}. Esper\xE1.` });
-      _notify();
-      return;
-    }
-    if (!_isWithinBlastWindow()) {
-      _lastResults.unshift({ nombre: "\u{1F550} Fuera de horario", telefono: "", status: "blocked", ack: -1, error: "Horario no permitido (" + getPeruTimeStr() + "). Lun-Vie 8-20h, S\xE1b 9-14h, Dom no." });
+      _lastResults.unshift({ nombre: "\u274C Sin n\xFAmero", telefono: "", status: "failed", ack: -1, error: "No se detect\xF3 el n\xFAmero. Recarg\xE1 WA Web." });
       _notify();
       return;
     }
     _running = true;
-    _paused = false;
-    _consecFails = 0;
-    _loopRunning = true;
-    _msgsSinceBreak = 0;
-    _retryNoWa();
-    fetchGlobalStats();
-    _startStatsRefresh();
+    _kpis = { sent: 0, failed: 0, no_wa: 0, skipped: 0 };
+    _lastResults = [];
+    _trackedMsgs = [];
+    _totalPending = null;
+    _sessionSent = 0;
     _notify();
-    while (_running && !_paused) {
-      fetchNumberHealth();
-      _phase2 = "cargando";
-      _notify();
-      const rawBatch = await _fetchBatch(BULK_SIZE);
+    while (_running) {
+      if (_blastLimit > 0 && _sessionSent >= _blastLimit) {
+        _running = false;
+        _stopCountdown();
+        _notify();
+        break;
+      }
+      const rawBatch = await _fetchBatch(cfg.batchSize);
+      if (!rawBatch.length) {
+        _running = false;
+        _stopCountdown();
+        _notify();
+        break;
+      }
       const batch = rawBatch.filter((c) => {
-        if (c.id && _habladoIds.has(c.id)) {
-          console.log("[BLAST] Pre-filtro dedup \u2014 ya procesado:", c.id);
-          return false;
-        }
+        if (c.id && _sentIds.has(c.id)) return false;
         const np = _normalizePhone(c.telefono);
-        if (np && _sentThisSession.has(np)) {
-          console.log("[BLAST] Pre-filtro dedup \u2014 tel\xE9fono ya enviado:", np);
-          return false;
-        }
+        if (np && _sentPhones.has(np)) return false;
         return true;
       });
       if (!batch.length) {
@@ -3244,309 +2818,198 @@
         _notify();
         break;
       }
-      const logBatch = [];
       const habladoBatch = [];
       const noWaBatch = [];
-      let batchSent = 0;
-      const sc = await _spamCheck();
-      _lastSpamResult = sc;
-      if (sc.shouldPause) {
-        _running = false;
-        _stopCountdown();
-        const reasons = sc.warnings.length ? sc.warnings.slice(0, 3).join(" \xB7 ") : "Patr\xF3n de env\xEDo detectado como spam";
-        const whatToDo = sc.actions.length ? "\n\u2192 " + sc.actions.slice(0, 2).join("\n\u2192 ") : "";
-        _lastResults.unshift({
-          nombre: sc.riskLevel === "critical" ? "\u{1F6A8} RIESGO CR\xCDTICO" : "\u26A0\uFE0F RIESGO ALTO",
-          telefono: "",
-          status: "failed",
-          ack: -1,
-          error: `Score: ${sc.score}/100 | ${reasons}${whatToDo}`
-        });
-        _notify();
-        break;
-      }
-      if (!_blockId) {
-        _blockId = _newBlockId();
-        _blockSent = 0;
-        _checkpoint = null;
-      }
-      if (_blockSent >= BLOCK_SIZE) {
-        _phase2 = "checkpoint";
-        _notify();
-        while (_running && !_paused) {
-          const stats = await _fetchBlockStats(_blockId);
-          if (stats) {
-            _checkpoint = stats;
-            _notify();
-          }
-          if (_checkpoint?.unlocked_50) break;
-          _startCountdown(30, "checkpoint");
-          _notify();
-          await _sleep(3e4);
-          _stopCountdown();
-        }
-        _blockId = _newBlockId();
-        _blockSent = 0;
-        _checkpoint = null;
-        if (!_running || _paused) break;
-      }
-      for (let i = 0; i < batch.length && _running && !_paused; i++) {
+      for (let i = 0; i < batch.length && _running; i++) {
         const c = batch[i];
         const normalizedPhone = _normalizePhone(c.telefono);
         const jid = normalizedPhone ? normalizedPhone + "@c.us" : null;
-        const tpl = tpls[_tplIndex % tpls.length];
-        const parts = _spinMessage(tpl, c, _tplIndex);
-        const text = parts[0];
-        const cName = ((c.nombre || "") + " " + (c.apellidos || "")).trim();
-        let status = "sent", error = null;
-        const rawNombreCheck = ((c.nombre || "") + " " + (c.apellidos || "")).trim();
-        if (!rawNombreCheck) {
-          console.log("[BLAST] Skip sin nombre \u2014 tel:", c.telefono);
+        const cName = ((c.nombre || "") + " " + (c.apellidos || "")).trim() || "\u2014";
+        const lockKey = (normalizedPhone || "") + ":" + (c.id || "");
+        if (_inFlight.has(lockKey)) continue;
+        if (normalizedPhone) _sentPhones.add(normalizedPhone);
+        if (c.id) _sentIds.add(c.id);
+        _inFlight.add(lockKey);
+        if (!((c.nombre || "") + " " + (c.apellidos || "")).trim()) {
+          _kpis.skipped++;
           if (c.id) {
-            _habladoIds.add(c.id);
+            _markHabladoIds([c.id]);
             habladoBatch.push(c.id);
-          }
-          if (normalizedPhone) {
-            _sentThisSession.add(normalizedPhone);
-            _persistDedup(normalizedPhone);
-          }
-          if (c.id) {
-            _sentIds.add(c.id);
-            _persistDedup(c.id);
           }
           _lastResults.unshift({ nombre: "\u2014 Sin nombre", telefono: c.telefono, status: "skipped", ack: -1, error: "Sin nombre" });
           if (_lastResults.length > 30) _lastResults.length = 30;
           _notify();
           continue;
         }
-        const lockKey = (normalizedPhone || "") + ":" + (c.id || "");
-        if (normalizedPhone && _sentThisSession.has(normalizedPhone) || c.id && _sentIds.has(c.id) || lockKey && _inFlight.has(lockKey)) {
-          console.log("[BLAST] Dedup local \u2014 ya enviado/en vuelo:", normalizedPhone || c.id);
-          continue;
-        }
-        if (normalizedPhone && _respondedPhones.has(normalizedPhone)) {
-          console.log("[BLAST] Auto-exclusi\xF3n \u2014 contacto respondi\xF3:", normalizedPhone);
-          continue;
-        }
-        if (normalizedPhone) {
-          _sentThisSession.add(normalizedPhone);
-          _persistDedup(normalizedPhone);
-        }
-        if (c.id) {
-          _sentIds.add(c.id);
-          _habladoIds.add(c.id);
-          _persistDedup(c.id);
-        }
-        if (lockKey) _inFlight.add(lockKey);
         if (!jid) {
-          status = "failed";
-          error = "Tel inv\xE1lido";
           _kpis.failed++;
-          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error });
+          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error: "Tel inv\xE1lido" });
           if (_lastResults.length > 30) _lastResults.length = 30;
-          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null, block_id: _blockId });
           _notify();
           continue;
         }
         if (normalizedPhone) {
           const hasWA = await _checkExistsOnWA(normalizedPhone);
           if (hasWA === false) {
-            _kpis.no_wa = (_kpis.no_wa || 0) + 1;
-            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "no_wa", ack: -1, error: "Sin WhatsApp" });
-            if (_lastResults.length > 30) _lastResults.length = 30;
-            logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status: "no_wa", error: "Sin WhatsApp", own_number: activeNumber });
+            _kpis.no_wa++;
             if (c.id) {
-              _habladoIds.add(c.id);
+              _sentIds.add(c.id);
               noWaBatch.push(c.id);
             }
-            if (lockKey) _inFlight.delete(lockKey);
+            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "no_wa", ack: -1, error: "Sin WA" });
+            if (_lastResults.length > 30) _lastResults.length = 30;
             _notify();
             continue;
           }
         }
         let chat = null;
-        let alreadyInStore = false;
         try {
-          const pw = await _prewarmChat(jid);
-          chat = pw.chat;
-          alreadyInStore = pw.alreadyInStore;
-        } catch (err) {
-          status = "failed";
-          error = err.message;
-          _consecFails++;
-          _kpis.failed++;
-          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error });
-          if (_lastResults.length > 30) _lastResults.length = 30;
-          logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null, block_id: _blockId });
-          _notify();
-          if (lockKey) _inFlight.delete(lockKey);
-          if (_consecFails >= 3) {
-            _running = false;
-            _stopCountdown();
-            _reportLog([...logBatch]);
-            break;
+          const wf = _req("WAWebWidFactory");
+          const wid = wf.createWid(jid);
+          const coll = _req("WAWebCollections");
+          chat = coll.Chat.get(wid);
+          if (!chat) {
+            const FC = _req("WAWebFindChatAction");
+            const r = await FC.findOrCreateLatestChat(wid);
+            chat = r?.chat ?? r;
           }
+          if (!chat) throw new Error("No se resolvi\xF3 el chat");
+          const lastReceivedKey = chat.get?.("lastReceivedKey");
+          const msgCount = chat.get?.("msgCount") || 0;
+          if (lastReceivedKey && msgCount > 0) {
+            console.log("[BLAST] Skip \u2014 WA ya tiene chat con historial:", cName, telefono);
+            _kpis.skipped++;
+            if (c.id) {
+              _markHabladoIds([c.id]);
+              habladoBatch.push(c.id);
+            }
+            _markHablado(c.id ? [c.id] : [], []).catch(() => {
+            });
+            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Ya tiene chat en WA" });
+            if (_lastResults.length > 30) _lastResults.length = 30;
+            _notify();
+            _inFlight.delete(lockKey);
+            continue;
+          }
+        } catch (err) {
+          _kpis.failed++;
+          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error: err.message });
+          if (_lastResults.length > 30) _lastResults.length = 30;
+          _notify();
           continue;
         }
-        if (_running && !_paused && !alreadyInStore && cfg.prewarmSec > 0) {
-          _startCountdown(cfg.prewarmSec, "prewarm");
-          _notify();
-          await _sleep(cfg.prewarmSec * 1e3);
-          _stopCountdown();
-        }
-        if (!_running || _paused) break;
+        const tpl = tpls[_tplIndex % tpls.length];
+        const parts = _spinMessage(tpl, c, _tplIndex);
+        const text = parts[0];
         let msgModel = null;
+        let sendOk = true;
         try {
-          for (let p = 0; p < parts.length && _running && !_paused; p++) {
+          for (let p = 0; p < parts.length && _running; p++) {
             const partText = parts[p];
-            if (p > 0) {
-              const partDelay = 1e3 + Math.random() * 3e3 + p * 500;
-              await _sleep(partDelay);
-            }
+            if (p > 0) await _sleep(1e3 + Math.random() * 2e3);
             const partModel = await _sendToChat(chat, partText);
             if (p === 0) {
               msgModel = partModel;
-              if (partModel) {
-                _trackMessage(partModel, cName, c.telefono);
-              } else {
-                _kpis.pending++;
-              }
+              if (partModel) _trackMessage(partModel, c.telefono);
             }
           }
-          batchSent++;
+          _kpis.sent++;
           _sessionSent++;
-          _blockSent++;
-          if (batchSent > 0 && batchSent % 5 === 0 && _numberHealth) {
-            fetchNumberHealth();
-          }
           _tplIndex++;
-          _consecFails = 0;
-          if (c.id) habladoBatch.push(c.id);
-          _lastResults.unshift({
-            nombre: cName,
-            telefono: c.telefono,
-            status: "sent",
-            ack: msgModel?.get?.("ack") ?? 0,
-            error: null,
-            parts: parts.length
-          });
-        } catch (err) {
-          status = "failed";
-          error = err.message;
-          _consecFails++;
-          _kpis.failed++;
-          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error });
-          if (_consecFails >= 3) {
+          if (c.id) {
+            habladoBatch.push(c.id);
+            _markHablado([c.id], []).catch((err) => {
+              console.warn("[BLAST] mark-hablado immediate failed:", err?.message);
+            });
+          }
+          if (_blastLimit > 0 && _sessionSent >= _blastLimit) {
             _running = false;
             _stopCountdown();
-            logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null, block_id: _blockId });
-            _reportLog([...logBatch]);
+            _notify();
             break;
           }
-        } finally {
-          if (lockKey) _inFlight.delete(lockKey);
+        } catch (err) {
+          _kpis.failed++;
+          sendOk = false;
+          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error: err.message });
         }
         if (_lastResults.length > 30) _lastResults.length = 30;
-        logBatch.push({ phone: c.telefono, contact_name: cName, message: text, status, error, own_number: activeNumber, contact_id: c.id ?? null, block_id: _blockId });
         _notify();
-        if (logBatch.length >= 10) {
-          _reportLog([...logBatch]);
-          logBatch.length = 0;
-        }
-        if (_running && !_paused && i < batch.length - 1) {
-          if (!_isWithinBlastWindow()) {
-            _paused = true;
-            _running = false;
-            _stopCountdown();
-            _lastResults.unshift({ nombre: "\u{1F550} Fuera de horario", telefono: "", status: "paused", ack: -1, error: "Pausa por ventana horaria (" + getPeruTimeStr() + ")" });
-            _notify();
-            break;
-          }
-          if (batchSent > 0 && batchSent % BULK_SIZE === 0) {
-            const bulkDelay = BULK_DELAY_MIN + Math.floor(Math.random() * (BULK_DELAY_MAX - BULK_DELAY_MIN + 1));
-            _startCountdown(bulkDelay, "pausa");
-            _notify();
-            await _sleep(bulkDelay * 1e3);
-            _stopCountdown();
-          } else if (_shouldMicroBreak()) {
-            const breakSec = _microBreakDuration();
-            _startCountdown(breakSec, "micro");
-            _notify();
-            await _sleep(breakSec * 1e3);
-            _stopCountdown();
-          } else if (cfg.delaySec > 0) {
-            const actual = _gaussianDelay(cfg.delaySec);
-            _startCountdown(actual, "delay");
-            _notify();
-            await _sleep(actual * 1e3);
-            _stopCountdown();
-          }
+        _inFlight.delete(lockKey);
+        if (_running && i < batch.length - 1) {
+          const delay = _variableDelay();
+          _startCountdown(Math.ceil(delay / 1e3), "delay");
+          await _sleep(delay);
+          _stopCountdown();
         }
       }
       if (habladoBatch.length || noWaBatch.length) {
-        _phase2 = "marcando";
-        _notify();
         await _markHablado([...habladoBatch], [...noWaBatch]);
-        habladoBatch.length = 0;
-        noWaBatch.length = 0;
       }
-      if (logBatch.length) _reportLog([...logBatch]);
-      if (_totalPending !== null) _totalPending = Math.max(0, _totalPending - batchSent);
+      if (_totalPending !== null) _totalPending = Math.max(0, _totalPending - _kpis.sent);
       _notify();
-      if (!_running || _paused) break;
-      _startCountdown(5, "cargando");
-      _notify();
-      await _sleep(5e3);
-      _stopCountdown();
+      if (_running) {
+        await _sleep(2e3);
+      }
     }
     _running = false;
-    _loopRunning = false;
     _stopCountdown();
-    _stopStatsRefresh();
-    fetchGlobalStats();
+    _stopAckTracking();
     _notify();
   }
+  function isPaused() {
+    return false;
+  }
+  function getPhase() {
+    return "";
+  }
+  function refreshPendingCount() {
+  }
+  function getPeruTimeStr() {
+    return "";
+  }
+  function getNumberHealth() {
+    return null;
+  }
+  function isNumberAuthorized() {
+    return null;
+  }
+  function fetchNumberHealth() {
+  }
+  function fetchNumberConfig() {
+  }
+  function getLastSpamResult() {
+    return null;
+  }
+  function getGlobalStats() {
+    return null;
+  }
+  function fetchGlobalStats() {
+  }
   function pauseBlast() {
-    _paused = true;
     _running = false;
     _stopCountdown();
     _notify();
   }
   function resumeBlast() {
-    if (_loopRunning) return;
-    _paused = false;
+    if (_running) return;
     startBlast();
   }
   function resetSession() {
-    _sentThisSession.clear();
+    _sentPhones.clear();
     _sentIds.clear();
     _habladoIds.clear();
     _inFlight.clear();
-    delete window.__blastSessionStart;
-    _previewBuffer = [];
-    window.postMessage({ type: "BLAST_DEDUP_CLEAR" }, WA_ORIGIN);
-    _respondedPhones.clear();
-    _loopRunning = false;
-    _tplIndex = 0;
-    _sessionSent = 0;
-    _blockId = null;
-    _blockSent = 0;
-    _checkpoint = null;
-    _stopCheckpointPolling();
-    _previewContacts = [];
-    _previewSkipped.clear();
-    _previewLoading = false;
-    _previewReady = false;
-    _kpis = { pending: 0, sent: 0, delivered: 0, read: 0, failed: 0, no_wa: 0 };
-    _lastResults = [];
     _trackedMsgs = [];
+    _kpis = { sent: 0, failed: 0, no_wa: 0, skipped: 0 };
+    _lastResults = [];
     _totalPending = null;
     _running = false;
-    _paused = false;
+    _tplIndex = 0;
+    _sessionSent = 0;
+    _blastLimit = 0;
     _stopCountdown();
     _stopAckTracking();
-    _stopStatsRefresh();
-    fetchGlobalStats();
     _notify();
   }
 
@@ -3575,7 +3038,7 @@
   var _contacts = [];
   var _total = 0;
   var _running2 = false;
-  var _paused2 = false;
+  var _paused = false;
   var _idx = 0;
   var _sessionCount = 0;
   var _burstCount = 0;
@@ -3799,19 +3262,19 @@
   }
   var USYNC_BATCH_SIZE = 20;
   async function _run() {
-    if (_running2 || _paused2) return;
+    if (_running2 || _paused) return;
     if (!_contacts.length) {
       _toast2("Carga los contactos primero", "#ef5350");
       return;
     }
     _running2 = true;
-    _paused2 = false;
+    _paused = false;
     const batch = [];
     _render();
     const sessionMax = _mode === "conv" ? SESSION_MAX_CONV : SESSION_MAX_SILENT;
-    while (_idx < _contacts.length && _running2 && !_paused2) {
+    while (_idx < _contacts.length && _running2 && !_paused) {
       if (_sessionCount >= sessionMax) {
-        _paused2 = _running2 = false;
+        _paused = _running2 = false;
         _stopCountdown2();
         if (batch.length) {
           _saveResults([...batch]);
@@ -3841,7 +3304,7 @@
         } catch (_) {
         }
         for (let i = 0; i < slice.length; i++) {
-          if (!_running2 || _paused2) break;
+          if (!_running2 || _paused) break;
           const c2 = slice[i];
           const norm = normalized[i];
           const r2 = batchResults[norm] || { exists: false, reason: "error" };
@@ -3856,7 +3319,7 @@
           _saveResults([...batch]);
           batch.length = 0;
         }
-        if (_running2 && !_paused2 && _idx < _contacts.length) {
+        if (_running2 && !_paused && _idx < _contacts.length) {
           const d = SILENT_DELAY_MIN + Math.random() * (SILENT_DELAY_MAX - SILENT_DELAY_MIN);
           _startCountdown2(d);
           _render();
@@ -3876,12 +3339,12 @@
         _render();
         await _sleep2(CONV_BURST_REST);
         _stopCountdown2();
-        if (!_running2 || _paused2) break;
+        if (!_running2 || _paused) break;
       }
       const c = _contacts[_idx];
       const spamCheck = await _spamCheckBeforeSend();
       if (spamCheck.shouldPause) {
-        _paused2 = _running2 = false;
+        _paused = _running2 = false;
         _stopCountdown2();
         if (batch.length) {
           _saveResults([...batch]);
@@ -3915,7 +3378,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         _saveResults([...batch]);
         batch.length = 0;
       }
-      if (_running2 && !_paused2 && _idx < _contacts.length) {
+      if (_running2 && !_paused && _idx < _contacts.length) {
         const d = _randomDelay();
         _startCountdown2(d);
         _render();
@@ -3927,7 +3390,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       _saveResults([...batch]);
       batch.length = 0;
     }
-    if (!_paused2 && _idx >= _contacts.length) {
+    if (!_paused && _idx >= _contacts.length) {
       _running2 = false;
       _stopCountdown2();
       const valid = _results.filter((r) => r.wa_valid).length;
@@ -4055,7 +3518,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
           <button id="wspp-val-load" style="flex:1;padding:11px 16px;background:rgba(96,165,250,.1);border:1px solid rgba(96,165,250,.2);border-radius:9px;color:#60a5fa;font-size:13px;font-weight:700;cursor:pointer;">
             \u{1F4CB} Cargar ${_total || "..."} n\xFAmeros
           </button>
-        ` : !_running2 && !_paused2 ? `
+        ` : !_running2 && !_paused ? `
           <button id="wspp-val-start" style="flex:1;padding:11px 16px;background:${modeColor};border:none;border-radius:9px;color:#0a0f1e;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 4px 20px ${modeColor}33;">
             \u25B6 ${isConv ? "Iniciar conversaciones" : "Verificar"} (${_contacts.length - _idx})
           </button>
@@ -4065,7 +3528,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
             ${isConv ? `\u{1F4AC} Enviando \xB7 ${_sessionCount} msgs \xB7 burst ${_burstCount}/${CONV_BURST_MAX}` : `\u{1F535} Verificando \xB7 ${_sessionCount} en esta sesi\xF3n`}
           </div>
           <button id="wspp-val-pause" style="padding:11px 16px;background:rgba(255,149,0,.1);border:1px solid rgba(255,149,0,.2);border-radius:9px;color:#ff9f0a;font-size:13px;font-weight:700;cursor:pointer;">\u23F8 Pausar</button>
-        ` : _paused2 && _idx < _contacts.length ? `
+        ` : _paused && _idx < _contacts.length ? `
           <div style="width:100%;padding:9px 12px;background:rgba(255,149,0,.06);border:1px solid rgba(255,149,0,.14);border-radius:9px;font-size:12px;color:#ff9f0a;line-height:1.5;">
             \u23F8 Pausado en ${_idx}/${_contacts.length}. Listo para reanudar.
           </div>
@@ -4119,7 +3582,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       _open = false;
       if (_running2) {
         _running2 = false;
-        _paused2 = true;
+        _paused = true;
         _stopCountdown2();
       }
       _render();
@@ -4141,7 +3604,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         _sessionCount = 0;
         _burstCount = 0;
         _running2 = false;
-        _paused2 = false;
+        _paused = false;
       }
       _load();
     } else if (id === "wspp-val-start") {
@@ -4149,14 +3612,14 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       _burstCount = 0;
       _run();
     } else if (id === "wspp-val-pause") {
-      _paused2 = true;
+      _paused = true;
       _running2 = false;
       _stopCountdown2();
       _render();
     } else if (id === "wspp-val-resume") {
       _sessionCount = 0;
       _burstCount = 0;
-      _paused2 = false;
+      _paused = false;
       _run();
     } else if (id === "wspp-val-stats") {
       window.postMessage({ type: "WA_VALIDATOR_GET_STATS_REQ" }, WA_ORIGIN);
@@ -4268,7 +3731,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       _burstCount = 0;
       _results = [];
       _running2 = false;
-      _paused2 = false;
+      _paused = false;
       _toast2(`\u2705 ${_contacts.length} n\xFAmeros cargados`, "#60a5fa");
       _render();
       return;
@@ -4537,7 +4000,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       refreshPendingCount();
       _renderContent();
     } else if (id === "sb-start") {
-      console.log("[SIDEBAR] sb-start clicked");
+      console.log("[SIDEBAR] sb-start clicked, limit:", getBlastLimit());
       startBlast();
     } else if (id === "sb-pause") {
       pauseBlast();
@@ -4547,14 +4010,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       resetSession();
       refreshPendingCount();
       _renderContent();
-    } else if (id === "sb-preview-cancel") {
-      previewCancel();
-      _renderContent();
-    } else if (id === "sb-preview-confirm") {
-      btn.disabled = true;
-      btn.textContent = "Enviando...";
-      previewConfirm();
-      await startBlast();
     } else if (id === "sb-tpl-add") {
       const t = getTemplates();
       t.push(`[Hola|Buenas|Buenas tardes] {{nombre}} \xBF[c\xF3mo est\xE1s?|todo bien?|c\xF3mo te va?]
@@ -4564,24 +4019,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       _renderContent();
     } else if (id === "sb-open-validator") {
       toggleValidatorPanel();
-    } else if (skip) {
-      btn.disabled = true;
-      btn.textContent = "...";
-      try {
-        await previewSkipAndReplace(skip);
-      } catch (err) {
-        console.error("[SIDEBAR] skip error:", err);
-      }
-      _renderContent();
-    } else if (markH) {
-      btn.disabled = true;
-      btn.textContent = "...";
-      try {
-        await previewMarkHablado(markH);
-      } catch (err) {
-        console.error("[SIDEBAR] markHablado error:", err);
-      }
-      _renderContent();
     } else if (preset) {
       const n = Number(preset);
       setConfig({ batchSize: n });
@@ -4595,6 +4032,14 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       });
       const startBtn = $("sb-start");
       if (startBtn) startBtn.textContent = `\u25B6 Enviar a ${n} personas`;
+    } else if (id && id.startsWith("sb-limit-")) {
+      const n = Number(id.replace("sb-limit-", ""));
+      setBlastLimit(n);
+      _renderContent();
+    } else if (btn.dataset?.limit !== void 0) {
+      const n = Number(btn.dataset.limit);
+      setBlastLimit(n);
+      _renderContent();
     } else if (tplDel !== void 0) {
       const t = getTemplates();
       if (t.length > 1) {
@@ -4696,8 +4141,8 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     const kpis = getKpis();
     const pending = getTotalPending();
     const results = getLastResults();
-    const totalSent = kpis.pending + kpis.sent + kpis.delivered + kpis.read;
-    const totalProcessed = totalSent + kpis.failed + (kpis.no_wa || 0);
+    const totalSent = kpis.sent;
+    const totalProcessed = totalSent + kpis.failed + kpis.no_wa + kpis.skipped;
     const hasActivity = totalProcessed > 0 || running;
     let timerLabel = "";
     if (countdown > 0) {
@@ -4819,10 +4264,9 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">
       ${[
       ["\u2713", kpis.sent, "Enviado", "#6b7280"],
-      ["\u2713\u2713", kpis.delivered, "Entregado", S.accent],
-      ['<span style="color:#53bdeb;">\u2713\u2713</span>', kpis.read, "Le\xEDdo", "#53bdeb"],
-      ["\u2717", kpis.failed, "Fallido", S.danger],
-      ["\u{1F4F5}", kpis.no_wa || 0, "Sin WA", "#9ca3af"]
+      ["\u2717", kpis.failed, "Fallidos", S.danger],
+      ["\u{1F4F5}", kpis.no_wa, "Sin WA", "#9ca3af"],
+      ["\u23ED", kpis.skipped, "Saltados", S.muted]
     ].map(([icon, val, label, color]) => `
         <div style="background:${S.card};border:1px solid ${S.border};border-radius:8px;padding:8px 4px;text-align:center;">
           <div style="font-size:16px;font-weight:800;color:${color};">${val}</div>
@@ -4832,14 +4276,26 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     </div>
     ` : ""}
 
-    <!-- VENTANA HORARIA + STEALTH STATS -->
-    <div style="background:${inWindow ? S.accentBg : S.dangerBg};border:1px solid ${inWindow ? "rgba(37,211,102,0.3)" : "#fecaca"};border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;">
-      <span style="font-size:18px;">${inWindow ? "\u{1F7E2}" : "\u{1F534}"}</span>
-      <div style="flex:1;">
-        <div style="font-size:11px;font-weight:700;color:${inWindow ? S.accent : S.danger};">${inWindow ? "Ventana activa" : "Fuera de horario"}</div>
-        <div style="font-size:10px;color:${S.muted};">Per\xFA ${peruTime} \xB7 Lun-Vie 8-20h \xB7 S\xE1b 9-14h</div>
-      </div>
-    </div>
+    <!-- PROGRESS BAR (cuando hay l\xEDmite activo) -->
+    ${(() => {
+      const limit = getBlastLimit();
+      const sent = getSessionSent();
+      if (!running || limit === 0) return "";
+      const pct = Math.min(100, Math.round(sent / limit * 100));
+      const done = sent >= limit;
+      return `
+      <div style="background:${done ? S.accentBg : S.card};border:1px solid ${done ? "rgba(37,211,102,0.3)" : S.border};border-radius:10px;padding:12px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:6px;">
+          <span style="color:${done ? S.accent : S.text};">${done ? "\u2705 L\xEDmite alcanzado" : "\u{1F4E4} Enviando..."}</span>
+          <span style="color:${done ? S.accent : S.accent};">${sent} / ${limit}</span>
+        </div>
+        <div style="height:8px;background:${S.border};border-radius:4px;overflow:hidden;">
+          <div style="height:100%;width:${pct}%;background:${done ? S.accent : "#3b82f6"};border-radius:4px;transition:width .3s ease;"></div>
+        </div>
+        ${done ? `<div style="font-size:10px;color:${S.muted};margin-top:6px;text-align:center;">Listo \u2014 par\xE1 o inici\xE1 otra tanda</div>` : ""}
+      </div>`;
+    })()}
+
 
     <!-- STEALTH STATS (solo con actividad) -->
     ${hasActivity ? `
@@ -4900,29 +4356,28 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     </div>
     ` : ""}
 
-    <!-- TANDA -->
+    <!-- L\xCDMITE -->
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
-      <div style="font-size:12px;font-weight:700;margin-bottom:8px;">\xBFA cu\xE1ntos envi\xE1s por tanda?</div>
-      <div style="display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap;">
-        ${[10, 25, 50, 100, 200].map((n) => `
-          <button data-preset="${n}" style="
-            flex:1;min-width:40px;padding:7px 4px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;
-            border:2px solid ${cfg2.batchSize === n ? S.accent : S.border};
-            background:${cfg2.batchSize === n ? S.accentBg : S.bg};
-            color:${cfg2.batchSize === n ? S.accent : S.muted};
-            transition:all .1s;
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px;">\xBFCu\xE1ntos envi\xE1s?</div>
+      <div style="display:flex;gap:5px;margin-bottom:6px;flex-wrap:wrap;">
+        ${[25, 50, 75, 100].map((n) => `
+          <button data-limit="${n}" style="
+            flex:1;min-width:50px;padding:8px 4px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;
+            border:2px solid ${getBlastLimit() === n ? S.accent : S.border};
+            background:${getBlastLimit() === n ? S.accentBg : S.bg};
+            color:${getBlastLimit() === n ? S.accent : S.muted};
+            transition:all .15s;
           ">${n}</button>
         `).join("")}
+        <button data-limit="0" title="Hasta que acaben o lo pares" style="
+          flex:1;min-width:50px;padding:8px 4px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;
+          border:2px solid ${getBlastLimit() === 0 ? S.accent : S.border};
+          background:${getBlastLimit() === 0 ? S.accentBg : S.bg};
+          color:${getBlastLimit() === 0 ? S.accent : S.muted};
+          transition:all .15s;
+        ">\u221E</button>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:11px;color:${S.muted};white-space:nowrap;">O escrib\xED:</span>
-        <input type="number" data-cfg="batchSize" value="${cfg2.batchSize}" min="1" max="500" style="
-          flex:1;padding:6px 8px;border:1px solid ${S.border};border-radius:6px;
-          background:${S.bg};color:${S.text};font-size:13px;font-weight:700;
-          outline:none;text-align:center;box-sizing:border-box;
-        " />
-        <span style="font-size:11px;color:${S.muted};white-space:nowrap;">personas</span>
-      </div>
+      ${getBlastLimit() === 0 ? `<div style="font-size:10px;color:${S.muted};text-align:center;">Loop infinito \u2014 par\xE1 vos cuando quieras</div>` : ""}
     </div>
 
     <!-- FILTRO BRIGADISTA -->
@@ -4939,21 +4394,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       </div>
       ${cfg2.brigadista ? `<div style="font-size:10px;color:${S.accent};margin-top:4px;font-weight:600;">Filtrando solo contactos de: ${_esc(cfg2.brigadista)}</div>` : ""}
     </div>
-
-    <!-- CONFIG AVANZADA -->
-    <details style="background:${S.card};border:1px solid ${S.border};border-radius:10px;overflow:hidden;">
-      <summary style="padding:12px;font-size:12px;font-weight:700;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">
-        <span>\u2699\uFE0F Timing anti-baneo</span>
-        <span style="font-size:10px;color:${S.muted};">\u25BE</span>
-      </summary>
-      <div style="padding:0 12px 12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        ${_cfgField("delaySec", "Espera entre msgs (seg)", cfg2.delaySec, 3, 120)}
-        ${_cfgField("prewarmSec", "Pre-warm (seg)", cfg2.prewarmSec, 0, 120)}
-        ${_cfgField("pausaCada", "Pausa cada N msgs", cfg2.pausaCada, 3, 50)}
-        ${_cfgField("pausaSec", "Duraci\xF3n pausa (seg)", cfg2.pausaSec, 10, 600)}
-        ${_cfgField("descansoSec", "Descanso c/25 (seg)", cfg2.descansoSec, 30, 900)}
-      </div>
-    </details>
 
     <!-- PLANTILLAS -->
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
@@ -4998,60 +4438,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
 
     </div>
 
-    <!-- CHECKPOINT UI -->
-    ${(() => {
-      const cp = getCheckpoint();
-      const bs = getBlockSent();
-      if (!running && !cp) return "";
-      const pct10 = cp ? Math.min(100, Math.round(cp.response_rate / 0.1 * 100)) : 0;
-      const pct50 = cp ? Math.min(100, Math.round(cp.response_rate / 0.5 * 100)) : 0;
-      const rPct = cp ? Math.round(cp.response_rate * 100) : 0;
-      const blockPct = Math.min(100, Math.round(bs / 50 * 100));
-      return `
-      <div style="background:${S.card};border:2px solid ${cp?.unlocked_50 ? S.accent : cp?.unlocked_10 ? S.warn : S.border};border-radius:12px;padding:14px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <div style="font-size:12px;font-weight:700;color:${S.text};">
-            ${cp ? "\u23F8 Checkpoint \u2014 esperando respuestas" : `\u{1F4E6} Bloque actual: ${bs}/50`}
-          </div>
-          ${cp ? `<span style="font-size:14px;font-weight:800;color:${rPct >= 50 ? S.accent : rPct >= 10 ? S.warn : S.danger};">${rPct}%</span>` : ""}
-        </div>
-
-        ${!cp ? `
-          <!-- Progreso de env\xEDo hacia 50 -->
-          <div style="margin-bottom:4px;">
-            <div style="height:6px;background:${S.border};border-radius:3px;overflow:hidden;">
-              <div style="height:100%;width:${blockPct}%;background:${S.accent};border-radius:3px;transition:width .3s;"></div>
-            </div>
-            <div style="font-size:10px;color:${S.muted};margin-top:3px;">${bs} enviados de 50 \u2192 checkpoint autom\xE1tico</div>
-          </div>
-        ` : `
-          <!-- Barra hacia 10% (desbloqueo vista) -->
-          <div style="margin-bottom:8px;">
-            <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:3px;">
-              <span>Vista (10%)</span>
-              <span style="font-weight:700;color:${cp.unlocked_10 ? S.accent : S.muted};">${cp.unlocked_10 ? "\u2713 Desbloqueado" : "Esperando..."}</span>
-            </div>
-            <div style="height:5px;background:${S.border};border-radius:3px;overflow:hidden;">
-              <div style="height:100%;width:${pct10}%;background:${S.warn};border-radius:3px;transition:width .4s;"></div>
-            </div>
-          </div>
-          <!-- Barra hacia 50% (desbloqueo env\xEDo) -->
-          <div>
-            <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:3px;">
-              <span>Enviar siguientes 50 (50%)</span>
-              <span style="font-weight:700;color:${cp.unlocked_50 ? S.accent : S.muted};">${cp.unlocked_50 ? "\u2713 Listo" : `${cp.responded}/${Math.ceil(cp.sent * 0.5)} respuestas`}</span>
-            </div>
-            <div style="height:5px;background:${S.border};border-radius:3px;overflow:hidden;">
-              <div style="height:100%;width:${pct50}%;background:${cp.unlocked_50 ? S.accent : "#3b82f6"};border-radius:3px;transition:width .4s;"></div>
-            </div>
-          </div>
-          <div style="font-size:10px;color:${S.muted};margin-top:6px;">
-            ${cp.responded} de ${cp.sent} respondieron \xB7 actualizando cada 30s
-          </div>
-        `}
-      </div>`;
-    })()}
-
     <!-- TIMER + LOG -->
     ${hasActivity ? `
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
@@ -5076,84 +4462,18 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     </div>
     ` : ""}
 
-    <!-- PREVIEW \u2014 muestra pr\xF3ximos contactos antes de arrancar -->
-    ${isPreviewLoading() ? `
-      <div style="background:${S.card};border:1px solid ${S.border};border-radius:12px;padding:16px;text-align:center;">
-        <div style="font-size:13px;color:${S.muted};">Cargando preview...</div>
-      </div>
-    ` : getPreviewContacts().length > 0 && !isPreviewReady() && !running ? `
-      <div style="background:${S.card};border:1px solid ${S.border};border-radius:12px;padding:14px;">
-        <div style="font-size:12px;font-weight:700;color:${S.text};margin-bottom:10px;">
-          \u{1F441} Pr\xF3ximos a enviar \u2014 revis\xE1 antes de confirmar
-        </div>
-        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
-          ${getPreviewContacts().map((c) => {
-      const nombre = ((c.nombre || "") + " " + (c.apellidos || "")).trim() || "\u2014 Sin nombre";
-      return `
-            <div style="
-              display:flex;align-items:center;gap:8px;padding:8px 10px;
-              background:${S.bg};border:1px solid ${S.border};border-radius:8px;
-            ">
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:12px;font-weight:600;color:${S.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                  ${_esc(nombre)}
-                </div>
-                <div style="font-size:10px;color:${S.muted};margin-top:1px;">
-                  +${_esc(c.telefono || "?")}
-                  ${c.departamento ? ` \xB7 ${_esc(c.departamento)}` : ""}
-                  ${c.heat_score === 2 ? " \u{1F525}" : ""}
-                </div>
-              </div>
-              <button data-skip="${_esc(c.id)}" title="Saltear (marca hablado)" style="padding:4px 10px;border-radius:5px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:10px;cursor:pointer;flex-shrink:0;">Saltear</button>
-              <button data-markhablado="${_esc(c.id)}" title="Ya le hablamos" style="padding:4px 10px;border-radius:5px;border:1px solid #fecaca;background:#fef2f2;color:${S.danger};font-size:10px;font-weight:600;cursor:pointer;flex-shrink:0;">\u2713 Hablado</button>
-            </div>`;
-    }).join("")}
-        </div>
-        <div style="display:flex;gap:8px;">
-          <button id="sb-preview-cancel" style="
-            flex:1;padding:10px;border-radius:8px;border:1px solid ${S.border};
-            background:${S.bg};color:${S.muted};font-size:13px;font-weight:600;cursor:pointer;
-          ">\u2715 Cancelar</button>
-          <button id="sb-preview-confirm" style="
-            flex:2;padding:10px;border-radius:8px;border:none;
-            background:${S.accent};color:#fff;font-size:13px;font-weight:700;cursor:pointer;
-            box-shadow:0 2px 8px ${S.accent}40;
-          ">\u25B6 Confirmar y enviar</button>
-        </div>
-      </div>
-    ` : ""}
-
     <!-- CONTROLES -->
-    ${!running && !paused && hasPending && !isPreviewLoading() && getPreviewContacts().length === 0 ? `
-      ${!inWindow ? `
-        <div style="text-align:center;padding:12px;background:${S.dangerBg};border:1px solid #fecaca;border-radius:10px;font-size:12px;color:${S.danger};font-weight:600;">
-          \u{1F534} No se puede enviar fuera de horario (${peruTime})
-        </div>
-      ` : analysis.level === "danger" ? `
-        <div style="margin-bottom:6px;text-align:center;padding:8px;background:${S.dangerBg};border:1px solid #fecaca;border-radius:8px;font-size:11px;color:${S.danger};">
-          \u26A0\uFE0F Las plantillas tienen riesgo ALTO \u2014 revis\xE1 las sugerencias arriba
-        </div>
-        <button id="sb-start" data-force="true" style="
-          width:100%;padding:14px;border-radius:10px;border:1px solid ${S.danger};
-          background:${S.dangerBg};color:${S.danger};font-size:15px;font-weight:700;cursor:pointer;
-        ">\u26A0\uFE0F Enviar igual a ${cfg2.batchSize} personas</button>
-      ` : `
-        <button id="sb-start" style="
-          width:100%;padding:14px;border-radius:10px;border:none;
-          background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
-          box-shadow:0 2px 12px ${S.accent}40;
-        ">\u25B6 Enviar a ${cfg2.batchSize} personas</button>
-      `}
+    ${!running && !paused && hasPending ? `
+      <button id="sb-start" style="
+        width:100%;padding:14px;border-radius:10px;border:none;
+        background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+        box-shadow:0 2px 12px ${S.accent}40;
+      ">\u25B6 ${getBlastLimit() === 0 ? "Enviar en loop (\u221E)" : "\u25B6 Enviar " + getBlastLimit()}</button>
     ` : running ? `
       <button id="sb-pause" style="
         width:100%;padding:14px;border-radius:10px;border:1px solid ${S.warn}40;
         background:${S.warnBg};color:${S.warn};font-size:15px;font-weight:700;cursor:pointer;
       ">\u23F8 Pausar</button>
-    ` : paused ? `
-      <button id="sb-resume" style="
-        width:100%;padding:14px;border-radius:10px;border:none;
-        background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
-      ">\u25B6 Reanudar</button>
     ` : !hasPending && pending !== null ? `
       <div style="text-align:center;padding:12px;background:${S.accentBg};border-radius:10px;font-size:13px;color:${S.accent};font-weight:600;">
         \u2705 No hay m\xE1s pendientes
@@ -5172,16 +4492,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   }
   function _smallBtn(color, bg) {
     return `padding:5px 10px;border-radius:6px;border:none;background:${bg};color:${color};font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap`;
-  }
-  function _cfgField(key, label, value, min, max) {
-    return `<div>
-    <label style="font-size:11px;color:${S.muted};display:block;margin-bottom:2px;">${label}</label>
-    <input type="number" data-cfg="${key}" value="${value}" min="${min}" max="${max}" style="
-      width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid ${S.border};
-      border-radius:6px;background:${S.bg};color:${S.text};font-size:13px;font-weight:600;
-      outline:none;text-align:center;
-    " />
-  </div>`;
   }
   function _validarHTML() {
     return `<div style="padding:40px 20px;text-align:center;">
