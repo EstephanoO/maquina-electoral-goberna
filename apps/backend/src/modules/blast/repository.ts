@@ -235,7 +235,7 @@ export async function markHablado(
          SELECT $1, $2, COALESCE(fs.data->>'telefono',''), fs.id, 'sent'
          FROM form_submissions fs
          WHERE fs.id = ANY($3::uuid[]) AND fs.campaign_id = $1
-         ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent' DO NOTHING`,
+          ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent' AND contact_phone <> '' DO NOTHING`,
         [campaign_id, wa_number, ids]
       ).catch((err) => { console.warn("[blast] audit log insert failed", String(err)); });
     }
