@@ -36,7 +36,7 @@ export default function ExtensionPage() {
           <h1 style={{ fontSize: "clamp(28px, 7vw, 40px)", fontWeight: 800, lineHeight: 1.1, color: "#fff", margin: "0 0 8px", letterSpacing: "-0.02em" }}>WhatsApp Helper</h1>
           <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", margin: 0, lineHeight: 1.5 }}>
             Extension de Chrome para Goberna{" "}
-            <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(37,211,102,0.6)" }}>v10.4.0</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(37,211,102,0.6)" }}>v10.5.0</span>
           </p>
         </div>
 
@@ -47,7 +47,7 @@ export default function ExtensionPage() {
               <Feature icon="tab" title="Blast masivo" desc="Envia mensajes a miles de contactos automaticamente en loop" />
               <Feature icon="speed" title="Delay variable" desc="1-5 segundos entre mensajes para evitar baneo" />
               <Feature icon="detect" title="Detecta respuestas" desc="Reconoce cuando un contacto responde y para" />
-              <Feature icon="safe" title="Sin duplicados" desc="3 filtros anti-duplicado: backend, inmediato y WA local" />
+              <Feature icon="safe" title="Sin duplicados" desc="6 capas anti-duplicado: localStorage, realtime backend, USyncQuery, ContactCollection, lastReceivedKey y blast_log" />
               <Feature icon="single" title="Una sola pestana" desc="Reutiliza WhatsApp Web en vez de abrir 100 pestanas" />
             </div>
 
