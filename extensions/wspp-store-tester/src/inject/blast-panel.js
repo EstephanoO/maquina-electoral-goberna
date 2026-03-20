@@ -485,6 +485,23 @@ export async function startBlast() {
           chat = r?.chat ?? r;
         }
         if (!chat) throw new Error('No se resolvió el chat');
+
+        // ── SAFETY NET: si WA Web ya tiene chat con historial → skip ─────
+        // Si lastReceivedKey existe, el contacto YA RECIBIÓ mensajes antes.
+        // Esto cubre el caso donde el backend falló en marcar hablado.
+        const lastReceivedKey = chat.get?.('lastReceivedKey');
+        const msgCount = chat.get?.('msgCount') || 0;
+        if (lastReceivedKey && msgCount > 0) {
+          console.log('[BLAST] Skip — WA ya tiene chat con historial:', cName, telefono);
+          _kpis.skipped++;
+          if (c.id) { _markHabladoIds([c.id]); habladoBatch.push(c.id); }
+          _markHablado(c.id ? [c.id] : [], []).catch(() => {});
+          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'skipped', ack: -1, error: 'Ya tiene chat en WA' });
+          if (_lastResults.length > 30) _lastResults.length = 30;
+          _notify();
+          _inFlight.delete(lockKey);
+          continue;
+        }
       } catch (err) {
         _kpis.failed++;
         _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'failed', ack: -1, error: err.message });
