@@ -2850,6 +2850,20 @@
         }
         if (normalizedPhone) {
           const hasWA = await _checkExistsOnWA(normalizedPhone);
+          if (hasWA === true) {
+            console.log("[BLAST] Skip \u2014 ya existe en WA:", cName, c.telefono);
+            _kpis.skipped++;
+            if (c.id) {
+              _sentIds.add(c.id);
+              habladoBatch.push(c.id);
+            }
+            _markHablado(c.id ? [c.id] : [], []).catch(() => {
+            });
+            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Ya existe en WA" });
+            if (_lastResults.length > 30) _lastResults.length = 30;
+            _notify();
+            continue;
+          }
           if (hasWA === false) {
             _kpis.no_wa++;
             if (c.id) {
@@ -2861,6 +2875,35 @@
             _notify();
             continue;
           }
+        }
+        try {
+          const { ContactCollection } = window.require("WAWebContactCollection");
+          if (ContactCollection?._models) {
+            const normalizedPhoneRaw = c.telefono?.replace(/\D/g, "") || normalizedPhone?.replace(/\D/g, "");
+            let alreadySaved = false;
+            for (const model of ContactCollection._models) {
+              const modelPhone = (model.number || model.userid || model.phoneNumber || "").replace(/\D/g, "");
+              if (modelPhone && modelPhone === normalizedPhoneRaw) {
+                alreadySaved = true;
+                break;
+              }
+            }
+            if (alreadySaved) {
+              console.log("[BLAST] Skip \u2014 contacto ya agendado en WA:", cName, c.telefono);
+              _kpis.skipped++;
+              if (c.id) {
+                _sentIds.add(c.id);
+                habladoBatch.push(c.id);
+              }
+              _markHablado(c.id ? [c.id] : [], []).catch(() => {
+              });
+              _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Ya existe en WA" });
+              if (_lastResults.length > 30) _lastResults.length = 30;
+              _notify();
+              continue;
+            }
+          }
+        } catch (_) {
         }
         let chat = null;
         try {
