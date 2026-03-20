@@ -809,58 +809,6 @@
     }
     return null;
   }
-  function installChatWatcher() {
-    if (_chatWatcherInstalled) return;
-    try {
-      let handleActiveChatChange = function(changedModel) {
-        try {
-          const active = changedModel?.active === true ? changedModel : ChatCollection._models.find((c) => c.active);
-          if (!active) return;
-          const jid = active.id?._serialized;
-          if (!jid || jid === _lastActiveChatJid) return;
-          _lastActiveChatJid = jid;
-          if (jid.includes("@g.us") || jid.includes("@broadcast") || jid.includes("@newsletter")) return;
-          let phone = jidToNumber(jid);
-          if (!phone && jid.includes("@lid")) {
-            phone = resolvePhoneFromLid(jid);
-          }
-          const name = active.name || active.formattedTitle || active.pushname || null;
-          window.postMessage({
-            type: "WSPP_CHAT_OPENED",
-            payload: {
-              phone,
-              contact_name: name,
-              jid
-            }
-          }, WA_ORIGIN);
-          console.log("[WSPP] Chat abierto:", phone ?? jid, "| nombre:", name ?? "-");
-        } catch (err) {
-          console.warn("[WSPP] chat change error:", err?.message);
-        }
-      };
-      const { ChatCollection } = window.require("WAWebChatCollection");
-      if (!ChatCollection || !ChatCollection._models) {
-        console.log("[WSPP] ChatCollection no disponible a\xFAn");
-        return;
-      }
-      let eventDriven = false;
-      try {
-        if (typeof ChatCollection.on === "function") {
-          ChatCollection.on("change:active", handleActiveChatChange);
-          eventDriven = true;
-          console.log("[WSPP] \u2713 Chat watcher instalado (event-driven: change:active)");
-        }
-      } catch (_) {
-      }
-      if (!eventDriven) {
-        setInterval(handleActiveChatChange, 2e3);
-        console.log("[WSPP] \u2713 Chat watcher instalado (polling fallback cada 2s)");
-      }
-      _chatWatcherInstalled = true;
-    } catch (err) {
-      console.log("[WSPP] ChatCollection a\xFAn no disponible:", err.message);
-    }
-  }
   var MAX_WA_LISTENER_RETRIES = 30;
   var _waListenerRetries = 0;
   var WA_REQUIRED_MODULES = [
@@ -1060,7 +1008,6 @@
       return;
     }
     installIncomingMessageListener();
-    installChatWatcher();
     if (!_msgListenerInstalled || !_chatWatcherInstalled) {
       _waListenerRetries++;
       if (_waListenerRetries < MAX_WA_LISTENER_RETRIES) {
