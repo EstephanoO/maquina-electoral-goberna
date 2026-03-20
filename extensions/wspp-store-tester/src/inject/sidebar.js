@@ -16,6 +16,7 @@ import {
   getPreviewContacts, isPreviewLoading, isPreviewReady, getPreviewSkipped,
   previewSkipAndReplace, previewMarkHablado, previewConfirm, previewCancel,
   getCheckpoint, getBlockSent,
+  setBlastLimit, getBlastLimit, getSessionSent,
 } from './blast-panel.js';
 import { analyzeTemplates } from './template-analyzer.js';
 import { toggleValidatorPanel } from './wa-validator-panel.js';
@@ -273,28 +274,16 @@ async function _handleDelegatedClick(e) {
 
   if (id === 'sb-refresh') { refreshPendingCount(); fetchGlobalStats(); _toast('Actualizando...'); }
   else if (id === 'sb-brigadista-clear') { setConfig({ brigadista: '' }); refreshPendingCount(); _renderContent(); }
-  else if (id === 'sb-start') { console.log('[SIDEBAR] sb-start clicked'); startBlast(); }
+  else if (id === 'sb-start') { console.log('[SIDEBAR] sb-start clicked, limit:', getBlastLimit()); startBlast(); }
   else if (id === 'sb-pause') { pauseBlast(); }
   else if (id === 'sb-resume') { resumeBlast(); }
   else if (id === 'sb-reset') { resetSession(); refreshPendingCount(); _renderContent(); }
-  else if (id === 'sb-preview-cancel') { previewCancel(); _renderContent(); }
-  else if (id === 'sb-preview-confirm') { btn.disabled = true; btn.textContent = 'Enviando...'; previewConfirm(); await startBlast(); }
   else if (id === 'sb-tpl-add') {
     const t = getTemplates();
     t.push(`[Hola|Buenas|Buenas tardes] {{nombre}} ¿[cómo estás?|todo bien?|cómo te va?]\n---\n[Mensaje ${t.length + 1} — editá este bloque]`);
     setTemplates(t); _renderContent();
   }
   else if (id === 'sb-open-validator') { toggleValidatorPanel(); }
-  else if (skip) {
-    btn.disabled = true; btn.textContent = '...';
-    try { await previewSkipAndReplace(skip); } catch (err) { console.error('[SIDEBAR] skip error:', err); }
-    _renderContent();
-  }
-  else if (markH) {
-    btn.disabled = true; btn.textContent = '...';
-    try { await previewMarkHablado(markH); } catch (err) { console.error('[SIDEBAR] markHablado error:', err); }
-    _renderContent();
-  }
   else if (preset) {
     const n = Number(preset);
     setConfig({ batchSize: n });
@@ -308,6 +297,16 @@ async function _handleDelegatedClick(e) {
     });
     const startBtn = $('sb-start');
     if (startBtn) startBtn.textContent = `▶ Enviar a ${n} personas`;
+  }
+  else if (id && id.startsWith('sb-limit-')) {
+    const n = Number(id.replace('sb-limit-', ''));
+    setBlastLimit(n);
+    _renderContent();
+  }
+  else if (btn.dataset?.limit !== undefined) {
+    const n = Number(btn.dataset.limit);
+    setBlastLimit(n);
+    _renderContent();
   }
   else if (tplDel !== undefined) {
     const t = getTemplates();
@@ -414,8 +413,8 @@ function _blastHTML() {
   const kpis = getKpis();
   const pending = getTotalPending();
   const results = getLastResults();
-  const totalSent = kpis.pending + kpis.sent + kpis.delivered + kpis.read;
-  const totalProcessed = totalSent + kpis.failed + (kpis.no_wa || 0);
+  const totalSent = kpis.sent;
+  const totalProcessed = totalSent + kpis.failed + kpis.no_wa + kpis.skipped;
   const hasActivity = totalProcessed > 0 || running;
 
   // Timer — incluye micro-descansos stealth
@@ -551,11 +550,10 @@ function _blastHTML() {
     ${hasActivity ? `
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">
       ${[
-        ['✓',   kpis.sent,           'Enviado',   '#6b7280'],
-        ['✓✓',  kpis.delivered,      'Entregado', S.accent],
-        ['<span style="color:#53bdeb;">✓✓</span>', kpis.read, 'Leído', '#53bdeb'],
-        ['✗',   kpis.failed,         'Fallido',   S.danger],
-        ['📵',  kpis.no_wa || 0,     'Sin WA',    '#9ca3af'],
+        ['✓',   kpis.sent,    'Enviado',   '#6b7280'],
+        ['✗',   kpis.failed,  'Fallidos',   S.danger],
+        ['📵',  kpis.no_wa,  'Sin WA',    '#9ca3af'],
+        ['⏭',   kpis.skipped, 'Saltados',   S.muted],
       ].map(([icon, val, label, color]) => `
         <div style="background:${S.card};border:1px solid ${S.border};border-radius:8px;padding:8px 4px;text-align:center;">
           <div style="font-size:16px;font-weight:800;color:${color};">${val}</div>
@@ -565,14 +563,26 @@ function _blastHTML() {
     </div>
     ` : ''}
 
-    <!-- VENTANA HORARIA + STEALTH STATS -->
-    <div style="background:${inWindow ? S.accentBg : S.dangerBg};border:1px solid ${inWindow ? 'rgba(37,211,102,0.3)' : '#fecaca'};border-radius:10px;padding:10px 12px;display:flex;align-items:center;gap:10px;">
-      <span style="font-size:18px;">${inWindow ? '🟢' : '🔴'}</span>
-      <div style="flex:1;">
-        <div style="font-size:11px;font-weight:700;color:${inWindow ? S.accent : S.danger};">${inWindow ? 'Ventana activa' : 'Fuera de horario'}</div>
-        <div style="font-size:10px;color:${S.muted};">Perú ${peruTime} · Lun-Vie 8-20h · Sáb 9-14h</div>
-      </div>
-    </div>
+    <!-- PROGRESS BAR (cuando hay límite activo) -->
+    ${(() => {
+      const limit = getBlastLimit();
+      const sent = getSessionSent();
+      if (!running || limit === 0) return '';
+      const pct = Math.min(100, Math.round((sent / limit) * 100));
+      const done = sent >= limit;
+      return `
+      <div style="background:${done ? S.accentBg : S.card};border:1px solid ${done ? 'rgba(37,211,102,0.3)' : S.border};border-radius:10px;padding:12px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:6px;">
+          <span style="color:${done ? S.accent : S.text};">${done ? '✅ Límite alcanzado' : '📤 Enviando...'}</span>
+          <span style="color:${done ? S.accent : S.accent};">${sent} / ${limit}</span>
+        </div>
+        <div style="height:8px;background:${S.border};border-radius:4px;overflow:hidden;">
+          <div style="height:100%;width:${pct}%;background:${done ? S.accent : '#3b82f6'};border-radius:4px;transition:width .3s ease;"></div>
+        </div>
+        ${done ? `<div style="font-size:10px;color:${S.muted};margin-top:6px;text-align:center;">Listo — pará o iniciá otra tanda</div>` : ''}
+      </div>`;
+    })()}
+
 
     <!-- STEALTH STATS (solo con actividad) -->
     ${hasActivity ? `
@@ -633,29 +643,28 @@ function _blastHTML() {
     </div>
     ` : ''}
 
-    <!-- TANDA -->
+    <!-- LÍMITE -->
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
-      <div style="font-size:12px;font-weight:700;margin-bottom:8px;">¿A cuántos enviás por tanda?</div>
-      <div style="display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap;">
-        ${[10, 25, 50, 100, 200].map(n => `
-          <button data-preset="${n}" style="
-            flex:1;min-width:40px;padding:7px 4px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;
-            border:2px solid ${cfg.batchSize === n ? S.accent : S.border};
-            background:${cfg.batchSize === n ? S.accentBg : S.bg};
-            color:${cfg.batchSize === n ? S.accent : S.muted};
-            transition:all .1s;
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px;">¿Cuántos enviás?</div>
+      <div style="display:flex;gap:5px;margin-bottom:6px;flex-wrap:wrap;">
+        ${[25, 50, 75, 100].map(n => `
+          <button data-limit="${n}" style="
+            flex:1;min-width:50px;padding:8px 4px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;
+            border:2px solid ${getBlastLimit() === n ? S.accent : S.border};
+            background:${getBlastLimit() === n ? S.accentBg : S.bg};
+            color:${getBlastLimit() === n ? S.accent : S.muted};
+            transition:all .15s;
           ">${n}</button>
         `).join('')}
+        <button data-limit="0" title="Hasta que acaben o lo pares" style="
+          flex:1;min-width:50px;padding:8px 4px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;
+          border:2px solid ${getBlastLimit() === 0 ? S.accent : S.border};
+          background:${getBlastLimit() === 0 ? S.accentBg : S.bg};
+          color:${getBlastLimit() === 0 ? S.accent : S.muted};
+          transition:all .15s;
+        ">∞</button>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:11px;color:${S.muted};white-space:nowrap;">O escribí:</span>
-        <input type="number" data-cfg="batchSize" value="${cfg.batchSize}" min="1" max="500" style="
-          flex:1;padding:6px 8px;border:1px solid ${S.border};border-radius:6px;
-          background:${S.bg};color:${S.text};font-size:13px;font-weight:700;
-          outline:none;text-align:center;box-sizing:border-box;
-        " />
-        <span style="font-size:11px;color:${S.muted};white-space:nowrap;">personas</span>
-      </div>
+      ${getBlastLimit() === 0 ? `<div style="font-size:10px;color:${S.muted};text-align:center;">Loop infinito — pará vos cuando quieras</div>` : ''}
     </div>
 
     <!-- FILTRO BRIGADISTA -->
@@ -672,21 +681,6 @@ function _blastHTML() {
       </div>
       ${cfg.brigadista ? `<div style="font-size:10px;color:${S.accent};margin-top:4px;font-weight:600;">Filtrando solo contactos de: ${_esc(cfg.brigadista)}</div>` : ''}
     </div>
-
-    <!-- CONFIG AVANZADA -->
-    <details style="background:${S.card};border:1px solid ${S.border};border-radius:10px;overflow:hidden;">
-      <summary style="padding:12px;font-size:12px;font-weight:700;cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;">
-        <span>⚙️ Timing anti-baneo</span>
-        <span style="font-size:10px;color:${S.muted};">▾</span>
-      </summary>
-      <div style="padding:0 12px 12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        ${_cfgField('delaySec', 'Espera entre msgs (seg)', cfg.delaySec, 3, 120)}
-        ${_cfgField('prewarmSec', 'Pre-warm (seg)', cfg.prewarmSec, 0, 120)}
-        ${_cfgField('pausaCada', 'Pausa cada N msgs', cfg.pausaCada, 3, 50)}
-        ${_cfgField('pausaSec', 'Duración pausa (seg)', cfg.pausaSec, 10, 600)}
-        ${_cfgField('descansoSec', 'Descanso c/25 (seg)', cfg.descansoSec, 30, 900)}
-      </div>
-    </details>
 
     <!-- PLANTILLAS -->
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
@@ -731,61 +725,6 @@ function _blastHTML() {
 
     </div>
 
-    <!-- CHECKPOINT UI -->
-    ${(() => {
-      const cp = getCheckpoint();
-      const bs = getBlockSent();
-      if (!running && !cp) return '';
-      const pct10 = cp ? Math.min(100, Math.round((cp.response_rate / 0.10) * 100)) : 0;
-      const pct50 = cp ? Math.min(100, Math.round((cp.response_rate / 0.50) * 100)) : 0;
-      const rPct  = cp ? Math.round(cp.response_rate * 100) : 0;
-      // Barra de progreso del bloque actual (enviados hacia 50)
-      const blockPct = Math.min(100, Math.round((bs / 50) * 100));
-      return `
-      <div style="background:${S.card};border:2px solid ${cp?.unlocked_50 ? S.accent : cp?.unlocked_10 ? S.warn : S.border};border-radius:12px;padding:14px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <div style="font-size:12px;font-weight:700;color:${S.text};">
-            ${cp ? '⏸ Checkpoint — esperando respuestas' : `📦 Bloque actual: ${bs}/50`}
-          </div>
-          ${cp ? `<span style="font-size:14px;font-weight:800;color:${rPct>=50?S.accent:rPct>=10?S.warn:S.danger};">${rPct}%</span>` : ''}
-        </div>
-
-        ${!cp ? `
-          <!-- Progreso de envío hacia 50 -->
-          <div style="margin-bottom:4px;">
-            <div style="height:6px;background:${S.border};border-radius:3px;overflow:hidden;">
-              <div style="height:100%;width:${blockPct}%;background:${S.accent};border-radius:3px;transition:width .3s;"></div>
-            </div>
-            <div style="font-size:10px;color:${S.muted};margin-top:3px;">${bs} enviados de 50 → checkpoint automático</div>
-          </div>
-        ` : `
-          <!-- Barra hacia 10% (desbloqueo vista) -->
-          <div style="margin-bottom:8px;">
-            <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:3px;">
-              <span>Vista (10%)</span>
-              <span style="font-weight:700;color:${cp.unlocked_10?S.accent:S.muted};">${cp.unlocked_10?'✓ Desbloqueado':'Esperando...'}</span>
-            </div>
-            <div style="height:5px;background:${S.border};border-radius:3px;overflow:hidden;">
-              <div style="height:100%;width:${pct10}%;background:${S.warn};border-radius:3px;transition:width .4s;"></div>
-            </div>
-          </div>
-          <!-- Barra hacia 50% (desbloqueo envío) -->
-          <div>
-            <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:3px;">
-              <span>Enviar siguientes 50 (50%)</span>
-              <span style="font-weight:700;color:${cp.unlocked_50?S.accent:S.muted};">${cp.unlocked_50?'✓ Listo':`${cp.responded}/${Math.ceil(cp.sent*0.5)} respuestas`}</span>
-            </div>
-            <div style="height:5px;background:${S.border};border-radius:3px;overflow:hidden;">
-              <div style="height:100%;width:${pct50}%;background:${cp.unlocked_50?S.accent:'#3b82f6'};border-radius:3px;transition:width .4s;"></div>
-            </div>
-          </div>
-          <div style="font-size:10px;color:${S.muted};margin-top:6px;">
-            ${cp.responded} de ${cp.sent} respondieron · actualizando cada 30s
-          </div>
-        `}
-      </div>`;
-    })()}
-
     <!-- TIMER + LOG -->
     ${hasActivity ? `
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
@@ -810,84 +749,18 @@ function _blastHTML() {
     </div>
     ` : ''}
 
-    <!-- PREVIEW — muestra próximos contactos antes de arrancar -->
-    ${isPreviewLoading() ? `
-      <div style="background:${S.card};border:1px solid ${S.border};border-radius:12px;padding:16px;text-align:center;">
-        <div style="font-size:13px;color:${S.muted};">Cargando preview...</div>
-      </div>
-    ` : getPreviewContacts().length > 0 && !isPreviewReady() && !running ? `
-      <div style="background:${S.card};border:1px solid ${S.border};border-radius:12px;padding:14px;">
-        <div style="font-size:12px;font-weight:700;color:${S.text};margin-bottom:10px;">
-          👁 Próximos a enviar — revisá antes de confirmar
-        </div>
-        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
-          ${getPreviewContacts().map(c => {
-            const nombre = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim() || '— Sin nombre';
-            return `
-            <div style="
-              display:flex;align-items:center;gap:8px;padding:8px 10px;
-              background:${S.bg};border:1px solid ${S.border};border-radius:8px;
-            ">
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:12px;font-weight:600;color:${S.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                  ${_esc(nombre)}
-                </div>
-                <div style="font-size:10px;color:${S.muted};margin-top:1px;">
-                  +${_esc(c.telefono || '?')}
-                  ${c.departamento ? ` · ${_esc(c.departamento)}` : ''}
-                  ${c.heat_score === 2 ? ' 🔥' : ''}
-                </div>
-              </div>
-              <button data-skip="${_esc(c.id)}" title="Saltear (marca hablado)" style="padding:4px 10px;border-radius:5px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:10px;cursor:pointer;flex-shrink:0;">Saltear</button>
-              <button data-markhablado="${_esc(c.id)}" title="Ya le hablamos" style="padding:4px 10px;border-radius:5px;border:1px solid #fecaca;background:#fef2f2;color:${S.danger};font-size:10px;font-weight:600;cursor:pointer;flex-shrink:0;">✓ Hablado</button>
-            </div>`;
-          }).join('')}
-        </div>
-        <div style="display:flex;gap:8px;">
-          <button id="sb-preview-cancel" style="
-            flex:1;padding:10px;border-radius:8px;border:1px solid ${S.border};
-            background:${S.bg};color:${S.muted};font-size:13px;font-weight:600;cursor:pointer;
-          ">✕ Cancelar</button>
-          <button id="sb-preview-confirm" style="
-            flex:2;padding:10px;border-radius:8px;border:none;
-            background:${S.accent};color:#fff;font-size:13px;font-weight:700;cursor:pointer;
-            box-shadow:0 2px 8px ${S.accent}40;
-          ">▶ Confirmar y enviar</button>
-        </div>
-      </div>
-    ` : ''}
-
     <!-- CONTROLES -->
-    ${!running && !paused && hasPending && !isPreviewLoading() && getPreviewContacts().length === 0 ? `
-      ${!inWindow ? `
-        <div style="text-align:center;padding:12px;background:${S.dangerBg};border:1px solid #fecaca;border-radius:10px;font-size:12px;color:${S.danger};font-weight:600;">
-          🔴 No se puede enviar fuera de horario (${peruTime})
-        </div>
-      ` : analysis.level === 'danger' ? `
-        <div style="margin-bottom:6px;text-align:center;padding:8px;background:${S.dangerBg};border:1px solid #fecaca;border-radius:8px;font-size:11px;color:${S.danger};">
-          ⚠️ Las plantillas tienen riesgo ALTO — revisá las sugerencias arriba
-        </div>
-        <button id="sb-start" data-force="true" style="
-          width:100%;padding:14px;border-radius:10px;border:1px solid ${S.danger};
-          background:${S.dangerBg};color:${S.danger};font-size:15px;font-weight:700;cursor:pointer;
-        ">⚠️ Enviar igual a ${cfg.batchSize} personas</button>
-      ` : `
-        <button id="sb-start" style="
-          width:100%;padding:14px;border-radius:10px;border:none;
-          background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
-          box-shadow:0 2px 12px ${S.accent}40;
-        ">▶ Enviar a ${cfg.batchSize} personas</button>
-      `}
+    ${!running && !paused && hasPending ? `
+      <button id="sb-start" style="
+        width:100%;padding:14px;border-radius:10px;border:none;
+        background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+        box-shadow:0 2px 12px ${S.accent}40;
+      ">▶ ${getBlastLimit() === 0 ? 'Enviar en loop (∞)' : '▶ Enviar ' + getBlastLimit()}</button>
     ` : running ? `
       <button id="sb-pause" style="
         width:100%;padding:14px;border-radius:10px;border:1px solid ${S.warn}40;
         background:${S.warnBg};color:${S.warn};font-size:15px;font-weight:700;cursor:pointer;
       ">⏸ Pausar</button>
-    ` : paused ? `
-      <button id="sb-resume" style="
-        width:100%;padding:14px;border-radius:10px;border:none;
-        background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
-      ">▶ Reanudar</button>
     ` : !hasPending && pending !== null ? `
       <div style="text-align:center;padding:12px;background:${S.accentBg};border-radius:10px;font-size:13px;color:${S.accent};font-weight:600;">
         ✅ No hay más pendientes
