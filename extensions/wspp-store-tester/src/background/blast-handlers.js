@@ -184,3 +184,58 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   })();
   return true;
 });
+
+// ── BLAST_CHECK_CONTACTS (Capa 5: realtime dedup — inject → background → backend) ─
+// Receives [{id, phone}] → returns {ok, valid: [id...]} of contacts still 'nuevo' in DB.
+// Catches contacts marked 'hablado' by another phone while the blast is running.
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type !== 'BLAST_CHECK_CONTACTS') return;
+
+  const { contacts, own_number } = msg;
+  if (!contacts?.length) { sendResponse({ ok: true, valid: [] }); return true; }
+
+  (async () => {
+    try {
+      const result = await apiFetch('/api/blast/check-contacts', {
+        method: 'POST',
+        headers: own_number ? { 'x-wa-number': own_number } : {},
+        body: JSON.stringify({ contacts }),
+      });
+      sendResponse({ ok: result.ok, valid: result.valid ?? [] });
+    } catch (err) {
+      console.warn('[WSPP BLAST] check-contacts failed:', err.message);
+      sendResponse({ ok: false, valid: [] }); // fail open — let local dedup decide
+    }
+  })();
+  return true;
+});
+
+// ── BLAST_REPORT_SKIPS (Capa 6: visibilidad — inject → background → backend, fire-and-forget) ─
+// Logs skipped contacts to blast_log with reason for visibility/reporting.
+// Reasons: usync_was_in_contacts, contact_collection_agendado, last_received_key,
+//          otro_phone_hablado, sin_nombre, ot
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type !== 'BLAST_REPORT_SKIPS') return;
+
+  const { skips, own_number } = msg;
+  if (!skips?.length) { sendResponse({ ok: true, saved: 0 }); return true; }
+
+  (async () => {
+    try {
+      const result = await apiFetch('/api/blast/report-skips', {
+        method: 'POST',
+        headers: own_number ? { 'x-wa-number': own_number } : {},
+        body: JSON.stringify({ skips }),
+      });
+      if (result.ok) {
+        console.log(`[WSPP BLAST] report-skips: ${result.saved ?? 0} logged`);
+      }
+      sendResponse({ ok: result.ok });
+    } catch (err) {
+      // Fire-and-forget — never block blast on skip reporting failure
+      console.warn('[WSPP BLAST] report-skips failed:', err.message);
+      sendResponse({ ok: false });
+    }
+  })();
+  return true;
+});
