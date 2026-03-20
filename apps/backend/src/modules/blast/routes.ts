@@ -629,5 +629,42 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
         }
       }
     );
+
+    // ──────────────────────────────────────────────────────────────────
+    // POST /api/blast/sync-status
+    // Sincroniza cms_status con blast_log. Marca como 'hablado' todos los
+    // contactos que tienen registro en blast_log con status='sent' pero
+    // que aún tienen cms_status='nuevo'.
+    // ──────────────────────────────────────────────────────────────────
+    app.post(
+      "/api/blast/sync-status",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const req        = request as AuthenticatedRequest;
+        const requestId  = String(request.id);
+        const campaignId = req.activeCampaignId!;
+
+        try {
+          const result = await repo.syncCmsStatusWithBlastLog(campaignId);
+          app.log.info({ campaignId, ...result }, "[blast] sync-status completed");
+          return reply.code(200).send({
+            ok:         true,
+            request_id: requestId,
+            ...result,
+            message: `Sincronizados ${result.synced} contactos. Ahora hay ${result.pending_nuevo - result.synced} pendientes reales.`,
+          });
+        } catch (err) {
+          app.log.error({ err }, "[blast] syncCmsStatusWithBlastLog failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "Error al sincronizar status")
+          );
+        }
+      }
+    );
   };
 }

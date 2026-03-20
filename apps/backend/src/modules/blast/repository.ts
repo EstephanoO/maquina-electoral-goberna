@@ -124,19 +124,22 @@ export async function getFormContactsForNumber(params: {
     `COALESCE(fs.data->>'telefono', '') != ''`,
     // Deterministic segment assignment
     `ABS(hashtext(COALESCE(fs.data->>'telefono', fs.id::text))) % $2 = $3`,
-    // Skip contacts already sent successfully by this wa_number (histórico)
+    // Skip contacts already sent successfully by ANY wa_number (no solo este)
+    // CRÍTICO: Si CUALQUIER celular ya envió a este teléfono, no enviar de nuevo.
+    // Esto previene duplicados cuando el mark-hablado falla pero blast_log sí se registró.
     `NOT EXISTS (
        SELECT 1 FROM blast_log bl
        WHERE bl.campaign_id = $1
-         AND bl.wa_number   = $4
          AND regexp_replace(bl.contact_phone, '[^0-9]', '', 'g') = regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g')
          AND bl.status = 'sent'
      )`,
     // Skip contacts marked no_wa HOY — se reintentarán mañana via retry-no-wa
     `COALESCE(fs.cms_status, 'nuevo') != 'no_wa'
      OR fs.cms_hablado_at < CURRENT_DATE`,
-    // Skip contacts que ya respondieron — ya están atendidos por el CMS
-    `COALESCE(fs.cms_status, 'nuevo') NOT IN ('hablado', 'respondieron')`,
+    // Skip contacts que ya fueron procesados (hablado, respondieron, archivado, claimed)
+    `COALESCE(fs.cms_status, 'nuevo') NOT IN ('hablado', 'respondieron', 'archivado', 'claimed')`,
+    // Skip teléfonos inválidos (menos de 9 dígitos)
+    `LENGTH(regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g')) >= 9`,
     // Bloqueo global — si el teléfono está en blast_blocklist, NINGÚN celular puede enviarle
     `NOT EXISTS (
        SELECT 1 FROM blast_blocklist bl2
@@ -452,6 +455,61 @@ export async function retryNoWaContacts(campaign_id: string): Promise<number> {
     [campaign_id]
   );
   return result.rowCount ?? 0;
+}
+
+// ── Sincronizar cms_status con blast_log ──────────────────────────────
+// Marca como 'hablado' todos los contactos que tienen registro en blast_log
+// con status='sent' pero que aún tienen cms_status='nuevo'.
+// Esto corrige inconsistencias donde el mensaje se envió pero no se marcó.
+export async function syncCmsStatusWithBlastLog(campaign_id: string): Promise<{
+  synced: number;
+  already_hablado: number;
+  in_blast_log: number;
+  pending_nuevo: number;
+}> {
+  // 1. Contar estado actual
+  const statsResult = await pool.query<{
+    in_blast_log: string;
+    pending_nuevo: string;
+    already_hablado: string;
+  }>(`
+    SELECT
+      (SELECT COUNT(DISTINCT regexp_replace(contact_phone, '[^0-9]', '', 'g'))
+       FROM blast_log WHERE campaign_id = $1 AND status = 'sent') AS in_blast_log,
+      (SELECT COUNT(*) FROM form_submissions
+       WHERE campaign_id = $1 AND deleted_at IS NULL
+         AND COALESCE(cms_status, 'nuevo') = 'nuevo'
+         AND COALESCE(data->>'telefono', '') != '') AS pending_nuevo,
+      (SELECT COUNT(*) FROM form_submissions
+       WHERE campaign_id = $1 AND deleted_at IS NULL
+         AND cms_status = 'hablado') AS already_hablado
+  `, [campaign_id]);
+
+  const stats = statsResult.rows[0];
+
+  // 2. Sincronizar: marcar como 'hablado' los que están en blast_log pero tienen cms_status='nuevo'
+  const syncResult = await pool.query(`
+    UPDATE form_submissions fs
+    SET cms_status = 'hablado',
+        cms_hablado_at = COALESCE(fs.cms_hablado_at, NOW())
+    WHERE fs.campaign_id = $1
+      AND fs.deleted_at IS NULL
+      AND COALESCE(fs.cms_status, 'nuevo') = 'nuevo'
+      AND EXISTS (
+        SELECT 1 FROM blast_log bl
+        WHERE bl.campaign_id = $1
+          AND bl.status = 'sent'
+          AND regexp_replace(bl.contact_phone, '[^0-9]', '', 'g') =
+              regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g')
+      )
+  `, [campaign_id]);
+
+  return {
+    synced: syncResult.rowCount ?? 0,
+    already_hablado: parseInt(stats?.already_hablado ?? '0', 10),
+    in_blast_log: parseInt(stats?.in_blast_log ?? '0', 10),
+    pending_nuevo: parseInt(stats?.pending_nuevo ?? '0', 10),
+  };
 }
 
 // ── Save blast log batch ───────────────────────────────────────────────
@@ -964,19 +1022,19 @@ export async function resolvePhoneByJid(params: {
 
 // ── Capa 5: check-contacts — realtime deduplicación anti-duplicado ─────
 // Recibe una lista de {id, phone} y devuelve cuáles siguen siendo 'nuevo'.
-// Si un contacto fue marcado 'hablado' por OTRO phone mientras este corre,
-// lo detectamos aquí antes de enviar.
+// Si un contacto fue marcado 'hablado' por CUALQUIER phone, lo detectamos aquí.
+// CRÍTICO: Verifica blast_log sin filtrar por wa_number para evitar duplicados globales.
 export async function checkContactsStillNew(params: {
   campaign_id: string;
   wa_number:   string;
   contacts:     { id: string; phone: string }[];
 }): Promise<Set<string>> {
-  const { campaign_id, wa_number, contacts } = params;
+  const { campaign_id, contacts } = params;
   if (!contacts.length) return new Set();
 
-  // Build placeholders: $1=campaign_id, $2=wa_number
-  // contacts[i] = { id: $3+i*2, phone: $4+i*2 }
-  const args: unknown[] = [campaign_id, wa_number];
+  // Build placeholders: $1=campaign_id
+  // contacts[i] = { id: $2+i*2, phone: $3+i*2 }
+  const args: unknown[] = [campaign_id];
   const idPlaceholders:  string[] = [];
   const phonePlaceholders: string[] = [];
 
@@ -992,12 +1050,13 @@ export async function checkContactsStillNew(params: {
     WHERE fs.campaign_id = $1
       AND fs.deleted_at IS NULL
       AND fs.id IN (${idPlaceholders.join(',')})
-      AND COALESCE(fs.data->>'telefono', '') IN (${phonePlaceholders.join(',')})
+      -- Normalizar teléfono para comparación correcta
+      AND regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g') IN (${phonePlaceholders.join(',')})
       AND COALESCE(fs.cms_status, 'nuevo') NOT IN ('hablado', 'respondieron')
+      -- CRÍTICO: Sin filtro de wa_number — excluir si CUALQUIER celular ya envió
       AND NOT EXISTS (
         SELECT 1 FROM blast_log bl
         WHERE bl.campaign_id = $1
-          AND bl.wa_number   = $2
           AND regexp_replace(bl.contact_phone, '[^0-9]', '', 'g') = regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g')
           AND bl.status = 'sent'
       )

@@ -441,15 +441,19 @@ function _markHablado(ids, no_wa_ids) {
 // ── Capa 5: realtime check con backend antes de procesar ─────────────
 // Verifica que cada contacto siga siendo 'nuevo' en la DB.
 // Cubre el caso donde OTRO phone lo marcó 'hablado' mientras este corre.
+// IMPORTANTE: En timeout, retornamos TODOS los IDs (asumir válidos) para
+// confiar en el dedup local. NO retornar Set vacío porque eso filtraría todo.
 function _checkContactsBackend(contacts) {
   if (!contacts.length) return Promise.resolve(new Set());
+  // Extraer IDs para fallback en caso de timeout
+  const allIds = new Set(contacts.filter(c => c.id).map(c => c.id));
   return new Promise((resolve) => {
     const reqId = 'chk_' + Date.now();
     console.log(`[BLAST CHECK] checking ${contacts.length} contacts with backend`);
     const timer = setTimeout(() => {
       window.removeEventListener('message', onReply);
-      console.warn('[BLAST CHECK] TIMEOUT — trusting local dedup');
-      resolve(new Set()); // fallback: confiar en el dedup local
+      console.warn('[BLAST CHECK] TIMEOUT — asumiendo todos válidos, confiando en dedup local');
+      resolve(allIds); // fallback SEGURO: asumir todos válidos, confiar en dedup local
     }, 10000);
     function onReply(e) {
       if (e.source !== window || e.data?.type !== 'BLAST_CHECK_CONTACTS_DONE' || e.data.reqId !== reqId) return;
@@ -486,6 +490,25 @@ function _reportSkips(skips) {
   }, WA_ORIGIN); // fire-and-forget
 }
 
+// ── Capa 7: reportar envíos exitosos a blast_log para dedup global ──
+// CRÍTICO: Esto garantiza que blast_log tenga registro de TODOS los envíos,
+// incluso si el mark-hablado falla. El filtro del backend usa blast_log
+// para evitar duplicados entre diferentes celulares.
+function _reportSentResult(contact, messageText) {
+  window.postMessage({
+    type: 'BLAST_REPORT_RESULTS',
+    results: [{
+      phone:        contact.telefono ?? '',
+      contact_name: ((contact.nombre || '') + ' ' + (contact.apellidos || '')).trim() || null,
+      message:      messageText?.slice(0, 200) ?? null,
+      status:       'sent',
+      error:        null,
+      own_number:   getOwnNumber() || '',
+      contact_id:   contact.id ?? null,
+    }],
+  }, WA_ORIGIN); // fire-and-forget pero CRÍTICO para dedup
+}
+
 // ── Exports ──────────────────────────────────────────────────────
 export function getConfig() { return cfg; }
 export function setConfig(c) { cfg = { ...cfg, ...c }; _saveCfg(cfg); }
@@ -514,6 +537,28 @@ export async function startBlast() {
     _notify();
     return;
   }
+
+  // ══════════════════════════════════════════════════════════════════
+  // LIMPIEZA TOTAL: Limpiar TODOS los caches antes de iniciar
+  // Esto garantiza que no haya datos viejos que interfieran con el blast
+  // ══════════════════════════════════════════════════════════════════
+  console.log('[BLAST] Limpiando todos los caches antes de iniciar...');
+
+  // 1. Limpiar Sets en memoria
+  _sentPhones.clear();
+  _sentIds.clear();
+  _preClaimedIds.clear();
+  _habladoIds.clear();
+  _inFlight.clear();
+
+  // 2. Limpiar localStorage de envíos anteriores
+  try { localStorage.removeItem(LS_SENT_KEY); } catch (_) {}
+
+  // 3. Limpiar tracked messages
+  _trackedMsgs = [];
+
+  console.log('[BLAST] Caches limpiados: _sentPhones, _sentIds, _preClaimedIds, _habladoIds, _inFlight, localStorage');
+  // ══════════════════════════════════════════════════════════════════
 
   // Nueva sesión — nuevo sessionId para que localStorage no interfiera
   _currentSessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
@@ -577,6 +622,8 @@ export async function startBlast() {
     // ── Capa 5: realtime check con backend antes de procesar ──────
     // Filtra contactos que fueron marcados 'hablado' por OTRO phone
     // mientras este batch se ejecutaba. Evita el race condition más común.
+    // CRÍTICO: Usamos filteredBatch para el resto del procesamiento.
+    let filteredBatch = batch;
     if (batch.length) {
       const validIds = await _checkContactsBackend(batch);
       if (validIds.size < batch.length) {
@@ -601,7 +648,17 @@ export async function startBlast() {
           if (_lastResults.length > 30) _lastResults.length = 30;
         }
         _notify();
+        // ⚠️ CRÍTICO: Filtrar el batch para NO procesar los removed
+        filteredBatch = batch.filter(c => !c.id || validIds.has(c.id));
+        console.log(`[BLAST] Capa5: batch filtrado de ${batch.length} → ${filteredBatch.length} contactos`);
       }
+    }
+
+    // Si después de filtrar no quedan contactos, continuar al siguiente batch
+    if (!filteredBatch.length) {
+      console.log('[BLAST] Capa5: todos los contactos fueron filtrados, continuando al siguiente batch');
+      _reportSkips(skipsBatch);
+      continue;
     }
 
     // ── PRE-CLAIM: marcar 'hablado' ANTES de procesar ─────────────────
@@ -609,10 +666,11 @@ export async function startBlast() {
     // entre que el backend filtra (status=nuevo) y que _markHablado(post-send)
     // se ejecuta, OTRO phone puede reclamar el contacto.
     // Al pre-reclamar aquí, la próxima query del backend ya los excluye.
-    const idsToPreClaim = batch
+    // NOTA: Usamos filteredBatch (ya filtrado por Capa 5)
+    const idsToPreClaim = filteredBatch
       .filter(c => c.id)
       .map(c => c.id);
-    console.log(`[BLAST PRE-CLAIM] batch tiene ${idsToPreClaim.length} ids con id`);
+    console.log(`[BLAST PRE-CLAIM] filteredBatch tiene ${idsToPreClaim.length} ids con id`);
     if (idsToPreClaim.length) {
       _preClaimContacts(idsToPreClaim);
       // También agregarlos a habladoBatch para que NO se marquen de nuevo post-send
@@ -620,8 +678,9 @@ export async function startBlast() {
     }
 
     // 3. Procesar cada contacto (Capa 1: ContactCollection, Capa 2: lastReceivedKey)
-    for (let i = 0; i < batch.length && _running; i++) {
-      const c = batch[i];
+    // NOTA: Usamos filteredBatch (ya filtrado por Capa 5)
+    for (let i = 0; i < filteredBatch.length && _running; i++) {
+      const c = filteredBatch[i];
       const normalizedPhone = _normalizePhone(c.telefono);
       const jid = normalizedPhone ? normalizedPhone + '@c.us' : null;
       const cName = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim() || '—';
@@ -742,6 +801,11 @@ export async function startBlast() {
         _kpis.sent++;
         _sessionSent++;
         _tplIndex++;
+        _hasSentThisSession = true; // Activar persistencia en localStorage
+        // Capa 7: Reportar envío exitoso a blast_log para dedup global
+        _reportSentResult(c, text);
+        // Agregar a lastResults
+        _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'sent', ack: 0, error: null });
     // Si alcanzó el límite → romper el loop de contactos
     if (_blastLimit > 0 && _sessionSent >= _blastLimit) {
       console.log('[BLAST] Límite alcanzado — parando');
@@ -765,7 +829,7 @@ export async function startBlast() {
       _inFlight.delete(lockKey);
 
       // Delay VARIABLE 1-5s ANTES del siguiente
-      if (_running && i < batch.length - 1) {
+      if (_running && i < filteredBatch.length - 1) {
         const delay = _variableDelay();
         _startCountdown(Math.ceil(delay / 1000), 'delay');
         await _sleep(delay);
