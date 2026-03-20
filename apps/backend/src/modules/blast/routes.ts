@@ -17,6 +17,8 @@ import {
   markHabladoSchema,
   blastReportSchema,
   numberConfigSchema,
+  reportConversationSchema,
+  resolvePhoneSchema,
 } from "./schemas";
 import * as repo from "./repository";
 
@@ -424,6 +426,106 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
           app.log.error({ err }, "[blast] retryNoWa failed");
           return reply.code(500).send(
             errorPayload(requestId, "UPSTREAM_ERROR", "Error al reintentar no_wa")
+          );
+        }
+      }
+    );
+
+    // ──────────────────────────────────────────────────────────────────
+    // POST /api/blast/report-conversation
+    // Called by the extension immediately after a blast message is sent.
+    // Stores jid→phone mapping in blast_jid_phone_map and creates the
+    // conversation entry with source='blast'.
+    //
+    // This closes the gap: blast sends never created conversations with
+    // phone, causing 78% of conversations to have phone=NULL.
+    // ──────────────────────────────────────────────────────────────────
+    app.post(
+      "/api/blast/report-conversation",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const req        = request as AuthenticatedRequest;
+        const requestId  = String(request.id);
+        const campaignId = req.activeCampaignId!;
+
+        const parsed = reportConversationSchema.safeParse(request.body);
+        if (!parsed.success) {
+          return reply.code(400).send(
+            errorPayload(requestId, "VALIDATION_ERROR",
+              parsed.error.issues[0]?.message ?? "Payload inválido")
+          );
+        }
+
+        try {
+          const result = await repo.reportBlastConversation({
+            campaign_id:  campaignId,
+            own_number:   parsed.data.own_number,
+            jid:          parsed.data.jid,
+            phone:        parsed.data.phone.replace(/\D/g, "").slice(-9), // canonical 9-digit
+            contact_name: parsed.data.contact_name ?? null,
+          });
+
+          return reply.code(200).send({
+            ok:             true,
+            request_id:     requestId,
+            conversation_id: result.conversation_id,
+            is_new:         result.is_new,
+          });
+        } catch (err) {
+          app.log.error({ err }, "[blast] reportBlastConversation failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "Error al registrar conversación de blast")
+          );
+        }
+      }
+    );
+
+    // ──────────────────────────────────────────────────────────────────
+    // GET /api/blast/resolve-phone?jid=xxx
+    // Called by the extension on every incoming message.
+    // Looks up the canonical phone number for a JID so that:
+    //   1. conversations.phone is backfilled
+    //   2. voter_profiles.blast_replied is updated
+    //   3. CMS auto-transition (hablado→respondieron) works for blast contacts
+    // ──────────────────────────────────────────────────────────────────
+    app.get(
+      "/api/blast/resolve-phone",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const req        = request as AuthenticatedRequest;
+        const requestId  = String(request.id);
+        const campaignId = req.activeCampaignId!;
+
+        const { jid } = request.query as { jid?: string };
+        if (!jid) {
+          return reply.code(400).send(
+            errorPayload(requestId, "VALIDATION_ERROR", "jid requerido")
+          );
+        }
+
+        try {
+          const result = await repo.resolvePhoneByJid({ campaign_id: campaignId, jid });
+          return reply.code(200).send({
+            ok:           true,
+            request_id:   requestId,
+            jid,
+            phone:        result.phone,
+            contact_name: result.contact_name,
+          });
+        } catch (err) {
+          app.log.error({ err }, "[blast] resolvePhoneByJid failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "Error al resolver teléfono")
           );
         }
       }

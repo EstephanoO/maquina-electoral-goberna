@@ -815,3 +815,129 @@ export async function getNumberHealth(
     next_available_at: nextAvailableAt,
   };
 }
+
+// ── Blast conversation bridge ──────────────────────────────────────────
+// See: migration 044_blast_jid_phone_map.sql
+//
+// reportBlastConversation:
+//   1. Upsert into blast_jid_phone_map (jid → phone mapping)
+//   2. Upsert into conversations with source='blast'
+// Both in a transaction so they're atomic.
+//
+// resolvePhoneByJid:
+//   Looks up the canonical phone number for a given JID.
+//   Used by the extension on incoming replies.
+
+export async function reportBlastConversation(params: {
+  campaign_id:  string;
+  own_number:   string;
+  jid:          string;
+  phone:        string;
+  contact_name: string | null;
+}): Promise<{ conversation_id: number; is_new: boolean }> {
+  const { campaign_id, own_number, jid, phone, contact_name } = params;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Step 1: upsert blast_jid_phone_map
+    await client.query(`
+      INSERT INTO blast_jid_phone_map
+        (campaign_id, own_number, jid, phone, contact_name)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (campaign_id, own_number, jid) DO UPDATE SET
+        phone = EXCLUDED.phone,
+        contact_name = COALESCE(EXCLUDED.contact_name, blast_jid_phone_map.contact_name),
+        created_at = now()
+    `, [campaign_id, own_number, jid, phone, contact_name]);
+
+    // Step 2: upsert conversations with source='blast'
+    const msgEntry = JSON.stringify({
+      d: "out",
+      t: "(mensaje de blast)",
+      ts: Date.now(),
+      op: null,
+    });
+
+    const { rows } = await client.query<{ id: string; is_new: boolean }>(`
+      INSERT INTO conversations (
+        campaign_id, own_number, jid, phone, contact_name,
+        messages, message_count, inbound_count,
+        source, classified_by
+      ) VALUES (
+        $1, $2, $3, $4, $5,
+        jsonb_build_array($6::jsonb), 1, 0,
+        'blast', 'pending'
+      )
+      ON CONFLICT (campaign_id, own_number, jid) DO UPDATE SET
+        phone = EXCLUDED.phone,
+        contact_name = COALESCE(EXCLUDED.contact_name, conversations.contact_name),
+        messages = CASE
+          WHEN jsonb_array_length(conversations.messages) >= 50
+          THEN (conversations.messages - 0) || jsonb_build_array($6::jsonb)
+          ELSE conversations.messages || jsonb_build_array($6::jsonb)
+        END,
+        message_count = conversations.message_count + 1,
+        updated_at = now()
+      RETURNING id::text, (xmax = 0) as is_new
+    `, [campaign_id, own_number, jid, phone, contact_name, msgEntry]);
+
+    await client.query("COMMIT");
+
+    return {
+      conversation_id: parseInt(rows[0]!.id, 10),
+      is_new: rows[0]!.is_new,
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function resolvePhoneByJid(params: {
+  campaign_id: string;
+  jid:         string;
+}): Promise<{ phone: string | null; contact_name: string | null }> {
+  const { campaign_id, jid } = params;
+
+  // Look up in blast_jid_phone_map first (most specific for blast)
+  const { rows: bjpmRows } = await pool.query<{
+    phone:        string;
+    contact_name: string | null;
+  }>(`
+    SELECT phone, contact_name
+    FROM blast_jid_phone_map
+    WHERE campaign_id = $1 AND jid = $2
+    LIMIT 1
+  `, [campaign_id, jid]);
+
+  if (bjpmRows.length > 0) {
+    return {
+      phone:        bjpmRows[0]!.phone,
+      contact_name: bjpmRows[0]!.contact_name,
+    };
+  }
+
+  // Fallback: look in conversations table directly
+  const { rows: convRows } = await pool.query<{
+    phone:        string | null;
+    contact_name: string | null;
+  }>(`
+    SELECT phone, contact_name
+    FROM conversations
+    WHERE campaign_id = $1 AND jid = $2
+    LIMIT 1
+  `, [campaign_id, jid]);
+
+  if (convRows.length > 0) {
+    return {
+      phone:        convRows[0]!.phone,
+      contact_name: convRows[0]!.contact_name,
+    };
+  }
+
+  return { phone: null, contact_name: null };
+}

@@ -27,3 +27,19 @@ export const numberConfigSchema = z.object({
   segment_idx: z.number().int().min(0).max(29),  // slot 0-29
   total_slots: z.number().int().min(1).max(30),
 });
+
+// POST /api/blast/report-conversation
+// Called by the extension immediately after a blast message is sent.
+// Stores jid→phone mapping and creates/updates the conversations entry.
+export const reportConversationSchema = z.object({
+  jid:          z.string().min(1).max(100),
+  own_number:   z.string().min(1).max(20),
+  phone:        z.string().min(1).max(20),
+  contact_name: z.string().max(200).optional(),
+});
+
+// GET /api/blast/resolve-phone?jid=xxx
+// Called by the extension on incoming reply. Looks up phone by JID.
+export const resolvePhoneSchema = z.object({
+  jid: z.string().min(1).max(100),
+});
