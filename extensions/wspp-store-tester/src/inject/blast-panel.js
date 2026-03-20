@@ -512,9 +512,9 @@ export async function startBlast() {
 
     const habladoBatch = [];
     const noWaBatch = [];
-    const skipsBatch = []; // Capa 6: collects skips para reportar al backend
+    const skipsBatch = []; // collects skips para reportar al backend (Capa 6)
 
-    // ── Capa 5: realtime check con backend antes de procesar ──────
+    // ── Capa 4: realtime check con backend antes de procesar ──────
     // Filtra contactos que fueron marcados 'hablado' por OTRO phone
     // mientras este batch se ejecutaba. Evita el race condition más común.
     if (batch.length) {
@@ -536,7 +536,7 @@ export async function startBlast() {
             telefono: c.telefono ?? '',
             status: 'skipped',
             ack: -1,
-            error: 'Ya marcado por otro phone',
+            error: 'Ya marcado por otro phone — skip',
           });
           if (_lastResults.length > 30) _lastResults.length = 30;
         }
@@ -544,7 +544,7 @@ export async function startBlast() {
       }
     }
 
-    // 3. Procesar cada contacto
+    // 3. Procesar cada contacto (Capa 1: ContactCollection, Capa 2: lastReceivedKey)
     for (let i = 0; i < batch.length && _running; i++) {
       const c = batch[i];
       const normalizedPhone = _normalizePhone(c.telefono);
@@ -565,8 +565,8 @@ export async function startBlast() {
       if (!((c.nombre || '') + ' ' + (c.apellidos || '')).trim()) {
         _kpis.skipped++;
         if (c.id) { _markHabladoIds([c.id]); habladoBatch.push(c.id); }
-        skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: null, reason: 'sin_nombre' }); // Capa 6
-        _lastResults.unshift({ nombre: '— Sin nombre', telefono: c.telefono, status: 'skipped', ack: -1, error: 'Sin nombre' });
+        skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: null, reason: 'sin_nombre' });
+        _lastResults.unshift({ nombre: '— Sin nombre', telefono: c.telefono, status: 'skipped', ack: -1, error: 'Sin nombre — skip' });
         if (_lastResults.length > 30) _lastResults.length = 30;
         _notify();
         continue;
@@ -580,43 +580,14 @@ export async function startBlast() {
         continue;
       }
 
-      // ── CAPA 1: USyncQuery — ¿ya existe en WA? ────────────────────────────
-      // type === 'in' significa que el número está en los contactos del usuario
-      // (mutual, sincronizado del celular, o agregado manualmente).
-      // Si ya existe → skip sin enviar.
-      if (normalizedPhone) {
-        const hasWA = await _checkExistsOnWA(normalizedPhone);
-        if (hasWA === true) {
-          // Número ya está en WA (contactos, sincronizado, o agregado manualmente)
-          console.log('[BLAST] Skip — ya existe en WA:', cName, c.telefono);
-          _kpis.skipped++;
-          if (c.id) { _sentIds.add(c.id); habladoBatch.push(c.id); }
-          _markHablado(c.id ? [c.id] : [], []).catch(() => {});
-          skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: cName, reason: 'usync_was_in_contacts' }); // Capa 6
-          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'skipped', ack: -1, error: 'Ya existe en WA' });
-          if (_lastResults.length > 30) _lastResults.length = 30;
-          _notify();
-          continue;
-        }
-        if (hasWA === false) {
-          // No tiene WA activo
-          _kpis.no_wa++;
-          if (c.id) { _sentIds.add(c.id); noWaBatch.push(c.id); }
-          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'no_wa', ack: -1, error: 'Sin WA' });
-          if (_lastResults.length > 30) _lastResults.length = 30;
-          _notify();
-          continue;
-        }
-      }
-
-      // ── CAPA 2: ContactCollection — ¿ya está agendado en WA? ─────────────
+      // ── CAPA 1: ContactCollection — ¿ya está agendado en WA? ─────────────
       // Si el contacto existe en ContactCollection, fue agregado manualmente
       // a WhatsApp antes. Skip + marcar hablado sin enviar.
+      // NOTA: USyncQuery (verificado antes) NO se usa en blast — bloqueaba
+      // contactos si el celular tiene el phonebook sincronizado.
       try {
         const { ContactCollection } = window.require('WAWebContactCollection');
         if (ContactCollection?._models) {
-          // Buscar por número en los modelos de contacto
-          // El número puede estar en .userid, .number, o la clave del map
           const normalizedPhoneRaw = c.telefono?.replace(/\D/g, '') || normalizedPhone?.replace(/\D/g, '');
           let alreadySaved = false;
           for (const model of ContactCollection._models) {
@@ -631,8 +602,8 @@ export async function startBlast() {
             _kpis.skipped++;
             if (c.id) { _sentIds.add(c.id); habladoBatch.push(c.id); }
             _markHablado(c.id ? [c.id] : [], []).catch(() => {});
-            skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: cName, reason: 'contact_collection_agendado' }); // Capa 6
-            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'skipped', ack: -1, error: 'Ya existe en WA' });
+            skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: cName, reason: 'contact_collection_agendado' });
+            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'skipped', ack: -1, error: 'Agendado en WA — skip' });
             if (_lastResults.length > 30) _lastResults.length = 30;
             _notify();
             continue;
@@ -640,7 +611,7 @@ export async function startBlast() {
         }
       } catch (_) { /* ContactCollection no disponible */ }
 
-      // Prewarm chat
+      // ── CAPA 2: Prewarm chat y buscar si ya existe ────────────────────
       let chat = null;
       try {
         const wf  = _req('WAWebWidFactory');
@@ -654,7 +625,7 @@ export async function startBlast() {
         }
         if (!chat) throw new Error('No se resolvió el chat');
 
-        // ── SAFETY NET: si WA Web ya tiene chat con historial → skip ─────
+        // ── CAPA 3: lastReceivedKey — si WA ya tiene chat con historial → skip ──
         // Si lastReceivedKey existe, el contacto YA RECIBIÓ mensajes antes.
         // Esto cubre el caso donde el backend falló en marcar hablado.
         const lastReceivedKey = chat.get?.('lastReceivedKey');
@@ -664,8 +635,8 @@ export async function startBlast() {
           _kpis.skipped++;
           if (c.id) { _markHabladoIds([c.id]); habladoBatch.push(c.id); }
           _markHablado(c.id ? [c.id] : [], []).catch(() => {});
-          skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: cName, reason: 'last_received_key' }); // Capa 6
-          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'skipped', ack: -1, error: 'Ya tiene chat en WA' });
+          skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: cName, reason: 'last_received_key' });
+          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'skipped', ack: -1, error: 'Chat con historial — skip' });
           if (_lastResults.length > 30) _lastResults.length = 30;
           _notify();
           _inFlight.delete(lockKey);

@@ -2583,20 +2583,6 @@
     if (!d) return null;
     return d.length === 9 ? "51" + d : d;
   }
-  async function _checkExistsOnWA(normalizedPhone) {
-    try {
-      const { USyncQuery } = window.require("WAWebUsync");
-      const { USyncUser } = window.require("WAWebUsyncUser");
-      if (!USyncQuery || !USyncUser) return null;
-      const query = new USyncQuery().withContext("interactive").withContactProtocol().withUser(new USyncUser().withPhone(normalizedPhone));
-      const response = await query.execute();
-      const type = response?.list?.[0]?.contact?.type;
-      if (!type) return null;
-      return type === "in";
-    } catch (_) {
-      return null;
-    }
-  }
   async function _simulateTyping(chat, text) {
     try {
       const csb = _req("WAWebChatStateBridge");
@@ -2915,7 +2901,7 @@
               telefono: c.telefono ?? "",
               status: "skipped",
               ack: -1,
-              error: "Ya marcado por otro phone"
+              error: "Ya marcado por otro phone \u2014 skip"
             });
             if (_lastResults.length > 30) _lastResults.length = 30;
           }
@@ -2940,7 +2926,7 @@
             habladoBatch.push(c.id);
           }
           skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: null, reason: "sin_nombre" });
-          _lastResults.unshift({ nombre: "\u2014 Sin nombre", telefono: c.telefono, status: "skipped", ack: -1, error: "Sin nombre" });
+          _lastResults.unshift({ nombre: "\u2014 Sin nombre", telefono: c.telefono, status: "skipped", ack: -1, error: "Sin nombre \u2014 skip" });
           if (_lastResults.length > 30) _lastResults.length = 30;
           _notify();
           continue;
@@ -2951,35 +2937,6 @@
           if (_lastResults.length > 30) _lastResults.length = 30;
           _notify();
           continue;
-        }
-        if (normalizedPhone) {
-          const hasWA = await _checkExistsOnWA(normalizedPhone);
-          if (hasWA === true) {
-            console.log("[BLAST] Skip \u2014 ya existe en WA:", cName, c.telefono);
-            _kpis.skipped++;
-            if (c.id) {
-              _sentIds.add(c.id);
-              habladoBatch.push(c.id);
-            }
-            _markHablado(c.id ? [c.id] : [], []).catch(() => {
-            });
-            skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: cName, reason: "usync_was_in_contacts" });
-            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Ya existe en WA" });
-            if (_lastResults.length > 30) _lastResults.length = 30;
-            _notify();
-            continue;
-          }
-          if (hasWA === false) {
-            _kpis.no_wa++;
-            if (c.id) {
-              _sentIds.add(c.id);
-              noWaBatch.push(c.id);
-            }
-            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "no_wa", ack: -1, error: "Sin WA" });
-            if (_lastResults.length > 30) _lastResults.length = 30;
-            _notify();
-            continue;
-          }
         }
         try {
           const { ContactCollection } = window.require("WAWebContactCollection");
@@ -3003,7 +2960,7 @@
               _markHablado(c.id ? [c.id] : [], []).catch(() => {
               });
               skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: cName, reason: "contact_collection_agendado" });
-              _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Ya existe en WA" });
+              _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Agendado en WA \u2014 skip" });
               if (_lastResults.length > 30) _lastResults.length = 30;
               _notify();
               continue;
@@ -3035,7 +2992,7 @@
             _markHablado(c.id ? [c.id] : [], []).catch(() => {
             });
             skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: cName, reason: "last_received_key" });
-            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Ya tiene chat en WA" });
+            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Chat con historial \u2014 skip" });
             if (_lastResults.length > 30) _lastResults.length = 30;
             _notify();
             _inFlight.delete(lockKey);
