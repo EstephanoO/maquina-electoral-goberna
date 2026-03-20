@@ -558,7 +558,7 @@ export async function getBlastStats(campaign_id: string): Promise<{
               SELECT 1 FROM blast_log bl
               WHERE bl.campaign_id = $1
                 AND bl.status = 'sent'
-                AND bl.contact_phone = regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g')
+                AND regexp_replace(bl.contact_phone, '[^0-9]', '', 'g') = regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g')
             )
          ) AS responded`,
       [campaign_id]
@@ -978,7 +978,7 @@ export async function checkContactsStillNew(params: {
         SELECT 1 FROM blast_log bl
         WHERE bl.campaign_id = $1
           AND bl.wa_number   = $2
-          AND bl.contact_phone = regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g')
+          AND regexp_replace(bl.contact_phone, '[^0-9]', '', 'g') = regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g')
           AND bl.status = 'sent'
       )
   `);
