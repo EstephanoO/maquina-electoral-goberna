@@ -1,13 +1,11 @@
 // template-analyzer.js — Análisis de riesgo de plantillas pre-envío
-// Evalúa cada plantilla y devuelve score + sugerencias para evitar ban.
-// Consumido por sidebar.js para mostrar warnings antes de iniciar blast.
+// VERSIÓN PERMISIVA — solo flags informativos, no bloquea el envío.
+// Umbrales: 0-60 OK / 61-90 warning / 91+ danger
 
-// ── Palabras trigger de spam ──────────────────────────────────────────
+// ── Palabras trigger de spam (suavizado) ─────────────────────────
 const SPAM_WORDS = [
-  'oferta', 'descuento', 'gratis', 'promo', 'promoción', 'promocion',
-  'sorteo', 'regalo', 'gana', 'ganar', 'premios', 'premio',
-  'click aquí', 'haz click', 'compra ya', 'aprovecha',
-  'último día', 'últimas horas', 'time limited', 'oferta limitada',
+  'oferta', 'descuento', 'gratis', 'sorteo', 'premio',
+  'click aquí', 'haz click', 'compra ya',
 ];
 
 // ── Levenshtein distance (normalizada 0-1) ────────────────────────────
@@ -58,56 +56,50 @@ function _analyzeOneTemplate(tpl) {
 
   // URL/link detection
   if (/https?:\/\/|www\.|\.com\b|\.pe\b|bit\.ly|goo\.gl/i.test(stripped)) {
-    score += 30;
-    signals.push({ points: 30, signal: 'Tiene URL/link', suggestion: 'Eliminá el link — envialo después de que respondan' });
+    score += 15;
+    signals.push({ points: 15, signal: 'Contiene link', suggestion: 'Si es largo, considerá quitarlo' });
   }
 
-  // Más de 3 emojis
+  // Más de 5 emojis
   const emojiCount = _countEmojis(stripped);
-  if (emojiCount > 3) {
-    score += 10;
-    signals.push({ points: 10, signal: `${emojiCount} emojis (>3)`, suggestion: 'Reducí los emojis a máximo 2-3' });
+  if (emojiCount > 5) {
+    score += 5;
+    signals.push({ points: 5, signal: `${emojiCount} emojis (>5)`, suggestion: 'Considerá reducir a 3-4 emojis' });
   }
 
-  // Texto > 300 caracteres (sin separadores)
+  // Texto > 500 caracteres (sin separadores)
   const fullText = stripped.replace(/\n---\n/g, ' ');
-  if (fullText.length > 300) {
-    score += 10;
-    signals.push({ points: 10, signal: `Texto largo (${fullText.length} chars)`, suggestion: 'Reducí a menos de 200 caracteres — la gente no lee msgs largos de desconocidos' });
+  if (fullText.length > 500) {
+    score += 5;
+    signals.push({ points: 5, signal: `Texto largo (${fullText.length} chars)`, suggestion: 'Considerá hacerlo más conciso' });
   }
 
   // No tiene {{nombre}} en ninguna variante
   if (!/\{\{nombre\}\}/i.test(tpl)) {
-    score += 20;
-    signals.push({ points: 20, signal: 'Sin personalización {{nombre}}', suggestion: 'Agregá {{nombre}} al inicio del saludo — personalización = legitimidad' });
+    score += 10;
+    signals.push({ points: 10, signal: 'Sin {{nombre}}', suggestion: 'Agregar {{nombre}} mejora personalización' });
   }
 
   // Pocas opciones en spintax (< 3 opciones por grupo)
   const minOpts = _minSpintaxOptions(tpl);
   const spintaxGroups = (tpl.match(/\[([^\]]+)\]/g) || []).length;
   if (spintaxGroups > 0 && minOpts < 3) {
-    score += 10;
-    signals.push({ points: 10, signal: `Spintax con pocas opciones (mín ${minOpts})`, suggestion: 'Agregá más variantes — mínimo 3 opciones por cada [...]' });
+    score += 5;
+    signals.push({ points: 5, signal: `Spintax con pocas opciones`, suggestion: 'Idealmente 3+ opciones por grupo' });
   }
 
   // Palabras trigger de spam
   const lowerText = stripped.toLowerCase();
   const foundSpam = SPAM_WORDS.filter(w => lowerText.includes(w));
   if (foundSpam.length) {
-    score += 25;
-    signals.push({ points: 25, signal: `Palabras spam: ${foundSpam.join(', ')}`, suggestion: 'Evitá palabras comerciales — WA penaliza "oferta", "descuento", etc.' });
+    score += 10;
+    signals.push({ points: 10, signal: `Spam: ${foundSpam.join(', ')}`, suggestion: 'Palabras comerciales que WA puede marcar' });
   }
 
   // Contiene número de teléfono (redirección)
   if (/\b\d{9,}\b/.test(stripped.replace(/\{\{[^}]+\}\}/g, ''))) {
-    score += 15;
-    signals.push({ points: 15, signal: 'Contiene número de teléfono', suggestion: 'Sacá el número — redirección en primer contacto = sospechoso' });
-  }
-
-  // No tiene '---' (un solo mensaje — menos natural)
-  if (!tpl.includes('---')) {
     score += 5;
-    signals.push({ points: 5, signal: 'Un solo mensaje (sin ---)', suggestion: 'Dividí en 2-3 mensajes con --- para parecer más natural' });
+    signals.push({ points: 5, signal: 'Contiene número de teléfono', suggestion: 'Número de teléfono puede activar filtros' });
   }
 
   return { score, signals };
@@ -138,9 +130,9 @@ export function analyzeTemplates(templates) {
         maxSimilarity = Math.max(maxSimilarity, sim);
       }
     }
-    if (maxSimilarity > 0.7) {
-      maxScore += 15;
-      allSignals.push({ points: 15, signal: `Plantillas muy similares (${Math.round(maxSimilarity * 100)}%)`, suggestion: 'Las plantillas deben ser más diferentes entre sí — variá estructura, largo y tono' });
+    if (maxSimilarity > 0.85) {
+      maxScore += 5;
+      allSignals.push({ points: 5, signal: `Plantillas similares (${Math.round(maxSimilarity * 100)}%)`, suggestion: 'Variá estructura o tono entre plantillas' });
     }
   }
 
@@ -150,14 +142,14 @@ export function analyzeTemplates(templates) {
   for (const s of allSignals) {
     if (!seenSuggestions.has(s.suggestion)) {
       seenSuggestions.add(s.suggestion);
-      suggestions.push(s.suggestion);
+      suggestions.push(s);
     }
   }
 
-  // Nivel de riesgo
-  let level = 'ok';       // 0-20
-  if (maxScore > 40) level = 'danger';  // 41+
-  else if (maxScore > 20) level = 'warning'; // 21-40
+  // Nivel de riesgo (UMBRALES PERMISIVOS)
+  let level = 'ok';       // 0-60
+  if (maxScore > 90) level = 'danger';  // 91+
+  else if (maxScore > 60) level = 'warning'; // 61-90
 
   return {
     score: maxScore,
