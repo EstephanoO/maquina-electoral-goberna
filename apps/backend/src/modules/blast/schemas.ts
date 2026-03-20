@@ -43,3 +43,27 @@ export const reportConversationSchema = z.object({
 export const resolvePhoneSchema = z.object({
   jid: z.string().min(1).max(100),
 });
+
+// POST /api/blast/check-contacts — Capa 5 anti-duplicado
+// Recibe una lista de {id, phone} y devuelve los que siguen siendo 'nuevo'.
+// Se llama antes de procesar cada batch para detectar contactos marcados
+// 'hablado' por OTRO phone mientras este corre.
+export const checkContactsSchema = z.object({
+  contacts: z.array(z.object({
+    id:    z.string().uuid(),
+    phone: z.string().max(20),
+  })).min(1).max(100),
+});
+
+// POST /api/blast/report-skips — Capa 6 visibilidad
+// Registra en blast_log los contactos que se saltaron y por qué.
+// Permite ver en el dashboard qué se saltó y por cuál razón.
+export const reportSkipsSchema = z.object({
+  skips: z.array(z.object({
+    contact_id:     z.string().uuid().nullable(),
+    phone:          z.string().max(20),
+    contact_phone:  z.string().max(20),
+    contact_name:   z.string().max(200).nullable(),
+    reason:         z.string().max(100),
+  })).min(1).max(200),
+});

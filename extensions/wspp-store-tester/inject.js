@@ -2446,8 +2446,43 @@
   var _totalPending = null;
   var _blastLimit = 0;
   var _sessionSent = 0;
+  var LS_SENT_KEY = "wspp_blast_sent_v1";
+  var LS_SENT_TTL_MS = 7 * 24 * 60 * 60 * 1e3;
   var _sentPhones = /* @__PURE__ */ new Set();
   var _sentIds = /* @__PURE__ */ new Set();
+  function _loadSentFromStorage() {
+    try {
+      const raw = localStorage.getItem(LS_SENT_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      if (parsed.savedAt && Date.now() - parsed.savedAt > LS_SENT_TTL_MS) {
+        localStorage.removeItem(LS_SENT_KEY);
+        return;
+      }
+      if (Array.isArray(parsed.phones)) {
+        for (const p of parsed.phones) _sentPhones.add(p);
+      }
+      if (Array.isArray(parsed.ids)) {
+        for (const id of parsed.ids) _sentIds.add(id);
+      }
+      if (_sentPhones.size || _sentIds.size) {
+        console.log(`[BLAST] Capa4: recuper\xF3 ${_sentPhones.size} phones + ${_sentIds.size} ids de localStorage`);
+      }
+    } catch (_) {
+    }
+  }
+  function _saveSentToStorage() {
+    try {
+      localStorage.setItem(LS_SENT_KEY, JSON.stringify({
+        phones: [..._sentPhones],
+        ids: [..._sentIds],
+        savedAt: Date.now()
+      }));
+    } catch (_) {
+    }
+  }
+  _loadSentFromStorage();
   var _inFlight = /* @__PURE__ */ new Set();
   var _ackInterval = null;
   function _startAckTracking() {
@@ -2729,6 +2764,43 @@
       }, WA_ORIGIN);
     });
   }
+  function _checkContactsBackend(contacts) {
+    if (!contacts.length) return Promise.resolve(/* @__PURE__ */ new Set());
+    return new Promise((resolve) => {
+      const reqId = "chk_" + Date.now();
+      const timer = setTimeout(() => {
+        window.removeEventListener("message", onReply);
+        resolve(/* @__PURE__ */ new Set());
+      }, 1e4);
+      function onReply(e) {
+        if (e.source !== window || e.data?.type !== "BLAST_CHECK_CONTACTS_DONE" || e.data.reqId !== reqId) return;
+        window.removeEventListener("message", onReply);
+        clearTimeout(timer);
+        resolve(new Set(e.data.valid ?? []));
+      }
+      window.addEventListener("message", onReply);
+      window.postMessage({
+        type: "BLAST_CHECK_CONTACTS",
+        contacts: contacts.map((c) => ({ id: c.id, phone: c.telefono })),
+        own_number: getOwnNumber(),
+        reqId
+      }, WA_ORIGIN);
+    });
+  }
+  function _reportSkips(skips) {
+    if (!skips.length) return;
+    window.postMessage({
+      type: "BLAST_REPORT_SKIPS",
+      skips: skips.map((s) => ({
+        contact_id: s.contact_id ?? null,
+        phone: getOwnNumber() || "",
+        contact_phone: s.contact_phone,
+        contact_name: s.contact_name ?? null,
+        reason: s.reason
+      })),
+      own_number: getOwnNumber()
+    }, WA_ORIGIN);
+  }
   function getConfig() {
     return cfg;
   }
@@ -2820,6 +2892,36 @@
       }
       const habladoBatch = [];
       const noWaBatch = [];
+      const skipsBatch = [];
+      if (batch.length) {
+        const validIds = await _checkContactsBackend(batch);
+        if (validIds.size < batch.length) {
+          const removed = batch.filter((c) => c.id && !validIds.has(c.id));
+          console.log(`[BLAST] Capa5: ${removed.length} contactos ya marcados por otro phone \u2014 skip`);
+          for (const c of removed) {
+            _kpis.skipped++;
+            if (c.id) {
+              _sentIds.add(c.id);
+              _saveSentToStorage();
+            }
+            skipsBatch.push({
+              contact_id: c.id ?? null,
+              contact_phone: c.telefono ?? "",
+              contact_name: ((c.nombre || "") + " " + (c.apellidos || "")).trim() || null,
+              reason: "otro_phone_hablado"
+            });
+            _lastResults.unshift({
+              nombre: ((c.nombre || "") + " " + (c.apellidos || "")).trim() || "\u2014",
+              telefono: c.telefono ?? "",
+              status: "skipped",
+              ack: -1,
+              error: "Ya marcado por otro phone"
+            });
+            if (_lastResults.length > 30) _lastResults.length = 30;
+          }
+          _notify();
+        }
+      }
       for (let i = 0; i < batch.length && _running; i++) {
         const c = batch[i];
         const normalizedPhone = _normalizePhone(c.telefono);
@@ -2829,6 +2931,7 @@
         if (_inFlight.has(lockKey)) continue;
         if (normalizedPhone) _sentPhones.add(normalizedPhone);
         if (c.id) _sentIds.add(c.id);
+        _saveSentToStorage();
         _inFlight.add(lockKey);
         if (!((c.nombre || "") + " " + (c.apellidos || "")).trim()) {
           _kpis.skipped++;
@@ -2836,6 +2939,7 @@
             _markHabladoIds([c.id]);
             habladoBatch.push(c.id);
           }
+          skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: null, reason: "sin_nombre" });
           _lastResults.unshift({ nombre: "\u2014 Sin nombre", telefono: c.telefono, status: "skipped", ack: -1, error: "Sin nombre" });
           if (_lastResults.length > 30) _lastResults.length = 30;
           _notify();
@@ -2859,6 +2963,7 @@
             }
             _markHablado(c.id ? [c.id] : [], []).catch(() => {
             });
+            skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: cName, reason: "usync_was_in_contacts" });
             _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Ya existe en WA" });
             if (_lastResults.length > 30) _lastResults.length = 30;
             _notify();
@@ -2897,6 +3002,7 @@
               }
               _markHablado(c.id ? [c.id] : [], []).catch(() => {
               });
+              skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: cName, reason: "contact_collection_agendado" });
               _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Ya existe en WA" });
               if (_lastResults.length > 30) _lastResults.length = 30;
               _notify();
@@ -2928,6 +3034,7 @@
             }
             _markHablado(c.id ? [c.id] : [], []).catch(() => {
             });
+            skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: cName, reason: "last_received_key" });
             _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Ya tiene chat en WA" });
             if (_lastResults.length > 30) _lastResults.length = 30;
             _notify();
@@ -2989,6 +3096,8 @@
       if (habladoBatch.length || noWaBatch.length) {
         await _markHablado([...habladoBatch], [...noWaBatch]);
       }
+      _saveSentToStorage();
+      _reportSkips(skipsBatch);
       if (_totalPending !== null) _totalPending = Math.max(0, _totalPending - _kpis.sent);
       _notify();
       if (_running) {
@@ -3041,6 +3150,10 @@
   function resetSession() {
     _sentPhones.clear();
     _sentIds.clear();
+    try {
+      localStorage.removeItem(LS_SENT_KEY);
+    } catch (_) {
+    }
     _habladoIds.clear();
     _inFlight.clear();
     _trackedMsgs = [];

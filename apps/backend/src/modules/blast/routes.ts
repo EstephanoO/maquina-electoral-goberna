@@ -19,6 +19,8 @@ import {
   numberConfigSchema,
   reportConversationSchema,
   resolvePhoneSchema,
+  checkContactsSchema,
+  reportSkipsSchema,
 } from "./schemas";
 import * as repo from "./repository";
 
@@ -526,6 +528,103 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
           app.log.error({ err }, "[blast] resolvePhoneByJid failed");
           return reply.code(500).send(
             errorPayload(requestId, "UPSTREAM_ERROR", "Error al resolver teléfono")
+          );
+        }
+      }
+    );
+
+    // ──────────────────────────────────────────────────────────────────
+    // POST /api/blast/check-contacts — Capa 5 anti-duplicado realtime
+    // Recibe {contacts: [{id, phone}]} y devuelve {valid: [id...]}.
+    // Se llama antes de procesar cada batch para detectar contactos
+    // marcados 'hablado' por OTRO phone mientras este corre.
+    // ──────────────────────────────────────────────────────────────────
+    app.post(
+      "/api/blast/check-contacts",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const req        = request as AuthenticatedRequest;
+        const requestId  = String(request.id);
+        const campaignId = req.activeCampaignId!;
+
+        const parsed = checkContactsSchema.safeParse(request.body);
+        if (!parsed.success) {
+          return reply.code(400).send(
+            errorPayload(requestId, "VALIDATION_ERROR",
+              parsed.error.issues[0]?.message ?? "Payload inválido")
+          );
+        }
+
+        const waNumber = (request.headers["x-wa-number"] as string ?? "")
+          .replace(/\D/g, "").slice(0, 20);
+
+        try {
+          const valid = await repo.checkContactsStillNew({
+            campaign_id: campaignId,
+            wa_number:   waNumber || "unknown",
+            contacts:    parsed.data.contacts,
+          });
+          return reply.code(200).send({
+            ok:        true,
+            request_id: requestId,
+            valid:     [...valid],
+          });
+        } catch (err) {
+          app.log.error({ err }, "[blast] checkContactsStillNew failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "Error al verificar contactos")
+          );
+        }
+      }
+    );
+
+    // ──────────────────────────────────────────────────────────────────
+    // POST /api/blast/report-skips — Capa 6 visibilidad de skips
+    // Registra en blast_log los contactos saltados y su razón.
+    // Permite trazabilidad completa en el dashboard.
+    // ──────────────────────────────────────────────────────────────────
+    app.post(
+      "/api/blast/report-skips",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const req        = request as AuthenticatedRequest;
+        const requestId  = String(request.id);
+        const campaignId = req.activeCampaignId!;
+
+        const parsed = reportSkipsSchema.safeParse(request.body);
+        if (!parsed.success) {
+          return reply.code(400).send(
+            errorPayload(requestId, "VALIDATION_ERROR",
+              parsed.error.issues[0]?.message ?? "Payload inválido")
+          );
+        }
+
+        const waNumber = (request.headers["x-wa-number"] as string ?? "")
+          .replace(/\D/g, "").slice(0, 20);
+
+        try {
+          const saved = await repo.reportSkips({
+            campaign_id: campaignId,
+            wa_number:   waNumber || "unknown",
+            skips:       parsed.data.skips,
+          });
+          app.log.info({ campaignId, waNumber, saved, count: parsed.data.skips.length },
+            "[blast] report-skips");
+          return reply.code(200).send({ ok: true, request_id: requestId, saved });
+        } catch (err) {
+          app.log.error({ err }, "[blast] reportSkips failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "Error al reportar skips")
           );
         }
       }

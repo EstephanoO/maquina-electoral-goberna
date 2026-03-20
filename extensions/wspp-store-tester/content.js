@@ -314,6 +314,25 @@ window.addEventListener('message', (e) => {
     return;
   }
 
+  // --- BLAST_CHECK_CONTACTS (Capa 5: realtime dedup — inject → background → inject) ---
+  if (e.data?.type === 'BLAST_CHECK_CONTACTS') {
+    const reqId = e.data.reqId;
+    chrome.runtime.sendMessage({ type: 'BLAST_CHECK_CONTACTS', contacts: e.data.contacts, own_number: e.data.own_number }, (response) => {
+      if (chrome.runtime.lastError) {
+        if (reqId) window.postMessage({ type: 'BLAST_CHECK_CONTACTS_DONE', ok: false, valid: [], reqId }, WA_ORIGIN);
+        return;
+      }
+      if (reqId) window.postMessage({ type: 'BLAST_CHECK_CONTACTS_DONE', ok: response?.ok ?? false, valid: response?.valid ?? [], reqId }, WA_ORIGIN);
+    });
+    return;
+  }
+
+  // --- BLAST_REPORT_SKIPS (Capa 6: visibilidad — inject → background, fire-and-forget) ---
+  if (e.data?.type === 'BLAST_REPORT_SKIPS') {
+    chrome.runtime.sendMessage({ type: 'BLAST_REPORT_SKIPS', skips: e.data.skips, own_number: e.data.own_number }, () => {});
+    return;
+  }
+
   // --- BLAST_GET_BLOCK_STATS (inject → background → inject) ---
   if (e.data?.type === 'BLAST_GET_BLOCK_STATS') {
     chrome.runtime.sendMessage({ type: 'BLAST_GET_BLOCK_STATS', block_id: e.data.block_id, own_number: e.data.own_number }, (response) => {

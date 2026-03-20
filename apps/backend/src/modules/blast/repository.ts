@@ -941,3 +941,95 @@ export async function resolvePhoneByJid(params: {
 
   return { phone: null, contact_name: null };
 }
+
+// ── Capa 5: check-contacts — realtime deduplicación anti-duplicado ─────
+// Recibe una lista de {id, phone} y devuelve cuáles siguen siendo 'nuevo'.
+// Si un contacto fue marcado 'hablado' por OTRO phone mientras este corre,
+// lo detectamos aquí antes de enviar.
+export async function checkContactsStillNew(params: {
+  campaign_id: string;
+  wa_number:   string;
+  contacts:     { id: string; phone: string }[];
+}): Promise<Set<string>> {
+  const { campaign_id, wa_number, contacts } = params;
+  if (!contacts.length) return new Set();
+
+  // Build placeholders: $1=campaign_id, $2=wa_number
+  // contacts[i] = { id: $3+i*2, phone: $4+i*2 }
+  const args: unknown[] = [campaign_id, wa_number];
+  const idPlaceholders:  string[] = [];
+  const phonePlaceholders: string[] = [];
+
+  contacts.forEach((c, i) => {
+    args.push(c.id, c.phone.replace(/\D/g, ''));
+    idPlaceholders.push(`$${args.length - 1}`);
+    phonePlaceholders.push(`$${args.length}`);
+  });
+
+  const { rows } = await pool.query<{ id: string }>(`
+    SELECT fs.id
+    FROM form_submissions fs
+    WHERE fs.campaign_id = $1
+      AND fs.deleted_at IS NULL
+      AND fs.id IN (${idPlaceholders.join(',')})
+      AND COALESCE(fs.data->>'telefono', '') IN (${phonePlaceholders.join(',')})
+      AND COALESCE(fs.cms_status, 'nuevo') NOT IN ('hablado', 'respondieron')
+      AND NOT EXISTS (
+        SELECT 1 FROM blast_log bl
+        WHERE bl.campaign_id = $1
+          AND bl.wa_number   = $2
+          AND bl.contact_phone = regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g')
+          AND bl.status = 'sent'
+      )
+  `);
+
+  return new Set(rows.map(r => r.id));
+}
+
+// ── Capa 6: report-skips — visibilidad de skips en blast_log ───────────
+// Registra cada skip con su razón para trazabilidad en el dashboard.
+export async function reportSkips(params: {
+  campaign_id: string;
+  wa_number:   string;
+  skips: {
+    contact_id:    string | null;
+    phone:         string;
+    contact_phone: string;
+    contact_name:  string | null;
+    reason:        string;
+  }[];
+}): Promise<number> {
+  const { campaign_id, wa_number, skips } = params;
+  if (!skips.length) return 0;
+
+  const values: unknown[] = [];
+  const placeholders: string[] = [];
+  let idx = 1;
+
+  for (const skip of skips) {
+    placeholders.push(
+      `($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++})`
+    );
+    values.push(
+      campaign_id,
+      skip.contact_id,
+      skip.phone,
+      skip.contact_phone,
+      skip.contact_name ?? null,
+      'skipped',
+      skip.reason,
+      new Date(),
+    );
+  }
+
+  const { rowCount } = await pool.query(`
+    INSERT INTO blast_log (
+      campaign_id, contact_id, phone, contact_phone, contact_name,
+      status, message, sent_at, created_at
+    )
+    VALUES ${placeholders.join(', ')}
+    ON CONFLICT DO NOTHING
+  `, values);
+
+  return rowCount ?? 0;
+}

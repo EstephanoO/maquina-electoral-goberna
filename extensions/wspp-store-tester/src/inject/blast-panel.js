@@ -46,9 +46,53 @@ let _totalPending = null;
 let _blastLimit = 0; // 0 = infinito, >0 = parar al alcanzar
 let _sessionSent = 0;
 
+// ── Capa 4: localStorage persistente anti-crash ─────────────────────
+// Survive recargas del browser y browser crashes.
+// Sin localStorage, si WA Web se actualiza o crashea, se pierde todo el dedup.
+// Key: wspp_blast_sent_v1 — { phones: [...], ids: [...], savedAt: timestamp }
+// Cleanup automático: entradas > 7 días se descartan al cargar.
+const LS_SENT_KEY = 'wspp_blast_sent_v1';
+const LS_SENT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
+
 // Dedup local simple
 const _sentPhones = new Set();
 const _sentIds = new Set();
+
+function _loadSentFromStorage() {
+  try {
+    const raw = localStorage.getItem(LS_SENT_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return;
+    // Descartar entradas viejas
+    if (parsed.savedAt && Date.now() - parsed.savedAt > LS_SENT_TTL_MS) {
+      localStorage.removeItem(LS_SENT_KEY);
+      return;
+    }
+    if (Array.isArray(parsed.phones)) {
+      for (const p of parsed.phones) _sentPhones.add(p);
+    }
+    if (Array.isArray(parsed.ids)) {
+      for (const id of parsed.ids) _sentIds.add(id);
+    }
+    if (_sentPhones.size || _sentIds.size) {
+      console.log(`[BLAST] Capa4: recuperó ${_sentPhones.size} phones + ${_sentIds.size} ids de localStorage`);
+    }
+  } catch (_) {}
+}
+
+function _saveSentToStorage() {
+  try {
+    localStorage.setItem(LS_SENT_KEY, JSON.stringify({
+      phones: [..._sentPhones],
+      ids: [..._sentIds],
+      savedAt: Date.now(),
+    }));
+  } catch (_) {}
+}
+
+// Cargar al inicio (luego de declarar los Sets)
+_loadSentFromStorage();
 
 // In-flight lock
 const _inFlight = new Set();
@@ -353,6 +397,50 @@ function _markHablado(ids, no_wa_ids) {
   });
 }
 
+// ── Capa 5: realtime check con backend antes de procesar ─────────────
+// Verifica que cada contacto siga siendo 'nuevo' en la DB.
+// Cubre el caso donde OTRO phone lo marcó 'hablado' mientras este corre.
+function _checkContactsBackend(contacts) {
+  if (!contacts.length) return Promise.resolve(new Set());
+  return new Promise((resolve) => {
+    const reqId = 'chk_' + Date.now();
+    const timer = setTimeout(() => {
+      window.removeEventListener('message', onReply);
+      resolve(new Set()); // fallback: confiar en el dedup local
+    }, 10000);
+    function onReply(e) {
+      if (e.source !== window || e.data?.type !== 'BLAST_CHECK_CONTACTS_DONE' || e.data.reqId !== reqId) return;
+      window.removeEventListener('message', onReply);
+      clearTimeout(timer);
+      resolve(new Set(e.data.valid ?? []));
+    }
+    window.addEventListener('message', onReply);
+    window.postMessage({
+      type: 'BLAST_CHECK_CONTACTS',
+      contacts: contacts.map(c => ({ id: c.id, phone: c.telefono })),
+      own_number: getOwnNumber(),
+      reqId,
+    }, WA_ORIGIN);
+  });
+}
+
+// ── Capa 6: reportar skips a blast_log para visibilidad dashboard ──
+// Registra cada skip con su razón para trazabilidad.
+function _reportSkips(skips) {
+  if (!skips.length) return;
+  window.postMessage({
+    type: 'BLAST_REPORT_SKIPS',
+    skips: skips.map(s => ({
+      contact_id:    s.contact_id ?? null,
+      phone:         getOwnNumber() || '',
+      contact_phone: s.contact_phone,
+      contact_name:  s.contact_name ?? null,
+      reason:        s.reason,
+    })),
+    own_number: getOwnNumber(),
+  }, WA_ORIGIN); // fire-and-forget
+}
+
 // ── Exports ──────────────────────────────────────────────────────
 export function getConfig() { return cfg; }
 export function setConfig(c) { cfg = { ...cfg, ...c }; _saveCfg(cfg); }
@@ -424,6 +512,37 @@ export async function startBlast() {
 
     const habladoBatch = [];
     const noWaBatch = [];
+    const skipsBatch = []; // Capa 6: collects skips para reportar al backend
+
+    // ── Capa 5: realtime check con backend antes de procesar ──────
+    // Filtra contactos que fueron marcados 'hablado' por OTRO phone
+    // mientras este batch se ejecutaba. Evita el race condition más común.
+    if (batch.length) {
+      const validIds = await _checkContactsBackend(batch);
+      if (validIds.size < batch.length) {
+        const removed = batch.filter(c => c.id && !validIds.has(c.id));
+        console.log(`[BLAST] Capa5: ${removed.length} contactos ya marcados por otro phone — skip`);
+        for (const c of removed) {
+          _kpis.skipped++;
+          if (c.id) { _sentIds.add(c.id); _saveSentToStorage(); }
+          skipsBatch.push({
+            contact_id: c.id ?? null,
+            contact_phone: c.telefono ?? '',
+            contact_name: ((c.nombre || '') + ' ' + (c.apellidos || '')).trim() || null,
+            reason: 'otro_phone_hablado',
+          });
+          _lastResults.unshift({
+            nombre: ((c.nombre || '') + ' ' + (c.apellidos || '')).trim() || '—',
+            telefono: c.telefono ?? '',
+            status: 'skipped',
+            ack: -1,
+            error: 'Ya marcado por otro phone',
+          });
+          if (_lastResults.length > 30) _lastResults.length = 30;
+        }
+        _notify();
+      }
+    }
 
     // 3. Procesar cada contacto
     for (let i = 0; i < batch.length && _running; i++) {
@@ -439,12 +558,14 @@ export async function startBlast() {
       // Dedup
       if (normalizedPhone) _sentPhones.add(normalizedPhone);
       if (c.id) _sentIds.add(c.id);
+      _saveSentToStorage(); // Capa 4: persiste en localStorage anti-crash
       _inFlight.add(lockKey);
 
       // Sin nombre → skip
       if (!((c.nombre || '') + ' ' + (c.apellidos || '')).trim()) {
         _kpis.skipped++;
         if (c.id) { _markHabladoIds([c.id]); habladoBatch.push(c.id); }
+        skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: null, reason: 'sin_nombre' }); // Capa 6
         _lastResults.unshift({ nombre: '— Sin nombre', telefono: c.telefono, status: 'skipped', ack: -1, error: 'Sin nombre' });
         if (_lastResults.length > 30) _lastResults.length = 30;
         _notify();
@@ -459,10 +580,26 @@ export async function startBlast() {
         continue;
       }
 
-      // USyncQuery pre-check
+      // ── CAPA 1: USyncQuery — ¿ya existe en WA? ────────────────────────────
+      // type === 'in' significa que el número está en los contactos del usuario
+      // (mutual, sincronizado del celular, o agregado manualmente).
+      // Si ya existe → skip sin enviar.
       if (normalizedPhone) {
         const hasWA = await _checkExistsOnWA(normalizedPhone);
+        if (hasWA === true) {
+          // Número ya está en WA (contactos, sincronizado, o agregado manualmente)
+          console.log('[BLAST] Skip — ya existe en WA:', cName, c.telefono);
+          _kpis.skipped++;
+          if (c.id) { _sentIds.add(c.id); habladoBatch.push(c.id); }
+          _markHablado(c.id ? [c.id] : [], []).catch(() => {});
+          skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: cName, reason: 'usync_was_in_contacts' }); // Capa 6
+          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'skipped', ack: -1, error: 'Ya existe en WA' });
+          if (_lastResults.length > 30) _lastResults.length = 30;
+          _notify();
+          continue;
+        }
         if (hasWA === false) {
+          // No tiene WA activo
           _kpis.no_wa++;
           if (c.id) { _sentIds.add(c.id); noWaBatch.push(c.id); }
           _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'no_wa', ack: -1, error: 'Sin WA' });
@@ -471,6 +608,37 @@ export async function startBlast() {
           continue;
         }
       }
+
+      // ── CAPA 2: ContactCollection — ¿ya está agendado en WA? ─────────────
+      // Si el contacto existe en ContactCollection, fue agregado manualmente
+      // a WhatsApp antes. Skip + marcar hablado sin enviar.
+      try {
+        const { ContactCollection } = window.require('WAWebContactCollection');
+        if (ContactCollection?._models) {
+          // Buscar por número en los modelos de contacto
+          // El número puede estar en .userid, .number, o la clave del map
+          const normalizedPhoneRaw = c.telefono?.replace(/\D/g, '') || normalizedPhone?.replace(/\D/g, '');
+          let alreadySaved = false;
+          for (const model of ContactCollection._models) {
+            const modelPhone = (model.number || model.userid || model.phoneNumber || '').replace(/\D/g, '');
+            if (modelPhone && modelPhone === normalizedPhoneRaw) {
+              alreadySaved = true;
+              break;
+            }
+          }
+          if (alreadySaved) {
+            console.log('[BLAST] Skip — contacto ya agendado en WA:', cName, c.telefono);
+            _kpis.skipped++;
+            if (c.id) { _sentIds.add(c.id); habladoBatch.push(c.id); }
+            _markHablado(c.id ? [c.id] : [], []).catch(() => {});
+            skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: cName, reason: 'contact_collection_agendado' }); // Capa 6
+            _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'skipped', ack: -1, error: 'Ya existe en WA' });
+            if (_lastResults.length > 30) _lastResults.length = 30;
+            _notify();
+            continue;
+          }
+        }
+      } catch (_) { /* ContactCollection no disponible */ }
 
       // Prewarm chat
       let chat = null;
@@ -496,6 +664,7 @@ export async function startBlast() {
           _kpis.skipped++;
           if (c.id) { _markHabladoIds([c.id]); habladoBatch.push(c.id); }
           _markHablado(c.id ? [c.id] : [], []).catch(() => {});
+          skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: cName, reason: 'last_received_key' }); // Capa 6
           _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'skipped', ack: -1, error: 'Ya tiene chat en WA' });
           if (_lastResults.length > 30) _lastResults.length = 30;
           _notify();
@@ -573,6 +742,9 @@ export async function startBlast() {
       await _markHablado([...habladoBatch], [...noWaBatch]);
     }
 
+    _saveSentToStorage(); // Capa 4: persiste estado post-batch
+    _reportSkips(skipsBatch); // Capa 6: reporta skips al backend para trazabilidad
+
     if (_totalPending !== null) _totalPending = Math.max(0, _totalPending - _kpis.sent);
     _notify();
 
@@ -627,6 +799,7 @@ export function resumeBlast() {
 export function resetSession() {
   _sentPhones.clear();
   _sentIds.clear();
+  try { localStorage.removeItem(LS_SENT_KEY); } catch (_) {} // Capa 4: limpia persistente
   _habladoIds.clear();
   _inFlight.clear();
   _trackedMsgs = [];
