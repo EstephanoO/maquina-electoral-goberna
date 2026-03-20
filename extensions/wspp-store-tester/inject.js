@@ -1132,7 +1132,7 @@
     @keyframes wspp-su{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
     @keyframes wspp-sp{from{transform:rotate(0)}to{transform:rotate(360deg)}}
     .wspp-sp{animation:wspp-sp .7s linear infinite}
-    #wspp-cat-panel{position:fixed;bottom:128px;right:12px;z-index:99999;
+    #wspp-cat-panel{position:fixed;top:120px;right:12px;z-index:99999;
       width:min(310px,calc(100vw - 24px));max-height:min(460px,calc(100vh - 170px));
       background:#111;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;
       font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;
@@ -1167,6 +1167,9 @@
     .wc-preview-send{height:28px;padding:0 10px;border-radius:14px;border:none;background:#00a884;color:#fff;font-size:11px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:4px;flex-shrink:0;transition:background .12s;font-family:inherit;white-space:nowrap}
     .wc-preview-send:hover{background:#00c49a}
     .wc-preview-send:active{transform:scale(.95)}
+    .wc-drag-handle{cursor:grab;display:flex;align-items:center;justify-content:center;padding:4px;border-radius:4px;flex-shrink:0}
+    .wc-drag-handle:active{cursor:grabbing}
+    .wc-drag-handle svg{width:16px;height:16px;color:#444}
   `;
     (document.head || document.documentElement).appendChild(s);
   }
@@ -1180,6 +1183,37 @@
       else e.setAttribute(k, v);
     });
     return e;
+  }
+  function _makeDraggable(panel) {
+    let isDragging = false;
+    let startX, startY, initialLeft, initialTop;
+    panel.addEventListener("mousedown", (e) => {
+      const handle = e.target.closest(".wc-drag-handle");
+      if (!handle) return;
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      const rect = panel.getBoundingClientRect();
+      initialLeft = rect.left;
+      initialTop = rect.top;
+      panel.style.transition = "none";
+      handle.style.cursor = "grabbing";
+    });
+    document.addEventListener("mousemove", (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      panel.style.left = initialLeft + dx + "px";
+      panel.style.top = initialTop + dy + "px";
+      panel.style.right = "auto";
+      panel.style.bottom = "auto";
+    });
+    document.addEventListener("mouseup", () => {
+      if (!isDragging) return;
+      isDragging = false;
+      const handle = panel.querySelector(".wc-drag-handle");
+      if (handle) handle.style.cursor = "grab";
+    });
   }
   function _iconBtn(svg, color, title, onClick) {
     const b = _el("button", { color: color || "#8696a0", width: "24px", height: "24px", borderRadius: "6px", flexShrink: "0" }, { cls: "wc-ibtn", html: svg, title: title || "" });
@@ -1218,6 +1252,9 @@
   }
   function _mkHdr(title, onBack, rightEls) {
     const h = _el("div", {}, { cls: "wc-hdr" });
+    const dragHandle = _el("div", { cursor: "grab" }, { cls: "wc-drag-handle", html: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.5"/><circle cx="16" cy="6" r="1.5"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/><circle cx="8" cy="18" r="1.5"/><circle cx="16" cy="18" r="1.5"/></svg>' });
+    dragHandle.title = "Arrastrar para mover";
+    h.appendChild(dragHandle);
     if (onBack) {
       h.appendChild(_iconBtn(I.back, "#00a884", "Volver", onBack));
     } else {
@@ -2208,7 +2245,9 @@
     _injectStyles();
     const panel = _el("div");
     panel.id = "wspp-cat-panel";
+    Object.assign(panel.style, { position: "fixed", top: "120px", right: "12px", zIndex: "99999" });
     document.body.appendChild(panel);
+    _makeDraggable(panel);
     renderCatalogPanel();
   }
 
