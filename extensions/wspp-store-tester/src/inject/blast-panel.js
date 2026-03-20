@@ -514,7 +514,15 @@ export async function startBlast() {
         _kpis.sent++;
         _sessionSent++;
         _tplIndex++;
-        if (c.id) habladoBatch.push(c.id);
+        if (c.id) {
+          habladoBatch.push(c.id);
+          // ── MARCAR INMEDIATAMENTE después del envío ──────────────────
+          // Así, si algo falla después, el contacto ya está marcado
+          // como 'hablado' en form_submissions y blast_log
+          _markHablado([c.id], []).catch(err => {
+            console.warn('[BLAST] mark-hablado immediate failed:', err?.message);
+          });
+        }
         // Si alcanzó el límite → romper el loop de contactos
         if (_blastLimit > 0 && _sessionSent >= _blastLimit) {
           _running = false;
