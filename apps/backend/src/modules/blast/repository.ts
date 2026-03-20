@@ -121,7 +121,7 @@ export async function getFormContactsForNumber(params: {
     `COALESCE(fs.cms_status, 'nuevo') != 'no_wa'
      OR fs.cms_hablado_at < CURRENT_DATE`,
     // Skip contacts que ya respondieron — ya están atendidos por el CMS
-    `COALESCE(fs.cms_status, 'nuevo') != 'respondieron'`,
+    `COALESCE(fs.cms_status, 'nuevo') NOT IN ('hablado', 'respondieron')`,
   ];
 
   const args: unknown[] = [campaign_id, total_slots, segment_idx, wa_number];
