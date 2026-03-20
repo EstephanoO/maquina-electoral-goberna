@@ -47,9 +47,9 @@ let _blastLimit = 0; // 0 = infinito, >0 = parar al alcanzar
 let _sessionSent = 0;
 
 // ── Capa 4: localStorage persistente anti-crash ─────────────────────
-// Survive recargas del browser y browser crashes.
-// Sin localStorage, si WA Web se actualiza o crashea, se pierde todo el dedup.
-// Key: wspp_blast_sent_v1 — { phones: [...], ids: [...], savedAt: timestamp }
+// Solo persiste si hubo al menos 1 envío exitoso en esta sesión.
+// Si la sesión se limpió manualmente (resetSession), arranca limpio.
+// Key: wspp_blast_sent_v1 — { phones: [...], ids: [...], savedAt: timestamp, sessionId: string }
 // Cleanup automático: entradas > 7 días se descartan al cargar.
 const LS_SENT_KEY = 'wspp_blast_sent_v1';
 const LS_SENT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
@@ -57,6 +57,13 @@ const LS_SENT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
 // Dedup local simple
 const _sentPhones = new Set();
 const _sentIds = new Set();
+
+// Session ID — cambia en cada startBlast(). Si no coincide, significa que
+// es una sesión nueva y se ignoran los datos de localStorage.
+let _currentSessionId = null;
+
+// Flag: ¿esta sesión ya tuvo envíos exitosos? Solo entonces persistimos.
+let _hasSentThisSession = false;
 
 function _loadSentFromStorage() {
   try {
@@ -69,6 +76,11 @@ function _loadSentFromStorage() {
       localStorage.removeItem(LS_SENT_KEY);
       return;
     }
+    // Solo cargar si es la MISMA sesión (no hubo reset)
+    if (parsed.sessionId !== _currentSessionId) {
+      console.log(`[BLAST Capa4] Session mismatch — stored=${parsed.sessionId} current=${_currentSessionId}, ignorando localStorage`);
+      return;
+    }
     if (Array.isArray(parsed.phones)) {
       for (const p of parsed.phones) _sentPhones.add(p);
     }
@@ -76,23 +88,23 @@ function _loadSentFromStorage() {
       for (const id of parsed.ids) _sentIds.add(id);
     }
     if (_sentPhones.size || _sentIds.size) {
-      console.log(`[BLAST] Capa4: recuperó ${_sentPhones.size} phones + ${_sentIds.size} ids de localStorage`);
+      console.log(`[BLAST Capa4] Recuperó ${_sentPhones.size} phones + ${_sentIds.size} ids de localStorage (session=${parsed.sessionId})`);
     }
   } catch (_) {}
 }
 
 function _saveSentToStorage() {
+  // Solo persiste si hubo envíos esta sesión
+  if (!_hasSentThisSession) return;
   try {
     localStorage.setItem(LS_SENT_KEY, JSON.stringify({
       phones: [..._sentPhones],
       ids: [..._sentIds],
       savedAt: Date.now(),
+      sessionId: _currentSessionId,
     }));
   } catch (_) {}
 }
-
-// Cargar al inicio (luego de declarar los Sets)
-_loadSentFromStorage();
 
 // In-flight lock
 const _inFlight = new Set();
@@ -331,8 +343,27 @@ function _stopCountdown() { clearInterval(_countdownTimer); _countdown = 0; }
 // ── Hablado IDs (para marcar en backend sin romper dedup) ────────
 const _habladoIds = new Set();
 
+// ── Pre-claim tracking (LLAVE ANTI-RACE CONDITION) ───────────────────
+// Trackea IDs que YA fueron marcados 'hablado' en la DB ANTES de enviar.
+// Esto cierra la ventana de race condition: sin esto, entre el fetch del
+// backend y el _markHablado(post-send), otro phone puede reclamar el contacto.
+const _preClaimedIds = new Set();
+
 function _markHabladoIds(ids) {
   for (const id of ids) _habladoIds.add(id);
+}
+
+// ── Pre-reclamar contactos ANTES del envío ────────────────────────────
+// El objetivo: marcar 'hablado' en la DB ANTES de enviar, así el backend
+// ya los excluye en la siguiente query. Cierra la race condition.
+// Fire-and-forget: no bloquea el envío si falla.
+function _preClaimContacts(ids) {
+  if (!ids?.length) return;
+  for (const id of ids) _preClaimedIds.add(id);
+  console.log(`[BLAST PRE-CLAIM] marking ${ids.length} contacts as hablado in backend`);
+  _markHablado(ids, []).catch(err => {
+    console.warn('[BLAST] pre-claim failed:', err?.message, '| ids:', ids.length);
+  });
 }
 
 // ── Backend comms ─────────────────────────────────────────────────
@@ -343,16 +374,22 @@ const _pendingRequests = new Map();
 window.addEventListener('message', (e) => {
   if (e.source !== window || e.data?.type !== 'BLAST_FORM_CONTACTS_READY') return;
   const reqId = e.data.reqId;
+  console.log(`[BLAST FETCH] BLAST_FORM_CONTACTS_READY received reqId=${reqId} ok=${e.data.ok} contacts=${e.data.contacts?.length ?? '?'} total=${e.data.total}`);
   if (!reqId) return;
   const pending = _pendingRequests.get(reqId);
-  if (!pending) return;
+  if (!pending) {
+    console.warn(`[BLAST FETCH] reqId=${reqId} not found in _pendingRequests — already resolved or cleared`);
+    return;
+  }
   clearTimeout(pending.timer);
   _pendingRequests.delete(reqId);
   if (e.data.ok) {
     _totalPending = e.data.total ?? _totalPending;
+    console.log(`[BLAST FETCH] resolving with ${e.data.contacts?.length ?? 0} contacts, totalPending=${_totalPending}`);
     pending.resolve(e.data.contacts || []);
     _notify();
   } else {
+    console.warn(`[BLAST FETCH] backend error: ${e.data.error}`);
     pending.resolve([]);
   }
 });
@@ -360,7 +397,10 @@ window.addEventListener('message', (e) => {
 function _fetchBatch(limit) {
   return new Promise((resolve) => {
     const reqId = _nextReqId();
+    const ownNum = getOwnNumber();
+    console.log(`[BLAST FETCH] reqId=${reqId} limit=${limit} own=${ownNum} brigadista=${cfg.brigadista || '(ninguno)'}`);
     const timer = setTimeout(() => {
+      console.warn(`[BLAST FETCH] TIMEOUT — reqId=${reqId} no response after 15s`);
       _pendingRequests.delete(reqId);
       resolve([]);
     }, 15000);
@@ -370,8 +410,9 @@ function _fetchBatch(limit) {
       limit, offset: 0, status: 'nuevo',
       brigadista: cfg.brigadista || '',
       reqId,
-      own_number: getOwnNumber()
+      own_number: ownNum,
     }, WA_ORIGIN);
+    console.log(`[BLAST FETCH] message sent, waiting for BLAST_FORM_CONTACTS_READY reqId=${reqId}`);
   });
 }
 
@@ -404,15 +445,19 @@ function _checkContactsBackend(contacts) {
   if (!contacts.length) return Promise.resolve(new Set());
   return new Promise((resolve) => {
     const reqId = 'chk_' + Date.now();
+    console.log(`[BLAST CHECK] checking ${contacts.length} contacts with backend`);
     const timer = setTimeout(() => {
       window.removeEventListener('message', onReply);
+      console.warn('[BLAST CHECK] TIMEOUT — trusting local dedup');
       resolve(new Set()); // fallback: confiar en el dedup local
     }, 10000);
     function onReply(e) {
       if (e.source !== window || e.data?.type !== 'BLAST_CHECK_CONTACTS_DONE' || e.data.reqId !== reqId) return;
       window.removeEventListener('message', onReply);
       clearTimeout(timer);
-      resolve(new Set(e.data.valid ?? []));
+      const valid = e.data.valid ?? [];
+      console.log(`[BLAST CHECK] done: ${valid.length}/${contacts.length} still 'nuevo', filtered ${contacts.length - valid.length}`);
+      resolve(new Set(valid));
     }
     window.addEventListener('message', onReply);
     window.postMessage({
@@ -470,6 +515,11 @@ export async function startBlast() {
     return;
   }
 
+  // Nueva sesión — nuevo sessionId para que localStorage no interfiera
+  _currentSessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  _hasSentThisSession = false;
+  console.log(`[BLAST] Iniciando sesión=${_currentSessionId}`);
+
   _running = true;
   _kpis = { sent: 0, failed: 0, no_wa: 0, skipped: 0 };
   _lastResults = [];
@@ -481,6 +531,7 @@ export async function startBlast() {
   while (_running) {
     // Si alcanzó el límite → parar
     if (_blastLimit > 0 && _sessionSent >= _blastLimit) {
+      console.log('[BLAST] Límite alcanzado — parando');
       _running = false;
       _stopCountdown();
       _notify();
@@ -488,7 +539,11 @@ export async function startBlast() {
     }
     // 1. Fetch un batch
     const rawBatch = await _fetchBatch(cfg.batchSize);
+    console.log(`[BLAST LOOP] batch recibido: ${rawBatch.length} contactos`);
     if (!rawBatch.length) {
+      console.log('[BLAST LOOP] Batch vacío — no hay más contactos pendientes, parando loop');
+      // Auto-limpiar localStorage para que el próximo blast arranque limpio
+      try { localStorage.removeItem(LS_SENT_KEY); } catch (_) {}
       _running = false;
       _stopCountdown();
       _notify();
@@ -502,8 +557,13 @@ export async function startBlast() {
       if (np && _sentPhones.has(np)) return false;
       return true;
     });
+    console.log(`[BLAST LOOP] tras dedup local: ${batch.length}/${rawBatch.length} contactos`);
 
     if (!batch.length) {
+      console.log('[BLAST LOOP] Todos filtrados por dedup local — parando loop');
+      // Si batch completo está filtrado por dedup, significa que ya se enviou todo en sesiones anteriores.
+      // Limpiar localStorage para que el próximo blast arranque limpio.
+      try { localStorage.removeItem(LS_SENT_KEY); } catch (_) {}
       _running = false;
       _stopCountdown();
       _notify();
@@ -514,7 +574,7 @@ export async function startBlast() {
     const noWaBatch = [];
     const skipsBatch = []; // collects skips para reportar al backend (Capa 6)
 
-    // ── Capa 4: realtime check con backend antes de procesar ──────
+    // ── Capa 5: realtime check con backend antes de procesar ──────
     // Filtra contactos que fueron marcados 'hablado' por OTRO phone
     // mientras este batch se ejecutaba. Evita el race condition más común.
     if (batch.length) {
@@ -544,6 +604,21 @@ export async function startBlast() {
       }
     }
 
+    // ── PRE-CLAIM: marcar 'hablado' ANTES de procesar ─────────────────
+    // Este es el paso crítico anti-race-condition. Si no hacemos esto,
+    // entre que el backend filtra (status=nuevo) y que _markHablado(post-send)
+    // se ejecuta, OTRO phone puede reclamar el contacto.
+    // Al pre-reclamar aquí, la próxima query del backend ya los excluye.
+    const idsToPreClaim = batch
+      .filter(c => c.id)
+      .map(c => c.id);
+    console.log(`[BLAST PRE-CLAIM] batch tiene ${idsToPreClaim.length} ids con id`);
+    if (idsToPreClaim.length) {
+      _preClaimContacts(idsToPreClaim);
+      // También agregarlos a habladoBatch para que NO se marquen de nuevo post-send
+      for (const id of idsToPreClaim) habladoBatch.push(id);
+    }
+
     // 3. Procesar cada contacto (Capa 1: ContactCollection, Capa 2: lastReceivedKey)
     for (let i = 0; i < batch.length && _running; i++) {
       const c = batch[i];
@@ -564,7 +639,6 @@ export async function startBlast() {
       // Sin nombre → skip
       if (!((c.nombre || '') + ' ' + (c.apellidos || '')).trim()) {
         _kpis.skipped++;
-        if (c.id) { _markHabladoIds([c.id]); habladoBatch.push(c.id); }
         skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: null, reason: 'sin_nombre' });
         _lastResults.unshift({ nombre: '— Sin nombre', telefono: c.telefono, status: 'skipped', ack: -1, error: 'Sin nombre — skip' });
         if (_lastResults.length > 30) _lastResults.length = 30;
@@ -600,8 +674,7 @@ export async function startBlast() {
           if (alreadySaved) {
             console.log('[BLAST] Skip — contacto ya agendado en WA:', cName, c.telefono);
             _kpis.skipped++;
-            if (c.id) { _sentIds.add(c.id); habladoBatch.push(c.id); }
-            _markHablado(c.id ? [c.id] : [], []).catch(() => {});
+            if (c.id) _sentIds.add(c.id);
             skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: cName, reason: 'contact_collection_agendado' });
             _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'skipped', ack: -1, error: 'Agendado en WA — skip' });
             if (_lastResults.length > 30) _lastResults.length = 30;
@@ -631,10 +704,8 @@ export async function startBlast() {
         const lastReceivedKey = chat.get?.('lastReceivedKey');
         const msgCount = chat.get?.('msgCount') || 0;
         if (lastReceivedKey && msgCount > 0) {
-          console.log('[BLAST] Skip — WA ya tiene chat con historial:', cName, telefono);
+          console.log('[BLAST] Skip — WA ya tiene chat con historial:', cName, c.telefono);
           _kpis.skipped++;
-          if (c.id) { _markHabladoIds([c.id]); habladoBatch.push(c.id); }
-          _markHablado(c.id ? [c.id] : [], []).catch(() => {});
           skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? '', contact_name: cName, reason: 'last_received_key' });
           _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: 'skipped', ack: -1, error: 'Chat con historial — skip' });
           if (_lastResults.length > 30) _lastResults.length = 30;
@@ -671,22 +742,16 @@ export async function startBlast() {
         _kpis.sent++;
         _sessionSent++;
         _tplIndex++;
-        if (c.id) {
-          habladoBatch.push(c.id);
-          // ── MARCAR INMEDIATAMENTE después del envío ──────────────────
-          // Así, si algo falla después, el contacto ya está marcado
-          // como 'hablado' en form_submissions y blast_log
-          _markHablado([c.id], []).catch(err => {
-            console.warn('[BLAST] mark-hablado immediate failed:', err?.message);
-          });
-        }
-        // Si alcanzó el límite → romper el loop de contactos
-        if (_blastLimit > 0 && _sessionSent >= _blastLimit) {
-          _running = false;
-          _stopCountdown();
-          _notify();
-          break;
-        }
+    // Si alcanzó el límite → romper el loop de contactos
+    if (_blastLimit > 0 && _sessionSent >= _blastLimit) {
+      console.log('[BLAST] Límite alcanzado — parando');
+      // NO limpiar localStorage aquí — el blast se puede retomar donde quedó.
+      // Solo se limpia cuando se agotan los contactos o se resetea manualmente.
+      _running = false;
+      _stopCountdown();
+      _notify();
+      break;
+    }
       } catch (err) {
         _kpis.failed++;
         sendOk = false;
@@ -708,10 +773,17 @@ export async function startBlast() {
       }
     }
 
-    // 4. Mark hablado masivo
+    // 4. Mark hablado masivo — safety net post-batch
+    // Todos los IDs ya fueron pre-reclamados (ver _preClaimContacts), así que
+    // esta llamada solo garantiza que el backend recibió el update si falló el pre-claim.
     if (habladoBatch.length || noWaBatch.length) {
-      await _markHablado([...habladoBatch], [...noWaBatch]);
+      await _markHablado([...habladoBatch], [...noWaBatch]).catch(err => {
+        console.warn('[BLAST] batch mark-hablado failed:', err?.message);
+      });
     }
+    // Limpiar batch arrays
+    habladoBatch.length = 0;
+    noWaBatch.length = 0;
 
     _saveSentToStorage(); // Capa 4: persiste estado post-batch
     _reportSkips(skipsBatch); // Capa 6: reporta skips al backend para trazabilidad
@@ -770,8 +842,9 @@ export function resumeBlast() {
 export function resetSession() {
   _sentPhones.clear();
   _sentIds.clear();
-  try { localStorage.removeItem(LS_SENT_KEY); } catch (_) {} // Capa 4: limpia persistente
+  try { localStorage.removeItem(LS_SENT_KEY); } catch (_) {} // Limpia para nueva tanda
   _habladoIds.clear();
+  _preClaimedIds.clear();
   _inFlight.clear();
   _trackedMsgs = [];
   _kpis = { sent: 0, failed: 0, no_wa: 0, skipped: 0 };
@@ -781,6 +854,7 @@ export function resetSession() {
   _tplIndex = 0;
   _sessionSent = 0;
   _blastLimit = 0;
+  _hasSentThisSession = false;
   _stopCountdown();
   _stopAckTracking();
   _notify();

@@ -2450,39 +2450,20 @@
   var LS_SENT_TTL_MS = 7 * 24 * 60 * 60 * 1e3;
   var _sentPhones = /* @__PURE__ */ new Set();
   var _sentIds = /* @__PURE__ */ new Set();
-  function _loadSentFromStorage() {
-    try {
-      const raw = localStorage.getItem(LS_SENT_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object") return;
-      if (parsed.savedAt && Date.now() - parsed.savedAt > LS_SENT_TTL_MS) {
-        localStorage.removeItem(LS_SENT_KEY);
-        return;
-      }
-      if (Array.isArray(parsed.phones)) {
-        for (const p of parsed.phones) _sentPhones.add(p);
-      }
-      if (Array.isArray(parsed.ids)) {
-        for (const id of parsed.ids) _sentIds.add(id);
-      }
-      if (_sentPhones.size || _sentIds.size) {
-        console.log(`[BLAST] Capa4: recuper\xF3 ${_sentPhones.size} phones + ${_sentIds.size} ids de localStorage`);
-      }
-    } catch (_) {
-    }
-  }
+  var _currentSessionId = null;
+  var _hasSentThisSession = false;
   function _saveSentToStorage() {
+    if (!_hasSentThisSession) return;
     try {
       localStorage.setItem(LS_SENT_KEY, JSON.stringify({
         phones: [..._sentPhones],
         ids: [..._sentIds],
-        savedAt: Date.now()
+        savedAt: Date.now(),
+        sessionId: _currentSessionId
       }));
     } catch (_) {
     }
   }
-  _loadSentFromStorage();
   var _inFlight = /* @__PURE__ */ new Set();
   var _ackInterval = null;
   function _startAckTracking() {
@@ -2517,9 +2498,9 @@
     if (!_trackedMsgs.length) _stopAckTracking();
     if (changed) _notify();
   }
-  function _trackMessage(msgModel, telefono2) {
+  function _trackMessage(msgModel, telefono) {
     const ack = typeof msgModel.get === "function" ? msgModel.get("ack") : msgModel.ack || 0;
-    _trackedMsgs.push({ msgModel, telefono: telefono2, lastAck: Number(ack) || 0, ts: Date.now() });
+    _trackedMsgs.push({ msgModel, telefono, lastAck: Number(ack) || 0, ts: Date.now() });
     _startAckTracking();
   }
   function _notify() {
@@ -2683,8 +2664,14 @@
     _countdown = 0;
   }
   var _habladoIds = /* @__PURE__ */ new Set();
-  function _markHabladoIds(ids) {
-    for (const id of ids) _habladoIds.add(id);
+  var _preClaimedIds = /* @__PURE__ */ new Set();
+  function _preClaimContacts(ids) {
+    if (!ids?.length) return;
+    for (const id of ids) _preClaimedIds.add(id);
+    console.log(`[BLAST PRE-CLAIM] marking ${ids.length} contacts as hablado in backend`);
+    _markHablado(ids, []).catch((err) => {
+      console.warn("[BLAST] pre-claim failed:", err?.message, "| ids:", ids.length);
+    });
   }
   var _reqIdCounter = 0;
   function _nextReqId() {
@@ -2694,23 +2681,32 @@
   window.addEventListener("message", (e) => {
     if (e.source !== window || e.data?.type !== "BLAST_FORM_CONTACTS_READY") return;
     const reqId = e.data.reqId;
+    console.log(`[BLAST FETCH] BLAST_FORM_CONTACTS_READY received reqId=${reqId} ok=${e.data.ok} contacts=${e.data.contacts?.length ?? "?"} total=${e.data.total}`);
     if (!reqId) return;
     const pending = _pendingRequests.get(reqId);
-    if (!pending) return;
+    if (!pending) {
+      console.warn(`[BLAST FETCH] reqId=${reqId} not found in _pendingRequests \u2014 already resolved or cleared`);
+      return;
+    }
     clearTimeout(pending.timer);
     _pendingRequests.delete(reqId);
     if (e.data.ok) {
       _totalPending = e.data.total ?? _totalPending;
+      console.log(`[BLAST FETCH] resolving with ${e.data.contacts?.length ?? 0} contacts, totalPending=${_totalPending}`);
       pending.resolve(e.data.contacts || []);
       _notify();
     } else {
+      console.warn(`[BLAST FETCH] backend error: ${e.data.error}`);
       pending.resolve([]);
     }
   });
   function _fetchBatch(limit) {
     return new Promise((resolve) => {
       const reqId = _nextReqId();
+      const ownNum = getOwnNumber();
+      console.log(`[BLAST FETCH] reqId=${reqId} limit=${limit} own=${ownNum} brigadista=${cfg.brigadista || "(ninguno)"}`);
       const timer = setTimeout(() => {
+        console.warn(`[BLAST FETCH] TIMEOUT \u2014 reqId=${reqId} no response after 15s`);
         _pendingRequests.delete(reqId);
         resolve([]);
       }, 15e3);
@@ -2722,8 +2718,9 @@
         status: "nuevo",
         brigadista: cfg.brigadista || "",
         reqId,
-        own_number: getOwnNumber()
+        own_number: ownNum
       }, WA_ORIGIN);
+      console.log(`[BLAST FETCH] message sent, waiting for BLAST_FORM_CONTACTS_READY reqId=${reqId}`);
     });
   }
   function _markHablado(ids, no_wa_ids) {
@@ -2754,15 +2751,19 @@
     if (!contacts.length) return Promise.resolve(/* @__PURE__ */ new Set());
     return new Promise((resolve) => {
       const reqId = "chk_" + Date.now();
+      console.log(`[BLAST CHECK] checking ${contacts.length} contacts with backend`);
       const timer = setTimeout(() => {
         window.removeEventListener("message", onReply);
+        console.warn("[BLAST CHECK] TIMEOUT \u2014 trusting local dedup");
         resolve(/* @__PURE__ */ new Set());
       }, 1e4);
       function onReply(e) {
         if (e.source !== window || e.data?.type !== "BLAST_CHECK_CONTACTS_DONE" || e.data.reqId !== reqId) return;
         window.removeEventListener("message", onReply);
         clearTimeout(timer);
-        resolve(new Set(e.data.valid ?? []));
+        const valid = e.data.valid ?? [];
+        console.log(`[BLAST CHECK] done: ${valid.length}/${contacts.length} still 'nuevo', filtered ${contacts.length - valid.length}`);
+        resolve(new Set(valid));
       }
       window.addEventListener("message", onReply);
       window.postMessage({
@@ -2843,6 +2844,9 @@
       _notify();
       return;
     }
+    _currentSessionId = "sess_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+    _hasSentThisSession = false;
+    console.log(`[BLAST] Iniciando sesi\xF3n=${_currentSessionId}`);
     _running = true;
     _kpis = { sent: 0, failed: 0, no_wa: 0, skipped: 0 };
     _lastResults = [];
@@ -2852,13 +2856,20 @@
     _notify();
     while (_running) {
       if (_blastLimit > 0 && _sessionSent >= _blastLimit) {
+        console.log("[BLAST] L\xEDmite alcanzado \u2014 parando");
         _running = false;
         _stopCountdown();
         _notify();
         break;
       }
       const rawBatch = await _fetchBatch(cfg.batchSize);
+      console.log(`[BLAST LOOP] batch recibido: ${rawBatch.length} contactos`);
       if (!rawBatch.length) {
+        console.log("[BLAST LOOP] Batch vac\xEDo \u2014 no hay m\xE1s contactos pendientes, parando loop");
+        try {
+          localStorage.removeItem(LS_SENT_KEY);
+        } catch (_) {
+        }
         _running = false;
         _stopCountdown();
         _notify();
@@ -2870,7 +2881,13 @@
         if (np && _sentPhones.has(np)) return false;
         return true;
       });
+      console.log(`[BLAST LOOP] tras dedup local: ${batch.length}/${rawBatch.length} contactos`);
       if (!batch.length) {
+        console.log("[BLAST LOOP] Todos filtrados por dedup local \u2014 parando loop");
+        try {
+          localStorage.removeItem(LS_SENT_KEY);
+        } catch (_) {
+        }
         _running = false;
         _stopCountdown();
         _notify();
@@ -2908,6 +2925,12 @@
           _notify();
         }
       }
+      const idsToPreClaim = batch.filter((c) => c.id).map((c) => c.id);
+      console.log(`[BLAST PRE-CLAIM] batch tiene ${idsToPreClaim.length} ids con id`);
+      if (idsToPreClaim.length) {
+        _preClaimContacts(idsToPreClaim);
+        for (const id of idsToPreClaim) habladoBatch.push(id);
+      }
       for (let i = 0; i < batch.length && _running; i++) {
         const c = batch[i];
         const normalizedPhone = _normalizePhone(c.telefono);
@@ -2921,10 +2944,6 @@
         _inFlight.add(lockKey);
         if (!((c.nombre || "") + " " + (c.apellidos || "")).trim()) {
           _kpis.skipped++;
-          if (c.id) {
-            _markHabladoIds([c.id]);
-            habladoBatch.push(c.id);
-          }
           skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: null, reason: "sin_nombre" });
           _lastResults.unshift({ nombre: "\u2014 Sin nombre", telefono: c.telefono, status: "skipped", ack: -1, error: "Sin nombre \u2014 skip" });
           if (_lastResults.length > 30) _lastResults.length = 30;
@@ -2953,12 +2972,7 @@
             if (alreadySaved) {
               console.log("[BLAST] Skip \u2014 contacto ya agendado en WA:", cName, c.telefono);
               _kpis.skipped++;
-              if (c.id) {
-                _sentIds.add(c.id);
-                habladoBatch.push(c.id);
-              }
-              _markHablado(c.id ? [c.id] : [], []).catch(() => {
-              });
+              if (c.id) _sentIds.add(c.id);
               skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: cName, reason: "contact_collection_agendado" });
               _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Agendado en WA \u2014 skip" });
               if (_lastResults.length > 30) _lastResults.length = 30;
@@ -2983,14 +2997,8 @@
           const lastReceivedKey = chat.get?.("lastReceivedKey");
           const msgCount = chat.get?.("msgCount") || 0;
           if (lastReceivedKey && msgCount > 0) {
-            console.log("[BLAST] Skip \u2014 WA ya tiene chat con historial:", cName, telefono);
+            console.log("[BLAST] Skip \u2014 WA ya tiene chat con historial:", cName, c.telefono);
             _kpis.skipped++;
-            if (c.id) {
-              _markHabladoIds([c.id]);
-              habladoBatch.push(c.id);
-            }
-            _markHablado(c.id ? [c.id] : [], []).catch(() => {
-            });
             skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: cName, reason: "last_received_key" });
             _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Chat con historial \u2014 skip" });
             if (_lastResults.length > 30) _lastResults.length = 30;
@@ -3023,13 +3031,8 @@
           _kpis.sent++;
           _sessionSent++;
           _tplIndex++;
-          if (c.id) {
-            habladoBatch.push(c.id);
-            _markHablado([c.id], []).catch((err) => {
-              console.warn("[BLAST] mark-hablado immediate failed:", err?.message);
-            });
-          }
           if (_blastLimit > 0 && _sessionSent >= _blastLimit) {
+            console.log("[BLAST] L\xEDmite alcanzado \u2014 parando");
             _running = false;
             _stopCountdown();
             _notify();
@@ -3051,8 +3054,12 @@
         }
       }
       if (habladoBatch.length || noWaBatch.length) {
-        await _markHablado([...habladoBatch], [...noWaBatch]);
+        await _markHablado([...habladoBatch], [...noWaBatch]).catch((err) => {
+          console.warn("[BLAST] batch mark-hablado failed:", err?.message);
+        });
       }
+      habladoBatch.length = 0;
+      noWaBatch.length = 0;
       _saveSentToStorage();
       _reportSkips(skipsBatch);
       if (_totalPending !== null) _totalPending = Math.max(0, _totalPending - _kpis.sent);
@@ -3112,6 +3119,7 @@
     } catch (_) {
     }
     _habladoIds.clear();
+    _preClaimedIds.clear();
     _inFlight.clear();
     _trackedMsgs = [];
     _kpis = { sent: 0, failed: 0, no_wa: 0, skipped: 0 };
@@ -3121,6 +3129,7 @@
     _tplIndex = 0;
     _sessionSent = 0;
     _blastLimit = 0;
+    _hasSentThisSession = false;
     _stopCountdown();
     _stopAckTracking();
     _notify();
