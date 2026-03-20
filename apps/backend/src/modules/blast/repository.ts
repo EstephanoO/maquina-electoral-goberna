@@ -34,6 +34,21 @@ export async function ensureBlastTables(): Promise<void> {
     )
   `);
 
+  // blast_blocklist: números bloqueados globalmente para TODOS los celulares.
+  // Se verifica en TODAS las queries de blast — un contacto aquí = excluido para todos.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS blast_blocklist (
+      id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+      phone_digits  text        NOT NULL UNIQUE,
+      source        text        DEFAULT 'csv',
+      created_at    timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_blast_blocklist_phone
+    ON blast_blocklist(phone_digits)
+  `);
+
   // Migrate legacy columns to new names (ADD IF NOT EXISTS is safe to run multiple times)
   await pool.query(`
     ALTER TABLE blast_log
@@ -114,7 +129,7 @@ export async function getFormContactsForNumber(params: {
        SELECT 1 FROM blast_log bl
        WHERE bl.campaign_id = $1
          AND bl.wa_number   = $4
-         AND bl.contact_phone = regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g')
+         AND regexp_replace(bl.contact_phone, '[^0-9]', '', 'g') = regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g')
          AND bl.status = 'sent'
      )`,
     // Skip contacts marked no_wa HOY — se reintentarán mañana via retry-no-wa
@@ -122,6 +137,11 @@ export async function getFormContactsForNumber(params: {
      OR fs.cms_hablado_at < CURRENT_DATE`,
     // Skip contacts que ya respondieron — ya están atendidos por el CMS
     `COALESCE(fs.cms_status, 'nuevo') NOT IN ('hablado', 'respondieron')`,
+    // Bloqueo global — si el teléfono está en blast_blocklist, NINGÚN celular puede enviarle
+    `NOT EXISTS (
+       SELECT 1 FROM blast_blocklist bl2
+       WHERE bl2.phone_digits = regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g')
+     )`,
   ];
 
   const args: unknown[] = [campaign_id, total_slots, segment_idx, wa_number];
@@ -980,6 +1000,10 @@ export async function checkContactsStillNew(params: {
           AND bl.wa_number   = $2
           AND regexp_replace(bl.contact_phone, '[^0-9]', '', 'g') = regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g')
           AND bl.status = 'sent'
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM blast_blocklist bl2
+        WHERE bl2.phone_digits = regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g')
       )
   `);
 
