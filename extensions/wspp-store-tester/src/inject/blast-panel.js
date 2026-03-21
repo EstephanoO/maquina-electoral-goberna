@@ -719,40 +719,19 @@ export async function startBlast() {
   }
 
   // ══════════════════════════════════════════════════════════════════
-  // RECOVERY: Intentar cargar dedup de sesión anterior (crash recovery)
-  // Si hay datos guardados recientes (<7 días), los usamos como dedup
-  // para no re-enviar a contactos ya procesados.
-  // ══════════════════════════════════════════════════════════════════
+  // FIX: No cross-session recovery. The backend is the source of truth.
+  // If it returns a contact as status='nuevo', we trust it and send.
+  // The old 7-day recovery was loading thousands of stale phone numbers
+  // that blocked the entire blast — the backend kept returning contacts
+  // that the local dedup rejected, causing "3 consecutive all-dedup batches".
+  // Local dedup now ONLY protects within the current blast session.
   _preClaimedIds.clear();
   _inFlight.clear();
   _trackedMsgs = [];
-
-  // Intentar recovery ANTES de crear nueva sesión
-  let recovered = false;
-  try {
-    const raw = localStorage.getItem(LS_SENT_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed?.savedAt && Date.now() - parsed.savedAt < LS_SENT_TTL_MS) {
-        // Datos recientes — cargar como dedup seeds
-        _sentPhones.clear();
-        _sentIds.clear();
-        if (Array.isArray(parsed.phones)) for (const p of parsed.phones) _sentPhones.add(p);
-        if (Array.isArray(parsed.ids)) for (const id of parsed.ids) _sentIds.add(id);
-        recovered = _sentPhones.size > 0 || _sentIds.size > 0;
-        if (recovered) {
-          console.log(`[BLAST] Recovery: cargó ${_sentPhones.size} phones + ${_sentIds.size} ids de sesión anterior`);
-        }
-      }
-    }
-  } catch (_) {}
-
-  if (!recovered) {
-    _sentPhones.clear();
-    _sentIds.clear();
-    try { localStorage.removeItem(LS_SENT_KEY); } catch (_) {}
-    console.log('[BLAST] Sesión limpia — sin recovery');
-  }
+  _sentPhones.clear();
+  _sentIds.clear();
+  try { localStorage.removeItem(LS_SENT_KEY); } catch (_) {}
+  console.log('[BLAST] Sesión limpia — dedup solo intra-sesión');
 
   // Nueva sesión
   _currentSessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);

@@ -3070,33 +3070,13 @@
     _preClaimedIds.clear();
     _inFlight.clear();
     _trackedMsgs = [];
-    let recovered = false;
+    _sentPhones.clear();
+    _sentIds.clear();
     try {
-      const raw = localStorage.getItem(LS_SENT_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed?.savedAt && Date.now() - parsed.savedAt < LS_SENT_TTL_MS) {
-          _sentPhones.clear();
-          _sentIds.clear();
-          if (Array.isArray(parsed.phones)) for (const p of parsed.phones) _sentPhones.add(p);
-          if (Array.isArray(parsed.ids)) for (const id of parsed.ids) _sentIds.add(id);
-          recovered = _sentPhones.size > 0 || _sentIds.size > 0;
-          if (recovered) {
-            console.log(`[BLAST] Recovery: carg\xF3 ${_sentPhones.size} phones + ${_sentIds.size} ids de sesi\xF3n anterior`);
-          }
-        }
-      }
+      localStorage.removeItem(LS_SENT_KEY);
     } catch (_) {
     }
-    if (!recovered) {
-      _sentPhones.clear();
-      _sentIds.clear();
-      try {
-        localStorage.removeItem(LS_SENT_KEY);
-      } catch (_) {
-      }
-      console.log("[BLAST] Sesi\xF3n limpia \u2014 sin recovery");
-    }
+    console.log("[BLAST] Sesi\xF3n limpia \u2014 dedup solo intra-sesi\xF3n");
     _currentSessionId = "sess_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
     _hasSentThisSession = false;
     console.log(`[BLAST] Iniciando sesi\xF3n=${_currentSessionId}`);
