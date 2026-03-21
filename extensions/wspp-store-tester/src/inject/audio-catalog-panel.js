@@ -1019,8 +1019,12 @@ export async function sendAudioAsPTT(audioBase64, mimeType) {
     const uploaded = await uploadFn(uploadArgs);
     L('9d uploaded raw', JSON.stringify(uploaded)?.slice(0, 300));
 
-    // autorelease AFTER upload
-    if (pttBlob && typeof pttBlob.autorelease === 'function') pttBlob.autorelease();
+    // FIX: Do NOT call autorelease() here — WA Web still needs the OpaqueData
+    // to render the PTT message in the chat UI (waveform, play button, etc.).
+    // Calling autorelease too early causes "OpaqueData:url called on released OpaqueData"
+    // on slower machines where WA hasn't finished rendering yet.
+    // WA's internal GC will release it when no longer referenced.
+    // if (pttBlob && typeof pttBlob.autorelease === 'function') pttBlob.autorelease();
 
     // Extract mediaEntry — builds return different shapes:
     // { mediaEntry: { directPath } }  |  { directPath }  |  [{directPath}]  |  {kind:"error"}

@@ -2058,7 +2058,6 @@
       );
       const uploaded = await uploadFn(uploadArgs);
       L("9d uploaded raw", JSON.stringify(uploaded)?.slice(0, 300));
-      if (pttBlob && typeof pttBlob.autorelease === "function") pttBlob.autorelease();
       let me = uploaded?.mediaEntry ?? uploaded;
       if (Array.isArray(me)) me = me[0];
       if (me?.kind === "error") {
