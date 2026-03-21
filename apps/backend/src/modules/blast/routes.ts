@@ -51,8 +51,9 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
         const campaignId = req.activeCampaignId!;
 
         const qs     = request.query as Record<string, string>;
-        const limit  = Math.min(500, Math.max(1, parseInt(qs.limit  ?? "200", 10)));
-        const offset = Math.max(0,             parseInt(qs.offset ?? "0",   10));
+        // FIX: Guard against NaN from malformed query params (parseInt("abc") = NaN)
+        const limit  = Math.min(500, Math.max(1, parseInt(qs.limit  ?? "200", 10) || 200));
+        const offset = Math.max(0,             parseInt(qs.offset ?? "0",   10) || 0);
         const status     = qs.status     ?? "nuevo";
         const district   = qs.district   ?? "";
         const brigadista = qs.brigadista ?? "";
@@ -307,12 +308,20 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
           );
         }
 
-        const config = await repo.getNumberConfig(campaignId, waNumber);
-        return reply.code(200).send({
-          ok:         true,
-          request_id: requestId,
-          config:     config ?? null,
-        });
+        // FIX: Was missing try/catch — DB errors would leak stack traces
+        try {
+          const config = await repo.getNumberConfig(campaignId, waNumber);
+          return reply.code(200).send({
+            ok:         true,
+            request_id: requestId,
+            config:     config ?? null,
+          });
+        } catch (err) {
+          app.log.error({ err }, "[blast] getNumberConfig failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "UPSTREAM_ERROR", "Error al obtener configuración del número")
+          );
+        }
       }
     );
 

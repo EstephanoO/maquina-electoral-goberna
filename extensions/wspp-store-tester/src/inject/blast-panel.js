@@ -240,7 +240,9 @@ async function _simulateTyping(chat, text) {
       // Jitter: ±30% no-uniforme + pausa de "pensamiento" (0-2s extra)
       const jitter = baseMs * (0.7 + Math.random() * 0.6);
       const thinkPause = Math.random() < 0.3 ? _humanRandom(500, 2000) : 0; // 30% chance de pausa
-      const typingMs = Math.max(1200, Math.min(6000, jitter + thinkPause));
+      // FIX: Cap raised from 6s to 12s — a 200-char message at ~60ms/char = 12s.
+      // 6s cap made long messages look impossibly fast (ban risk).
+      const typingMs = Math.max(1200, Math.min(12000, jitter + thinkPause));
       await _sleep(typingMs);
       if (csb.sendChatStatePaused) await csb.sendChatStatePaused(chat.id);
     }
@@ -871,15 +873,22 @@ export async function startBlast() {
     console.log(`[BLAST LOOP] tras dedup local: ${batch.length}/${rawBatch.length} contactos`);
 
     if (!batch.length) {
-      console.log('[BLAST LOOP] Todos filtrados por dedup local — parando loop');
-      // Si batch completo está filtrado por dedup, significa que ya se enviou todo en sesiones anteriores.
-      // Limpiar localStorage para que el próximo blast arranque limpio.
-      try { localStorage.removeItem(LS_SENT_KEY); } catch (_) {}
-      _running = false;
-      _stopCountdown();
-      _notify();
-      break;
+      // FIX: Don't stop permanently — the backend may have MORE contacts beyond this
+      // dedup'd batch. Retry up to 3 times before giving up.
+      _dedupRetries = (_dedupRetries || 0) + 1;
+      if (_dedupRetries >= 3) {
+        console.log('[BLAST LOOP] 3 consecutive all-dedup batches — stopping');
+        try { localStorage.removeItem(LS_SENT_KEY); } catch (_) {}
+        _running = false;
+        _stopCountdown();
+        _notify();
+        break;
+      }
+      console.log(`[BLAST LOOP] Batch all dedup'd — retry ${_dedupRetries}/3`);
+      await _sleep(1000);
+      continue; // try next batch from backend
     }
+    _dedupRetries = 0; // reset on non-empty batch
 
     // Accumulators — filled DURING the loop, acted on AFTER
     const habladoBatch = [];  // IDs de contactos que recibieron mensaje OK

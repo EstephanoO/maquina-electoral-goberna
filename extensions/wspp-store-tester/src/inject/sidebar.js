@@ -16,7 +16,6 @@ import {
   getPreviewContacts, isPreviewLoading, isPreviewReady, getPreviewSkipped,
   getPreviewMessage, getPreviewFlags, loadPreview, previewSkipContact,
   previewMarkHabladoAndReplace, previewConfirm, previewCancel,
-  getCheckpoint, getBlockSent,
   setBlastLimit, getBlastLimit, getSessionSent,
 } from './blast-panel.js';
 import { analyzeTemplates } from './template-analyzer.js';
@@ -348,7 +347,6 @@ async function _handleDelegatedClick(e) {
   else if (id === 'sb-start') { console.log('[SIDEBAR] sb-start clicked → loading preview'); loadPreview(); }
   else if (id === 'sb-preview-confirm') { previewConfirm(); }
   else if (id === 'sb-preview-cancel') { previewCancel(); }
-  else if (id === 'sb-send-direct') { console.log('[SIDEBAR] direct send, limit:', getBlastLimit()); startBlast(); }
   else if (id === 'sb-pause') { pauseBlast(); }
   else if (id === 'sb-resume') { resumeBlast(); }
   else if (id === 'sb-reset') { resetSession(); refreshPendingCount(); _renderContent(); }
@@ -633,7 +631,7 @@ function _blastHTML() {
 
     <!-- KPIs -->
     ${hasActivity ? `
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
       ${[
         ['✓',   kpis.sent,    'Enviado',   '#6b7280', 'sent'],
         ['✗',   kpis.failed,  'Fallidos',   S.danger, 'failed'],
@@ -995,6 +993,12 @@ function _blastHTML() {
         width:100%;padding:14px;border-radius:10px;border:1px solid ${S.warn}40;
         background:${S.warnBg};color:${S.warn};font-size:15px;font-weight:700;cursor:pointer;
       ">⏸ Pausar</button>
+    ` : paused && hasPending ? `
+      <button id="sb-resume" style="
+        width:100%;padding:14px;border-radius:10px;border:none;
+        background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+        box-shadow:0 2px 12px ${S.accent}40;
+      ">▶ Reanudar</button>
     ` : !hasPending && pending !== null ? `
       <div style="text-align:center;padding:12px;background:${S.accentBg};border-radius:10px;font-size:13px;color:${S.accent};font-weight:600;">
         ✅ No hay más pendientes

@@ -2642,7 +2642,7 @@
         const baseMs = text.length * charMs;
         const jitter = baseMs * (0.7 + Math.random() * 0.6);
         const thinkPause = Math.random() < 0.3 ? _humanRandom(500, 2e3) : 0;
-        const typingMs = Math.max(1200, Math.min(6e3, jitter + thinkPause));
+        const typingMs = Math.max(1200, Math.min(12e3, jitter + thinkPause));
         await _sleep(typingMs);
         if (csb.sendChatStatePaused) await csb.sendChatStatePaused(chat.id);
       }
@@ -3219,16 +3219,23 @@
       });
       console.log(`[BLAST LOOP] tras dedup local: ${batch.length}/${rawBatch.length} contactos`);
       if (!batch.length) {
-        console.log("[BLAST LOOP] Todos filtrados por dedup local \u2014 parando loop");
-        try {
-          localStorage.removeItem(LS_SENT_KEY);
-        } catch (_) {
+        _dedupRetries = (_dedupRetries || 0) + 1;
+        if (_dedupRetries >= 3) {
+          console.log("[BLAST LOOP] 3 consecutive all-dedup batches \u2014 stopping");
+          try {
+            localStorage.removeItem(LS_SENT_KEY);
+          } catch (_) {
+          }
+          _running = false;
+          _stopCountdown();
+          _notify();
+          break;
         }
-        _running = false;
-        _stopCountdown();
-        _notify();
-        break;
+        console.log(`[BLAST LOOP] Batch all dedup'd \u2014 retry ${_dedupRetries}/3`);
+        await _sleep(1e3);
+        continue;
       }
+      _dedupRetries = 0;
       const habladoBatch = [];
       const noWaBatch = [];
       const skipsBatch = [];
@@ -4696,9 +4703,6 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       previewConfirm();
     } else if (id === "sb-preview-cancel") {
       previewCancel();
-    } else if (id === "sb-send-direct") {
-      console.log("[SIDEBAR] direct send, limit:", getBlastLimit());
-      startBlast();
     } else if (id === "sb-pause") {
       pauseBlast();
     } else if (id === "sb-resume") {
@@ -4966,7 +4970,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
 
     <!-- KPIs -->
     ${hasActivity ? `
-    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
       ${[
       ["\u2713", kpis.sent, "Enviado", "#6b7280", "sent"],
       ["\u2717", kpis.failed, "Fallidos", S.danger, "failed"],
@@ -5321,6 +5325,12 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         width:100%;padding:14px;border-radius:10px;border:1px solid ${S.warn}40;
         background:${S.warnBg};color:${S.warn};font-size:15px;font-weight:700;cursor:pointer;
       ">\u23F8 Pausar</button>
+    ` : paused && hasPending ? `
+      <button id="sb-resume" style="
+        width:100%;padding:14px;border-radius:10px;border:none;
+        background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+        box-shadow:0 2px 12px ${S.accent}40;
+      ">\u25B6 Reanudar</button>
     ` : !hasPending && pending !== null ? `
       <div style="text-align:center;padding:12px;background:${S.accentBg};border-radius:10px;font-size:13px;color:${S.accent};font-weight:600;">
         \u2705 No hay m\xE1s pendientes

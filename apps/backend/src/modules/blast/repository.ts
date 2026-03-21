@@ -143,10 +143,10 @@ export async function getFormContactsForNumber(params: {
          AND bl.status = 'sent'
      )`,
     // Skip contacts marked no_wa HOY — se reintentarán mañana via retry-no-wa
-    // FIX: Parentheses required — without them the OR breaks the entire WHERE clause
-    // because OR has lower precedence than AND. Before this fix, contacts marked
-    // 'hablado' YESTERDAY would reappear as pending due to the OR evaluating globally.
-    `(COALESCE(fs.cms_status, 'nuevo') != 'no_wa' OR fs.cms_hablado_at < CURRENT_DATE)`,
+    // FIX: Parentheses + COALESCE for NULL cms_hablado_at.
+    // Without parentheses, the OR broke the entire WHERE clause.
+    // Without COALESCE, no_wa contacts with NULL cms_hablado_at were permanently stuck.
+    `(COALESCE(fs.cms_status, 'nuevo') != 'no_wa' OR COALESCE(fs.cms_hablado_at, '1970-01-01'::timestamptz) < CURRENT_DATE)`,
     // Skip contacts que ya fueron procesados (hablado, respondieron, archivado, claimed)
     `COALESCE(fs.cms_status, 'nuevo') NOT IN ('hablado', 'respondieron', 'archivado', 'claimed')`,
     // Skip teléfonos inválidos (menos de 9 dígitos)
@@ -291,16 +291,43 @@ export async function markHablado(
   }
 
   // Marca sin WhatsApp como 'no_wa' — se pueden reintentar pasadas 24h
+  // FIX: Use transaction + add blast_log entry for cross-phone dedup consistency.
+  // Before this fix, no_wa was outside the transaction and had no blast_log entry,
+  // so the NOT EXISTS dedup check couldn't see them.
   if (no_wa_ids?.length) {
-    await pool.query(
-      `UPDATE form_submissions
-       SET cms_status     = 'no_wa',
-           cms_hablado_at = now()
-       WHERE id = ANY($1::uuid[])
-         AND campaign_id = $2
-         AND COALESCE(cms_status, 'nuevo') IN ('nuevo', 'no_wa')`,
-      [no_wa_ids, campaign_id]
-    );
+    const noWaClient = await pool.connect();
+    try {
+      await noWaClient.query('BEGIN');
+
+      await noWaClient.query(
+        `UPDATE form_submissions
+         SET cms_status     = 'no_wa',
+             cms_hablado_at = now()
+         WHERE id = ANY($1::uuid[])
+           AND campaign_id = $2
+           AND COALESCE(cms_status, 'nuevo') IN ('nuevo', 'no_wa')`,
+        [no_wa_ids, campaign_id]
+      );
+
+      // Log no_wa in blast_log for cross-phone dedup
+      if (wa_number) {
+        await noWaClient.query(
+          `INSERT INTO blast_log (campaign_id, wa_number, contact_phone, contact_id, status)
+           SELECT $1, $2, regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g'), fs.id, 'no_wa'
+           FROM form_submissions fs
+           WHERE fs.id = ANY($3::uuid[]) AND fs.campaign_id = $1
+           ON CONFLICT DO NOTHING`,
+          [campaign_id, wa_number, no_wa_ids]
+        );
+      }
+
+      await noWaClient.query('COMMIT');
+    } catch (err) {
+      await noWaClient.query('ROLLBACK');
+      console.error("[blast] no_wa transaction failed — rolled back", String(err));
+    } finally {
+      noWaClient.release();
+    }
   }
 
   return total;
@@ -481,13 +508,15 @@ export async function getBlockStats(
 // ── Retry no_wa: vuelve a 'nuevo' los contactos sin WA de más de 24h ──
 // Llamado al arrancar el blast — permite reintentar al día siguiente.
 export async function retryNoWaContacts(campaign_id: string): Promise<number> {
+  // FIX: COALESCE handles historical no_wa contacts with NULL cms_hablado_at
+  // that were permanently stuck (NULL < anything → NULL → excluded from UPDATE)
   const result = await pool.query(
     `UPDATE form_submissions
      SET cms_status     = 'nuevo',
          cms_hablado_at = NULL
      WHERE campaign_id = $1
        AND cms_status   = 'no_wa'
-       AND cms_hablado_at < NOW() - INTERVAL '24 hours'`,
+       AND COALESCE(cms_hablado_at, '1970-01-01'::timestamptz) < NOW() - INTERVAL '24 hours'`,
     [campaign_id]
   );
   return result.rowCount ?? 0;
