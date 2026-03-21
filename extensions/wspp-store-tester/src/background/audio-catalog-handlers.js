@@ -158,8 +158,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // BUST_AUDIO_CACHE / BUST_CATALOG_CACHE — cache invalidation from inject
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'BUST_AUDIO_CACHE' && msg.id) {
-    _audioDataCache.delete(msg.id);
+  if (msg.type === 'BUST_AUDIO_CACHE') {
+    // FIX: Handle falsy id — bust all audio data cache if no specific id
+    if (msg.id) _audioDataCache.delete(msg.id);
+    else _audioDataCache.clear();
     sendResponse({ ok: true });
     return true;
   }

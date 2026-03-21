@@ -195,10 +195,17 @@ window.addEventListener('message', (e) => {
         window.postMessage({ type: 'CREATE_CATALOG_ITEM_DONE', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
         return;
       }
+      // FIX: Relay ALL fields from background — audio_generated, audio_error,
+      // audioSize, durationMs were previously stripped, so inject panel
+      // never showed correct post-creation toast.
       window.postMessage({
         type: 'CREATE_CATALOG_ITEM_DONE',
         ok: response?.ok ?? false,
         item: response?.item ?? null,
+        audio_generated: response?.audio_generated ?? false,
+        audioSize: response?.audioSize ?? 0,
+        durationMs: response?.durationMs ?? 0,
+        audio_error: response?.audio_error ?? null,
         error: response?.error ?? null,
       }, WA_ORIGIN);
     });
@@ -336,6 +343,10 @@ window.addEventListener('message', (e) => {
   // --- BLAST_GET_BLOCK_STATS (inject → background → inject) ---
   if (e.data?.type === 'BLAST_GET_BLOCK_STATS') {
     chrome.runtime.sendMessage({ type: 'BLAST_GET_BLOCK_STATS', block_id: e.data.block_id, own_number: e.data.own_number }, (response) => {
+      if (chrome.runtime.lastError || !response) {
+        window.postMessage({ type: 'BLAST_BLOCK_STATS_READY', ok: false, error: chrome.runtime.lastError?.message || 'No response' }, WA_ORIGIN);
+        return;
+      }
       window.postMessage({ type: 'BLAST_BLOCK_STATS_READY', ...response }, WA_ORIGIN);
     });
     return;

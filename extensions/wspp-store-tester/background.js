@@ -1506,8 +1506,9 @@
     return true;
   });
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg.type === "BUST_AUDIO_CACHE" && msg.id) {
-      _audioDataCache.delete(msg.id);
+    if (msg.type === "BUST_AUDIO_CACHE") {
+      if (msg.id) _audioDataCache.delete(msg.id);
+      else _audioDataCache.clear();
       sendResponse({ ok: true });
       return true;
     }

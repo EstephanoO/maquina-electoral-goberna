@@ -1857,8 +1857,13 @@
         _previewAudio.pause();
         _previewPlaying = false;
       } else {
-        _previewAudio.play();
-        _previewPlaying = true;
+        _previewAudio.play().then(() => {
+          _previewPlaying = true;
+          if (_catalogPanelOpen) renderCatalogPanel();
+        }).catch(() => {
+          _previewPlaying = false;
+        });
+        return;
       }
       if (_catalogPanelOpen) renderCatalogPanel();
       return;
@@ -1950,40 +1955,8 @@
       const prepRawMedia = prepMod.prepRawMedia ?? prepMod.default?.prepRawMedia ?? prepMod.default;
       L("4a prepRawMedia fn", typeof prepRawMedia, `length=${prepRawMedia?.length}`);
       const mediaPrep = prepRawMedia(opaqueData, { isPtt: true, asSticker: false, asGif: false, asDocument: false });
-      L("4b mediaPrep", typeof mediaPrep, Object.keys(mediaPrep).join(", "));
       const mediaData = await mediaPrep.waitForPrep();
-      L("4 \u2713 mediaData", `type=${mediaData.type ?? mediaData.get?.("type")} filehash=${(mediaData.filehash ?? mediaData.get?.("filehash"))?.slice(0, 16)}`);
-      const mdKeys = typeof mediaData.toJSON === "function" ? Object.keys(mediaData.toJSON()) : Object.keys(mediaData);
-      const mdGetKeys = typeof mediaData.get === "function" ? "(Backbone model)" : "(plain object)";
-      L("4+ mediaData keys", mdGetKeys, mdKeys.join(", "));
-      const blobDirect = mediaData.mediaBlob;
-      const blobGet = typeof mediaData.get === "function" ? mediaData.get("mediaBlob") : void 0;
-      const blobPreview = mediaData.preview;
-      const blobFull = mediaData.fullData;
-      L(
-        "4+ blob search",
-        `direct=${blobDirect ? typeof blobDirect : "null"}`,
-        `get=${blobGet ? typeof blobGet : "null"}`,
-        `preview=${blobPreview ? typeof blobPreview : "null"}`,
-        `fullData=${blobFull ? typeof blobFull : "null"}`,
-        `opaqueData=${mediaData.opaqueData ? typeof mediaData.opaqueData : "null"}`
-      );
-      const inspectBlob = blobGet || blobDirect;
-      if (inspectBlob) {
-        const bKeys = Object.keys(inspectBlob).slice(0, 20);
-        const bProto = Object.getOwnPropertyNames(Object.getPrototypeOf(inspectBlob) || {}).slice(0, 20);
-        L(
-          "4+ mediaBlob inspect",
-          `keys=[${bKeys.join(",")}]`,
-          `proto=[${bProto.join(",")}]`,
-          `.url=${typeof inspectBlob.url}`,
-          `.blob=${typeof inspectBlob.blob}`,
-          `.forceUrl=${typeof inspectBlob.forceUrl}`,
-          `.getUrl=${typeof inspectBlob.getUrl}`,
-          `.toBase64=${typeof inspectBlob.toBase64}`,
-          `.constructor=${inspectBlob.constructor?.name || "?"}`
-        );
-      }
+      L("4 \u2713 mediaData ready");
       try {
         const waveform = await _generateWaveform(file);
         if (waveform) {
