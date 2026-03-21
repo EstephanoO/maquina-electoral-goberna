@@ -9,7 +9,7 @@ import { recordConversation } from './gemini-fallback.js';
 import { apiFetch } from './api-client.js';
 import { getCachedValidation, claimValidation, updateValidationStatus, invalidateCache } from './validation-client.js';
 import { reportClassificationEvent } from './classification-reporter.js';
-import { mergeWithConversationScore, resetConversationScore, getConversationDebug } from './conversation-scorer.js';
+import { mergeWithConversationScore } from './conversation-scorer.js';
 
 const _phoneQueue = new Map(); // phone → Promise chain
 

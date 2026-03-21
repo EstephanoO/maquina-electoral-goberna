@@ -204,7 +204,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: result.ok, valid: result.valid ?? [] });
     } catch (err) {
       console.warn('[WSPP BLAST] check-contacts failed:', err.message);
-      sendResponse({ ok: false, valid: [] }); // fail open — let local dedup decide
+      // FIX: Fail open — return all contact IDs as valid so blast continues.
+      // Local dedup will still filter duplicates. Previously returned valid:[]
+      // which was fail-closed (discarded all contacts on network error).
+      const allIds = (contacts || []).map(c => c.id).filter(Boolean);
+      sendResponse({ ok: false, valid: allIds });
     }
   })();
   return true;

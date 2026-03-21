@@ -39,9 +39,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
 
         // Adaptive scoring: learn from operator correction
-        if (original_category || (currentValidation && currentValidation.vote_class)) {
-          const prevCategory = original_category || currentValidation?.vote_class || '';
-          const wasCorrect = prevCategory === vote_class;
+        // FIX: Compare vote_class with vote_class (same taxonomy).
+        // original_category is a category string (e.g. 'apoyo_genuino'),
+        // vote_class is the target classification (e.g. 'duro').
+        // We use the previous vote_class from currentValidation for correctness check,
+        // and pass the original_category to recordCorrection so it can adjust
+        // the weight for that category.
+        if (original_category || (currentValidation && currentValidation.category)) {
+          const prevCategory = original_category || currentValidation?.category || '';
+          const prevVoteClass = currentValidation?.vote_class || '';
+          const wasCorrect = prevVoteClass === vote_class;
           recordCorrection(prevCategory, vote_class, wasCorrect);
         }
 

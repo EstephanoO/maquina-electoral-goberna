@@ -809,6 +809,58 @@
     }
     return null;
   }
+  function installChatWatcher() {
+    if (_chatWatcherInstalled) return;
+    try {
+      let handleActiveChatChange = function(changedModel) {
+        try {
+          const active = changedModel?.active === true ? changedModel : ChatCollection._models.find((c) => c.active);
+          if (!active) return;
+          const jid = active.id?._serialized;
+          if (!jid || jid === _lastActiveChatJid) return;
+          _lastActiveChatJid = jid;
+          if (jid.includes("@g.us") || jid.includes("@broadcast") || jid.includes("@newsletter")) return;
+          let phone = jidToNumber(jid);
+          if (!phone && jid.includes("@lid")) {
+            phone = resolvePhoneFromLid(jid);
+          }
+          const name = active.name || active.formattedTitle || active.pushname || null;
+          window.postMessage({
+            type: "WSPP_CHAT_OPENED",
+            payload: {
+              phone,
+              contact_name: name,
+              jid
+            }
+          }, WA_ORIGIN);
+          console.log("[WSPP] Chat abierto:", phone ?? jid, "| nombre:", name ?? "-");
+        } catch (err) {
+          console.warn("[WSPP] chat change error:", err?.message);
+        }
+      };
+      const { ChatCollection } = window.require("WAWebChatCollection");
+      if (!ChatCollection || !ChatCollection._models) {
+        console.log("[WSPP] ChatCollection no disponible a\xFAn");
+        return;
+      }
+      let eventDriven = false;
+      try {
+        if (typeof ChatCollection.on === "function") {
+          ChatCollection.on("change:active", handleActiveChatChange);
+          eventDriven = true;
+          console.log("[WSPP] \u2713 Chat watcher instalado (event-driven: change:active)");
+        }
+      } catch (_) {
+      }
+      if (!eventDriven) {
+        setInterval(handleActiveChatChange, 2e3);
+        console.log("[WSPP] \u2713 Chat watcher instalado (polling fallback cada 2s)");
+      }
+      _chatWatcherInstalled = true;
+    } catch (err) {
+      console.log("[WSPP] ChatCollection a\xFAn no disponible:", err.message);
+    }
+  }
   var MAX_WA_LISTENER_RETRIES = 30;
   var _waListenerRetries = 0;
   var WA_REQUIRED_MODULES = [
@@ -1008,6 +1060,7 @@
       return;
     }
     installIncomingMessageListener();
+    installChatWatcher();
     if (!_msgListenerInstalled || !_chatWatcherInstalled) {
       _waListenerRetries++;
       if (_waListenerRetries < MAX_WA_LISTENER_RETRIES) {
@@ -2377,12 +2430,16 @@
   }
 
   // src/inject/blast-panel.js
-  var CFG_KEY = "wspp_blast_cfg_v7";
+  var CFG_KEY = "wspp_blast_cfg_v8";
   var TPL_KEY = "wspp_blast_tpls_v6";
   var DEFAULTS = {
     batchSize: 10,
     // cuántos contactos pedir por fetch al backend
-    brigadista: ""
+    brigadista: "",
+    burstSize: 12,
+    // cuántos msgs antes de descanso obligatorio
+    burstRestSec: 90
+    // descanso entre bursts (segundos)
   };
   function _loadCfg() {
     try {
@@ -2441,9 +2498,11 @@
   function _saveSentToStorage() {
     if (!_hasSentThisSession) return;
     try {
+      const phones = [..._sentPhones];
+      const ids = [..._sentIds];
       localStorage.setItem(LS_SENT_KEY, JSON.stringify({
-        phones: [..._sentPhones],
-        ids: [..._sentIds],
+        phones: phones.length > 5e3 ? phones.slice(-5e3) : phones,
+        ids: ids.length > 5e3 ? ids.slice(-5e3) : ids,
         savedAt: Date.now(),
         sessionId: _currentSessionId
       }));
@@ -2461,6 +2520,8 @@
       clearInterval(_ackInterval);
       _ackInterval = null;
     }
+    for (const entry of _trackedMsgs) entry.msgModel = null;
+    _trackedMsgs = [];
   }
   function _pollAcks() {
     let changed = false;
@@ -2475,10 +2536,14 @@
         if (result) result.ack = newAck;
         changed = true;
       }
+      if (newAck >= 2) entry.msgModel = null;
     }
     _trackedMsgs = _trackedMsgs.filter((e) => {
-      if (e.lastAck >= 3 && now - e.ts > 12e4) return false;
-      if (now - e.ts > 6e5) return false;
+      if (!e.msgModel && e.lastAck >= 2 && now - e.ts > 3e4) return false;
+      if (now - e.ts > 3e5) {
+        e.msgModel = null;
+        return false;
+      }
       return true;
     });
     if (!_trackedMsgs.length) _stopAckTracking();
@@ -2507,7 +2572,9 @@
     let counter = 0;
     return text.replace(/\[([^\]]+)\]/g, (_, inner) => {
       const opts = inner.split("|");
-      return opts[_hashSeed(String(seed + counter), counter) % opts.length];
+      const pick = opts[_hashSeed(String(seed + counter), counter) % opts.length];
+      counter++;
+      return pick;
     });
   }
   function _toTitleCase(word) {
@@ -2550,12 +2617,32 @@
     if (!d) return null;
     return d.length === 9 ? "51" + d : d;
   }
+  async function _checkExistsOnWA(normalizedPhone) {
+    try {
+      const usyncMod = _req("WAWebUsync", "WAWebUsyncQuery", "WAWebUSyncModule");
+      const userMod = _req("WAWebUsyncUser", "WAWebUSyncUserUtils", "WAWebUSyncUser");
+      const USyncQuery = usyncMod?.USyncQuery || usyncMod?.default?.USyncQuery || usyncMod;
+      const USyncUser = userMod?.USyncUser || userMod?.default?.USyncUser || userMod;
+      if (!USyncQuery || !USyncUser) return null;
+      const query = new USyncQuery().withContext("interactive").withContactProtocol().withUser(new USyncUser().withPhone(normalizedPhone));
+      const response = await query.execute();
+      const type = response?.list?.[0]?.contact?.type;
+      if (!type) return null;
+      return type === "in";
+    } catch (_) {
+      return null;
+    }
+  }
   async function _simulateTyping(chat, text) {
     try {
       const csb = _req("WAWebChatStateBridge");
       if (csb.sendChatStateComposing) {
         await csb.sendChatStateComposing(chat.id);
-        const typingMs = Math.max(800, Math.min(4e3, text.length * 30));
+        const charMs = 40 + Math.random() * 40;
+        const baseMs = text.length * charMs;
+        const jitter = baseMs * (0.7 + Math.random() * 0.6);
+        const thinkPause = Math.random() < 0.3 ? _humanRandom(500, 2e3) : 0;
+        const typingMs = Math.max(1200, Math.min(6e3, jitter + thinkPause));
         await _sleep(typingMs);
         if (csb.sendChatStatePaused) await csb.sendChatStatePaused(chat.id);
       }
@@ -2625,9 +2712,6 @@
     }
     return capturedModel;
   }
-  function _variableDelay() {
-    return 1e3 + Math.floor(Math.random() * 4e3);
-  }
   function _sleep(ms) {
     return new Promise((r) => setTimeout(r, ms));
   }
@@ -2649,16 +2733,7 @@
     clearInterval(_countdownTimer);
     _countdown = 0;
   }
-  var _habladoIds = /* @__PURE__ */ new Set();
   var _preClaimedIds = /* @__PURE__ */ new Set();
-  function _preClaimContacts(ids) {
-    if (!ids?.length) return;
-    for (const id of ids) _preClaimedIds.add(id);
-    console.log(`[BLAST PRE-CLAIM] marking ${ids.length} contacts as hablado in backend`);
-    _markHablado(ids, []).catch((err) => {
-      console.warn("[BLAST] pre-claim failed:", err?.message, "| ids:", ids.length);
-    });
-  }
   var _reqIdCounter = 0;
   function _nextReqId() {
     return "blast_" + ++_reqIdCounter + "_" + Date.now();
@@ -2709,9 +2784,38 @@
       console.log(`[BLAST FETCH] message sent, waiting for BLAST_FORM_CONTACTS_READY reqId=${reqId}`);
     });
   }
-  function _markHablado(ids, no_wa_ids) {
-    if (!ids.length && !no_wa_ids?.length) return Promise.resolve(false);
-    return new Promise((resolve) => {
+  var LS_RETRY_KEY = "wspp_blast_retry_hablado";
+  function _loadRetryQueue() {
+    try {
+      const raw = localStorage.getItem(LS_RETRY_KEY);
+      if (!raw) return { ids: [], no_wa_ids: [] };
+      return JSON.parse(raw);
+    } catch (_) {
+      return { ids: [], no_wa_ids: [] };
+    }
+  }
+  function _saveRetryQueue(ids, no_wa_ids) {
+    if (!ids.length && !no_wa_ids.length) {
+      try {
+        localStorage.removeItem(LS_RETRY_KEY);
+      } catch (_) {
+      }
+      return;
+    }
+    try {
+      localStorage.setItem(LS_RETRY_KEY, JSON.stringify({
+        ids: ids.length > 500 ? ids.slice(-500) : ids,
+        no_wa_ids: no_wa_ids.length > 500 ? no_wa_ids.slice(-500) : no_wa_ids
+      }));
+    } catch (_) {
+    }
+  }
+  async function _markHablado(ids, no_wa_ids) {
+    const retry = _loadRetryQueue();
+    const allIds = [.../* @__PURE__ */ new Set([...ids, ...retry.ids || []])];
+    const allNoWa = [.../* @__PURE__ */ new Set([...no_wa_ids ?? [], ...retry.no_wa_ids || []])];
+    if (!allIds.length && !allNoWa.length) return true;
+    const ok = await new Promise((resolve) => {
       const reqId = "mh_" + Date.now();
       const timer = setTimeout(() => {
         window.removeEventListener("message", onReply);
@@ -2726,22 +2830,31 @@
       window.addEventListener("message", onReply);
       window.postMessage({
         type: "BLAST_MARK_HABLADO",
-        ids,
-        no_wa_ids: no_wa_ids ?? [],
+        ids: allIds,
+        no_wa_ids: allNoWa,
         own_number: getOwnNumber(),
         reqId
       }, WA_ORIGIN);
     });
+    if (ok) {
+      _saveRetryQueue([], []);
+      console.log(`[BLAST] markHablado OK: ${allIds.length} hablado, ${allNoWa.length} no_wa`);
+    } else {
+      _saveRetryQueue(allIds, allNoWa);
+      console.warn(`[BLAST] markHablado FAILED \u2014 queued ${allIds.length} ids for retry`);
+    }
+    return ok;
   }
   function _checkContactsBackend(contacts) {
     if (!contacts.length) return Promise.resolve(/* @__PURE__ */ new Set());
+    const allIds = new Set(contacts.filter((c) => c.id).map((c) => c.id));
     return new Promise((resolve) => {
       const reqId = "chk_" + Date.now();
       console.log(`[BLAST CHECK] checking ${contacts.length} contacts with backend`);
       const timer = setTimeout(() => {
         window.removeEventListener("message", onReply);
-        console.warn("[BLAST CHECK] TIMEOUT \u2014 trusting local dedup");
-        resolve(/* @__PURE__ */ new Set());
+        console.warn("[BLAST CHECK] TIMEOUT \u2014 asumiendo todos v\xE1lidos, confiando en dedup local");
+        resolve(allIds);
       }, 1e4);
       function onReply(e) {
         if (e.source !== window || e.data?.type !== "BLAST_CHECK_CONTACTS_DONE" || e.data.reqId !== reqId) return;
@@ -2773,6 +2886,158 @@
       })),
       own_number: getOwnNumber()
     }, WA_ORIGIN);
+  }
+  var _lastHealth = null;
+  function _fetchHealth() {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        window.removeEventListener("message", onReply);
+        resolve(null);
+      }, 8e3);
+      function onReply(e) {
+        if (e.source !== window || e.data?.type !== "BLAST_NUMBER_HEALTH_READY") return;
+        window.removeEventListener("message", onReply);
+        clearTimeout(timer);
+        _lastHealth = e.data;
+        resolve(e.data);
+      }
+      window.addEventListener("message", onReply);
+      window.postMessage({
+        type: "BLAST_GET_NUMBER_HEALTH",
+        own_number: getOwnNumber()
+      }, WA_ORIGIN);
+    });
+  }
+  function _isWithinSendWindow() {
+    const now = /* @__PURE__ */ new Date();
+    const peruHour = new Date(now.toLocaleString("en-US", { timeZone: "America/Lima" })).getHours();
+    return peruHour >= 8 && peruHour < 21;
+  }
+  function _humanRandom(min, max) {
+    const r = (Math.random() + Math.random() + Math.random()) / 3;
+    return min + Math.floor(r * (max - min));
+  }
+  function _adaptiveDelay() {
+    const risk = _lastHealth?.risk_level || "low";
+    switch (risk) {
+      case "critical":
+        return _humanRandom(25e3, 45e3);
+      // 25-45s
+      case "high":
+        return _humanRandom(12e3, 25e3);
+      // 12-25s
+      case "medium":
+        return _humanRandom(8e3, 15e3);
+      // 8-15s
+      default:
+        return _humanRandom(4e3, 1e4);
+    }
+  }
+  var _remoteConfig = null;
+  var _remoteConfigLoadedAt = 0;
+  var REMOTE_CONFIG_TTL = 10 * 60 * 1e3;
+  function _fetchRemoteConfig() {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        window.removeEventListener("message", onReply);
+        resolve(null);
+      }, 5e3);
+      function onReply(e) {
+        if (e.source !== window || e.data?.type !== "BLAST_NUMBER_CONFIG_READY") return;
+        window.removeEventListener("message", onReply);
+        clearTimeout(timer);
+        resolve(e.data.config || null);
+      }
+      window.addEventListener("message", onReply);
+      window.postMessage({
+        type: "BLAST_GET_NUMBER_CONFIG",
+        own_number: getOwnNumber()
+      }, WA_ORIGIN);
+    });
+  }
+  async function _loadRemoteConfig() {
+    if (_remoteConfig && Date.now() - _remoteConfigLoadedAt < REMOTE_CONFIG_TTL) return;
+    const rc = await _fetchRemoteConfig();
+    if (rc) {
+      _remoteConfig = rc;
+      _remoteConfigLoadedAt = Date.now();
+      if (rc.burst_size) cfg.burstSize = rc.burst_size;
+      if (rc.burst_rest_sec) cfg.burstRestSec = rc.burst_rest_sec;
+      _saveCfg(cfg);
+      console.log("[BLAST CONFIG] Remote config loaded:", JSON.stringify(rc).slice(0, 200));
+    }
+  }
+  var _lastSpamResult = null;
+  window.addEventListener("message", (e) => {
+    if (e.source !== window || e.data?.type !== "WSPP_SPAM_WARNING") return;
+    _lastSpamResult = e.data.payload || null;
+    _notify();
+  });
+  var _globalStats = null;
+  function _fetchGlobalStats() {
+    window.postMessage({ type: "BLAST_GET_STATS" }, WA_ORIGIN);
+  }
+  window.addEventListener("message", (e) => {
+    if (e.source !== window || e.data?.type !== "BLAST_STATS_READY") return;
+    if (e.data.ok) {
+      _globalStats = {
+        ...e.data.stats,
+        by_number: e.data.by_number ?? {},
+        // Map field names sidebar expects
+        total_hablado: e.data.stats?.total_sent ?? 0,
+        total_pending: e.data.stats?.total_pending ?? 0
+      };
+      _notify();
+    }
+  });
+  var _previewContacts = [];
+  var _previewLoading = false;
+  var _previewReady = false;
+  var _previewSkippedIds = /* @__PURE__ */ new Set();
+  var _previewMessages = /* @__PURE__ */ new Map();
+  var _previewFlags = /* @__PURE__ */ new Map();
+  var _burstCount = 0;
+  async function _checkPreviewContact(c) {
+    const np = _normalizePhone(c.telefono);
+    if (!np) {
+      _previewFlags.set(c.id, { inContacts: false, noWA: null, invalid: true });
+      return;
+    }
+    const flags = { inContacts: false, noWA: null, invalid: false };
+    try {
+      const { ContactCollection } = window.require("WAWebContactCollection");
+      if (ContactCollection?._models) {
+        const rawDigits = np.replace(/\D/g, "");
+        for (const model of ContactCollection._models) {
+          const modelPhone = (model.number || model.userid || model.phoneNumber || "").replace(/\D/g, "");
+          if (modelPhone && (modelPhone === rawDigits || modelPhone.endsWith(rawDigits.slice(-9)))) {
+            flags.inContacts = true;
+            break;
+          }
+        }
+      }
+    } catch (_) {
+    }
+    try {
+      const exists = await _checkExistsOnWA(np);
+      flags.noWA = exists === false ? true : exists === true ? false : null;
+    } catch (_) {
+      flags.noWA = null;
+    }
+    _previewFlags.set(c.id, flags);
+  }
+  async function _checkAllPreviewContacts(contacts) {
+    const batchSize = 20;
+    for (let i = 0; i < contacts.length; i += batchSize) {
+      const slice = contacts.slice(i, i + batchSize);
+      await Promise.all(slice.map((c) => _checkPreviewContact(c)));
+    }
+    for (const c of contacts) {
+      const f = _previewFlags.get(c.id);
+      if (f?.inContacts) {
+        _previewSkippedIds.add(c.id);
+      }
+    }
   }
   function getConfig() {
     return cfg;
@@ -2810,7 +3075,7 @@
     return _tplIndex;
   }
   function isWithinBlastWindow() {
-    return true;
+    return _isWithinSendWindow();
   }
   function setBlastLimit(n) {
     _blastLimit = n;
@@ -2830,6 +3095,36 @@
       _notify();
       return;
     }
+    _preClaimedIds.clear();
+    _inFlight.clear();
+    _trackedMsgs = [];
+    let recovered = false;
+    try {
+      const raw = localStorage.getItem(LS_SENT_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.savedAt && Date.now() - parsed.savedAt < LS_SENT_TTL_MS) {
+          _sentPhones.clear();
+          _sentIds.clear();
+          if (Array.isArray(parsed.phones)) for (const p of parsed.phones) _sentPhones.add(p);
+          if (Array.isArray(parsed.ids)) for (const id of parsed.ids) _sentIds.add(id);
+          recovered = _sentPhones.size > 0 || _sentIds.size > 0;
+          if (recovered) {
+            console.log(`[BLAST] Recovery: carg\xF3 ${_sentPhones.size} phones + ${_sentIds.size} ids de sesi\xF3n anterior`);
+          }
+        }
+      }
+    } catch (_) {
+    }
+    if (!recovered) {
+      _sentPhones.clear();
+      _sentIds.clear();
+      try {
+        localStorage.removeItem(LS_SENT_KEY);
+      } catch (_) {
+      }
+      console.log("[BLAST] Sesi\xF3n limpia \u2014 sin recovery");
+    }
     _currentSessionId = "sess_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
     _hasSentThisSession = false;
     console.log(`[BLAST] Iniciando sesi\xF3n=${_currentSessionId}`);
@@ -2839,8 +3134,35 @@
     _trackedMsgs = [];
     _totalPending = null;
     _sessionSent = 0;
+    _burstCount = 0;
+    let _consecutiveFailures = 0;
     _notify();
+    await _loadRemoteConfig();
+    if (!_isWithinSendWindow()) {
+      console.log("[BLAST] Fuera de ventana horaria (8am-9pm Peru) \u2014 no se inicia");
+      _running = false;
+      _notify();
+      return;
+    }
     while (_running) {
+      if (!_isWithinSendWindow()) {
+        console.log("[BLAST] Fuera de ventana horaria (8am-9pm Peru) \u2014 parando");
+        _running = false;
+        _stopCountdown();
+        _notify();
+        break;
+      }
+      const health = await _fetchHealth();
+      if (health && health.can_send === false) {
+        const waitUntil = health.next_available_at;
+        console.log(`[BLAST] Rate limit \u2014 can_send=false, next=${waitUntil}`);
+        _notify();
+        const waitMs = waitUntil ? Math.min(3e5, Math.max(5e3, new Date(waitUntil).getTime() - Date.now())) : 6e4;
+        _startCountdown(Math.ceil(waitMs / 1e3), "cooldown");
+        await _sleep(waitMs);
+        _stopCountdown();
+        continue;
+      }
       if (_blastLimit > 0 && _sessionSent >= _blastLimit) {
         console.log("[BLAST] L\xEDmite alcanzado \u2014 parando");
         _running = false;
@@ -2848,8 +3170,36 @@
         _notify();
         break;
       }
-      const rawBatch = await _fetchBatch(cfg.batchSize);
-      console.log(`[BLAST LOOP] batch recibido: ${rawBatch.length} contactos`);
+      if (_consecutiveFailures >= 5) {
+        console.warn("[BLAST] Circuit breaker: 5+ fallos consecutivos \u2014 pausando 60s");
+        _notify();
+        _startCountdown(60, "circuit-breaker");
+        await _sleep(6e4);
+        _stopCountdown();
+        _consecutiveFailures = 0;
+        continue;
+      }
+      const burstMax = cfg.burstSize || 12;
+      const burstRestSec = cfg.burstRestSec || 90;
+      if (_burstCount >= burstMax) {
+        const restMs = burstRestSec * 1e3 + _humanRandom(0, 15e3);
+        console.log(`[BLAST] Burst rest: ${_burstCount} msgs enviados, descansando ${Math.round(restMs / 1e3)}s`);
+        _startCountdown(Math.ceil(restMs / 1e3), "descanso");
+        _notify();
+        await _sleep(restMs);
+        _stopCountdown();
+        _burstCount = 0;
+        if (!_running) break;
+      }
+      let rawBatch;
+      if (_confirmedPreview && _confirmedPreview.length) {
+        rawBatch = _confirmedPreview;
+        _confirmedPreview = null;
+        console.log(`[BLAST LOOP] usando ${rawBatch.length} contactos del preview confirmado`);
+      } else {
+        rawBatch = await _fetchBatch(cfg.batchSize);
+        console.log(`[BLAST LOOP] batch recibido: ${rawBatch.length} contactos`);
+      }
       if (!rawBatch.length) {
         console.log("[BLAST LOOP] Batch vac\xEDo \u2014 no hay m\xE1s contactos pendientes, parando loop");
         try {
@@ -2882,6 +3232,8 @@
       const habladoBatch = [];
       const noWaBatch = [];
       const skipsBatch = [];
+      const sentResults = [];
+      let filteredBatch = batch;
       if (batch.length) {
         const validIds = await _checkContactsBackend(batch);
         if (validIds.size < batch.length) {
@@ -2909,31 +3261,33 @@
             if (_lastResults.length > 30) _lastResults.length = 30;
           }
           _notify();
+          filteredBatch = batch.filter((c) => !c.id || validIds.has(c.id));
+          console.log(`[BLAST] Capa5: batch filtrado de ${batch.length} \u2192 ${filteredBatch.length} contactos`);
         }
       }
-      const idsToPreClaim = batch.filter((c) => c.id).map((c) => c.id);
-      console.log(`[BLAST PRE-CLAIM] batch tiene ${idsToPreClaim.length} ids con id`);
-      if (idsToPreClaim.length) {
-        _preClaimContacts(idsToPreClaim);
-        for (const id of idsToPreClaim) habladoBatch.push(id);
+      if (!filteredBatch.length) {
+        console.log("[BLAST] Capa5: todos filtrados, continuando al siguiente batch");
+        _reportSkips(skipsBatch);
+        continue;
       }
-      for (let i = 0; i < batch.length && _running; i++) {
-        const c = batch[i];
+      for (let i = 0; i < filteredBatch.length && _running; i++) {
+        const c = filteredBatch[i];
         const normalizedPhone = _normalizePhone(c.telefono);
         const jid = normalizedPhone ? normalizedPhone + "@c.us" : null;
         const cName = ((c.nombre || "") + " " + (c.apellidos || "")).trim() || "\u2014";
         const lockKey = (normalizedPhone || "") + ":" + (c.id || "");
         if (_inFlight.has(lockKey)) continue;
-        if (normalizedPhone) _sentPhones.add(normalizedPhone);
-        if (c.id) _sentIds.add(c.id);
-        _saveSentToStorage();
+        if (normalizedPhone && _sentPhones.has(normalizedPhone)) continue;
+        if (c.id && _sentIds.has(c.id)) continue;
         _inFlight.add(lockKey);
         if (!((c.nombre || "") + " " + (c.apellidos || "")).trim()) {
           _kpis.skipped++;
+          if (c.id) _sentIds.add(c.id);
           skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: null, reason: "sin_nombre" });
           _lastResults.unshift({ nombre: "\u2014 Sin nombre", telefono: c.telefono, status: "skipped", ack: -1, error: "Sin nombre \u2014 skip" });
           if (_lastResults.length > 30) _lastResults.length = 30;
           _notify();
+          _inFlight.delete(lockKey);
           continue;
         }
         if (!jid) {
@@ -2941,6 +3295,21 @@
           _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error: "Tel inv\xE1lido" });
           if (_lastResults.length > 30) _lastResults.length = 30;
           _notify();
+          _inFlight.delete(lockKey);
+          continue;
+        }
+        const hasWA = await _checkExistsOnWA(normalizedPhone);
+        if (hasWA === false) {
+          console.log("[BLAST] Skip \u2014 sin WA (USyncQuery):", cName, c.telefono);
+          _kpis.no_wa++;
+          if (c.id) noWaBatch.push(c.id);
+          if (normalizedPhone) _sentPhones.add(normalizedPhone);
+          if (c.id) _sentIds.add(c.id);
+          skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: cName, reason: "usync_no_wa" });
+          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Sin WA \u2014 skip" });
+          if (_lastResults.length > 30) _lastResults.length = 30;
+          _notify();
+          _inFlight.delete(lockKey);
           continue;
         }
         try {
@@ -2958,11 +3327,11 @@
             if (alreadySaved) {
               console.log("[BLAST] Skip \u2014 contacto ya agendado en WA:", cName, c.telefono);
               _kpis.skipped++;
-              if (c.id) _sentIds.add(c.id);
               skipsBatch.push({ contact_id: c.id ?? null, contact_phone: c.telefono ?? "", contact_name: cName, reason: "contact_collection_agendado" });
               _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "skipped", ack: -1, error: "Agendado en WA \u2014 skip" });
               if (_lastResults.length > 30) _lastResults.length = 30;
               _notify();
+              _inFlight.delete(lockKey);
               continue;
             }
           }
@@ -2993,30 +3362,51 @@
             continue;
           }
         } catch (err) {
-          _kpis.failed++;
-          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error: err.message });
+          _kpis.no_wa++;
+          if (c.id) noWaBatch.push(c.id);
+          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error: "Sin WA: " + err.message });
           if (_lastResults.length > 30) _lastResults.length = 30;
           _notify();
+          _inFlight.delete(lockKey);
           continue;
         }
         const tpl = tpls[_tplIndex % tpls.length];
         const parts = _spinMessage(tpl, c, _tplIndex);
         const text = parts[0];
-        let msgModel = null;
-        let sendOk = true;
         try {
           for (let p = 0; p < parts.length && _running; p++) {
             const partText = parts[p];
-            if (p > 0) await _sleep(1e3 + Math.random() * 2e3);
+            if (p > 0) await _sleep(_humanRandom(1500, 4e3));
             const partModel = await _sendToChat(chat, partText);
-            if (p === 0) {
-              msgModel = partModel;
-              if (partModel) _trackMessage(partModel, c.telefono);
-            }
+            if (p === 0 && partModel) _trackMessage(partModel, c.telefono);
           }
           _kpis.sent++;
           _sessionSent++;
           _tplIndex++;
+          _burstCount++;
+          _hasSentThisSession = true;
+          if (c.id) habladoBatch.push(c.id);
+          if (normalizedPhone) _sentPhones.add(normalizedPhone);
+          if (c.id) _sentIds.add(c.id);
+          _saveSentToStorage();
+          window.postMessage({
+            type: "BLAST_REPORT_CONVERSATION",
+            jid,
+            own_number: getOwnNumber() || "",
+            phone: c.telefono ?? "",
+            contact_name: cName
+          }, WA_ORIGIN);
+          sentResults.push({
+            phone: c.telefono ?? "",
+            contact_name: ((c.nombre || "") + " " + (c.apellidos || "")).trim() || null,
+            message: text?.slice(0, 200) ?? null,
+            status: "sent",
+            error: null,
+            own_number: getOwnNumber() || "",
+            contact_id: c.id ?? null
+          });
+          _consecutiveFailures = 0;
+          _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "sent", ack: 0, error: null });
           if (_blastLimit > 0 && _sessionSent >= _blastLimit) {
             console.log("[BLAST] L\xEDmite alcanzado \u2014 parando");
             _running = false;
@@ -3026,14 +3416,14 @@
           }
         } catch (err) {
           _kpis.failed++;
-          sendOk = false;
+          _consecutiveFailures++;
           _lastResults.unshift({ nombre: cName, telefono: c.telefono, status: "failed", ack: -1, error: err.message });
         }
         if (_lastResults.length > 30) _lastResults.length = 30;
         _notify();
         _inFlight.delete(lockKey);
-        if (_running && i < batch.length - 1) {
-          const delay = _variableDelay();
+        if (_running && i < filteredBatch.length - 1) {
+          const delay = _adaptiveDelay();
           _startCountdown(Math.ceil(delay / 1e3), "delay");
           await _sleep(delay);
           _stopCountdown();
@@ -3044,11 +3434,16 @@
           console.warn("[BLAST] batch mark-hablado failed:", err?.message);
         });
       }
-      habladoBatch.length = 0;
-      noWaBatch.length = 0;
+      if (sentResults.length) {
+        window.postMessage({
+          type: "BLAST_REPORT_RESULTS",
+          results: sentResults
+        }, WA_ORIGIN);
+      }
       _saveSentToStorage();
       _reportSkips(skipsBatch);
-      if (_totalPending !== null) _totalPending = Math.max(0, _totalPending - _kpis.sent);
+      const batchProcessed = habladoBatch.length + noWaBatch.length + skipsBatch.length;
+      if (_totalPending !== null && batchProcessed > 0) _totalPending = Math.max(0, _totalPending - batchProcessed);
       _notify();
       if (_running) {
         await _sleep(2e3);
@@ -3059,6 +3454,116 @@
     _stopAckTracking();
     _notify();
   }
+  async function loadPreview() {
+    if (_previewLoading || _running) return;
+    _previewLoading = true;
+    _previewReady = false;
+    _previewContacts = [];
+    _previewSkippedIds.clear();
+    _previewMessages.clear();
+    _notify();
+    await _loadRemoteConfig();
+    const limit = _blastLimit > 0 ? _blastLimit : cfg.batchSize || 10;
+    const contacts = await _fetchBatch(Math.min(limit, 200));
+    if (!contacts.length) {
+      _previewLoading = false;
+      _notify();
+      return;
+    }
+    let tplIdx = _tplIndex;
+    for (const c of contacts) {
+      const tpl = tpls[tplIdx % tpls.length];
+      const parts = _spinMessage(tpl, c, tplIdx);
+      _previewMessages.set(c.id, parts);
+      tplIdx++;
+    }
+    _previewContacts = contacts;
+    _notify();
+    await _checkAllPreviewContacts(contacts);
+    _previewLoading = false;
+    _previewReady = true;
+    _notify();
+  }
+  function getPreviewContacts() {
+    return _previewContacts;
+  }
+  function isPreviewLoading() {
+    return _previewLoading;
+  }
+  function isPreviewReady() {
+    return _previewReady;
+  }
+  function getPreviewSkipped() {
+    return _previewSkippedIds;
+  }
+  function getPreviewMessage(id) {
+    return _previewMessages.get(id) || [];
+  }
+  function getPreviewFlags() {
+    return _previewFlags;
+  }
+  function previewSkipContact(id) {
+    if (_previewSkippedIds.has(id)) {
+      _previewSkippedIds.delete(id);
+    } else {
+      _previewSkippedIds.add(id);
+    }
+    _notify();
+  }
+  async function previewMarkHabladoAndReplace(id) {
+    const contact = _previewContacts.find((c) => c.id === id);
+    if (!contact) return;
+    _previewSkippedIds.add(id);
+    _notify();
+    await _markHablado([id], []);
+    console.log("[PREVIEW] Marked hablado:", id, contact.telefono);
+    const np = _normalizePhone(contact.telefono);
+    if (np) _sentPhones.add(np);
+    _sentIds.add(id);
+    const replacements = await _fetchBatch(1);
+    if (replacements.length) {
+      const rep = replacements[0];
+      const existingIds = new Set(_previewContacts.map((c) => c.id));
+      if (!existingIds.has(rep.id) && !_sentIds.has(rep.id)) {
+        const tplIdx = _tplIndex + _previewContacts.length;
+        const tpl = tpls[tplIdx % tpls.length];
+        _previewMessages.set(rep.id, _spinMessage(tpl, rep, tplIdx));
+        await _checkPreviewContact(rep);
+        const idx = _previewContacts.findIndex((c) => c.id === id);
+        if (idx !== -1) {
+          _previewContacts[idx] = rep;
+          _previewSkippedIds.delete(id);
+        } else {
+          _previewContacts.push(rep);
+        }
+        console.log("[PREVIEW] Replaced with:", rep.nombre, rep.telefono);
+      }
+    }
+    _notify();
+  }
+  function previewCancel() {
+    _previewContacts = [];
+    _previewSkippedIds.clear();
+    _previewMessages.clear();
+    _previewFlags.clear();
+    _previewReady = false;
+    _previewLoading = false;
+    _notify();
+  }
+  function previewConfirm() {
+    if (!_previewReady || !_previewContacts.length) return;
+    const confirmed = _previewContacts.filter((c) => !_previewSkippedIds.has(c.id));
+    if (!confirmed.length) {
+      previewCancel();
+      return;
+    }
+    _confirmedPreview = confirmed;
+    _previewReady = false;
+    _previewFlags.clear();
+    _notify();
+    startBlast();
+  }
+  var _confirmedPreview = null;
   function isPaused() {
     return false;
   }
@@ -3066,27 +3571,30 @@
     return "";
   }
   function refreshPendingCount() {
+    _fetchGlobalStats();
   }
   function getPeruTimeStr() {
-    return "";
+    return (/* @__PURE__ */ new Date()).toLocaleTimeString("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit" });
   }
   function getNumberHealth() {
-    return null;
+    return _lastHealth;
   }
   function isNumberAuthorized() {
-    return null;
+    return _lastHealth?.can_send ?? null;
   }
   function fetchNumberHealth() {
+    _fetchHealth();
   }
   function fetchNumberConfig() {
   }
   function getLastSpamResult() {
-    return null;
+    return _lastSpamResult;
   }
   function getGlobalStats() {
-    return null;
+    return _globalStats;
   }
   function fetchGlobalStats() {
+    _fetchGlobalStats();
   }
   function pauseBlast() {
     _running = false;
@@ -3104,7 +3612,10 @@
       localStorage.removeItem(LS_SENT_KEY);
     } catch (_) {
     }
-    _habladoIds.clear();
+    try {
+      localStorage.removeItem(LS_RETRY_KEY);
+    } catch (_) {
+    }
     _preClaimedIds.clear();
     _inFlight.clear();
     _trackedMsgs = [];
@@ -3115,7 +3626,15 @@
     _tplIndex = 0;
     _sessionSent = 0;
     _blastLimit = 0;
+    _burstCount = 0;
     _hasSentThisSession = false;
+    _confirmedPreview = null;
+    _previewContacts = [];
+    _previewSkippedIds.clear();
+    _previewMessages.clear();
+    _previewFlags.clear();
+    _previewReady = false;
+    _previewLoading = false;
     _stopCountdown();
     _stopAckTracking();
     _notify();
@@ -3149,12 +3668,13 @@
   var _paused = false;
   var _idx = 0;
   var _sessionCount = 0;
-  var _burstCount = 0;
+  var _burstCount2 = 0;
   var _results = [];
   var _countdown2 = 0;
   var _countdownTimer2 = null;
   var _activeNumber = null;
   var _startTime = null;
+  var _phase = "";
   function _req2(...names) {
     for (const n of names) {
       try {
@@ -3183,8 +3703,10 @@
     if (!toQuery.length) return results;
     let usyncOk = false;
     try {
-      const { USyncQuery } = window.require("WAWebUsync");
-      const { USyncUser } = window.require("WAWebUsyncUser");
+      const usyncMod = _req2("WAWebUsync", "WAWebUsyncQuery", "WAWebUSyncModule");
+      const userMod = _req2("WAWebUsyncUser", "WAWebUSyncUserUtils", "WAWebUSyncUser");
+      const USyncQuery = usyncMod?.USyncQuery || usyncMod?.default?.USyncQuery || usyncMod;
+      const USyncUser = userMod?.USyncUser || userMod?.default?.USyncUser || userMod;
       if (USyncQuery && USyncUser) {
         const query = new USyncQuery().withContext("interactive").withContactProtocol();
         for (const phone of toQuery) {
@@ -3318,6 +3840,12 @@
     }
   }
   var _sleep2 = (ms) => new Promise((r) => setTimeout(r, ms));
+  function _esc(str) {
+    if (!str) return "";
+    const d = document.createElement("div");
+    d.appendChild(document.createTextNode(String(str)));
+    return d.innerHTML;
+  }
   function _randomDelay() {
     if (_mode === "conv") {
       return CONV_DELAY_MIN + Math.random() * (CONV_DELAY_MAX - CONV_DELAY_MIN);
@@ -3436,8 +3964,8 @@
         }
         continue;
       }
-      if (_burstCount >= CONV_BURST_MAX) {
-        _burstCount = 0;
+      if (_burstCount2 >= CONV_BURST_MAX) {
+        _burstCount2 = 0;
         if (batch.length) {
           _saveResults([...batch]);
           batch.length = 0;
@@ -3475,7 +4003,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       } else {
         console.log("[WA VALIDATOR CONV] failed for", c.telefono, ":", r.reason);
       }
-      _burstCount++;
+      _burstCount2++;
       const result = { ...c, wa_valid: r.sent, mode: "conv" };
       batch.push(result);
       _results.push(result);
@@ -3633,7 +4161,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
           <button id="wspp-val-reload" title="Recargar" style="padding:11px 14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:9px;color:rgba(255,255,255,.4);font-size:14px;cursor:pointer;">\u21BA</button>
         ` : _running2 ? `
           <div style="flex:1;padding:9px 12px;background:rgba(96,165,250,.05);border:1px solid rgba(96,165,250,.1);border-radius:9px;font-size:12px;color:rgba(255,255,255,.55);line-height:1.5;">
-            ${isConv ? `\u{1F4AC} Enviando \xB7 ${_sessionCount} msgs \xB7 burst ${_burstCount}/${CONV_BURST_MAX}` : `\u{1F535} Verificando \xB7 ${_sessionCount} en esta sesi\xF3n`}
+            ${isConv ? `\u{1F4AC} Enviando \xB7 ${_sessionCount} msgs \xB7 burst ${_burstCount2}/${CONV_BURST_MAX}` : `\u{1F535} Verificando \xB7 ${_sessionCount} en esta sesi\xF3n`}
           </div>
           <button id="wspp-val-pause" style="padding:11px 16px;background:rgba(255,149,0,.1);border:1px solid rgba(255,149,0,.2);border-radius:9px;color:#ff9f0a;font-size:13px;font-weight:700;cursor:pointer;">\u23F8 Pausar</button>
         ` : _paused && _idx < _contacts.length ? `
@@ -3658,10 +4186,10 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
             <div style="display:flex;align-items:center;gap:7px;padding:5px 9px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.04);">
               <span style="font-size:13px;flex-shrink:0;">${r.wa_valid ? "\u2705" : "\u274C"}</span>
               <span style="font-size:12px;color:${r.wa_valid ? "rgba(255,255,255,.6)" : "rgba(255,255,255,.5)"};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                ${r.nombre || "?"} \xB7 +${r.telefono}
+                ${_esc(r.nombre) || "?"} \xB7 +${_esc(r.telefono)}
               </span>
               <span style="font-size:10px;color:rgba(255,255,255,.15);flex-shrink:0;">
-                ${r.mode === "conv" ? "\u{1F4AC}" : "\u{1F50D}"} ${(r.encuestador || "").slice(0, 14)}
+                ${r.mode === "conv" ? "\u{1F4AC}" : "\u{1F50D}"} ${_esc((r.encuestador || "").slice(0, 14))}
               </span>
             </div>
           `).join("")}
@@ -3710,14 +4238,14 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         _results = [];
         _idx = 0;
         _sessionCount = 0;
-        _burstCount = 0;
+        _burstCount2 = 0;
         _running2 = false;
         _paused = false;
       }
       _load();
     } else if (id === "wspp-val-start") {
       _startTime = Date.now();
-      _burstCount = 0;
+      _burstCount2 = 0;
       _run();
     } else if (id === "wspp-val-pause") {
       _paused = true;
@@ -3726,7 +4254,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       _render();
     } else if (id === "wspp-val-resume") {
       _sessionCount = 0;
-      _burstCount = 0;
+      _burstCount2 = 0;
       _paused = false;
       _run();
     } else if (id === "wspp-val-stats") {
@@ -3800,7 +4328,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         <div style="padding:8px 10px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.04);margin-bottom:5px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
             <span style="font-size:12px;font-weight:600;color:rgba(255,255,255,.75);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px;">
-              ${b.encuestador || "Sin nombre"}
+              ${_esc(b.encuestador) || "Sin nombre"}
             </span>
             <span style="font-size:12px;font-weight:800;color:${pctColor};">${pct}% inv.</span>
           </div>
@@ -3836,7 +4364,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       _total = e.data.total || _contacts.length;
       _idx = 0;
       _sessionCount = 0;
-      _burstCount = 0;
+      _burstCount2 = 0;
       _results = [];
       _running2 = false;
       _paused = false;
@@ -3857,6 +4385,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   // src/inject/sidebar.js
   var _cachedAnalysis = null;
   var _cachedTplsHash = "";
+  var _blastSessionStart = null;
   var SIDEBAR_W = 380;
   var SIDEBAR_ID = "wspp-sidebar";
   var FAB_ID = "wspp-sidebar-fab";
@@ -3892,7 +4421,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   var _savedTab = localStorage.getItem(TAB_KEY) || "blast";
   var _tab = _savedTab === "audios" ? "blast" : _savedTab;
   var $ = (id) => document.getElementById(id);
-  function _esc(s) {
+  function _esc2(s) {
     return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
   setOnUpdate(() => {
@@ -4081,6 +4610,59 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
   function _renderContent() {
     const el = $("sb-content");
     if (!el) return;
+    const running = isRunning();
+    const activeEl = document.activeElement;
+    const isEditing = activeEl && el.contains(activeEl) && (activeEl.tagName === "TEXTAREA" || activeEl.tagName === "INPUT");
+    if (running || isEditing) {
+      const timerEl = document.getElementById("sb-timer-label");
+      if (timerEl) {
+        const countdown = getCountdown();
+        if (countdown > 0) {
+          const m = Math.floor(countdown / 60);
+          const s = countdown % 60;
+          timerEl.textContent = `\u23F1\uFE0F ${m > 0 ? m + "m " : ""}${s}s`;
+          timerEl.style.display = "";
+        } else {
+          timerEl.style.display = "none";
+        }
+      }
+      const kpis = getKpis();
+      const kpiEls = el.querySelectorAll("[data-kpi]");
+      for (const k of kpiEls) {
+        const key = k.dataset.kpi;
+        if (key && kpis[key] !== void 0) k.textContent = kpis[key];
+      }
+      const sentEl = document.getElementById("sb-session-sent");
+      if (sentEl) sentEl.textContent = getSessionSent();
+      const pctEl = document.getElementById("sb-limit-pct");
+      if (pctEl) {
+        const limit = getBlastLimit();
+        const sent = getSessionSent();
+        if (limit > 0) pctEl.style.width = Math.min(100, Math.round(sent / limit * 100)) + "%";
+      }
+      const resultsContainer = document.getElementById("sb-results-list");
+      if (resultsContainer) {
+        const results = getLastResults();
+        const rendered = resultsContainer.children.length;
+        if (results.length !== rendered) {
+          resultsContainer.innerHTML = results.slice(0, 12).map((r) => `
+          <div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:${r.status === "failed" ? S.dangerBg : S.bg};border:1px solid ${r.status === "failed" ? "#fecaca" : S.border};border-radius:5px;font-size:11px;">
+            <span style="flex-shrink:0;font-size:10px;min-width:20px;">${_ackIcon(r.ack ?? -1)}</span>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${r.status === "failed" ? S.danger : S.text};">
+              ${_esc2(r.nombre || "?")}
+            </span>
+            <span style="font-size:10px;color:${S.muted};flex-shrink:0;">${r.telefono ? "+" + r.telefono : ""}</span>
+          </div>
+        `).join("");
+        }
+      }
+      const speedEl = document.getElementById("sb-speed");
+      if (speedEl && _blastSessionStart) {
+        const elapsedMin = Math.max(1, (Date.now() - _blastSessionStart) / 6e4);
+        speedEl.textContent = (kpis.sent / elapsedMin).toFixed(1) + " msg/min";
+      }
+      return;
+    }
     el.innerHTML = _contentHTML();
     _bindContentInputs();
     if (!_delegationBound2) {
@@ -4108,7 +4690,14 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       refreshPendingCount();
       _renderContent();
     } else if (id === "sb-start") {
-      console.log("[SIDEBAR] sb-start clicked, limit:", getBlastLimit());
+      console.log("[SIDEBAR] sb-start clicked \u2192 loading preview");
+      loadPreview();
+    } else if (id === "sb-preview-confirm") {
+      previewConfirm();
+    } else if (id === "sb-preview-cancel") {
+      previewCancel();
+    } else if (id === "sb-send-direct") {
+      console.log("[SIDEBAR] direct send, limit:", getBlastLimit());
       startBlast();
     } else if (id === "sb-pause") {
       pauseBlast();
@@ -4155,6 +4744,13 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         setTemplates(t);
         _renderContent();
       }
+    } else if (btn.dataset?.previewSkip) {
+      previewSkipContact(btn.dataset.previewSkip);
+    } else if (btn.dataset?.previewHablado) {
+      const hId = btn.dataset.previewHablado;
+      btn.disabled = true;
+      btn.textContent = "\u23F3";
+      previewMarkHabladoAndReplace(hId);
     }
   }
   function _handleDelegatedChange(e) {
@@ -4190,7 +4786,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
           preview.textContent = "\u25B6 " + fakeParts[0].slice(0, 80) + (fakeParts[0].length > 80 ? "\u2026" : "");
         } else {
           preview.innerHTML = fakeParts.map(
-            (p, i) => `<span style="display:block;margin-bottom:1px;">\u2709\uFE0F ${i + 1}: ${_esc(p.slice(0, 60))}${p.length > 60 ? "\u2026" : ""}</span>`
+            (p, i) => `<span style="display:block;margin-bottom:1px;">\u2709\uFE0F ${i + 1}: ${_esc2(p.slice(0, 60))}${p.length > 60 ? "\u2026" : ""}</span>`
           ).join("");
         }
       }
@@ -4214,7 +4810,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
           preview.textContent = "\u25B6 " + fakeParts[0].slice(0, 80) + (fakeParts[0].length > 80 ? "\u2026" : "");
         } else {
           preview.innerHTML = fakeParts.map(
-            (p, i) => `<span style="display:block;margin-bottom:1px;">\u2709\uFE0F ${i + 1}: ${_esc(p.slice(0, 60))}${p.length > 60 ? "\u2026" : ""}</span>`
+            (p, i) => `<span style="display:block;margin-bottom:1px;">\u2709\uFE0F ${i + 1}: ${_esc2(p.slice(0, 60))}${p.length > 60 ? "\u2026" : ""}</span>`
           ).join("");
         }
       }
@@ -4267,8 +4863,9 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       _cachedAnalysis = analyzeTemplates(tpls2);
     }
     const analysis = _cachedAnalysis || { level: "ok", suggestions: [] };
-    const sessionStart = window.__blastSessionStart || Date.now();
-    if (!window.__blastSessionStart && running) window.__blastSessionStart = Date.now();
+    if (!_blastSessionStart && running) _blastSessionStart = Date.now();
+    if (!running) _blastSessionStart = null;
+    const sessionStart = _blastSessionStart || Date.now();
     const elapsedMin = Math.max(1, (Date.now() - sessionStart) / 6e4);
     const msgPerMin = totalProcessed > 0 ? (totalSent / elapsedMin).toFixed(1) : "0";
     const estRemaining = pending !== null && totalSent > 0 ? Math.round(pending / (totalSent / elapsedMin)) : null;
@@ -4354,7 +4951,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
         <div style="display:flex;flex-direction:column;gap:3px;">
           ${byNumEntries.map(([num, v]) => `
             <div style="display:flex;align-items:center;gap:6px;font-size:11px;">
-              <span style="color:${S.muted};font-size:10px;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="+${num}">${v.label ? _esc(v.label) : "+" + num.slice(-4)}</span>
+              <span style="color:${S.muted};font-size:10px;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="+${num}">${v.label ? _esc2(v.label) : "+" + num.slice(-4)}</span>
               <div style="flex:1;height:4px;background:${S.border};border-radius:2px;overflow:hidden;">
                 <div style="height:100%;width:${gsTotal > 0 ? Math.min(100, Math.round(v.sent / gsTotal * 100 * 6)) : 0}%;background:${S.accent};border-radius:2px;"></div>
               </div>
@@ -4371,13 +4968,13 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     ${hasActivity ? `
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">
       ${[
-      ["\u2713", kpis.sent, "Enviado", "#6b7280"],
-      ["\u2717", kpis.failed, "Fallidos", S.danger],
-      ["\u{1F4F5}", kpis.no_wa, "Sin WA", "#9ca3af"],
-      ["\u23ED", kpis.skipped, "Saltados", S.muted]
-    ].map(([icon, val, label, color]) => `
+      ["\u2713", kpis.sent, "Enviado", "#6b7280", "sent"],
+      ["\u2717", kpis.failed, "Fallidos", S.danger, "failed"],
+      ["\u{1F4F5}", kpis.no_wa, "Sin WA", "#9ca3af", "no_wa"],
+      ["\u23ED", kpis.skipped, "Saltados", S.muted, "skipped"]
+    ].map(([icon, val, label, color, key]) => `
         <div style="background:${S.card};border:1px solid ${S.border};border-radius:8px;padding:8px 4px;text-align:center;">
-          <div style="font-size:16px;font-weight:800;color:${color};">${val}</div>
+          <div data-kpi="${key}" style="font-size:16px;font-weight:800;color:${color};">${val}</div>
           <div style="font-size:9px;color:${S.muted};margin-top:2px;">${icon} ${label}</div>
         </div>
       `).join("")}
@@ -4395,10 +4992,10 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       <div style="background:${done ? S.accentBg : S.card};border:1px solid ${done ? "rgba(37,211,102,0.3)" : S.border};border-radius:10px;padding:12px;">
         <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:6px;">
           <span style="color:${done ? S.accent : S.text};">${done ? "\u2705 L\xEDmite alcanzado" : "\u{1F4E4} Enviando..."}</span>
-          <span style="color:${done ? S.accent : S.accent};">${sent} / ${limit}</span>
+          <span><span id="sb-session-sent">${sent}</span> / ${limit}</span>
         </div>
         <div style="height:8px;background:${S.border};border-radius:4px;overflow:hidden;">
-          <div style="height:100%;width:${pct}%;background:${done ? S.accent : "#3b82f6"};border-radius:4px;transition:width .3s ease;"></div>
+          <div id="sb-limit-pct" style="height:100%;width:${pct}%;background:${done ? S.accent : "#3b82f6"};border-radius:4px;transition:width .3s ease;"></div>
         </div>
         ${done ? `<div style="font-size:10px;color:${S.muted};margin-top:6px;text-align:center;">Listo \u2014 par\xE1 o inici\xE1 otra tanda</div>` : ""}
       </div>`;
@@ -4410,7 +5007,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:10px 12px;">
       <div style="font-size:10px;color:${S.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Sesi\xF3n actual</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:11px;">
-        <div><span style="color:${S.muted};">Velocidad</span><br><b>${msgPerMin} msg/min</b></div>
+        <div><span style="color:${S.muted};">Velocidad</span><br><b id="sb-speed">${msgPerMin} msg/min</b></div>
         <div><span style="color:${S.muted};">Est. restante</span><br><b>${estRemaining !== null ? estRemaining > 60 ? Math.round(estRemaining / 60) + "h" : estRemaining + " min" : "\u2014"}</b></div>
         <div><span style="color:${S.muted};">Plantilla</span><br><b>#${getTplIndex() % tpls2.length + 1} de ${tpls2.length}</b></div>
       </div>
@@ -4426,14 +5023,14 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
             <span style="font-size:12px;">${isHigh ? "\u{1F6A8}" : "\u26A0\uFE0F"}</span>
             <span style="font-size:11px;font-weight:700;color:${color};">Spam: ${spam.riskLevel.toUpperCase()} (${spam.score}/100)</span>
           </div>
-          ${spam.warnings.slice(0, 3).map((w) => `<div style="font-size:10px;color:${S.muted};padding-left:20px;">\u25CF ${_esc(w)}</div>`).join("")}
-          ${spam.actions.length ? spam.actions.slice(0, 2).map((a) => `<div style="font-size:10px;color:${color};padding-left:20px;font-weight:600;">\u2192 ${_esc(a)}</div>`).join("") : ""}
+          ${spam.warnings.slice(0, 3).map((w) => `<div style="font-size:10px;color:${S.muted};padding-left:20px;">\u25CF ${_esc2(w)}</div>`).join("")}
+          ${spam.actions.length ? spam.actions.slice(0, 2).map((a) => `<div style="font-size:10px;color:${color};padding-left:20px;font-weight:600;">\u2192 ${_esc2(a)}</div>`).join("") : ""}
           ${spam.repeatedTexts?.length ? `
             <div style="margin-top:6px;padding-left:20px;">
               <div style="font-size:9px;color:${color};font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;">Mensajes repetidos:</div>
               ${spam.repeatedTexts.slice(0, 3).map((rt) => `
                 <div style="font-size:10px;color:${S.muted};padding:3px 6px;margin-bottom:2px;background:rgba(0,0,0,0.03);border-radius:4px;border-left:2px solid ${color};">
-                  <span style="color:${color};font-weight:600;">${rt.count}x</span> "${_esc(rt.text.length > 80 ? rt.text.slice(0, 80) + "\u2026" : rt.text)}"
+                  <span style="color:${color};font-weight:600;">${rt.count}x</span> "${_esc2(rt.text.length > 80 ? rt.text.slice(0, 80) + "\u2026" : rt.text)}"
                 </div>
               `).join("")}
             </div>
@@ -4457,7 +5054,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       ${analysis.suggestions.length ? `
       <div style="display:flex;flex-direction:column;gap:3px;">
         ${analysis.suggestions.slice(0, 4).map((s) => `
-          <div style="font-size:10px;color:${S.muted};padding-left:22px;">\u2192 ${_esc(s)}</div>
+          <div style="font-size:10px;color:${S.muted};padding-left:22px;">\u2192 ${_esc2(s)}</div>
         `).join("")}
       </div>
       ` : ""}
@@ -4488,19 +5085,45 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       ${getBlastLimit() === 0 ? `<div style="font-size:10px;color:${S.muted};text-align:center;">Loop infinito \u2014 par\xE1 vos cuando quieras</div>` : ""}
     </div>
 
+    <!-- ANTI-BAN CONFIG -->
+    <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:10px 12px;">
+      <div style="font-size:11px;font-weight:700;color:${S.muted};margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">
+        Anti-ban \xB7 Pausa entre tandas
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div>
+          <label style="font-size:10px;color:${S.muted};display:block;margin-bottom:2px;">Msgs por tanda</label>
+          <input type="number" data-cfg="burstSize" value="${cfg2.burstSize || 12}" min="5" max="30" style="
+            width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid ${S.border};
+            border-radius:6px;background:${S.bg};color:${S.text};font-size:13px;font-weight:600;
+            outline:none;text-align:center;
+          " />
+        </div>
+        <div>
+          <label style="font-size:10px;color:${S.muted};display:block;margin-bottom:2px;">Descanso (seg)</label>
+          <input type="number" data-cfg="burstRestSec" value="${cfg2.burstRestSec || 90}" min="30" max="300" style="
+            width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid ${S.border};
+            border-radius:6px;background:${S.bg};color:${S.text};font-size:13px;font-weight:600;
+            outline:none;text-align:center;
+          " />
+        </div>
+      </div>
+      <div style="font-size:10px;color:${S.muted};margin-top:4px;">Cada ${cfg2.burstSize || 12} msgs \u2192 pausa de ${cfg2.burstRestSec || 90}s + variaci\xF3n aleatoria</div>
+    </div>
+
     <!-- FILTRO BRIGADISTA -->
     <div style="background:${S.card};border:1px solid ${cfg2.brigadista ? S.accent : S.border};border-radius:10px;padding:10px 12px;">
       <div style="font-size:11px;font-weight:700;color:${S.muted};margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">
         Filtrar por brigadista
       </div>
       <div style="display:flex;gap:6px;align-items:center;">
-        <input type="text" id="sb-brigadista-input" placeholder="Ej: Ricardo Rea\xF1o" value="${_esc(cfg2.brigadista || "")}" style="
+        <input type="text" id="sb-brigadista-input" placeholder="Ej: Ricardo Rea\xF1o" value="${_esc2(cfg2.brigadista || "")}" style="
           flex:1;padding:7px 10px;border:1px solid ${S.border};border-radius:6px;
           background:${S.bg};color:${S.text};font-size:12px;outline:none;
         " />
         ${cfg2.brigadista ? `<button id="sb-brigadista-clear" style="padding:6px 10px;border-radius:6px;border:1px solid ${S.border};background:${S.bg};color:${S.danger};font-size:11px;font-weight:700;cursor:pointer;">\u2715</button>` : ""}
       </div>
-      ${cfg2.brigadista ? `<div style="font-size:10px;color:${S.accent};margin-top:4px;font-weight:600;">Filtrando solo contactos de: ${_esc(cfg2.brigadista)}</div>` : ""}
+      ${cfg2.brigadista ? `<div style="font-size:10px;color:${S.accent};margin-top:4px;font-weight:600;">Filtrando solo contactos de: ${_esc2(cfg2.brigadista)}</div>` : ""}
     </div>
 
     <!-- PLANTILLAS -->
@@ -4539,7 +5162,7 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
             width:100%;box-sizing:border-box;border:1px solid ${S.border};border-radius:8px;background:${S.bg};
             color:${S.text};font-size:12px;padding:10px;line-height:1.6;
             font-family:inherit;resize:vertical;outline:none;
-          ">${_esc(t)}</textarea>
+          ">${_esc2(t)}</textarea>
           <div id="sb-tpl-preview-${i}" style="margin-top:4px;font-size:10px;color:${S.muted};line-height:1.5;font-style:italic;min-height:14px;"></div>
         </div>
       `).join("")}
@@ -4552,12 +5175,12 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
       ${timerLabel ? `<div id="sb-timer-label" style="font-size:12px;color:${S.accent};font-weight:600;margin-bottom:8px;">${timerLabel}</div>` : '<div id="sb-timer-label" style="display:none"></div>'}
       ${results.length ? `
       <div style="font-size:10px;color:${S.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">\xDAltimos enviados</div>
-      <div style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;">
+      <div id="sb-results-list" style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;">
         ${results.slice(0, 12).map((r) => `
           <div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:${r.status === "failed" ? S.dangerBg : S.bg};border:1px solid ${r.status === "failed" ? "#fecaca" : S.border};border-radius:5px;font-size:11px;">
             <span style="flex-shrink:0;font-size:10px;min-width:20px;">${_ackIcon(r.ack ?? -1)}</span>
             <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${r.status === "failed" ? S.danger : S.text};">
-              ${_esc(r.nombre || "?")}
+              ${_esc2(r.nombre || "?")}
             </span>
             <span style="font-size:10px;color:${S.muted};flex-shrink:0;">${r.telefono ? "+" + r.telefono : ""}</span>
           </div>
@@ -4570,13 +5193,129 @@ Esper\xE1 ${coolMin} min antes de reanudar.`,
     </div>
     ` : ""}
 
+    <!-- PREVIEW DE CONTACTOS -->
+    ${(() => {
+      const pvLoading = isPreviewLoading();
+      const pvReady = isPreviewReady();
+      const pvContacts = getPreviewContacts();
+      const pvSkipped = getPreviewSkipped();
+      const pvHasContacts = getPreviewContacts().length > 0;
+      if (pvLoading) {
+        return `
+        <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:20px;text-align:center;">
+          <div style="font-size:24px;margin-bottom:8px;">${pvHasContacts ? "\u{1F50D}" : "\u{1F4E5}"}</div>
+          <div style="font-size:13px;font-weight:600;color:${S.text};">${pvHasContacts ? "Verificando " + getPreviewContacts().length + " contactos..." : "Cargando contactos..."}</div>
+          <div style="font-size:11px;color:${S.muted};margin-top:4px;">${pvHasContacts ? "Comprobando si tienen WA y si ya los tenemos agendados" : "Preparando preview"}</div>
+        </div>`;
+      }
+      if (pvReady && pvContacts.length > 0) {
+        const pvFlags = getPreviewFlags();
+        const active = pvContacts.filter((c) => !pvSkipped.has(c.id));
+        const flaggedInContacts = pvContacts.filter((c) => pvFlags.get(c.id)?.inContacts).length;
+        const flaggedNoWA = pvContacts.filter((c) => pvFlags.get(c.id)?.noWA === true).length;
+        const byDepto = {};
+        const byBrig = {};
+        for (const c of active) {
+          const d = c.departamento || c.distrito || "Sin depto";
+          const b = c.encuestador || "Sin brigadista";
+          byDepto[d] = (byDepto[d] || 0) + 1;
+          byBrig[b] = (byBrig[b] || 0) + 1;
+        }
+        const deptoEntries = Object.entries(byDepto).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        const brigEntries = Object.entries(byBrig).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        return `
+        <div style="background:${S.card};border:2px solid ${S.accent};border-radius:10px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div>
+              <div style="font-size:13px;font-weight:700;color:${S.accent};">\u{1F4CB} Preview: ${active.length} contactos</div>
+              <div style="font-size:10px;color:${S.muted};">
+                ${pvSkipped.size > 0 ? pvSkipped.size + " saltados \xB7 " : ""}
+                ${flaggedInContacts > 0 ? `<span style="color:${S.warn};">${flaggedInContacts} agendados</span> \xB7 ` : ""}
+                ${flaggedNoWA > 0 ? `<span style="color:${S.danger};">${flaggedNoWA} sin WA</span> \xB7 ` : ""}
+                Revis\xE1 antes de enviar
+              </div>
+            </div>
+            <button id="sb-preview-cancel" style="padding:4px 10px;border-radius:6px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:11px;cursor:pointer;">\u2715</button>
+          </div>
+
+          <!-- Resumen por departamento -->
+          ${deptoEntries.length > 1 ? `
+          <div style="margin-bottom:8px;">
+            <div style="font-size:10px;color:${S.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Por departamento</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;">
+              ${deptoEntries.map(([d, n]) => `<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${S.blueBg};color:${S.blue};font-weight:600;">${_esc2(d)} (${n})</span>`).join("")}
+            </div>
+          </div>` : ""}
+
+          <!-- Resumen por brigadista -->
+          ${brigEntries.length > 1 ? `
+          <div style="margin-bottom:8px;">
+            <div style="font-size:10px;color:${S.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Por brigadista</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;">
+              ${brigEntries.map(([b, n]) => `<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${S.warnBg};color:${S.warn};font-weight:600;">${_esc2(b.split(" ")[0])} (${n})</span>`).join("")}
+            </div>
+          </div>` : ""}
+
+          <!-- Lista de contactos -->
+          <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;margin-bottom:10px;">
+            ${pvContacts.map((c) => {
+          const skipped = pvSkipped.has(c.id);
+          const flags = pvFlags.get(c.id) || {};
+          const msgParts = getPreviewMessage(c.id);
+          const msgPreview = msgParts.length ? msgParts[0].slice(0, 80) + (msgParts[0].length > 80 ? "\u2026" : "") : "\u2014";
+          const nombre = ((c.nombre || "") + " " + (c.apellidos || "")).trim() || "\u2014";
+          const isInContacts = flags.inContacts;
+          const isNoWA = flags.noWA === true;
+          const hasProblem = isInContacts || isNoWA;
+          const borderColor = skipped ? "#fecaca" : isNoWA ? "#fecaca" : isInContacts ? "#fde68a" : S.border;
+          const bgColor = skipped ? S.dangerBg : isNoWA ? S.dangerBg : isInContacts ? S.warnBg : S.bg;
+          return `
+              <div style="padding:6px 8px;background:${bgColor};border:1px solid ${borderColor};border-radius:6px;opacity:${skipped ? "0.4" : "1"};transition:opacity .15s;">
+                <div style="display:flex;align-items:center;gap:5px;">
+                  <!-- Toggle skip -->
+                  <button data-preview-skip="${c.id}" title="${skipped ? "Incluir de nuevo" : "Saltar este contacto"}" style="width:20px;height:20px;border-radius:4px;border:1px solid ${skipped ? S.danger : S.border};background:${skipped ? S.danger : S.bg};color:${skipped ? "#fff" : S.muted};font-size:10px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;">${skipped ? "\u2715" : "\u2713"}</button>
+                  <!-- Contact info -->
+                  <div style="flex:1;min-width:0;">
+                    <div style="display:flex;align-items:center;gap:4px;">
+                      <span style="font-size:11px;font-weight:600;color:${S.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${_esc2(nombre)}</span>
+                      ${isInContacts ? `<span style="font-size:8px;padding:1px 5px;border-radius:8px;background:${S.warnBg};color:${S.warn};font-weight:700;flex-shrink:0;border:1px solid #fde68a;">AGENDADO</span>` : ""}
+                      ${isNoWA ? `<span style="font-size:8px;padding:1px 5px;border-radius:8px;background:${S.dangerBg};color:${S.danger};font-weight:700;flex-shrink:0;border:1px solid #fecaca;">SIN WA</span>` : ""}
+                      <span style="font-size:10px;color:${S.muted};flex-shrink:0;">+${_esc2(c.telefono || "")}</span>
+                    </div>
+                    <div style="font-size:10px;color:${S.muted};margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_esc2(msgPreview)}">\u{1F4AC} ${_esc2(msgPreview)}</div>
+                    ${c.encuestador ? `<div style="font-size:9px;color:${S.blue};margin-top:1px;">\u{1F464} ${_esc2(c.encuestador)} \xB7 ${_esc2(c.departamento || c.distrito || "")}</div>` : ""}
+                  </div>
+                  <!-- Mark hablado + replace button -->
+                  ${!skipped ? `<button data-preview-hablado="${c.id}" title="Ya habl\xE9 \u2014 marcar y reemplazar" style="padding:2px 6px;border-radius:4px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:9px;cursor:pointer;flex-shrink:0;white-space:nowrap;">Ya habl\xE9</button>` : ""}
+                </div>
+              </div>`;
+        }).join("")}
+          </div>
+
+          <!-- Botones confirmar/cancelar -->
+          <div style="display:flex;gap:8px;">
+            <button id="sb-preview-confirm" style="
+              flex:1;padding:12px;border-radius:10px;border:none;
+              background:${active.length > 0 ? S.accent : S.muted};color:#fff;font-size:14px;font-weight:700;cursor:pointer;
+              box-shadow:${active.length > 0 ? "0 2px 12px " + S.accent + "40" : "none"};
+              ${active.length === 0 ? "pointer-events:none;opacity:0.5;" : ""}
+            ">\u2705 Confirmar y enviar (${active.length})</button>
+          </div>
+          <div style="font-size:10px;color:${S.muted};text-align:center;margin-top:6px;">
+            \u2713 = saltar \xB7 "Ya habl\xE9" = marcar hablado + traer otro contacto
+          </div>
+        </div>`;
+      }
+      return "";
+    })()}
+
     <!-- CONTROLES -->
-    ${!running && !paused && hasPending ? `
+    ${!running && !paused && hasPending && !isPreviewReady() && !isPreviewLoading() ? `
       <button id="sb-start" style="
         width:100%;padding:14px;border-radius:10px;border:none;
         background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
         box-shadow:0 2px 12px ${S.accent}40;
-      ">\u25B6 ${getBlastLimit() === 0 ? "Enviar en loop (\u221E)" : "\u25B6 Enviar " + getBlastLimit()}</button>
+      ">\u{1F4CB} Preview y enviar ${getBlastLimit() === 0 ? "(\u221E)" : getBlastLimit()}</button>
     ` : running ? `
       <button id="sb-pause" style="
         width:100%;padding:14px;border-radius:10px;border:1px solid ${S.warn}40;

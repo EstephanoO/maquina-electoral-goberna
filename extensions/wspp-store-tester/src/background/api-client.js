@@ -97,6 +97,10 @@ export async function tryRefreshToken() {
 
 export function forceReLogin() {
   chrome.storage.local.remove(['wspp_token', 'wspp_refresh_token', 'wspp_user', 'wspp_campaign_id']);
+  // FIX: Also clear session storage — otherwise _getToken still finds the stale token
+  if (chrome.storage.session) {
+    chrome.storage.session.remove(['wspp_token']);
+  }
   console.warn('[WSPP AUTH] Session expired — user must re-login');
 }
 

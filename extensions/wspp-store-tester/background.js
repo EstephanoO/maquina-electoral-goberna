@@ -249,6 +249,9 @@
   }
   function forceReLogin() {
     chrome.storage.local.remove(["wspp_token", "wspp_refresh_token", "wspp_user", "wspp_campaign_id"]);
+    if (chrome.storage.session) {
+      chrome.storage.session.remove(["wspp_token"]);
+    }
     console.warn("[WSPP AUTH] Session expired \u2014 user must re-login");
   }
   function _getToken(callback) {
@@ -1344,9 +1347,10 @@
               status
             );
           }
-          if (original_category || currentValidation && currentValidation.vote_class) {
-            const prevCategory = original_category || currentValidation?.vote_class || "";
-            const wasCorrect = prevCategory === vote_class;
+          if (original_category || currentValidation && currentValidation.category) {
+            const prevCategory = original_category || currentValidation?.category || "";
+            const prevVoteClass = currentValidation?.vote_class || "";
+            const wasCorrect = prevVoteClass === vote_class;
             recordCorrection(prevCategory, vote_class, wasCorrect);
           }
           reportClassificationEvent({
@@ -1951,7 +1955,8 @@
         sendResponse({ ok: result.ok, valid: result.valid ?? [] });
       } catch (err) {
         console.warn("[WSPP BLAST] check-contacts failed:", err.message);
-        sendResponse({ ok: false, valid: [] });
+        const allIds = (contacts || []).map((c) => c.id).filter(Boolean);
+        sendResponse({ ok: false, valid: allIds });
       }
     })();
     return true;

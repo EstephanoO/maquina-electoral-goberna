@@ -14,7 +14,8 @@ import {
   getLastSpamResult,
   getGlobalStats, fetchGlobalStats,
   getPreviewContacts, isPreviewLoading, isPreviewReady, getPreviewSkipped,
-  previewSkipAndReplace, previewMarkHablado, previewConfirm, previewCancel,
+  getPreviewMessage, getPreviewFlags, loadPreview, previewSkipContact,
+  previewMarkHabladoAndReplace, previewConfirm, previewCancel,
   getCheckpoint, getBlockSent,
   setBlastLimit, getBlastLimit, getSessionSent,
 } from './blast-panel.js';
@@ -25,6 +26,7 @@ import { sendAudioAsPTT, toggleCatalogPanel } from './audio-catalog-panel.js';
 // ── Cached template analysis ──────────────────────────────────────────
 let _cachedAnalysis = null;
 let _cachedTplsHash = '';
+let _blastSessionStart = null;
 
 // ── Constants ─────────────────────────────────────────────────────────
 const SIDEBAR_W = 380;
@@ -249,6 +251,75 @@ function _renderContent() {
   const el = $('sb-content');
   if (!el) return;
 
+  const running = isRunning();
+  const activeEl = document.activeElement;
+  const isEditing = activeEl && el.contains(activeEl) && (activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'INPUT');
+
+  // ── Incremental DOM update when blast is running ─────────────
+  // Instead of destroying the entire DOM on every tick, update only
+  // the dynamic elements (timer, KPIs, results). Preserves scroll + focus.
+  if (running || isEditing) {
+    // Timer
+    const timerEl = document.getElementById('sb-timer-label');
+    if (timerEl) {
+      const countdown = getCountdown();
+      if (countdown > 0) {
+        const m = Math.floor(countdown / 60); const s = countdown % 60;
+        timerEl.textContent = `⏱️ ${m > 0 ? m + 'm ' : ''}${s}s`;
+        timerEl.style.display = '';
+      } else {
+        timerEl.style.display = 'none';
+      }
+    }
+
+    // KPIs — update text content only, don't rebuild DOM
+    const kpis = getKpis();
+    const kpiEls = el.querySelectorAll('[data-kpi]');
+    for (const k of kpiEls) {
+      const key = k.dataset.kpi;
+      if (key && kpis[key] !== undefined) k.textContent = kpis[key];
+    }
+
+    // Session sent / limit progress
+    const sentEl = document.getElementById('sb-session-sent');
+    if (sentEl) sentEl.textContent = getSessionSent();
+    const pctEl = document.getElementById('sb-limit-pct');
+    if (pctEl) {
+      const limit = getBlastLimit();
+      const sent = getSessionSent();
+      if (limit > 0) pctEl.style.width = Math.min(100, Math.round((sent / limit) * 100)) + '%';
+    }
+
+    // Results list — only append new items, don't rebuild
+    const resultsContainer = document.getElementById('sb-results-list');
+    if (resultsContainer) {
+      const results = getLastResults();
+      const rendered = resultsContainer.children.length;
+      // If new results were added (they go to front), rebuild the list
+      if (results.length !== rendered) {
+        resultsContainer.innerHTML = results.slice(0, 12).map(r => `
+          <div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:${r.status === 'failed' ? S.dangerBg : S.bg};border:1px solid ${r.status === 'failed' ? '#fecaca' : S.border};border-radius:5px;font-size:11px;">
+            <span style="flex-shrink:0;font-size:10px;min-width:20px;">${_ackIcon(r.ack ?? -1)}</span>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:${r.status === 'failed' ? S.danger : S.text};">
+              ${_esc(r.nombre || '?')}
+            </span>
+            <span style="font-size:10px;color:${S.muted};flex-shrink:0;">${r.telefono ? '+' + r.telefono : ''}</span>
+          </div>
+        `).join('');
+      }
+    }
+
+    // Speed/ETA
+    const speedEl = document.getElementById('sb-speed');
+    if (speedEl && _blastSessionStart) {
+      const elapsedMin = Math.max(1, (Date.now() - _blastSessionStart) / 60000);
+      speedEl.textContent = (kpis.sent / elapsedMin).toFixed(1) + ' msg/min';
+    }
+
+    return; // Skip full rebuild
+  }
+
+  // ── Full rebuild (idle state, tab switch, first render) ──────
   el.innerHTML = _contentHTML();
   _bindContentInputs(); // solo inputs/textareas (no clicks)
   if (!_delegationBound) {
@@ -274,7 +345,10 @@ async function _handleDelegatedClick(e) {
 
   if (id === 'sb-refresh') { refreshPendingCount(); fetchGlobalStats(); _toast('Actualizando...'); }
   else if (id === 'sb-brigadista-clear') { setConfig({ brigadista: '' }); refreshPendingCount(); _renderContent(); }
-  else if (id === 'sb-start') { console.log('[SIDEBAR] sb-start clicked, limit:', getBlastLimit()); startBlast(); }
+  else if (id === 'sb-start') { console.log('[SIDEBAR] sb-start clicked → loading preview'); loadPreview(); }
+  else if (id === 'sb-preview-confirm') { previewConfirm(); }
+  else if (id === 'sb-preview-cancel') { previewCancel(); }
+  else if (id === 'sb-send-direct') { console.log('[SIDEBAR] direct send, limit:', getBlastLimit()); startBlast(); }
   else if (id === 'sb-pause') { pauseBlast(); }
   else if (id === 'sb-resume') { resumeBlast(); }
   else if (id === 'sb-reset') { resetSession(); refreshPendingCount(); _renderContent(); }
@@ -311,6 +385,16 @@ async function _handleDelegatedClick(e) {
   else if (tplDel !== undefined) {
     const t = getTemplates();
     if (t.length > 1) { t.splice(Number(tplDel), 1); setTemplates(t); _renderContent(); }
+  }
+  else if (btn.dataset?.previewSkip) {
+    previewSkipContact(btn.dataset.previewSkip);
+  }
+  else if (btn.dataset?.previewHablado) {
+    // Mark as hablado in backend + fetch replacement
+    const hId = btn.dataset.previewHablado;
+    btn.disabled = true;
+    btn.textContent = '⏳';
+    previewMarkHabladoAndReplace(hId);
   }
   // Audio send/regen removed — handled by audio-catalog-panel.js own event listeners
 }
@@ -433,8 +517,9 @@ function _blastHTML() {
   const analysis = _cachedAnalysis || { level: 'ok', suggestions: [] };
 
   // Session stats
-  const sessionStart = window.__blastSessionStart || Date.now();
-  if (!window.__blastSessionStart && running) window.__blastSessionStart = Date.now();
+  if (!_blastSessionStart && running) _blastSessionStart = Date.now();
+  if (!running) _blastSessionStart = null;
+  const sessionStart = _blastSessionStart || Date.now();
   const elapsedMin = Math.max(1, (Date.now() - sessionStart) / 60000);
   const msgPerMin = totalProcessed > 0 ? (totalSent / elapsedMin).toFixed(1) : '0';
   const estRemaining = pending !== null && totalSent > 0 ? Math.round(pending / (totalSent / elapsedMin)) : null;
@@ -550,13 +635,13 @@ function _blastHTML() {
     ${hasActivity ? `
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">
       ${[
-        ['✓',   kpis.sent,    'Enviado',   '#6b7280'],
-        ['✗',   kpis.failed,  'Fallidos',   S.danger],
-        ['📵',  kpis.no_wa,  'Sin WA',    '#9ca3af'],
-        ['⏭',   kpis.skipped, 'Saltados',   S.muted],
-      ].map(([icon, val, label, color]) => `
+        ['✓',   kpis.sent,    'Enviado',   '#6b7280', 'sent'],
+        ['✗',   kpis.failed,  'Fallidos',   S.danger, 'failed'],
+        ['📵',  kpis.no_wa,  'Sin WA',    '#9ca3af', 'no_wa'],
+        ['⏭',   kpis.skipped, 'Saltados',   S.muted, 'skipped'],
+      ].map(([icon, val, label, color, key]) => `
         <div style="background:${S.card};border:1px solid ${S.border};border-radius:8px;padding:8px 4px;text-align:center;">
-          <div style="font-size:16px;font-weight:800;color:${color};">${val}</div>
+          <div data-kpi="${key}" style="font-size:16px;font-weight:800;color:${color};">${val}</div>
           <div style="font-size:9px;color:${S.muted};margin-top:2px;">${icon} ${label}</div>
         </div>
       `).join('')}
@@ -574,10 +659,10 @@ function _blastHTML() {
       <div style="background:${done ? S.accentBg : S.card};border:1px solid ${done ? 'rgba(37,211,102,0.3)' : S.border};border-radius:10px;padding:12px;">
         <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:6px;">
           <span style="color:${done ? S.accent : S.text};">${done ? '✅ Límite alcanzado' : '📤 Enviando...'}</span>
-          <span style="color:${done ? S.accent : S.accent};">${sent} / ${limit}</span>
+          <span><span id="sb-session-sent">${sent}</span> / ${limit}</span>
         </div>
         <div style="height:8px;background:${S.border};border-radius:4px;overflow:hidden;">
-          <div style="height:100%;width:${pct}%;background:${done ? S.accent : '#3b82f6'};border-radius:4px;transition:width .3s ease;"></div>
+          <div id="sb-limit-pct" style="height:100%;width:${pct}%;background:${done ? S.accent : '#3b82f6'};border-radius:4px;transition:width .3s ease;"></div>
         </div>
         ${done ? `<div style="font-size:10px;color:${S.muted};margin-top:6px;text-align:center;">Listo — pará o iniciá otra tanda</div>` : ''}
       </div>`;
@@ -589,7 +674,7 @@ function _blastHTML() {
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:10px 12px;">
       <div style="font-size:10px;color:${S.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Sesión actual</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:11px;">
-        <div><span style="color:${S.muted};">Velocidad</span><br><b>${msgPerMin} msg/min</b></div>
+        <div><span style="color:${S.muted};">Velocidad</span><br><b id="sb-speed">${msgPerMin} msg/min</b></div>
         <div><span style="color:${S.muted};">Est. restante</span><br><b>${estRemaining !== null ? (estRemaining > 60 ? Math.round(estRemaining / 60) + 'h' : estRemaining + ' min') : '—'}</b></div>
         <div><span style="color:${S.muted};">Plantilla</span><br><b>#${(getTplIndex() % tpls.length) + 1} de ${tpls.length}</b></div>
       </div>
@@ -667,6 +752,32 @@ function _blastHTML() {
       ${getBlastLimit() === 0 ? `<div style="font-size:10px;color:${S.muted};text-align:center;">Loop infinito — pará vos cuando quieras</div>` : ''}
     </div>
 
+    <!-- ANTI-BAN CONFIG -->
+    <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:10px 12px;">
+      <div style="font-size:11px;font-weight:700;color:${S.muted};margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">
+        Anti-ban · Pausa entre tandas
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div>
+          <label style="font-size:10px;color:${S.muted};display:block;margin-bottom:2px;">Msgs por tanda</label>
+          <input type="number" data-cfg="burstSize" value="${cfg.burstSize || 12}" min="5" max="30" style="
+            width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid ${S.border};
+            border-radius:6px;background:${S.bg};color:${S.text};font-size:13px;font-weight:600;
+            outline:none;text-align:center;
+          " />
+        </div>
+        <div>
+          <label style="font-size:10px;color:${S.muted};display:block;margin-bottom:2px;">Descanso (seg)</label>
+          <input type="number" data-cfg="burstRestSec" value="${cfg.burstRestSec || 90}" min="30" max="300" style="
+            width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid ${S.border};
+            border-radius:6px;background:${S.bg};color:${S.text};font-size:13px;font-weight:600;
+            outline:none;text-align:center;
+          " />
+        </div>
+      </div>
+      <div style="font-size:10px;color:${S.muted};margin-top:4px;">Cada ${cfg.burstSize || 12} msgs → pausa de ${cfg.burstRestSec || 90}s + variación aleatoria</div>
+    </div>
+
     <!-- FILTRO BRIGADISTA -->
     <div style="background:${S.card};border:1px solid ${cfg.brigadista ? S.accent : S.border};border-radius:10px;padding:10px 12px;">
       <div style="font-size:11px;font-weight:700;color:${S.muted};margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">
@@ -731,7 +842,7 @@ function _blastHTML() {
       ${timerLabel ? `<div id="sb-timer-label" style="font-size:12px;color:${S.accent};font-weight:600;margin-bottom:8px;">${timerLabel}</div>` : '<div id="sb-timer-label" style="display:none"></div>'}
       ${results.length ? `
       <div style="font-size:10px;color:${S.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Últimos enviados</div>
-      <div style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;">
+      <div id="sb-results-list" style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;">
         ${results.slice(0, 12).map(r => `
           <div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:${r.status === 'failed' ? S.dangerBg : S.bg};border:1px solid ${r.status === 'failed' ? '#fecaca' : S.border};border-radius:5px;font-size:11px;">
             <span style="flex-shrink:0;font-size:10px;min-width:20px;">${_ackIcon(r.ack ?? -1)}</span>
@@ -749,13 +860,136 @@ function _blastHTML() {
     </div>
     ` : ''}
 
+    <!-- PREVIEW DE CONTACTOS -->
+    ${(() => {
+      const pvLoading = isPreviewLoading();
+      const pvReady = isPreviewReady();
+      const pvContacts = getPreviewContacts();
+      const pvSkipped = getPreviewSkipped();
+
+      // Show contacts while checking (pvLoading=true but pvContacts has items)
+      const pvHasContacts = getPreviewContacts().length > 0;
+
+      if (pvLoading) {
+        return `
+        <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:20px;text-align:center;">
+          <div style="font-size:24px;margin-bottom:8px;">${pvHasContacts ? '🔍' : '📥'}</div>
+          <div style="font-size:13px;font-weight:600;color:${S.text};">${pvHasContacts ? 'Verificando ' + getPreviewContacts().length + ' contactos...' : 'Cargando contactos...'}</div>
+          <div style="font-size:11px;color:${S.muted};margin-top:4px;">${pvHasContacts ? 'Comprobando si tienen WA y si ya los tenemos agendados' : 'Preparando preview'}</div>
+        </div>`;
+      }
+
+      if (pvReady && pvContacts.length > 0) {
+        const pvFlags = getPreviewFlags();
+        const active = pvContacts.filter(c => !pvSkipped.has(c.id));
+        const flaggedInContacts = pvContacts.filter(c => pvFlags.get(c.id)?.inContacts).length;
+        const flaggedNoWA = pvContacts.filter(c => pvFlags.get(c.id)?.noWA === true).length;
+        const byDepto = {};
+        const byBrig = {};
+        for (const c of active) {
+          const d = c.departamento || c.distrito || 'Sin depto';
+          const b = c.encuestador || 'Sin brigadista';
+          byDepto[d] = (byDepto[d] || 0) + 1;
+          byBrig[b] = (byBrig[b] || 0) + 1;
+        }
+        const deptoEntries = Object.entries(byDepto).sort((a,b) => b[1]-a[1]).slice(0, 5);
+        const brigEntries = Object.entries(byBrig).sort((a,b) => b[1]-a[1]).slice(0, 5);
+
+        return `
+        <div style="background:${S.card};border:2px solid ${S.accent};border-radius:10px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div>
+              <div style="font-size:13px;font-weight:700;color:${S.accent};">📋 Preview: ${active.length} contactos</div>
+              <div style="font-size:10px;color:${S.muted};">
+                ${pvSkipped.size > 0 ? pvSkipped.size + ' saltados · ' : ''}
+                ${flaggedInContacts > 0 ? `<span style="color:${S.warn};">${flaggedInContacts} agendados</span> · ` : ''}
+                ${flaggedNoWA > 0 ? `<span style="color:${S.danger};">${flaggedNoWA} sin WA</span> · ` : ''}
+                Revisá antes de enviar
+              </div>
+            </div>
+            <button id="sb-preview-cancel" style="padding:4px 10px;border-radius:6px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:11px;cursor:pointer;">✕</button>
+          </div>
+
+          <!-- Resumen por departamento -->
+          ${deptoEntries.length > 1 ? `
+          <div style="margin-bottom:8px;">
+            <div style="font-size:10px;color:${S.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Por departamento</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;">
+              ${deptoEntries.map(([d, n]) => `<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${S.blueBg};color:${S.blue};font-weight:600;">${_esc(d)} (${n})</span>`).join('')}
+            </div>
+          </div>` : ''}
+
+          <!-- Resumen por brigadista -->
+          ${brigEntries.length > 1 ? `
+          <div style="margin-bottom:8px;">
+            <div style="font-size:10px;color:${S.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Por brigadista</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;">
+              ${brigEntries.map(([b, n]) => `<span style="font-size:10px;padding:2px 8px;border-radius:10px;background:${S.warnBg};color:${S.warn};font-weight:600;">${_esc(b.split(' ')[0])} (${n})</span>`).join('')}
+            </div>
+          </div>` : ''}
+
+          <!-- Lista de contactos -->
+          <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:3px;margin-bottom:10px;">
+            ${pvContacts.map(c => {
+              const skipped = pvSkipped.has(c.id);
+              const flags = pvFlags.get(c.id) || {};
+              const msgParts = getPreviewMessage(c.id);
+              const msgPreview = msgParts.length ? msgParts[0].slice(0, 80) + (msgParts[0].length > 80 ? '…' : '') : '—';
+              const nombre = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim() || '—';
+              // Visual indicators
+              const isInContacts = flags.inContacts;
+              const isNoWA = flags.noWA === true;
+              const hasProblem = isInContacts || isNoWA;
+              const borderColor = skipped ? '#fecaca' : isNoWA ? '#fecaca' : isInContacts ? '#fde68a' : S.border;
+              const bgColor = skipped ? S.dangerBg : isNoWA ? S.dangerBg : isInContacts ? S.warnBg : S.bg;
+              return `
+              <div style="padding:6px 8px;background:${bgColor};border:1px solid ${borderColor};border-radius:6px;opacity:${skipped ? '0.4' : '1'};transition:opacity .15s;">
+                <div style="display:flex;align-items:center;gap:5px;">
+                  <!-- Toggle skip -->
+                  <button data-preview-skip="${c.id}" title="${skipped ? 'Incluir de nuevo' : 'Saltar este contacto'}" style="width:20px;height:20px;border-radius:4px;border:1px solid ${skipped ? S.danger : S.border};background:${skipped ? S.danger : S.bg};color:${skipped ? '#fff' : S.muted};font-size:10px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;">${skipped ? '✕' : '✓'}</button>
+                  <!-- Contact info -->
+                  <div style="flex:1;min-width:0;">
+                    <div style="display:flex;align-items:center;gap:4px;">
+                      <span style="font-size:11px;font-weight:600;color:${S.text};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${_esc(nombre)}</span>
+                      ${isInContacts ? `<span style="font-size:8px;padding:1px 5px;border-radius:8px;background:${S.warnBg};color:${S.warn};font-weight:700;flex-shrink:0;border:1px solid #fde68a;">AGENDADO</span>` : ''}
+                      ${isNoWA ? `<span style="font-size:8px;padding:1px 5px;border-radius:8px;background:${S.dangerBg};color:${S.danger};font-weight:700;flex-shrink:0;border:1px solid #fecaca;">SIN WA</span>` : ''}
+                      <span style="font-size:10px;color:${S.muted};flex-shrink:0;">+${_esc(c.telefono || '')}</span>
+                    </div>
+                    <div style="font-size:10px;color:${S.muted};margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_esc(msgPreview)}">💬 ${_esc(msgPreview)}</div>
+                    ${c.encuestador ? `<div style="font-size:9px;color:${S.blue};margin-top:1px;">👤 ${_esc(c.encuestador)} · ${_esc(c.departamento || c.distrito || '')}</div>` : ''}
+                  </div>
+                  <!-- Mark hablado + replace button -->
+                  ${!skipped ? `<button data-preview-hablado="${c.id}" title="Ya hablé — marcar y reemplazar" style="padding:2px 6px;border-radius:4px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:9px;cursor:pointer;flex-shrink:0;white-space:nowrap;">Ya hablé</button>` : ''}
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+
+          <!-- Botones confirmar/cancelar -->
+          <div style="display:flex;gap:8px;">
+            <button id="sb-preview-confirm" style="
+              flex:1;padding:12px;border-radius:10px;border:none;
+              background:${active.length > 0 ? S.accent : S.muted};color:#fff;font-size:14px;font-weight:700;cursor:pointer;
+              box-shadow:${active.length > 0 ? '0 2px 12px ' + S.accent + '40' : 'none'};
+              ${active.length === 0 ? 'pointer-events:none;opacity:0.5;' : ''}
+            ">✅ Confirmar y enviar (${active.length})</button>
+          </div>
+          <div style="font-size:10px;color:${S.muted};text-align:center;margin-top:6px;">
+            ✓ = saltar · "Ya hablé" = marcar hablado + traer otro contacto
+          </div>
+        </div>`;
+      }
+
+      return '';
+    })()}
+
     <!-- CONTROLES -->
-    ${!running && !paused && hasPending ? `
+    ${!running && !paused && hasPending && !isPreviewReady() && !isPreviewLoading() ? `
       <button id="sb-start" style="
         width:100%;padding:14px;border-radius:10px;border:none;
         background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
         box-shadow:0 2px 12px ${S.accent}40;
-      ">▶ ${getBlastLimit() === 0 ? 'Enviar en loop (∞)' : '▶ Enviar ' + getBlastLimit()}</button>
+      ">📋 Preview y enviar ${getBlastLimit() === 0 ? '(∞)' : getBlastLimit()}</button>
     ` : running ? `
       <button id="sb-pause" style="
         width:100%;padding:14px;border-radius:10px;border:1px solid ${S.warn}40;
@@ -784,17 +1018,6 @@ function _ackIcon(ack) {
 function _smallBtn(color, bg) {
   return `padding:5px 10px;border-radius:6px;border:none;background:${bg};color:${color};font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap`;
 }
-function _cfgField(key, label, value, min, max) {
-  return `<div>
-    <label style="font-size:11px;color:${S.muted};display:block;margin-bottom:2px;">${label}</label>
-    <input type="number" data-cfg="${key}" value="${value}" min="${min}" max="${max}" style="
-      width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid ${S.border};
-      border-radius:6px;background:${S.bg};color:${S.text};font-size:13px;font-weight:600;
-      outline:none;text-align:center;
-    " />
-  </div>`;
-}
-
 // Audio catalog tab removed — audios accessible via dedicated FAB button
 
 // ══════════════════════════════════════════════════════════════════════

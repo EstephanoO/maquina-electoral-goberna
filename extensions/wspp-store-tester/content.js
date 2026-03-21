@@ -393,6 +393,19 @@ window.addEventListener('message', (e) => {
     return;
   }
 
+  // --- BLAST_REPORT_CONVERSATION (inject → background, fire-and-forget) ---
+  // Maps blast JID → phone so CMS can track replies from blast contacts.
+  if (e.data?.type === 'BLAST_REPORT_CONVERSATION') {
+    chrome.runtime.sendMessage({
+      type: 'BLAST_REPORT_CONVERSATION',
+      jid: e.data.jid,
+      own_number: e.data.own_number,
+      phone: e.data.phone,
+      contact_name: e.data.contact_name,
+    }, () => {});
+    return;
+  }
+
   // --- BLAST_GET_STATS (inject → background → inject) ---
   // Devuelve stats globales del servidor: total/hablado/pendiente por campaña.
   // Todos los celulares ven el mismo número porque viene del backend.

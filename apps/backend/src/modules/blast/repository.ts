@@ -60,6 +60,14 @@ export async function ensureBlastTables(): Promise<void> {
       ADD COLUMN IF NOT EXISTS block_id      text
   `);
 
+  // Index on normalized contact_phone for fast dedup lookups.
+  // contact_phone is stored as digits-only (normalized at INSERT time),
+  // so a plain index works without regexp_replace per-query.
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_blast_log_contact_phone_sent
+    ON blast_log(campaign_id, contact_phone) WHERE status = 'sent' AND contact_phone != ''
+  `);
+
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_blast_log_block_id
     ON blast_log(campaign_id, block_id) WHERE block_id IS NOT NULL
@@ -126,16 +134,19 @@ export async function getFormContactsForNumber(params: {
     `ABS(hashtext(COALESCE(fs.data->>'telefono', fs.id::text))) % $2 = $3`,
     // Skip contacts already sent successfully by ANY wa_number (no solo este)
     // CRÍTICO: Si CUALQUIER celular ya envió a este teléfono, no enviar de nuevo.
-    // Esto previene duplicados cuando el mark-hablado falla pero blast_log sí se registró.
+    // blast_log.contact_phone is stored as digits-only, so we only normalize the
+    // form_submissions side. The index idx_blast_log_contact_phone_sent covers this.
     `NOT EXISTS (
        SELECT 1 FROM blast_log bl
        WHERE bl.campaign_id = $1
-         AND regexp_replace(bl.contact_phone, '[^0-9]', '', 'g') = regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g')
+         AND bl.contact_phone = regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g')
          AND bl.status = 'sent'
      )`,
     // Skip contacts marked no_wa HOY — se reintentarán mañana via retry-no-wa
-    `COALESCE(fs.cms_status, 'nuevo') != 'no_wa'
-     OR fs.cms_hablado_at < CURRENT_DATE`,
+    // FIX: Parentheses required — without them the OR breaks the entire WHERE clause
+    // because OR has lower precedence than AND. Before this fix, contacts marked
+    // 'hablado' YESTERDAY would reappear as pending due to the OR evaluating globally.
+    `(COALESCE(fs.cms_status, 'nuevo') != 'no_wa' OR fs.cms_hablado_at < CURRENT_DATE)`,
     // Skip contacts que ya fueron procesados (hablado, respondieron, archivado, claimed)
     `COALESCE(fs.cms_status, 'nuevo') NOT IN ('hablado', 'respondieron', 'archivado', 'claimed')`,
     // Skip teléfonos inválidos (menos de 9 dígitos)
@@ -237,30 +248,45 @@ export async function markHablado(
 ): Promise<number> {
   let total = 0;
 
-  // Marca como 'hablado' — SIN filtrar por cms_status.
-  // Si el operador dice "marcar hablado", se marca sin condiciones.
-  // Esto evita el bug de updated:0 con status desconocidos.
+  // Marca como 'hablado' + audit log en una transacción atómica.
+  // FIX: Antes eran 2 queries independientes. Si la segunda fallaba,
+  // form_submissions quedaba marcada pero blast_log no tenía registro,
+  // rompiendo el dedup cross-phone.
   if (ids.length) {
-    const result = await pool.query(
-      `UPDATE form_submissions
-       SET cms_status     = 'hablado',
-           cms_hablado_at = now()
-       WHERE id = ANY($1::uuid[])
-         AND campaign_id = $2`,
-      [ids, campaign_id]
-    );
-    total += result.rowCount ?? 0;
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    // Audit log — best-effort
-    if (wa_number) {
-      pool.query(
-        `INSERT INTO blast_log (campaign_id, wa_number, contact_phone, contact_id, status)
-         SELECT $1, $2, COALESCE(fs.data->>'telefono',''), fs.id, 'sent'
-         FROM form_submissions fs
-         WHERE fs.id = ANY($3::uuid[]) AND fs.campaign_id = $1
-          ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent' AND contact_phone <> '' DO NOTHING`,
-        [campaign_id, wa_number, ids]
-      ).catch((err) => { console.warn("[blast] audit log insert failed", String(err)); });
+      const result = await client.query(
+        `UPDATE form_submissions
+         SET cms_status     = 'hablado',
+             cms_hablado_at = now()
+         WHERE id = ANY($1::uuid[])
+           AND campaign_id = $2
+           AND COALESCE(cms_status, 'nuevo') != 'hablado'`,
+        [ids, campaign_id]
+      );
+      total += result.rowCount ?? 0;
+
+      // Audit log — MANDATORY for cross-phone dedup.
+      if (wa_number) {
+        await client.query(
+          `INSERT INTO blast_log (campaign_id, wa_number, contact_phone, contact_id, status)
+           SELECT $1, $2, regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g'), fs.id, 'sent'
+           FROM form_submissions fs
+           WHERE fs.id = ANY($3::uuid[]) AND fs.campaign_id = $1
+            ON CONFLICT (campaign_id, wa_number, contact_phone) WHERE status = 'sent' AND contact_phone <> '' DO NOTHING`,
+          [campaign_id, wa_number, ids]
+        );
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error("[blast] CRITICAL: markHablado transaction failed — rolled back", String(err));
+      throw err; // propagate so route returns 500
+    } finally {
+      client.release();
     }
   }
 
@@ -282,14 +308,24 @@ export async function markHablado(
 
 // ── Dashboard: stats completas por celular + quality + spam ────────────
 export async function getDashboardStats(campaign_id: string) {
+  // 0. Read total_slots from config (default 6) — must match getFormContactsForNumber
+  const slotsResult = await pool.query<{ total_slots: number }>(
+    `SELECT COALESCE(MAX(total_slots), 6) AS total_slots
+     FROM blast_number_config
+     WHERE campaign_id = $1 AND active = true`,
+    [campaign_id]
+  );
+  const totalSlots = slotsResult.rows[0]?.total_slots ?? 6;
+
   // 1. Stats por segmento (celular) desde form_submissions (fuente real)
+  // FIX: Uses dynamic total_slots instead of hardcoded % 6
   const perSegment = await pool.query<{
     segmento: number; total: string; hablado: string;
     respondieron: string; no_wa: string; pendiente: string;
     hablado_hoy: string; respondieron_hoy: string;
   }>(`
     SELECT
-      ABS(hashtext(COALESCE(data->>'telefono', id::text))) % 6 AS segmento,
+      ABS(hashtext(COALESCE(data->>'telefono', id::text))) % $2 AS segmento,
       COUNT(*)::text AS total,
       COUNT(*) FILTER (WHERE cms_status = 'hablado')::text AS hablado,
       COUNT(*) FILTER (WHERE cms_status = 'respondieron')::text AS respondieron,
@@ -301,7 +337,7 @@ export async function getDashboardStats(campaign_id: string) {
     WHERE campaign_id = $1 AND deleted_at IS NULL
       AND COALESCE(data->>'telefono','') != ''
     GROUP BY 1 ORDER BY 1
-  `, [campaign_id]);
+  `, [campaign_id, totalSlots]);
 
   // 2. Config de números (label, segment_idx)
   const configs = await pool.query<{
@@ -499,8 +535,7 @@ export async function syncCmsStatusWithBlastLog(campaign_id: string): Promise<{
         SELECT 1 FROM blast_log bl
         WHERE bl.campaign_id = $1
           AND bl.status = 'sent'
-          AND regexp_replace(bl.contact_phone, '[^0-9]', '', 'g') =
-              regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g')
+          AND bl.contact_phone = regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g')
       )
   `, [campaign_id]);
 
@@ -625,9 +660,11 @@ export async function getBlastStats(campaign_id: string): Promise<{
       `SELECT
          (SELECT COUNT(*) FROM form_submissions WHERE campaign_id = $1 AND deleted_at IS NULL
             AND COALESCE(data->>'telefono','') != '') AS total,
-         (SELECT COUNT(*) FROM blast_log WHERE campaign_id = $1 AND status = 'sent') AS sent,
-         (SELECT COUNT(*) FROM blast_log WHERE campaign_id = $1 AND status = 'failed') AS failed,
-         (SELECT COUNT(*) FROM blast_log WHERE campaign_id = $1 AND status = 'no_wa') AS no_wa,
+         -- FIX: COUNT(DISTINCT contact_phone) para no contar doble cuando
+         -- múltiples celulares envían al mismo contacto
+         (SELECT COUNT(DISTINCT contact_phone) FROM blast_log WHERE campaign_id = $1 AND status = 'sent' AND contact_phone != '') AS sent,
+         (SELECT COUNT(DISTINCT contact_phone) FROM blast_log WHERE campaign_id = $1 AND status = 'failed' AND contact_phone != '') AS failed,
+         (SELECT COUNT(DISTINCT contact_phone) FROM blast_log WHERE campaign_id = $1 AND status = 'no_wa' AND contact_phone != '') AS no_wa,
          -- Respondieron: contactos blasted que luego cambiaron a 'respondieron'
          (SELECT COUNT(*) FROM form_submissions fs
           WHERE fs.campaign_id = $1
@@ -636,7 +673,8 @@ export async function getBlastStats(campaign_id: string): Promise<{
               SELECT 1 FROM blast_log bl
               WHERE bl.campaign_id = $1
                 AND bl.status = 'sent'
-                AND regexp_replace(bl.contact_phone, '[^0-9]', '', 'g') = regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g')
+                AND bl.contact_phone != ''
+                AND bl.contact_phone = regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g')
             )
          ) AS responded`,
       [campaign_id]
@@ -834,9 +872,20 @@ export async function getNumberHealth(
          CASE WHEN sent.total > 0 THEN resp.total::numeric / sent.total ELSE 0 END AS response_rate,
          CASE WHEN sent.total > 0 THEN (sent.total - resp.total)::numeric / sent.total ELSE 1 END AS no_response_rate
        FROM
-         (SELECT COUNT(*) AS total FROM blast_log WHERE campaign_id = $1 AND status = 'sent') sent,
-         (SELECT COUNT(*) AS total FROM form_submissions
-          WHERE campaign_id = $1 AND cms_status = 'respondieron') resp`,
+         (SELECT COUNT(DISTINCT contact_phone) AS total FROM blast_log WHERE campaign_id = $1 AND status = 'sent' AND contact_phone != '') sent,
+         -- FIX: Only count respondieron that were ACTUALLY blasted (have a blast_log entry)
+         -- Before this fix, ALL respondieron were counted (including organic/CMS responses),
+         -- inflating response_rate and granting undeserved quality bonuses.
+         (SELECT COUNT(*) AS total FROM form_submissions fs
+          WHERE fs.campaign_id = $1 AND fs.cms_status = 'respondieron'
+            AND EXISTS (
+              SELECT 1 FROM blast_log bl
+              WHERE bl.campaign_id = $1
+                AND bl.status = 'sent'
+                AND bl.contact_phone != ''
+                AND bl.contact_phone = regexp_replace(COALESCE(fs.data->>'telefono',''), '[^0-9]', '', 'g')
+            )
+         ) resp`,
       [campaign_id]
     );
     const rr  = parseFloat(qResult.rows[0]?.response_rate  ?? "0");
@@ -1054,10 +1103,11 @@ export async function checkContactsStillNew(params: {
       AND regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g') IN (${phonePlaceholders.join(',')})
       AND COALESCE(fs.cms_status, 'nuevo') NOT IN ('hablado', 'respondieron')
       -- CRÍTICO: Sin filtro de wa_number — excluir si CUALQUIER celular ya envió
+      -- blast_log.contact_phone is stored digits-only, only normalize form_submissions side
       AND NOT EXISTS (
         SELECT 1 FROM blast_log bl
         WHERE bl.campaign_id = $1
-          AND regexp_replace(bl.contact_phone, '[^0-9]', '', 'g') = regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g')
+          AND bl.contact_phone = regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g')
           AND bl.status = 'sent'
       )
       AND NOT EXISTS (
@@ -1091,24 +1141,23 @@ export async function reportSkips(params: {
 
   for (const skip of skips) {
     placeholders.push(
-      `($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++})`
+      `($${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++}, $${idx++})`
     );
     values.push(
       campaign_id,
       skip.contact_id,
-      skip.phone,
-      skip.contact_phone,
+      wa_number,
+      (skip.contact_phone || skip.phone || '').replace(/\D/g, ''),
       skip.contact_name ?? null,
       'skipped',
       skip.reason,
-      new Date(),
     );
   }
 
   const { rowCount } = await pool.query(`
     INSERT INTO blast_log (
-      campaign_id, contact_id, phone, contact_phone, contact_name,
-      status, message, sent_at, created_at
+      campaign_id, contact_id, wa_number, contact_phone, contact_name,
+      status, error_msg
     )
     VALUES ${placeholders.join(', ')}
     ON CONFLICT DO NOTHING

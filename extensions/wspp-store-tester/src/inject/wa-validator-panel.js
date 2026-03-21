@@ -61,6 +61,7 @@ let _countdown      = 0;
 let _countdownTimer = null;
 let _activeNumber   = null;
 let _startTime      = null;
+let _phase          = '';  // FIX: was undeclared — implicit global in non-strict mode
 
 // ── WA module resolver ────────────────────────────────────────────────
 function _req(...names) {
@@ -104,10 +105,13 @@ async function _checkPhonesSilentBatch(phones) {
   if (!toQuery.length) return results;
 
   // 2. Intentar WAWebUsync (API interna — más confiable y silenciosa)
+  // RESILIENCE: Multiple module name fallbacks
   let usyncOk = false;
   try {
-    const { USyncQuery } = window.require('WAWebUsync');
-    const { USyncUser }  = window.require('WAWebUsyncUser');
+    const usyncMod = _req('WAWebUsync', 'WAWebUsyncQuery', 'WAWebUSyncModule');
+    const userMod  = _req('WAWebUsyncUser', 'WAWebUSyncUserUtils', 'WAWebUSyncUser');
+    const USyncQuery = usyncMod?.USyncQuery || usyncMod?.default?.USyncQuery || usyncMod;
+    const USyncUser  = userMod?.USyncUser || userMod?.default?.USyncUser || userMod;
 
     if (USyncQuery && USyncUser) {
       const query = new USyncQuery()
@@ -287,6 +291,14 @@ function _typeAndSend(text) {
 
 // ── Helpers ───────────────────────────────────────────────────────────
 const _sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// FIX: XSS-safe HTML escaping for user data in template literals
+function _esc(str) {
+  if (!str) return '';
+  const d = document.createElement('div');
+  d.appendChild(document.createTextNode(String(str)));
+  return d.innerHTML;
+}
 
 function _randomDelay() {
   if (_mode === 'conv') {
@@ -632,10 +644,10 @@ function _render() {
             <div style="display:flex;align-items:center;gap:7px;padding:5px 9px;background:rgba(255,255,255,.02);border-radius:6px;border:1px solid rgba(255,255,255,.04);">
               <span style="font-size:13px;flex-shrink:0;">${r.wa_valid ? '✅' : '❌'}</span>
               <span style="font-size:12px;color:${r.wa_valid?'rgba(255,255,255,.6)':'rgba(255,255,255,.5)'};flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                ${r.nombre || '?'} · +${r.telefono}
+                ${_esc(r.nombre) || '?'} · +${_esc(r.telefono)}
               </span>
               <span style="font-size:10px;color:rgba(255,255,255,.15);flex-shrink:0;">
-                ${r.mode === 'conv' ? '💬' : '🔍'} ${(r.encuestador || '').slice(0, 14)}
+                ${r.mode === 'conv' ? '💬' : '🔍'} ${_esc((r.encuestador || '').slice(0, 14))}
               </span>
             </div>
           `).join('')}
@@ -776,7 +788,7 @@ function _showStats(summary, byBrigadista) {
         <div style="padding:8px 10px;background:rgba(255,255,255,.02);border-radius:8px;border:1px solid rgba(255,255,255,.04);margin-bottom:5px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
             <span style="font-size:12px;font-weight:600;color:rgba(255,255,255,.75);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px;">
-              ${b.encuestador || 'Sin nombre'}
+              ${_esc(b.encuestador) || 'Sin nombre'}
             </span>
             <span style="font-size:12px;font-weight:800;color:${pctColor};">${pct}% inv.</span>
           </div>

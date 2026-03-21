@@ -443,7 +443,7 @@ export function tryInstallWAListeners() {
   }
 
   installIncomingMessageListener();
-  // installChatWatcher(); // DESHABILITADO: overlay de validación eliminado
+  installChatWatcher();
 
   // Si no se instalaron, reintentar con limit
   if (!_msgListenerInstalled || !_chatWatcherInstalled) {

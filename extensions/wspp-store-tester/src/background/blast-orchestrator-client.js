@@ -29,9 +29,11 @@ export function startOrchestratorPolling(waNumber) {
   _pollTimer = setInterval(_poll, POLL_INTERVAL_MS);
 }
 
-/** Stop polling. */
+/** Stop polling and heartbeat. */
 export function stopOrchestratorPolling() {
   if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+  // FIX: Also stop heartbeat timer — previously it kept firing with _ownNumber=null
+  if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
   _ownNumber = null;
   _lastState = null;
 }
@@ -204,10 +206,6 @@ function _startHeartbeat() {
 }
 
 // Start heartbeat when polling starts
-const _origStart = startOrchestratorPolling;
-// Note: We call heartbeat inline in the polling start to avoid
-// circular reference with the re-assignment pattern.
-// The heartbeat timer is started on first successful poll.
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.type === 'ORCH_START_POLLING' && !_heartbeatTimer) {
     _startHeartbeat();
