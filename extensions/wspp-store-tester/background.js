@@ -831,6 +831,7 @@
   }
 
   // src/background/spam-detector.js
+  var SPAM_DETECTION_DISABLED = true;
   var _outgoingLog = [];
   var SPAM_LOG_MAX = 500;
   var SPAM_WINDOW_SEC = 1200;
@@ -890,7 +891,7 @@
     });
   }
   function recordOutgoing(text, timestamp, toPhone, ownNumber) {
-    if (!text) return;
+    if (SPAM_DETECTION_DISABLED || !text) return;
     _outgoingLog.push({
       text: text.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 500),
       timestamp,
@@ -989,6 +990,7 @@
     };
   }
   function checkSpamNow(ownNumber) {
+    if (SPAM_DETECTION_DISABLED) return { risk_level: "low", risk_score: 0, warnings: [], message_count: 0 };
     const result = localSpamCheck(ownNumber);
     if (!result || result.risk_level === "low") return result;
     const ownNum = ownNumber || result.own_number;
@@ -1009,6 +1011,7 @@
   }
   var _periodicCheckSeq = 0;
   setInterval(() => {
+    if (SPAM_DETECTION_DISABLED) return;
     _periodicCheckSeq++;
     const result = localSpamCheck();
     if (!result || result.risk_level === "low") return;
@@ -1028,6 +1031,7 @@
     }
   }, SPAM_CHECK_INTERVAL_MS);
   setInterval(() => {
+    if (SPAM_DETECTION_DISABLED) return;
     if (_outgoingLog.length < 5) return;
     const cutoff = Math.floor(Date.now() / 1e3) - 300;
     const recent = _outgoingLog.filter((m) => m.timestamp >= cutoff);

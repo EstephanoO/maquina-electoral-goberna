@@ -13,6 +13,11 @@
 
 import { apiFetch } from './api-client.js';
 
+// ── MASTER KILL SWITCH ────────────────────────────────────────────────
+// Set to true to disable ALL spam detection. Useful for blast campaigns
+// where we're sending to our own contacts and detection is just noise.
+const SPAM_DETECTION_DISABLED = true;
+
 // ── Log ───────────────────────────────────────────────────────────────
 const _outgoingLog = []; // { text, timestamp, to_phone, own_number }
 const SPAM_LOG_MAX       = 500;   // keep last 500 msgs (was 200)
@@ -97,7 +102,7 @@ function _broadcastToWaTabs(result) {
 // from wa-validator-panel.js (conv mode).
 // ═══════════════════════════════════════════════════════════════════════
 export function recordOutgoing(text, timestamp, toPhone, ownNumber) {
-  if (!text) return;
+  if (SPAM_DETECTION_DISABLED || !text) return;
   _outgoingLog.push({
     text:       text.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 500),
     timestamp,
@@ -234,6 +239,7 @@ export function localSpamCheck(forceNumber) {
 // This is the "check in the hot path" — called by blast-panel + validator.
 // ═══════════════════════════════════════════════════════════════════════
 export function checkSpamNow(ownNumber) {
+  if (SPAM_DETECTION_DISABLED) return { risk_level: 'low', risk_score: 0, warnings: [], message_count: 0 };
   const result = localSpamCheck(ownNumber);
   if (!result || result.risk_level === 'low') return result;
 
@@ -259,6 +265,7 @@ export function checkSpamNow(ownNumber) {
 // ═══════════════════════════════════════════════════════════════════════
 let _periodicCheckSeq = 0;
 setInterval(() => {
+  if (SPAM_DETECTION_DISABLED) return;
   _periodicCheckSeq++;
   const result = localSpamCheck();
   if (!result || result.risk_level === 'low') return;
@@ -282,6 +289,7 @@ setInterval(() => {
 // If server returns risk, ALSO broadcast to WA tabs (was missing before).
 // ═══════════════════════════════════════════════════════════════════════
 setInterval(() => {
+  if (SPAM_DETECTION_DISABLED) return;
   if (_outgoingLog.length < 5) return;
   const cutoff = Math.floor(Date.now() / 1000) - 300;
   const recent = _outgoingLog.filter(m => m.timestamp >= cutoff);
