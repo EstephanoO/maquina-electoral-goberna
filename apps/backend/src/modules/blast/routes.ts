@@ -573,11 +573,18 @@ export function buildBlastRoutes(_env: AppEnv): FastifyPluginAsync {
           .replace(/\D/g, "").slice(0, 20);
 
         try {
+          // DEBUG: log input to diagnose empty valid sets
+          const inputSample = parsed.data.contacts.slice(0, 3).map((c: any) => ({ id: c.id?.slice(0, 8), phone: c.phone }));
+          app.log.info({ inputSample, count: parsed.data.contacts.length, waNumber }, "[blast] check-contacts input");
+
           const valid = await repo.checkContactsStillNew({
             campaign_id: campaignId,
             wa_number:   waNumber || "unknown",
             contacts:    parsed.data.contacts,
           });
+
+          app.log.info({ validCount: valid.size, inputCount: parsed.data.contacts.length }, "[blast] check-contacts result");
+
           return reply.code(200).send({
             ok:        true,
             request_id: requestId,
