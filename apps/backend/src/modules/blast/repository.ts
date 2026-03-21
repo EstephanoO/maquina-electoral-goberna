@@ -158,8 +158,10 @@ export async function getFormContactsForNumber(params: {
      )`,
   ];
 
-  const args: unknown[] = [campaign_id, total_slots, segment_idx, wa_number];
-  let argIdx = 5;
+  // Note: wa_number is NOT used in SQL conditions (dedup is cross-phone via blast_log).
+  // Removed from args — PostgreSQL can't determine type of unused parameters.
+  const args: unknown[] = [campaign_id, total_slots, segment_idx];
+  let argIdx = 4;
 
   if (status) {
     conditions.push(`COALESCE(fs.cms_status, 'nuevo') = $${argIdx++}`);
