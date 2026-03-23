@@ -26,25 +26,15 @@ function isSseOriginAllowed(origin: string, env: AppEnv): boolean {
   });
 }
 
-// ── Schemas ─────────────────────────────────────────────────────────
-
-const signalFlagsSchema = z.object({
-  responde: z.boolean().optional(),
-  hace_pregunta: z.boolean().optional(),
-  pide_informacion: z.boolean().optional(),
-  comparte_ubicacion: z.boolean().optional(),
-  deja_en_visto: z.boolean().optional(),
-  bloquea: z.boolean().optional(),
-});
-
-const updateNotesSchema = z.object({
-  local_votacion: z.string().max(500).optional().default(""),
-  domicilio: z.string().max(500).optional().default(""),
-  comentarios: z.string().max(2000).optional().default(""),
-  signal_flags: signalFlagsSchema.optional().default({}),
-  signal_score: z.number().int().min(-200).max(200).optional().default(0),
-  vote_tier: z.enum(["contacto_basura", "voto_blando", "voto_duro"]).optional().default("contacto_basura"),
-});
+// ── Schemas (imported from schemas.ts) ──────────────────────────────
+import {
+  updateNotesSchema,
+  setTagsSchema,
+  extensionEventSchema,
+  publicContactSchema,
+  waPhoneSchema,
+  extensionMonitorQuery as extensionMonitorQuerySchema,
+} from "./schemas";
 
 // ── SSE helpers ─────────────────────────────────────────────────────
 
@@ -481,10 +471,6 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
 
     // ── PUT /api/cms/contacts/:id/tags ──────────────────────────────
     // Set tags on a contact (replaces existing)
-    const setTagsSchema = z.object({
-      tags: z.array(z.string().min(1).max(32)).max(20),
-    });
-
     app.put(
       "/api/cms/contacts/:id/tags",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
@@ -746,20 +732,6 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
     //                        as wa_sent metric. No auto-transition.
     //   "message_received" — contact replied back (reserved for future use).
     //                        Auto-transitions hablado → respondieron.
-    const extensionEventSchema = z.object({
-      type: z.enum(["message_sent", "message_received"]),
-      // phone is optional — WA Web does not expose the phone number for saved contacts.
-      // When absent, contact_name is used to look up the contact by name in the campaign.
-      phone: z.string().min(7).max(20).optional(),
-      contact_name: z.string().max(200).optional(),
-      own_number: z.string().max(20).optional().default(""),
-      preview: z.string().max(500).optional().default(""),
-      detected_at: z.number().optional(),
-    }).refine(
-      (d) => d.phone || d.contact_name,
-      { message: "phone o contact_name es requerido" },
-    );
-
     app.post(
       "/api/cms/extension-event",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
@@ -894,15 +866,6 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
     // ── POST /api/cms/contacts/public ───────────────────────────────────
     // Public endpoint (no auth) — creates a contact for a campaign by slug.
     // Designed for external integrations / frontends that don't have JWT.
-    const publicContactSchema = z.object({
-      campaign_slug: z.string().min(1, "campaign_slug es requerido"),
-      nombre: z.string().min(1, "nombre es requerido").max(200),
-      telefono: z.string().min(6, "telefono es requerido").max(20),
-      zona: z.string().max(200).optional().default(""),
-      distrito: z.string().max(200).optional().default(""),
-      comentarios: z.string().max(2000).optional().default(""),
-    });
-
     app.post(
       "/api/cms/contacts/public",
       async (request, reply) => {
@@ -981,11 +944,6 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
     // Manage aliases for the physical WA phones used by operators.
     // Requires candidato+ role scoped to the campaign.
 
-    const waPhoneSchema = z.object({
-      number: z.string().min(7).max(20),
-      alias: z.string().min(1).max(100),
-    });
-
     // GET /api/cms/wa-phones — list all phones for the campaign
     app.get(
       "/api/cms/wa-phones",
@@ -1050,10 +1008,6 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
     // ── GET /api/cms/extension-monitor ────────────────────────────────
     // Authenticated endpoint. Returns per-phone + per-operator breakdown.
     // Requires ?campaign_id=<uuid> query param.
-    const extensionMonitorQuerySchema = z.object({
-      campaign_id: z.string().uuid("campaign_id debe ser un UUID válido"),
-    });
-
     app.get(
       "/api/cms/extension-monitor",
       { preHandler: [app.authenticate, authorize({ requireCampaign: true })] },
