@@ -1,113 +1,8 @@
-// blast-handlers.js — background handlers for multi-number WhatsApp blast.
-// Sources: form_submissions (brigadistas data) + conversations (CMS).
+// blast-handlers.js — background handlers for WhatsApp blast.
+// Excel-only mode: contacts come from local Excel, no backend fetch.
+// Remaining handlers: report results, stats, number config, health, report skips.
 
 import { apiFetch } from './api-client.js';
-
-// ── BLAST_GET_FORM_CONTACTS ───────────────────────────────────────────
-// Primary source: form_submissions (12,258 persons with phone + nombre + distrito)
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type !== 'BLAST_GET_FORM_CONTACTS') return;
-
-  const { limit = 200, offset = 0, status = 'nuevo', district, brigadista, own_number } = msg;
-  const qs = new URLSearchParams({ limit, offset, status });
-  if (district)   qs.set('district', district);
-  if (brigadista) qs.set('brigadista', brigadista);
-
-  (async () => {
-    try {
-      const result = await apiFetch(`/api/blast/form-contacts?${qs}`, {
-        headers: own_number ? { 'x-wa-number': own_number } : {},
-      });
-      if (!result.ok) {
-        sendResponse({ ok: false, error: result.message || result.error || 'Failed' });
-        return;
-      }
-      console.log(`[WSPP BLAST] form-contacts: ${result.contacts?.length} / ${result.total}`);
-      sendResponse({ ok: true, contacts: result.contacts, total: result.total });
-    } catch (err) {
-      sendResponse({ ok: false, error: err.message });
-    }
-  })();
-  return true;
-});
-
-// ── BLAST_MARK_HABLADO ────────────────────────────────────────────────
-// ids      → cms_status='hablado' (enviados con éxito)
-// no_wa_ids → cms_status='no_wa'  (sin WhatsApp, reintentables mañana)
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type !== 'BLAST_MARK_HABLADO') return;
-
-  const { ids, no_wa_ids, own_number } = msg;
-  if (!ids?.length && !no_wa_ids?.length) { sendResponse({ ok: true, updated: 0 }); return true; }
-
-  (async () => {
-    try {
-      const body = { ids: ids ?? [] };
-      if (no_wa_ids?.length) body.no_wa_ids = no_wa_ids;
-      const result = await apiFetch('/api/blast/mark-hablado', {
-        method: 'PUT',
-        headers: own_number ? { 'x-wa-number': own_number } : {},
-        body: JSON.stringify(body),
-      });
-      console.log(`[WSPP BLAST] marked hablado: ${result.updated} | no_wa: ${no_wa_ids?.length ?? 0}`);
-      sendResponse({ ok: result.ok, updated: result.updated || 0, error: result.error });
-    } catch (err) {
-      sendResponse({ ok: false, error: err.message });
-    }
-  })();
-  return true;
-});
-
-// ── BLAST_GET_BLOCK_STATS ────────────────────────────────────────────
-// Consulta cuántos del bloque de 50 respondieron
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type !== 'BLAST_GET_BLOCK_STATS') return;
-  const { block_id, own_number } = msg;
-  if (!block_id) { sendResponse({ ok: false }); return true; }
-  apiFetch(`/api/blast/block-stats/${encodeURIComponent(block_id)}`, {
-    headers: own_number ? { 'x-wa-number': own_number } : {},
-  }).then(r => sendResponse({ ok: r.ok, ...r }))
-    .catch(() => sendResponse({ ok: false }));
-  return true;
-});
-
-// ── BLAST_RETRY_NO_WA ─────────────────────────────────────────────────
-// Resetea contactos sin WhatsApp de +24h a 'nuevo' para reintentarlos.
-// Fire-and-forget — no bloquea el arranque del blast.
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type !== 'BLAST_RETRY_NO_WA') return;
-  const { own_number } = msg;
-  apiFetch('/api/blast/retry-no-wa', {
-    method: 'POST',
-    headers: own_number ? { 'x-wa-number': own_number } : {},
-    body: JSON.stringify({}),
-  }).then(r => {
-    if (r.reset > 0) console.log(`[WSPP BLAST] retry-no-wa: ${r.reset} contactos reseteados`);
-  }).catch((err) => { console.warn('[BLAST] retry-no-wa failed:', err?.message || err); });
-  sendResponse({ ok: true });
-  return false;
-});
-
-// ── BLAST_GET_CONTACTS (CMS conversations — legacy) ───────────────────
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type !== 'BLAST_GET_CONTACTS') return;
-
-  const { limit = 200, offset = 0, own_number } = msg;
-  const qs = new URLSearchParams({ limit, offset });
-  if (own_number) qs.set('own_number', own_number);
-
-  (async () => {
-    try {
-      const result = await apiFetch(`/api/blast/contacts?${qs}`);
-      sendResponse(result.ok
-        ? { ok: true, contacts: result.contacts, total: result.total }
-        : { ok: false, error: result.message || result.error });
-    } catch (err) {
-      sendResponse({ ok: false, error: err.message });
-    }
-  })();
-  return true;
-});
 
 // ── BLAST_REPORT ──────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -146,7 +41,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 // ── BLAST_GET_NUMBER_CONFIG ────────────────────────────────────────────
-// Returns segment config for the active WA number.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type !== 'BLAST_GET_NUMBER_CONFIG') return;
   const { own_number } = msg;
@@ -166,7 +60,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 // ── BLAST_GET_NUMBER_HEALTH ───────────────────────────────────────────
-// Returns health/limits for the calling WA number (hourly, daily, warm-up).
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type !== 'BLAST_GET_NUMBER_HEALTH') return;
   const { own_number } = msg;
@@ -185,39 +78,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return true;
 });
 
-// ── BLAST_CHECK_CONTACTS (Capa 5: realtime dedup — inject → background → backend) ─
-// Receives [{id, phone}] → returns {ok, valid: [id...]} of contacts still 'nuevo' in DB.
-// Catches contacts marked 'hablado' by another phone while the blast is running.
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type !== 'BLAST_CHECK_CONTACTS') return;
-
-  const { contacts, own_number } = msg;
-  if (!contacts?.length) { sendResponse({ ok: true, valid: [] }); return true; }
-
-  (async () => {
-    try {
-      const result = await apiFetch('/api/blast/check-contacts', {
-        method: 'POST',
-        headers: own_number ? { 'x-wa-number': own_number } : {},
-        body: JSON.stringify({ contacts }),
-      });
-      sendResponse({ ok: result.ok, valid: result.valid ?? [] });
-    } catch (err) {
-      console.warn('[WSPP BLAST] check-contacts failed:', err.message);
-      // FIX: Fail open — return all contact IDs as valid so blast continues.
-      // Local dedup will still filter duplicates. Previously returned valid:[]
-      // which was fail-closed (discarded all contacts on network error).
-      const allIds = (contacts || []).map(c => c.id).filter(Boolean);
-      sendResponse({ ok: false, valid: allIds });
-    }
-  })();
-  return true;
-});
-
-// ── BLAST_REPORT_SKIPS (Capa 6: visibilidad — inject → background → backend, fire-and-forget) ─
-// Logs skipped contacts to blast_log with reason for visibility/reporting.
-// Reasons: usync_was_in_contacts, contact_collection_agendado, last_received_key,
-//          otro_phone_hablado, sin_nombre, ot
+// ── BLAST_REPORT_SKIPS ────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type !== 'BLAST_REPORT_SKIPS') return;
 
@@ -231,12 +92,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         headers: own_number ? { 'x-wa-number': own_number } : {},
         body: JSON.stringify({ skips }),
       });
-      if (result.ok) {
-        console.log(`[WSPP BLAST] report-skips: ${result.saved ?? 0} logged`);
-      }
+      if (result.ok) console.log(`[WSPP BLAST] report-skips: ${result.saved ?? 0} logged`);
       sendResponse({ ok: result.ok });
     } catch (err) {
-      // Fire-and-forget — never block blast on skip reporting failure
       console.warn('[WSPP BLAST] report-skips failed:', err.message);
       sendResponse({ ok: false });
     }

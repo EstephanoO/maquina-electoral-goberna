@@ -9,7 +9,6 @@ import { errorPayload } from "../../infra/http";
 import { cmsEvents, type CmsMessageEvent, type CmsStatusUpdateEvent, type CmsExtensionMessageEvent } from "../../infra/cms-events";
 import { pool } from "../../db";
 import * as repo from "./repository";
-import { buildCmsChatWsRoutes } from "./ws-chat";
 
 // ── SSE CORS origin validation ───────────────────────────────────────
 // reply.raw bypasses @fastify/cors, so we validate origin manually.
@@ -155,8 +154,7 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
   });
 
   return async (app) => {
-    // Register WebSocket chat routes for real-time WhatsApp messages
-    app.register(buildCmsChatWsRoutes(env));
+    // WebSocket chat routes removed — CMS uses SSE for realtime updates
 
     // ── GET /api/cms/contacts ───────────────────────────────────────
     app.get(
@@ -866,8 +864,14 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
     // ── POST /api/cms/contacts/public ───────────────────────────────────
     // Public endpoint (no auth) — creates a contact for a campaign by slug.
     // Designed for external integrations / frontends that don't have JWT.
+    // SECURITY: Rate limited to 10 req/min per IP to prevent spam flooding.
     app.post(
       "/api/cms/contacts/public",
+      {
+        config: {
+          rateLimit: { max: 10, timeWindow: "1 minute" },
+        },
+      },
       async (request, reply) => {
         const requestId = String(request.id);
 
@@ -879,64 +883,69 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
 
         const { campaign_slug, nombre, telefono, zona, distrito, comentarios } = parsed.data;
 
-        // Resolve campaign by slug
-        const campaignRes = await pool.query<{ id: string; name: string }>(
-          `SELECT id, name FROM campaigns WHERE slug = $1 LIMIT 1`,
-          [campaign_slug],
-        );
+        try {
+          // Resolve campaign by slug
+          const campaignRes = await pool.query<{ id: string; name: string }>(
+            `SELECT id, name FROM campaigns WHERE slug = $1 LIMIT 1`,
+            [campaign_slug],
+          );
 
-        if (campaignRes.rows.length === 0) {
-          return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", `Campaña '${campaign_slug}' no encontrada`));
+          if (campaignRes.rows.length === 0) {
+            return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "Campaña no encontrada"));
+          }
+
+          const campaign = campaignRes.rows[0]!;
+
+          // Check for duplicate phone in same campaign
+          const cleanPhone = telefono.replace(/[^\d]/g, "");
+          const dupeRes = await pool.query<{ id: string }>(
+            `SELECT id FROM form_submissions
+             WHERE campaign_id = $1 AND data->>'telefono' = $2 AND deleted_at IS NULL
+             LIMIT 1`,
+            [campaign.id, cleanPhone],
+          );
+
+          if (dupeRes.rows.length > 0) {
+            return reply.code(409).send(errorPayload(requestId, "DUPLICATE", "Ya existe un contacto con ese teléfono"));
+          }
+
+          // Insert contact
+          const data: Record<string, string> = { nombre, telefono: cleanPhone };
+          if (zona) data.zona = zona;
+          if (distrito) data.distrito = distrito;
+          if (comentarios) data.comentarios = comentarios;
+
+          const insertRes = await pool.query<{ id: string; created_at: string }>(
+            `INSERT INTO form_submissions (campaign_id, data, client_id, cms_status)
+             VALUES ($1, $2, $3, 'nuevo')
+             RETURNING id, created_at`,
+            [campaign.id, JSON.stringify(data), `public-api-${Date.now()}`],
+          );
+
+          const contact = insertRes.rows[0]!;
+
+          app.log.info(
+            { contact_id: contact.id, campaign: campaign_slug, phone: cleanPhone, request_id: requestId },
+            "public contact created",
+          );
+
+          return reply.code(201).send({
+            ok: true,
+            request_id: requestId,
+            contact: {
+              id: contact.id,
+              campaign_id: campaign.id,
+              campaign_name: campaign.name,
+              nombre,
+              telefono: cleanPhone,
+              cms_status: "nuevo",
+              created_at: contact.created_at,
+            },
+          });
+        } catch (err) {
+          app.log.error({ err, request_id: requestId }, "[cms] public contact creation failed");
+          return reply.code(500).send(errorPayload(requestId, "UPSTREAM_ERROR", "Error interno"));
         }
-
-        const campaign = campaignRes.rows[0]!;
-
-        // Check for duplicate phone in same campaign
-        const dupeRes = await pool.query<{ id: string }>(
-          `SELECT id FROM form_submissions
-           WHERE campaign_id = $1 AND data->>'telefono' = $2 AND deleted_at IS NULL
-           LIMIT 1`,
-          [campaign.id, telefono.replace(/[^\d]/g, "")],
-        );
-
-        if (dupeRes.rows.length > 0) {
-          return reply.code(409).send(errorPayload(requestId, "DUPLICATE", `Ya existe un contacto con teléfono ${telefono} en esta campaña`));
-        }
-
-        // Insert contact
-        const cleanPhone = telefono.replace(/[^\d]/g, "");
-        const data: Record<string, string> = { nombre, telefono: cleanPhone };
-        if (zona) data.zona = zona;
-        if (distrito) data.distrito = distrito;
-        if (comentarios) data.comentarios = comentarios;
-
-        const insertRes = await pool.query<{ id: string; created_at: string }>(
-          `INSERT INTO form_submissions (campaign_id, data, client_id, cms_status)
-           VALUES ($1, $2, $3, 'nuevo')
-           RETURNING id, created_at`,
-          [campaign.id, JSON.stringify(data), `public-api-${Date.now()}`],
-        );
-
-        const contact = insertRes.rows[0]!;
-
-        app.log.info(
-          { contact_id: contact.id, campaign: campaign_slug, phone: cleanPhone, request_id: requestId },
-          "public contact created",
-        );
-
-        return reply.code(201).send({
-          ok: true,
-          request_id: requestId,
-          contact: {
-            id: contact.id,
-            campaign_id: campaign.id,
-            campaign_name: campaign.name,
-            nombre,
-            telefono: cleanPhone,
-            cms_status: "nuevo",
-            created_at: contact.created_at,
-          },
-        });
       },
     );
 

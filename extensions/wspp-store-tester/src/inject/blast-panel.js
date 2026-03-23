@@ -364,9 +364,6 @@ function _startCountdown(sec, phase) {
 }
 function _stopCountdown() { clearInterval(_countdownTimer); _countdown = 0; }
 
-// Legacy sets kept for resetSession compat
-const _preClaimedIds = new Set();
-
 // ── Excel batch — paginación local sin backend ───────────────────
 function _fetchBatch(limit) {
   // Return next `limit` contacts from Excel that haven't been sent yet
@@ -641,7 +638,6 @@ export async function startBlast() {
   _excelCursor = 0;
 
   // Sesión limpia — resetear solo estado de sesión, NO historial persistente
-  _preClaimedIds.clear();
   _inFlight.clear();
   _trackedMsgs = [];
   _sentIds.clear();
@@ -1227,16 +1223,12 @@ export function getPeruTimeStr() {
 export function getNumberHealth() { return _lastHealth; }
 export function isNumberAuthorized() { return _lastHealth?.can_send ?? null; }
 export function fetchNumberHealth() { _fetchHealth(); }
-export function fetchNumberConfig() {}
+// fetchNumberConfig removed — _loadRemoteConfig is the real one
 export function getLastSpamResult() { return _lastSpamResult; }
 export function getGlobalStats() { return _globalStats; }
 export function fetchGlobalStats() { _fetchGlobalStats(); }
-export function getCheckpoint() { return null; }
-export function getBlockSent() { return 0; }
-export function getRespondedCount() { return 0; }
-// Legacy stubs for sidebar compat (no longer used but keep contract)
-export function previewSkipAndReplace() {}
-export function previewMarkHablado() {}
+// Legacy stubs removed — getCheckpoint, getBlockSent, getRespondedCount,
+// previewSkipAndReplace, previewMarkHablado — not imported anywhere
 
 export function pauseBlast() {
   _running = false;
@@ -1257,7 +1249,6 @@ export function resetSession() {
   _excelCursor = 0; // Reset Excel pagination
   try { localStorage.removeItem(LS_SENT_KEY); } catch (_) {}
   try { localStorage.removeItem(LS_RETRY_KEY); } catch (_) {}
-  _preClaimedIds.clear();
   _inFlight.clear();
   _trackedMsgs = [];
   _kpis = { sent: 0, failed: 0, no_wa: 0, skipped: 0 };

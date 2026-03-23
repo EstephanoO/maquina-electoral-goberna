@@ -31,7 +31,7 @@ import {
   type CmsSseTagsUpdated,
   type CmsTwilioMessage,
 } from "@/lib/services/cms";
-import { useChatWs } from "@/lib/hooks";
+
 import {
   mergeContactForActiveTab,
   normalizeTagName,
@@ -146,27 +146,7 @@ export function useCmsState() {
     return filtered.slice().sort((a, b) => getContactLastInteractionMs(b) - getContactLastInteractionMs(a));
   }, [contacts, debouncedSearch, selectedTagFilter]);
 
-  // ── WebSocket for real-time WhatsApp messages
-  const handleChatWsEvent = useCallback(
-    (event: { type: string; contactId: string }) => {
-      if (!activeCampaignId) return;
-      if (selectedContactIdRef.current !== event.contactId) return;
-      getContactWhatsAppMessages(activeCampaignId, event.contactId).then((res) => {
-        if (selectedContactIdRef.current !== event.contactId) return;
-        if (res.ok) {
-          setMessagesByContact((prev) => ({ ...prev, [event.contactId]: res.messages }));
-          setMessagesErrorByContact((prev) => ({ ...prev, [event.contactId]: null }));
-        }
-      });
-    },
-    [activeCampaignId],
-  );
-
-  useChatWs({
-    campaignId: activeCampaignId,
-    contactId: selectedContactId,
-    onMessageEvent: handleChatWsEvent,
-  });
+  // WebSocket for real-time WhatsApp messages — removed (CMS uses SSE instead)
 
   // ── Data fetching
   const fetchContacts = useCallback(async () => {

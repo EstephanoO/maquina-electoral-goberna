@@ -10,7 +10,7 @@ import {
   startBlast, pauseBlast, resumeBlast, resetSession,
   refreshPendingCount, setOnUpdate, getTplIndex,
   isWithinBlastWindow, getPeruTimeStr,
-  getNumberHealth, isNumberAuthorized, fetchNumberHealth, fetchNumberConfig,
+  getNumberHealth, isNumberAuthorized, fetchNumberHealth,
   getLastSpamResult,
   getGlobalStats, fetchGlobalStats,
   getPreviewContacts, isPreviewLoading, isPreviewReady, getPreviewSkipped,
@@ -175,7 +175,6 @@ export function toggleSidebar() {
     _renderSidebar();
     if (!isRunning()) refreshPendingCount();
     fetchNumberHealth();
-    fetchNumberConfig();
     fetchGlobalStats();
   } else {
     // Restore FAB container to right edge
@@ -340,13 +339,11 @@ async function _handleDelegatedClick(e) {
   const id = btn.id;
   const skip = btn.dataset?.skip;
   const markH = btn.dataset?.markhablado;
-  const preset = btn.dataset?.preset;
   const tplDel = btn.dataset?.tplDel;
 
-  console.log('[SIDEBAR] delegated click:', id || skip || markH || preset || tplDel || btn.dataset?.audioSend || '?');
+  console.log('[SIDEBAR] delegated click:', id || skip || markH || tplDel || btn.dataset?.audioSend || '?');
 
-  if (id === 'sb-refresh') { refreshPendingCount(); fetchGlobalStats(); _toast('Actualizando...'); }
-  else if (id === 'sb-excel-clear') { clearExcelContacts(); setExcelContacts([]); _renderContent(); }
+  if (id === 'sb-excel-clear') { clearExcelContacts(); setExcelContacts([]); _renderContent(); }
   else if (id === 'sb-history-clear') { clearHistory(); _toast('Historial limpiado'); _renderContent(); }
   else if (id === 'sb-start') { console.log('[SIDEBAR] sb-start clicked → loading preview'); loadPreview(); }
   else if (id === 'sb-preview-confirm') { previewConfirm(); }
@@ -360,20 +357,6 @@ async function _handleDelegatedClick(e) {
     setTemplates(t); _renderContent();
   }
   else if (id === 'sb-open-validator') { toggleValidatorPanel(); }
-  else if (preset) {
-    const n = Number(preset);
-    setConfig({ batchSize: n });
-    const inp = document.querySelector('[data-cfg="batchSize"]');
-    if (inp) inp.value = n;
-    document.querySelectorAll('[data-preset]').forEach(b => {
-      const active = Number(b.dataset.preset) === n;
-      b.style.borderColor = active ? S.accent : S.border;
-      b.style.background  = active ? S.accentBg : S.bg;
-      b.style.color       = active ? S.accent : S.muted;
-    });
-    const startBtn = $('sb-start');
-    if (startBtn) startBtn.textContent = `▶ Enviar a ${n} personas`;
-  }
   else if (id && id.startsWith('sb-limit-')) {
     const n = Number(id.replace('sb-limit-', ''));
     setBlastLimit(n);
@@ -407,16 +390,6 @@ function _handleDelegatedChange(e) {
   const v = Math.max(Number(inp.min || 1), Math.min(Number(inp.max || 9999), Number(inp.value)));
   inp.value = v;
   setConfig({ [inp.dataset.cfg]: v });
-  if (inp.dataset.cfg === 'batchSize') {
-    document.querySelectorAll('[data-preset]').forEach(b => {
-      const active = Number(b.dataset.preset) === v;
-      b.style.borderColor = active ? S.accent : S.border;
-      b.style.background  = active ? S.accentBg : S.bg;
-      b.style.color       = active ? S.accent : S.muted;
-    });
-    const startBtn = $('sb-start');
-    if (startBtn) startBtn.textContent = `▶ Enviar a ${v} personas`;
-  }
 }
 
 function _handleDelegatedInput(e) {

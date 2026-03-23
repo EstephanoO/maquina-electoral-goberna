@@ -269,70 +269,8 @@ window.addEventListener('message', (e) => {
     return;
   }
 
-  // --- BLAST_GET_FORM_CONTACTS (form_submissions: inject → background → inject) ---
-  if (e.data?.type === 'BLAST_GET_FORM_CONTACTS') {
-    const { limit, offset, status, district, brigadista, reqId, own_number } = e.data;
-    chrome.runtime.sendMessage({ type: 'BLAST_GET_FORM_CONTACTS', limit, offset, status, district, brigadista, own_number }, (response) => {
-      if (chrome.runtime.lastError) {
-        window.postMessage({ type: 'BLAST_FORM_CONTACTS_READY', ok: false, error: chrome.runtime.lastError.message, reqId }, WA_ORIGIN);
-        return;
-      }
-      window.postMessage({
-        type: 'BLAST_FORM_CONTACTS_READY',
-        ok: response?.ok ?? false,
-        contacts: response?.contacts ?? [],
-        total: response?.total ?? 0,
-        error: response?.error ?? null,
-        reqId, // ← reenviar el reqId para que blast-panel resuelva el Promise correcto
-      }, WA_ORIGIN);
-    });
-    return;
-  }
-
-  // --- BLAST_GET_CONTACTS (CMS conversations — legacy) ---
-  if (e.data?.type === 'BLAST_GET_CONTACTS') {
-    const { limit, offset, own_number } = e.data;
-    chrome.runtime.sendMessage({ type: 'BLAST_GET_CONTACTS', limit, offset, own_number }, (response) => {
-      if (chrome.runtime.lastError) {
-        window.postMessage({ type: 'BLAST_CONTACTS_READY', ok: false, error: chrome.runtime.lastError.message }, WA_ORIGIN);
-        return;
-      }
-      window.postMessage({
-        type: 'BLAST_CONTACTS_READY',
-        ok: response?.ok ?? false,
-        contacts: response?.contacts ?? [],
-        total: response?.total ?? 0,
-        error: response?.error ?? null,
-      }, WA_ORIGIN);
-    });
-    return;
-  }
-
-  // --- BLAST_MARK_HABLADO (inject → background → inject con confirmación) ---
-  if (e.data?.type === 'BLAST_MARK_HABLADO') {
-    const reqId = e.data.reqId;
-    chrome.runtime.sendMessage({ type: 'BLAST_MARK_HABLADO', ids: e.data.ids, no_wa_ids: e.data.no_wa_ids ?? [], own_number: e.data.own_number }, (response) => {
-      if (chrome.runtime.lastError) {
-        if (reqId) window.postMessage({ type: 'BLAST_MARK_HABLADO_DONE', ok: false, reqId }, WA_ORIGIN);
-        return;
-      }
-      if (reqId) window.postMessage({ type: 'BLAST_MARK_HABLADO_DONE', ok: response?.ok ?? false, reqId }, WA_ORIGIN);
-    });
-    return;
-  }
-
-  // --- BLAST_CHECK_CONTACTS (Capa 5: realtime dedup — inject → background → inject) ---
-  if (e.data?.type === 'BLAST_CHECK_CONTACTS') {
-    const reqId = e.data.reqId;
-    chrome.runtime.sendMessage({ type: 'BLAST_CHECK_CONTACTS', contacts: e.data.contacts, own_number: e.data.own_number }, (response) => {
-      if (chrome.runtime.lastError) {
-        if (reqId) window.postMessage({ type: 'BLAST_CHECK_CONTACTS_DONE', ok: false, valid: [], reqId }, WA_ORIGIN);
-        return;
-      }
-      if (reqId) window.postMessage({ type: 'BLAST_CHECK_CONTACTS_DONE', ok: response?.ok ?? false, valid: response?.valid ?? [], reqId }, WA_ORIGIN);
-    });
-    return;
-  }
+  // BLAST_GET_FORM_CONTACTS, BLAST_GET_CONTACTS, BLAST_MARK_HABLADO,
+  // BLAST_CHECK_CONTACTS — removed (Excel-only mode, no backend fetch)
 
   // --- BLAST_REPORT_SKIPS (Capa 6: visibilidad — inject → background, fire-and-forget) ---
   if (e.data?.type === 'BLAST_REPORT_SKIPS') {
@@ -340,23 +278,7 @@ window.addEventListener('message', (e) => {
     return;
   }
 
-  // --- BLAST_GET_BLOCK_STATS (inject → background → inject) ---
-  if (e.data?.type === 'BLAST_GET_BLOCK_STATS') {
-    chrome.runtime.sendMessage({ type: 'BLAST_GET_BLOCK_STATS', block_id: e.data.block_id, own_number: e.data.own_number }, (response) => {
-      if (chrome.runtime.lastError || !response) {
-        window.postMessage({ type: 'BLAST_BLOCK_STATS_READY', ok: false, error: chrome.runtime.lastError?.message || 'No response' }, WA_ORIGIN);
-        return;
-      }
-      window.postMessage({ type: 'BLAST_BLOCK_STATS_READY', ...response }, WA_ORIGIN);
-    });
-    return;
-  }
-
-  // --- BLAST_RETRY_NO_WA (inject → background, fire-and-forget) ---
-  if (e.data?.type === 'BLAST_RETRY_NO_WA') {
-    chrome.runtime.sendMessage({ type: 'BLAST_RETRY_NO_WA', own_number: e.data.own_number }, () => {});
-    return;
-  }
+  // BLAST_GET_BLOCK_STATS, BLAST_RETRY_NO_WA — removed (Excel-only mode)
 
   // --- BLAST_GET_NUMBER_CONFIG (inject → background → inject) ---
   if (e.data?.type === 'BLAST_GET_NUMBER_CONFIG') {
@@ -377,45 +299,7 @@ window.addEventListener('message', (e) => {
     return;
   }
 
-  // --- BLAST_DEDUP_ADD (inject → storage, fire-and-forget) ---
-  if (e.data?.type === 'BLAST_DEDUP_ADD') {
-    const phone = e.data.phone;
-    if (!phone) return;
-    chrome.storage.local.get({ blast_dedup: [] }, (data) => {
-      const arr = data.blast_dedup || [];
-      if (arr.length > 5000) arr.splice(0, arr.length - 4000); // keep last 4000
-      if (!arr.includes(phone)) arr.push(phone);
-      chrome.storage.local.set({ blast_dedup: arr });
-    });
-    return;
-  }
-
-  // --- BLAST_DEDUP_REQUEST (inject asks for persisted dedup on load) ---
-  if (e.data?.type === 'BLAST_DEDUP_REQUEST') {
-    chrome.storage.local.get({ blast_dedup: [] }, (data) => {
-      window.postMessage({ type: 'BLAST_DEDUP_LOADED', phones: data.blast_dedup || [] }, WA_ORIGIN);
-    });
-    return;
-  }
-
-  // --- BLAST_DEDUP_CLEAR (inject asks to clear persisted dedup) ---
-  if (e.data?.type === 'BLAST_DEDUP_CLEAR') {
-    chrome.storage.local.set({ blast_dedup: [] });
-    return;
-  }
-
-  // --- BLAST_REPORT_CONVERSATION (inject → background, fire-and-forget) ---
-  // Maps blast JID → phone so CMS can track replies from blast contacts.
-  if (e.data?.type === 'BLAST_REPORT_CONVERSATION') {
-    chrome.runtime.sendMessage({
-      type: 'BLAST_REPORT_CONVERSATION',
-      jid: e.data.jid,
-      own_number: e.data.own_number,
-      phone: e.data.phone,
-      contact_name: e.data.contact_name,
-    }, () => {});
-    return;
-  }
+  // BLAST_DEDUP_*, BLAST_REPORT_CONVERSATION — removed (Excel-only mode, localStorage dedup)
 
   // --- BLAST_GET_STATS (inject → background → inject) ---
   // Devuelve stats globales del servidor: total/hablado/pendiente por campaña.
