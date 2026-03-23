@@ -10,7 +10,8 @@
     "build:zip": "node build.js && node zip.js"
   },
   "devDependencies": {
-    "esbuild": "^0.24.0"
+    "esbuild": "^0.24.0",
+    "vitest": "^4.1.1"
   },
   "dependencies": {
     "xlsx": "^0.18.5"

@@ -6,7 +6,9 @@
     "dev": "bun --watch src/server.ts",
     "start": "bun src/server.ts",
     "migrate": "bun src/infra/database/migrate.ts",
-    "seed": "bun scripts/seed-dev.ts"
+    "seed": "bun scripts/seed-dev.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fastify/compress": "^8.1.0",
@@ -29,6 +31,7 @@
     "@types/bcryptjs": "^3.0.0",
     "@types/bun": "latest",
     "@types/pg": "^8.15.6",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.1"
   }
 }
