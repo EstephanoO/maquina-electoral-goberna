@@ -2,7 +2,7 @@
 
 > **Hereda de:** `/AGENTS.md` (root)  
 > **Alcance:** Solo `apps/web/**`  
-> **Ultima actualizacion:** 2026-03-05
+> **Ultima actualizacion:** 2026-03-23
 
 ---
 
@@ -59,7 +59,7 @@ apps/web/
     auth-context.tsx            # Auth state management
     api-client.ts               # Re-export (backward compat)
     query-provider.tsx          # TanStack Query provider
-    mock-data.ts                # Legacy (deprecated)
+
 
   next.config.ts                # Rewrites for /api/* and /uploads/*
   package.json

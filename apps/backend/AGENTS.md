@@ -2,14 +2,13 @@
 
 > **Hereda de:** `/AGENTS.md` (root)  
 > **Alcance:** Solo `apps/backend/**`  
-> **Ultima actualizacion:** 2026-03-05
+> **Ultima actualizacion:** 2026-03-23
 
 ---
 
 ## Flujo de Desarrollo
 
 Ver `/CONTRIBUTING.md` para el flujo GitHub Flow completo.  
-Ver `/CMS_DEVELOPER_GUIDE.md` para guia tecnica del modulo CMS + Twilio.  
 Ver seccion 9 del root `/AGENTS.md` para CI/CD y ramas.
 
 ---
@@ -41,7 +40,7 @@ CMS de contactos con SSE realtime. Integracion WhatsApp via Twilio.
 | Upstream (Tegola) | `src/infra/upstream.ts` |
 | DB migrations | `src/infra/database/` |
 
-### Modulos por dominio (23 modulos)
+### Modulos por dominio (32 directorios — ver root AGENTS.md seccion 5)
 ```
 src/modules/
   health/           <- /api/health, /api/ready, /api/ops/system

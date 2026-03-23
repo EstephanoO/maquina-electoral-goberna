@@ -24,7 +24,7 @@ import {
   type GA4Data,
   type GSCData,
 } from "./_components";
-import { EDWARDS_INFANTE_REGIONS, EDWARDS_INFANTE_GSC } from "./hardcoded-data";
+// hardcoded-data removed — fallback data for edwards-infante no longer needed
 import { FULL_SCREEN, S } from "./analytics-styles";
 
 /** Lazy-load CitiesHeatmap — keeps MapLibre GL out of the analytics chunk */
@@ -88,9 +88,7 @@ export default function DigitalPage() {
           const analytics = res.data.analytics;
           const regions = analytics.regions?.length
             ? analytics.regions
-            : slug === "edwards-infante"
-              ? EDWARDS_INFANTE_REGIONS
-              : [];
+            : [];
           setGA4Data({
             ...analytics,
             pagesDetailed: analytics.pagesDetailed || [],
@@ -201,8 +199,8 @@ export default function DigitalPage() {
   const hasDailyUsers = ga4Data.dailyUsers.some((d) => d.newUsers > 0 || d.returningUsers > 0);
   const hasRegions = (ga4Data.regions?.length ?? 0) > 0;
 
-  // ── GSC: datos hardcodeados para edwards-infante (única campaña con datos GSC por ahora) ──
-  const gscData: GSCData | null = slug === "edwards-infante" ? EDWARDS_INFANTE_GSC : null;
+  // GSC data — loaded from API when available
+  const gscData: GSCData | null = null;
 
   /* ═══════════════════════════════════════════════════════════════
      UNIFIED DASHBOARD — Single scrollable view

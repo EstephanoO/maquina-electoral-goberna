@@ -2,14 +2,14 @@
 
 > **Hereda de:** `/AGENTS.md` (root) y `apps/backend/AGENTS.md`  
 > **Alcance:** Solo `apps/backend/src/modules/**`  
-> **Ultima actualizacion:** 2026-03-05
+> **Ultima actualizacion:** 2026-03-23
 
 ---
 
 ## Flujo de Desarrollo
 
 Ver `/CONTRIBUTING.md` para el flujo GitHub Flow completo.  
-Ver `/CMS_DEVELOPER_GUIDE.md` para guia tecnica del modulo CMS + Twilio.
+
 
 ---
 
@@ -19,33 +19,11 @@ Ver `/CMS_DEVELOPER_GUIDE.md` para guia tecnica del modulo CMS + Twilio.
 - Sin dependencia circular entre modulos.
 - Endpoints y payloads explicitos; cero contratos implicitos.
 
-## Modulos registrados en app.ts (23 total)
+## Modulos registrados en app.ts (32 directorios en disco)
 
-| Modulo | Prefijo API | Tipo |
-|--------|-------------|------|
-| `health` | `/api/health`, `/api/ready`, `/api/ops/system` | Ops |
-| `auth` | `/api/auth/*`, `/api/users/*` | Core |
-| `campaigns` | `/api/campaigns/*`, `/api/candidates`, `/api/consultors/*` | Core |
-| `forms` | `/api/forms/*` | Ingesta (write-behind) |
-| `form-submissions` | `/api/form-submissions/*` | Ingesta (directo) |
-| `form-definitions` | `/api/form-definitions/*` | Config |
-| `agents` | `/api/agents/*`, `/ws/tracking` | Ingesta (write-behind + WS) |
-| `meets` | `/api/meets/*` | Operativo |
-| `zones` | `/api/zones/*` | Geo |
-| `org-hierarchy` | `/api/org-hierarchy/*` | Operativo |
-| `invitations` | `/api/invitations/*` | Onboarding |
-| `access-requests` | `/api/access-requests/*` | Onboarding |
-| `map` | `/api/config`, `/api/tiles/*`, `/api/capabilities` | Geo |
-| `uploads` | `/api/uploads/*` | Archivos |
-| `analytics` | `/api/campaigns/:id/analytics`, `/api/analytics/*` | Digital |
-| `cms` | `/api/cms/*` | CMS (SSE realtime) |
-| `objectives` | `/api/objectives/*` | Operativo |
-| `twilio` | `/api/twilio/*`, `/api/webhooks/twilio/*` | Messaging |
-| `leads` | `/api/leads/*` | Operativo (+ Telegram notify) |
-| `support` | `/api/support/*` | Soporte interno |
-| `validacion` | `/api/validacion/*` | Campo |
-| `voluntarios` | `/api/voluntarios/*` | Campo |
-| `regional-leaders` | `/api/regional-leaders/*` | Campo |
+> Fuente de verdad: contar directorios en `src/modules/`. El root AGENTS.md lista 30 registrados.
+
+Ver seccion 5 del root `/AGENTS.md` para la tabla completa de modulos y prefijos API.
 
 **Ruta de metricas:** `GET /api/metrics` esta definido directamente en `app.ts` (no en un modulo).
 

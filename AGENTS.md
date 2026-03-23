@@ -1,6 +1,6 @@
 # AGENTS.md — Goberna Platform
 > Fuente de verdad absoluta del monorepo. Si hay conflicto con cualquier otro AGENTS.md, este prevalece.
-> Última actualización: 2026-03-17 | Leer COMPLETO antes de cualquier tarea.
+> Última actualización: 2026-03-23 | Leer COMPLETO antes de cualquier tarea.
 
 ---
 
@@ -98,7 +98,7 @@ maquina-electoral-goberna/
 | Data fetching | TanStack Query | 5.x | ✅ Producción |
 | Mobile | Expo + React Native | SDK 54, RN 0.81 | 🟡 Desarrollo |
 | Offline mobile | expo-sqlite | 16.x | 🟡 Desarrollo |
-| Extensión Chrome | MV3 + esbuild IIFE | — | ✅ Producción (v9.0.0) |
+| Extensión Chrome | MV3 + esbuild IIFE | — | ✅ Producción (v10.5.2) |
 | TTS | ElevenLabs API | — | ✅ En uso |
 | CI/CD | GitHub Actions | — | ✅ Producción |
 
@@ -266,9 +266,10 @@ const prepMod = _requireAny('WAWebPrepRawMedia', 'WAWebPrepareMediaUtils');
 
 **Regla 4 — Build + distribución:**
 ```bash
-node build.js        # genera inject.js + background.js
-node zip.js          # genera apps/web/public/whatsapp-helper.zip
-# Siempre actualizar: manifest.json version + package.json + página /extension
+node build.js        # genera inject.js + background.js (gitignored)
+node zip.js          # genera apps/web/public/whatsapp-helper.zip (tracked)
+# Siempre: build → zip → commit zip → push
+# inject.js y background.js están en .gitignore — solo el zip se commitea
 ```
 
 ### 6.3 Web Next.js
@@ -570,7 +571,7 @@ docker exec nexus_postgres psql -U appuser -d appdb -c "SELECT ..."
 | Backend | 30 módulos en app.ts | ✅ Producción |
 | Web | Next.js 16.1 | ✅ Producción (Vercel) |
 | Mobile | Expo SDK 54 | 🟡 Desarrollo |
-| Extensión Chrome | v9.0.0 | ✅ Producción |
+| Extensión Chrome | v10.5.2 | ✅ Producción |
 | PostgreSQL | 15 + PostGIS 3.4 | ✅ Producción |
 | Redis | 7.4 | ✅ Producción (noeviction) |
 | Tegola | latest | ✅ Producción |
