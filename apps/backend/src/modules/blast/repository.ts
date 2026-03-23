@@ -60,6 +60,25 @@ export async function ensureBlastTables(): Promise<void> {
       ADD COLUMN IF NOT EXISTS block_id      text
   `);
 
+  // FIX: Legacy columns 'jid' and 'message' had NOT NULL constraints.
+  // New INSERT paths (markHablado) don't include these columns, causing
+  // "null value in column 'jid' violates not-null constraint".
+  // Drop NOT NULL + set defaults so they're optional for new inserts.
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE blast_log ALTER COLUMN jid DROP NOT NULL;
+      ALTER TABLE blast_log ALTER COLUMN jid SET DEFAULT '';
+    EXCEPTION WHEN undefined_column THEN NULL;
+    END $$
+  `);
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE blast_log ALTER COLUMN message DROP NOT NULL;
+      ALTER TABLE blast_log ALTER COLUMN message SET DEFAULT '';
+    EXCEPTION WHEN undefined_column THEN NULL;
+    END $$
+  `);
+
   // Index on normalized contact_phone for fast dedup lookups.
   // contact_phone is stored as digits-only (normalized at INSERT time),
   // so a plain index works without regexp_replace per-query.
@@ -1145,7 +1164,7 @@ export async function checkContactsStillNew(params: {
         SELECT 1 FROM blast_blocklist bl2
         WHERE bl2.phone_digits = regexp_replace(COALESCE(fs.data->>'telefono', ''), '[^0-9]', '', 'g')
       )
-  `);
+  `, args);
 
   return new Set(rows.map(r => r.id));
 }

@@ -1,5 +1,6 @@
-// blast-panel.js — v8: preview completo + anti-ban mejorado
-// Preview antes de enviar, burst-rest pattern, delays humanos.
+// blast-panel.js — v9: Excel-only blast
+// Contactos vienen de un archivo Excel subido por el operador.
+// Sin backend para contactos — solo dedup local + envío WA.
 
 import { WA_ORIGIN, getOwnNumber } from './bootstrap.js';
 
@@ -46,41 +47,71 @@ let _totalPending = null;
 let _blastLimit = 0; // 0 = infinito, >0 = parar al alcanzar
 let _sessionSent = 0;
 
-// ── Capa 4: localStorage persistente anti-crash ─────────────────────
-// Solo persiste si hubo al menos 1 envío exitoso en esta sesión.
-// Si la sesión se limpió manualmente (resetSession), arranca limpio.
-// Key: wspp_blast_sent_v1 — { phones: [...], ids: [...], savedAt: timestamp, sessionId: string }
-// Cleanup automático: entradas > 7 días se descartan al cargar.
-const LS_SENT_KEY = 'wspp_blast_sent_v1';
-const LS_SENT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 días
+// ── Historial persistente de enviados (cross-session) ────────────────
+// Acumula teléfonos enviados entre sesiones para evitar doble mensaje
+// al re-subir el mismo Excel. Se guarda en localStorage.
+// Key: wspp_blast_history_v1 — { phones: [...], savedAt: timestamp }
+const LS_HISTORY_KEY = 'wspp_blast_history_v1';
+const LS_SENT_KEY = 'wspp_blast_sent_v1'; // legacy, kept for resetSession compat
+const LS_SENT_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 días
 
-// Dedup local
+// Dedup local (sesión actual)
 const _sentPhones = new Set();
 const _sentIds = new Set();
 
-// Session ID — cambia en cada startBlast(). Si no coincide, significa que
-// es una sesión nueva y se ignoran los datos de localStorage.
+// Historial persistente (cross-session) — solo teléfonos
+let _historyPhones = new Set();
+let _historyFilteredCount = 0; // cuántos se filtraron al cargar Excel
+
+function _loadHistory() {
+  try {
+    const raw = localStorage.getItem(LS_HISTORY_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    // Descartar si es muy viejo
+    if (data.savedAt && Date.now() - data.savedAt > LS_SENT_TTL_MS) {
+      localStorage.removeItem(LS_HISTORY_KEY);
+      return;
+    }
+    if (Array.isArray(data.phones)) {
+      _historyPhones = new Set(data.phones);
+      console.log(`[BLAST] Historial cargado: ${_historyPhones.size} teléfonos enviados previamente`);
+    }
+  } catch (_) {}
+}
+
+function _saveHistory() {
+  try {
+    // Merge sesión actual con historial
+    for (const p of _sentPhones) _historyPhones.add(p);
+    // Cap a 20000 para no reventar localStorage
+    const all = [..._historyPhones];
+    const phones = all.length > 20000 ? all.slice(-20000) : all;
+    localStorage.setItem(LS_HISTORY_KEY, JSON.stringify({
+      phones,
+      savedAt: Date.now(),
+      count: phones.length,
+    }));
+  } catch (_) {}
+}
+
+// Cargar historial al iniciar
+_loadHistory();
+
+// ── Excel contacts ────────────────────────────────────────────────
+// Source of truth for blast contacts. Set by sidebar after parsing Excel.
+let _excelContacts = [];   // [{id, nombre, telefono, ...}]
+let _excelCursor = 0;      // pagination cursor into _excelContacts
+
+// Session ID — cambia en cada startBlast().
 let _currentSessionId = null;
 
 // Flag: ¿esta sesión ya tuvo envíos exitosos? Solo entonces persistimos.
 let _hasSentThisSession = false;
 
-// _loadSentFromStorage removed — recovery logic inlined in startBlast()
-
 function _saveSentToStorage() {
-  // Solo persiste si hubo envíos esta sesión
   if (!_hasSentThisSession) return;
-  try {
-    // Cap to last 5000 entries to avoid localStorage quota issues
-    const phones = [..._sentPhones];
-    const ids = [..._sentIds];
-    localStorage.setItem(LS_SENT_KEY, JSON.stringify({
-      phones: phones.length > 5000 ? phones.slice(-5000) : phones,
-      ids: ids.length > 5000 ? ids.slice(-5000) : ids,
-      savedAt: Date.now(),
-      sessionId: _currentSessionId,
-    }));
-  } catch (_) {}
+  _saveHistory();
 }
 
 // In-flight lock
@@ -163,6 +194,9 @@ function _titleCasePhrase(phrase) {
   return phrase.split(/\s+/).map(_toTitleCase).join(' ');
 }
 
+// _v: helper — acepta {{var}} y {{var} (typo tolerante: 1 o 2 llaves de cierre)
+function _v(name) { return new RegExp(`\\{\\{${name}\\}{1,2}`, 'gi'); }
+
 function _applyVars(text, c, seed) {
   const rawNombre = ((c.nombre || '') + ' ' + (c.apellidos || '')).trim().split(/\s+/)[0] || 'amigo';
   const nombre = _toTitleCase(rawNombre);
@@ -170,15 +204,15 @@ function _applyVars(text, c, seed) {
   const brigadista = _toTitleCase(rawBrigadista.split(/\s+/)[0] || 'un colaborador');
   const now = new Date();
   return text
-    .replace(/\{\{nombre\}\}/gi, nombre)
-    .replace(/\{\{brigadista\}\}/gi, brigadista)
-    .replace(/\{\{departamento\}\}/gi, _titleCasePhrase((c.departamento || c.distrito || '').trim()) || 'tu zona')
-    .replace(/\{\{saludo\}\}/gi, SALUDOS[_hashSeed(String(seed), 1) % SALUDOS.length])
-    .replace(/\{\{cierre\}\}/gi, CIERRES[_hashSeed(String(seed), 2) % CIERRES.length])
-    .replace(/\{\{emoji\}\}/gi,  EMOJIS[_hashSeed(String(seed),  3) % EMOJIS.length])
-    .replace(/\{\{distrito\}\}/gi, c.distrito || '')
-    .replace(/\{\{fecha\}\}/gi, now.toLocaleDateString('es-PE'))
-    .replace(/\{\{hora\}\}/gi, now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }));
+    .replace(_v('nombre'), nombre)
+    .replace(_v('brigadista'), brigadista)
+    .replace(_v('departamento'), _titleCasePhrase((c.departamento || c.distrito || '').trim()) || 'tu zona')
+    .replace(_v('saludo'), SALUDOS[_hashSeed(String(seed), 1) % SALUDOS.length])
+    .replace(_v('cierre'), CIERRES[_hashSeed(String(seed), 2) % CIERRES.length])
+    .replace(_v('emoji'),  EMOJIS[_hashSeed(String(seed),  3) % EMOJIS.length])
+    .replace(_v('distrito'), c.distrito || '')
+    .replace(_v('fecha'), now.toLocaleDateString('es-PE'))
+    .replace(_v('hora'), now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }));
 }
 
 function _spinMessage(tpl, c, idx) {
@@ -333,155 +367,33 @@ function _stopCountdown() { clearInterval(_countdownTimer); _countdown = 0; }
 // Legacy sets kept for resetSession compat
 const _preClaimedIds = new Set();
 
-// ── Backend comms ─────────────────────────────────────────────────
-let _reqIdCounter = 0;
-function _nextReqId() { return 'blast_' + (++_reqIdCounter) + '_' + Date.now(); }
-const _pendingRequests = new Map();
-
-window.addEventListener('message', (e) => {
-  if (e.source !== window || e.data?.type !== 'BLAST_FORM_CONTACTS_READY') return;
-  const reqId = e.data.reqId;
-  console.log(`[BLAST FETCH] BLAST_FORM_CONTACTS_READY received reqId=${reqId} ok=${e.data.ok} contacts=${e.data.contacts?.length ?? '?'} total=${e.data.total}`);
-  if (!reqId) return;
-  const pending = _pendingRequests.get(reqId);
-  if (!pending) {
-    console.warn(`[BLAST FETCH] reqId=${reqId} not found in _pendingRequests — already resolved or cleared`);
-    return;
-  }
-  clearTimeout(pending.timer);
-  _pendingRequests.delete(reqId);
-  if (e.data.ok) {
-    _totalPending = e.data.total ?? _totalPending;
-    console.log(`[BLAST FETCH] resolving with ${e.data.contacts?.length ?? 0} contacts, totalPending=${_totalPending}`);
-    pending.resolve(e.data.contacts || []);
-    _notify();
-  } else {
-    console.warn(`[BLAST FETCH] backend error: ${e.data.error}`);
-    pending.resolve([]);
-  }
-});
-
+// ── Excel batch — paginación local sin backend ───────────────────
 function _fetchBatch(limit) {
-  return new Promise((resolve) => {
-    const reqId = _nextReqId();
-    const ownNum = getOwnNumber();
-    console.log(`[BLAST FETCH] reqId=${reqId} limit=${limit} own=${ownNum} brigadista=${cfg.brigadista || '(ninguno)'}`);
-    const timer = setTimeout(() => {
-      console.warn(`[BLAST FETCH] TIMEOUT — reqId=${reqId} no response after 15s`);
-      _pendingRequests.delete(reqId);
-      resolve([]);
-    }, 15000);
-    _pendingRequests.set(reqId, { resolve, timer });
-    window.postMessage({
-      type: 'BLAST_GET_FORM_CONTACTS',
-      limit, offset: 0, status: 'nuevo',
-      brigadista: cfg.brigadista || '',
-      reqId,
-      own_number: ownNum,
-    }, WA_ORIGIN);
-    console.log(`[BLAST FETCH] message sent, waiting for BLAST_FORM_CONTACTS_READY reqId=${reqId}`);
-  });
-}
-
-// Retry queue: si markHablado falla, guardamos y reintentamos en el próximo batch
-const LS_RETRY_KEY = 'wspp_blast_retry_hablado';
-
-function _loadRetryQueue() {
-  try {
-    const raw = localStorage.getItem(LS_RETRY_KEY);
-    if (!raw) return { ids: [], no_wa_ids: [] };
-    return JSON.parse(raw);
-  } catch (_) { return { ids: [], no_wa_ids: [] }; }
-}
-
-function _saveRetryQueue(ids, no_wa_ids) {
-  if (!ids.length && !no_wa_ids.length) {
-    try { localStorage.removeItem(LS_RETRY_KEY); } catch (_) {}
-    return;
+  // Return next `limit` contacts from Excel that haven't been sent yet
+  const result = [];
+  while (result.length < limit && _excelCursor < _excelContacts.length) {
+    const c = _excelContacts[_excelCursor++];
+    const np = _normalizePhone(c.telefono);
+    // Skip already sent (dedup)
+    if (c.id && _sentIds.has(c.id)) continue;
+    if (np && _sentPhones.has(np)) continue;
+    result.push(c);
   }
-  // Cap to last 500 entries to prevent localStorage bloat
-  try { localStorage.setItem(LS_RETRY_KEY, JSON.stringify({
-    ids: ids.length > 500 ? ids.slice(-500) : ids,
-    no_wa_ids: no_wa_ids.length > 500 ? no_wa_ids.slice(-500) : no_wa_ids,
-  })); } catch (_) {}
+  _totalPending = Math.max(0, _excelContacts.length - _excelCursor);
+  console.log(`[BLAST FETCH] Excel batch: ${result.length} contactos, cursor=${_excelCursor}/${_excelContacts.length}, pending=${_totalPending}`);
+  return Promise.resolve(result);
 }
 
+// ── markHablado — local only (Excel mode, no backend) ────────────
+const LS_RETRY_KEY = 'wspp_blast_retry_hablado'; // kept for resetSession compat
 async function _markHablado(ids, no_wa_ids) {
-  // Merge with retry queue
-  const retry = _loadRetryQueue();
-  const allIds = [...new Set([...ids, ...(retry.ids || [])])];
-  const allNoWa = [...new Set([...(no_wa_ids ?? []), ...(retry.no_wa_ids || [])])];
-
-  if (!allIds.length && !allNoWa.length) return true;
-
-  const ok = await new Promise((resolve) => {
-    const reqId = 'mh_' + Date.now();
-    const timer = setTimeout(() => {
-      window.removeEventListener('message', onReply);
-      resolve(false);
-    }, 8000);
-    function onReply(e) {
-      if (e.source !== window || e.data?.type !== 'BLAST_MARK_HABLADO_DONE' || e.data.reqId !== reqId) return;
-      window.removeEventListener('message', onReply);
-      clearTimeout(timer);
-      resolve(e.data.ok ?? false);
-    }
-    window.addEventListener('message', onReply);
-    window.postMessage({
-      type: 'BLAST_MARK_HABLADO', ids: allIds, no_wa_ids: allNoWa,
-      own_number: getOwnNumber(), reqId
-    }, WA_ORIGIN);
-  });
-
-  if (ok) {
-    // Success — clear retry queue
-    _saveRetryQueue([], []);
-    console.log(`[BLAST] markHablado OK: ${allIds.length} hablado, ${allNoWa.length} no_wa`);
-  } else {
-    // Failed — save to retry queue for next batch
-    _saveRetryQueue(allIds, allNoWa);
-    console.warn(`[BLAST] markHablado FAILED — queued ${allIds.length} ids for retry`);
-  }
-  return ok;
+  // In Excel mode, just track locally — no backend call needed
+  for (const id of ids) _sentIds.add(id);
+  console.log(`[BLAST] markHablado local: ${ids.length} hablado, ${(no_wa_ids || []).length} no_wa`);
+  return true;
 }
 
-// ── Capa 5: realtime check con backend antes de procesar ─────────────
-// Verifica que cada contacto siga siendo 'nuevo' en la DB.
-// Cubre el caso donde OTRO phone lo marcó 'hablado' mientras este corre.
-// IMPORTANTE: En timeout, retornamos TODOS los IDs (asumir válidos) para
-// confiar en el dedup local. NO retornar Set vacío porque eso filtraría todo.
-function _checkContactsBackend(contacts) {
-  if (!contacts.length) return Promise.resolve(new Set());
-  // Extraer IDs para fallback en caso de timeout
-  const allIds = new Set(contacts.filter(c => c.id).map(c => c.id));
-  return new Promise((resolve) => {
-    const reqId = 'chk_' + Date.now();
-    console.log(`[BLAST CHECK] checking ${contacts.length} contacts with backend`);
-    const timer = setTimeout(() => {
-      window.removeEventListener('message', onReply);
-      console.warn('[BLAST CHECK] TIMEOUT — asumiendo todos válidos, confiando en dedup local');
-      resolve(allIds); // fallback SEGURO: asumir todos válidos, confiar en dedup local
-    }, 10000);
-    function onReply(e) {
-      if (e.source !== window || e.data?.type !== 'BLAST_CHECK_CONTACTS_DONE' || e.data.reqId !== reqId) return;
-      window.removeEventListener('message', onReply);
-      clearTimeout(timer);
-      const valid = e.data.valid ?? [];
-      console.log(`[BLAST CHECK] done: ${valid.length}/${contacts.length} still 'nuevo', filtered ${contacts.length - valid.length}`);
-      resolve(new Set(valid));
-    }
-    window.addEventListener('message', onReply);
-    window.postMessage({
-      type: 'BLAST_CHECK_CONTACTS',
-      contacts: contacts.map(c => ({ id: c.id, phone: c.telefono })),
-      own_number: getOwnNumber(),
-      reqId,
-    }, WA_ORIGIN);
-  });
-}
-
-// ── Capa 6: reportar skips a blast_log para visibilidad dashboard ──
-// Registra cada skip con su razón para trazabilidad.
+// ── Capa 6: reportar skips — noop in Excel mode ──
 function _reportSkips(skips) {
   if (!skips.length) return;
   window.postMessage({
@@ -711,6 +623,13 @@ export async function startBlast() {
   if (_running) return;
   if (!tpls.length || !tpls[0].trim()) return;
 
+  // Excel mode: must have contacts loaded
+  if (!_excelContacts.length && !_confirmedPreview?.length) {
+    _lastResults.unshift({ nombre: '❌ Sin Excel', telefono: '', status: 'failed', ack: -1, error: 'Subí un archivo Excel con contactos primero.' });
+    _notify();
+    return;
+  }
+
   const activeNumber = getOwnNumber();
   if (!activeNumber) {
     _lastResults.unshift({ nombre: '❌ Sin número', telefono: '', status: 'failed', ack: -1, error: 'No se detectó el número. Recargá WA Web.' });
@@ -718,25 +637,25 @@ export async function startBlast() {
     return;
   }
 
-  // ══════════════════════════════════════════════════════════════════
-  // FIX: No cross-session recovery. The backend is the source of truth.
-  // If it returns a contact as status='nuevo', we trust it and send.
-  // The old 7-day recovery was loading thousands of stale phone numbers
-  // that blocked the entire blast — the backend kept returning contacts
-  // that the local dedup rejected, causing "3 consecutive all-dedup batches".
-  // Local dedup now ONLY protects within the current blast session.
+  // Reset Excel cursor for new session
+  _excelCursor = 0;
+
+  // Sesión limpia — resetear solo estado de sesión, NO historial persistente
   _preClaimedIds.clear();
   _inFlight.clear();
   _trackedMsgs = [];
-  _sentPhones.clear();
   _sentIds.clear();
-  try { localStorage.removeItem(LS_SENT_KEY); } catch (_) {}
-  console.log('[BLAST] Sesión limpia — dedup solo intra-sesión');
+  // _sentPhones NO se limpia — se acumula para dedup cross-session
+  console.log(`[BLAST] Sesión limpia — historial: ${_historyPhones.size} teléfonos, sesión: ${_sentPhones.size}`);
 
   // Nueva sesión
   _currentSessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
   _hasSentThisSession = false;
   console.log(`[BLAST] Iniciando sesión=${_currentSessionId}`);
+
+  // _previewOnlyMode is set by previewConfirm() BEFORE calling startBlast().
+  // If startBlast() is called directly (not from preview), reset the flag.
+  if (!_confirmedPreview) _previewOnlyMode = false;
 
   _running = true;
   _kpis = { sent: 0, failed: 0, no_wa: 0, skipped: 0 };
@@ -828,6 +747,14 @@ export async function startBlast() {
       rawBatch = _confirmedPreview;
       _confirmedPreview = null; // consume once
       console.log(`[BLAST LOOP] usando ${rawBatch.length} contactos del preview confirmado`);
+    } else if (_previewOnlyMode) {
+      // FIX: Preview-only blast — do NOT fetch more contacts from backend.
+      // The operator only approved the previewed contacts. Stop here.
+      console.log('[BLAST LOOP] Preview-only mode — no más contactos, parando');
+      _running = false;
+      _stopCountdown();
+      _notify();
+      break;
     } else {
       rawBatch = await _fetchBatch(cfg.batchSize);
       console.log(`[BLAST LOOP] batch recibido: ${rawBatch.length} contactos`);
@@ -875,40 +802,8 @@ export async function startBlast() {
     const skipsBatch   = [];  // skips para reportar al backend (Capa 6)
     const sentResults  = [];  // envíos exitosos para blast_log (batched)
 
-    // ── Capa 5: realtime check con backend antes de procesar ──────
-    let filteredBatch = batch;
-    if (batch.length) {
-      const validIds = await _checkContactsBackend(batch);
-      if (validIds.size < batch.length) {
-        const removed = batch.filter(c => c.id && !validIds.has(c.id));
-        console.log(`[BLAST] Capa5: ${removed.length} contactos ya marcados por otro phone — skip`);
-        for (const c of removed) {
-          _kpis.skipped++;
-          if (c.id) { _sentIds.add(c.id); _saveSentToStorage(); }
-          skipsBatch.push({
-            contact_id: c.id ?? null,
-            contact_phone: c.telefono ?? '',
-            contact_name: ((c.nombre || '') + ' ' + (c.apellidos || '')).trim() || null,
-            reason: 'otro_phone_hablado',
-          });
-          _lastResults.unshift({
-            nombre: ((c.nombre || '') + ' ' + (c.apellidos || '')).trim() || '—',
-            telefono: c.telefono ?? '', status: 'skipped', ack: -1,
-            error: 'Ya marcado por otro phone — skip',
-          });
-          if (_lastResults.length > 30) _lastResults.length = 30;
-        }
-        _notify();
-        filteredBatch = batch.filter(c => !c.id || validIds.has(c.id));
-        console.log(`[BLAST] Capa5: batch filtrado de ${batch.length} → ${filteredBatch.length} contactos`);
-      }
-    }
-
-    if (!filteredBatch.length) {
-      console.log('[BLAST] Capa5: todos filtrados, continuando al siguiente batch');
-      _reportSkips(skipsBatch);
-      continue;
-    }
+    // ── Excel mode: no Capa5 backend check — dedup is local only ──
+    const filteredBatch = batch;
 
     // ── PROCESO: sin pre-claim — marcar hablado SOLO después de enviar ──
     for (let i = 0; i < filteredBatch.length && _running; i++) {
@@ -1262,7 +1157,7 @@ export function previewCancel() {
   _notify();
 }
 
-// Confirm preview → start blast with these specific contacts
+// Confirm preview → start blast with these specific contacts ONLY
 export function previewConfirm() {
   if (!_previewReady || !_previewContacts.length) return;
   // Filter out skipped and flagged-inContacts
@@ -1271,6 +1166,12 @@ export function previewConfirm() {
 
   // Store confirmed contacts for the blast loop to use
   _confirmedPreview = confirmed;
+  // FIX: Lock blast to ONLY the confirmed preview contacts.
+  // Previously _blastLimit stayed at 0 (∞), so after the first batch
+  // (the preview) was consumed, the loop kept fetching MORE contacts
+  // from the backend — sending to people the operator never reviewed.
+  _blastLimit = confirmed.length;
+  _previewOnlyMode = true;
   _previewReady = false;
   _previewFlags.clear();
   _notify();
@@ -1279,10 +1180,47 @@ export function previewConfirm() {
 
 // Internal: confirmed contacts from preview (null = use normal fetch)
 let _confirmedPreview = null;
+// When true, the blast was started from a preview and must NOT fetch more contacts
+let _previewOnlyMode = false;
+
+// ── Excel contacts setter — called by sidebar after parsing ──────
+export function setExcelContacts(contacts) {
+  const all = contacts || [];
+  // Filtrar contactos que ya fueron enviados (historial persistente)
+  const beforeCount = all.length;
+  _excelContacts = all.filter(c => {
+    const phone = (c.telefono || '').replace(/\D/g, '');
+    if (!phone) return true; // keep invalid phones, they'll fail later
+    return !_historyPhones.has(phone);
+  });
+  _historyFilteredCount = beforeCount - _excelContacts.length;
+  _excelCursor = 0;
+  _totalPending = _excelContacts.length;
+  if (_historyFilteredCount > 0) {
+    console.log(`[BLAST] Excel: ${beforeCount} total, ${_historyFilteredCount} ya enviados antes, ${_excelContacts.length} nuevos`);
+  } else {
+    console.log(`[BLAST] Excel contacts set: ${_excelContacts.length} (todos nuevos)`);
+  }
+  _notify();
+}
+export function getExcelContactCount() { return _excelContacts.length; }
+export function getExcelFilteredCount() { return _historyFilteredCount; }
+export function getHistoryCount() { return _historyPhones.size; }
+export function hasExcelLoaded() { return _excelContacts.length > 0; }
+export function clearHistory() {
+  _historyPhones.clear();
+  _historyFilteredCount = 0;
+  try { localStorage.removeItem(LS_HISTORY_KEY); } catch (_) {}
+  console.log('[BLAST] Historial de enviados limpiado');
+}
 
 export function isPaused() { return false; }
 export function getPhase() { return ''; }
-export function refreshPendingCount() { _fetchGlobalStats(); }
+export function refreshPendingCount() {
+  // In Excel mode, pending = total - cursor
+  _totalPending = Math.max(0, _excelContacts.length - _excelCursor - _sentIds.size);
+  _notify();
+}
 export function getPeruTimeStr() {
   return new Date().toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit' });
 }
@@ -1312,8 +1250,11 @@ export function resumeBlast() {
 }
 
 export function resetSession() {
+  // Guardar historial antes de limpiar sesión
+  _saveHistory();
   _sentPhones.clear();
   _sentIds.clear();
+  _excelCursor = 0; // Reset Excel pagination
   try { localStorage.removeItem(LS_SENT_KEY); } catch (_) {}
   try { localStorage.removeItem(LS_RETRY_KEY); } catch (_) {}
   _preClaimedIds.clear();
@@ -1329,6 +1270,7 @@ export function resetSession() {
   _burstCount = 0;
   _hasSentThisSession = false;
   _confirmedPreview = null;
+  _previewOnlyMode = false;
   _previewContacts = [];
   _previewSkippedIds.clear();
   _previewMessages.clear();

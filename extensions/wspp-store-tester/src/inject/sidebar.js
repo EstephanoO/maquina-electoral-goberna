@@ -17,7 +17,10 @@ import {
   getPreviewMessage, getPreviewFlags, loadPreview, previewSkipContact,
   previewMarkHabladoAndReplace, previewConfirm, previewCancel,
   setBlastLimit, getBlastLimit, getSessionSent,
+  setExcelContacts, getExcelContactCount, getExcelFilteredCount,
+  getHistoryCount, hasExcelLoaded, clearHistory,
 } from './blast-panel.js';
+import { parseExcelFile, getExcelFileName, getExcelError, clearExcelContacts } from './excel-loader.js';
 import { analyzeTemplates } from './template-analyzer.js';
 import { toggleValidatorPanel } from './wa-validator-panel.js';
 import { sendAudioAsPTT, toggleCatalogPanel } from './audio-catalog-panel.js';
@@ -343,7 +346,8 @@ async function _handleDelegatedClick(e) {
   console.log('[SIDEBAR] delegated click:', id || skip || markH || preset || tplDel || btn.dataset?.audioSend || '?');
 
   if (id === 'sb-refresh') { refreshPendingCount(); fetchGlobalStats(); _toast('Actualizando...'); }
-  else if (id === 'sb-brigadista-clear') { setConfig({ brigadista: '' }); refreshPendingCount(); _renderContent(); }
+  else if (id === 'sb-excel-clear') { clearExcelContacts(); setExcelContacts([]); _renderContent(); }
+  else if (id === 'sb-history-clear') { clearHistory(); _toast('Historial limpiado'); _renderContent(); }
   else if (id === 'sb-start') { console.log('[SIDEBAR] sb-start clicked → loading preview'); loadPreview(); }
   else if (id === 'sb-preview-confirm') { previewConfirm(); }
   else if (id === 'sb-preview-cancel') { previewCancel(); }
@@ -415,10 +419,8 @@ function _handleDelegatedChange(e) {
   }
 }
 
-let _brigTimer = null;
 function _handleDelegatedInput(e) {
   const tpl = e.target.closest('[data-tpl]');
-  const brig = e.target.id === 'sb-brigadista-input' ? e.target : null;
 
   if (tpl) {
     const idx = Number(tpl.dataset.tpl);
@@ -435,14 +437,6 @@ function _handleDelegatedInput(e) {
         ).join('');
       }
     }
-  }
-  if (brig) {
-    clearTimeout(_brigTimer);
-    _brigTimer = setTimeout(() => {
-      setConfig({ brigadista: brig.value.trim() });
-      refreshPendingCount();
-      _renderContent();
-    }, 600);
   }
 }
 
@@ -462,6 +456,49 @@ function _bindContentInputs() {
       }
     }
   });
+
+  // Excel file input handler
+  const excelInput = document.getElementById('sb-excel-input');
+  if (excelInput) {
+    excelInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        _toast('Cargando Excel...');
+        const result = await parseExcelFile(file);
+        setExcelContacts(result.contacts);
+        _toast(`✅ ${result.contacts.length} contactos cargados`);
+        _renderContent();
+      } catch (err) {
+        _toast('❌ ' + (err || 'Error al cargar'));
+        _renderContent();
+      }
+    });
+  }
+
+  // Dropzone label click → trigger hidden file input
+  const dropzone = document.getElementById('sb-excel-dropzone');
+  if (dropzone) {
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.style.borderColor = S.accent; dropzone.style.background = S.accentBg; });
+    dropzone.addEventListener('dragleave', () => { dropzone.style.borderColor = S.border; dropzone.style.background = 'transparent'; });
+    dropzone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = S.border;
+      dropzone.style.background = 'transparent';
+      const file = e.dataTransfer?.files?.[0];
+      if (!file) return;
+      try {
+        _toast('Cargando Excel...');
+        const result = await parseExcelFile(file);
+        setExcelContacts(result.contacts);
+        _toast(`✅ ${result.contacts.length} contactos cargados`);
+        _renderContent();
+      } catch (err) {
+        _toast('❌ ' + (err || 'Error al cargar'));
+        _renderContent();
+      }
+    });
+  }
 }
 
 function _contentHTML() {
@@ -573,61 +610,33 @@ function _blastHTML() {
       ` : ''}
     </div>
 
-    <!-- STATS GLOBALES DEL SERVIDOR -->
+    <!-- PROGRESO SESIÓN -->
+    ${hasExcelLoaded() ? `
     <div style="background:${S.card};border:1px solid ${S.border};border-radius:10px;padding:12px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-        <div style="font-size:11px;color:${S.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Progreso global — todos los celulares</div>
-        <button id="sb-refresh" style="padding:4px 10px;border-radius:6px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:11px;cursor:pointer;">↻</button>
-      </div>
-
-      <!-- Tres contadores grandes -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
         <div style="background:${S.bg};border:1px solid ${S.border};border-radius:8px;padding:10px 6px;text-align:center;">
-          <div style="font-size:22px;font-weight:800;color:${S.accent};">${gs ? gsPending.toLocaleString('es-PE') : '...'}</div>
+          <div style="font-size:22px;font-weight:800;color:${S.accent};">${(pending !== null ? pending : getExcelContactCount()).toLocaleString('es-PE')}</div>
           <div style="font-size:10px;color:${S.muted};margin-top:2px;">Pendientes</div>
         </div>
         <div style="background:${S.bg};border:1px solid ${S.border};border-radius:8px;padding:10px 6px;text-align:center;">
-          <div style="font-size:22px;font-weight:800;color:#6b7280;">${gs ? gsHablado.toLocaleString('es-PE') : '...'}</div>
-          <div style="font-size:10px;color:${S.muted};margin-top:2px;">Hablados</div>
-        </div>
-        <div style="background:${S.bg};border:1px solid ${S.border};border-radius:8px;padding:10px 6px;text-align:center;">
-          <div style="font-size:22px;font-weight:800;color:${S.text};">${gs ? gsTotal.toLocaleString('es-PE') : '...'}</div>
-          <div style="font-size:10px;color:${S.muted};margin-top:2px;">Total</div>
+          <div style="font-size:22px;font-weight:800;color:${S.text};">${getExcelContactCount().toLocaleString('es-PE')}</div>
+          <div style="font-size:10px;color:${S.muted};margin-top:2px;">Total Excel</div>
         </div>
       </div>
-
-      <!-- Barra de progreso -->
-      ${gs ? `
-      <div style="margin-bottom:${byNumEntries.length ? '10' : '0'}px;">
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:4px;">
-          <span>Completado</span>
-          <span style="font-weight:700;color:${gsPct >= 80 ? S.accent : S.text};">${gsPct}%</span>
-        </div>
-        <div style="height:6px;background:${S.border};border-radius:3px;overflow:hidden;">
-          <div style="height:100%;width:${gsPct}%;background:${gsPct >= 80 ? S.accent : gsPct >= 50 ? S.blue : S.warn};border-radius:3px;transition:width .4s ease;"></div>
-        </div>
-      </div>
-      ` : ''}
-
-      <!-- Desglose por celular (solo si hay datos hoy) -->
-      ${byNumEntries.length ? `
-      <div style="border-top:1px solid ${S.border};padding-top:8px;">
-        <div style="font-size:10px;color:${S.muted};font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Hoy por celular</div>
-        <div style="display:flex;flex-direction:column;gap:3px;">
-          ${byNumEntries.map(([num, v]) => `
-            <div style="display:flex;align-items:center;gap:6px;font-size:11px;">
-              <span style="color:${S.muted};font-size:10px;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="+${num}">${v.label ? _esc(v.label) : '+' + num.slice(-4)}</span>
-              <div style="flex:1;height:4px;background:${S.border};border-radius:2px;overflow:hidden;">
-                <div style="height:100%;width:${gsTotal > 0 ? Math.min(100, Math.round((v.sent / gsTotal) * 100 * 6)) : 0}%;background:${S.accent};border-radius:2px;"></div>
-              </div>
-              <span style="font-weight:700;color:${S.text};min-width:28px;text-align:right;">${v.today}</span>
-              <span style="color:${S.muted};font-size:10px;">hoy</span>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-      ` : ''}
+      ${totalSent > 0 ? (() => {
+        const xlPct = Math.round((totalSent / getExcelContactCount()) * 100);
+        return `<div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:${S.muted};margin-bottom:4px;">
+            <span>Completado</span>
+            <span style="font-weight:700;color:${xlPct >= 80 ? S.accent : S.text};">${xlPct}%</span>
+          </div>
+          <div style="height:6px;background:${S.border};border-radius:3px;overflow:hidden;">
+            <div style="height:100%;width:${xlPct}%;background:${xlPct >= 80 ? S.accent : xlPct >= 50 ? S.blue : S.warn};border-radius:3px;transition:width .4s ease;"></div>
+          </div>
+        </div>`;
+      })() : ''}
     </div>
+    ` : ''}
 
     <!-- KPIs -->
     ${hasActivity ? `
@@ -776,19 +785,44 @@ function _blastHTML() {
       <div style="font-size:10px;color:${S.muted};margin-top:4px;">Cada ${cfg.burstSize || 12} msgs → pausa de ${cfg.burstRestSec || 90}s + variación aleatoria</div>
     </div>
 
-    <!-- FILTRO BRIGADISTA -->
-    <div style="background:${S.card};border:1px solid ${cfg.brigadista ? S.accent : S.border};border-radius:10px;padding:10px 12px;">
-      <div style="font-size:11px;font-weight:700;color:${S.muted};margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">
-        Filtrar por brigadista
+    <!-- EXCEL UPLOAD -->
+    <div style="background:${S.card};border:1px solid ${hasExcelLoaded() ? S.accent : S.border};border-radius:10px;padding:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:700;color:${S.muted};text-transform:uppercase;letter-spacing:.5px;">
+          📄 Contactos desde Excel
+        </div>
+        ${getHistoryCount() > 0 ? `<span style="font-size:10px;color:${S.muted};background:${S.bg};padding:2px 6px;border-radius:4px;border:1px solid ${S.border};">${getHistoryCount()} enviados antes</span>` : ''}
       </div>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <input type="text" id="sb-brigadista-input" placeholder="Ej: Ricardo Reaño" value="${_esc(cfg.brigadista || '')}" style="
-          flex:1;padding:7px 10px;border:1px solid ${S.border};border-radius:6px;
-          background:${S.bg};color:${S.text};font-size:12px;outline:none;
-        " />
-        ${cfg.brigadista ? `<button id="sb-brigadista-clear" style="padding:6px 10px;border-radius:6px;border:1px solid ${S.border};background:${S.bg};color:${S.danger};font-size:11px;font-weight:700;cursor:pointer;">✕</button>` : ''}
-      </div>
-      ${cfg.brigadista ? `<div style="font-size:10px;color:${S.accent};margin-top:4px;font-weight:600;">Filtrando solo contactos de: ${_esc(cfg.brigadista)}</div>` : ''}
+      ${hasExcelLoaded() ? `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:${S.accentBg};border:1px solid ${S.accent}30;border-radius:8px;">
+          <span style="font-size:18px;">✅</span>
+          <div style="flex:1;">
+            <div style="font-size:12px;font-weight:700;color:${S.accent};">${getExcelContactCount()} contactos nuevos</div>
+            <div style="font-size:10px;color:${S.muted};">${_esc(getExcelFileName() || 'archivo.xlsx')}</div>
+          </div>
+          <button id="sb-excel-clear" style="padding:4px 8px;border-radius:6px;border:1px solid ${S.danger}40;background:${S.dangerBg};color:${S.danger};font-size:10px;font-weight:700;cursor:pointer;">✕</button>
+        </div>
+        ${getExcelFilteredCount() > 0 ? `
+        <div style="font-size:10px;color:${S.warn};margin-top:6px;padding:6px 8px;background:${S.warnBg};border:1px solid ${S.warn}20;border-radius:6px;">
+          ⚠️ ${getExcelFilteredCount()} contactos ya enviados antes fueron excluidos automáticamente
+        </div>` : ''}
+      ` : `
+        <label id="sb-excel-dropzone" style="
+          display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+          padding:16px;border:2px dashed ${S.border};border-radius:10px;cursor:pointer;
+          transition:border-color .15s, background .15s;
+        ">
+          <span style="font-size:28px;">📁</span>
+          <span style="font-size:12px;font-weight:600;color:${S.text};">Subir archivo Excel</span>
+          <span style="font-size:10px;color:${S.muted};">.xlsx, .xls o .csv — con columna de teléfono y nombre</span>
+          <input type="file" id="sb-excel-input" accept=".xlsx,.xls,.csv" style="display:none;" />
+        </label>
+        ${getExcelError() ? `<div style="font-size:10px;color:${S.danger};margin-top:6px;padding:6px 8px;background:${S.dangerBg};border-radius:6px;">❌ ${_esc(getExcelError())}</div>` : ''}
+      `}
+      ${getHistoryCount() > 0 ? `
+      <div style="margin-top:6px;text-align:right;">
+        <button id="sb-history-clear" style="padding:3px 8px;border-radius:5px;border:1px solid ${S.border};background:${S.bg};color:${S.muted};font-size:10px;cursor:pointer;">Limpiar historial (${getHistoryCount()})</button>
+      </div>` : ''}
     </div>
 
     <!-- PLANTILLAS -->
@@ -982,27 +1016,27 @@ function _blastHTML() {
     })()}
 
     <!-- CONTROLES -->
-    ${!running && !paused && hasPending && !isPreviewReady() && !isPreviewLoading() ? `
+    ${!running && !paused && hasExcelLoaded() && !isPreviewReady() && !isPreviewLoading() ? `
       <button id="sb-start" style="
         width:100%;padding:14px;border-radius:10px;border:none;
         background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
         box-shadow:0 2px 12px ${S.accent}40;
-      ">📋 Preview y enviar ${getBlastLimit() === 0 ? '(∞)' : getBlastLimit()}</button>
+      ">📋 Preview y enviar ${getBlastLimit() === 0 ? '(' + getExcelContactCount() + ')' : getBlastLimit()}</button>
+    ` : !running && !paused && !hasExcelLoaded() && !isPreviewReady() && !isPreviewLoading() ? `
+      <div style="text-align:center;padding:12px;background:${S.warnBg};border:1px solid ${S.warn}30;border-radius:10px;font-size:13px;color:${S.warn};font-weight:600;">
+        📄 Subí un Excel para empezar
+      </div>
     ` : running ? `
       <button id="sb-pause" style="
         width:100%;padding:14px;border-radius:10px;border:1px solid ${S.warn}40;
         background:${S.warnBg};color:${S.warn};font-size:15px;font-weight:700;cursor:pointer;
       ">⏸ Pausar</button>
-    ` : paused && hasPending ? `
+    ` : paused && hasExcelLoaded() ? `
       <button id="sb-resume" style="
         width:100%;padding:14px;border-radius:10px;border:none;
         background:${S.accent};color:#fff;font-size:15px;font-weight:700;cursor:pointer;
         box-shadow:0 2px 12px ${S.accent}40;
       ">▶ Reanudar</button>
-    ` : !hasPending && pending !== null ? `
-      <div style="text-align:center;padding:12px;background:${S.accentBg};border-radius:10px;font-size:13px;color:${S.accent};font-weight:600;">
-        ✅ No hay más pendientes
-      </div>
     ` : ''}
 
   </div>`;

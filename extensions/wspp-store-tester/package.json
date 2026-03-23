@@ -11,5 +11,8 @@
   },
   "devDependencies": {
     "esbuild": "^0.24.0"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
   }
 }

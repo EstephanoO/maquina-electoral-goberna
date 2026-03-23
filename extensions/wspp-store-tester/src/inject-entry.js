@@ -23,16 +23,19 @@ import './inject/audio-catalog-panel.js';
 // 7. Template analyzer: análisis de riesgo de plantillas pre-envío
 import './inject/template-analyzer.js';
 
-// 8. Blast panel: motor de blast masivo + anti-ban
+// 8. Excel loader: parsea contactos desde Excel (.xlsx/.xls/.csv)
+import './inject/excel-loader.js';
+
+// 9. Blast panel: motor de blast masivo + anti-ban
 import './inject/blast-panel.js';
 
-// 9. WA Validator panel: verificación de números (silencioso + conversación)
+// 10. WA Validator panel: verificación de números (silencioso + conversación)
 import './inject/wa-validator-panel.js';
 
-// 10. Chat opener: flujo DOM para abrir chats con números nuevos
+// 11. Chat opener: flujo DOM para abrir chats con números nuevos
 import './inject/chat-opener.js';
 
-// 11. Sidebar: panel lateral unificado (reemplaza los 3 FABs separados)
+// 12. Sidebar: panel lateral unificado (reemplaza los 3 FABs separados)
 import './inject/sidebar.js';
 
 // ── Bootstrap WA listeners ────────────────────────────────────────────
