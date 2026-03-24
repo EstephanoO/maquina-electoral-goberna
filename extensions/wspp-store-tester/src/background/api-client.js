@@ -161,6 +161,13 @@ export async function apiFetch(path, options = {}, _isRetry = false) {
           return;
         }
 
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+          const text = await res.text().catch(() => res.statusText);
+          console.error('[WSPP API]', path, 'non-JSON response', res.status, text.slice(0, 200));
+          resolve({ ok: false, error: `Server returned ${res.status} (non-JSON)`, status: res.status });
+          return;
+        }
         const json = await res.json();
         if (!res.ok && !json.status) json.status = res.status;
         resolve(json);
