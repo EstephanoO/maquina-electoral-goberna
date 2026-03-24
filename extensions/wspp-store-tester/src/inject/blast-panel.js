@@ -207,10 +207,11 @@ function _applyVars(text, c, seed) {
     .replace(_v('nombre'), nombre)
     .replace(_v('brigadista'), brigadista)
     .replace(_v('departamento'), _titleCasePhrase((c.departamento || c.distrito || '').trim()) || 'tu zona')
+    .replace(_v('provincia'), _titleCasePhrase((c.provincia || '').trim()) || 'tu provincia')
     .replace(_v('saludo'), SALUDOS[_hashSeed(String(seed), 1) % SALUDOS.length])
     .replace(_v('cierre'), CIERRES[_hashSeed(String(seed), 2) % CIERRES.length])
     .replace(_v('emoji'),  EMOJIS[_hashSeed(String(seed),  3) % EMOJIS.length])
-    .replace(_v('distrito'), c.distrito || '')
+    .replace(_v('distrito'), _titleCasePhrase((c.distrito || '').trim()) || '')
     .replace(_v('fecha'), now.toLocaleDateString('es-PE'))
     .replace(_v('hora'), now.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }));
 }
