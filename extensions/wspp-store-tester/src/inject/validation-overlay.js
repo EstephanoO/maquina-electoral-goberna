@@ -252,11 +252,9 @@ export function removeSpamWarning() {
   if (blocker) blocker.remove();
 }
 
-// ── Validation overlay ─────────────────────────────────────────────────
+// ── Validation overlay (disabled — no longer shown on chat open) ───────
 export function showValidationOverlay(data) {
-  removeValidationOverlay();
-
-  if (!data || !data.id) return;
+  return;
 
   const statusColors = {
     pendiente:  { bg: 'rgba(255,149,0,.12)', text: '#ff9f0a', label: 'PENDIENTE' },
