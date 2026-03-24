@@ -110,6 +110,8 @@ async function callElevenLabsTTS(
   // Despite the name starting with "opus_", ElevenLabs wraps it in a valid OGG
   // container (magic bytes "OggS"). WhatsApp PTT requires OGG container — this format
   // is correct. The format "ogg_48000_32" does NOT exist in ElevenLabs API (returns 403).
+  // 55s timeout — must finish before Nginx proxy_read_timeout (65s) and
+  // Cloudflare (100s) to avoid an HTML 502 page reaching the client.
   const ttsRes = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/stream?output_format=opus_48000_32`,
     {
@@ -122,6 +124,7 @@ async function callElevenLabsTTS(
         text: scriptText,
         model_id: "eleven_multilingual_v2",
       }),
+      signal: AbortSignal.timeout(55_000),
     },
   );
 
@@ -262,8 +265,9 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
           durationMs: result.durationMs,
         });
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "Unknown TTS error";
-        app.log.error({ err }, "TTS catalog generation error");
+        const isTimeout = err instanceof Error && err.name === "TimeoutError";
+        const message = isTimeout ? "ElevenLabs timeout (script may be too long)" : (err instanceof Error ? err.message : "Unknown TTS error");
+        app.log.error({ err, isTimeout }, "TTS catalog generation error");
         return reply.code(502).send(errorPayload(requestId, "UPSTREAM_ERROR", message));
       }
     });
