@@ -202,7 +202,7 @@ export async function getFormsTotals(campaignId: string): Promise<FormsTotals> {
      SELECT
        COUNT(*)::text AS forms_count,
        COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE)::text AS forms_today,
-       COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::text AS forms_week
+        COUNT(*) FILTER (WHERE created_at >= date_trunc('week', NOW()))::text AS forms_week
      FROM unique_forms`,
     [campaignId],
   );
