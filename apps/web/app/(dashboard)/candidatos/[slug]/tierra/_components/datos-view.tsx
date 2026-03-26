@@ -56,6 +56,7 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
   const [filterEncuestador, setFilterEncuestador] = useState<string>("all");
   const [filterDepartamento, setFilterDepartamento] = useState<string>("all");
   const [filterProvincia, setFilterProvincia] = useState<string>("all");
+  const [filterDistrito, setFilterDistrito] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
 
@@ -84,6 +85,15 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
     }
     return Array.from(s).sort((a, b) => a.localeCompare(b));
   }, [forms, filterDepartamento]);
+
+  const distritoOptions = useMemo(() => {
+    if (filterProvincia === "all") return [];
+    const s = new Set<string>();
+    for (const f of forms) {
+      if (f.departamento === filterDepartamento && f.provincia === filterProvincia && f.distrito) s.add(f.distrito);
+    }
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  }, [forms, filterDepartamento, filterProvincia]);
 
   const duplicatePhones = useMemo(() => {
     const counts = new Map<string, number>();
@@ -117,6 +127,7 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
     filterEncuestador !== "all",
     filterDepartamento !== "all",
     filterProvincia !== "all",
+    filterDistrito !== "all",
     !!dateFrom,
     !!dateTo,
     showDuplicates,
@@ -126,7 +137,7 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
 
   const clearFilters = useCallback(() => {
     setSearch(""); setFilterEncuestador("all");
-    setFilterDepartamento("all"); setFilterProvincia("all");
+    setFilterDepartamento("all"); setFilterProvincia("all"); setFilterDistrito("all");
     setDateFrom(""); setDateTo(""); setShowDuplicates(false); setPage(0);
   }, []);
 
@@ -151,13 +162,14 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
     if (filterEncuestador !== "all") list = list.filter((f) => (f.encuestador_id || f.encuestador) === filterEncuestador);
     if (filterDepartamento !== "all") list = list.filter((f) => f.departamento === filterDepartamento);
     if (filterProvincia !== "all") list = list.filter((f) => f.provincia === filterProvincia);
+    if (filterDistrito !== "all") list = list.filter((f) => f.distrito === filterDistrito);
     if (fromMs) list = list.filter((f) => new Date(f.created_at).getTime() >= fromMs);
     if (toMs) list = list.filter((f) => new Date(f.created_at).getTime() <= toMs);
     return [...list].sort((a, b) => {
       const cmp = String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? ""));
       return sortAsc ? cmp : -cmp;
     });
-  }, [forms, optimisticDeletedIds, search, sortKey, sortAsc, showDuplicates, duplicatePhones, filterEncuestador, filterDepartamento, filterProvincia, dateFrom, dateTo]);
+  }, [forms, optimisticDeletedIds, search, sortKey, sortAsc, showDuplicates, duplicatePhones, filterEncuestador, filterDepartamento, filterProvincia, filterDistrito, dateFrom, dateTo]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
@@ -370,7 +382,7 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
             {/* Departamento */}
             <div className="flex flex-col gap-0.5">
               <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 pl-0.5">Departamento</span>
-              <select value={filterDepartamento} onChange={(e) => { setFilterDepartamento(e.target.value); setFilterProvincia("all"); setPage(0); }}
+              <select value={filterDepartamento} onChange={(e) => { setFilterDepartamento(e.target.value); setFilterProvincia("all"); setFilterDistrito("all"); setPage(0); }}
                 className={`${selectClass} min-w-[140px] max-w-[180px]`}>
                 <option value="all">Todos</option>
                 {departamentoOptions.map((d) => <option key={d} value={d}>{d.charAt(0) + d.slice(1).toLowerCase()}</option>)}
@@ -381,10 +393,22 @@ export function DatosView({ forms, isLoading, primaryColor, campaignName, campai
             {filterDepartamento !== "all" && provinciaOptions.length > 0 && (
               <div className="flex flex-col gap-0.5">
                 <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 pl-0.5">Provincia</span>
-                <select value={filterProvincia} onChange={(e) => { setFilterProvincia(e.target.value); setPage(0); }}
+                <select value={filterProvincia} onChange={(e) => { setFilterProvincia(e.target.value); setFilterDistrito("all"); setPage(0); }}
                   className={`${selectClass} min-w-[140px] max-w-[180px]`}>
                   <option value="all">Todas</option>
                   {provinciaOptions.map((p) => <option key={p} value={p}>{p.charAt(0) + p.slice(1).toLowerCase()}</option>)}
+                </select>
+              </div>
+            )}
+
+            {/* Distrito (cascaded from provincia) */}
+            {filterProvincia !== "all" && distritoOptions.length > 0 && (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 pl-0.5">Distrito</span>
+                <select value={filterDistrito} onChange={(e) => { setFilterDistrito(e.target.value); setPage(0); }}
+                  className={`${selectClass} min-w-[140px] max-w-[180px]`}>
+                  <option value="all">Todos</option>
+                  {distritoOptions.map((d) => <option key={d} value={d}>{d.charAt(0) + d.slice(1).toLowerCase()}</option>)}
                 </select>
               </div>
             )}
