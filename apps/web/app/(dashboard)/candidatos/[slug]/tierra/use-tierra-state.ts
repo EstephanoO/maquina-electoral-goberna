@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { deleteForm, updateForm, type FormRecord } from "@/lib/services";
 import { useAuth } from "@/lib/auth-context";
+import { useTheme } from "@/lib/theme-context";
 import { tierraKeys } from "@/lib/hooks";
 
 import {
@@ -24,6 +25,7 @@ import {
 export function useTierraState(slug: string, forms: FormRecord[]) {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const { theme: appTheme } = useTheme();
   const queryClient = useQueryClient();
   const mapHandleRef = useRef<TierraMapHandle | null>(null);
   /** Set by the page after useEnrichedAgents — keeps handleAgentListClick stable */
@@ -39,7 +41,7 @@ export function useTierraState(slug: string, forms: FormRecord[]) {
   const [datosVizMode, setDatosVizMode] = useState<DatosVizMode>("points");
   const [heatmapRadius, setHeatmapRadius] = useState(26);
   const [heatmapOpacity, setHeatmapOpacity] = useState(0.88);
-  const [mapTheme, setMapTheme] = useState<MapTheme>("voyager");
+  const [mapTheme, setMapTheme] = useState<MapTheme>(appTheme === "dark" ? "dark" : "voyager");
   const [showControlsPanel, setShowControlsPanel] = useState(false);
   const [rightPanelCloseSignal, setRightPanelCloseSignal] = useState(0);
   const [rightPanelOpenSignal, setRightPanelOpenSignal] = useState(0);
@@ -152,6 +154,11 @@ export function useTierraState(slug: string, forms: FormRecord[]) {
     root.style.setProperty("--tierra-tab-hover-bg", isDark ? "rgba(148,163,184,0.14)" : "rgba(15,23,42,0.04)");
     root.style.setProperty("--tierra-tab-indicator", isDark ? "#60a5fa" : "var(--goberna-blue-900)");
   }, [mapTheme]);
+
+  // Sync map theme when global app theme changes
+  useEffect(() => {
+    setMapTheme(appTheme === "dark" ? "dark" : "voyager");
+  }, [appTheme]);
 
   useEffect(() => {
     document.body.classList.add(TIERRA_FULLSCREEN_CLASS);
