@@ -35,6 +35,8 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
   const [search, setSearch] = useState("");
   const [filterEncuestador, setFilterEncuestador] = useState<string>("all");
   const [filterDate, setFilterDate] = useState<string>("all");
+  const [filterDepartamento, setFilterDepartamento] = useState<string>("all");
+  const [filterProvincia, setFilterProvincia] = useState<string>("all");
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -48,6 +50,21 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
     }
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [forms]);
+
+  const departamentoOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const f of forms) { if (f.departamento) s.add(f.departamento); }
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  }, [forms]);
+
+  const provinciaOptions = useMemo(() => {
+    if (filterDepartamento === "all") return [];
+    const s = new Set<string>();
+    for (const f of forms) {
+      if (f.departamento === filterDepartamento && f.provincia) s.add(f.provincia);
+    }
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  }, [forms, filterDepartamento]);
 
   const filteredForms = useMemo(() => {
     const now = new Date();
@@ -66,6 +83,8 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
         const fKey = f.encuestador_id || f.encuestador;
         if (fKey !== filterEncuestador) return false;
       }
+      if (filterDepartamento !== "all" && f.departamento !== filterDepartamento) return false;
+      if (filterProvincia !== "all" && f.provincia !== filterProvincia) return false;
       if (filterDate !== "all") {
         const created = new Date(f.created_at);
         if (filterDate === "today" && created < startOfToday) return false;
@@ -74,7 +93,7 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
       }
       return true;
     });
-  }, [forms, search, filterEncuestador, filterDate]);
+  }, [forms, search, filterEncuestador, filterDepartamento, filterProvincia, filterDate]);
 
   // Reset scroll when filter changes
   const prevCount = useRef(filteredForms.length);
@@ -146,9 +165,9 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
     finally { setIsDeleting(false); }
   }, [selectedIds, campaignId, onFormsDeleted]);
 
-  const hasActiveFilters = search || filterEncuestador !== "all" || filterDate !== "all";
+  const hasActiveFilters = search || filterEncuestador !== "all" || filterDepartamento !== "all" || filterProvincia !== "all" || filterDate !== "all";
   const hasSelection = selectedIds.size > 0;
-  const clearFilters = () => { setSearch(""); setFilterEncuestador("all"); setFilterDate("all"); };
+  const clearFilters = () => { setSearch(""); setFilterEncuestador("all"); setFilterDepartamento("all"); setFilterProvincia("all"); setFilterDate("all"); };
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -219,6 +238,18 @@ export function DatosTab({ forms, selectedAgentName, primaryColor, onFlyTo, camp
             <option value="all">Todos los agentes</option>
             {encuestadores.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
           </select>
+        </div>
+        <div className="flex gap-2 items-center">
+          <select value={filterDepartamento} onChange={(e) => { setFilterDepartamento(e.target.value); setFilterProvincia("all"); }} className="flex-1 text-xs text-slate-600 px-2.5 py-1.5 rounded-md border border-slate-200 bg-white cursor-pointer outline-none">
+            <option value="all">Todos los departamentos</option>
+            {departamentoOptions.map((d) => <option key={d} value={d}>{d.charAt(0) + d.slice(1).toLowerCase()}</option>)}
+          </select>
+          {filterDepartamento !== "all" && provinciaOptions.length > 0 && (
+            <select value={filterProvincia} onChange={(e) => setFilterProvincia(e.target.value)} className="flex-1 text-xs text-slate-600 px-2.5 py-1.5 rounded-md border border-slate-200 bg-white cursor-pointer outline-none">
+              <option value="all">Todas las provincias</option>
+              {provinciaOptions.map((p) => <option key={p} value={p}>{p.charAt(0) + p.slice(1).toLowerCase()}</option>)}
+            </select>
+          )}
           {hasActiveFilters && (
             <button type="button" onClick={clearFilters} className="text-xs font-semibold border-none bg-transparent cursor-pointer px-2.5 py-1.5 rounded-md whitespace-nowrap shrink-0" style={{ color: primaryColor }}>Limpiar</button>
           )}
