@@ -1,8 +1,8 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import { useCallback } from "react";
 import dynamic from "next/dynamic";
-
 import { useCampaignStats, useRecentForms, useAgentLocationsSnapshot } from "@/lib/hooks";
 
 import {
@@ -36,6 +36,11 @@ export default function TierraPage() {
   const campaignId = stats?.campaign.id;
   const { data: forms = EMPTY_FORMS } = useRecentForms(campaignId);
   const { data: initialLocations } = useAgentLocationsSnapshot(campaignId);
+
+  // ── WhatsApp channel URL save handler ──
+  const handleWhatsappUrlSaved = useCallback(() => {
+    void refetchStats();
+  }, [refetchStats]);
 
   // ── Pipeline state (period filter, metrics, form filtering) ──
   const pipeline = usePipelineState(campaignId, forms);
@@ -248,6 +253,10 @@ export default function TierraPage() {
             serverTotals={stats.totals}
             agentesCampoCount={enrichedAgents.length}
             metaDatos={stats.metas.datos}
+            whatsappChannelUrl={campaign.whatsapp_channel_url}
+            interviewerName={user?.full_name ?? ""}
+            userRole={user?.role}
+            onWhatsappUrlSaved={handleWhatsappUrlSaved}
           />
         </div>
       ) : (

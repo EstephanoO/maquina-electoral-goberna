@@ -196,6 +196,7 @@ export type CampaignStats = {
     foto_url: string | null;
     color_primario: string;
     color_secundario: string;
+    whatsapp_channel_url?: string;
   };
   metas: {
     datos: number;
