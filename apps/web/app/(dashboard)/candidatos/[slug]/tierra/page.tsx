@@ -8,6 +8,7 @@ import { useCampaignStats, useRecentForms, useAgentLocationsSnapshot } from "@/l
 import {
   TierraHeader, MapControls, PipelineView, DatosView, CampoOverlay,
 } from "./_components";
+import { QRWhatsAppButton } from "./_components/qr-whatsapp-modal";
 import { DemoLeguaBanner } from "./_components/demo-legua-banner";
 import { useAgentSSE } from "./_components/hooks/use-agent-sse";
 import { usePipelineState } from "./_components/hooks/use-pipeline-state";
@@ -254,7 +255,6 @@ export default function TierraPage() {
             agentesCampoCount={enrichedAgents.length}
             metaDatos={stats.metas.datos}
             whatsappChannelUrl={campaign.whatsapp_channel_url}
-            interviewerName={user?.full_name ?? ""}
             userRole={user?.role}
             onWhatsappUrlSaved={handleWhatsappUrlSaved}
           />
@@ -272,6 +272,19 @@ export default function TierraPage() {
           onFormsChanged={handleFormsChanged}
           onFlyTo={flyToFromDatos}
         />
+      )}
+
+      {/* Floating QR WhatsApp button — bottom-left, all views */}
+      {campaign.whatsapp_channel_url && (
+        <div className="fixed bottom-5 left-5 z-[55]">
+          <QRWhatsAppButton
+            campaignId={campaign.id}
+            primaryColor={campaign.color_primario}
+            secondaryColor={campaign.color_secundario}
+            interviewerName={user?.full_name ?? ""}
+            whatsappChannelUrl={campaign.whatsapp_channel_url}
+          />
+        </div>
       )}
 
       <style jsx global>{`

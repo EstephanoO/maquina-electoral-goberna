@@ -9,7 +9,6 @@ import type { EnrichedAgent } from "./types";
 import { PipelineFilters, type PipelinePeriod, type PipelineDateRanges } from "./pipeline-filters";
 import { GeoRanking, type GeoDrillState, INITIAL_GEO_DRILL } from "./geo-ranking";
 import { ChartsSection, FunnelSkeleton, TableSkeleton } from "./pipeline-skeletons";
-import { QRWhatsAppButton } from "./qr-whatsapp-modal";
 import { QRChannelConfig } from "./qr-config";
 
 /* ========== Lazy-loaded components ========== */
@@ -75,7 +74,6 @@ type Props = {
   agentesCampoCount: number;
   metaDatos: number;
   whatsappChannelUrl?: string;
-  interviewerName?: string;
   userRole?: string;
   onWhatsappUrlSaved?: (url: string) => void;
 };
@@ -88,7 +86,7 @@ export const PipelineView = memo(function PipelineView({
   geoDrill, onGeoDrillChange, hasGeoFilter,
   periodLabel, dateRanges,
   totalDatos, serverTotals, agentesCampoCount, metaDatos,
-  whatsappChannelUrl, interviewerName, userRole, onWhatsappUrlSaved,
+  whatsappChannelUrl, userRole, onWhatsappUrlSaved,
 }: Props) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
@@ -394,18 +392,6 @@ export const PipelineView = memo(function PipelineView({
         </div>
       )}
 
-      {/* QR WhatsApp — bottom-left, only if campaign has a channel URL */}
-      {whatsappChannelUrl && (
-        <div className="sticky bottom-4 left-4 z-40 self-start ml-4 mb-4 mt-2">
-          <QRWhatsAppButton
-            campaignId={campaignId}
-            primaryColor={primaryColor}
-            secondaryColor={secondaryColor}
-            interviewerName={interviewerName ?? ""}
-            whatsappChannelUrl={whatsappChannelUrl}
-          />
-        </div>
-      )}
     </div>
   );
 });
