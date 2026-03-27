@@ -554,3 +554,19 @@ export function getMyQrStats(): Promise<ApiResult<{
 }>> {
   return request('GET', '/qr-leads/my-stats');
 }
+
+/**
+ * POST /api/qr-leads/codes
+ * Creates a scan code for QR auto-detection. Returns { code }.
+ */
+export function createQrCode(redirectUrl: string): Promise<ApiResult<{ code: string }>> {
+  return request('POST', '/qr-leads/codes', { redirect_url: redirectUrl });
+}
+
+/**
+ * GET /api/qr-leads/codes/:code/status
+ * Check if a scan code has been scanned.
+ */
+export function checkQrCodeStatus(code: string): Promise<ApiResult<{ scanned: boolean; scanned_at: string | null }>> {
+  return request('GET', `/qr-leads/codes/${code}/status`);
+}

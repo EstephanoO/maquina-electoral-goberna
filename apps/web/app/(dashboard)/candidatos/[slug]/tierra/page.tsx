@@ -1,14 +1,12 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useCampaignStats, useRecentForms, useAgentLocationsSnapshot } from "@/lib/hooks";
 
 import {
   TierraHeader, MapControls, PipelineView, DatosView, CampoOverlay,
 } from "./_components";
-import { QRWhatsAppButton } from "./_components/qr-whatsapp-modal";
 import { DemoLeguaBanner } from "./_components/demo-legua-banner";
 import { useAgentSSE } from "./_components/hooks/use-agent-sse";
 import { usePipelineState } from "./_components/hooks/use-pipeline-state";
@@ -37,11 +35,6 @@ export default function TierraPage() {
   const campaignId = stats?.campaign.id;
   const { data: forms = EMPTY_FORMS } = useRecentForms(campaignId);
   const { data: initialLocations } = useAgentLocationsSnapshot(campaignId);
-
-  // ── WhatsApp channel URL save handler ──
-  const handleWhatsappUrlSaved = useCallback(() => {
-    void refetchStats();
-  }, [refetchStats]);
 
   // ── Pipeline state (period filter, metrics, form filtering) ──
   const pipeline = usePipelineState(campaignId, forms);
@@ -254,9 +247,6 @@ export default function TierraPage() {
             serverTotals={stats.totals}
             agentesCampoCount={enrichedAgents.length}
             metaDatos={stats.metas.datos}
-            whatsappChannelUrl={campaign.whatsapp_channel_url}
-            userRole={user?.role}
-            onWhatsappUrlSaved={handleWhatsappUrlSaved}
           />
         </div>
       ) : (
@@ -272,19 +262,6 @@ export default function TierraPage() {
           onFormsChanged={handleFormsChanged}
           onFlyTo={flyToFromDatos}
         />
-      )}
-
-      {/* Floating QR WhatsApp button — bottom-left, all views */}
-      {campaign.whatsapp_channel_url && (
-        <div className="fixed bottom-5 left-5 z-[55]">
-          <QRWhatsAppButton
-            campaignId={campaign.id}
-            primaryColor={campaign.color_primario}
-            secondaryColor={campaign.color_secundario}
-            interviewerName={user?.full_name ?? ""}
-            whatsappChannelUrl={campaign.whatsapp_channel_url}
-          />
-        </div>
       )}
 
       <style jsx global>{`

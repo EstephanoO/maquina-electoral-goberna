@@ -9,7 +9,6 @@ import type { EnrichedAgent } from "./types";
 import { PipelineFilters, type PipelinePeriod, type PipelineDateRanges } from "./pipeline-filters";
 import { GeoRanking, type GeoDrillState, INITIAL_GEO_DRILL } from "./geo-ranking";
 import { ChartsSection, FunnelSkeleton, TableSkeleton } from "./pipeline-skeletons";
-import { QRChannelConfig } from "./qr-config";
 
 /* ========== Lazy-loaded components ========== */
 
@@ -73,9 +72,6 @@ type Props = {
   serverTotals: { forms_count: number; forms_today: number; forms_week: number };
   agentesCampoCount: number;
   metaDatos: number;
-  whatsappChannelUrl?: string;
-  userRole?: string;
-  onWhatsappUrlSaved?: (url: string) => void;
 };
 
 /* ========== Component ========== */
@@ -86,7 +82,6 @@ export const PipelineView = memo(function PipelineView({
   geoDrill, onGeoDrillChange, hasGeoFilter,
   periodLabel, dateRanges,
   totalDatos, serverTotals, agentesCampoCount, metaDatos,
-  whatsappChannelUrl, userRole, onWhatsappUrlSaved,
 }: Props) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
@@ -183,15 +178,6 @@ export const PipelineView = memo(function PipelineView({
       <div className={`shrink-0 ${isDark ? "border-b border-[#2a303b] bg-[#090D15]" : "border-b border-slate-100 bg-white"}`}>
         <PipelineFilters period={period} onChange={onPeriodChange} primaryColor={primaryColor} offset={offset} onOffsetChange={onOffsetChange} />
       </div>
-
-      {/* WhatsApp channel config (candidato+ only, when no URL set) */}
-      {!whatsappChannelUrl && onWhatsappUrlSaved && ["admin", "consultor", "candidato"].includes(userRole ?? "") && (
-        <QRChannelConfig
-          campaignId={campaignId}
-          primaryColor={primaryColor}
-          onSaved={onWhatsappUrlSaved}
-        />
-      )}
 
       {/* Geo context banner */}
       {geoLabel && (

@@ -1037,7 +1037,15 @@ export default function DashboardScreen() {
         </View>
       )}
 
-      {/* FAB */}
+      {/* QR FAB — bottom-left */}
+      <Pressable
+        style={[styles.qrFab, { backgroundColor: primary }]}
+        onPress={() => router.push('/(main)/qr-code')}
+      >
+        <MaterialIcons name="qr-code-2" size={26} color="#ffffff" />
+      </Pressable>
+
+      {/* FAB — bottom-right */}
       <Pressable
         style={[styles.fab, { backgroundColor: primary }]}
         onPress={() => router.push('/(main)/new-form')}
@@ -1243,7 +1251,23 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  // FAB
+  // QR FAB (bottom-left)
+  qrFab: {
+    position: 'absolute',
+    left: 20,
+    bottom: 24,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  // FAB (bottom-right)
   fab: {
     position: 'absolute',
     right: 20,

@@ -72,13 +72,10 @@ export default function MainLayout() {
           ),
         }}
       />
+      {/* qr-code is a hidden screen, accessed via FAB from dashboard */}
       <Tabs.Screen
         name="qr-code"
-        options={{
-          tabBarIcon: ({ color }) => (
-            <MaterialIcons name="qr-code-2" size={28} color={color} />
-          ),
-        }}
+        options={{ href: null }}
       />
       {/* new-form is a hidden screen, accessed via FAB (+) from dashboard */}
       <Tabs.Screen
