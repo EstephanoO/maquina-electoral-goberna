@@ -259,7 +259,7 @@ function QrScanCounter({ isDark, primaryColor, slug }: { isDark: boolean; primar
               <div className={`p-3 rounded-2xl ${isDark ? "bg-white" : "bg-slate-50 border border-slate-100"}`}>
                 {/* QR rendered via external service */}
                 <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}&color=075E54&bgcolor=FFFFFF&margin=0`}
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}&color=000000&bgcolor=FFFFFF&margin=0`}
                   alt="QR Code Canal WhatsApp"
                   width={200}
                   height={200}
