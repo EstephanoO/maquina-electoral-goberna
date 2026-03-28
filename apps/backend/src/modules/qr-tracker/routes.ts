@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { AppEnv } from "../../config/env";
+import type { AuthenticatedRequest } from "../../infra/auth";
 import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
 import * as repo from "./repository";
@@ -117,6 +118,40 @@ export function buildQrTrackerRoutes(_env: AppEnv): FastifyPluginAsync {
           }
           throw err;
         }
+      },
+    );
+    // ──────────────────────────────────────────────────────────────────
+    // POST /api/qr-trackers/my-qr
+    // Authenticated — returns (or creates) the brigadista's static QR
+    // tracker. Body: { target_url }. Slug = "b-{userId}".
+    // ──────────────────────────────────────────────────────────────────
+    app.post(
+      "/api/qr-trackers/my-qr",
+      { preHandler: [app.authenticate] },
+      async (request, reply) => {
+        const req = request as AuthenticatedRequest;
+        const requestId = String(request.id);
+        const userId = req.userId!;
+        const { target_url } = (request.body ?? {}) as { target_url?: string };
+
+        if (!target_url) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "target_url es requerido"));
+        }
+
+        const slug = `b-${userId}`;
+        let tracker = await repo.getBySlug(slug);
+
+        if (!tracker) {
+          tracker = await repo.createTracker({ slug, target_url, label: req.userId });
+        }
+
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          slug: tracker.slug,
+          scan_count: tracker.scan_count,
+          redirect_url: `/r/${tracker.slug}`,
+        });
       },
     );
   };

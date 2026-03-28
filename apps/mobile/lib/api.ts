@@ -570,3 +570,15 @@ export function createQrCode(redirectUrl: string): Promise<ApiResult<{ code: str
 export function checkQrCodeStatus(code: string): Promise<ApiResult<{ scanned: boolean; scanned_at: string | null }>> {
   return request('GET', `/qr-leads/codes/${code}/status`);
 }
+
+/**
+ * POST /api/qr-trackers/my-qr
+ * Returns (or creates) the brigadista's static QR tracker.
+ */
+export function getMyStaticQr(targetUrl: string): Promise<ApiResult<{
+  slug: string;
+  scan_count: number;
+  redirect_url: string;
+}>> {
+  return request('POST', '/qr-trackers/my-qr', { target_url: targetUrl });
+}

@@ -1,36 +1,28 @@
 /**
  * QR Code Screen — Goberna
  *
- * Cada brigadista tiene su propio QR que redirige al canal de WhatsApp
- * de la campaña. Al escanearlo:
- * 1. El backend registra el escaneo automaticamente (qr_leads table)
- * 2. Redirige 302 al canal de WhatsApp
- * 3. Esta pantalla detecta el escaneo via polling y muestra confirmacion
+ * Cada brigadista tiene su propio QR estatico que redirige al canal de
+ * WhatsApp de la campaña. El QR nunca expira y cada escaneo se
+ * contabiliza automaticamente en el backend.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
   Text,
   View,
   ActivityIndicator,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import QRCode from 'react-native-qrcode-svg';
 import { MaterialIcons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { useAgent, useCandidate, useActiveCampaign } from '@/lib/app-context';
-import {
-  API_BASE,
-  getCampaign,
-  getMyQrStats,
-  createQrCode,
-  checkQrCodeStatus,
-} from '@/lib/api';
+import { API_BASE, getCampaign, getMyStaticQr } from '@/lib/api';
 
 const FONT = 'Montserrat-Bold';
 const FONT_MEDIUM = 'Montserrat-SemiBold';
@@ -43,58 +35,41 @@ export default function QrCodeScreen() {
   const primary = candidate.color_primario;
   const secondary = candidate.color_secundario;
 
-  const [stats, setStats] = useState<{ total: number; today: number; this_week: number } | null>(null);
-  const [qrState, setQrState] = useState<'loading' | 'ready' | 'scanned' | 'error'>('loading');
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [qrUrl, setQrUrl] = useState('');
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [scanCount, setScanCount] = useState(0);
 
-  const loadStats = useCallback(async () => {
-    const res = await getMyQrStats();
-    if (res.ok && res.data?.stats) setStats(res.data.stats);
-  }, []);
-
-  const generateQR = useCallback(async () => {
-    setQrState('loading');
-    setQrUrl('');
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-
+  const load = useCallback(async () => {
+    setState('loading');
     try {
       const campRes = await getCampaign(campaign.id);
       const channelUrl = campRes.ok
         ? (campRes.data?.campaign?.config as Record<string, unknown> | null)?.whatsapp_channel_url as string | undefined
         : undefined;
 
-      if (!channelUrl) { setQrState('error'); return; }
+      if (!channelUrl) { setState('error'); return; }
 
-      const codeRes = await createQrCode(channelUrl);
-      if (!codeRes.ok || !codeRes.data?.code) { setQrState('error'); return; }
+      const res = await getMyStaticQr(channelUrl);
+      if (!res.ok || !res.data) { setState('error'); return; }
 
-      const code = codeRes.data.code;
-      setQrUrl(`${API_BASE}/qr-leads/redirect/${code}`);
-      setQrState('ready');
-
-      pollRef.current = setInterval(async () => {
-        try {
-          const check = await checkQrCodeStatus(code);
-          if (check.ok && check.data?.scanned) {
-            if (pollRef.current) clearInterval(pollRef.current);
-            pollRef.current = null;
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            setQrState('scanned');
-            void loadStats();
-          }
-        } catch { /* ignore */ }
-      }, 2000);
+      // Build full redirect URL (API_BASE = https://api.goberna.us/api)
+      const baseOrigin = API_BASE.replace(/\/api$/, '');
+      setQrUrl(`${baseOrigin}${res.data.redirect_url}`);
+      setScanCount(res.data.scan_count);
+      setState('ready');
     } catch {
-      setQrState('error');
+      setState('error');
     }
-  }, [campaign.id, loadStats]);
+  }, [campaign.id]);
 
-  useEffect(() => {
-    void generateQR();
-    void loadStats();
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [generateQR, loadStats]);
+  useEffect(() => { void load(); }, [load]);
+
+  const handleShare = useCallback(async () => {
+    if (!qrUrl) return;
+    await Share.share({
+      message: `Unite al canal de WhatsApp de ${candidate.name}: ${qrUrl}`,
+    });
+  }, [qrUrl, candidate.name]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: primary }]}>
@@ -111,75 +86,53 @@ export default function QrCodeScreen() {
         <Text style={styles.candidateInfo}>#{candidate.numero} · {candidate.partido}</Text>
       </Animated.View>
 
-      {/* QR Card — centered */}
+      {/* QR Card */}
       <Animated.View entering={FadeIn.delay(150).duration(500)} style={styles.qrCard}>
-        {qrState === 'loading' && (
+        {state === 'loading' && (
           <View style={styles.centerBox}>
             <ActivityIndicator size="large" color={primary} />
-            <Text style={styles.loadingText}>Generando QR...</Text>
+            <Text style={styles.loadingText}>Cargando QR...</Text>
           </View>
         )}
 
-        {qrState === 'ready' && qrUrl !== '' && (
+        {state === 'ready' && qrUrl !== '' && (
           <>
             <View style={styles.qrWrapper}>
               <QRCode value={qrUrl} size={200} color="#1e293b" backgroundColor="#ffffff" />
             </View>
             <Text style={styles.agentName}>{agent.full_name}</Text>
-            <Text style={styles.hint}>Escanear para unirse al canal</Text>
-            <View style={styles.waitingRow}>
-              <View style={styles.waitingDot} />
-              <Text style={styles.waitingLabel}>Esperando escaneo...</Text>
-            </View>
+            <Text style={styles.hint}>Escanea para unirte al canal</Text>
+
+            {/* Share button */}
+            <Pressable
+              style={({ pressed }) => [styles.shareBtn, { opacity: pressed ? 0.8 : 1 }]}
+              onPress={handleShare}
+            >
+              <MaterialIcons name="share" size={16} color="#64748b" />
+              <Text style={styles.shareBtnText}>Compartir enlace</Text>
+            </Pressable>
           </>
         )}
 
-        {qrState === 'scanned' && (
-          <View style={styles.centerBox}>
-            <View style={styles.checkCircle}>
-              <MaterialIcons name="check" size={28} color="#ffffff" />
-            </View>
-            <Text style={styles.scannedTitle}>Escaneado</Text>
-            <Text style={styles.scannedSub}>Contacto registrado</Text>
-            <Pressable
-              style={({ pressed }) => [styles.newQrBtn, { backgroundColor: primary, opacity: pressed ? 0.85 : 1 }]}
-              onPress={generateQR}
-            >
-              <MaterialIcons name="refresh" size={16} color="#fff" />
-              <Text style={styles.newQrBtnText}>Nuevo QR</Text>
-            </Pressable>
-          </View>
-        )}
-
-        {qrState === 'error' && (
+        {state === 'error' && (
           <View style={styles.centerBox}>
             <MaterialIcons name="link-off" size={40} color="#cbd5e1" />
             <Text style={styles.errorTitle}>Canal no configurado</Text>
             <Pressable
-              style={({ pressed }) => [styles.newQrBtn, { backgroundColor: primary, opacity: pressed ? 0.85 : 1 }]}
-              onPress={generateQR}
+              style={({ pressed }) => [styles.retryBtn, { backgroundColor: primary, opacity: pressed ? 0.85 : 1 }]}
+              onPress={load}
             >
-              <Text style={styles.newQrBtnText}>Reintentar</Text>
+              <Text style={styles.retryBtnText}>Reintentar</Text>
             </Pressable>
           </View>
         )}
       </Animated.View>
 
-      {/* Stats row */}
+      {/* Scan counter */}
       <Animated.View entering={FadeIn.delay(350).duration(500)} style={styles.statsRow}>
         <View style={styles.statCard}>
-          <Text style={[styles.statValue, { color: '#ffffff' }]}>{stats?.total ?? '—'}</Text>
-          <Text style={styles.statLabel}>Total</Text>
-        </View>
-        <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.15)' }]} />
-        <View style={styles.statCard}>
-          <Text style={[styles.statValue, { color: secondary }]}>{stats?.today ?? '—'}</Text>
-          <Text style={styles.statLabel}>Hoy</Text>
-        </View>
-        <View style={[styles.statDivider, { backgroundColor: 'rgba(255,255,255,0.15)' }]} />
-        <View style={styles.statCard}>
-          <Text style={[styles.statValue, { color: '#4ade80' }]}>{stats?.this_week ?? '—'}</Text>
-          <Text style={styles.statLabel}>Semana</Text>
+          <Text style={[styles.statValue, { color: secondary }]}>{scanCount}</Text>
+          <Text style={styles.statLabel}>Escaneos</Text>
         </View>
       </Animated.View>
     </SafeAreaView>
@@ -207,7 +160,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Candidate profile
   profile: {
     alignItems: 'center',
     marginBottom: 20,
@@ -226,7 +178,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  // QR Card
   qrCard: {
     backgroundColor: '#ffffff',
     borderRadius: 24,
@@ -257,7 +208,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#94a3b8',
     fontFamily: FONT_MEDIUM,
-    marginBottom: 12,
+    marginBottom: 16,
   },
   centerBox: {
     alignItems: 'center',
@@ -271,48 +222,27 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  // Waiting
-  waitingRow: {
+  shareBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 10,
     backgroundColor: '#f1f5f9',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
   },
-  waitingDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#25D366',
-  },
-  waitingLabel: {
-    fontSize: 11,
+  shareBtnText: {
+    fontSize: 12,
     fontFamily: FONT_MEDIUM,
     color: '#64748b',
   },
 
-  // Scanned
-  checkCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#25D366',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scannedTitle: {
-    fontSize: 18,
+  errorTitle: {
+    fontSize: 14,
     fontFamily: FONT,
-    color: '#1e293b',
-  },
-  scannedSub: {
-    fontSize: 12,
-    fontFamily: FONT_MEDIUM,
     color: '#94a3b8',
   },
-  newQrBtn: {
+  retryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -321,20 +251,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 8,
   },
-  newQrBtnText: {
+  retryBtnText: {
     fontSize: 13,
     fontFamily: FONT,
     color: '#ffffff',
   },
 
-  // Error
-  errorTitle: {
-    fontSize: 14,
-    fontFamily: FONT,
-    color: '#94a3b8',
-  },
-
-  // Stats
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -342,13 +264,14 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginHorizontal: 24,
     paddingVertical: 16,
+    paddingHorizontal: 32,
   },
   statCard: {
     flex: 1,
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 28,
     fontFamily: FONT,
     fontVariant: ['tabular-nums'],
   },
@@ -359,9 +282,5 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 28,
   },
 });
