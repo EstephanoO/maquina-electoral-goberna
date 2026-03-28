@@ -28,6 +28,13 @@ export async function ensureQrTrackerTables(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_qr_scans_tracker
     ON qr_scans(tracker_id, scanned_at DESC)
   `);
+
+  // Geo columns (added after initial release)
+  await pool.query(`ALTER TABLE qr_scans ADD COLUMN IF NOT EXISTS country text`);
+  await pool.query(`ALTER TABLE qr_scans ADD COLUMN IF NOT EXISTS region text`);
+  await pool.query(`ALTER TABLE qr_scans ADD COLUMN IF NOT EXISTS city text`);
+  await pool.query(`ALTER TABLE qr_scans ADD COLUMN IF NOT EXISTS lat double precision`);
+  await pool.query(`ALTER TABLE qr_scans ADD COLUMN IF NOT EXISTS lon double precision`);
 }
 
 // ── Create a tracker ─────────────────────────────────────────────────
@@ -51,7 +58,7 @@ export async function recordScan(params: {
   ip?: string | null;
   user_agent?: string | null;
   referer?: string | null;
-}): Promise<{ scan_count: number }> {
+}): Promise<{ scan_count: number; scan_id: string }> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -63,20 +70,35 @@ export async function recordScan(params: {
       [params.tracker_id],
     );
 
-    await client.query(
+    const ins = await client.query<{ id: string }>(
       `INSERT INTO qr_scans (tracker_id, ip, user_agent, referer)
-       VALUES ($1, $2, $3, $4)`,
+       VALUES ($1, $2, $3, $4)
+       RETURNING id`,
       [params.tracker_id, params.ip ?? null, params.user_agent ?? null, params.referer ?? null],
     );
 
     await client.query("COMMIT");
-    return { scan_count: parseInt(upd.rows[0]!.scan_count, 10) };
+    return { scan_count: parseInt(upd.rows[0]!.scan_count, 10), scan_id: ins.rows[0]!.id };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
   } finally {
     client.release();
   }
+}
+
+// ── Update scan with geo data ────────────────────────────────────────
+export async function updateScanGeo(scanId: string, geo: {
+  country: string | null;
+  region: string | null;
+  city: string | null;
+  lat: number | null;
+  lon: number | null;
+}): Promise<void> {
+  await pool.query(
+    `UPDATE qr_scans SET country=$1, region=$2, city=$3, lat=$4, lon=$5 WHERE id=$6`,
+    [geo.country, geo.region, geo.city, geo.lat, geo.lon, scanId],
+  );
 }
 
 // ── Get tracker by slug ──────────────────────────────────────────────
@@ -109,21 +131,30 @@ export async function getBySlug(slug: string): Promise<{
 export async function getRecentScans(
   tracker_id: string,
   limit = 50,
-): Promise<Array<{ id: string; ip: string | null; user_agent: string | null; scanned_at: string }>> {
+): Promise<Array<{ id: string; ip: string | null; user_agent: string | null; scanned_at: string; country: string | null; region: string | null; city: string | null; lat: number | null; lon: number | null }>> {
   const result = await pool.query<{
     id: string;
     ip: string | null;
     user_agent: string | null;
     scanned_at: string;
+    country: string | null;
+    region: string | null;
+    city: string | null;
+    lat: string | null;
+    lon: string | null;
   }>(
-    `SELECT id, ip, user_agent, scanned_at
+    `SELECT id, ip, user_agent, scanned_at, country, region, city, lat, lon
      FROM qr_scans
      WHERE tracker_id = $1
      ORDER BY scanned_at DESC
      LIMIT $2`,
     [tracker_id, limit],
   );
-  return result.rows;
+  return result.rows.map((r) => ({
+    ...r,
+    lat: r.lat != null ? parseFloat(r.lat) : null,
+    lon: r.lon != null ? parseFloat(r.lon) : null,
+  }));
 }
 
 // ── List all trackers ────────────────────────────────────────────────

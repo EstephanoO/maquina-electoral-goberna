@@ -185,7 +185,7 @@ function QrScanCounter({ isDark, primaryColor, slug }: { isDark: boolean; primar
   const { data } = useQuery({
     queryKey: ["qr-tracker", slug],
     queryFn: async () => {
-      const res = await api.get<{ tracker: { scan_count: number; created_at: string }; recent_scans: Array<{ scanned_at: string }> }>(`/api/qr-trackers/${slug}/stats`);
+      const res = await api.get<{ tracker: { scan_count: number; created_at: string }; recent_scans: Array<{ scanned_at: string; country: string | null; region: string | null; city: string | null }> }>(`/api/qr-trackers/${slug}/stats`);
       if (!res.ok || !res.data) throw new Error("Failed to fetch QR stats");
       return res.data;
     },
@@ -198,6 +198,20 @@ function QrScanCounter({ isDark, primaryColor, slug }: { isDark: boolean; primar
     if (!data?.recent_scans) return 0;
     const todayStr = new Date().toISOString().slice(0, 10);
     return data.recent_scans.filter((s) => s.scanned_at.slice(0, 10) === todayStr).length;
+  }, [data?.recent_scans]);
+
+  const locationGroups = useMemo(() => {
+    if (!data?.recent_scans) return [];
+    const counts = new Map<string, number>();
+    for (const s of data.recent_scans) {
+      const parts = [s.city, s.region, s.country].filter(Boolean);
+      if (parts.length === 0) continue;
+      const key = parts.join(", ");
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([location, count]) => ({ location, count }))
+      .sort((a, b) => b.count - a.count);
   }, [data?.recent_scans]);
 
   const qrUrl = `https://api.goberna.us/r/${slug}`;
@@ -288,6 +302,27 @@ function QrScanCounter({ isDark, primaryColor, slug }: { isDark: boolean; primar
                 </span>
               </div>
             </div>
+
+            {/* Locations */}
+            {locationGroups.length > 0 && (
+              <div className={`px-5 py-3 ${isDark ? "border-t border-[#1d2f43]" : "border-t border-slate-100"}`}>
+                <span className={`text-[9px] font-bold uppercase tracking-widest block mb-2 ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+                  Ubicaciones recientes
+                </span>
+                <div className="flex flex-col gap-1.5 max-h-[140px] overflow-y-auto">
+                  {locationGroups.map((g) => (
+                    <div key={g.location} className="flex items-center justify-between gap-2">
+                      <span className={`text-[11px] truncate ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                        {g.location}
+                      </span>
+                      <span className={`text-[11px] font-bold tabular-nums shrink-0 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                        {g.count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

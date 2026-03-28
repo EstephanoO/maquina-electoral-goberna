@@ -3,6 +3,7 @@ import type { AppEnv } from "../../config/env";
 import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
 import * as repo from "./repository";
+import { resolveAndStoreGeo } from "./geo";
 
 export function buildQrTrackerRoutes(_env: AppEnv): FastifyPluginAsync {
   return async (app) => {
@@ -22,12 +23,17 @@ export function buildQrTrackerRoutes(_env: AppEnv): FastifyPluginAsync {
       }
 
       // Record the scan (non-blocking — don't make the user wait)
+      // Chain geo resolution after successful recording
       repo
         .recordScan({
           tracker_id: tracker.id,
           ip: request.ip,
           user_agent: request.headers["user-agent"] ?? null,
           referer: request.headers.referer ?? null,
+        })
+        .then(({ scan_id }) => {
+          resolveAndStoreGeo(scan_id, request.ip)
+            .catch((err) => app.log.error({ err }, "[qr-tracker] geo lookup failed"));
         })
         .catch((err) => app.log.error({ err }, "[qr-tracker] recordScan failed"));
 
