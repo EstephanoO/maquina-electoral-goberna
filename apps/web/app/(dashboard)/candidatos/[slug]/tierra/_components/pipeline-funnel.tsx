@@ -189,8 +189,8 @@ function QrScanCounter({ isDark, primaryColor, slug }: { isDark: boolean; primar
       if (!res.ok || !res.data) throw new Error("Failed to fetch QR stats");
       return res.data;
     },
-    refetchInterval: 15_000,
-    staleTime: 10_000,
+    refetchInterval: open ? 3_000 : 30_000,
+    staleTime: open ? 2_000 : 25_000,
   });
 
   const scanCount = data?.tracker?.scan_count ?? 0;
