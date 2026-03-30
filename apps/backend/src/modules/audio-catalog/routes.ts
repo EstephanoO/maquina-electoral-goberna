@@ -186,8 +186,9 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
     }, async (request, reply) => {
       const requestId = String(request.id);
       const campaignId = request.headers["x-campaign-id"] as string;
-      if (!campaignId) {
-        return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "x-campaign-id header requerido"));
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!campaignId || !UUID_RE.test(campaignId)) {
+        return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "x-campaign-id header requerido y debe ser un UUID válido"));
       }
 
       const q = request.query as Record<string, unknown>;

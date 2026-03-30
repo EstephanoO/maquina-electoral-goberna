@@ -112,7 +112,7 @@ export async function create(data: {
     INSERT INTO audio_catalog (
       campaign_id, category, label, description, script_text,
       sort_order, voice_id, created_by
-    ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'iaSdolcffUuIlEi5pdbj'), $8)
+    ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'ioPHn4YlxFFAweLTLkxV'), $8)
     RETURNING
       id::text, campaign_id::text, category, label, description,
       script_text, mime_type, audio_size, duration_ms, voice_id,
