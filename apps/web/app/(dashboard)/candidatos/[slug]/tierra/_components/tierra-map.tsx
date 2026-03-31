@@ -258,6 +258,12 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
 
   const handleMoveEnd = useCallback(() => {
     zoomEndTimer.current = setTimeout(() => { isZoomingRef.current = false; }, 300);
+    if (mapRef.current) {
+      const c = mapRef.current.getCenter();
+      const z = mapRef.current.getZoom();
+      const b = mapRef.current.getBounds();
+      console.log(`[tierra-cam] center: [${c.lng.toFixed(5)}, ${c.lat.toFixed(5)}]  zoom: ${z.toFixed(2)}  bounds: [[${b.getWest().toFixed(5)}, ${b.getSouth().toFixed(5)}], [${b.getEast().toFixed(5)}, ${b.getNorth().toFixed(5)}]]`);
+    }
     if (mapRef.current && showDatos && datosVizMode === "bars3d") {
       setBarsZoom(mapRef.current.getZoom());
     }
