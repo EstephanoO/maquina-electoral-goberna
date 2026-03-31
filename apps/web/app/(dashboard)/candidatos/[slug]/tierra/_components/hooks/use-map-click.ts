@@ -22,6 +22,8 @@ export function useMapClick(
   pendingDrillRef: React.MutableRefObject<boolean>,
   onDrillChange: (state: DrillState) => void,
   onSelectAgent: (agentId: string | null) => void,
+  /** When set, the user cannot drill back below this level (e.g. 2 = locked to province) */
+  lockedDrillLevel: DrillLevel | null = null,
 ) {
   return useCallback((e: MapLayerMouseEvent) => {
     const currentDrill = drillStateRef.current!;
@@ -33,6 +35,9 @@ export function useMapClick(
       if (currentSelectedAgent) {
         onSelectAgent(null);
       }
+
+      // If drill is locked, don't reset — just deselect agent
+      if (lockedDrillLevel != null) return;
 
       // Empty space (single click) → clear filters + reset zoom
       onDrillChange(INITIAL_DRILL);
@@ -113,6 +118,8 @@ export function useMapClick(
     const clickedLevel = isDep ? 0 : isProv ? 1 : isDist ? 2 : isSector ? 3 : -1;
     if (clickedLevel >= 0 && clickedLevel < currentDrill.level) {
       const newLevel = (currentDrill.level - 1) as DrillLevel;
+      // Block going back below the locked drill level
+      if (lockedDrillLevel != null && newLevel < lockedDrillLevel) return;
       const newState = { ...currentDrill, level: newLevel };
       if (newLevel < 4) { newState.sector = null; newState.sectorName = null; }
       if (newLevel < 3) { newState.distCode = null; newState.distName = null; }
@@ -124,6 +131,8 @@ export function useMapClick(
     }
 
     if (isDep) {
+      // Block dep-level navigation when locked at or above dep level
+      if (lockedDrillLevel != null && lockedDrillLevel >= 1) return;
       const coddep = String(f.properties?.coddep ?? f.properties?.CODDEP ?? "");
       const name = String(f.properties?.departamento ?? f.properties?.departamen ?? f.properties?.DEPARTAMEN ?? coddep);
       if (coddep) {
@@ -137,6 +146,8 @@ export function useMapClick(
     }
 
     if (isProv) {
+      // Block prov-level lateral navigation when locked at or above prov level
+      if (lockedDrillLevel != null && lockedDrillLevel >= 2) return;
       const codprovFull = String(f.properties?.codprov_full ?? ((f.properties?.CODDEP ?? "") + (f.properties?.CODPROV ?? "")));
       const name = String(f.properties?.provincia ?? f.properties?.PROVINCIA ?? codprovFull);
       const coddep = String(f.properties?.coddep ?? f.properties?.CODDEP ?? currentDrill.depCode ?? "");
@@ -175,5 +186,5 @@ export function useMapClick(
         if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
       }
     }
-  }, [mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent]);
+  }, [mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent, lockedDrillLevel]);
 }

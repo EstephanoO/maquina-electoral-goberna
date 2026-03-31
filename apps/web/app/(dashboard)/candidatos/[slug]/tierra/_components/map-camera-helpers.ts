@@ -38,7 +38,7 @@ export function boundsToInitialViewState(bounds: [[number, number], [number, num
   return {
     longitude: (sw[0] + ne[0]) / 2,
     latitude: (sw[1] + ne[1]) / 2,
-    zoom: 13, // safe zoom for a small district like Carmen de la Legua
+    zoom: boundsToMinZoom(bounds),
   };
 }
 

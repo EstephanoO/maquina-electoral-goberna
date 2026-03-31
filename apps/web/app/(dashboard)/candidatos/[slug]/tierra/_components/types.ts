@@ -150,6 +150,11 @@ export type TierraMapProps = {
    * - pendingDrillRef is never set (no reverse-geocode drift)
    */
   lockedBounds?: [[number, number], [number, number]];
+  /**
+   * Minimum drill level the user cannot go below.
+   * E.g. 2 = locked to provincia (can enter districts, can't go back to dep or Peru).
+   */
+  lockedDrillLevel?: DrillLevel | null;
 };
 
 /* ─── Log Entries ─── */

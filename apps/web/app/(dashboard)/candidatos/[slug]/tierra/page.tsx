@@ -195,6 +195,7 @@ export default function TierraPage() {
             onDrillChange={setDrillState}
             onMapDoubleClick={handleMapDoubleClick}
             lockedBounds={isLeguaDemo ? LEGUA_BOUNDS : jurisdictionResult?.bounds ?? undefined}
+            lockedDrillLevel={isLeguaDemo ? 3 : jurisdictionResult?.drill.level ?? null}
           />
           <div
             className="absolute top-3 z-20 flex items-start transition-[left] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
