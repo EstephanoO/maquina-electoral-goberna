@@ -57,7 +57,7 @@ import {
 } from "./map-paint-constants";
 import {
   MAP_DRAG_PAN_OPTIONS, CAMERA_PITCH_MIN, CAMERA_PITCH_MAX,
-  clamp, boundsToInitialViewState, applyFluidMapInteractions,
+  clamp, boundsToInitialViewState, applyFluidMapInteractions, expandBounds, boundsToMinZoom,
 } from "./map-camera-helpers";
 import { useZonePaint, useLayerPaint } from "./hooks/use-zone-paint";
 
@@ -489,8 +489,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         minPitch={0}
         maxPitch={60}
         clickTolerance={4}
-        minZoom={1}
-        maxBounds={PERU_MAX_BOUNDS}
+        minZoom={lockedBounds ? boundsToMinZoom(lockedBounds) : 1}
+        maxBounds={lockedBounds ? expandBounds(lockedBounds, 0.15) : PERU_MAX_BOUNDS}
         maxTileCacheZoomLevels={10}
         fadeDuration={0}
         onLoad={handleLoad}
