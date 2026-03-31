@@ -24,6 +24,8 @@ export function useMapClick(
   onSelectAgent: (agentId: string | null) => void,
   /** When set, the user cannot drill back below this level (e.g. 2 = locked to province) */
   lockedDrillLevel: DrillLevel | null = null,
+  /** Bounds to fitBounds to when returning to the locked drill level */
+  lockedBounds: [[number, number], [number, number]] | null = null,
 ) {
   return useCallback((e: MapLayerMouseEvent) => {
     const currentDrill = drillStateRef.current!;
@@ -126,7 +128,13 @@ export function useMapClick(
       if (newLevel < 2) { newState.provCode = null; newState.provName = null; }
       if (newLevel < 1) { newState.depCode = null; newState.depName = null; }
       onDrillChange(newState);
-      if (newLevel === 0) mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: FLY_DURATION });
+      skipNextFitRef.current = true;
+      if (lockedDrillLevel != null && newLevel === lockedDrillLevel && lockedBounds) {
+        // Returning to jurisdiction level — re-center on jurisdiction bounds
+        mapRef.current?.fitBounds(lockedBounds, { padding: 60, duration: FLY_DURATION });
+      } else if (newLevel === 0) {
+        mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: FLY_DURATION });
+      }
       return;
     }
 
@@ -186,5 +194,5 @@ export function useMapClick(
         if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
       }
     }
-  }, [mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent, lockedDrillLevel]);
+  }, [mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent, lockedDrillLevel, lockedBounds]);
 }

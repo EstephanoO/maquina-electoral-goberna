@@ -119,7 +119,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
     agents,
   });
   const { formTooltipRef, onFormMouseMove, onFormMouseLeave, showPinnedTooltip } = useFormTooltip(isZoomingRef, mapRef);
-  const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent, lockedDrillLevel ?? null);
+  const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent, lockedDrillLevel ?? null, lockedBounds ?? null);
   const containerRef = useMapResize(mapRef, drillStateRef);
 
   // ─── P5: Memoize tiles array (new array = new Source in react-maplibre) ───
