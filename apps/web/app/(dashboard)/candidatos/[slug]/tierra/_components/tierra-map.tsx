@@ -107,7 +107,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   agentsRef.current = agents;
 
   // ─── Hooks ───
-  const filters = useDrillFilters(drillState, campaignId);
+  const filters = useDrillFilters(drillState, campaignId, lockedDrillLevel);
   const agentsGeoJson = useAgentsSource(agents, selectedAgentId);
   const { formsGeoJson, barsGeoJson } = useFormSources(forms, selectedAgentId, barsZoom);
   const newPoints = useNewPoints(forms);
