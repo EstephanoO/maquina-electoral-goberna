@@ -21,6 +21,8 @@ export type CampaignRow = {
   numero: number | null;
   partido: string | null;
   foto_url: string | null;
+  jurisdiccion_nivel: string | null;
+  jurisdiccion_code: string | null;
   created_at: Date;
   updated_at: Date;
 };
@@ -35,10 +37,13 @@ export type CampaignStats = CampaignRow & {
 
 // ── Queries ─────────────────────────────────────────────────────────
 
+/** Column list shared by all single-table SELECTs */
+const CAMPAIGN_COLS = `id, name, slug, config, status, cargo, numero, partido, foto_url, jurisdiccion_nivel, jurisdiccion_code, created_at, updated_at`;
+const CAMPAIGN_COLS_ALIASED = CAMPAIGN_COLS.split(", ").map((c) => `c.${c}`).join(", ");
+
 export async function findById(id: string): Promise<CampaignRow | null> {
   const { rows } = await pool.query<CampaignRow>(
-    `SELECT id, name, slug, config, status, cargo, numero, partido, foto_url, created_at, updated_at
-     FROM campaigns WHERE id = $1`,
+    `SELECT ${CAMPAIGN_COLS} FROM campaigns WHERE id = $1`,
     [id],
   );
   return rows[0] ?? null;
@@ -46,8 +51,7 @@ export async function findById(id: string): Promise<CampaignRow | null> {
 
 export async function findBySlug(slug: string): Promise<CampaignRow | null> {
   const { rows } = await pool.query<CampaignRow>(
-    `SELECT id, name, slug, config, status, cargo, numero, partido, foto_url, created_at, updated_at
-     FROM campaigns WHERE slug = $1`,
+    `SELECT ${CAMPAIGN_COLS} FROM campaigns WHERE slug = $1`,
     [slug],
   );
   return rows[0] ?? null;
@@ -55,7 +59,7 @@ export async function findBySlug(slug: string): Promise<CampaignRow | null> {
 
 export async function listForUser(userId: string): Promise<CampaignRow[]> {
   const { rows } = await pool.query<CampaignRow>(
-    `SELECT c.id, c.name, c.slug, c.config, c.status, c.cargo, c.numero, c.partido, c.foto_url, c.created_at, c.updated_at
+    `SELECT ${CAMPAIGN_COLS_ALIASED}
      FROM campaigns c
      JOIN user_campaigns uc ON uc.campaign_id = c.id
      WHERE uc.user_id = $1 AND uc.status = 'active' AND c.status != 'archived'
@@ -68,7 +72,7 @@ export async function listForUser(userId: string): Promise<CampaignRow[]> {
 export async function listAll(): Promise<CampaignStats[]> {
   const { rows } = await pool.query<CampaignStats>(
     `SELECT
-       c.id, c.name, c.slug, c.config, c.status, c.cargo, c.numero, c.partido, c.foto_url, c.created_at, c.updated_at,
+       ${CAMPAIGN_COLS_ALIASED},
        COUNT(CASE WHEN uc.role = 'agente_campo'     AND uc.status = 'active' THEN 1 END)::int AS agente_campo_count,
        COUNT(CASE WHEN uc.role = 'brigadista_zonal'  AND uc.status = 'active' THEN 1 END)::int AS brigadista_zonal_count,
        COUNT(CASE WHEN uc.role = 'candidato' AND uc.status = 'active' THEN 1 END)::int AS candidato_count,
@@ -84,19 +88,17 @@ export async function listAll(): Promise<CampaignStats[]> {
 
 export async function listActive(): Promise<CampaignRow[]> {
   const { rows } = await pool.query<CampaignRow>(
-    `SELECT id, name, slug, config, status, cargo, numero, partido, foto_url, created_at, updated_at
-     FROM campaigns WHERE status = 'active'
-     ORDER BY name`,
+    `SELECT ${CAMPAIGN_COLS} FROM campaigns WHERE status = 'active' ORDER BY name`,
   );
   return rows;
 }
 
 export async function create(input: CreateCampaignInput): Promise<CampaignRow> {
   const { rows } = await pool.query<CampaignRow>(
-    `INSERT INTO campaigns (name, slug, config, cargo, numero, partido, foto_url)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, name, slug, config, status, cargo, numero, partido, foto_url, created_at, updated_at`,
-    [input.name, input.slug, JSON.stringify(input.config), input.cargo ?? null, input.numero ?? null, input.partido ?? null, input.foto_url ?? null],
+    `INSERT INTO campaigns (name, slug, config, cargo, numero, partido, foto_url, jurisdiccion_nivel, jurisdiccion_code)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING ${CAMPAIGN_COLS}`,
+    [input.name, input.slug, JSON.stringify(input.config), input.cargo ?? null, input.numero ?? null, input.partido ?? null, input.foto_url ?? null, input.jurisdiccion_nivel ?? null, input.jurisdiccion_code ?? null],
   );
   return rows[0]!;
 }
@@ -134,6 +136,14 @@ export async function update(id: string, input: UpdateCampaignInput): Promise<Ca
     setClauses.push(`foto_url = $${paramIndex++}`);
     values.push(input.foto_url);
   }
+  if (input.jurisdiccion_nivel !== undefined) {
+    setClauses.push(`jurisdiccion_nivel = $${paramIndex++}`);
+    values.push(input.jurisdiccion_nivel);
+  }
+  if (input.jurisdiccion_code !== undefined) {
+    setClauses.push(`jurisdiccion_code = $${paramIndex++}`);
+    values.push(input.jurisdiccion_code);
+  }
 
   if (setClauses.length === 0) return findById(id);
 
@@ -142,7 +152,7 @@ export async function update(id: string, input: UpdateCampaignInput): Promise<Ca
 
   const { rows } = await pool.query<CampaignRow>(
     `UPDATE campaigns SET ${setClauses.join(", ")} WHERE id = $${paramIndex}
-     RETURNING id, name, slug, config, status, cargo, numero, partido, foto_url, created_at, updated_at`,
+     RETURNING ${CAMPAIGN_COLS}`,
     values,
   );
   return rows[0] ?? null;
@@ -179,6 +189,7 @@ export type FormsTotals = {
   forms_count: number;
   forms_today: number;
   forms_week: number;
+  forms_hablado: number;
 };
 
 export type AgentFormsData = {
@@ -189,10 +200,10 @@ export type AgentFormsData = {
 
 export async function getFormsTotals(campaignId: string): Promise<FormsTotals> {
   // Dedup by phone (first-write-wins) — consistent with CMS pipeline metrics
-  const { rows } = await pool.query<{ forms_count: string; forms_today: string; forms_week: string }>(
+  const { rows } = await pool.query<{ forms_count: string; forms_today: string; forms_week: string; forms_hablado: string }>(
     `WITH unique_forms AS (
        SELECT DISTINCT ON (data->>'telefono')
-         id, created_at
+         id, cms_status, created_at
        FROM form_submissions
        WHERE campaign_id = $1
          AND COALESCE(data->>'telefono', '') != ''
@@ -202,7 +213,8 @@ export async function getFormsTotals(campaignId: string): Promise<FormsTotals> {
      SELECT
        COUNT(*)::text AS forms_count,
        COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE)::text AS forms_today,
-        COUNT(*) FILTER (WHERE created_at >= date_trunc('week', NOW()))::text AS forms_week
+       COUNT(*) FILTER (WHERE created_at >= date_trunc('week', NOW()))::text AS forms_week,
+       COUNT(*) FILTER (WHERE cms_status IN ('hablado', 'respondieron'))::text AS forms_hablado
      FROM unique_forms`,
     [campaignId],
   );
@@ -211,6 +223,7 @@ export async function getFormsTotals(campaignId: string): Promise<FormsTotals> {
     forms_count: parseInt(row?.forms_count ?? "0", 10),
     forms_today: parseInt(row?.forms_today ?? "0", 10),
     forms_week: parseInt(row?.forms_week ?? "0", 10),
+    forms_hablado: parseInt(row?.forms_hablado ?? "0", 10),
   };
 }
 

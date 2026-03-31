@@ -15,6 +15,8 @@ export type CreateCampaignInput = {
   numero?: number;
   partido?: string;
   foto_url?: string;
+  jurisdiccion_nivel?: string;
+  jurisdiccion_code?: string;
   config?: {
     color_primario?: string;
     color_secundario?: string;

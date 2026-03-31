@@ -46,6 +46,29 @@ export function isCargoSubnacional(cargo: string): boolean {
   return (CARGOS_SUBNACIONALES as readonly string[]).includes(cargo);
 }
 
+/**
+ * Max jurisdiction drill level allowed per cargo.
+ * Returns null for cargos that don't need jurisdiction selection.
+ */
+export function getMaxJurisdiccionLevel(cargo: string): "departamento" | "provincia" | "distrito" | null {
+  switch (cargo) {
+    case "Congresista":
+    case "Senador Nacional":
+    case "Presidente Regional":
+    case "Vicepresidente Regional":
+    case "Consejero Regional":
+      return "departamento";
+    case "Alcalde Provincial":
+    case "Regidor Provincial":
+      return "provincia";
+    case "Alcalde Distrital":
+    case "Regidor Distrital":
+      return "distrito";
+    default:
+      return null;
+  }
+}
+
 // ── Status Configurations ──────────────────────────────────────────
 
 export const STATUS_CONFIG = {
