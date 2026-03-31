@@ -86,15 +86,28 @@ export async function saveAudio(
   audioBase64: string,
   audioSize: number,
   durationMs: number,
+  scriptOverride?: string,
 ): Promise<void> {
-  await pool.query(`
-    UPDATE audio_catalog SET
-      audio_base64 = $2,
-      audio_size = $3,
-      duration_ms = $4,
-      updated_at = now()
-    WHERE id = $1
-  `, [id, audioBase64, audioSize, durationMs]);
+  if (scriptOverride) {
+    await pool.query(`
+      UPDATE audio_catalog SET
+        audio_base64 = $2,
+        audio_size = $3,
+        duration_ms = $4,
+        script_text = $5,
+        updated_at = now()
+      WHERE id = $1
+    `, [id, audioBase64, audioSize, durationMs, scriptOverride]);
+  } else {
+    await pool.query(`
+      UPDATE audio_catalog SET
+        audio_base64 = $2,
+        audio_size = $3,
+        duration_ms = $4,
+        updated_at = now()
+      WHERE id = $1
+    `, [id, audioBase64, audioSize, durationMs]);
+  }
 }
 
 // ── Create a new catalog item ────────────────────────────────────────
