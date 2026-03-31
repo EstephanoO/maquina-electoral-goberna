@@ -178,7 +178,7 @@ export function useMapClick(
       const provName = String(f.properties?.provincia ?? f.properties?.PROVINCIA ?? currentDrill.provName ?? "");
       if (ubigeo) {
         const bounds = getBoundsFromFeature(f);
-        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
+        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 80, duration: FLY_DURATION });
         skipNextFitRef.current = true;
         onDrillChange({ level: 3, depCode: coddep, depName, provCode: codprovFull, provName, distCode: ubigeo, distName: name, sector: null, sectorName: null });
       }
