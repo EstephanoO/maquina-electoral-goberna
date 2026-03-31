@@ -15,7 +15,7 @@ import {
   Button,
   Alert,
 } from "../../../../lib/ui";
-import { CARGO_OPTIONS, DEFAULT_COLORS, FONT_STACK } from "../../../../lib/constants";
+import { CARGO_OPTIONS, DEFAULT_COLORS, FONT_STACK, isCargoCongresal, isCargoSubnacional } from "../../../../lib/constants";
 import { updateCampaign, uploadCandidatePhoto } from "../../../../lib/services";
 import type { Campaign } from "../../../../lib/types";
 
@@ -73,8 +73,20 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
     setHasChanges(changed);
   }, [form, photoFile, candidate]);
 
+  const showNumero = isCargoCongresal(form.cargo);
+  const showPartido = isCargoSubnacional(form.cargo);
+
   const updateField = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [key]: value };
+      // Clear fields that become hidden when cargo changes
+      if (key === "cargo") {
+        const cargo = value as string;
+        if (!isCargoCongresal(cargo)) next.numero = "";
+        if (!isCargoSubnacional(cargo)) next.partido = "";
+      }
+      return next;
+    });
   }, []);
 
   const handlePhotoChange = useCallback((file: File | null, preview: string | null) => {
@@ -183,22 +195,26 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
           placeholder="Seleccionar cargo…"
         />
 
-        <TextInput
-          id="ec-numero"
-          type="number"
-          label="Número de candidatura"
-          value={form.numero}
-          onChange={(e) => updateField("numero", e.target.value)}
-          placeholder="Ej: 7"
-        />
+        {showNumero && (
+          <TextInput
+            id="ec-numero"
+            type="number"
+            label="Número de candidatura"
+            value={form.numero}
+            onChange={(e) => updateField("numero", e.target.value)}
+            placeholder="Ej: 7"
+          />
+        )}
 
-        <TextInput
-          id="ec-partido"
-          label="Nombre del partido"
-          value={form.partido}
-          onChange={(e) => updateField("partido", e.target.value)}
-          placeholder="Ej: Partido Nacional"
-        />
+        {showPartido && (
+          <TextInput
+            id="ec-partido"
+            label="Nombre del partido"
+            value={form.partido}
+            onChange={(e) => updateField("partido", e.target.value)}
+            placeholder="Ej: Partido Nacional"
+          />
+        )}
 
         <SelectInput
           id="ec-status"

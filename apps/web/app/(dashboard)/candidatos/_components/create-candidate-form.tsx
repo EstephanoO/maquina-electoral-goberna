@@ -15,7 +15,7 @@ import {
   Button,
   Alert,
 } from "../../../../lib/ui";
-import { CARGO_OPTIONS, DEFAULT_COLORS, FONT_STACK } from "../../../../lib/constants";
+import { CARGO_OPTIONS, DEFAULT_COLORS, FONT_STACK, isCargoCongresal, isCargoSubnacional } from "../../../../lib/constants";
 import { slugify } from "../../../../lib/utils";
 import { createCampaignWithPhoto } from "../../../../lib/services";
 
@@ -51,8 +51,20 @@ export function CreateCandidateForm({ onSuccess, onCancel }: CreateCandidateForm
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
+  const showNumero = isCargoCongresal(form.cargo);
+  const showPartido = isCargoSubnacional(form.cargo);
+
   const updateField = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [key]: value };
+      // Clear fields that become hidden when cargo changes
+      if (key === "cargo") {
+        const cargo = value as string;
+        if (!isCargoCongresal(cargo)) next.numero = "";
+        if (!isCargoSubnacional(cargo)) next.partido = "";
+      }
+      return next;
+    });
   }, []);
 
   const handlePhotoChange = useCallback((file: File | null, preview: string | null) => {
@@ -150,22 +162,26 @@ export function CreateCandidateForm({ onSuccess, onCancel }: CreateCandidateForm
           placeholder="Seleccionar cargo…"
         />
 
-        <TextInput
-          id="nc-numero"
-          type="number"
-          label="Número de candidatura"
-          value={form.numero}
-          onChange={(e) => updateField("numero", e.target.value)}
-          placeholder="Ej: 7"
-        />
+        {showNumero && (
+          <TextInput
+            id="nc-numero"
+            type="number"
+            label="Número de candidatura"
+            value={form.numero}
+            onChange={(e) => updateField("numero", e.target.value)}
+            placeholder="Ej: 7"
+          />
+        )}
 
-        <TextInput
-          id="nc-partido"
-          label="Nombre del partido"
-          value={form.partido}
-          onChange={(e) => updateField("partido", e.target.value)}
-          placeholder="Ej: Partido Nacional"
-        />
+        {showPartido && (
+          <TextInput
+            id="nc-partido"
+            label="Nombre del partido"
+            value={form.partido}
+            onChange={(e) => updateField("partido", e.target.value)}
+            placeholder="Ej: Partido Nacional"
+          />
+        )}
 
         {/* Colors */}
         <div style={{ marginBottom: 24 }}>
