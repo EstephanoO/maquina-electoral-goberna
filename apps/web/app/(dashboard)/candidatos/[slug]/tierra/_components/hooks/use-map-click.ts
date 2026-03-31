@@ -7,7 +7,7 @@ import type { DrillLevel, DrillState, EnrichedAgent } from "../types";
 import { INITIAL_DRILL } from "../types";
 import { PERU_BOUNDS, FLY_DURATION } from "../constants";
 import { getBoundsFromFeature } from "../utils";
-import { preloadProvincias, preloadDistritos } from "@/lib/services/geo";
+import { preloadProvincias, preloadDistritos, getDistritos, getProvincias } from "@/lib/services/geo";
 
 /**
  * Stable click handler for the map. Reads volatile values from refs so the
@@ -161,10 +161,22 @@ export function useMapClick(
       const coddep = String(f.properties?.coddep ?? f.properties?.CODDEP ?? currentDrill.depCode ?? "");
       if (codprovFull) {
         preloadDistritos(codprovFull);
-        const bounds = getBoundsFromFeature(f);
-        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
         skipNextFitRef.current = true;
         onDrillChange({ ...currentDrill, level: 2, provCode: codprovFull, provName: name, depCode: coddep, distCode: null, distName: null, sector: null, sectorName: null });
+        // Use precise bounds from geo API for accurate centering
+        getProvincias(coddep).then((r) => {
+          if (!r.ok || !r.provincias || !mapRef.current) return;
+          const p = r.provincias.find((x) => x.codprov_full === codprovFull);
+          if (p) {
+            mapRef.current.fitBounds(p.bounds, { padding: 40, duration: FLY_DURATION });
+          } else {
+            const bounds = getBoundsFromFeature(f);
+            if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
+          }
+        }).catch(() => {
+          const bounds = getBoundsFromFeature(f);
+          if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
+        });
       }
       return;
     }
@@ -177,10 +189,23 @@ export function useMapClick(
       const codprovFull = String(f.properties?.codprov_full ?? (((f.properties?.CODDEP ?? "") + (f.properties?.CODPROV ?? "")) || (currentDrill.provCode ?? "")));
       const provName = String(f.properties?.provincia ?? f.properties?.PROVINCIA ?? currentDrill.provName ?? "");
       if (ubigeo) {
-        const bounds = getBoundsFromFeature(f);
-        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 80, duration: FLY_DURATION });
         skipNextFitRef.current = true;
         onDrillChange({ level: 3, depCode: coddep, depName, provCode: codprovFull, provName, distCode: ubigeo, distName: name, sector: null, sectorName: null });
+        // Use precise bounds from geo API (same as resize handler) for accurate centering
+        getDistritos(codprovFull).then((r) => {
+          if (!r.ok || !r.distritos || !mapRef.current) return;
+          const d = r.distritos.find((x) => x.ubigeo === ubigeo);
+          if (d) {
+            mapRef.current.fitBounds(d.bounds, { padding: 80, duration: FLY_DURATION });
+          } else {
+            // Fallback to tile feature bounds
+            const bounds = getBoundsFromFeature(f);
+            if (bounds) mapRef.current?.fitBounds(bounds, { padding: 80, duration: FLY_DURATION });
+          }
+        }).catch(() => {
+          const bounds = getBoundsFromFeature(f);
+          if (bounds) mapRef.current?.fitBounds(bounds, { padding: 80, duration: FLY_DURATION });
+        });
       }
       return;
     }
