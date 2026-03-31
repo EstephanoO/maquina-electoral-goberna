@@ -35,10 +35,14 @@ export function clamp(value: number, min: number, max: number): number {
  */
 export function boundsToInitialViewState(bounds: [[number, number], [number, number]]) {
   const [sw, ne] = bounds;
+  // Start at a reasonable zoom that shows the full bounds with margin.
+  // handleLoad will instantly correct via fitBounds(lockedBounds, { padding }).
+  // Using minZoom+1 ensures the initial flash is close to final view.
+  const zoom = boundsToMinZoom(bounds) + 1;
   return {
     longitude: (sw[0] + ne[0]) / 2,
     latitude: (sw[1] + ne[1]) / 2,
-    zoom: boundsToMinZoom(bounds),
+    zoom,
   };
 }
 

@@ -234,7 +234,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         // Hard-pin the camera to the locked district — duration:0 = instant, no animation.
         // This is the final revalidator: even if initialViewState drifted slightly due to
         // MapLibre's internal projection math, this corrects it with zero flash.
-        map.fitBounds(lockedBounds, { padding: 60, duration: 0 });
+        map.fitBounds(lockedBounds, { padding: { top: 80, bottom: 80, left: 80, right: 80 }, duration: 0 });
       } else if (!disableAutoFitRef.current) {
         // Normal mode: start at Peru overview.
         map.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
@@ -489,8 +489,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         minPitch={0}
         maxPitch={60}
         clickTolerance={4}
-        minZoom={lockedBounds ? boundsToMinZoom(lockedBounds) : 1}
-        maxBounds={lockedBounds ? expandBounds(lockedBounds, 0.15) : PERU_MAX_BOUNDS}
+        minZoom={lockedBounds ? Math.max(boundsToMinZoom(lockedBounds) - 1, 4) : 1}
+        maxBounds={lockedBounds ? expandBounds(lockedBounds, 0.25) : PERU_MAX_BOUNDS}
         maxTileCacheZoomLevels={10}
         fadeDuration={0}
         onLoad={handleLoad}
