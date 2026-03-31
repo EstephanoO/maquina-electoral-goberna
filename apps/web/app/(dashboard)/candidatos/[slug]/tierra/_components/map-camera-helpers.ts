@@ -69,14 +69,15 @@ export function boundsToMinZoom(bounds: [[number, number], [number, number]]): n
   const spanLng = Math.abs(ne[0] - sw[0]);
   const spanLat = Math.abs(ne[1] - sw[1]);
   const maxSpan = Math.max(spanLng, spanLat);
-  // ~0.01° span (tiny district) → zoom 14; ~2° span (large dep) → zoom 7
-  if (maxSpan < 0.02) return 13;
-  if (maxSpan < 0.05) return 12;
-  if (maxSpan < 0.1) return 11;
-  if (maxSpan < 0.3) return 10;
-  if (maxSpan < 0.6) return 9;
-  if (maxSpan < 1.2) return 8;
-  return 7;
+  // Heuristic: ensure the full jurisdiction fits with margin.
+  // ~0.01° span (tiny district) → zoom 12; ~2° span (large dep) → zoom 6
+  if (maxSpan < 0.02) return 12;
+  if (maxSpan < 0.05) return 11;
+  if (maxSpan < 0.1) return 10;
+  if (maxSpan < 0.3) return 9;
+  if (maxSpan < 0.6) return 8;
+  if (maxSpan < 1.2) return 7;
+  return 6;
 }
 
 /**
