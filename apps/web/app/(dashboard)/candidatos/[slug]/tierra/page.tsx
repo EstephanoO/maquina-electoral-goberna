@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { useCampaignStats, useRecentForms, useAgentLocationsSnapshot } from "@/lib/hooks";
@@ -61,11 +62,18 @@ export default function TierraPage() {
     handleDeleteForm, handleUpdateForm, handleFormsChanged,
   } = state;
 
-  // ── Jurisdiction bounds (auto-center map on campaign's jurisdiction) ──
-  const jurisdictionBounds = useJurisdictionBounds(
+  // ── Jurisdiction bounds + drill (auto-center and mask map on campaign's jurisdiction) ──
+  const jurisdictionResult = useJurisdictionBounds(
     stats?.campaign.jurisdiccion_nivel,
     stats?.campaign.jurisdiccion_code,
   );
+
+  // Set drill state to jurisdiction drill when it resolves (once)
+  useEffect(() => {
+    if (jurisdictionResult?.drill && !isLeguaDemo) {
+      setDrillState(jurisdictionResult.drill);
+    }
+  }, [jurisdictionResult, isLeguaDemo, setDrillState]);
 
   // ── Derived data (depends on drillState from useTierraState) ──
   const drillRegion = useDrillRegion(drillState);
@@ -186,7 +194,7 @@ export default function TierraPage() {
             drillState={drillState}
             onDrillChange={setDrillState}
             onMapDoubleClick={handleMapDoubleClick}
-            lockedBounds={isLeguaDemo ? LEGUA_BOUNDS : jurisdictionBounds ?? undefined}
+            lockedBounds={isLeguaDemo ? LEGUA_BOUNDS : jurisdictionResult?.bounds ?? undefined}
           />
           <div
             className="absolute top-3 z-20 flex items-start transition-[left] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
