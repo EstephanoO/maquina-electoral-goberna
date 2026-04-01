@@ -155,6 +155,8 @@ export type TierraMapProps = {
    * E.g. 2 = locked to provincia (can enter districts, can't go back to dep or Peru).
    */
   lockedDrillLevel?: DrillLevel | null;
+  /** Electoral results data for coloring districts */
+  electoralData?: { ubigeo: string; distrito: string; ganador: string; votos: number; electores: number; pct: number }[] | null;
 };
 
 /* ─── Log Entries ─── */

@@ -25,6 +25,15 @@ export type CampaignConfig = {
 
 export type JurisdiccionNivel = "departamento" | "provincia" | "distrito";
 
+export type ElectoralDataItem = {
+  distrito: string;
+  ubigeo: string;
+  ganador: string;
+  votos: number;
+  electores: number;
+  pct: number;
+};
+
 export type Campaign = {
   id: string;
   name: string;
@@ -203,6 +212,7 @@ export type CampaignStats = {
     color_primario: string;
     color_secundario: string;
     whatsapp_channel_url?: string;
+    electoral_data?: ElectoralDataItem[] | null;
   };
   metas: {
     datos: number;

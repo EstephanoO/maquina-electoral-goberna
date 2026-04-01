@@ -373,6 +373,7 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
               color_primario: config.color_primario ?? "#1e40af",
               color_secundario: config.color_secundario ?? "#fbbf24",
               whatsapp_channel_url: (config as Record<string, unknown>).whatsapp_channel_url as string | undefined,
+              electoral_data: (config as Record<string, unknown>).electoral_data as unknown[] | undefined,
             },
             metas: {
               datos: config.meta_datos ?? 0,

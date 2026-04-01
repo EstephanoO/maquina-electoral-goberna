@@ -74,7 +74,7 @@ import { reverseGeocode } from "@/lib/services/geo";
 /* ========== Component (P6 — wrapped with memo) ========== */
 
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
-  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange, onMapDoubleClick, lockedBounds, lockedDrillLevel },
+  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange, onMapDoubleClick, lockedBounds, lockedDrillLevel, electoralData },
   ref,
 ) {
   const mapRef = useRef<MapRef | null>(null);
@@ -117,6 +117,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef, {
     forms,
     agents,
+    electoralData,
   });
   const { formTooltipRef, onFormMouseMove, onFormMouseLeave, showPinnedTooltip } = useFormTooltip(isZoomingRef, mapRef);
   const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent, lockedDrillLevel ?? null, lockedBounds ?? null);
@@ -126,7 +127,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const tilesArray = useMemo(() => tileUrl ? [tileUrl] : [], [tileUrl]);
 
   // ─── P2: Memoized paint objects (extracted to hooks/use-zone-paint.ts) ───
-  const { depFillPaint, depLinePaint, provFillPaint, provLinePaint, distFillPaint, distLinePaint } = useZonePaint(drillState, mapTheme);
+  const { depFillPaint, depLinePaint, provFillPaint, provLinePaint, distFillPaint, distLinePaint } = useZonePaint(drillState, mapTheme, electoralData);
   const {
     clusterRingPaint, clusterCirclePaint, formPointsPaint, heatmapPaint,
     agentSelectedRingPaint, agentCirclesPaint,
