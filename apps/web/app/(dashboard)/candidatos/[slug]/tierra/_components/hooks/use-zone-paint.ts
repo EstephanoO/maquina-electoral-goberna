@@ -102,10 +102,10 @@ export function useZonePaint(
       const matchArgs: unknown[] = [["get", "ubigeo"]];
       for (const d of electoralData) {
         const t = (d.pct - minPct) / range; // 0=min, 1=max
-        // Interpolate between #dbeafe (low) → #1e40af (high)
-        const r = Math.round(219 + (30 - 219) * t);
-        const g = Math.round(190 + (64 - 190) * t);
-        const b = Math.round(254 + (175 - 254) * t);
+        // Interpolate between #ffffff (low) → #dc2626 (high)
+        const r = Math.round(255 + (220 - 255) * t);
+        const g = Math.round(255 + (38 - 255) * t);
+        const b = Math.round(255 + (38 - 255) * t);
         matchArgs.push(d.ubigeo, `rgb(${r},${g},${b})`);
       }
       matchArgs.push(zonePalette.fill); // fallback
