@@ -25,6 +25,8 @@ type Props = {
   periodGoalPerBrig?: number;
   /** Total contacts marked as hablado + respondieron (all-time, deduped by phone) */
   contactados?: number;
+  /** WhatsApp-validated datos count (shown in the right half of the split meta bar) */
+  datosWspp?: number;
 };
 
 /* ========== Helpers ========== */
@@ -42,7 +44,7 @@ function fmt(n: number): string {
 
 /* ========== Component ========== */
 
-export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesCampoCount, metaDatos: campaignMeta, period, selectedAgentName, periodGoalPerBrig: periodGoalOverride, contactados = 0 }: Props) {
+export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesCampoCount, metaDatos: campaignMeta, period, selectedAgentName, periodGoalPerBrig: periodGoalOverride, contactados = 0, datosWspp = 0 }: Props) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   // ── Editable goal inputs ──
@@ -69,6 +71,17 @@ export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesC
 
   const periodPct = periodGoal.target > 0 ? Math.min((periodGoal.current / periodGoal.target) * 100, 100) : 0;
   const periodRemaining = Math.max(periodGoal.target - periodGoal.current, 0);
+
+  // ── Split meta: Datos de Territorio | Datos WhatsApp ──
+  // Each half takes 50% of the total meta target.
+  const halfTarget = Math.max(Math.floor(periodGoal.target / 2), 0);
+  const territorioCurrent = periodGoal.current;
+  const territorioPct = halfTarget > 0 ? Math.min((territorioCurrent / halfTarget) * 100, 100) : 0;
+  const wsppCurrent = datosWspp;
+  const wsppPct = halfTarget > 0 ? Math.min((wsppCurrent / halfTarget) * 100, 100) : 0;
+  const combinedCurrent = territorioCurrent + wsppCurrent;
+  const combinedPct = periodGoal.target > 0 ? Math.min((combinedCurrent / periodGoal.target) * 100, 100) : 0;
+  const combinedRemaining = Math.max(periodGoal.target - combinedCurrent, 0);
 
   // ── Urgency ──
   const urgencyColor = dias <= 7 ? "#ef4444" : dias <= 14 ? "#facc15" : "#10b981";
@@ -122,51 +135,69 @@ export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesC
         </div>
       )}
 
-      {/* ═══ Hero Card (light) ═══ */}
+      {/* ═══ Hero Card — split meta (Territorio | WhatsApp) ═══ */}
       <div
         className={`relative overflow-hidden rounded-2xl mb-3 ${isDark ? "border border-[#1d2f43]" : "border border-slate-200/80"}`}
         style={{ background: isDark ? "#090D15" : `linear-gradient(135deg, #ffffff 0%, #f8fafc 50%, ${primaryColor}08 100%)`, boxShadow: isDark ? "none" : "0 1px 4px rgba(0,0,0,0.04)" }}
       >
-        <div className="relative flex items-center gap-5 px-5 py-4">
-          <div className="flex-1 min-w-0">
-            <span className={`text-[10px] font-bold uppercase tracking-widest mb-1 block ${isDark ? "text-slate-400" : "text-slate-400"}`}>{periodGoal.label}</span>
-            <div className="flex items-baseline gap-2 mb-1.5">
-              <span className={`text-[32px] font-black tabular-nums leading-none ${isDark ? "text-slate-50" : "text-slate-900"}`}>{fmt(periodGoal.current)}</span>
-              <span className="text-[20px] font-black tabular-nums leading-none" style={{ color: periodPct >= 100 ? "#63d58a" : (isDark ? "#facc15" : primaryColor) }}>{periodPct.toFixed(0)}%</span>
-              <span className={`text-[16px] font-bold ${isDark ? "text-slate-400" : "text-slate-300"}`}>/ {fmt(periodGoal.target)}</span>
+        <div className="relative px-5 py-4">
+          {/* Top row: label + combined counter */}
+          <div className="flex items-baseline justify-between mb-2.5">
+            <span className={`text-[10px] font-bold uppercase tracking-widest ${isDark ? "text-slate-400" : "text-slate-400"}`}>{periodGoal.label}</span>
+            <div className="flex items-baseline gap-2">
+              <span className={`text-[11px] font-semibold tabular-nums ${isDark ? "text-slate-400" : "text-slate-400"}`}>{fmt(combinedCurrent)} / {fmt(periodGoal.target)}</span>
+              <span className="text-[13px] font-black tabular-nums" style={{ color: combinedPct >= 100 ? "#63d58a" : (isDark ? "#facc15" : primaryColor) }}>{combinedPct.toFixed(0)}%</span>
             </div>
-            <div className={`h-2 rounded-full overflow-hidden mb-1.5 ${isDark ? "bg-transparent" : "bg-slate-200/80"}`} style={isDark ? { backgroundColor: "rgba(250, 204, 21, 0.18)" } : undefined}>
-              <div
-                className="h-full rounded-full transition-[width] duration-700 ease-out"
-                style={{
-                  width: `${periodPct}%`,
-                  background: periodPct >= 100 ? "linear-gradient(90deg, #facc15, #eab308)" : "linear-gradient(90deg, #facc15, #eab308)",
-                }}
-              />
-            </div>
-            {/* ── Contactados bar ── */}
-            {totalDatos > 0 && (
-              <div className="flex items-center gap-2 mb-1.5">
-                <div className={`flex h-1.5 rounded-full overflow-hidden flex-1 ${isDark ? "bg-slate-800" : "bg-slate-200/60"}`}>
-                  <div
-                    className="h-full rounded-full transition-[width] duration-700 ease-out"
-                    style={{ width: `${Math.min((contactados / totalDatos) * 100, 100)}%`, backgroundColor: "#10b981" }}
-                  />
-                </div>
-                <span className={`text-[10px] font-bold tabular-nums shrink-0 ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
-                  {fmt(contactados)} contactados
-                </span>
+          </div>
+
+          {/* Split bar: 2 equal columns (Territorio | WhatsApp) */}
+          <div className="grid grid-cols-2 gap-3 mb-2.5">
+            <SplitMetric
+              isDark={isDark}
+              label="Datos de Territorio"
+              current={territorioCurrent}
+              target={halfTarget}
+              pct={territorioPct}
+              gradient="linear-gradient(90deg, #facc15, #eab308)"
+              accentColor="#eab308"
+              dotColor="#facc15"
+            />
+            <SplitMetric
+              isDark={isDark}
+              label="Datos WhatsApp"
+              current={wsppCurrent}
+              target={halfTarget}
+              pct={wsppPct}
+              gradient="linear-gradient(90deg, #34d399, #10b981)"
+              accentColor="#10b981"
+              dotColor="#10b981"
+            />
+          </div>
+
+          {/* ── Contactados bar (preserved from upstream) ── */}
+          {totalDatos > 0 && (
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className={`flex h-1.5 rounded-full overflow-hidden flex-1 ${isDark ? "bg-slate-800" : "bg-slate-200/60"}`}>
+                <div
+                  className="h-full rounded-full transition-[width] duration-700 ease-out"
+                  style={{ width: `${Math.min((contactados / totalDatos) * 100, 100)}%`, backgroundColor: "#10b981" }}
+                />
               </div>
-            )}
-            <div className="flex items-center gap-4">
-              <span className={`text-[11px] ${isDark ? "text-slate-400" : "text-slate-400"}`}>
-                {periodRemaining > 0 ? <>Faltan <strong className={isDark ? "text-slate-100" : "text-slate-700"}>{fmt(periodRemaining)}</strong></> : <strong className="text-emerald-500">Meta alcanzada</strong>}
-                </span>
-              <span className="text-[11px] font-bold flex items-center gap-1" style={{ color: urgencyColor }}>
-                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: urgencyColor }} />
-                {dias}d restantes
+              <span className={`text-[10px] font-bold tabular-nums shrink-0 ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
+                {fmt(contactados)} contactados
               </span>
             </div>
+          )}
+
+          {/* Footer: remaining + days */}
+          <div className="flex items-center justify-between pt-1">
+            <span className={`text-[11px] ${isDark ? "text-slate-400" : "text-slate-400"}`}>
+              {combinedRemaining > 0 ? <>Faltan <strong className={isDark ? "text-slate-100" : "text-slate-700"}>{fmt(combinedRemaining)}</strong></> : <strong className="text-emerald-500">Meta alcanzada</strong>}
+            </span>
+            <span className="text-[11px] font-bold flex items-center gap-1" style={{ color: urgencyColor }}>
+              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: urgencyColor }} />
+              {dias}d restantes
+            </span>
           </div>
         </div>
       </div>
@@ -179,6 +210,40 @@ export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesC
 }
 
 /* ========== Sub-components ========== */
+
+function SplitMetric({ isDark, label, current, target, pct, gradient, accentColor, dotColor }: {
+  isDark: boolean;
+  label: string;
+  current: number;
+  target: number;
+  pct: number;
+  gradient: string;
+  accentColor: string;
+  dotColor: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5 mb-1">
+        <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: dotColor }} />
+        <span className={`text-[9px] font-bold uppercase tracking-wider truncate ${isDark ? "text-slate-400" : "text-slate-500"}`}>{label}</span>
+      </div>
+      <div className="flex items-baseline gap-1.5 mb-1.5">
+        <span className={`text-[26px] font-black tabular-nums leading-none ${isDark ? "text-slate-50" : "text-slate-900"}`}>{fmt(current)}</span>
+        <span className="text-[15px] font-black tabular-nums leading-none" style={{ color: pct >= 100 ? "#63d58a" : accentColor }}>{pct.toFixed(0)}%</span>
+        <span className={`text-[12px] font-bold truncate ${isDark ? "text-slate-500" : "text-slate-300"}`}>/ {fmt(target)}</span>
+      </div>
+      <div
+        className={`h-1.5 rounded-full overflow-hidden ${isDark ? "" : "bg-slate-200/80"}`}
+        style={isDark ? { backgroundColor: `${accentColor}20` } : undefined}
+      >
+        <div
+          className="h-full rounded-full transition-[width] duration-700 ease-out"
+          style={{ width: `${pct}%`, background: gradient }}
+        />
+      </div>
+    </div>
+  );
+}
 
 function QrScanCounter({ isDark, primaryColor, slug }: { isDark: boolean; primaryColor: string; slug: string }) {
   const [open, setOpen] = useState(false);

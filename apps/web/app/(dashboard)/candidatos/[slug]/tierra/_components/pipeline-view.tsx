@@ -291,6 +291,7 @@ export const PipelineView = memo(function PipelineView({
               period={period}
               selectedAgentName={agentDrill?.name ?? undefined}
               periodGoalPerBrig={goalCalcs.periodGoalPerBrig}
+              datosWspp={27483}
             />
           </div>
 
