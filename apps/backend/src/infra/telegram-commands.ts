@@ -110,11 +110,6 @@ cms_extension_events (10,941 rows) — Eventos WhatsApp de agentes digitales (ex
   contact_id uuid FK→form_submissions, event_type varchar ('message_sent'|'message_received'),
   phone text, matched bool, own_number varchar, created_at timestamptz
 
-cms_twilio_messages (32 rows) — Mensajes WhatsApp via Twilio.
-  id uuid PK, campaign_id uuid, contact_id uuid FK→form_submissions,
-  sent_by uuid FK→users, direction text ('outbound'|'inbound'), body text,
-  status text, twilio_sid text, created_at timestamptz
-
 leads (53 rows) — Leads de campaña digital.
   id uuid PK, nombre varchar, correo varchar, plataforma varchar, created_at timestamptz
 

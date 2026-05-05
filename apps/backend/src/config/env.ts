@@ -59,8 +59,6 @@ export type AppEnv = {
   trackingDefaultDistanceM: number;
   // Health check: max acceptable stream lag before health endpoint degrades
   trackingHealthMaxLag: number;
-  // Twilio — clave maestra para cifrar auth_tokens en DB (obligatoria si se usa Twilio)
-  twilioEncryptionKey: string;
   // Telegram — notificaciones de leads (opcional)
   telegramBotToken: string;
   telegramChatId: string;
@@ -70,6 +68,21 @@ export type AppEnv = {
   telegramAdminIds: number[];
   // ElevenLabs — TTS proxy para notas de voz (opcional)
   elevenlabsApiKey: string;
+  // Bot Baileys — secret compartido para autenticar pushes/pulls del bot
+  // (POST /api/cms/wa-events, GET /api/cms/active-wa-phones).
+  // Si vacío, esos endpoints responden 503 (no configurado).
+  botSharedSecret: string;
+  // Engagement: nro de interacciones bidireccionales (in + out) para subir
+  // un voter_profile a pipeline_status='fidelizado'.
+  fidelizadoThreshold: number;
+  // Engagement: horas sin inbound tras un outbound antes de marcar 'no_responde'.
+  noRespondeAfterHours: number;
+  // Public base URL — usado para armar links absolutos en HTML compartibles
+  // (OG tags del /r/:token landing). Sin slash final.
+  publicBaseUrl: string;
+  // Firebase Phone Auth — project ID para verificar ID tokens emitidos por
+  // Firebase desde mobile. Si vacío, /api/auth/firebase-verify responde 503.
+  firebaseProjectId: string;
 };
 
 function toNumber(value: string | undefined, fallback: number): number {
@@ -182,12 +195,16 @@ export function getEnv(): AppEnv {
     trackingDefaultIntervalMs: toNumber(process.env.TRACKING_DEFAULT_INTERVAL_MS, 15000),
     trackingDefaultDistanceM: toNumber(process.env.TRACKING_DEFAULT_DISTANCE_M, 5),
     trackingHealthMaxLag: toNumber(process.env.TRACKING_HEALTH_MAX_LAG, 1000),
-    twilioEncryptionKey: (process.env.TWILIO_ENCRYPTION_KEY ?? "").trim(),
     telegramBotToken: (process.env.TELEGRAM_BOT_TOKEN ?? "").trim(),
     telegramChatId: (process.env.TELEGRAM_CHAT_ID ?? "").trim(),
     geminiApiKey: (process.env.GEMINI_API_KEY ?? "").trim(),
     telegramAdminIds: (process.env.TELEGRAM_ADMIN_IDS ?? "")
       .split(",").map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)),
     elevenlabsApiKey: (process.env.ELEVENLABS_API_KEY ?? "").trim(),
+    botSharedSecret: (process.env.BOT_SHARED_SECRET ?? "").trim(),
+    fidelizadoThreshold: toNumber(process.env.FIDELIZADO_THRESHOLD, 4),
+    noRespondeAfterHours: toNumber(process.env.NO_RESPONDE_AFTER_HOURS, 48),
+    publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? "https://electoral.goberna.club").replace(/\/$/, ""),
+    firebaseProjectId: (process.env.FIREBASE_PROJECT_ID ?? "").trim(),
   };
 }

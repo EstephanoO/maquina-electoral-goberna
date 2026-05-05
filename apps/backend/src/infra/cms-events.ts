@@ -2,8 +2,6 @@
  * GOBERNA — CMS Event Bus
  *
  * Lightweight in-process event emitter for cross-module SSE broadcasting.
- * Allows the Twilio module (and others) to notify the CMS SSE stream
- * about new messages without a direct import dependency on cms/routes.
  *
  * Usage:
  *   - Publisher:  cmsEvents.emit("message.new", { campaignId, contactId, message })
@@ -19,17 +17,10 @@ export type CmsMessageEvent = {
   messageId: string;
 };
 
-export type CmsStatusUpdateEvent = {
-  campaignId: string;
-  contactId: string;
-  twilioSid: string;
-  status: string;
-};
-
 /**
- * Event emitted when the Chrome extension detects an inbound message
- * in WhatsApp Web via DOM observation. Not a Twilio webhook — this
- * is a "best effort" signal from the operator's browser.
+ * Event emitted when the Chrome extension detects a message
+ * in WhatsApp Web via DOM observation. Best-effort signal from
+ * the operator's browser.
  */
 export type CmsExtensionMessageEvent = {
   campaignId: string;
@@ -42,7 +33,6 @@ export type CmsExtensionMessageEvent = {
 
 export interface CmsEventMap {
   "message.new": CmsMessageEvent;
-  "message.status": CmsStatusUpdateEvent;
   "extension.message_received": CmsExtensionMessageEvent;
   "extension.message_sent": CmsExtensionMessageEvent;
 }

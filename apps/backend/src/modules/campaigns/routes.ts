@@ -5,19 +5,10 @@ import type { AppEnv } from "../../config/env";
 import type { AuthenticatedRequest } from "../../infra/auth";
 import { authorize, ROLE_HIERARCHY, type Role } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
-import { encrypt, decrypt, maskToken } from "../../infra/crypto";
 import * as repo from "./repository";
 import type { CampaignConfig } from "./repository";
 import { createCampaignSchema, updateCampaignSchema } from "./schemas";
 import { createDefaultForCampaign } from "../form-definitions/repository";
-
-// Twilio config schema for PUT /api/campaigns/:campaignId/integrations/twilio
-const twilioConfigSchema = z.object({
-  account_sid: z.string().min(1, "account_sid es requerido").max(200),
-  auth_token: z.string().max(200).optional(),
-  whatsapp_from: z.string().min(1, "whatsapp_from es requerido").max(50),
-  messaging_service_sid: z.string().max(200).optional(),
-});
 
 // ── Event log (in-memory circular buffer) ─────────────────────────────
 type CampaignEvent = {
@@ -211,6 +202,110 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "campaign update failed");
           return reply.code(500).send(errorPayload(requestId, "CAMPAIGN_UPDATE_ERROR", "error actualizando campana"));
+        }
+      },
+    );
+
+    // ── PATCH /api/campaigns/:campaignId/config ───────────────────────
+    // Partial merge into campaigns.config JSONB. Keys not in body are preserved.
+    app.patch(
+      "/api/campaigns/:campaignId/config",
+      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { campaignId } = request.params as { campaignId: string };
+
+        const patchSchema = z
+          .object({
+            whatsapp_channel_url: z.string().trim().max(500).optional(),
+            whatsapp_number: z.string().trim().max(20).regex(/^\d{9,15}$/, "whatsapp_number debe ser 9-15 dígitos sin '+'").optional(),
+            whatsapp_qr_message: z.string().max(800).optional(),
+          })
+          .strict();
+
+        const parsed = patchSchema.safeParse(request.body);
+        if (!parsed.success) {
+          const message = parsed.error.issues.map((i) => i.message).join(", ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
+        }
+
+        const partial: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(parsed.data)) {
+          if (v !== undefined) partial[k] = v;
+        }
+        if (Object.keys(partial).length === 0) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "ningún campo para actualizar"));
+        }
+
+        try {
+          const campaign = await repo.patchConfig(campaignId, partial);
+          if (!campaign) {
+            return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campaña no encontrada"));
+          }
+          return reply.code(200).send({ ok: true, request_id: requestId, campaign });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "campaign config patch failed");
+          return reply.code(500).send(errorPayload(requestId, "CAMPAIGN_CONFIG_PATCH_ERROR", "error actualizando config"));
+        }
+      },
+    );
+
+    // ── PATCH /api/campaigns/:campaignId/whatsapp-qr-message ──────────
+    // Edita SOLO el template de mensaje del QR de referido (campaigns.config.whatsapp_qr_message).
+    //
+    // Endpoint dedicado y separado del PATCH /config genérico porque:
+    //   - candidato+ debe poder editarlo desde la UI de su propia campaña
+    //   - el PATCH /config queda restringido a admin para no exponer otras keys
+    //   - simplifica el cliente (la web hace 1 fetch a un endpoint "obvio")
+    //
+    // Tokens soportados en el template: {candidato} {brigadista}.
+    // El renderer en form-qr-drafts/routes.ts hace replaceAll de esos tokens.
+    app.patch(
+      "/api/campaigns/:campaignId/whatsapp-qr-message",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["candidato"], requireCampaign: true }),
+        ],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { campaignId } = request.params as { campaignId: string };
+
+        const bodySchema = z.object({
+          // Vacío = volver al default. Hasta 800 chars (suficiente para WSP).
+          whatsapp_qr_message: z.string().max(800),
+        }).strict();
+
+        const parsed = bodySchema.safeParse(request.body);
+        if (!parsed.success) {
+          const message = parsed.error.issues.map((i) => i.message).join(", ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
+        }
+
+        // Verifica que el campaignId del path coincida con el activeCampaignId
+        // del JWT/header (authorize ya validó membresía cuando requireCampaign=true,
+        // pero queremos que la URL sea source of truth).
+        const activeCampaignId = (request as { activeCampaignId?: string }).activeCampaignId;
+        if (activeCampaignId && activeCampaignId !== campaignId) {
+          return reply.code(403).send(errorPayload(requestId, "FORBIDDEN", "campaign del path no coincide con el activo"));
+        }
+
+        try {
+          const campaign = await repo.patchConfig(campaignId, {
+            whatsapp_qr_message: parsed.data.whatsapp_qr_message.trim(),
+          });
+          if (!campaign) {
+            return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campaña no encontrada"));
+          }
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            whatsapp_qr_message: (campaign.config as { whatsapp_qr_message?: string }).whatsapp_qr_message ?? "",
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId, campaignId }, "campaign whatsapp_qr_message patch failed");
+          return reply.code(500).send(errorPayload(requestId, "CAMPAIGN_CONFIG_PATCH_ERROR", "error actualizando template del QR"));
         }
       },
     );
@@ -499,124 +594,5 @@ export function buildCampaignsRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
-    // ═══════════════════════════════════════════════════════════════════
-    // TWILIO INTEGRATION PER CAMPAIGN
-    // Only admin can read or write Twilio credentials.
-    // Auth token is stored AES-256-GCM encrypted in campaigns.config JSONB.
-    // ═══════════════════════════════════════════════════════════════════
-
-    // ── GET /api/campaigns/:campaignId/integrations/twilio ─────────────
-    // Returns masked Twilio config (auth_token is never returned in full).
-    app.get(
-      "/api/campaigns/:campaignId/integrations/twilio",
-      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
-      async (request, reply) => {
-        const requestId = String(request.id);
-        const { campaignId } = request.params as { campaignId: string };
-
-        try {
-          const campaign = await repo.findById(campaignId);
-          if (!campaign) {
-            return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campaña no encontrada"));
-          }
-
-          const config = (campaign.config ?? {}) as Record<string, unknown>;
-          const twilio = (config.twilio ?? {}) as {
-            account_sid?: string;
-            auth_token?: string;  // encrypted
-            whatsapp_from?: string;
-          };
-
-          const isConfigured = Boolean(twilio.account_sid && twilio.auth_token && twilio.whatsapp_from);
-
-          // Derive hint from decrypted token — only last 4 chars
-          let authTokenHint = "";
-          if (twilio.auth_token) {
-            try {
-              const plain = decrypt(twilio.auth_token);
-              authTokenHint = maskToken(plain, 4);
-            } catch {
-              authTokenHint = "****????";
-            }
-          }
-
-          return reply.code(200).send({
-            ok: true,
-            request_id: requestId,
-            twilio: {
-              configured: isConfigured,
-              account_sid: twilio.account_sid ?? "",
-              auth_token_hint: authTokenHint,
-              whatsapp_from: twilio.whatsapp_from ?? "",
-            },
-          });
-        } catch (error) {
-          app.log.error({ err: error, request_id: requestId }, "twilio config get failed");
-          return reply.code(500).send(errorPayload(requestId, "TWILIO_CONFIG_ERROR", "error obteniendo config de Twilio"));
-        }
-      },
-    );
-
-    // ── PUT /api/campaigns/:campaignId/integrations/twilio ─────────────
-    // Save (or update) Twilio credentials for a campaign.
-    // If auth_token is empty/omitted, preserves the existing encrypted value.
-    app.put(
-      "/api/campaigns/:campaignId/integrations/twilio",
-      { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] },
-      async (request, reply) => {
-        const requestId = String(request.id);
-        const { campaignId } = request.params as { campaignId: string };
-
-        const parsed = twilioConfigSchema.safeParse(request.body);
-        if (!parsed.success) {
-          const msg = parsed.error.issues.map((e) => e.message).join("; ");
-          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", msg));
-        }
-
-        const body = parsed.data;
-
-        try {
-          const campaign = await repo.findById(campaignId);
-          if (!campaign) {
-            return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campaña no encontrada"));
-          }
-
-          const existingConfig = (campaign.config ?? {}) as Record<string, unknown>;
-          const existingTwilio = (existingConfig.twilio ?? {}) as { auth_token?: string };
-
-          // Encrypt new token if provided, otherwise keep existing encrypted value
-          let encryptedToken = existingTwilio.auth_token ?? "";
-          if (body.auth_token?.trim()) {
-            try {
-              encryptedToken = encrypt(body.auth_token.trim());
-            } catch (encErr) {
-              app.log.error({ err: encErr, request_id: requestId }, "twilio token encryption failed");
-              return reply.code(500).send(errorPayload(requestId, "TWILIO_ENCRYPT_ERROR", "Error cifrando credenciales. Verificar TWILIO_ENCRYPTION_KEY."));
-            }
-          }
-
-          // Merge twilio config into campaign config JSONB
-          const twilioConfig: Record<string, string> = {
-            account_sid: body.account_sid.trim(),
-            auth_token: encryptedToken,
-            whatsapp_from: body.whatsapp_from.trim(),
-          };
-          if (body.messaging_service_sid?.trim()) {
-            twilioConfig.messaging_service_sid = body.messaging_service_sid.trim();
-          }
-          const newConfig = {
-            ...existingConfig,
-            twilio: twilioConfig,
-          };
-
-          await repo.updateConfig(campaignId, newConfig);
-
-          return reply.code(200).send({ ok: true, request_id: requestId });
-        } catch (error) {
-          app.log.error({ err: error, request_id: requestId }, "twilio config save failed");
-          return reply.code(500).send(errorPayload(requestId, "TWILIO_CONFIG_ERROR", "error guardando config de Twilio"));
-        }
-      },
-    );
   };
 }

@@ -74,6 +74,13 @@ const nextConfig: NextConfig = {
           source: "/uploads/:path*",
           destination: `${target}/uploads/:path*`,
         },
+        // Pretty share URL para QR de referido. Mobile comparte /r/:token,
+        // que el backend sirve como /api/r/:token (nginx solo rutea /api/*).
+        // Va en beforeFiles para que Next.js no intente match contra page route.
+        {
+          source: "/r/:token",
+          destination: `${target}/api/r/:token`,
+        },
       ],
     };
   },

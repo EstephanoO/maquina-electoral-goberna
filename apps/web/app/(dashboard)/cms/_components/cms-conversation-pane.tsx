@@ -9,12 +9,12 @@
  */
 
 import { memo, useEffect, useRef, useMemo, useState, useCallback } from "react";
-import type { CmsContact, CmsStatus, CmsTwilioMessage, CmsTwilioStatus } from "@/lib/services/cms";
+import type { CmsContact, CmsStatus, CmsMessage, CmsMessageStatus } from "@/lib/services/cms";
 import { CmsEmptyState } from "./cms-empty-state";
 
 type CmsConversationPaneProps = {
   contact: CmsContact | null;
-  messages: CmsTwilioMessage[];
+  messages: CmsMessage[];
   loadingMessages: boolean;
   messagesError: string | null;
   draft: string;
@@ -89,7 +89,7 @@ function sameDay(a: string, b: string): boolean {
   }
 }
 
-function getStatusIcon(status: CmsTwilioStatus): { symbol: string; color: string; title: string } {
+function getStatusIcon(status: CmsMessageStatus): { symbol: string; color: string; title: string } {
   switch (status) {
     case "queued": return { symbol: "\u{1F551}", color: "text-slate-400", title: "En cola" };
     case "sent": return { symbol: "\u2713", color: "text-slate-400", title: "Enviado" };
@@ -146,12 +146,12 @@ export const CmsConversationPane = memo(function CmsConversationPane({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && contact) {
         e.preventDefault();
-        onSend();
+        onOpenWhatsApp(contact.telefono, draft || undefined);
       }
     },
-    [onSend],
+    [contact, draft, onOpenWhatsApp],
   );
 
   const handleAction = useCallback(
@@ -177,7 +177,7 @@ export const CmsConversationPane = memo(function CmsConversationPane({
 
   // Build timeline with day separators
   const timeline = useMemo(() => {
-    const rows: Array<{ type: "day"; label: string } | { type: "message"; msg: CmsTwilioMessage }> = [];
+    const rows: Array<{ type: "day"; label: string } | { type: "message"; msg: CmsMessage }> = [];
     let lastDate = "";
     for (const msg of messages) {
       if (!lastDate || !sameDay(lastDate, msg.created_at)) {
@@ -322,7 +322,7 @@ export const CmsConversationPane = memo(function CmsConversationPane({
         {!loadingMessages && !messagesError && messages.length === 0 && (
           <div className="text-center py-8">
             <p className="text-xs text-text-tertiary mb-1">Sin mensajes WhatsApp</p>
-            <p className="text-[11px] text-text-tertiary">Envia un mensaje via Twilio o abre WhatsApp Web</p>
+            <p className="text-[11px] text-text-tertiary">Abre WhatsApp Web con la extensión</p>
           </div>
         )}
 
@@ -377,7 +377,7 @@ export const CmsConversationPane = memo(function CmsConversationPane({
               <WhatsAppIcon size={18} />
             </button>
 
-            {/* Text input */}
+            {/* Text input — sirve como pre-llenado al abrir WhatsApp Web */}
             <div className="flex-1 flex items-end bg-surface-hover rounded-2xl border border-border focus-within:border-[var(--goberna-blue-400)] transition-colors">
               <textarea
                 ref={inputRef}
@@ -389,24 +389,10 @@ export const CmsConversationPane = memo(function CmsConversationPane({
                 className="flex-1 px-3 py-2 text-[13px] bg-transparent outline-none resize-none max-h-24 placeholder:text-text-tertiary"
               />
             </div>
-
-            {/* Send button (Twilio) */}
-            <button
-              type="button"
-              onClick={onSend}
-              disabled={sending || !draft.trim()}
-              className="shrink-0 p-2 rounded-full bg-[var(--goberna-blue-700)] text-white hover:bg-[var(--goberna-blue-800)] disabled:opacity-30 disabled:cursor-default transition-colors"
-              title="Enviar via Twilio"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <title>Enviar</title>
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-              </svg>
-            </button>
           </div>
 
           <p className="text-[9px] text-text-tertiary mt-1 text-center">
-            Boton verde = WhatsApp Web (extension) &middot; Boton azul = Twilio API
+            Botón verde abre WhatsApp Web (extensión Chrome) con el texto pre-cargado
           </p>
         </div>
       )}

@@ -42,7 +42,6 @@ Ver seccion 5 del root `/AGENTS.md` para la tabla completa de modulos y prefijos
 - Estado live de tracking no depende del historico.
 - `/api/ready` debe contemplar DB + Tegola + Redis.
 - CMS usa SSE en `/api/cms/stream` con broadcast por campaign_id.
-- Twilio webhook es publico pero valida firma `X-Twilio-Signature`.
 
 ## Guardrails de seguridad (auth module)
 

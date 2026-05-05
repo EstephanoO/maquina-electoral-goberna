@@ -8,6 +8,7 @@ import { AuthRepository } from "./repository";
 import { changePasswordSchema, loginSchema, refreshSchema, registerSchema, resetPasswordSchema } from "./schemas";
 import { authorize } from "../../infra/authorize";
 import { AppError, AuthService } from "./service";
+import { verifyFirebaseIdToken } from "./firebase-verify";
 import * as invitationsRepo from "../invitations/repository";
 import * as accessCodesRepo from "../access-codes/repository";
 
@@ -376,6 +377,10 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
           slug: c.campaign_slug,
           role: c.role,
           perm_audio_admin: c.perm_audio_admin,
+          whatsapp_number:
+            typeof c.campaign_config?.whatsapp_number === "string"
+              ? (c.campaign_config.whatsapp_number as string)
+              : null,
         }));
 
         return reply.code(200).send({
@@ -454,6 +459,85 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
     app.post("/api/auth/reset-password", resetPasswordOpts, resetPasswordHandler);
     // Compat alias: mobile app sends /api/api/auth/reset-password (API_BASE already includes /api)
     app.post("/api/api/auth/reset-password", resetPasswordOpts, resetPasswordHandler);
+
+    // ── POST /api/auth/firebase-verify ─────────────────────────────────
+    // Scaffold de Firebase Phone Auth — recibe el ID token emitido por Firebase
+    // después del flujo SMS OTP en mobile, lo valida contra Google, y matchea
+    // contra un user existente por phone (o devuelve "no_user" si no existe).
+    //
+    // NO ESTÁ ENCHUFADO AL LOGIN PRINCIPAL todavía. La idea es:
+    //   1. Esta PR lo deja listo + verificable.
+    //   2. Cuando el flujo OTP sea estable en mobile, conectamos el resultado
+    //      a la emisión de nuestro JWT (set cookies + return access/refresh).
+    //
+    // Si FIREBASE_PROJECT_ID está vacío, el endpoint responde 503.
+    const firebaseVerifyOpts = {
+      config: {
+        rateLimit: {
+          max: env.rateLimitAuthPerMinute,
+          timeWindow: "1 minute",
+          keyGenerator: (request: FastifyRequest) => request.ip,
+        },
+      },
+    } as const;
+
+    app.post("/api/auth/firebase-verify", firebaseVerifyOpts, async (request, reply) => {
+      const requestId = String(request.id);
+
+      if (!env.firebaseProjectId) {
+        return reply.code(503).send(errorPayload(requestId, "FIREBASE_NOT_CONFIGURED", "FIREBASE_PROJECT_ID no configurado"));
+      }
+
+      const body = request.body as { id_token?: unknown };
+      if (typeof body?.id_token !== "string" || body.id_token.length < 50) {
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "id_token requerido"));
+      }
+
+      let verified: Awaited<ReturnType<typeof verifyFirebaseIdToken>>;
+      try {
+        verified = await verifyFirebaseIdToken(body.id_token, env.firebaseProjectId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "verificación falló";
+        app.log.warn({ err: msg, request_id: requestId }, "firebase-verify: token rechazado");
+        return reply.code(401).send(errorPayload(requestId, "FIREBASE_INVALID_TOKEN", msg.slice(0, 120)));
+      }
+
+      // Matchea contra users por phone (Firebase devuelve E.164 con '+'; nosotros
+      // guardamos solo dígitos en users.phone, así que strippeamos el '+').
+      const normalizedPhone = (verified.phone_number ?? "").replace(/\D/g, "");
+      let user = null;
+      if (normalizedPhone) {
+        user = await repo.findUserByPhone(normalizedPhone);
+      }
+
+      app.log.info({
+        request_id: requestId,
+        firebase_uid: verified.uid,
+        phone_present: !!verified.phone_number,
+        user_matched: !!user,
+      }, "firebase-verify: token válido");
+
+      // Por ahora: solo devolvemos info — NO emitimos JWT. Esto se conecta cuando
+      // el cliente esté listo. El user puede usar este payload para decidir
+      // "registrar nueva cuenta" vs "login existente".
+      return reply.code(200).send({
+        ok: true,
+        request_id: requestId,
+        firebase: {
+          uid: verified.uid,
+          phone_number: verified.phone_number,
+        },
+        matched_user: user
+          ? {
+              id: user.id,
+              full_name: user.full_name,
+              phone: user.phone,
+              role: user.role,
+              status: user.status,
+            }
+          : null,
+      });
+    });
 
     // ── POST /api/users/:userId/set-password ───────────────────────────
     // Admin/Candidato sets a new password directly for a team member.

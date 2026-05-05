@@ -69,6 +69,7 @@ export type LoginResult = {
     slug: string;
     role: string;
     perm_audio_admin: boolean;
+    whatsapp_number: string | null;
   }>;
   /** If true, user must set new password before accessing the app */
   password_reset_required?: boolean;

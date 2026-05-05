@@ -27,6 +27,7 @@ function mapBackendRoleToUI(backendRole: string): UIRole {
 const ALL_TABS = [
   { key: "analytics", label: "ANALYTICS", icon: MonitorIcon, roles: ["admin", "consultor", "candidato"] as UIRole[] },
   { key: "monitor", label: "MONITOR", icon: WhatsAppIcon, roles: ["admin", "consultor", "candidato"] as UIRole[] },
+  { key: "whatsapp", label: "WHATSAPP", icon: WhatsAppIcon, roles: ["admin"] as UIRole[] },
 ] as const;
 
 type TabKey = (typeof ALL_TABS)[number]["key"];

@@ -363,8 +363,17 @@ function AddPhoneForm({
 
 // ── Main export ───────────────────────────────────────────────────────
 
-export function WaPhonesSection() {
+type WaPhonesSectionProps = {
+  /**
+   * Override which campaign's phones to manage. If omitted, uses
+   * the authenticated user's activeCampaignId.
+   */
+  campaignId?: string;
+};
+
+export function WaPhonesSection({ campaignId: campaignIdProp }: WaPhonesSectionProps = {}) {
   const { activeCampaignId, user } = useAuth();
+  const campaignId = campaignIdProp ?? activeCampaignId;
   const [phones, setPhones] = useState<WaPhone[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -386,8 +395,8 @@ export function WaPhonesSection() {
   }, []);
 
   useEffect(() => {
-    if (activeCampaignId) load(activeCampaignId);
-  }, [activeCampaignId, load]);
+    if (campaignId) load(campaignId);
+  }, [campaignId, load]);
 
   if (!canManage) return null;
 
@@ -439,7 +448,7 @@ export function WaPhonesSection() {
                 <PhoneRow
                   key={p.id}
                   phone={p}
-                  campaignId={activeCampaignId!}
+                  campaignId={campaignId!}
                   onUpdated={(updated) =>
                     setPhones((prev) => prev.map((x) => x.id === updated.id ? updated : x))
                   }
@@ -451,9 +460,9 @@ export function WaPhonesSection() {
             </div>
           )}
 
-          {activeCampaignId && (
+          {campaignId && (
             <AddPhoneForm
-              campaignId={activeCampaignId}
+              campaignId={campaignId}
               onAdded={(p) => setPhones((prev) => {
                 const exists = prev.findIndex((x) => x.id === p.id);
                 if (exists >= 0) return prev.map((x) => x.id === p.id ? p : x);

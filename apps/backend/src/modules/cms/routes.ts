@@ -6,7 +6,7 @@ import type { AppEnv } from "../../config/env";
 import type { AuthenticatedRequest } from "../../infra/auth";
 import { authorize } from "../../infra/authorize";
 import { errorPayload } from "../../infra/http";
-import { cmsEvents, type CmsMessageEvent, type CmsStatusUpdateEvent, type CmsExtensionMessageEvent } from "../../infra/cms-events";
+import { cmsEvents, type CmsMessageEvent, type CmsExtensionMessageEvent } from "../../infra/cms-events";
 import { pool } from "../../db";
 import * as repo from "./repository";
 
@@ -125,21 +125,13 @@ export function buildCmsRoutes(env: AppEnv): FastifyPluginAsync {
   heartbeatTimer.unref();
 
   // ── Event bus subscriptions ─────────────────────────────────────
-  // Listen for cross-module events (e.g. Twilio inbound messages)
-  // and broadcast them to SSE clients of the matching campaign.
+  // Listen for cross-module events and broadcast them to SSE clients
+  // of the matching campaign.
   cmsEvents.onCms("message.new", (payload: CmsMessageEvent) => {
     broadcastToCampaign(payload.campaignId, "message.new", {
       contact_id: payload.contactId,
       direction: payload.direction,
       message_id: payload.messageId,
-    });
-  });
-
-  cmsEvents.onCms("message.status", (payload: CmsStatusUpdateEvent) => {
-    broadcastToCampaign(payload.campaignId, "message.status", {
-      contact_id: payload.contactId,
-      twilio_sid: payload.twilioSid,
-      status: payload.status,
     });
   });
 

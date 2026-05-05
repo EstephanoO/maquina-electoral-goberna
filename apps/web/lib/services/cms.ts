@@ -159,10 +159,13 @@ export type CmsSseTagsUpdated = {
 };
 
 // ── WhatsApp message types ──────────────────────────────────────────
+// Source: bot Baileys (WhatsApp Web QR) via thin pipe to electoral backend.
+// API endpoints to fetch/send messages will land in Fase 1 (conversation_messages
+// table). Until then, getContactWhatsAppMessages returns [] and send is disabled.
 
-export type CmsTwilioDirection = "outbound" | "inbound";
+export type CmsMessageDirection = "outbound" | "inbound";
 
-export type CmsTwilioStatus =
+export type CmsMessageStatus =
   | "queued"
   | "sent"
   | "delivered"
@@ -171,30 +174,15 @@ export type CmsTwilioStatus =
   | "undelivered"
   | "received";
 
-export type CmsTwilioMessage = {
+export type CmsMessage = {
   id: string;
   contact_id: string;
   campaign_id: string;
-  direction: CmsTwilioDirection;
+  direction: CmsMessageDirection;
   body: string;
-  twilio_sid: string | null;
-  status: CmsTwilioStatus;
+  status: CmsMessageStatus;
   sent_by: string | null;
   created_at: string;
-};
-
-type CmsTwilioMessagesResponse = {
-  ok: boolean;
-  request_id: string;
-  messages: CmsTwilioMessage[];
-};
-
-type CmsTwilioSendResponse = {
-  ok: boolean;
-  request_id: string;
-  message_id: string;
-  twilio_sid: string | null;
-  status: CmsTwilioStatus;
 };
 
 // ── API calls ───────────────────────────────────────────────────────
@@ -308,39 +296,26 @@ export async function getCmsMetrics(campaignId?: string): Promise<{
   return { ok: true, metrics: res.data?.metrics };
 }
 
-// ── Twilio WhatsApp messages ────────────────────────────────────────
+// ── WhatsApp messages (stub — Fase 1 wirea conversation_messages) ───
+// El feed real viene del bot Baileys via push events. Hasta que el endpoint
+// de electoral exista, devolvemos vacío y el envío en CMS está deshabilitado
+// (operadora envía via extensión Chrome / WhatsApp Web).
 
 export async function getContactWhatsAppMessages(
-  campaignId: string,
-  contactId: string,
-): Promise<{ ok: boolean; messages: CmsTwilioMessage[]; error?: string }> {
-  const res = await api.get<CmsTwilioMessagesResponse>(
-    `/api/twilio/whatsapp/messages/${contactId}`,
-    { campaignId },
-  );
-  if (!res.ok) return { ok: false, messages: [], error: res.error?.message };
-  return { ok: true, messages: res.data?.messages ?? [] };
+  _campaignId: string,
+  _contactId: string,
+): Promise<{ ok: boolean; messages: CmsMessage[]; error?: string }> {
+  return { ok: true, messages: [] };
 }
 
 export async function sendContactWhatsAppMessage(
-  campaignId: string,
-  contactId: string,
-  body: string,
-): Promise<{ ok: boolean; messageId?: string; status?: CmsTwilioStatus; error?: string }> {
-  const res = await api.post<CmsTwilioSendResponse>(
-    "/api/twilio/whatsapp/send",
-    {
-      contact_id: contactId,
-      campaign_id: campaignId,
-      body,
-    },
-    { campaignId },
-  );
-  if (!res.ok) return { ok: false, error: res.error?.message };
+  _campaignId: string,
+  _contactId: string,
+  _body: string,
+): Promise<{ ok: boolean; messageId?: string; status?: CmsMessageStatus; error?: string }> {
   return {
-    ok: true,
-    messageId: res.data?.message_id,
-    status: res.data?.status,
+    ok: false,
+    error: "Envío via API deshabilitado — usar la extensión Chrome / WhatsApp Web",
   };
 }
 
@@ -435,12 +410,12 @@ export async function listWaPhones(
 
 export async function upsertWaPhone(
   campaignId: string,
-  own_number: string,
+  number: string,
   alias: string,
 ): Promise<{ ok: boolean; phone?: WaPhone; error?: string }> {
   const res = await api.post<WaPhoneUpsertResponse>(
     "/api/cms/wa-phones",
-    { own_number, alias },
+    { number, alias },
     { campaignId },
   );
   if (!res.ok) return { ok: false, error: res.error?.message };
@@ -510,42 +485,3 @@ export async function getExtensionMonitor(campaignId: string): Promise<{
   return { ok: true, totals: data.totals, phones: data.phones };
 }
 
-// ── Twilio config per campaign ───────────────────────────────────────
-
-export type CampaignTwilioConfig = {
-  configured: boolean;
-  account_sid: string;
-  auth_token_hint: string;
-  whatsapp_from: string;
-};
-
-type TwilioConfigGetResponse = {
-  ok: boolean;
-  twilio: CampaignTwilioConfig;
-};
-
-export async function getCampaignTwilioConfig(
-  campaignId: string,
-): Promise<{ ok: boolean; twilio?: CampaignTwilioConfig; error?: string }> {
-  const res = await api.get<TwilioConfigGetResponse>(
-    `/api/campaigns/${campaignId}/integrations/twilio`,
-  );
-  if (!res.ok) return { ok: false, error: res.error?.message };
-  return { ok: true, twilio: res.data?.twilio };
-}
-
-export async function saveCampaignTwilioConfig(
-  campaignId: string,
-  data: {
-    account_sid: string;
-    auth_token?: string;
-    whatsapp_from: string;
-  },
-): Promise<{ ok: boolean; error?: string }> {
-  const res = await api.put(
-    `/api/campaigns/${campaignId}/integrations/twilio`,
-    data,
-  );
-  if (!res.ok) return { ok: false, error: res.error?.message };
-  return { ok: true };
-}

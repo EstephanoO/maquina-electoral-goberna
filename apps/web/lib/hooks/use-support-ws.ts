@@ -46,9 +46,12 @@ const BASE_RECONNECT_DELAY_MS = 1_000;
 
 function getWsBaseUrl(): string {
   if (typeof window === "undefined") return "";
-  return window.location.hostname === "localhost"
-    ? "ws://localhost:3001/ws/support/chat"
-    : "wss://api.goberna.us/ws/support/chat";
+  if (window.location.hostname === "localhost") {
+    return "ws://localhost:3001/ws/support/chat";
+  }
+  // Same-origin WSS: nginx en electoral.goberna.club proxa a backend (puerto 3000)
+  // Mantener mismo host que el frontend evita errores de mixed content y CORS.
+  return `wss://${window.location.host}/ws/support/chat`;
 }
 
 // ─── Hook ────────────────────────────────────────────────────

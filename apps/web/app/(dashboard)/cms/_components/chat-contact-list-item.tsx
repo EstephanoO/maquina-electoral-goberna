@@ -1,13 +1,13 @@
 "use client";
 
-import type { CmsContact, CmsTwilioMessage } from "@/lib/services/cms";
+import type { CmsContact, CmsMessage } from "@/lib/services/cms";
 
 const FONT = "var(--font-montserrat), system-ui, sans-serif";
 
 type Props = {
   contact: CmsContact;
   selected: boolean;
-  lastMessage?: CmsTwilioMessage;
+  lastMessage?: CmsMessage;
   onSelect: (contactId: string) => void;
   onOpenProfile: (contact: CmsContact) => void;
 };
@@ -51,7 +51,7 @@ function getInitials(name: string): string {
   return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
 }
 
-function getRelevantTimestamp(contact: CmsContact, lastMessage?: CmsTwilioMessage): string {
+function getRelevantTimestamp(contact: CmsContact, lastMessage?: CmsMessage): string {
   if (lastMessage?.created_at) return lastMessage.created_at;
   if (contact.cms_respondieron_at) return contact.cms_respondieron_at;
   if (contact.cms_hablado_at) return contact.cms_hablado_at;
@@ -84,7 +84,7 @@ function formatTimestamp(dateStr: string): string {
   }
 }
 
-function buildPreview(contact: CmsContact, lastMessage?: CmsTwilioMessage): string {
+function buildPreview(contact: CmsContact, lastMessage?: CmsMessage): string {
   if (lastMessage?.body?.trim()) {
     const prefix = lastMessage.direction === "outbound" ? "Tu: " : "";
     return `${prefix}${lastMessage.body.trim()}`;

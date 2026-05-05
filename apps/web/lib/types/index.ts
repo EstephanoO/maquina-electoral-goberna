@@ -21,6 +21,11 @@ export type CampaignConfig = {
   tracking_enabled?: boolean;
   forms_enabled?: boolean;
   has_ga4_data?: boolean;
+  whatsapp_channel_url?: string;
+  /** WhatsApp number that the QR code points to. 9-15 digits, no '+' prefix. */
+  whatsapp_number?: string;
+  /** Pre-canned wa.me message. Supports {candidato} and {brigadista} placeholders. */
+  whatsapp_qr_message?: string;
 };
 
 export type Campaign = {

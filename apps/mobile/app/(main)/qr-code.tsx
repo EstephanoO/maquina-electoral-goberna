@@ -32,7 +32,7 @@ import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
 
 import { useAgent, useCandidate, useActiveCampaign } from '@/lib/app-context';
-import { recordQrScan, getMyQrStats } from '@/lib/api';
+import { recordQrScan, getMyQrStats, getOrCreateShareToken } from '@/lib/api';
 
 const FONT = 'Montserrat-Bold';
 
@@ -113,6 +113,10 @@ export default function QrCodeScreen() {
   const [stats, setStats] = useState<{ total: number; today: number; this_week: number } | null>(null);
   const [recording, setRecording] = useState(false);
   const [lastRecorded, setLastRecorded] = useState<string | null>(null);
+  // Share URL bonita con OG (preview con foto + nombre + descripción) en
+  // lugar del wa.me crudo. Se carga once en mount; el endpoint es idempotente
+  // del lado server (reusa el token vigente del brigadista, TTL 30d).
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
   const qrRef = useRef<{ toDataURL?: (cb: (data: string) => void) => void }>(null);
 
   // Load stats on mount
@@ -126,6 +130,19 @@ export default function QrCodeScreen() {
   useEffect(() => {
     void loadStats();
   }, [loadStats]);
+
+  // Carga (o reusa, lado server) la URL bonita de share una vez en mount.
+  // Si falla por algún motivo, el handleShare cae al wa.me crudo como fallback.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const res = await getOrCreateShareToken();
+      if (!cancelled && res.ok && res.data?.share_url) {
+        setShareUrl(res.data.share_url);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Record a manual scan event
   const handleRecordContact = useCallback(async () => {
@@ -145,26 +162,30 @@ export default function QrCodeScreen() {
     }
   }, [recording, loadStats]);
 
-  // Share the WA link
+  // Share: prioriza la URL bonita (/r/:token) — al pegarla en WhatsApp/redes
+  // se previsualiza con foto + nombre + descripción del candidato en lugar
+  // de mostrar el wa.me crudo. Fallback al wa.me si el share-token aún no
+  // cargó (rare).
+  const linkToShare = shareUrl ?? waLink;
   const handleShare = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       await Share.share({
-        message: Platform.OS === 'ios' ? waLink : `Contactar campaña: ${waLink}`,
-        url: Platform.OS === 'ios' ? waLink : undefined,
-        title: `Campaña ${candidate.name}`,
+        message: Platform.OS === 'ios' ? linkToShare : `Apoyá a ${candidate.name}: ${linkToShare}`,
+        url: Platform.OS === 'ios' ? linkToShare : undefined,
+        title: `Apoyá a ${candidate.name}`,
       });
     } catch {
       // User dismissed
     }
-  }, [waLink, candidate.name]);
+  }, [linkToShare, candidate.name]);
 
   // Copy link to clipboard
   const handleCopy = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Clipboard.setString(waLink);
+    Clipboard.setString(linkToShare);
     Alert.alert('Copiado', 'El enlace fue copiado al portapapeles.');
-  }, [waLink]);
+  }, [linkToShare]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: primary }]}>

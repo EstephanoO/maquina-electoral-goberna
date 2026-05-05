@@ -29,7 +29,6 @@ import { buildFormSubmissionsRoutes } from "./modules/form-submissions/routes";
 import { buildAnalyticsRoutes } from "./modules/analytics/routes";
 import { buildObjectivesRoutes } from "./modules/objectives/routes";
 import { buildCmsRoutes } from "./modules/cms/routes";
-import { buildTwilioRoutes } from "./modules/twilio/twilio.routes";
 import { buildLeadsRoutes } from "./modules/leads/routes";
 import { buildSupportRoutes } from "./modules/support/routes";
 import { buildValidacionRoutes } from "./modules/validacion/routes";
@@ -42,8 +41,10 @@ import { buildAudioCatalogRoutes } from "./modules/audio-catalog/routes";
 import { buildRegionalLeadersRoutes } from "./modules/regional-leaders/routes";
 import { buildWaValidatorRoutes } from "./modules/wa-validator/routes";
 import { buildQrLeadsRoutes } from "./modules/qr-leads/routes";
+import { buildFormQrDraftsRoutes } from "./modules/form-qr-drafts/routes";
 import { buildBlastRoutes } from "./modules/blast/routes";
 import { buildBlastOrchestratorRoutes } from "./modules/blast-orchestrator/routes";
+import { buildWaEventsRoutes } from "./modules/wa-events/routes";
 
 export function buildApp(env: AppEnv) {
   const app = Fastify({
@@ -55,7 +56,7 @@ export function buildApp(env: AppEnv) {
 
   app.register(helmet);
   app.register(compress);
-  app.register(formbody); // Twilio webhooks arrive as application/x-www-form-urlencoded
+  app.register(formbody);
   // Warn at startup if CORS is misconfigured (wildcard + credentials is insecure)
   if (env.frontendOrigins.includes("*") && env.nodeEnv === "production") {
     app.log.error(
@@ -183,7 +184,6 @@ export function buildApp(env: AppEnv) {
   app.register(buildAnalyticsRoutes(env));
   app.register(buildObjectivesRoutes(env));
   app.register(buildCmsRoutes(env));
-  app.register(buildTwilioRoutes(env));
   app.register(buildLeadsRoutes(env));
   app.register(buildSupportRoutes(env));
   app.register(buildValidacionRoutes(env));
@@ -196,8 +196,10 @@ export function buildApp(env: AppEnv) {
   app.register(buildRegionalLeadersRoutes(env));
   app.register(buildWaValidatorRoutes(env));
   app.register(buildQrLeadsRoutes(env));
+  app.register(buildFormQrDraftsRoutes(env));
   app.register(buildBlastRoutes(env));
   app.register(buildBlastOrchestratorRoutes(env));
+  app.register(buildWaEventsRoutes(env));
 
   app.get("/api/metrics", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, async (_request, reply) => {
     reply.header("Cache-Control", "no-store");

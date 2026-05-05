@@ -71,6 +71,38 @@ export async function updateCampaign(id: string, input: UpdateCampaignInput) {
 }
 
 /**
+ * Patch (partial-merge) keys into campaigns.config JSONB. Admin only.
+ * Backend whitelist (extensible):
+ *   - whatsapp_channel_url: link al canal de difusión WA del candidato
+ *   - whatsapp_number: número al que apunta el QR (9-15 dígitos sin '+')
+ *   - whatsapp_qr_message: mensaje pre-armado del wa.me (placeholders {candidato}, {brigadista})
+ */
+export async function patchCampaignConfig(
+  id: string,
+  partial: {
+    whatsapp_channel_url?: string;
+    whatsapp_number?: string;
+    whatsapp_qr_message?: string;
+  },
+) {
+  return api.patch<CampaignResponse>(`/api/campaigns/${id}/config`, partial);
+}
+
+/**
+ * Edita SOLO el template del mensaje del QR de referido. Endpoint dedicado
+ * que permite candidato+ con campaign access (vs el patch /config genérico
+ * que sólo permite admin).
+ *
+ * Devuelve el string actualizado, no la campaña completa.
+ */
+export async function patchCampaignWhatsappQrMessage(id: string, message: string) {
+  return api.patch<{ whatsapp_qr_message: string }>(
+    `/api/campaigns/${id}/whatsapp-qr-message`,
+    { whatsapp_qr_message: message },
+  );
+}
+
+/**
  * Upload a candidate photo.
  */
 export async function uploadCandidatePhoto(file: File, slug: string) {

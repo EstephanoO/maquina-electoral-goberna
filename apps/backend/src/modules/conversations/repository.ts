@@ -8,11 +8,11 @@ import type { UpsertMessageInput, ClassifyConversationInput } from "./schemas";
 //   1. (campaign_id, own_number, jid) is unique — one conversation per contact per phone line
 //   2. owner_id is set on first outbound message and never changed
 //   3. Classification can only be set once by auto; manual always overrides
-//   4. Messages array capped at 50 entries (oldest trimmed)
+//   4. Messages array capped at 500 entries (oldest trimmed; logs warning on trim)
 //   5. Phone resolution is best-effort; updated whenever a better value arrives
 // ═══════════════════════════════════════════════════════════════════════
 
-const MAX_MESSAGES = 50;
+const MAX_MESSAGES = 500;
 
 export type ConversationRow = {
   id: string;
@@ -68,6 +68,7 @@ export async function upsertMessage(
     is_new: boolean;
     message_count: number;
     inbound_count: number;
+    was_trimmed: boolean;
   }>(`
     INSERT INTO conversations (
       campaign_id, own_number, jid, phone, contact_name,
@@ -100,7 +101,10 @@ export async function upsertMessage(
       id::text,
       (xmax = 0) as is_new,
       message_count,
-      inbound_count
+      inbound_count,
+      -- was_trimmed: post-update message_count > cap means oldest was just trimmed
+      -- (message_count is monotonic, so once it exceeds the cap, every insert trims)
+      (message_count > ${MAX_MESSAGES}) as was_trimmed
   `, [
     campaignId,           // $1
     input.own_number,     // $2
@@ -114,6 +118,11 @@ export async function upsertMessage(
   ]);
 
   const row = rows[0]!;
+  if (row.was_trimmed) {
+    console.warn(
+      `[conversations] trimmed oldest message: conversation_id=${row.id} message_count=${row.message_count} cap=${MAX_MESSAGES} campaign_id=${campaignId} jid=${input.jid}`,
+    );
+  }
   return {
     conversation_id: parseInt(row.id, 10),
     is_new: row.is_new,

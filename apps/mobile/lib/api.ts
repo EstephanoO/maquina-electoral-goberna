@@ -554,3 +554,23 @@ export function getMyQrStats(): Promise<ApiResult<{
 }>> {
   return request('GET', '/qr-leads/my-stats');
 }
+
+/**
+ * POST /api/qr-share-tokens
+ *
+ * Crea (o reusa, si ya hay uno vigente) un token "share-only" para el botón
+ * Compartir del QR. Devuelve un share_url tipo `https://electoral.goberna.club/r/<token>`
+ * que renderiza una landing con OG tags completos (foto del candidato + nombre +
+ * descripción) y luego redirige al wa.me. Esto reemplaza el share del wa.me crudo
+ * que se ve feo en el share sheet de iOS/Android.
+ *
+ * Idempotente del lado server (TTL 30d, reusa share token vigente del brigadista
+ * para esta campaign), así que el cliente puede llamarlo múltiples veces sin temor.
+ */
+export function getOrCreateShareToken(): Promise<ApiResult<{
+  token: string;
+  share_url: string;
+  expires_at: string;
+}>> {
+  return request('POST', '/qr-share-tokens', {});
+}

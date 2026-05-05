@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CmsContact, CmsTwilioMessage } from "@/lib/services/cms";
+import type { CmsContact, CmsMessage } from "@/lib/services/cms";
 
 const FONT = "var(--font-montserrat), system-ui, sans-serif";
 const TAG_COLOR_PALETTE = [
@@ -19,7 +19,7 @@ const TAG_COLOR_PALETTE = [
 
 type Props = {
   contact: CmsContact | null;
-  messages: CmsTwilioMessage[];
+  messages: CmsMessage[];
   loadingMessages: boolean;
   messagesError: string | null;
   draft: string;
@@ -58,7 +58,7 @@ const MESSAGE_STATUS_LABELS: Record<string, string> = {
 
 type MessageStatusGlyph = "clock" | "single-check" | "double-check" | "error";
 
-function getMessageStatusVisual(status: CmsTwilioMessage["status"]): {
+function getMessageStatusVisual(status: CmsMessage["status"]): {
   glyph: MessageStatusGlyph;
   color: string;
   label: string;
@@ -82,7 +82,7 @@ function getMessageStatusVisual(status: CmsTwilioMessage["status"]): {
   }
 }
 
-function MessageStatusIcon({ status }: { status: CmsTwilioMessage["status"] }) {
+function MessageStatusIcon({ status }: { status: CmsMessage["status"] }) {
   const visual = getMessageStatusVisual(status);
 
   return (
@@ -209,7 +209,7 @@ function getTagColor(tagName: string): string {
 
 type TimelineRow =
   | { type: "day"; key: string; label: string }
-  | { type: "message"; key: string; message: CmsTwilioMessage };
+  | { type: "message"; key: string; message: CmsMessage };
 
 export function ChatConversationPane({
   contact,

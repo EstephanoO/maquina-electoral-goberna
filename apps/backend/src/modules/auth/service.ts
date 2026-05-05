@@ -93,6 +93,10 @@ export class AuthService {
         slug: c.campaign_slug,
         role: c.role,
         perm_audio_admin: c.perm_audio_admin,
+        whatsapp_number:
+          typeof c.campaign_config?.whatsapp_number === "string"
+            ? (c.campaign_config.whatsapp_number as string)
+            : null,
       })),
       // Include flag if user needs to reset password
       ...(user.password_reset_required ? { password_reset_required: true } : {}),

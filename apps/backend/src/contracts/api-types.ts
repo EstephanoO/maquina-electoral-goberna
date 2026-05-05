@@ -68,6 +68,8 @@ export type CampaignInfo = {
   name: string;
   slug: string;
   role: string;
+  perm_audio_admin?: boolean;
+  whatsapp_number?: string | null;
 };
 
 export type LoginResponse = ApiSuccess<{

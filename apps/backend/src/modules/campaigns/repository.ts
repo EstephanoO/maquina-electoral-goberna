@@ -101,6 +101,23 @@ export async function create(input: CreateCampaignInput): Promise<CampaignRow> {
   return rows[0]!;
 }
 
+/**
+ * Merge a partial config object into campaigns.config JSONB.
+ * Uses Postgres `||` operator: keys in `partial` overwrite existing keys at top level;
+ * keys NOT in `partial` are preserved untouched. Does not deep-merge nested objects.
+ */
+export async function patchConfig(id: string, partial: Record<string, unknown>): Promise<CampaignRow | null> {
+  const { rows } = await pool.query<CampaignRow>(
+    `UPDATE campaigns
+        SET config = COALESCE(config, '{}'::jsonb) || $1::jsonb,
+            updated_at = now()
+      WHERE id = $2
+   RETURNING id, name, slug, config, status, cargo, numero, partido, foto_url, created_at, updated_at`,
+    [JSON.stringify(partial), id],
+  );
+  return rows[0] ?? null;
+}
+
 export async function update(id: string, input: UpdateCampaignInput): Promise<CampaignRow | null> {
   const setClauses: string[] = [];
   const values: unknown[] = [];
@@ -430,18 +447,3 @@ export async function removeCampaignFromConsultor(userId: string, campaignId: st
   );
 }
 
-// ── Twilio integration config ────────────────────────────────────────
-
-/**
- * Replaces the entire campaigns.config JSONB with the provided object.
- * Caller is responsible for merging existing config fields before calling.
- */
-export async function updateConfig(
-  id: string,
-  config: Record<string, unknown>,
-): Promise<void> {
-  await pool.query(
-    `UPDATE campaigns SET config = $1, updated_at = now() WHERE id = $2`,
-    [JSON.stringify(config), id],
-  );
-}

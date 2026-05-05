@@ -383,3 +383,219 @@ export async function incrementWaCounts(
     WHERE campaign_id = $1 AND canonical_phone = $2
   `, [campaignId, canon, sent, received]);
 }
+
+// ── Engagement state machine ─────────────────────────────────────────
+//
+// Estados manejados en pipeline_status:
+//   'nuevo'             — perfil creado, sin actividad WA
+//   'pendiente_envio'   — el ciudadano escaneó un QR pero todavía no llegó
+//                         su primer mensaje a wa-events
+//   'comparte'          — primer inbound recibido (compartió el contacto)
+//   'no_comparte'       — escaneó pero pasó X tiempo sin que llegue inbound
+//                         (TODO en cron job, no implementado todavía)
+//   'responde'          — respondió a un mensaje saliente nuestro
+//   'no_responde'       — le mandamos algo y no contestó tras N horas
+//   'fidelizado'        — engagement_score >= FIDELIZADO_THRESHOLD
+//   'invalido'          — phone bouncea o el contacto pidió baja
+//
+// Estados legacy (compatibles): 'contactado', 'respondido', 'comprometido'.
+//
+// Reglas de transición (las aplica `applyEngagementTransition`):
+//   inbound + estado in {nuevo, pendiente_envio}  → comparte
+//   inbound + último mensaje fue outbound          → responde
+//   outbound + estado in {nuevo, pendiente_envio}  → contactado
+//                                                    (deja la puerta abierta
+//                                                    a que después llegue
+//                                                    'responde' o 'no_responde')
+//   engagement_score >= threshold (any direction)  → fidelizado
+//
+// La promoción a 'fidelizado' es terminal: una vez fidelizado, no rebaja.
+
+export type EngagementDirection = "in" | "out";
+
+/**
+ * Marca un perfil como `pendiente_envio`. Usado por /api/q/:token cuando el
+ * ciudadano escaneó pero todavía no se envió mensaje en WhatsApp. Idempotente:
+ * solo aplica si el perfil está en 'nuevo' (no degrada estados posteriores).
+ */
+export async function markPendingEnvio(campaignId: string, phone: string): Promise<void> {
+  const canon = normalizePhone(phone);
+  if (canon.length !== 9 || canon === "987654321") return;
+
+  await pool.query(`
+    UPDATE voter_profiles SET
+      pipeline_status    = 'pendiente_envio',
+      last_engagement_at = now(),
+      updated_at         = now()
+    WHERE campaign_id = $1
+      AND canonical_phone = $2
+      AND pipeline_status IN ('', 'nuevo')
+  `, [campaignId, canon]);
+}
+
+/**
+ * Aplica la transición de engagement al recibir/enviar un mensaje WA.
+ * Llamada desde wa-events después del upsert del perfil.
+ *
+ * Atómico: usa CTE para leer el perfil + decidir nuevo estado en un solo UPDATE.
+ * Promueve a fidelizado si engagement_score (post-incremento) >= threshold.
+ */
+export async function applyEngagementTransition(
+  profileId: string,
+  direction: EngagementDirection,
+  fidelizadoThreshold: number,
+): Promise<{ pipeline_status: string; engagement_score: number } | null> {
+  // Reglas:
+  //   inbound  → si estado ∈ {nuevo, pendiente_envio} ⇒ comparte
+  //              si estado ∈ {comparte, contactado, no_responde, no_comparte} ⇒ responde
+  //   outbound → si estado ∈ {nuevo, pendiente_envio} ⇒ contactado
+  //              (no degrada respond/comparte/fidelizado)
+  //   any      → engagement_score++; si llega al threshold ⇒ fidelizado
+  //
+  // 'fidelizado' nunca rebaja; 'invalido' tampoco se toca acá.
+  const sql = `
+    WITH bumped AS (
+      UPDATE voter_profiles SET
+        engagement_score   = engagement_score + 1,
+        last_engagement_at = now(),
+        updated_at         = now()
+      WHERE id = $1
+      RETURNING id, pipeline_status, engagement_score
+    ),
+    transition AS (
+      SELECT
+        id,
+        engagement_score,
+        CASE
+          WHEN engagement_score >= $3                          THEN 'fidelizado'
+          WHEN pipeline_status IN ('fidelizado', 'invalido')   THEN pipeline_status
+          WHEN $2 = 'in'  AND pipeline_status IN ('', 'nuevo', 'pendiente_envio')
+                                                                THEN 'comparte'
+          WHEN $2 = 'in'  AND pipeline_status IN ('comparte', 'contactado', 'no_responde', 'no_comparte')
+                                                                THEN 'responde'
+          WHEN $2 = 'out' AND pipeline_status IN ('', 'nuevo', 'pendiente_envio')
+                                                                THEN 'contactado'
+          ELSE pipeline_status
+        END AS next_status
+      FROM bumped
+    )
+    UPDATE voter_profiles SET
+      pipeline_status = transition.next_status,
+      updated_at      = now()
+    FROM transition
+    WHERE voter_profiles.id = transition.id
+    RETURNING voter_profiles.pipeline_status, voter_profiles.engagement_score
+  `;
+
+  const res = await pool.query<{ pipeline_status: string; engagement_score: number }>(
+    sql,
+    [profileId, direction, fidelizadoThreshold],
+  );
+  return res.rows[0] ?? null;
+}
+
+/**
+ * Cron-style sweep: marca como 'no_responde' los perfiles a los que les enviamos
+ * algo (status='contactado') y no respondieron en `hours` horas.
+ * Devuelve el número de perfiles afectados.
+ */
+export async function sweepNoResponde(hours: number): Promise<number> {
+  const res = await pool.query(`
+    UPDATE voter_profiles SET
+      pipeline_status = 'no_responde',
+      updated_at      = now()
+    WHERE pipeline_status = 'contactado'
+      AND last_contacted_at IS NOT NULL
+      AND last_contacted_at < now() - ($1::int * INTERVAL '1 hour')
+      AND (last_responded_at IS NULL OR last_responded_at < last_contacted_at)
+  `, [hours]);
+  return res.rowCount ?? 0;
+}
+
+/**
+ * Cron-style sweep: marca como 'no_comparte' los pendientes que llevan
+ * `hours` horas sin inbound (escanearon el QR pero nunca enviaron).
+ */
+export async function sweepNoComparte(hours: number): Promise<number> {
+  const res = await pool.query(`
+    UPDATE voter_profiles SET
+      pipeline_status = 'no_comparte',
+      updated_at      = now()
+    WHERE pipeline_status = 'pendiente_envio'
+      AND last_engagement_at IS NOT NULL
+      AND last_engagement_at < now() - ($1::int * INTERVAL '1 hour')
+  `, [hours]);
+  return res.rowCount ?? 0;
+}
+
+/**
+ * Setea ai_classification y mergea tags devueltas por el módulo ai/.
+ * Tags son union-merge (no se sobreescriben las existentes manuales).
+ */
+export async function setAiClassification(
+  profileId: string,
+  classification: {
+    category?: string;
+    vote_class?: string;
+    confidence?: number;
+    reason?: string;
+    model?: string;
+  },
+  tagsToMerge: string[],
+): Promise<void> {
+  const aiPayload = {
+    ...classification,
+    classified_at: new Date().toISOString(),
+  };
+
+  // Sanitiza: tags como strings cortos, sin duplicados, sin vacíos.
+  const cleanTags = Array.from(
+    new Set(
+      tagsToMerge
+        .map((t) => t.trim().toLowerCase())
+        .filter((t) => t.length > 0 && t.length <= 60),
+    ),
+  );
+
+  await pool.query(`
+    UPDATE voter_profiles SET
+      ai_classification = $2::jsonb,
+      tags              = ARRAY(SELECT DISTINCT unnest(tags || $3::text[])),
+      vote_class        = CASE
+        WHEN COALESCE(vote_class, '') = '' AND $4::text != ''
+        THEN $4::text
+        ELSE vote_class
+      END,
+      vote_class_source = CASE
+        WHEN COALESCE(vote_class, '') = '' AND $4::text != ''
+        THEN 'auto'
+        ELSE vote_class_source
+      END,
+      category          = CASE
+        WHEN COALESCE(category, '') = '' AND $5::text != ''
+        THEN $5::text
+        ELSE category
+      END,
+      confidence        = COALESCE($6::real, confidence),
+      updated_at        = now()
+    WHERE id = $1
+  `, [
+    profileId,
+    JSON.stringify(aiPayload),
+    cleanTags,
+    classification.vote_class ?? "",
+    classification.category ?? "",
+    classification.confidence ?? null,
+  ]);
+}
+
+/** Devuelve el perfil por (campaign_id, phone) o null. Útil para hooks de wa-events. */
+export async function findByPhone(campaignId: string, phone: string): Promise<VoterProfile | null> {
+  const canon = normalizePhone(phone);
+  if (canon.length !== 9) return null;
+  const res = await pool.query<VoterProfile>(
+    "SELECT * FROM voter_profiles WHERE campaign_id = $1 AND canonical_phone = $2",
+    [campaignId, canon],
+  );
+  return res.rows[0] ?? null;
+}

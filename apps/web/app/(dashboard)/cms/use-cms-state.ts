@@ -29,7 +29,7 @@ import {
   type CmsSseContactUpdated,
   type CmsSseNotesUpdated,
   type CmsSseTagsUpdated,
-  type CmsTwilioMessage,
+  type CmsMessage,
 } from "@/lib/services/cms";
 
 import {
@@ -74,7 +74,7 @@ export function useCmsState() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [uiError, setUiError] = useState<string | null>(null);
-  const [messagesByContact, setMessagesByContact] = useState<Record<string, CmsTwilioMessage[]>>({});
+  const [messagesByContact, setMessagesByContact] = useState<Record<string, CmsMessage[]>>({});
   const [messagesLoadingByContact, setMessagesLoadingByContact] = useState<Record<string, boolean>>({});
   const [messagesErrorByContact, setMessagesErrorByContact] = useState<Record<string, string | null>>({});
   const [draftByContact, setDraftByContact] = useState<Record<string, string>>({});
@@ -103,8 +103,8 @@ export function useCmsState() {
   const mobileChatOpen = mobileActivePane === "chat" && selectedContact !== null;
   const panelOpen = notesContact !== null;
 
-  const latestMessageByContact = useMemo<Record<string, CmsTwilioMessage | undefined>>(() => {
-    const next: Record<string, CmsTwilioMessage | undefined> = {};
+  const latestMessageByContact = useMemo<Record<string, CmsMessage | undefined>>(() => {
+    const next: Record<string, CmsMessage | undefined> = {};
     for (const [contactId, messages] of Object.entries(messagesByContact)) {
       if (messages.length > 0) {
         next[contactId] = messages[messages.length - 1];
@@ -556,13 +556,12 @@ export function useCmsState() {
     if (!messageBody) return;
 
     const tempId = `temp-${Date.now()}`;
-    const optimisticMessage: CmsTwilioMessage = {
+    const optimisticMessage: CmsMessage = {
       id: tempId,
       contact_id: selectedContactId,
       campaign_id: activeCampaignId,
       direction: "outbound",
       body: messageBody,
-      twilio_sid: null,
       status: "queued",
       sent_by: user?.id ?? null,
       created_at: new Date().toISOString(),
