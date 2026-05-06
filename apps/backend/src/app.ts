@@ -29,6 +29,7 @@ import { buildFormSubmissionsRoutes } from "./modules/form-submissions/routes";
 import { buildAnalyticsRoutes } from "./modules/analytics/routes";
 import { buildObjectivesRoutes } from "./modules/objectives/routes";
 import { buildCmsRoutes } from "./modules/cms/routes";
+import { buildWaInboxRoutes } from "./modules/cms/wa-inbox-routes";
 import { buildLeadsRoutes } from "./modules/leads/routes";
 import { buildSupportRoutes } from "./modules/support/routes";
 import { buildValidacionRoutes } from "./modules/validacion/routes";
@@ -184,6 +185,7 @@ export function buildApp(env: AppEnv) {
   app.register(buildAnalyticsRoutes(env));
   app.register(buildObjectivesRoutes(env));
   app.register(buildCmsRoutes(env));
+  app.register(buildWaInboxRoutes(env));
   app.register(buildLeadsRoutes(env));
   app.register(buildSupportRoutes(env));
   app.register(buildValidacionRoutes(env));
