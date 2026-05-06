@@ -18,6 +18,7 @@ import { getInstanceFor, getTemplatesByCategory, type BotInstance, type Template
 import { pickTemplate, applyTemplate } from "./template-picker.js";
 import { generateReply as openaiReply, aiAvailable as openaiAvailable } from "./openai.js";
 import { generateReply as geminiReply, geminiAvailable } from "./gemini.js";
+import { getRecentHistory, formatHistoryForPrompt } from "./conversation-memory.js";
 
 /** AI provider chain: OpenAI primero (default), Gemini como fallback. */
 async function aiReply(opts: { systemPrompt: string; userMessage: string }) {
@@ -49,12 +50,13 @@ function markReplied(phone: string) {
 }
 
 export type AutoReplyInput = {
-  instanceSlug: string;          // p4, p3, etc — used to find bot_instance
-  ownPhone: string;              // bot's own phone (e.g. +51944531711)
-  fromPhone: string;             // lead phone
-  body: string;                  // inbound message body
+  instanceSlug: string;
+  ownPhone: string;
+  fromPhone: string;
+  body: string;
   classifiedProducts: string[];
   customTags: string[];
+  leadId?: number;               // si presente, se trae conversation memory
 };
 
 export type AutoReplyMessage = {
@@ -114,7 +116,15 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
   //     caemos al holding template.
   if (!tpl) {
     if (aiProviderAvailable()) {
-      const systemPrompt = buildSystemPrompt(instance);
+      const baseSystemPrompt = buildSystemPrompt(instance);
+      // ── CONVERSATION MEMORY: incluye historial reciente como contexto ──
+      let systemPrompt = baseSystemPrompt;
+      if (input.leadId) {
+        const history = await getRecentHistory(input.leadId, 10);
+        if (history.length > 0) {
+          systemPrompt += `\n\n--- Historial reciente con este lead ---\n${formatHistoryForPrompt(history)}\n--- Fin historial ---`;
+        }
+      }
       const ai = await aiReply({
         systemPrompt,
         userMessage: input.body,

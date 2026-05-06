@@ -48,6 +48,8 @@ import {
 import { getAutoResponse, getOutOfHoursResponse, isWithinHours } from "./auto-reply.js";
 import { decideAutoReply, typingDelayFor } from "./auto-reply-v2.js";
 import { extractFromMessage, buildLeadPatch } from "./extractors.js";
+import { getNextSlots, proposeMessage, saveProposedSlots, getProposedSlots, pickSlotFromReply, createAppointment, confirmationMessage } from "./agenda.js";
+import { invalidateMemory } from "./conversation-memory.js";
 
 const logger = P({ level: "warn" });
 
@@ -585,6 +587,73 @@ export class WAInstance {
       addLog(this.id, `⚠ updateLead failed: ${e.message}`);
     }
 
+    // ── INVALIDAR MEMORY antes de cualquier AI call ──
+    invalidateMemory(lead.id);
+
+    // ── AGENDA · si lead pidió agendar O está confirmando un slot ──
+    try {
+      const wantsAgenda = (customTags as string[]).includes("intent:agenda");
+      const proposed = getProposedSlots(phone);
+
+      if (proposed && proposed.length > 0) {
+        // Tenemos slots propuestos pendientes — checar si el body los confirma
+        const picked = pickSlotFromReply(body, proposed);
+        if (picked) {
+          addLog(this.id, `📅 lead ${lead.id} eligió slot: ${picked.display}`);
+          const apt = await createAppointment({
+            lead_id: lead.id,
+            scheduled_at: picked.iso,
+            operator_id: 4,  // Kathy default
+            notes: `Booked via bot from "${body.slice(0, 100)}"`,
+          });
+          const meetingUrl = apt?.meeting_url ?? null;
+          const confirmMsg = confirmationMessage(picked, meetingUrl);
+          await new Promise(r => setTimeout(r, 1500));
+          await this.sendMessage(phone, confirmMsg);
+          await crmApi.recordMessage({
+            phone, direction: "out",
+            body: confirmMsg,
+            assigned_to: this.phone,
+            timestamp: new Date().toISOString(),
+            external_id: `agenda-confirm-${apt?.id}-${Date.now()}`,
+            meta: { message_type: "text", auto_reply: true, agenda_confirmed: true, appointment_id: apt?.id },
+          });
+          // Flag to operator que hay nueva cita
+          if (lead?.id) {
+            try {
+              await fetch(`${process.env.API_URL || "http://api:4000"}/leads/${lead.id}/flag-attention`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reason: `appointment_booked: ${picked.display}` }),
+              });
+            } catch {}
+          }
+          return;  // Done — no auto-reply normal
+        }
+      }
+
+      if (wantsAgenda) {
+        addLog(this.id, `📅 lead ${lead.id} pidió AGENDA, proponiendo slots…`);
+        const slots = await getNextSlots(4, 3);
+        if (slots.length > 0) {
+          saveProposedSlots(phone, slots);
+          const msg = proposeMessage(slots);
+          await new Promise(r => setTimeout(r, 1500));
+          await this.sendMessage(phone, msg);
+          await crmApi.recordMessage({
+            phone, direction: "out",
+            body: msg,
+            assigned_to: this.phone,
+            timestamp: new Date().toISOString(),
+            external_id: `agenda-propose-${Date.now()}`,
+            meta: { message_type: "text", auto_reply: true, agenda_proposed: true, slot_count: slots.length },
+          });
+          return;  // Done — esperando que el lead elija
+        }
+      }
+    } catch (e: any) {
+      addLog(this.id, `⚠ agenda flow failed: ${e.message}`);
+    }
+
     // ── AUTO-REPLY (v2: DB-driven) ──────────────────────────────────────
     // Sólo si bot_instances.auto_reply = TRUE para esta instancia. El operador
     // puede activar/desactivar desde /settings sin redeploy. Cooldown 30min
@@ -597,6 +666,7 @@ export class WAInstance {
         body,
         classifiedProducts: classified.products,
         customTags,
+        leadId: lead?.id,
       });
       if (decision.sent) {
         addLog(this.id, `🤖 auto-reply: matched template "${decision.template_name}"${decision.image_url ? " 📷" : ""} — typing…`);
