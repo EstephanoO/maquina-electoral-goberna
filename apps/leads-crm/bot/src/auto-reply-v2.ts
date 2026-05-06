@@ -14,7 +14,7 @@
  * (≤60s) corta el envío.
  */
 import { CONFIG } from "./config.js";
-import { getInstanceFor, getTemplatesByCategory, type BotInstance } from "./instance-config.js";
+import { getInstanceFor, getTemplatesByCategory, type BotInstance, type Template } from "./instance-config.js";
 import { pickTemplate, applyTemplate } from "./template-picker.js";
 
 const COOLDOWN_MS = 30 * 60 * 1000;
@@ -43,9 +43,27 @@ export type AutoReplyInput = {
   customTags: string[];
 };
 
+export type AutoReplyMessage = {
+  template_id: number;
+  template_name: string;
+  body: string;
+  image_url?: string | null;
+  media_kind: "text" | "image" | "video" | "document";
+};
+
 export type AutoReplyResult =
   | { sent: false; reason: string }
-  | { sent: true; template_id: number; template_name: string; body: string; image_url?: string | null };
+  | {
+      sent: true;
+      // Primary message (compat with v1 caller — single image+text or text)
+      template_id: number;
+      template_name: string;
+      body: string;
+      image_url?: string | null;
+      // Sequence: messages to send IN ORDER after the primary one (0..N).
+      // Each is sent with a 1.5-3s delay between them.
+      sequence?: AutoReplyMessage[];
+    };
 
 export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyResult> {
   // 1. Find instance — by phone or slug (whichever matches)
@@ -77,12 +95,31 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
   // 5. Mark cooldown BEFORE sending so retries don't double-send
   markReplied(input.fromPhone);
 
+  // 6. Build sequence: si el template es flyer y tiene product_sku con
+  //    temario, agregamos el TEMARIO image como segundo mensaje (replicando
+  //    el patrón de Kathy: flyer → temario).
+  const sequence: AutoReplyMessage[] = [];
+  if (tpl.category === "flyer" && tpl.product_sku) {
+    const allTemplates = [...cats.values()].flat();
+    const temario = allTemplates.find(t => t.category === "temario" && t.product_sku === tpl.product_sku);
+    if (temario && temario.image_url) {
+      sequence.push({
+        template_id: temario.id,
+        template_name: temario.name,
+        body: temario.body,
+        image_url: temario.image_url,
+        media_kind: "image",
+      });
+    }
+  }
+
   return {
     sent: true,
     template_id: tpl.id,
     template_name: tpl.name,
     body,
     image_url: tpl.image_url ?? null,
+    sequence: sequence.length > 0 ? sequence : undefined,
   };
 }
 

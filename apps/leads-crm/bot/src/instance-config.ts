@@ -10,6 +10,9 @@ export type Template = {
   id: number; name: string; body: string;
   category: string; uses_count: number;
   image_url?: string | null;
+  product_sku?: string | null;
+  media_kind?: "text" | "image" | "video" | "document" | null;
+  sequence_after?: number | null;
 };
 
 export type BotInstance = {

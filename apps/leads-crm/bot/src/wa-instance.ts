@@ -532,10 +532,44 @@ export class WAInstance {
             assigned_to: this.phone,
             timestamp: new Date().toISOString(),
             external_id: `auto-reply-${decision.template_id}-${Date.now()}`,
-            meta: { message_type: "text", auto_reply: true, template_id: decision.template_id, template_name: decision.template_name },
+            meta: {
+              message_type: decision.image_url ? "image" : "text",
+              auto_reply: true, template_id: decision.template_id, template_name: decision.template_name,
+              ...(decision.image_url ? { media_url: decision.image_url } : {}),
+            },
           });
         } catch (e: any) {
           addLog(this.id, `⚠ auto-reply log failed: ${e.message}`);
+        }
+
+        // Sequence: send follow-up messages (e.g. TEMARIO image after flyer)
+        if (decision.sequence && decision.sequence.length > 0) {
+          for (const step of decision.sequence) {
+            await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1500));
+            try {
+              if (step.media_kind === "image" && step.image_url) {
+                await this.sendImage(phone, step.image_url, step.body || "");
+              } else {
+                await this.sendMessage(phone, step.body);
+              }
+              addLog(this.id, `🤖 sequence step SENT: ${step.template_name}`);
+              await crmApi.recordMessage({
+                phone, direction: "out",
+                body: step.body || "",
+                assigned_to: this.phone,
+                timestamp: new Date().toISOString(),
+                external_id: `auto-reply-seq-${step.template_id}-${Date.now()}`,
+                meta: {
+                  message_type: step.media_kind === "image" ? "image" : "text",
+                  auto_reply: true, template_id: step.template_id, template_name: step.template_name,
+                  ...(step.image_url ? { media_url: step.image_url } : {}),
+                },
+              });
+            } catch (e: any) {
+              addLog(this.id, `⚠ sequence step failed: ${e.message}`);
+              break; // stop sequence on first failure
+            }
+          }
         }
       } else {
         addLog(this.id, `🤖 auto-reply skip: ${decision.reason}`);
