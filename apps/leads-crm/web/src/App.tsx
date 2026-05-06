@@ -31,6 +31,16 @@ export default function App() {
     setLoading(false);
   }, []);
 
+  // Cross-page navigation: child cards dispatch CustomEvent("nav:goto", { detail: "products" })
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const target = (e as CustomEvent<string>).detail;
+      if (target) setView(target as View);
+    };
+    window.addEventListener("nav:goto", handler);
+    return () => window.removeEventListener("nav:goto", handler);
+  }, []);
+
   const handleLogin = (newToken: string) => {
     setToken(newToken);
     setUser({ name: "Usuario", email: "usuario@goberna.pe" });
