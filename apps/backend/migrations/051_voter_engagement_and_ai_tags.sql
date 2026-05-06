@@ -66,6 +66,10 @@ ALTER TABLE form_qr_drafts
 COMMENT ON COLUMN form_qr_drafts.kind IS
   'form (default, flujo de scan + form submission, TTL 30min) | share (flujo de link compartible, TTL 30 días)';
 
+-- Index parcial sobre share-tokens del brigadista. NO incluye `expires_at > NOW()`
+-- en el predicate porque NOW() no es IMMUTABLE — Postgres no permite funciones
+-- volátiles en predicates de índices parciales. La query del repo filtra por
+-- expires_at en el WHERE explícito (un index seek + filter, no un full scan).
 CREATE INDEX IF NOT EXISTS idx_form_qr_drafts_brigadista_share
-  ON form_qr_drafts(brigadista_id, campaign_id)
-  WHERE kind = 'share' AND expires_at > NOW();
+  ON form_qr_drafts(brigadista_id, campaign_id, expires_at DESC)
+  WHERE kind = 'share';
