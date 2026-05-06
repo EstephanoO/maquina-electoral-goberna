@@ -2123,6 +2123,134 @@ app.post("/bot-activity/recover-stale", requireAuth, async (_req, res) => {
 
 // ==================== END BOT ACTIVITY ====================
 
+// ==================== BOT ACTIVITY · más detalle ====================
+
+// País distribution de mensajes IN del día
+app.get("/bot-activity/by-country", async (_req, res) => {
+  const rows = await sql`
+    SELECT l.country AS country, count(*)::int AS msgs
+      FROM interactions i
+      JOIN leads l ON l.id = i.lead_id
+     WHERE i.created_at::date = current_date
+       AND i.kind = 'message_in'
+       AND l.country IS NOT NULL
+     GROUP BY l.country
+     ORDER BY msgs DESC
+     LIMIT 12
+  `;
+  res.json({ items: rows });
+});
+
+// Distribución por hora (Lima TZ)
+app.get("/bot-activity/by-hour", async (_req, res) => {
+  const rows = await sql`
+    SELECT
+      EXTRACT(HOUR FROM i.created_at AT TIME ZONE 'America/Lima')::int AS hour,
+      count(*) FILTER (WHERE i.kind = 'message_in')::int AS in_count,
+      count(*) FILTER (WHERE i.kind = 'message_out')::int AS out_count
+    FROM interactions i
+    WHERE i.created_at::date = current_date
+    GROUP BY 1
+    ORDER BY 1
+  `;
+  res.json({ items: rows });
+});
+
+// Intents detectados HOY (vía regex match a reglas activas)
+app.get("/bot-activity/intents-today", async (_req, res) => {
+  const rows = await sql`
+    WITH today_intents AS (
+      SELECT DISTINCT ON (i.lead_id, r.id)
+        r.tag, r.name, r.source
+      FROM interactions i
+      JOIN ai_rules r ON r.enabled = TRUE
+      WHERE i.kind = 'message_in'
+        AND i.created_at::date = current_date
+        AND i.body IS NOT NULL
+        AND i.body ~* r.pattern
+    )
+    SELECT tag, source, count(*)::int AS leads
+      FROM today_intents
+     GROUP BY tag, source
+     ORDER BY leads DESC
+     LIMIT 20
+  `;
+  res.json({ items: rows });
+});
+
+// Top 10 leads más activos hoy
+app.get("/bot-activity/top-active-leads", async (_req, res) => {
+  const rows = await sql`
+    SELECT
+      l.id, l.name, l.phone, l.country, l.stage, l.buyer_tier,
+      count(*) FILTER (WHERE i.kind = 'message_in')::int  AS in_count,
+      count(*) FILTER (WHERE i.kind = 'message_out')::int AS out_count,
+      l.attention_reason, l.needs_human_attention
+    FROM interactions i
+    JOIN leads l ON l.id = i.lead_id
+    WHERE i.created_at::date = current_date
+    GROUP BY l.id
+    ORDER BY count(*) DESC
+    LIMIT 10
+  `;
+  res.json({ items: rows });
+});
+
+// Últimos mensajes IN (para feed)
+app.get("/bot-activity/recent-messages", async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 15, 50);
+  const rows = await sql`
+    SELECT
+      i.id, i.created_at, i.body,
+      i.meta->>'message_type' AS type,
+      l.id AS lead_id, l.name AS lead_name, l.country, l.buyer_tier,
+      l.needs_human_attention
+    FROM interactions i
+    JOIN leads l ON l.id = i.lead_id
+    WHERE i.created_at::date = current_date
+      AND i.kind = 'message_in'
+    ORDER BY i.id DESC
+    LIMIT ${limit}
+  `;
+  res.json({ items: rows });
+});
+
+// Stats globales más profundas hoy
+app.get("/bot-activity/today-deep", async (_req, res) => {
+  const stats = await sql`
+    SELECT
+      count(*) FILTER (WHERE i.kind = 'message_in')::int AS msgs_in,
+      count(*) FILTER (WHERE i.kind = 'message_in' AND i.meta->>'message_type' IN ('image','video','document','audio'))::int AS media_in,
+      count(*) FILTER (WHERE i.kind = 'message_out')::int AS msgs_out,
+      count(*) FILTER (WHERE i.kind = 'message_out' AND (i.meta->>'auto_reply')::bool IS TRUE)::int AS auto_replies,
+      count(*) FILTER (WHERE i.kind = 'message_out' AND i.meta->>'message_type' IN ('image','video','document','audio'))::int AS media_out,
+      count(DISTINCT i.lead_id) FILTER (WHERE i.kind = 'message_in')::int AS unique_leads_in,
+      count(DISTINCT i.lead_id) FILTER (WHERE i.kind = 'message_out' AND (i.meta->>'auto_reply')::bool IS TRUE)::int AS unique_leads_replied,
+      count(*) FILTER (WHERE i.kind = 'message_out' AND (i.meta->>'holding')::bool IS TRUE)::int AS holdings,
+      count(*) FILTER (WHERE i.kind = 'message_out' AND (i.meta->>'agenda_proposed')::bool IS TRUE)::int AS agenda_proposed,
+      count(*) FILTER (WHERE i.kind = 'message_out' AND (i.meta->>'agenda_confirmed')::bool IS TRUE)::int AS agenda_confirmed
+    FROM interactions i
+    WHERE i.created_at::date = current_date
+  `;
+  const newLeads = await sql`
+    SELECT count(*)::int AS new_leads FROM leads WHERE created_at::date = current_date
+  `;
+  const sales = await sql`
+    SELECT count(*)::int AS sold_today
+      FROM interactions
+     WHERE created_at::date = current_date
+       AND kind = 'stage_change'
+       AND meta->>'to_stage' = 'sold'
+  `;
+  res.json({
+    ...stats[0],
+    new_leads_today: newLeads[0].new_leads,
+    auto_sold_today: sales[0].sold_today,
+  });
+});
+
+// ==================== END EXTRAS ====================
+
 // Error handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("[api] unhandled error:", err);
