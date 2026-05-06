@@ -64,7 +64,7 @@ export type Lead = {
 export type LeadInput = Partial<Omit<Lead, "id" | "created_at" | "updated_at">> & { name?: string; last_activity_at?: string | null; };
 export type InteractionKind = "note" | "message_in" | "message_out" | "stage_change" | "lead_created";
 export type Interaction = { id: number; lead_id: number; kind: InteractionKind; body: string | null; meta: Record<string, unknown> | null; by: string | null; created_at: string; };
-export type Template = { id: number; name: string; body: string; image_url: string | null; created_at: string; updated_at: string; };
+export type Template = { id: number; name: string; body: string; image_url: string | null; category: string | null; uses_count: number; product_sku: string | null; media_kind: string | null; sequence_after: number | null; created_at: string; updated_at: string; };
 export type SendStatus = "pending" | "sent" | "failed" | "cancelled";
 export type Send = { id: number; lead_id: number; body: string; body_parts: string[] | null; image_url: string | null; status: SendStatus; error: string | null; assigned_to: string | null; scheduled_at: string | null; created_at: string; sent_at: string | null; };
 export type Operator = { id: number; email: string; name: string; phone: string | null; role: "operator" | "admin"; };
@@ -80,6 +80,10 @@ const LEAD_COLS = sql`
   l.stage, l.priority, l.notes, l.tags, l.next_follow_up_at, l.source, l.assigned_to,
   l.captured_by_phone, l.country, l.email, l.total_usd_spent, l.n_purchases,
   l.first_purchase_at, l.buyer_tier, l.created_at, l.updated_at,
+  l.dni, l.ocupacion, l.fecha_nacimiento, l.last_course,
+  l.enrollments_count, l.certificates_count, l.escuela_client_id,
+  l.is_group, l.group_subject, l.last_chat_kind,
+  l.needs_human_attention, l.attention_reason, l.attention_at,
   (SELECT created_at FROM interactions WHERE lead_id = l.id AND kind = 'message_in' ORDER BY created_at DESC LIMIT 1) as last_contacted_at,
   EXTRACT(DAY FROM now() - (SELECT created_at FROM interactions WHERE lead_id = l.id AND kind = 'message_in' ORDER BY created_at DESC LIMIT 1)) as days_since_contact,
   exists(SELECT 1 FROM interactions WHERE lead_id = l.id AND kind = 'stage_change' AND (meta->>'from_stage')::text = 'interested') as was_previously_interested
@@ -97,13 +101,29 @@ function mapLead(r: any): Lead {
     created_at: toISO(r.created_at)!, updated_at: toISO(r.updated_at)!,
     last_contacted_at: toISO(r.last_contacted_at), days_since_contact: r.days_since_contact,
     was_previously_interested: r.was_previously_interested,
-  };
+    // Escuela ERP enrichment
+    dni: r.dni ?? null,
+    ocupacion: r.ocupacion ?? null,
+    fecha_nacimiento: toISO(r.fecha_nacimiento),
+    last_course: r.last_course ?? null,
+    enrollments_count: r.enrollments_count ?? 0,
+    certificates_count: r.certificates_count ?? 0,
+    escuela_client_id: r.escuela_client_id ?? null,
+    // Chat meta
+    is_group: r.is_group ?? false,
+    group_subject: r.group_subject ?? null,
+    last_chat_kind: r.last_chat_kind ?? null,
+    // Atención humana
+    needs_human_attention: r.needs_human_attention ?? false,
+    attention_reason: r.attention_reason ?? null,
+    attention_at: toISO(r.attention_at),
+  } as any;
 }
 function mapInteraction(r: any): Interaction {
   return { id: r.id, lead_id: r.lead_id, kind: r.kind, body: r.body, meta: r.meta, by: r.by ?? r.by_user, created_at: toISO(r.created_at)! };
 }
 function mapTemplate(r: any): Template {
-  return { id: r.id, name: r.name, body: r.body, image_url: r.image_url, created_at: toISO(r.created_at)!, updated_at: toISO(r.updated_at)! };
+  return { id: r.id, name: r.name, body: r.body, image_url: r.image_url, category: r.category ?? null, uses_count: r.uses_count ?? 0, product_sku: r.product_sku ?? null, media_kind: r.media_kind ?? null, sequence_after: r.sequence_after ?? null, created_at: toISO(r.created_at)!, updated_at: toISO(r.updated_at)! };
 }
 function mapSend(r: any): Send {
   return { id: r.id, lead_id: r.lead_id, body: r.body, body_parts: r.body_parts, image_url: r.image_url, status: r.status, error: r.error, assigned_to: r.assigned_to, scheduled_at: toISO(r.scheduled_at), created_at: toISO(r.created_at)!, sent_at: toISO(r.sent_at) };
