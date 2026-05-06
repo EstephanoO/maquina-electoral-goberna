@@ -6,11 +6,12 @@ import ReportsPage from "./pages/ReportsPage";
 import ChatPage from "./pages/ChatPage";
 import TrainingPage from "./pages/TrainingPage";
 import ProductsPage from "./pages/ProductsPage";
+import SettingsPage from "./pages/SettingsPage";
 import { LeadDetail } from "./views/LeadDetail";
-import { LayoutDashboard, Users, LogOut, ChevronDown, FileBarChart, MessageCircle, Brain, Package } from "lucide-react";
+import { LayoutDashboard, Users, LogOut, ChevronDown, FileBarChart, MessageCircle, Brain, Package, Settings } from "lucide-react";
 import { cn } from "./lib/utils";
 
-type View = "dashboard" | "leads" | "chat" | "reports" | "training" | "products";
+type View = "dashboard" | "leads" | "chat" | "reports" | "training" | "products" | "settings";
 
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
@@ -68,6 +69,7 @@ export default function App() {
     { key: "reports" as const, label: "Reportes", icon: FileBarChart },
     { key: "training" as const, label: "Entrenamiento IA", icon: Brain },
     { key: "products" as const, label: "Productos", icon: Package },
+    { key: "settings" as const, label: "Configuración", icon: Settings },
   ];
 
   return (
@@ -128,6 +130,7 @@ export default function App() {
         {view === "reports" && <ReportsPage />}
         {view === "training" && <TrainingPage />}
         {view === "products" && <ProductsPage />}
+        {view === "settings" && <SettingsPage />}
       </main>
 
       {/* Mobile Bottom Nav */}

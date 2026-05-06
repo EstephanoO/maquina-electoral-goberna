@@ -51,22 +51,16 @@ export const PRIORITY_CONFIG = {
   low: { label: "🟢 Baja", color: "bg-green-100 text-green-800 border-green-300" },
 } as const;
 
-// Estados del flujo de gestión
+// Pipeline canónico de Goberna Escuela (8 stages — orden de izquierda a derecha en el Kanban).
+// Antes había 13 stages mezclados (recibido/en_revision/completado/rechazado + new/contacted/...),
+// pero los 4 primeros estaban siempre en 0 y confundían al operador.
 export const STAGE_CONFIG = {
-  // Flujo de gestión de propuestas (nuevos)
-  recibido: { label: "📥 Recibido", color: "bg-blue-100 text-blue-800", group: "intake" },
-  en_revision: { label: "🔄 En Revisión", color: "bg-amber-100 text-amber-800", group: "process" },
-  completado: { label: "✅ Completado", color: "bg-green-100 text-green-800", group: "complete" },
-  rechazado: { label: "❌ Rechazado", color: "bg-red-100 text-red-800", group: "out" },
-  
-  // Mantener compatibilidad con datos antiguos
-  new: { label: "Nuevo", color: "bg-indigo-100 text-indigo-800", group: "sale" },
-  contacted: { label: "Contactado", color: "bg-blue-100 text-blue-800", group: "sale" },
-  interested: { label: "Interesado", color: "bg-amber-100 text-amber-800", group: "sale" },
-  sold: { label: "Vendido", color: "bg-green-100 text-green-800", group: "sale" },
-  delivered: { label: "Entregado", color: "bg-teal-100 text-teal-800", group: "post" },
-  follow_up: { label: "Seguimiento", color: "bg-cyan-100 text-cyan-800", group: "post" },
-  recontact: { label: "Recontacto", color: "bg-violet-100 text-violet-800", group: "post" },
-  resold: { label: "Re-vendido", color: "bg-emerald-100 text-emerald-800", group: "post" },
-  lost: { label: "Perdido", color: "bg-red-100 text-red-800", group: "out" },
+  contacted:  { label: "📞 Contactado",  color: "bg-blue-100 text-blue-800",       group: "sale" },
+  interested: { label: "💡 Interesado",  color: "bg-amber-100 text-amber-800",     group: "sale" },
+  sold:       { label: "💰 Vendido",     color: "bg-green-100 text-green-800",     group: "sale" },
+  delivered:  { label: "📦 Entregado",   color: "bg-teal-100 text-teal-800",       group: "post" },
+  follow_up:  { label: "🔁 Seguimiento", color: "bg-cyan-100 text-cyan-800",       group: "post" },
+  recontact:  { label: "📲 Recontacto",  color: "bg-violet-100 text-violet-800",   group: "post" },
+  resold:     { label: "🏆 Re-vendido",  color: "bg-emerald-100 text-emerald-800", group: "post" },
+  lost:       { label: "❌ Perdido",     color: "bg-red-100 text-red-800",         group: "out" },
 } as const;
