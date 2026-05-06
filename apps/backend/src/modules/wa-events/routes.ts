@@ -31,6 +31,8 @@ import { pool } from "../../db";
 import * as conversationsRepo from "../conversations/repository";
 import * as voterProfileRepo from "../voter-profiles/repository";
 import { classifyAndTagVoterProfile } from "../ai/voter-classifier";
+import { analyzePushName, detectCountryFromPhone, slug as countrySlug } from "../ai/pushname-analyzer";
+import type { ClassifierKind } from "../ai/classifier";
 import { cmsEvents } from "../../infra/cms-events";
 
 // ── Schemas ──────────────────────────────────────────────────────────
@@ -142,15 +144,22 @@ export function buildWaEventsRoutes(env: AppEnv): FastifyPluginAsync {
       }
       const body = parsed.data;
 
-      // Security: el bot solo puede pushear para números registrados en wa_phones de esta campaña
+      // Security: el bot solo puede pushear para números registrados en wa_phones de esta campaña.
+      // Aprovechamos el join para traer `campaigns.config.kind` (campaign | business)
+      // que decide qué prompt usa el classifier.
       const cleanOwnNumber = body.own_number.replace(/\D/g, "");
-      const { rows: phoneRows } = await pool.query<{ id: string }>(
-        `SELECT id::text FROM wa_phones WHERE campaign_id = $1 AND number = $2 LIMIT 1`,
+      const { rows: phoneRows } = await pool.query<{ id: string; campaign_kind: string | null }>(
+        `SELECT wp.id::text, c.config->>'kind' AS campaign_kind
+           FROM wa_phones wp
+           JOIN campaigns c ON c.id = wp.campaign_id
+          WHERE wp.campaign_id = $1 AND wp.number = $2
+          LIMIT 1`,
         [body.campaign_id, cleanOwnNumber],
       );
       if (phoneRows.length === 0) {
         return reply.code(403).send(errorPayload(requestId, "OWN_NUMBER_NOT_REGISTERED", `el número ${cleanOwnNumber} no está registrado en wa_phones de esta campaña`));
       }
+      const classifierKind: ClassifierKind = phoneRows[0]!.campaign_kind === "business" ? "business" : "campaign";
 
       const isOut = body.direction === "out";
       const operatorId = isOut ? (body.operator_id ?? SYSTEM_OPERATOR_ID) : SYSTEM_OPERATOR_ID;
@@ -255,17 +264,38 @@ export function buildWaEventsRoutes(env: AppEnv): FastifyPluginAsync {
         linked = linkRes.linked;
       }
 
-      // 3. Voter profile auto-upsert + engagement transition.
-      // Fire-and-forget en el sentido de que no bloqueamos la respuesta HTTP,
-      // pero sí ejecutamos el flujo completo (upsert → counters → transition →
-      // AI tag) en background. El match con el QR lead pasa acá vía canonical_phone.
+      // 3. Voter profile auto-upsert + engagement transition + pushName analysis + classifier.
+      //
+      // Fire-and-forget: no bloqueamos la respuesta HTTP, pero corre todo el
+      // flujo en background. El match con el QR lead pasa acá vía canonical_phone.
+      //
+      // Capa de pushName: analyzePushName separa nombre limpio del pushName
+      // crudo (descarta mottos / "(Perú)" / "Sin nombre" / ...) y deriva tags
+      // (país detectado, profesión, tipo:negocio). Los tags se mergean con
+      // los del classifier de texto.
       if (body.phone) {
         const phone = body.phone;
         const captureContactedBy = isOut && operatorId !== SYSTEM_OPERATOR_ID ? operatorId : undefined;
+
+        // Análisis del pushName antes de upserts. Si es junk, no lo pasamos
+        // a voter_profile.canonical_name — el repo ya tiene su propio filter
+        // pero acá agregamos una capa más rica.
+        const pushAnalysis = analyzePushName(body.contact_name, phone);
+        const cleanContactName = pushAnalysis.discard ? undefined : pushAnalysis.clean_name;
+
+        // País: prioridad pushName ("(Perú)") → fallback phone prefix (+51… → Perú).
+        // Usamos el `countrySlug` del pushname-analyzer (que strippea diacríticos
+        // vía NFD) en vez del replace simple — antes "Perú" salía como "per-".
+        const detectedCountry = pushAnalysis.country ?? detectCountryFromPhone(phone);
+        const pushTags: string[] = [...pushAnalysis.tags];
+        if (detectedCountry && !pushAnalysis.tags.some((t) => t.startsWith("país:"))) {
+          pushTags.push(`país:${countrySlug(detectedCountry)}`);
+        }
+
         voterProfileRepo.upsert({
           campaign_id: body.campaign_id,
           phone,
-          name: body.contact_name,
+          name: cleanContactName,
           jid: body.jid,
           conversation_id: result.conversation_id,
           contacted_by: captureContactedBy,
@@ -278,9 +308,6 @@ export function buildWaEventsRoutes(env: AppEnv): FastifyPluginAsync {
           ).catch(() => {});
 
           // Transición de engagement (comparte/responde/fidelizado/contactado).
-          // Reemplaza la lógica antigua basada en if/else con la state machine
-          // unificada del repo, que también incrementa engagement_score y
-          // promueve a 'fidelizado' al cruzar el threshold.
           await voterProfileRepo.applyEngagementTransition(
             vp.id,
             isOut ? "out" : "in",
@@ -290,13 +317,38 @@ export function buildWaEventsRoutes(env: AppEnv): FastifyPluginAsync {
             app.log.warn({ vp_id: vp.id, error: msg }, "wa-events: applyEngagementTransition failed");
           });
 
-          // AI auto-tag/auto-classify SOLO en inbound con texto no vacío.
-          // Outbound no se clasifica (lo escribió la operadora).
+          // AI auto-tag/auto-classify.
+          //   - Inbound con texto: corre programmatic + Gemini gateado.
+          //   - Outbound o sin texto: solo persiste pushTags si hay (no hay text para classify).
+          //   - kind viene del campaign.config (business=Escuela vs campaign=política).
           if (!isOut && body.text && body.text.trim().length > 3) {
-            void classifyAndTagVoterProfile(env, vp.id, body.text).catch((err: unknown) => {
+            void classifyAndTagVoterProfile(env, vp.id, body.text, {
+              kind: classifierKind,
+              extraTags: pushTags,
+            }).catch((err: unknown) => {
               const msg = err instanceof Error ? err.message : String(err);
               app.log.warn({ vp_id: vp.id, error: msg }, "wa-events: AI classifier failed");
             });
+          } else if (pushTags.length > 0) {
+            // Outbound o text vacío: aún así escribimos los tags del pushName
+            // (país, profesión) para que el lead quede enriquecido aunque
+            // nunca pase por el classifier de texto.
+            void voterProfileRepo
+              .setAiClassification(
+                vp.id,
+                {
+                  category: "",
+                  vote_class: "",
+                  confidence: 0.6,
+                  reason: "pushname_tags_only",
+                  model: "pushname-analyzer",
+                },
+                pushTags,
+              )
+              .catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                app.log.warn({ vp_id: vp.id, error: msg }, "wa-events: pushname tags persist failed");
+              });
           }
         }).catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err);

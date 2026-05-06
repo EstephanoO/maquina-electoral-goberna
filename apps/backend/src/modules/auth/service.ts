@@ -60,13 +60,15 @@ export class AuthService {
     // This ensures a consultor for any campaign can access consultor-level endpoints
     const effectiveRole = this.computeEffectiveRole(user.role, campaigns);
 
+    // JWT compacto: solo identidad. campaign_ids/perms se fetchean desde DB
+    // en el authenticate middleware con cache LRU. Antes iban inline pero
+    // hacían crecer el cookie a > 4096 bytes para admins con muchas campañas
+    // y el browser lo rechazaba (fix 2026-05-06).
     const accessToken = await this.generateAccessToken({
       sub: user.id,
       email: user.email,
       role: effectiveRole,
       region: user.region,
-      campaign_ids: campaignIds,
-      campaign_perms: this.buildCampaignPerms(campaigns),
     });
 
     const familyId = crypto.randomUUID();
@@ -75,6 +77,7 @@ export class AuthService {
     const refreshExpiry = this.parseExpiry(this.env.jwtRefreshExpiresIn);
 
     await this.repo.saveRefreshToken(user.id, refreshHash, familyId, refreshExpiry);
+    void campaignIds; // intencionalmente no usado en el JWT — se fetchea en middleware
 
     return {
       access_token: accessToken,
@@ -138,14 +141,14 @@ export class AuthService {
     // Use the highest role between user's global role and campaign-specific roles
     const effectiveRole = this.computeEffectiveRole(user.role, campaigns);
 
+    // JWT compacto en refresh también — mismo motivo del fix de login.
     const accessToken = await this.generateAccessToken({
       sub: user.id,
       email: user.email,
       role: effectiveRole,
       region: user.region,
-      campaign_ids: campaignIds,
-      campaign_perms: this.buildCampaignPerms(campaigns),
     });
+    void campaignIds; // se fetchean desde DB en authenticate middleware
 
     const newRefreshToken = this.generateRefreshToken();
     const newRefreshHash = this.hashToken(newRefreshToken);
