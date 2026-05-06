@@ -10,6 +10,7 @@ const ChatPage      = lazy(() => import("./pages/ChatPage"));
 const ReportsPage   = lazy(() => import("./pages/ReportsPage"));
 const TrainingPage  = lazy(() => import("./pages/TrainingPage"));
 const ProductsPage  = lazy(() => import("./pages/ProductsPage"));
+const CampaignsPage = lazy(() => import("./pages/CampaignsPage"));
 const SettingsPage  = lazy(() => import("./pages/SettingsPage"));
 
 function RouteFallback() {
@@ -52,6 +53,7 @@ export const router = createBrowserRouter([
       { path: "/reports",   element: <ReportsPage /> },
       { path: "/training",  element: <TrainingPage /> },
       { path: "/products",  element: <ProductsPage /> },
+      { path: "/campaigns", element: <CampaignsPage /> },
       { path: "/settings",  element: <SettingsPage /> },
       { path: "/settings/:tab", element: <SettingsPage /> },
     ],

@@ -123,6 +123,11 @@ app.use((req, res, next) => {
   // (clasificador en runtime) sin auth — los demás verbos requieren auth
   // porque solo UI/admin debería editar reglas.
   if (req.method === "GET" && req.path === "/ai/rules") return next();
+  // Bot reads instance config + templates to drive auto-reply (DB-driven). GET only.
+  if (req.method === "GET" && (req.path === "/config/instances" || req.path === "/templates" || req.path === "/campaigns/queue")) return next();
+  if (req.method === "POST" && /^\/campaigns\/recipient\/[0-9]+\/(sent|failed)$/.test(req.path)) return next();
+  // Bot signals attention queue
+  if (req.method === "POST" && /^\/\leads\/[0-9]+\/flag-attention$/.test(req.path)) return next();
   return requireAuth(req, res, next);
 });
 
@@ -1217,6 +1222,573 @@ app.delete("/products/:id", requireAuth, async (req, res) => {
 });
 
 // ==================== END PRODUCTS ====================
+
+// ==================== CONFIGURACIÓN: PIPELINE / INSTANCES / BANCOS ====================
+
+// ── Pipeline stages CRUD ─────────────────────────────────────────────
+app.get("/config/pipeline", async (_req, res) => {
+  const rows = await sql`
+    SELECT id, key, label, color, position, enabled, group_name
+      FROM pipeline_stages
+     ORDER BY position ASC
+  `;
+  res.json({ stages: rows });
+});
+
+app.put("/config/pipeline", requireAuth, async (req, res) => {
+  const stages = (req.body?.stages ?? []) as Array<{
+    id?: number; key: string; label: string; color?: string;
+    position?: number; enabled?: boolean; group_name?: string;
+  }>;
+  if (!Array.isArray(stages) || stages.length === 0) {
+    return res.status(400).json({ error: "stages_required" });
+  }
+  // Upsert por key
+  for (let i = 0; i < stages.length; i++) {
+    const s = stages[i];
+    if (!s.key || !s.label) continue;
+    await sql`
+      INSERT INTO pipeline_stages (key, label, color, position, enabled, group_name)
+      VALUES (${s.key}, ${s.label}, ${s.color ?? 'bg-slate-100 text-slate-800'},
+              ${s.position ?? i}, ${s.enabled ?? true}, ${s.group_name ?? 'sale'})
+      ON CONFLICT (key) DO UPDATE SET
+        label = EXCLUDED.label, color = EXCLUDED.color,
+        position = EXCLUDED.position, enabled = EXCLUDED.enabled,
+        group_name = EXCLUDED.group_name, updated_at = now()
+    `;
+  }
+  const rows = await sql`SELECT id, key, label, color, position, enabled, group_name FROM pipeline_stages ORDER BY position ASC`;
+  res.json({ stages: rows });
+});
+
+
+// ── Bot instances ────────────────────────────────────────────────────
+app.get("/config/instances", async (_req, res) => {
+  const rows = await sql`
+    SELECT id, slug, display_name, phone, agent_name, agent_signature,
+           product_skus, cuenta_bancaria, yape_numero, extra_prompt,
+           rule_ids, enabled, auto_reply, notes,
+           created_at, updated_at
+      FROM bot_instances
+     ORDER BY slug ASC
+  `;
+  res.json({ instances: rows });
+});
+
+app.post("/config/instances", requireAuth, async (req: AuthedRequest, res) => {
+  const b = req.body ?? {};
+  if (!b.slug || !b.display_name) {
+    return res.status(400).json({ error: "slug_and_display_name_required" });
+  }
+  const rows = await sql`
+    INSERT INTO bot_instances (slug, display_name, phone, agent_name, agent_signature,
+                               product_skus, cuenta_bancaria, yape_numero, extra_prompt,
+                               rule_ids, enabled, auto_reply, notes)
+    VALUES (${b.slug}, ${b.display_name}, ${b.phone ?? null},
+            ${b.agent_name ?? 'Goberna'}, ${b.agent_signature ?? null},
+            ${b.product_skus ?? null}, ${b.cuenta_bancaria ?? null}, ${b.yape_numero ?? null},
+            ${b.extra_prompt ?? null}, ${b.rule_ids ?? null},
+            ${b.enabled ?? true}, ${b.auto_reply ?? false}, ${b.notes ?? null})
+    RETURNING *
+  `;
+  res.json(rows[0]);
+});
+
+app.put("/config/instances/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  const b = req.body ?? {};
+  const rows = await sql`
+    UPDATE bot_instances SET
+      slug            = COALESCE(${b.slug ?? null}, slug),
+      display_name    = COALESCE(${b.display_name ?? null}, display_name),
+      phone           = ${b.phone ?? null},
+      agent_name      = COALESCE(${b.agent_name ?? null}, agent_name),
+      agent_signature = ${b.agent_signature ?? null},
+      product_skus    = ${b.product_skus ?? null},
+      cuenta_bancaria = ${b.cuenta_bancaria ?? null},
+      yape_numero     = ${b.yape_numero ?? null},
+      extra_prompt    = ${b.extra_prompt ?? null},
+      rule_ids        = ${b.rule_ids ?? null},
+      enabled         = COALESCE(${b.enabled ?? null}, enabled),
+      auto_reply      = COALESCE(${b.auto_reply ?? null}, auto_reply),
+      notes           = ${b.notes ?? null},
+      updated_at      = now()
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+// Copiar configuración de un instance a otro (excepto slug/phone/display_name)
+app.post("/config/instances/:id/copy-from/:fromId", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const fromId = Number(req.params.fromId);
+  if (!Number.isFinite(id) || !Number.isFinite(fromId)) return res.status(400).json({ error: "invalid_id" });
+  const src = await sql`SELECT * FROM bot_instances WHERE id = ${fromId}`;
+  if (src.length === 0) return res.status(404).json({ error: "source_not_found" });
+  const s = src[0];
+  const rows = await sql`
+    UPDATE bot_instances SET
+      agent_name      = ${s.agent_name},
+      agent_signature = ${s.agent_signature},
+      product_skus    = ${s.product_skus},
+      cuenta_bancaria = ${s.cuenta_bancaria},
+      yape_numero     = ${s.yape_numero},
+      extra_prompt    = ${s.extra_prompt},
+      rule_ids        = ${s.rule_ids},
+      updated_at      = now()
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "target_not_found" });
+  res.json(rows[0]);
+});
+
+app.delete("/config/instances/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  await sql`UPDATE bot_instances SET enabled = FALSE, updated_at = now() WHERE id = ${id}`;
+  res.json({ ok: true, id });
+});
+
+
+// ── Bank accounts catálogo ──────────────────────────────────────────
+app.get("/config/banks", async (_req, res) => {
+  const rows = await sql`SELECT * FROM bank_accounts ORDER BY is_default DESC, name ASC`;
+  res.json({ banks: rows });
+});
+
+app.post("/config/banks", requireAuth, async (req, res) => {
+  const b = req.body ?? {};
+  if (!b.name || !b.body) return res.status(400).json({ error: "name_and_body_required" });
+  if (b.is_default === true) {
+    await sql`UPDATE bank_accounts SET is_default = FALSE`;
+  }
+  const rows = await sql`
+    INSERT INTO bank_accounts (name, body, yape_numero, is_default)
+    VALUES (${b.name}, ${b.body}, ${b.yape_numero ?? null}, ${b.is_default ?? false})
+    RETURNING *
+  `;
+  res.json(rows[0]);
+});
+
+app.put("/config/banks/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  const b = req.body ?? {};
+  if (b.is_default === true) {
+    await sql`UPDATE bank_accounts SET is_default = FALSE WHERE id <> ${id}`;
+  }
+  const rows = await sql`
+    UPDATE bank_accounts SET
+      name = COALESCE(${b.name ?? null}, name),
+      body = COALESCE(${b.body ?? null}, body),
+      yape_numero = ${b.yape_numero ?? null},
+      is_default = COALESCE(${b.is_default ?? null}, is_default),
+      updated_at = now()
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+app.delete("/config/banks/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  await sql`DELETE FROM bank_accounts WHERE id = ${id}`;
+  res.json({ ok: true });
+});
+
+// ==================== END CONFIG ====================
+
+// ==================== HUMAN ATTENTION QUEUE ====================
+
+// GET /attention — queue ordenada por waiting time
+app.get("/attention", async (_req, res) => {
+  const rows = await sql`SELECT * FROM v_attention_queue LIMIT 200`;
+  res.json({ items: rows });
+});
+
+// POST /leads/:id/flag-attention — bot llama esto cuando no sabe responder.
+// El operador también puede llamarlo manualmente desde el chat.
+app.post("/leads/:id/flag-attention", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  const reason = (req.body?.reason as string) || "unknown";
+  const rows = await sql`
+    UPDATE leads
+       SET needs_human_attention = TRUE,
+           attention_reason = ${reason}
+     WHERE id = ${id}
+     RETURNING id, needs_human_attention, attention_at
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+// POST /leads/:id/resolve-attention — marca como resuelto
+app.post("/leads/:id/resolve-attention", requireAuth, async (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  const rows = await sql`
+    UPDATE leads
+       SET needs_human_attention = FALSE,
+           attention_resolved_by = ${req.userEmail ?? 'unknown'}
+     WHERE id = ${id}
+     RETURNING id, needs_human_attention, attention_resolved_at, attention_resolved_by
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+// ==================== END ATTENTION ====================
+
+// ==================== CHATS v2 (con tabs: dm / group / attention) ====================
+app.get("/chats/v2", async (req, res) => {
+  const tab = (req.query.tab as string) || "all";  // all | dm | group | attention
+  const search = (req.query.q as string)?.toLowerCase() ?? null;
+  const limit = Math.min(Number(req.query.limit) || 100, 500);
+
+  const filters: string[] = [];
+  if (tab === "dm")        filters.push("is_group = FALSE");
+  if (tab === "group")     filters.push("is_group = TRUE");
+  if (tab === "attention") filters.push("needs_human_attention = TRUE");
+
+  const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
+  const searchClause = search
+    ? `AND (lower(name) LIKE '%' || $1 || '%' OR phone LIKE '%' || $1 || '%' OR lower(coalesce(group_subject,'')) LIKE '%' || $1 || '%')`
+    : "";
+
+  const queryStr = `
+    SELECT * FROM v_chats_summary
+    ${where}
+    ${searchClause}
+    ORDER BY needs_human_attention DESC, last_message_at DESC NULLS LAST
+    LIMIT ${limit}
+  `;
+
+  const rows = search
+    ? await sql.unsafe(queryStr, [search])
+    : await sql.unsafe(queryStr);
+
+  const counts = await sql`
+    SELECT
+      count(*) FILTER (WHERE is_group = FALSE) AS dm,
+      count(*) FILTER (WHERE is_group = TRUE)  AS group_,
+      count(*) FILTER (WHERE needs_human_attention) AS attention,
+      count(*) AS total
+    FROM v_chats_summary
+  `;
+
+  res.json({ chats: rows, counts: counts[0] });
+});
+
+// Lead enrichment con datos del ERP de Escuela cuando sea cliente histórico.
+// Usa escuela_client_id si está, sino busca por phone en lead_360 cross-DB
+// (pero lead_360 vive en electoral, así que usamos solo lo que ya está
+// poblado en leads-crm via consolidate.sql).
+app.get("/leads/:id/enrichment", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  const rows = await sql`
+    SELECT
+      l.id, l.escuela_client_id, l.dni, l.ocupacion, l.fecha_nacimiento,
+      l.last_course, l.enrollments_count, l.certificates_count,
+      l.buyer_tier, l.total_usd_spent, l.n_purchases,
+      l.first_purchase_at, l.last_purchase_year,
+      l.is_group, l.group_subject, l.last_chat_kind,
+      l.needs_human_attention, l.attention_reason, l.attention_at
+    FROM leads l
+    WHERE l.id = ${id}
+    LIMIT 1
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+// ==================== END CHATS v2 ====================
+
+// ==================== CAMPAIGNS · re-engagement masivo ====================
+
+/**
+ * Build dynamic SQL filter from JSONB segment_filter.
+ * Supported keys:
+ *   buyer_tier: string | { in: string[] }
+ *   stage: string | { in: string[] }
+ *   country: string
+ *   n_purchases: number | { gte / lte / eq }
+ *   last_purchase_year: number | { gte / lte }
+ *   days_since_contact: { gte / lte }
+ *   days_since_purchase: { lte }
+ *   tags: { contains: string }
+ *   has_phone: true
+ *   escuela_client_id_not_null: true
+ */
+function buildSegmentSQL(filter: any): { where: string; params: any[] } {
+  const conds: string[] = ["l.phone IS NOT NULL"];
+  const params: any[] = [];
+  const f = filter || {};
+
+  function add(cond: string, ...p: any[]) {
+    conds.push(cond);
+    params.push(...p);
+  }
+
+  if (f.buyer_tier) {
+    if (typeof f.buyer_tier === "string") add(`l.buyer_tier = $${params.length + 1}`, f.buyer_tier);
+    else if (f.buyer_tier.in) add(`l.buyer_tier = ANY($${params.length + 1}::text[])`, f.buyer_tier.in);
+  }
+  if (f.stage) {
+    if (typeof f.stage === "string") add(`l.stage = $${params.length + 1}`, f.stage);
+    else if (f.stage.in) add(`l.stage = ANY($${params.length + 1}::text[])`, f.stage.in);
+  }
+  if (f.country)        add(`l.country = $${params.length + 1}`, f.country);
+  if (f.escuela_client_id_not_null) conds.push("l.escuela_client_id IS NOT NULL");
+
+  if (f.n_purchases !== undefined) {
+    if (typeof f.n_purchases === "number") add(`l.n_purchases = $${params.length + 1}`, f.n_purchases);
+    else {
+      if (f.n_purchases.gte !== undefined) add(`l.n_purchases >= $${params.length + 1}`, f.n_purchases.gte);
+      if (f.n_purchases.lte !== undefined) add(`l.n_purchases <= $${params.length + 1}`, f.n_purchases.lte);
+    }
+  }
+
+  if (f.last_purchase_year) {
+    if (typeof f.last_purchase_year === "number") add(`l.last_purchase_year = $${params.length + 1}`, f.last_purchase_year);
+    else {
+      if (f.last_purchase_year.gte !== undefined) add(`l.last_purchase_year >= $${params.length + 1}`, f.last_purchase_year.gte);
+      if (f.last_purchase_year.lte !== undefined) add(`l.last_purchase_year <= $${params.length + 1}`, f.last_purchase_year.lte);
+    }
+  }
+
+  if (f.days_since_contact) {
+    const d = f.days_since_contact;
+    if (d.gte !== undefined) {
+      add(`(SELECT MAX(created_at) FROM interactions WHERE lead_id = l.id AND kind = 'message_in') < now() - ($${params.length + 1} || ' days')::interval`, String(d.gte));
+    }
+    if (d.lte !== undefined) {
+      add(`(SELECT MAX(created_at) FROM interactions WHERE lead_id = l.id AND kind = 'message_in') > now() - ($${params.length + 1} || ' days')::interval`, String(d.lte));
+    }
+  }
+
+  if (f.days_since_purchase?.lte !== undefined) {
+    add(`l.first_purchase_at > now() - ($${params.length + 1} || ' days')::interval`, String(f.days_since_purchase.lte));
+  }
+
+  if (f.tags?.contains) add(`$${params.length + 1} = ANY(l.tags)`, f.tags.contains);
+
+  return { where: conds.join(" AND "), params };
+}
+
+// ── List presets ────────────────────────────────────────────────────
+app.get("/segment-presets", async (_req, res) => {
+  const rows = await sql`SELECT id, slug, name, description, filter, icon FROM segment_presets ORDER BY id`;
+  res.json({ presets: rows });
+});
+
+// ── Preview segment count + sample ──────────────────────────────────
+app.post("/campaigns/preview", requireAuth, async (req, res) => {
+  const filter = req.body?.filter ?? {};
+  const { where, params } = buildSegmentSQL(filter);
+  try {
+    const countRes = await sql.unsafe(`SELECT count(*)::int AS n FROM leads l WHERE ${where}`, params);
+    const sample = await sql.unsafe(
+      `SELECT id, name, phone, country, buyer_tier, total_usd_spent, last_course
+         FROM leads l
+        WHERE ${where}
+        ORDER BY total_usd_spent DESC NULLS LAST
+        LIMIT 10`,
+      params,
+    );
+    res.json({ total: countRes[0]?.n ?? 0, sample });
+  } catch (e: any) {
+    res.status(400).json({ error: "preview_failed", message: e.message });
+  }
+});
+
+// ── Campaigns CRUD ──────────────────────────────────────────────────
+app.get("/campaigns", async (_req, res) => {
+  const rows = await sql`SELECT * FROM v_campaign_progress`;
+  res.json({ campaigns: rows });
+});
+
+app.get("/campaigns/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  const rows = await sql`SELECT * FROM campaigns WHERE id = ${id}`;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+app.post("/campaigns", requireAuth, async (req: AuthedRequest, res) => {
+  const b = req.body ?? {};
+  if (!b.name) return res.status(400).json({ error: "name_required" });
+  const rows = await sql`
+    INSERT INTO campaigns (
+      name, description, segment_filter,
+      template_id, custom_body, custom_image_url, custom_document_url,
+      bot_instance_id, throttle_per_min, window_start_hr, window_end_hr,
+      created_by
+    ) VALUES (
+      ${b.name}, ${b.description ?? null}, ${b.segment_filter ?? {}}::jsonb,
+      ${b.template_id ?? null}, ${b.custom_body ?? null}, ${b.custom_image_url ?? null}, ${b.custom_document_url ?? null},
+      ${b.bot_instance_id ?? null}, ${b.throttle_per_min ?? 10},
+      ${b.window_start_hr ?? 9}, ${b.window_end_hr ?? 19},
+      ${req.userEmail ?? 'unknown'}
+    )
+    RETURNING *
+  `;
+  res.json(rows[0]);
+});
+
+app.put("/campaigns/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const b = req.body ?? {};
+  const rows = await sql`
+    UPDATE campaigns SET
+      name = COALESCE(${b.name ?? null}, name),
+      description = ${b.description ?? null},
+      segment_filter = COALESCE(${b.segment_filter ?? null}::jsonb, segment_filter),
+      template_id = ${b.template_id ?? null},
+      custom_body = ${b.custom_body ?? null},
+      custom_image_url = ${b.custom_image_url ?? null},
+      custom_document_url = ${b.custom_document_url ?? null},
+      bot_instance_id = ${b.bot_instance_id ?? null},
+      throttle_per_min = COALESCE(${b.throttle_per_min ?? null}, throttle_per_min),
+      window_start_hr = COALESCE(${b.window_start_hr ?? null}, window_start_hr),
+      window_end_hr = COALESCE(${b.window_end_hr ?? null}, window_end_hr),
+      scheduled_at = ${b.scheduled_at ?? null},
+      updated_at = now()
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+// ── Materialize recipients (create rows in campaign_recipients) ─────
+app.post("/campaigns/:id/materialize", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const c = (await sql`SELECT * FROM campaigns WHERE id = ${id}`)[0];
+  if (!c) return res.status(404).json({ error: "not_found" });
+  const { where, params } = buildSegmentSQL(c.segment_filter || {});
+
+  // Insert recipients dedup'd by lead_id (UNIQUE constraint)
+  const queryStr = `
+    INSERT INTO campaign_recipients (campaign_id, lead_id)
+    SELECT $${params.length + 1}, l.id FROM leads l WHERE ${where}
+    ON CONFLICT (campaign_id, lead_id) DO NOTHING
+  `;
+  await sql.unsafe(queryStr, [...params, id]);
+
+  const counts = await sql`
+    SELECT count(*)::int AS total FROM campaign_recipients WHERE campaign_id = ${id}
+  `;
+  await sql`UPDATE campaigns SET total_recipients = ${counts[0].total}, updated_at = now() WHERE id = ${id}`;
+
+  res.json({ ok: true, total_recipients: counts[0].total });
+});
+
+// ── Launch campaign (schedule pending recipients) ───────────────────
+app.post("/campaigns/:id/launch", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const rows = await sql`
+    UPDATE campaigns SET
+      status = 'running',
+      started_at = COALESCE(started_at, now()),
+      scheduled_at = COALESCE(scheduled_at, now()),
+      updated_at = now()
+    WHERE id = ${id} AND status IN ('draft','scheduled','paused')
+    RETURNING *
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found_or_invalid_state" });
+  res.json(rows[0]);
+});
+
+// ── Pause / Cancel ──────────────────────────────────────────────────
+app.post("/campaigns/:id/pause", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  await sql`UPDATE campaigns SET status = 'paused', updated_at = now() WHERE id = ${id} AND status = 'running'`;
+  res.json({ ok: true });
+});
+app.post("/campaigns/:id/cancel", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  await sql`UPDATE campaigns SET status = 'cancelled', completed_at = now(), updated_at = now() WHERE id = ${id}`;
+  res.json({ ok: true });
+});
+
+// ── Bot pulls next batch of pending recipients (called every minute) ──
+app.get("/campaigns/queue", async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 10, 50);
+  const now = new Date();
+  const hr = now.getUTCHours() - 5;  // Lima UTC-5
+  const hour = (hr + 24) % 24;
+  // Fetch up to N pending recipients across active campaigns,
+  // respecting throttle + window
+  const rows = await sql`
+    SELECT
+      r.id AS recipient_id, r.campaign_id, r.lead_id,
+      l.phone, l.name, l.country,
+      c.template_id, c.custom_body, c.custom_image_url, c.custom_document_url,
+      c.window_start_hr, c.window_end_hr, c.bot_instance_id,
+      t.body AS template_body, t.image_url AS template_image_url,
+      t.document_url AS template_document_url,
+      t.document_filename, t.document_mime, t.video_url AS template_video_url,
+      t.media_kind
+    FROM campaign_recipients r
+    JOIN campaigns c ON c.id = r.campaign_id
+    JOIN leads l ON l.id = r.lead_id
+    LEFT JOIN templates t ON t.id = c.template_id
+    WHERE r.status = 'pending'
+      AND c.status = 'running'
+      AND ${hour} BETWEEN c.window_start_hr AND c.window_end_hr - 1
+    ORDER BY r.id ASC
+    LIMIT ${limit}
+  `;
+  res.json({ items: rows });
+});
+
+// ── Bot reports send result for a recipient ─────────────────────────
+app.post("/campaigns/recipient/:id/sent", async (req, res) => {
+  const id = Number(req.params.id);
+  const { message_id } = req.body ?? {};
+  await sql`
+    UPDATE campaign_recipients SET status = 'sent', message_id = ${message_id ?? null}, sent_at = now(), updated_at = now()
+    WHERE id = ${id}
+  `;
+  // Bump campaign sent_count
+  await sql`
+    UPDATE campaigns SET sent_count = sent_count + 1, updated_at = now()
+    WHERE id = (SELECT campaign_id FROM campaign_recipients WHERE id = ${id})
+  `;
+  // Auto-complete if no more pending
+  await sql`
+    UPDATE campaigns c SET status = 'completed', completed_at = now(), updated_at = now()
+    WHERE c.id = (SELECT campaign_id FROM campaign_recipients WHERE id = ${id})
+      AND c.status = 'running'
+      AND NOT EXISTS (SELECT 1 FROM campaign_recipients r WHERE r.campaign_id = c.id AND r.status = 'pending')
+  `;
+  res.json({ ok: true });
+});
+
+app.post("/campaigns/recipient/:id/failed", async (req, res) => {
+  const id = Number(req.params.id);
+  const { error_msg } = req.body ?? {};
+  await sql`
+    UPDATE campaign_recipients SET status = 'failed', error_msg = ${error_msg ?? null}, updated_at = now()
+    WHERE id = ${id}
+  `;
+  await sql`
+    UPDATE campaigns SET failed_count = failed_count + 1, updated_at = now()
+    WHERE id = (SELECT campaign_id FROM campaign_recipients WHERE id = ${id})
+  `;
+  res.json({ ok: true });
+});
+
+// ==================== END CAMPAIGNS ====================
 
 // Error handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
