@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Save, Sparkles, Layers, Filter as FilterIcon, MessageSquarePlus, Send } from "lucide-react";
+import { Save, Sparkles, Layers, Filter as FilterIcon, MessageSquarePlus, Send, Smartphone } from "lucide-react";
 import { useSegmentPresets, useCampaigns, usePreviewSegment } from "../../hooks/useCampaigns";
 import { useToast } from "../../toast";
 import { Button } from "../ui";
@@ -8,6 +8,10 @@ import { SegmentPresetGrid } from "./SegmentPresetGrid";
 import { SegmentPreviewBox } from "./SegmentPreviewBox";
 import { AdvancedFilterBuilder } from "./AdvancedFilterBuilder";
 import { TemplatePicker } from "./TemplatePicker";
+import { InstancePicker } from "./InstancePicker";
+import { PersonalizationPreview } from "./PersonalizationPreview";
+import { VariablesHelper } from "./VariablesHelper";
+import { SendTimeEstimator } from "./SendTimeEstimator";
 import type { SegmentPreset } from "../../types/campaign";
 
 type Mode = "preset" | "advanced";
@@ -35,6 +39,7 @@ export function CampaignBuilder({ onCreated }: Props) {
   const [throttle, setThrottle]   = useState(10);
   const [windowStart, setWindowStart] = useState(9);
   const [windowEnd, setWindowEnd]     = useState(19);
+  const [botInstanceId, setBotInstanceId] = useState<number | null>(null);
 
   const finalBody = (hookLine.trim() ? hookLine + "\n\n" : "") + (useTemplate ? templateBody : customBody);
 
@@ -52,6 +57,7 @@ export function CampaignBuilder({ onCreated }: Props) {
         throttle_per_min: throttle,
         window_start_hr: windowStart,
         window_end_hr: windowEnd,
+        bot_instance_id: botInstanceId,
       } as any);
       const m = await materialize.mutateAsync(c.id);
       toast(`Campaña creada · ${m.total_recipients} destinatarios`, "ok");
@@ -125,46 +131,73 @@ export function CampaignBuilder({ onCreated }: Props) {
                   onChange={(id, tpl) => { setTemplateId(id); setTemplateBody(tpl?.body ?? ""); }}
                 />
               ) : (
-                <TextArea
-                  rows={6}
-                  value={customBody}
-                  onChange={(e) => setCustomBody(e.target.value)}
-                  placeholder="Escribí el mensaje. Variables: {{nombre}} {{ciudad}} {{último_curso}}"
-                />
+                <>
+                  <TextArea
+                    rows={6}
+                    value={customBody}
+                    onChange={(e) => setCustomBody(e.target.value)}
+                    placeholder="Escribí el mensaje. Hacé click abajo para insertar variables ↓"
+                  />
+                  <div className="mt-2">
+                    <VariablesHelper />
+                  </div>
+                </>
               )}
             </Field>
           </div>
 
-          <div className="card p-4 bg-slate-50 border-slate-200 self-start">
-            <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mb-2">Preview del mensaje completo</div>
-            <div className="bg-white rounded-lg border border-slate-200 p-3 max-h-60 overflow-y-auto whitespace-pre-wrap text-xs font-mono">
-              {finalBody.trim() || <span className="text-slate-400 italic font-sans">Escribí o seleccioná template…</span>}
+          <div className="space-y-3 self-start">
+            <div className="card p-4 bg-slate-50 border-slate-200">
+              <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mb-2">Preview del mensaje raw</div>
+              <div className="bg-white rounded-lg border border-slate-200 p-3 max-h-40 overflow-y-auto whitespace-pre-wrap text-xs font-mono">
+                {finalBody.trim() || <span className="text-slate-400 italic font-sans">Escribí o seleccioná template…</span>}
+              </div>
+              <div className="text-[10px] text-slate-400 mt-2">
+                {finalBody.length} caracteres
+                {finalBody.length > 1000 && <span className="text-amber-600 ml-2">⚠ muy largo</span>}
+              </div>
             </div>
-            <div className="text-[10px] text-slate-400 mt-2">
-              {finalBody.length} caracteres
-              {finalBody.length > 1000 && <span className="text-amber-600 ml-2">⚠ muy largo</span>}
-            </div>
+
+            {finalBody.trim() && filter && (
+              <PersonalizationPreview filter={filter} body={finalBody} />
+            )}
           </div>
         </div>
       </Step>
 
-      <Step n={3} title="Configuración" icon={FilterIcon}>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Field label="Nombre interno">
-            <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Re-engagement Q2" />
-          </Field>
-          <Field label="Throttle (msj/min)" hint="5-15 recomendado">
-            <TextInput type="number" min={1} max={60} value={throttle}
-                       onChange={(e) => setThrottle(Number(e.target.value) || 10)} />
-          </Field>
-          <Field label="Ventana inicio (hora)">
-            <TextInput type="number" min={0} max={23} value={windowStart}
-                       onChange={(e) => setWindowStart(Number(e.target.value) || 9)} />
-          </Field>
-          <Field label="Ventana fin (hora)">
-            <TextInput type="number" min={0} max={23} value={windowEnd}
-                       onChange={(e) => setWindowEnd(Number(e.target.value) || 19)} />
-          </Field>
+      <Step n={3} title="Celular que envía" icon={Smartphone}>
+        <p className="text-xs text-slate-500 mb-3">
+          Elegí desde qué instancia del bot se enviarán los mensajes. Recomendado: la que tiene auto-reply ON.
+        </p>
+        <InstancePicker value={botInstanceId} onChange={setBotInstanceId} />
+      </Step>
+
+      <Step n={4} title="Configuración + estimador" icon={FilterIcon}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3 self-start">
+            <Field label="Nombre interno">
+              <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Re-engagement Q2" />
+            </Field>
+            <Field label="Throttle (msj/min)" hint="5-15 recomendado">
+              <TextInput type="number" min={1} max={60} value={throttle}
+                         onChange={(e) => setThrottle(Number(e.target.value) || 10)} />
+            </Field>
+            <Field label="Ventana inicio (hora)">
+              <TextInput type="number" min={0} max={23} value={windowStart}
+                         onChange={(e) => setWindowStart(Number(e.target.value) || 9)} />
+            </Field>
+            <Field label="Ventana fin (hora)">
+              <TextInput type="number" min={0} max={23} value={windowEnd}
+                         onChange={(e) => setWindowEnd(Number(e.target.value) || 19)} />
+            </Field>
+          </div>
+
+          <SendTimeEstimator
+            recipients={previewQ.data?.total ?? 0}
+            throttle={throttle}
+            windowStart={windowStart}
+            windowEnd={windowEnd}
+          />
         </div>
       </Step>
 

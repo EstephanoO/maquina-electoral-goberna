@@ -5,3 +5,7 @@ export { SegmentPreviewBox } from "./SegmentPreviewBox";
 export { AdvancedFilterBuilder } from "./AdvancedFilterBuilder";
 export { TemplatePicker } from "./TemplatePicker";
 export { RecommendationsCard } from "./RecommendationsCard";
+export { InstancePicker } from "./InstancePicker";
+export { PersonalizationPreview } from "./PersonalizationPreview";
+export { VariablesHelper } from "./VariablesHelper";
+export { SendTimeEstimator } from "./SendTimeEstimator";
