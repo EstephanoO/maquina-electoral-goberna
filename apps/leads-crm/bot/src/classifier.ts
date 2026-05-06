@@ -57,14 +57,23 @@ export function getCourse(product: string): string | null {
 }
 
 const PREFIXES = [
-  { p: "1809", c: "Rep. Dominicana" }, { p: "1829", c: "Rep. Dominicana" },
+  // Mobile prefixes que requieren match LARGO antes que el prefix corto:
+  { p: "1809", c: "República Dominicana" }, { p: "1829", c: "República Dominicana" }, { p: "1849", c: "República Dominicana" },
+  { p: "1787", c: "Puerto Rico" }, { p: "1939", c: "Puerto Rico" },
+  { p: "521",  c: "México" },        // móvil — DEBE ir antes de "52"
+  { p: "549",  c: "Argentina" },     // móvil — DEBE ir antes de "54"
+  // Países LATAM con código de 3 dígitos:
   { p: "593", c: "Ecuador" }, { p: "591", c: "Bolivia" }, { p: "595", c: "Paraguay" },
   { p: "598", c: "Uruguay" }, { p: "506", c: "Costa Rica" }, { p: "502", c: "Guatemala" },
   { p: "503", c: "El Salvador" }, { p: "504", c: "Honduras" }, { p: "505", c: "Nicaragua" },
   { p: "507", c: "Panamá" },
+  // 2 dígitos:
   { p: "51", c: "Perú" }, { p: "52", c: "México" }, { p: "57", c: "Colombia" },
   { p: "56", c: "Chile" }, { p: "54", c: "Argentina" }, { p: "58", c: "Venezuela" },
-  { p: "55", c: "Brasil" }, { p: "53", c: "Cuba" }, { p: "34", c: "España" },
+  { p: "55", c: "Brasil" }, { p: "53", c: "Cuba" },
+  // Europa:
+  { p: "34", c: "España" }, { p: "33", c: "Francia" }, { p: "49", c: "Alemania" }, { p: "39", c: "Italia" }, { p: "44", c: "Reino Unido" },
+  // Catch-all:
   { p: "1", c: "EEUU/Canadá" },
 ];
 
