@@ -1,39 +1,66 @@
 import { useState } from "react";
-import { Send, Save, Sparkles } from "lucide-react";
-import { useSegmentPresets, useCampaigns } from "../../hooks/useCampaigns";
+import { Save, Sparkles, Layers, Filter as FilterIcon, MessageSquarePlus, Send } from "lucide-react";
+import { useSegmentPresets, useCampaigns, usePreviewSegment } from "../../hooks/useCampaigns";
 import { useToast } from "../../toast";
 import { Button } from "../ui";
 import { Field, TextInput, TextArea } from "../forms/Field";
 import { SegmentPresetGrid } from "./SegmentPresetGrid";
 import { SegmentPreviewBox } from "./SegmentPreviewBox";
+import { AdvancedFilterBuilder } from "./AdvancedFilterBuilder";
+import { TemplatePicker } from "./TemplatePicker";
 import type { SegmentPreset } from "../../types/campaign";
+
+type Mode = "preset" | "advanced";
 
 type Props = { onCreated?: () => void };
 
 export function CampaignBuilder({ onCreated }: Props) {
   const toast = useToast();
   const presetsQ = useSegmentPresets();
-  const { create, materialize } = useCampaigns();
+  const { create, materialize, launch } = useCampaigns();
 
+  const [mode, setMode] = useState<Mode>("preset");
   const [preset, setPreset] = useState<SegmentPreset | null>(null);
-  const [name, setName] = useState("");
-  const [body, setBody] = useState("");
-  const [throttle, setThrottle] = useState(10);
+  const [advFilter, setAdvFilter] = useState<any>({ has_phone: true });
+  const filter = mode === "preset" ? (preset?.filter ?? null) : advFilter;
+  const previewQ = usePreviewSegment(filter);
 
-  async function save() {
-    if (!preset || !name.trim() || !body.trim()) {
-      toast("Nombre, segmento y mensaje son obligatorios", "err"); return;
-    }
+  const [name, setName]                 = useState("");
+  const [hookLine, setHookLine]         = useState("");
+  const [templateId, setTemplateId]     = useState<number | null>(null);
+  const [templateBody, setTemplateBody] = useState<string>("");
+  const [customBody, setCustomBody]     = useState<string>("");
+  const [useTemplate, setUseTemplate]   = useState(true);
+
+  const [throttle, setThrottle]   = useState(10);
+  const [windowStart, setWindowStart] = useState(9);
+  const [windowEnd, setWindowEnd]     = useState(19);
+
+  const finalBody = (hookLine.trim() ? hookLine + "\n\n" : "") + (useTemplate ? templateBody : customBody);
+
+  async function save(launchAfter: boolean) {
+    if (!filter)             { toast("Elegí un segmento", "err"); return; }
+    if (!name.trim())        { toast("Nombre obligatorio", "err"); return; }
+    if (!finalBody.trim() && !templateId) { toast("Mensaje obligatorio", "err"); return; }
+
     try {
       const c = await create.mutateAsync({
         name,
-        segment_filter: preset.filter,
-        custom_body: body,
+        segment_filter: filter,
+        template_id: useTemplate ? templateId : null,
+        custom_body: useTemplate ? null : finalBody,
         throttle_per_min: throttle,
+        window_start_hr: windowStart,
+        window_end_hr: windowEnd,
       } as any);
-      await materialize.mutateAsync(c.id);
-      toast(`Campaña "${name}" creada con ${c.total_recipients ?? "?"} destinatarios`, "ok");
-      setName(""); setBody(""); setPreset(null);
+      const m = await materialize.mutateAsync(c.id);
+      toast(`Campaña creada · ${m.total_recipients} destinatarios`, "ok");
+      if (launchAfter) {
+        await launch.mutateAsync(c.id);
+        toast("Lanzando ahora 🚀", "ok");
+      }
+      setName(""); setHookLine(""); setCustomBody("");
+      setPreset(null); setTemplateId(null); setTemplateBody("");
       onCreated?.();
     } catch (e: any) {
       toast(`Error: ${e.message}`, "err");
@@ -42,70 +69,153 @@ export function CampaignBuilder({ onCreated }: Props) {
 
   return (
     <section className="card p-5 space-y-5">
-      <header className="flex items-center gap-2">
-        <Sparkles className="w-5 h-5 text-amber-500" />
-        <h3 className="text-sm font-bold text-slate-800">Nueva campaña</h3>
+      <header>
+        <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-amber-500" />
+          Nueva campaña — Goberna Escuela / p4
+        </h3>
+        <p className="text-xs text-slate-500 mt-1">
+          Elegí segmento + template + gancho. Throttled vía Kathy.
+        </p>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Left: segment picker */}
-        <div className="space-y-3">
-          <Field label="1 · Segmento — a quién enviar">
-            {presetsQ.isLoading ? (
-              <div className="text-xs text-slate-400 py-4">Cargando segmentos…</div>
+      <Step n={1} title="Segmento — ¿a quién enviar?" icon={Layers}>
+        <div className="flex gap-2 mb-3">
+          <ModeButton current={mode} value="preset"   onClick={() => setMode("preset")}   label="Preset rápido" />
+          <ModeButton current={mode} value="advanced" onClick={() => setMode("advanced")} label="Filtro custom" />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div>
+            {mode === "preset" ? (
+              presetsQ.isLoading ? <div className="text-xs text-slate-400 py-4">Cargando…</div> :
+              <SegmentPresetGrid presets={presetsQ.data ?? []} selected={preset} onSelect={setPreset} />
             ) : (
-              <SegmentPresetGrid
-                presets={presetsQ.data ?? []}
-                selected={preset}
-                onSelect={setPreset}
-              />
+              <AdvancedFilterBuilder value={advFilter} onChange={setAdvFilter} />
             )}
+          </div>
+          <div className="card p-4 bg-slate-50 border-slate-200 self-start">
+            <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mb-2">Preview del segmento</div>
+            <SegmentPreviewBox filter={filter} />
+          </div>
+        </div>
+      </Step>
+
+      <Step n={2} title="Template + gancho personalizable" icon={MessageSquarePlus}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <Field label="Gancho de apertura (opcional, va antes del template)">
+              <TextArea
+                rows={2}
+                value={hookLine}
+                onChange={(e) => setHookLine(e.target.value)}
+                placeholder="Hola 👋 Te escribo porque pensaba en vos…"
+              />
+            </Field>
+
+            <Field label="Cuerpo del mensaje">
+              <div className="flex gap-2 mb-2">
+                <ModeButton current={useTemplate ? "tpl" : "custom"} value="tpl"    onClick={() => setUseTemplate(true)}  label="Usar template" />
+                <ModeButton current={useTemplate ? "tpl" : "custom"} value="custom" onClick={() => setUseTemplate(false)} label="Texto custom" />
+              </div>
+
+              {useTemplate ? (
+                <TemplatePicker
+                  selectedId={templateId}
+                  onChange={(id, tpl) => { setTemplateId(id); setTemplateBody(tpl?.body ?? ""); }}
+                />
+              ) : (
+                <TextArea
+                  rows={6}
+                  value={customBody}
+                  onChange={(e) => setCustomBody(e.target.value)}
+                  placeholder="Escribí el mensaje. Variables: {{nombre}} {{ciudad}} {{último_curso}}"
+                />
+              )}
+            </Field>
+          </div>
+
+          <div className="card p-4 bg-slate-50 border-slate-200 self-start">
+            <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mb-2">Preview del mensaje completo</div>
+            <div className="bg-white rounded-lg border border-slate-200 p-3 max-h-60 overflow-y-auto whitespace-pre-wrap text-xs font-mono">
+              {finalBody.trim() || <span className="text-slate-400 italic font-sans">Escribí o seleccioná template…</span>}
+            </div>
+            <div className="text-[10px] text-slate-400 mt-2">
+              {finalBody.length} caracteres
+              {finalBody.length > 1000 && <span className="text-amber-600 ml-2">⚠ muy largo</span>}
+            </div>
+          </div>
+        </div>
+      </Step>
+
+      <Step n={3} title="Configuración" icon={FilterIcon}>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Field label="Nombre interno">
+            <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Re-engagement Q2" />
+          </Field>
+          <Field label="Throttle (msj/min)" hint="5-15 recomendado">
+            <TextInput type="number" min={1} max={60} value={throttle}
+                       onChange={(e) => setThrottle(Number(e.target.value) || 10)} />
+          </Field>
+          <Field label="Ventana inicio (hora)">
+            <TextInput type="number" min={0} max={23} value={windowStart}
+                       onChange={(e) => setWindowStart(Number(e.target.value) || 9)} />
+          </Field>
+          <Field label="Ventana fin (hora)">
+            <TextInput type="number" min={0} max={23} value={windowEnd}
+                       onChange={(e) => setWindowEnd(Number(e.target.value) || 19)} />
           </Field>
         </div>
+      </Step>
 
-        {/* Right: preview */}
-        <div className="card p-4 bg-slate-50 border-slate-200">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-slate-500 mb-2">
-            Preview del segmento
-          </div>
-          <SegmentPreviewBox filter={preset?.filter ?? null} />
+      <footer className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100">
+        <div className="text-xs text-slate-500">
+          {previewQ.data ? (
+            <span>Listos para alcanzar <span className="font-bold text-slate-800">{previewQ.data.total.toLocaleString()}</span> leads</span>
+          ) : "Elegí segmento para ver alcance"}
         </div>
-      </div>
-
-      {/* Bottom: message + send */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Field label="2 · Nombre interno de la campaña">
-          <TextInput
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Ej: Re-engagement VIPs Q2 2026"
-          />
-        </Field>
-        <Field label="Throttle (mensajes / minuto)" hint="Para no bannear el número, recomendado 5-15">
-          <TextInput
-            type="number" min={1} max={60}
-            value={throttle}
-            onChange={(e) => setThrottle(Number(e.target.value) || 10)}
-          />
-        </Field>
-      </div>
-
-      <Field label="3 · Mensaje a enviar">
-        <TextArea
-          rows={5}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder={`Hola 👋\nTe escribo desde Goberna Escuela. Estamos abriendo el nuevo Diploma de…`}
-        />
-      </Field>
-
-      <footer className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-        <Button variant="secondary" leftIcon={<Save className="w-4 h-4" />}
-                onClick={save} loading={create.isPending || materialize.isPending}
-                disabled={!preset || !name.trim() || !body.trim()}>
-          Guardar como borrador
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" leftIcon={<Save className="w-4 h-4" />}
+                  loading={create.isPending && !launch.isPending}
+                  onClick={() => save(false)}>
+            Guardar borrador
+          </Button>
+          <Button leftIcon={<Send className="w-4 h-4" />}
+                  loading={launch.isPending}
+                  onClick={() => save(true)}>
+            Lanzar ahora
+          </Button>
+        </div>
       </footer>
     </section>
+  );
+}
+
+function Step({ n, title, icon: Icon, children }: {
+  n: number; title: string; icon: any; children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2 pb-4 border-b border-slate-100 last:border-0 last:pb-0">
+      <div className="flex items-center gap-2">
+        <span className="w-6 h-6 rounded-full bg-[#1B365D] text-white text-[10px] font-bold flex items-center justify-center">{n}</span>
+        <Icon className="w-4 h-4 text-slate-500" />
+        <h4 className="text-sm font-semibold text-slate-800">{title}</h4>
+      </div>
+      <div className="pl-8">{children}</div>
+    </div>
+  );
+}
+
+function ModeButton({ current, value, onClick, label }: { current: string; value: string; onClick: () => void; label: string }) {
+  const active = current === value;
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-1 rounded-md text-xs font-medium transition ${
+        active ? "bg-[#1B365D] text-white" : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+      }`}
+    >
+      {label}
+    </button>
   );
 }

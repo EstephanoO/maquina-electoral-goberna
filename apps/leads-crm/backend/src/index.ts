@@ -1790,6 +1790,121 @@ app.post("/campaigns/recipient/:id/failed", async (req, res) => {
 
 // ==================== END CAMPAIGNS ====================
 
+// ==================== RECOMMENDATIONS · "a quiénes hablar ahora" ====================
+
+/**
+ * Sistema de scoring que devuelve los mejores leads para contactar HOY.
+ * Combina señales:
+ *   1. Compradores VIP sin contacto reciente (high LTV, easy win-back).
+ *   2. Tags interés:* sin compra (hot leads — preguntaron por algo).
+ *   3. Stage interested estancado.
+ *   4. Egresados recientes (cross-sell).
+ *   5. Cliente ERP histórico que volvió a escribir hace poco.
+ *
+ * Cada lead recibe un score 0-100 + razones legibles.
+ */
+app.get("/recommendations", async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 30, 100);
+  const reason = (req.query.reason as string) || "all";  // all | vip_inactive | hot_interest | stuck | crosssell
+
+  const rows = await sql`
+    WITH lead_signals AS (
+      SELECT
+        l.id, l.name, l.phone, l.country, l.stage, l.tags, l.buyer_tier,
+        l.total_usd_spent, l.n_purchases, l.last_course,
+        l.escuela_client_id, l.dni, l.ocupacion,
+        (SELECT MAX(created_at) FROM interactions
+          WHERE lead_id = l.id AND kind = 'message_in') AS last_inbound,
+        (SELECT MAX(created_at) FROM interactions
+          WHERE lead_id = l.id AND kind = 'message_out') AS last_outbound,
+        EXTRACT(DAY FROM now() - (SELECT MAX(created_at) FROM interactions
+          WHERE lead_id = l.id AND kind = 'message_in'))::int AS days_since_in,
+        (SELECT count(*) FROM interactions WHERE lead_id = l.id AND kind = 'message_in') AS msgs_in_count,
+        EXISTS(
+          SELECT 1 FROM unnest(l.tags) t
+          WHERE t LIKE 'interés:%' OR t LIKE 'producto:%'
+        ) AS has_interest_tag
+      FROM leads l
+      WHERE l.phone IS NOT NULL
+    ),
+    scored AS (
+      SELECT *,
+        -- VIP inactivo (60+ días sin contacto)
+        CASE WHEN buyer_tier = 'vip' AND days_since_in BETWEEN 30 AND 365 THEN 30 ELSE 0 END
+        -- Hot lead con tag de interés sin compra
+        + CASE WHEN has_interest_tag AND n_purchases = 0 AND days_since_in <= 14 THEN 35 ELSE 0 END
+        -- Stage interested estancado (con conversación reciente)
+        + CASE WHEN stage = 'interested' AND days_since_in BETWEEN 3 AND 30 THEN 25 ELSE 0 END
+        -- Repeat buyer (alto LTV potential)
+        + CASE WHEN buyer_tier = 'repeat' AND days_since_in <= 60 THEN 20 ELSE 0 END
+        -- Compró hace poco (cross-sell)
+        + CASE WHEN n_purchases >= 1 AND last_course IS NOT NULL AND days_since_in <= 14 THEN 15 ELSE 0 END
+        -- Cliente ERP que escribió recientemente (high signal)
+        + CASE WHEN escuela_client_id IS NOT NULL AND days_since_in <= 7 THEN 25 ELSE 0 END
+        -- Penalty si hace muy poco lo contactamos (last_outbound < 24h)
+        - CASE WHEN last_outbound > now() - interval '1 day' THEN 30 ELSE 0 END
+        AS score,
+
+        -- Razones (array de strings)
+        ARRAY(
+          SELECT r FROM (VALUES
+            (CASE WHEN buyer_tier = 'vip' AND days_since_in BETWEEN 30 AND 365 THEN 'VIP inactivo' END),
+            (CASE WHEN has_interest_tag AND n_purchases = 0 AND days_since_in <= 14 THEN 'Hot lead con interés' END),
+            (CASE WHEN stage = 'interested' AND days_since_in BETWEEN 3 AND 30 THEN 'Interesado estancado' END),
+            (CASE WHEN buyer_tier = 'repeat' AND days_since_in <= 60 THEN 'Repeat buyer' END),
+            (CASE WHEN n_purchases >= 1 AND last_course IS NOT NULL AND days_since_in <= 14 THEN 'Cross-sell' END),
+            (CASE WHEN escuela_client_id IS NOT NULL AND days_since_in <= 7 THEN 'Cliente ERP activo' END)
+          ) AS t(r) WHERE r IS NOT NULL
+        ) AS reasons
+      FROM lead_signals
+      WHERE days_since_in IS NOT NULL
+    )
+    SELECT id, name, phone, country, stage, tags, buyer_tier,
+           total_usd_spent::float, n_purchases, last_course,
+           escuela_client_id, days_since_in, msgs_in_count,
+           score, reasons,
+           last_inbound::text, last_outbound::text
+    FROM scored
+    WHERE score > 0
+    ${reason === "vip_inactive"  ? sql`AND 'VIP inactivo' = ANY(reasons)` :
+      reason === "hot_interest"  ? sql`AND 'Hot lead con interés' = ANY(reasons)` :
+      reason === "stuck"         ? sql`AND 'Interesado estancado' = ANY(reasons)` :
+      reason === "crosssell"     ? sql`AND 'Cross-sell' = ANY(reasons)` :
+      sql``}
+    ORDER BY score DESC, days_since_in ASC
+    LIMIT ${limit}
+  `;
+
+  res.json({ items: rows });
+});
+
+// ──── Distinct values para filter UI (countries, tags, courses) ────
+app.get("/lead-facets", async (_req, res) => {
+  const [countries, tags, courses, tiers, stages] = await Promise.all([
+    sql`
+      SELECT country, count(*)::int AS n
+      FROM leads WHERE country IS NOT NULL AND country <> ''
+      GROUP BY country ORDER BY n DESC LIMIT 30
+    `,
+    sql`
+      SELECT t AS tag, count(*)::int AS n
+      FROM leads, unnest(tags) AS t
+      WHERE t IS NOT NULL AND t <> ''
+      GROUP BY t ORDER BY n DESC LIMIT 50
+    `,
+    sql`
+      SELECT last_course AS course, count(*)::int AS n
+      FROM leads WHERE last_course IS NOT NULL AND last_course <> ''
+      GROUP BY last_course ORDER BY n DESC LIMIT 30
+    `,
+    sql`SELECT buyer_tier AS tier, count(*)::int AS n FROM leads WHERE buyer_tier IS NOT NULL GROUP BY buyer_tier ORDER BY n DESC`,
+    sql`SELECT stage, count(*)::int AS n FROM leads WHERE stage IS NOT NULL GROUP BY stage ORDER BY n DESC`,
+  ]);
+  res.json({ countries, tags, courses, tiers, stages });
+});
+
+// ==================== END RECOMMENDATIONS ====================
+
 // Error handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("[api] unhandled error:", err);
