@@ -2251,6 +2251,79 @@ app.get("/bot-activity/today-deep", async (_req, res) => {
 
 // ==================== END EXTRAS ====================
 
+// ==================== BOT ACTIVITY · personas + calidad ====================
+
+// Personas únicas que nos hablaron — series 14 días
+app.get("/bot-activity/people-daily", async (req, res) => {
+  const days = Math.min(Number(req.query.days) || 14, 60);
+  const rows = await sql`
+    SELECT
+      created_at::date AS day,
+      count(DISTINCT lead_id)::int AS people_in,
+      count(DISTINCT lead_id) FILTER (WHERE l.created_at::date = i.created_at::date)::int AS new_people
+    FROM interactions i
+    JOIN leads l ON l.id = i.lead_id
+    WHERE i.kind = 'message_in'
+      AND i.created_at >= current_date - (${days}::int * INTERVAL '1 day')
+    GROUP BY 1
+    ORDER BY 1 DESC
+  `;
+  res.json({ items: rows });
+});
+
+// Calidad de datos — qué tan completos están los leads
+app.get("/bot-activity/data-quality", async (_req, res) => {
+  const stats = await sql`
+    WITH base AS (
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (WHERE name IS NOT NULL AND name <> '' AND name <> phone)::int AS with_name,
+        count(*) FILTER (WHERE email IS NOT NULL AND email <> '')::int                       AS with_email,
+        count(*) FILTER (WHERE country IS NOT NULL AND country <> 'Unknown')::int            AS with_country,
+        count(*) FILTER (WHERE dni IS NOT NULL AND dni <> '')::int                           AS with_dni,
+        count(*) FILTER (WHERE ocupacion IS NOT NULL AND ocupacion <> '')::int               AS with_ocupacion,
+        count(*) FILTER (WHERE stage IS NOT NULL AND stage <> 'lead')::int                   AS with_stage,
+        count(*) FILTER (WHERE buyer_tier IS NOT NULL AND buyer_tier <> '')::int             AS with_tier,
+        count(*) FILTER (WHERE escuela_client_id IS NOT NULL)::int                           AS with_escuela_link,
+        count(*) FILTER (WHERE last_course IS NOT NULL AND last_course <> '')::int           AS with_last_course
+      FROM leads
+      WHERE is_group IS NOT TRUE
+    ),
+    today_engaged AS (
+      SELECT count(DISTINCT i.lead_id)::int AS people
+        FROM interactions i
+        JOIN leads l ON l.id = i.lead_id
+       WHERE i.kind = 'message_in'
+         AND i.created_at::date = current_date
+         AND l.is_group IS NOT TRUE
+    ),
+    today_unknown AS (
+      SELECT
+        count(DISTINCT l.id) FILTER (WHERE l.country IS NULL OR l.country = 'Unknown')::int AS no_country,
+        count(DISTINCT l.id) FILTER (WHERE l.name IS NULL OR l.name = '' OR l.name = l.phone)::int AS no_name,
+        count(DISTINCT l.id) FILTER (WHERE l.email IS NULL OR l.email = '')::int AS no_email
+      FROM interactions i
+      JOIN leads l ON l.id = i.lead_id
+     WHERE i.kind = 'message_in'
+       AND i.created_at::date = current_date
+       AND l.is_group IS NOT TRUE
+    ),
+    tags AS (
+      SELECT count(DISTINCT lead_id)::int AS leads_with_tags FROM lead_tags
+    )
+    SELECT b.*, te.people AS engaged_today,
+           tu.no_country AS today_no_country,
+           tu.no_name    AS today_no_name,
+           tu.no_email   AS today_no_email,
+           t.leads_with_tags
+      FROM base b CROSS JOIN today_engaged te CROSS JOIN today_unknown tu CROSS JOIN tags t
+  `;
+  res.json(stats[0]);
+});
+
+// ==================== END PEOPLE + QUALITY ====================
+
+
 // Error handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("[api] unhandled error:", err);

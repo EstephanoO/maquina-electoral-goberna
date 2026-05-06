@@ -1,13 +1,13 @@
-import { Bot, Inbox, Send, Users, AlertCircle, Calendar, Sparkles, RefreshCw, TrendingUp, UserPlus, ShoppingBag } from "lucide-react";
+import { Bot, Users, AlertCircle, Calendar, Sparkles, RefreshCw, TrendingUp, UserPlus, ShoppingBag, MessageSquare, MessageCircle } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import {
-  useBotActivityDaily, useTemplateStats, useRuleStats,
+  useTemplateStats, useRuleStats,
   useHotLeadsList, useRecoverStale,
 } from "../hooks/useBotActivity";
-import { useTodayDeep } from "../hooks/useBotActivityExtras";
+import { useTodayDeep, usePeopleDaily } from "../hooks/useBotActivityExtras";
 import {
   CountryDistribution, HourlyChart, IntentsToday,
-  TopActiveLeads, RecentMessagesFeed,
+  TopActiveLeads, RecentMessagesFeed, DataQualityCard,
 } from "../components/bot";
 import { Avatar, Button, EmptyState } from "../components/ui";
 import { KPI } from "../components";
@@ -15,14 +15,19 @@ import { formatRelative } from "../lib/utils";
 
 export default function BotActivityPage() {
   const today = useTodayDeep();
-  const daily = useBotActivityDaily(14);
+  const people = usePeopleDaily(14);
   const templates = useTemplateStats();
   const rules = useRuleStats();
   const hot = useHotLeadsList();
   const recover = useRecoverStale();
 
   const t = today.data;
-  const coverage = t && t.msgs_in > 0 ? ((t.auto_replies / t.msgs_in) * 100).toFixed(1) : "0";
+  const coverage = t && t.unique_leads_in > 0
+    ? ((t.unique_leads_replied / t.unique_leads_in) * 100).toFixed(0)
+    : "0";
+  const msgsPerPerson = t && t.unique_leads_in > 0
+    ? (t.msgs_in / t.unique_leads_in).toFixed(1)
+    : "—";
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto space-y-6 animate-fade-in">
@@ -33,7 +38,7 @@ export default function BotActivityPage() {
             Bot · reporte en vivo
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            Todo lo que pasa en p4 (Kathy +51944531711) hoy y los últimos 14 días.
+            Personas reales que conversaron con Kathy hoy y los últimos 14 días.
           </p>
         </div>
         <Button
@@ -46,47 +51,90 @@ export default function BotActivityPage() {
         </Button>
       </header>
 
-      {/* TOTALES DEL DÍA · 8 KPIs */}
-      <section>
-        <h2 className="text-xs uppercase tracking-wide text-slate-500 font-semibold mb-3">Totales del día</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <KPI icon={Inbox}     label="Mensajes IN"        value={fmt(t?.msgs_in)}            color="bg-blue-50 text-blue-600"
-               sub={t ? `${t.media_in} media adjunta` : undefined} />
-          <KPI icon={Send}      label="Mensajes OUT"       value={fmt(t?.msgs_out)}           color="bg-emerald-50 text-emerald-600"
-               sub={t ? `${t.media_out} media enviada` : undefined} />
-          <KPI icon={Bot}       label="Auto-reply"         value={fmt(t?.auto_replies)}       color="bg-purple-50 text-purple-600"
-               sub={`${coverage}% cobertura · ${t?.unique_leads_replied ?? 0} leads`} />
-          <KPI icon={Users}     label="Leads únicos hoy"   value={fmt(t?.unique_leads_in)}    color="bg-amber-50 text-amber-600" />
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3">
-          <KPI icon={UserPlus}   label="Leads nuevos"       value={fmt(t?.new_leads_today)}    color="bg-indigo-50 text-indigo-600" />
-          <KPI icon={Calendar}   label="Citas agendadas"    value={fmt((t?.agenda_proposed ?? 0) + (t?.agenda_confirmed ?? 0))} color="bg-cyan-50 text-cyan-600"
-               sub={`${fmt(t?.agenda_confirmed)} confirmadas`} />
-          <KPI icon={ShoppingBag} label="Auto-ventas"       value={fmt(t?.auto_sold_today)}    color="bg-emerald-50 text-emerald-600"
-               sub="payment_proof detectado" />
-          <KPI icon={AlertCircle} label="Hot leads"         value={fmt(hot.data?.length)}      color="bg-red-50 text-red-600"
-               sub="atención pendiente" />
+      {/* HERO · personas que nos hablaron hoy */}
+      <section className="card p-6 bg-gradient-to-br from-blue-50 via-white to-purple-50 border-blue-200">
+        <div className="flex flex-wrap items-end gap-8">
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-slate-500 font-bold mb-1">
+              Personas que nos hablaron hoy
+            </div>
+            <div className="flex items-baseline gap-3">
+              <div className="text-5xl font-extrabold text-slate-900 tabular-nums">
+                {fmt(t?.unique_leads_in)}
+              </div>
+              <div className="text-sm text-slate-500">
+                {t?.new_leads_today ? <span className="font-semibold text-emerald-600">+{t.new_leads_today} nuevos</span> : null}
+              </div>
+            </div>
+            <div className="text-xs text-slate-500 mt-1">
+              {t?.unique_leads_replied ?? 0} recibieron auto-reply ({coverage}% de cobertura)
+            </div>
+          </div>
+
+          <div className="flex-1 min-w-[260px] grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <MiniStat label="Mensajes IN"    value={fmt(t?.msgs_in)}     sub={`${msgsPerPerson} por persona`} tone="blue" />
+            <MiniStat label="Mensajes OUT"   value={fmt(t?.msgs_out)}    sub={`${fmt(t?.media_out)} media`}    tone="emerald" />
+            <MiniStat label="Auto-reply"     value={fmt(t?.auto_replies)} sub="enviadas por Kathy"             tone="purple" />
+            <MiniStat label="Holdings"       value={fmt(t?.holdings)}    sub="esperando IA"                    tone="slate" />
+          </div>
         </div>
       </section>
 
-      {/* CHART últimos 14 días */}
+      {/* TOTALES SECUNDARIOS · 4 KPIs */}
+      <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KPI icon={UserPlus}   label="Leads nuevos"     value={fmt(t?.new_leads_today)} color="bg-indigo-50 text-indigo-600" />
+        <KPI icon={Calendar}   label="Citas agendadas"  value={fmt((t?.agenda_proposed ?? 0) + (t?.agenda_confirmed ?? 0))} color="bg-cyan-50 text-cyan-600"
+             sub={`${fmt(t?.agenda_confirmed)} confirmadas`} />
+        <KPI icon={ShoppingBag} label="Auto-ventas"     value={fmt(t?.auto_sold_today)} color="bg-emerald-50 text-emerald-600"
+             sub="payment_proof detectado" />
+        <KPI icon={AlertCircle} label="Hot leads"       value={fmt(hot.data?.length)}   color="bg-red-50 text-red-600"
+             sub="atención pendiente" />
+      </section>
+
+      {/* CHART últimos 14 días — PERSONAS, no mensajes */}
       <section className="card p-5">
-        <h2 className="text-sm font-bold text-slate-800 mb-3">Últimos 14 días · evolución</h2>
-        {daily.data && daily.data.length > 0 ? (
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-sm font-bold text-slate-800">Últimos 14 días · personas únicas</h2>
+            <p className="text-[11px] text-slate-500">Cuántos humanos distintos nos escribieron cada día</p>
+          </div>
+        </div>
+        {people.data && people.data.length > 0 ? (
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={[...daily.data].reverse()}>
+            <LineChart data={[...people.data].reverse()}>
               <XAxis dataKey="day" tickFormatter={(d) => new Date(d).toLocaleDateString("es-PE", { day: "2-digit", month: "short" })} fontSize={10} />
               <YAxis fontSize={10} />
               <Tooltip />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Line type="monotone" dataKey="msgs_in"      name="Recibidos"  stroke="#3b82f6" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="msgs_manual"  name="Kathy manual" stroke="#10b981" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="auto_replies" name="Auto-reply"  stroke="#a855f7" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="people_in"  name="Personas que escribieron"  stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="new_people" name="Personas nuevas"           stroke="#10b981" strokeWidth={2}   dot={{ r: 2 }} />
             </LineChart>
           </ResponsiveContainer>
         ) : (
           <div className="text-xs text-slate-400 py-6 text-center">Cargando…</div>
         )}
+      </section>
+
+      {/* CALIDAD DE DATOS · full width */}
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="lg:col-span-2">
+          <DataQualityCard />
+        </div>
+        <div className="card p-5">
+          <h2 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-amber-500" /> ¿Qué significa esto?
+          </h2>
+          <ul className="space-y-2 text-[11px] text-slate-600 leading-relaxed">
+            <li>· <b>Nombre real</b>: el bot capturó pushName o el lead lo dijo en chat. Si está bajo, mucha gente queda como "+5191..." sin identidad.</li>
+            <li>· <b>País</b>: detectado por prefijo o auto-trigger. Crítico para segmentar campañas.</li>
+            <li>· <b>Email/DNI/Ocupación</b>: extraídos por NER del historial de mensajes.</li>
+            <li>· <b>Vínculo Escuela</b>: matchea con escuela.lead_360 (compras anteriores).</li>
+            <li>· <b>Categorías (tags)</b>: leads que disparon al menos una regla IA.</li>
+          </ul>
+          <div className="mt-3 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
+            Verde ≥80% · azul ≥50% · ámbar ≥25% · rojo &lt;25%
+          </div>
+        </div>
       </section>
 
       {/* GEOGRAFÍA + HORARIO */}
@@ -180,6 +228,23 @@ export default function BotActivityPage() {
           ) : <div className="text-xs text-slate-400 py-3">Sin data</div>}
         </div>
       </section>
+    </div>
+  );
+}
+
+const TONE = {
+  blue:    "bg-blue-50/60 border-blue-200",
+  emerald: "bg-emerald-50/60 border-emerald-200",
+  purple:  "bg-purple-50/60 border-purple-200",
+  slate:   "bg-slate-50 border-slate-200",
+} as const;
+
+function MiniStat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone: keyof typeof TONE }) {
+  return (
+    <div className={`rounded-lg border p-2.5 ${TONE[tone]}`}>
+      <div className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">{label}</div>
+      <div className="text-xl font-bold tabular-nums text-slate-900">{value}</div>
+      {sub && <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>}
     </div>
   );
 }

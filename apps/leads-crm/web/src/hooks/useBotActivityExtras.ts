@@ -22,6 +22,17 @@ export type TodayDeep = {
   holdings: number; agenda_proposed: number; agenda_confirmed: number;
   new_leads_today: number; auto_sold_today: number;
 };
+export type PeopleDaily = { day: string; people_in: number; new_people: number };
+export type DataQuality = {
+  total: number;
+  with_name: number; with_email: number; with_country: number;
+  with_dni: number; with_ocupacion: number;
+  with_stage: number; with_tier: number;
+  with_escuela_link: number; with_last_course: number;
+  engaged_today: number;
+  today_no_country: number; today_no_name: number; today_no_email: number;
+  leads_with_tags: number;
+};
 
 const POLL = 30_000;
 
@@ -31,3 +42,5 @@ export function useIntentsToday()    { return useQuery({ queryKey: ["bot","inten
 export function useTopActiveLeads()  { return useQuery({ queryKey: ["bot","top-active-leads"], queryFn: () => api.get<{ items: ActiveLead[] }>("/bot-activity/top-active-leads").then(r => r.items),  refetchInterval: POLL }); }
 export function useRecentMessages()  { return useQuery({ queryKey: ["bot","recent-messages"],  queryFn: () => api.get<{ items: RecentMsg[] }>("/bot-activity/recent-messages?limit=20").then(r => r.items), refetchInterval: 15_000 }); }
 export function useTodayDeep()       { return useQuery({ queryKey: ["bot","today-deep"],       queryFn: () => api.get<TodayDeep>("/bot-activity/today-deep"),                                          refetchInterval: POLL }); }
+export function usePeopleDaily(days = 14) { return useQuery({ queryKey: ["bot","people-daily", days], queryFn: () => api.get<{ items: PeopleDaily[] }>(`/bot-activity/people-daily?days=${days}`).then(r => r.items), refetchInterval: 60_000 }); }
+export function useDataQuality()     { return useQuery({ queryKey: ["bot","data-quality"],     queryFn: () => api.get<DataQuality>("/bot-activity/data-quality"),                                       refetchInterval: 60_000 }); }
