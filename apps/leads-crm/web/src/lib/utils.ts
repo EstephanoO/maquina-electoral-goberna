@@ -6,8 +6,26 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatMoney(n: number): string {
-  if (n >= 1000) return `$${(n / 1000).toFixed(1)}K`;
-  return `$${n.toLocaleString()}`;
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 10_000)    return `$${Math.round(n / 1000)}K`;
+  if (n >= 1_000)     return `$${(n / 1000).toFixed(1)}K`;
+  return `$${Math.round(n).toLocaleString()}`;
+}
+
+/** Compact relative date (3m, 2h, 5d, then short calendar). */
+export function formatRelative(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return "";
+  const diff = Date.now() - t;
+  const m = Math.floor(diff / 60_000);
+  if (m < 1)  return "ahora";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 7)  return `${d}d`;
+  return new Date(iso).toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
 }
 
 export function formatDate(iso: string): string {

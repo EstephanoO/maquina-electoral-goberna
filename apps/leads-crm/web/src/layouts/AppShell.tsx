@@ -2,10 +2,11 @@ import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, LogOut, ChevronDown, FileBarChart,
-  MessageCircle, Brain, Package, Settings,
+  MessageCircle, Brain, Package, Settings, Search,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../lib/utils";
+import { CommandPalette, useCommandPalette } from "../components/ui";
 
 const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: "/chat",      label: "Chat",            icon: MessageCircle },
@@ -20,6 +21,7 @@ const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const [userMenu, setUserMenu] = useState(false);
+  const cmdk = useCommandPalette();
   const userName = (() => {
     try { return JSON.parse(localStorage.getItem("user") || "null")?.name; } catch { return null; }
   })();
@@ -59,6 +61,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="flex-1" />
+
+        {/* Command palette trigger — Linear/Vercel pattern */}
+        <button
+          onClick={() => cmdk.setOpen(true)}
+          className="hidden lg:flex items-center gap-2 mr-3 px-2.5 py-1 rounded-md bg-white/10 hover:bg-white/15 transition border border-white/10 text-white/70 text-xs"
+          title="Buscar / navegar (⌘K)"
+        >
+          <Search className="w-3.5 h-3.5" />
+          <span>Buscar…</span>
+          <kbd className="ml-2 text-[10px] !bg-white/10 !border-white/20 !text-white/70">⌘K</kbd>
+        </button>
 
         <div className="relative">
           <button onClick={() => setUserMenu(!userMenu)}
@@ -110,6 +123,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span className="text-[10px] font-semibold">Salir</span>
         </button>
       </nav>
+
+      <CommandPalette open={cmdk.open} onClose={cmdk.close} />
     </div>
   );
 }
