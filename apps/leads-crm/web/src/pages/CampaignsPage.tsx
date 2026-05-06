@@ -1,5 +1,5 @@
 import { Megaphone } from "lucide-react";
-import { CampaignBuilder, CampaignList, RecommendationsCard } from "../components/campaigns";
+import { CampaignWizard, CampaignList, RecommendationsCard } from "../components/campaigns";
 
 export default function CampaignsPage() {
   return (
@@ -11,14 +11,13 @@ export default function CampaignsPage() {
         </h1>
         <p className="text-sm text-slate-500 mt-1">
           Reactivá antiguos compradores · cross-sell a egresados · recontactá VIPs inactivos.
-          Todo throttled vía Kathy +51944531711.
+          Throttled vía Kathy +51944531711.
         </p>
       </header>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-5">
-        {/* Left: builder + list */}
-        <div className="space-y-5">
-          <CampaignBuilder />
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-5">
+        <div className="space-y-5 min-w-0">
+          <CampaignWizard />
 
           <section>
             <h2 className="text-sm font-bold text-slate-700 mb-3">Tus campañas</h2>
@@ -26,8 +25,7 @@ export default function CampaignsPage() {
           </section>
         </div>
 
-        {/* Right: recommendations sidebar */}
-        <aside className="space-y-3 xl:sticky xl:top-4 xl:self-start">
+        <aside className="space-y-3 xl:sticky xl:top-4 xl:self-start min-w-0">
           <RecommendationsCard />
         </aside>
       </div>
