@@ -475,6 +475,7 @@ export class WAInstance {
     const meta: Record<string, unknown> = {
       message_type: detectedType,
     };
+    if (contactName) meta.pushName = contactName;
     if (isGroup) {
       meta.is_group = true;
       if (groupJid) meta.group_jid = groupJid;
@@ -513,6 +514,15 @@ export class WAInstance {
       addLog(this.id, `🤖 skip auto-reply: group message (${groupSubject || groupJid?.slice(0, 16)})`);
       return;
     }
+
+    // ── AUTO-NAME: si lead.name es placeholder y tenemos pushName, actualizar
+    try {
+      const placeholder = !lead?.name || lead.name === "Sin nombre" || /^\+?\d+$/.test(lead.name) || lead.name === phone;
+      if (placeholder && contactName && contactName.length >= 3 && !/^\+?\d+$/.test(contactName)) {
+        await crmApi.updateLead(lead.id, { name: contactName });
+        addLog(this.id, `📝 lead name updated from pushName: "${contactName}"`);
+      }
+    } catch {}
 
     // ── EXTRACTORS · NER ligero del mensaje entrante ──
     // Saca email / DNI / ciudad / fecha / ocupación + signals (sales-ready,
