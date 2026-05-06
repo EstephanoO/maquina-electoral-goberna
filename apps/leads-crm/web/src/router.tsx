@@ -10,8 +10,9 @@ const ChatPage      = lazy(() => import("./pages/ChatPage"));
 const ReportsPage   = lazy(() => import("./pages/ReportsPage"));
 const TrainingPage  = lazy(() => import("./pages/TrainingPage"));
 const ProductsPage  = lazy(() => import("./pages/ProductsPage"));
-const CampaignsPage = lazy(() => import("./pages/CampaignsPage"));
-const SettingsPage  = lazy(() => import("./pages/SettingsPage"));
+const CampaignsPage   = lazy(() => import("./pages/CampaignsPage"));
+const BotActivityPage = lazy(() => import("./pages/BotActivityPage"));
+const SettingsPage    = lazy(() => import("./pages/SettingsPage"));
 
 function RouteFallback() {
   return <div className="flex-1 flex items-center justify-center text-slate-400">Cargando…</div>;
@@ -54,6 +55,7 @@ export const router = createBrowserRouter([
       { path: "/training",  element: <TrainingPage /> },
       { path: "/products",  element: <ProductsPage /> },
       { path: "/campaigns", element: <CampaignsPage /> },
+      { path: "/bot",       element: <BotActivityPage /> },
       { path: "/settings",  element: <SettingsPage /> },
       { path: "/settings/:tab", element: <SettingsPage /> },
     ],

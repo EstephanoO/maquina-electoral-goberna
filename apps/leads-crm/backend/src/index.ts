@@ -2063,6 +2063,66 @@ app.delete("/appointment-slots/:id", requireAuth, async (req, res) => {
 
 // ==================== END APPOINTMENTS ====================
 
+// ==================== BOT ACTIVITY DASHBOARD ====================
+
+app.get("/bot-activity/today", async (_req, res) => {
+  const rows = await sql`SELECT * FROM v_bot_activity_today`;
+  res.json(rows[0] ?? {});
+});
+
+app.get("/bot-activity/daily", async (req, res) => {
+  const days = Math.min(Number(req.query.days) || 14, 60);
+  const rows = await sql.unsafe(`
+    SELECT
+      created_at::date AS day,
+      count(*) FILTER (WHERE kind = 'message_in')::int AS msgs_in,
+      count(*) FILTER (WHERE kind = 'message_out' AND (meta->>'auto_reply')::bool IS TRUE)::int AS auto_replies,
+      count(*) FILTER (WHERE kind = 'message_out' AND ((meta->>'auto_reply')::bool IS NULL OR (meta->>'auto_reply')::bool = false))::int AS msgs_manual,
+      count(DISTINCT lead_id) FILTER (WHERE kind = 'message_in')::int AS unique_leads
+    FROM interactions
+    WHERE created_at >= current_date - interval '${days} days'
+    GROUP BY 1 ORDER BY 1 DESC
+  `);
+  res.json({ items: rows });
+});
+
+app.get("/bot-activity/templates", async (_req, res) => {
+  const rows = await sql`SELECT * FROM v_template_stats LIMIT 30`;
+  res.json({ items: rows });
+});
+
+app.get("/bot-activity/hot-leads", async (_req, res) => {
+  const rows = await sql`SELECT * FROM v_hot_leads`;
+  res.json({ items: rows });
+});
+
+app.get("/bot-activity/rules", async (_req, res) => {
+  const rows = await sql`
+    SELECT id, name, source, hits_count, last_hit_at, enabled, tag
+      FROM ai_rules
+     WHERE enabled = TRUE
+     ORDER BY hits_count DESC, id ASC
+     LIMIT 50
+  `;
+  res.json({ items: rows });
+});
+
+// Bot reporta que matcheó reglas (incrementa hits_count batch).
+app.post("/bot-activity/rule-hit", async (req, res) => {
+  const ids = (req.body?.rule_ids ?? []) as number[];
+  if (!Array.isArray(ids) || ids.length === 0) return res.json({ ok: true });
+  await sql`SELECT increment_rule_hits(${ids}::int[])`;
+  res.json({ ok: true });
+});
+
+// Stale lead recovery: operador puede correr esto cuando quiera.
+app.post("/bot-activity/recover-stale", requireAuth, async (_req, res) => {
+  const r = await sql`SELECT mark_stale_leads_followup() AS affected`;
+  res.json({ affected: Number(r[0]?.affected ?? 0) });
+});
+
+// ==================== END BOT ACTIVITY ====================
+
 // Error handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error("[api] unhandled error:", err);

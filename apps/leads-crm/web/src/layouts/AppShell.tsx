@@ -2,7 +2,7 @@ import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, Users, LogOut, ChevronDown, FileBarChart,
-  MessageCircle, Brain, Package, Settings, Search, Megaphone,
+  MessageCircle, Brain, Package, Settings, Search, Megaphone, Bot,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -16,6 +16,7 @@ const NAV: Array<{ to: string; label: string; icon: LucideIcon }> = [
   { to: "/training",  label: "Entrenamiento IA", icon: Brain },
   { to: "/products",  label: "Productos",       icon: Package },
   { to: "/campaigns", label: "Campañas",        icon: Megaphone },
+  { to: "/bot",       label: "Bot",             icon: Bot },
   { to: "/settings",  label: "Configuración",   icon: Settings },
 ];
 
