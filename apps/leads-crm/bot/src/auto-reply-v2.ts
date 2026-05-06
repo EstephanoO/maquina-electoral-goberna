@@ -63,6 +63,10 @@ export type AutoReplyResult =
       // Sequence: messages to send IN ORDER after the primary one (0..N).
       // Each is sent with a 1.5-3s delay between them.
       sequence?: AutoReplyMessage[];
+      // True si el template es de tipo "holding" — significa que el bot no
+      // sabe responder y está comprando tiempo. El operador debe atender.
+      needs_human_attention?: boolean;
+      attention_reason?: string;
     };
 
 export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyResult> {
@@ -86,7 +90,24 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
     { body: input.body, classifiedProducts: input.classifiedProducts, customTags: input.customTags },
     allTemplates
   );
-  if (!tpl) return { sent: false, reason: "no template matched" };
+
+  // 3b. Si NO hay match, usar holding template (mensaje humano comprando
+  //     tiempo) y flagear lead para atención humana.
+  if (!tpl) {
+    const holdings = cats.get("holding") ?? [];
+    if (holdings.length === 0) return { sent: false, reason: "no template matched, no holding" };
+    const holding = holdings[Math.floor(Math.random() * holdings.length)];
+    markReplied(input.fromPhone);
+    return {
+      sent: true,
+      template_id: holding.id,
+      template_name: holding.name,
+      body: holding.body,
+      image_url: null,
+      needs_human_attention: true,
+      attention_reason: `bot_no_match: "${input.body.slice(0, 100)}"`,
+    };
+  }
 
   // 4. Apply variable substitution
   const curso = input.classifiedProducts[0];

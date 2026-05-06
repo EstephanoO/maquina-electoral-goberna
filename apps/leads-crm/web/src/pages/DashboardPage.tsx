@@ -5,7 +5,7 @@ import {
   aggregateByCountry, aggregateByStage, bucketRulesBySource, sumRevenue,
 } from "../lib/dashboard-aggregations";
 import {
-  KPI, CoursesCard, AICard, TemplatesCard,
+  KPI, CoursesCard, AICard, TemplatesCard, AttentionQueueCard,
   RevenueByCountryChart, StageDistributionChart, CountryTable,
 } from "../components";
 
@@ -40,6 +40,8 @@ export default function DashboardPage() {
         <KPI icon={Crown} label="VIPs" value={vips.toString()} sub={`${formatMoney(vipRevenue)} gastado`}
              color="bg-[#FAF6EB] text-[#B8942F]" />
       </section>
+
+      <AttentionQueueCard />
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <CoursesCard products={products} productRulesCount={buckets.productRules.length} />
