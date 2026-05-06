@@ -16,6 +16,7 @@
 import { CONFIG } from "./config.js";
 import { getInstanceFor, getTemplatesByCategory, type BotInstance, type Template } from "./instance-config.js";
 import { pickTemplate, applyTemplate } from "./template-picker.js";
+import { generateReply, geminiAvailable } from "./gemini.js";
 
 const COOLDOWN_MS = 30 * 60 * 1000;
 const recentReplies = new Map<string, number>();
@@ -91,9 +92,34 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
     allTemplates
   );
 
-  // 3b. Si NO hay match, usar holding template (mensaje humano comprando
-  //     tiempo) y flagear lead para atención humana.
+  // 3b. Si NO hay match con templates, intentamos Gemini primero (si la key
+  //     está configurada y el proyecto tiene créditos). Si Gemini falla,
+  //     caemos al holding template.
   if (!tpl) {
+    if (geminiAvailable()) {
+      const systemPrompt = buildSystemPrompt(instance);
+      const ai = await generateReply({
+        systemPrompt,
+        userMessage: input.body,
+      });
+      if (ai.ok) {
+        markReplied(input.fromPhone);
+        return {
+          sent: true,
+          template_id: 0,
+          template_name: `gemini:${ai.model}`,
+          body: ai.text,
+          image_url: null,
+          // Aún flagear para que el operador revise lo que la IA respondió
+          needs_human_attention: true,
+          attention_reason: `gemini_response: "${input.body.slice(0, 80)}"`,
+        };
+      }
+      // Gemini falló (429 sin créditos, 401 key inválida, etc) — log y caer a holding
+      console.warn(`[auto-reply] gemini fallback: ${ai.reason}${ai.status ? ` (${ai.status})` : ""}`);
+    }
+
+    // Holding template (mensaje humano comprando tiempo)
     const holdings = cats.get("holding") ?? [];
     if (holdings.length === 0) return { sent: false, reason: "no template matched, no holding" };
     const holding = holdings[Math.floor(Math.random() * holdings.length)];
@@ -149,6 +175,21 @@ export function typingDelayFor(body: string): number {
   const base = 1500;
   const perChar = 25;
   return Math.min(base + body.length * perChar, 8_000);
+}
+
+/**
+ * Build el system prompt para Gemini usando el contexto de la instancia.
+ * Incluye nombre del agente, productos, cuenta bancaria, y reglas de tono.
+ */
+function buildSystemPrompt(instance: BotInstance): string {
+  const parts = [
+    `Eres ${instance.agent_name || "una asesora"}, asesora cálida y profesional de Goberna Escuela. Respondes en español neutro, breve (≤ 60 palabras) y directo. Usa "usted" formal al inicio. NUNCA digas que eres un bot o que vas a derivar a un humano. Si no sabes la respuesta exacta, di "déjame revisar y te confirmo en un momento".`,
+    instance.extra_prompt ?? "",
+    instance.agent_signature ? `Firma: ${instance.agent_signature}` : "",
+    instance.cuenta_bancaria ? `\nCuenta bancaria (compartir solo si preguntan):\n${instance.cuenta_bancaria}` : "",
+    `\nNUNCA inventes precios, fechas o links. Si no estás 100% seguro, pide tiempo para revisar.`,
+  ];
+  return parts.filter(Boolean).join("\n");
 }
 
 /** Manual cooldown clear (for testing). */
