@@ -59,6 +59,14 @@ export function pickTemplate(input: PickInput, allTemplates: Template[]): Templa
 
   // 2. Tag intent específico (custom rules) — más confiable que regex aquí
   const tagSet = new Set(input.customTags);
+  if (tagSet.has("intent:brochure_pdf")) {
+    const t = pickByCategory("brochure", allTemplates);
+    if (t) return t;
+  }
+  if (tagSet.has("intent:video")) {
+    const t = pickByCategory("video", allTemplates);
+    if (t) return t;
+  }
   if (tagSet.has("intent:pago") || tagSet.has("intent:pago_metodos")) {
     const t = pickByCategory("pago", allTemplates);
     if (t) return t;

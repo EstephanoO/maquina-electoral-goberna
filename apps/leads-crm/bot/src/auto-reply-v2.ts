@@ -62,6 +62,10 @@ export type AutoReplyMessage = {
   template_name: string;
   body: string;
   image_url?: string | null;
+  document_url?: string | null;
+  document_filename?: string | null;
+  document_mime?: string | null;
+  video_url?: string | null;
   media_kind: "text" | "image" | "video" | "document";
 };
 
@@ -179,8 +183,12 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
     template_name: tpl.name,
     body,
     image_url: tpl.image_url ?? null,
+    document_url: tpl.document_url ?? null,
+    document_filename: tpl.document_filename ?? null,
+    document_mime: tpl.document_mime ?? null,
+    video_url: tpl.video_url ?? null,
     sequence: sequence.length > 0 ? sequence : undefined,
-  };
+  } as any;
 }
 
 /** Simulate human typing delay based on body length (≈ 30 chars/sec). */

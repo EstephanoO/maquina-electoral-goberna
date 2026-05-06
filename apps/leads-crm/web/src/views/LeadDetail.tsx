@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import type { Interaction, Lead } from "../types";
 import {
-  LeadDetailHeader, PipelineFunnel, LeadStatsGrid,
+  LeadDetailHeader, PipelineStepper, LeadStatsGrid,
   LeadInfoPanel, LeadTimeline, LeadActionsPanel,
 } from "../components/lead";
 
@@ -37,6 +37,14 @@ export function LeadDetail({ leadId, onClose, onSaved, onDeleted }: Props) {
     onDeleted?.();
   }
 
+  // Stage history from interactions (kind=stage_change, meta.to_stage)
+  const stageHistory = useMemo(() => {
+    return interactions
+      .filter(i => i.kind === "stage_change" && (i.meta as any)?.to_stage)
+      .map(i => ({ stage: (i.meta as any).to_stage as string, at: i.created_at }))
+      .reverse();  // chronological
+  }, [interactions]);
+
   if (error)   return <Drawer onClose={onClose}><div className="p-6 text-red-500">{error}</div></Drawer>;
   if (!lead)   return <Drawer onClose={onClose}><div className="p-6 text-slate-400">Cargando…</div></Drawer>;
 
@@ -46,7 +54,9 @@ export function LeadDetail({ leadId, onClose, onSaved, onDeleted }: Props) {
 
       <div className="p-5 space-y-4">
         <LeadStatsGrid lead={lead as any} />
-        <PipelineFunnel current={lead.stage} onChange={changeStage} />
+        <div className="card p-4">
+          <PipelineStepper current={lead.stage} onChange={changeStage} history={stageHistory} />
+        </div>
         <LeadInfoPanel lead={lead as any} />
         <LeadActionsPanel lead={lead as any} onChange={reload} onDelete={deleteLead} />
         <LeadTimeline interactions={interactions} />

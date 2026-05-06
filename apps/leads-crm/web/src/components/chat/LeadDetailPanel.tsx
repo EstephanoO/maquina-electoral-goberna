@@ -9,6 +9,7 @@ import { QK } from "../../lib/query-client";
 import { formatMoney, STAGE_CONFIG, TIER_CONFIG } from "../../lib/utils";
 import type { Lead } from "../../types";
 import { useResolveAttention } from "../../hooks/useResolveAttention";
+import { PipelineStepper } from "../lead/PipelineStepper";
 
 type FullLead = Lead & {
   dni?: string | null;
@@ -83,14 +84,10 @@ export function LeadDetailPanel({ leadId, onClose }: Props) {
           )}
         </Card>
 
-        {/* PIPELINE + TIER */}
-        <Card title="Pipeline">
-          <div className="flex items-center gap-2 flex-wrap">
-            {stageCfg && (
-              <span className={`px-2 py-1 rounded text-[11px] font-medium ${stageCfg.color}`}>
-                {stageCfg.label}
-              </span>
-            )}
+        {/* PIPELINE STEPPER (horizontal con dots) */}
+        <Card title="Pipeline · estado actual">
+          <PipelineStepper current={lead.stage} />
+          <div className="flex items-center gap-2 flex-wrap mt-3 pt-3 border-t border-slate-100">
             {tierCfg && (
               <span className={`px-2 py-1 rounded text-[11px] font-medium ${tierCfg.color}`}>
                 {tierCfg.label}

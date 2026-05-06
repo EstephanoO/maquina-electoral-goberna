@@ -10,6 +10,10 @@ export type Template = {
   id: number; name: string; body: string;
   category: string; uses_count: number;
   image_url?: string | null;
+  document_url?: string | null;
+  document_filename?: string | null;
+  document_mime?: string | null;
+  video_url?: string | null;
   product_sku?: string | null;
   media_kind?: "text" | "image" | "video" | "document" | null;
   sequence_after?: number | null;

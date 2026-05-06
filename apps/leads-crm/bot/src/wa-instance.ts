@@ -367,8 +367,16 @@ export class WAInstance {
       return;
     }
 
-    // Resolve phone number from JID
+    // Resolve phone number from JID. We support 3 JID types:
+    //   - @s.whatsapp.net : DM con un usuario (toma phone de jid)
+    //   - @lid           : DM con LID (resolve via participantPn / mapping)
+    //   - @g.us          : grupo (tomar el sender real desde participant)
     let phone: string;
+    let isGroup = false;
+    let groupJid: string | null = null;
+    let groupSubject: string | null = null;
+    let senderName: string | null = null;
+
     if (jid.includes("@s.whatsapp.net")) {
       // Normal JID: 51955135507@s.whatsapp.net
       const digits = jid.replace("@s.whatsapp.net", "");
@@ -377,6 +385,36 @@ export class WAInstance {
         return;
       }
       phone = "+" + digits;
+    } else if (jid.includes("@g.us")) {
+      // GROUP JID — el lead es el participant real (sender), no el grupo.
+      isGroup = true;
+      groupJid = jid;
+      const partPn: string | undefined = msg.key?.participantPn || msg.participantPn;
+      const part: string | undefined = msg.key?.participant;
+      let resolved: string | null = null;
+      if (partPn && partPn.includes("@s.whatsapp.net")) {
+        const d = partPn.replace("@s.whatsapp.net", "").split(":")[0];
+        if (d.length >= 8 && d.length <= 15) resolved = "+" + d;
+      }
+      if (!resolved && part && part.includes("@s.whatsapp.net")) {
+        const d = part.replace("@s.whatsapp.net", "").split(":")[0];
+        if (d.length >= 8 && d.length <= 15) resolved = "+" + d;
+      }
+      if (!resolved && part && part.includes("@lid")) {
+        resolved = await this.resolveLidPhone(part, msg);
+      }
+      if (!resolved) {
+        addLog(this.id, `⏭ group sender unresolved: ${jid.slice(0, 25)}`);
+        return;
+      }
+      phone = resolved;
+      senderName = msg.pushName || null;
+      // Resolve group subject best-effort (cached)
+      try {
+        const meta = await (this.sock as any)?.groupMetadata?.(jid);
+        groupSubject = meta?.subject || null;
+      } catch {}
+      addLog(this.id, `👥 GROUP msg: ${groupSubject || jid.slice(0, 18)} · sender ${senderName || phone}`);
     } else if (jid.includes("@lid")) {
       // LID: try to resolve real phone via participant or msg.key
       const resolved = await this.resolveLidPhone(jid, msg);
@@ -434,6 +472,12 @@ export class WAInstance {
     const meta: Record<string, unknown> = {
       message_type: detectedType,
     };
+    if (isGroup) {
+      meta.is_group = true;
+      if (groupJid) meta.group_jid = groupJid;
+      if (groupSubject) meta.group_subject = groupSubject;
+      if (senderName) meta.sender_name = senderName;
+    }
     if (mediaInfo) {
       meta.media_url = mediaInfo.media_url;
       meta.media_mime = mediaInfo.media_mime;
@@ -459,9 +503,13 @@ export class WAInstance {
     const { lead, interaction } = result;
     addLog(this.id, `✅ CRM saved: lead=${lead.id} (${lead.name}) interaction=${interaction?.id ?? "dedup"} dir=${isFromMe ? "out" : "in"}`);
 
-    // 2. Classify + auto-reply: SOLO inbound. Mensajes propios del operador
-    //    no se clasifican ni disparan auto-reply.
+    // 2. Classify + auto-reply: SOLO inbound DMs. Mensajes propios del
+    //    operador y mensajes de grupos NO disparan auto-reply.
     if (isFromMe) return;
+    if (isGroup) {
+      addLog(this.id, `🤖 skip auto-reply: group message (${groupSubject || groupJid?.slice(0, 16)})`);
+      return;
+    }
 
     const classified = classifyMessage(body);
     if (classified.products.length > 0) addLog(this.id, `🏷 Classified: ${classified.products.join(", ")}`);
@@ -520,10 +568,15 @@ export class WAInstance {
         try { await this.sock?.sendPresenceUpdate("paused", jid); } catch {}
         if (decision.image_url) {
           await this.sendImage(phone, decision.image_url, decision.body);
+        } else if ((decision as any).document_url) {
+          const d: any = decision;
+          await this.sendDocument(phone, d.document_url, d.document_filename || "documento.pdf", decision.body, d.document_mime || "application/pdf");
+        } else if ((decision as any).video_url) {
+          await this.sendVideo(phone, (decision as any).video_url, decision.body);
         } else {
           await this.sendMessage(phone, decision.body);
         }
-        addLog(this.id, `🤖 auto-reply SENT (${decision.body.length} chars)`);
+        addLog(this.id, `🤖 auto-reply SENT (${decision.body.length} chars)${decision.needs_human_attention ? " · ⚠ HOLDING (needs human)" : ""}`);
         try {
           await crmApi.recordMessage({
             phone,
@@ -536,8 +589,22 @@ export class WAInstance {
               message_type: decision.image_url ? "image" : "text",
               auto_reply: true, template_id: decision.template_id, template_name: decision.template_name,
               ...(decision.image_url ? { media_url: decision.image_url } : {}),
+              ...(decision.needs_human_attention ? { holding: true, attention_reason: decision.attention_reason } : {}),
             },
           });
+          // Si fue un holding, marcamos al lead para atención humana
+          if (decision.needs_human_attention && lead?.id) {
+            try {
+              await fetch(`${process.env.API_URL || "http://api:4000"}/leads/${lead.id}/flag-attention`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reason: decision.attention_reason || "bot_no_match" }),
+              });
+              addLog(this.id, `🚨 lead ${lead.id} flagged for human attention`);
+            } catch (e: any) {
+              addLog(this.id, `⚠ flag-attention failed: ${e.message}`);
+            }
+          }
         } catch (e: any) {
           addLog(this.id, `⚠ auto-reply log failed: ${e.message}`);
         }
@@ -549,6 +616,11 @@ export class WAInstance {
             try {
               if (step.media_kind === "image" && step.image_url) {
                 await this.sendImage(phone, step.image_url, step.body || "");
+              } else if (step.media_kind === "document" && (step as any).document_url) {
+                const sd: any = step;
+                await this.sendDocument(phone, sd.document_url, sd.document_filename || "documento.pdf", step.body || "", sd.document_mime || "application/pdf");
+              } else if (step.media_kind === "video" && (step as any).video_url) {
+                await this.sendVideo(phone, (step as any).video_url, step.body || "");
               } else {
                 await this.sendMessage(phone, step.body);
               }
@@ -671,6 +743,48 @@ export class WAInstance {
   }
 
   /** Send a message to a phone number */
+  /** Send PDF / document via URL (Baileys document message). */
+  async sendDocument(phone: string, docUrl: string, filename: string, caption?: string, mimetype = "application/pdf"): Promise<void> {
+    if (!this.sock || this._status !== "ready") throw new Error("not connected");
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 8 || digits.length > 15) throw new Error(`invalid phone: ${phone}`);
+    const jid = digits + "@s.whatsapp.net";
+    addLog(this.id, `📤📄 DOC to ${phone}: ${filename}`);
+    try {
+      const result = await this.sock.sendMessage(jid, {
+        document: { url: docUrl },
+        mimetype,
+        fileName: filename,
+        caption: caption || "",
+      });
+      addLog(this.id, `✅ DOC SENT: msgId=${result?.key?.id || "?"}`);
+      this.stats.messagesOut++;
+    } catch (e: any) {
+      addLog(this.id, `❌ DOC SEND FAILED: ${e.message}`);
+      throw e;
+    }
+  }
+
+  /** Send video via URL (Baileys video message). */
+  async sendVideo(phone: string, videoUrl: string, caption?: string): Promise<void> {
+    if (!this.sock || this._status !== "ready") throw new Error("not connected");
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 8 || digits.length > 15) throw new Error(`invalid phone: ${phone}`);
+    const jid = digits + "@s.whatsapp.net";
+    addLog(this.id, `📤🎬 VID to ${phone}: ${videoUrl.slice(-30)}`);
+    try {
+      const result = await this.sock.sendMessage(jid, {
+        video: { url: videoUrl },
+        caption: caption || "",
+      });
+      addLog(this.id, `✅ VID SENT: msgId=${result?.key?.id || "?"}`);
+      this.stats.messagesOut++;
+    } catch (e: any) {
+      addLog(this.id, `❌ VID SEND FAILED: ${e.message}`);
+      throw e;
+    }
+  }
+
   /** Send image via URL with optional caption. Uses Baileys image message. */
   async sendImage(phone: string, imageUrl: string, caption?: string): Promise<void> {
     if (!this.sock || this._status !== "ready") throw new Error("not connected");
