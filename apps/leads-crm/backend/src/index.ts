@@ -2258,9 +2258,9 @@ app.get("/bot-activity/people-daily", async (req, res) => {
   const days = Math.min(Number(req.query.days) || 14, 60);
   const rows = await sql`
     SELECT
-      created_at::date AS day,
-      count(DISTINCT lead_id)::int AS people_in,
-      count(DISTINCT lead_id) FILTER (WHERE l.created_at::date = i.created_at::date)::int AS new_people
+      i.created_at::date AS day,
+      count(DISTINCT i.lead_id)::int AS people_in,
+      count(DISTINCT i.lead_id) FILTER (WHERE l.created_at::date = i.created_at::date)::int AS new_people
     FROM interactions i
     JOIN leads l ON l.id = i.lead_id
     WHERE i.kind = 'message_in'
@@ -2309,7 +2309,7 @@ app.get("/bot-activity/data-quality", async (_req, res) => {
        AND l.is_group IS NOT TRUE
     ),
     tags AS (
-      SELECT count(DISTINCT lead_id)::int AS leads_with_tags FROM lead_tags
+      SELECT count(*)::int AS leads_with_tags FROM leads WHERE is_group IS NOT TRUE AND cardinality(tags) > 0
     )
     SELECT b.*, te.people AS engaged_today,
            tu.no_country AS today_no_country,
