@@ -1,0 +1,15 @@
+{
+  "name": "Goberna Leads",
+  "short_name": "Goberna",
+  "description": "CRM de ventas potenciado con WhatsApp",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#f59e0b",
+  "orientation": "any",
+  "icons": [
+    { "src": "/goberna-logo.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/goberna-logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "categories": ["business", "productivity"]
+}

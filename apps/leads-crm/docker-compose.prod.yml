@@ -1,0 +1,98 @@
+name: leads-crm
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: leads_crm_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nexus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-leads_crm}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nexus} -d ${POSTGRES_DB:-leads_crm}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - internal
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: leads_crm_api
+    restart: unless-stopped
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgres://${POSTGRES_USER:-nexus}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-leads_crm}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-720}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      UPLOADS_DIR: /app/uploads
+      MOODLE_WS_URL: ${MOODLE_WS_URL:-https://campus.grupogoberna.com/webservice/rest/server.php}
+      MOODLE_WS_TOKEN: ${MOODLE_WS_TOKEN:-}
+      BOT_URL: http://bot:4020
+    ports:
+      - "${API_PORT:-4010}:4000"
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+
+  ui:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+    container_name: leads_crm_ui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${UI_PORT:-7010}:80"
+    networks:
+      - internal
+
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: leads_crm_bot
+    restart: unless-stopped
+    environment:
+      BOT_PORT: 4020
+      API_URL: http://api:4000
+      AUTO_REPLY: ${BOT_AUTO_REPLY:-false}
+      AUTO_REPLY_LEADS: ${AUTO_REPLY_LEADS:-}
+      AI_AUTO_REPLY_LEADS: ${AUTO_REPLY_LEADS:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      ELECTORAL_API_URL: ${ELECTORAL_API_URL:-https://electoral.goberna.club}
+      ELECTORAL_BOT_SECRET: ${ELECTORAL_BOT_SECRET:-}
+      PHONES: ${BOT_PHONES:-[{"id":"peru1","label":"Perú 1","phone":"+51986855496"},{"id":"peru2","label":"Perú 2","phone":"+51986394450"},{"id":"peru3","label":"Perú 3 (Test)","phone":"+51954562435","testOnly":true}]}
+    ports:
+      - "${BOT_PORT:-4030}:4020"
+    volumes:
+      - bot_sessions:/app/sessions
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - internal
+
+volumes:
+  pgdata:
+  uploads:
+  bot_sessions:
+
+networks:
+  internal:
+    # Host firewall only ACCEPTs traffic to :5432 from 172.16.0.0/12; force our
+    # subnet into that range so postgres connections work between containers.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

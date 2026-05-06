@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+.env.*
+*.db
+*.db.json
+docker-compose.dev.yml

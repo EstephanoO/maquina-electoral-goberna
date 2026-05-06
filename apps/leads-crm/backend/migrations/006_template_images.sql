@@ -1,0 +1,5 @@
+ALTER TABLE templates
+  ADD COLUMN IF NOT EXISTS image_url TEXT;
+
+ALTER TABLE sends
+  ADD COLUMN IF NOT EXISTS image_url TEXT;
