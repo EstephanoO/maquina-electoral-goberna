@@ -47,6 +47,7 @@ import {
 } from "./crm-api.js";
 import { getAutoResponse, getOutOfHoursResponse, isWithinHours } from "./auto-reply.js";
 import { decideAutoReply, typingDelayFor } from "./auto-reply-v2.js";
+import { extractFromMessage, buildLeadPatch } from "./extractors.js";
 
 const logger = P({ level: "warn" });
 
@@ -509,6 +510,43 @@ export class WAInstance {
     if (isGroup) {
       addLog(this.id, `🤖 skip auto-reply: group message (${groupSubject || groupJid?.slice(0, 16)})`);
       return;
+    }
+
+    // ── EXTRACTORS · NER ligero del mensaje entrante ──
+    // Saca email / DNI / ciudad / fecha / ocupación + signals (sales-ready,
+    // frustración, intent_strength). Persiste lo nuevo al lead sin pisar.
+    const extracted = extractFromMessage(body);
+    if (Object.keys(extracted).length > 0) {
+      addLog(this.id, `🔬 extracted: ${JSON.stringify(extracted).slice(0, 120)}`);
+      try {
+        const patch = buildLeadPatch(lead as any, extracted);
+        if (Object.keys(patch).length > 0) {
+          await crmApi.updateLead(lead.id, patch);
+          addLog(this.id, `📝 lead enriched: ${Object.keys(patch).join(", ")}`);
+        }
+      } catch (e: any) {
+        addLog(this.id, `⚠ enrich failed: ${e.message}`);
+      }
+      // Sales-ready signal → flag lead for human attention immediately
+      if (extracted.sales_ready && lead?.id) {
+        try {
+          await fetch(`${process.env.API_URL || "http://api:4000"}/leads/${lead.id}/flag-attention`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: extracted.payment_proof ? "sales_ready_payment_done" : "sales_ready_high_intent" }),
+          });
+          addLog(this.id, `🎯 SALES-READY signal → flagged for human (${extracted.payment_proof ? "pago hecho" : "high intent"})`);
+        } catch {}
+      }
+      // Frustration signal → flag too
+      if (extracted.frustration && lead?.id) {
+        try {
+          await fetch(`${process.env.API_URL || "http://api:4000"}/leads/${lead.id}/flag-attention`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: "frustration_detected" }),
+          });
+          addLog(this.id, `😡 FRUSTRATION signal → flagged for human`);
+        } catch {}
+      }
     }
 
     const classified = classifyMessage(body);
