@@ -46,6 +46,7 @@ import {
   getElectoralCampaignFor,
 } from "./crm-api.js";
 import { getAutoResponse, getOutOfHoursResponse, isWithinHours } from "./auto-reply.js";
+import { decideAutoReply, typingDelayFor } from "./auto-reply-v2.js";
 
 const logger = P({ level: "warn" });
 
@@ -497,6 +498,51 @@ export class WAInstance {
     } catch (e: any) {
       addLog(this.id, `⚠ updateLead failed: ${e.message}`);
     }
+
+    // ── AUTO-REPLY (v2: DB-driven) ──────────────────────────────────────
+    // Sólo si bot_instances.auto_reply = TRUE para esta instancia. El operador
+    // puede activar/desactivar desde /settings sin redeploy. Cooldown 30min
+    // por phone para evitar spam.
+    try {
+      const decision = await decideAutoReply({
+        instanceSlug: this.id,
+        ownPhone: this.phone,
+        fromPhone: phone,
+        body,
+        classifiedProducts: classified.products,
+        customTags,
+      });
+      if (decision.sent) {
+        addLog(this.id, `🤖 auto-reply: matched template "${decision.template_name}"${decision.image_url ? " 📷" : ""} — typing…`);
+        const delay = typingDelayFor(decision.body);
+        try { await this.sock?.sendPresenceUpdate("composing", jid); } catch {}
+        await new Promise((r) => setTimeout(r, delay));
+        try { await this.sock?.sendPresenceUpdate("paused", jid); } catch {}
+        if (decision.image_url) {
+          await this.sendImage(phone, decision.image_url, decision.body);
+        } else {
+          await this.sendMessage(phone, decision.body);
+        }
+        addLog(this.id, `🤖 auto-reply SENT (${decision.body.length} chars)`);
+        try {
+          await crmApi.recordMessage({
+            phone,
+            direction: "out",
+            body: decision.body,
+            assigned_to: this.phone,
+            timestamp: new Date().toISOString(),
+            external_id: `auto-reply-${decision.template_id}-${Date.now()}`,
+            meta: { message_type: "text", auto_reply: true, template_id: decision.template_id, template_name: decision.template_name },
+          });
+        } catch (e: any) {
+          addLog(this.id, `⚠ auto-reply log failed: ${e.message}`);
+        }
+      } else {
+        addLog(this.id, `🤖 auto-reply skip: ${decision.reason}`);
+      }
+    } catch (e: any) {
+      addLog(this.id, `⚠ auto-reply error: ${e.message}`);
+    }
   }
 
   // LID → phone cache
@@ -591,6 +637,27 @@ export class WAInstance {
   }
 
   /** Send a message to a phone number */
+  /** Send image via URL with optional caption. Uses Baileys image message. */
+  async sendImage(phone: string, imageUrl: string, caption?: string): Promise<void> {
+    if (!this.sock || this._status !== "ready") throw new Error("not connected");
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 8 || digits.length > 15) throw new Error(`invalid phone: ${phone}`);
+    const jid = digits + "@s.whatsapp.net";
+    addLog(this.id, `📤📷 IMG to ${phone}: ${imageUrl.slice(-30)}${caption ? ` · "${caption.slice(0, 40)}"` : ""}`);
+    try {
+      const result = await this.sock.sendMessage(jid, {
+        image: { url: imageUrl },
+        caption: caption || "",
+      });
+      const msgId = result?.key?.id;
+      addLog(this.id, `✅ IMG SENT ok: msgId=${msgId || "?"}`);
+      this.stats.messagesOut++;
+    } catch (e: any) {
+      addLog(this.id, `❌ IMG SEND FAILED: ${e.message}`);
+      throw e;
+    }
+  }
+
   async sendMessage(phone: string, text: string): Promise<void> {
     if (!this.sock || this._status !== "ready") throw new Error("not connected");
     const digits = phone.replace(/\D/g, "");
