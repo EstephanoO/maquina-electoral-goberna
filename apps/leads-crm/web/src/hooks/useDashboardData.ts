@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useQueries } from "@tanstack/react-query";
 import { api } from "../api";
+import { QK } from "../lib/query-client";
 import type { Lead } from "../types";
 
 export type ProductSummary = {
@@ -25,32 +26,34 @@ export type DashboardData = {
   templates: TemplateSummary[];
 };
 
-const EMPTY_PRODUCTS: ProductSummary[] = [];
-const EMPTY_RULES: RuleSummary[] = [];
-const EMPTY_TEMPLATES: TemplateSummary[] = [];
-
 export function useDashboardData(): DashboardData {
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [products, setProducts] = useState<ProductSummary[]>([]);
-  const [rules, setRules] = useState<RuleSummary[]>([]);
-  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queries = useQueries({
+    queries: [
+      {
+        queryKey: QK.leads({ limit: 10000 }),
+        queryFn: () => api.listLeads({ limit: 10000 } as any) as Promise<Lead[]>,
+      },
+      {
+        queryKey: QK.products("featured"),
+        queryFn: () => api.get<{ products: ProductSummary[] }>("/products?featured=1").then(r => r.products),
+      },
+      {
+        queryKey: QK.rules(),
+        queryFn: () => api.get<RuleSummary[]>("/ai/rules"),
+      },
+      {
+        queryKey: QK.templates(),
+        queryFn: () => api.get<TemplateSummary[]>("/templates"),
+      },
+    ],
+  });
 
-  useEffect(() => {
-    Promise.all([
-      api.listLeads({ limit: 10000 } as any) as Promise<Lead[]>,
-      api.get<{ products: ProductSummary[] }>("/products?featured=1").then(r => r.products).catch(() => EMPTY_PRODUCTS),
-      api.get<RuleSummary[]>("/ai/rules").catch(() => EMPTY_RULES),
-      api.get<TemplateSummary[]>("/templates").catch(() => EMPTY_TEMPLATES),
-    ])
-      .then(([ls, ps, rs, ts]) => {
-        setLeads(ls);
-        setProducts(ps);
-        setRules(rs);
-        setTemplates(ts);
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  return { loading, leads, products, rules, templates };
+  const [leadsQ, productsQ, rulesQ, templatesQ] = queries;
+  return {
+    loading: queries.some(q => q.isLoading),
+    leads:     (leadsQ.data ?? []) as Lead[],
+    products:  productsQ.data ?? [],
+    rules:     rulesQ.data ?? [],
+    templates: templatesQ.data ?? [],
+  };
 }

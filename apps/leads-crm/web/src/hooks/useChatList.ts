@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
+import { QK } from "../lib/query-client";
 import type { ChatTab } from "../components/chat/ChatTabs";
 
 export type ChatRow = {
@@ -28,29 +30,23 @@ export type ChatCounts = { all?: number; dm?: number; group_?: number; attention
 export function useChatList(initialTab: ChatTab = "all", pollMs = 12_000) {
   const [tab, setTab] = useState<ChatTab>(initialTab);
   const [search, setSearch] = useState("");
-  const [chats, setChats] = useState<ChatRow[]>([]);
-  const [counts, setCounts] = useState<ChatCounts>({});
-  const [loading, setLoading] = useState(true);
 
-  const reload = useCallback(async () => {
-    try {
+  const q = useQuery({
+    queryKey: QK.chats(tab, search),
+    queryFn: async () => {
       const qs = new URLSearchParams({ tab, limit: "200" });
       if (search) qs.set("q", search);
-      const d = await api.get<{ chats: ChatRow[]; counts: ChatCounts }>(`/chats/v2?${qs}`);
-      setChats(d.chats);
-      setCounts(d.counts);
-    } catch {
-      // endpoint may be missing in old backends — graceful degrade
-    } finally {
-      setLoading(false);
-    }
-  }, [tab, search]);
+      return api.get<{ chats: ChatRow[]; counts: ChatCounts }>(`/chats/v2?${qs}`);
+    },
+    refetchInterval: pollMs,
+    staleTime: 5_000,
+  });
 
-  useEffect(() => {
-    setLoading(true); void reload();
-    const t = setInterval(reload, pollMs);
-    return () => clearInterval(t);
-  }, [reload, pollMs]);
-
-  return { tab, setTab, search, setSearch, chats, counts, loading, reload };
+  return {
+    tab, setTab, search, setSearch,
+    chats:   q.data?.chats ?? [],
+    counts:  q.data?.counts ?? {},
+    loading: q.isLoading,
+    reload:  () => q.refetch(),
+  };
 }

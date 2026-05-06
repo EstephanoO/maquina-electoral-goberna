@@ -16,7 +16,20 @@
 import { CONFIG } from "./config.js";
 import { getInstanceFor, getTemplatesByCategory, type BotInstance, type Template } from "./instance-config.js";
 import { pickTemplate, applyTemplate } from "./template-picker.js";
-import { generateReply, geminiAvailable } from "./gemini.js";
+import { generateReply as openaiReply, aiAvailable as openaiAvailable } from "./openai.js";
+import { generateReply as geminiReply, geminiAvailable } from "./gemini.js";
+
+/** AI provider chain: OpenAI primero (default), Gemini como fallback. */
+async function aiReply(opts: { systemPrompt: string; userMessage: string }) {
+  if (openaiAvailable()) {
+    const r = await openaiReply(opts);
+    if (r.ok) return r;
+    console.warn(`[ai] openai failed: ${r.reason}${"status" in r && r.status ? ` (${r.status})` : ""}`);
+  }
+  if (geminiAvailable()) return geminiReply(opts);
+  return { ok: false as const, reason: "no_ai_provider" };
+}
+function aiProviderAvailable(): boolean { return openaiAvailable() || geminiAvailable(); }
 
 const COOLDOWN_MS = 30 * 60 * 1000;
 const recentReplies = new Map<string, number>();
@@ -96,9 +109,9 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
   //     está configurada y el proyecto tiene créditos). Si Gemini falla,
   //     caemos al holding template.
   if (!tpl) {
-    if (geminiAvailable()) {
+    if (aiProviderAvailable()) {
       const systemPrompt = buildSystemPrompt(instance);
-      const ai = await generateReply({
+      const ai = await aiReply({
         systemPrompt,
         userMessage: input.body,
       });

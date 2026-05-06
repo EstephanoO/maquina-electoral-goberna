@@ -1,11 +1,13 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { cn } from "../lib/utils";
 import { LogIn } from "lucide-react";
 
 const LOGIN_LOGO = "/goberna-logo.png";
 
-export default function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
+export default function LoginPage(props?: { onLogin?: (token: string) => void }) {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -23,7 +25,9 @@ export default function LoginPage({ onLogin }: { onLogin: (token: string) => voi
       const response = await api.post<{ token: string; user: any }>("/auth/login", { email, password });
       if (response?.token) {
         localStorage.setItem("auth_token", response.token);
-        onLogin(response.token);
+        if (response.user) localStorage.setItem("user", JSON.stringify(response.user));
+        if (props?.onLogin) props.onLogin(response.token);
+        navigate("/", { replace: true });
       } else {
         setError("Login fallido");
       }

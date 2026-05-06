@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import type { Lead } from "../types";
 import { cn, formatMoney, TIER_CONFIG, STAGE_CONFIG } from "../lib/utils";
@@ -6,6 +7,7 @@ import {
   Search, Filter, ChevronLeft, ChevronRight, Users, DollarSign, Crown,
   Repeat, UserCheck, UserX, LayoutGrid, List, Table2, Phone, MapPin,
 } from "lucide-react";
+import { LeadDetail } from "../views/LeadDetail";
 
 const PAGE_SIZE = 50;
 const PIPELINE_PER_STAGE = 30;
@@ -28,7 +30,13 @@ const STAGE_COLORS: Record<string, { bg: string; border: string; text: string; d
   lost:       { bg: "bg-red-50/60",    border: "border-red-200",    text: "text-red-700",    dot: "bg-red-500",    headerBg: "bg-red-100" },
 };
 
-export default function LeadsPage({ onOpenLead }: { onOpenLead: (id: number) => void }) {
+export default function LeadsPage() {
+  const navigate = useNavigate();
+  const params = useParams<{ id?: string }>();
+  const openLeadId = params.id ? Number(params.id) : null;
+  const onOpenLead = (id: number) => navigate(`/leads/${id}`);
+  const onCloseLead = () => navigate("/leads");
+
   const [leads, setLeads] = useState<Lead[]>([]);
   const [q, setQ] = useState("");
   const [tier, setTier] = useState("");
@@ -224,6 +232,15 @@ export default function LeadsPage({ onOpenLead }: { onOpenLead: (id: number) => 
             </>
           )}
         </>
+      )}
+
+      {openLeadId !== null && (
+        <LeadDetail
+          leadId={openLeadId}
+          onClose={onCloseLead}
+          onSaved={() => { /* react-query auto-refresh */ }}
+          onDeleted={onCloseLead}
+        />
       )}
     </div>
   );
