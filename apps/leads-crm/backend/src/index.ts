@@ -9,6 +9,7 @@ import { DEFAULT_COUNTRY_PREFIXES } from "./lib/country.js";
 import { migrate } from "./migrate.js";
 import { sql } from "./sql.js";
 import { renderTemplate, previewVariants } from "./lib/template.js";
+import { embed, vecToPg, embedderAvailable } from "./lib/embedder.js";
 import { getCourses } from "./courses.js";
 import {
   comparePassword, createUser, findUserByEmail, requireAuth, signToken,
@@ -259,12 +260,41 @@ app.get("/leads/:id/interactions", async (req, res) => {
 app.post("/leads/:id/interactions", async (req, res) => {
   const it = await db.addInteraction(Number(req.params.id), req.body);
   if (!it) return res.status(404).json({ error: "lead_not_found" });
+  // Embed inbound messages para lead-memory RAG (Phase D). Sólo message_in
+  // con body útil — outbound del bot/operador no aporta señal de query.
+  if (it.kind === "message_in" && it.body && it.body.length >= 12) {
+    embedInteractionInBackground(it.id, Number(req.params.id), it.body);
+  }
   res.status(201).json(it);
 });
 app.post("/messages", safe(async (req, res) => {
   const r = await db.recordMessage(req.body);
   if (!r) return res.status(400).json({ error: "invalid_phone" });
+  const it = r.interaction;
+  if (it && it.kind === "message_in" && it.body && it.body.length >= 12) {
+    embedInteractionInBackground(it.id, r.lead.id, it.body);
+  }
   res.status(201).json(r);
+}));
+
+// POST /leads/:id/relevant-history { query, topK?, minScore? }
+// Retorna top-K interactions más similares al query, para inyectar como
+// contexto en el AI generative path. Llamado por el bot solo cuando se va
+// por Gemini (no para template matches — no aporta).
+app.post("/leads/:id/relevant-history", safe(async (req, res) => {
+  const leadId = Number(req.params.id);
+  if (!Number.isFinite(leadId)) return res.status(400).json({ error: "invalid_id" });
+  const query = String(req.body?.query ?? "").trim();
+  const topK = Math.min(Math.max(Number(req.body?.topK) || 3, 1), 10);
+  const minScore = typeof req.body?.minScore === "number" ? req.body.minScore : 0.70;
+  if (!query || query.length < 8) return res.json({ history: [], reason: "query_too_short" });
+  if (!embedderAvailable()) return res.json({ history: [], reason: "no_embedder" });
+
+  const r = await embed(query, "RETRIEVAL_QUERY");
+  if (!r.ok) return res.json({ history: [], reason: r.reason });
+
+  const matches = await db.searchInteractionsSemantic(leadId, vecToPg(r.vec), topK, minScore);
+  res.json({ history: matches });
 }));
 
 // Bulk interactions for a single lead (used by WA history sync).
@@ -286,11 +316,17 @@ app.get("/templates/:id", async (req, res) => {
 app.post("/templates", async (req, res) => {
   const { name, body, image_url } = req.body ?? {};
   if (!name || !body) return res.status(400).json({ error: "name_and_body_required" });
-  res.status(201).json(await db.createTemplate({ name, body, image_url }));
+  const t = await db.createTemplate({ name, body, image_url });
+  // Fire-and-forget embed — no bloquear la response. Si falla, queda flagged
+  // por getTemplatesNeedingEmbed y el backfill cron lo recupera.
+  embedTemplateInBackground(t.id, t.body);
+  res.status(201).json(t);
 });
 app.patch("/templates/:id", async (req, res) => {
   const t = await db.updateTemplate(Number(req.params.id), req.body);
   if (!t) return res.status(404).json({ error: "not_found" });
+  // Si body cambió, re-embed. updateTemplate ya devuelve la versión nueva.
+  if (req.body?.body !== undefined) embedTemplateInBackground(t.id, t.body);
   res.json(t);
 });
 app.delete("/templates/:id", async (req, res) => {
@@ -315,6 +351,100 @@ app.post("/templates/preview", (req, res) => {
     asignado: "Carolina",
   }));
 });
+
+// ========== SEMANTIC SEARCH ==========
+// Helpers para embed en background sin bloquear el caller (ej: POST/PATCH templates).
+// Si falla, el template queda con embedding=NULL y `getTemplatesNeedingEmbed` lo
+// recupera en el próximo backfill.
+function embedTemplateInBackground(id: number, body: string) {
+  if (!embedderAvailable() || !body) return;
+  const snippet = body.slice(0, 512);
+  void embed(snippet, "RETRIEVAL_DOCUMENT").then(r => {
+    if (r.ok) return db.setTemplateEmbedding(id, vecToPg(r.vec), snippet);
+    console.warn(`[embed/template ${id}] failed: ${r.reason}`);
+  }).catch(e => console.warn(`[embed/template ${id}] threw:`, e?.message));
+}
+
+function embedRuleInBackground(id: number, name: string) {
+  if (!embedderAvailable() || !name) return;
+  void embed(name, "RETRIEVAL_DOCUMENT").then(r => {
+    if (r.ok) return db.setRuleEmbedding(id, vecToPg(r.vec), name);
+    console.warn(`[embed/rule ${id}] failed: ${r.reason}`);
+  }).catch(e => console.warn(`[embed/rule ${id}] threw:`, e?.message));
+}
+
+function embedInteractionInBackground(interactionId: number, leadId: number, body: string) {
+  if (!embedderAvailable() || !body) return;
+  void embed(body.slice(0, 1024), "RETRIEVAL_DOCUMENT").then(r => {
+    if (r.ok) return db.setInteractionEmbedding(interactionId, leadId, vecToPg(r.vec));
+    console.warn(`[embed/interaction ${interactionId}] failed: ${r.reason}`);
+  }).catch(e => console.warn(`[embed/interaction ${interactionId}] threw:`, e?.message));
+}
+
+// POST /templates/pick-semantic { body }
+// Llamado por el bot cuando el rule-based picker no matcheó. Devuelve el mejor
+// template por similitud coseno. Devuelve null si ningún score supera el threshold.
+app.post("/templates/pick-semantic", safe(async (req, res) => {
+  const body = String(req.body?.body ?? "").trim();
+  if (!body || body.length < 8) return res.json({ template: null, reason: "body_too_short" });
+  if (!embedderAvailable()) return res.json({ template: null, reason: "no_embedder" });
+
+  const r = await embed(body, "RETRIEVAL_QUERY");
+  if (!r.ok) return res.json({ template: null, reason: r.reason });
+
+  const matches = await db.searchTemplatesSemantic(vecToPg(r.vec), 1, 0.72);
+  if (matches.length === 0) return res.json({ template: null, reason: "no_match_above_threshold" });
+
+  const top = matches[0];
+  return res.json({
+    template: { id: top.id, name: top.name, body: top.body, image_url: top.image_url, category: top.category, uses_count: top.uses_count },
+    score: top.score,
+    method: "semantic",
+  });
+}));
+
+// POST /rules/match-semantic { body }
+// Igual que arriba pero para intent. Devuelve top-K rules con score ≥ 0.78.
+app.post("/rules/match-semantic", safe(async (req, res) => {
+  const body = String(req.body?.body ?? "").trim();
+  if (!body || body.length < 8) return res.json({ matches: [], reason: "body_too_short" });
+  if (!embedderAvailable()) return res.json({ matches: [], reason: "no_embedder" });
+
+  const r = await embed(body, "RETRIEVAL_QUERY");
+  if (!r.ok) return res.json({ matches: [], reason: r.reason });
+
+  const matches = await db.searchRulesSemantic(vecToPg(r.vec), 5, 0.78);
+  return res.json({ matches, method: "semantic" });
+}));
+
+// POST /admin/embed/backfill — re-genera embeddings que falten (templates + rules).
+// Idempotente: skipea los que ya tienen embedding y embedding_text coincide.
+app.post("/admin/embed/backfill", requireAuth, safe(async (req, res) => {
+  if (!embedderAvailable()) return res.status(503).json({ error: "no_embedder" });
+
+  const templates = await db.getTemplatesNeedingEmbed();
+  const rules = await db.getRulesNeedingEmbed();
+
+  let tOk = 0, tFail = 0;
+  for (const t of templates) {
+    const snippet = (t.body ?? "").slice(0, 512);
+    if (!snippet) continue;
+    const r = await embed(snippet, "RETRIEVAL_DOCUMENT");
+    if (r.ok) { await db.setTemplateEmbedding(t.id, vecToPg(r.vec), snippet); tOk++; }
+    else { tFail++; }
+  }
+  let rOk = 0, rFail = 0;
+  for (const ru of rules) {
+    if (!ru.name) continue;
+    const r = await embed(ru.name, "RETRIEVAL_DOCUMENT");
+    if (r.ok) { await db.setRuleEmbedding(ru.id, vecToPg(r.vec), ru.name); rOk++; }
+    else { rFail++; }
+  }
+  res.json({
+    templates: { needed: templates.length, ok: tOk, failed: tFail },
+    rules: { needed: rules.length, ok: rOk, failed: rFail },
+  });
+}));
 
 // SEND QUEUE
 app.get("/sends", async (req, res) => {
@@ -903,6 +1033,8 @@ app.post("/ai/rules", async (req, res) => {
             ${enabled !== false}, ${createdBy})
     RETURNING *
   `;
+  // Embed name como canonical-example para semantic intent fallback (Phase C).
+  embedRuleInBackground(rows[0].id, rows[0].name);
   res.status(201).json(rows[0]);
 });
 
@@ -928,6 +1060,13 @@ app.patch("/ai/rules/:id", async (req, res) => {
     RETURNING *
   `;
   if (!rows[0]) return res.status(404).json({ error: "not_found" });
+  // Si el name cambió, re-embed (es nuestra canonical-example string).
+  if (name !== undefined && name !== rows[0].name) {
+    embedRuleInBackground(rows[0].id, rows[0].name);
+  } else if (name !== undefined) {
+    // mismo name pero re-embedeo igual por si la rule era nueva sin embedding.
+    embedRuleInBackground(rows[0].id, rows[0].name);
+  }
   res.json(rows[0]);
 });
 

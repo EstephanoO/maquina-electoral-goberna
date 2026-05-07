@@ -27,7 +27,7 @@ import P from "pino";
 import { join } from "path";
 import { rmSync } from "fs";
 import { CONFIG, type PhoneConfig } from "./config.js";
-import { classifyMessage, getCourse, applyCustomRules } from "./classifier.js";
+import { classifyMessage, getCourse, applyCustomRulesEnriched } from "./classifier.js";
 
 // Slug para tags: "Consultor Político" → "consultor-politico". Usado para que
 // los tags queden consistentes (sin acentos, espacios, mayúsculas).
@@ -567,7 +567,10 @@ export class WAInstance {
     // Custom rules dinámicas — el operador/admin las edita en /training y se
     // aplican sin redeploy (cache 60s en classifier.ts). Devuelve un array de
     // tags que matchearon. Se mergean con los tags hardcoded del PRODUCT_RULES.
-    const customTags = await applyCustomRules(body).catch(() => []);
+    // Enriched = regex first; si nada matchea, semantic fallback (Gemini embed
+    // + pgvector). Tags semánticos llevan prefix `ai-sem:` para audit pero
+    // también la tag plana, así el picker los trata igual que los regex.
+    const customTags = await applyCustomRulesEnriched(body).catch(() => []);
     if (customTags.length > 0) addLog(this.id, `🤖 Custom rules: ${customTags.join(", ")}`);
 
     // Si NO matcheó nada (ni products ni custom), no hay nada que persistir.

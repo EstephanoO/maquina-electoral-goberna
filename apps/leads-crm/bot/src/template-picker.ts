@@ -101,6 +101,104 @@ export function pickTemplate(input: PickInput, allTemplates: Template[]): Templa
   return null;
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Semantic picker — fallback cuando el cascade rule-based devolvió null.
+//
+// Llama al endpoint POST /templates/pick-semantic del API, que embebe el
+// body con Gemini RETRIEVAL_QUERY y compara contra embeddings de todos los
+// templates (RETRIEVAL_DOCUMENT). Threshold 0.72 — empírico-conservador
+// para evitar matches paráfrasis-cercanas pero no relevantes.
+//
+// Por qué llamar al API en vez de hacer cosine local:
+//   1. pgvector con HNSW/ivfflat es más rápido que JS para sets crecientes.
+//   2. Bot no necesita knowledge de embeddings, solo el endpoint.
+//   3. Re-embed al editar templates ya pasa server-side.
+// ─────────────────────────────────────────────────────────────────────
+
+const API_URL = process.env.API_URL || "http://localhost:4010";
+const API_TOKEN = process.env.API_TOKEN || "";
+const SEMANTIC_TIMEOUT_MS = 5000;
+const SEMANTIC_MIN_BODY_LEN = 8;
+
+export type PickMethod = "product" | "tag" | "regex_body" | "semantic" | "none";
+
+export type PickedTemplate = { template: Template; method: PickMethod; score?: number };
+
+async function pickBySemantic(body: string): Promise<{ template: Template; score: number } | null> {
+  if (!body || body.length < SEMANTIC_MIN_BODY_LEN) return null;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (API_TOKEN) headers["Authorization"] = `Bearer ${API_TOKEN}`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), SEMANTIC_TIMEOUT_MS);
+  try {
+    const r = await fetch(`${API_URL}/templates/pick-semantic`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ body }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    if (!r.ok) return null;
+    const j: any = await r.json();
+    if (!j.template) return null;
+    return { template: j.template as Template, score: j.score };
+  } catch (e: any) {
+    clearTimeout(t);
+    console.warn(`[template-picker] semantic call failed: ${e?.message ?? "unknown"}`);
+    return null;
+  }
+}
+
+/**
+ * Variante async — corre cascade rule-based primero, si nada matchea hace
+ * fallback a semantic search. Esto es lo que debería usar auto-reply-v2.
+ *
+ * El método matcheado se devuelve para que el caller pueda loggearlo en
+ * interactions.meta y medir cobertura por estrategia.
+ */
+export async function pickTemplateWithSemantic(input: PickInput, allTemplates: Template[]): Promise<PickedTemplate | null> {
+  const fromProduct = pickByProduct(input.classifiedProducts, allTemplates);
+  if (fromProduct) return { template: fromProduct, method: "product" };
+
+  const tagSet = new Set(input.customTags);
+  const tagToCategory: Array<[string, string]> = [
+    ["intent:brochure_pdf", "brochure"],
+    ["intent:video", "video"],
+    ["intent:pago", "pago"],
+    ["intent:pago_metodos", "pago"],
+    ["intent:matricula", "inscripcion"],
+    ["intent:saludo", "saludo"],
+    ["intent:precio", "info_curso"],
+    ["intent:horario_fecha", "info_curso"],
+    ["intent:info_request", "info_curso"],
+  ];
+  for (const [tag, category] of tagToCategory) {
+    if (tagSet.has(tag)) {
+      const t = pickByCategory(category, allTemplates);
+      if (t) return { template: t, method: "tag" };
+    }
+  }
+
+  if (PAYMENT_RE.test(input.body)) {
+    const t = pickByCategory("pago", allTemplates);
+    if (t) return { template: t, method: "regex_body" };
+  }
+  if (PRICE_RE.test(input.body) || INFO_RE.test(input.body)) {
+    const t = pickByCategory("info_curso", allTemplates);
+    if (t) return { template: t, method: "regex_body" };
+  }
+  if (GREETING_RE.test(input.body)) {
+    const t = pickByCategory("saludo", allTemplates);
+    if (t) return { template: t, method: "regex_body" };
+  }
+
+  // Fallback final: semantic
+  const sem = await pickBySemantic(input.body);
+  if (sem) return { template: sem.template, method: "semantic", score: sem.score };
+
+  return null;
+}
+
 export function applyTemplate(template: Template, instance: BotInstance, ctx: { curso?: string }): string {
   let body = template.body;
   body = body.replace(/\{\{\s*curso\s*\}\}/g, ctx.curso ?? "");

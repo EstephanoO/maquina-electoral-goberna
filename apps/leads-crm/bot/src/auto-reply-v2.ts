@@ -15,10 +15,10 @@
  */
 import { CONFIG } from "./config.js";
 import { getInstanceFor, getTemplatesByCategory, type BotInstance, type Template } from "./instance-config.js";
-import { pickTemplate, applyTemplate } from "./template-picker.js";
+import { pickTemplate, pickTemplateWithSemantic, applyTemplate } from "./template-picker.js";
 import { generateReply as openaiReply, aiAvailable as openaiAvailable } from "./openai.js";
 import { generateReply as geminiReply, geminiAvailable } from "./gemini.js";
-import { getRecentHistory, formatHistoryForPrompt } from "./conversation-memory.js";
+import { getRecentHistory, formatHistoryForPrompt, getRelevantHistory, formatRelevantForPrompt } from "./conversation-memory.js";
 
 /** AI provider chain: OpenAI primero (default), Gemini como fallback. */
 async function aiReply(opts: { systemPrompt: string; userMessage: string }) {
@@ -103,13 +103,19 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
     return { sent: false, reason: `cooldown for ${input.fromPhone}` };
   }
 
-  // 3. Pick template
+  // 3. Pick template — cascade rule-based + semantic fallback (~80ms latency
+  //    extra solo si todas las reglas fallaron; cubre paráfrasis y mensajes
+  //    que la regex no atrapa).
   const cats = await getTemplatesByCategory();
   const allTemplates = [...cats.values()].flat();
-  const tpl = pickTemplate(
+  const picked = await pickTemplateWithSemantic(
     { body: input.body, classifiedProducts: input.classifiedProducts, customTags: input.customTags },
     allTemplates
   );
+  const tpl = picked?.template ?? null;
+  const pickerMethod = picked?.method ?? "none";
+  const pickerScore = picked?.score;
+  void pickTemplate; // referenced para evitar dead-code warning, sigue exportada para tests
 
   // 3b. Si NO hay match con templates, intentamos Gemini primero (si la key
   //     está configurada y el proyecto tiene créditos). Si Gemini falla,
@@ -117,12 +123,25 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
   if (!tpl) {
     if (aiProviderAvailable()) {
       const baseSystemPrompt = buildSystemPrompt(instance);
-      // ── CONVERSATION MEMORY: incluye historial reciente como contexto ──
+      // ── CONVERSATION MEMORY (cronológico) + RAG (semántico) ──
+      // Las dos cosas en paralelo: el cronológico da continuidad de la conver-
+      // sación reciente; el RAG trae menciones viejas relevantes al mensaje
+      // actual ("¿cuándo empezaba el de marketing?" → mensaje de hace 2 sema-
+      // nas con la fecha exacta). Total ~150ms en paralelo.
       let systemPrompt = baseSystemPrompt;
       if (input.leadId) {
-        const history = await getRecentHistory(input.leadId, 10);
+        const [history, relevant] = await Promise.all([
+          getRecentHistory(input.leadId, 10),
+          getRelevantHistory(input.leadId, input.body, 3),
+        ]);
         if (history.length > 0) {
           systemPrompt += `\n\n--- Historial reciente con este lead ---\n${formatHistoryForPrompt(history)}\n--- Fin historial ---`;
+        }
+        // Si hay relevantes que NO están ya en el cronológico, agregarlos.
+        const recentIds = new Set(history.map(h => h.text.slice(0, 60)));
+        const novel = relevant.filter(r => !recentIds.has(r.body.slice(0, 60)));
+        if (novel.length > 0) {
+          systemPrompt += `\n\n--- Mensajes anteriores relevantes a la consulta actual ---\n${formatRelevantForPrompt(novel)}\n--- Fin relevantes ---`;
         }
       }
       const ai = await aiReply({
@@ -198,6 +217,10 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
     document_mime: tpl.document_mime ?? null,
     video_url: tpl.video_url ?? null,
     sequence: sequence.length > 0 ? sequence : undefined,
+    // Tracking del método de match para análisis posterior. El caller debe
+    // pasarlo a interactions.meta.picker_method al loggear el message_out.
+    picker_method: pickerMethod,
+    picker_score: pickerScore,
   } as any;
 }
 

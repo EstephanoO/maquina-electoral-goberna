@@ -2,7 +2,10 @@ name: leads-crm
 
 services:
   db:
-    image: postgres:16-alpine
+    # pgvector image = postgres:16 + extension preinstalada. Drop-in para postgres:16-alpine
+    # — mismo major version, pgdata volume es compatible. Requerido por migration 040
+    # (templates/rules embeddings + interaction_embeddings).
+    image: pgvector/pgvector:pg16
     container_name: leads_crm_db
     restart: unless-stopped
     environment:
@@ -35,6 +38,9 @@ services:
       MOODLE_WS_URL: ${MOODLE_WS_URL:-https://campus.grupogoberna.com/webservice/rest/server.php}
       MOODLE_WS_TOKEN: ${MOODLE_WS_TOKEN:-}
       BOT_URL: http://bot:4020
+      # Embedder para semantic search (templates/rules backfill + on-edit hooks).
+      # Mismo modelo que el bot — text-embedding-004, 768 dims.
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     ports:
       - "${API_PORT:-4010}:4000"
     volumes:

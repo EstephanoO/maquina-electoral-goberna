@@ -157,3 +157,70 @@ export async function applyCustomRules(body: string): Promise<string[]> {
   }
   return Array.from(tags);
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Semantic intent fallback — solo se activa cuando applyCustomRules
+// devolvió 0 tags y el body es lo suficientemente largo (mensajes muy
+// cortos son saludos/sí/no que no necesitan embeddings).
+//
+// Threshold: 0.78 cosine sim (server-side). Más estricto que el del
+// template picker porque un false-positive de intent dispara el flow
+// equivocado del bot, mientras que el picker solo elige un template más
+// y el operador siempre puede revisar.
+//
+// Tag prefix `ai-sem:` permite distinguir matches semánticos de regex en
+// la UI/audit. Para que el picker (que matchea por tag exacto como
+// "intent:precio") siga funcionando, también agregamos la tag plana.
+// ─────────────────────────────────────────────────────────────────────
+
+const SEMANTIC_INTENT_TIMEOUT_MS = 5_000;
+const SEMANTIC_INTENT_MIN_BODY_LEN = 12;
+
+async function fetchSemanticRuleMatches(body: string): Promise<Array<{ tag: string; score: number }>> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (API_TOKEN) headers["Authorization"] = `Bearer ${API_TOKEN}`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), SEMANTIC_INTENT_TIMEOUT_MS);
+  try {
+    const r = await fetch(`${API_URL}/rules/match-semantic`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ body }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    if (!r.ok) return [];
+    const j: any = await r.json();
+    return Array.isArray(j.matches) ? j.matches : [];
+  } catch (e: any) {
+    clearTimeout(t);
+    console.warn(`[classifier] semantic call failed: ${e?.message ?? "unknown"}`);
+    return [];
+  }
+}
+
+/**
+ * Aplica regex rules + (si nada matcheó) semantic fallback.
+ *
+ * Reemplaza a applyCustomRules en el caller principal. Cae back a regex si
+ * la API o embedder fallan — ningún failure mode puede romper el flow del
+ * bot, en peor caso el comportamiento queda igual que con applyCustomRules.
+ */
+export async function applyCustomRulesEnriched(body: string): Promise<string[]> {
+  const regexTags = await applyCustomRules(body);
+  if (regexTags.length > 0) return regexTags;
+  if (!body || body.length < SEMANTIC_INTENT_MIN_BODY_LEN) return regexTags;
+
+  const matches = await fetchSemanticRuleMatches(body);
+  if (matches.length === 0) return regexTags;
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of matches) {
+    if (!m.tag) continue;
+    const flagged = m.tag.startsWith("ai-sem:") ? m.tag : `ai-sem:${m.tag}`;
+    if (!seen.has(flagged)) { seen.add(flagged); out.push(flagged); }
+    if (!seen.has(m.tag)) { seen.add(m.tag); out.push(m.tag); }
+  }
+  return out;
+}
