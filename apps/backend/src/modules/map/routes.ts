@@ -205,8 +205,11 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
       const contentType = response.headers.get("content-type") ?? "application/x-protobuf";
 
       // Browser cache: zoom-tiered TTL with stale-while-revalidate
-      const browserMaxAge = zNum <= 7 ? 3600 : zNum <= 12 ? 600 : 120;
-      reply.header("Cache-Control", `public, max-age=${browserMaxAge}, stale-while-revalidate=600`);
+      // Cache aggressive en zooms pre-bakeados (3-10) — polygons no cambian a diario.
+      // En z>=11 cache mas corto porque priority/sector pueden actualizarse y son menos pesados.
+      const browserMaxAge = zNum <= 10 ? 86400 : zNum <= 14 ? 1800 : 300;
+      const swr = zNum <= 10 ? 604800 : 3600;
+      reply.header("Cache-Control", `public, max-age=${browserMaxAge}, stale-while-revalidate=${swr}`);
       if (etag) reply.header("ETag", etag);
       if (lastModified) reply.header("Last-Modified", lastModified);
       reply.header("X-Tile-Zoom", zNum.toString());
@@ -220,14 +223,11 @@ export function buildMapRoutes(env: AppEnv): FastifyPluginAsync {
       }
 
       reply.header("Content-Type", contentType);
-      const contentEncoding = response.headers.get("content-encoding");
-      if (contentEncoding) reply.header("Content-Encoding", contentEncoding);
+      // Removed: fetch() ya descomprime el body, forwardear CE rompe el tile en el browser
+      // (era: if (contentEncoding) reply.header("Content-Encoding", contentEncoding))
 
-      // Stream response body directly — avoid double-buffering (ArrayBuffer → Buffer copy)
-      if (response.body) {
-        return reply.send(response.body);
-      }
-      // Fallback for runtimes without ReadableStream body
+      // Buffer body — needed para que @fastify/compress pueda gzipear el MVT.
+      // El stream pass-through saltea la compresion; ~46KB raw → ~10KB gzip vale la latencia extra.
       const body = Buffer.from(await response.arrayBuffer());
       return reply.send(body);
     });

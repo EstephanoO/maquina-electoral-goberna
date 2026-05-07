@@ -45,8 +45,10 @@ export type JwtPayload = {
   email: string;
   role: string;
   region?: string | null;
-  campaign_ids: string[];
-  /** Map of campaign_id -> permission flags */
+  // DEPRECATED en JWT desde 2026-05-06 (cookie >4096 bytes para admin).
+  // El authenticate middleware fetchea campaigns desde DB con cache.
+  // Mantenemos opcional por backward compat con tokens viejos en el aire.
+  campaign_ids?: string[];
   campaign_perms?: Record<string, CampaignPerms>;
   iat?: number;
   exp?: number;

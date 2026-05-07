@@ -9,7 +9,10 @@ port = ":8080"
 # Tegola internal Redis cache — geographic data is static, cache aggressively
 [cache]
 type = "redis"
-uri = "redis://:${REDIS_PASSWORD}@redis:6379/0"
+network = "tcp"
+address = "maquina_electoral_redis:6379"
+password = "maquina_electoral_redis_production_2026"
+db = 0
 max_zoom = 14
 
 [[providers]]
