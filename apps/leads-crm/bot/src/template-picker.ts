@@ -23,6 +23,9 @@ export type PickInput = {
   body: string;                  // raw inbound text
   classifiedProducts: string[];  // from classifier.classifyMessage
   customTags: string[];          // from custom rules
+  /** País del lead (derivado del prefix del phone). Filtra learned_replies
+   *  para que un lead PE no reciba respuestas con $MXN. NULL = sin filter. */
+  country?: string | null;
 };
 
 const GREETING_RE = /^(hola[,!.\s]|buen[oa]s?\s*(d[ií]as|tardes|noches)|hey|saludos)/i;
@@ -138,7 +141,7 @@ export type PickedTemplate = {
  * del histórico manual de Kathy. Auto-uso solo si has_pii=false; si tiene
  * PII queda como sugerencia para operador, no como template del bot.
  */
-async function pickByLearnedReply(body: string): Promise<{ id: number; response: string; original_query: string; score: number } | null> {
+async function pickByLearnedReply(body: string, country: string | null = null): Promise<{ id: number; response: string; original_query: string; score: number } | null> {
   if (!body || body.length < SEMANTIC_MIN_BODY_LEN) return null;
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (API_TOKEN) headers["Authorization"] = `Bearer ${API_TOKEN}`;
@@ -148,7 +151,7 @@ async function pickByLearnedReply(body: string): Promise<{ id: number; response:
     const r = await fetch(`${API_URL}/learned-replies/match`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ body }),
+      body: JSON.stringify({ body, country }),
       signal: ctrl.signal,
     });
     clearTimeout(t);
@@ -196,11 +199,33 @@ async function pickBySemantic(body: string): Promise<{ template: Template; score
  * interactions.meta y medir cobertura por estrategia.
  */
 export async function pickTemplateWithSemantic(input: PickInput, allTemplates: Template[]): Promise<PickedTemplate | null> {
+  const tagSet = new Set(input.customTags);
+
+  // PRIORIDAD MAX: tags que ganan ANTES que product. Replicamos el patrón
+  // real de Kathy — para inbounds de IA Marketing primero qualifica con la
+  // pregunta opener (sales_opener_ia), y el flyer lo manda en el turno
+  // siguiente cuando el lead confirma interés. Si dejamos que product gane,
+  // el bot saltea la qualificación humana y manda directo el flyer con $150.
+  // Migration 045 + sesión 2026-05-07.
+  const HIGH_PRIORITY_TAGS: Array<[string, string]> = [
+    ["intent:sales_opener_ia", "sales_opener_ia"],
+  ];
+  for (const [tag, category] of HIGH_PRIORITY_TAGS) {
+    if (tagSet.has(tag)) {
+      const t = pickByCategory(category, allTemplates);
+      if (t) return { template: t, method: "tag" };
+    }
+  }
+
   const fromProduct = pickByProduct(input.classifiedProducts, allTemplates);
   if (fromProduct) return { template: fromProduct, method: "product" };
 
-  const tagSet = new Set(input.customTags);
   const tagToCategory: Array<[string, string]> = [
+    // Top patterns Kathy (sesión 2026-05-07): específicos primero, antes que
+    // los buckets genéricos de pago/info que matchean más amplio y robarían
+    // estos hits.
+    ["intent:pago_completed", "datos_registro"],
+    ["intent:duracion", "info_duracion"],
     ["intent:brochure_pdf", "brochure"],
     ["intent:video", "video"],
     ["intent:pago", "pago"],
@@ -222,7 +247,7 @@ export async function pickTemplateWithSemantic(input: PickInput, allTemplates: T
   // de Kathy a "info de consultoria" es siempre mejor que un template
   // estático "info_curso" — usa el tono y los detalles que probaron servir.
   // Solo cae a regex/semantic si learned no devuelve nada con score alto.
-  const learned = await pickByLearnedReply(input.body);
+  const learned = await pickByLearnedReply(input.body, input.country ?? null);
   if (learned) {
     const synthetic: Template = {
       id: -learned.id,                      // id negativo para que no choque con templates reales en logs
