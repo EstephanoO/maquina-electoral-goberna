@@ -490,7 +490,7 @@ export class WAInstance {
     });
 
     if (!result) { addLog(this.id, `⚠ recordMessage returned null for ${phone}`); return; }
-    const { lead, interaction, recent_manual_out_at } = result;
+    const { lead, interaction, recent_manual_out_at, prior_msg_count } = result;
     addLog(this.id, `✅ CRM saved: lead=${lead.id} (${lead.name}) interaction=${interaction?.id ?? "dedup"} dir=${isFromMe ? "out" : "in"}`);
 
     // 2. Classify + auto-reply: SOLO inbound DMs. Mensajes propios del
@@ -668,10 +668,11 @@ export class WAInstance {
         classifiedProducts: classified.products,
         customTags,
         leadId: lead?.id,
-        // Sprint 2 hotfixes F1+F2+F3:
+        // Sprint 2 hotfixes F1+F2+F3+F6:
         leadStage: lead?.stage ?? null,
         recentManualOutAt: recent_manual_out_at ?? null,
         leadCountry: lead?.country ?? null,
+        priorMsgCount: prior_msg_count ?? 0,
       });
       if (decision.sent) {
         addLog(this.id, `🤖 auto-reply: matched template "${decision.template_name}"${decision.image_url ? " 📷" : ""} — typing…`);

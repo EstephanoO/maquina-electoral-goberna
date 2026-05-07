@@ -129,6 +129,10 @@ export type AutoReplyInput = {
   /** País detectado del lead (Sprint 2 hotfix F3). Pasado al system prompt
    *  + filter de learned_replies para evitar mezclar precios y cuentas. */
   leadCountry?: string | null;
+  /** Cantidad de message_in/out anteriores al actual. 0 = lead nuevo.
+   *  Sprint 2 hotfix F6: bot solo responde a leads nuevos por ahora — si
+   *  ya hubo conversación, el operador la maneja. */
+  priorMsgCount?: number;
 };
 
 export type AutoReplyMessage = {
@@ -248,6 +252,15 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
       const ageMin = Math.round(ageMs / 60_000);
       return { sent: false, reason: `operator active (manual out ${ageMin}min ago)` };
     }
+  }
+
+  // 1f. Sprint 2 hotfix F6 (decisión user 2026-05-07: "que el bot por ahora
+  //     solo responda a leads nuevos"). priorMsgCount = mensajes previos al
+  //     actual. 0 = primer contacto. Si hay historia → operador maneja.
+  //     Toggle vía env: BOT_NEW_LEADS_ONLY=false desactiva este check.
+  const newLeadsOnly = (process.env.BOT_NEW_LEADS_ONLY ?? "true").toLowerCase() !== "false";
+  if (newLeadsOnly && (input.priorMsgCount ?? 0) > 0) {
+    return { sent: false, reason: `skip non-new lead (${input.priorMsgCount} prior msgs)` };
   }
 
   // 2. Cooldown check

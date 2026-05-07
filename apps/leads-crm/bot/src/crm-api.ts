@@ -32,6 +32,10 @@ export interface RecordMessageResult {
    *  operador en últimos 10 min. Si presente, el bot NO debe disparar
    *  auto-reply — está activa una conversación humana. */
   recent_manual_out_at: string | null;
+  /** Sprint 2 hotfix F6: count de message_in/out anteriores al recién
+   *  insertado. 0 = lead nuevo (primer contacto). El bot solo responde
+   *  a leads nuevos hasta que el cascade esté más afinado. */
+  prior_msg_count: number;
 }
 
 export interface AiSuggestion {

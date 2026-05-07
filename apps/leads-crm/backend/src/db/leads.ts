@@ -190,6 +190,10 @@ export async function recordMessage(input: {
    *  últimos 10 min, o null. Sprint 2 hotfix F2: bot debe NO interrumpir
    *  conversación activa del operador. */
   recent_manual_out_at: string | null;
+  /** Cuántos message_in/out tenía el lead ANTES del que recién insertamos.
+   *  0 = primer contacto (lead nuevo). Sprint 2 hotfix F6: bot solo
+   *  responde a leads nuevos por seguridad mientras se afina el cascade. */
+  prior_msg_count: number;
 } | null> {
   const cleanName = sanitizeContactName(input.name, input.phone);
 
@@ -245,5 +249,17 @@ export async function recordMessage(input: {
   `;
   const recent_manual_out_at = recentRows[0]?.ts ?? null;
 
-  return { lead, interaction, recent_manual_out_at };
+  // Sprint 2 hotfix F6: count de mensajes previos al actual. 0 = lead nuevo.
+  // Excluye al recién insertado (interaction.id) para no contarse a sí mismo.
+  // Solo cuenta message_in/out — ignoramos lead_created, stage_change, etc.
+  const priorRows = await sql<Array<{ c: number }>>`
+    SELECT count(*)::int AS c
+      FROM interactions
+     WHERE lead_id = ${lead.id}
+       AND kind IN ('message_in', 'message_out')
+       AND id <> ${interaction?.id ?? -1}
+  `;
+  const prior_msg_count = priorRows[0]?.c ?? 0;
+
+  return { lead, interaction, recent_manual_out_at, prior_msg_count };
 }
