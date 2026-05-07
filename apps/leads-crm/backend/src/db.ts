@@ -601,6 +601,12 @@ export const db = {
     // top-1 si están sobre-representados. Los excluimos del mining set.
     const WAME_PRECANNED_RE = '^[¡¿]?\\s*hola[!.,]?\\s*(deseo\\s+inscribirme|quiero\\s+m[aá]s\\s+informaci[oó]n|me\\s+interesa\\s+(el|la|este)\\s+(diploma|curso|programa))';
 
+    // Skip bodies que SON puro placeholder de media — Baileys/histórico a veces
+    // logueó "🖼 [imagen]" como body cuando el mensaje real era una imagen con
+    // o sin caption. Si el mining concatena esos bodies, el response del bot
+    // termina con string "🖼 [imagen]" literal que el lead recibe.
+    const MEDIA_PLACEHOLDER_RE = '^[🖼🎤🩵📄]?\\s*(\\[(imagen|image|video|audio|sticker|document)\\]|🎤\\s*\\[nota de voz\\])\\s*$';
+
     const rows = await sql`
       WITH next_in AS (
         -- Para cada inbound, calcula el timestamp del siguiente inbound
@@ -640,6 +646,7 @@ export const db = {
               AND COALESCE((i_out.meta->>'auto_reply')::boolean, false) = false
               AND i_out.body IS NOT NULL
               AND length(i_out.body) >= 5
+              AND i_out.body !~ ${MEDIA_PLACEHOLDER_RE}
           ) AS outbound_id,
           -- Dedup: si el operador re-envió el mismo template (caso típico
           -- en broadcasts), agarramos solo la primera ocurrencia de cada
