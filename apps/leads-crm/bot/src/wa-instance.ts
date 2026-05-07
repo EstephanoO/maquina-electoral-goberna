@@ -573,31 +573,33 @@ export class WAInstance {
     const customTags = await applyCustomRulesEnriched(body).catch(() => []);
     if (customTags.length > 0) addLog(this.id, `🤖 Custom rules: ${customTags.join(", ")}`);
 
-    // Si NO matcheó nada (ni products ni custom), no hay nada que persistir.
-    if (classified.products.length === 0 && customTags.length === 0) return;
-
     if (classified.products.length > 0) {
       console.log(`[bot:${this.id}] 🏷️ Classified: ${classified.products.join(", ")} for ${contactName || phone}`);
     }
 
-    // Persistir clasificación + custom rules tags al lead.
-    const productTags = classified.products.map((p) => `interés:${slugifyTag(p)}`);
-    const tagsToAdd = [...productTags, ...customTags];
-    const primaryCourse = classified.products[0]
-      ? getCourse(classified.products[0]) || classified.products[0]
-      : null;
+    // Persistir clasificación + custom rules tags al lead — solo si hubo
+    // matching. Si no hubo nada, saltamos el updateLead pero seguimos hasta
+    // auto-reply (el cascade del picker tiene fallbacks: regex/semantic/IA
+    // que pueden cubrir mensajes que el clasificador básico no atrapó).
+    if (classified.products.length > 0 || customTags.length > 0) {
+      const productTags = classified.products.map((p) => `interés:${slugifyTag(p)}`);
+      const tagsToAdd = [...productTags, ...customTags];
+      const primaryCourse = classified.products[0]
+        ? getCourse(classified.products[0]) || classified.products[0]
+        : null;
 
-    try {
-      const existingTags = (lead as { tags?: string[] }).tags ?? [];
-      const mergedTags = Array.from(new Set([...existingTags, ...tagsToAdd]));
+      try {
+        const existingTags = (lead as { tags?: string[] }).tags ?? [];
+        const mergedTags = Array.from(new Set([...existingTags, ...tagsToAdd]));
 
-      await crmApi.updateLead(lead.id, {
-        tags: mergedTags,
-        ...(primaryCourse && !(lead as { course?: string | null }).course ? { course: primaryCourse } : {}),
-      });
-      addLog(this.id, `✅ Lead updated: tags+=${tagsToAdd.join(",")}${primaryCourse ? ` course=${primaryCourse}` : ""}`);
-    } catch (e: any) {
-      addLog(this.id, `⚠ updateLead failed: ${e.message}`);
+        await crmApi.updateLead(lead.id, {
+          tags: mergedTags,
+          ...(primaryCourse && !(lead as { course?: string | null }).course ? { course: primaryCourse } : {}),
+        });
+        addLog(this.id, `✅ Lead updated: tags+=${tagsToAdd.join(",")}${primaryCourse ? ` course=${primaryCourse}` : ""}`);
+      } catch (e: any) {
+        addLog(this.id, `⚠ updateLead failed: ${e.message}`);
+      }
     }
 
     // ── INVALIDAR MEMORY antes de cualquier AI call ──
