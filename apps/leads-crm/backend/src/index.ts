@@ -9,6 +9,7 @@ import { DEFAULT_COUNTRY_PREFIXES } from "./lib/country.js";
 import { migrate } from "./migrate.js";
 import { sql } from "./sql.js";
 import { renderTemplate, previewVariants } from "./lib/template.js";
+import { embed, vecToPg, embedderAvailable } from "./lib/embedder.js";
 import { getCourses } from "./courses.js";
 import {
   comparePassword, createUser, findUserByEmail, requireAuth, signToken,
@@ -123,6 +124,14 @@ app.use((req, res, next) => {
   // (clasificador en runtime) sin auth — los demás verbos requieren auth
   // porque solo UI/admin debería editar reglas.
   if (req.method === "GET" && req.path === "/ai/rules") return next();
+  // Bot reads instance config + templates to drive auto-reply (DB-driven). GET only.
+  if (req.method === "GET" && (req.path === "/config/instances" || req.path === "/templates" || req.path === "/campaigns/queue")) return next();
+  if (req.method === "POST" && /^\/campaigns\/recipient\/[0-9]+\/(sent|failed)$/.test(req.path)) return next();
+  // Bot signals attention queue
+  if (req.method === "POST" && /^\/\leads\/[0-9]+\/flag-attention$/.test(req.path)) return next();
+  if (req.method === "GET"  && req.path.startsWith("/appointment-slots/available")) return next();
+  if (req.method === "POST" && req.path === "/appointments") return next();
+  if (req.method === "GET"  && /^\/leads\/[0-9]+\/interactions$/.test(req.path)) return next();
   return requireAuth(req, res, next);
 });
 
@@ -251,12 +260,41 @@ app.get("/leads/:id/interactions", async (req, res) => {
 app.post("/leads/:id/interactions", async (req, res) => {
   const it = await db.addInteraction(Number(req.params.id), req.body);
   if (!it) return res.status(404).json({ error: "lead_not_found" });
+  // Embed inbound messages para lead-memory RAG (Phase D). Sólo message_in
+  // con body útil — outbound del bot/operador no aporta señal de query.
+  if (it.kind === "message_in" && it.body && it.body.length >= 12) {
+    embedInteractionInBackground(it.id, Number(req.params.id), it.body);
+  }
   res.status(201).json(it);
 });
 app.post("/messages", safe(async (req, res) => {
   const r = await db.recordMessage(req.body);
   if (!r) return res.status(400).json({ error: "invalid_phone" });
+  const it = r.interaction;
+  if (it && it.kind === "message_in" && it.body && it.body.length >= 12) {
+    embedInteractionInBackground(it.id, r.lead.id, it.body);
+  }
   res.status(201).json(r);
+}));
+
+// POST /leads/:id/relevant-history { query, topK?, minScore? }
+// Retorna top-K interactions más similares al query, para inyectar como
+// contexto en el AI generative path. Llamado por el bot solo cuando se va
+// por Gemini (no para template matches — no aporta).
+app.post("/leads/:id/relevant-history", safe(async (req, res) => {
+  const leadId = Number(req.params.id);
+  if (!Number.isFinite(leadId)) return res.status(400).json({ error: "invalid_id" });
+  const query = String(req.body?.query ?? "").trim();
+  const topK = Math.min(Math.max(Number(req.body?.topK) || 3, 1), 10);
+  const minScore = typeof req.body?.minScore === "number" ? req.body.minScore : 0.70;
+  if (!query || query.length < 8) return res.json({ history: [], reason: "query_too_short" });
+  if (!embedderAvailable()) return res.json({ history: [], reason: "no_embedder" });
+
+  const r = await embed(query, "RETRIEVAL_QUERY");
+  if (!r.ok) return res.json({ history: [], reason: r.reason });
+
+  const matches = await db.searchInteractionsSemantic(leadId, vecToPg(r.vec), topK, minScore);
+  res.json({ history: matches });
 }));
 
 // Bulk interactions for a single lead (used by WA history sync).
@@ -278,11 +316,17 @@ app.get("/templates/:id", async (req, res) => {
 app.post("/templates", async (req, res) => {
   const { name, body, image_url } = req.body ?? {};
   if (!name || !body) return res.status(400).json({ error: "name_and_body_required" });
-  res.status(201).json(await db.createTemplate({ name, body, image_url }));
+  const t = await db.createTemplate({ name, body, image_url });
+  // Fire-and-forget embed — no bloquear la response. Si falla, queda flagged
+  // por getTemplatesNeedingEmbed y el backfill cron lo recupera.
+  embedTemplateInBackground(t.id, t.body);
+  res.status(201).json(t);
 });
 app.patch("/templates/:id", async (req, res) => {
   const t = await db.updateTemplate(Number(req.params.id), req.body);
   if (!t) return res.status(404).json({ error: "not_found" });
+  // Si body cambió, re-embed. updateTemplate ya devuelve la versión nueva.
+  if (req.body?.body !== undefined) embedTemplateInBackground(t.id, t.body);
   res.json(t);
 });
 app.delete("/templates/:id", async (req, res) => {
@@ -307,6 +351,100 @@ app.post("/templates/preview", (req, res) => {
     asignado: "Carolina",
   }));
 });
+
+// ========== SEMANTIC SEARCH ==========
+// Helpers para embed en background sin bloquear el caller (ej: POST/PATCH templates).
+// Si falla, el template queda con embedding=NULL y `getTemplatesNeedingEmbed` lo
+// recupera en el próximo backfill.
+function embedTemplateInBackground(id: number, body: string) {
+  if (!embedderAvailable() || !body) return;
+  const snippet = body.slice(0, 512);
+  void embed(snippet, "RETRIEVAL_DOCUMENT").then(r => {
+    if (r.ok) return db.setTemplateEmbedding(id, vecToPg(r.vec), snippet);
+    console.warn(`[embed/template ${id}] failed: ${r.reason}`);
+  }).catch(e => console.warn(`[embed/template ${id}] threw:`, e?.message));
+}
+
+function embedRuleInBackground(id: number, name: string) {
+  if (!embedderAvailable() || !name) return;
+  void embed(name, "RETRIEVAL_DOCUMENT").then(r => {
+    if (r.ok) return db.setRuleEmbedding(id, vecToPg(r.vec), name);
+    console.warn(`[embed/rule ${id}] failed: ${r.reason}`);
+  }).catch(e => console.warn(`[embed/rule ${id}] threw:`, e?.message));
+}
+
+function embedInteractionInBackground(interactionId: number, leadId: number, body: string) {
+  if (!embedderAvailable() || !body) return;
+  void embed(body.slice(0, 1024), "RETRIEVAL_DOCUMENT").then(r => {
+    if (r.ok) return db.setInteractionEmbedding(interactionId, leadId, vecToPg(r.vec));
+    console.warn(`[embed/interaction ${interactionId}] failed: ${r.reason}`);
+  }).catch(e => console.warn(`[embed/interaction ${interactionId}] threw:`, e?.message));
+}
+
+// POST /templates/pick-semantic { body }
+// Llamado por el bot cuando el rule-based picker no matcheó. Devuelve el mejor
+// template por similitud coseno. Devuelve null si ningún score supera el threshold.
+app.post("/templates/pick-semantic", safe(async (req, res) => {
+  const body = String(req.body?.body ?? "").trim();
+  if (!body || body.length < 8) return res.json({ template: null, reason: "body_too_short" });
+  if (!embedderAvailable()) return res.json({ template: null, reason: "no_embedder" });
+
+  const r = await embed(body, "RETRIEVAL_QUERY");
+  if (!r.ok) return res.json({ template: null, reason: r.reason });
+
+  const matches = await db.searchTemplatesSemantic(vecToPg(r.vec), 1, 0.72);
+  if (matches.length === 0) return res.json({ template: null, reason: "no_match_above_threshold" });
+
+  const top = matches[0];
+  return res.json({
+    template: { id: top.id, name: top.name, body: top.body, image_url: top.image_url, category: top.category, uses_count: top.uses_count },
+    score: top.score,
+    method: "semantic",
+  });
+}));
+
+// POST /rules/match-semantic { body }
+// Igual que arriba pero para intent. Devuelve top-K rules con score ≥ 0.78.
+app.post("/rules/match-semantic", safe(async (req, res) => {
+  const body = String(req.body?.body ?? "").trim();
+  if (!body || body.length < 8) return res.json({ matches: [], reason: "body_too_short" });
+  if (!embedderAvailable()) return res.json({ matches: [], reason: "no_embedder" });
+
+  const r = await embed(body, "RETRIEVAL_QUERY");
+  if (!r.ok) return res.json({ matches: [], reason: r.reason });
+
+  const matches = await db.searchRulesSemantic(vecToPg(r.vec), 5, 0.78);
+  return res.json({ matches, method: "semantic" });
+}));
+
+// POST /admin/embed/backfill — re-genera embeddings que falten (templates + rules).
+// Idempotente: skipea los que ya tienen embedding y embedding_text coincide.
+app.post("/admin/embed/backfill", requireAuth, safe(async (req, res) => {
+  if (!embedderAvailable()) return res.status(503).json({ error: "no_embedder" });
+
+  const templates = await db.getTemplatesNeedingEmbed();
+  const rules = await db.getRulesNeedingEmbed();
+
+  let tOk = 0, tFail = 0;
+  for (const t of templates) {
+    const snippet = (t.body ?? "").slice(0, 512);
+    if (!snippet) continue;
+    const r = await embed(snippet, "RETRIEVAL_DOCUMENT");
+    if (r.ok) { await db.setTemplateEmbedding(t.id, vecToPg(r.vec), snippet); tOk++; }
+    else { tFail++; }
+  }
+  let rOk = 0, rFail = 0;
+  for (const ru of rules) {
+    if (!ru.name) continue;
+    const r = await embed(ru.name, "RETRIEVAL_DOCUMENT");
+    if (r.ok) { await db.setRuleEmbedding(ru.id, vecToPg(r.vec), ru.name); rOk++; }
+    else { rFail++; }
+  }
+  res.json({
+    templates: { needed: templates.length, ok: tOk, failed: tFail },
+    rules: { needed: rules.length, ok: rOk, failed: rFail },
+  });
+}));
 
 // SEND QUEUE
 app.get("/sends", async (req, res) => {
@@ -895,6 +1033,8 @@ app.post("/ai/rules", async (req, res) => {
             ${enabled !== false}, ${createdBy})
     RETURNING *
   `;
+  // Embed name como canonical-example para semantic intent fallback (Phase C).
+  embedRuleInBackground(rows[0].id, rows[0].name);
   res.status(201).json(rows[0]);
 });
 
@@ -920,6 +1060,13 @@ app.patch("/ai/rules/:id", async (req, res) => {
     RETURNING *
   `;
   if (!rows[0]) return res.status(404).json({ error: "not_found" });
+  // Si el name cambió, re-embed (es nuestra canonical-example string).
+  if (name !== undefined && name !== rows[0].name) {
+    embedRuleInBackground(rows[0].id, rows[0].name);
+  } else if (name !== undefined) {
+    // mismo name pero re-embedeo igual por si la rule era nueva sin embedding.
+    embedRuleInBackground(rows[0].id, rows[0].name);
+  }
   res.json(rows[0]);
 });
 
@@ -1217,6 +1364,1104 @@ app.delete("/products/:id", requireAuth, async (req, res) => {
 });
 
 // ==================== END PRODUCTS ====================
+
+// ==================== CONFIGURACIÓN: PIPELINE / INSTANCES / BANCOS ====================
+
+// ── Pipeline stages CRUD ─────────────────────────────────────────────
+app.get("/config/pipeline", async (_req, res) => {
+  const rows = await sql`
+    SELECT id, key, label, color, position, enabled, group_name
+      FROM pipeline_stages
+     ORDER BY position ASC
+  `;
+  res.json({ stages: rows });
+});
+
+app.put("/config/pipeline", requireAuth, async (req, res) => {
+  const stages = (req.body?.stages ?? []) as Array<{
+    id?: number; key: string; label: string; color?: string;
+    position?: number; enabled?: boolean; group_name?: string;
+  }>;
+  if (!Array.isArray(stages) || stages.length === 0) {
+    return res.status(400).json({ error: "stages_required" });
+  }
+  // Upsert por key
+  for (let i = 0; i < stages.length; i++) {
+    const s = stages[i];
+    if (!s.key || !s.label) continue;
+    await sql`
+      INSERT INTO pipeline_stages (key, label, color, position, enabled, group_name)
+      VALUES (${s.key}, ${s.label}, ${s.color ?? 'bg-slate-100 text-slate-800'},
+              ${s.position ?? i}, ${s.enabled ?? true}, ${s.group_name ?? 'sale'})
+      ON CONFLICT (key) DO UPDATE SET
+        label = EXCLUDED.label, color = EXCLUDED.color,
+        position = EXCLUDED.position, enabled = EXCLUDED.enabled,
+        group_name = EXCLUDED.group_name, updated_at = now()
+    `;
+  }
+  const rows = await sql`SELECT id, key, label, color, position, enabled, group_name FROM pipeline_stages ORDER BY position ASC`;
+  res.json({ stages: rows });
+});
+
+
+// ── Bot instances ────────────────────────────────────────────────────
+app.get("/config/instances", async (_req, res) => {
+  const rows = await sql`
+    SELECT id, slug, display_name, phone, agent_name, agent_signature,
+           product_skus, cuenta_bancaria, yape_numero, extra_prompt,
+           rule_ids, enabled, auto_reply, notes,
+           created_at, updated_at
+      FROM bot_instances
+     ORDER BY slug ASC
+  `;
+  res.json({ instances: rows });
+});
+
+app.post("/config/instances", requireAuth, async (req: AuthedRequest, res) => {
+  const b = req.body ?? {};
+  if (!b.slug || !b.display_name) {
+    return res.status(400).json({ error: "slug_and_display_name_required" });
+  }
+  const rows = await sql`
+    INSERT INTO bot_instances (slug, display_name, phone, agent_name, agent_signature,
+                               product_skus, cuenta_bancaria, yape_numero, extra_prompt,
+                               rule_ids, enabled, auto_reply, notes)
+    VALUES (${b.slug}, ${b.display_name}, ${b.phone ?? null},
+            ${b.agent_name ?? 'Goberna'}, ${b.agent_signature ?? null},
+            ${b.product_skus ?? null}, ${b.cuenta_bancaria ?? null}, ${b.yape_numero ?? null},
+            ${b.extra_prompt ?? null}, ${b.rule_ids ?? null},
+            ${b.enabled ?? true}, ${b.auto_reply ?? false}, ${b.notes ?? null})
+    RETURNING *
+  `;
+  res.json(rows[0]);
+});
+
+app.put("/config/instances/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  const b = req.body ?? {};
+  const rows = await sql`
+    UPDATE bot_instances SET
+      slug            = COALESCE(${b.slug ?? null}, slug),
+      display_name    = COALESCE(${b.display_name ?? null}, display_name),
+      phone           = ${b.phone ?? null},
+      agent_name      = COALESCE(${b.agent_name ?? null}, agent_name),
+      agent_signature = ${b.agent_signature ?? null},
+      product_skus    = ${b.product_skus ?? null},
+      cuenta_bancaria = ${b.cuenta_bancaria ?? null},
+      yape_numero     = ${b.yape_numero ?? null},
+      extra_prompt    = ${b.extra_prompt ?? null},
+      rule_ids        = ${b.rule_ids ?? null},
+      enabled         = COALESCE(${b.enabled ?? null}, enabled),
+      auto_reply      = COALESCE(${b.auto_reply ?? null}, auto_reply),
+      notes           = ${b.notes ?? null},
+      updated_at      = now()
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+// Copiar configuración de un instance a otro (excepto slug/phone/display_name)
+app.post("/config/instances/:id/copy-from/:fromId", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const fromId = Number(req.params.fromId);
+  if (!Number.isFinite(id) || !Number.isFinite(fromId)) return res.status(400).json({ error: "invalid_id" });
+  const src = await sql`SELECT * FROM bot_instances WHERE id = ${fromId}`;
+  if (src.length === 0) return res.status(404).json({ error: "source_not_found" });
+  const s = src[0];
+  const rows = await sql`
+    UPDATE bot_instances SET
+      agent_name      = ${s.agent_name},
+      agent_signature = ${s.agent_signature},
+      product_skus    = ${s.product_skus},
+      cuenta_bancaria = ${s.cuenta_bancaria},
+      yape_numero     = ${s.yape_numero},
+      extra_prompt    = ${s.extra_prompt},
+      rule_ids        = ${s.rule_ids},
+      updated_at      = now()
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "target_not_found" });
+  res.json(rows[0]);
+});
+
+app.delete("/config/instances/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  await sql`UPDATE bot_instances SET enabled = FALSE, updated_at = now() WHERE id = ${id}`;
+  res.json({ ok: true, id });
+});
+
+
+// ── Bank accounts catálogo ──────────────────────────────────────────
+app.get("/config/banks", async (_req, res) => {
+  const rows = await sql`SELECT * FROM bank_accounts ORDER BY is_default DESC, name ASC`;
+  res.json({ banks: rows });
+});
+
+app.post("/config/banks", requireAuth, async (req, res) => {
+  const b = req.body ?? {};
+  if (!b.name || !b.body) return res.status(400).json({ error: "name_and_body_required" });
+  if (b.is_default === true) {
+    await sql`UPDATE bank_accounts SET is_default = FALSE`;
+  }
+  const rows = await sql`
+    INSERT INTO bank_accounts (name, body, yape_numero, is_default)
+    VALUES (${b.name}, ${b.body}, ${b.yape_numero ?? null}, ${b.is_default ?? false})
+    RETURNING *
+  `;
+  res.json(rows[0]);
+});
+
+app.put("/config/banks/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  const b = req.body ?? {};
+  if (b.is_default === true) {
+    await sql`UPDATE bank_accounts SET is_default = FALSE WHERE id <> ${id}`;
+  }
+  const rows = await sql`
+    UPDATE bank_accounts SET
+      name = COALESCE(${b.name ?? null}, name),
+      body = COALESCE(${b.body ?? null}, body),
+      yape_numero = ${b.yape_numero ?? null},
+      is_default = COALESCE(${b.is_default ?? null}, is_default),
+      updated_at = now()
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+app.delete("/config/banks/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  await sql`DELETE FROM bank_accounts WHERE id = ${id}`;
+  res.json({ ok: true });
+});
+
+// ==================== END CONFIG ====================
+
+// ==================== HUMAN ATTENTION QUEUE ====================
+
+// GET /attention — queue ordenada por waiting time
+app.get("/attention", async (_req, res) => {
+  const rows = await sql`SELECT * FROM v_attention_queue LIMIT 200`;
+  res.json({ items: rows });
+});
+
+// POST /leads/:id/flag-attention — bot llama esto cuando no sabe responder.
+// El operador también puede llamarlo manualmente desde el chat.
+app.post("/leads/:id/flag-attention", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  const reason = (req.body?.reason as string) || "unknown";
+  const rows = await sql`
+    UPDATE leads
+       SET needs_human_attention = TRUE,
+           attention_reason = ${reason}
+     WHERE id = ${id}
+     RETURNING id, needs_human_attention, attention_at
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+// POST /leads/:id/resolve-attention — marca como resuelto
+app.post("/leads/:id/resolve-attention", requireAuth, async (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  const rows = await sql`
+    UPDATE leads
+       SET needs_human_attention = FALSE,
+           attention_resolved_by = ${req.userEmail ?? 'unknown'}
+     WHERE id = ${id}
+     RETURNING id, needs_human_attention, attention_resolved_at, attention_resolved_by
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+// ==================== END ATTENTION ====================
+
+// ==================== CHATS v2 (con tabs: dm / group / attention) ====================
+app.get("/chats/v2", async (req, res) => {
+  const tab = (req.query.tab as string) || "all";  // all | dm | group | attention
+  const search = (req.query.q as string)?.toLowerCase() ?? null;
+  const limit = Math.min(Number(req.query.limit) || 100, 500);
+
+  const filters: string[] = [];
+  if (tab === "dm")        filters.push("is_group = FALSE");
+  if (tab === "group")     filters.push("is_group = TRUE");
+  if (tab === "attention") filters.push("needs_human_attention = TRUE");
+
+  const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
+  const searchClause = search
+    ? `AND (lower(name) LIKE '%' || $1 || '%' OR phone LIKE '%' || $1 || '%' OR lower(coalesce(group_subject,'')) LIKE '%' || $1 || '%')`
+    : "";
+
+  const queryStr = `
+    SELECT * FROM v_chats_summary
+    ${where}
+    ${searchClause}
+    ORDER BY needs_human_attention DESC, last_message_at DESC NULLS LAST
+    LIMIT ${limit}
+  `;
+
+  const rows = search
+    ? await sql.unsafe(queryStr, [search])
+    : await sql.unsafe(queryStr);
+
+  const counts = await sql`
+    SELECT
+      count(*) FILTER (WHERE is_group = FALSE) AS dm,
+      count(*) FILTER (WHERE is_group = TRUE)  AS group_,
+      count(*) FILTER (WHERE needs_human_attention) AS attention,
+      count(*) AS total
+    FROM v_chats_summary
+  `;
+
+  res.json({ chats: rows, counts: counts[0] });
+});
+
+// Lead enrichment con datos del ERP de Escuela cuando sea cliente histórico.
+// Usa escuela_client_id si está, sino busca por phone en lead_360 cross-DB
+// (pero lead_360 vive en electoral, así que usamos solo lo que ya está
+// poblado en leads-crm via consolidate.sql).
+app.get("/leads/:id/enrichment", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  const rows = await sql`
+    SELECT
+      l.id, l.escuela_client_id, l.dni, l.ocupacion, l.fecha_nacimiento,
+      l.last_course, l.enrollments_count, l.certificates_count,
+      l.buyer_tier, l.total_usd_spent, l.n_purchases,
+      l.first_purchase_at, l.last_purchase_year,
+      l.is_group, l.group_subject, l.last_chat_kind,
+      l.needs_human_attention, l.attention_reason, l.attention_at
+    FROM leads l
+    WHERE l.id = ${id}
+    LIMIT 1
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+// ==================== END CHATS v2 ====================
+
+// ==================== CAMPAIGNS · re-engagement masivo ====================
+
+/**
+ * Build dynamic SQL filter from JSONB segment_filter.
+ * Supported keys:
+ *   buyer_tier: string | { in: string[] }
+ *   stage: string | { in: string[] }
+ *   country: string
+ *   n_purchases: number | { gte / lte / eq }
+ *   last_purchase_year: number | { gte / lte }
+ *   days_since_contact: { gte / lte }
+ *   days_since_purchase: { lte }
+ *   tags: { contains: string }
+ *   has_phone: true
+ *   escuela_client_id_not_null: true
+ */
+function buildSegmentSQL(filter: any): { where: string; params: any[] } {
+  const conds: string[] = ["l.phone IS NOT NULL"];
+  const params: any[] = [];
+  const f = filter || {};
+
+  function add(cond: string, ...p: any[]) {
+    conds.push(cond);
+    params.push(...p);
+  }
+
+  if (f.buyer_tier) {
+    if (typeof f.buyer_tier === "string") add(`l.buyer_tier = $${params.length + 1}`, f.buyer_tier);
+    else if (f.buyer_tier.in) add(`l.buyer_tier = ANY($${params.length + 1}::text[])`, f.buyer_tier.in);
+  }
+  if (f.stage) {
+    if (typeof f.stage === "string") add(`l.stage = $${params.length + 1}`, f.stage);
+    else if (f.stage.in) add(`l.stage = ANY($${params.length + 1}::text[])`, f.stage.in);
+  }
+  if (f.country)        add(`l.country = $${params.length + 1}`, f.country);
+  if (f.escuela_client_id_not_null) conds.push("l.escuela_client_id IS NOT NULL");
+
+  if (f.n_purchases !== undefined) {
+    if (typeof f.n_purchases === "number") add(`l.n_purchases = $${params.length + 1}`, f.n_purchases);
+    else {
+      if (f.n_purchases.gte !== undefined) add(`l.n_purchases >= $${params.length + 1}`, f.n_purchases.gte);
+      if (f.n_purchases.lte !== undefined) add(`l.n_purchases <= $${params.length + 1}`, f.n_purchases.lte);
+    }
+  }
+
+  if (f.last_purchase_year) {
+    if (typeof f.last_purchase_year === "number") add(`l.last_purchase_year = $${params.length + 1}`, f.last_purchase_year);
+    else {
+      if (f.last_purchase_year.gte !== undefined) add(`l.last_purchase_year >= $${params.length + 1}`, f.last_purchase_year.gte);
+      if (f.last_purchase_year.lte !== undefined) add(`l.last_purchase_year <= $${params.length + 1}`, f.last_purchase_year.lte);
+    }
+  }
+
+  if (f.days_since_contact) {
+    const d = f.days_since_contact;
+    if (d.gte !== undefined) {
+      add(`(SELECT MAX(created_at) FROM interactions WHERE lead_id = l.id AND kind = 'message_in') < now() - ($${params.length + 1} || ' days')::interval`, String(d.gte));
+    }
+    if (d.lte !== undefined) {
+      add(`(SELECT MAX(created_at) FROM interactions WHERE lead_id = l.id AND kind = 'message_in') > now() - ($${params.length + 1} || ' days')::interval`, String(d.lte));
+    }
+  }
+
+  if (f.days_since_purchase?.lte !== undefined) {
+    add(`l.first_purchase_at > now() - ($${params.length + 1} || ' days')::interval`, String(f.days_since_purchase.lte));
+  }
+
+  if (f.tags?.contains) add(`$${params.length + 1} = ANY(l.tags)`, f.tags.contains);
+
+  return { where: conds.join(" AND "), params };
+}
+
+// ── List presets ────────────────────────────────────────────────────
+app.get("/segment-presets", async (_req, res) => {
+  const rows = await sql`SELECT id, slug, name, description, filter, icon FROM segment_presets ORDER BY id`;
+  res.json({ presets: rows });
+});
+
+// ── Preview segment count + sample ──────────────────────────────────
+app.post("/campaigns/preview", requireAuth, async (req, res) => {
+  const filter = req.body?.filter ?? {};
+  const { where, params } = buildSegmentSQL(filter);
+  try {
+    const countRes = await sql.unsafe(`SELECT count(*)::int AS n FROM leads l WHERE ${where}`, params);
+    const sample = await sql.unsafe(
+      `SELECT id, name, phone, country, buyer_tier, total_usd_spent, last_course
+         FROM leads l
+        WHERE ${where}
+        ORDER BY total_usd_spent DESC NULLS LAST
+        LIMIT 10`,
+      params,
+    );
+    res.json({ total: countRes[0]?.n ?? 0, sample });
+  } catch (e: any) {
+    res.status(400).json({ error: "preview_failed", message: e.message });
+  }
+});
+
+// ── Campaigns CRUD ──────────────────────────────────────────────────
+app.get("/campaigns", async (_req, res) => {
+  const rows = await sql`SELECT * FROM v_campaign_progress`;
+  res.json({ campaigns: rows });
+});
+
+app.get("/campaigns/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  const rows = await sql`SELECT * FROM campaigns WHERE id = ${id}`;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+app.post("/campaigns", requireAuth, async (req: AuthedRequest, res) => {
+  const b = req.body ?? {};
+  if (!b.name) return res.status(400).json({ error: "name_required" });
+  const rows = await sql`
+    INSERT INTO campaigns (
+      name, description, segment_filter,
+      template_id, custom_body, custom_image_url, custom_document_url,
+      bot_instance_id, throttle_per_min, window_start_hr, window_end_hr,
+      created_by
+    ) VALUES (
+      ${b.name}, ${b.description ?? null}, ${b.segment_filter ?? {}}::jsonb,
+      ${b.template_id ?? null}, ${b.custom_body ?? null}, ${b.custom_image_url ?? null}, ${b.custom_document_url ?? null},
+      ${b.bot_instance_id ?? null}, ${b.throttle_per_min ?? 10},
+      ${b.window_start_hr ?? 9}, ${b.window_end_hr ?? 19},
+      ${req.userEmail ?? 'unknown'}
+    )
+    RETURNING *
+  `;
+  res.json(rows[0]);
+});
+
+app.put("/campaigns/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const b = req.body ?? {};
+  const rows = await sql`
+    UPDATE campaigns SET
+      name = COALESCE(${b.name ?? null}, name),
+      description = ${b.description ?? null},
+      segment_filter = COALESCE(${b.segment_filter ?? null}::jsonb, segment_filter),
+      template_id = ${b.template_id ?? null},
+      custom_body = ${b.custom_body ?? null},
+      custom_image_url = ${b.custom_image_url ?? null},
+      custom_document_url = ${b.custom_document_url ?? null},
+      bot_instance_id = ${b.bot_instance_id ?? null},
+      throttle_per_min = COALESCE(${b.throttle_per_min ?? null}, throttle_per_min),
+      window_start_hr = COALESCE(${b.window_start_hr ?? null}, window_start_hr),
+      window_end_hr = COALESCE(${b.window_end_hr ?? null}, window_end_hr),
+      scheduled_at = ${b.scheduled_at ?? null},
+      updated_at = now()
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+// ── Materialize recipients (create rows in campaign_recipients) ─────
+app.post("/campaigns/:id/materialize", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const c = (await sql`SELECT * FROM campaigns WHERE id = ${id}`)[0];
+  if (!c) return res.status(404).json({ error: "not_found" });
+  const { where, params } = buildSegmentSQL(c.segment_filter || {});
+
+  // Insert recipients dedup'd by lead_id (UNIQUE constraint)
+  const queryStr = `
+    INSERT INTO campaign_recipients (campaign_id, lead_id)
+    SELECT $${params.length + 1}, l.id FROM leads l WHERE ${where}
+    ON CONFLICT (campaign_id, lead_id) DO NOTHING
+  `;
+  await sql.unsafe(queryStr, [...params, id]);
+
+  const counts = await sql`
+    SELECT count(*)::int AS total FROM campaign_recipients WHERE campaign_id = ${id}
+  `;
+  await sql`UPDATE campaigns SET total_recipients = ${counts[0].total}, updated_at = now() WHERE id = ${id}`;
+
+  res.json({ ok: true, total_recipients: counts[0].total });
+});
+
+// ── Launch campaign (schedule pending recipients) ───────────────────
+app.post("/campaigns/:id/launch", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const rows = await sql`
+    UPDATE campaigns SET
+      status = 'running',
+      started_at = COALESCE(started_at, now()),
+      scheduled_at = COALESCE(scheduled_at, now()),
+      updated_at = now()
+    WHERE id = ${id} AND status IN ('draft','scheduled','paused')
+    RETURNING *
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found_or_invalid_state" });
+  res.json(rows[0]);
+});
+
+// ── Pause / Cancel ──────────────────────────────────────────────────
+app.post("/campaigns/:id/pause", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  await sql`UPDATE campaigns SET status = 'paused', updated_at = now() WHERE id = ${id} AND status = 'running'`;
+  res.json({ ok: true });
+});
+app.post("/campaigns/:id/cancel", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  await sql`UPDATE campaigns SET status = 'cancelled', completed_at = now(), updated_at = now() WHERE id = ${id}`;
+  res.json({ ok: true });
+});
+
+// ── Bot pulls next batch of pending recipients (called every minute) ──
+app.get("/campaigns/queue", async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 10, 50);
+  const now = new Date();
+  const hr = now.getUTCHours() - 5;  // Lima UTC-5
+  const hour = (hr + 24) % 24;
+  // Fetch up to N pending recipients across active campaigns,
+  // respecting throttle + window
+  const rows = await sql`
+    SELECT
+      r.id AS recipient_id, r.campaign_id, r.lead_id,
+      l.phone, l.name, l.country,
+      c.template_id, c.custom_body, c.custom_image_url, c.custom_document_url,
+      c.window_start_hr, c.window_end_hr, c.bot_instance_id,
+      t.body AS template_body, t.image_url AS template_image_url,
+      t.document_url AS template_document_url,
+      t.document_filename, t.document_mime, t.video_url AS template_video_url,
+      t.media_kind
+    FROM campaign_recipients r
+    JOIN campaigns c ON c.id = r.campaign_id
+    JOIN leads l ON l.id = r.lead_id
+    LEFT JOIN templates t ON t.id = c.template_id
+    WHERE r.status = 'pending'
+      AND c.status = 'running'
+      AND ${hour} BETWEEN c.window_start_hr AND c.window_end_hr - 1
+    ORDER BY r.id ASC
+    LIMIT ${limit}
+  `;
+  res.json({ items: rows });
+});
+
+// ── Bot reports send result for a recipient ─────────────────────────
+app.post("/campaigns/recipient/:id/sent", async (req, res) => {
+  const id = Number(req.params.id);
+  const { message_id } = req.body ?? {};
+  await sql`
+    UPDATE campaign_recipients SET status = 'sent', message_id = ${message_id ?? null}, sent_at = now(), updated_at = now()
+    WHERE id = ${id}
+  `;
+  // Bump campaign sent_count
+  await sql`
+    UPDATE campaigns SET sent_count = sent_count + 1, updated_at = now()
+    WHERE id = (SELECT campaign_id FROM campaign_recipients WHERE id = ${id})
+  `;
+  // Auto-complete if no more pending
+  await sql`
+    UPDATE campaigns c SET status = 'completed', completed_at = now(), updated_at = now()
+    WHERE c.id = (SELECT campaign_id FROM campaign_recipients WHERE id = ${id})
+      AND c.status = 'running'
+      AND NOT EXISTS (SELECT 1 FROM campaign_recipients r WHERE r.campaign_id = c.id AND r.status = 'pending')
+  `;
+  res.json({ ok: true });
+});
+
+app.post("/campaigns/recipient/:id/failed", async (req, res) => {
+  const id = Number(req.params.id);
+  const { error_msg } = req.body ?? {};
+  await sql`
+    UPDATE campaign_recipients SET status = 'failed', error_msg = ${error_msg ?? null}, updated_at = now()
+    WHERE id = ${id}
+  `;
+  await sql`
+    UPDATE campaigns SET failed_count = failed_count + 1, updated_at = now()
+    WHERE id = (SELECT campaign_id FROM campaign_recipients WHERE id = ${id})
+  `;
+  res.json({ ok: true });
+});
+
+// ==================== END CAMPAIGNS ====================
+
+// ==================== RECOMMENDATIONS · "a quiénes hablar ahora" ====================
+
+/**
+ * Sistema de scoring que devuelve los mejores leads para contactar HOY.
+ * Combina señales:
+ *   1. Compradores VIP sin contacto reciente (high LTV, easy win-back).
+ *   2. Tags interés:* sin compra (hot leads — preguntaron por algo).
+ *   3. Stage interested estancado.
+ *   4. Egresados recientes (cross-sell).
+ *   5. Cliente ERP histórico que volvió a escribir hace poco.
+ *
+ * Cada lead recibe un score 0-100 + razones legibles.
+ */
+app.get("/recommendations", async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 30, 100);
+  const reason = (req.query.reason as string) || "all";  // all | vip_inactive | hot_interest | stuck | crosssell
+
+  const rows = await sql`
+    WITH lead_signals AS (
+      SELECT
+        l.id, l.name, l.phone, l.country, l.stage, l.tags, l.buyer_tier,
+        l.total_usd_spent, l.n_purchases, l.last_course,
+        l.escuela_client_id, l.dni, l.ocupacion,
+        (SELECT MAX(created_at) FROM interactions
+          WHERE lead_id = l.id AND kind = 'message_in') AS last_inbound,
+        (SELECT MAX(created_at) FROM interactions
+          WHERE lead_id = l.id AND kind = 'message_out') AS last_outbound,
+        EXTRACT(DAY FROM now() - (SELECT MAX(created_at) FROM interactions
+          WHERE lead_id = l.id AND kind = 'message_in'))::int AS days_since_in,
+        (SELECT count(*) FROM interactions WHERE lead_id = l.id AND kind = 'message_in') AS msgs_in_count,
+        EXISTS(
+          SELECT 1 FROM unnest(l.tags) t
+          WHERE t LIKE 'interés:%' OR t LIKE 'producto:%'
+        ) AS has_interest_tag
+      FROM leads l
+      WHERE l.phone IS NOT NULL
+    ),
+    scored AS (
+      SELECT *,
+        -- VIP inactivo (60+ días sin contacto)
+        CASE WHEN buyer_tier = 'vip' AND days_since_in BETWEEN 30 AND 365 THEN 30 ELSE 0 END
+        -- Hot lead con tag de interés sin compra
+        + CASE WHEN has_interest_tag AND n_purchases = 0 AND days_since_in <= 14 THEN 35 ELSE 0 END
+        -- Stage interested estancado (con conversación reciente)
+        + CASE WHEN stage = 'interested' AND days_since_in BETWEEN 3 AND 30 THEN 25 ELSE 0 END
+        -- Repeat buyer (alto LTV potential)
+        + CASE WHEN buyer_tier = 'repeat' AND days_since_in <= 60 THEN 20 ELSE 0 END
+        -- Compró hace poco (cross-sell)
+        + CASE WHEN n_purchases >= 1 AND last_course IS NOT NULL AND days_since_in <= 14 THEN 15 ELSE 0 END
+        -- Cliente ERP que escribió recientemente (high signal)
+        + CASE WHEN escuela_client_id IS NOT NULL AND days_since_in <= 7 THEN 25 ELSE 0 END
+        -- Penalty si hace muy poco lo contactamos (last_outbound < 24h)
+        - CASE WHEN last_outbound > now() - interval '1 day' THEN 30 ELSE 0 END
+        AS score,
+
+        -- Razones (array de strings)
+        ARRAY(
+          SELECT r FROM (VALUES
+            (CASE WHEN buyer_tier = 'vip' AND days_since_in BETWEEN 30 AND 365 THEN 'VIP inactivo' END),
+            (CASE WHEN has_interest_tag AND n_purchases = 0 AND days_since_in <= 14 THEN 'Hot lead con interés' END),
+            (CASE WHEN stage = 'interested' AND days_since_in BETWEEN 3 AND 30 THEN 'Interesado estancado' END),
+            (CASE WHEN buyer_tier = 'repeat' AND days_since_in <= 60 THEN 'Repeat buyer' END),
+            (CASE WHEN n_purchases >= 1 AND last_course IS NOT NULL AND days_since_in <= 14 THEN 'Cross-sell' END),
+            (CASE WHEN escuela_client_id IS NOT NULL AND days_since_in <= 7 THEN 'Cliente ERP activo' END)
+          ) AS t(r) WHERE r IS NOT NULL
+        ) AS reasons
+      FROM lead_signals
+      WHERE days_since_in IS NOT NULL
+    )
+    SELECT id, name, phone, country, stage, tags, buyer_tier,
+           total_usd_spent::float, n_purchases, last_course,
+           escuela_client_id, days_since_in, msgs_in_count,
+           score, reasons,
+           last_inbound::text, last_outbound::text
+    FROM scored
+    WHERE score > 0
+    ${reason === "vip_inactive"  ? sql`AND 'VIP inactivo' = ANY(reasons)` :
+      reason === "hot_interest"  ? sql`AND 'Hot lead con interés' = ANY(reasons)` :
+      reason === "stuck"         ? sql`AND 'Interesado estancado' = ANY(reasons)` :
+      reason === "crosssell"     ? sql`AND 'Cross-sell' = ANY(reasons)` :
+      sql``}
+    ORDER BY score DESC, days_since_in ASC
+    LIMIT ${limit}
+  `;
+
+  res.json({ items: rows });
+});
+
+// ──── Distinct values para filter UI (countries, tags, courses) ────
+app.get("/lead-facets", async (_req, res) => {
+  const [countries, tags, courses, tiers, stages] = await Promise.all([
+    sql`
+      SELECT country, count(*)::int AS n
+      FROM leads WHERE country IS NOT NULL AND country <> ''
+      GROUP BY country ORDER BY n DESC LIMIT 30
+    `,
+    sql`
+      SELECT t AS tag, count(*)::int AS n
+      FROM leads, unnest(tags) AS t
+      WHERE t IS NOT NULL AND t <> ''
+      GROUP BY t ORDER BY n DESC LIMIT 50
+    `,
+    sql`
+      SELECT last_course AS course, count(*)::int AS n
+      FROM leads WHERE last_course IS NOT NULL AND last_course <> ''
+      GROUP BY last_course ORDER BY n DESC LIMIT 30
+    `,
+    sql`SELECT buyer_tier AS tier, count(*)::int AS n FROM leads WHERE buyer_tier IS NOT NULL GROUP BY buyer_tier ORDER BY n DESC`,
+    sql`SELECT stage, count(*)::int AS n FROM leads WHERE stage IS NOT NULL GROUP BY stage ORDER BY n DESC`,
+  ]);
+  res.json({ countries, tags, courses, tiers, stages });
+});
+
+// ==================== END RECOMMENDATIONS ====================
+
+// ==================== APPOINTMENTS · agenda ====================
+
+/**
+ * Calcula próximos N slots disponibles para un operador.
+ * Combina:
+ *   - appointment_slots (recurring weekly schedule)
+ *   - appointments existentes (excluir slots ya tomados)
+ *   - now() en delante (no slots pasados)
+ */
+app.get("/appointment-slots/available", async (req, res) => {
+  const operatorId = Number(req.query.operator_id) || 4;
+  const limit = Math.min(Number(req.query.limit) || 3, 10);
+  const daysAhead = Math.min(Number(req.query.days_ahead) || 14, 30);
+
+  const now = new Date();
+  const nowLima = new Date(now.getTime() - 5 * 3600 * 1000);  // UTC-5
+
+  const slotRows = await sql`
+    SELECT weekday, start_hr, start_min, end_hr, end_min, duration_min
+      FROM appointment_slots
+     WHERE operator_id = ${operatorId} AND enabled = TRUE
+     ORDER BY weekday, start_hr, start_min
+  `;
+  const taken = await sql`
+    SELECT scheduled_at FROM appointments
+     WHERE operator_id = ${operatorId}
+       AND status IN ('pending', 'confirmed')
+       AND scheduled_at > now()
+       AND scheduled_at < now() + (${daysAhead} || ' days')::interval
+  `;
+  const takenISO = new Set(taken.map((t: any) => new Date(t.scheduled_at).toISOString()));
+
+  const out: Array<{ iso: string; weekday: number; hour: number; minute: number; display: string }> = [];
+
+  // Iterate days ahead, generate slots
+  outer: for (let d = 0; d < daysAhead; d++) {
+    const day = new Date(nowLima);
+    day.setDate(day.getDate() + d);
+    const wd = day.getDay();
+
+    const daySlots = slotRows.filter((s: any) => s.weekday === wd);
+    for (const s of daySlots) {
+      // Generate every duration_min interval from start_hr to end_hr
+      const stepMin = s.duration_min || 30;
+      const startTotalMin = s.start_hr * 60 + (s.start_min || 0);
+      const endTotalMin = s.end_hr * 60 + (s.end_min || 0);
+
+      for (let m = startTotalMin; m + stepMin <= endTotalMin; m += stepMin) {
+        const hr = Math.floor(m / 60);
+        const min = m % 60;
+        const slotDt = new Date(Date.UTC(
+          day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(),
+          hr + 5, min, 0  // back to UTC
+        ));
+        if (slotDt <= now) continue;
+        const iso = slotDt.toISOString();
+        if (takenISO.has(iso)) continue;
+
+        const limaDt = new Date(slotDt.getTime() - 5 * 3600 * 1000);
+        const days = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+        const months = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+        const ampm = hr >= 12 ? "p.m." : "a.m.";
+        const h12 = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr;
+        const display = `${days[limaDt.getUTCDay()]} ${limaDt.getUTCDate()} ${months[limaDt.getUTCMonth()]} · ${h12}:${String(min).padStart(2,'0')} ${ampm}`;
+
+        out.push({ iso, weekday: wd, hour: hr, minute: min, display });
+        if (out.length >= limit) break outer;
+      }
+    }
+  }
+
+  res.json({ slots: out });
+});
+
+// ── Appointments CRUD ─────────────────────────────────────────────
+app.get("/appointments", async (_req, res) => {
+  const rows = await sql`SELECT * FROM v_upcoming_appointments LIMIT 100`;
+  res.json({ items: rows });
+});
+
+app.post("/appointments", async (req, res) => {
+  const b = req.body ?? {};
+  if (!b.scheduled_at) return res.status(400).json({ error: "scheduled_at_required" });
+  const rows = await sql`
+    INSERT INTO appointments (
+      lead_id, operator_id, bot_instance_id,
+      scheduled_at, duration_min, meeting_url, meeting_kind,
+      status, notes, created_via
+    ) VALUES (
+      ${b.lead_id ?? null}, ${b.operator_id ?? 4}, ${b.bot_instance_id ?? null},
+      ${b.scheduled_at}, ${b.duration_min ?? 30},
+      ${b.meeting_url ?? null}, ${b.meeting_kind ?? 'zoom'},
+      ${b.status ?? 'confirmed'}, ${b.notes ?? null}, ${b.created_via ?? 'api'}
+    )
+    RETURNING *
+  `;
+  res.json(rows[0]);
+});
+
+app.put("/appointments/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const b = req.body ?? {};
+  const rows = await sql`
+    UPDATE appointments SET
+      scheduled_at = COALESCE(${b.scheduled_at ?? null}, scheduled_at),
+      duration_min = COALESCE(${b.duration_min ?? null}, duration_min),
+      meeting_url = ${b.meeting_url ?? null},
+      meeting_kind = COALESCE(${b.meeting_kind ?? null}, meeting_kind),
+      status = COALESCE(${b.status ?? null}, status),
+      notes = ${b.notes ?? null},
+      updated_at = now()
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+app.delete("/appointments/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  await sql`UPDATE appointments SET status = 'cancelled', updated_at = now() WHERE id = ${id}`;
+  res.json({ ok: true });
+});
+
+// ── Slots CRUD (operator availability) ───────────────────────────
+app.get("/appointment-slots", async (req, res) => {
+  const operatorId = Number(req.query.operator_id) || null;
+  const rows = operatorId
+    ? await sql`SELECT * FROM appointment_slots WHERE operator_id = ${operatorId} ORDER BY weekday, start_hr`
+    : await sql`SELECT * FROM appointment_slots ORDER BY operator_id, weekday, start_hr`;
+  res.json({ slots: rows });
+});
+
+app.post("/appointment-slots", requireAuth, async (req, res) => {
+  const b = req.body ?? {};
+  const rows = await sql`
+    INSERT INTO appointment_slots (operator_id, weekday, start_hr, start_min, end_hr, end_min, duration_min)
+    VALUES (${b.operator_id}, ${b.weekday}, ${b.start_hr}, ${b.start_min ?? 0},
+            ${b.end_hr}, ${b.end_min ?? 0}, ${b.duration_min ?? 30})
+    ON CONFLICT (operator_id, weekday, start_hr, start_min) DO UPDATE SET
+      end_hr = EXCLUDED.end_hr, end_min = EXCLUDED.end_min,
+      duration_min = EXCLUDED.duration_min, enabled = TRUE
+    RETURNING *
+  `;
+  res.json(rows[0]);
+});
+
+app.delete("/appointment-slots/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  await sql`DELETE FROM appointment_slots WHERE id = ${id}`;
+  res.json({ ok: true });
+});
+
+// ==================== END APPOINTMENTS ====================
+
+// ==================== BOT ACTIVITY DASHBOARD ====================
+
+app.get("/bot-activity/today", async (_req, res) => {
+  const rows = await sql`SELECT * FROM v_bot_activity_today`;
+  res.json(rows[0] ?? {});
+});
+
+app.get("/bot-activity/daily", async (req, res) => {
+  const days = Math.min(Number(req.query.days) || 14, 60);
+  const rows = await sql.unsafe(`
+    SELECT
+      created_at::date AS day,
+      count(*) FILTER (WHERE kind = 'message_in')::int AS msgs_in,
+      count(*) FILTER (WHERE kind = 'message_out' AND (meta->>'auto_reply')::bool IS TRUE)::int AS auto_replies,
+      count(*) FILTER (WHERE kind = 'message_out' AND ((meta->>'auto_reply')::bool IS NULL OR (meta->>'auto_reply')::bool = false))::int AS msgs_manual,
+      count(DISTINCT lead_id) FILTER (WHERE kind = 'message_in')::int AS unique_leads
+    FROM interactions
+    WHERE created_at >= current_date - interval '${days} days'
+    GROUP BY 1 ORDER BY 1 DESC
+  `);
+  res.json({ items: rows });
+});
+
+app.get("/bot-activity/templates", async (_req, res) => {
+  const rows = await sql`SELECT * FROM v_template_stats LIMIT 30`;
+  res.json({ items: rows });
+});
+
+app.get("/bot-activity/hot-leads", async (_req, res) => {
+  const rows = await sql`SELECT * FROM v_hot_leads`;
+  res.json({ items: rows });
+});
+
+app.get("/bot-activity/rules", async (_req, res) => {
+  const rows = await sql`
+    SELECT id, name, source, hits_count, last_hit_at, enabled, tag
+      FROM ai_rules
+     WHERE enabled = TRUE
+     ORDER BY hits_count DESC, id ASC
+     LIMIT 50
+  `;
+  res.json({ items: rows });
+});
+
+// Bot reporta que matcheó reglas (incrementa hits_count batch).
+app.post("/bot-activity/rule-hit", async (req, res) => {
+  const ids = (req.body?.rule_ids ?? []) as number[];
+  if (!Array.isArray(ids) || ids.length === 0) return res.json({ ok: true });
+  await sql`SELECT increment_rule_hits(${ids}::int[])`;
+  res.json({ ok: true });
+});
+
+// Stale lead recovery: operador puede correr esto cuando quiera.
+app.post("/bot-activity/recover-stale", requireAuth, async (_req, res) => {
+  const r = await sql`SELECT mark_stale_leads_followup() AS affected`;
+  res.json({ affected: Number(r[0]?.affected ?? 0) });
+});
+
+// ==================== END BOT ACTIVITY ====================
+
+// ==================== BOT ACTIVITY · más detalle ====================
+
+// País distribution de mensajes IN del día
+app.get("/bot-activity/by-country", async (_req, res) => {
+  const rows = await sql`
+    SELECT l.country AS country, count(*)::int AS msgs
+      FROM interactions i
+      JOIN leads l ON l.id = i.lead_id
+     WHERE i.created_at::date = current_date
+       AND i.kind = 'message_in'
+       AND l.country IS NOT NULL
+     GROUP BY l.country
+     ORDER BY msgs DESC
+     LIMIT 12
+  `;
+  res.json({ items: rows });
+});
+
+// Distribución por hora (Lima TZ)
+app.get("/bot-activity/by-hour", async (_req, res) => {
+  const rows = await sql`
+    SELECT
+      EXTRACT(HOUR FROM i.created_at AT TIME ZONE 'America/Lima')::int AS hour,
+      count(*) FILTER (WHERE i.kind = 'message_in')::int AS in_count,
+      count(*) FILTER (WHERE i.kind = 'message_out')::int AS out_count
+    FROM interactions i
+    WHERE i.created_at::date = current_date
+    GROUP BY 1
+    ORDER BY 1
+  `;
+  res.json({ items: rows });
+});
+
+// Intents detectados HOY (vía regex match a reglas activas)
+app.get("/bot-activity/intents-today", async (_req, res) => {
+  const rows = await sql`
+    WITH today_intents AS (
+      SELECT DISTINCT ON (i.lead_id, r.id)
+        r.tag, r.name, r.source
+      FROM interactions i
+      JOIN ai_rules r ON r.enabled = TRUE
+      WHERE i.kind = 'message_in'
+        AND i.created_at::date = current_date
+        AND i.body IS NOT NULL
+        AND i.body ~* r.pattern
+    )
+    SELECT tag, source, count(*)::int AS leads
+      FROM today_intents
+     GROUP BY tag, source
+     ORDER BY leads DESC
+     LIMIT 20
+  `;
+  res.json({ items: rows });
+});
+
+// Top 10 leads más activos hoy
+app.get("/bot-activity/top-active-leads", async (_req, res) => {
+  const rows = await sql`
+    SELECT
+      l.id, l.name, l.phone, l.country, l.stage, l.buyer_tier,
+      count(*) FILTER (WHERE i.kind = 'message_in')::int  AS in_count,
+      count(*) FILTER (WHERE i.kind = 'message_out')::int AS out_count,
+      l.attention_reason, l.needs_human_attention
+    FROM interactions i
+    JOIN leads l ON l.id = i.lead_id
+    WHERE i.created_at::date = current_date
+    GROUP BY l.id
+    ORDER BY count(*) DESC
+    LIMIT 10
+  `;
+  res.json({ items: rows });
+});
+
+// Últimos mensajes IN (para feed)
+app.get("/bot-activity/recent-messages", async (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 15, 50);
+  const rows = await sql`
+    SELECT
+      i.id, i.created_at, i.body,
+      i.meta->>'message_type' AS type,
+      l.id AS lead_id, l.name AS lead_name, l.country, l.buyer_tier,
+      l.needs_human_attention
+    FROM interactions i
+    JOIN leads l ON l.id = i.lead_id
+    WHERE i.created_at::date = current_date
+      AND i.kind = 'message_in'
+    ORDER BY i.id DESC
+    LIMIT ${limit}
+  `;
+  res.json({ items: rows });
+});
+
+// Stats globales más profundas hoy
+app.get("/bot-activity/today-deep", async (_req, res) => {
+  const stats = await sql`
+    SELECT
+      count(*) FILTER (WHERE i.kind = 'message_in')::int AS msgs_in,
+      count(*) FILTER (WHERE i.kind = 'message_in' AND i.meta->>'message_type' IN ('image','video','document','audio'))::int AS media_in,
+      count(*) FILTER (WHERE i.kind = 'message_out')::int AS msgs_out,
+      count(*) FILTER (WHERE i.kind = 'message_out' AND (i.meta->>'auto_reply')::bool IS TRUE)::int AS auto_replies,
+      count(*) FILTER (WHERE i.kind = 'message_out' AND i.meta->>'message_type' IN ('image','video','document','audio'))::int AS media_out,
+      count(DISTINCT i.lead_id) FILTER (WHERE i.kind = 'message_in')::int AS unique_leads_in,
+      count(DISTINCT i.lead_id) FILTER (WHERE i.kind = 'message_out' AND (i.meta->>'auto_reply')::bool IS TRUE)::int AS unique_leads_replied,
+      count(*) FILTER (WHERE i.kind = 'message_out' AND (i.meta->>'holding')::bool IS TRUE)::int AS holdings,
+      count(*) FILTER (WHERE i.kind = 'message_out' AND (i.meta->>'agenda_proposed')::bool IS TRUE)::int AS agenda_proposed,
+      count(*) FILTER (WHERE i.kind = 'message_out' AND (i.meta->>'agenda_confirmed')::bool IS TRUE)::int AS agenda_confirmed
+    FROM interactions i
+    WHERE i.created_at::date = current_date
+  `;
+  const newLeads = await sql`
+    SELECT count(*)::int AS new_leads FROM leads WHERE created_at::date = current_date
+  `;
+  const sales = await sql`
+    SELECT count(*)::int AS sold_today
+      FROM interactions
+     WHERE created_at::date = current_date
+       AND kind = 'stage_change'
+       AND meta->>'to_stage' = 'sold'
+  `;
+  res.json({
+    ...stats[0],
+    new_leads_today: newLeads[0].new_leads,
+    auto_sold_today: sales[0].sold_today,
+  });
+});
+
+// ==================== END EXTRAS ====================
+
+// ==================== BOT ACTIVITY · personas + calidad ====================
+
+// Personas únicas que nos hablaron — series 14 días
+app.get("/bot-activity/people-daily", async (req, res) => {
+  const days = Math.min(Number(req.query.days) || 14, 60);
+  const rows = await sql`
+    SELECT
+      i.created_at::date AS day,
+      count(DISTINCT i.lead_id)::int AS people_in,
+      count(DISTINCT i.lead_id) FILTER (WHERE l.created_at::date = i.created_at::date)::int AS new_people
+    FROM interactions i
+    JOIN leads l ON l.id = i.lead_id
+    WHERE i.kind = 'message_in'
+      AND i.created_at >= current_date - (${days}::int * INTERVAL '1 day')
+    GROUP BY 1
+    ORDER BY 1 DESC
+  `;
+  res.json({ items: rows });
+});
+
+// Calidad de datos — qué tan completos están los leads
+app.get("/bot-activity/data-quality", async (_req, res) => {
+  const stats = await sql`
+    WITH base AS (
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (WHERE name IS NOT NULL AND name <> '' AND name <> phone)::int AS with_name,
+        count(*) FILTER (WHERE email IS NOT NULL AND email <> '')::int                       AS with_email,
+        count(*) FILTER (WHERE country IS NOT NULL AND country <> 'Unknown')::int            AS with_country,
+        count(*) FILTER (WHERE dni IS NOT NULL AND dni <> '')::int                           AS with_dni,
+        count(*) FILTER (WHERE ocupacion IS NOT NULL AND ocupacion <> '')::int               AS with_ocupacion,
+        count(*) FILTER (WHERE stage IS NOT NULL AND stage <> 'lead')::int                   AS with_stage,
+        count(*) FILTER (WHERE buyer_tier IS NOT NULL AND buyer_tier <> '')::int             AS with_tier,
+        count(*) FILTER (WHERE escuela_client_id IS NOT NULL)::int                           AS with_escuela_link,
+        count(*) FILTER (WHERE last_course IS NOT NULL AND last_course <> '')::int           AS with_last_course
+      FROM leads
+      WHERE is_group IS NOT TRUE
+    ),
+    today_engaged AS (
+      SELECT count(DISTINCT i.lead_id)::int AS people
+        FROM interactions i
+        JOIN leads l ON l.id = i.lead_id
+       WHERE i.kind = 'message_in'
+         AND i.created_at::date = current_date
+         AND l.is_group IS NOT TRUE
+    ),
+    today_unknown AS (
+      SELECT
+        count(DISTINCT l.id) FILTER (WHERE l.country IS NULL OR l.country = 'Unknown')::int AS no_country,
+        count(DISTINCT l.id) FILTER (WHERE l.name IS NULL OR l.name = '' OR l.name = l.phone)::int AS no_name,
+        count(DISTINCT l.id) FILTER (WHERE l.email IS NULL OR l.email = '')::int AS no_email
+      FROM interactions i
+      JOIN leads l ON l.id = i.lead_id
+     WHERE i.kind = 'message_in'
+       AND i.created_at::date = current_date
+       AND l.is_group IS NOT TRUE
+    ),
+    tags AS (
+      SELECT count(*)::int AS leads_with_tags FROM leads WHERE is_group IS NOT TRUE AND cardinality(tags) > 0
+    )
+    SELECT b.*, te.people AS engaged_today,
+           tu.no_country AS today_no_country,
+           tu.no_name    AS today_no_name,
+           tu.no_email   AS today_no_email,
+           t.leads_with_tags
+      FROM base b CROSS JOIN today_engaged te CROSS JOIN today_unknown tu CROSS JOIN tags t
+  `;
+  res.json(stats[0]);
+});
+
+// ==================== END PEOPLE + QUALITY ====================
+
 
 // Error handler
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

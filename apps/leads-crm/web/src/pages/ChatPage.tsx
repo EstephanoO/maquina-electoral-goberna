@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LeadDetailPanel } from "../components/chat";
 import { api } from "../api";
 import { cn, STAGE_CONFIG, TIER_CONFIG } from "../lib/utils";
 import {
@@ -402,7 +403,7 @@ export default function ChatPage() {
               <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-500">{activeBot?.label}</span>
             </div>
             <div className="flex-1 overflow-y-auto">
-              <CrmPanel chat={selected} detail={detail} onNameSaved={() => { fetchChats(); fetchDetail(selectedId!); }} />
+              <LeadDetailPanel leadId={selectedId} onClose={() => setShowCrm(false)} />
             </div>
           </div>
         </>
@@ -431,31 +432,76 @@ function Avatar({ name, tier, purchases, size = "md" }: { name: string; tier: st
 function ChatItem({ chat: c, active, onClick }: { chat: Chat; active: boolean; onClick: () => void }) {
   const unread = c.unread_count > 0;
   const bad = !c.name || c.name === "Sin nombre" || /^\+?\d/.test(c.name);
+  const isVip = c.buyer_tier === "vip";
+  const tagsToShow = (c.tags || []).filter(t => t).slice(0, 3);
+  const moneySpent = Number(c.total_usd_spent || 0);
+
   return (
-    <div onClick={onClick} className={cn("flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-slate-100/60 active:bg-slate-50",
+    <div onClick={onClick} className={cn("flex items-start gap-3 px-3 py-2.5 cursor-pointer border-b border-slate-100/60 active:bg-slate-50 transition",
       active ? "bg-blue-50" : "hover:bg-slate-50/50")}>
       <Avatar name={c.name} tier={c.buyer_tier} purchases={c.n_purchases} />
       <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between">
-          <span className={cn("text-[13px] truncate", unread ? "font-bold text-slate-900" : "font-medium text-slate-700", bad && "italic text-orange-600")}>
+        {/* Row 1: name + crown + time */}
+        <div className="flex items-center gap-1.5 mb-0.5">
+          {isVip && <span className="text-amber-500 shrink-0" title="VIP">👑</span>}
+          <span className={cn("text-[13px] truncate flex-1", unread ? "font-bold text-slate-900" : "font-semibold text-slate-700", bad && "italic text-orange-600 font-normal")}>
             {bad ? c.phone : c.name}
           </span>
-          <span className={cn("text-[10px] shrink-0 ml-2", unread ? "text-[#2a4f8a] font-bold" : "text-slate-400")}>
+          <span className={cn("text-[10px] shrink-0", unread ? "text-[#2a4f8a] font-bold" : "text-slate-400")}>
             {c.last_message_at ? ago(c.last_message_at) : ""}
           </span>
         </div>
-        <div className="flex items-center justify-between mt-0.5">
-          <p className={cn("text-[11px] truncate max-w-[200px]", unread ? "text-slate-600" : "text-slate-400")}>
-            {c.last_message_kind === "message_out" ? "✓ " : ""}{(c.last_message || "").slice(0, 50)}
+
+        {/* Row 2: country + curso */}
+        {(c.country || c.course) && (
+          <div className="text-[10.5px] text-slate-500 truncate flex items-center gap-1.5 mb-1">
+            {c.country && <span>📍 {c.country}</span>}
+            {c.course && <span className="truncate text-purple-700">📚 {c.course.slice(0, 28)}</span>}
+          </div>
+        )}
+
+        {/* Row 3: last message preview */}
+        {c.last_message && (
+          <p className={cn("text-[11px] truncate max-w-full mb-1", unread ? "text-slate-600" : "text-slate-400")}>
+            {c.last_message_kind === "message_out" ? "✓ " : ""}{(c.last_message || "").slice(0, 60)}
           </p>
+        )}
+
+        {/* Row 4: tags + money */}
+        <div className="flex items-center justify-between gap-1">
+          <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+            {tagsToShow.map((t, i) => (
+              <span key={i} className={cn("text-[9px] px-1.5 py-0.5 rounded font-medium truncate max-w-[100px]", tagColor(t))}>
+                {t.replace(/^[^:]+:/, "")}
+              </span>
+            ))}
+            {(c.tags?.length ?? 0) > 3 && (
+              <span className="text-[9px] text-slate-400 self-center">+{(c.tags!.length - 3)}</span>
+            )}
+          </div>
           <div className="flex items-center gap-1 shrink-0">
-            {c.n_purchases > 0 && <span className="text-[9px] font-bold text-blue-600">{c.n_purchases}</span>}
-            {unread && <span className="min-w-[18px] h-[18px] rounded-full bg-[#2a4f8a] text-white text-[9px] font-bold flex items-center justify-center px-1">{c.unread_count > 9 ? "9+" : c.unread_count}</span>}
+            {moneySpent > 0 && (
+              <span className="text-[9px] font-mono font-bold text-emerald-700">${Math.round(moneySpent).toLocaleString()}</span>
+            )}
+            {unread && (
+              <span className="min-w-[18px] h-[18px] rounded-full bg-[#2a4f8a] text-white text-[9px] font-bold flex items-center justify-center px-1">
+                {c.unread_count > 9 ? "9+" : c.unread_count}
+              </span>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+function tagColor(tag: string): string {
+  if (tag.startsWith("interés:") || tag.startsWith("interes:")) return "bg-purple-100 text-purple-700";
+  if (tag.startsWith("producto:")) return "bg-blue-100 text-blue-700";
+  if (tag.startsWith("intent:"))   return "bg-amber-100 text-amber-700";
+  if (tag.startsWith("pago:"))     return "bg-emerald-100 text-emerald-700";
+  if (tag.startsWith("cliente:"))  return "bg-rose-100 text-rose-700";
+  return "bg-slate-100 text-slate-700";
 }
 
 function Bubble({ msg }: { msg: Msg }) {

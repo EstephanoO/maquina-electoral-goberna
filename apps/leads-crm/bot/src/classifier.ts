@@ -57,14 +57,23 @@ export function getCourse(product: string): string | null {
 }
 
 const PREFIXES = [
-  { p: "1809", c: "Rep. Dominicana" }, { p: "1829", c: "Rep. Dominicana" },
+  // Mobile prefixes que requieren match LARGO antes que el prefix corto:
+  { p: "1809", c: "República Dominicana" }, { p: "1829", c: "República Dominicana" }, { p: "1849", c: "República Dominicana" },
+  { p: "1787", c: "Puerto Rico" }, { p: "1939", c: "Puerto Rico" },
+  { p: "521",  c: "México" },        // móvil — DEBE ir antes de "52"
+  { p: "549",  c: "Argentina" },     // móvil — DEBE ir antes de "54"
+  // Países LATAM con código de 3 dígitos:
   { p: "593", c: "Ecuador" }, { p: "591", c: "Bolivia" }, { p: "595", c: "Paraguay" },
   { p: "598", c: "Uruguay" }, { p: "506", c: "Costa Rica" }, { p: "502", c: "Guatemala" },
   { p: "503", c: "El Salvador" }, { p: "504", c: "Honduras" }, { p: "505", c: "Nicaragua" },
   { p: "507", c: "Panamá" },
+  // 2 dígitos:
   { p: "51", c: "Perú" }, { p: "52", c: "México" }, { p: "57", c: "Colombia" },
   { p: "56", c: "Chile" }, { p: "54", c: "Argentina" }, { p: "58", c: "Venezuela" },
-  { p: "55", c: "Brasil" }, { p: "53", c: "Cuba" }, { p: "34", c: "España" },
+  { p: "55", c: "Brasil" }, { p: "53", c: "Cuba" },
+  // Europa:
+  { p: "34", c: "España" }, { p: "33", c: "Francia" }, { p: "49", c: "Alemania" }, { p: "39", c: "Italia" }, { p: "44", c: "Reino Unido" },
+  // Catch-all:
   { p: "1", c: "EEUU/Canadá" },
 ];
 
@@ -147,4 +156,71 @@ export async function applyCustomRules(body: string): Promise<string[]> {
     if (r._re.test(body)) tags.add(r.tag);
   }
   return Array.from(tags);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Semantic intent fallback — solo se activa cuando applyCustomRules
+// devolvió 0 tags y el body es lo suficientemente largo (mensajes muy
+// cortos son saludos/sí/no que no necesitan embeddings).
+//
+// Threshold: 0.78 cosine sim (server-side). Más estricto que el del
+// template picker porque un false-positive de intent dispara el flow
+// equivocado del bot, mientras que el picker solo elige un template más
+// y el operador siempre puede revisar.
+//
+// Tag prefix `ai-sem:` permite distinguir matches semánticos de regex en
+// la UI/audit. Para que el picker (que matchea por tag exacto como
+// "intent:precio") siga funcionando, también agregamos la tag plana.
+// ─────────────────────────────────────────────────────────────────────
+
+const SEMANTIC_INTENT_TIMEOUT_MS = 5_000;
+const SEMANTIC_INTENT_MIN_BODY_LEN = 12;
+
+async function fetchSemanticRuleMatches(body: string): Promise<Array<{ tag: string; score: number }>> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (API_TOKEN) headers["Authorization"] = `Bearer ${API_TOKEN}`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), SEMANTIC_INTENT_TIMEOUT_MS);
+  try {
+    const r = await fetch(`${API_URL}/rules/match-semantic`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ body }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    if (!r.ok) return [];
+    const j: any = await r.json();
+    return Array.isArray(j.matches) ? j.matches : [];
+  } catch (e: any) {
+    clearTimeout(t);
+    console.warn(`[classifier] semantic call failed: ${e?.message ?? "unknown"}`);
+    return [];
+  }
+}
+
+/**
+ * Aplica regex rules + (si nada matcheó) semantic fallback.
+ *
+ * Reemplaza a applyCustomRules en el caller principal. Cae back a regex si
+ * la API o embedder fallan — ningún failure mode puede romper el flow del
+ * bot, en peor caso el comportamiento queda igual que con applyCustomRules.
+ */
+export async function applyCustomRulesEnriched(body: string): Promise<string[]> {
+  const regexTags = await applyCustomRules(body);
+  if (regexTags.length > 0) return regexTags;
+  if (!body || body.length < SEMANTIC_INTENT_MIN_BODY_LEN) return regexTags;
+
+  const matches = await fetchSemanticRuleMatches(body);
+  if (matches.length === 0) return regexTags;
+
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const m of matches) {
+    if (!m.tag) continue;
+    const flagged = m.tag.startsWith("ai-sem:") ? m.tag : `ai-sem:${m.tag}`;
+    if (!seen.has(flagged)) { seen.add(flagged); out.push(flagged); }
+    if (!seen.has(m.tag)) { seen.add(m.tag); out.push(m.tag); }
+  }
+  return out;
 }

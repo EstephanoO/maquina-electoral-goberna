@@ -27,7 +27,7 @@ import P from "pino";
 import { join } from "path";
 import { rmSync } from "fs";
 import { CONFIG, type PhoneConfig } from "./config.js";
-import { classifyMessage, getCourse, applyCustomRules } from "./classifier.js";
+import { classifyMessage, getCourse, applyCustomRulesEnriched } from "./classifier.js";
 
 // Slug para tags: "Consultor Político" → "consultor-politico". Usado para que
 // los tags queden consistentes (sin acentos, espacios, mayúsculas).
@@ -46,6 +46,10 @@ import {
   getElectoralCampaignFor,
 } from "./crm-api.js";
 import { getAutoResponse, getOutOfHoursResponse, isWithinHours } from "./auto-reply.js";
+import { decideAutoReply, typingDelayFor } from "./auto-reply-v2.js";
+import { extractFromMessage, buildLeadPatch } from "./extractors.js";
+import { getNextSlots, proposeMessage, saveProposedSlots, getProposedSlots, pickSlotFromReply, createAppointment, confirmationMessage } from "./agenda.js";
+import { invalidateMemory } from "./conversation-memory.js";
 
 const logger = P({ level: "warn" });
 
@@ -366,8 +370,16 @@ export class WAInstance {
       return;
     }
 
-    // Resolve phone number from JID
+    // Resolve phone number from JID. We support 3 JID types:
+    //   - @s.whatsapp.net : DM con un usuario (toma phone de jid)
+    //   - @lid           : DM con LID (resolve via participantPn / mapping)
+    //   - @g.us          : grupo (tomar el sender real desde participant)
     let phone: string;
+    let isGroup = false;
+    let groupJid: string | null = null;
+    let groupSubject: string | null = null;
+    let senderName: string | null = null;
+
     if (jid.includes("@s.whatsapp.net")) {
       // Normal JID: 51955135507@s.whatsapp.net
       const digits = jid.replace("@s.whatsapp.net", "");
@@ -376,6 +388,36 @@ export class WAInstance {
         return;
       }
       phone = "+" + digits;
+    } else if (jid.includes("@g.us")) {
+      // GROUP JID — el lead es el participant real (sender), no el grupo.
+      isGroup = true;
+      groupJid = jid;
+      const partPn: string | undefined = msg.key?.participantPn || msg.participantPn;
+      const part: string | undefined = msg.key?.participant;
+      let resolved: string | null = null;
+      if (partPn && partPn.includes("@s.whatsapp.net")) {
+        const d = partPn.replace("@s.whatsapp.net", "").split(":")[0];
+        if (d.length >= 8 && d.length <= 15) resolved = "+" + d;
+      }
+      if (!resolved && part && part.includes("@s.whatsapp.net")) {
+        const d = part.replace("@s.whatsapp.net", "").split(":")[0];
+        if (d.length >= 8 && d.length <= 15) resolved = "+" + d;
+      }
+      if (!resolved && part && part.includes("@lid")) {
+        resolved = await this.resolveLidPhone(part, msg);
+      }
+      if (!resolved) {
+        addLog(this.id, `⏭ group sender unresolved: ${jid.slice(0, 25)}`);
+        return;
+      }
+      phone = resolved;
+      senderName = msg.pushName || null;
+      // Resolve group subject best-effort (cached)
+      try {
+        const meta = await (this.sock as any)?.groupMetadata?.(jid);
+        groupSubject = meta?.subject || null;
+      } catch {}
+      addLog(this.id, `👥 GROUP msg: ${groupSubject || jid.slice(0, 18)} · sender ${senderName || phone}`);
     } else if (jid.includes("@lid")) {
       // LID: try to resolve real phone via participant or msg.key
       const resolved = await this.resolveLidPhone(jid, msg);
@@ -433,6 +475,13 @@ export class WAInstance {
     const meta: Record<string, unknown> = {
       message_type: detectedType,
     };
+    if (contactName) meta.pushName = contactName;
+    if (isGroup) {
+      meta.is_group = true;
+      if (groupJid) meta.group_jid = groupJid;
+      if (groupSubject) meta.group_subject = groupSubject;
+      if (senderName) meta.sender_name = senderName;
+    }
     if (mediaInfo) {
       meta.media_url = mediaInfo.media_url;
       meta.media_mime = mediaInfo.media_mime;
@@ -458,9 +507,59 @@ export class WAInstance {
     const { lead, interaction } = result;
     addLog(this.id, `✅ CRM saved: lead=${lead.id} (${lead.name}) interaction=${interaction?.id ?? "dedup"} dir=${isFromMe ? "out" : "in"}`);
 
-    // 2. Classify + auto-reply: SOLO inbound. Mensajes propios del operador
-    //    no se clasifican ni disparan auto-reply.
+    // 2. Classify + auto-reply: SOLO inbound DMs. Mensajes propios del
+    //    operador y mensajes de grupos NO disparan auto-reply.
     if (isFromMe) return;
+    if (isGroup) {
+      addLog(this.id, `🤖 skip auto-reply: group message (${groupSubject || groupJid?.slice(0, 16)})`);
+      return;
+    }
+
+    // ── AUTO-NAME: si lead.name es placeholder y tenemos pushName, actualizar
+    try {
+      const placeholder = !lead?.name || lead.name === "Sin nombre" || /^\+?\d+$/.test(lead.name) || lead.name === phone;
+      if (placeholder && contactName && contactName.length >= 3 && !/^\+?\d+$/.test(contactName)) {
+        await crmApi.updateLead(lead.id, { name: contactName });
+        addLog(this.id, `📝 lead name updated from pushName: "${contactName}"`);
+      }
+    } catch {}
+
+    // ── EXTRACTORS · NER ligero del mensaje entrante ──
+    // Saca email / DNI / ciudad / fecha / ocupación + signals (sales-ready,
+    // frustración, intent_strength). Persiste lo nuevo al lead sin pisar.
+    const extracted = extractFromMessage(body);
+    if (Object.keys(extracted).length > 0) {
+      addLog(this.id, `🔬 extracted: ${JSON.stringify(extracted).slice(0, 120)}`);
+      try {
+        const patch = buildLeadPatch(lead as any, extracted);
+        if (Object.keys(patch).length > 0) {
+          await crmApi.updateLead(lead.id, patch);
+          addLog(this.id, `📝 lead enriched: ${Object.keys(patch).join(", ")}`);
+        }
+      } catch (e: any) {
+        addLog(this.id, `⚠ enrich failed: ${e.message}`);
+      }
+      // Sales-ready signal → flag lead for human attention immediately
+      if (extracted.sales_ready && lead?.id) {
+        try {
+          await fetch(`${process.env.API_URL || "http://api:4000"}/leads/${lead.id}/flag-attention`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: extracted.payment_proof ? "sales_ready_payment_done" : "sales_ready_high_intent" }),
+          });
+          addLog(this.id, `🎯 SALES-READY signal → flagged for human (${extracted.payment_proof ? "pago hecho" : "high intent"})`);
+        } catch {}
+      }
+      // Frustration signal → flag too
+      if (extracted.frustration && lead?.id) {
+        try {
+          await fetch(`${process.env.API_URL || "http://api:4000"}/leads/${lead.id}/flag-attention`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reason: "frustration_detected" }),
+          });
+          addLog(this.id, `😡 FRUSTRATION signal → flagged for human`);
+        } catch {}
+      }
+    }
 
     const classified = classifyMessage(body);
     if (classified.products.length > 0) addLog(this.id, `🏷 Classified: ${classified.products.join(", ")}`);
@@ -468,7 +567,10 @@ export class WAInstance {
     // Custom rules dinámicas — el operador/admin las edita en /training y se
     // aplican sin redeploy (cache 60s en classifier.ts). Devuelve un array de
     // tags que matchearon. Se mergean con los tags hardcoded del PRODUCT_RULES.
-    const customTags = await applyCustomRules(body).catch(() => []);
+    // Enriched = regex first; si nada matchea, semantic fallback (Gemini embed
+    // + pgvector). Tags semánticos llevan prefix `ai-sem:` para audit pero
+    // también la tag plana, así el picker los trata igual que los regex.
+    const customTags = await applyCustomRulesEnriched(body).catch(() => []);
     if (customTags.length > 0) addLog(this.id, `🤖 Custom rules: ${customTags.join(", ")}`);
 
     // Si NO matcheó nada (ni products ni custom), no hay nada que persistir.
@@ -496,6 +598,177 @@ export class WAInstance {
       addLog(this.id, `✅ Lead updated: tags+=${tagsToAdd.join(",")}${primaryCourse ? ` course=${primaryCourse}` : ""}`);
     } catch (e: any) {
       addLog(this.id, `⚠ updateLead failed: ${e.message}`);
+    }
+
+    // ── INVALIDAR MEMORY antes de cualquier AI call ──
+    invalidateMemory(lead.id);
+
+    // ── AGENDA · si lead pidió agendar O está confirmando un slot ──
+    try {
+      const wantsAgenda = (customTags as string[]).includes("intent:agenda");
+      const proposed = getProposedSlots(phone);
+
+      if (proposed && proposed.length > 0) {
+        // Tenemos slots propuestos pendientes — checar si el body los confirma
+        const picked = pickSlotFromReply(body, proposed);
+        if (picked) {
+          addLog(this.id, `📅 lead ${lead.id} eligió slot: ${picked.display}`);
+          const apt = await createAppointment({
+            lead_id: lead.id,
+            scheduled_at: picked.iso,
+            operator_id: 4,  // Kathy default
+            notes: `Booked via bot from "${body.slice(0, 100)}"`,
+          });
+          const meetingUrl = apt?.meeting_url ?? null;
+          const confirmMsg = confirmationMessage(picked, meetingUrl);
+          await new Promise(r => setTimeout(r, 1500));
+          await this.sendMessage(phone, confirmMsg);
+          await crmApi.recordMessage({
+            phone, direction: "out",
+            body: confirmMsg,
+            assigned_to: this.phone,
+            timestamp: new Date().toISOString(),
+            external_id: `agenda-confirm-${apt?.id}-${Date.now()}`,
+            meta: { message_type: "text", auto_reply: true, agenda_confirmed: true, appointment_id: apt?.id },
+          });
+          // Flag to operator que hay nueva cita
+          if (lead?.id) {
+            try {
+              await fetch(`${process.env.API_URL || "http://api:4000"}/leads/${lead.id}/flag-attention`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reason: `appointment_booked: ${picked.display}` }),
+              });
+            } catch {}
+          }
+          return;  // Done — no auto-reply normal
+        }
+      }
+
+      if (wantsAgenda) {
+        addLog(this.id, `📅 lead ${lead.id} pidió AGENDA, proponiendo slots…`);
+        const slots = await getNextSlots(4, 3);
+        if (slots.length > 0) {
+          saveProposedSlots(phone, slots);
+          const msg = proposeMessage(slots);
+          await new Promise(r => setTimeout(r, 1500));
+          await this.sendMessage(phone, msg);
+          await crmApi.recordMessage({
+            phone, direction: "out",
+            body: msg,
+            assigned_to: this.phone,
+            timestamp: new Date().toISOString(),
+            external_id: `agenda-propose-${Date.now()}`,
+            meta: { message_type: "text", auto_reply: true, agenda_proposed: true, slot_count: slots.length },
+          });
+          return;  // Done — esperando que el lead elija
+        }
+      }
+    } catch (e: any) {
+      addLog(this.id, `⚠ agenda flow failed: ${e.message}`);
+    }
+
+    // ── AUTO-REPLY (v2: DB-driven) ──────────────────────────────────────
+    // Sólo si bot_instances.auto_reply = TRUE para esta instancia. El operador
+    // puede activar/desactivar desde /settings sin redeploy. Cooldown 30min
+    // por phone para evitar spam.
+    try {
+      const decision = await decideAutoReply({
+        instanceSlug: this.id,
+        ownPhone: this.phone,
+        fromPhone: phone,
+        body,
+        classifiedProducts: classified.products,
+        customTags,
+        leadId: lead?.id,
+      });
+      if (decision.sent) {
+        addLog(this.id, `🤖 auto-reply: matched template "${decision.template_name}"${decision.image_url ? " 📷" : ""} — typing…`);
+        const delay = typingDelayFor(decision.body);
+        try { await this.sock?.sendPresenceUpdate("composing", jid); } catch {}
+        await new Promise((r) => setTimeout(r, delay));
+        try { await this.sock?.sendPresenceUpdate("paused", jid); } catch {}
+        if (decision.image_url) {
+          await this.sendImage(phone, decision.image_url, decision.body);
+        } else if ((decision as any).document_url) {
+          const d: any = decision;
+          await this.sendDocument(phone, d.document_url, d.document_filename || "documento.pdf", decision.body, d.document_mime || "application/pdf");
+        } else if ((decision as any).video_url) {
+          await this.sendVideo(phone, (decision as any).video_url, decision.body);
+        } else {
+          await this.sendMessage(phone, decision.body);
+        }
+        addLog(this.id, `🤖 auto-reply SENT (${decision.body.length} chars)${decision.needs_human_attention ? " · ⚠ HOLDING (needs human)" : ""}`);
+        try {
+          await crmApi.recordMessage({
+            phone,
+            direction: "out",
+            body: decision.body,
+            assigned_to: this.phone,
+            timestamp: new Date().toISOString(),
+            external_id: `auto-reply-${decision.template_id}-${Date.now()}`,
+            meta: {
+              message_type: decision.image_url ? "image" : "text",
+              auto_reply: true, template_id: decision.template_id, template_name: decision.template_name,
+              ...(decision.image_url ? { media_url: decision.image_url } : {}),
+              ...(decision.needs_human_attention ? { holding: true, attention_reason: decision.attention_reason } : {}),
+            },
+          });
+          // Si fue un holding, marcamos al lead para atención humana
+          if (decision.needs_human_attention && lead?.id) {
+            try {
+              await fetch(`${process.env.API_URL || "http://api:4000"}/leads/${lead.id}/flag-attention`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reason: decision.attention_reason || "bot_no_match" }),
+              });
+              addLog(this.id, `🚨 lead ${lead.id} flagged for human attention`);
+            } catch (e: any) {
+              addLog(this.id, `⚠ flag-attention failed: ${e.message}`);
+            }
+          }
+        } catch (e: any) {
+          addLog(this.id, `⚠ auto-reply log failed: ${e.message}`);
+        }
+
+        // Sequence: send follow-up messages (e.g. TEMARIO image after flyer)
+        if (decision.sequence && decision.sequence.length > 0) {
+          for (const step of decision.sequence) {
+            await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1500));
+            try {
+              if (step.media_kind === "image" && step.image_url) {
+                await this.sendImage(phone, step.image_url, step.body || "");
+              } else if (step.media_kind === "document" && (step as any).document_url) {
+                const sd: any = step;
+                await this.sendDocument(phone, sd.document_url, sd.document_filename || "documento.pdf", step.body || "", sd.document_mime || "application/pdf");
+              } else if (step.media_kind === "video" && (step as any).video_url) {
+                await this.sendVideo(phone, (step as any).video_url, step.body || "");
+              } else {
+                await this.sendMessage(phone, step.body);
+              }
+              addLog(this.id, `🤖 sequence step SENT: ${step.template_name}`);
+              await crmApi.recordMessage({
+                phone, direction: "out",
+                body: step.body || "",
+                assigned_to: this.phone,
+                timestamp: new Date().toISOString(),
+                external_id: `auto-reply-seq-${step.template_id}-${Date.now()}`,
+                meta: {
+                  message_type: step.media_kind === "image" ? "image" : "text",
+                  auto_reply: true, template_id: step.template_id, template_name: step.template_name,
+                  ...(step.image_url ? { media_url: step.image_url } : {}),
+                },
+              });
+            } catch (e: any) {
+              addLog(this.id, `⚠ sequence step failed: ${e.message}`);
+              break; // stop sequence on first failure
+            }
+          }
+        }
+      } else {
+        addLog(this.id, `🤖 auto-reply skip: ${decision.reason}`);
+      }
+    } catch (e: any) {
+      addLog(this.id, `⚠ auto-reply error: ${e.message}`);
     }
   }
 
@@ -591,6 +864,69 @@ export class WAInstance {
   }
 
   /** Send a message to a phone number */
+  /** Send PDF / document via URL (Baileys document message). */
+  async sendDocument(phone: string, docUrl: string, filename: string, caption?: string, mimetype = "application/pdf"): Promise<void> {
+    if (!this.sock || this._status !== "ready") throw new Error("not connected");
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 8 || digits.length > 15) throw new Error(`invalid phone: ${phone}`);
+    const jid = digits + "@s.whatsapp.net";
+    addLog(this.id, `📤📄 DOC to ${phone}: ${filename}`);
+    try {
+      const result = await this.sock.sendMessage(jid, {
+        document: { url: docUrl },
+        mimetype,
+        fileName: filename,
+        caption: caption || "",
+      });
+      addLog(this.id, `✅ DOC SENT: msgId=${result?.key?.id || "?"}`);
+      this.stats.messagesOut++;
+    } catch (e: any) {
+      addLog(this.id, `❌ DOC SEND FAILED: ${e.message}`);
+      throw e;
+    }
+  }
+
+  /** Send video via URL (Baileys video message). */
+  async sendVideo(phone: string, videoUrl: string, caption?: string): Promise<void> {
+    if (!this.sock || this._status !== "ready") throw new Error("not connected");
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 8 || digits.length > 15) throw new Error(`invalid phone: ${phone}`);
+    const jid = digits + "@s.whatsapp.net";
+    addLog(this.id, `📤🎬 VID to ${phone}: ${videoUrl.slice(-30)}`);
+    try {
+      const result = await this.sock.sendMessage(jid, {
+        video: { url: videoUrl },
+        caption: caption || "",
+      });
+      addLog(this.id, `✅ VID SENT: msgId=${result?.key?.id || "?"}`);
+      this.stats.messagesOut++;
+    } catch (e: any) {
+      addLog(this.id, `❌ VID SEND FAILED: ${e.message}`);
+      throw e;
+    }
+  }
+
+  /** Send image via URL with optional caption. Uses Baileys image message. */
+  async sendImage(phone: string, imageUrl: string, caption?: string): Promise<void> {
+    if (!this.sock || this._status !== "ready") throw new Error("not connected");
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 8 || digits.length > 15) throw new Error(`invalid phone: ${phone}`);
+    const jid = digits + "@s.whatsapp.net";
+    addLog(this.id, `📤📷 IMG to ${phone}: ${imageUrl.slice(-30)}${caption ? ` · "${caption.slice(0, 40)}"` : ""}`);
+    try {
+      const result = await this.sock.sendMessage(jid, {
+        image: { url: imageUrl },
+        caption: caption || "",
+      });
+      const msgId = result?.key?.id;
+      addLog(this.id, `✅ IMG SENT ok: msgId=${msgId || "?"}`);
+      this.stats.messagesOut++;
+    } catch (e: any) {
+      addLog(this.id, `❌ IMG SEND FAILED: ${e.message}`);
+      throw e;
+    }
+  }
+
   async sendMessage(phone: string, text: string): Promise<void> {
     if (!this.sock || this._status !== "ready") throw new Error("not connected");
     const digits = phone.replace(/\D/g, "");
