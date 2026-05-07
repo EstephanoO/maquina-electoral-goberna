@@ -491,11 +491,13 @@ app.post("/learned-replies/match", safe(async (req, res) => {
   const r = await embed(body, "RETRIEVAL_QUERY");
   if (!r.ok) return res.json({ match: null, reason: r.reason });
 
-  // Threshold 0.78 (bajado de 0.85): el 0.85 era demasiado estricto y perdía
-  // matches válidos para queries naturales tipo "info de consultoria" cuando
-  // Kathy había respondido a "quisiera saber del consultor". Sigue siendo
-  // selectivo (≥0.78 = bien similar), pero captura paráfrasis razonables.
-  const matches = await db.searchLearnedReplies(vecToPg(r.vec), 1, 0.78, true);
+  // Threshold 0.72 (bajado iterativamente desde 0.85→0.78→0.72): los queries
+  // naturales ("hola quiero info de X") rara vez sacan ≥0.78 con queries del
+  // histórico que vienen del wa.me link ("¡Hola! Quiero más información de
+  // Y"). 0.72 captura paráfrasis amplias pero sigue por encima de matches
+  // espurios (~0.5-0.65 es semánticamente disperso). Si baja respuestas
+  // malas, subir a 0.75.
+  const matches = await db.searchLearnedReplies(vecToPg(r.vec), 1, 0.72, true);
   if (matches.length === 0) return res.json({ match: null, reason: "no_match_above_threshold" });
 
   const top = matches[0];
