@@ -1,23 +1,33 @@
 /**
- * Mining review service: auto-promueve intent_mining_candidates con
- * match_count alto, y manda resumen al admin via WhatsApp para los que
- * requieren ojo humano.
+ * Mining review service: NO auto-promueve por defecto. Lista candidates con
+ * match_count >= 5 y manda resumen al admin via WhatsApp para review humano.
  *
- * Flujo:
- *   1. Lista pending candidates con match_count >= 5, ordenados DESC
- *   2. Auto-promote candidates con match_count >= AUTO_PROMOTE_THRESHOLD
- *      Y suggested_pattern válido (compilable) Y sin duplicado
- *   3. Top 10 restantes → resumen WhatsApp al ADMIN_PHONE (si configurado)
+ * Por qué no auto-promote (post-mortem 2026-05-07):
+ *   La primera versión auto-promovió 6 rules con match_count alto, pero el
+ *   suggested_pattern del clusterer (3 palabras top-frecuencia) es demasiado
+ *   genérico. Match_count alto venía de SPAM ("Te comparto una oportunidad",
+ *   un mismo lead pre-canned a centenares), ACKS ("muchas gracias",
+ *   "ahora reviso") y base64 garbage de imágenes mal logueadas.
+ *   Auto-promote contaminó ai_rules con tags como `intent:comparto` que
+ *   matchean cualquier mensaje con esas palabras genéricas.
+ *
+ *   Lección: el clusterer puede DETECTAR clusters, pero el SIGNIFICADO
+ *   semántico requiere ojo humano. El scheduler solo notifica.
+ *
+ *   AUTO_PROMOTE_THRESHOLD = Infinity efectivamente desactiva auto-promote.
+ *   Si en el futuro se quiere reactivar con guards más estrictos (whitelist
+ *   de palabras "intent-like", validación de diversidad de samples), bajar
+ *   el threshold y agregar checks acá.
  *
  * Usage:
- *   - Cron diario @ 9 AM Lima (services/scheduler.ts)
+ *   - Cron diario @ 9 AM Lima (services/scheduler.ts) → solo notify
  *   - Manual: POST /admin/mining/run-review
  */
 import { sql } from "../sql.js";
 import { db } from "../db.js";
 import { embedRuleInBackground } from "./embed.js";
 
-export const AUTO_PROMOTE_THRESHOLD = 50;
+export const AUTO_PROMOTE_THRESHOLD = Number.POSITIVE_INFINITY; // efectivamente OFF
 const ADMIN_PHONE = process.env.MINING_ADMIN_PHONE || ""; // ej. "+51955135507"
 const NOTIFY_INSTANCE = process.env.MINING_NOTIFY_INSTANCE || "p4";
 const BOT_URL = () => process.env.BOT_URL || "http://bot:4020";
