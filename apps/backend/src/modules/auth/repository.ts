@@ -37,6 +37,37 @@ export class AuthRepository {
     return rows[0] ?? null;
   }
 
+  /**
+   * Match por firebase_uid (linkeado en migración 059). Tiene prioridad sobre
+   * el match por phone porque el linkeo previo ya garantiza identidad.
+   */
+  async findUserByFirebaseUid(firebaseUid: string): Promise<UserRow | null> {
+    const { rows } = await this.pool.query<UserRow>(
+      `SELECT id, email, password_hash, full_name, phone, region, role, status,
+              COALESCE(password_reset_required, false) as password_reset_required, created_at, updated_at
+       FROM users WHERE firebase_uid = $1`,
+      [firebaseUid],
+    );
+    return rows[0] ?? null;
+  }
+
+  /**
+   * Linkea un firebase_uid a un user existente. UNIQUE (cuando NOT NULL) en
+   * la columna garantiza que un mismo uid no quede ligado a 2 users.
+   * Retorna true si se actualizó (no había uid previo o coincide); false si
+   * el user ya tenía OTRO uid (caller debe rechazar el linkeo en ese caso).
+   */
+  async linkUserFirebaseUid(userId: string, firebaseUid: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE users
+          SET firebase_uid = $2, updated_at = now()
+        WHERE id = $1
+          AND (firebase_uid IS NULL OR firebase_uid = $2)`,
+      [userId, firebaseUid],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
   /** Mark user as requiring password reset on next login */
   async setPasswordResetRequired(userId: string, required: boolean): Promise<boolean> {
     const result = await this.pool.query(

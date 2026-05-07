@@ -50,20 +50,36 @@ export class AuthService {
       throw new AppError("AUTH_INVALID_CREDENTIALS", "credenciales incorrectas", 401);
     }
 
+    return this.issueTokensForUser(user);
+  }
+
+  /**
+   * Emite access+refresh tokens para un user ya autenticado por OTRO mecanismo
+   * (Firebase Phone Auth, magic-link consume). NO valida password — el caller
+   * es responsable de haber verificado la identidad antes.
+   */
+  async issueTokensForUser(user: {
+    id: string;
+    email: string;
+    full_name: string;
+    phone?: string | null;
+    region?: string | null;
+    role: string;
+    status: string;
+    password_reset_required?: boolean;
+  }): Promise<LoginResult> {
+    if (user.status === "suspended") {
+      throw new AppError("AUTH_USER_SUSPENDED", "usuario suspendido", 403);
+    }
+
     // Admin users see ALL campaigns; others only their assigned ones
     const campaigns = user.role === "admin"
       ? await this.repo.getAllActiveCampaigns()
       : await this.repo.getUserCampaigns(user.id);
     const campaignIds = campaigns.map((c) => c.campaign_id);
 
-    // Use the highest role between user's global role and campaign-specific roles
-    // This ensures a consultor for any campaign can access consultor-level endpoints
     const effectiveRole = this.computeEffectiveRole(user.role, campaigns);
 
-    // JWT compacto: solo identidad. campaign_ids/perms se fetchean desde DB
-    // en el authenticate middleware con cache LRU. Antes iban inline pero
-    // hacían crecer el cookie a > 4096 bytes para admins con muchas campañas
-    // y el browser lo rechazaba (fix 2026-05-06).
     const accessToken = await this.generateAccessToken({
       sub: user.id,
       email: user.email,
@@ -77,7 +93,7 @@ export class AuthService {
     const refreshExpiry = this.parseExpiry(this.env.jwtRefreshExpiresIn);
 
     await this.repo.saveRefreshToken(user.id, refreshHash, familyId, refreshExpiry);
-    void campaignIds; // intencionalmente no usado en el JWT — se fetchea en middleware
+    void campaignIds;
 
     return {
       access_token: accessToken,
@@ -101,7 +117,6 @@ export class AuthService {
             ? (c.campaign_config.whatsapp_number as string)
             : null,
       })),
-      // Include flag if user needs to reset password
       ...(user.password_reset_required ? { password_reset_required: true } : {}),
     };
   }

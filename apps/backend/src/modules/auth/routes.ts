@@ -502,12 +502,27 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
         return reply.code(401).send(errorPayload(requestId, "FIREBASE_INVALID_TOKEN", msg.slice(0, 120)));
       }
 
-      // Matchea contra users por phone (Firebase devuelve E.164 con '+'; nosotros
-      // guardamos solo dígitos en users.phone, así que strippeamos el '+').
+      // Resolución del user en orden de confianza:
+      //   1. firebase_uid (linkeo previo en migración 059 — máxima confianza)
+      //   2. phone match (auto-link si coincide y no tiene uid)
+      //   3. nada → 412 (cliente debe completar registro o pedir admin)
       const normalizedPhone = (verified.phone_number ?? "").replace(/\D/g, "");
-      let user = null;
-      if (normalizedPhone) {
+      let user = await repo.findUserByFirebaseUid(verified.uid);
+      let autoLinked = false;
+
+      if (!user && normalizedPhone) {
         user = await repo.findUserByPhone(normalizedPhone);
+        if (user) {
+          const linked = await repo.linkUserFirebaseUid(user.id, verified.uid);
+          if (!linked) {
+            return reply.code(409).send(errorPayload(
+              requestId,
+              "FIREBASE_UID_CONFLICT",
+              "el usuario ya tiene otra cuenta Firebase asociada — contactar admin",
+            ));
+          }
+          autoLinked = true;
+        }
       }
 
       app.log.info({
@@ -515,29 +530,42 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
         firebase_uid: verified.uid,
         phone_present: !!verified.phone_number,
         user_matched: !!user,
+        auto_linked: autoLinked,
       }, "firebase-verify: token válido");
 
-      // Por ahora: solo devolvemos info — NO emitimos JWT. Esto se conecta cuando
-      // el cliente esté listo. El user puede usar este payload para decidir
-      // "registrar nueva cuenta" vs "login existente".
-      return reply.code(200).send({
-        ok: true,
-        request_id: requestId,
-        firebase: {
-          uid: verified.uid,
-          phone_number: verified.phone_number,
-        },
-        matched_user: user
-          ? {
-              id: user.id,
-              full_name: user.full_name,
-              phone: user.phone,
-              role: user.role,
-              status: user.status,
-            }
-          : null,
-      });
+      if (!user) {
+        // TODO follow-up: si hay candidatos.postulacion pendiente con este
+        // telefono_e164, auto-crear users row + linkear vía user_campaigns
+        // con role 'candidato'. Por ahora el cliente debe completar registro.
+        return reply.code(412).send(errorPayload(
+          requestId,
+          "USER_NOT_FOUND_FOR_FIREBASE",
+          "phone verificado pero el usuario no existe — completar registro primero",
+        ));
+      }
+
+      // Emite JWT cookie (web) + body con tokens (mobile guarda en expo-secure-store)
+      try {
+        const result = await service.issueTokensForUser(user);
+        setAuthCookies(reply, result.access_token, result.refresh_token, isProd);
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          firebase: {
+            uid: verified.uid,
+            phone_number: verified.phone_number,
+          },
+          auto_linked: autoLinked,
+          ...result,
+        });
+      } catch (error) {
+        if (error instanceof AppError) {
+          return reply.code(error.statusCode).send(errorPayload(requestId, error.code, error.message));
+        }
+        throw error;
+      }
     });
+
 
     // ── POST /api/users/:userId/set-password ───────────────────────────
     // Admin/Candidato sets a new password directly for a team member.
