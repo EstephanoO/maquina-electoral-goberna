@@ -183,7 +183,14 @@ export async function remove(id: number): Promise<boolean> {
 export async function recordMessage(input: {
   phone: string; body: string; name?: string;
   kind?: string; by?: string; meta?: any; assigned_to?: string;
-}): Promise<{ lead: Lead; interaction: Awaited<ReturnType<typeof addInteraction>> } | null> {
+}): Promise<{
+  lead: Lead;
+  interaction: Awaited<ReturnType<typeof addInteraction>>;
+  /** ISO timestamp del último message_out manual (auto_reply≠true) en los
+   *  últimos 10 min, o null. Sprint 2 hotfix F2: bot debe NO interrumpir
+   *  conversación activa del operador. */
+  recent_manual_out_at: string | null;
+} | null> {
   const cleanName = sanitizeContactName(input.name, input.phone);
 
   let lead = await findByPhone(input.phone);
@@ -222,5 +229,21 @@ export async function recordMessage(input: {
     meta: input.meta,
     by: input.by,
   });
-  return { lead, interaction };
+
+  // Sprint 2 hotfix F2: timestamp del último message_out MANUAL (no del bot)
+  // en últimos 10 min. Si está presente, el bot debe skipear auto-reply
+  // — está activa una conversación con operador y no queremos interrumpirla.
+  const recentRows = await sql<Array<{ ts: string }>>`
+    SELECT created_at AS ts
+      FROM interactions
+     WHERE lead_id = ${lead.id}
+       AND kind = 'message_out'
+       AND COALESCE((meta->>'auto_reply')::bool, false) = false
+       AND created_at > now() - interval '10 minutes'
+     ORDER BY created_at DESC
+     LIMIT 1
+  `;
+  const recent_manual_out_at = recentRows[0]?.ts ?? null;
+
+  return { lead, interaction, recent_manual_out_at };
 }

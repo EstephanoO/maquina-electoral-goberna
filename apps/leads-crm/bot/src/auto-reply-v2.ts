@@ -44,21 +44,22 @@ async function aiReply(opts: { systemPrompt: string; userMessage: string }): Pro
 }
 function aiProviderAvailable(): boolean { return openaiAvailable() || geminiAvailable(); }
 
-// Cooldown — SOLO se activa cuando el bot escala a humano (sensible / Gemini
-// fallback / holding template). Para matches confiados (product / tag /
-// learned_reply) NO hay cooldown — el bot responde siempre, replicando el
-// flujo natural de Kathy. Si el lead spamea, los matches rinden idéntico
-// resultado y el flow no se rompe.
-//
-// Decisión user 2026-05-07: "quiero que responda siempre, cuando la consulta
-// no la podés responder ahí sí esperás, decís que te dé un momento, y notificás
-// que ese chat necesita atención humana."
-const COOLDOWN_MS = 30 * 60 * 1000;
-// LRU con TTL: la entrada expira automáticamente al pasar el cooldown,
-// y el max=5000 protege de un crecimiento ilimitado si se ataca el bot.
-const recentReplies = new LRUCache<string, number>({
+// Cooldown dual (Sprint 2 hotfix F4, post-mortem 2026-05-07):
+//   - SHORT_COOLDOWN_MS (15s): se activa SIEMPRE tras enviar — bloquea
+//     duplicados burst (ej. lead manda "es costo" 2 veces y bot responde
+//     diploma_4_semanas 2 veces en 5s). Aplica también a confident matches.
+//   - LONG_COOLDOWN_MS (30min): solo cuando el bot escaló a humano (holding/
+//     gemini/sensitive). Mantiene la decisión del user de "responde siempre,
+//     y solo cuando no podés esperás" — pero el "esperás" debe ser corto si
+//     fue match confiado, largo si necesita humano de verdad.
+const SHORT_COOLDOWN_MS = 15 * 1000;
+const LONG_COOLDOWN_MS = 30 * 60 * 1000;
+// Compatibilidad con clearCooldown() y código antiguo. El TTL del LRU es
+// el más largo posible — un timestamp dado puede ser de 15s o 30min, decide
+// inCooldown() según el tipo.
+const recentReplies = new LRUCache<string, { until: number }>({
   max: 5000,
-  ttl: COOLDOWN_MS,
+  ttl: LONG_COOLDOWN_MS,
 });
 
 // ─── Detector de intents sensibles ──────────────────────────────────────
@@ -92,11 +93,22 @@ export function detectSensitiveIntent(body: string): string | null {
 }
 
 function inCooldown(phone: string): boolean {
-  return recentReplies.has(phone);
+  const entry = recentReplies.get(phone);
+  if (!entry) return false;
+  if (Date.now() < entry.until) return true;
+  // Expirada — limpiar para que LRU no sirva una entrada vieja.
+  recentReplies.delete(phone);
+  return false;
 }
 
-function markReplied(phone: string) {
-  recentReplies.set(phone, Date.now());
+/** Cooldown corto: 15s, anti-duplicados burst. Aplica a TODOS los sends. */
+function markRepliedShort(phone: string) {
+  recentReplies.set(phone, { until: Date.now() + SHORT_COOLDOWN_MS });
+}
+
+/** Cooldown largo: 30min, cuando bot pidió humano (holding/gemini/sensitive). */
+function markRepliedLong(phone: string) {
+  recentReplies.set(phone, { until: Date.now() + LONG_COOLDOWN_MS });
 }
 
 export type AutoReplyInput = {
@@ -107,6 +119,16 @@ export type AutoReplyInput = {
   classifiedProducts: string[];
   customTags: string[];
   leadId?: number;               // si presente, se trae conversation memory
+  /** Stage actual del lead. Sprint 2 hotfix F1: si es 'sold' o 'delivered'
+   *  el bot NO debe disparar — el operador está en proceso activo de
+   *  inscripción/post-venta y el bot rompería el flujo. */
+  leadStage?: string | null;
+  /** ISO timestamp del último message_out manual del operador en últimos
+   *  10 min, o null. Sprint 2 hotfix F2: skip si presente. */
+  recentManualOutAt?: string | null;
+  /** País detectado del lead (Sprint 2 hotfix F3). Pasado al system prompt
+   *  + filter de learned_replies para evitar mezclar precios y cuentas. */
+  leadCountry?: string | null;
 };
 
 export type AutoReplyMessage = {
@@ -206,6 +228,28 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
     return { sent: false, reason: `body too short (${(input.body ?? "").length} chars)` };
   }
 
+  // 1d. Sprint 2 hotfix F1: skip si el lead ya está en proceso activo de
+  //     inscripción/post-venta. stage='sold' = vendido, 'delivered' = curso
+  //     entregado. En ambos casos hay un humano (Kathy/operador) atendiendo
+  //     y un bot interrumpiendo solo confunde a todos. Caso real 2026-05-07:
+  //     lead Leydi (sold) reenvió template de DATOS_REGISTRO al operador,
+  //     bot lo interpretó como sensitive y mandó "voy a consultar al equipo"
+  //     mientras el operador estaba completando la inscripción.
+  const stage = (input.leadStage ?? "").toLowerCase();
+  if (stage === "sold" || stage === "delivered") {
+    return { sent: false, reason: `skip lead.stage=${stage}` };
+  }
+
+  // 1e. Sprint 2 hotfix F2: skip si hay message_out manual del operador en
+  //     últimos 10 min — conversación activa, bot no debe interrumpir.
+  if (input.recentManualOutAt) {
+    const ageMs = Date.now() - new Date(input.recentManualOutAt).getTime();
+    if (ageMs < 10 * 60 * 1000) {
+      const ageMin = Math.round(ageMs / 60_000);
+      return { sent: false, reason: `operator active (manual out ${ageMin}min ago)` };
+    }
+  }
+
   // 2. Cooldown check
   if (inCooldown(input.fromPhone)) {
     return { sent: false, reason: `cooldown for ${input.fromPhone}` };
@@ -221,11 +265,12 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
     const holdings = allCats.get("holding") ?? [];
     const holdingBody = holdings.length > 0
       ? holdings[Math.floor(Math.random() * holdings.length)].body
-      : "Un momento por favor, le confirmo enseguida con un asesor 🙏";
+      : "Dame un momento por favor, te confirmo enseguida 🙏";
     const holdingTpl = holdings.length > 0
       ? holdings[Math.floor(Math.random() * holdings.length)]
       : null;
-    markReplied(input.fromPhone);
+    // Sensitive → cooldown largo (necesita humano de verdad).
+    markRepliedLong(input.fromPhone);
     const notifyPhone = instance.escalation_phone || "+51955135507";
     return {
       sent: true,
@@ -266,7 +311,7 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
   //     caemos al holding template.
   if (!tpl) {
     if (aiProviderAvailable()) {
-      const baseSystemPrompt = buildSystemPrompt(instance);
+      const baseSystemPrompt = buildSystemPrompt(instance, input.leadCountry);
       // ── CONVERSATION MEMORY (cronológico) + RAG (semántico) ──
       // Las dos cosas en paralelo: el cronológico da continuidad de la conver-
       // sación reciente; el RAG trae menciones viejas relevantes al mensaje
@@ -293,7 +338,8 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
         userMessage: input.body,
       });
       if (ai.ok) {
-        markReplied(input.fromPhone);
+        // AI fallback → cooldown largo: el bot no supo, espera humano.
+        markRepliedLong(input.fromPhone);
         const aiModel = `${ai.provider}:${ai.model}`;
         return {
           sent: true,
@@ -316,7 +362,8 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
     const holdings = cats.get("holding") ?? [];
     if (holdings.length === 0) return { sent: false, reason: "no template matched, no holding" };
     const holding = holdings[Math.floor(Math.random() * holdings.length)];
-    markReplied(input.fromPhone);
+    // Holding (no hubo template ni AI) → cooldown largo: necesita humano.
+    markRepliedLong(input.fromPhone);
     return {
       sent: true,
       template_id: holding.id,
@@ -378,6 +425,13 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
   // No persistimos ese id como template_id real — usamos 0 + learned_reply_id
   // por separado para que el log/dashboard no haga JOIN roto a templates(id).
   const isLearned = pickerMethod === "learned_reply";
+
+  // Sprint 2 hotfix F4: cooldown CORTO en confident matches — bloquea
+  // duplicados burst (caso real 2026-05-07: lead manda "es costo" 2x →
+  // bot responde diploma_4_semanas 2x en 5s). 15s es suficiente para
+  // permitir que la sequence (flyer→temario→datos) corra sin re-disparar.
+  markRepliedShort(input.fromPhone);
+
   return {
     sent: true,
     template_id: isLearned ? 0 : tpl.id,
@@ -406,13 +460,27 @@ export function typingDelayFor(body: string): number {
 /**
  * Build el system prompt para Gemini usando el contexto de la instancia.
  * Incluye nombre del agente, productos, cuenta bancaria, y reglas de tono.
+ *
+ * Sprint 2 hotfix F3: si conocemos el país del lead y NO es Perú, omitimos
+ * la cuenta bancaria PE (BCP en soles + Yape) e instruimos al modelo a
+ * decir "dame un momento para confirmarte los métodos de pago para tu país".
+ * Caso real 2026-05-07: lead MX (Juan Gabriel) pidió "Me pasa un número
+ * para transferir" → bot dio cuenta BCP en soles. Casi rompe el pago.
  */
-function buildSystemPrompt(instance: BotInstance): string {
+function buildSystemPrompt(instance: BotInstance, leadCountry?: string | null): string {
+  // Goberna Escuela es PE. Cuenta bancaria del instance es PE-only.
+  const isLeadPE = !leadCountry || leadCountry === "Perú";
+  const countryNote = leadCountry && !isLeadPE
+    ? `\n[CONTEXTO PAÍS] El lead es de ${leadCountry}. NUNCA compartas cuentas bancarias peruanas (BCP, Yape, Plin, soles/PEN) — son inválidas para él. Si pregunta por métodos de pago, responde "dame un momento, te confirmo los métodos de pago disponibles para ${leadCountry}".`
+    : "";
   const parts = [
     `Eres ${instance.agent_name || "una asesora"}, asesora cálida y profesional de Goberna Escuela. Respondes en español neutro, breve (≤ 60 palabras) y directo. Usa "usted" formal al inicio. NUNCA digas que eres un bot o que vas a derivar a un humano. Si no sabes la respuesta exacta, di "déjame revisar y te confirmo en un momento".`,
     instance.extra_prompt ?? "",
     instance.agent_signature ? `Firma: ${instance.agent_signature}` : "",
-    instance.cuenta_bancaria ? `\nCuenta bancaria (compartir solo si preguntan):\n${instance.cuenta_bancaria}` : "",
+    isLeadPE && instance.cuenta_bancaria
+      ? `\nCuenta bancaria (compartir solo si preguntan):\n${instance.cuenta_bancaria}`
+      : "",
+    countryNote,
     `\nNUNCA inventes precios, fechas o links. Si no estás 100% seguro, pide tiempo para revisar.`,
   ];
   return parts.filter(Boolean).join("\n");

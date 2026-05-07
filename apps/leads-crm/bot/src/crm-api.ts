@@ -28,6 +28,10 @@ export interface Lead {
 export interface RecordMessageResult {
   lead: Lead;
   interaction: { id: number } | null;
+  /** Sprint 2 hotfix F2: timestamp ISO del último message_out manual del
+   *  operador en últimos 10 min. Si presente, el bot NO debe disparar
+   *  auto-reply — está activa una conversación humana. */
+  recent_manual_out_at: string | null;
 }
 
 export interface AiSuggestion {

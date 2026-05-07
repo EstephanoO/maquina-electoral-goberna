@@ -85,26 +85,66 @@ export async function searchLearnedReplies(
   // pero topK típico = 3.
   const POOL = Math.max(topK * 6, 20);
 
+  // ── Sprint 2 hotfix F3 — country leakage filter ─────────────────────
+  // Antes: `country IS NULL OR country = lead.country` — permitía que un
+  // lead MX recibiera respuestas con cuenta peruana (BCP/Yape/soles) que
+  // estaban marcadas como country=NULL en el histórico. Caso real
+  // 2026-05-07: Juan Gabriel (MX) recibió cuenta BCP en soles. Bloquea.
+  //
+  // Política nueva: si el lead tiene país conocido y NO es Perú, las
+  // respuestas con country=NULL deben pasar un anti-PE-leak regex que
+  // descarta menciones de BCP, Yape, Plin, soles, S/, PEN, Interbank, BBVA
+  // Perú, Scotiabank Perú, etc. Mantiene recall de respuestas genéricas
+  // (saludos, info de cursos sin moneda) pero corta las que filtran PE.
+  const leadIsPE = country === "Perú" || country === null;
+  const peLeakRe = "(\\mbcp\\M|\\myape\\M|\\mplin\\M|\\msol(es)?\\M|\\bs/\\b|\\mpen\\M|\\minterbank\\M|\\mbbva\\b|\\mscotiabank\\b)";
+
   // ── Vector ranking (HNSW cosine) — siempre corre. ───────────────────
   const vecRows = autoUseOnly
-    ? await sql<any[]>`
-        SELECT id, query_text, response_text, pii_redacted_response, has_pii, hits_count, country,
-               1 - (query_embedding <=> ${vec}::vector) AS cosine_score
-          FROM learned_replies
-         WHERE status = 'active' AND has_pii = false AND query_embedding IS NOT NULL
-           AND (${country}::text IS NULL OR country = ${country} OR country IS NULL)
-         ORDER BY query_embedding <=> ${vec}::vector
-         LIMIT ${POOL}
-      `
-    : await sql<any[]>`
-        SELECT id, query_text, response_text, pii_redacted_response, has_pii, hits_count, country,
-               1 - (query_embedding <=> ${vec}::vector) AS cosine_score
-          FROM learned_replies
-         WHERE status = 'active' AND query_embedding IS NOT NULL
-           AND (${country}::text IS NULL OR country = ${country} OR country IS NULL)
-         ORDER BY query_embedding <=> ${vec}::vector
-         LIMIT ${POOL}
-      `;
+    ? leadIsPE
+      ? await sql<any[]>`
+          SELECT id, query_text, response_text, pii_redacted_response, has_pii, hits_count, country,
+                 1 - (query_embedding <=> ${vec}::vector) AS cosine_score
+            FROM learned_replies
+           WHERE status = 'active' AND has_pii = false AND query_embedding IS NOT NULL
+             AND (${country}::text IS NULL OR country = ${country} OR country IS NULL)
+           ORDER BY query_embedding <=> ${vec}::vector
+           LIMIT ${POOL}
+        `
+      : await sql<any[]>`
+          SELECT id, query_text, response_text, pii_redacted_response, has_pii, hits_count, country,
+                 1 - (query_embedding <=> ${vec}::vector) AS cosine_score
+            FROM learned_replies
+           WHERE status = 'active' AND has_pii = false AND query_embedding IS NOT NULL
+             AND (
+               country = ${country}
+               OR (country IS NULL AND response_text !~* ${peLeakRe})
+             )
+           ORDER BY query_embedding <=> ${vec}::vector
+           LIMIT ${POOL}
+        `
+    : leadIsPE
+      ? await sql<any[]>`
+          SELECT id, query_text, response_text, pii_redacted_response, has_pii, hits_count, country,
+                 1 - (query_embedding <=> ${vec}::vector) AS cosine_score
+            FROM learned_replies
+           WHERE status = 'active' AND query_embedding IS NOT NULL
+             AND (${country}::text IS NULL OR country = ${country} OR country IS NULL)
+           ORDER BY query_embedding <=> ${vec}::vector
+           LIMIT ${POOL}
+        `
+      : await sql<any[]>`
+          SELECT id, query_text, response_text, pii_redacted_response, has_pii, hits_count, country,
+                 1 - (query_embedding <=> ${vec}::vector) AS cosine_score
+            FROM learned_replies
+           WHERE status = 'active' AND query_embedding IS NOT NULL
+             AND (
+               country = ${country}
+               OR (country IS NULL AND response_text !~* ${peLeakRe})
+             )
+           ORDER BY query_embedding <=> ${vec}::vector
+           LIMIT ${POOL}
+        `;
 
   // ── FTS ranking (GIN ts_rank_cd) — solo si tenemos query texto. ─────
   let ftsRows: any[] = [];
@@ -112,28 +152,58 @@ export async function searchLearnedReplies(
     try {
       const q = query.trim().slice(0, 200);
       ftsRows = autoUseOnly
-        ? await sql<any[]>`
-            SELECT id,
-                   ts_rank_cd(to_tsvector('spanish', query_text),
-                              plainto_tsquery('spanish', ${q})) AS fts_score
-              FROM learned_replies
-             WHERE status = 'active' AND has_pii = false
-               AND to_tsvector('spanish', query_text) @@ plainto_tsquery('spanish', ${q})
-               AND (${country}::text IS NULL OR country = ${country} OR country IS NULL)
-             ORDER BY fts_score DESC
-             LIMIT ${POOL}
-          `
-        : await sql<any[]>`
-            SELECT id,
-                   ts_rank_cd(to_tsvector('spanish', query_text),
-                              plainto_tsquery('spanish', ${q})) AS fts_score
-              FROM learned_replies
-             WHERE status = 'active'
-               AND to_tsvector('spanish', query_text) @@ plainto_tsquery('spanish', ${q})
-               AND (${country}::text IS NULL OR country = ${country} OR country IS NULL)
-             ORDER BY fts_score DESC
-             LIMIT ${POOL}
-          `;
+        ? leadIsPE
+          ? await sql<any[]>`
+              SELECT id,
+                     ts_rank_cd(to_tsvector('spanish', query_text),
+                                plainto_tsquery('spanish', ${q})) AS fts_score
+                FROM learned_replies
+               WHERE status = 'active' AND has_pii = false
+                 AND to_tsvector('spanish', query_text) @@ plainto_tsquery('spanish', ${q})
+                 AND (${country}::text IS NULL OR country = ${country} OR country IS NULL)
+               ORDER BY fts_score DESC
+               LIMIT ${POOL}
+            `
+          : await sql<any[]>`
+              SELECT id,
+                     ts_rank_cd(to_tsvector('spanish', query_text),
+                                plainto_tsquery('spanish', ${q})) AS fts_score
+                FROM learned_replies
+               WHERE status = 'active' AND has_pii = false
+                 AND to_tsvector('spanish', query_text) @@ plainto_tsquery('spanish', ${q})
+                 AND (
+                   country = ${country}
+                   OR (country IS NULL AND response_text !~* ${peLeakRe})
+                 )
+               ORDER BY fts_score DESC
+               LIMIT ${POOL}
+            `
+        : leadIsPE
+          ? await sql<any[]>`
+              SELECT id,
+                     ts_rank_cd(to_tsvector('spanish', query_text),
+                                plainto_tsquery('spanish', ${q})) AS fts_score
+                FROM learned_replies
+               WHERE status = 'active'
+                 AND to_tsvector('spanish', query_text) @@ plainto_tsquery('spanish', ${q})
+                 AND (${country}::text IS NULL OR country = ${country} OR country IS NULL)
+               ORDER BY fts_score DESC
+               LIMIT ${POOL}
+            `
+          : await sql<any[]>`
+              SELECT id,
+                     ts_rank_cd(to_tsvector('spanish', query_text),
+                                plainto_tsquery('spanish', ${q})) AS fts_score
+                FROM learned_replies
+               WHERE status = 'active'
+                 AND to_tsvector('spanish', query_text) @@ plainto_tsquery('spanish', ${q})
+                 AND (
+                   country = ${country}
+                   OR (country IS NULL AND response_text !~* ${peLeakRe})
+                 )
+               ORDER BY fts_score DESC
+               LIMIT ${POOL}
+            `;
     } catch (e: any) {
       // Si la migration 015 no se aplicó, plainto_tsquery puede ser caro
       // (no usa el index). Fallar silenciosamente al modo puro vector.
