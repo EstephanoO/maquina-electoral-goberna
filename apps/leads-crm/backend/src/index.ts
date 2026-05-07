@@ -132,6 +132,16 @@ app.use((req, res, next) => {
   // Bot signals escalation (sensitive intent → human handle). GET listing
   // requires auth (admin), but POST creation by bot is allowed.
   if (req.method === "POST" && req.path === "/escalations") return next();
+  // Bot semantic/learned matching — el cascade del picker llama estos en
+  // orden. Sin esta excepción el bot recibe 401 silencioso y nunca usa
+  // las respuestas aprendidas de Kathy ni el match semántico.
+  if (req.method === "POST" && (
+    req.path === "/learned-replies/match" ||
+    req.path === "/templates/pick-semantic" ||
+    req.path === "/rules/match-semantic"
+  )) return next();
+  // Bot lee historial relevante (RAG) cuando va a IA fallback.
+  if (req.method === "POST" && /^\/leads\/[0-9]+\/relevant-history$/.test(req.path)) return next();
   if (req.method === "GET"  && req.path.startsWith("/appointment-slots/available")) return next();
   if (req.method === "POST" && req.path === "/appointments") return next();
   if (req.method === "GET"  && /^\/leads\/[0-9]+\/interactions$/.test(req.path)) return next();
@@ -481,7 +491,11 @@ app.post("/learned-replies/match", safe(async (req, res) => {
   const r = await embed(body, "RETRIEVAL_QUERY");
   if (!r.ok) return res.json({ match: null, reason: r.reason });
 
-  const matches = await db.searchLearnedReplies(vecToPg(r.vec), 1, 0.85, true);
+  // Threshold 0.78 (bajado de 0.85): el 0.85 era demasiado estricto y perdía
+  // matches válidos para queries naturales tipo "info de consultoria" cuando
+  // Kathy había respondido a "quisiera saber del consultor". Sigue siendo
+  // selectivo (≥0.78 = bien similar), pero captura paráfrasis razonables.
+  const matches = await db.searchLearnedReplies(vecToPg(r.vec), 1, 0.78, true);
   if (matches.length === 0) return res.json({ match: null, reason: "no_match_above_threshold" });
 
   const top = matches[0];
@@ -1874,7 +1888,7 @@ app.get("/config/instances", async (_req, res) => {
   const rows = await sql`
     SELECT id, slug, display_name, phone, agent_name, agent_signature,
            product_skus, cuenta_bancaria, yape_numero, extra_prompt,
-           rule_ids, enabled, auto_reply, escalation_phone, notes,
+           rule_ids, enabled, auto_reply, escalation_phone, auto_reply_whitelist, notes,
            created_at, updated_at
       FROM bot_instances
      ORDER BY slug ASC

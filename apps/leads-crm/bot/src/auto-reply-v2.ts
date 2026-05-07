@@ -140,6 +140,18 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
   if (!instance.enabled) return { sent: false, reason: `instance ${instance.slug} disabled` };
   if (!instance.auto_reply) return { sent: false, reason: `auto_reply OFF for ${instance.slug}` };
 
+  // 1b. Whitelist (testing mode). Si auto_reply_whitelist está set, solo
+  //     responde a esos números. Útil para probar nuevos cascades/prompts
+  //     sin spammear leads reales.
+  const whitelist = instance.auto_reply_whitelist ?? [];
+  if (whitelist.length > 0) {
+    const fromDigits = input.fromPhone.replace(/\D/g, "");
+    const allowed = whitelist.some(w => w.replace(/\D/g, "") === fromDigits);
+    if (!allowed) {
+      return { sent: false, reason: `whitelist active — ${input.fromPhone} not allowed (${instance.slug})` };
+    }
+  }
+
   // 2. Cooldown check
   if (inCooldown(input.fromPhone)) {
     return { sent: false, reason: `cooldown for ${input.fromPhone}` };

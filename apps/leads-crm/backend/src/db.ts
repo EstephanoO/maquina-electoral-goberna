@@ -581,46 +581,83 @@ export const db = {
     inbound_id: number; outbound_id: number; lead_id: number; lead_name: string | null;
     lead_phone: string | null; query: string; response: string;
   }>> {
+    // Concatena hasta 5 outbounds consecutivos del operador dentro de la
+    // ventana [inbound, next_inbound, +10min] hasta que sumen 600 chars.
+    // El operador típicamente escribe la respuesta en bloques (saludo,
+    // detalles, precio, link) y antes guardábamos solo el primero. Ahora
+    // capturamos la respuesta completa, con saltos de línea entre bloques.
     const rows = await sql`
-      WITH ranked AS (
+      WITH next_in AS (
+        -- Para cada inbound, calcula el timestamp del siguiente inbound
+        -- del mismo lead (o futuro lejano si no hay más).
         SELECT
           i_in.id AS inbound_id,
           i_in.body AS query,
           i_in.lead_id,
-          (SELECT i_out.id FROM interactions i_out
-            WHERE i_out.lead_id = i_in.lead_id
-              AND i_out.kind = 'message_out'
-              AND i_out.created_at > i_in.created_at
-              AND i_out.created_at <= i_in.created_at + interval '24 hours'
-              AND i_out.body IS NOT NULL
-              AND length(i_out.body) >= 10
-              AND COALESCE((i_out.meta->>'auto_reply')::boolean, false) = false
-            ORDER BY i_out.created_at ASC LIMIT 1) AS outbound_id,
-          (SELECT i_out.body FROM interactions i_out
-            WHERE i_out.lead_id = i_in.lead_id
-              AND i_out.kind = 'message_out'
-              AND i_out.created_at > i_in.created_at
-              AND i_out.created_at <= i_in.created_at + interval '24 hours'
-              AND i_out.body IS NOT NULL
-              AND length(i_out.body) >= 10
-              AND COALESCE((i_out.meta->>'auto_reply')::boolean, false) = false
-            ORDER BY i_out.created_at ASC LIMIT 1) AS response
+          i_in.created_at AS inbound_at,
+          COALESCE(
+            (SELECT MIN(i2.created_at) FROM interactions i2
+              WHERE i2.lead_id = i_in.lead_id
+                AND i2.kind = 'message_in'
+                AND i2.created_at > i_in.created_at),
+            now() + interval '1 year'
+          ) AS next_inbound_at
         FROM interactions i_in
         WHERE i_in.kind = 'message_in'
           AND i_in.body IS NOT NULL
           AND length(i_in.body) >= 12
+      ),
+      out_block AS (
+        -- Toma todos los outbounds entre inbound y next_inbound (cap 10min)
+        -- y los concatena en orden cronológico. Limita a 5 mensajes para
+        -- no agarrar todo el thread del día.
+        SELECT
+          ni.inbound_id,
+          ni.lead_id,
+          ni.query,
+          (SELECT MIN(i_out.id) FROM interactions i_out
+            WHERE i_out.lead_id = ni.lead_id
+              AND i_out.kind = 'message_out'
+              AND i_out.created_at > ni.inbound_at
+              AND i_out.created_at < LEAST(ni.next_inbound_at, ni.inbound_at + interval '10 minutes')
+              AND COALESCE((i_out.meta->>'auto_reply')::boolean, false) = false
+              AND i_out.body IS NOT NULL
+              AND length(i_out.body) >= 5
+          ) AS outbound_id,
+          -- Dedup: si el operador re-envió el mismo template (caso típico
+          -- en broadcasts), agarramos solo la primera ocurrencia de cada
+          -- texto único (matcheado por los primeros 80 chars).
+          (SELECT string_agg(i_out.body, E'\n\n' ORDER BY i_out.created_at ASC)
+           FROM (
+             SELECT DISTINCT ON (left(i_out.body, 80)) i_out.body, i_out.created_at
+             FROM interactions i_out
+             WHERE i_out.lead_id = ni.lead_id
+               AND i_out.kind = 'message_out'
+               AND i_out.created_at > ni.inbound_at
+               AND i_out.created_at < LEAST(ni.next_inbound_at, ni.inbound_at + interval '10 minutes')
+               AND COALESCE((i_out.meta->>'auto_reply')::boolean, false) = false
+               AND i_out.body IS NOT NULL
+               AND length(i_out.body) >= 5
+             ORDER BY left(i_out.body, 80), i_out.created_at ASC
+             LIMIT 5
+           ) i_out
+          ) AS response
+        FROM next_in ni
       )
-      SELECT r.inbound_id, r.outbound_id, r.lead_id, r.query, r.response,
+      SELECT ob.inbound_id, ob.outbound_id, ob.lead_id, ob.query,
+             left(ob.response, 1500) AS response,
              l.name AS lead_name, l.phone AS lead_phone
-        FROM ranked r
-        JOIN leads l ON l.id = r.lead_id
-       WHERE r.outbound_id IS NOT NULL
+        FROM out_block ob
+        JOIN leads l ON l.id = ob.lead_id
+       WHERE ob.outbound_id IS NOT NULL
+         AND ob.response IS NOT NULL
+         AND length(ob.response) >= 20
          AND NOT EXISTS (
            SELECT 1 FROM learned_replies lr
-            WHERE lr.source_inbound_id = r.inbound_id
-              AND lr.source_outbound_id = r.outbound_id
+            WHERE lr.source_inbound_id = ob.inbound_id
+              AND lr.source_outbound_id = ob.outbound_id
          )
-       ORDER BY r.inbound_id
+       ORDER BY ob.inbound_id
        LIMIT ${limit}`;
     return rows as any;
   },

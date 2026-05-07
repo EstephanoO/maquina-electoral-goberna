@@ -30,6 +30,9 @@ export type BotInstance = {
   /** Phone que recibe notificaciones cuando el bot escala un intent
    *  sensible (credenciales, datos personales). Default +51955135507. */
   escalation_phone: string | null;
+  /** Si está set (no vacío), el bot solo auto-responde a estos teléfonos.
+   *  Útil para testing del cascade sin afectar leads reales. NULL/[] = all. */
+  auto_reply_whitelist: string[] | null;
   notes: string | null;
 };
 

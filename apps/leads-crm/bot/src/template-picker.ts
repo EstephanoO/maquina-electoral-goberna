@@ -218,24 +218,10 @@ export async function pickTemplateWithSemantic(input: PickInput, allTemplates: T
     }
   }
 
-  if (PAYMENT_RE.test(input.body)) {
-    const t = pickByCategory("pago", allTemplates);
-    if (t) return { template: t, method: "regex_body" };
-  }
-  if (PRICE_RE.test(input.body) || INFO_RE.test(input.body)) {
-    const t = pickByCategory("info_curso", allTemplates);
-    if (t) return { template: t, method: "regex_body" };
-  }
-  if (GREETING_RE.test(input.body)) {
-    const t = pickByCategory("saludo", allTemplates);
-    if (t) return { template: t, method: "regex_body" };
-  }
-
-  // Fallback #1: learned_replies — el bot reusa una respuesta probada de
-  // Kathy si el mensaje del lead actual es semánticamente similar a uno
-  // del histórico. Solo aplica respuestas SIN PII (no diría "Hola María"
-  // a Juan). Threshold alto (0.85) — preferimos no responder antes que
-  // responder con algo que no aplica.
+  // PRIORIDAD: learned_replies sobre regex genérico. Una respuesta real
+  // de Kathy a "info de consultoria" es siempre mejor que un template
+  // estático "info_curso" — usa el tono y los detalles que probaron servir.
+  // Solo cae a regex/semantic si learned no devuelve nada con score alto.
   const learned = await pickByLearnedReply(input.body);
   if (learned) {
     const synthetic: Template = {
@@ -264,7 +250,22 @@ export async function pickTemplateWithSemantic(input: PickInput, allTemplates: T
     };
   }
 
-  // Fallback #2: semantic templates
+  // Si learned no matcheó, regex genérico cubre intents amplios (saludo,
+  // info, precio, pago). Es el "safety net" para mensajes muy comunes.
+  if (PAYMENT_RE.test(input.body)) {
+    const t = pickByCategory("pago", allTemplates);
+    if (t) return { template: t, method: "regex_body" };
+  }
+  if (PRICE_RE.test(input.body) || INFO_RE.test(input.body)) {
+    const t = pickByCategory("info_curso", allTemplates);
+    if (t) return { template: t, method: "regex_body" };
+  }
+  if (GREETING_RE.test(input.body)) {
+    const t = pickByCategory("saludo", allTemplates);
+    if (t) return { template: t, method: "regex_body" };
+  }
+
+  // Último recurso: semantic templates (más permisivo, threshold 0.72).
   const sem = await pickBySemantic(input.body);
   if (sem) return { template: sem.template, method: "semantic", score: sem.score };
 
