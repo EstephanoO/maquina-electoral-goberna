@@ -16,6 +16,7 @@
 import { CONFIG } from "./config.js";
 import { getInstanceFor, getTemplatesByCategory, type BotInstance, type Template } from "./instance-config.js";
 import { pickTemplate, pickTemplateWithSemantic, applyTemplate } from "./template-picker.js";
+import { detectCountry } from "./classifier.js";
 import { generateReply as openaiReply, aiAvailable as openaiAvailable } from "./openai.js";
 import { generateReply as geminiReply, geminiAvailable } from "./gemini.js";
 import { getRecentHistory, formatHistoryForPrompt, getRelevantHistory, formatRelevantForPrompt } from "./conversation-memory.js";
@@ -152,6 +153,15 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
     }
   }
 
+  // 1c. Body mínimo. Inbounds vacíos (audio sin transcribir, reactions,
+  //     sticker), o demasiado cortos ("ok", "si") no deben gatillar el
+  //     cascade ni consumir el cooldown — el operador los maneja a mano.
+  //     Si caen acá, podríamos terminar respondiendo con AI genérico que
+  //     bloquea las queries reales que vienen después por 30min.
+  if (!input.body || input.body.trim().length < 5) {
+    return { sent: false, reason: `body too short (${(input.body ?? "").length} chars)` };
+  }
+
   // 2. Cooldown check
   if (inCooldown(input.fromPhone)) {
     return { sent: false, reason: `cooldown for ${input.fromPhone}` };
@@ -194,8 +204,11 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
   //    que la regex no atrapa).
   const cats = await getTemplatesByCategory();
   const allTemplates = [...cats.values()].flat();
+  // detectCountry from phone prefix (+51 → Perú, +52/+521 → México) — pasamos
+  // a learned_replies search para que no traiga respuestas con $MXN a un PE.
+  const country = detectCountry(input.fromPhone);
   const picked = await pickTemplateWithSemantic(
-    { body: input.body, classifiedProducts: input.classifiedProducts, customTags: input.customTags },
+    { body: input.body, classifiedProducts: input.classifiedProducts, customTags: input.customTags, country },
     allTemplates
   );
   const tpl = picked?.template ?? null;

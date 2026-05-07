@@ -463,40 +463,47 @@ export const db = {
     source_lead_id: number;
     has_pii: boolean;
     pii_redacted_response: string | null;
+    country: string | null;
   }): Promise<{ id: number }> {
     const rows = await sql`
       INSERT INTO learned_replies (
         query_text, query_embedding, response_text, response_embedding,
         source_inbound_id, source_outbound_id, source_lead_id,
-        has_pii, pii_redacted_response
+        has_pii, pii_redacted_response, country
       ) VALUES (
         ${input.query_text}, ${input.query_embedding_vec}::vector,
         ${input.response_text}, ${input.response_embedding_vec}::vector,
         ${input.source_inbound_id}, ${input.source_outbound_id}, ${input.source_lead_id},
-        ${input.has_pii}, ${input.pii_redacted_response}
+        ${input.has_pii}, ${input.pii_redacted_response}, ${input.country}
       )
       ON CONFLICT DO NOTHING
       RETURNING id`;
     return rows[0] ?? { id: 0 };
   },
 
-  async searchLearnedReplies(vec: string, topK = 3, minScore = 0.85, autoUseOnly = true): Promise<Array<{
+  // country filter: si country viene set, devuelve solo learned_replies de ese
+  // país O sin país (NULL = legacy/desconocido — se usa de fallback antes que
+  // mandar nada). Si country=null, no filtra (devuelve todo). Esto evita que
+  // un lead PE reciba pricing en MXN.
+  async searchLearnedReplies(vec: string, topK = 3, minScore = 0.85, autoUseOnly = true, country: string | null = null): Promise<Array<{
     id: number; query_text: string; response_text: string; pii_redacted_response: string | null;
-    has_pii: boolean; hits_count: number; score: number;
+    has_pii: boolean; hits_count: number; score: number; country: string | null;
   }>> {
     const rows = autoUseOnly
       ? await sql`
-          SELECT id, query_text, response_text, pii_redacted_response, has_pii, hits_count,
+          SELECT id, query_text, response_text, pii_redacted_response, has_pii, hits_count, country,
                  1 - (query_embedding <=> ${vec}::vector) AS score
             FROM learned_replies
            WHERE status = 'active' AND has_pii = false AND query_embedding IS NOT NULL
+             AND (${country}::text IS NULL OR country = ${country} OR country IS NULL)
            ORDER BY query_embedding <=> ${vec}::vector
            LIMIT ${topK}`
       : await sql`
-          SELECT id, query_text, response_text, pii_redacted_response, has_pii, hits_count,
+          SELECT id, query_text, response_text, pii_redacted_response, has_pii, hits_count, country,
                  1 - (query_embedding <=> ${vec}::vector) AS score
             FROM learned_replies
            WHERE status = 'active' AND query_embedding IS NOT NULL
+             AND (${country}::text IS NULL OR country = ${country} OR country IS NULL)
            ORDER BY query_embedding <=> ${vec}::vector
            LIMIT ${topK}`;
     return rows.filter((r: any) => r.score >= minScore) as any;
@@ -579,17 +586,26 @@ export const db = {
   /** Pares (inbound, primer outbound manual <24h) por lead, listos para mining. */
   async getInboundOutboundPairs(limit = 10000): Promise<Array<{
     inbound_id: number; outbound_id: number; lead_id: number; lead_name: string | null;
-    lead_phone: string | null; query: string; response: string;
+    lead_phone: string | null; lead_country: string | null; query: string; response: string;
   }>> {
     // Concatena hasta 5 outbounds consecutivos del operador dentro de la
     // ventana [inbound, next_inbound, +10min] hasta que sumen 600 chars.
     // El operador típicamente escribe la respuesta en bloques (saludo,
     // detalles, precio, link) y antes guardábamos solo el primero. Ahora
     // capturamos la respuesta completa, con saltos de línea entre bloques.
+    // Patrón para mensajes pre-canned del link wa.me (`https://wa.me/...?text=`).
+    // Producen queries idénticas que dominan el embedding space ("¡Hola! Deseo
+    // inscribirme al Diploma X" repetido 24× para Parlamentaria, etc.). Como
+    // un lead nuevo escribe distinto ("hola me interesa info") nunca vamos a
+    // matchear esto bien, pero aún así un score 0.72-0.77 estos dominan el
+    // top-1 si están sobre-representados. Los excluimos del mining set.
+    const WAME_PRECANNED_RE = '^[¡¿]?\\s*hola[!.,]?\\s*(deseo\\s+inscribirme|quiero\\s+m[aá]s\\s+informaci[oó]n|me\\s+interesa\\s+(el|la|este)\\s+(diploma|curso|programa))';
+
     const rows = await sql`
       WITH next_in AS (
         -- Para cada inbound, calcula el timestamp del siguiente inbound
-        -- del mismo lead (o futuro lejano si no hay más).
+        -- del mismo lead (o futuro lejano si no hay más). Excluye queries
+        -- pre-canned del wa.me link (ruido sintético, no query natural).
         SELECT
           i_in.id AS inbound_id,
           i_in.body AS query,
@@ -606,6 +622,7 @@ export const db = {
         WHERE i_in.kind = 'message_in'
           AND i_in.body IS NOT NULL
           AND length(i_in.body) >= 12
+          AND i_in.body !~* ${WAME_PRECANNED_RE}
       ),
       out_block AS (
         -- Toma todos los outbounds entre inbound y next_inbound (cap 10min)
@@ -646,7 +663,7 @@ export const db = {
       )
       SELECT ob.inbound_id, ob.outbound_id, ob.lead_id, ob.query,
              left(ob.response, 1500) AS response,
-             l.name AS lead_name, l.phone AS lead_phone
+             l.name AS lead_name, l.phone AS lead_phone, l.country AS lead_country
         FROM out_block ob
         JOIN leads l ON l.id = ob.lead_id
        WHERE ob.outbound_id IS NOT NULL

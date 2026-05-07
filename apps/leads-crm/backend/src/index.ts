@@ -481,10 +481,15 @@ function detectPIIInResponse(response: string, lead: { name: string | null; phon
   return { hasPII, redacted: hasPII ? redacted : null };
 }
 
-// POST /learned-replies/match { body }
+// POST /learned-replies/match { body, country? }
 // Bot lo llama cuando ningún template matchea, antes de ir a Gemini.
+// `country` (opcional) filtra el set candidato — Kathy usa precios distintos
+// para PE ($150 USD / S/500) vs MX ($MXN). Si el lead es PE y no filtramos,
+// semantic match puede traer una respuesta "El curso cuesta $3500 MXN..." y
+// el bot manda info errónea.
 app.post("/learned-replies/match", safe(async (req, res) => {
   const body = String(req.body?.body ?? "").trim();
+  const country = req.body?.country ? String(req.body.country).trim() : null;
   if (!body || body.length < 8) return res.json({ match: null, reason: "body_too_short" });
   if (!embedderAvailable()) return res.json({ match: null, reason: "no_embedder" });
 
@@ -497,7 +502,7 @@ app.post("/learned-replies/match", safe(async (req, res) => {
   // Y"). 0.72 captura paráfrasis amplias pero sigue por encima de matches
   // espurios (~0.5-0.65 es semánticamente disperso). Si baja respuestas
   // malas, subir a 0.75.
-  const matches = await db.searchLearnedReplies(vecToPg(r.vec), 1, 0.72, true);
+  const matches = await db.searchLearnedReplies(vecToPg(r.vec), 1, 0.72, true, country);
   if (matches.length === 0) return res.json({ match: null, reason: "no_match_above_threshold" });
 
   const top = matches[0];
@@ -511,6 +516,7 @@ app.post("/learned-replies/match", safe(async (req, res) => {
       original_query: top.query_text,
       score: top.score,
       hits_count: top.hits_count,
+      country: top.country,
     },
     method: "learned_reply",
   });
@@ -557,6 +563,7 @@ app.post("/admin/learned-replies/backfill", requireAuth, safe(async (req, res) =
           source_lead_id: p.lead_id,
           has_pii: piiCheck.hasPII,
           pii_redacted_response: piiCheck.redacted,
+          country: p.lead_country,
         });
         ok++;
       } catch (e: any) {
