@@ -297,9 +297,11 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
   //    los paths de unconfident match (sensitive/gemini/holding) cool down.
   //    Ver comment en COOLDOWN_MS.
 
-  // 6. Build sequence: si el template es flyer y tiene product_sku con
-  //    temario, agregamos el TEMARIO image como segundo mensaje (replicando
-  //    el patrón de Kathy: flyer → temario).
+  // 6. Build sequence: replicar el patrón natural de Kathy donde un template
+  //    arrastra otro como follow-up obligatorio.
+  //    - flyer → temario (imagen del temario del producto)
+  //    - pago → datos_registro (formulario de datos para que el lead complete
+  //      al hacer el pago — Kathy SIEMPRE manda los dos juntos).
   const sequence: AutoReplyMessage[] = [];
   if (tpl.category === "flyer" && tpl.product_sku) {
     const allTemplates = [...cats.values()].flat();
@@ -311,6 +313,23 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
         body: temario.body,
         image_url: temario.image_url,
         media_kind: "image",
+      });
+    }
+  }
+  if (tpl.category === "pago") {
+    const allTemplates = [...cats.values()].flat();
+    // Preferimos el template explícito kathy_datos_registro (categoría datos_registro)
+    // sobre el viejo de inscripcion. Si no está, fallback al de inscripcion.
+    const datos =
+      allTemplates.find(t => t.category === "datos_registro") ??
+      allTemplates.find(t => t.category === "inscripcion");
+    if (datos) {
+      sequence.push({
+        template_id: datos.id,
+        template_name: datos.name,
+        body: applyTemplate(datos, instance, { curso }),
+        image_url: null,
+        media_kind: "text",
       });
     }
   }
