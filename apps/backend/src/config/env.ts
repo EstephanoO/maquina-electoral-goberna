@@ -83,9 +83,6 @@ export type AppEnv = {
   fidelizadoThreshold: number;
   // Engagement: horas sin inbound tras un outbound antes de marcar 'no_responde'.
   noRespondeAfterHours: number;
-  // Public base URL — usado para armar links absolutos en HTML compartibles
-  // (OG tags del /r/:token landing). Sin slash final.
-  publicBaseUrl: string;
   // Firebase Phone Auth — project ID para verificar ID tokens emitidos por
   // Firebase desde mobile. Si vacío, /api/auth/firebase-verify responde 503.
   firebaseProjectId: string;
@@ -212,7 +209,6 @@ export function getEnv(): AppEnv {
     botSharedSecret: (process.env.BOT_SHARED_SECRET ?? "").trim(),
     fidelizadoThreshold: toNumber(process.env.FIDELIZADO_THRESHOLD, 4),
     noRespondeAfterHours: toNumber(process.env.NO_RESPONDE_AFTER_HOURS, 48),
-    publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? "https://electoral.goberna.club").replace(/\/$/, ""),
     firebaseProjectId: (process.env.FIREBASE_PROJECT_ID ?? "").trim(),
   };
 }
