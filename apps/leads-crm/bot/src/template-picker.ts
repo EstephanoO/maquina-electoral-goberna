@@ -224,6 +224,7 @@ export async function pickTemplateWithSemantic(input: PickInput, allTemplates: T
     // Top patterns Kathy (sesión 2026-05-07): específicos primero, antes que
     // los buckets genéricos de pago/info que matchean más amplio y robarían
     // estos hits.
+    ["intent:certificado_descarga", "certificado_campus"],
     ["intent:pago_completed", "datos_registro"],
     ["intent:duracion", "info_duracion"],
     ["intent:brochure_pdf", "brochure"],
