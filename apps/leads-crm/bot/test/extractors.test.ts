@@ -19,14 +19,14 @@ describe("extractFromMessage", () => {
     expect(r.intent_strength).toBeGreaterThan(0.7);
   });
 
-  it("detecta payment_proof con 'ya hice el pago' (sin acentos)", () => {
-    // NOTA: la regex usa \\b, que en JS no matchea correctamente cuando hay
-    // acentos al final (í/é). Frases legítimas como 'ya transferí', 'ya pagué',
-    // 'ya deposité' NO matchean. Solo variantes ASCII funcionan. Bug
-    // pre-existente — fix queda para Sprint 2 (regex unicode-aware con \\p{L}).
-    const r = extractFromMessage("ya hice el pago de 250 soles");
-    expect(r.payment_proof).toBe(true);
-    expect(r.intent_strength).toBe(1.0);
+  it("detecta payment_proof con variantes acentuadas (Sprint 2.A — \\p{L} boundary)", () => {
+    // Sprint 2.A fix: PAYMENT_DONE_RE ahora usa boundary unicode-aware con
+    // flag `u`. Antes, `\b` después de `í/é` no disparaba y se perdían
+    // signals legítimos (ya transferí, ya pagué, ya deposité).
+    expect(extractFromMessage("ya hice el pago de 250 soles").payment_proof).toBe(true);
+    expect(extractFromMessage("ya transferí los 250 soles").payment_proof).toBe(true);
+    expect(extractFromMessage("ya pagué la inscripción").payment_proof).toBe(true);
+    expect(extractFromMessage("deposité el monto en la cuenta").payment_proof).toBe(true);
   });
 
   it("body vacío o muy corto devuelve objeto vacío", () => {

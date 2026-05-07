@@ -21,6 +21,7 @@ import * as sends from "./sends.js";
 import * as settings from "./settings.js";
 import * as stats from "./stats.js";
 import * as users from "./users.js";
+import * as pickerFeedback from "./picker-feedback.js";
 
 // Re-exports de tipos
 export type {
@@ -99,4 +100,9 @@ export const db = {
 
   // ── Users ────────────────────────────────────────────────────────
   listOperators: users.listOperators,
+
+  // ── Picker feedback (Sprint 2.C) ─────────────────────────────────
+  upsertPickerFeedback: pickerFeedback.upsertFeedback,
+  getPickerSummary: pickerFeedback.getPickerSummary,
+  getFeedbackForInteraction: pickerFeedback.getFeedbackForInteraction,
 };

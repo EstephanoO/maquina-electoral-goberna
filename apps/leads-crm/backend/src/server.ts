@@ -1,6 +1,7 @@
 import { createApp } from "./app.js";
 import { migrate } from "./migrate.js";
 import { sql } from "./sql.js";
+import { startScheduler, stopScheduler } from "./services/scheduler.js";
 
 /**
  * Bootstrap del backend:
@@ -23,6 +24,9 @@ async function boot() {
   app.listen(PORT, () => {
     console.log(`nexus-backend listening on http://localhost:${PORT}`);
   });
+
+  // Cron jobs (Sprint 2.B): mining-review diario @ 9 AM Lima.
+  startScheduler();
 }
 
 boot();
@@ -30,6 +34,7 @@ boot();
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, async () => {
     console.log(`[api] ${sig} received, closing…`);
+    stopScheduler();
     await sql.end({ timeout: 5 });
     process.exit(0);
   });

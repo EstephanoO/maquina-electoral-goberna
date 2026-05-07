@@ -5,6 +5,7 @@ import { safe } from "../middleware/safe.js";
 import { vecToPg } from "../lib/embedder.js";
 import { cosineSim, vecMean, parsePgVector } from "../services/semantic-vec.js";
 import { embedRuleInBackground } from "../services/embed.js";
+import { runMiningReview } from "../services/mining-review.js";
 import type { AuthedRequest } from "../auth.js";
 
 /**
@@ -135,4 +136,12 @@ adminMiningRouter.post("/admin/intent-mining/reject/:id", safe(async (req: Authe
   const by = req.user?.email ?? "intent-mining";
   await db.rejectMiningCandidate(id, by);
   res.json({ ok: true });
+}));
+
+// Sprint 2.B: invocación manual del review job. El cron diario hace lo mismo
+// a las 9 AM Lima — esto es para dispararlo ad-hoc desde curl o Postman.
+adminMiningRouter.post("/admin/mining/run-review", safe(async (req: AuthedRequest, res) => {
+  const triggeredBy = req.user?.email ? `manual:${req.user.email}` : "manual";
+  const result = await runMiningReview(triggeredBy);
+  res.json(result);
 }));

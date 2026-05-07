@@ -27,6 +27,12 @@ export type ExtractedData = {
 };
 
 // ── Patterns ─────────────────────────────────────────────────────
+// Unicode word-boundary helpers: `\b` en JS NO respeta acentos (entre 'í' y
+// ' ' no dispara, así "ya transferí" nunca matcheaba `\btransferí\b`). Con
+// flag `u` + lookarounds `\p{L}` sí funciona — capturamos cualquier letra
+// Unicode como "word char" para los boundaries.
+const WB_START = "(?<!\\p{L})";
+const WB_END   = "(?!\\p{L})";
 
 const EMAIL_RE = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/i;
 
@@ -35,7 +41,11 @@ const DNI_RE = /\b(?:dni|cedula|c[ée]dula)[:\s]*?(\d{7,10})\b|\b(\d{8})\b/i;
 const CIUDAD_PERU_RE = /\b(lima|arequipa|cusco|trujillo|piura|chiclayo|iquitos|huancayo|ayacucho|tacna|puno|tumbes|pucallpa|cajamarca|chimbote|huaraz)\b/i;
 const CIUDAD_ECUADOR_RE = /\b(quito|guayaquil|cuenca|machala|loja|riobamba|ambato|esmeraldas)\b/i;
 const CIUDAD_MEX_RE = /\b(cdmx|ciudad\s*de\s*m[eé]xico|guadalajara|monterrey|puebla|tijuana|queretaro|m[eé]rida|oaxaca|cancun)\b/i;
-const CIUDAD_COL_RE = /\b(bogot[aá]|medell[ií]n|cali|cartagena|barranquilla|bucaramanga)\b/i;
+// `bogotá` termina en `á` — usa boundary unicode.
+const CIUDAD_COL_RE = new RegExp(
+  `${WB_START}(bogot[aá]|medell[ií]n|cali|cartagena|barranquilla|bucaramanga)${WB_END}`,
+  "iu",
+);
 
 const FECHA_RE = /\b(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\b/;
 
@@ -47,13 +57,27 @@ const OCUPACIONES = [
   "asesor", "arquitec", "contad", "administr",
 ];
 
-// Sales-ready signals
-const PAYMENT_REQUEST_RE = /\b(c[oó]mo\s*(pago|puedo\s*pagar)|medios\s*de\s*pago|n[uú]mero\s*de\s*cuenta|yape|deposito|transferencia)\b/i;
-const PAYMENT_DONE_RE = /\b(ya\s*(hice|realice|pagu[eé])|deposit[eé]|transferí|adjunto.*comprobante|pagu[eé]\s*el|listo\s*el\s*pago|comprobante\s*adjunto)\b/i;
-const HIGH_INTENT_RE = /\b(quiero\s*inscrib|me\s*inscrib|c[oó]mo\s*me\s*inscribo|necesito\s*el\s*link|d[oó]nde\s*pago|sigue\s*disponible|todav[ií]a\s*est[aá]|mandame\s*el\s*link|env[ií]ame\s*el\s*link)/i;
+// Sales-ready signals — todos con boundary unicode-aware (flag `u`).
+// Sin esto, `\btransferí\b` nunca matcheaba (el `\b` final tras `í` falla
+// porque JS considera `í` como no-word). Era un falso negativo silencioso.
+const PAYMENT_REQUEST_RE = new RegExp(
+  `${WB_START}(c[oó]mo\\s*(pago|puedo\\s*pagar)|medios\\s*de\\s*pago|n[uú]mero\\s*de\\s*cuenta|yape|deposito|transferencia)${WB_END}`,
+  "iu",
+);
+const PAYMENT_DONE_RE = new RegExp(
+  `${WB_START}(ya\\s*(hice|realice|pagu[eé])|deposit[eé]|transfer[ií]|adjunto.*comprobante|pagu[eé]\\s*el|listo\\s*el\\s*pago|comprobante\\s*adjunto)${WB_END}`,
+  "iu",
+);
+const HIGH_INTENT_RE = new RegExp(
+  `${WB_START}(quiero\\s*inscrib|me\\s*inscrib|c[oó]mo\\s*me\\s*inscribo|necesito\\s*el\\s*link|d[oó]nde\\s*pago|sigue\\s*disponible|todav[ií]a\\s*est[aá]|mandame\\s*el\\s*link|env[ií]ame\\s*el\\s*link)`,
+  "iu",
+);
 
-// Frustration signals (sin trailing \b para que matchee "molesto", "enojada", etc.)
-const FRUSTRATION_RE = /\b(molest|enoj|muy\s*mal|p[eé]simo|desde\s*hace|no\s*me\s*llega|no\s*recibi|todav[ií]a\s*sin|no\s*me\s*responden|por\s*qu[eé]\s*tardan|insufrible|fastidi)/i;
+// Frustration: matches inicios de palabra ("molest" → molesto, molesta, etc.).
+const FRUSTRATION_RE = new RegExp(
+  `${WB_START}(molest|enoj|muy\\s*mal|p[eé]simo|desde\\s*hace|no\\s*me\\s*llega|no\\s*recibi|todav[ií]a\\s*sin|no\\s*me\\s*responden|por\\s*qu[eé]\\s*tardan|insufrible|fastidi)`,
+  "iu",
+);
 
 // ── Extractors ───────────────────────────────────────────────────
 

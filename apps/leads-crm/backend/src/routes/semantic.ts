@@ -61,7 +61,9 @@ semanticRouter.post("/learned-replies/match", safe(async (req, res) => {
   const r = await embed(body, "RETRIEVAL_QUERY");
   if (!r.ok) return res.json({ match: null, reason: r.reason });
 
-  const matches = await db.searchLearnedReplies(vecToPg(r.vec), 1, 0.72, true, country);
+  // Sprint 2.D: pasamos `body` también para que el repo haga hybrid (cosine + FTS)
+  // y mejor ranking en queries muy literales tipo "DNI", "wsp".
+  const matches = await db.searchLearnedReplies(vecToPg(r.vec), 1, 0.72, true, country, body);
   if (matches.length === 0) return res.json({ match: null, reason: "no_match_above_threshold" });
 
   const top = matches[0];
