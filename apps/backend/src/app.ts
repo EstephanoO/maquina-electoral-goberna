@@ -61,8 +61,20 @@ export function buildApp(env: AppEnv) {
   });
 
   app.register(helmet);
-  app.register(compress);
-  app.register(formbody);
+  // Comprimir tiles MVT (no es default en @fastify/compress) — ahorra ~70% bandwidth
+  app.register(compress, {
+    customTypes: /^application\/(vnd\.mapbox-vector-tile|x-protobuf)$/,
+  });
+  app.register(formbody); // Twilio webhooks arrive as application/x-www-form-urlencoded
+  // Quitar headers pesados de helmet en /api/tiles/* — un pbf binario no necesita CSP/COOP/CORP/etc.
+  app.addHook("onSend", async (request, reply, payload) => {
+    if (request.url.startsWith("/api/tiles/")) {
+      for (const h of ["content-security-policy","cross-origin-opener-policy","cross-origin-resource-policy","referrer-policy","x-dns-prefetch-control","x-download-options","x-permitted-cross-domain-policies","origin-agent-cluster","x-frame-options","x-xss-protection","strict-transport-security"]) {
+        reply.raw.removeHeader(h);
+      }
+    }
+    return payload;
+  });
   // Warn at startup if CORS is misconfigured (wildcard + credentials is insecure)
   if (env.frontendOrigins.includes("*") && env.nodeEnv === "production") {
     app.log.error(

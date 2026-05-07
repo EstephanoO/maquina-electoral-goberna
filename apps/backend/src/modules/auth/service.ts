@@ -80,6 +80,10 @@ export class AuthService {
 
     const effectiveRole = this.computeEffectiveRole(user.role, campaigns);
 
+    // JWT compacto: solo identidad. campaign_ids/perms se fetchean desde DB
+    // en el authenticate middleware con cache LRU. Antes iban inline pero
+    // hacían crecer el cookie a > 4096 bytes para admins con muchas campañas
+    // y el browser lo rechazaba (fix 2026-05-06).
     const accessToken = await this.generateAccessToken({
       sub: user.id,
       email: user.email,
@@ -93,7 +97,7 @@ export class AuthService {
     const refreshExpiry = this.parseExpiry(this.env.jwtRefreshExpiresIn);
 
     await this.repo.saveRefreshToken(user.id, refreshHash, familyId, refreshExpiry);
-    void campaignIds;
+    void campaignIds; // intencionalmente no usado en el JWT — se fetchea en middleware
 
     return {
       access_token: accessToken,

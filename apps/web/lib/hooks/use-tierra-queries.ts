@@ -55,8 +55,8 @@ export function useCampaignStats(slug: string) {
       return res.data;
     },
     // Refetch every 10s for activity log updates (connect/disconnect events from campaign buffer)
-    refetchInterval: 10_000,
-    staleTime: 8_000,
+    refetchInterval: 60_000,
+    staleTime: 50_000,
   });
 }
 
@@ -81,9 +81,9 @@ export function useRecentForms(campaignId: string | undefined, from?: string, to
       return res.data.forms;
     },
     enabled: !!campaignId,
-    refetchInterval: 5_000,
+    refetchInterval: 30_000,
     // structuralSharing is ON by default — key for P3 fix
-    staleTime: 4_000, // slightly less than poll interval to avoid double-fetch
+    staleTime: 25_000, // slightly less than poll interval to avoid double-fetch
   });
 }
 

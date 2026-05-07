@@ -492,7 +492,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         clickTolerance={4}
         minZoom={lockedBounds ? Math.max(boundsToMinZoom(lockedBounds) - 1, 4) : 1}
         maxBounds={lockedBounds ? expandBounds(lockedBounds, 0.5) : PERU_MAX_BOUNDS}
-        maxTileCacheZoomLevels={10}
+        maxTileCacheZoomLevels={14} maxTileCacheSize={1024}
         fadeDuration={0}
         onLoad={handleLoad}
         onMove={handleMove}
