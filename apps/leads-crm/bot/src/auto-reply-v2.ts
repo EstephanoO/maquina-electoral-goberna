@@ -35,6 +35,36 @@ function aiProviderAvailable(): boolean { return openaiAvailable() || geminiAvai
 const COOLDOWN_MS = 30 * 60 * 1000;
 const recentReplies = new Map<string, number>();
 
+// ─── Detector de intents sensibles ──────────────────────────────────────
+// El bot NUNCA debe responder con credenciales/contraseñas/datos personales
+// del lead. Cuando detectamos uno de estos patrones escalamos a humano:
+//   1. mandamos un holding al lead ("un momento, te confirmo enseguida")
+//   2. avisamos al escalation_phone con el contexto
+//
+// Patrones intencionalmente conservadores. Falsos positivos (escala algo
+// que no era sensible) son aceptables — solo demoran un par de minutos.
+// Falsos negativos (responde con un password real) son catastróficos.
+const SENSITIVE_PATTERNS: Array<{ re: RegExp; reason: string }> = [
+  // Pidiendo contraseñas/credenciales explícito
+  { re: /\b(contrase[ñn]a|password|clave\s*(de\s*acceso|de\s*ingreso)?|credencial(es)?)\b/i, reason: "credentials" },
+  // No puede ingresar / olvidó / quiere recuperar
+  { re: /\b(olvid[eé]|no\s*recuerdo|recuper(ar|en?\s*mi)|restablec(er|en?\s*mi)|reset(ear)?)\b.{0,30}\b(contrase[ñn]a|password|clave|cuenta|acceso|usuario)\b/i, reason: "credentials" },
+  { re: /\bno\s*(me\s*)?(deja|puedo|consigo)\s*(ingresar|entrar|acceder|loguear)/i, reason: "credentials" },
+  // Acceso al campus/plataforma
+  { re: /\b(acces(o|ar)|ingres(ar|o))\s*(al?\s*)?(campus|plataforma|aula|moodle|portal)\b/i, reason: "campus_access" },
+  // Datos personales sensibles del lead — DNI, número de cuenta del cliente
+  { re: /\b(mi\s*)?dni\s*(es|:)?\s*\d{6,9}/i, reason: "sensitive_personal_data" },
+];
+
+/** Devuelve el motivo si el body matchea un intent sensible, o null. */
+export function detectSensitiveIntent(body: string): string | null {
+  if (!body) return null;
+  for (const { re, reason } of SENSITIVE_PATTERNS) {
+    if (re.test(body)) return reason;
+  }
+  return null;
+}
+
 function inCooldown(phone: string): boolean {
   const last = recentReplies.get(phone);
   return last !== undefined && Date.now() - last < COOLDOWN_MS;
@@ -71,6 +101,14 @@ export type AutoReplyMessage = {
   media_kind: "text" | "image" | "video" | "document";
 };
 
+/** Si está presente, el bot debe POST a /escalations + WhatsApp al operador
+ *  con esta info, además de mandar el holding al lead. */
+export type Escalation = {
+  reason: string;          // 'credentials' | 'sensitive_personal_data' | etc.
+  notify_phone: string;    // a quién avisar (escalation_phone de la instancia)
+  bot_instance_id: number; // para auditoría
+};
+
 export type AutoReplyResult =
   | { sent: false; reason: string }
   | {
@@ -87,6 +125,10 @@ export type AutoReplyResult =
       // sabe responder y está comprando tiempo. El operador debe atender.
       needs_human_attention?: boolean;
       attention_reason?: string;
+      // Si presente, el caller debe notificar al operador humano además de
+      // enviar el body al lead. El bot NO debe intentar responder con la
+      // info real — la maneja siempre un humano.
+      escalation?: Escalation;
     };
 
 export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyResult> {
@@ -101,6 +143,38 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
   // 2. Cooldown check
   if (inCooldown(input.fromPhone)) {
     return { sent: false, reason: `cooldown for ${input.fromPhone}` };
+  }
+
+  // 2b. Intent sensible (credenciales/datos personales) → escalar a humano
+  //     ANTES de matchear templates / learned_replies / IA. Si dejamos que
+  //     el LLM o un learned_reply respondan a "olvidé mi contraseña", podría
+  //     decir cualquier cosa. Mejor mandar holding + ping al operador.
+  const sensitiveReason = detectSensitiveIntent(input.body);
+  if (sensitiveReason) {
+    const allCats = await getTemplatesByCategory();
+    const holdings = allCats.get("holding") ?? [];
+    const holdingBody = holdings.length > 0
+      ? holdings[Math.floor(Math.random() * holdings.length)].body
+      : "Un momento por favor, le confirmo enseguida con un asesor 🙏";
+    const holdingTpl = holdings.length > 0
+      ? holdings[Math.floor(Math.random() * holdings.length)]
+      : null;
+    markReplied(input.fromPhone);
+    const notifyPhone = instance.escalation_phone || "+51955135507";
+    return {
+      sent: true,
+      template_id: holdingTpl?.id ?? 0,
+      template_name: holdingTpl?.name ?? `escalation:${sensitiveReason}`,
+      body: holdingBody,
+      image_url: null,
+      needs_human_attention: true,
+      attention_reason: `${sensitiveReason}: "${input.body.slice(0, 100)}"`,
+      escalation: {
+        reason: sensitiveReason,
+        notify_phone: notifyPhone,
+        bot_instance_id: instance.id,
+      },
+    };
   }
 
   // 3. Pick template — cascade rule-based + semantic fallback (~80ms latency

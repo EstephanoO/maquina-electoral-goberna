@@ -129,6 +129,9 @@ app.use((req, res, next) => {
   if (req.method === "POST" && /^\/campaigns\/recipient\/[0-9]+\/(sent|failed)$/.test(req.path)) return next();
   // Bot signals attention queue
   if (req.method === "POST" && /^\/\leads\/[0-9]+\/flag-attention$/.test(req.path)) return next();
+  // Bot signals escalation (sensitive intent → human handle). GET listing
+  // requires auth (admin), but POST creation by bot is allowed.
+  if (req.method === "POST" && req.path === "/escalations") return next();
   if (req.method === "GET"  && req.path.startsWith("/appointment-slots/available")) return next();
   if (req.method === "POST" && req.path === "/appointments") return next();
   if (req.method === "GET"  && /^\/leads\/[0-9]+\/interactions$/.test(req.path)) return next();
@@ -1695,7 +1698,7 @@ app.get("/config/instances", async (_req, res) => {
   const rows = await sql`
     SELECT id, slug, display_name, phone, agent_name, agent_signature,
            product_skus, cuenta_bancaria, yape_numero, extra_prompt,
-           rule_ids, enabled, auto_reply, notes,
+           rule_ids, enabled, auto_reply, escalation_phone, notes,
            created_at, updated_at
       FROM bot_instances
      ORDER BY slug ASC
@@ -1740,6 +1743,7 @@ app.put("/config/instances/:id", requireAuth, async (req, res) => {
       rule_ids        = ${b.rule_ids ?? null},
       enabled         = COALESCE(${b.enabled ?? null}, enabled),
       auto_reply      = COALESCE(${b.auto_reply ?? null}, auto_reply),
+      escalation_phone= ${b.escalation_phone ?? null},
       notes           = ${b.notes ?? null},
       updated_at      = now()
     WHERE id = ${id}
@@ -1779,6 +1783,66 @@ app.delete("/config/instances/:id", requireAuth, async (req, res) => {
   if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
   await sql`UPDATE bot_instances SET enabled = FALSE, updated_at = now() WHERE id = ${id}`;
   res.json({ ok: true, id });
+});
+
+
+// ── Escalations: bot pide ayuda al operador en intents sensibles ────
+//
+// El bot llama POST /escalations cuando detecta credentials/sensitive_personal_data
+// y debería NO responder con info real. El backend solo registra el evento
+// (audit log). El bot se encarga del envío del WhatsApp al escalation_phone
+// usando su propia conexión Baileys — pasa por acá solo para que quede
+// trazado quién pidió, qué pidió y a quién avisamos.
+app.post("/escalations", async (req, res) => {
+  const b = req.body ?? {};
+  // lead_id es opcional (puede no haber lead todavía si el escalation viene
+  // de un mensaje sin matching). bot_instance_id sí es required para auditoría.
+  if (!b.bot_instance_id || !b.reason || !b.inbound_body || !b.notified_phone) {
+    return res.status(400).json({ error: "missing_fields", required: ["bot_instance_id","reason","inbound_body","notified_phone"] });
+  }
+  const rows = await sql`
+    INSERT INTO escalations (lead_id, bot_instance_id, reason, inbound_body, notified_phone, notify_status, notify_error)
+    VALUES (${b.lead_id}, ${b.bot_instance_id}, ${b.reason}, ${b.inbound_body}, ${b.notified_phone},
+            ${b.notify_status ?? 'pending'}, ${b.notify_error ?? null})
+    RETURNING *
+  `;
+  res.json(rows[0]);
+});
+
+// Update notify_status (sent | failed | skipped) — el bot lo llama después
+// del intento de envío para cerrar el ciclo.
+app.patch("/escalations/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "invalid_id" });
+  const b = req.body ?? {};
+  const rows = await sql`
+    UPDATE escalations SET
+      notify_status = COALESCE(${b.notify_status ?? null}, notify_status),
+      notify_error  = ${b.notify_error ?? null},
+      resolved_at   = ${b.resolved ? sql`now()` : sql`resolved_at`},
+      resolved_by   = ${b.resolved_by ?? null}
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  if (rows.length === 0) return res.status(404).json({ error: "not_found" });
+  res.json(rows[0]);
+});
+
+// Listado para que el operador vea sus escalations pendientes en /settings
+// o un dashboard. Filtra por bot_instance_id (operador solo ve las suyas)
+// y por estado (pending/resolved).
+app.get("/escalations", requireAuth, async (req, res) => {
+  const { bot_instance_id, status } = req.query as any;
+  const rows = await sql`
+    SELECT e.*, l.name AS lead_name, l.phone AS lead_phone, b.slug AS instance_slug
+    FROM escalations e
+    LEFT JOIN leads l ON l.id = e.lead_id
+    LEFT JOIN bot_instances b ON b.id = e.bot_instance_id
+    WHERE (${bot_instance_id ?? null}::int IS NULL OR e.bot_instance_id = ${bot_instance_id ?? null}::int)
+      AND (${status === 'pending' ? sql`e.resolved_at IS NULL` : status === 'resolved' ? sql`e.resolved_at IS NOT NULL` : sql`TRUE`})
+    ORDER BY e.created_at DESC LIMIT 100
+  `;
+  res.json({ escalations: rows });
 });
 
 

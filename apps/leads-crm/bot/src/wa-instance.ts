@@ -726,6 +726,18 @@ export class WAInstance {
               addLog(this.id, `⚠ flag-attention failed: ${e.message}`);
             }
           }
+
+          // Si fue una ESCALATION (intent sensible: credenciales, datos pers.)
+          // 1) audit row 2) WhatsApp al escalation_phone con contexto
+          if ((decision as any).escalation) {
+            await this.handleEscalation(
+              (decision as any).escalation,
+              lead?.id ?? null,
+              lead?.name ?? null,
+              phone,
+              body,
+            );
+          }
         } catch (e: any) {
           addLog(this.id, `⚠ auto-reply log failed: ${e.message}`);
         }
@@ -950,6 +962,73 @@ export class WAInstance {
     } catch (e: any) {
       addLog(this.id, `❌ SEND FAILED: ${e.message}`);
       throw e;
+    }
+  }
+
+  /** Escala un intent sensible: registra audit row + manda WA al operador
+   *  con el contexto del lead. Idempotente respecto a la respuesta del lead
+   *  (esa la mandó decideAutoReply via holding). */
+  private async handleEscalation(
+    esc: { reason: string; notify_phone: string; bot_instance_id: number },
+    leadId: number | null,
+    leadName: string | null,
+    leadPhone: string,
+    inboundBody: string,
+  ): Promise<void> {
+    const apiUrl = process.env.API_URL || "http://api:4000";
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (CONFIG.apiToken) headers["Authorization"] = `Bearer ${CONFIG.apiToken}`;
+
+    let escalationId: number | null = null;
+    // 1. Audit row
+    try {
+      const r = await fetch(`${apiUrl}/escalations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lead_id: leadId,
+          bot_instance_id: esc.bot_instance_id,
+          reason: esc.reason,
+          inbound_body: inboundBody,
+          notified_phone: esc.notify_phone,
+          notify_status: "pending",
+        }),
+      });
+      if (r.ok) {
+        const j: any = await r.json();
+        escalationId = j.id ?? null;
+      }
+    } catch (e: any) {
+      addLog(this.id, `⚠ escalation audit failed: ${e.message}`);
+    }
+
+    // 2. WhatsApp al operador con contexto. No bloqueante — si falla
+    //    actualizamos el row con notify_status='failed'.
+    let notifyStatus: "sent" | "failed" = "sent";
+    let notifyError: string | null = null;
+    const summary =
+      `🚨 *Escalation* (${esc.reason})\n` +
+      `Lead: ${leadName || leadPhone} (${leadPhone})\n` +
+      `Mensaje: "${inboundBody.slice(0, 200)}"` +
+      (leadId ? `\n\nhttps://crm.goberna.club/chat?lead=${leadId}` : "");
+    try {
+      await this.sendMessage(esc.notify_phone, summary);
+      addLog(this.id, `🚨 escalation NOTIFIED → ${esc.notify_phone} (${esc.reason})`);
+    } catch (e: any) {
+      notifyStatus = "failed";
+      notifyError = e.message;
+      addLog(this.id, `⚠ escalation notify FAILED → ${esc.notify_phone}: ${e.message}`);
+    }
+
+    // 3. Update audit row con resultado
+    if (escalationId) {
+      try {
+        await fetch(`${apiUrl}/escalations/${escalationId}`, {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ notify_status: notifyStatus, notify_error: notifyError }),
+        });
+      } catch {}
     }
   }
 

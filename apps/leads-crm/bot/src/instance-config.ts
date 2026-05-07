@@ -26,7 +26,11 @@ export type BotInstance = {
   product_skus: string[] | null;
   cuenta_bancaria: string | null; yape_numero: string | null;
   extra_prompt: string | null; rule_ids: number[] | null;
-  enabled: boolean; auto_reply: boolean; notes: string | null;
+  enabled: boolean; auto_reply: boolean;
+  /** Phone que recibe notificaciones cuando el bot escala un intent
+   *  sensible (credenciales, datos personales). Default +51955135507. */
+  escalation_phone: string | null;
+  notes: string | null;
 };
 
 const TTL_MS = 60_000;
