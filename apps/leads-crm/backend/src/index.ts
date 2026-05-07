@@ -732,6 +732,182 @@ app.post("/admin/embed/backfill", requireAuth, safe(async (req, res) => {
   });
 }));
 
+// ── Extraction candidates: precios, cuentas, yape, imágenes desde manuales ─
+//
+// POST /admin/extraction/run — scanea outbounds manuales recientes con regex,
+// agrupa por valor normalizado y crea/upserta extraction_candidates. El
+// operador revisa y aprueba en /admin/extraction/candidates.
+app.post("/admin/extraction/run", requireAuth, safe(async (req, res) => {
+  const { extractAll } = await import("./lib/extractors.js");
+  const { since_days, bot_instance_id } = req.body ?? {};
+  const sinceDays = Math.min(Math.max(Number(since_days) || 30, 1), 365);
+
+  // Trae outbounds manuales (auto_reply!=true), opcionalmente filtrados
+  // por línea (assigned_to del lead). Si bot_instance_id se pasa, filtramos
+  // por el phone de esa instancia.
+  let assignedFilter = sql`TRUE`;
+  let botInstanceId: number | null = null;
+  if (bot_instance_id) {
+    const inst = await sql`SELECT id, phone FROM bot_instances WHERE id = ${Number(bot_instance_id)}`;
+    if (inst.length > 0 && inst[0].phone) {
+      assignedFilter = sql`l.assigned_to = ${inst[0].phone}`;
+      botInstanceId = inst[0].id;
+    }
+  }
+  const rows = await sql`
+    SELECT i.id, i.body
+    FROM interactions i
+    JOIN leads l ON l.id = i.lead_id
+    WHERE i.kind = 'message_out'
+      AND COALESCE((i.meta->>'auto_reply')::boolean, false) = false
+      AND i.created_at > now() - (${sinceDays}::int || ' days')::interval
+      AND ${assignedFilter}
+      AND i.body IS NOT NULL AND length(i.body) > 5
+    ORDER BY i.created_at DESC LIMIT 5000
+  `;
+
+  // Aggregate por (kind, value_normalized) → upsert
+  type Agg = {
+    kind: string;
+    value_normalized: string;
+    value_raw: string;
+    value_meta: any;
+    msgIds: number[];
+    samples: string[];
+  };
+  const agg = new Map<string, Agg>();
+  for (const r of rows) {
+    const matches = extractAll(r.body as string);
+    for (const m of matches) {
+      const key = `${m.kind}:${m.value_normalized}`;
+      const existing = agg.get(key);
+      if (existing) {
+        existing.msgIds.push(r.id);
+        if (existing.samples.length < 3) existing.samples.push(((r.body as string) || "").slice(0, 200));
+      } else {
+        agg.set(key, {
+          kind: m.kind,
+          value_normalized: m.value_normalized,
+          value_raw: m.value_raw,
+          value_meta: m.value_meta ?? {},
+          msgIds: [r.id],
+          samples: [((r.body as string) || "").slice(0, 200)],
+        });
+      }
+    }
+  }
+
+  // Upsert candidates. Confidence = min(occurrences / 3, 1.0).
+  let inserted = 0, updated = 0;
+  for (const a of agg.values()) {
+    const occ = a.msgIds.length;
+    const conf = Math.min(occ / 3, 1.0);
+    const result = await sql`
+      INSERT INTO extraction_candidates (
+        kind, value_raw, value_normalized, value_meta,
+        occurrences, confidence, source_message_ids, sample_texts,
+        bot_instance_id, last_seen_at
+      ) VALUES (
+        ${a.kind}, ${a.value_raw}, ${a.value_normalized}, ${sql.json(a.value_meta)},
+        ${occ}, ${conf}, ${a.msgIds}, ${a.samples},
+        ${botInstanceId}, now()
+      )
+      ON CONFLICT (kind, value_normalized, COALESCE(bot_instance_id, 0))
+      DO UPDATE SET
+        occurrences        = extraction_candidates.occurrences + EXCLUDED.occurrences,
+        confidence         = LEAST((extraction_candidates.occurrences + EXCLUDED.occurrences) / 3.0, 1.0),
+        source_message_ids = (extraction_candidates.source_message_ids || EXCLUDED.source_message_ids)[1:50],
+        sample_texts       = CASE
+          WHEN cardinality(extraction_candidates.sample_texts) < 3
+          THEN (extraction_candidates.sample_texts || EXCLUDED.sample_texts)[1:3]
+          ELSE extraction_candidates.sample_texts
+        END,
+        last_seen_at       = now()
+      RETURNING (xmax = 0) AS inserted
+    `;
+    if (result[0]?.inserted) inserted++; else updated++;
+  }
+
+  res.json({
+    scanned_messages: rows.length,
+    unique_values: agg.size,
+    inserted,
+    updated,
+  });
+}));
+
+// GET /admin/extraction/candidates?kind=price&status=pending — listado para review
+app.get("/admin/extraction/candidates", requireAuth, safe(async (req, res) => {
+  const { kind, status, bot_instance_id } = req.query as any;
+  const rows = await sql`
+    SELECT * FROM extraction_candidates
+    WHERE (${kind ?? null}::text IS NULL OR kind = ${kind ?? null})
+      AND (${status ?? null}::text IS NULL OR status = ${status ?? null})
+      AND (${bot_instance_id ?? null}::int IS NULL OR bot_instance_id = ${bot_instance_id ?? null}::int)
+    ORDER BY status = 'pending' DESC, confidence DESC, last_seen_at DESC
+    LIMIT 200
+  `;
+  res.json({ candidates: rows });
+}));
+
+// POST /admin/extraction/approve/:id — aplica el valor al destino. Acepta
+// approved_value (override) y target (override del suggested_target).
+//
+// Por ahora solo aplica targets del shape:
+//   { type: "instance.cuenta_bancaria", instance_id }
+//   { type: "instance.yape_numero", instance_id }
+//   { type: "instance.escalation_phone", instance_id }
+// Otros shapes (ej. product.price) los marcamos approved sin aplicar y el
+// operador hace el update manual hasta que armemos el handler.
+app.post("/admin/extraction/approve/:id", requireAuth, safe(async (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const { approved_value, target } = req.body ?? {};
+  const by = (req as any).user?.email ?? "extraction";
+
+  const c = (await sql`SELECT * FROM extraction_candidates WHERE id = ${id}`)[0];
+  if (!c) return res.status(404).json({ error: "not_found" });
+
+  const value = approved_value || c.value_raw;
+  const t = target || c.suggested_target;
+
+  let appliedNote: string | null = null;
+  if (t && t.type && t.instance_id) {
+    const instId = Number(t.instance_id);
+    if (t.type === "instance.cuenta_bancaria") {
+      await sql`UPDATE bot_instances SET cuenta_bancaria = ${value}, updated_at = now() WHERE id = ${instId}`;
+      appliedNote = `cuenta_bancaria updated for instance ${instId}`;
+    } else if (t.type === "instance.yape_numero") {
+      await sql`UPDATE bot_instances SET yape_numero = ${value}, updated_at = now() WHERE id = ${instId}`;
+      appliedNote = `yape_numero updated for instance ${instId}`;
+    } else if (t.type === "instance.escalation_phone") {
+      await sql`UPDATE bot_instances SET escalation_phone = ${value}, updated_at = now() WHERE id = ${instId}`;
+      appliedNote = `escalation_phone updated for instance ${instId}`;
+    }
+  }
+
+  await sql`
+    UPDATE extraction_candidates SET
+      status = 'approved',
+      approved_value = ${value},
+      approved_target = ${t ? sql.json(t) : null},
+      applied_at = ${appliedNote ? sql`now()` : null},
+      applied_by = ${appliedNote ? by : null}
+    WHERE id = ${id}
+  `;
+  res.json({ ok: true, applied: appliedNote });
+}));
+
+app.post("/admin/extraction/reject/:id", requireAuth, safe(async (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const reason: string | null = req.body?.reason ?? null;
+  await sql`
+    UPDATE extraction_candidates SET status = 'rejected', rejected_reason = ${reason}
+    WHERE id = ${id}
+  `;
+  res.json({ ok: true });
+}));
+
+
 // SEND QUEUE
 app.get("/sends", async (req, res) => {
   const { status, assigned_to, available_now } = req.query as Record<string, string | undefined>;
