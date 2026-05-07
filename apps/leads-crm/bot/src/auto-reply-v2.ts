@@ -33,6 +33,15 @@ async function aiReply(opts: { systemPrompt: string; userMessage: string }) {
 }
 function aiProviderAvailable(): boolean { return openaiAvailable() || geminiAvailable(); }
 
+// Cooldown — SOLO se activa cuando el bot escala a humano (sensible / Gemini
+// fallback / holding template). Para matches confiados (product / tag /
+// learned_reply) NO hay cooldown — el bot responde siempre, replicando el
+// flujo natural de Kathy. Si el lead spamea, los matches rinden idéntico
+// resultado y el flow no se rompe.
+//
+// Decisión user 2026-05-07: "quiero que responda siempre, cuando la consulta
+// no la podés responder ahí sí esperás, decís que te dé un momento, y notificás
+// que ese chat necesita atención humana."
 const COOLDOWN_MS = 30 * 60 * 1000;
 const recentReplies = new Map<string, number>();
 
@@ -284,8 +293,9 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
   const curso = input.classifiedProducts[0];
   const body = applyTemplate(tpl, instance, { curso });
 
-  // 5. Mark cooldown BEFORE sending so retries don't double-send
-  markReplied(input.fromPhone);
+  // 5. NO cooldown para matches confiados — el bot responde siempre. Solo
+  //    los paths de unconfident match (sensitive/gemini/holding) cool down.
+  //    Ver comment en COOLDOWN_MS.
 
   // 6. Build sequence: si el template es flyer y tiene product_sku con
   //    temario, agregamos el TEMARIO image como segundo mensaje (replicando
