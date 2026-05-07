@@ -49,7 +49,7 @@ export async function createLearnedReply(input: {
     ON CONFLICT DO NOTHING
     RETURNING id
   `;
-  return rows[0] ?? { id: 0 };
+  return (rows[0] as { id: number } | undefined) ?? { id: 0 };
 }
 
 export async function searchLearnedReplies(

@@ -10,17 +10,12 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   Browsers,
   type WASocket,
-  type BaileysEventMap,
-  type WAMessage,
   type WAMessageKey,
   type proto,
   isJidGroup,
   isJidBroadcast,
   isJidNewsletter,
   isJidStatusBroadcast,
-  getContentType,
-  jidNormalizedUser,
-  downloadMediaMessage,
 } from "baileys";
 import { Boom } from "@hapi/boom";
 import P from "pino";
@@ -28,28 +23,27 @@ import { join } from "path";
 import { rmSync } from "fs";
 import { CONFIG, type PhoneConfig } from "./config.js";
 import { classifyMessage, getCourse, applyCustomRulesEnriched } from "./classifier.js";
-
-// Slug para tags: "Consultor Político" → "consultor-politico". Usado para que
-// los tags queden consistentes (sin acentos, espacios, mayúsculas).
-function slugifyTag(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD").replace(/[̀-ͯ]/g, "")  // strip combining diacritics
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-import {
-  crmApi,
-  pushElectoralEvent,
-  uploadMediaToElectoral,
-  syncElectoralPhones,
-  getElectoralCampaignFor,
-} from "./crm-api.js";
-import { getAutoResponse, getOutOfHoursResponse, isWithinHours } from "./auto-reply.js";
+import { crmApi, getElectoralCampaignFor } from "./crm-api.js";
 import { decideAutoReply, typingDelayFor } from "./auto-reply-v2.js";
 import { extractFromMessage, buildLeadPatch } from "./extractors.js";
-import { getNextSlots, proposeMessage, saveProposedSlots, getProposedSlots, pickSlotFromReply, createAppointment, confirmationMessage } from "./agenda.js";
+import {
+  getNextSlots, proposeMessage, saveProposedSlots, getProposedSlots,
+  pickSlotFromReply, createAppointment, confirmationMessage,
+} from "./agenda.js";
 import { invalidateMemory } from "./conversation-memory.js";
+// Pipeline modular (Phase 3 refactor): pure helpers + handlers extraídos.
+import { slugifyTag, normalizeJid, detectMessageType, extractText, sleep } from "./wa/utils.js";
+import { LidResolver } from "./wa/lid-resolver.js";
+import {
+  sendDocument as senderDoc, sendVideo as senderVid, sendImage as senderImg, sendText as senderText,
+  type SenderDeps,
+} from "./wa/senders.js";
+import { handleEscalation as runEscalation } from "./wa/escalation.js";
+import {
+  handleElectoralEvent as runElectoralEvent,
+  handleElectoralReaction as runElectoralReaction,
+  extractMediaForElectoral as runExtractMedia,
+} from "./wa/electoral.js";
 
 const logger = P({ level: "warn" });
 
@@ -110,6 +104,8 @@ export class WAInstance {
   // recipient sees "Esperando mensaje, esto puede tomar tiempo…" indefinitely.
   private messageCache = new Map<string, proto.IMessage>();
   private static MESSAGE_CACHE_LIMIT = 2000;
+  // LID→phone resolver con cache (sustituye al Map inline anterior).
+  private lidResolver = new LidResolver(() => this.sock, (m) => addLog(this.id, m));
   readonly stats: InstanceStats = {
     messagesIn: 0, messagesOut: 0, autoReplies: 0, errors: 0,
     startedAt: new Date().toISOString(),
@@ -120,6 +116,24 @@ export class WAInstance {
     this.label = config.label;
     this.phone = config.phone;
     this.testOnly = config.testOnly || false;
+  }
+
+  /** Deps que los senders puros necesitan: socket + ready flag + log + onSent
+   *  callback que mantiene stats.messagesOut + cachea payload para retry receipts. */
+  private get senderDeps(): SenderDeps {
+    return {
+      sock: this.sock,
+      isReady: this._status === "ready",
+      log: (m: string) => addLog(this.id, m),
+      onSent: (jid, msgId, payload) => {
+        this.stats.messagesOut++;
+        if (msgId && payload) {
+          this.cacheMessage(jid, msgId, payload);
+          const meJid = (this.sock as any)?.authState?.creds?.me?.id;
+          if (meJid) this.cacheMessage(meJid, msgId, payload);
+        }
+      },
+    };
   }
 
   get state(): InstanceState {
@@ -229,32 +243,21 @@ export class WAInstance {
       }
     });
 
-    // Build LID→phone map from contacts sync
+    // Build LID→phone map from contacts sync — delegado al LidResolver.
     this.sock.ev.on("contacts.upsert", (contacts) => {
       for (const c of contacts) {
-        const id = c.id; // could be LID or phone JID
-        const lid = (c as any).lid; // some contacts have a lid field
-        if (lid && id?.includes("@s.whatsapp.net")) {
-          const phone = "+" + id.replace("@s.whatsapp.net", "");
-          this.lidCache.set(lid, phone);
-          addLog(this.id, `📇 Contact map: ${lid.slice(0, 20)} → ${phone}`);
-        }
-        // Also map the reverse: if id is a LID and there's a notify/name with digits
-        if (id?.includes("@lid")) {
+        this.lidResolver.recordContact(c.id, (c as any).lid);
+        // Log auxiliar: si el id es un LID con verifiedName/notify, dejar trace.
+        if (c.id?.includes("@lid")) {
           const verifiedName = (c as any).verifiedName || (c as any).notify || "";
-          if (verifiedName) addLog(this.id, `📇 LID contact: ${id.slice(0, 20)} name=${verifiedName}`);
+          if (verifiedName) addLog(this.id, `📇 LID contact: ${c.id.slice(0, 20)} name=${verifiedName}`);
         }
       }
     });
 
     this.sock.ev.on("contacts.update", (contacts) => {
       for (const c of contacts) {
-        const id = c.id;
-        const lid = (c as any).lid;
-        if (lid && id?.includes("@s.whatsapp.net")) {
-          const phone = "+" + id.replace("@s.whatsapp.net", "");
-          this.lidCache.set(lid, phone);
-        }
+        if (c.id) this.lidResolver.recordContact(c.id, (c as any).lid);
       }
     });
 
@@ -304,19 +307,10 @@ export class WAInstance {
     });
   }
 
-  // Normalize JID so that retry lookups work regardless of device suffix or
-  // agent hint. WhatsApp retries come back addressed to device-specific JIDs
-  // like `51955135507:11@s.whatsapp.net`, but we cache by the base user JID.
+  // Normaliza JID (strip device suffix). Delegado a wa/utils para que el
+  // cache de retry funcione con el mismo algoritmo que el resto del pipeline.
   private normalizeJid(jid: string): string {
-    if (!jid) return jid;
-    // Strip `:N` device suffix before the `@`: `51955135507:11@s.whatsapp.net` → `51955135507@s.whatsapp.net`
-    const at = jid.indexOf("@");
-    if (at <= 0) return jid;
-    const user = jid.slice(0, at);
-    const server = jid.slice(at);
-    const colon = user.indexOf(":");
-    const bareUser = colon >= 0 ? user.slice(0, colon) : user;
-    return bareUser + server;
+    return normalizeJid(jid);
   }
 
   private cacheMessage(jid: string, id: string, message: proto.IMessage) {
@@ -786,190 +780,39 @@ export class WAInstance {
     }
   }
 
-  // LID → phone cache
-  private lidCache = new Map<string, string>();
-
+  // LID → phone resolución delegada a wa/lid-resolver.LidResolver. El cache
+  // vive en la instancia (this.lidResolver) y persiste durante el lifetime
+  // del WAInstance, igual que antes. NO inventamos phones falsos: si no se
+  // resuelve, el caller decide si dropear o flagear el mensaje.
   private async resolveLidPhone(lid: string, msg: any): Promise<string | null> {
-    // Check cache first
-    if (this.lidCache.has(lid)) return this.lidCache.get(lid)!;
-
-    // Method 1: msg.key.participantPn — Baileys v7 delivers the real phone JID
-    // alongside the LID in this field for DMs and group messages.
-    const participantPn: string | undefined = msg.key?.participantPn || msg.participantPn;
-    if (participantPn && participantPn.includes("@s.whatsapp.net")) {
-      const digits = participantPn.replace("@s.whatsapp.net", "").split(":")[0];
-      if (digits.length >= 8 && digits.length <= 15) {
-        const phone = "+" + digits;
-        this.lidCache.set(lid, phone);
-        addLog(this.id, `📇 LID→phone via participantPn: ${lid.slice(0, 20)} → ${phone}`);
-        return phone;
-      }
-    }
-
-    // Method 2: msg.key.participant if it's already a phone JID (legacy path)
-    const participant: string | undefined = msg.key?.participant;
-    if (participant && participant.includes("@s.whatsapp.net")) {
-      const digits = participant.replace("@s.whatsapp.net", "").split(":")[0];
-      if (digits.length >= 8 && digits.length <= 15) {
-        const phone = "+" + digits;
-        this.lidCache.set(lid, phone);
-        return phone;
-      }
-    }
-
-    // Method 3: Baileys v7 LID mapping store — maps LID → PN from prior traffic
-    try {
-      const repo = (this.sock as any)?.signalRepository;
-      const pn: string | null | undefined = await repo?.lidMapping?.getPNForLID?.(lid);
-      if (pn && pn.includes("@s.whatsapp.net")) {
-        const digits = pn.replace("@s.whatsapp.net", "").split(":")[0];
-        if (digits.length >= 8 && digits.length <= 15) {
-          const phone = "+" + digits;
-          this.lidCache.set(lid, phone);
-          addLog(this.id, `📇 LID→phone via lidMapping: ${lid.slice(0, 20)} → ${phone}`);
-          return phone;
-        }
-      }
-    } catch (e: any) {
-      addLog(this.id, `⚠ lidMapping.getPNForLID failed: ${e.message}`);
-    }
-
-    // Could not resolve — do NOT save anything with a fake phone
-    addLog(this.id, `⚠ LID not resolved. pushName: ${msg.pushName || "?"}`);
-    return null;
+    return this.lidResolver.resolve(lid, msg);
   }
 
-  /**
-   * Detecta el tipo de mensaje a partir del shape de msg.message. Devuelve un
-   * label del enum compartido con electoral wa-events. Útil para que leads-crm
-   * sepa qué renderizar (imagen/audio/video/etc) sin tener que inspeccionar
-   * el binario por sí solo.
-   */
-  private detectMessageType(msg: any): "text" | "image" | "audio" | "video" | "document" | "sticker" | "location" | "contact" | "system" {
-    const m = msg.message;
-    if (!m) return "system";
-    if (m.imageMessage) return "image";
-    if (m.videoMessage) return "video";
-    if (m.audioMessage) return "audio";
-    if (m.documentMessage) return "document";
-    if (m.stickerMessage) return "sticker";
-    if (m.locationMessage || m.liveLocationMessage) return "location";
-    if (m.contactMessage || m.contactsArrayMessage) return "contact";
-    return "text";
-  }
+  // Helpers delegados a wa/utils — wrappers para preservar la API interna.
+  private detectMessageType(msg: any) { return detectMessageType(msg); }
+  private extractText(msg: any) { return extractText(msg); }
 
-  private extractText(msg: any): string | null {
-    const m = msg.message;
-    if (!m) return null;
-    // Text
-    if (m.conversation) return m.conversation;
-    if (m.extendedTextMessage?.text) return m.extendedTextMessage.text;
-    // Media captions
-    if (m.imageMessage?.caption) return m.imageMessage.caption;
-    if (m.videoMessage?.caption) return m.videoMessage.caption;
-    if (m.documentMessage?.caption) return m.documentMessage.caption;
-    // Button/list replies (user clicked a button or list item)
-    if (m.buttonsResponseMessage?.selectedDisplayText) return m.buttonsResponseMessage.selectedDisplayText;
-    if (m.listResponseMessage?.title) return m.listResponseMessage.title;
-    if (m.templateButtonReplyMessage?.selectedDisplayText) return m.templateButtonReplyMessage.selectedDisplayText;
-    // Interactive responses
-    if (m.interactiveResponseMessage?.body?.text) return m.interactiveResponseMessage.body.text;
-    return null;
-  }
-
-  /** Send a message to a phone number */
-  /** Send PDF / document via URL (Baileys document message). */
+  // ── Senders públicos ─────────────────────────────────────────────────
+  // Delegan a wa/senders.ts. El onSent en this.senderDeps se encarga del
+  // stats.messagesOut + cache de payload (para retry receipts en sendMessage).
   async sendDocument(phone: string, docUrl: string, filename: string, caption?: string, mimetype = "application/pdf"): Promise<void> {
-    if (!this.sock || this._status !== "ready") throw new Error("not connected");
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length < 8 || digits.length > 15) throw new Error(`invalid phone: ${phone}`);
-    const jid = digits + "@s.whatsapp.net";
-    addLog(this.id, `📤📄 DOC to ${phone}: ${filename}`);
-    try {
-      const result = await this.sock.sendMessage(jid, {
-        document: { url: docUrl },
-        mimetype,
-        fileName: filename,
-        caption: caption || "",
-      });
-      addLog(this.id, `✅ DOC SENT: msgId=${result?.key?.id || "?"}`);
-      this.stats.messagesOut++;
-    } catch (e: any) {
-      addLog(this.id, `❌ DOC SEND FAILED: ${e.message}`);
-      throw e;
-    }
+    return senderDoc(this.senderDeps, phone, docUrl, filename, caption, mimetype);
   }
 
-  /** Send video via URL (Baileys video message). */
   async sendVideo(phone: string, videoUrl: string, caption?: string): Promise<void> {
-    if (!this.sock || this._status !== "ready") throw new Error("not connected");
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length < 8 || digits.length > 15) throw new Error(`invalid phone: ${phone}`);
-    const jid = digits + "@s.whatsapp.net";
-    addLog(this.id, `📤🎬 VID to ${phone}: ${videoUrl.slice(-30)}`);
-    try {
-      const result = await this.sock.sendMessage(jid, {
-        video: { url: videoUrl },
-        caption: caption || "",
-      });
-      addLog(this.id, `✅ VID SENT: msgId=${result?.key?.id || "?"}`);
-      this.stats.messagesOut++;
-    } catch (e: any) {
-      addLog(this.id, `❌ VID SEND FAILED: ${e.message}`);
-      throw e;
-    }
+    return senderVid(this.senderDeps, phone, videoUrl, caption);
   }
 
-  /** Send image via URL with optional caption. Uses Baileys image message. */
   async sendImage(phone: string, imageUrl: string, caption?: string): Promise<void> {
-    if (!this.sock || this._status !== "ready") throw new Error("not connected");
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length < 8 || digits.length > 15) throw new Error(`invalid phone: ${phone}`);
-    const jid = digits + "@s.whatsapp.net";
-    addLog(this.id, `📤📷 IMG to ${phone}: ${imageUrl.slice(-30)}${caption ? ` · "${caption.slice(0, 40)}"` : ""}`);
-    try {
-      const result = await this.sock.sendMessage(jid, {
-        image: { url: imageUrl },
-        caption: caption || "",
-      });
-      const msgId = result?.key?.id;
-      addLog(this.id, `✅ IMG SENT ok: msgId=${msgId || "?"}`);
-      this.stats.messagesOut++;
-    } catch (e: any) {
-      addLog(this.id, `❌ IMG SEND FAILED: ${e.message}`);
-      throw e;
-    }
+    return senderImg(this.senderDeps, phone, imageUrl, caption);
   }
 
   async sendMessage(phone: string, text: string): Promise<void> {
-    if (!this.sock || this._status !== "ready") throw new Error("not connected");
-    const digits = phone.replace(/\D/g, "");
-    if (digits.length < 8 || digits.length > 15) throw new Error(`invalid phone: ${phone} (${digits.length} digits)`);
-    const jid = digits + "@s.whatsapp.net";
-    addLog(this.id, `📤 SEND to ${phone} (${jid}): ${text.slice(0, 50)}`);
-    try {
-      const result = await this.sock.sendMessage(jid, { text });
-      const msgId = result?.key?.id;
-      addLog(this.id, `✅ SENT ok: msgId=${msgId || "?"}`);
-      // Cache the payload so retry receipts can be answered. WhatsApp fans the
-      // message out to every device of the recipient *and* every companion
-      // device of ourselves, so we index under both JIDs — either side may
-      // request a retry.
-      if (msgId && result?.message) {
-        this.cacheMessage(jid, msgId, result.message);
-        const meJid = (this.sock as any)?.authState?.creds?.me?.id;
-        if (meJid) this.cacheMessage(meJid, msgId, result.message);
-      }
-      this.stats.messagesOut++;
-    } catch (e: any) {
-      addLog(this.id, `❌ SEND FAILED: ${e.message}`);
-      throw e;
-    }
+    return senderText(this.senderDeps, phone, text);
   }
 
-  /** Escala un intent sensible: registra audit row + manda WA al operador
-   *  con el contexto del lead. Idempotente respecto a la respuesta del lead
-   *  (esa la mandó decideAutoReply via holding). */
+  /** Escala un intent sensible. Delegado a wa/escalation.ts — el módulo se
+   *  encarga del audit row + WA al operador + update final. */
   private async handleEscalation(
     esc: { reason: string; notify_phone: string; bot_instance_id: number },
     leadId: number | null,
@@ -977,61 +820,17 @@ export class WAInstance {
     leadPhone: string,
     inboundBody: string,
   ): Promise<void> {
-    const apiUrl = process.env.API_URL || "http://api:4000";
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (CONFIG.apiToken) headers["Authorization"] = `Bearer ${CONFIG.apiToken}`;
-
-    let escalationId: number | null = null;
-    // 1. Audit row
-    try {
-      const r = await fetch(`${apiUrl}/escalations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lead_id: leadId,
-          bot_instance_id: esc.bot_instance_id,
-          reason: esc.reason,
-          inbound_body: inboundBody,
-          notified_phone: esc.notify_phone,
-          notify_status: "pending",
-        }),
-      });
-      if (r.ok) {
-        const j: any = await r.json();
-        escalationId = j.id ?? null;
-      }
-    } catch (e: any) {
-      addLog(this.id, `⚠ escalation audit failed: ${e.message}`);
-    }
-
-    // 2. WhatsApp al operador con contexto. No bloqueante — si falla
-    //    actualizamos el row con notify_status='failed'.
-    let notifyStatus: "sent" | "failed" = "sent";
-    let notifyError: string | null = null;
-    const summary =
-      `🚨 *Escalation* (${esc.reason})\n` +
-      `Lead: ${leadName || leadPhone} (${leadPhone})\n` +
-      `Mensaje: "${inboundBody.slice(0, 200)}"` +
-      (leadId ? `\n\nhttps://crm.goberna.club/chat?lead=${leadId}` : "");
-    try {
-      await this.sendMessage(esc.notify_phone, summary);
-      addLog(this.id, `🚨 escalation NOTIFIED → ${esc.notify_phone} (${esc.reason})`);
-    } catch (e: any) {
-      notifyStatus = "failed";
-      notifyError = e.message;
-      addLog(this.id, `⚠ escalation notify FAILED → ${esc.notify_phone}: ${e.message}`);
-    }
-
-    // 3. Update audit row con resultado
-    if (escalationId) {
-      try {
-        await fetch(`${apiUrl}/escalations/${escalationId}`, {
-          method: "PATCH",
-          headers,
-          body: JSON.stringify({ notify_status: notifyStatus, notify_error: notifyError }),
-        });
-      } catch {}
-    }
+    return runEscalation(
+      {
+        sendMessage: (phone, text) => this.sendMessage(phone, text),
+        log: (m) => addLog(this.id, m),
+      },
+      esc,
+      leadId,
+      leadName,
+      leadPhone,
+      inboundBody,
+    );
   }
 
   async destroy(): Promise<void> {
@@ -1088,210 +887,30 @@ export class WAInstance {
   // que el flow original de leads-crm descarta.
   // ═══════════════════════════════════════════════════════════════════
 
-  /**
-   * Empuja eventos a electoral. Refresca el mapping de phones cada 60s en el
-   * primer evento de cada batch (lazy sync, no polling activo).
-   */
-  private async handleElectoralEvent(msg: any): Promise<void> {
-    const ownDigits = this.phone.replace(/\D/g, "");
-    const jid: string | undefined = msg.key?.remoteJid;
-    if (!jid) return;
-    const isFromMe = !!msg.key?.fromMe;
-
-    // Refresh perezoso del mapping de phones electoral.
-    await syncElectoralPhones();
-    const mapping = getElectoralCampaignFor(ownDigits);
-    if (!mapping) return; // own_number no mapeado a electoral, no-op.
-
-    // Status broadcasts: privacy + ruido. Skip incluso para electoral.
-    if (isJidStatusBroadcast(jid)) return;
-
-    const isGroup = isJidGroup(jid);
-    const isNewsletter = isJidNewsletter(jid);
-    const isBroadcast = isJidBroadcast(jid);
-
-    // Resolver phone del autor del mensaje. En 1:1 = el remote_jid; en grupo
-    // = msg.key.participantPn o msg.key.participant.
-    let senderJid: string | undefined;
-    let senderPhone: string | undefined;
-    let senderName: string | undefined = isFromMe ? undefined : (msg.pushName || undefined);
-
-    if (isGroup) {
-      const participant: string | undefined = msg.key?.participant;
-      const participantPn: string | undefined = msg.key?.participantPn;
-      senderJid = participantPn || participant;
-      if (senderJid?.includes("@s.whatsapp.net")) {
-        const digits = senderJid.replace("@s.whatsapp.net", "").split(":")[0];
-        if (digits.length >= 8 && digits.length <= 15) senderPhone = "+" + digits;
-      }
-    } else if (jid.includes("@s.whatsapp.net")) {
-      const digits = jid.replace("@s.whatsapp.net", "");
-      if (digits.length >= 8 && digits.length <= 15) senderPhone = "+" + digits;
-    } else if (jid.includes("@lid")) {
-      const resolved = await this.resolveLidPhone(jid, msg);
-      if (resolved) senderPhone = resolved;
-    }
-
-    // Detect group subject
-    let groupSubject: string | undefined;
-    if (isGroup && this.sock) {
-      try {
-        const meta = await this.sock.groupMetadata(jid);
-        groupSubject = meta?.subject || undefined;
-      } catch {
-        // groupMetadata puede fallar si no somos miembros — ignorar.
-      }
-    }
-
-    // Detectar tipo de mensaje + extraer media si aplica.
-    const mediaInfo = await this.extractMediaForElectoral(msg, mapping.campaign_id);
-    const messageType = mediaInfo?.message_type ?? "text";
-    const text = this.extractText(msg) ?? "";
-
-    // Quoted reply
-    const m = msg.message ?? {};
-    const ctx = m.extendedTextMessage?.contextInfo
-      ?? m.imageMessage?.contextInfo
-      ?? m.videoMessage?.contextInfo
-      ?? m.audioMessage?.contextInfo
-      ?? m.documentMessage?.contextInfo;
-    const quotedExternalId = ctx?.stanzaId || undefined;
-
-    const event = {
-      own_number: ownDigits,
-      jid,
-      phone: senderPhone,
-      contact_name: senderName,
-      direction: (isFromMe ? "out" : "in") as "in" | "out",
-      text,
-      timestamp: msg.messageTimestamp ? Number(msg.messageTimestamp) * 1000 : Date.now(),
-      external_id: msg.key?.id || undefined,
-      message_type: messageType,
-      ...(mediaInfo ? {
-        media_url: mediaInfo.media_url,
-        media_mime: mediaInfo.media_mime,
-        media_size_bytes: mediaInfo.media_size_bytes,
-        media_caption: mediaInfo.media_caption,
-        media_duration_sec: mediaInfo.media_duration_sec,
-      } : {}),
-      ...(isGroup || isNewsletter || isBroadcast ? { is_group: isGroup, group_subject: groupSubject } : {}),
-      ...(isGroup ? { sender_jid: senderJid, sender_name: senderName } : {}),
-      ...(quotedExternalId ? { quoted_external_id: quotedExternalId } : {}),
-    };
-
-    await pushElectoralEvent(event);
-    addLog(this.id, `🛰 electoral push ${messageType}${isGroup ? " group" : ""}${mediaInfo ? " w/media" : ""}`);
-  }
-
-  /** Reaction handler — empuja a electoral con message_type='reaction'. */
-  private async handleElectoralReaction(r: any): Promise<void> {
-    const ownDigits = this.phone.replace(/\D/g, "");
-    await syncElectoralPhones();
-    const mapping = getElectoralCampaignFor(ownDigits);
-    if (!mapping) return;
-
-    const targetExternalId = r.key?.id;
-    const reactionEmoji = r.reaction?.text || ""; // empty = unreact
-    if (!targetExternalId) return;
-    const remoteJid: string | undefined = r.key?.remoteJid;
-    if (!remoteJid) return;
-    if (isJidStatusBroadcast(remoteJid)) return;
-
-    const isGroup = isJidGroup(remoteJid);
-    const isFromMe = !!r.reaction?.key?.fromMe || !!r.key?.fromMe;
-
-    // Resolver phone del que reaccionó
-    let senderPhone: string | undefined;
-    if (isGroup) {
-      const p = r.key?.participantPn || r.key?.participant;
-      if (p?.includes("@s.whatsapp.net")) {
-        const digits = p.replace("@s.whatsapp.net", "").split(":")[0];
-        if (digits.length >= 8 && digits.length <= 15) senderPhone = "+" + digits;
-      }
-    } else if (remoteJid.includes("@s.whatsapp.net")) {
-      const digits = remoteJid.replace("@s.whatsapp.net", "");
-      if (digits.length >= 8 && digits.length <= 15) senderPhone = "+" + digits;
-    }
-
-    await pushElectoralEvent({
-      own_number: ownDigits,
-      jid: remoteJid,
-      phone: senderPhone,
-      direction: isFromMe ? "out" : "in",
-      message_type: "reaction",
-      text: reactionEmoji,
-      external_id: r.reaction?.key?.id || undefined,
-      reaction_to_external_id: targetExternalId,
-      reaction_emoji: reactionEmoji,
-      timestamp: Date.now(),
-      ...(isGroup ? { is_group: true } : {}),
-    });
-    addLog(this.id, `🛰 electoral reaction ${reactionEmoji} → ${targetExternalId.slice(0, 12)}`);
-  }
-
-  /**
-   * Si el mensaje tiene media adjunta (image/audio/video/doc/sticker), la
-   * descarga y la sube al endpoint /api/cms/wa-media de electoral. Devuelve
-   * la URL pública + metadata para meter en el wa-event. Null si no hay media
-   * o si el upload falló.
-   */
-  private async extractMediaForElectoral(
-    msg: any,
-    campaignId: string,
-  ): Promise<{
-    message_type: string;
-    media_url: string;
-    media_mime: string;
-    media_size_bytes: number;
-    media_caption?: string;
-    media_duration_sec?: number;
-  } | null> {
-    const m = msg.message;
-    if (!m) return null;
-
-    type MType = { key: string; defaultMime: string; type: string; durationField?: string };
-    const mediaTypes: MType[] = [
-      { key: "imageMessage", defaultMime: "image/jpeg", type: "image" },
-      { key: "videoMessage", defaultMime: "video/mp4", type: "video", durationField: "seconds" },
-      { key: "audioMessage", defaultMime: "audio/ogg", type: "audio", durationField: "seconds" },
-      { key: "documentMessage", defaultMime: "application/pdf", type: "document" },
-      { key: "stickerMessage", defaultMime: "image/webp", type: "sticker" },
-    ];
-    const found = mediaTypes.find((mt) => m[mt.key]);
-    if (!found) return null;
-
-    const node = m[found.key];
-    const mime = node.mimetype || found.defaultMime;
-    const caption = node.caption || undefined;
-    const duration = found.durationField ? node[found.durationField] : undefined;
-
-    let buffer: Buffer;
-    try {
-      buffer = (await downloadMediaMessage(
-        msg,
-        "buffer",
-        {},
-        { logger: undefined as any, reuploadRequest: this.sock!.updateMediaMessage },
-      )) as Buffer;
-    } catch (e: any) {
-      addLog(this.id, `⚠ media download failed (${found.type}): ${e?.message ?? e}`);
-      return null;
-    }
-
-    const upload = await uploadMediaToElectoral(buffer, mime, campaignId);
-    if (!upload) return null;
-
+  /** Context object compartido por los 3 handlers electoral. */
+  private get electoralCtx() {
     return {
-      message_type: found.type,
-      media_url: upload.url,
-      media_mime: mime,
-      media_size_bytes: upload.size_bytes,
-      media_caption: caption,
-      media_duration_sec: duration,
+      sock: () => this.sock,
+      ownPhone: this.phone,
+      lidResolver: this.lidResolver,
+      log: (m: string) => addLog(this.id, m),
     };
   }
-}
 
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
+  /** Empuja eventos a electoral (1:1 / grupos / newsletters / broadcasts +
+   *  media). Delegado a wa/electoral.ts — fire-and-forget. */
+  private async handleElectoralEvent(msg: any): Promise<void> {
+    return runElectoralEvent(this.electoralCtx, msg);
+  }
+
+  /** Reaction → electoral. Delegado a wa/electoral.ts. */
+  private async handleElectoralReaction(r: any): Promise<void> {
+    return runElectoralReaction(this.electoralCtx, r);
+  }
+
+  /** Descarga media del mensaje y la sube a /api/cms/wa-media de electoral.
+   *  Devuelve URL pública + metadata, o null. Delegado a wa/electoral.ts. */
+  private async extractMediaForElectoral(msg: any, campaignId: string) {
+    return runExtractMedia(this.electoralCtx, msg, campaignId);
+  }
 }

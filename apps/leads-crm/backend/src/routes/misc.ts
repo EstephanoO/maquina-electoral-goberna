@@ -252,8 +252,8 @@ miscRouter.get("/reports/daily", async (req, res) => {
   // Product interest detection — usa el mismo classifier que el auto-sync
   const productInterest: Record<string, { count: number; leads: { name: string; phone: string; body: string; time: string }[] }> = {};
   for (const msg of messagesIn) {
-    const classified = classifyMessage(msg.body || "");
-    for (const product of classified.products) {
+    const classified = await classifyMessage(msg.body || "");
+    for (const product of classified.interests) {
       if (!productInterest[product]) productInterest[product] = { count: 0, leads: [] };
       productInterest[product].count++;
       productInterest[product].leads.push({

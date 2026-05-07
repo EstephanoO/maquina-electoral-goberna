@@ -54,7 +54,7 @@ export async function createMiningCandidate(input: {
       ${input.match_count}, ${input.suggested_tag}, ${input.suggested_pattern}
     ) RETURNING id
   `;
-  return rows[0];
+  return rows[0] as { id: number };
 }
 
 export async function listMiningCandidates(status: string = "pending"): Promise<Array<{
