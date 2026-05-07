@@ -24,6 +24,8 @@ import { HIDE_FILTER, SHOW_ALL_FILTER } from "../constants";
 export function useDrillFilters(
   drillState: DrillState,
   campaignId: string,
+  /** When set, hide all geometry outside the jurisdiction (no fills, no lines) */
+  lockedDrillLevel?: number | null,
 ): DrillFilters {
   const campaignFilter: FilterSpecification = useMemo(
     () => ["==", ["get", "campaign_id"], campaignId],
@@ -31,31 +33,40 @@ export function useDrillFilters(
   );
 
   // ─── DEPARTAMENTOS ───
-  // Fill: ALWAYS show all deps (tile-native mask darkens non-selected via paint)
-  const depFillFilter: FilterSpecification = SHOW_ALL_FILTER;
+  // When jurisdiction is locked, hide dep geometry entirely (clean basemap outside)
+  const depFillFilter: FilterSpecification = useMemo(() => {
+    if (lockedDrillLevel != null && lockedDrillLevel >= 1) return HIDE_FILTER;
+    return SHOW_ALL_FILTER;
+  }, [lockedDrillLevel]);
 
-  // Line: level 0 all, level 1+ only selected (reduce clutter)
   const depLineFilter: FilterSpecification = useMemo(() => {
+    if (lockedDrillLevel != null && lockedDrillLevel >= 1) return HIDE_FILTER;
     if (drillState.level === 0) return SHOW_ALL_FILTER;
     if (drillState.depCode) return ["==", ["get", "coddep"], drillState.depCode];
     return HIDE_FILTER;
-  }, [drillState.level, drillState.depCode]);
+  }, [drillState.level, drillState.depCode, lockedDrillLevel]);
 
   // ─── PROVINCIAS ───
-  // Fill: show all provs in selected dep (for tile-native masking at level 2+)
   const provFillFilter: FilterSpecification = useMemo(() => {
     if (drillState.level === 0) return HIDE_FILTER;
+    // When locked at prov level, only show the locked province (no siblings)
+    if (lockedDrillLevel != null && lockedDrillLevel >= 2 && drillState.provCode) {
+      return ["==", ["get", "codprov_full"], drillState.provCode];
+    }
     if (drillState.depCode) return ["==", ["get", "coddep"], drillState.depCode];
     return HIDE_FILTER;
-  }, [drillState.level, drillState.depCode]);
+  }, [drillState.level, drillState.depCode, drillState.provCode, lockedDrillLevel]);
 
-  // Line: level 1 all provs in dep, level 2+ only selected prov
   const provLineFilter: FilterSpecification = useMemo(() => {
     if (drillState.level === 0) return HIDE_FILTER;
+    // When locked at prov level, only show the locked province outline
+    if (lockedDrillLevel != null && lockedDrillLevel >= 2 && drillState.provCode) {
+      return ["==", ["get", "codprov_full"], drillState.provCode];
+    }
     if (drillState.level >= 2 && drillState.provCode) return ["==", ["get", "codprov_full"], drillState.provCode];
     if (drillState.depCode) return ["==", ["get", "coddep"], drillState.depCode];
     return HIDE_FILTER;
-  }, [drillState.level, drillState.depCode, drillState.provCode]);
+  }, [drillState.level, drillState.depCode, drillState.provCode, lockedDrillLevel]);
 
   // ─── DISTRITOS ───
   // Fill: show all dists in selected prov (for tile-native masking at level 3+)

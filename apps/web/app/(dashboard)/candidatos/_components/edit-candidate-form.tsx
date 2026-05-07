@@ -15,9 +15,10 @@ import {
   Button,
   Alert,
 } from "../../../../lib/ui";
-import { CARGO_OPTIONS, DEFAULT_COLORS, FONT_STACK } from "../../../../lib/constants";
+import { CARGO_OPTIONS, DEFAULT_COLORS, FONT_STACK, isCargoCongresal, isCargoSubnacional, getMaxJurisdiccionLevel } from "../../../../lib/constants";
 import { updateCampaign, uploadCandidatePhoto } from "../../../../lib/services";
-import type { Campaign } from "../../../../lib/types";
+import type { Campaign, JurisdiccionNivel } from "../../../../lib/types";
+import { JurisdiccionSelector } from "./jurisdiccion-selector";
 
 type FormState = {
   name: string;
@@ -58,6 +59,18 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [hasChanges, setHasChanges] = useState(false);
+  const [jurisdiccion, setJurisdiccion] = useState<{ nivel: JurisdiccionNivel | ""; code: string }>({
+    nivel: candidate.jurisdiccion_nivel ?? "",
+    code: candidate.jurisdiccion_code ?? "",
+  });
+
+  // Derive initial dep/prov codes for the cascading selector in edit mode
+  const initialDepCode = candidate.jurisdiccion_code?.substring(0, 2) ?? "";
+  const initialProvCode = candidate.jurisdiccion_code?.length === 6
+    ? candidate.jurisdiccion_code.substring(0, 4)
+    : candidate.jurisdiccion_code?.length === 4
+      ? candidate.jurisdiccion_code
+      : "";
 
   // Track changes
   useEffect(() => {
@@ -69,12 +82,28 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
       form.color_primario !== (candidate.config?.color_primario ?? DEFAULT_COLORS.primario) ||
       form.color_secundario !== (candidate.config?.color_secundario ?? DEFAULT_COLORS.secundario) ||
       form.status !== candidate.status ||
+      jurisdiccion.nivel !== (candidate.jurisdiccion_nivel ?? "") ||
+      jurisdiccion.code !== (candidate.jurisdiccion_code ?? "") ||
       photoFile !== null;
     setHasChanges(changed);
-  }, [form, photoFile, candidate]);
+  }, [form, photoFile, candidate, jurisdiccion]);
+
+  const showNumero = isCargoCongresal(form.cargo);
+  const showPartido = isCargoSubnacional(form.cargo);
+  const maxJurisdiccionLevel = getMaxJurisdiccionLevel(form.cargo);
 
   const updateField = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [key]: value };
+      // Clear fields that become hidden when cargo changes
+      if (key === "cargo") {
+        const cargo = value as string;
+        if (!isCargoCongresal(cargo)) next.numero = "";
+        if (!isCargoSubnacional(cargo)) next.partido = "";
+        setJurisdiccion({ nivel: "", code: "" });
+      }
+      return next;
+    });
   }, []);
 
   const handlePhotoChange = useCallback((file: File | null, preview: string | null) => {
@@ -114,6 +143,8 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
         partido: form.partido.trim() || undefined,
         foto_url: fotoUrl,
         status: form.status,
+        jurisdiccion_nivel: jurisdiccion.nivel || undefined,
+        jurisdiccion_code: jurisdiccion.code || undefined,
         config: {
           color_primario: form.color_primario,
           color_secundario: form.color_secundario,
@@ -183,22 +214,51 @@ export function EditCandidateForm({ candidate, onSuccess, onCancel }: EditCandid
           placeholder="Seleccionar cargo…"
         />
 
-        <TextInput
-          id="ec-numero"
-          type="number"
-          label="Número de candidatura"
-          value={form.numero}
-          onChange={(e) => updateField("numero", e.target.value)}
-          placeholder="Ej: 7"
-        />
+        {showNumero && (
+          <TextInput
+            id="ec-numero"
+            type="number"
+            label="Número de candidatura"
+            value={form.numero}
+            onChange={(e) => updateField("numero", e.target.value)}
+            placeholder="Ej: 7"
+          />
+        )}
 
-        <TextInput
-          id="ec-partido"
-          label="Nombre del partido"
-          value={form.partido}
-          onChange={(e) => updateField("partido", e.target.value)}
-          placeholder="Ej: Partido Nacional"
-        />
+        {showPartido && (
+          <TextInput
+            id="ec-partido"
+            label="Nombre del partido"
+            value={form.partido}
+            onChange={(e) => updateField("partido", e.target.value)}
+            placeholder="Ej: Partido Nacional"
+          />
+        )}
+
+        {/* Jurisdiccion Selector — conditioned by cargo */}
+        {maxJurisdiccionLevel && (
+          <div style={{ marginBottom: 16 }}>
+            <span
+              style={{
+                display: "block",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--color-text-secondary)",
+                marginBottom: 8,
+                fontFamily: FONT_STACK,
+              }}
+            >
+              JURISDICCION
+            </span>
+            <JurisdiccionSelector
+              maxLevel={maxJurisdiccionLevel}
+              value={jurisdiccion}
+              onChange={setJurisdiccion}
+              initialDepCode={initialDepCode}
+              initialProvCode={initialProvCode}
+            />
+          </div>
+        )}
 
         <SelectInput
           id="ec-status"

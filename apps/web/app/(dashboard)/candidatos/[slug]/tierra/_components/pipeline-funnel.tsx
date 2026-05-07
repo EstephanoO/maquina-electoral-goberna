@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/services";
 import { useTheme } from "@/lib/theme-context";
 
 /* ========== Types ========== */
@@ -21,6 +23,10 @@ type Props = {
   selectedAgentName?: string;
   /** Per-brigadista goal for the current period (used when agent drill-down active) */
   periodGoalPerBrig?: number;
+  /** Total contacts marked as hablado + respondieron (all-time, deduped by phone) */
+  contactados?: number;
+  /** WhatsApp-validated datos count (shown in the right half of the split meta bar) */
+  datosWspp?: number;
 };
 
 /* ========== Helpers ========== */
@@ -38,7 +44,7 @@ function fmt(n: number): string {
 
 /* ========== Component ========== */
 
-export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesCampoCount, metaDatos: campaignMeta, period, selectedAgentName, periodGoalPerBrig: periodGoalOverride }: Props) {
+export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesCampoCount, metaDatos: campaignMeta, period, selectedAgentName, periodGoalPerBrig: periodGoalOverride, contactados = 0, datosWspp = 0 }: Props) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   // ── Editable goal inputs ──
@@ -65,6 +71,17 @@ export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesC
 
   const periodPct = periodGoal.target > 0 ? Math.min((periodGoal.current / periodGoal.target) * 100, 100) : 0;
   const periodRemaining = Math.max(periodGoal.target - periodGoal.current, 0);
+
+  // ── Split meta: Datos de Territorio | Datos WhatsApp ──
+  // Each half takes 50% of the total meta target.
+  const halfTarget = Math.max(Math.floor(periodGoal.target / 2), 0);
+  const territorioCurrent = periodGoal.current;
+  const territorioPct = halfTarget > 0 ? Math.min((territorioCurrent / halfTarget) * 100, 100) : 0;
+  const wsppCurrent = datosWspp;
+  const wsppPct = halfTarget > 0 ? Math.min((wsppCurrent / halfTarget) * 100, 100) : 0;
+  const combinedCurrent = territorioCurrent + wsppCurrent;
+  const combinedPct = periodGoal.target > 0 ? Math.min((combinedCurrent / periodGoal.target) * 100, 100) : 0;
+  const combinedRemaining = Math.max(periodGoal.target - combinedCurrent, 0);
 
   // ── Urgency ──
   const urgencyColor = dias <= 7 ? "#ef4444" : dias <= 14 ? "#facc15" : "#10b981";
@@ -118,47 +135,265 @@ export function PipelineFunnel({ primaryColor, totalDatos, periodDatos, agentesC
         </div>
       )}
 
-      {/* ═══ Hero Card (light) ═══ */}
+      {/* ═══ Hero Card — split meta (Territorio | WhatsApp) ═══ */}
       <div
         className={`relative overflow-hidden rounded-2xl mb-3 ${isDark ? "border border-[#1d2f43]" : "border border-slate-200/80"}`}
         style={{ background: isDark ? "#090D15" : `linear-gradient(135deg, #ffffff 0%, #f8fafc 50%, ${primaryColor}08 100%)`, boxShadow: isDark ? "none" : "0 1px 4px rgba(0,0,0,0.04)" }}
       >
-        <div className="relative flex items-center gap-5 px-5 py-4">
-          <div className="flex-1 min-w-0">
-            <span className={`text-[10px] font-bold uppercase tracking-widest mb-1 block ${isDark ? "text-slate-400" : "text-slate-400"}`}>{periodGoal.label}</span>
-            <div className="flex items-baseline gap-2 mb-1.5">
-              <span className={`text-[32px] font-black tabular-nums leading-none ${isDark ? "text-slate-50" : "text-slate-900"}`}>{fmt(periodGoal.current)}</span>
-              <span className="text-[20px] font-black tabular-nums leading-none" style={{ color: periodPct >= 100 ? "#63d58a" : (isDark ? "#facc15" : primaryColor) }}>{periodPct.toFixed(0)}%</span>
-              <span className={`text-[16px] font-bold ${isDark ? "text-slate-400" : "text-slate-300"}`}>/ {fmt(periodGoal.target)}</span>
+        <div className="relative px-5 py-4">
+          {/* Top row: label + combined counter */}
+          <div className="flex items-baseline justify-between mb-2.5">
+            <span className={`text-[10px] font-bold uppercase tracking-widest ${isDark ? "text-slate-400" : "text-slate-400"}`}>{periodGoal.label}</span>
+            <div className="flex items-baseline gap-2">
+              <span className={`text-[11px] font-semibold tabular-nums ${isDark ? "text-slate-400" : "text-slate-400"}`}>{fmt(combinedCurrent)} / {fmt(periodGoal.target)}</span>
+              <span className="text-[13px] font-black tabular-nums" style={{ color: combinedPct >= 100 ? "#63d58a" : (isDark ? "#facc15" : primaryColor) }}>{combinedPct.toFixed(0)}%</span>
             </div>
-            <div className={`h-2 rounded-full overflow-hidden mb-1.5 ${isDark ? "bg-transparent" : "bg-slate-200/80"}`} style={isDark ? { backgroundColor: "rgba(250, 204, 21, 0.18)" } : undefined}>
-              <div
-                className="h-full rounded-full transition-[width] duration-700 ease-out"
-                style={{
-                  width: `${periodPct}%`,
-                  background: periodPct >= 100 ? "linear-gradient(90deg, #facc15, #eab308)" : "linear-gradient(90deg, #facc15, #eab308)",
-                }}
-              />
-            </div>
-            <div className="flex items-center gap-4">
-              <span className={`text-[11px] ${isDark ? "text-slate-400" : "text-slate-400"}`}>
-                {periodRemaining > 0 ? <>Faltan <strong className={isDark ? "text-slate-100" : "text-slate-700"}>{fmt(periodRemaining)}</strong></> : <strong className="text-emerald-500">Meta alcanzada</strong>}
-                </span>
-              <span className="text-[11px] font-bold flex items-center gap-1" style={{ color: urgencyColor }}>
-                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: urgencyColor }} />
-                {dias}d restantes
+          </div>
+
+          {/* Split bar: 2 equal columns (Territorio | WhatsApp) */}
+          <div className="grid grid-cols-2 gap-3 mb-2.5">
+            <SplitMetric
+              isDark={isDark}
+              label="Datos de Territorio"
+              current={territorioCurrent}
+              target={halfTarget}
+              pct={territorioPct}
+              gradient="linear-gradient(90deg, #facc15, #eab308)"
+              accentColor="#eab308"
+              dotColor="#facc15"
+            />
+            <SplitMetric
+              isDark={isDark}
+              label="Datos WhatsApp"
+              current={wsppCurrent}
+              target={halfTarget}
+              pct={wsppPct}
+              gradient="linear-gradient(90deg, #34d399, #10b981)"
+              accentColor="#10b981"
+              dotColor="#10b981"
+            />
+          </div>
+
+          {/* ── Contactados bar (preserved from upstream) ── */}
+          {totalDatos > 0 && (
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className={`flex h-1.5 rounded-full overflow-hidden flex-1 ${isDark ? "bg-slate-800" : "bg-slate-200/60"}`}>
+                <div
+                  className="h-full rounded-full transition-[width] duration-700 ease-out"
+                  style={{ width: `${Math.min((contactados / totalDatos) * 100, 100)}%`, backgroundColor: "#10b981" }}
+                />
+              </div>
+              <span className={`text-[10px] font-bold tabular-nums shrink-0 ${isDark ? "text-emerald-400" : "text-emerald-600"}`}>
+                {fmt(contactados)} contactados
               </span>
             </div>
+          )}
+
+          {/* Footer: remaining + days */}
+          <div className="flex items-center justify-between pt-1">
+            <span className={`text-[11px] ${isDark ? "text-slate-400" : "text-slate-400"}`}>
+              {combinedRemaining > 0 ? <>Faltan <strong className={isDark ? "text-slate-100" : "text-slate-700"}>{fmt(combinedRemaining)}</strong></> : <strong className="text-emerald-500">Meta alcanzada</strong>}
+            </span>
+            <span className="text-[11px] font-bold flex items-center gap-1" style={{ color: urgencyColor }}>
+              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: urgencyColor }} />
+              {dias}d restantes
+            </span>
           </div>
         </div>
       </div>
 
+      {/* ═══ QR Channel Tracker (hidden button + modal) ═══ */}
+      <QrScanCounter isDark={isDark} primaryColor={primaryColor} slug="wa-channel" />
 
     </div>
   );
 }
 
 /* ========== Sub-components ========== */
+
+function SplitMetric({ isDark, label, current, target, pct, gradient, accentColor, dotColor }: {
+  isDark: boolean;
+  label: string;
+  current: number;
+  target: number;
+  pct: number;
+  gradient: string;
+  accentColor: string;
+  dotColor: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center gap-1.5 mb-1">
+        <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: dotColor }} />
+        <span className={`text-[9px] font-bold uppercase tracking-wider truncate ${isDark ? "text-slate-400" : "text-slate-500"}`}>{label}</span>
+      </div>
+      <div className="flex items-baseline gap-1.5 mb-1.5">
+        <span className={`text-[26px] font-black tabular-nums leading-none ${isDark ? "text-slate-50" : "text-slate-900"}`}>{fmt(current)}</span>
+        <span className="text-[15px] font-black tabular-nums leading-none" style={{ color: pct >= 100 ? "#63d58a" : accentColor }}>{pct.toFixed(0)}%</span>
+        <span className={`text-[12px] font-bold truncate ${isDark ? "text-slate-500" : "text-slate-300"}`}>/ {fmt(target)}</span>
+      </div>
+      <div
+        className={`h-1.5 rounded-full overflow-hidden ${isDark ? "" : "bg-slate-200/80"}`}
+        style={isDark ? { backgroundColor: `${accentColor}20` } : undefined}
+      >
+        <div
+          className="h-full rounded-full transition-[width] duration-700 ease-out"
+          style={{ width: `${pct}%`, background: gradient }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function QrScanCounter({ isDark, primaryColor, slug }: { isDark: boolean; primaryColor: string; slug: string }) {
+  const [open, setOpen] = useState(false);
+  const { data } = useQuery({
+    queryKey: ["qr-tracker", slug],
+    queryFn: async () => {
+      const res = await api.get<{ tracker: { scan_count: number; created_at: string }; recent_scans: Array<{ scanned_at: string; country: string | null; region: string | null; city: string | null }> }>(`/api/qr-trackers/${slug}/stats`);
+      if (!res.ok || !res.data) throw new Error("Failed to fetch QR stats");
+      return res.data;
+    },
+    refetchInterval: open ? 3_000 : 30_000,
+    staleTime: open ? 2_000 : 25_000,
+  });
+
+  const scanCount = data?.tracker?.scan_count ?? 0;
+  const todayScans = useMemo(() => {
+    if (!data?.recent_scans) return 0;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return data.recent_scans.filter((s) => s.scanned_at.slice(0, 10) === todayStr).length;
+  }, [data?.recent_scans]);
+
+  const locationGroups = useMemo(() => {
+    if (!data?.recent_scans) return [];
+    const counts = new Map<string, number>();
+    for (const s of data.recent_scans) {
+      const parts = [s.city, s.region, s.country].filter(Boolean);
+      if (parts.length === 0) continue;
+      const key = parts.join(", ");
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([location, count]) => ({ location, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [data?.recent_scans]);
+
+  const qrUrl = `https://api.goberna.us/r/${slug}`;
+
+  return (
+    <>
+      {/* Discrete trigger button */}
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={`w-full flex items-center gap-2 rounded-lg px-3 py-1.5 cursor-pointer transition-colors ${isDark ? "bg-transparent border border-[#1d2f43] hover:bg-[#0a1628] text-slate-500" : "bg-slate-50 border border-slate-100 hover:bg-white text-slate-400"}`}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="shrink-0 opacity-50">
+          <rect x="2" y="2" width="6" height="6" /><rect x="16" y="2" width="6" height="6" /><rect x="2" y="16" width="6" height="6" />
+          <rect x="10" y="2" width="4" height="4" /><rect x="10" y="10" width="4" height="4" /><rect x="16" y="10" width="4" height="4" /><rect x="10" y="18" width="4" height="4" /><rect x="18" y="18" width="4" height="4" />
+        </svg>
+        <span className="text-[10px] font-semibold">QR</span>
+        {scanCount > 0 && <span className="text-[11px] font-black tabular-nums">{scanCount.toLocaleString("es-PE")}</span>}
+      </button>
+
+      {/* Modal overlay */}
+      {open && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
+          onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="QR Canal WhatsApp"
+        >
+          <div className={`relative w-[340px] max-w-[90vw] rounded-2xl shadow-2xl overflow-hidden ${isDark ? "bg-[#0f172a] border border-[#1d2f43]" : "bg-white border border-slate-200"}`}>
+            {/* Close */}
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className={`absolute top-3 right-3 w-7 h-7 rounded-full flex items-center justify-center cursor-pointer border-none z-10 transition-colors ${isDark ? "bg-[#1e293b] text-slate-300 hover:bg-[#334155]" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
+              aria-label="Cerrar"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+
+            {/* Header */}
+            <div className="flex items-center gap-3 px-5 pt-5 pb-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: "#25D366" }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="white" aria-hidden="true">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className={`text-sm font-bold ${isDark ? "text-slate-100" : "text-slate-800"}`}>Canal WhatsApp</h3>
+                <p className={`text-[11px] ${isDark ? "text-slate-400" : "text-slate-400"}`}>Escanea para unirte</p>
+              </div>
+            </div>
+
+            {/* QR Code */}
+            <div className="flex justify-center px-5 py-4">
+              <div className={`p-3 rounded-2xl ${isDark ? "bg-white" : "bg-slate-50 border border-slate-100"}`}>
+                {/* QR rendered via external service */}
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}&color=000000&bgcolor=FFFFFF&margin=0`}
+                  alt="QR Code Canal WhatsApp"
+                  width={200}
+                  height={200}
+                  className="block"
+                />
+              </div>
+            </div>
+
+            {/* Stats */}
+            <div className={`flex items-center justify-center gap-6 px-5 py-4 ${isDark ? "border-t border-[#1d2f43]" : "border-t border-slate-100"}`}>
+              <div className="flex flex-col items-center">
+                <span className={`text-[28px] font-black tabular-nums leading-tight ${isDark ? "text-slate-50" : "text-slate-900"}`}>
+                  {scanCount.toLocaleString("es-PE")}
+                </span>
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-400"}`}>
+                  total escaneos
+                </span>
+              </div>
+              <div className={`w-px h-10 ${isDark ? "bg-[#1d2f43]" : "bg-slate-200"}`} />
+              <div className="flex flex-col items-center">
+                <span className="text-[28px] font-black tabular-nums leading-tight" style={{ color: primaryColor }}>
+                  {todayScans}
+                </span>
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? "text-slate-400" : "text-slate-400"}`}>
+                  hoy
+                </span>
+              </div>
+            </div>
+
+            {/* Locations */}
+            {locationGroups.length > 0 && (
+              <div className={`px-5 py-3 ${isDark ? "border-t border-[#1d2f43]" : "border-t border-slate-100"}`}>
+                <span className={`text-[9px] font-bold uppercase tracking-widest block mb-2 ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+                  Ubicaciones recientes
+                </span>
+                <div className="flex flex-col gap-1.5 max-h-[140px] overflow-y-auto">
+                  {locationGroups.map((g) => (
+                    <div key={g.location} className="flex items-center justify-between gap-2">
+                      <span className={`text-[11px] truncate ${isDark ? "text-slate-300" : "text-slate-600"}`}>
+                        {g.location}
+                      </span>
+                      <span className={`text-[11px] font-bold tabular-nums shrink-0 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                        {g.count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 function ConfigInput({ label, value, onChange, step, min, hint, onHintClick }: {
   label: string; value: number; onChange: (v: number) => void; step?: number; min?: number;

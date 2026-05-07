@@ -556,21 +556,29 @@ export function getMyQrStats(): Promise<ApiResult<{
 }
 
 /**
- * POST /api/qr-share-tokens
- *
- * Crea (o reusa, si ya hay uno vigente) un token "share-only" para el botón
- * Compartir del QR. Devuelve un share_url tipo `https://electoral.goberna.club/r/<token>`
- * que renderiza una landing con OG tags completos (foto del candidato + nombre +
- * descripción) y luego redirige al wa.me. Esto reemplaza el share del wa.me crudo
- * que se ve feo en el share sheet de iOS/Android.
- *
- * Idempotente del lado server (TTL 30d, reusa share token vigente del brigadista
- * para esta campaign), así que el cliente puede llamarlo múltiples veces sin temor.
+ * POST /api/qr-leads/codes
+ * Creates a scan code for QR auto-detection. Returns { code }.
  */
-export function getOrCreateShareToken(): Promise<ApiResult<{
-  token: string;
-  share_url: string;
-  expires_at: string;
+export function createQrCode(redirectUrl: string): Promise<ApiResult<{ code: string }>> {
+  return request('POST', '/qr-leads/codes', { redirect_url: redirectUrl });
+}
+
+/**
+ * GET /api/qr-leads/codes/:code/status
+ * Check if a scan code has been scanned.
+ */
+export function checkQrCodeStatus(code: string): Promise<ApiResult<{ scanned: boolean; scanned_at: string | null }>> {
+  return request('GET', `/qr-leads/codes/${code}/status`);
+}
+
+/**
+ * POST /api/qr-trackers/my-qr
+ * Returns (or creates) the brigadista's static QR tracker.
+ */
+export function getMyStaticQr(targetUrl: string): Promise<ApiResult<{
+  slug: string;
+  scan_count: number;
+  redirect_url: string;
 }>> {
-  return request('POST', '/qr-share-tokens', {});
+  return request('POST', '/qr-trackers/my-qr', { target_url: targetUrl });
 }

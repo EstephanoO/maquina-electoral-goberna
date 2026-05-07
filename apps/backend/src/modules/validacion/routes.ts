@@ -228,7 +228,7 @@ export function buildValidacionRoutes(env: AppEnv): FastifyPluginAsync {
       }
 
       const { text, voice_id } = parsed.data;
-      const voiceId = voice_id || "iaSdolcffUuIlEi5pdbj";
+      const voiceId = voice_id || "ioPHn4YlxFFAweLTLkxV";
 
       try {
         // Use /stream endpoint with output_format query param — body-level

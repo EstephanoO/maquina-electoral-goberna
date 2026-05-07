@@ -86,15 +86,28 @@ export async function saveAudio(
   audioBase64: string,
   audioSize: number,
   durationMs: number,
+  scriptOverride?: string,
 ): Promise<void> {
-  await pool.query(`
-    UPDATE audio_catalog SET
-      audio_base64 = $2,
-      audio_size = $3,
-      duration_ms = $4,
-      updated_at = now()
-    WHERE id = $1
-  `, [id, audioBase64, audioSize, durationMs]);
+  if (scriptOverride) {
+    await pool.query(`
+      UPDATE audio_catalog SET
+        audio_base64 = $2,
+        audio_size = $3,
+        duration_ms = $4,
+        script_text = $5,
+        updated_at = now()
+      WHERE id = $1
+    `, [id, audioBase64, audioSize, durationMs, scriptOverride]);
+  } else {
+    await pool.query(`
+      UPDATE audio_catalog SET
+        audio_base64 = $2,
+        audio_size = $3,
+        duration_ms = $4,
+        updated_at = now()
+      WHERE id = $1
+    `, [id, audioBase64, audioSize, durationMs]);
+  }
 }
 
 // ── Create a new catalog item ────────────────────────────────────────
@@ -112,7 +125,7 @@ export async function create(data: {
     INSERT INTO audio_catalog (
       campaign_id, category, label, description, script_text,
       sort_order, voice_id, created_by
-    ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'iaSdolcffUuIlEi5pdbj'), $8)
+    ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, 'ioPHn4YlxFFAweLTLkxV'), $8)
     RETURNING
       id::text, campaign_id::text, category, label, description,
       script_text, mime_type, audio_size, duration_ms, voice_id,

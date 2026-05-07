@@ -49,7 +49,13 @@ function buildZonePalette(mapTheme: MapTheme): ZonePalette {
  *  Hook: useZonePaint
  * ═══════════════════════════════════════════════ */
 
-export function useZonePaint(drillState: DrillState, mapTheme: MapTheme) {
+type ElectoralItem = { ubigeo: string; pct: number };
+
+export function useZonePaint(
+  drillState: DrillState,
+  mapTheme: MapTheme,
+  electoralData?: ElectoralItem[] | null,
+) {
   const zonePalette = useMemo(() => buildZonePalette(mapTheme), [mapTheme]);
 
   const depFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
@@ -82,14 +88,47 @@ export function useZonePaint(drillState: DrillState, mapTheme: MapTheme) {
     "line-opacity": drillState.level === 1 ? (mapTheme === "dark" ? 0.8 : 0.92) : (mapTheme === "dark" ? 0.38 : 0.56),
   }), [drillState.level, mapTheme, zonePalette]);
 
-  const distFillPaint = useMemo((): FillLayerSpecification["paint"] => ({
-    "fill-color": drillState.level === 2
-      ? ["case", ["boolean", ["feature-state", "hover"], false], zonePalette.hover, zonePalette.fill]
-      : drillState.distCode
-        ? ["case", ["==", ["get", "ubigeo"], drillState.distCode], zonePalette.fill, zonePalette.mask]
-        : zonePalette.fill,
-    "fill-opacity": 1,
-  }), [drillState.level, drillState.distCode, zonePalette]);
+  const distFillPaint = useMemo((): FillLayerSpecification["paint"] => {
+    // Build electoral gradient paint when data is available and we're at province level (level 2)
+    if (electoralData?.length && drillState.level === 2) {
+      // pct range across all districts
+      const pcts = electoralData.map((d) => d.pct);
+      const minPct = Math.min(...pcts);
+      const maxPct = Math.max(...pcts);
+      const range = maxPct - minPct || 1;
+
+      // Build a match expression: ["match", ["get","ubigeo"], ubigeo1, color1, ubigeo2, color2, ..., fallback]
+      // Color: interpolate from light blue (#bfdbfe) to deep blue (#1e3a8a) based on pct
+      const matchArgs: unknown[] = [["get", "ubigeo"]];
+      for (const d of electoralData) {
+        const t = (d.pct - minPct) / range; // 0=min, 1=max
+        // Interpolate between #ffffff (low) → #dc2626 (high)
+        const r = Math.round(255 + (220 - 255) * t);
+        const g = Math.round(255 + (38 - 255) * t);
+        const b = Math.round(255 + (38 - 255) * t);
+        matchArgs.push(d.ubigeo, `rgb(${r},${g},${b})`);
+      }
+      matchArgs.push(zonePalette.fill); // fallback
+
+      return {
+        "fill-color": ["case",
+          ["boolean", ["feature-state", "hover"], false],
+          zonePalette.hover,
+          ["match", ...matchArgs] as unknown as string,
+        ],
+        "fill-opacity": 1,
+      };
+    }
+
+    return {
+      "fill-color": drillState.level === 2
+        ? ["case", ["boolean", ["feature-state", "hover"], false], zonePalette.hover, zonePalette.fill]
+        : drillState.distCode
+          ? ["case", ["==", ["get", "ubigeo"], drillState.distCode], zonePalette.fill, zonePalette.mask]
+          : zonePalette.fill,
+      "fill-opacity": 1,
+    };
+  }, [drillState.level, drillState.distCode, zonePalette, electoralData]);
 
   const distLinePaint = useMemo((): LineLayerSpecification["paint"] => ({
     "line-color": zonePalette.line,

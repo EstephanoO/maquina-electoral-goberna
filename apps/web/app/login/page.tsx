@@ -175,7 +175,7 @@ export default function LoginPage() {
   const router = useRouter();
   const emailRef = useRef<HTMLInputElement>(null);
 
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -204,15 +204,15 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
 
-    const trimmedEmail = email.trim();
-    if (!trimmedEmail || !password) {
-      setError("Ingrese correo y contraseña.");
+    const trimmedIdentifier = identifier.trim();
+    if (!trimmedIdentifier || !password) {
+      setError("Ingrese usuario/correo y contraseña.");
       return;
     }
 
     setSubmitting(true);
     try {
-      const result = await login(trimmedEmail, password);
+      const result = await login(trimmedIdentifier, password);
       if (result.ok) {
         router.replace("/home");
       } else {
@@ -477,18 +477,18 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} noValidate>
             {/* Email */}
             <div style={{ marginBottom: 20 }}>
-              <label htmlFor="login-email" style={labelStyle}>
-                Correo electrónico
+              <label htmlFor="login-identifier" style={labelStyle}>
+                Usuario o correo electrónico
               </label>
               <input
                 ref={emailRef}
-                id="login-email"
-                type="email"
-                autoComplete="email"
+                id="login-identifier"
+                type="text"
+                autoComplete="username"
                 required
-                placeholder="usuario@goberna.pe"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                placeholder="usuario o correo@goberna.pe"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
                 disabled={submitting}
                 style={inputStyle}
                 onFocus={onInputFocus}

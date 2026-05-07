@@ -19,6 +19,56 @@ export const CARGO_OPTIONS = [
 
 export type CargoOption = (typeof CARGO_OPTIONS)[number];
 
+/** Cargos congresales — muestran "Número de candidatura" */
+export const CARGOS_CONGRESALES: readonly CargoOption[] = [
+  "Congresista",
+  "Senador Nacional",
+] as const;
+
+/** Cargos subnacionales — muestran "Nombre del partido" */
+export const CARGOS_SUBNACIONALES: readonly CargoOption[] = [
+  "Presidente Regional",
+  "Vicepresidente Regional",
+  "Consejero Regional",
+  "Alcalde Provincial",
+  "Alcalde Distrital",
+  "Regidor Provincial",
+  "Regidor Distrital",
+] as const;
+
+/** Check if a cargo should show "Número de candidatura" */
+export function isCargoCongresal(cargo: string): boolean {
+  return (CARGOS_CONGRESALES as readonly string[]).includes(cargo);
+}
+
+/** Check if a cargo should show "Nombre del partido" */
+export function isCargoSubnacional(cargo: string): boolean {
+  return (CARGOS_SUBNACIONALES as readonly string[]).includes(cargo);
+}
+
+/**
+ * Max jurisdiction drill level allowed per cargo.
+ * Returns null for cargos that don't need jurisdiction selection.
+ */
+export function getMaxJurisdiccionLevel(cargo: string): "departamento" | "provincia" | "distrito" | null {
+  switch (cargo) {
+    case "Congresista":
+    case "Senador Nacional":
+    case "Presidente Regional":
+    case "Vicepresidente Regional":
+    case "Consejero Regional":
+      return "departamento";
+    case "Alcalde Provincial":
+    case "Regidor Provincial":
+      return "provincia";
+    case "Alcalde Distrital":
+    case "Regidor Distrital":
+      return "distrito";
+    default:
+      return null;
+  }
+}
+
 // ── Status Configurations ──────────────────────────────────────────
 
 export const STATUS_CONFIG = {

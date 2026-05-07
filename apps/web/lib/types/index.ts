@@ -28,6 +28,17 @@ export type CampaignConfig = {
   whatsapp_qr_message?: string;
 };
 
+export type JurisdiccionNivel = "departamento" | "provincia" | "distrito";
+
+export type ElectoralDataItem = {
+  distrito: string;
+  ubigeo: string;
+  ganador: string;
+  votos: number;
+  electores: number;
+  pct: number;
+};
+
 export type Campaign = {
   id: string;
   name: string;
@@ -38,6 +49,8 @@ export type Campaign = {
   partido: string | null;
   foto_url: string | null;
   config: CampaignConfig | null;
+  jurisdiccion_nivel: JurisdiccionNivel | null;
+  jurisdiccion_code: string | null;
   user_count?: number;
   created_at?: string;
   updated_at?: string;
@@ -199,8 +212,12 @@ export type CampaignStats = {
     numero: number | null;
     partido: string | null;
     foto_url: string | null;
+    jurisdiccion_nivel: JurisdiccionNivel | null;
+    jurisdiccion_code: string | null;
     color_primario: string;
     color_secundario: string;
+    whatsapp_channel_url?: string;
+    electoral_data?: ElectoralDataItem[] | null;
   };
   metas: {
     datos: number;
@@ -210,6 +227,7 @@ export type CampaignStats = {
     forms_count: number;
     forms_today: number;
     forms_week: number;
+    forms_hablado: number;
   };
   top_agents: TopAgent[];
   agent_forms_chart: AgentFormsData[];

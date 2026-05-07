@@ -57,7 +57,7 @@ import {
 } from "./map-paint-constants";
 import {
   MAP_DRAG_PAN_OPTIONS, CAMERA_PITCH_MIN, CAMERA_PITCH_MAX,
-  clamp, boundsToInitialViewState, applyFluidMapInteractions,
+  clamp, boundsToInitialViewState, applyFluidMapInteractions, expandBounds, boundsToMinZoom,
 } from "./map-camera-helpers";
 import { useZonePaint, useLayerPaint } from "./hooks/use-zone-paint";
 
@@ -74,7 +74,7 @@ import { reverseGeocode } from "@/lib/services/geo";
 /* ========== Component (P6 — wrapped with memo) ========== */
 
 export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(function TierraMap(
-  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange, onMapDoubleClick, lockedBounds },
+  { campaignId, slug, primaryColor, agents, forms, selectedAgentId, onSelectAgent, showTracking, showDatos, datosVizMode, heatmapRadius, heatmapOpacity, mapTheme, showRoutes, drillState, onDrillChange, onMapDoubleClick, lockedBounds, lockedDrillLevel, electoralData },
   ref,
 ) {
   const mapRef = useRef<MapRef | null>(null);
@@ -107,7 +107,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   agentsRef.current = agents;
 
   // ─── Hooks ───
-  const filters = useDrillFilters(drillState, campaignId);
+  const filters = useDrillFilters(drillState, campaignId, lockedDrillLevel);
   const agentsGeoJson = useAgentsSource(agents, selectedAgentId);
   const { formsGeoJson, barsGeoJson } = useFormSources(forms, selectedAgentId, barsZoom);
   const newPoints = useNewPoints(forms);
@@ -117,16 +117,17 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
   const { tooltipRef, onMouseMove: tooltipMouseMove, onMouseLeave: tooltipMouseLeave } = useZoneTooltip(isZoomingRef, {
     forms,
     agents,
+    electoralData,
   });
   const { formTooltipRef, onFormMouseMove, onFormMouseLeave, showPinnedTooltip } = useFormTooltip(isZoomingRef, mapRef);
-  const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent);
+  const handleClick = useMapClick(mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent, lockedDrillLevel ?? null, lockedBounds ?? null);
   const containerRef = useMapResize(mapRef, drillStateRef);
 
   // ─── P5: Memoize tiles array (new array = new Source in react-maplibre) ───
   const tilesArray = useMemo(() => tileUrl ? [tileUrl] : [], [tileUrl]);
 
   // ─── P2: Memoized paint objects (extracted to hooks/use-zone-paint.ts) ───
-  const { depFillPaint, depLinePaint, provFillPaint, provLinePaint, distFillPaint, distLinePaint } = useZonePaint(drillState, mapTheme);
+  const { depFillPaint, depLinePaint, provFillPaint, provLinePaint, distFillPaint, distLinePaint } = useZonePaint(drillState, mapTheme, electoralData);
   const {
     clusterRingPaint, clusterCirclePaint, formPointsPaint, heatmapPaint,
     agentSelectedRingPaint, agentCirclesPaint,
@@ -234,7 +235,7 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         // Hard-pin the camera to the locked district — duration:0 = instant, no animation.
         // This is the final revalidator: even if initialViewState drifted slightly due to
         // MapLibre's internal projection math, this corrects it with zero flash.
-        map.fitBounds(lockedBounds, { padding: 30, duration: 0 });
+        map.fitBounds(lockedBounds, { padding: { top: 60, bottom: 60, left: 60, right: 60 }, duration: 0 });
       } else if (!disableAutoFitRef.current) {
         // Normal mode: start at Peru overview.
         map.fitBounds(PERU_BOUNDS, { padding: 20, duration: 0 });
@@ -489,8 +490,8 @@ export const TierraMap = memo(forwardRef<TierraMapHandle, TierraMapProps>(functi
         minPitch={0}
         maxPitch={60}
         clickTolerance={4}
-        minZoom={1}
-        maxBounds={PERU_MAX_BOUNDS}
+        minZoom={lockedBounds ? Math.max(boundsToMinZoom(lockedBounds) - 1, 4) : 1}
+        maxBounds={lockedBounds ? expandBounds(lockedBounds, 0.5) : PERU_MAX_BOUNDS}
         maxTileCacheZoomLevels={10}
         fadeDuration={0}
         onLoad={handleLoad}

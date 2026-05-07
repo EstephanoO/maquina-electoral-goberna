@@ -47,6 +47,7 @@ import { buildFormQrDraftsRoutes } from "./modules/form-qr-drafts/routes";
 import { buildBlastRoutes } from "./modules/blast/routes";
 import { buildBlastOrchestratorRoutes } from "./modules/blast-orchestrator/routes";
 import { buildWaEventsRoutes } from "./modules/wa-events/routes";
+import { buildQrTrackerRoutes } from "./modules/qr-tracker/routes";
 
 export function buildApp(env: AppEnv) {
   const app = Fastify({
@@ -204,6 +205,7 @@ export function buildApp(env: AppEnv) {
   app.register(buildBlastRoutes(env));
   app.register(buildBlastOrchestratorRoutes(env));
   app.register(buildWaEventsRoutes(env));
+  app.register(buildQrTrackerRoutes(env));
 
   app.get("/api/metrics", { preHandler: [app.authenticate, authorize({ roles: ["admin"] })] }, async (_request, reply) => {
     reply.header("Cache-Control", "no-store");

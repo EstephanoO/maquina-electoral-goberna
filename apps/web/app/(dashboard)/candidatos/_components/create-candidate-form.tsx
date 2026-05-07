@@ -15,9 +15,11 @@ import {
   Button,
   Alert,
 } from "../../../../lib/ui";
-import { CARGO_OPTIONS, DEFAULT_COLORS, FONT_STACK } from "../../../../lib/constants";
+import { CARGO_OPTIONS, DEFAULT_COLORS, FONT_STACK, isCargoCongresal, isCargoSubnacional, getMaxJurisdiccionLevel } from "../../../../lib/constants";
 import { slugify } from "../../../../lib/utils";
 import { createCampaignWithPhoto } from "../../../../lib/services";
+import { JurisdiccionSelector } from "./jurisdiccion-selector";
+import type { JurisdiccionNivel } from "../../../../lib/types";
 
 type FormState = {
   name: string;
@@ -50,9 +52,25 @@ export function CreateCandidateForm({ onSuccess, onCancel }: CreateCandidateForm
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const [jurisdiccion, setJurisdiccion] = useState<{ nivel: JurisdiccionNivel | ""; code: string }>({ nivel: "", code: "" });
+
+  const showNumero = isCargoCongresal(form.cargo);
+  const showPartido = isCargoSubnacional(form.cargo);
+  const maxJurisdiccionLevel = getMaxJurisdiccionLevel(form.cargo);
 
   const updateField = useCallback(<K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [key]: value };
+      // Clear fields that become hidden when cargo changes
+      if (key === "cargo") {
+        const cargo = value as string;
+        if (!isCargoCongresal(cargo)) next.numero = "";
+        if (!isCargoSubnacional(cargo)) next.partido = "";
+        // Reset jurisdiction when cargo changes
+        setJurisdiccion({ nivel: "", code: "" });
+      }
+      return next;
+    });
   }, []);
 
   const handlePhotoChange = useCallback((file: File | null, preview: string | null) => {
@@ -79,6 +97,8 @@ export function CreateCandidateForm({ onSuccess, onCancel }: CreateCandidateForm
         cargo: form.cargo || undefined,
         numero: form.numero ? parseInt(form.numero, 10) : undefined,
         partido: form.partido.trim() || undefined,
+        jurisdiccion_nivel: jurisdiccion.nivel || undefined,
+        jurisdiccion_code: jurisdiccion.code || undefined,
         config: {
           color_primario: form.color_primario,
           color_secundario: form.color_secundario,
@@ -101,6 +121,7 @@ export function CreateCandidateForm({ onSuccess, onCancel }: CreateCandidateForm
     setForm(INITIAL_STATE);
     setPhotoFile(null);
     setPhotoPreview(null);
+    setJurisdiccion({ nivel: "", code: "" });
     setError("");
     onCancel();
   }, [onCancel]);
@@ -150,22 +171,49 @@ export function CreateCandidateForm({ onSuccess, onCancel }: CreateCandidateForm
           placeholder="Seleccionar cargo…"
         />
 
-        <TextInput
-          id="nc-numero"
-          type="number"
-          label="Número de candidatura"
-          value={form.numero}
-          onChange={(e) => updateField("numero", e.target.value)}
-          placeholder="Ej: 7"
-        />
+        {showNumero && (
+          <TextInput
+            id="nc-numero"
+            type="number"
+            label="Número de candidatura"
+            value={form.numero}
+            onChange={(e) => updateField("numero", e.target.value)}
+            placeholder="Ej: 7"
+          />
+        )}
 
-        <TextInput
-          id="nc-partido"
-          label="Nombre del partido"
-          value={form.partido}
-          onChange={(e) => updateField("partido", e.target.value)}
-          placeholder="Ej: Partido Nacional"
-        />
+        {showPartido && (
+          <TextInput
+            id="nc-partido"
+            label="Nombre del partido"
+            value={form.partido}
+            onChange={(e) => updateField("partido", e.target.value)}
+            placeholder="Ej: Partido Nacional"
+          />
+        )}
+
+        {/* Jurisdiccion Selector — conditioned by cargo */}
+        {maxJurisdiccionLevel && (
+          <div style={{ marginBottom: 16 }}>
+            <span
+              style={{
+                display: "block",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--color-text-secondary)",
+                marginBottom: 8,
+                fontFamily: FONT_STACK,
+              }}
+            >
+              JURISDICCION
+            </span>
+            <JurisdiccionSelector
+              maxLevel={maxJurisdiccionLevel}
+              value={jurisdiccion}
+              onChange={setJurisdiccion}
+            />
+          </div>
+        )}
 
         {/* Colors */}
         <div style={{ marginBottom: 24 }}>

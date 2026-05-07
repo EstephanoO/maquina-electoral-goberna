@@ -7,7 +7,7 @@ import type { DrillLevel, DrillState, EnrichedAgent } from "../types";
 import { INITIAL_DRILL } from "../types";
 import { PERU_BOUNDS, FLY_DURATION } from "../constants";
 import { getBoundsFromFeature } from "../utils";
-import { preloadProvincias, preloadDistritos } from "@/lib/services/geo";
+import { preloadProvincias, preloadDistritos, getDistritos, getProvincias } from "@/lib/services/geo";
 
 /**
  * Stable click handler for the map. Reads volatile values from refs so the
@@ -22,6 +22,10 @@ export function useMapClick(
   pendingDrillRef: React.MutableRefObject<boolean>,
   onDrillChange: (state: DrillState) => void,
   onSelectAgent: (agentId: string | null) => void,
+  /** When set, the user cannot drill back below this level (e.g. 2 = locked to province) */
+  lockedDrillLevel: DrillLevel | null = null,
+  /** Bounds to fitBounds to when returning to the locked drill level */
+  lockedBounds: [[number, number], [number, number]] | null = null,
 ) {
   return useCallback((e: MapLayerMouseEvent) => {
     const currentDrill = drillStateRef.current!;
@@ -33,6 +37,9 @@ export function useMapClick(
       if (currentSelectedAgent) {
         onSelectAgent(null);
       }
+
+      // If drill is locked, don't reset — just deselect agent
+      if (lockedDrillLevel != null) return;
 
       // Empty space (single click) → clear filters + reset zoom
       onDrillChange(INITIAL_DRILL);
@@ -113,17 +120,27 @@ export function useMapClick(
     const clickedLevel = isDep ? 0 : isProv ? 1 : isDist ? 2 : isSector ? 3 : -1;
     if (clickedLevel >= 0 && clickedLevel < currentDrill.level) {
       const newLevel = (currentDrill.level - 1) as DrillLevel;
+      // Block going back below the locked drill level
+      if (lockedDrillLevel != null && newLevel < lockedDrillLevel) return;
       const newState = { ...currentDrill, level: newLevel };
       if (newLevel < 4) { newState.sector = null; newState.sectorName = null; }
       if (newLevel < 3) { newState.distCode = null; newState.distName = null; }
       if (newLevel < 2) { newState.provCode = null; newState.provName = null; }
       if (newLevel < 1) { newState.depCode = null; newState.depName = null; }
       onDrillChange(newState);
-      if (newLevel === 0) mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: FLY_DURATION });
+      skipNextFitRef.current = true;
+      if (lockedDrillLevel != null && newLevel === lockedDrillLevel && lockedBounds) {
+        // Returning to jurisdiction level — re-center on jurisdiction bounds
+        mapRef.current?.fitBounds(lockedBounds, { padding: 60, duration: FLY_DURATION });
+      } else if (newLevel === 0) {
+        mapRef.current?.fitBounds(PERU_BOUNDS, { padding: 40, duration: FLY_DURATION });
+      }
       return;
     }
 
     if (isDep) {
+      // Block dep-level navigation when locked at or above dep level
+      if (lockedDrillLevel != null && lockedDrillLevel >= 1) return;
       const coddep = String(f.properties?.coddep ?? f.properties?.CODDEP ?? "");
       const name = String(f.properties?.departamento ?? f.properties?.departamen ?? f.properties?.DEPARTAMEN ?? coddep);
       if (coddep) {
@@ -137,15 +154,29 @@ export function useMapClick(
     }
 
     if (isProv) {
+      // Block prov-level lateral navigation when locked at or above prov level
+      if (lockedDrillLevel != null && lockedDrillLevel >= 2) return;
       const codprovFull = String(f.properties?.codprov_full ?? ((f.properties?.CODDEP ?? "") + (f.properties?.CODPROV ?? "")));
       const name = String(f.properties?.provincia ?? f.properties?.PROVINCIA ?? codprovFull);
       const coddep = String(f.properties?.coddep ?? f.properties?.CODDEP ?? currentDrill.depCode ?? "");
       if (codprovFull) {
         preloadDistritos(codprovFull);
-        const bounds = getBoundsFromFeature(f);
-        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
         skipNextFitRef.current = true;
         onDrillChange({ ...currentDrill, level: 2, provCode: codprovFull, provName: name, depCode: coddep, distCode: null, distName: null, sector: null, sectorName: null });
+        // Use precise bounds from geo API for accurate centering
+        getProvincias(coddep).then((r) => {
+          if (!r.ok || !r.provincias || !mapRef.current) return;
+          const p = r.provincias.find((x) => x.codprov_full === codprovFull);
+          if (p) {
+            mapRef.current.fitBounds(p.bounds, { padding: 40, duration: FLY_DURATION });
+          } else {
+            const bounds = getBoundsFromFeature(f);
+            if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
+          }
+        }).catch(() => {
+          const bounds = getBoundsFromFeature(f);
+          if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
+        });
       }
       return;
     }
@@ -158,10 +189,23 @@ export function useMapClick(
       const codprovFull = String(f.properties?.codprov_full ?? (((f.properties?.CODDEP ?? "") + (f.properties?.CODPROV ?? "")) || (currentDrill.provCode ?? "")));
       const provName = String(f.properties?.provincia ?? f.properties?.PROVINCIA ?? currentDrill.provName ?? "");
       if (ubigeo) {
-        const bounds = getBoundsFromFeature(f);
-        if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
         skipNextFitRef.current = true;
         onDrillChange({ level: 3, depCode: coddep, depName, provCode: codprovFull, provName, distCode: ubigeo, distName: name, sector: null, sectorName: null });
+        // Use precise bounds from geo API (same as resize handler) for accurate centering
+        getDistritos(codprovFull).then((r) => {
+          if (!r.ok || !r.distritos || !mapRef.current) return;
+          const d = r.distritos.find((x) => x.ubigeo === ubigeo);
+          if (d) {
+            mapRef.current.fitBounds(d.bounds, { padding: 80, duration: FLY_DURATION });
+          } else {
+            // Fallback to tile feature bounds
+            const bounds = getBoundsFromFeature(f);
+            if (bounds) mapRef.current?.fitBounds(bounds, { padding: 80, duration: FLY_DURATION });
+          }
+        }).catch(() => {
+          const bounds = getBoundsFromFeature(f);
+          if (bounds) mapRef.current?.fitBounds(bounds, { padding: 80, duration: FLY_DURATION });
+        });
       }
       return;
     }
@@ -175,5 +219,5 @@ export function useMapClick(
         if (bounds) mapRef.current?.fitBounds(bounds, { padding: 40, duration: FLY_DURATION });
       }
     }
-  }, [mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent]);
+  }, [mapRef, drillStateRef, selectedAgentIdRef, agentsRef, skipNextFitRef, pendingDrillRef, onDrillChange, onSelectAgent, lockedDrillLevel, lockedBounds]);
 }

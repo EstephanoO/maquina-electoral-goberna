@@ -101,10 +101,18 @@ function parseOggOpusDurationMs(buffer: ArrayBuffer): number {
 }
 
 // ── Shared ElevenLabs TTS call — reused by generate endpoint and auto-generate ──
+type VoiceSettings = {
+  stability?: number;
+  similarity_boost?: number;
+  style?: number;
+  use_speaker_boost?: boolean;
+};
+
 async function callElevenLabsTTS(
   apiKey: string,
   voiceId: string,
   scriptText: string,
+  voiceSettings?: VoiceSettings,
 ): Promise<{ base64: string; size: number; durationMs: number } | { error: string; status: number }> {
   // output_format "opus_48000_32" — ElevenLabs name for OGG/Opus 48kHz 32kbps.
   // Despite the name starting with "opus_", ElevenLabs wraps it in a valid OGG
@@ -123,6 +131,7 @@ async function callElevenLabsTTS(
       body: JSON.stringify({
         text: scriptText,
         model_id: "eleven_multilingual_v2",
+        ...(voiceSettings ? { voice_settings: voiceSettings } : {}),
       }),
       signal: AbortSignal.timeout(55_000),
     },
@@ -186,8 +195,9 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
     }, async (request, reply) => {
       const requestId = String(request.id);
       const campaignId = request.headers["x-campaign-id"] as string;
-      if (!campaignId) {
-        return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "x-campaign-id header requerido"));
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!campaignId || !UUID_RE.test(campaignId)) {
+        return reply.code(400).send(errorPayload(requestId, "MISSING_CAMPAIGN", "x-campaign-id header requerido y debe ser un UUID válido"));
       }
 
       const q = request.query as Record<string, unknown>;
@@ -246,15 +256,21 @@ export function buildAudioCatalogRoutes(env: AppEnv): FastifyPluginAsync {
         return reply.code(404).send(errorPayload(requestId, "NOT_FOUND", "item no encontrado"));
       }
 
+      const body = (request.body ?? {}) as {
+        voice_settings?: VoiceSettings;
+        script_override?: string;
+      };
+
       try {
-        const result = await callElevenLabsTTS(env.elevenlabsApiKey, item.voice_id, item.script_text);
+        const scriptText = body.script_override ?? item.script_text;
+        const result = await callElevenLabsTTS(env.elevenlabsApiKey, item.voice_id, scriptText, body.voice_settings);
 
         if ("error" in result) {
           app.log.error({ status: result.status, body: result.error }, "ElevenLabs TTS error (catalog generate)");
           return reply.code(502).send(errorPayload(requestId, "UPSTREAM_ERROR", `ElevenLabs returned ${result.status}`));
         }
 
-        await repo.saveAudio(item.id, result.base64, result.size, result.durationMs);
+        await repo.saveAudio(item.id, result.base64, result.size, result.durationMs, body.script_override);
         app.log.info({ id: item.id, category: item.category, size: result.size, durationMs: result.durationMs }, "audio generated for catalog item");
 
         return reply.send({

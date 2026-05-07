@@ -14,4 +14,4 @@ if (chrome.storage.session?.setAccessLevel) {
 
 // ── ElevenLabs TTS ─────────────────────────────────────────────────────
 // C-1 FIX: API key moved to backend proxy. Extension calls /api/tts/generate.
-export const ELEVENLABS_VOICE_ID = 'iaSdolcffUuIlEi5pdbj';  // César Vásquez — voz clonada
+export const ELEVENLABS_VOICE_ID = 'ioPHn4YlxFFAweLTLkxV';

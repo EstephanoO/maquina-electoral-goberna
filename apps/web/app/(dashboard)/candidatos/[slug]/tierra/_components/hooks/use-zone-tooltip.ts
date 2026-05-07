@@ -106,9 +106,50 @@ function extract(layerId: string, props: Record<string, unknown>): ZoneInfo | nu
   return null;
 }
 
+// ─── Electoral data lookup ────────────────────────────────────────────────────
+
+type ElectoralItem = { ubigeo: string; distrito: string; ganador: string; votos: number; electores: number; pct: number };
+
+function buildElectoralHTML(zone: ZoneInfo, electoral: ElectoralItem[]): string | null {
+  if (zone.level !== "dist") return null;
+  // Match by ubigeo (from key "dist:XXXXXX") or by name
+  const ubigeo = zone.key.replace("dist:", "");
+  const item = electoral.find((d) => d.ubigeo === ubigeo) ?? electoral.find((d) => d.distrito.toUpperCase() === zone.name.toUpperCase());
+  if (!item) return null;
+
+  const barW = Math.round(item.pct);
+  const barColor = item.pct >= 30 ? "#4ade80" : item.pct >= 20 ? "#fbbf24" : "#f87171";
+
+  return `<div style="font-family:system-ui,sans-serif;width:200px;padding:2px 0">
+  <div style="font-size:9px;font-weight:600;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Distrito</div>
+  <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:8px;line-height:1.1">${zone.name}</div>
+  <div style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:6px">${item.ganador}</div>
+  <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+    <span style="font-size:11px;color:rgba(255,255,255,0.5)">Votos</span>
+    <span style="font-size:12px;font-weight:700;color:#fff">${item.votos.toLocaleString("es-PE")}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+    <span style="font-size:11px;color:rgba(255,255,255,0.5)">Electores</span>
+    <span style="font-size:12px;font-weight:700;color:#fff">${item.electores.toLocaleString("es-PE")}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+    <span style="font-size:11px;color:rgba(255,255,255,0.5)">% votos/electores</span>
+    <span style="font-size:12px;font-weight:700;color:${barColor}">${item.pct.toFixed(1)}%</span>
+  </div>
+  <div style="height:3px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden">
+    <div style="height:100%;width:${barW}%;background:${barColor};border-radius:2px"></div>
+  </div>
+</div>`.trim();
+}
+
 // ─── HTML builder — minimal ───────────────────────────────────────────────────
 
-function buildHTML(zone: ZoneInfo, totalForms: number, depCounts: Map<string, number>): string {
+function buildHTML(zone: ZoneInfo, totalForms: number, depCounts: Map<string, number>, electoralData?: ElectoralItem[] | null): string {
+  // If electoral data is available for this district, show it
+  if (electoralData?.length) {
+    const elHTML = buildElectoralHTML(zone, electoralData);
+    if (elHTML) return elHTML;
+  }
   const dep = zone.depName ? getDep(zone.depName) : null;
 
   // Level label
@@ -188,6 +229,7 @@ export type ZoneTooltipOptions = {
   forms?: FormPoint[];
   agents?: EnrichedAgent[];
   primaryColor?: string;
+  electoralData?: ElectoralItem[] | null;
 };
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -248,7 +290,7 @@ export function useZoneTooltip(
 
     if (zone.key !== state.current.currentKey) {
       state.current.currentKey = zone.key;
-      el.innerHTML = buildHTML(zone, totalForms, depCounts.current);
+      el.innerHTML = buildHTML(zone, totalForms, depCounts.current, options?.electoralData);
       el.style.opacity = "1";
     }
 
