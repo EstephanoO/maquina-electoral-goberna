@@ -25,6 +25,12 @@ export type AppEnv = {
   formsWriteBehindFlushMs: number;
   formsWriteBehindMaxQueue: number;
   agentIngestToken: string;
+  // Shared secret for nexus-control → electoral server-to-server provisioning
+  // (POST /api/onboarding/provisioned). If empty, that endpoint responds 503.
+  onboardingServiceToken: string;
+  // Public base URL — usado para armar el dashboard_url que devuelve
+  // /api/onboarding/provisioned al wizard.
+  publicBaseUrl: string;
   agentStaleAfterMs: number;
   agentStreamHeartbeatMs: number;
   agentStreamBatchFlushMs: number;
@@ -163,6 +169,8 @@ export function getEnv(): AppEnv {
     formsWriteBehindFlushMs: toNumber(process.env.FORMS_WB_FLUSH_MS, 300),
     formsWriteBehindMaxQueue: toNumber(process.env.FORMS_WB_MAX_QUEUE, 10000),
     agentIngestToken: (process.env.AGENT_INGEST_TOKEN ?? "").trim(),
+    onboardingServiceToken: (process.env.ONBOARDING_SERVICE_TOKEN ?? "").trim(),
+    publicBaseUrl: (process.env.PUBLIC_BASE_URL ?? "https://electoral.goberna.club").replace(/\/$/, ""),
     agentStaleAfterMs: toNumber(process.env.AGENT_STALE_AFTER_MS, 120000),
     agentStreamHeartbeatMs: toNumber(process.env.AGENT_STREAM_HEARTBEAT_MS, 25000),
     agentStreamBatchFlushMs: toNumber(process.env.AGENT_STREAM_BATCH_FLUSH_MS, 120),
