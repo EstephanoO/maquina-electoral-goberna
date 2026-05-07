@@ -122,7 +122,15 @@ async function fetchCustomRules(): Promise<CustomRule[]> {
   // pattern roto, _re queda null y se ignora en aplicación (no rompe el bot).
   return rows.filter((r) => r.enabled).map((r) => {
     let re: RegExp | null = null;
-    try { re = new RegExp(r.pattern, "i"); } catch { re = null; }
+    // Strip PCRE/POSIX inline flag `(?i)` que JS no soporta — históricamente
+    // los rules en DB lo traían (formato PostgreSQL ~* compatible) y el
+    // RegExp constructor lanzaba SyntaxError silenciosamente, dejando el
+    // rule deshabilitado. Si está, lo quitamos y usamos solo el flag "i".
+    const pat = r.pattern.replace(/^\s*\(\?i\)\s*/, "");
+    try { re = new RegExp(pat, "i"); } catch (e) {
+      console.warn(`[classifier] invalid regex for rule ${r.name}: ${(e as Error).message}`);
+      re = null;
+    }
     return { ...r, _re: re };
   });
 }
