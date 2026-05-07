@@ -13,6 +13,7 @@
  * Kill-switch: editar bot_instances.auto_reply en /settings → next refresh
  * (≤60s) corta el envío.
  */
+import { LRUCache } from "lru-cache";
 import { CONFIG } from "./config.js";
 import { getInstanceFor, getTemplatesByCategory, type BotInstance, type Template } from "./instance-config.js";
 import { pickTemplate, pickTemplateWithSemantic, applyTemplate } from "./template-picker.js";
@@ -21,15 +22,25 @@ import { generateReply as openaiReply, aiAvailable as openaiAvailable } from "./
 import { generateReply as geminiReply, geminiAvailable } from "./gemini.js";
 import { getRecentHistory, formatHistoryForPrompt, getRelevantHistory, formatRelevantForPrompt } from "./conversation-memory.js";
 
-/** AI provider chain: OpenAI primero (default), Gemini como fallback. */
-async function aiReply(opts: { systemPrompt: string; userMessage: string }) {
+/** AI provider chain: OpenAI primero (default), Gemini como fallback.
+ *  Devuelve provider además de text+model para que el caller pueda registrar
+ *  ai_model en meta sin parsear strings. */
+type AiReplyResult =
+  | { ok: true; text: string; model: string; provider: "openai" | "gemini" }
+  | { ok: false; reason: string };
+
+async function aiReply(opts: { systemPrompt: string; userMessage: string }): Promise<AiReplyResult> {
   if (openaiAvailable()) {
     const r = await openaiReply(opts);
-    if (r.ok) return r;
+    if (r.ok) return { ok: true, text: r.text, model: r.model, provider: "openai" };
     console.warn(`[ai] openai failed: ${r.reason}${"status" in r && r.status ? ` (${r.status})` : ""}`);
   }
-  if (geminiAvailable()) return geminiReply(opts);
-  return { ok: false as const, reason: "no_ai_provider" };
+  if (geminiAvailable()) {
+    const r = await geminiReply(opts);
+    if (r.ok) return { ok: true, text: r.text, model: r.model, provider: "gemini" };
+    return { ok: false, reason: r.reason };
+  }
+  return { ok: false, reason: "no_ai_provider" };
 }
 function aiProviderAvailable(): boolean { return openaiAvailable() || geminiAvailable(); }
 
@@ -43,7 +54,12 @@ function aiProviderAvailable(): boolean { return openaiAvailable() || geminiAvai
 // no la podés responder ahí sí esperás, decís que te dé un momento, y notificás
 // que ese chat necesita atención humana."
 const COOLDOWN_MS = 30 * 60 * 1000;
-const recentReplies = new Map<string, number>();
+// LRU con TTL: la entrada expira automáticamente al pasar el cooldown,
+// y el max=5000 protege de un crecimiento ilimitado si se ataca el bot.
+const recentReplies = new LRUCache<string, number>({
+  max: 5000,
+  ttl: COOLDOWN_MS,
+});
 
 // ─── Detector de intents sensibles ──────────────────────────────────────
 // El bot NUNCA debe responder con credenciales/contraseñas/datos personales
@@ -76,17 +92,11 @@ export function detectSensitiveIntent(body: string): string | null {
 }
 
 function inCooldown(phone: string): boolean {
-  const last = recentReplies.get(phone);
-  return last !== undefined && Date.now() - last < COOLDOWN_MS;
+  return recentReplies.has(phone);
 }
 
 function markReplied(phone: string) {
   recentReplies.set(phone, Date.now());
-  // garbage collect
-  if (recentReplies.size > 5000) {
-    const cutoff = Date.now() - COOLDOWN_MS * 2;
-    for (const [k, v] of recentReplies.entries()) if (v < cutoff) recentReplies.delete(k);
-  }
 }
 
 export type AutoReplyInput = {
@@ -119,6 +129,19 @@ export type Escalation = {
   bot_instance_id: number; // para auditoría
 };
 
+/** Cómo se eligió la respuesta — para observabilidad en interactions.meta. */
+export type PickerMethod =
+  | "product"          // matched a flyer por palabra clave en el body
+  | "tag"              // tag → category mapping
+  | "learned_reply"    // pgvector match contra learned_replies
+  | "regex_body"       // regex genérico (pago/precio/info/saludo)
+  | "semantic"         // semantic search sobre templates
+  | "ai_gemini"        // fallback Gemini
+  | "ai_openai"        // fallback OpenAI
+  | "holding"          // ningún match, holding de "compro tiempo"
+  | "escalation"       // intent sensible → holding + ping al operador
+  | "none";
+
 export type AutoReplyResult =
   | { sent: false; reason: string }
   | {
@@ -128,6 +151,10 @@ export type AutoReplyResult =
       template_name: string;
       body: string;
       image_url?: string | null;
+      document_url?: string | null;
+      document_filename?: string | null;
+      document_mime?: string | null;
+      video_url?: string | null;
       // Sequence: messages to send IN ORDER after the primary one (0..N).
       // Each is sent with a 1.5-3s delay between them.
       sequence?: AutoReplyMessage[];
@@ -139,6 +166,14 @@ export type AutoReplyResult =
       // enviar el body al lead. El bot NO debe intentar responder con la
       // info real — la maneja siempre un humano.
       escalation?: Escalation;
+      // ── Observabilidad (Sprint 1.3) ─────────────────────────────────
+      // Estos campos se persisten en interactions.meta para poder analizar
+      // cuál branch del cascade pegó cada vez. SIEMPRE presentes en `sent:true`.
+      picker_method: PickerMethod;
+      picker_score?: number;            // cosine sim 0..1, solo en learned_reply / semantic
+      ai_model?: string;                // 'gemini:gemini-2.5-flash-lite', 'openai:gpt-4o-mini'
+      learned_reply_id?: number;
+      learned_query?: string;
     };
 
 export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyResult> {
@@ -205,6 +240,7 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
         notify_phone: notifyPhone,
         bot_instance_id: instance.id,
       },
+      picker_method: "escalation",
     };
   }
 
@@ -258,19 +294,22 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
       });
       if (ai.ok) {
         markReplied(input.fromPhone);
+        const aiModel = `${ai.provider}:${ai.model}`;
         return {
           sent: true,
           template_id: 0,
-          template_name: `gemini:${ai.model}`,
+          template_name: aiModel,
           body: ai.text,
           image_url: null,
           // Aún flagear para que el operador revise lo que la IA respondió
           needs_human_attention: true,
-          attention_reason: `gemini_response: "${input.body.slice(0, 80)}"`,
+          attention_reason: `${ai.provider}_response: "${input.body.slice(0, 80)}"`,
+          picker_method: ai.provider === "openai" ? "ai_openai" : "ai_gemini",
+          ai_model: aiModel,
         };
       }
-      // Gemini falló (429 sin créditos, 401 key inválida, etc) — log y caer a holding
-      console.warn(`[auto-reply] gemini fallback: ${ai.reason}${ai.status ? ` (${ai.status})` : ""}`);
+      // AI falló (429 sin créditos, 401 key inválida, breaker open, etc) — log y caer a holding
+      console.warn(`[auto-reply] ai fallback: ${ai.reason}`);
     }
 
     // Holding template (mensaje humano comprando tiempo)
@@ -286,6 +325,7 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
       image_url: null,
       needs_human_attention: true,
       attention_reason: `bot_no_match: "${input.body.slice(0, 100)}"`,
+      picker_method: "holding",
     };
   }
 
@@ -349,11 +389,11 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
     document_mime: isLearned ? null : (tpl.document_mime ?? null),
     video_url: isLearned ? null : (tpl.video_url ?? null),
     sequence: sequence.length > 0 ? sequence : undefined,
-    picker_method: pickerMethod,
+    picker_method: pickerMethod as PickerMethod,
     picker_score: pickerScore,
     learned_reply_id: picked?.learned_reply_id,
     learned_query: picked?.learned_query,
-  } as any;
+  };
 }
 
 /** Simulate human typing delay based on body length (≈ 30 chars/sec). */

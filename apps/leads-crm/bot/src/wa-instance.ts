@@ -19,6 +19,7 @@ import makeWASocket, {
 } from "baileys";
 import { Boom } from "@hapi/boom";
 import P from "pino";
+import { LRUCache } from "lru-cache";
 import { join } from "path";
 import { rmSync } from "fs";
 import { CONFIG, type PhoneConfig } from "./config.js";
@@ -76,17 +77,7 @@ function addLog(id: string, msg: string) {
   if (logs.length > MAX_LOGS) logs.shift();
 }
 
-// Cooldown tracker per chat
-const recentReplies = new Map<string, number>();
-const recentMessages = new Map<string, Array<{ body: string; fromMe: boolean }>>();
-
-// Prune old entries every 10 min
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of recentReplies) {
-    if (now - v > CONFIG.replyCooldownMs * 2) recentReplies.delete(k);
-  }
-}, 10 * 60 * 1000);
+// (Cooldown vive en auto-reply-v2.ts; acá no hace falta una segunda copia.)
 
 export class WAInstance {
   readonly id: string;
@@ -99,11 +90,17 @@ export class WAInstance {
   // Set when destroy/restart/logout runs — suppresses auto-reconnect from close handler
   private intentionalStop = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
-  // Cache of recent messages keyed by `${jid}:${id}` so `getMessage` can answer
-  // retry receipts from recipients who failed to decrypt. Without this, the
-  // recipient sees "Esperando mensaje, esto puede tomar tiempo…" indefinitely.
-  private messageCache = new Map<string, proto.IMessage>();
-  private static MESSAGE_CACHE_LIMIT = 2000;
+  // Cache LRU de mensajes recientes (`${jid}:${id}` → proto.IMessage). Permite
+  // que `getMessage` responda retry receipts cuando un destinatario no puede
+  // descifrar nuestro mensaje. Sin esto, el lead ve "Esperando mensaje…"
+  // indefinidamente. LRU con TTL (15min) — más que suficiente para retries
+  // (whatsapp suele reintentar dentro de 1-3 min). Reemplaza el Map FIFO
+  // anterior (Sprint 1.2): el FIFO evictaba cosas vivas si entraba mucho
+  // tráfico de chats nuevos antes de que llegara el retry.
+  private messageCache = new LRUCache<string, proto.IMessage>({
+    max: 2000,
+    ttl: 15 * 60 * 1000,
+  });
   // LID→phone resolver con cache (sustituye al Map inline anterior).
   private lidResolver = new LidResolver(() => this.sock, (m) => addLog(this.id, m));
   readonly stats: InstanceStats = {
@@ -314,14 +311,9 @@ export class WAInstance {
   }
 
   private cacheMessage(jid: string, id: string, message: proto.IMessage) {
-    const baseJid = this.normalizeJid(jid);
-    const key = `${baseJid}:${id}`;
+    const key = `${this.normalizeJid(jid)}:${id}`;
     this.messageCache.set(key, message);
-    // Simple FIFO eviction to keep memory bounded
-    if (this.messageCache.size > WAInstance.MESSAGE_CACHE_LIMIT) {
-      const firstKey = this.messageCache.keys().next().value;
-      if (firstKey) this.messageCache.delete(firstKey);
-    }
+    // LRU se encarga de la eviction (max + ttl) — no hace falta lógica manual.
   }
 
   private lookupCachedMessage(jid: string, id: string): proto.IMessage | undefined {
@@ -704,7 +696,17 @@ export class WAInstance {
             external_id: `auto-reply-${decision.template_id}-${Date.now()}`,
             meta: {
               message_type: decision.image_url ? "image" : "text",
-              auto_reply: true, template_id: decision.template_id, template_name: decision.template_name,
+              auto_reply: true,
+              template_id: decision.template_id,
+              template_name: decision.template_name,
+              // ── Observabilidad del cascade (Sprint 1.3) ────────────
+              // Estos campos antes llegaban NULL — sin ellos no se podía
+              // analizar qué branch del cascade pegó cada vez.
+              picker_method: decision.picker_method,
+              ...(decision.picker_score !== undefined ? { picker_score: decision.picker_score } : {}),
+              ...(decision.ai_model ? { ai_model: decision.ai_model } : {}),
+              ...(decision.learned_reply_id ? { learned_reply_id: decision.learned_reply_id } : {}),
+              ...(decision.learned_query ? { learned_query: decision.learned_query } : {}),
               ...(decision.image_url ? { media_url: decision.image_url } : {}),
               ...(decision.needs_human_attention ? { holding: true, attention_reason: decision.attention_reason } : {}),
             },
@@ -762,7 +764,11 @@ export class WAInstance {
                 external_id: `auto-reply-seq-${step.template_id}-${Date.now()}`,
                 meta: {
                   message_type: step.media_kind === "image" ? "image" : "text",
-                  auto_reply: true, template_id: step.template_id, template_name: step.template_name,
+                  auto_reply: true,
+                  template_id: step.template_id,
+                  template_name: step.template_name,
+                  picker_method: "sequence",
+                  parent_method: decision.picker_method,
                   ...(step.image_url ? { media_url: step.image_url } : {}),
                 },
               });

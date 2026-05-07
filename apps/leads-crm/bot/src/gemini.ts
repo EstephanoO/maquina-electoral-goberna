@@ -2,13 +2,17 @@
  * Gemini integration: cuando no matchea template y la key está disponible,
  * generamos una respuesta natural usando contexto del prompt_override.
  *
- * Fallback chain:
- *   1. Template match (alta confianza, instant)
- *   2. Gemini con contexto del negocio (si hay key + créditos)
- *   3. Holding template (último recurso, agarra tiempo + flag attention)
+ * Resilience (Sprint 1.1, 2026-05-07):
+ *   - Circuit breaker (5 fails / 30s → open 60s) por endpoint
+ *   - Retry con jitter (3 intentos, 200ms→2s) en 5xx + 429 + network errors
+ *   - 4xx (bad request, 401, 403) NO se reintentan
  *
- * Si Gemini falla (429 / 401 / network), caemos al holding sin ruido.
+ * Si Gemini falla todo (breaker open o todos los retries quemados),
+ * los callers caen al holding sin ruido.
  */
+import { CircuitBreaker } from "./llm/breaker.js";
+import { resilientFetch, type ResilientResult } from "./llm/resilient-fetch.js";
+
 const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
 const API_KEY = process.env.GEMINI_API_KEY || "";
 
@@ -17,6 +21,17 @@ export type GeminiResult =
   | { ok: false; reason: string; status?: number };
 
 const TIMEOUT_MS = 8_000;
+
+const generateBreaker = new CircuitBreaker("gemini-generate", {
+  onStateChange: (from, to, name) => {
+    console.warn(`[breaker:${name}] ${from} → ${to}`);
+  },
+});
+const embedBreaker = new CircuitBreaker("gemini-embed", {
+  onStateChange: (from, to, name) => {
+    console.warn(`[breaker:${name}] ${from} → ${to}`);
+  },
+});
 
 export async function generateReply(opts: {
   systemPrompt: string;
@@ -48,36 +63,45 @@ export async function generateReply(opts: {
     ],
   };
 
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  try {
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: ctrl.signal,
-    });
-    clearTimeout(t);
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      return { ok: false, reason: j?.error?.message || `http_${r.status}`, status: r.status };
-    }
-    const j: any = await r.json();
-    const text = j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    if (!text) return { ok: false, reason: "empty_response" };
-    return { ok: true, text, model: MODEL };
-  } catch (e: any) {
-    clearTimeout(t);
-    return { ok: false, reason: e?.message || "fetch_failed" };
-  }
+  const result = await resilientFetch<{ text: string; model: string }>(
+    generateBreaker,
+    async (signal): Promise<ResilientResult<{ text: string; model: string }>> => {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal,
+      });
+      if (!r.ok) {
+        const j: any = await r.json().catch(() => ({}));
+        return { ok: false, reason: j?.error?.message || `http_${r.status}`, status: r.status };
+      }
+      const j: any = await r.json();
+      const text = j?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      if (!text) return { ok: false, reason: "empty_response" };
+      return { ok: true, data: { text, model: MODEL } };
+    },
+    { timeoutMs: TIMEOUT_MS, retries: 3 },
+  );
+
+  if (result.ok) return { ok: true, text: result.data.text, model: result.data.model };
+  return { ok: false, reason: result.reason, status: result.status };
 }
 
 export function geminiAvailable(): boolean {
   return API_KEY.length > 0;
 }
 
+/** Estado actual del breaker — útil para /health endpoints. */
+export function geminiBreakerStatus() {
+  return {
+    generate: generateBreaker.status(),
+    embed: embedBreaker.status(),
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────
-// Embeddings — text-embedding-004 (768 dims) para semantic search
+// Embeddings — gemini-embedding-001 (768 dims) para semantic search
 // (template picker, intent fallback, lead memory).
 //
 // Free tier: 1500 RPM. Estamos en ~400 mensajes IN/día = ~17/h, lejos del límite.
@@ -116,7 +140,7 @@ export type EmbedResult =
   | { ok: false; reason: string; status?: number };
 
 /**
- * Embed un texto con Gemini text-embedding-004.
+ * Embed un texto con Gemini gemini-embedding-001.
  *
  * taskType: "RETRIEVAL_DOCUMENT" para textos almacenados (templates, rules,
  * historical interactions); "RETRIEVAL_QUERY" para queries en vivo (mensaje
@@ -135,37 +159,39 @@ export async function embed(text: string, taskType: "RETRIEVAL_DOCUMENT" | "RETR
   }
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:embedContent?key=${API_KEY}`;
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  try {
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: `models/${EMBED_MODEL}`,
-        content: { parts: [{ text: norm }] },
-        taskType,
-        outputDimensionality: EMBED_DIMS,
-      }),
-      signal: ctrl.signal,
-    });
-    clearTimeout(t);
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      return { ok: false, reason: j?.error?.message || `http_${r.status}`, status: r.status };
-    }
-    const j: any = await r.json();
-    const vec = j?.embedding?.values;
-    if (!Array.isArray(vec) || vec.length !== EMBED_DIMS) {
-      return { ok: false, reason: `bad_response_dims:${vec?.length ?? 0}` };
-    }
-    embedCache.set(key, { vec, ts: Date.now() });
-    trimCache();
-    return { ok: true, vec, cached: false };
-  } catch (e: any) {
-    clearTimeout(t);
-    return { ok: false, reason: e?.message || "fetch_failed" };
-  }
+
+  const result = await resilientFetch<number[]>(
+    embedBreaker,
+    async (signal): Promise<ResilientResult<number[]>> => {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: `models/${EMBED_MODEL}`,
+          content: { parts: [{ text: norm }] },
+          taskType,
+          outputDimensionality: EMBED_DIMS,
+        }),
+        signal,
+      });
+      if (!r.ok) {
+        const j: any = await r.json().catch(() => ({}));
+        return { ok: false, reason: j?.error?.message || `http_${r.status}`, status: r.status };
+      }
+      const j: any = await r.json();
+      const vec = j?.embedding?.values;
+      if (!Array.isArray(vec) || vec.length !== EMBED_DIMS) {
+        return { ok: false, reason: `bad_response_dims:${vec?.length ?? 0}` };
+      }
+      return { ok: true, data: vec };
+    },
+    { timeoutMs: TIMEOUT_MS, retries: 3 },
+  );
+
+  if (!result.ok) return { ok: false, reason: result.reason, status: result.status };
+  embedCache.set(key, { vec: result.data, ts: Date.now() });
+  trimCache();
+  return { ok: true, vec: result.data, cached: false };
 }
 
 /** Format vector array como literal pgvector ('[0.1,0.2,...]'). */
