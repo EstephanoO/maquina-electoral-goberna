@@ -417,6 +417,289 @@ app.post("/rules/match-semantic", safe(async (req, res) => {
   return res.json({ matches, method: "semantic" });
 }));
 
+// ─────────────────────────────────────────────────────────────────────
+// LEARNED REPLIES (#3a) — el bot reusa respuestas manuales de Kathy
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Detecta si una respuesta menciona PII del lead específico (nombre/teléfono).
+ * Si sí, NO se puede auto-reusar — la respuesta diría "Hola María" a un lead
+ * llamado Juan. Se guarda flag has_pii=true y queda como sugerencia para
+ * operador, no auto-uso.
+ *
+ * Conservador: cualquier match de nombre o teléfono → flag.
+ */
+function detectPIIInResponse(response: string, lead: { name: string | null; phone: string | null }): { hasPII: boolean; redacted: string | null } {
+  let redacted = response;
+  let hasPII = false;
+
+  // Phone match — variaciones comunes
+  if (lead.phone) {
+    const digits = lead.phone.replace(/\D/g, "");
+    if (digits.length >= 8 && response.includes(digits)) {
+      hasPII = true;
+      redacted = redacted.replaceAll(digits, "{{telefono}}");
+    }
+    if (response.includes(lead.phone)) {
+      hasPII = true;
+      redacted = redacted.replaceAll(lead.phone, "{{telefono}}");
+    }
+  }
+
+  // Name match — solo si tiene >= 4 chars (evita false positives con "Ana", "Eva")
+  if (lead.name && lead.name.trim().length >= 4) {
+    const name = lead.name.trim();
+    const re = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    if (re.test(response)) {
+      hasPII = true;
+      redacted = redacted.replace(re, "{{nombre}}");
+    }
+    // También primer nombre solo (nombres como "Juan Pérez" → "Juan")
+    const firstName = name.split(/\s+/)[0];
+    if (firstName.length >= 4) {
+      const fre = new RegExp(`\\b${firstName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+      if (fre.test(response)) {
+        hasPII = true;
+        redacted = redacted.replace(fre, "{{nombre}}");
+      }
+    }
+  }
+
+  return { hasPII, redacted: hasPII ? redacted : null };
+}
+
+// POST /learned-replies/match { body }
+// Bot lo llama cuando ningún template matchea, antes de ir a Gemini.
+app.post("/learned-replies/match", safe(async (req, res) => {
+  const body = String(req.body?.body ?? "").trim();
+  if (!body || body.length < 8) return res.json({ match: null, reason: "body_too_short" });
+  if (!embedderAvailable()) return res.json({ match: null, reason: "no_embedder" });
+
+  const r = await embed(body, "RETRIEVAL_QUERY");
+  if (!r.ok) return res.json({ match: null, reason: r.reason });
+
+  const matches = await db.searchLearnedReplies(vecToPg(r.vec), 1, 0.85, true);
+  if (matches.length === 0) return res.json({ match: null, reason: "no_match_above_threshold" });
+
+  const top = matches[0];
+  // Increment hits async — no bloquear response
+  void db.incrementLearnedReplyHits(top.id);
+
+  return res.json({
+    match: {
+      id: top.id,
+      response: top.pii_redacted_response ?? top.response_text,
+      original_query: top.query_text,
+      score: top.score,
+      hits_count: top.hits_count,
+    },
+    method: "learned_reply",
+  });
+}));
+
+// POST /admin/learned-replies/backfill — pipeline de mining sobre el histórico
+//   1. Trae pares (inbound, primer outbound manual <24h)
+//   2. Detecta PII en cada respuesta vs el lead original
+//   3. Embebe query y response (parallel batches)
+//   4. Inserta en learned_replies
+app.post("/admin/learned-replies/backfill", requireAuth, safe(async (req, res) => {
+  if (!embedderAvailable()) return res.status(503).json({ error: "no_embedder" });
+
+  const limit = Math.min(Number((req.query as any)?.limit) || 5000, 20000);
+  const pairs = await db.getInboundOutboundPairs(limit);
+
+  let ok = 0, fail = 0, withPII = 0;
+  const PARALLEL = 4;
+  for (let i = 0; i < pairs.length; i += PARALLEL) {
+    const slice = pairs.slice(i, i + PARALLEL);
+    await Promise.all(slice.map(async (p) => {
+      try {
+        // Skip si query/response está vacío o muy corto
+        if (!p.query || p.query.length < 12 || !p.response || p.response.length < 10) return;
+        // Skip respuestas demasiado largas (probablemente listas, links pegados)
+        if (p.response.length > 1500) return;
+
+        const piiCheck = detectPIIInResponse(p.response, { name: p.lead_name, phone: p.lead_phone });
+        if (piiCheck.hasPII) withPII++;
+
+        const [qe, re] = await Promise.all([
+          embed(p.query.slice(0, 1024), "RETRIEVAL_DOCUMENT"),
+          embed(p.response.slice(0, 1024), "RETRIEVAL_DOCUMENT"),
+        ]);
+        if (!qe.ok || !re.ok) { fail++; return; }
+
+        await db.createLearnedReply({
+          query_text: p.query.slice(0, 2000),
+          query_embedding_vec: vecToPg(qe.vec),
+          response_text: p.response.slice(0, 2000),
+          response_embedding_vec: vecToPg(re.vec),
+          source_inbound_id: p.inbound_id,
+          source_outbound_id: p.outbound_id,
+          source_lead_id: p.lead_id,
+          has_pii: piiCheck.hasPII,
+          pii_redacted_response: piiCheck.redacted,
+        });
+        ok++;
+      } catch (e: any) {
+        fail++;
+        console.warn(`[learned-replies/backfill] err id=${p.inbound_id}: ${e?.message}`);
+      }
+    }));
+  }
+  res.json({ pairs_total: pairs.length, ok, fail, with_pii: withPII });
+}));
+
+// ─────────────────────────────────────────────────────────────────────
+// INTENT MINING (#3b) — sugerir nuevas reglas de inbounds que nada matchea
+// ─────────────────────────────────────────────────────────────────────
+
+/** Cosine similarity entre dos vectores number[]. */
+function cosineSim(a: number[], b: number[]): number {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+/** Promedio de vectores (centroid). */
+function vecMean(vecs: number[][]): number[] {
+  const dims = vecs[0].length;
+  const out = new Array(dims).fill(0);
+  for (const v of vecs) for (let i = 0; i < dims; i++) out[i] += v[i];
+  for (let i = 0; i < dims; i++) out[i] /= vecs.length;
+  return out;
+}
+
+/** Parse el formato pgvector text '[0.1,0.2,...]' a number[]. */
+function parsePgVector(s: string): number[] {
+  return s.replace(/^\[|\]$/g, "").split(",").map(Number);
+}
+
+// POST /admin/intent-mining/run
+//   1. Trae interactions sin regla matcheada (con embedding)
+//   2. Clusteriza con greedy: cada msg sin asignar busca todos sus vecinos a >=0.85
+//   3. Filtra clusters con >=5 miembros
+//   4. Sugiere tag (palabra más frecuente) y pattern (regex de tokens comunes)
+//   5. Inserta candidate
+app.post("/admin/intent-mining/run", requireAuth, safe(async (req, res) => {
+  const SIM_THRESHOLD = Number((req.query as any)?.threshold) || 0.85;
+  const MIN_CLUSTER_SIZE = Number((req.query as any)?.min_cluster) || 5;
+  const SAMPLE_LIMIT = Number((req.query as any)?.limit) || 5000;
+
+  const rows = await db.getUnclassifiedInteractions(SAMPLE_LIMIT);
+  if (rows.length === 0) return res.json({ unclassified: 0, candidates_created: 0 });
+
+  const items = rows.map((r) => ({ ...r, vec: parsePgVector(r.embedding), assigned: false }));
+
+  type Cluster = { items: typeof items; centroid: number[] };
+  const clusters: Cluster[] = [];
+
+  for (const it of items) {
+    if (it.assigned) continue;
+    it.assigned = true;
+    const cluster: typeof items = [it];
+    for (const other of items) {
+      if (other.assigned) continue;
+      if (cosineSim(it.vec, other.vec) >= SIM_THRESHOLD) {
+        other.assigned = true;
+        cluster.push(other);
+      }
+    }
+    if (cluster.length >= MIN_CLUSTER_SIZE) {
+      const centroid = vecMean(cluster.map((c) => c.vec));
+      clusters.push({ items: cluster, centroid });
+    }
+  }
+
+  let candidatesCreated = 0;
+  for (const c of clusters) {
+    const top = c.items.slice(0, 8);
+    const allText = top.map((t) => t.body.toLowerCase()).join(" ");
+    // Sugerir tag a partir de la palabra más distintiva (top 3 más frecuentes >3 chars)
+    const wordCount: Record<string, number> = {};
+    for (const txt of top) {
+      const tokens = txt.body.toLowerCase().match(/[a-záéíóúñü]{4,}/g) ?? [];
+      for (const t of new Set(tokens)) wordCount[t] = (wordCount[t] ?? 0) + 1;
+    }
+    const STOPWORDS = new Set(["hola", "buenos", "buenas", "días", "tardes", "noches", "gracias", "favor", "saludos", "puedo", "quisiera", "quiero", "tengo", "estoy", "necesito", "puede", "como", "donde", "cuando", "porque"]);
+    const sortedWords = Object.entries(wordCount)
+      .filter(([w]) => !STOPWORDS.has(w))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([w]) => w);
+    const suggestedTag = sortedWords.length > 0 ? `intent:${sortedWords[0]}` : null;
+    const suggestedPattern = sortedWords.length > 0 ? `\\b(${sortedWords.join("|")})\\b` : null;
+
+    await db.createMiningCandidate({
+      centroid_vec: vecToPg(c.centroid),
+      sample_message_ids: top.map((t) => t.id),
+      sample_texts: top.map((t) => t.body.slice(0, 300)),
+      match_count: c.items.length,
+      suggested_tag: suggestedTag,
+      suggested_pattern: suggestedPattern,
+    });
+    candidatesCreated++;
+  }
+
+  res.json({
+    unclassified: items.length,
+    clusters_found: clusters.length,
+    candidates_created: candidatesCreated,
+  });
+}));
+
+app.get("/admin/intent-mining/candidates", requireAuth, safe(async (req, res) => {
+  const status = String((req.query as any)?.status ?? "pending");
+  const candidates = await db.listMiningCandidates(status);
+  res.json({ candidates });
+}));
+
+// POST /admin/intent-mining/promote/:id { name?, tag?, pattern? }
+// Promueve un candidate a ai_rule activa. Permite override del tag/pattern
+// sugeridos antes de crear la regla.
+app.post("/admin/intent-mining/promote/:id", requireAuth, safe(async (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const { name, tag, pattern, weight } = req.body ?? {};
+  const candidates = await db.listMiningCandidates("pending");
+  const c = candidates.find((x: any) => x.id === id);
+  if (!c) return res.status(404).json({ error: "candidate_not_found_or_already_processed" });
+
+  const finalTag = String(tag || c.suggested_tag || "intent:custom");
+  const finalPattern = String(pattern || c.suggested_pattern || "");
+  if (!finalPattern) return res.status(400).json({ error: "pattern_required" });
+  try { new RegExp(finalPattern); } catch (e: any) { return res.status(400).json({ error: "invalid_regex", message: e.message }); }
+
+  const finalName = String(name || `mined: ${c.sample_texts[0]?.slice(0, 60) ?? "auto"}`);
+  const createdBy = (req as any).user?.email ?? "intent-mining";
+
+  const ruleRows: any = await sql`
+    INSERT INTO ai_rules (name, description, pattern, tag, weight, enabled, created_by, source)
+    VALUES (
+      ${finalName},
+      ${`Auto-mined intent (cluster of ${c.match_count} unmatched messages)`},
+      ${finalPattern}, ${finalTag},
+      ${typeof weight === "number" ? weight : 1.0},
+      TRUE, ${createdBy}, 'mined'
+    ) RETURNING id, name`;
+  const ruleId = ruleRows[0].id;
+
+  embedRuleInBackground(ruleId, ruleRows[0].name);
+  await db.promoteMiningCandidate(id, ruleId, createdBy);
+
+  res.json({ ok: true, rule_id: ruleId, rule_name: ruleRows[0].name });
+}));
+
+app.post("/admin/intent-mining/reject/:id", requireAuth, safe(async (req: AuthedRequest, res) => {
+  const id = Number(req.params.id);
+  const by = (req as any).user?.email ?? "intent-mining";
+  await db.rejectMiningCandidate(id, by);
+  res.json({ ok: true });
+}));
+
 // POST /admin/embed/backfill — re-genera embeddings que falten (templates + rules).
 // Idempotente: skipea los que ya tienen embedding y embedding_text coincide.
 app.post("/admin/embed/backfill", requireAuth, safe(async (req, res) => {

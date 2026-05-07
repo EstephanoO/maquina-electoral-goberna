@@ -120,9 +120,48 @@ const API_TOKEN = process.env.API_TOKEN || "";
 const SEMANTIC_TIMEOUT_MS = 5000;
 const SEMANTIC_MIN_BODY_LEN = 8;
 
-export type PickMethod = "product" | "tag" | "regex_body" | "semantic" | "none";
+export type PickMethod = "product" | "tag" | "regex_body" | "learned_reply" | "semantic" | "none";
 
-export type PickedTemplate = { template: Template; method: PickMethod; score?: number };
+export type PickedTemplate = {
+  template: Template;
+  method: PickMethod;
+  score?: number;
+  /** Si method='learned_reply', el body ya viene con la respuesta lista
+   *  (no es un template canónico — viene del histórico de Kathy). */
+  learned_reply_id?: number;
+  /** Texto del lead original que disparó la respuesta aprendida (audit). */
+  learned_query?: string;
+};
+
+/**
+ * Llama al endpoint de learned_replies — pares (query, response) extraídos
+ * del histórico manual de Kathy. Auto-uso solo si has_pii=false; si tiene
+ * PII queda como sugerencia para operador, no como template del bot.
+ */
+async function pickByLearnedReply(body: string): Promise<{ id: number; response: string; original_query: string; score: number } | null> {
+  if (!body || body.length < SEMANTIC_MIN_BODY_LEN) return null;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (API_TOKEN) headers["Authorization"] = `Bearer ${API_TOKEN}`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), SEMANTIC_TIMEOUT_MS);
+  try {
+    const r = await fetch(`${API_URL}/learned-replies/match`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ body }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    if (!r.ok) return null;
+    const j: any = await r.json();
+    if (!j.match) return null;
+    return j.match;
+  } catch (e: any) {
+    clearTimeout(t);
+    console.warn(`[template-picker] learned-reply call failed: ${e?.message ?? "unknown"}`);
+    return null;
+  }
+}
 
 async function pickBySemantic(body: string): Promise<{ template: Template; score: number } | null> {
   if (!body || body.length < SEMANTIC_MIN_BODY_LEN) return null;
@@ -192,7 +231,40 @@ export async function pickTemplateWithSemantic(input: PickInput, allTemplates: T
     if (t) return { template: t, method: "regex_body" };
   }
 
-  // Fallback final: semantic
+  // Fallback #1: learned_replies — el bot reusa una respuesta probada de
+  // Kathy si el mensaje del lead actual es semánticamente similar a uno
+  // del histórico. Solo aplica respuestas SIN PII (no diría "Hola María"
+  // a Juan). Threshold alto (0.85) — preferimos no responder antes que
+  // responder con algo que no aplica.
+  const learned = await pickByLearnedReply(input.body);
+  if (learned) {
+    const synthetic: Template = {
+      id: -learned.id,                      // id negativo para que no choque con templates reales en logs
+      name: `learned:${learned.id}`,
+      body: learned.response,
+      category: "learned_reply",
+      uses_count: 0,
+      image_url: null,
+      product_sku: null,
+      media_kind: "text",
+      sequence_after: null,
+      document_url: null,
+      document_filename: null,
+      document_mime: null,
+      video_url: null,
+      created_at: "",
+      updated_at: "",
+    } as Template;
+    return {
+      template: synthetic,
+      method: "learned_reply",
+      score: learned.score,
+      learned_reply_id: learned.id,
+      learned_query: learned.original_query,
+    };
+  }
+
+  // Fallback #2: semantic templates
   const sem = await pickBySemantic(input.body);
   if (sem) return { template: sem.template, method: "semantic", score: sem.score };
 

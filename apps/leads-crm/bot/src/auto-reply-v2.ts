@@ -206,21 +206,25 @@ export async function decideAutoReply(input: AutoReplyInput): Promise<AutoReplyR
     }
   }
 
+  // Cuando viene de learned_reply el "template" es sintético (id negativo).
+  // No persistimos ese id como template_id real — usamos 0 + learned_reply_id
+  // por separado para que el log/dashboard no haga JOIN roto a templates(id).
+  const isLearned = pickerMethod === "learned_reply";
   return {
     sent: true,
-    template_id: tpl.id,
+    template_id: isLearned ? 0 : tpl.id,
     template_name: tpl.name,
     body,
-    image_url: tpl.image_url ?? null,
-    document_url: tpl.document_url ?? null,
-    document_filename: tpl.document_filename ?? null,
-    document_mime: tpl.document_mime ?? null,
-    video_url: tpl.video_url ?? null,
+    image_url: isLearned ? null : (tpl.image_url ?? null),
+    document_url: isLearned ? null : (tpl.document_url ?? null),
+    document_filename: isLearned ? null : (tpl.document_filename ?? null),
+    document_mime: isLearned ? null : (tpl.document_mime ?? null),
+    video_url: isLearned ? null : (tpl.video_url ?? null),
     sequence: sequence.length > 0 ? sequence : undefined,
-    // Tracking del método de match para análisis posterior. El caller debe
-    // pasarlo a interactions.meta.picker_method al loggear el message_out.
     picker_method: pickerMethod,
     picker_score: pickerScore,
+    learned_reply_id: picked?.learned_reply_id,
+    learned_query: picked?.learned_query,
   } as any;
 }
 

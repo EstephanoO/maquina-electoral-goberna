@@ -448,6 +448,183 @@ export const db = {
     return rows.filter((r: any) => r.score >= minScore) as any;
   },
 
+  // ===== LEARNED REPLIES (#3a — aprende de respuestas manuales del operador) =====
+  // Pares (mensaje del lead, respuesta manual de Kathy dentro de 24h). Cuando
+  // un lead nuevo escribe algo similar a query_text, el bot puede reusar
+  // response_text. has_pii=true bloquea auto-uso (la respuesta menciona el
+  // nombre/teléfono del lead original — lo damos como sugerencia, no auto).
+  async createLearnedReply(input: {
+    query_text: string;
+    query_embedding_vec: string;
+    response_text: string;
+    response_embedding_vec: string;
+    source_inbound_id: number;
+    source_outbound_id: number;
+    source_lead_id: number;
+    has_pii: boolean;
+    pii_redacted_response: string | null;
+  }): Promise<{ id: number }> {
+    const rows = await sql`
+      INSERT INTO learned_replies (
+        query_text, query_embedding, response_text, response_embedding,
+        source_inbound_id, source_outbound_id, source_lead_id,
+        has_pii, pii_redacted_response
+      ) VALUES (
+        ${input.query_text}, ${input.query_embedding_vec}::vector,
+        ${input.response_text}, ${input.response_embedding_vec}::vector,
+        ${input.source_inbound_id}, ${input.source_outbound_id}, ${input.source_lead_id},
+        ${input.has_pii}, ${input.pii_redacted_response}
+      )
+      ON CONFLICT DO NOTHING
+      RETURNING id`;
+    return rows[0] ?? { id: 0 };
+  },
+
+  async searchLearnedReplies(vec: string, topK = 3, minScore = 0.85, autoUseOnly = true): Promise<Array<{
+    id: number; query_text: string; response_text: string; pii_redacted_response: string | null;
+    has_pii: boolean; hits_count: number; score: number;
+  }>> {
+    const rows = autoUseOnly
+      ? await sql`
+          SELECT id, query_text, response_text, pii_redacted_response, has_pii, hits_count,
+                 1 - (query_embedding <=> ${vec}::vector) AS score
+            FROM learned_replies
+           WHERE status = 'active' AND has_pii = false AND query_embedding IS NOT NULL
+           ORDER BY query_embedding <=> ${vec}::vector
+           LIMIT ${topK}`
+      : await sql`
+          SELECT id, query_text, response_text, pii_redacted_response, has_pii, hits_count,
+                 1 - (query_embedding <=> ${vec}::vector) AS score
+            FROM learned_replies
+           WHERE status = 'active' AND query_embedding IS NOT NULL
+           ORDER BY query_embedding <=> ${vec}::vector
+           LIMIT ${topK}`;
+    return rows.filter((r: any) => r.score >= minScore) as any;
+  },
+
+  async incrementLearnedReplyHits(id: number): Promise<void> {
+    await sql`UPDATE learned_replies SET hits_count = hits_count + 1, last_used_at = now() WHERE id = ${id}`;
+  },
+
+  // ===== INTENT MINING (#3b — sugiere reglas nuevas a partir de inbounds que nada matchea) =====
+  async getUnclassifiedInteractions(limit = 5000): Promise<Array<{ id: number; lead_id: number; body: string; embedding: string }>> {
+    const rows = await sql`
+      WITH active_patterns AS (
+        SELECT pattern FROM ai_rules WHERE enabled = TRUE AND pattern IS NOT NULL
+      ),
+      already_in_candidate AS (
+        SELECT DISTINCT unnest(sample_message_ids) AS id FROM intent_mining_candidates WHERE status = 'pending'
+      )
+      SELECT i.id, i.lead_id, i.body, ie.embedding::text AS embedding
+        FROM interactions i
+        JOIN interaction_embeddings ie ON ie.interaction_id = i.id
+       WHERE i.kind = 'message_in'
+         AND i.body IS NOT NULL
+         AND length(i.body) >= 12
+         AND i.id NOT IN (SELECT id FROM already_in_candidate)
+         AND NOT EXISTS (
+           SELECT 1 FROM active_patterns ap WHERE i.body ~* ap.pattern
+         )
+       ORDER BY i.created_at DESC
+       LIMIT ${limit}`;
+    return rows as any;
+  },
+
+  async createMiningCandidate(input: {
+    centroid_vec: string;
+    sample_message_ids: number[];
+    sample_texts: string[];
+    match_count: number;
+    suggested_tag: string | null;
+    suggested_pattern: string | null;
+  }): Promise<{ id: number }> {
+    const rows = await sql`
+      INSERT INTO intent_mining_candidates (
+        cluster_centroid, sample_message_ids, sample_texts, match_count,
+        suggested_tag, suggested_pattern
+      ) VALUES (
+        ${input.centroid_vec}::vector, ${input.sample_message_ids}, ${input.sample_texts},
+        ${input.match_count}, ${input.suggested_tag}, ${input.suggested_pattern}
+      ) RETURNING id`;
+    return rows[0];
+  },
+
+  async listMiningCandidates(status: string = 'pending'): Promise<Array<{
+    id: number; sample_texts: string[]; match_count: number; suggested_tag: string | null;
+    suggested_pattern: string | null; status: string; created_at: string;
+  }>> {
+    const rows = await sql`
+      SELECT id, sample_texts, match_count, suggested_tag, suggested_pattern, status, created_at
+        FROM intent_mining_candidates
+       WHERE status = ${status}
+       ORDER BY match_count DESC, created_at DESC`;
+    return rows as any;
+  },
+
+  async promoteMiningCandidate(id: number, ruleId: number, by: string | null): Promise<void> {
+    await sql`
+      UPDATE intent_mining_candidates
+         SET status = 'promoted', promoted_rule_id = ${ruleId},
+             reviewed_at = now(), reviewed_by = ${by}
+       WHERE id = ${id}`;
+  },
+
+  async rejectMiningCandidate(id: number, by: string | null): Promise<void> {
+    await sql`
+      UPDATE intent_mining_candidates
+         SET status = 'rejected', reviewed_at = now(), reviewed_by = ${by}
+       WHERE id = ${id}`;
+  },
+
+  /** Pares (inbound, primer outbound manual <24h) por lead, listos para mining. */
+  async getInboundOutboundPairs(limit = 10000): Promise<Array<{
+    inbound_id: number; outbound_id: number; lead_id: number; lead_name: string | null;
+    lead_phone: string | null; query: string; response: string;
+  }>> {
+    const rows = await sql`
+      WITH ranked AS (
+        SELECT
+          i_in.id AS inbound_id,
+          i_in.body AS query,
+          i_in.lead_id,
+          (SELECT i_out.id FROM interactions i_out
+            WHERE i_out.lead_id = i_in.lead_id
+              AND i_out.kind = 'message_out'
+              AND i_out.created_at > i_in.created_at
+              AND i_out.created_at <= i_in.created_at + interval '24 hours'
+              AND i_out.body IS NOT NULL
+              AND length(i_out.body) >= 10
+              AND COALESCE((i_out.meta->>'auto_reply')::boolean, false) = false
+            ORDER BY i_out.created_at ASC LIMIT 1) AS outbound_id,
+          (SELECT i_out.body FROM interactions i_out
+            WHERE i_out.lead_id = i_in.lead_id
+              AND i_out.kind = 'message_out'
+              AND i_out.created_at > i_in.created_at
+              AND i_out.created_at <= i_in.created_at + interval '24 hours'
+              AND i_out.body IS NOT NULL
+              AND length(i_out.body) >= 10
+              AND COALESCE((i_out.meta->>'auto_reply')::boolean, false) = false
+            ORDER BY i_out.created_at ASC LIMIT 1) AS response
+        FROM interactions i_in
+        WHERE i_in.kind = 'message_in'
+          AND i_in.body IS NOT NULL
+          AND length(i_in.body) >= 12
+      )
+      SELECT r.inbound_id, r.outbound_id, r.lead_id, r.query, r.response,
+             l.name AS lead_name, l.phone AS lead_phone
+        FROM ranked r
+        JOIN leads l ON l.id = r.lead_id
+       WHERE r.outbound_id IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM learned_replies lr
+            WHERE lr.source_inbound_id = r.inbound_id
+              AND lr.source_outbound_id = r.outbound_id
+         )
+       ORDER BY r.inbound_id
+       LIMIT ${limit}`;
+    return rows as any;
+  },
+
   // ===== SENDS =====
   async listSends(filters: any = {}): Promise<Send[]> {
     const leadId = typeof filters === "number" ? filters : null;
