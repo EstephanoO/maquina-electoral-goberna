@@ -15,6 +15,7 @@ type Chat = {
   n_purchases: number; assigned_to: string; interests: string[];
   tags: string[]; course: string;
   last_message: string; last_message_kind: string; last_message_at: string;
+  last_message_is_bot?: boolean;
   unread_count: number;
 };
 type Msg = { id: number; kind: string; body: string; by: string; time: string; meta: any };
@@ -43,7 +44,7 @@ export default function ChatPage() {
   // Chat state
   const [chats, setChats] = useState<Chat[]>([]);
   const [search, setSearch] = useState("");
-  const [chatFilter, setChatFilter] = useState<"all" | "unread" | "noname">("all");
+  const [chatFilter, setChatFilter] = useState<"all" | "unread" | "noname" | "bot" | "manual">("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [detail, setDetail] = useState<any>(null);
@@ -184,10 +185,14 @@ export default function ChatPage() {
   const filtered = chats.filter((c) => {
     if (chatFilter === "unread") return c.unread_count > 0;
     if (chatFilter === "noname") return !c.name || c.name === "Sin nombre" || /^\+?\d/.test(c.name);
+    if (chatFilter === "bot") return c.last_message_kind === "message_out" && c.last_message_is_bot === true;
+    if (chatFilter === "manual") return c.last_message_kind === "message_out" && c.last_message_is_bot === false;
     return true;
   });
 
   const unreadTotal = chats.filter((c) => c.unread_count > 0).length;
+  const botTotal = chats.filter((c) => c.last_message_kind === "message_out" && c.last_message_is_bot === true).length;
+  const manualTotal = chats.filter((c) => c.last_message_kind === "message_out" && c.last_message_is_bot === false).length;
   const showList = !selectedId;
 
   return (
@@ -276,10 +281,12 @@ export default function ChatPage() {
                   className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 text-[13px] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2a4f8a]/20 border border-slate-100"
                   placeholder="Buscar vecino..." />
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-1 flex-wrap">
                 {([
                   { k: "all" as const, l: "Todos", c: chats.length },
                   { k: "unread" as const, l: "Nuevos", c: unreadTotal },
+                  { k: "bot" as const, l: "🤖 Bot", c: botTotal },
+                  { k: "manual" as const, l: "👤 Tú", c: manualTotal },
                   { k: "noname" as const, l: "Sin nombre", c: chats.filter((c) => !c.name || c.name === "Sin nombre" || /^\+?\d/.test(c.name)).length },
                 ] as const).map((f) => (
                   <button key={f.k} onClick={() => setChatFilter(f.k)}
@@ -463,7 +470,10 @@ function ChatItem({ chat: c, active, onClick }: { chat: Chat; active: boolean; o
         {/* Row 3: last message preview */}
         {c.last_message && (
           <p className={cn("text-[11px] truncate max-w-full mb-1", unread ? "text-slate-600" : "text-slate-400")}>
-            {c.last_message_kind === "message_out" ? "✓ " : ""}{(c.last_message || "").slice(0, 60)}
+            {c.last_message_kind === "message_out"
+              ? (c.last_message_is_bot ? <span className="text-purple-600 font-bold mr-0.5" title="Auto-respuesta del bot">🤖 </span> : "✓ ")
+              : ""}
+            {(c.last_message || "").slice(0, 60)}
           </p>
         )}
 
@@ -507,6 +517,7 @@ function tagColor(tag: string): string {
 function Bubble({ msg }: { msg: Msg }) {
   const out = msg.kind === "message_out";
   const err = msg.meta?.error;
+  const isBot = out && msg.meta?.auto_reply === true;
   const time = new Date(msg.time).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
 
   // El bot empuja meta = { message_type, media_url?, media_mime?, media_caption? }
@@ -519,10 +530,22 @@ function Bubble({ msg }: { msg: Msg }) {
   const mediaSize = msg.meta?.media_size_bytes as number | undefined;
   const mediaDuration = msg.meta?.media_duration_sec as number | undefined;
 
+  // Etiqueta para el bubble del bot — surface el origen de la respuesta.
+  const botBadge = isBot ? botSourceLabel(msg.meta) : null;
+
   return (
     <div className={cn("flex mb-0.5", out ? "justify-end" : "justify-start")}>
       <div className={cn("max-w-[80%] sm:max-w-[65%] rounded-xl px-3 py-1.5 shadow-sm text-[13px] leading-snug",
-        out ? "bg-[#D9FDD3] rounded-tr-sm" : "bg-white rounded-tl-sm", err && "bg-red-50 border border-red-200")}>
+        !out ? "bg-white rounded-tl-sm"
+          : isBot ? "bg-[#EDE7FF] rounded-tr-sm border border-purple-200/50"
+          : "bg-[#D9FDD3] rounded-tr-sm",
+        err && "bg-red-50 border border-red-200")}>
+        {botBadge && (
+          <div className="flex items-center gap-1 -mt-0.5 mb-0.5 text-[9px] font-bold text-purple-700/80 uppercase tracking-wide">
+            <span>🤖</span>
+            <span>{botBadge}</span>
+          </div>
+        )}
         <RichBody
           messageType={messageType}
           body={msg.body}
@@ -532,12 +555,31 @@ function Bubble({ msg }: { msg: Msg }) {
           mediaSize={mediaSize}
           mediaDuration={mediaDuration}
         />
-        <div className={cn("text-[9px] mt-0.5 text-right", out ? "text-emerald-700/40" : "text-slate-400")}>
+        <div className={cn("text-[9px] mt-0.5 text-right",
+          out ? (isBot ? "text-purple-700/50" : "text-emerald-700/40") : "text-slate-400")}>
           {time}{out && !err && " ✓"}{err && <span className="text-red-500 ml-1">No enviado</span>}
         </div>
       </div>
     </div>
   );
+}
+
+/** Mapea meta del outbound del bot a un label corto con el origen de la
+ *  respuesta. Permite al operador entender de un vistazo qué disparó el envío. */
+function botSourceLabel(meta: any): string {
+  if (!meta) return "Bot";
+  if (meta.holding) return "Bot · holding";
+  if (meta.agenda_confirmed) return "Bot · agenda confirmada";
+  if (meta.agenda_proposed) return "Bot · agenda propuesta";
+  const tn: string | undefined = meta.template_name;
+  if (tn) {
+    if (tn.startsWith("learned:")) return "Bot · aprendido";
+    if (tn.startsWith("gemini:")) return "Bot · IA";
+    return `Bot · ${tn}`;
+  }
+  if (meta.picker_method === "semantic") return "Bot · semántico";
+  if (meta.picker_method === "learned_reply") return "Bot · aprendido";
+  return "Bot · auto";
 }
 
 /**

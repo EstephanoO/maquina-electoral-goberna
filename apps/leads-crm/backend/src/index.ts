@@ -838,7 +838,8 @@ app.get("/chats", async (req, res) => {
         kind,
         body,
         created_at,
-        by_user
+        by_user,
+        COALESCE((meta->>'auto_reply')::boolean, false) AS is_auto_reply
       FROM interactions
       WHERE kind IN ('message_in', 'message_out')
       ORDER BY lead_id, created_at DESC
@@ -872,6 +873,7 @@ app.get("/chats", async (req, res) => {
       lm.body as last_message,
       lm.kind as last_message_kind,
       lm.created_at as last_message_at,
+      lm.is_auto_reply as last_message_is_bot,
       COALESCE(u.unread_count, 0) as unread_count
     FROM leads l
     JOIN last_msg lm ON lm.lead_id = l.id
@@ -901,6 +903,7 @@ app.get("/chats", async (req, res) => {
     last_message: r.last_message,
     last_message_kind: r.last_message_kind,
     last_message_at: r.last_message_at,
+    last_message_is_bot: !!r.last_message_is_bot,
     unread_count: r.unread_count,
   })));
 });
