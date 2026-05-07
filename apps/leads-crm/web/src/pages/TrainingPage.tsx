@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { TrainingTabs, RulesTab, PromptTab, SandboxTab, type TrainingTab } from "../components/training";
+import { TrainingTabs, RulesTab, PromptTab, SandboxTab, ExtractionTab, type TrainingTab } from "../components/training";
 
 export default function TrainingPage() {
   const [tab, setTab] = useState<TrainingTab>("rules");
@@ -11,6 +11,7 @@ export default function TrainingPage() {
         {tab === "rules" && <RulesTab />}
         {tab === "prompt" && <PromptTab />}
         {tab === "sandbox" && <SandboxTab />}
+        {tab === "extraction" && <ExtractionTab />}
       </div>
     </div>
   );

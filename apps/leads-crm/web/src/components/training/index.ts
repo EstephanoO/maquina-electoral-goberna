@@ -9,3 +9,4 @@ export { RuleTemplatePicker } from "./RuleTemplatePicker";
 export { RulesTab } from "./tabs/RulesTab";
 export { PromptTab } from "./tabs/PromptTab";
 export { SandboxTab } from "./tabs/SandboxTab";
+export { ExtractionTab } from "./tabs/ExtractionTab";

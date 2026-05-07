@@ -1,13 +1,14 @@
 import type { LucideIcon } from "lucide-react";
-import { ClipboardList, BookText, FlaskConical } from "lucide-react";
+import { ClipboardList, BookText, FlaskConical, Inbox } from "lucide-react";
 import { cn } from "../../lib/utils";
 
-export type TrainingTab = "rules" | "prompt" | "sandbox";
+export type TrainingTab = "rules" | "prompt" | "sandbox" | "extraction";
 
 const TABS: Array<{ key: TrainingTab; icon: LucideIcon; label: string }> = [
   { key: "rules", icon: ClipboardList, label: "Reglas" },
   { key: "prompt", icon: BookText, label: "Prompt IA" },
   { key: "sandbox", icon: FlaskConical, label: "Sandbox" },
+  { key: "extraction", icon: Inbox, label: "Extracciones" },
 ];
 
 type Props = { current: TrainingTab; onChange: (t: TrainingTab) => void };
