@@ -15,8 +15,11 @@ export function SlideHistorialINFOGOB({ ctx }: SlideHistorialINFOGOBProps) {
   const dni = ""; // a futuro: pull desde candidatos.candidato.documento_numero
 
   return (
-    <SlideShell title={`Historial político de ${ctx.user.full_name}`}>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10 pt-2">
+    <SlideShell
+      kicker="04 · Tu trayectoria electoral"
+      title={`Historial político de ${ctx.user.full_name.split(/\s+/).slice(0, 2).join(" ")}`}
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-10">
         {/* Mockup de tabla INFOGOB */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}

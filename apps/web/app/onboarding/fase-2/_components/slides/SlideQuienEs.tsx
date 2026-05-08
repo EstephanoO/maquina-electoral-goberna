@@ -15,8 +15,11 @@ export function SlideQuienEs({ ctx }: SlideQuienEsProps) {
   const firstName = ctx.user.full_name.split(/\s+/)[0] ?? ctx.user.full_name;
 
   return (
-    <SlideShell title={`¿Quién es ${ctx.user.full_name}?`}>
-      <div className="pt-2 space-y-6">
+    <SlideShell
+      kicker="05 · Diagnóstico de imagen pública"
+      title={`Cómo te ven en ${jurisdiccionLabelOrFallback(ctx)}`}
+    >
+      <div className="space-y-6">
         <p className="text-base sm:text-lg text-gray-300 max-w-3xl">
           Auditamos tu posicionamiento digital — Google, redes sociales, prensa
           local — para entender qué lee de vos un votante que recién te conoce.
@@ -80,6 +83,15 @@ interface DiagnosticoCardProps {
   label: string;
   estado: string;
   metric: string;
+}
+
+function jurisdiccionLabelOrFallback(ctx: CandidatoContext): string {
+  return (
+    ctx.jurisdiccion.distrito?.nombre ??
+    ctx.jurisdiccion.provincia?.nombre ??
+    ctx.jurisdiccion.departamento?.nombre ??
+    ctx.jurisdiccion.pais.nombre
+  );
 }
 
 function DiagnosticoCard({ icon, label, estado, metric }: DiagnosticoCardProps) {

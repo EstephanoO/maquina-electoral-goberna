@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.gitignore
+*.log
+.env*
+!.env.production
+Dockerfile
+.dockerignore
+README.md
+AGENTS.md
+.claude
+tsconfig.tsbuildinfo
+*.png
+!public/**/*.png
+*.jpg
+!public/**/*.jpg

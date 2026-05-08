@@ -10,23 +10,22 @@ interface SlideAnalisisElectoralProps {
 }
 
 export function SlideAnalisisElectoral({ ctx }: SlideAnalisisElectoralProps) {
-  const partidoNombre = ctx.organizacion_politica?.nombre ?? "Tu candidatura";
-  const jurisdiccionLabel =
-    ctx.jurisdiccion.distrito?.nombre ??
-    ctx.jurisdiccion.provincia?.nombre ??
-    ctx.jurisdiccion.departamento?.nombre ??
-    ctx.jurisdiccion.pais.nombre;
+  const subAmbitoLabel =
+    ctx.cargo.ambito === "pais"
+      ? "región"
+      : ctx.cargo.ambito === "departamento"
+        ? "provincia"
+        : "distrito";
 
   return (
     <SlideShell
-      title={`¿Cómo le fue a ${partidoNombre} en ${jurisdiccionLabel}?`}
+      kicker="02 · Resultados últimas elecciones"
+      title={`Mapa de ganadores por ${subAmbitoLabel}`}
     >
-      <div className="pt-2">
-        <AnalisisElectoral
-          jurisdiccion={ctx.jurisdiccion}
-          ambito={ctx.cargo.ambito}
-        />
-      </div>
+      <AnalisisElectoral
+        jurisdiccion={ctx.jurisdiccion}
+        ambito={ctx.cargo.ambito}
+      />
     </SlideShell>
   );
 }

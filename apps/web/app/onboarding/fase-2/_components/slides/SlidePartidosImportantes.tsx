@@ -20,13 +20,14 @@ export function SlidePartidosImportantes({ ctx }: SlidePartidosImportantesProps)
   const partidos = getPartidosImportantesMock(jurisdiccionLabel);
 
   return (
-    <SlideShell title={`Quiénes mandan en ${jurisdiccionLabel}`}>
-      <div className="pt-2">
-        <p className="text-sm text-gray-400 mb-5">
-          Los 3 partidos con más votos en las últimas elecciones de tu zona.
-        </p>
-        <PartidosZona partidos={partidos} />
-      </div>
+    <SlideShell
+      kicker="03 · Top 3 fuerzas políticas"
+      title={`Los partidos con más votos en ${jurisdiccionLabel}`}
+    >
+      <p className="text-sm sm:text-base text-gray-400 mb-6 max-w-3xl">
+        Quiénes definen la agenda electoral en tu zona. Conocerlos es clave para diseñar tu narrativa diferencial.
+      </p>
+      <PartidosZona partidos={partidos} />
     </SlideShell>
   );
 }
