@@ -1,17 +1,17 @@
 /**
- * InviteScreen — Registro simplificado via magic link.
+ * InviteScreen — Registro via universal link OTP-only.
  *
- * Flujo:
- * 1. Al montar: valida el código de invitación contra el backend
- * 2. Muestra el candidato/campaña de forma prominente (contexto ya resuelto)
- * 3. El usuario solo completa: nombre completo + teléfono + contraseña
- * 4. POST /api/auth/register con invitation_code incluido
- * 5. Auto-login y navegación al dashboard
+ * Flow:
+ *   1. Mount: GET /api/invitations/validate/:code → muestra hero de campaña
+ *   2. Form: nombre completo + teléfono (region = 'Nacional')
+ *   3. Send OTP → SMS dispatched
+ *   4. Verify SMS → idToken → POST /api/auth/register-firebase + invitation_code
+ *   5. RouterGuard navega a (main)/dashboard o (auth)/pending
  *
- * Diferencias con register.tsx normal:
- * - Sin búsqueda de candidato (viene del link)
- * - Sin selección de región (se usa "Nacional" por defecto, editable)
- * - Sin paso 2 separado — todo en una pantalla
+ * Diferencias con /register:
+ *   - Sin selector de región (default Nacional)
+ *   - Sin selector de campaña (viene del invitation_code)
+ *   - El campaign_id va por el invitation_code, no se manda explícito
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -27,16 +27,21 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useApp } from '@/lib/app-context';
-import { validateInvitation, registerWithInvitation } from '@/lib/api';
+import { validateInvitation } from '@/lib/api';
+import {
+  sendOtp,
+  confirmOtp,
+  toE164PhonePeru,
+  type FirebaseConfirmation,
+} from '@/lib/firebase';
 import type { InvitationInfo } from '@/lib/types';
 
-// ─── Design Tokens (idénticos al resto de la app) ───────────────
+// ─── Design Tokens ──────────────────────────────────────────────
 const BRAND_BLUE = '#163960';
 const BRAND_YELLOW = '#FFC800';
 const TEXT_DARK = '#163960';
@@ -48,19 +53,19 @@ const SUCCESS = '#22c55e';
 const FONT = 'Montserrat-Bold';
 const FONT_REGULAR = 'Montserrat-Regular';
 
-// Peru phone: 9 dígitos comenzando con 9
 const PHONE_REGEX = /^9\d{8}$/;
-
-const PHOTO_BASE_URL = 'https://maquina-electoral-goberna-web.vercel.app';
+const SMS_REGEX = /^\d{6}$/;
+const RESEND_COOLDOWN_S = 30;
 
 type ScreenState =
   | { phase: 'validating' }
   | { phase: 'invalid'; reason: string }
-  | { phase: 'ready'; invitation: InvitationInfo }
-  | { phase: 'registering' }
+  | { phase: 'form'; invitation: InvitationInfo }
+  | { phase: 'sending'; invitation: InvitationInfo }
+  | { phase: 'sms'; invitation: InvitationInfo }
+  | { phase: 'registering'; invitation: InvitationInfo }
   | { phase: 'done' };
 
-// Friendly role labels for display
 const ROLE_LABELS: Record<string, string> = {
   agente_campo: 'agente de campo',
   agente_digital: 'agente digital',
@@ -71,29 +76,28 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 export default function InviteScreen() {
-  // useLocalSearchParams can return string | string[] — always normalize to string
   const params = useLocalSearchParams<{ code: string }>();
   const rawCode = params.code;
   const code = Array.isArray(rawCode) ? rawCode[0] : rawCode;
 
   const router = useRouter();
-  const { login } = useApp();
+  const { registerWithFirebase } = useApp();
 
-  // ─── Screen phase ────────────────────────────────────────────
   const [state, setState] = useState<ScreenState>({ phase: 'validating' });
-  // Keep invitation data in a ref so it's accessible across all phases after validation
   const invitationRef = useRef<InvitationInfo | null>(null);
+  const confirmationRef = useRef<FirebaseConfirmation | null>(null);
+  const smsInputRef = useRef<TextInput | null>(null);
 
-  // ─── Form fields ─────────────────────────────────────────────
+  // Form fields
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [smsCode, setSmsCode] = useState('');
+  const [resendIn, setResendIn] = useState(0);
 
   // Focus
   const [nameFocused, setNameFocused] = useState(false);
   const [phoneFocused, setPhoneFocused] = useState(false);
-  const [passwordFocused, setPasswordFocused] = useState(false);
+  const [smsFocused, setSmsFocused] = useState(false);
 
   // ─── Validate invitation on mount ────────────────────────────
   useEffect(() => {
@@ -103,8 +107,6 @@ export default function InviteScreen() {
     }
 
     let cancelled = false;
-
-    // Timeout de 15s: si el backend no responde, mostramos error con opción de reintentar
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15_000);
 
@@ -128,7 +130,7 @@ export default function InviteScreen() {
       }
 
       invitationRef.current = result.data.invitation;
-      setState({ phase: 'ready', invitation: result.data.invitation });
+      setState({ phase: 'form', invitation: result.data.invitation });
     })();
 
     return () => {
@@ -138,46 +140,96 @@ export default function InviteScreen() {
     };
   }, [code]);
 
+  // ─── Resend cooldown ─────────────────────────────────────────
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setInterval(() => setResendIn((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [resendIn]);
+
+  // ─── Auto-focus SMS input on phase=sms ───────────────────────
+  useEffect(() => {
+    if (state.phase === 'sms') {
+      const t = setTimeout(() => smsInputRef.current?.focus(), 200);
+      return () => clearTimeout(t);
+    }
+  }, [state.phase]);
+
   // ─── Form validation ─────────────────────────────────────────
-  const formValid = useMemo(() => {
-    return (
-      fullName.trim().length >= 3 &&
-      PHONE_REGEX.test(phone.trim()) &&
-      password.trim().length >= 8
-    );
-  }, [fullName, phone, password]);
+  const formValid = useMemo(
+    () => fullName.trim().length >= 3 && PHONE_REGEX.test(phone.trim()),
+    [fullName, phone],
+  );
 
-  // ─── Submit ──────────────────────────────────────────────────
+  // ─── Handlers ────────────────────────────────────────────────
+  const handleSendOtp = async () => {
+    if (state.phase !== 'form' || !formValid) return;
+    const invitation = state.invitation;
+
+    setState({ phase: 'sending', invitation });
+    const result = await sendOtp(toE164PhonePeru(phone.trim()));
+
+    if (!result.ok) {
+      setState({ phase: 'form', invitation });
+      Alert.alert('Error enviando SMS', result.error);
+      return;
+    }
+    confirmationRef.current = result.confirmation;
+    setSmsCode('');
+    setResendIn(RESEND_COOLDOWN_S);
+    setState({ phase: 'sms', invitation });
+  };
+
+  const handleResend = async () => {
+    if (resendIn > 0) return;
+    const result = await sendOtp(toE164PhonePeru(phone.trim()));
+    if (!result.ok) {
+      Alert.alert('Error', result.error);
+      return;
+    }
+    confirmationRef.current = result.confirmation;
+    setResendIn(RESEND_COOLDOWN_S);
+  };
+
   const handleRegister = async () => {
-    if (!formValid || state.phase !== 'ready') return;
+    if (state.phase !== 'sms') return;
+    if (!SMS_REGEX.test(smsCode.trim())) {
+      Alert.alert('Código inválido', 'Ingresá los 6 dígitos del SMS.');
+      return;
+    }
+    if (!confirmationRef.current) {
+      Alert.alert('Sesión expirada', 'Pedí un código nuevo.');
+      setState({ phase: 'form', invitation: state.invitation });
+      return;
+    }
 
-    const { invitation } = state;
-    setState({ phase: 'registering' });
+    const invitation = state.invitation;
+    setState({ phase: 'registering', invitation });
+
+    const otpResult = await confirmOtp(confirmationRef.current, smsCode.trim());
+    if (!otpResult.ok) {
+      setState({ phase: 'sms', invitation });
+      Alert.alert('Error', otpResult.error);
+      return;
+    }
 
     const phoneTrimmed = phone.trim();
-    // Backend accepts phone OR synthesized email — use phone directly (simpler, no coupling)
-    const email = `${phoneTrimmed}@goberna.pe`;
-
-    const registerResult = await registerWithInvitation({
+    const result = await registerWithFirebase({
+      id_token: otpResult.idToken,
       full_name: fullName.trim(),
-      email,
-      password: password.trim(),
-      phone: phoneTrimmed,
       region: 'Nacional',
-      campaign_id: invitation.campaign_id,
+      email: `${phoneTrimmed}@goberna.pe`,
       invitation_code: code ?? '',
+      campaign_id: invitation.campaign_id,
     });
 
-    if (!registerResult.ok) {
-      // Back to ready so user can fix and retry
-      setState({ phase: 'ready', invitation });
-
-      const friendlyMessage =
-        registerResult.code === 'AUTH_PHONE_EXISTS'
+    if (!result.ok) {
+      setState({ phase: 'sms', invitation });
+      const friendly =
+        result.code === 'AUTH_PHONE_EXISTS'
           ? 'Ese número ya tiene una cuenta. Iniciá sesión en su lugar.'
-          : registerResult.error ?? 'No se pudo crear la cuenta. Intentá de nuevo.';
-
-      Alert.alert('Error', friendlyMessage, [
+          : result.error ?? 'No se pudo crear la cuenta. Intentá de nuevo.';
+      Alert.alert('Error', friendly, [
         {
           text: 'Iniciar sesión',
           onPress: () => router.replace('/(auth)/login'),
@@ -188,27 +240,13 @@ export default function InviteScreen() {
       return;
     }
 
-    // Auto-login: use phone as identifier (backend supports it directly)
-    const loginResult = await login({ identifier: phoneTrimmed, password: password.trim() });
-
-    if (!loginResult.ok) {
-      setState({ phase: 'ready', invitation });
-      Alert.alert(
-        'Cuenta creada',
-        'Tu cuenta fue creada. Por favor iniciá sesión.',
-        [{ text: 'Ir al login', onPress: () => router.replace('/(auth)/login') }],
-      );
-      return;
-    }
-
     setState({ phase: 'done' });
-    // RouterGuard in _layout.tsx handles navigation to (main)/dashboard or (auth)/pending
+    // RouterGuard handles navigation
   };
 
-  // ─── Helpers ─────────────────────────────────────────────────
-  const getPhotoUrl = (fotoUrl: string | null | undefined): string | null => {
-    if (!fotoUrl) return null;
-    return fotoUrl.startsWith('http') ? fotoUrl : `${PHOTO_BASE_URL}${fotoUrl}`;
+  const formatPhoneMask = (p: string) => {
+    if (p.length !== 9) return p;
+    return `+51 ${p.slice(0, 3)} ${p.slice(3, 6)} ${p.slice(6)}`;
   };
 
   // ─── Render: validating ──────────────────────────────────────
@@ -226,20 +264,27 @@ export default function InviteScreen() {
     );
   }
 
-  // ─── Render: invalid / expired ───────────────────────────────
+  // ─── Render: invalid ─────────────────────────────────────────
   if (state.phase === 'invalid') {
-    const isNetworkError = state.reason.includes('conexión') || state.reason.includes('red');
+    const isNetworkError =
+      state.reason.includes('conexión') || state.reason.includes('red');
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.centered}>
           <View style={[styles.logoCircle, { backgroundColor: '#fee2e2' }]}>
-            <Ionicons name={isNetworkError ? 'wifi-outline' : 'close-circle'} size={40} color="#dc2626" />
+            <Ionicons
+              name={isNetworkError ? 'wifi-outline' : 'close-circle'}
+              size={40}
+              color="#dc2626"
+            />
           </View>
-          <Text style={styles.errorTitle}>{isNetworkError ? 'Sin conexión' : 'Link inválido'}</Text>
+          <Text style={styles.errorTitle}>
+            {isNetworkError ? 'Sin conexión' : 'Link inválido'}
+          </Text>
           <Text style={styles.errorBody}>{state.reason}</Text>
           {isNetworkError && (
             <Pressable
-              style={[styles.button, { backgroundColor: '#163960' }]}
+              style={[styles.button, { backgroundColor: BRAND_BLUE }]}
               onPress={() => setState({ phase: 'validating' })}
             >
               <Ionicons name="refresh-outline" size={20} color="#FFFFFF" />
@@ -247,18 +292,31 @@ export default function InviteScreen() {
             </Pressable>
           )}
           <Pressable
-            style={[styles.button, isNetworkError && { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#163960' }]}
+            style={[
+              styles.button,
+              isNetworkError && {
+                backgroundColor: 'transparent',
+                borderWidth: 1,
+                borderColor: BRAND_BLUE,
+              },
+            ]}
             onPress={() => router.replace('/(auth)/login')}
           >
-            <Ionicons name="log-in-outline" size={20} color={isNetworkError ? '#163960' : '#FFFFFF'} />
-            <Text style={[styles.buttonText, isNetworkError && { color: '#163960' }]}>Ir al login</Text>
+            <Ionicons
+              name="log-in-outline"
+              size={20}
+              color={isNetworkError ? BRAND_BLUE : '#FFFFFF'}
+            />
+            <Text style={[styles.buttonText, isNetworkError && { color: BRAND_BLUE }]}>
+              Ir al login
+            </Text>
           </Pressable>
         </View>
       </SafeAreaView>
     );
   }
 
-  // ─── Render: done (briefly shown before RouterGuard redirects) ──
+  // ─── Render: done ────────────────────────────────────────────
   if (state.phase === 'done') {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -270,13 +328,20 @@ export default function InviteScreen() {
     );
   }
 
-  // ─── Render: ready / registering ─────────────────────────────
-  // Use ref so invitation data is accessible in both 'ready' and 'registering' phases
-  const invitation = invitationRef.current ?? (state.phase === 'ready' ? state.invitation : null);
-  const isRegistering = state.phase === 'registering';
-
-  // Guard: invitation must be available to render this section
+  // ─── Render: form / sending / sms / registering ──────────────
+  const invitation =
+    state.phase === 'form' ||
+    state.phase === 'sending' ||
+    state.phase === 'sms' ||
+    state.phase === 'registering'
+      ? state.invitation
+      : invitationRef.current;
   if (!invitation) return null;
+
+  const isSending = state.phase === 'sending';
+  const isRegistering = state.phase === 'registering';
+  const showSmsStep = state.phase === 'sms' || state.phase === 'registering';
+  const editable = !isSending && !isRegistering;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -289,7 +354,7 @@ export default function InviteScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* ── Campaign hero ── */}
+          {/* Hero */}
           <View style={styles.hero}>
             <View style={styles.logoCircle}>
               <Text style={styles.logoText}>G</Text>
@@ -300,149 +365,236 @@ export default function InviteScreen() {
             </View>
             <Text style={styles.heroTitle}>{invitation.campaign_name}</Text>
             <Text style={styles.heroSubtitle}>
-              Te invitan a unirte como {ROLE_LABELS[invitation.role] ?? invitation.role}
+              Te invitan a unirte como{' '}
+              {ROLE_LABELS[invitation.role] ?? invitation.role}
             </Text>
           </View>
 
-          {/* ── Divider ── */}
           <View style={styles.divider} />
 
-          {/* ── Form ── */}
+          {/* ── Form / SMS ── */}
           <View style={styles.form}>
-            <Text style={styles.formTitle}>Crear tu cuenta</Text>
-            <Text style={styles.formSubtitle}>
-              Solo necesitás tu nombre, teléfono y una contraseña
-            </Text>
+            {!showSmsStep ? (
+              <>
+                <Text style={styles.formTitle}>Crear tu cuenta</Text>
+                <Text style={styles.formSubtitle}>
+                  Te mandamos un código por SMS para verificar tu número
+                </Text>
 
-            {/* Nombre */}
-            <View style={styles.field}>
-              <Text style={styles.label}>Nombre completo</Text>
-              <View style={[styles.inputWrapper, nameFocused && styles.inputWrapperFocused]}>
-                <Ionicons
-                  name="person-outline"
-                  size={20}
-                  color={nameFocused ? BORDER_FOCUS : TEXT_MUTED}
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Juan Pérez García"
-                  placeholderTextColor={TEXT_MUTED}
-                  value={fullName}
-                  onChangeText={setFullName}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  editable={!isRegistering}
-                  onFocus={() => setNameFocused(true)}
-                  onBlur={() => setNameFocused(false)}
-                />
-                {fullName.trim().length >= 3 && (
-                  <Ionicons name="checkmark-circle" size={20} color={SUCCESS} />
-                )}
-              </View>
-            </View>
+                {/* Nombre */}
+                <View style={styles.field}>
+                  <Text style={styles.label}>Nombre completo</Text>
+                  <View
+                    style={[
+                      styles.inputWrapper,
+                      nameFocused && styles.inputWrapperFocused,
+                    ]}
+                  >
+                    <Ionicons
+                      name="person-outline"
+                      size={20}
+                      color={nameFocused ? BORDER_FOCUS : TEXT_MUTED}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Juan Pérez García"
+                      placeholderTextColor={TEXT_MUTED}
+                      value={fullName}
+                      onChangeText={setFullName}
+                      autoCapitalize="words"
+                      autoCorrect={false}
+                      editable={editable}
+                      onFocus={() => setNameFocused(true)}
+                      onBlur={() => setNameFocused(false)}
+                    />
+                    {fullName.trim().length >= 3 && (
+                      <Ionicons name="checkmark-circle" size={20} color={SUCCESS} />
+                    )}
+                  </View>
+                </View>
 
-            {/* Teléfono */}
-            <View style={styles.field}>
-              <Text style={styles.label}>Número de teléfono</Text>
-              <View style={[styles.inputWrapper, phoneFocused && styles.inputWrapperFocused]}>
-                <Ionicons
-                  name="call-outline"
-                  size={20}
-                  color={phoneFocused ? BORDER_FOCUS : TEXT_MUTED}
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="987654321"
-                  placeholderTextColor={TEXT_MUTED}
-                  value={phone}
-                  onChangeText={setPhone}
-                  keyboardType="phone-pad"
-                  maxLength={9}
-                  editable={!isRegistering}
-                  onFocus={() => setPhoneFocused(true)}
-                  onBlur={() => setPhoneFocused(false)}
-                />
-                {PHONE_REGEX.test(phone.trim()) && (
-                  <Ionicons name="checkmark-circle" size={20} color={SUCCESS} />
-                )}
-              </View>
-              {phone.length > 0 && phone.length < 9 && (
-                <Text style={styles.hint}>{9 - phone.length} dígitos restantes</Text>
-              )}
-            </View>
+                {/* Teléfono */}
+                <View style={styles.field}>
+                  <Text style={styles.label}>Número de teléfono</Text>
+                  <View
+                    style={[
+                      styles.inputWrapper,
+                      phoneFocused && styles.inputWrapperFocused,
+                    ]}
+                  >
+                    <Text style={styles.prefix}>+51</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="987654321"
+                      placeholderTextColor={TEXT_MUTED}
+                      value={phone}
+                      onChangeText={(t) =>
+                        setPhone(t.replace(/\D/g, '').slice(0, 9))
+                      }
+                      keyboardType="phone-pad"
+                      autoComplete="tel"
+                      maxLength={9}
+                      editable={editable}
+                      onFocus={() => setPhoneFocused(true)}
+                      onBlur={() => setPhoneFocused(false)}
+                    />
+                    {PHONE_REGEX.test(phone.trim()) && (
+                      <Ionicons name="checkmark-circle" size={20} color={SUCCESS} />
+                    )}
+                  </View>
+                  {phone.length > 0 && phone.length < 9 && (
+                    <Text style={styles.hint}>
+                      {9 - phone.length} dígitos restantes
+                    </Text>
+                  )}
+                </View>
 
-            {/* Contraseña */}
-            <View style={styles.field}>
-              <Text style={styles.label}>Contraseña</Text>
-              <View style={[styles.inputWrapper, passwordFocused && styles.inputWrapperFocused]}>
-                <Ionicons
-                  name="lock-closed-outline"
-                  size={20}
-                  color={passwordFocused ? BORDER_FOCUS : TEXT_MUTED}
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={[styles.input, styles.inputPassword]}
-                  placeholder="Mínimo 8 caracteres"
-                  placeholderTextColor={TEXT_MUTED}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!showPassword}
-                  editable={!isRegistering}
-                  onFocus={() => setPasswordFocused(true)}
-                  onBlur={() => setPasswordFocused(false)}
-                />
                 <Pressable
-                  onPress={() => setShowPassword((v) => !v)}
-                  hitSlop={12}
-                  disabled={isRegistering}
+                  style={({ pressed }) => [
+                    styles.button,
+                    styles.buttonPrimary,
+                    (!formValid || isSending) && styles.buttonDisabled,
+                    pressed && formValid && !isSending && styles.buttonPressed,
+                  ]}
+                  onPress={handleSendOtp}
+                  disabled={!formValid || isSending}
                 >
-                  <Ionicons
-                    name={showPassword ? 'eye-outline' : 'eye-off-outline'}
-                    size={22}
-                    color={TEXT_MUTED}
-                  />
+                  {isSending ? (
+                    <ActivityIndicator color={BRAND_BLUE} />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="chatbox-ellipses-outline"
+                        size={20}
+                        color={BRAND_BLUE}
+                      />
+                      <Text style={styles.buttonTextPrimary}>
+                        Enviar código por SMS
+                      </Text>
+                    </>
+                  )}
                 </Pressable>
-              </View>
-              {password.length > 0 && password.length < 8 && (
-                <Text style={styles.hint}>{8 - password.length} caracteres más</Text>
-              )}
-            </View>
 
-            {/* Submit */}
-            <Pressable
-              style={({ pressed }) => [
-                styles.button,
-                styles.buttonPrimary,
-                (!formValid || isRegistering) && styles.buttonDisabled,
-                pressed && formValid && !isRegistering && styles.buttonPressed,
-              ]}
-              onPress={handleRegister}
-              disabled={!formValid || isRegistering}
-            >
-              {isRegistering ? (
-                <ActivityIndicator color={BRAND_BLUE} />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle-outline" size={20} color={BRAND_BLUE} />
-                  <Text style={styles.buttonTextPrimary}>Unirme a la campaña</Text>
-                </>
-              )}
-            </Pressable>
+                <View style={styles.footer}>
+                  <Text style={styles.footerText}>¿Ya tenés cuenta?</Text>
+                  <Pressable
+                    onPress={() => router.replace('/(auth)/login')}
+                    hitSlop={8}
+                    disabled={!editable}
+                  >
+                    <Text style={styles.footerLink}>Iniciar sesión</Text>
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.smsHeader}>
+                  <Ionicons
+                    name="chatbubble-ellipses"
+                    size={32}
+                    color={BRAND_BLUE}
+                  />
+                  <Text style={styles.formTitle}>Revisá tu SMS</Text>
+                  <Text style={styles.smsSubtitle}>
+                    Mandamos un código de 6 dígitos a{'\n'}
+                    <Text style={styles.smsPhoneStrong}>
+                      {formatPhoneMask(phone)}
+                    </Text>
+                  </Text>
+                </View>
 
-            {/* Already have account */}
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>¿Ya tenés cuenta?</Text>
-              <Pressable
-                onPress={() => router.replace('/(auth)/login')}
-                hitSlop={8}
-                disabled={isRegistering}
-              >
-                <Text style={styles.footerLink}>Iniciar sesión</Text>
-              </Pressable>
-            </View>
+                <View style={styles.field}>
+                  <Text style={styles.label}>Código de verificación</Text>
+                  <View
+                    style={[
+                      styles.inputWrapper,
+                      smsFocused && styles.inputWrapperFocused,
+                      styles.smsInputWrapper,
+                    ]}
+                  >
+                    <TextInput
+                      ref={smsInputRef}
+                      style={styles.smsInput}
+                      placeholder="000000"
+                      placeholderTextColor={TEXT_MUTED}
+                      value={smsCode}
+                      onChangeText={(t) =>
+                        setSmsCode(t.replace(/\D/g, '').slice(0, 6))
+                      }
+                      keyboardType="number-pad"
+                      autoComplete="sms-otp"
+                      textContentType="oneTimeCode"
+                      maxLength={6}
+                      editable={editable}
+                      onFocus={() => setSmsFocused(true)}
+                      onBlur={() => setSmsFocused(false)}
+                    />
+                  </View>
+                </View>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.button,
+                    styles.buttonPrimary,
+                    (!SMS_REGEX.test(smsCode) || isRegistering) &&
+                      styles.buttonDisabled,
+                    pressed &&
+                      SMS_REGEX.test(smsCode) &&
+                      !isRegistering &&
+                      styles.buttonPressed,
+                  ]}
+                  onPress={handleRegister}
+                  disabled={!SMS_REGEX.test(smsCode) || isRegistering}
+                >
+                  {isRegistering ? (
+                    <ActivityIndicator color={BRAND_BLUE} />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={20}
+                        color={BRAND_BLUE}
+                      />
+                      <Text style={styles.buttonTextPrimary}>
+                        Crear cuenta y unirme
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+
+                <View style={styles.smsFooter}>
+                  <Pressable
+                    onPress={() => {
+                      confirmationRef.current = null;
+                      setSmsCode('');
+                      setResendIn(0);
+                      setState({ phase: 'form', invitation });
+                    }}
+                    disabled={isRegistering}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.smsFooterLink}>← Cambiar datos</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={handleResend}
+                    disabled={resendIn > 0 || isRegistering}
+                    hitSlop={8}
+                  >
+                    <Text
+                      style={[
+                        styles.smsFooterLink,
+                        resendIn > 0 && styles.smsFooterLinkDisabled,
+                      ]}
+                    >
+                      {resendIn > 0
+                        ? `Reenviar en ${resendIn}s`
+                        : 'Reenviar código'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -530,7 +682,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
 
-  // Form
   scroll: {
     paddingBottom: 48,
   },
@@ -576,6 +727,12 @@ const styles = StyleSheet.create({
   inputIcon: {
     marginRight: 10,
   },
+  prefix: {
+    fontSize: 16,
+    color: TEXT_DARK,
+    fontFamily: FONT,
+    marginRight: 8,
+  },
   input: {
     flex: 1,
     paddingVertical: 14,
@@ -583,14 +740,56 @@ const styles = StyleSheet.create({
     color: TEXT_DARK,
     fontFamily: FONT_REGULAR,
   },
-  inputPassword: {
-    paddingRight: 8,
-  },
   hint: {
     fontSize: 12,
     color: TEXT_MUTED,
     fontFamily: FONT_REGULAR,
     marginLeft: 4,
+  },
+
+  // SMS phase
+  smsHeader: {
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  smsSubtitle: {
+    fontSize: 14,
+    fontFamily: FONT_REGULAR,
+    color: TEXT_MUTED,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  smsPhoneStrong: {
+    fontFamily: FONT,
+    color: TEXT_DARK,
+  },
+  smsInputWrapper: {
+    paddingHorizontal: 16,
+  },
+  smsInput: {
+    flex: 1,
+    paddingVertical: 18,
+    fontSize: 28,
+    color: TEXT_DARK,
+    fontFamily: FONT,
+    letterSpacing: 8,
+    textAlign: 'center',
+  },
+  smsFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  smsFooterLink: {
+    fontSize: 13,
+    color: BRAND_BLUE,
+    fontFamily: FONT,
+  },
+  smsFooterLinkDisabled: {
+    color: TEXT_MUTED,
   },
 
   // Buttons
@@ -657,7 +856,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 
-  // Error/loading states
+  // Status
   loadingText: {
     fontSize: 16,
     fontFamily: FONT_REGULAR,

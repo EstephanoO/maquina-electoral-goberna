@@ -2,7 +2,7 @@
   "expo": {
     "name": "goberna-territory0.2",
     "slug": "goberna-territory-02",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -14,7 +14,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.estephano.gobernaterritory02",
       "buildNumber": "2",
-      "associatedDomains": ["applinks:dashboard.grupogoberna.com"],
+      "associatedDomains": ["applinks:electoral.goberna.club"],
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "Goberna needs your location to record GPS coordinates when completing a field form. Your location data is not shared with third parties.",
@@ -27,6 +28,7 @@
     "android": {
       "package": "com.estephano.gobernaterritory02",
       "versionCode": 2,
+      "googleServicesFile": "./google-services.json",
       "softwareKeyboardLayoutMode": "resize",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -45,7 +47,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "dashboard.grupogoberna.com",
+              "host": "electoral.goberna.club",
               "pathPrefix": "/invite"
             }
           ],
@@ -63,6 +65,8 @@
       "expo-router",
       "expo-sqlite",
       "expo-secure-store",
+      "@react-native-firebase/app",
+      "./plugins/with-modular-headers",
       [
         "expo-location",
         {
@@ -72,6 +76,9 @@
       [
         "expo-build-properties",
         {
+          "ios": {
+            "useFrameworks": "static"
+          },
           "android": {
             "usesCleartextTraffic": false,
             "extraGradleProperties": {
@@ -100,7 +107,7 @@
     },
 
     "extra": {
-      "EXPO_PUBLIC_BACKEND_API_URL": "https://api.goberna.us/api",
+      "EXPO_PUBLIC_BACKEND_API_URL": "https://electoral.goberna.club/api",
       "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "JPVK6a0xrV-FYVFWRgn_1ruofUhPcxkY5proTSBEmULYrActHJaU_8a99p2pf8Bq",
 
       "eas": {

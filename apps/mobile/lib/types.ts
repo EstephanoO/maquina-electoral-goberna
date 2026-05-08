@@ -355,6 +355,34 @@ export type RegisterWithAccessCodeRequest = RegisterRequest & {
   access_code: string;
 };
 
+// ─── Firebase Phone Auth (OTP-only flow) ────────────────────
+
+/** Body for POST /api/auth/firebase-verify */
+export type FirebaseVerifyRequest = {
+  id_token: string;
+};
+
+/** Body for POST /api/auth/register-firebase. Exactly one of
+ *  invitation_code | access_code | campaign_id must be present. */
+export type RegisterFirebaseRequest = {
+  id_token: string;
+  full_name: string;
+  region: string;
+  email?: string;
+  invitation_code?: string;
+  access_code?: string;
+  campaign_id?: string;
+};
+
+/** Response shape shared by /firebase-verify and /register-firebase.
+ *  No password_reset_required: OTP flow has no password concept. */
+export type FirebaseAuthResponse = {
+  access_token: string;
+  refresh_token: string;
+  user: AuthUser;
+  campaigns: CampaignMembership[];
+};
+
 // ─── API Error codes ────────────────────────────────────────
 
 // ─── Geo Hierarchy ──────────────────────────────────────────

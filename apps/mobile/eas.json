@@ -26,7 +26,9 @@
       "env": {
         "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "254c108f56727599de6fd11e3d3e46d899a8b605bf6cfedd"
       },
-      "ios": {},
+      "ios": {
+        "image": "latest"
+      },
       "android": {
         "buildType": "app-bundle"
       }
@@ -36,7 +38,9 @@
       "env": {
         "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "254c108f56727599de6fd11e3d3e46d899a8b605bf6cfedd"
       },
-      "ios": {},
+      "ios": {
+        "image": "latest"
+      },
       "android": {
         "buildType": "app-bundle"
       }

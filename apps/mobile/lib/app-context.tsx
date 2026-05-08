@@ -29,6 +29,8 @@ import type {
   FormDefinition,
   LoginRequest,
   RegisterRequest,
+  RegisterFirebaseRequest,
+  FirebaseAuthResponse,
   ApiResult,
 } from './types';
 
@@ -48,7 +50,13 @@ type AuthState =
 
 type AppContextValue = {
   auth: AuthState;
+  /** OTP-only mobile login: phone → SMS → idToken → backend JWT */
+  loginWithIdToken: (idToken: string) => Promise<ApiResult<void>>;
+  /** OTP-only mobile register: phone+name+region+code → SMS → idToken → backend JWT */
+  registerWithFirebase: (body: RegisterFirebaseRequest) => Promise<ApiResult<void>>;
+  /** @deprecated Email+password is web-only; mobile uses loginWithIdToken. Kept for transition. */
   login: (body: LoginRequest) => Promise<ApiResult<void>>;
+  /** @deprecated Mobile uses registerWithFirebase. Kept for transition. */
   register: (body: RegisterRequest) => Promise<ApiResult<void>>;
   logout: () => Promise<void>;
   refreshConfig: () => Promise<void>;
@@ -228,49 +236,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
-  // ── Login ─────────────────────────────────────────────────
+  // ── Shared: persist auth + transition state from any auth response ──
+  const completeAuth = useCallback(
+    async (data: FirebaseAuthResponse): Promise<ApiResult<void>> => {
+      const { user, campaigns } = data;
+      await authStore.saveAuthData(data);
+
+      if (user.status === 'pending') {
+        setAuth({ status: 'pending', user, campaigns });
+        return { ok: true, data: undefined };
+      }
+      if (user.status === 'suspended') {
+        setAuth({ status: 'suspended', user });
+        return { ok: true, data: undefined };
+      }
+
+      const config = await buildAppConfig(user, campaigns);
+      if (config) {
+        setAuth({ status: 'active', user, campaigns, config });
+      } else {
+        setAuth({ status: 'pending', user, campaigns });
+      }
+      return { ok: true, data: undefined };
+    },
+    [],
+  );
+
+  // ── OTP login: idToken from Firebase Phone Auth → backend JWT ──
+  const loginWithIdToken = useCallback(
+    async (idToken: string): Promise<ApiResult<void>> => {
+      const result = await api.firebaseVerify(idToken);
+      if (!result.ok) return result;
+      return completeAuth(result.data);
+    },
+    [completeAuth],
+  );
+
+  // ── OTP register: idToken + profile → backend JWT (creates user) ──
+  const registerWithFirebase = useCallback(
+    async (body: RegisterFirebaseRequest): Promise<ApiResult<void>> => {
+      const result = await api.registerFirebase(body);
+      if (!result.ok) return result;
+      return completeAuth(result.data);
+    },
+    [completeAuth],
+  );
+
+  // ── Legacy login (email+password) — kept until callers migrate ──
   const login = useCallback(async (body: LoginRequest): Promise<ApiResult<void>> => {
     const result = await api.login(body);
     if (!result.ok) return result;
+    // Note: password_reset_required handling removed — mobile is OTP-only.
+    return completeAuth(result.data);
+  }, [completeAuth]);
 
-    const { user, campaigns, password_reset_required } = result.data;
-
-    // Check if password reset is required BEFORE saving auth data
-    // User must set new password first, so we don't save tokens yet
-    if (password_reset_required) {
-      return { 
-        ok: false, 
-        error: 'Debes crear una nueva contraseña.',
-        code: 'AUTH_PASSWORD_RESET_REQUIRED',
-        passwordResetRequired: true,
-      };
-    }
-
-    await authStore.saveAuthData(result.data);
-
-    if (user.status === 'pending') {
-      setAuth({ status: 'pending', user, campaigns });
-      return { ok: true, data: undefined };
-    }
-
-    if (user.status === 'suspended') {
-      setAuth({ status: 'suspended', user });
-      return { ok: true, data: undefined };
-    }
-
-    // Active — build config
-    const config = await buildAppConfig(user, campaigns);
-    if (config) {
-      setAuth({ status: 'active', user, campaigns, config });
-    } else {
-      // Active but no campaigns yet
-      setAuth({ status: 'pending', user, campaigns });
-    }
-
-    return { ok: true, data: undefined };
-  }, []);
-
-  // ── Register ──────────────────────────────────────────────
+  // ── Legacy register (email+password) — kept until callers migrate ──
   const register = useCallback(async (body: RegisterRequest): Promise<ApiResult<void>> => {
     const result = await api.register(body);
     if (!result.ok) return result;
@@ -387,8 +407,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Memoize context value ─────────────────────────────────
   const value = useMemo<AppContextValue>(
-    () => ({ auth, login, register, logout, refreshConfig, checkApproval, switchCampaign, availableCampaigns }),
-    [auth, login, register, logout, refreshConfig, checkApproval, switchCampaign, availableCampaigns],
+    () => ({
+      auth,
+      loginWithIdToken,
+      registerWithFirebase,
+      login,
+      register,
+      logout,
+      refreshConfig,
+      checkApproval,
+      switchCampaign,
+      availableCampaigns,
+    }),
+    [
+      auth,
+      loginWithIdToken,
+      registerWithFirebase,
+      login,
+      register,
+      logout,
+      refreshConfig,
+      checkApproval,
+      switchCampaign,
+      availableCampaigns,
+    ],
   );
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

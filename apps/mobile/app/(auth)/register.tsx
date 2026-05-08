@@ -1,12 +1,13 @@
 /**
- * Register Screen — Registro Multi-Step
+ * Register Screen — OTP-only registration via Firebase Phone Auth.
  *
- * Flujo en 2 pasos:
- * - Paso 1: Teléfono + Contraseña + Nombre
- * - Paso 2: Región + Código de acceso de 4 chars (dado por el coordinador)
+ * Flow (3 steps):
+ *   1. Identidad: teléfono (9 dígitos) + nombre completo
+ *   2. Campaña: región + código de acceso (4 chars, validado contra backend)
+ *   3. Verificación SMS: 6-digit code → registerWithFirebase → JWT cookie
  *
- * El código de acceso (4 chars) es la única vía de registro.
- * Links de invitación se manejan en pantalla separada /invite/[code].
+ * SMS only fires at the 2→3 transition (when the user is fully committed) to
+ * avoid burning Firebase quota on incomplete forms (Spark plan = 10/día).
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -27,8 +28,14 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useApp } from '@/lib/app-context';
-import { validateAccessCode, registerWithAccessCode } from '@/lib/api';
-import type { ApiResult, ValidateAccessCodeResponse } from '@/lib/types';
+import { validateAccessCode } from '@/lib/api';
+import {
+  sendOtp,
+  confirmOtp,
+  toE164PhonePeru,
+  type FirebaseConfirmation,
+} from '@/lib/firebase';
+import type { ValidateAccessCodeResponse } from '@/lib/types';
 import RegionPicker from '@/components/RegionPicker';
 
 // ─── Design Tokens ─────────────────────────────────────────────
@@ -45,57 +52,72 @@ const AMBER = '#f59e0b';
 const FONT = 'Montserrat-Bold';
 const FONT_REGULAR = 'Montserrat-Regular';
 
-// Phone validation - Peru format (9 digits starting with 9)
 const PHONE_REGEX = /^9\d{8}$/;
-
-// Access code: exactly 4 alphanumeric chars
 const CODE_REGEX = /^[A-Z0-9]{4}$/;
+const SMS_REGEX = /^\d{6}$/;
+const RESEND_COOLDOWN_S = 30;
+const TOTAL_STEPS = 3;
 
 export default function RegisterScreen() {
   const router = useRouter();
-  const { login } = useApp();
+  const { registerWithFirebase } = useApp();
 
-  // ─── Step State ─────────────────────────────────────────────
-  const [step, setStep] = useState(1);
-  const totalSteps = 2;
+  // ─── Step machine ───────────────────────────────────────────
+  const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  // ─── Form State (Step 1) ─────────────────────────────────────
+  // ─── Step 1 fields ──────────────────────────────────────────
   const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [fullName, setFullName] = useState('');
 
-  // ─── Form State (Step 2) ─────────────────────────────────────
+  // ─── Step 2 fields ──────────────────────────────────────────
   const [region, setRegion] = useState<string | null>(null);
   const [accessCodeInput, setAccessCodeInput] = useState('');
-  const [accessCodeCampaign, setAccessCodeCampaign] = useState<ValidateAccessCodeResponse['campaign'] | null>(null);
+  const [accessCodeCampaign, setAccessCodeCampaign] = useState<
+    ValidateAccessCodeResponse['campaign'] | null
+  >(null);
   const [validatingCode, setValidatingCode] = useState(false);
-  const [validatingAttempt, setValidatingAttempt] = useState(0); // 0=primer intento, 1+=reintento
+  const [validatingAttempt, setValidatingAttempt] = useState(0);
   const [codeError, setCodeError] = useState<string | null>(null);
-  // retryCount: incrementar este valor fuerza el useEffect a re-ejecutar la validación
-  // sin el hack de agregar/quitar un espacio al input
   const [retryCount, setRetryCount] = useState(0);
-  const codeInputRefs = useRef<(TextInput | null)[]>([]);
+  const codeInputRef = useRef<TextInput | null>(null);
 
-  // ─── UI State ───────────────────────────────────────────────
+  // ─── Step 3 fields ──────────────────────────────────────────
+  const [smsCode, setSmsCode] = useState('');
+  const [resendIn, setResendIn] = useState(0);
+  const confirmationRef = useRef<FirebaseConfirmation | null>(null);
+  const smsInputRef = useRef<TextInput | null>(null);
+
+  // ─── UI state ───────────────────────────────────────────────
   const [loading, setLoading] = useState(false);
 
-  // Focus states
+  // Focus tracking
   const [phoneFocused, setPhoneFocused] = useState(false);
-  const [passwordFocused, setPasswordFocused] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
+  const [smsFocused, setSmsFocused] = useState(false);
 
-  // ─── Validate access code cuando se completan 4 chars ────────
-  // Estrategia para conectividad intermitente:
-  //   1. Debounce 300ms — no dispara mientras el usuario tipea
-  //   2. Retry 3 intentos con backoff exponencial (0s → 1s → 3s)
-  //   3. Distingue "código inválido" (404) de "sin red" (error de red)
+  // ─── Resend cooldown ────────────────────────────────────────
   useEffect(() => {
-    // retryCount se lee aquí para que React lo incluya como dependencia válida.
-    // Al incrementarse desde el botón "reintentar", fuerza re-ejecución del efecto.
+    if (resendIn <= 0) return;
+    const t = setInterval(() => setResendIn((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [resendIn]);
+
+  // ─── Auto-focus SMS input when entering step 3 ──────────────
+  useEffect(() => {
+    if (step === 3) {
+      const t = setTimeout(() => smsInputRef.current?.focus(), 200);
+      return () => clearTimeout(t);
+    }
+  }, [step]);
+
+  // ─── Validate access code on entry (step 2) ─────────────────
+  useEffect(() => {
     void retryCount;
 
-    const code = accessCodeInput.replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 4);
+    const code = accessCodeInput
+      .replace(/[^A-Z0-9]/gi, '')
+      .toUpperCase()
+      .slice(0, 4);
     if (code.length < 4) {
       setAccessCodeCampaign(null);
       setCodeError(null);
@@ -104,8 +126,6 @@ export default function RegisterScreen() {
     if (!CODE_REGEX.test(code)) return;
 
     let cancelled = false;
-
-    // Delays entre reintentos: inmediato, 1s, 3s
     const RETRY_DELAYS = [0, 1000, 3000];
 
     async function tryValidate() {
@@ -116,17 +136,14 @@ export default function RegisterScreen() {
 
       for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
         if (cancelled) return;
-
         setValidatingAttempt(attempt);
 
-        // Espera antes del reintento (0 en el primero)
         if (RETRY_DELAYS[attempt] > 0) {
           await new Promise<void>((resolve) => {
             const t = setTimeout(resolve, RETRY_DELAYS[attempt]);
             if (cancelled) clearTimeout(t);
           });
         }
-
         if (cancelled) return;
 
         const result = await validateAccessCode(code);
@@ -138,33 +155,28 @@ export default function RegisterScreen() {
           return;
         }
 
-        // Código 404 / inválido explícito → no tiene sentido reintentar
-        const isNetworkError = !result.ok && (
-          result.error?.toLowerCase().includes('red') ||
-          result.error?.toLowerCase().includes('network') ||
-          result.error?.toLowerCase().includes('timeout') ||
-          result.error?.toLowerCase().includes('espera') ||
-          result.status == null  // sin status = error de red/timeout
-        );
+        const isNetworkError =
+          !result.ok &&
+          (result.error?.toLowerCase().includes('red') ||
+            result.error?.toLowerCase().includes('network') ||
+            result.error?.toLowerCase().includes('timeout') ||
+            result.error?.toLowerCase().includes('espera') ||
+            result.status == null);
 
         if (!isNetworkError) {
-          // El servidor respondió que el código no existe — no reintentamos
           setValidatingCode(false);
           setCodeError('Código inválido. Verificá con tu coordinador.');
           return;
         }
 
-        // Error de red: si hay más intentos, seguimos. Si no, informamos.
         const isLastAttempt = attempt === RETRY_DELAYS.length - 1;
         if (isLastAttempt) {
           setValidatingCode(false);
           setCodeError('Sin conexión. Verificá tu red e intentá de nuevo.');
         }
-        // Si no es el último intento, el loop continúa con el siguiente delay
       }
     }
 
-    // Debounce: espera 300ms desde el último cambio antes de disparar
     const debounceTimer = setTimeout(() => {
       tryValidate();
     }, 300);
@@ -173,115 +185,151 @@ export default function RegisterScreen() {
       cancelled = true;
       clearTimeout(debounceTimer);
     };
-  // retryCount incluido como dependencia: al incrementarlo se fuerza re-run
-  // sin tocar accessCodeInput (evita el hack del espacio)
   }, [accessCodeInput, retryCount]);
 
-  // ─── Validation ─────────────────────────────────────────────
-  const step1Valid = useMemo(() => (
-    PHONE_REGEX.test(phone.trim()) &&
-    password.trim().length >= 8 &&
-    fullName.trim().length >= 3
-  ), [phone, password, fullName]);
+  // ─── Step validation ────────────────────────────────────────
+  const step1Valid = useMemo(
+    () => PHONE_REGEX.test(phone.trim()) && fullName.trim().length >= 3,
+    [phone, fullName],
+  );
 
-  const step2Valid = useMemo(() => (
-    region !== null && accessCodeCampaign !== null
-  ), [region, accessCodeCampaign]);
+  const step2Valid = useMemo(
+    () => region !== null && accessCodeCampaign !== null,
+    [region, accessCodeCampaign],
+  );
 
-  // ─── Handlers ───────────────────────────────────────────────
-  const handleNext = () => {
+  // ─── Navigation ─────────────────────────────────────────────
+  const handleBack = () => {
     if (step === 1) {
-      if (!phone.trim()) {
-        Alert.alert('Campo requerido', 'Ingresa tu número de teléfono.');
-        return;
-      }
-      if (!PHONE_REGEX.test(phone.trim())) {
-        Alert.alert('Número inválido', 'Ingresa un número de 9 dígitos que empiece con 9.');
-        return;
-      }
-      if (password.trim().length < 8) {
-        Alert.alert('Contraseña muy corta', 'La contraseña debe tener al menos 8 caracteres.');
-        return;
-      }
-      if (fullName.trim().length < 3) {
-        Alert.alert('Nombre requerido', 'Ingresa tu nombre completo.');
-        return;
-      }
-      setStep(2);
+      router.back();
+      return;
     }
+    if (step === 3) {
+      // Back from SMS → step 2 (data preserved)
+      confirmationRef.current = null;
+      setSmsCode('');
+      setResendIn(0);
+      setStep(2);
+      return;
+    }
+    // Back from step 2 → step 1: clear step 2 fields
+    setRegion(null);
+    setAccessCodeInput('');
+    setAccessCodeCampaign(null);
+    setCodeError(null);
+    setValidatingCode(false);
+    setRetryCount(0);
+    setStep(1);
   };
 
-  const handleBack = () => {
-    if (step > 1) {
-      // Limpiar estado del Step 2 al volver: si el usuario cambia teléfono
-      // o contraseña en Step 1, el código validado ya no corresponde.
-      setRegion(null);
-      setAccessCodeInput('');
-      setAccessCodeCampaign(null);
-      setCodeError(null);
-      setValidatingCode(false);
-      setRetryCount(0);
-      setStep(step - 1);
-    } else {
-      router.back();
+  const handleNextFromStep1 = () => {
+    if (!step1Valid) {
+      if (!PHONE_REGEX.test(phone.trim())) {
+        Alert.alert(
+          'Número inválido',
+          'Ingresá un número de 9 dígitos que empiece con 9.',
+        );
+        return;
+      }
+      Alert.alert('Nombre requerido', 'Ingresá tu nombre completo.');
+      return;
     }
+    setStep(2);
+  };
+
+  const handleNextFromStep2 = async () => {
+    if (!step2Valid) return;
+    setLoading(true);
+    const result = await sendOtp(toE164PhonePeru(phone.trim()));
+    setLoading(false);
+
+    if (!result.ok) {
+      Alert.alert('Error enviando SMS', result.error);
+      return;
+    }
+    confirmationRef.current = result.confirmation;
+    setSmsCode('');
+    setResendIn(RESEND_COOLDOWN_S);
+    setStep(3);
+  };
+
+  const handleResend = async () => {
+    if (resendIn > 0 || loading) return;
+    const result = await sendOtp(toE164PhonePeru(phone.trim()));
+    if (!result.ok) {
+      Alert.alert('Error', result.error);
+      return;
+    }
+    confirmationRef.current = result.confirmation;
+    setResendIn(RESEND_COOLDOWN_S);
   };
 
   const handleRegister = async () => {
-    if (!step2Valid || !accessCodeCampaign) return;
+    if (!SMS_REGEX.test(smsCode.trim())) {
+      Alert.alert('Código inválido', 'Ingresá los 6 dígitos del SMS.');
+      return;
+    }
+    if (!confirmationRef.current) {
+      Alert.alert('Sesión expirada', 'Pedí un código nuevo.');
+      setStep(2);
+      return;
+    }
+    if (!accessCodeCampaign || !region) return;
 
     setLoading(true);
-    const email = `${phone.trim()}@goberna.pe`;
 
-    try {
-      const registerResult: ApiResult<unknown> = await registerWithAccessCode({
-        full_name: fullName.trim(),
-        email,
-        password: password.trim(),
-        phone: phone.trim(),
-        region: region!,
-        campaign_id: accessCodeCampaign.id,
-        // Sanitizar antes de enviar: eliminar cualquier carácter no alfanumérico
-        access_code: accessCodeInput.replace(/[^A-Z0-9]/g, '').toUpperCase().slice(0, 4),
-      });
-
-      if (!registerResult.ok) {
-        if (registerResult.code === 'AUTH_PHONE_EXISTS') {
-          Alert.alert(
-            'Número ya registrado',
-            '¿Ya tenés cuenta? Podés iniciar sesión directamente.',
-            [
-              { text: 'Ir al login', onPress: () => router.replace('/(auth)/login') },
-              { text: 'Cancelar', style: 'cancel' },
-            ],
-          );
-        } else {
-          Alert.alert('Error', registerResult.error ?? 'No se pudo crear la cuenta.');
-        }
-        setLoading(false);
-        return;
-      }
-
-      // Auto login: usar teléfono como identificador (el backend lo soporta directamente)
-      const loginResult = await login({ identifier: phone.trim(), password: password.trim() });
-      if (!loginResult.ok) {
-        Alert.alert('Error', loginResult.error ?? 'Cuenta creada pero no se pudo iniciar sesión.');
-        setLoading(false);
-        return;
-      }
-
-      router.replace('/(auth)/pending');
-    } catch (err) {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Error desconocido');
-    } finally {
+    const otpResult = await confirmOtp(confirmationRef.current, smsCode.trim());
+    if (!otpResult.ok) {
       setLoading(false);
+      Alert.alert('Error', otpResult.error);
+      return;
     }
+
+    const phoneTrimmed = phone.trim();
+    const cleanCode = accessCodeInput
+      .replace(/[^A-Z0-9]/g, '')
+      .toUpperCase()
+      .slice(0, 4);
+
+    const result = await registerWithFirebase({
+      id_token: otpResult.idToken,
+      full_name: fullName.trim(),
+      region,
+      email: `${phoneTrimmed}@goberna.pe`,
+      access_code: cleanCode,
+      campaign_id: accessCodeCampaign.id,
+    });
+    setLoading(false);
+
+    if (!result.ok) {
+      if (result.code === 'AUTH_PHONE_EXISTS') {
+        Alert.alert(
+          'Número ya registrado',
+          'Ese número ya tiene una cuenta. Iniciá sesión en su lugar.',
+          [
+            { text: 'Ir al login', onPress: () => router.replace('/(auth)/login') },
+            { text: 'Cancelar', style: 'cancel' },
+          ],
+        );
+        return;
+      }
+      Alert.alert('Error', result.error ?? 'No se pudo crear la cuenta.');
+      return;
+    }
+    // Success: RouterGuard handles redirect (active → dashboard, pending → /pending)
   };
 
-  // ─── Access Code: individual char boxes ─────────────────────
-  // Use a hidden TextInput + rendered char boxes for UX.
-  // codeStr is used directly in the JSX map below.
-  const codeStr = accessCodeInput.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4).padEnd(4, '');
+  // ─── Helpers ────────────────────────────────────────────────
+  const formatPhoneMask = (p: string) => {
+    if (p.length !== 9) return p;
+    return `+51 ${p.slice(0, 3)} ${p.slice(3, 6)} ${p.slice(6)}`;
+  };
+
+  const codeStr = accessCodeInput
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 4)
+    .padEnd(4, '');
 
   // ─── Render ─────────────────────────────────────────────────
   return (
@@ -297,15 +345,22 @@ export default function RegisterScreen() {
           </Pressable>
           <View style={styles.headerCenter}>
             <Text style={styles.headerTitle}>Crear Cuenta</Text>
-            <Text style={styles.headerSubtitle}>Paso {step} de {totalSteps}</Text>
+            <Text style={styles.headerSubtitle}>
+              Paso {step} de {TOTAL_STEPS}
+            </Text>
           </View>
           <View style={styles.headerRight} />
         </View>
 
-        {/* Progress Bar */}
+        {/* Progress */}
         <View style={styles.progressContainer}>
           <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${(step / totalSteps) * 100}%` }]} />
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${(step / TOTAL_STEPS) * 100}%` },
+              ]}
+            />
           </View>
         </View>
 
@@ -314,84 +369,58 @@ export default function RegisterScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* ── Step 1: Credentials ────────────────────────────── */}
+          {/* ── Step 1: Identidad ──────────────────────────── */}
           {step === 1 && (
             <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>Tus datos de acceso</Text>
+              <Text style={styles.stepTitle}>Tus datos</Text>
               <Text style={styles.stepDescription}>
-                Usarás tu número de teléfono para iniciar sesión
+                Tu número va a ser tu inicio de sesión
               </Text>
 
               {/* Phone */}
               <View style={styles.field}>
                 <Text style={styles.label}>Número de teléfono</Text>
-                <View style={[styles.inputWrapper, phoneFocused && styles.inputWrapperFocused]}>
-                  <Ionicons
-                    name="call-outline"
-                    size={20}
-                    color={phoneFocused ? BORDER_FOCUS : TEXT_MUTED}
-                    style={styles.inputIcon}
-                  />
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    phoneFocused && styles.inputWrapperFocused,
+                  ]}
+                >
+                  <Text style={styles.prefix}>+51</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="987654321"
                     placeholderTextColor={TEXT_MUTED}
                     value={phone}
-                    onChangeText={setPhone}
+                    onChangeText={(t) =>
+                      setPhone(t.replace(/\D/g, '').slice(0, 9))
+                    }
                     keyboardType="phone-pad"
+                    autoComplete="tel"
                     maxLength={9}
                     onFocus={() => setPhoneFocused(true)}
                     onBlur={() => setPhoneFocused(false)}
                   />
-                  {phone.length === 9 && PHONE_REGEX.test(phone) && (
+                  {PHONE_REGEX.test(phone) && (
                     <Ionicons name="checkmark-circle" size={20} color={SUCCESS} />
                   )}
                 </View>
                 {phone.length > 0 && phone.length < 9 && (
-                  <Text style={styles.hint}>{9 - phone.length} dígitos restantes</Text>
+                  <Text style={styles.hint}>
+                    {9 - phone.length} dígitos restantes
+                  </Text>
                 )}
               </View>
 
-              {/* Password */}
-              <View style={styles.field}>
-                <Text style={styles.label}>Contraseña</Text>
-                <View style={[styles.inputWrapper, passwordFocused && styles.inputWrapperFocused]}>
-                  <Ionicons
-                    name="lock-closed-outline"
-                    size={20}
-                    color={passwordFocused ? BORDER_FOCUS : TEXT_MUTED}
-                    style={styles.inputIcon}
-                  />
-                  <TextInput
-                    style={[styles.input, styles.inputPassword]}
-                    placeholder="Mínimo 8 caracteres"
-                    placeholderTextColor={TEXT_MUTED}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    onFocus={() => setPasswordFocused(true)}
-                    onBlur={() => setPasswordFocused(false)}
-                  />
-                  <Pressable onPress={() => setShowPassword(!showPassword)} hitSlop={12}>
-                    <Ionicons
-                      name={showPassword ? 'eye-outline' : 'eye-off-outline'}
-                      size={22}
-                      color={TEXT_MUTED}
-                    />
-                  </Pressable>
-                </View>
-                {password.length > 0 && password.length < 8 && (
-                  <Text style={styles.hintError}>{8 - password.length} caracteres más</Text>
-                )}
-                {password.length >= 8 && (
-                  <Text style={styles.hintSuccess}>Contraseña válida ✓</Text>
-                )}
-              </View>
-
-              {/* Full Name */}
+              {/* Name */}
               <View style={styles.field}>
                 <Text style={styles.label}>Nombre completo</Text>
-                <View style={[styles.inputWrapper, nameFocused && styles.inputWrapperFocused]}>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    nameFocused && styles.inputWrapperFocused,
+                  ]}
+                >
                   <Ionicons
                     name="person-outline"
                     size={20}
@@ -408,34 +437,40 @@ export default function RegisterScreen() {
                     onFocus={() => setNameFocused(true)}
                     onBlur={() => setNameFocused(false)}
                   />
+                  {fullName.trim().length >= 3 && (
+                    <Ionicons name="checkmark-circle" size={20} color={SUCCESS} />
+                  )}
                 </View>
               </View>
 
-              {/* Next Button */}
               <Pressable
                 style={({ pressed }) => [
                   styles.button,
                   !step1Valid && styles.buttonDisabled,
                   pressed && step1Valid && styles.buttonPressed,
                 ]}
-                onPress={handleNext}
+                onPress={handleNextFromStep1}
                 disabled={!step1Valid}
               >
                 <Text style={styles.buttonText}>Continuar</Text>
                 <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
               </Pressable>
 
-              {/* Login link */}
-              <Pressable onPress={() => router.replace('/(auth)/login')} style={styles.loginLink}>
-                <Text style={styles.loginLinkText}>¿Ya tenés cuenta? Iniciar sesión</Text>
+              <Pressable
+                onPress={() => router.replace('/(auth)/login')}
+                style={styles.altLink}
+              >
+                <Text style={styles.altLinkText}>
+                  ¿Ya tenés cuenta? Iniciar sesión
+                </Text>
               </Pressable>
             </View>
           )}
 
-          {/* ── Step 2: Region & Campaign ──────────────────────── */}
+          {/* ── Step 2: Campaña ────────────────────────────── */}
           {step === 2 && (
             <View style={styles.stepContainer}>
-              <Text style={styles.stepTitle}>¿A qué campaña te unes?</Text>
+              <Text style={styles.stepTitle}>¿A qué campaña te unís?</Text>
               <Text style={styles.stepDescription}>
                 Usá el código que te dio tu coordinador
               </Text>
@@ -450,20 +485,18 @@ export default function RegisterScreen() {
                 />
               </View>
 
-              {/* ── Código de acceso ── */}
+              {/* Access code boxes */}
               <View style={styles.field}>
                 <Text style={styles.label}>Código de acceso (4 caracteres)</Text>
-
-                {/* Char boxes — tap anywhere en la fila para enfocar el input oculto */}
                 <Pressable
-                  onPress={() => codeInputRefs.current[0]?.focus()}
+                  onPress={() => codeInputRef.current?.focus()}
                   style={styles.codeBoxRow}
                 >
                   {([0, 1, 2, 3] as const).map((pos) => {
-                    const positions = ['code-0', 'code-1', 'code-2', 'code-3'] as const;
+                    const ids = ['code-0', 'code-1', 'code-2', 'code-3'] as const;
                     return (
                       <View
-                        key={positions[pos]}
+                        key={ids[pos]}
                         style={[
                           styles.codeBox,
                           accessCodeInput.length === pos && styles.codeBoxActive,
@@ -471,25 +504,29 @@ export default function RegisterScreen() {
                           codeError && styles.codeBoxError,
                         ]}
                       >
-                        <Text style={[
-                          styles.codeBoxChar,
-                          accessCodeCampaign && styles.codeBoxCharSuccess,
-                          codeError && styles.codeBoxCharError,
-                        ]}>
+                        <Text
+                          style={[
+                            styles.codeBoxChar,
+                            accessCodeCampaign && styles.codeBoxCharSuccess,
+                            codeError && styles.codeBoxCharError,
+                          ]}
+                        >
                           {codeStr[pos] ?? ''}
                         </Text>
                       </View>
                     );
                   })}
-
-                  {/* Hidden input — position absolute para no romper el layout,
-                      pointerEvents none para que el Pressable padre maneje el tap */}
                   <TextInput
-                    ref={(ref) => { codeInputRefs.current[0] = ref; }}
+                    ref={(ref) => {
+                      codeInputRef.current = ref;
+                    }}
                     style={styles.codeHiddenInput}
                     value={accessCodeInput}
                     onChangeText={(t) => {
-                      const clean = t.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4);
+                      const clean = t
+                        .replace(/[^A-Za-z0-9]/g, '')
+                        .toUpperCase()
+                        .slice(0, 4);
                       setAccessCodeInput(clean);
                     }}
                     maxLength={4}
@@ -501,7 +538,6 @@ export default function RegisterScreen() {
                   />
                 </Pressable>
 
-                {/* Validation state */}
                 {validatingCode && (
                   <View style={styles.codeStatusRow}>
                     <ActivityIndicator size="small" color={AMBER} />
@@ -515,7 +551,6 @@ export default function RegisterScreen() {
                 {codeError && !validatingCode && (
                   <View style={styles.codeErrorRow}>
                     <Text style={styles.hintError}>{codeError}</Text>
-                    {/* Botón reintentar — solo si el error es de red, no de código inválido */}
                     {codeError.includes('conexión') && (
                       <Pressable
                         onPress={() => setRetryCount((c) => c + 1)}
@@ -530,46 +565,144 @@ export default function RegisterScreen() {
                 {!codeError && accessCodeCampaign && !validatingCode && (
                   <Text style={styles.hintSuccess}>Código válido ✓</Text>
                 )}
-
                 <Text style={styles.codeHint}>
-                  Pedile el código de 4 letras/números a tu coordinador de campaña
+                  Pedile el código de 4 letras/números a tu coordinador
                 </Text>
               </View>
 
-              {/* ── Campaign card resuelta ── */}
+              {/* Campaign card */}
               {accessCodeCampaign && (
                 <View style={styles.matchedCard}>
                   <View style={styles.campaignIconCircle}>
                     <Ionicons name="megaphone" size={24} color={BRAND_YELLOW} />
                   </View>
                   <View style={styles.candidateInfo}>
-                    <Text style={styles.candidateName}>{accessCodeCampaign.name}</Text>
+                    <Text style={styles.candidateName}>
+                      {accessCodeCampaign.name}
+                    </Text>
                     <Text style={styles.candidateCargo}>Campaña verificada</Text>
                   </View>
                   <Ionicons name="checkmark-circle" size={28} color={SUCCESS} />
                 </View>
               )}
 
-              {/* Register Button */}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.button,
+                  (!step2Valid || loading) && styles.buttonDisabled,
+                  pressed && step2Valid && !loading && styles.buttonPressed,
+                ]}
+                onPress={handleNextFromStep2}
+                disabled={!step2Valid || loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="chatbox-ellipses-outline"
+                      size={20}
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.buttonText}>Enviar código por SMS</Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          )}
+
+          {/* ── Step 3: SMS Verification ───────────────────── */}
+          {step === 3 && (
+            <View style={styles.stepContainer}>
+              <View style={styles.codeHeader}>
+                <Ionicons name="chatbubble-ellipses" size={32} color={BRAND_BLUE} />
+                <Text style={styles.stepTitle}>Revisá tu SMS</Text>
+                <Text style={styles.smsSubtitle}>
+                  Mandamos un código de 6 dígitos a{'\n'}
+                  <Text style={styles.smsPhoneStrong}>
+                    {formatPhoneMask(phone)}
+                  </Text>
+                </Text>
+              </View>
+
+              <View style={styles.field}>
+                <Text style={styles.label}>Código de verificación</Text>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    smsFocused && styles.inputWrapperFocused,
+                    styles.smsInputWrapper,
+                  ]}
+                >
+                  <TextInput
+                    ref={smsInputRef}
+                    style={styles.smsInput}
+                    placeholder="000000"
+                    placeholderTextColor={TEXT_MUTED}
+                    value={smsCode}
+                    onChangeText={(t) =>
+                      setSmsCode(t.replace(/\D/g, '').slice(0, 6))
+                    }
+                    keyboardType="number-pad"
+                    autoComplete="sms-otp"
+                    textContentType="oneTimeCode"
+                    maxLength={6}
+                    editable={!loading}
+                    onFocus={() => setSmsFocused(true)}
+                    onBlur={() => setSmsFocused(false)}
+                  />
+                </View>
+              </View>
+
               <Pressable
                 style={({ pressed }) => [
                   styles.button,
                   styles.buttonRegister,
-                  (!step2Valid || loading) && styles.buttonDisabled,
-                  pressed && step2Valid && !loading && styles.buttonPressed,
+                  (!SMS_REGEX.test(smsCode) || loading) && styles.buttonDisabled,
+                  pressed && SMS_REGEX.test(smsCode) && !loading && styles.buttonPressed,
                 ]}
                 onPress={handleRegister}
-                disabled={!step2Valid || loading}
+                disabled={!SMS_REGEX.test(smsCode) || loading}
               >
                 {loading ? (
                   <ActivityIndicator color={BRAND_BLUE} size="small" />
                 ) : (
                   <>
-                    <Ionicons name="checkmark-circle" size={24} color={BRAND_BLUE} />
-                    <Text style={styles.buttonTextRegister}>Registrarme</Text>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={24}
+                      color={BRAND_BLUE}
+                    />
+                    <Text style={styles.buttonTextRegister}>Crear cuenta</Text>
                   </>
                 )}
               </Pressable>
+
+              <View style={styles.smsFooter}>
+                <Pressable
+                  onPress={() => setStep(2)}
+                  disabled={loading}
+                  hitSlop={8}
+                >
+                  <Text style={styles.smsFooterLink}>← Cambiar datos</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleResend}
+                  disabled={resendIn > 0 || loading}
+                  hitSlop={8}
+                >
+                  <Text
+                    style={[
+                      styles.smsFooterLink,
+                      resendIn > 0 && styles.smsFooterLinkDisabled,
+                    ]}
+                  >
+                    {resendIn > 0
+                      ? `Reenviar en ${resendIn}s`
+                      : 'Reenviar código'}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           )}
         </ScrollView>
@@ -684,15 +817,18 @@ const styles = StyleSheet.create({
   inputIcon: {
     marginRight: 10,
   },
+  prefix: {
+    fontSize: 16,
+    color: TEXT_DARK,
+    fontFamily: FONT,
+    marginRight: 8,
+  },
   input: {
     flex: 1,
     paddingVertical: 14,
     fontSize: 16,
     color: TEXT_DARK,
     fontFamily: FONT_REGULAR,
-  },
-  inputPassword: {
-    paddingRight: 8,
   },
   hint: {
     fontSize: 12,
@@ -719,7 +855,7 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
 
-  // Access code boxes
+  // Access code boxes (step 2)
   codeBoxRow: {
     flexDirection: 'row',
     gap: 12,
@@ -754,7 +890,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontFamily: FONT,
     color: TEXT_DARK,
-    letterSpacing: 0,
   },
   codeBoxCharSuccess: {
     color: '#166534',
@@ -803,72 +938,52 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // Buttons
-  button: {
-    flexDirection: 'row',
+  // SMS code (step 3)
+  codeHeader: {
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 8,
-    backgroundColor: BRAND_BLUE,
-    borderRadius: 14,
-    padding: 16,
-    marginTop: 12,
+    marginBottom: 8,
   },
-  buttonPrimary: {
-    backgroundColor: BRAND_YELLOW,
+  smsSubtitle: {
+    fontSize: 14,
+    fontFamily: FONT_REGULAR,
+    color: TEXT_MUTED,
+    textAlign: 'center',
+    lineHeight: 20,
   },
-  buttonRegister: {
-    backgroundColor: BRAND_YELLOW,
-    paddingVertical: 20,
-    borderRadius: 16,
-    marginTop: 24,
-    shadowColor: BRAND_YELLOW,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.9,
-  },
-  buttonText: {
-    fontSize: 16,
+  smsPhoneStrong: {
     fontFamily: FONT,
-    color: '#FFFFFF',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    color: TEXT_DARK,
   },
-  buttonTextPrimary: {
-    fontSize: 16,
+  smsInputWrapper: {
+    paddingHorizontal: 16,
+  },
+  smsInput: {
+    flex: 1,
+    paddingVertical: 18,
+    fontSize: 28,
+    color: TEXT_DARK,
     fontFamily: FONT,
-    color: BRAND_BLUE,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 8,
+    textAlign: 'center',
   },
-  buttonTextRegister: {
-    fontSize: 18,
-    fontFamily: FONT,
-    color: BRAND_BLUE,
-    textTransform: 'uppercase',
-    letterSpacing: 1.5,
-  },
-
-  // Login link
-  loginLink: {
+  smsFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    marginTop: 8,
+    paddingHorizontal: 4,
   },
-  loginLinkText: {
+  smsFooterLink: {
     fontSize: 13,
     color: BRAND_BLUE,
-    fontFamily: FONT_REGULAR,
+    fontFamily: FONT,
+  },
+  smsFooterLinkDisabled: {
+    color: TEXT_MUTED,
   },
 
-  // Matched campaign/candidate card
+  // Matched campaign card
   matchedCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -901,5 +1016,60 @@ const styles = StyleSheet.create({
     fontFamily: FONT_REGULAR,
     color: TEXT_MUTED,
     marginTop: 2,
+  },
+
+  // Buttons
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: BRAND_BLUE,
+    borderRadius: 14,
+    padding: 16,
+    marginTop: 12,
+  },
+  buttonRegister: {
+    backgroundColor: BRAND_YELLOW,
+    paddingVertical: 20,
+    borderRadius: 16,
+    marginTop: 24,
+    shadowColor: BRAND_YELLOW,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  buttonPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.9,
+  },
+  buttonText: {
+    fontSize: 16,
+    fontFamily: FONT,
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  buttonTextRegister: {
+    fontSize: 18,
+    fontFamily: FONT,
+    color: BRAND_BLUE,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+  },
+
+  // Alt link
+  altLink: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  altLinkText: {
+    fontSize: 13,
+    color: BRAND_BLUE,
+    fontFamily: FONT_REGULAR,
   },
 });

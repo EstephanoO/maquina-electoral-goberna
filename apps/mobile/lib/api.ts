@@ -39,6 +39,8 @@ import type {
   ResolveAccessRequestPayload,
   AuthUser,
   CampaignMembership,
+  FirebaseAuthResponse,
+  RegisterFirebaseRequest,
   Meet,
   MeetSummary,
   MeetParticipant,
@@ -169,6 +171,29 @@ export async function login(body: LoginRequest): Promise<ApiResult<LoginResponse
 
 export async function register(body: RegisterRequest): Promise<ApiResult<RegisterResponse>> {
   return request<RegisterResponse>('POST', '/auth/register', body, false);
+}
+
+// ─── Firebase Phone Auth (OTP-only mobile flow) ─────────────
+
+/**
+ * POST /api/auth/firebase-verify — verify a Firebase Phone Auth idToken
+ * and exchange it for backend JWTs. The idToken's phone_number claim must
+ * match an existing user; if not, returns 412 MAGIC_LINK_NO_USER (or similar)
+ * and the caller should redirect to register.
+ */
+export async function firebaseVerify(idToken: string): Promise<ApiResult<FirebaseAuthResponse>> {
+  return request<FirebaseAuthResponse>('POST', '/auth/firebase-verify', { id_token: idToken }, false);
+}
+
+/**
+ * POST /api/auth/register-firebase — register a new user with a verified
+ * Firebase idToken + profile fields + one of {invitation_code, access_code,
+ * campaign_id}. Returns the same shape as login on success.
+ */
+export async function registerFirebase(
+  body: RegisterFirebaseRequest,
+): Promise<ApiResult<FirebaseAuthResponse>> {
+  return request<FirebaseAuthResponse>('POST', '/auth/register-firebase', body, false);
 }
 
 /**
