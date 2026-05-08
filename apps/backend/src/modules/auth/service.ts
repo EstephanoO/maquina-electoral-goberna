@@ -40,9 +40,15 @@ export class AuthService {
   }
 
   /** Login with a pre-fetched user object (used for phone-based login) */
-  async loginWithUser(user: { id: string; email: string; full_name: string; phone?: string | null; region?: string | null; role: string; status: string; password_hash: string; password_reset_required?: boolean }, password: string): Promise<LoginResult> {
+  async loginWithUser(user: { id: string; email: string; full_name: string; phone?: string | null; region?: string | null; role: string; status: string; password_hash: string | null; password_reset_required?: boolean }, password: string): Promise<LoginResult> {
     if (user.status === "suspended") {
       throw new AppError("AUTH_USER_SUSPENDED", "usuario suspendido", 403);
+    }
+
+    // password_hash NULL → user OTP-only (registrado via Firebase). El cliente
+    // debe usar /api/auth/firebase-verify, no login con password.
+    if (!user.password_hash) {
+      throw new AppError("AUTH_PASSWORD_NOT_SET", "este usuario solo puede iniciar sesión con OTP", 401);
     }
 
     const validPassword = await bcrypt.compare(password, user.password_hash);
@@ -189,6 +195,9 @@ export class AuthService {
     const user = await this.repo.findUserById(userId);
     if (!user) {
       throw new AppError("USER_NOT_FOUND", "usuario no encontrado", 404);
+    }
+    if (!user.password_hash) {
+      throw new AppError("AUTH_PASSWORD_NOT_SET", "este usuario no tiene password (OTP-only)", 400);
     }
 
     const valid = await bcrypt.compare(currentPassword, user.password_hash);

@@ -5,7 +5,7 @@ import { pool } from "../../db";
 import { errorPayload } from "../../infra/http";
 import { AUTH_COOKIE_NAMES, parseCookies, type AuthenticatedRequest } from "../../infra/auth";
 import { AuthRepository } from "./repository";
-import { changePasswordSchema, loginSchema, refreshSchema, registerSchema, resetPasswordSchema } from "./schemas";
+import { changePasswordSchema, loginSchema, refreshSchema, registerFirebaseSchema, registerSchema, resetPasswordSchema } from "./schemas";
 import { authorize } from "../../infra/authorize";
 import { AppError, AuthService } from "./service";
 import { verifyFirebaseIdToken } from "./firebase-verify";
@@ -353,6 +353,170 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
       }
     });
 
+    // ── POST /api/auth/register-firebase ───────────────────────────────
+    // Registro OTP-only via Firebase. El cliente envía:
+    //   { id_token, full_name, region, [invitation_code | access_code | campaign_id], email? }
+    //
+    // El phone se DERIVA del token (anti-spoofing) — no se acepta phone en
+    // el body. Si el user ya existe (por phone o firebase_uid), responde
+    // 409 USER_EXISTS sugiriendo usar /api/auth/firebase-verify (login).
+    //
+    // Crea user con password_hash=NULL, firebase_uid=verified.uid, agrega
+    // a la campaña como agente_campo, y emite JWT idéntico a /login.
+    app.post("/api/auth/register-firebase", {
+      config: {
+        rateLimit: {
+          max: env.rateLimitAuthPerMinute,
+          timeWindow: "1 minute",
+          keyGenerator: (request) => request.ip,
+        },
+      },
+    }, async (request, reply) => {
+      const requestId = String(request.id);
+
+      const parsed = registerFirebaseSchema.safeParse(request.body);
+      if (!parsed.success) {
+        const message = parsed.error.issues.map((i) => i.message).join(", ");
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
+      }
+
+      if (!env.firebaseProjectId) {
+        return reply.code(503).send(errorPayload(requestId, "FIREBASE_NOT_CONFIGURED", "FIREBASE_PROJECT_ID no configurado"));
+      }
+
+      const { id_token, full_name, region, invitation_code, access_code, campaign_id, email: providedEmail } = parsed.data;
+
+      // 1. Verificar id_token
+      let verified: Awaited<ReturnType<typeof verifyFirebaseIdToken>>;
+      try {
+        verified = await verifyFirebaseIdToken(id_token, env.firebaseProjectId);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "verificación falló";
+        app.log.warn({ err: msg, request_id: requestId }, "register-firebase: token rechazado");
+        return reply.code(401).send(errorPayload(requestId, "FIREBASE_INVALID_TOKEN", msg.slice(0, 120)));
+      }
+      if (!verified.phone_number) {
+        return reply.code(400).send(errorPayload(requestId, "FIREBASE_PHONE_MISSING", "id_token no incluye phone_number"));
+      }
+      const normalizedPhone = verified.phone_number.replace(/\D/g, "");
+
+      try {
+        // 2. Anti-duplicado: si ya existe por phone o firebase_uid, rechazar.
+        const existingByPhone = await repo.findUserByPhone(normalizedPhone);
+        if (existingByPhone) {
+          return reply.code(409).send(errorPayload(requestId, "USER_EXISTS", "usuario ya existe — usar /api/auth/firebase-verify para login"));
+        }
+        const existingByUid = await repo.findUserByFirebaseUid(verified.uid);
+        if (existingByUid) {
+          return reply.code(409).send(errorPayload(requestId, "USER_EXISTS", "firebase_uid ya registrado — usar /api/auth/firebase-verify"));
+        }
+
+        // 3. Resolver campaign_id desde invitation/access_code (mismo flow
+        // que /api/auth/register).
+        let invitationRow: Awaited<ReturnType<typeof invitationsRepo.findByCode>> = null;
+        let resolvedCampaignId = campaign_id ?? null;
+
+        if (invitation_code) {
+          invitationRow = await invitationsRepo.findByCode(invitation_code);
+          if (!invitationRow) {
+            return reply.code(400).send(errorPayload(requestId, "INVITATION_NOT_FOUND", "codigo de invitacion invalido"));
+          }
+          if (!invitationsRepo.isValid(invitationRow)) {
+            return reply.code(400).send(errorPayload(requestId, "INVITATION_EXPIRED", "codigo de invitacion expirado o agotado"));
+          }
+          resolvedCampaignId = invitationRow.campaign_id;
+        } else if (access_code) {
+          const accessCodeRow = await accessCodesRepo.findByCode(access_code);
+          if (!accessCodeRow) {
+            return reply.code(400).send(errorPayload(requestId, "ACCESS_CODE_NOT_FOUND", "codigo de acceso invalido"));
+          }
+          resolvedCampaignId = accessCodeRow.campaign_id;
+        }
+
+        if (!resolvedCampaignId) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "campaign_id requerido"));
+        }
+
+        // 4. Verificar que la campaña existe + activa (skip si invitation/access_code ya validó).
+        if (!invitationRow && !access_code) {
+          const { rows: campaignRows } = await pool.query(
+            "SELECT id FROM campaigns WHERE id = $1 AND status = 'active'",
+            [resolvedCampaignId],
+          );
+          if (campaignRows.length === 0) {
+            return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campaña no encontrada"));
+          }
+        }
+
+        // 5. Crear user OTP-only (password_hash=NULL, firebase_uid set).
+        const email = providedEmail ?? `${normalizedPhone}@goberna.pe`;
+        const user = await repo.createUser(
+          email,
+          null,
+          full_name,
+          normalizedPhone,
+          region,
+          undefined,
+          undefined,
+          verified.uid,
+        );
+
+        // 6. Linkear a campaña como agente_campo (mismo flujo que /register).
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          await client.query(
+            `INSERT INTO access_requests (user_id, campaign_id, region, perm_tierra, perm_digital, status, resolved_at)
+             VALUES ($1, $2, $3, true, true, 'approved', now())
+             ON CONFLICT (user_id, campaign_id) WHERE status = 'pending' DO NOTHING`,
+            [user.id, resolvedCampaignId, region],
+          );
+          await client.query(
+            `INSERT INTO user_campaigns (user_id, campaign_id, role, status, perm_tierra, perm_digital, region)
+             VALUES ($1, $2, 'agente_campo', 'active', true, true, $3)
+             ON CONFLICT (user_id, campaign_id)
+             DO UPDATE SET role = 'agente_campo', status = 'active', perm_tierra = true, perm_digital = true, region = $3, assigned_at = now()`,
+            [user.id, resolvedCampaignId, region],
+          );
+          await client.query("COMMIT");
+        } catch (txErr) {
+          await client.query("ROLLBACK");
+          throw txErr;
+        } finally {
+          client.release();
+        }
+
+        if (invitationRow) {
+          await invitationsRepo.incrementUsage(invitationRow.id);
+        }
+
+        // 7. Emitir JWT idéntico a /login + setear cookies.
+        const result = await service.issueTokensForUser(user);
+        setAuthCookies(reply, result.access_token, result.refresh_token, isProd);
+
+        app.log.info({
+          user_id: user.id,
+          campaign_id: resolvedCampaignId,
+          firebase_uid: verified.uid,
+          phone: normalizedPhone,
+          request_id: requestId,
+        }, "user registered via OTP (firebase) and auto-accepted as agente_campo");
+
+        return reply.code(201).send({
+          ok: true,
+          request_id: requestId,
+          firebase: { uid: verified.uid, phone_number: verified.phone_number },
+          ...result,
+        });
+      } catch (error) {
+        if (error instanceof AppError) {
+          return reply.code(error.statusCode).send(errorPayload(requestId, error.code, error.message));
+        }
+        app.log.error({ err: error, request_id: requestId }, "register-firebase failed");
+        return reply.code(500).send(errorPayload(requestId, "REGISTER_FIREBASE_ERROR", "error registrando user OTP"));
+      }
+    });
+
     // ── GET /api/auth/me ───────────────────────────────────────────────
     app.get(
       "/api/auth/me",
@@ -461,14 +625,18 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
     app.post("/api/api/auth/reset-password", resetPasswordOpts, resetPasswordHandler);
 
     // ── POST /api/auth/firebase-verify ─────────────────────────────────
-    // Scaffold de Firebase Phone Auth — recibe el ID token emitido por Firebase
-    // después del flujo SMS OTP en mobile, lo valida contra Google, y matchea
-    // contra un user existente por phone (o devuelve "no_user" si no existe).
+    // Endpoint canónico de login OTP-only para mobile. Recibe el ID token
+    // emitido por Firebase Phone Auth, lo valida contra Google, matchea
+    // contra users por firebase_uid o phone, y emite JWT propio (access +
+    // refresh) idéntico a /api/auth/login.
     //
-    // NO ESTÁ ENCHUFADO AL LOGIN PRINCIPAL todavía. La idea es:
-    //   1. Esta PR lo deja listo + verificable.
-    //   2. Cuando el flujo OTP sea estable en mobile, conectamos el resultado
-    //      a la emisión de nuestro JWT (set cookies + return access/refresh).
+    // Resolución de user:
+    //   1. firebase_uid (linkeo previo migración 059 — máxima confianza).
+    //   2. phone match → auto-link uid (si user no tiene otro uid).
+    //   3. nada → 412 USER_NOT_FOUND_FOR_FIREBASE (registro previo requerido).
+    //
+    // Response (200) idéntica a /login: { access_token, refresh_token, user,
+    // campaigns } + setea httpOnly cookies. Mobile guarda en expo-secure-store.
     //
     // Si FIREBASE_PROJECT_ID está vacío, el endpoint responde 503.
     const firebaseVerifyOpts = {

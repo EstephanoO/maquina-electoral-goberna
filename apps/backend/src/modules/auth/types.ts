@@ -1,7 +1,9 @@
 export type UserRow = {
   id: string;
   email: string;
-  password_hash: string;
+  // null para users creados via OTP-only / onboarding (post-mig-060).
+  // Login con password chequea null y rechaza con AUTH_PASSWORD_NOT_SET.
+  password_hash: string | null;
   full_name: string;
   phone: string | null;
   region: string | null;

@@ -87,18 +87,19 @@ export class AuthRepository {
 
   async createUser(
     email: string,
-    passwordHash: string,
+    passwordHash: string | null,
     fullName: string,
     phone?: string,
     region?: string,
     role = "agente_campo",
     status = "active",
+    firebaseUid?: string | null,
   ): Promise<UserRow> {
     const { rows } = await this.pool.query<UserRow>(
-      `INSERT INTO users (email, password_hash, full_name, phone, region, role, status)
-       VALUES (lower($1), $2, $3, $4, $5, $6, $7)
+      `INSERT INTO users (email, password_hash, full_name, phone, region, role, status, firebase_uid)
+       VALUES (lower($1), $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, email, password_hash, full_name, phone, region, role, status, created_at, updated_at`,
-      [email.trim(), passwordHash, fullName, phone ?? null, region ?? null, role, status],
+      [email.trim(), passwordHash, fullName, phone ?? null, region ?? null, role, status, firebaseUid ?? null],
     );
     return rows[0]!;
   }
