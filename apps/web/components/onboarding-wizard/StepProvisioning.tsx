@@ -116,7 +116,7 @@ export function StepProvisioning({ title, subtitle, data, onCompleted, onGoBack 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
-        className="text-2xl sm:text-3xl md:text-4xl mb-2 sm:mb-3 text-white leading-tight"
+        className="text-3xl sm:text-5xl md:text-6xl mb-3 sm:mb-4 text-white leading-[0.95] font-black tracking-tight"
       >
         {title}
       </motion.h2>

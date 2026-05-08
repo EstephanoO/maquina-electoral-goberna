@@ -1,10 +1,20 @@
 import type { OnboardingOption, FormField } from '@/types/onboarding/interfaces/options';
 import type { DragDropConfig, FrontStrategyConfig } from '@/types/onboarding/interfaces/ui';
 
+export type OnboardingChapter = {
+  /** Número visible: "01", "02"... */
+  num: string;
+  /** Total de capítulos (para el pill "Capítulo X de Y"). */
+  total: number;
+  /** Etiqueta corta: "Tu identidad", "Tu candidatura". */
+  label: string;
+};
+
 export type OnboardingStep = {
   id: string;
   title: string;
   subtitle?: string;
+  chapter?: OnboardingChapter;
   type:
     | "info"
     | "single-select"

@@ -47,8 +47,8 @@ export function StepFotoUpload({ title, subtitle, ctaText, onNext }: StepFotoUpl
       animate={{ opacity: 1, y: 0 }}
       className="mx-auto w-full max-w-xl text-center"
     >
-      <h2 className="text-3xl sm:text-4xl text-white font-semibold tracking-tight">{title}</h2>
-      {subtitle && <p className="mt-2 text-sm sm:text-base text-gray-400">{subtitle}</p>}
+      <h2 className="text-4xl sm:text-5xl md:text-6xl text-white font-black tracking-tight leading-[0.95]">{title}</h2>
+      {subtitle && <p className="mt-3 text-base sm:text-lg text-gray-300 max-w-xl mx-auto">{subtitle}</p>}
 
       {/* Preview area */}
       <div className="mt-8 mb-6 flex justify-center">

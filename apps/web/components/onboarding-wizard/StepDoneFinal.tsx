@@ -41,7 +41,7 @@ export function StepDoneFinal({ title, subtitle, dashboardUrl, onContinue }: Ste
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.4 }}
-        className="text-3xl sm:text-4xl md:text-5xl mb-3 sm:mb-4 text-white leading-tight"
+        className="text-4xl sm:text-6xl md:text-7xl mb-4 sm:mb-5 text-white leading-[0.95] font-black tracking-tight uppercase"
       >
         {title}
       </motion.h1>
@@ -51,7 +51,7 @@ export function StepDoneFinal({ title, subtitle, dashboardUrl, onContinue }: Ste
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
-          className="text-base sm:text-lg text-gray-400 mb-8 sm:mb-10 max-w-xl"
+          className="text-base sm:text-lg text-gray-300 mb-10 sm:mb-12 max-w-xl"
         >
           {subtitle}
         </motion.p>
@@ -61,13 +61,13 @@ export function StepDoneFinal({ title, subtitle, dashboardUrl, onContinue }: Ste
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.6 }}
-        whileHover={{ scale: 1.02 }}
+        whileHover={{ scale: 1.03 }}
         whileTap={{ scale: 0.98 }}
         onClick={() => onContinue(dashboardUrl)}
-        className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-8 py-3.5 text-sm font-bold uppercase tracking-wider text-black shadow-lg shadow-amber-500/30 transition hover:shadow-xl"
+        className="inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 px-10 py-4 text-base font-black uppercase tracking-wider text-[#0a1e4a] shadow-[0_15px_50px_rgba(251,191,36,0.4)] hover:shadow-[0_20px_70px_rgba(251,191,36,0.6)] transition-shadow"
       >
-        Ir al dashboard
-        <ArrowRight className="size-4" />
+        Ir a mi diagnóstico
+        <ArrowRight className="size-5" />
       </motion.button>
     </motion.div>
   );

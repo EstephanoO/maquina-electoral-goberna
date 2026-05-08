@@ -26,11 +26,23 @@ import { OnboardingStep } from "@/types/onboarding/domain/steps";
  *   - waSession / campaignStrategy / strategyCombination /
  *     campaignAssignment (todos fuera de Fase 1)
  */
+/**
+ * Capítulos lógicos que agrupan los pasos para el indicador de progreso
+ * estilo deck. Cada uno aparece como pill "Capítulo X de 5 · Etiqueta"
+ * arriba del step en el wizard.
+ */
+const CH_IDENTIDAD = { num: "01", total: 5, label: "Tu identidad" };
+const CH_ROL = { num: "02", total: 5, label: "Tu rol" };
+const CH_CANDIDATURA = { num: "03", total: 5, label: "Tu candidatura" };
+const CH_IMAGEN = { num: "04", total: 5, label: "Tu imagen" };
+const CH_PLATAFORMA = { num: "05", total: 5, label: "Tu plataforma" };
+
 export const onboardingSteps: OnboardingStep[] = [
   {
     id: "datos",
     title: "Empecemos por lo básico",
     subtitle: "Toma menos de 2 minutos.",
+    chapter: CH_IDENTIDAD,
     type: "form",
     required: true,
     ctaText: "Continuar",
@@ -91,6 +103,7 @@ export const onboardingSteps: OnboardingStep[] = [
   {
     id: "actor",
     title: "¿Cuál es tu rol en la campaña?",
+    chapter: CH_ROL,
     type: "single-select",
     required: true,
     guideText:
@@ -113,8 +126,9 @@ export const onboardingSteps: OnboardingStep[] = [
 
   {
     id: "level",
-    title: "¿A qué nivel político apuntas?",
-    subtitle: "Elige el nivel de gobierno que te interesa",
+    title: "¿A qué nivel político apuntás?",
+    subtitle: "Elegí el nivel de gobierno que te interesa.",
+    chapter: CH_ROL,
     type: "single-select",
     required: true,
     options: [
@@ -141,8 +155,9 @@ export const onboardingSteps: OnboardingStep[] = [
 
   {
     id: "cargoApi",
-    title: "¿A qué cargo apuntas?",
-    subtitle: "Según el nivel que elegiste",
+    title: "¿A qué cargo apuntás?",
+    subtitle: "Según el nivel que elegiste.",
+    chapter: CH_CANDIDATURA,
     type: "api-cargo",
     required: true,
   },
@@ -151,7 +166,8 @@ export const onboardingSteps: OnboardingStep[] = [
     id: "organizacionApi",
     title: "¿Por qué organización política?",
     subtitle:
-      "Si vas como independiente o todavía no tienes alianza, podés saltarlo.",
+      "Si vas como independiente o todavía no tenés alianza, podés saltarlo.",
+    chapter: CH_CANDIDATURA,
     type: "api-organizacion",
     required: false,
   },
@@ -160,7 +176,8 @@ export const onboardingSteps: OnboardingStep[] = [
     id: "foto",
     title: "Subí tu foto de campaña",
     subtitle:
-      "Personaliza tu Máquina Electoral. Si no la tenés ahora, podés subirla después.",
+      "Va a aparecer en tu deck de análisis y en la plataforma. Si no la tenés ahora, la subís después.",
+    chapter: CH_IMAGEN,
     type: "foto-upload",
     required: false,
   },
@@ -169,6 +186,7 @@ export const onboardingSteps: OnboardingStep[] = [
     id: "provisioning",
     title: "Armando tu Máquina Electoral",
     subtitle: "Cargando contexto, análisis electoral y competencia...",
+    chapter: CH_PLATAFORMA,
     type: "provisioning",
   },
 
@@ -177,6 +195,7 @@ export const onboardingSteps: OnboardingStep[] = [
     title: "Tu campaña ya tiene su sala de guerra",
     subtitle:
       "Entrá al dashboard para ver el análisis de tu jurisdicción y planear tu estrategia.",
+    chapter: CH_PLATAFORMA,
     type: "done-final",
   },
 ];
