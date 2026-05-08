@@ -1,16 +1,21 @@
 "use client";
 
 /**
- * /invite/[code] — Página de aterrizaje del magic link.
+ * /invite/[code] — Magic link landing page.
  *
- * Flujo:
- * - Android con app instalada: el intentFilter intercepta antes de llegar aquí.
- * - Android SIN app: llega aquí → botón Play Store.
- * - iOS (TestFlight): llega aquí → botón TestFlight.
- * - Desktop/otro: muestra instrucciones para abrir en el móvil.
+ * Flow:
+ * - Mobile (iOS/Android) WITH app installed: the universal link
+ *   intercepts before this page even loads (handled by AASA + assetlinks).
+ * - Mobile WITHOUT app installed: this page renders → fetches code info
+ *   from backend → shows campaign name → CTA to install (TestFlight or
+ *   Play Store) + custom scheme attempt for already-installed-but-AASA-broken.
+ * - Desktop / unsupported: shows the code + instruction to open from mobile.
  *
- * Esta página NO hace login — solo es el puente para quienes
- * no tienen la app instalada.
+ * Backend contract (mobile uses the same): GET /api/invitations/validate/:code
+ *   → 200 { invitation: { campaign_id, campaign_name, campaign_slug, role } }
+ *   → 401/403/404 → fallthrough to "code may be invalid" UI.
+ *
+ * The page never logs the user in — the actual flow happens in the app.
  */
 
 import { useEffect, useState } from "react";
@@ -21,10 +26,21 @@ const PLAY_STORE_URL =
   "https://play.google.com/store/apps/details?id=com.estephano.gobernaterritory02&hl=es_PE";
 const TESTFLIGHT_URL = "https://testflight.apple.com/join/JAZ5smzy";
 
-// Custom scheme fallback (works if app is installed but App Link didn't trigger)
 const APP_SCHEME = "com.estephano.gobernaterritory02";
 
 type DetectedPlatform = "android" | "ios" | "other";
+
+type InvitationInfo = {
+  campaign_id: string;
+  campaign_name: string;
+  campaign_slug: string;
+  role: string;
+};
+
+type ValidationState =
+  | { status: "loading" }
+  | { status: "valid"; invitation: InvitationInfo }
+  | { status: "invalid"; reason: string };
 
 function detectPlatform(): DetectedPlatform {
   if (typeof navigator === "undefined") return "other";
@@ -34,16 +50,71 @@ function detectPlatform(): DetectedPlatform {
   return "other";
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  agente_campo: "Agente de campo",
+  brigadista_zonal: "Brigadista zonal",
+  jefe_campana: "Jefe de campaña",
+  candidato: "Candidato",
+  consultor: "Consultor",
+  admin: "Administrador",
+};
+
 export default function InvitePage() {
   const params = useParams<{ code: string }>();
   const code = params?.code ?? "";
 
   const [platform, setPlatform] = useState<DetectedPlatform>("other");
   const [attempted, setAttempted] = useState(false);
+  const [validation, setValidation] = useState<ValidationState>({ status: "loading" });
 
   useEffect(() => {
     setPlatform(detectPlatform());
   }, []);
+
+  // Validate the invitation code against the backend so the landing can
+  // show the campaign name. Failure is non-fatal: we still show the install
+  // CTA so the user can complete the flow inside the app.
+  useEffect(() => {
+    if (!code) {
+      setValidation({ status: "invalid", reason: "Falta el código de invitación." });
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/invitations/validate/${encodeURIComponent(code)}`, {
+          method: "GET",
+          credentials: "omit",
+          cache: "no-store",
+        });
+        if (cancelled) return;
+        if (res.ok) {
+          const json = (await res.json()) as { invitation?: InvitationInfo };
+          if (json.invitation) {
+            setValidation({ status: "valid", invitation: json.invitation });
+            return;
+          }
+        }
+        setValidation({
+          status: "invalid",
+          reason:
+            res.status === 404
+              ? "El código no existe o ya fue usado."
+              : "No pudimos validar el código. Probá abrirlo desde la app.",
+        });
+      } catch {
+        if (!cancelled) {
+          setValidation({
+            status: "invalid",
+            reason: "No pudimos validar el código (sin conexión).",
+          });
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [code]);
 
   // On Android: try to open the app via custom scheme as a last resort
   // (App Links should have already handled it if app is installed)
@@ -51,7 +122,6 @@ export default function InvitePage() {
     if (platform !== "android" || !code || attempted) return;
     setAttempted(true);
 
-    // Small delay so the page renders first
     const timer = setTimeout(() => {
       window.location.href = `${APP_SCHEME}://invite/${code}`;
     }, 600);
@@ -69,14 +139,11 @@ export default function InvitePage() {
 
   const storeLabel =
     platform === "ios" ? "Instalar via TestFlight" : "Descargar en Play Store";
-  const storeIcon =
-    platform === "ios" ? "🍎" : "▶";
+  const storeIcon = platform === "ios" ? "🍎" : "▶";
 
   return (
     <div style={styles.page}>
-      {/* Card */}
       <div style={styles.card}>
-        {/* Logo */}
         <div style={styles.logoWrap}>
           <Image
             src="/isotipo_2_-removebg-preview.png"
@@ -88,14 +155,32 @@ export default function InvitePage() {
           />
         </div>
 
-        {/* Badge */}
         <div style={styles.badge}>
           <span style={styles.badgeIcon}>🔗</span>
           <span style={styles.badgeText}>Invitación oficial</span>
         </div>
 
         <h1 style={styles.title}>Goberna</h1>
-        <p style={styles.subtitle}>Tienes una invitación para unirte a una campaña</p>
+
+        {/* Validation outcome */}
+        {validation.status === "loading" && (
+          <p style={styles.subtitle}>Validando tu invitación…</p>
+        )}
+        {validation.status === "valid" && (
+          <>
+            <p style={styles.subtitle}>
+              Te invitan a unirte como{" "}
+              <strong style={{ color: BRAND_BLUE }}>
+                {ROLE_LABELS[validation.invitation.role] ?? validation.invitation.role}
+              </strong>{" "}
+              en
+            </p>
+            <p style={styles.campaignName}>{validation.invitation.campaign_name}</p>
+          </>
+        )}
+        {validation.status === "invalid" && (
+          <p style={styles.subtitle}>{validation.reason}</p>
+        )}
 
         <div style={styles.divider} />
 
@@ -122,22 +207,19 @@ export default function InvitePage() {
               <span style={styles.codeValue}>{code}</span>
             </div>
 
-            <button style={styles.storeButton} onClick={handleStoreButton}>
+            <button type="button" style={styles.storeButton} onClick={handleStoreButton}>
               <span style={styles.storeIcon}>{storeIcon}</span>
               <span style={styles.storeButtonText}>{storeLabel}</span>
             </button>
           </>
         )}
 
-        <p style={styles.footer}>
-          ¿Problemas? Contactá a tu coordinador de campaña.
-        </p>
+        <p style={styles.footer}>¿Problemas? Contactá a tu coordinador de campaña.</p>
       </div>
     </div>
   );
 }
 
-// ── Inline styles (no Tailwind dependency, página standalone) ──────────
 const BRAND_BLUE = "#163960";
 const BRAND_YELLOW = "#FFC800";
 
@@ -183,9 +265,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 20,
     padding: "4px 14px",
   },
-  badgeIcon: {
-    fontSize: 13,
-  },
+  badgeIcon: { fontSize: 13 },
   badgeText: {
     fontSize: 12,
     fontWeight: 700,
@@ -193,25 +273,22 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: 0.3,
     textTransform: "uppercase" as const,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 800,
-    color: BRAND_BLUE,
-    margin: 0,
-    letterSpacing: 1,
-  },
+  title: { fontSize: 28, fontWeight: 800, color: BRAND_BLUE, margin: 0, letterSpacing: 1 },
   subtitle: {
     fontSize: 15,
     color: "rgba(22,57,96,0.6)",
     margin: 0,
     textAlign: "center" as const,
+    lineHeight: 1.5,
   },
-  divider: {
-    width: "100%",
-    height: 1,
-    backgroundColor: "#E1E6F0",
-    margin: "4px 0",
+  campaignName: {
+    fontSize: 18,
+    fontWeight: 800,
+    color: BRAND_BLUE,
+    margin: 0,
+    textAlign: "center" as const,
   },
+  divider: { width: "100%", height: 1, backgroundColor: "#E1E6F0", margin: "4px 0" },
   body: {
     fontSize: 14,
     color: "rgba(22,57,96,0.7)",
@@ -257,9 +334,7 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     marginTop: 4,
   },
-  storeIcon: {
-    fontSize: 18,
-  },
+  storeIcon: { fontSize: 18 },
   storeButtonText: {
     fontSize: 15,
     fontWeight: 800,

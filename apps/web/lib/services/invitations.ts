@@ -1,7 +1,7 @@
 /**
  * GOBERNA — Invitations Service
  * Create and list invitation codes for a campaign.
- * The generated link is:  https://dashboard.grupogoberna.com/invite/{code}
+ * The generated link is:  https://electoral.goberna.club/invite/{code}
  */
 
 import { apiRequest } from "./api";
@@ -25,7 +25,7 @@ type CreateInvitationPayload = {
   expires_in_hours?: number; // hours until expiry, default 72 — omit to use backend default
 };
 
-const INVITE_BASE_URL = "https://dashboard.grupogoberna.com/invite";
+const INVITE_BASE_URL = "https://electoral.goberna.club/invite";
 
 export function buildInviteLink(code: string): string {
   return `${INVITE_BASE_URL}/${code}`;
