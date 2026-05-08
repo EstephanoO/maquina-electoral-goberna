@@ -2,16 +2,13 @@
 
 /**
  * DashboardShell — sidebar + main content area.
- * Manages sidebar state, viewport detection, nav filtering.
- * Children are rendered in the <main> area.
- *
- * ~290 lines (within 300-line feature component limit).
+ * Sidebar: 5 main items + collapsible Admin Hub (admin/consultor only).
  */
 
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
-import { useEffect, useMemo, useState, useCallback, memo } from "react";
+import { useEffect, useMemo, useState, useCallback, memo, type ReactNode } from "react";
 import { useAuth } from "../../../lib/auth-context";
 import { SupportChat } from "./support-chat";
 import { LoadingScreen } from "./loading-screen";
@@ -19,20 +16,28 @@ import { NotificationsButton } from "./notifications-button";
 import { CampaignSelector } from "./campaign-selector";
 import { SidebarUserPanel } from "./sidebar-user-panel";
 import {
-  DashboardIcon,
+  HomeIcon,
+  MapIcon,
+  CmsIcon,
+  DataIcon,
   AgentsIcon,
   CandidatosIcon,
   FormulariosIcon,
-  ValidacionIcon,
   GestionIcon,
   BrigadistasIcon,
+  OpsIcon,
+  BlastIcon,
   SettingsIcon,
   MenuIcon,
   CloseIcon,
+  ChevronIcon,
 } from "./icons";
 import {
-  type NavItem,
+  type NavSpec,
+  type NavItemKey,
   type UIRole,
+  MAIN_NAV,
+  ADMIN_NAV,
   mapBackendRoleToUI,
   SIDEBAR_W_EXPANDED,
   SIDEBAR_W_COLLAPSED,
@@ -41,17 +46,22 @@ import {
   navLinkBase,
 } from "./nav-config";
 
-// ── Nav items (module-scope constant) ───────────────────────────────
+// ── Icon registry ───────────────────────────────────────────────────
 
-const NAV_ITEMS: NavItem[] = [
-  { icon: <AgentsIcon />, label: "Equipo", href: "/equipo", roles: ["admin", "candidato"], section: "main", visibility: "always" },
-  { icon: <DashboardIcon />, label: "Territorio", href: (slug) => `/candidatos/${slug}/tierra`, roles: ["admin", "candidato", "consultor", "agente"], section: "main", visibility: "campaign" },
-  { icon: <ValidacionIcon />, label: "Digital", href: (slug) => `/candidatos/${slug}/validacion`, roles: ["admin", "candidato", "consultor"], section: "main", visibility: "campaign" },
-  { icon: <GestionIcon />, label: "Gestión", href: "/gestion", roles: ["admin", "consultor"], section: "main", visibility: "always" },
-  { icon: <CandidatosIcon />, label: "Candidatos", href: "/candidatos", roles: ["admin"], section: "admin", visibility: "global" },
-  { icon: <FormulariosIcon />, label: "Formularios", href: "/formularios", roles: ["admin"], section: "admin", visibility: "global" },
-  { icon: <BrigadistasIcon />, label: "Brigadistas", href: "/brigadistas", roles: ["admin"], section: "admin", visibility: "global" },
-];
+const ICON_BY_KEY: Record<NavItemKey, () => ReactNode> = {
+  inicio:      () => <HomeIcon />,
+  tierra:      () => <MapIcon />,
+  digital:     () => <CmsIcon />,
+  datos:       () => <DataIcon />,
+  equipo:      () => <AgentsIcon />,
+  candidatos:  () => <CandidatosIcon />,
+  gestion:     () => <GestionIcon />,
+  brigadistas: () => <BrigadistasIcon />,
+  ops:         () => <OpsIcon />,
+  blast:       () => <BlastIcon />,
+  leads:       () => <CandidatosIcon />,
+  formularios: () => <FormulariosIcon />,
+};
 
 // ── Component ───────────────────────────────────────────────────────
 
@@ -76,16 +86,22 @@ export const DashboardShell = memo(function DashboardShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [sidebarHoverOpen, setSidebarHoverOpen] = useState(false);
+  const [adminHubOpen, setAdminHubOpen] = useState(false);
 
   const uiRole: UIRole = mapBackendRoleToUI(user?.role ?? "agent");
   const showCollapsed = isMobile ? true : !sidebarHoverOpen;
   const showLabel = !showCollapsed || mobileOpen;
   const sidebarWidth = showCollapsed ? SIDEBAR_W_COLLAPSED : SIDEBAR_W_EXPANDED;
-  const isCmsRoute = pathname === "/cms" || pathname.startsWith("/cms/");
-  const isImmersiveRoute = pathname.includes("/tierra");
+  const isCmsRoute = pathname === "/cms" || pathname.startsWith("/cms/") || pathname.includes("/digital/chat");
+  const isImmersiveRoute = pathname.includes("/tierra") || pathname.includes("/digital") || pathname.includes("/datos");
   const isAdmin = user?.role === "admin";
   const activeCampaign = campaigns.find((c) => c.id === activeCampaignId);
   const campaignSlug = activeCampaign?.slug ?? "";
+
+  // Auto-collapse admin hub when sidebar collapses
+  useEffect(() => {
+    if (showCollapsed) setAdminHubOpen(false);
+  }, [showCollapsed]);
 
   // ── Effects
   useEffect(() => {
@@ -127,25 +143,24 @@ export const DashboardShell = memo(function DashboardShell({
   // ── Memoized nav lists
   const hasCampaign = !!activeCampaignId;
   const { mainNav, adminNav } = useMemo(() => {
-    const filtered = NAV_ITEMS
-      .filter((item) => item.roles.includes(uiRole))
-      .filter((item) => {
-        const vis = item.visibility ?? "always";
-        if (vis === "campaign") return hasCampaign && !!campaignSlug;
-        if (vis === "global") return !hasCampaign;
-        return true;
-      });
+    const filterByVis = (item: NavSpec) => {
+      const vis = item.visibility ?? "always";
+      if (vis === "campaign") return hasCampaign && !!campaignSlug;
+      if (vis === "global") return !hasCampaign;
+      return true;
+    };
     return {
-      mainNav: filtered.filter((item) => item.section === "main"),
-      adminNav: filtered.filter((item) => item.section === "admin"),
+      mainNav: MAIN_NAV.filter((i) => i.roles.includes(uiRole)).filter(filterByVis),
+      adminNav: ADMIN_NAV.filter((i) => i.roles.includes(uiRole)).filter(filterByVis),
     };
   }, [uiRole, campaignSlug, hasCampaign]);
 
   const isNavActive = useCallback(
-    (item: NavItem, href: string): boolean => {
+    (item: NavSpec, href: string): boolean => {
       if (pathname === href) return true;
-      if (href === "/home") return false;
       if (typeof item.href === "function") return pathname.startsWith(href);
+      // Static hrefs: match exact or as a prefix when the route has children
+      if (href !== "/" && pathname.startsWith(href + "/")) return true;
       return false;
     },
     [pathname],
@@ -155,8 +170,9 @@ export const DashboardShell = memo(function DashboardShell({
   if (isLoading || !isAuthenticated) return <LoadingScreen />;
 
   // ── Render helper
-  const renderNavLink = (item: NavItem, href: string) => {
+  const renderNavLink = (item: NavSpec, href: string) => {
     const isActive = isNavActive(item, href);
+    const renderIcon = ICON_BY_KEY[item.key];
     return (
       <Link
         key={href}
@@ -177,7 +193,9 @@ export const DashboardShell = memo(function DashboardShell({
           borderRadius: 0,
         }}
       >
-        <span style={{ flexShrink: 0, display: "flex", alignItems: "center", width: 20, justifyContent: "center" }}>{item.icon}</span>
+        <span style={{ flexShrink: 0, display: "flex", alignItems: "center", width: 20, justifyContent: "center" }}>
+          {renderIcon ? renderIcon() : null}
+        </span>
         {showLabel && <span>{item.label}</span>}
         {!showLabel && <span className="sidebar-tooltip">{item.label}</span>}
       </Link>
@@ -187,6 +205,7 @@ export const DashboardShell = memo(function DashboardShell({
   // ── Settings link helper
   const settingsActive = pathname === "/settings";
   const settingsVisible = uiRole === "admin" || uiRole === "candidato";
+  const showAdminSection = adminNav.length > 0;
 
   return (
     <div
@@ -256,12 +275,44 @@ export const DashboardShell = memo(function DashboardShell({
         {/* Nav links */}
         <nav style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "8px 0" }}>
           {mainNav.map((item) => renderNavLink(item, resolveHref(item.href)))}
-          {adminNav.length > 0 && (
-            <div style={{ margin: "8px 0 4px", borderTop: "1px solid var(--sidebar-border)", padding: showLabel ? "10px 20px 0" : "10px 0 0" }}>
-              {showLabel && <span style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.5, color: "rgba(255,255,255,0.25)" }}>Administración</span>}
-            </div>
+
+          {showAdminSection && (
+            <>
+              <div style={{ margin: "8px 0 0", borderTop: "1px solid var(--sidebar-border)" }} />
+              {showLabel ? (
+                <button
+                  type="button"
+                  onClick={() => setAdminHubOpen((v) => !v)}
+                  className="sidebar-nav-link"
+                  style={{
+                    ...navLinkBase,
+                    padding: "10px 20px",
+                    background: "transparent",
+                    color: "rgba(255,255,255,0.55)",
+                    fontWeight: 600,
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    letterSpacing: 1.5,
+                  }}
+                  aria-expanded={adminHubOpen}
+                >
+                  <span style={{ flex: 1 }}>Administración</span>
+                  <ChevronIcon open={adminHubOpen} />
+                </button>
+              ) : (
+                /* Collapsed-mode: show admin items as flat icons (no toggle) */
+                <div style={{ padding: "6px 0 0" }}>
+                  {adminNav.map((item) => renderNavLink(item, resolveHref(item.href)))}
+                </div>
+              )}
+
+              {showLabel && adminHubOpen && (
+                <div style={{ paddingLeft: 8 }}>
+                  {adminNav.map((item) => renderNavLink(item, resolveHref(item.href)))}
+                </div>
+              )}
+            </>
           )}
-          {adminNav.map((item) => renderNavLink(item, resolveHref(item.href)))}
         </nav>
 
         {/* Bottom section */}
