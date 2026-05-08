@@ -22,6 +22,7 @@ export type JurisdiccionRow = {
   codigo: string;
   nombre: string;
   parent_id: number | null;
+  geom?: unknown; // GeoJSON object (solo si with_geom=true)
 };
 
 export async function listCargos(paisIso2: string, nivelCodigo?: string): Promise<CargoRow[]> {
@@ -59,13 +60,52 @@ export async function listOrganizacionesPoliticas(
 }
 
 /**
- * Stub: las tablas geografia_politica.* no existen en este repo todavía
- * (migrations del geógrafo no commiteadas). Devolvemos array vacío hasta
- * que ese PR se cierre. El wizard debe tolerar este estado.
+ * Lista jurisdicciones del geógrafo (schema geografia_politica.*).
+ * Tablas (id SERIAL, nombre): peru_departamentos, peru_provincias, peru_distritos.
+ * No hay UBIGEO/codigo formal — exponemos `id` como codigo string.
+ *
+ * - ambito="departamento": ignora parent_id (todos PE; pais.id=1).
+ * - ambito="provincia":   parent_id = id_departamento (requerido).
+ * - ambito="distrito":    parent_id = id_provincia    (requerido).
  */
 export async function listJurisdicciones(
-  _ambito: string,
-  _parentId: number | null,
+  ambito: "departamento" | "provincia" | "distrito",
+  parentId: number | null,
+  withGeom: boolean = false,
 ): Promise<JurisdiccionRow[]> {
-  return [];
+  // Simplificamos la geometría a 0.005° (~500m) para reducir payload.
+  // No afecta la visualización a nivel de wizard.
+  const geomCol = withGeom
+    ? ", ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.005))::json AS geom"
+    : "";
+
+  if (ambito === "departamento") {
+    const { rows } = await pool.query<JurisdiccionRow>(
+      `SELECT id, id::text AS codigo, departamento AS nombre, id_pais AS parent_id${geomCol}
+         FROM geografia_politica.peru_departamentos
+        ORDER BY departamento`,
+    );
+    return rows;
+  }
+  if (ambito === "provincia") {
+    if (parentId == null) return [];
+    const { rows } = await pool.query<JurisdiccionRow>(
+      `SELECT id, id::text AS codigo, provincia AS nombre, id_departamento AS parent_id${geomCol}
+         FROM geografia_politica.peru_provincias
+        WHERE id_departamento = $1
+        ORDER BY provincia`,
+      [parentId],
+    );
+    return rows;
+  }
+  // ambito === "distrito"
+  if (parentId == null) return [];
+  const { rows } = await pool.query<JurisdiccionRow>(
+    `SELECT id, id::text AS codigo, distrito AS nombre, id_provincia AS parent_id${geomCol}
+       FROM geografia_politica.peru_distritos
+      WHERE id_provincia = $1
+      ORDER BY distrito`,
+    [parentId],
+  );
+  return rows;
 }

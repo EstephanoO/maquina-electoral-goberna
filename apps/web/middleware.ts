@@ -6,6 +6,8 @@
  *
  * - Dashboard routes require the `goberna_session` cookie (set by backend on login)
  * - Public routes (/, /login, /register, /onboarding, /mapa) are open
+ *   /onboarding = wizard público de creación de cuenta candidato
+ *   /pedir-acceso = pedir acceso a campaña (voluntarios, requiere auth)
  * - Security headers are added to all responses
  */
 import { NextRequest, NextResponse } from "next/server";
@@ -13,6 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 // ── Routes that require authentication ──────────────────────────────
 const PROTECTED_PREFIXES = [
   "/home",
+  "/inicio",
   "/candidatos",
   "/cms",
   "/cms-metrics",
@@ -21,6 +24,7 @@ const PROTECTED_PREFIXES = [
   "/gestion",
   "/map",
   "/ops",
+  "/pedir-acceso",
   "/settings",
 ];
 

@@ -12,6 +12,10 @@ export const organizacionesPoliticasQuerySchema = z.object({
 export const jurisdiccionesQuerySchema = z.object({
   ambito: z.enum(["departamento", "provincia", "distrito"]),
   parent_id: z.coerce.number().int().positive().optional(),
+  with_geom: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => v === "true"),
 });
 
 export type CargosQuery = z.infer<typeof cargosQuerySchema>;

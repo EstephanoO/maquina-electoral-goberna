@@ -16,13 +16,20 @@ export class AuthRepository {
   }
 
   async findUserByPhone(phone: string): Promise<UserRow | null> {
-    // Normalize phone: remove non-digits for comparison
+    // Normalize phone: remove non-digits for comparison.
+    // For Peru E.164 (51XXXXXXXXX, 11 digits), also accept the local 9-digit
+    // form (XXXXXXXXX) since the DB historically stores phones without the
+    // country code. Firebase Phone Auth always sends idTokens with E.164.
     const normalizedPhone = phone.replace(/\D/g, "");
+    const candidates =
+      normalizedPhone.startsWith("51") && normalizedPhone.length === 11
+        ? [normalizedPhone, normalizedPhone.slice(2)]
+        : [normalizedPhone];
     const { rows } = await this.pool.query<UserRow>(
       `SELECT id, email, password_hash, full_name, phone, region, role, status,
               COALESCE(password_reset_required, false) as password_reset_required, created_at, updated_at
-       FROM users WHERE REGEXP_REPLACE(phone, '\\D', '', 'g') = $1`,
-      [normalizedPhone],
+       FROM users WHERE REGEXP_REPLACE(phone, '\\D', '', 'g') = ANY($1::text[])`,
+      [candidates],
     );
     return rows[0] ?? null;
   }

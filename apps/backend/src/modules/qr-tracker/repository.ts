@@ -42,14 +42,29 @@ export async function createTracker(params: {
   slug: string;
   target_url: string;
   label?: string;
-}): Promise<{ id: string; slug: string; target_url: string; created_at: string }> {
-  const result = await pool.query<{ id: string; slug: string; target_url: string; created_at: string }>(
+}): Promise<{
+  id: string;
+  slug: string;
+  label: string | null;
+  target_url: string;
+  scan_count: number;
+  created_at: string;
+}> {
+  const result = await pool.query<{
+    id: string;
+    slug: string;
+    label: string | null;
+    target_url: string;
+    scan_count: string;
+    created_at: string;
+  }>(
     `INSERT INTO qr_trackers (slug, target_url, label)
      VALUES ($1, $2, $3)
-     RETURNING id, slug, target_url, created_at`,
+     RETURNING id, slug, label, target_url, scan_count, created_at`,
     [params.slug, params.target_url, params.label ?? null],
   );
-  return result.rows[0]!;
+  const row = result.rows[0]!;
+  return { ...row, scan_count: parseInt(row.scan_count, 10) };
 }
 
 // ── Record a scan (atomic increment + detail row) ────────────────────

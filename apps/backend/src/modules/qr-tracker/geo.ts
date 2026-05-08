@@ -15,7 +15,7 @@ export async function resolveAndStoreGeo(scanId: string, ip: string): Promise<vo
   }
 
   const res = await fetch(`http://ip-api.com/json/${ip}?fields=status,country,regionName,city,lat,lon`);
-  const data: IpApiResponse = await res.json();
+  const data = (await res.json()) as IpApiResponse;
 
   if (data.status !== "success") return;
 

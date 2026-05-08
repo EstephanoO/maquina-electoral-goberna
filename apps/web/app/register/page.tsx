@@ -285,7 +285,7 @@ function RegisterPageInner() {
       // 2) Auto-login with phone-based email
       const loginResult = await login(generatedEmail, password);
       if (loginResult.ok) {
-        router.replace("/onboarding");
+        router.replace("/pedir-acceso");
       } else {
         router.replace("/login");
       }

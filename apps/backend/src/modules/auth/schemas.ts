@@ -16,6 +16,14 @@ export const refreshSchema = z.object({
 });
 
 /**
+ * Set-initial-password schema. Solo válido si user.password_hash IS NULL
+ * (caso típico: cuenta creada por wizard onboarding sin contraseña).
+ */
+export const setInitialPasswordSchema = z.object({
+  new_password: z.string().min(8, "password debe tener al menos 8 caracteres").max(200),
+});
+
+/**
  * Register schema - phone is primary, email is optional
  * - phone: Required, will be used as login identifier
  * - email: Optional, for users who want email notifications

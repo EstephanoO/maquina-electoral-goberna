@@ -5,7 +5,7 @@ import { pool } from "../../db";
 import { errorPayload } from "../../infra/http";
 import { AUTH_COOKIE_NAMES, parseCookies, type AuthenticatedRequest } from "../../infra/auth";
 import { AuthRepository } from "./repository";
-import { changePasswordSchema, loginSchema, refreshSchema, registerFirebaseSchema, registerSchema, resetPasswordSchema } from "./schemas";
+import { changePasswordSchema, loginSchema, refreshSchema, registerFirebaseSchema, registerSchema, resetPasswordSchema, setInitialPasswordSchema } from "./schemas";
 import { authorize } from "../../infra/authorize";
 import { AppError, AuthService } from "./service";
 import { verifyFirebaseIdToken } from "./firebase-verify";
@@ -180,6 +180,48 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
 
         try {
           await service.changePassword(userId, parsed.data.current_password, parsed.data.new_password);
+          return reply.code(200).send({ ok: true, request_id: requestId });
+        } catch (error) {
+          if (error instanceof AppError) {
+            return reply.code(error.statusCode).send(errorPayload(requestId, error.code, error.message));
+          }
+          throw error;
+        }
+      },
+    );
+
+    // ── POST /api/auth/set-initial-password ────────────────────────────
+    // Setea password POR PRIMERA VEZ. Solo válido si user.password_hash IS
+    // NULL (caso típico: cuenta creada por wizard onboarding sin password,
+    // que después de Fase 3 elige una contraseña).
+    //
+    // Si el user ya tiene password, devuelve 409. Para cambiar password
+    // existente usar /api/auth/change-password (requiere current_password).
+    app.post(
+      "/api/auth/set-initial-password",
+      { preHandler: [app.authenticate] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const userId = (request as AuthenticatedRequest).userId;
+
+        const parsed = setInitialPasswordSchema.safeParse(request.body);
+        if (!parsed.success) {
+          const message = parsed.error.issues.map((i) => i.message).join(", ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
+        }
+
+        try {
+          const user = await repo.findUserById(userId);
+          if (!user) {
+            return reply.code(404).send(errorPayload(requestId, "USER_NOT_FOUND", "user no encontrado"));
+          }
+          if (user.password_hash) {
+            return reply.code(409).send(
+              errorPayload(requestId, "PASSWORD_ALREADY_SET", "ya existe contraseña — usá change-password"),
+            );
+          }
+          const hash = await service.hashPassword(parsed.data.new_password);
+          await repo.updatePasswordHash(userId, hash);
           return reply.code(200).send({ ok: true, request_id: requestId });
         } catch (error) {
           if (error instanceof AppError) {

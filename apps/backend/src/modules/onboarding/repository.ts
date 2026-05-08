@@ -1,7 +1,9 @@
+import crypto from "node:crypto";
+
 import type { PoolClient } from "pg";
 
 import { pool } from "../../db";
-import type { ProvisionedInput } from "./schemas";
+import type { ProvisionedInput, WizardInput } from "./schemas";
 
 // ── Catalog lookups (cached per process lifetime) ───────────────────
 // Los catálogos cambian rara vez (al crear un país nuevo o un cargo).
@@ -75,9 +77,13 @@ export type ProvisionedResult = {
   candidato_id: number;
   postulacion_id: number;
   slug: string;
+  user_id: string | null;
 };
 
 // ── Idempotent lookup ───────────────────────────────────────────────
+// LEFT JOIN user_campaigns con role='candidato' para devolver el user_id
+// de la primera invocación. user_id puede ser null si la tabla users no
+// existía en la versión vieja del endpoint (rows pre-Fase-3a).
 
 export async function findByNexusTenantId(
   nexusTenantId: string,
@@ -87,11 +93,21 @@ export async function findByNexusTenantId(
     candidato_id: number;
     postulacion_id: number;
     slug: string;
+    user_id: string | null;
   }>(
-    `SELECT p.campaign_id, p.id_candidato AS candidato_id, p.id AS postulacion_id, c.slug
+    `SELECT p.campaign_id,
+            p.id_candidato AS candidato_id,
+            p.id AS postulacion_id,
+            c.slug,
+            uc.user_id
      FROM candidatos.postulacion p
      JOIN campaigns c ON c.id = p.campaign_id
-     WHERE p.nexus_tenant_id = $1`,
+     LEFT JOIN user_campaigns uc
+       ON uc.campaign_id = p.campaign_id
+      AND uc.role = 'candidato'
+      AND uc.status = 'active'
+     WHERE p.nexus_tenant_id = $1
+     LIMIT 1`,
     [nexusTenantId],
   );
   return rows[0] ?? null;
@@ -117,6 +133,13 @@ export class SlugConflictError extends Error {
   constructor(public readonly slug: string) {
     super(`slug '${slug}' ya está tomado por otra campaña`);
     this.name = "SlugConflictError";
+  }
+}
+
+export class EmailConflictError extends Error {
+  constructor(public readonly email: string) {
+    super(`email '${email}' ya está registrado en users`);
+    this.name = "EmailConflictError";
   }
 }
 
@@ -221,12 +244,13 @@ export async function provisionFromOnboarding(
       const candidatoUpsert = await client.query<{ id: number }>(
         `INSERT INTO candidatos.candidato (
             nombres, id_pais, documento_tipo, documento_numero,
-            fecha_nacimiento, sexo, telefono_e164, email
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            fecha_nacimiento, sexo, telefono_e164, email, foto_url
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (id_pais, documento_tipo, documento_numero) DO UPDATE
             SET nombres = EXCLUDED.nombres,
                 telefono_e164 = COALESCE(EXCLUDED.telefono_e164, candidatos.candidato.telefono_e164),
                 email = COALESCE(EXCLUDED.email, candidatos.candidato.email),
+                foto_url = COALESCE(EXCLUDED.foto_url, candidatos.candidato.foto_url),
                 updated_at = now()
          RETURNING id`,
         [
@@ -238,6 +262,7 @@ export async function provisionFromOnboarding(
           input.sexo ?? null,
           input.telefono_e164 ?? null,
           input.email ?? null,
+          input.foto_url ?? null,
         ],
       );
       candidatoId = candidatoUpsert.rows[0]!.id;
@@ -245,8 +270,8 @@ export async function provisionFromOnboarding(
       const candidatoInsert = await client.query<{ id: number }>(
         `INSERT INTO candidatos.candidato (
             nombres, id_pais, documento_tipo,
-            fecha_nacimiento, sexo, telefono_e164, email
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+            fecha_nacimiento, sexo, telefono_e164, email, foto_url
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id`,
         [
           input.full_name,
@@ -256,6 +281,7 @@ export async function provisionFromOnboarding(
           input.sexo ?? null,
           input.telefono_e164 ?? null,
           input.email ?? null,
+          input.foto_url ?? null,
         ],
       );
       candidatoId = candidatoInsert.rows[0]!.id;
@@ -286,6 +312,36 @@ export async function provisionFromOnboarding(
     );
     const postulacionId = postulacionInsert.rows[0]!.id;
 
+    // 6. Crear users row para el candidato. password_hash = NULL (auth via
+    // OTP/Firebase post-mig-060). UNIQUE en lower(email) → 23505 si pisa otro
+    // user — lo traducimos a EmailConflictError.
+    let userId: string;
+    try {
+      const userInsert = await client.query<{ id: string }>(
+        `INSERT INTO users (email, password_hash, full_name, phone, role, status)
+         VALUES (lower($1), NULL, $2, $3, 'candidato', 'active')
+         RETURNING id`,
+        [
+          input.email.trim(),
+          input.full_name,
+          input.telefono_e164 ?? null,
+        ],
+      );
+      userId = userInsert.rows[0]!.id;
+    } catch (err) {
+      if (err instanceof Error && "code" in err && (err as { code?: string }).code === "23505") {
+        throw new EmailConflictError(input.email);
+      }
+      throw err;
+    }
+
+    // 7. Linkear user → campaign con rol candidato y permisos plenos.
+    await client.query(
+      `INSERT INTO user_campaigns (user_id, campaign_id, role, status, perm_tierra, perm_digital)
+       VALUES ($1, $2, 'candidato', 'active', true, true)`,
+      [userId, campaignId],
+    );
+
     await client.query("COMMIT");
 
     return {
@@ -293,6 +349,7 @@ export async function provisionFromOnboarding(
       candidato_id: candidatoId,
       postulacion_id: postulacionId,
       slug: input.slug,
+      user_id: userId,
     };
   } catch (err) {
     await client.query("ROLLBACK");
@@ -300,4 +357,253 @@ export async function provisionFromOnboarding(
   } finally {
     client.release();
   }
+}
+
+// ── Wizard público (apps/web /onboarding) ──────────────────────────────
+// Reusa provisionFromOnboarding generando los campos que el wizard no
+// pide al user: slug del nombre completo, email sintético <slug>@goberna.club,
+// nexus_tenant_id = wizard_<uuid> (UNIQUE en postulacion → idempotente
+// en reintentos del mismo browser), telefono normalizado.
+
+function slugify(input: string): string {
+  return input
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
+async function pickAvailableSlug(client: PoolClient, base: string): Promise<string> {
+  const baseSlug = slugify(base) || "candidato";
+  for (let i = 0; i < 50; i++) {
+    const candidate = i === 0 ? baseSlug : `${baseSlug}-${i + 1}`;
+    const { rows } = await client.query<{ id: string }>(
+      "SELECT id FROM campaigns WHERE slug = $1",
+      [candidate],
+    );
+    if (rows.length === 0) return candidate;
+  }
+  // Fallback: 6-char random suffix
+  return `${baseSlug}-${crypto.randomBytes(3).toString("hex")}`;
+}
+
+export async function provisionFromWizard(
+  input: WizardInput,
+): Promise<ProvisionedResult> {
+  const fullName = `${input.first_name} ${input.last_name}`.trim();
+  const phoneE164 = input.phone ? input.phone.replace(/^\+?/, "+") : undefined;
+
+  // pickAvailableSlug abre su propio cliente; nos sirve antes de la TX principal.
+  const client = await pool.connect();
+  let slug: string;
+  let cargoAmbito: string | null;
+  try {
+    slug = await pickAvailableSlug(client, fullName);
+    // Resolvemos el ámbito del cargo aquí para poder pasar SOLO el id
+    // de jurisdicción que corresponde (chk_jurisdiccion_unica enforces
+    // que solo 1 de departamento/provincia/distrito esté NOT NULL).
+    const cargo = await lookupCargo(client, input.cargo_codigo);
+    cargoAmbito = cargo?.ambito ?? null;
+  } finally {
+    client.release();
+  }
+
+  const email = `${slug}@goberna.pe`;
+
+  // Filtrar jurisdicción según ámbito del cargo (chk_jurisdiccion_unica).
+  // - pais         → ningún id_*
+  // - departamento → solo id_departamento
+  // - provincia    → solo id_provincia
+  // - distrito     → solo id_distrito
+  const jurisdiccion: Pick<ProvisionedInput, "id_departamento" | "id_provincia" | "id_distrito"> = {};
+  if (cargoAmbito === "departamento" && input.id_departamento) {
+    jurisdiccion.id_departamento = input.id_departamento;
+  } else if (cargoAmbito === "provincia" && input.id_provincia) {
+    jurisdiccion.id_provincia = input.id_provincia;
+  } else if (cargoAmbito === "distrito" && input.id_distrito) {
+    jurisdiccion.id_distrito = input.id_distrito;
+  }
+
+  const provisioned: ProvisionedInput = {
+    nexus_tenant_id: `wizard_${crypto.randomUUID()}`,
+    full_name: fullName,
+    pais_codigo: input.country,
+    documento_tipo: "DNI",
+    ...(input.documento_numero && { documento_numero: input.documento_numero }),
+    ...(phoneE164 && { telefono_e164: phoneE164 }),
+    email,
+    rol_campana_codigo: input.rol_campana_codigo,
+    cargo_codigo: input.cargo_codigo,
+    ...(input.organizacion_politica_codigo && {
+      organizacion_politica_codigo: input.organizacion_politica_codigo,
+    }),
+    ...jurisdiccion,
+    slug,
+    ...(input.foto_url && { foto_url: input.foto_url }),
+  };
+
+  return provisionFromOnboarding(provisioned);
+}
+
+/** Setea password_hash a un user después del provisionFromWizard. */
+export async function setUserPasswordHash(
+  userId: string,
+  passwordHash: string,
+): Promise<void> {
+  await pool.query(
+    "UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2",
+    [passwordHash, userId],
+  );
+}
+
+// ── Contexto del candidato (Fase 2) ────────────────────────────────────
+// Devuelve toda la info del candidato logged-in que Fase 2 muestra:
+// - identidad (user, full_name, phone)
+// - campaign (id, slug, name)
+// - cargo (codigo, nombre, ambito) y nivel
+// - jurisdicción (departamento + provincia + distrito si aplica)
+// - organización política (codigo, nombre, siglas)
+// - has_password (para saber si Fase 3 debe pedir contraseña)
+
+export type CandidatoContext = {
+  user: {
+    id: string;
+    full_name: string;
+    email: string;
+    phone: string | null;
+    has_password: boolean;
+    foto_url: string | null;
+  };
+  campaign: {
+    id: string;
+    slug: string;
+    name: string;
+  };
+  cargo: {
+    codigo: string;
+    nombre: string;
+    ambito: "pais" | "departamento" | "provincia" | "distrito";
+    nivel_codigo: string;
+    nivel_nombre: string;
+  };
+  jurisdiccion: {
+    pais: { id: number; nombre: string; iso2: string };
+    departamento: { id: number; nombre: string } | null;
+    provincia: { id: number; nombre: string } | null;
+    distrito: { id: number; nombre: string } | null;
+  };
+  organizacion_politica: {
+    codigo: string;
+    nombre: string;
+    siglas: string | null;
+  } | null;
+};
+
+export async function findCandidatoContext(userId: string): Promise<CandidatoContext | null> {
+  const { rows } = await pool.query<{
+    user_id: string;
+    full_name: string;
+    email: string;
+    phone: string | null;
+    has_password: boolean;
+    foto_url: string | null;
+    campaign_id: string;
+    campaign_slug: string;
+    campaign_name: string;
+    cargo_codigo: string;
+    cargo_nombre: string;
+    cargo_ambito: "pais" | "departamento" | "provincia" | "distrito";
+    nivel_codigo: string;
+    nivel_nombre: string;
+    pais_id: number;
+    pais_nombre: string;
+    pais_iso2: string;
+    dep_id: number | null;
+    dep_nombre: string | null;
+    prov_id: number | null;
+    prov_nombre: string | null;
+    dist_id: number | null;
+    dist_nombre: string | null;
+    org_codigo: string | null;
+    org_nombre: string | null;
+    org_siglas: string | null;
+  }>(
+    `SELECT
+        u.id AS user_id,
+        u.full_name,
+        u.email,
+        u.phone,
+        (u.password_hash IS NOT NULL) AS has_password,
+        cand.foto_url AS foto_url,
+        c.id AS campaign_id,
+        c.slug AS campaign_slug,
+        c.name AS campaign_name,
+        cg.codigo AS cargo_codigo,
+        cg.nombre AS cargo_nombre,
+        cg.ambito_geografico AS cargo_ambito,
+        ng.codigo AS nivel_codigo,
+        ng.nombre AS nivel_nombre,
+        pais.id AS pais_id,
+        pais.nombre AS pais_nombre,
+        pais.iso2 AS pais_iso2,
+        gp_dep.id AS dep_id,
+        gp_dep.departamento AS dep_nombre,
+        gp_prov.id AS prov_id,
+        gp_prov.provincia AS prov_nombre,
+        gp_dist.id AS dist_id,
+        gp_dist.distrito AS dist_nombre,
+        op.codigo AS org_codigo,
+        op.nombre AS org_nombre,
+        op.siglas AS org_siglas
+       FROM users u
+       JOIN user_campaigns uc ON uc.user_id = u.id AND uc.role = 'candidato' AND uc.status = 'active'
+       JOIN campaigns c       ON c.id = uc.campaign_id
+       JOIN candidatos.postulacion p ON p.campaign_id = c.id
+       JOIN candidatos.candidato cand ON cand.id = p.id_candidato
+       JOIN catalogos.cargo_gobierno cg ON cg.id = p.id_cargo_gobierno
+       JOIN catalogos.nivel_gobierno ng ON ng.id = cg.id_nivel_gobierno
+       JOIN catalogos.pais pais ON pais.id = ng.id_pais
+       LEFT JOIN geografia_politica.peru_departamentos gp_dep ON gp_dep.id = p.id_departamento
+       LEFT JOIN geografia_politica.peru_provincias gp_prov ON gp_prov.id = p.id_provincia
+       LEFT JOIN geografia_politica.peru_distritos gp_dist ON gp_dist.id = p.id_distrito
+       LEFT JOIN catalogos.organizacion_politica op ON op.id = p.id_organizacion_politica
+      WHERE u.id = $1
+      LIMIT 1`,
+    [userId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    user: {
+      id: r.user_id,
+      full_name: r.full_name,
+      email: r.email,
+      phone: r.phone,
+      has_password: r.has_password,
+      foto_url: r.foto_url,
+    },
+    campaign: {
+      id: r.campaign_id,
+      slug: r.campaign_slug,
+      name: r.campaign_name,
+    },
+    cargo: {
+      codigo: r.cargo_codigo,
+      nombre: r.cargo_nombre,
+      ambito: r.cargo_ambito,
+      nivel_codigo: r.nivel_codigo,
+      nivel_nombre: r.nivel_nombre,
+    },
+    jurisdiccion: {
+      pais: { id: r.pais_id, nombre: r.pais_nombre, iso2: r.pais_iso2 },
+      departamento: r.dep_id ? { id: r.dep_id, nombre: r.dep_nombre! } : null,
+      provincia: r.prov_id ? { id: r.prov_id, nombre: r.prov_nombre! } : null,
+      distrito: r.dist_id ? { id: r.dist_id, nombre: r.dist_nombre! } : null,
+    },
+    organizacion_politica: r.org_codigo
+      ? { codigo: r.org_codigo, nombre: r.org_nombre!, siglas: r.org_siglas }
+      : null,
+  };
 }

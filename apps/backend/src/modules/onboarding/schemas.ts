@@ -27,7 +27,13 @@ export const provisionedSchema = z.object({
     .trim()
     .regex(/^\+?\d{8,15}$/, "telefono_e164 debe ser 8-15 dígitos con o sin '+'")
     .optional(),
-  email: z.string().email().max(200).optional(),
+  // Required: el endpoint crea un users row + user_campaigns y necesita email
+  // como natural key. nexus aprovisiona un mailbox Mailu por tenant antes de
+  // invocar este endpoint, así que siempre hay email.
+  email: z.string().email().max(200),
+  // Foto del candidato (data URL base64 o http URL). Cap a 750KB. Renderiza
+  // en el deck de Fase 2 — ver wizardInputSchema más abajo.
+  foto_url: z.string().max(750_000).optional(),
 
   // ── Postulación (códigos resueltos a IDs server-side) ──────────
   rol_campana_codigo: z.enum(["candidato", "estratega"]).default("candidato"),
@@ -62,3 +68,43 @@ export const provisionedSchema = z.object({
 });
 
 export type ProvisionedInput = z.infer<typeof provisionedSchema>;
+
+// ── Wizard público ─────────────────────────────────────────────────────
+// Body que envía el wizard /onboarding del frontend principal (apps/web).
+// No requiere service-token ni nexus_tenant_id: el endpoint genera ambos
+// internamente. Sin DNS, hosting, mailbox — solo crea la cuenta del
+// candidato + campaign mínima para que entre al dashboard.
+
+export const wizardInputSchema = z.object({
+  // Identidad
+  first_name: z.string().trim().min(1).max(120),
+  last_name: z.string().trim().min(1).max(120),
+  country: z.string().trim().length(2).toUpperCase().default("PE"),
+  documento_numero: z.string().trim().max(50).optional(),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^\+?\d{8,15}$/, "phone debe ser 8-15 dígitos con o sin '+'")
+    .optional(),
+
+  // Rol + cargo
+  rol_campana_codigo: z.enum(["candidato", "estratega"]).default("candidato"),
+  cargo_codigo: z.string().trim().min(1).max(100),
+  organizacion_politica_codigo: z.string().trim().max(100).optional(),
+
+  // Jurisdicción (cascada — opcional según ámbito del cargo)
+  id_departamento: z.number().int().positive().optional(),
+  id_provincia: z.number().int().positive().optional(),
+  id_distrito: z.number().int().positive().optional(),
+
+  // Contraseña que el candidato elige al final del wizard. Opcional —
+  // si no viene, la cuenta queda solo con OTP/magic-link.
+  password: z.string().min(8).max(200).optional(),
+
+  // Foto del candidato — data URL (base64) o URL externa. Cap a 750KB para
+  // que el payload del wizard no se vuelva pesado. Se guarda en
+  // candidatos.candidato.foto_url y la consume el deck de Fase 2.
+  foto_url: z.string().max(750_000).optional(),
+});
+
+export type WizardInput = z.infer<typeof wizardInputSchema>;

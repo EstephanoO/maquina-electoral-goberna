@@ -18,6 +18,7 @@ import { buildFormsRoutes } from "./modules/forms/routes";
 import { buildHealthRoutes } from "./modules/health/routes";
 import { buildCampaignsRoutes } from "./modules/campaigns/routes";
 import { buildAccessRequestsRoutes } from "./modules/access-requests/routes";
+import { buildMobileRoutes } from "./modules/mobile/routes";
 import { buildOnboardingRoutes } from "./modules/onboarding/routes";
 import { buildCatalogosRoutes } from "./modules/catalogos/routes";
 import { buildMagicLinkRoutes } from "./modules/auth/magic-link/routes";
@@ -192,6 +193,7 @@ export function buildApp(env: AppEnv) {
   app.register(buildAgentsRoutes(env));
   app.register(buildCampaignsRoutes(env));
   app.register(buildAccessRequestsRoutes(env));
+  app.register(buildMobileRoutes(env));
   app.register(buildOnboardingRoutes(env));
   app.register(buildCatalogosRoutes(env));
   app.register(buildMagicLinkRoutes(env));

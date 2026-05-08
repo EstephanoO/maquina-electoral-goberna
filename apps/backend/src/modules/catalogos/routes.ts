@@ -54,11 +54,8 @@ export function buildCatalogosRoutes(_env: AppEnv): FastifyPluginAsync {
     });
 
     // ── GET /api/catalogos/jurisdicciones?ambito=distrito&parent_id=123 ─
-    // STUB: hasta que las tablas geografia_politica.* lleguen al repo
-    // (migración del geógrafo, otro PR), este endpoint devuelve []. El
-    // wizard debe permitir continuar igual con los IDs en null y el endpoint
-    // de provisioning los persiste tal cual; cuando geografia_politica esté,
-    // se reemplaza esta lógica por queries reales.
+    // Cascada del wizard: departamento → provincia (parent_id=dep) →
+    // distrito (parent_id=prov). Backed por geografia_politica.* (geógrafo).
     app.get("/api/catalogos/jurisdicciones", async (request, reply) => {
       const requestId = String(request.id);
       const parsed = jurisdiccionesQuerySchema.safeParse(request.query);
@@ -71,13 +68,13 @@ export function buildCatalogosRoutes(_env: AppEnv): FastifyPluginAsync {
         const jurisdicciones = await repo.listJurisdicciones(
           parsed.data.ambito,
           parsed.data.parent_id ?? null,
+          parsed.data.with_geom ?? false,
         );
         return reply.code(200).send({
           ok: true,
           request_id: requestId,
           ambito: parsed.data.ambito,
           jurisdicciones,
-          stub: true,
         });
       } catch (error) {
         app.log.error({ err: error, request_id: requestId }, "catalogos jurisdicciones failed");
