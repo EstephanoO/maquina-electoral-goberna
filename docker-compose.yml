@@ -143,6 +143,7 @@ services:
     networks:
       - app_network
       - leads_crm_internal
+      - nexus_app_network
 
   nginx:
     image: nginx:1.27-alpine
@@ -186,3 +187,7 @@ networks:
   leads_crm_internal:
     external: true
     name: leads-crm_internal
+  # Network compartida con nexus_postgres (DB principal de la plataforma).
+  # El DATABASE_URL en .env apunta a nexus_postgres:5432.
+  nexus_app_network:
+    external: true
