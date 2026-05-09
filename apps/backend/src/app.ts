@@ -20,6 +20,7 @@ import { buildCampaignsRoutes } from "./modules/campaigns/routes";
 import { buildAccessRequestsRoutes } from "./modules/access-requests/routes";
 import { buildMobileRoutes } from "./modules/mobile/routes";
 import { buildOnboardingRoutes } from "./modules/onboarding/routes";
+import { buildConsultorRoutes } from "./modules/consultor/routes";
 import { buildCatalogosRoutes } from "./modules/catalogos/routes";
 import { buildMagicLinkRoutes } from "./modules/auth/magic-link/routes";
 import { buildFormDefinitionsRoutes } from "./modules/form-definitions/routes";
@@ -195,6 +196,7 @@ export function buildApp(env: AppEnv) {
   app.register(buildAccessRequestsRoutes(env));
   app.register(buildMobileRoutes(env));
   app.register(buildOnboardingRoutes(env));
+  app.register(buildConsultorRoutes(env));
   app.register(buildCatalogosRoutes(env));
   app.register(buildMagicLinkRoutes(env));
   app.register(buildFormDefinitionsRoutes(env));
