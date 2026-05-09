@@ -1007,57 +1007,9 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
-    // POST /api/admin/decks/:id/approve  (admin only)
-    app.post<{ Params: { id: string } }>(
-      "/api/admin/decks/:id/approve",
-      {
-        preHandler: [app.authenticate, authorize({ roles: ["admin"] })],
-      },
-      async (request, reply) => {
-        const requestId = String(request.id);
-        const req = request as AuthenticatedRequest;
-        const id = request.params.id;
-        const idParsed = z.string().uuid().safeParse(id);
-        if (!idParsed.success) {
-          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "id inválido"));
-        }
-        const updated = await repo.approveDeckAdmin(id, req.userId);
-        if (!updated) {
-          return reply.code(404).send(
-            errorPayload(requestId, "DECK_NOT_APPROVABLE", "deck no existe o no está en pending_review"),
-          );
-        }
-        return reply.code(200).send({ ok: true, request_id: requestId, deck: updated });
-      },
-    );
-
-    // POST /api/admin/decks/:id/reject  (admin only)
-    app.post<{ Params: { id: string }; Body: { reason: string } }>(
-      "/api/admin/decks/:id/reject",
-      {
-        preHandler: [app.authenticate, authorize({ roles: ["admin"] })],
-      },
-      async (request, reply) => {
-        const requestId = String(request.id);
-        const req = request as AuthenticatedRequest;
-        const id = request.params.id;
-        const idParsed = z.string().uuid().safeParse(id);
-        if (!idParsed.success) {
-          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "id inválido"));
-        }
-        const reasonSchema = z.object({ reason: z.string().min(2).max(500) });
-        const reasonParsed = reasonSchema.safeParse(request.body);
-        if (!reasonParsed.success) {
-          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "reason requerido"));
-        }
-        const updated = await repo.rejectDeckAdmin(id, req.userId, reasonParsed.data.reason);
-        if (!updated) {
-          return reply.code(404).send(
-            errorPayload(requestId, "DECK_NOT_REJECTABLE", "deck no existe o no está en pending_review"),
-          );
-        }
-        return reply.code(200).send({ ok: true, request_id: requestId, deck: updated });
-      },
-    );
+    // Nota: el flow approve/reject del admin reusa los endpoints existentes
+    // /api/admin/decks/:id/publish y /api/admin/decks/:id/reject. Las queries
+    // ahora aceptan tanto status='draft' (autopublish directo) como
+    // status='pending_review' (admin aprobando lo que el consultor mandó).
   };
 }

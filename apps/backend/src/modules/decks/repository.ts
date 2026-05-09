@@ -512,20 +512,29 @@ export async function selfPublishDeck(id: string, consultorId: string): Promise<
   return rows[0] ?? null;
 }
 
+/**
+ * Publica un deck. Acepta tanto `draft` (autopublish/admin directo) como
+ * `pending_review` (admin aprobando lo que el consultor mandó a revisar).
+ */
 export async function publishDeck(id: string, reviewerId: string): Promise<DeckRow | null> {
   const { rows } = await pool.query<DeckRow>(
     `UPDATE public.decks
         SET status = 'published',
             reviewed_by_user_id = $2,
             published_at = now(),
+            rejection_reason = NULL,
             updated_at = now()
-      WHERE id = $1 AND status = 'draft'
+      WHERE id = $1 AND status IN ('draft', 'pending_review')
       RETURNING *`,
     [id, reviewerId],
   );
   return rows[0] ?? null;
 }
 
+/**
+ * Rechaza un deck. Acepta tanto `draft` como `pending_review`. El consultor
+ * puede reabrirlo via `reopenDraft`.
+ */
 export async function rejectDeck(
   id: string,
   reviewerId: string,
@@ -537,7 +546,7 @@ export async function rejectDeck(
             reviewed_by_user_id = $2,
             rejection_reason = $3,
             updated_at = now()
-      WHERE id = $1 AND status = 'draft'
+      WHERE id = $1 AND status IN ('draft', 'pending_review')
       RETURNING *`,
     [id, reviewerId, reason],
   );
@@ -620,46 +629,6 @@ export async function submitForReview(
         AND status IN ('draft', 'rejected')
       RETURNING *`,
     [deckId, consultorId],
-  );
-  return rows[0] ?? null;
-}
-
-/** Admin aprueba un deck en pending_review → published. */
-export async function approveDeckAdmin(
-  deckId: string,
-  adminId: string,
-): Promise<DeckRow | null> {
-  const { rows } = await pool.query<DeckRow>(
-    `UPDATE public.decks
-        SET status = 'published',
-            reviewed_by_user_id = $2,
-            published_at = now(),
-            rejection_reason = NULL,
-            updated_at = now()
-      WHERE id = $1
-        AND status = 'pending_review'
-      RETURNING *`,
-    [deckId, adminId],
-  );
-  return rows[0] ?? null;
-}
-
-/** Admin rechaza un deck en pending_review → rejected (consultor lo retoma). */
-export async function rejectDeckAdmin(
-  deckId: string,
-  adminId: string,
-  reason: string,
-): Promise<DeckRow | null> {
-  const { rows } = await pool.query<DeckRow>(
-    `UPDATE public.decks
-        SET status = 'rejected',
-            reviewed_by_user_id = $2,
-            rejection_reason = $3,
-            updated_at = now()
-      WHERE id = $1
-        AND status = 'pending_review'
-      RETURNING *`,
-    [deckId, adminId, reason],
   );
   return rows[0] ?? null;
 }
