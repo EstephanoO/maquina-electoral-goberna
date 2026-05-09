@@ -214,9 +214,26 @@ export interface DeckRow {
   size_bytes: number | null;
   status: "draft" | "published" | "rejected";
   rejection_reason: string | null;
+  consultor_form: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   published_at: string | null;
+}
+
+/** Merge profundo (replace level 1) del form en consultor_form. */
+export async function mergeConsultorForm(
+  deckId: string,
+  partial: Record<string, unknown>,
+): Promise<DeckRow | null> {
+  const { rows } = await pool.query<DeckRow>(
+    `UPDATE public.decks
+        SET consultor_form = consultor_form || $2::jsonb,
+            updated_at = now()
+      WHERE id = $1
+      RETURNING *`,
+    [deckId, JSON.stringify(partial)],
+  );
+  return rows[0] ?? null;
 }
 
 export interface DeckListItem extends DeckRow {

@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import type { AppEnv } from "../../config/env";
 import { errorPayload } from "../../infra/http";
+import { pool } from "../../db";
 import { authorize } from "../../infra/authorize";
 import type { AuthenticatedRequest } from "../../infra/auth";
 
@@ -13,6 +14,8 @@ import {
   checkConsultorAccessAndGetCandidatoUserId,
   consultorHasGlobalAccess,
 } from "../consultor/repository";
+import { getCandidatoSnapshotByCampaign } from "../onboarding/repository";
+import { renderDeckHtml, type ConsultorForm } from "./render";
 import * as repo from "./repository";
 
 // Storage path para los HTML — montado vía volume `uploads` en docker-compose.
@@ -507,6 +510,137 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
           app.log.error({ err: e, request_id: requestId, deck_id: id }, "decks/json read failed");
           return reply.code(500).send(errorPayload(requestId, "DECK_READ_ERROR", "no pude leer el archivo"));
         }
+      },
+    );
+
+    // ── POST /api/consultor/decks/bootstrap ───────────────────────────
+    // Crea o regenera el deck Goberna estándar (template Fase 2) a partir
+    // del onboarding del candidato + form opcional del consultor.
+    // Idempotente por (candidato_id, uploader, type): si ya existe un
+    // draft, lo actualiza; si no, crea uno nuevo.
+    // FK enforced: requiere que candidato exista en candidatos.candidato.
+    app.post(
+      "/api/consultor/decks/bootstrap",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["consultor"] }),
+        ],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const req = request as AuthenticatedRequest;
+        const schema = z.object({
+          candidato_id: z.coerce.number().int().positive(),
+          type: z.enum(["diagnostico", "analisis", "plan", "episodico", "otro"]).default("diagnostico"),
+          form: z.record(z.string(), z.unknown()).optional(),
+        });
+        const parsed = schema.safeParse(request.body ?? {});
+        if (!parsed.success) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", parsed.error.message));
+        }
+        const { candidato_id, type, form } = parsed.data;
+
+        // Verificar acceso al candidato
+        if (req.userRole !== "admin") {
+          const ok = await checkConsultorAccessAndGetCandidatoUserId(req.userId, candidato_id);
+          if (!ok) {
+            return reply.code(403).send(
+              errorPayload(requestId, "CANDIDATO_NOT_ACCESSIBLE", "no tenés acceso a este candidato"),
+            );
+          }
+        }
+
+        // Buscar el campaign_id del candidato
+        const { rows: campRows } = await pool.query<{ campaign_id: string }>(
+          `SELECT p.campaign_id FROM candidatos.postulacion p WHERE p.id_candidato = $1 LIMIT 1`,
+          [candidato_id],
+        );
+        const campaignId = campRows[0]?.campaign_id ?? null;
+        if (!campaignId) {
+          return reply.code(409).send(
+            errorPayload(requestId, "ONBOARDING_INCOMPLETE", "el candidato no tiene postulacion — completar onboarding primero"),
+          );
+        }
+
+        // Pull snapshot del onboarding (necesario para render)
+        const snapshot = await getCandidatoSnapshotByCampaign(campaignId);
+        if (!snapshot) {
+          return reply.code(409).send(
+            errorPayload(requestId, "ONBOARDING_INCOMPLETE", "no se pudo armar el snapshot del candidato — completar onboarding primero"),
+          );
+        }
+
+        // Reusar draft existente o crear nuevo (mismo patrón que upload_deck)
+        const existing = await repo.findDraftByKey(candidato_id, req.userId, type);
+        let row: repo.DeckRow;
+        let replaced = false;
+        const incomingForm = (form as ConsultorForm | undefined) ?? {};
+
+        if (existing) {
+          // Merge form parcial al existing.consultor_form
+          const merged = await repo.mergeConsultorForm(existing.id, incomingForm as Record<string, unknown>);
+          if (!merged) {
+            return reply.code(500).send(errorPayload(requestId, "DECK_MERGE_ERROR", "error mergeando form"));
+          }
+          row = merged;
+          replaced = true;
+        } else {
+          // INSERT nuevo con form
+          const id = randomUUID();
+          const storagePath = join(STORAGE_DIR, `${id}.html`);
+          const initialRow = await repo.insertDeck({
+            id,
+            candidato_id,
+            campaign_id: campaignId,
+            uploaded_by_user_id: req.userId,
+            title: `${type.charAt(0).toUpperCase() + type.slice(1)} — ${snapshot.user.full_name}`,
+            type,
+            description: `Deck Goberna estándar generado del onboarding${form ? " + form consultor" : ""}.`,
+            storage_path: storagePath,
+            size_bytes: 0, // se actualiza después del render
+          });
+          // Persistir form
+          if (Object.keys(incomingForm).length > 0) {
+            const merged = await repo.mergeConsultorForm(initialRow.id, incomingForm as Record<string, unknown>);
+            row = merged ?? initialRow;
+          } else {
+            row = initialRow;
+          }
+        }
+
+        // Render HTML usando snapshot + form merged
+        const fullForm = (row.consultor_form ?? {}) as ConsultorForm;
+        const html = renderDeckHtml({ snapshot, form: fullForm });
+
+        // Persistir HTML al disco
+        try {
+          await fs.mkdir(STORAGE_DIR, { recursive: true });
+          await fs.writeFile(row.storage_path, html, "utf8");
+          await pool.query(
+            `UPDATE public.decks SET size_bytes = $2, updated_at = now() WHERE id = $1`,
+            [row.id, Buffer.byteLength(html, "utf8")],
+          );
+        } catch (e) {
+          app.log.error({ err: e, request_id: requestId, deck_id: row.id }, "decks/bootstrap write failed");
+          return reply.code(500).send(errorPayload(requestId, "DECK_STORAGE_ERROR", "no pude guardar el HTML"));
+        }
+
+        return reply.code(replaced ? 200 : 201).send({
+          ok: true,
+          request_id: requestId,
+          replaced,
+          deck: {
+            id: row.id,
+            candidato_id: row.candidato_id,
+            title: row.title,
+            type: row.type,
+            status: row.status,
+            consultor_form: row.consultor_form,
+            preview_url: `/api/decks/${row.id}/raw`,
+            html, // para el MCP local
+          },
+        });
       },
     );
 
