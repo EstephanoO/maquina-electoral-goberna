@@ -42,6 +42,19 @@ export function normalizePhone(input: string): string {
   return input.replace(/\D/g, "");
 }
 
+/**
+ * E.164 sin `+` para Baileys. Para PE asume `51` cuando el número parece local
+ * (9 dígitos empezando con 9). El bot construye JID como `${digits}@s.whatsapp.net`,
+ * por lo que un 9 dígitos sin código país produciría un JID inválido.
+ */
+export function toE164ForBot(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.length === 9 && digits.startsWith("9")) {
+    return `51${digits}`;
+  }
+  return digits;
+}
+
 function otpKey(phone: string): string {
   return `otp:wa:${phone}`;
 }
@@ -113,10 +126,13 @@ export async function sendOtp(
     if (options.botToken) headers["Authorization"] = `Bearer ${options.botToken}`;
 
     const url = `${options.botUrl.replace(/\/$/, "")}/send/${encodeURIComponent(options.botInstance)}`;
+    // Bot construye JID como `${digits}@s.whatsapp.net` — necesita E.164 con
+    // código país, no el número local de 9 dígitos.
+    const botPhone = toE164ForBot(normalized);
     const res = await fetch(url, {
       method: "POST",
       headers,
-      body: JSON.stringify({ phone: normalized, message }),
+      body: JSON.stringify({ phone: botPhone, message }),
     });
 
     if (!res.ok) {
