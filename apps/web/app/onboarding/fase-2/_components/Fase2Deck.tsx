@@ -9,12 +9,18 @@ import type { CandidatoContext } from "@/lib/onboarding-api";
 import { CloudSkyBg } from "@/components/cloud-sky-bg";
 
 import { SlideCover } from "./slides/SlideCover";
+import { SlideCapacidadGoberna } from "./slides/SlideCapacidadGoberna";
+import { SlideOficinasGoberna } from "./slides/SlideOficinasGoberna";
 import { SlideRoadmap } from "./slides/SlideRoadmap";
+import { SlideRecorridoEstrategico } from "./slides/SlideRecorridoEstrategico";
 import { SlideIdentity } from "./slides/SlideIdentity";
 import { SlideResumen } from "./slides/SlideResumen";
 import { SlideAnalisisElectoral } from "./slides/SlideAnalisisElectoral";
+import { SlideVotosParaGanar } from "./slides/SlideVotosParaGanar";
 import { SlidePartidosImportantes } from "./slides/SlidePartidosImportantes";
 import { SlideHistorialINFOGOB } from "./slides/SlideHistorialINFOGOB";
+import { SlideFormulaElectoral } from "./slides/SlideFormulaElectoral";
+import { SlidePresenciaDigital } from "./slides/SlidePresenciaDigital";
 import { SlideQuienEs } from "./slides/SlideQuienEs";
 import { SlideCTA } from "./slides/SlideCTA";
 import { SectionDivider } from "./slides/SectionDivider";
@@ -46,26 +52,45 @@ export function Fase2Deck({ ctx }: Fase2DeckProps) {
     ctx.jurisdiccion.departamento?.nombre ??
     ctx.jurisdiccion.pais.nombre;
 
+  const firstName = ctx.user.full_name.split(/\s+/)[0] ?? "";
+  const SECCIONES_TOTAL = 7;
+
   const slides = useMemo<SlideDef[]>(
     () => [
-      // Apertura
+      // ── Apertura ──
       { id: "cover", node: <SlideCover /> },
+
+      // ── Sección 0: Capacidad Goberna (institucional) ──
+      {
+        id: "capacidad-goberna",
+        section: { num: 0, total: SECCIONES_TOTAL, label: "Quién te acompaña" },
+        node: <SlideCapacidadGoberna />,
+      },
+      {
+        id: "oficinas-goberna",
+        section: { num: 0, total: SECCIONES_TOTAL, label: "Quién te acompaña" },
+        node: <SlideOficinasGoberna />,
+      },
+
+      // ── Roadmap del deck ──
       { id: "roadmap", node: <SlideRoadmap ctx={ctx} /> },
-      // Sección 1: Tu territorio
+
+      // ── Sección 1: Tu territorio ──
       {
         id: "identity",
-        section: { num: 1, total: 5, label: "Tu territorio" },
+        section: { num: 1, total: SECCIONES_TOTAL, label: "Tu territorio" },
         node: <SlideIdentity ctx={ctx} />,
       },
       {
         id: "resumen",
-        section: { num: 1, total: 5, label: "Tu territorio" },
+        section: { num: 1, total: SECCIONES_TOTAL, label: "Tu territorio" },
         node: <SlideResumen ctx={ctx} />,
       },
-      // Sección 2: Análisis electoral
+
+      // ── Sección 2: Análisis electoral + votos para ganar ──
       {
         id: "div-analisis",
-        section: { num: 2, total: 5, label: "Análisis electoral" },
+        section: { num: 2, total: SECCIONES_TOTAL, label: "Análisis electoral" },
         isDivider: true,
         node: (
           <SectionDivider
@@ -78,13 +103,19 @@ export function Fase2Deck({ ctx }: Fase2DeckProps) {
       },
       {
         id: "analisis",
-        section: { num: 2, total: 5, label: "Análisis electoral" },
+        section: { num: 2, total: SECCIONES_TOTAL, label: "Análisis electoral" },
         node: <SlideAnalisisElectoral ctx={ctx} />,
       },
-      // Sección 3: Quiénes mandan
+      {
+        id: "votos-para-ganar",
+        section: { num: 2, total: SECCIONES_TOTAL, label: "Análisis electoral" },
+        node: <SlideVotosParaGanar ctx={ctx} />,
+      },
+
+      // ── Sección 3: Competencia partidaria ──
       {
         id: "div-partidos",
-        section: { num: 3, total: 5, label: "Competencia partidaria" },
+        section: { num: 3, total: SECCIONES_TOTAL, label: "Competencia partidaria" },
         isDivider: true,
         node: (
           <SectionDivider
@@ -97,13 +128,14 @@ export function Fase2Deck({ ctx }: Fase2DeckProps) {
       },
       {
         id: "partidos",
-        section: { num: 3, total: 5, label: "Competencia partidaria" },
+        section: { num: 3, total: SECCIONES_TOTAL, label: "Competencia partidaria" },
         node: <SlidePartidosImportantes ctx={ctx} />,
       },
-      // Sección 4: Historial político
+
+      // ── Sección 4: Historial político del candidato ──
       {
         id: "div-historial",
-        section: { num: 4, total: 5, label: "Historial político" },
+        section: { num: 4, total: SECCIONES_TOTAL, label: "Historial político" },
         isDivider: true,
         node: (
           <SectionDivider
@@ -116,35 +148,82 @@ export function Fase2Deck({ ctx }: Fase2DeckProps) {
       },
       {
         id: "historial",
-        section: { num: 4, total: 5, label: "Historial político" },
+        section: { num: 4, total: SECCIONES_TOTAL, label: "Historial político" },
         node: <SlideHistorialINFOGOB ctx={ctx} />,
       },
-      // Sección 5: ¿Quién sos?
+
+      // ── Sección 5: Estrategia (fórmula electoral + recorrido) ──
       {
-        id: "div-quien",
-        section: { num: 5, total: 5, label: "Tu imagen pública" },
+        id: "div-estrategia",
+        section: { num: 5, total: SECCIONES_TOTAL, label: "Estrategia" },
         isDivider: true,
         node: (
           <SectionDivider
             sectionNumber="05"
+            kicker="Estrategia"
+            question="¿Por dónde luchamos esta elección?"
+            highlight="luchamos"
+          />
+        ),
+      },
+      {
+        id: "formula-electoral",
+        section: { num: 5, total: SECCIONES_TOTAL, label: "Estrategia" },
+        node: <SlideFormulaElectoral ctx={ctx} />,
+      },
+      {
+        id: "recorrido-estrategico",
+        section: { num: 5, total: SECCIONES_TOTAL, label: "Estrategia" },
+        node: <SlideRecorridoEstrategico ctx={ctx} />,
+      },
+
+      // ── Sección 6: Presencia digital del candidato ──
+      {
+        id: "div-presencia",
+        section: { num: 6, total: SECCIONES_TOTAL, label: "Presencia digital" },
+        isDivider: true,
+        node: (
+          <SectionDivider
+            sectionNumber="06"
+            kicker="Presencia digital"
+            question={`¿Te encuentran cuando te buscan en Google?`}
+            highlight="Google"
+          />
+        ),
+      },
+      {
+        id: "presencia-digital",
+        section: { num: 6, total: SECCIONES_TOTAL, label: "Presencia digital" },
+        node: <SlidePresenciaDigital ctx={ctx} />,
+      },
+
+      // ── Sección 7: ¿Quién es? ──
+      {
+        id: "div-quien",
+        section: { num: 7, total: SECCIONES_TOTAL, label: "Tu imagen pública" },
+        isDivider: true,
+        node: (
+          <SectionDivider
+            sectionNumber="07"
             kicker="Tu imagen pública"
-            question={`¿Quién es ${ctx.user.full_name.split(/\s+/)[0]}?`}
-            highlight={ctx.user.full_name.split(/\s+/)[0] ?? ""}
+            question={`¿Quién es ${firstName}?`}
+            highlight={firstName}
           />
         ),
       },
       {
         id: "quien-es",
-        section: { num: 5, total: 5, label: "Tu imagen pública" },
+        section: { num: 7, total: SECCIONES_TOTAL, label: "Tu imagen pública" },
         node: <SlideQuienEs ctx={ctx} />,
       },
-      // Cierre
+
+      // ── Cierre ──
       {
         id: "cta",
         node: <SlideCTA onContinue={() => router.push("/onboarding/fase-3")} />,
       },
     ],
-    [ctx, router, partidoNombre, jurisdiccionLabel],
+    [ctx, router, partidoNombre, jurisdiccionLabel, firstName],
   );
 
   const total = slides.length;

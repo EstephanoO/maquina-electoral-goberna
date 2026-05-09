@@ -22,7 +22,7 @@ export function SlideQuienEs({ ctx }: SlideQuienEsProps) {
       <div className="space-y-6">
         <p className="text-base sm:text-lg text-gray-300 max-w-3xl">
           Auditamos tu posicionamiento digital — Google, redes sociales, prensa
-          local — para entender qué lee de vos un votante que recién te conoce.
+          local — para entender qué lee de ti un votante que recién te conoce.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">

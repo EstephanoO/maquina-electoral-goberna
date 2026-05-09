@@ -70,7 +70,7 @@ export function SlideRoadmap({ ctx }: SlideRoadmapProps) {
         transition={{ delay: 0.2 }}
         className="mt-4 text-base sm:text-lg text-gray-300 max-w-2xl text-center"
       >
-        En los próximos minutos vamos a recorrer 5 secciones para que sepas dónde competís y a quiénes tenés que ganarle.
+        En los próximos minutos vamos a recorrer 7 secciones para que sepas dónde compites, contra quiénes juegas y cómo te acompañamos.
       </motion.p>
 
       {/* 5 cards horizontales */}

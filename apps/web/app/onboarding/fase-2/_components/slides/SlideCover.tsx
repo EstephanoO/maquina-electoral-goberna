@@ -1,7 +1,6 @@
 "use client";
 
 import { motion } from "motion/react";
-import { Landmark } from "lucide-react";
 
 export function SlideCover() {
   return (
@@ -25,8 +24,12 @@ export function SlideCover() {
             transition={{ duration: 80, repeat: Infinity, ease: "linear" }}
             className="absolute inset-[-12px] rounded-full border-2 border-dashed border-amber-400/30"
           />
-          <div className="absolute inset-0 rounded-full border-4 border-amber-400 flex items-center justify-center bg-gradient-to-br from-amber-400/10 to-transparent backdrop-blur-sm">
-            <Landmark className="size-20 sm:size-24 text-amber-400" strokeWidth={1.5} />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <img
+              src="/branding/goberna-isotipo.png"
+              alt="Goberna"
+              className="size-full object-contain"
+            />
           </div>
         </motion.div>
 

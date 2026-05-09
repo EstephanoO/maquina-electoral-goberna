@@ -31,7 +31,7 @@ export function SlideCTA({ onContinue }: SlideCTAProps) {
         transition={{ delay: 0.1, duration: 0.6 }}
         className="text-5xl sm:text-7xl md:text-8xl font-black text-white uppercase tracking-tight leading-[0.95] max-w-5xl"
       >
-        Listo. Ahora <span className="text-amber-400">elegí cómo competís</span>.
+        Listo. Ahora <span className="text-amber-400">elige cómo compites</span>.
       </motion.h1>
 
       <motion.p
@@ -40,7 +40,7 @@ export function SlideCTA({ onContinue }: SlideCTAProps) {
         transition={{ delay: 0.3 }}
         className="mt-6 text-base sm:text-lg text-gray-300 max-w-2xl"
       >
-        Con este diagnóstico ya sabés contra quién jugás. El último paso: definir cómo se va a mover tu campaña.
+        Con este diagnóstico ya sabes contra quién juegas. El último paso: definir cómo se va a mover tu campaña.
       </motion.p>
 
       {/* Lista de recomendaciones */}

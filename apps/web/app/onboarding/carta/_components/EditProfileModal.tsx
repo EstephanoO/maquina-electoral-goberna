@@ -3,7 +3,7 @@
 /**
  * Modal de edición de perfil — abre desde la pantalla Carta.
  * Solo muestra los campos que faltan / son editables: foto, phone,
- * email (si querés cambiarlo), partido (lookup en organizacion_politica),
+ * email (si quieres cambiarlo), partido (lookup en organizacion_politica),
  * y password (si has_password=false → "set initial").
  */
 import { useEffect, useState } from "react";

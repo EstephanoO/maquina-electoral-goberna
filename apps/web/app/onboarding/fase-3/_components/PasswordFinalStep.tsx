@@ -222,7 +222,7 @@ export function PasswordFinalStep({ ctx, presupuestoTotal, onBack, onSuccess }: 
           </motion.form>
 
           <p className="mt-8 text-center text-[10px] uppercase tracking-[0.3em] text-gray-500">
-            Cifrada con bcrypt · Solo vos la conocés
+            Cifrada con bcrypt · Solo tú la conoces
           </p>
         </motion.div>
       </div>

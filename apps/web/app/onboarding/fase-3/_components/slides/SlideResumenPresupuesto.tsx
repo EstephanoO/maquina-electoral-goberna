@@ -58,7 +58,7 @@ export function SlideResumenPresupuesto({
           </div>
         </div>
         <p className="mt-3 text-sm sm:text-base text-gray-400">
-          Después podés ajustar todo desde la plataforma.
+          Después puedes ajustar todo desde la plataforma.
         </p>
       </motion.div>
 
