@@ -61,7 +61,7 @@ export function buildUploadsRoutes(env: AppEnv): FastifyPluginAsync {
     // Admin uploads a file (candidate photo, etc.)
     app.post(
       "/api/uploads",
-      { preHandler: [app.authenticate, authorize({ roles: ["consultor"] })], bodyLimit: MAX_FILE_SIZE },
+      { preHandler: [app.authenticate, authorize({ roles: ["candidato"] })], bodyLimit: MAX_FILE_SIZE },
       async (request, reply) => {
         const requestId = String(request.id);
 

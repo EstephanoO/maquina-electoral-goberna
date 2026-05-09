@@ -608,6 +608,82 @@ export async function findCandidatoContext(userId: string): Promise<CandidatoCon
   };
 }
 
+// ── Profile update from carta screen ─────────────────────────────────
+
+export type ProfilePatch = {
+  full_name?: string;
+  email?: string;
+  phone?: string | null;
+  foto_url?: string | null;
+  organizacion_politica_codigo?: string | null;
+};
+
+export async function patchProfile(userId: string, patch: ProfilePatch): Promise<void> {
+  // Update users.* fields
+  const userFields: string[] = [];
+  const userParams: unknown[] = [];
+  if (patch.full_name !== undefined) {
+    userParams.push(patch.full_name);
+    userFields.push(`full_name = $${userParams.length}`);
+  }
+  if (patch.email !== undefined) {
+    userParams.push(patch.email.toLowerCase());
+    userFields.push(`email = $${userParams.length}`);
+  }
+  if (patch.phone !== undefined) {
+    userParams.push(patch.phone);
+    userFields.push(`phone = $${userParams.length}`);
+  }
+  if (userFields.length > 0) {
+    userParams.push(userId);
+    await pool.query(
+      `UPDATE public.users SET ${userFields.join(", ")}, updated_at = now() WHERE id = $${userParams.length}`,
+      userParams,
+    );
+  }
+
+  // Update candidatos.candidato.foto_url (a través del user_campaigns → postulacion)
+  if (patch.foto_url !== undefined) {
+    await pool.query(
+      `UPDATE candidatos.candidato cand
+          SET foto_url = $1
+         FROM candidatos.postulacion p, public.user_campaigns uc
+        WHERE cand.id = p.id_candidato
+          AND p.campaign_id = uc.campaign_id
+          AND uc.user_id = $2
+          AND uc.role = 'candidato'`,
+      [patch.foto_url, userId],
+    );
+  }
+
+  // Update postulacion.id_organizacion_politica (lookup por código)
+  if (patch.organizacion_politica_codigo !== undefined) {
+    if (patch.organizacion_politica_codigo === null) {
+      await pool.query(
+        `UPDATE candidatos.postulacion p
+            SET id_organizacion_politica = NULL
+           FROM public.user_campaigns uc
+          WHERE p.campaign_id = uc.campaign_id
+            AND uc.user_id = $1
+            AND uc.role = 'candidato'`,
+        [userId],
+      );
+    } else {
+      await pool.query(
+        `UPDATE candidatos.postulacion p
+            SET id_organizacion_politica = op.id
+           FROM catalogos.organizacion_politica op,
+                public.user_campaigns uc
+          WHERE op.codigo = $1
+            AND p.campaign_id = uc.campaign_id
+            AND uc.user_id = $2
+            AND uc.role = 'candidato'`,
+        [patch.organizacion_politica_codigo, userId],
+      );
+    }
+  }
+}
+
 // ── Snapshot for the cinematic carta screen ──────────────────────────
 
 export type CandidatoSnapshot = CandidatoContext & {
@@ -723,21 +799,23 @@ async function computeProgress(campaignId: string, ctx: CandidatoContext): Promi
     territorio = 0;
   }
 
-  // Digital: cantidad de blast jobs ejecutados + waba conectado.
+  // Digital: blast templates configurados + envíos hechos + número WA configurado.
   let digital = 0;
   try {
-    const { rows } = await pool.query<{ blasts: number; waba: number }>(
+    const { rows } = await pool.query<{ tpl: number; sends: number; nums: number }>(
       `SELECT
-         (SELECT COUNT(*)::int FROM public.blast_jobs WHERE campaign_id = $1) AS blasts,
-         (SELECT COUNT(*)::int FROM public.waba_phones WHERE campaign_id = $1 AND status = 'connected') AS waba`,
+         (SELECT COUNT(*)::int FROM public.blast_templates WHERE campaign_id = $1) AS tpl,
+         (SELECT COUNT(*)::int FROM public.blast_log WHERE campaign_id = $1) AS sends,
+         (SELECT COUNT(*)::int FROM public.blast_number_config WHERE campaign_id = $1) AS nums`,
       [campaignId],
     );
     const r = rows[0];
     if (r) {
       let s = 0;
-      if (r.waba > 0) s += 50;
-      if (r.blasts > 0) s += 30;
-      if (r.blasts >= 5) s += 20;
+      if (r.nums > 0) s += 30;
+      if (r.tpl > 0) s += 30;
+      if (r.sends > 0) s += 20;
+      if (r.sends >= 100) s += 20;
       digital = Math.min(100, s);
     }
   } catch {

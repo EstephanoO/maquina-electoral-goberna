@@ -18,6 +18,7 @@ import { motion } from "motion/react";
 import { Edit3, ArrowRight, MapPin, Building2, Search } from "lucide-react";
 
 import { api } from "@/lib/api-client";
+import { EditProfileModal } from "./EditProfileModal";
 
 const JurisdictionMap = dynamic(
   () => import("./JurisdictionMap").then((m) => m.JurisdictionMap),
@@ -72,6 +73,8 @@ export function CartaClient({
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(
     initialParams.campaign_id ?? null,
   );
+  const [editing, setEditing] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +97,7 @@ export function CartaClient({
     return () => {
       cancelled = true;
     };
-  }, [selectedCampaignId]);
+  }, [selectedCampaignId, reloadKey]);
 
   // Trigger del stub diagnóstico una vez que tenemos snapshot.
   // Idempotente — el backend devuelve el deck existente si ya hay uno.
@@ -148,7 +151,7 @@ export function CartaClient({
     "—";
 
   const handleContinue = () => router.push("/onboarding/fase-2");
-  const handleEdit = () => router.push("/onboarding?step=editar");
+  const handleEdit = () => setEditing(true);
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#020a1e] text-white font-sans">
@@ -313,6 +316,22 @@ export function CartaClient({
           </div>
         ) : null}
       </motion.div>
+
+      {snapshot ? (
+        <EditProfileModal
+          open={editing}
+          onClose={() => setEditing(false)}
+          onSaved={() => setReloadKey((k) => k + 1)}
+          initial={{
+            full_name: snapshot.user.full_name,
+            email: snapshot.user.email,
+            phone: snapshot.user.phone,
+            foto_url: snapshot.user.foto_url,
+            has_password: snapshot.user.has_password,
+            organizacion_politica_codigo: snapshot.organizacion_politica?.codigo ?? null,
+          }}
+        />
+      ) : null}
     </div>
   );
 }

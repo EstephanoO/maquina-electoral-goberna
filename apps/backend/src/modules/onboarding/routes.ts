@@ -381,6 +381,51 @@ export function buildOnboardingRoutes(env: AppEnv): FastifyPluginAsync {
       });
     });
 
+    // ── PATCH /api/onboarding/profile ─────────────────────────────────
+    // Permite actualizar datos puntuales del candidato logged-in desde
+    // la pantalla "Carta" sin volver al wizard. Acepta cualquier subset
+    // de los campos editables.
+    app.patch(
+      "/api/onboarding/profile",
+      { preHandler: [app.authenticate] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const userId = (request as AuthenticatedRequest).userId;
+        const body = (request.body ?? {}) as Record<string, unknown>;
+
+        const patch: repo.ProfilePatch = {};
+        if (typeof body.full_name === "string" && body.full_name.trim().length >= 2) {
+          patch.full_name = body.full_name.trim();
+        }
+        if (typeof body.email === "string" && /\S+@\S+\.\S+/.test(body.email)) {
+          patch.email = body.email.trim();
+        }
+        if ("phone" in body) {
+          patch.phone = typeof body.phone === "string" && body.phone.trim() ? body.phone.trim() : null;
+        }
+        if ("foto_url" in body) {
+          patch.foto_url = typeof body.foto_url === "string" && body.foto_url.trim() ? body.foto_url.trim() : null;
+        }
+        if ("organizacion_politica_codigo" in body) {
+          patch.organizacion_politica_codigo =
+            typeof body.organizacion_politica_codigo === "string" && body.organizacion_politica_codigo.trim()
+              ? body.organizacion_politica_codigo.trim()
+              : null;
+        }
+        if (Object.keys(patch).length === 0) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "ningún campo válido para actualizar"));
+        }
+        try {
+          await repo.patchProfile(userId, patch);
+          const snap = await repo.getCandidatoSnapshot(userId);
+          return reply.code(200).send({ ok: true, request_id: requestId, snapshot: snap });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "onboarding/profile patch failed");
+          return reply.code(500).send(errorPayload(requestId, "PROFILE_PATCH_ERROR", "error actualizando perfil"));
+        }
+      },
+    );
+
     // ── POST /api/onboarding/seed-deck ────────────────────────────────
     // Cuando el wizard de fase 1 termina, generamos un stub diagnóstico
     // pre-poblado con los datos del candidato (cover + identidad +
