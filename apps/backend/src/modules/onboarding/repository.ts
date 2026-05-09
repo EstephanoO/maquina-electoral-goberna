@@ -607,3 +607,204 @@ export async function findCandidatoContext(userId: string): Promise<CandidatoCon
       : null,
   };
 }
+
+// ── Snapshot for the cinematic carta screen ──────────────────────────
+
+export type CandidatoSnapshot = CandidatoContext & {
+  geojson: unknown | null;
+  bbox: [number, number, number, number] | null;
+  centroid: [number, number] | null;
+  /** Progreso del candidato — 0..100 por dimensión. */
+  progress: {
+    onboarding: number;
+    territorio: number;
+    digital: number;
+    datos: number;
+  };
+  /** Cosas que faltan para que el wizard quede 100%. */
+  missing_fields: Array<"foto" | "phone" | "email" | "password" | "organizacion_politica">;
+};
+
+/**
+ * Devuelve el polígono de la jurisdicción del candidato como GeoJSON +
+ * bbox + centroide para que el frontend (Leaflet) zoom-in suave.
+ */
+async function findJurisdictionPolygon(
+  ambito: "pais" | "departamento" | "provincia" | "distrito",
+  ids: { dep_id: number | null; prov_id: number | null; dist_id: number | null },
+): Promise<{
+  geojson: unknown | null;
+  bbox: [number, number, number, number] | null;
+  centroid: [number, number] | null;
+}> {
+  let table = "";
+  let id: number | null = null;
+  if (ambito === "distrito" && ids.dist_id) {
+    table = "geografia_politica.peru_distritos";
+    id = ids.dist_id;
+  } else if (ambito === "provincia" && ids.prov_id) {
+    table = "geografia_politica.peru_provincias";
+    id = ids.prov_id;
+  } else if (ambito === "departamento" && ids.dep_id) {
+    table = "geografia_politica.peru_departamentos";
+    id = ids.dep_id;
+  } else {
+    return { geojson: null, bbox: null, centroid: null };
+  }
+
+  const { rows } = await pool.query<{
+    geojson: string;
+    minx: number;
+    miny: number;
+    maxx: number;
+    maxy: number;
+    cx: number;
+    cy: number;
+  }>(
+    `SELECT
+       ST_AsGeoJSON(ST_Simplify(geom, 0.0005), 6) AS geojson,
+       ST_XMin(geom) AS minx,
+       ST_YMin(geom) AS miny,
+       ST_XMax(geom) AS maxx,
+       ST_YMax(geom) AS maxy,
+       ST_X(ST_Centroid(geom)) AS cx,
+       ST_Y(ST_Centroid(geom)) AS cy
+     FROM ${table}
+     WHERE id = $1`,
+    [id],
+  );
+  const r = rows[0];
+  if (!r) return { geojson: null, bbox: null, centroid: null };
+  return {
+    geojson: JSON.parse(r.geojson),
+    bbox: [r.minx, r.miny, r.maxx, r.maxy],
+    centroid: [r.cx, r.cy],
+  };
+}
+
+async function computeProgress(campaignId: string, ctx: CandidatoContext): Promise<{
+  progress: CandidatoSnapshot["progress"];
+  missing_fields: CandidatoSnapshot["missing_fields"];
+}> {
+  // Onboarding: contamos cuántos de los campos clave están llenos.
+  const fields = [
+    !!ctx.user.full_name,
+    !!ctx.user.email,
+    !!ctx.user.phone,
+    !!ctx.user.foto_url,
+    !!ctx.user.has_password,
+    !!ctx.organizacion_politica,
+    !!(ctx.jurisdiccion.distrito || ctx.jurisdiccion.provincia || ctx.jurisdiccion.departamento),
+  ];
+  const onboarding = Math.round((fields.filter(Boolean).length / fields.length) * 100);
+
+  // Territorio: número de zonas + voluntarios. Métrica simple — si hay
+  // alguna actividad, reportamos 30+; si no, 0. Refinable después.
+  let territorio = 0;
+  try {
+    const { rows } = await pool.query<{ zonas: number; voluntarios: number }>(
+      `SELECT
+         (SELECT COUNT(*)::int FROM public.zones WHERE campaign_id = $1) AS zonas,
+         (SELECT COUNT(*)::int FROM public.users u
+            JOIN public.user_campaigns uc ON uc.user_id = u.id
+            WHERE uc.campaign_id = $1 AND uc.role IN ('agente_campo','brigadista_zonal')) AS voluntarios`,
+      [campaignId],
+    );
+    const r = rows[0];
+    if (r) {
+      let s = 0;
+      if (r.zonas > 0) s += 40;
+      if (r.zonas >= 5) s += 20;
+      if (r.voluntarios > 0) s += 20;
+      if (r.voluntarios >= 10) s += 20;
+      territorio = Math.min(100, s);
+    }
+  } catch {
+    territorio = 0;
+  }
+
+  // Digital: cantidad de blast jobs ejecutados + waba conectado.
+  let digital = 0;
+  try {
+    const { rows } = await pool.query<{ blasts: number; waba: number }>(
+      `SELECT
+         (SELECT COUNT(*)::int FROM public.blast_jobs WHERE campaign_id = $1) AS blasts,
+         (SELECT COUNT(*)::int FROM public.waba_phones WHERE campaign_id = $1 AND status = 'connected') AS waba`,
+      [campaignId],
+    );
+    const r = rows[0];
+    if (r) {
+      let s = 0;
+      if (r.waba > 0) s += 50;
+      if (r.blasts > 0) s += 30;
+      if (r.blasts >= 5) s += 20;
+      digital = Math.min(100, s);
+    }
+  } catch {
+    digital = 0;
+  }
+
+  // Datos: form_definitions activos + form_submissions.
+  let datos = 0;
+  try {
+    const { rows } = await pool.query<{ defs: number; subs: number }>(
+      `SELECT
+         (SELECT COUNT(*)::int FROM public.form_definitions WHERE campaign_id = $1) AS defs,
+         (SELECT COUNT(*)::int FROM public.form_submissions WHERE campaign_id = $1) AS subs`,
+      [campaignId],
+    );
+    const r = rows[0];
+    if (r) {
+      let s = 0;
+      if (r.defs > 0) s += 30;
+      if (r.defs >= 3) s += 20;
+      if (r.subs > 0) s += 30;
+      if (r.subs >= 50) s += 20;
+      datos = Math.min(100, s);
+    }
+  } catch {
+    datos = 0;
+  }
+
+  const missing: CandidatoSnapshot["missing_fields"] = [];
+  if (!ctx.user.foto_url) missing.push("foto");
+  if (!ctx.user.phone) missing.push("phone");
+  if (!ctx.user.email) missing.push("email");
+  if (!ctx.user.has_password) missing.push("password");
+  if (!ctx.organizacion_politica) missing.push("organizacion_politica");
+
+  return {
+    progress: { onboarding, territorio, digital, datos },
+    missing_fields: missing,
+  };
+}
+
+/** Snapshot completo: ctx + polígono + progress. Usado por la pantalla "Carta". */
+export async function getCandidatoSnapshot(userId: string): Promise<CandidatoSnapshot | null> {
+  const ctx = await findCandidatoContext(userId);
+  if (!ctx) return null;
+  const poly = await findJurisdictionPolygon(ctx.cargo.ambito, {
+    dep_id: ctx.jurisdiccion.departamento?.id ?? null,
+    prov_id: ctx.jurisdiccion.provincia?.id ?? null,
+    dist_id: ctx.jurisdiccion.distrito?.id ?? null,
+  });
+  const { progress, missing_fields } = await computeProgress(ctx.campaign.id, ctx);
+  return { ...ctx, ...poly, progress, missing_fields };
+}
+
+/** Lookup admin: snapshot para cualquier campaign_id. */
+export async function getCandidatoSnapshotByCampaign(
+  campaignId: string,
+): Promise<CandidatoSnapshot | null> {
+  const { rows } = await pool.query<{ user_id: string }>(
+    `SELECT u.id AS user_id
+       FROM public.user_campaigns uc
+       JOIN public.users u ON u.id = uc.user_id
+      WHERE uc.campaign_id = $1 AND uc.role = 'candidato' AND uc.status = 'active'
+      ORDER BY uc.assigned_at ASC
+      LIMIT 1`,
+    [campaignId],
+  );
+  if (!rows[0]) return null;
+  return getCandidatoSnapshot(rows[0].user_id);
+}

@@ -16,6 +16,100 @@ import {
   SlugConflictError,
 } from "./repository";
 import { provisionedSchema, wizardInputSchema } from "./schemas";
+import { promises as fs } from "node:fs";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import * as decksRepo from "../decks/repository";
+
+const DECKS_STORAGE_DIR = process.env.DECKS_STORAGE_DIR ?? "/srv/uploads/decks";
+
+function buildStubDiagnosticoHtml(snap: repo.CandidatoSnapshot): string {
+  const jurisdiccion =
+    snap.jurisdiccion.distrito?.nombre ??
+    snap.jurisdiccion.provincia?.nombre ??
+    snap.jurisdiccion.departamento?.nombre ??
+    snap.jurisdiccion.pais.nombre;
+  const partido = snap.organizacion_politica?.nombre ?? "[partido]";
+  const partidoSiglas = snap.organizacion_politica?.siglas ?? "";
+  const escape = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Diagnóstico Inicial — ${escape(snap.user.full_name)}</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>body{font-family:Montserrat,system-ui,sans-serif} .navy{background:#0a1f4a;color:#fff} .gold{color:#fbbf24} .gold-bg{background:#fbbf24} .gold-bar{height:6px;background:#fbbf24}</style>
+</head>
+<body>
+<!-- COVER -->
+<section class="navy h-screen flex flex-col justify-between p-16">
+  <div>
+    <div class="text-xs uppercase tracking-[0.3em] text-amber-300 font-bold">Diagnóstico Inicial</div>
+    <div class="mt-1 text-xs text-white/60">Generado automáticamente · listo para editar</div>
+  </div>
+  <div>
+    <h1 class="text-7xl font-black tracking-tight uppercase leading-[0.95]">${escape(snap.user.full_name)}</h1>
+    <div class="mt-3 text-2xl text-white/80">${escape(snap.cargo.nombre)} · ${escape(jurisdiccion)}</div>
+    <div class="mt-6 inline-block px-4 py-1.5 border border-amber-300/40 rounded text-amber-300 text-sm font-bold uppercase tracking-wider">
+      ${escape(partidoSiglas || partido)}
+    </div>
+  </div>
+  <div class="gold-bar w-32"></div>
+</section>
+
+<!-- IDENTIDAD -->
+<section class="bg-white p-16">
+  <div class="text-xs uppercase tracking-[0.3em] text-[#0a1f4a] font-bold mb-2">Identidad</div>
+  <div class="gold-bar w-12 mb-8"></div>
+  <h2 class="text-4xl font-black uppercase text-[#0a1f4a] leading-tight mb-6">¿Quién es ${escape(snap.user.full_name.split(" ")[0] ?? snap.user.full_name)}?</h2>
+  <div class="grid grid-cols-2 gap-12 mt-12">
+    <div>
+      <div class="text-xs uppercase tracking-wider text-gray-500 font-bold mb-1">Cargo al que postula</div>
+      <div class="text-2xl font-bold text-[#0a1f4a]">${escape(snap.cargo.nombre)}</div>
+    </div>
+    <div>
+      <div class="text-xs uppercase tracking-wider text-gray-500 font-bold mb-1">Jurisdicción</div>
+      <div class="text-2xl font-bold text-[#0a1f4a]">${escape(jurisdiccion)}</div>
+    </div>
+    <div>
+      <div class="text-xs uppercase tracking-wider text-gray-500 font-bold mb-1">Partido</div>
+      <div class="text-2xl font-bold text-[#0a1f4a]">${escape(partido)}</div>
+    </div>
+    <div>
+      <div class="text-xs uppercase tracking-wider text-gray-500 font-bold mb-1">Estado</div>
+      <div class="text-2xl font-bold text-[#0a1f4a]">[A completar por el consultor]</div>
+    </div>
+  </div>
+</section>
+
+<!-- PLACEHOLDER -->
+<section class="navy p-16">
+  <div class="text-xs uppercase tracking-[0.3em] text-amber-300 font-bold mb-2">Próximos slides</div>
+  <div class="gold-bar w-12 mb-8"></div>
+  <p class="text-2xl text-white/80 max-w-3xl leading-relaxed">
+    Este es un <strong class="text-amber-300">borrador automático</strong> con los datos básicos del candidato.
+    El consultor político lo va a completar con análisis electoral, contexto, ideas fuerza y plan operativo
+    usando Claude Code + el kit Goberna Decks.
+  </p>
+  <div class="mt-10 grid grid-cols-3 gap-6">
+    <div class="border border-white/20 p-6 rounded">
+      <div class="text-amber-300 text-sm font-bold uppercase tracking-wider mb-1">Slide 4</div>
+      <div class="text-lg">Análisis electoral</div>
+    </div>
+    <div class="border border-white/20 p-6 rounded">
+      <div class="text-amber-300 text-sm font-bold uppercase tracking-wider mb-1">Slide 5</div>
+      <div class="text-lg">Competencia</div>
+    </div>
+    <div class="border border-white/20 p-6 rounded">
+      <div class="text-amber-300 text-sm font-bold uppercase tracking-wider mb-1">Slide 6+</div>
+      <div class="text-lg">Recomendaciones</div>
+    </div>
+  </div>
+</section>
+</body></html>`;
+}
 
 const SERVICE_TOKEN_HEADER = "x-goberna-service-token";
 
@@ -286,6 +380,133 @@ export function buildOnboardingRoutes(env: AppEnv): FastifyPluginAsync {
         dashboard_url: buildWizardDashboardUrl(env.publicBaseUrl),
       });
     });
+
+    // ── POST /api/onboarding/seed-deck ────────────────────────────────
+    // Cuando el wizard de fase 1 termina, generamos un stub diagnóstico
+    // pre-poblado con los datos del candidato (cover + identidad +
+    // placeholders). Status='draft', uploaded_by_user_id=admin (si lo
+    // hay) o el propio candidato. Idempotente: si ya hay un deck con
+    // status='draft' del tipo diagnostico para este candidato_id, no
+    // crea otro.
+    app.post(
+      "/api/onboarding/seed-deck",
+      { preHandler: [app.authenticate] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const userId = (request as AuthenticatedRequest).userId;
+        try {
+          const snap = await repo.getCandidatoSnapshot(userId);
+          if (!snap) {
+            return reply.code(404).send(
+              errorPayload(requestId, "CANDIDATO_NOT_FOUND", "no se encontró candidatura"),
+            );
+          }
+          // Buscar candidato_id (decks usa el id de candidatos.candidato, no user_id)
+          const { rows: candRows } = await pool.query<{ id: number }>(
+            `SELECT cand.id
+               FROM candidatos.postulacion p
+               JOIN candidatos.candidato cand ON cand.id = p.id_candidato
+              WHERE p.campaign_id = $1
+              LIMIT 1`,
+            [snap.campaign.id],
+          );
+          if (!candRows[0]) {
+            return reply.code(409).send(
+              errorPayload(requestId, "CANDIDATO_ROW_MISSING", "no se encontró fila en candidatos.candidato"),
+            );
+          }
+          const candidatoId = candRows[0].id;
+
+          // Idempotente: si ya hay un draft diagnóstico, devolver ese.
+          const existing = await decksRepo.findDraftByKey(candidatoId, userId, "diagnostico");
+          if (existing) {
+            return reply.code(200).send({
+              ok: true,
+              request_id: requestId,
+              created: false,
+              deck: { id: existing.id, status: existing.status, preview_url: `/api/decks/${existing.id}/raw` },
+            });
+          }
+
+          const html = buildStubDiagnosticoHtml(snap);
+          const id = randomUUID();
+          const storagePath = join(DECKS_STORAGE_DIR, `${id}.html`);
+          await fs.mkdir(DECKS_STORAGE_DIR, { recursive: true });
+          await fs.writeFile(storagePath, html, "utf8");
+
+          const row = await decksRepo.insertDeck({
+            id,
+            candidato_id: candidatoId,
+            campaign_id: snap.campaign.id,
+            uploaded_by_user_id: userId,
+            title: `Diagnóstico Inicial — ${snap.user.full_name}`,
+            type: "diagnostico",
+            description: "Stub auto-generado al finalizar fase 1. Listo para editar por el consultor.",
+            storage_path: storagePath,
+            size_bytes: Buffer.byteLength(html, "utf8"),
+          });
+
+          return reply.code(201).send({
+            ok: true,
+            request_id: requestId,
+            created: true,
+            deck: {
+              id: row.id,
+              status: row.status,
+              title: row.title,
+              preview_url: `/api/decks/${row.id}/raw`,
+            },
+          });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, "onboarding/seed-deck failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "SEED_DECK_ERROR", "error generando deck inicial"),
+          );
+        }
+      },
+    );
+
+    // ── GET /api/onboarding/snapshot ──────────────────────────────────
+    // Snapshot completo del candidato (ctx + polígono + progress) para
+    // la pantalla "Carta del candidato" cinematográfica.
+    app.get(
+      "/api/onboarding/snapshot",
+      { preHandler: [app.authenticate] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const userId = (request as AuthenticatedRequest).userId;
+        const snap = await repo.getCandidatoSnapshot(userId);
+        if (!snap) {
+          return reply.code(404).send(
+            errorPayload(requestId, "CANDIDATO_NOT_FOUND", "no se encontró candidatura"),
+          );
+        }
+        return reply.code(200).send({ ok: true, request_id: requestId, snapshot: snap });
+      },
+    );
+
+    // ── GET /api/onboarding/snapshot/:campaignId ─────────────────────
+    // Versión admin: lookup de la carta para cualquier campaign.
+    app.get<{ Params: { campaignId: string } }>(
+      "/api/onboarding/snapshot/:campaignId",
+      { preHandler: [app.authenticate] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const role = (request as AuthenticatedRequest).userRole;
+        if (role !== "admin" && role !== "consultor") {
+          return reply.code(403).send(
+            errorPayload(requestId, "FORBIDDEN", "solo admin/consultor puede ver la carta de otros candidatos"),
+          );
+        }
+        const snap = await repo.getCandidatoSnapshotByCampaign(request.params.campaignId);
+        if (!snap) {
+          return reply.code(404).send(
+            errorPayload(requestId, "CANDIDATO_NOT_FOUND", "no se encontró candidatura para esa campaña"),
+          );
+        }
+        return reply.code(200).send({ ok: true, request_id: requestId, snapshot: snap });
+      },
+    );
 
     // ── GET /api/onboarding/me ────────────────────────────────────────
     // Contexto completo del candidato logged-in para Fase 2 / Fase 3:
