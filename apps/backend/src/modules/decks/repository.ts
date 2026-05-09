@@ -1,4 +1,205 @@
 import { pool } from "../../db";
+import type { PoolClient } from "pg";
+
+// ── Structured analysis payload (capa 2) ─────────────────────────────
+
+export type StructuredAnalysisInput = {
+  summary?: string;
+  fecha_corte?: string; // YYYY-MM-DD
+  hallazgos?: Array<{
+    categoria: "fortaleza" | "debilidad" | "oportunidad" | "amenaza" | "contexto";
+    texto: string;
+    evidencia?: string;
+    peso?: number;
+    tags?: string[];
+  }>;
+  riesgos?: Array<{
+    riesgo: string;
+    severidad: "baja" | "media" | "alta" | "critica";
+    probabilidad?: "baja" | "media" | "alta";
+    mitigacion?: string;
+    responsable?: string;
+  }>;
+  oportunidades?: Array<{
+    oportunidad: string;
+    ventana_temporal?: string;
+    recursos_necesarios?: string;
+    impacto_esperado?: string;
+  }>;
+  competidores?: Array<{
+    partido_codigo?: string;
+    partido_nombre?: string;
+    candidato_rival?: string;
+    fortaleza_relativa?: number;
+    jurisdiccion_clave?: string;
+    notas?: string;
+  }>;
+  recomendaciones?: Array<{
+    accion: string;
+    area?: string;
+    plazo?: "inmediato" | "corto" | "mediano" | "largo";
+    recursos_estimados?: string;
+    kpi_objetivo?: string;
+    prioridad?: number;
+  }>;
+  kpis?: Array<{
+    nombre: string;
+    valor_actual?: number;
+    valor_objetivo?: number;
+    unidad?: string;
+    fecha_objetivo?: string;
+  }>;
+};
+
+/**
+ * Crea o reemplaza el row maestro analisis.analisis + sus child rows.
+ * Si ya existe un analisis para este deck_id, lo borra (CASCADE) y
+ * recrea — esto matchea el comportamiento "auto-replace de drafts".
+ */
+export async function upsertAnalisisForDeck(input: {
+  deck_id: string;
+  candidato_id: number;
+  campaign_id: string | null;
+  uploaded_by_user_id: string;
+  type: DeckRow["type"];
+  title: string;
+  structured: StructuredAnalysisInput;
+}): Promise<{ analisis_id: string }> {
+  const client = (await pool.connect()) as PoolClient;
+  try {
+    await client.query("BEGIN");
+
+    // Borramos análisis previo del mismo deck (CASCADE → child rows)
+    await client.query(`DELETE FROM analisis.analisis WHERE deck_id = $1`, [input.deck_id]);
+
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO analisis.analisis
+         (candidato_id, campaign_id, deck_id, type, title, summary,
+          uploaded_by_user_id, fecha_corte)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id`,
+      [
+        input.candidato_id,
+        input.campaign_id,
+        input.deck_id,
+        input.type,
+        input.title,
+        input.structured.summary ?? null,
+        input.uploaded_by_user_id,
+        input.structured.fecha_corte ?? null,
+      ],
+    );
+    const analisisId = rows[0]!.id;
+
+    // Hallazgos
+    for (const h of input.structured.hallazgos ?? []) {
+      await client.query(
+        `INSERT INTO analisis.hallazgos
+           (analisis_id, categoria, texto, evidencia, peso, tags)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [analisisId, h.categoria, h.texto, h.evidencia ?? null, h.peso ?? null, h.tags ?? null],
+      );
+    }
+
+    // Riesgos
+    for (const r of input.structured.riesgos ?? []) {
+      await client.query(
+        `INSERT INTO analisis.riesgos
+           (analisis_id, riesgo, severidad, probabilidad, mitigacion, responsable)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          analisisId,
+          r.riesgo,
+          r.severidad,
+          r.probabilidad ?? null,
+          r.mitigacion ?? null,
+          r.responsable ?? null,
+        ],
+      );
+    }
+
+    // Oportunidades
+    for (const o of input.structured.oportunidades ?? []) {
+      await client.query(
+        `INSERT INTO analisis.oportunidades
+           (analisis_id, oportunidad, ventana_temporal, recursos_necesarios, impacto_esperado)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          analisisId,
+          o.oportunidad,
+          o.ventana_temporal ?? null,
+          o.recursos_necesarios ?? null,
+          o.impacto_esperado ?? null,
+        ],
+      );
+    }
+
+    // Competidores
+    for (const c of input.structured.competidores ?? []) {
+      await client.query(
+        `INSERT INTO analisis.competidores
+           (analisis_id, partido_codigo, partido_nombre, candidato_rival,
+            fortaleza_relativa, jurisdiccion_clave, notas)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          analisisId,
+          c.partido_codigo ?? null,
+          c.partido_nombre ?? null,
+          c.candidato_rival ?? null,
+          c.fortaleza_relativa ?? null,
+          c.jurisdiccion_clave ?? null,
+          c.notas ?? null,
+        ],
+      );
+    }
+
+    // Recomendaciones
+    for (const r of input.structured.recomendaciones ?? []) {
+      await client.query(
+        `INSERT INTO analisis.recomendaciones
+           (analisis_id, accion, area, plazo, recursos_estimados,
+            kpi_objetivo, prioridad)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          analisisId,
+          r.accion,
+          r.area ?? null,
+          r.plazo ?? null,
+          r.recursos_estimados ?? null,
+          r.kpi_objetivo ?? null,
+          r.prioridad ?? null,
+        ],
+      );
+    }
+
+    // KPIs
+    for (const k of input.structured.kpis ?? []) {
+      await client.query(
+        `INSERT INTO analisis.kpis
+           (analisis_id, nombre, valor_actual, valor_objetivo, unidad, fecha_objetivo)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          analisisId,
+          k.nombre,
+          k.valor_actual ?? null,
+          k.valor_objetivo ?? null,
+          k.unidad ?? null,
+          k.fecha_objetivo ?? null,
+        ],
+      );
+    }
+
+    await client.query("COMMIT");
+    return { analisis_id: analisisId };
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+
 
 export interface DeckRow {
   id: string;
@@ -90,6 +291,123 @@ export async function listPublishedDecksForCampaign(
         AND p.campaign_id = $1
       ORDER BY d.published_at DESC NULLS LAST, d.created_at DESC`,
     [campaignId],
+  );
+  return rows;
+}
+
+// ── Lookups sobre analisis.* (capa 2 + 3) ─────────────────────────────
+
+export type SimilarAnalisis = {
+  id: string;
+  candidato_id: number;
+  candidato_nombres: string;
+  type: string;
+  title: string;
+  summary: string | null;
+  cargo_codigo: string | null;
+  cargo_nombre: string | null;
+  jurisdiccion_label: string | null;
+  organizacion_codigo: string | null;
+  hallazgos_count: number;
+  recomendaciones_count: number;
+  created_at: string;
+};
+
+/**
+ * Busca análisis "similares": mismo cargo + ámbito geográfico (y opcionalmente
+ * mismo partido). Útil para que Claude le diga al consultor "para alcaldes
+ * de provincia con tu partido, los 3 análisis previos detectaron X".
+ */
+export async function findSimilarAnalisis(filters: {
+  cargo_codigo?: string;
+  ambito?: "pais" | "departamento" | "provincia" | "distrito";
+  organizacion_codigo?: string;
+  exclude_candidato_id?: number;
+  limit?: number;
+}): Promise<SimilarAnalisis[]> {
+  const limit = Math.min(20, Math.max(1, filters.limit ?? 5));
+  const params: unknown[] = [];
+  const where: string[] = [];
+  if (filters.cargo_codigo) {
+    params.push(filters.cargo_codigo);
+    where.push(`cg.codigo = $${params.length}`);
+  }
+  if (filters.ambito) {
+    params.push(filters.ambito);
+    where.push(`cg.ambito_geografico = $${params.length}`);
+  }
+  if (filters.organizacion_codigo) {
+    params.push(filters.organizacion_codigo);
+    where.push(`op.codigo = $${params.length}`);
+  }
+  if (filters.exclude_candidato_id) {
+    params.push(filters.exclude_candidato_id);
+    where.push(`a.candidato_id <> $${params.length}`);
+  }
+  const whereClause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  params.push(limit);
+
+  const { rows } = await pool.query<SimilarAnalisis>(
+    `SELECT
+        a.id,
+        a.candidato_id,
+        cand.nombres AS candidato_nombres,
+        a.type,
+        a.title,
+        a.summary,
+        cg.codigo AS cargo_codigo,
+        cg.nombre AS cargo_nombre,
+        COALESCE(gp_dist.distrito, gp_prov.provincia, gp_dep.departamento) AS jurisdiccion_label,
+        op.codigo AS organizacion_codigo,
+        (SELECT COUNT(*)::int FROM analisis.hallazgos h WHERE h.analisis_id = a.id) AS hallazgos_count,
+        (SELECT COUNT(*)::int FROM analisis.recomendaciones r WHERE r.analisis_id = a.id) AS recomendaciones_count,
+        a.created_at
+       FROM analisis.analisis a
+       JOIN candidatos.candidato cand ON cand.id = a.candidato_id
+       JOIN candidatos.postulacion p  ON p.id_candidato = cand.id
+       JOIN catalogos.cargo_gobierno cg ON cg.id = p.id_cargo_gobierno
+       LEFT JOIN catalogos.organizacion_politica op ON op.id = p.id_organizacion_politica
+       LEFT JOIN geografia_politica.peru_departamentos gp_dep  ON gp_dep.id  = p.id_departamento
+       LEFT JOIN geografia_politica.peru_provincias    gp_prov ON gp_prov.id = p.id_provincia
+       LEFT JOIN geografia_politica.peru_distritos     gp_dist ON gp_dist.id = p.id_distrito
+       ${whereClause}
+      ORDER BY a.created_at DESC
+      LIMIT $${params.length}`,
+    params,
+  );
+  return rows;
+}
+
+export type BenchmarkRow = {
+  cargo_codigo: string;
+  ambito_geografico: string;
+  kpi_nombre: string;
+  valor_p10: number | null;
+  valor_p50: number | null;
+  valor_p90: number | null;
+  unidad: string | null;
+  n_muestras: number;
+  last_computed_at: string;
+};
+
+export async function getBenchmarks(filters: {
+  cargo_codigo?: string;
+  ambito?: string;
+}): Promise<BenchmarkRow[]> {
+  const params: unknown[] = [];
+  const where: string[] = [];
+  if (filters.cargo_codigo) {
+    params.push(filters.cargo_codigo);
+    where.push(`cargo_codigo = $${params.length}`);
+  }
+  if (filters.ambito) {
+    params.push(filters.ambito);
+    where.push(`ambito_geografico = $${params.length}`);
+  }
+  const whereClause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  const { rows } = await pool.query<BenchmarkRow>(
+    `SELECT * FROM analisis.benchmarks ${whereClause} ORDER BY kpi_nombre LIMIT 100`,
+    params,
   );
   return rows;
 }

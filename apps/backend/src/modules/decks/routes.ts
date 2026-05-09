@@ -20,6 +20,98 @@ const STORAGE_DIR = process.env.DECKS_STORAGE_DIR ?? "/srv/uploads/decks";
 
 const MAX_HTML_BYTES = 5 * 1024 * 1024; // 5 MB
 
+// Capa 2 — payload estructurado opcional. Si viene, escribimos en analisis.*
+const structuredSchema = z
+  .object({
+    summary: z.string().max(2000).optional(),
+    fecha_corte: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    hallazgos: z
+      .array(
+        z.object({
+          categoria: z.enum(["fortaleza", "debilidad", "oportunidad", "amenaza", "contexto"]),
+          texto: z.string().min(2).max(2000),
+          evidencia: z.string().max(500).optional(),
+          peso: z.number().min(0).max(1).optional(),
+          tags: z.array(z.string().max(50)).max(20).optional(),
+        }),
+      )
+      .max(50)
+      .optional(),
+    riesgos: z
+      .array(
+        z.object({
+          riesgo: z.string().min(2).max(2000),
+          severidad: z.enum(["baja", "media", "alta", "critica"]),
+          probabilidad: z.enum(["baja", "media", "alta"]).optional(),
+          mitigacion: z.string().max(2000).optional(),
+          responsable: z.string().max(200).optional(),
+        }),
+      )
+      .max(30)
+      .optional(),
+    oportunidades: z
+      .array(
+        z.object({
+          oportunidad: z.string().min(2).max(2000),
+          ventana_temporal: z.string().max(200).optional(),
+          recursos_necesarios: z.string().max(1000).optional(),
+          impacto_esperado: z.string().max(1000).optional(),
+        }),
+      )
+      .max(30)
+      .optional(),
+    competidores: z
+      .array(
+        z.object({
+          partido_codigo: z.string().max(50).optional(),
+          partido_nombre: z.string().max(200).optional(),
+          candidato_rival: z.string().max(200).optional(),
+          fortaleza_relativa: z.number().int().min(1).max(10).optional(),
+          jurisdiccion_clave: z.string().max(200).optional(),
+          notas: z.string().max(1000).optional(),
+        }),
+      )
+      .max(20)
+      .optional(),
+    recomendaciones: z
+      .array(
+        z.object({
+          accion: z.string().min(2).max(2000),
+          area: z
+            .enum([
+              "territorio",
+              "digital",
+              "datos",
+              "comunicacion",
+              "organizacion",
+              "financiamiento",
+              "legal",
+              "otro",
+            ])
+            .optional(),
+          plazo: z.enum(["inmediato", "corto", "mediano", "largo"]).optional(),
+          recursos_estimados: z.string().max(1000).optional(),
+          kpi_objetivo: z.string().max(500).optional(),
+          prioridad: z.number().int().min(1).max(5).optional(),
+        }),
+      )
+      .max(50)
+      .optional(),
+    kpis: z
+      .array(
+        z.object({
+          nombre: z.string().min(2).max(200),
+          valor_actual: z.number().optional(),
+          valor_objetivo: z.number().optional(),
+          unidad: z.string().max(50).optional(),
+          fecha_objetivo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        }),
+      )
+      .max(30)
+      .optional(),
+  })
+  .optional();
+
 const uploadSchema = z.object({
   candidato_id: z.coerce.number().int().positive(),
   title: z.string().trim().min(2).max(200),
@@ -29,6 +121,7 @@ const uploadSchema = z.object({
     .string()
     .min(50, "el HTML está vacío o es muy corto")
     .max(MAX_HTML_BYTES, `el HTML excede el máximo de ${MAX_HTML_BYTES} bytes`),
+  structured: structuredSchema,
 });
 
 const rejectSchema = z.object({
@@ -111,6 +204,25 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
               storage_path: newStoragePath,
               size_bytes: sizeBytes,
             });
+            // Si vino structured payload, upsert en analisis.* (capa 2)
+            let analisisId: string | null = null;
+            if (input.structured) {
+              try {
+                const a = await repo.upsertAnalisisForDeck({
+                  deck_id: row.id,
+                  candidato_id: row.candidato_id,
+                  campaign_id: row.campaign_id,
+                  uploaded_by_user_id: req.userId,
+                  type: row.type,
+                  title: row.title,
+                  structured: input.structured,
+                });
+                analisisId = a.analisis_id;
+              } catch (e) {
+                app.log.error({ err: e, request_id: requestId, deck_id: row.id }, "decks/upload analisis upsert failed");
+                // No falla el request — el HTML quedó bien
+              }
+            }
             return reply.code(200).send({
               ok: true,
               request_id: requestId,
@@ -124,6 +236,7 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
                 created_at: row.created_at,
                 updated_at: row.updated_at,
                 preview_url: `/api/decks/${row.id}/raw`,
+                analisis_id: analisisId,
               },
             });
           } catch (e) {
@@ -159,6 +272,24 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
             storage_path: storagePath,
             size_bytes: sizeBytes,
           });
+          // Si vino structured payload, upsert en analisis.* (capa 2)
+          let analisisId: string | null = null;
+          if (input.structured) {
+            try {
+              const a = await repo.upsertAnalisisForDeck({
+                deck_id: row.id,
+                candidato_id: row.candidato_id,
+                campaign_id: row.campaign_id,
+                uploaded_by_user_id: req.userId,
+                type: row.type,
+                title: row.title,
+                structured: input.structured,
+              });
+              analisisId = a.analisis_id;
+            } catch (e) {
+              app.log.error({ err: e, request_id: requestId, deck_id: row.id }, "decks/upload analisis insert failed");
+            }
+          }
           return reply.code(201).send({
             ok: true,
             request_id: requestId,
@@ -171,6 +302,7 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
               status: row.status,
               created_at: row.created_at,
               preview_url: `/api/decks/${row.id}/raw`,
+              analisis_id: analisisId,
             },
           });
         } catch (e) {
@@ -181,6 +313,49 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
             errorPayload(requestId, "DECK_INSERT_ERROR", "error guardando el deck"),
           );
         }
+      },
+    );
+
+    // ── GET /api/consultor/analisis/similar ───────────────────────────
+    // Lookup capa 3-light: trae análisis previos del mismo cargo + ámbito
+    // (+ opcionalmente mismo partido) para que Claude pueda contextualizar
+    // un nuevo deck con qué encontraron consultores anteriores.
+    app.get<{ Querystring: { cargo?: string; ambito?: string; partido?: string; exclude_candidato?: string; limit?: string } }>(
+      "/api/consultor/analisis/similar",
+      {
+        preHandler: [app.authenticate, authorize({ roles: ["consultor"] })],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const ambitoParsed = z.enum(["pais", "departamento", "provincia", "distrito"]).optional()
+          .safeParse(request.query.ambito || undefined);
+        const filters = {
+          cargo_codigo: request.query.cargo || undefined,
+          ambito: ambitoParsed.success ? ambitoParsed.data : undefined,
+          organizacion_codigo: request.query.partido || undefined,
+          exclude_candidato_id: request.query.exclude_candidato
+            ? Number.parseInt(request.query.exclude_candidato, 10)
+            : undefined,
+          limit: request.query.limit ? Number.parseInt(request.query.limit, 10) : undefined,
+        };
+        const items = await repo.findSimilarAnalisis(filters);
+        return reply.code(200).send({ ok: true, request_id: requestId, items });
+      },
+    );
+
+    // ── GET /api/consultor/benchmarks ─────────────────────────────────
+    app.get<{ Querystring: { cargo?: string; ambito?: string } }>(
+      "/api/consultor/benchmarks",
+      {
+        preHandler: [app.authenticate, authorize({ roles: ["consultor"] })],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const items = await repo.getBenchmarks({
+          cargo_codigo: request.query.cargo || undefined,
+          ambito: request.query.ambito || undefined,
+        });
+        return reply.code(200).send({ ok: true, request_id: requestId, items });
       },
     );
 
