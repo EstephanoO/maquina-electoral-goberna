@@ -886,3 +886,27 @@ export async function getCandidatoSnapshotByCampaign(
   if (!rows[0]) return null;
   return getCandidatoSnapshot(rows[0].user_id);
 }
+
+/**
+ * Resuelve campaign + candidato por slug de campaign. Usado por el flujo
+ * editor consultor (`/onboarding/[slug]/fase-2`) — el slug en URL es el
+ * de la campaña.
+ */
+export async function getCandidatoSnapshotBySlug(
+  slug: string,
+): Promise<{ snapshot: CandidatoSnapshot; campaign_id: string; candidato_id: number } | null> {
+  const { rows: campRows } = await pool.query<{ campaign_id: string; candidato_id: number }>(
+    `SELECT c.id   AS campaign_id,
+            p.id_candidato AS candidato_id
+       FROM public.campaigns c
+       JOIN candidatos.postulacion p ON p.campaign_id = c.id
+      WHERE c.slug = $1
+      LIMIT 1`,
+    [slug],
+  );
+  if (!campRows[0]) return null;
+  const { campaign_id, candidato_id } = campRows[0];
+  const snapshot = await getCandidatoSnapshotByCampaign(campaign_id);
+  if (!snapshot) return null;
+  return { snapshot, campaign_id, candidato_id };
+}

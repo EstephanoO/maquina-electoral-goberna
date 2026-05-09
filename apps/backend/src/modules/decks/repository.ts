@@ -212,12 +212,13 @@ export interface DeckRow {
   description: string | null;
   storage_path: string;
   size_bytes: number | null;
-  status: "draft" | "published" | "rejected";
+  status: "draft" | "pending_review" | "published" | "rejected";
   rejection_reason: string | null;
   consultor_form: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   published_at: string | null;
+  submitted_for_review_at: string | null;
 }
 
 /** Merge profundo (replace level 1) del form en consultor_form. */
@@ -539,6 +540,142 @@ export async function rejectDeck(
       WHERE id = $1 AND status = 'draft'
       RETURNING *`,
     [id, reviewerId, reason],
+  );
+  return rows[0] ?? null;
+}
+
+// ── Fase 2 deck (canonical, 1 por candidato) ──────────────────────────
+//
+// Cada candidato tiene 1 solo "Fase 2 deck" canónico — type='diagnostico'.
+// Cuando el wizard de Fase 1 termina, se crea con status='draft' vacío. El
+// consultor lo edita via consultor_form. Cuando manda a revisar, status pasa
+// a 'pending_review'. Admin aprueba → 'published'.
+
+const FASE2_TYPE: DeckRow["type"] = "diagnostico";
+
+/** Devuelve el deck Fase 2 más reciente del candidato, o null si no existe. */
+export async function findFase2Deck(candidatoId: number): Promise<DeckRow | null> {
+  const { rows } = await pool.query<DeckRow>(
+    `SELECT * FROM public.decks
+      WHERE candidato_id = $1
+        AND type = $2
+        AND status <> 'rejected'
+      ORDER BY
+        CASE status
+          WHEN 'published'      THEN 0
+          WHEN 'pending_review' THEN 1
+          WHEN 'draft'          THEN 2
+          ELSE 3
+        END,
+        updated_at DESC
+      LIMIT 1`,
+    [candidatoId, FASE2_TYPE],
+  );
+  return rows[0] ?? null;
+}
+
+/** Crea el deck Fase 2 si no existe. Idempotente. */
+export async function ensureFase2Deck(input: {
+  candidato_id: number;
+  campaign_id: string;
+  uploaded_by_user_id: string;
+  candidato_full_name: string;
+}): Promise<DeckRow> {
+  const existing = await findFase2Deck(input.candidato_id);
+  if (existing) return existing;
+  const id = randomUUIDForDeck();
+  const storagePath = `/srv/uploads/decks/${id}.html`; // placeholder — el render React no usa esto
+  return insertDeck({
+    id,
+    candidato_id: input.candidato_id,
+    campaign_id: input.campaign_id,
+    uploaded_by_user_id: input.uploaded_by_user_id,
+    title: `Diagnóstico — ${input.candidato_full_name}`,
+    type: FASE2_TYPE,
+    description: "Deck Fase 2 generado del onboarding del candidato.",
+    storage_path: storagePath,
+    size_bytes: 0,
+  });
+}
+
+function randomUUIDForDeck(): string {
+  // Usamos node:crypto. Import dinámico evita ciclo a top.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { randomUUID } = require("node:crypto") as typeof import("node:crypto");
+  return randomUUID();
+}
+
+/** Marca un deck como pending_review (consultor → admin). */
+export async function submitForReview(
+  deckId: string,
+  consultorId: string,
+): Promise<DeckRow | null> {
+  const { rows } = await pool.query<DeckRow>(
+    `UPDATE public.decks
+        SET status = 'pending_review',
+            submitted_for_review_at = now(),
+            uploaded_by_user_id = COALESCE(uploaded_by_user_id, $2),
+            updated_at = now()
+      WHERE id = $1
+        AND status IN ('draft', 'rejected')
+      RETURNING *`,
+    [deckId, consultorId],
+  );
+  return rows[0] ?? null;
+}
+
+/** Admin aprueba un deck en pending_review → published. */
+export async function approveDeckAdmin(
+  deckId: string,
+  adminId: string,
+): Promise<DeckRow | null> {
+  const { rows } = await pool.query<DeckRow>(
+    `UPDATE public.decks
+        SET status = 'published',
+            reviewed_by_user_id = $2,
+            published_at = now(),
+            rejection_reason = NULL,
+            updated_at = now()
+      WHERE id = $1
+        AND status = 'pending_review'
+      RETURNING *`,
+    [deckId, adminId],
+  );
+  return rows[0] ?? null;
+}
+
+/** Admin rechaza un deck en pending_review → rejected (consultor lo retoma). */
+export async function rejectDeckAdmin(
+  deckId: string,
+  adminId: string,
+  reason: string,
+): Promise<DeckRow | null> {
+  const { rows } = await pool.query<DeckRow>(
+    `UPDATE public.decks
+        SET status = 'rejected',
+            reviewed_by_user_id = $2,
+            rejection_reason = $3,
+            updated_at = now()
+      WHERE id = $1
+        AND status = 'pending_review'
+      RETURNING *`,
+    [deckId, adminId, reason],
+  );
+  return rows[0] ?? null;
+}
+
+/** Devuelve a draft un deck rechazado o pending para que consultor reedite. */
+export async function reopenDraft(deckId: string): Promise<DeckRow | null> {
+  const { rows } = await pool.query<DeckRow>(
+    `UPDATE public.decks
+        SET status = 'draft',
+            rejection_reason = NULL,
+            submitted_for_review_at = NULL,
+            updated_at = now()
+      WHERE id = $1
+        AND status IN ('rejected', 'pending_review')
+      RETURNING *`,
+    [deckId],
   );
   return rows[0] ?? null;
 }

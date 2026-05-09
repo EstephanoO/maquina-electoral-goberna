@@ -16,6 +16,8 @@ import {
 } from "../consultor/repository";
 import { getCandidatoSnapshotByCampaign } from "../onboarding/repository";
 import { renderDeckHtml, type ConsultorForm } from "./render";
+import { consultorFormPatchSchema } from "./fase2-form";
+import { getCandidatoSnapshotBySlug } from "../onboarding/repository";
 import * as repo from "./repository";
 
 // Storage path para los HTML — montado vía volume `uploads` en docker-compose.
@@ -780,6 +782,278 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
         if (!updated) {
           return reply.code(404).send(
             errorPayload(requestId, "DECK_NOT_REJECTABLE", "deck no existe o no está en draft"),
+          );
+        }
+        return reply.code(200).send({ ok: true, request_id: requestId, deck: updated });
+      },
+    );
+
+    // ── Fase 2 deck per-candidato (consultor_form editable) ─────────────
+    //
+    // Flujo: consultor identifica candidato por slug de campaña → carga
+    // snapshot + consultor_form → edita campos vía MCP → submit_for_review
+    // → admin approve.
+
+    /** Helper: resolver slug → snapshot + permission check. */
+    async function resolveCandidatoBySlug(
+      slug: string,
+      req: AuthenticatedRequest,
+    ): Promise<
+      | { ok: true; data: Awaited<ReturnType<typeof getCandidatoSnapshotBySlug>> }
+      | { ok: false; code: number; error: string; message: string }
+    > {
+      const data = await getCandidatoSnapshotBySlug(slug);
+      if (!data) {
+        return {
+          ok: false,
+          code: 404,
+          error: "CANDIDATO_NOT_FOUND",
+          message: `no existe campaña con slug ${slug}`,
+        };
+      }
+      // Admin pasa siempre. Consultor: requiere acceso al candidato (per-row o global).
+      if (req.userRole !== "admin") {
+        const accessibleByPerRow = await checkConsultorAccessAndGetCandidatoUserId(
+          req.userId,
+          data.candidato_id,
+        );
+        const hasGlobal = accessibleByPerRow ? true : await consultorHasGlobalAccess(req.userId);
+        const accessible = !!accessibleByPerRow || hasGlobal;
+        if (!accessible) {
+          return {
+            ok: false,
+            code: 403,
+            error: "CANDIDATO_NOT_ACCESSIBLE",
+            message: "no tenés acceso a este candidato",
+          };
+        }
+      }
+      return { ok: true, data };
+    }
+
+    // GET /api/consultor/fase2/by-candidato/:slug
+    // Devuelve snapshot + consultor_form + estado del deck. Auto-crea el
+    // deck en status='draft' si todavía no existe (el wizard de Fase 1 lo
+    // crea pero por si quedó algún candidato legacy sin deck).
+    app.get<{ Params: { slug: string } }>(
+      "/api/consultor/fase2/by-candidato/:slug",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["consultor", "admin"] }),
+        ],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const req = request as AuthenticatedRequest;
+        const slug = request.params.slug;
+
+        const resolved = await resolveCandidatoBySlug(slug, req);
+        if (!resolved.ok) {
+          return reply.code(resolved.code).send(
+            errorPayload(requestId, resolved.error, resolved.message),
+          );
+        }
+        const { snapshot, campaign_id, candidato_id } = resolved.data!;
+
+        const deck = await repo.ensureFase2Deck({
+          candidato_id,
+          campaign_id,
+          uploaded_by_user_id: req.userId,
+          candidato_full_name: snapshot.user.full_name,
+        });
+
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          snapshot,
+          deck: {
+            id: deck.id,
+            status: deck.status,
+            consultor_form: deck.consultor_form,
+            updated_at: deck.updated_at,
+            submitted_for_review_at: deck.submitted_for_review_at,
+            published_at: deck.published_at,
+            rejection_reason: deck.rejection_reason,
+          },
+        });
+      },
+    );
+
+    // PATCH /api/consultor/fase2/by-candidato/:slug/form
+    // Deep-merge a consultor_form. El body es un subset del schema Fase 2.
+    // Cualquier campo top-level que viene reemplaza al existente (level-1 merge).
+    app.patch<{ Params: { slug: string } }>(
+      "/api/consultor/fase2/by-candidato/:slug/form",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["consultor", "admin"] }),
+        ],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const req = request as AuthenticatedRequest;
+        const slug = request.params.slug;
+
+        const resolved = await resolveCandidatoBySlug(slug, req);
+        if (!resolved.ok) {
+          return reply.code(resolved.code).send(
+            errorPayload(requestId, resolved.error, resolved.message),
+          );
+        }
+        const { snapshot, campaign_id, candidato_id } = resolved.data!;
+
+        const parsed = consultorFormPatchSchema.safeParse(request.body);
+        if (!parsed.success) {
+          return reply.code(400).send(
+            errorPayload(
+              requestId,
+              "VALIDATION_ERROR",
+              parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+            ),
+          );
+        }
+
+        const deck = await repo.ensureFase2Deck({
+          candidato_id,
+          campaign_id,
+          uploaded_by_user_id: req.userId,
+          candidato_full_name: snapshot.user.full_name,
+        });
+
+        const merged = await repo.mergeConsultorForm(
+          deck.id,
+          parsed.data as Record<string, unknown>,
+        );
+        if (!merged) {
+          return reply.code(500).send(
+            errorPayload(requestId, "DECK_MERGE_ERROR", "no pude mergear el form"),
+          );
+        }
+
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          deck: {
+            id: merged.id,
+            status: merged.status,
+            consultor_form: merged.consultor_form,
+            updated_at: merged.updated_at,
+          },
+        });
+      },
+    );
+
+    // POST /api/consultor/fase2/by-candidato/:slug/submit
+    // Marca el deck Fase 2 como pending_review. El admin lo verá en su panel.
+    app.post<{ Params: { slug: string } }>(
+      "/api/consultor/fase2/by-candidato/:slug/submit",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["consultor", "admin"] }),
+        ],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const req = request as AuthenticatedRequest;
+        const slug = request.params.slug;
+
+        const resolved = await resolveCandidatoBySlug(slug, req);
+        if (!resolved.ok) {
+          return reply.code(resolved.code).send(
+            errorPayload(requestId, resolved.error, resolved.message),
+          );
+        }
+        const { snapshot, campaign_id, candidato_id } = resolved.data!;
+
+        const deck = await repo.ensureFase2Deck({
+          candidato_id,
+          campaign_id,
+          uploaded_by_user_id: req.userId,
+          candidato_full_name: snapshot.user.full_name,
+        });
+
+        if (deck.status === "pending_review") {
+          return reply.code(409).send(
+            errorPayload(requestId, "DECK_ALREADY_PENDING", "ya está en revisión"),
+          );
+        }
+        if (deck.status === "published") {
+          return reply.code(409).send(
+            errorPayload(requestId, "DECK_ALREADY_PUBLISHED", "ya está publicado"),
+          );
+        }
+
+        const submitted = await repo.submitForReview(deck.id, req.userId);
+        if (!submitted) {
+          return reply.code(500).send(
+            errorPayload(requestId, "DECK_SUBMIT_ERROR", "no pude marcar como pending_review"),
+          );
+        }
+
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          deck: {
+            id: submitted.id,
+            status: submitted.status,
+            submitted_for_review_at: submitted.submitted_for_review_at,
+          },
+          // URL que el admin abre para revisar
+          review_url: `/admin/fase2/${slug}`,
+        });
+      },
+    );
+
+    // POST /api/admin/decks/:id/approve  (admin only)
+    app.post<{ Params: { id: string } }>(
+      "/api/admin/decks/:id/approve",
+      {
+        preHandler: [app.authenticate, authorize({ roles: ["admin"] })],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const req = request as AuthenticatedRequest;
+        const id = request.params.id;
+        const idParsed = z.string().uuid().safeParse(id);
+        if (!idParsed.success) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "id inválido"));
+        }
+        const updated = await repo.approveDeckAdmin(id, req.userId);
+        if (!updated) {
+          return reply.code(404).send(
+            errorPayload(requestId, "DECK_NOT_APPROVABLE", "deck no existe o no está en pending_review"),
+          );
+        }
+        return reply.code(200).send({ ok: true, request_id: requestId, deck: updated });
+      },
+    );
+
+    // POST /api/admin/decks/:id/reject  (admin only)
+    app.post<{ Params: { id: string }; Body: { reason: string } }>(
+      "/api/admin/decks/:id/reject",
+      {
+        preHandler: [app.authenticate, authorize({ roles: ["admin"] })],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const req = request as AuthenticatedRequest;
+        const id = request.params.id;
+        const idParsed = z.string().uuid().safeParse(id);
+        if (!idParsed.success) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "id inválido"));
+        }
+        const reasonSchema = z.object({ reason: z.string().min(2).max(500) });
+        const reasonParsed = reasonSchema.safeParse(request.body);
+        if (!reasonParsed.success) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "reason requerido"));
+        }
+        const updated = await repo.rejectDeckAdmin(id, req.userId, reasonParsed.data.reason);
+        if (!updated) {
+          return reply.code(404).send(
+            errorPayload(requestId, "DECK_NOT_REJECTABLE", "deck no existe o no está en pending_review"),
           );
         }
         return reply.code(200).send({ ok: true, request_id: requestId, deck: updated });
