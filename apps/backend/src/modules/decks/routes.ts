@@ -11,6 +11,7 @@ import type { AuthenticatedRequest } from "../../infra/auth";
 
 import {
   checkConsultorAccessAndGetCandidatoUserId,
+  consultorHasGlobalAccess,
 } from "../consultor/repository";
 import * as repo from "./repository";
 
@@ -506,6 +507,72 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
           app.log.error({ err: e, request_id: requestId, deck_id: id }, "decks/json read failed");
           return reply.code(500).send(errorPayload(requestId, "DECK_READ_ERROR", "no pude leer el archivo"));
         }
+      },
+    );
+
+    // ── POST /api/consultor/decks/:id/publish ─────────────────────────
+    // Autopublicación del consultor — solo permitida si tiene
+    // consultor_global_access. Sin global access → debe pedir a admin.
+    app.post<{ Params: { id: string } }>(
+      "/api/consultor/decks/:id/publish",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["consultor"] }),
+        ],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const req = request as AuthenticatedRequest;
+        const id = request.params.id;
+        const idParsed = z.string().uuid().safeParse(id);
+        if (!idParsed.success) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "id inválido"));
+        }
+        // Verificar permiso de autopublicación: admin pasa, o consultor con global access.
+        if (req.userRole !== "admin") {
+          const hasGlobal = await consultorHasGlobalAccess(req.userId);
+          if (!hasGlobal) {
+            return reply.code(403).send(
+              errorPayload(
+                requestId,
+                "SELF_PUBLISH_NOT_ALLOWED",
+                "no tenés permiso de autopublicar — pedile a admin que lo publique en /decks",
+              ),
+            );
+          }
+        }
+        // Verificar acceso al deck (mismo flujo que GET /:id)
+        const deck = await repo.findDeckById(id);
+        if (!deck) {
+          return reply.code(404).send(errorPayload(requestId, "DECK_NOT_FOUND", "deck no existe"));
+        }
+        if (req.userRole !== "admin") {
+          const ok = await checkConsultorAccessAndGetCandidatoUserId(req.userId, deck.candidato_id);
+          if (!ok) {
+            return reply.code(403).send(
+              errorPayload(requestId, "CANDIDATO_NOT_ACCESSIBLE", "sin acceso a este candidato"),
+            );
+          }
+        }
+        const updated = await repo.selfPublishDeck(id, req.userId);
+        if (!updated) {
+          return reply.code(409).send(
+            errorPayload(requestId, "DECK_NOT_PUBLISHABLE", "deck no existe o no está en draft"),
+          );
+        }
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          deck: {
+            id: updated.id,
+            candidato_id: updated.candidato_id,
+            title: updated.title,
+            status: updated.status,
+            published_at: updated.published_at,
+            preview_url: `/api/decks/${updated.id}/raw`,
+          },
+        });
       },
     );
 

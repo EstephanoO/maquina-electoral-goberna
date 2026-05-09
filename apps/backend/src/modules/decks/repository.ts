@@ -474,6 +474,26 @@ export async function findDeckById(id: string): Promise<DeckRow | null> {
   return rows[0] ?? null;
 }
 
+/**
+ * Publica un deck que actualmente está en draft. Pasa de status draft →
+ * published, setea reviewed_by_user_id y published_at. La diferencia con
+ * `publishDeck` (admin) es que esta versión es para que el consultor
+ * mismo se autopublique — gateada en routes por consultor_global_access.
+ */
+export async function selfPublishDeck(id: string, consultorId: string): Promise<DeckRow | null> {
+  const { rows } = await pool.query<DeckRow>(
+    `UPDATE public.decks
+        SET status = 'published',
+            reviewed_by_user_id = $2,
+            published_at = now(),
+            updated_at = now()
+      WHERE id = $1 AND status = 'draft'
+      RETURNING *`,
+    [id, consultorId],
+  );
+  return rows[0] ?? null;
+}
+
 export async function publishDeck(id: string, reviewerId: string): Promise<DeckRow | null> {
   const { rows } = await pool.query<DeckRow>(
     `UPDATE public.decks
