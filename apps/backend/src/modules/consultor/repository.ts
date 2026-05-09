@@ -25,14 +25,30 @@ export interface ConsultorCandidatoRow {
   candidato_user_id: string | null;
 }
 
+/** Verifica si un consultor tiene acceso global (a TODOS los candidatos). */
+export async function consultorHasGlobalAccess(consultorUserId: string): Promise<boolean> {
+  const { rows } = await pool.query<{ x: number }>(
+    `SELECT 1 AS x FROM public.consultor_global_access WHERE consultor_user_id = $1 LIMIT 1`,
+    [consultorUserId],
+  );
+  return rows.length > 0;
+}
+
 /**
  * Lista los candidatos asignados a un consultor con un resumen para mostrar
  * en el listado del MCP. NO trae el contexto completo (ese es el endpoint
  * `:id/context`).
+ *
+ * Si el consultor está en consultor_global_access, devuelve TODOS los
+ * candidatos (presentes y futuros).
  */
 export async function listConsultorCandidates(
   consultorUserId: string,
 ): Promise<ConsultorCandidatoRow[]> {
+  // Global access → atajo: lista todos los candidatos
+  if (await consultorHasGlobalAccess(consultorUserId)) {
+    return listAllCandidatesForAdmin();
+  }
   const { rows } = await pool.query<ConsultorCandidatoRow>(
     `SELECT
         cand.id           AS candidato_id,
@@ -76,13 +92,29 @@ export async function listConsultorCandidates(
 
 /**
  * Verifica que un consultor tenga acceso a un candidato (asignado en
- * consultor_candidato). Devuelve el user_id del candidato si existe,
- * para poder llamar findCandidatoContext después.
+ * consultor_candidato O en consultor_global_access). Devuelve el user_id
+ * del candidato si existe, para poder llamar findCandidatoContext después.
  */
 export async function checkConsultorAccessAndGetCandidatoUserId(
   consultorUserId: string,
   candidatoId: number,
 ): Promise<string | null> {
+  // Path global: si el consultor tiene acceso global, devolver el user_id
+  // del candidato directo (sin filtro por consultor_candidato).
+  if (await consultorHasGlobalAccess(consultorUserId)) {
+    const { rows } = await pool.query<{ user_id: string }>(
+      `SELECT u.id AS user_id
+         FROM candidatos.candidato cand
+         JOIN candidatos.postulacion p  ON p.id_candidato = cand.id
+         JOIN public.user_campaigns uc  ON uc.campaign_id = p.campaign_id AND uc.role = 'candidato'
+         JOIN public.users u            ON u.id = uc.user_id
+        WHERE cand.id = $1
+        LIMIT 1`,
+      [candidatoId],
+    );
+    return rows[0]?.user_id ?? null;
+  }
+
   const { rows } = await pool.query<{ user_id: string | null }>(
     `SELECT u.id AS user_id
        FROM public.consultor_candidato cc
@@ -187,6 +219,84 @@ export async function listAllCandidatesForAdmin(): Promise<ConsultorCandidatoRow
       LIMIT 200`,
   );
   return rows;
+}
+
+// ── Admin helpers (Fase B) ─────────────────────────────────────────────
+
+export interface ConsultorUserSummary {
+  user_id: string;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  status: string;
+  has_global_access: boolean;
+  assignments_count: number;
+  created_at: string;
+}
+
+/** Lista todos los users con role=consultor + count asignaciones + has_global_access flag. */
+export async function listConsultorUsers(): Promise<ConsultorUserSummary[]> {
+  const { rows } = await pool.query<ConsultorUserSummary>(
+    `SELECT
+        u.id           AS user_id,
+        u.full_name,
+        u.email,
+        u.phone,
+        u.status,
+        EXISTS (
+          SELECT 1 FROM public.consultor_global_access cga
+            WHERE cga.consultor_user_id = u.id
+        )              AS has_global_access,
+        (SELECT COUNT(*)::int FROM public.consultor_candidato cc
+           WHERE cc.consultor_user_id = u.id) AS assignments_count,
+        u.created_at
+       FROM public.users u
+      WHERE u.role = 'consultor'
+      ORDER BY u.created_at DESC`,
+  );
+  return rows;
+}
+
+/** Lista las asignaciones (candidato_id, candidato_nombres) de un consultor. */
+export async function listAssignmentsForConsultor(
+  consultorUserId: string,
+): Promise<Array<{ candidato_id: number; candidato_nombres: string; assigned_at: string }>> {
+  const { rows } = await pool.query<{
+    candidato_id: number;
+    candidato_nombres: string;
+    assigned_at: string;
+  }>(
+    `SELECT cc.candidato_id, cand.nombres AS candidato_nombres, cc.assigned_at
+       FROM public.consultor_candidato cc
+       JOIN candidatos.candidato cand ON cand.id = cc.candidato_id
+      WHERE cc.consultor_user_id = $1
+      ORDER BY cc.assigned_at DESC`,
+    [consultorUserId],
+  );
+  return rows;
+}
+
+export async function grantGlobalAccess(
+  consultorUserId: string,
+  grantedBy: string,
+  notes: string | null,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO public.consultor_global_access (consultor_user_id, granted_by, notes)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (consultor_user_id) DO UPDATE
+       SET granted_by = EXCLUDED.granted_by,
+           notes      = EXCLUDED.notes,
+           granted_at = now()`,
+    [consultorUserId, grantedBy, notes],
+  );
+}
+
+export async function revokeGlobalAccess(consultorUserId: string): Promise<void> {
+  await pool.query(
+    `DELETE FROM public.consultor_global_access WHERE consultor_user_id = $1`,
+    [consultorUserId],
+  );
 }
 
 /** Versión admin de getCandidatoContext — sin filtro por consultor_candidato. */

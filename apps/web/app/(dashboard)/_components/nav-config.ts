@@ -36,7 +36,8 @@ export function mapBackendRoleToUI(backendRole: string): UIRole {
 
 export type NavItemKey =
   | "inicio" | "tierra" | "digital" | "datos" | "equipo"
-  | "candidatos" | "gestion" | "brigadistas" | "ops" | "blast"
+  | "candidatos" | "gestion" | "consultores" | "decks"
+  | "brigadistas" | "ops" | "blast"
   | "leads" | "formularios";
 
 /** Pure spec — icons rendered by the shell, not stored here. */
@@ -65,6 +66,8 @@ export const MAIN_NAV: NavSpec[] = [
 export const ADMIN_NAV: NavSpec[] = [
   { key: "candidatos",  label: "Candidatos",         href: "/candidatos",  roles: ["admin"],              visibility: "always" },
   { key: "gestion",     label: "Gestión",            href: "/gestion",     roles: ["admin", "consultor"], visibility: "always" },
+  { key: "consultores", label: "Consultores",        href: "/consultores", roles: ["admin"],              visibility: "always" },
+  { key: "decks",       label: "Decks (revisión)",   href: "/decks",       roles: ["admin"],              visibility: "always" },
   { key: "brigadistas", label: "Brigadistas",        href: "/brigadistas", roles: ["admin"],              visibility: "always" },
   { key: "ops",         label: "Ops",                href: "/ops",         roles: ["admin"],              visibility: "always" },
   { key: "blast",       label: "Blast (multi)",      href: "/blast",       roles: ["admin"],              visibility: "always" },

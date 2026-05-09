@@ -56,6 +56,8 @@ const ICON_BY_KEY: Record<NavItemKey, () => ReactNode> = {
   equipo:      () => <AgentsIcon />,
   candidatos:  () => <CandidatosIcon />,
   gestion:     () => <GestionIcon />,
+  consultores: () => <CandidatosIcon />,
+  decks:       () => <CmsIcon />,
   brigadistas: () => <BrigadistasIcon />,
   ops:         () => <OpsIcon />,
   blast:       () => <BlastIcon />,

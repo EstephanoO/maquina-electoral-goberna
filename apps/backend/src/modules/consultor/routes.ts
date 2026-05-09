@@ -134,6 +134,111 @@ export function buildConsultorRoutes(env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── GET /api/admin/consultores ────────────────────────────────────
+    // Lista todos los consultores con asignaciones + flag global access.
+    app.get(
+      "/api/admin/consultores",
+      {
+        preHandler: [app.authenticate, authorize({ roles: ["admin"] })],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const consultores = await repo.listConsultorUsers();
+        return reply.code(200).send({ ok: true, request_id: requestId, consultores });
+      },
+    );
+
+    // GET /api/admin/consultores/:id/assignments
+    app.get<{ Params: { id: string } }>(
+      "/api/admin/consultores/:id/assignments",
+      {
+        preHandler: [app.authenticate, authorize({ roles: ["admin"] })],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const assignments = await repo.listAssignmentsForConsultor(request.params.id);
+        return reply.code(200).send({ ok: true, request_id: requestId, assignments });
+      },
+    );
+
+    // POST /api/admin/consultores/:id/assignments  body: { candidato_id, campaign_id? }
+    app.post<{ Params: { id: string } }>(
+      "/api/admin/consultores/:id/assignments",
+      {
+        preHandler: [app.authenticate, authorize({ roles: ["admin"] })],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const req = request as AuthenticatedRequest;
+        const schema = z.object({
+          candidato_id: z.coerce.number().int().positive(),
+          campaign_id: z.string().uuid().optional().nullable(),
+        });
+        const parsed = schema.safeParse(request.body);
+        if (!parsed.success) {
+          return reply
+            .code(400)
+            .send(errorPayload(requestId, "VALIDATION_ERROR", "candidato_id requerido"));
+        }
+        await repo.assignCandidatoToConsultor(
+          request.params.id,
+          parsed.data.candidato_id,
+          parsed.data.campaign_id ?? null,
+          req.userId,
+        );
+        return reply.code(200).send({ ok: true, request_id: requestId });
+      },
+    );
+
+    // DELETE /api/admin/consultores/:id/assignments/:candidatoId
+    app.delete<{ Params: { id: string; candidatoId: string } }>(
+      "/api/admin/consultores/:id/assignments/:candidatoId",
+      {
+        preHandler: [app.authenticate, authorize({ roles: ["admin"] })],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const candidatoId = Number.parseInt(request.params.candidatoId, 10);
+        if (!Number.isInteger(candidatoId) || candidatoId <= 0) {
+          return reply
+            .code(400)
+            .send(errorPayload(requestId, "VALIDATION_ERROR", "candidatoId inválido"));
+        }
+        await repo.unassignCandidatoFromConsultor(request.params.id, candidatoId);
+        return reply.code(200).send({ ok: true, request_id: requestId });
+      },
+    );
+
+    // POST /api/admin/consultores/:id/global-access  body: { notes? }
+    app.post<{ Params: { id: string } }>(
+      "/api/admin/consultores/:id/global-access",
+      {
+        preHandler: [app.authenticate, authorize({ roles: ["admin"] })],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const req = request as AuthenticatedRequest;
+        const schema = z.object({ notes: z.string().max(500).optional() });
+        const parsed = schema.safeParse(request.body ?? {});
+        const notes = parsed.success ? parsed.data.notes ?? null : null;
+        await repo.grantGlobalAccess(request.params.id, req.userId, notes);
+        return reply.code(200).send({ ok: true, request_id: requestId });
+      },
+    );
+
+    // DELETE /api/admin/consultores/:id/global-access
+    app.delete<{ Params: { id: string } }>(
+      "/api/admin/consultores/:id/global-access",
+      {
+        preHandler: [app.authenticate, authorize({ roles: ["admin"] })],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        await repo.revokeGlobalAccess(request.params.id);
+        return reply.code(200).send({ ok: true, request_id: requestId });
+      },
+    );
+
     // ── GET /api/consultor/candidates/:id/context ─────────────────────
     // Devuelve el CandidatoContext completo. Valida ownership.
     app.get<{ Params: { id: string } }>(
