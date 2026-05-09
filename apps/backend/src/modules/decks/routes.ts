@@ -449,6 +449,66 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── GET /api/consultor/decks/:id ──────────────────────────────────
+    // Devuelve metadata + HTML completo en JSON. Lo usa el MCP
+    // fetch_deck_html para sincronizar el workspace local del consultor
+    // con el deck actual de un candidato.
+    app.get<{ Params: { id: string } }>(
+      "/api/consultor/decks/:id",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["consultor"] }),
+        ],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const req = request as AuthenticatedRequest;
+        const id = request.params.id;
+        const idParsed = z.string().uuid().safeParse(id);
+        if (!idParsed.success) {
+          return reply
+            .code(400)
+            .send(errorPayload(requestId, "VALIDATION_ERROR", "id inválido"));
+        }
+        const deck = await repo.findDeckById(id);
+        if (!deck) {
+          return reply.code(404).send(errorPayload(requestId, "DECK_NOT_FOUND", "deck no existe"));
+        }
+        // Verificar acceso al candidato (admin pasa siempre)
+        if (req.userRole !== "admin") {
+          const ok = await checkConsultorAccessAndGetCandidatoUserId(req.userId, deck.candidato_id);
+          if (!ok) {
+            return reply.code(403).send(
+              errorPayload(requestId, "CANDIDATO_NOT_ACCESSIBLE", "sin acceso a este candidato"),
+            );
+          }
+        }
+        try {
+          const html = await fs.readFile(deck.storage_path, "utf8");
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            deck: {
+              id: deck.id,
+              candidato_id: deck.candidato_id,
+              title: deck.title,
+              type: deck.type,
+              description: deck.description,
+              status: deck.status,
+              size_bytes: deck.size_bytes,
+              created_at: deck.created_at,
+              updated_at: deck.updated_at,
+              html,
+            },
+          });
+        } catch (e) {
+          app.log.error({ err: e, request_id: requestId, deck_id: id }, "decks/json read failed");
+          return reply.code(500).send(errorPayload(requestId, "DECK_READ_ERROR", "no pude leer el archivo"));
+        }
+      },
+    );
+
     // ── ADMIN ─────────────────────────────────────────────────────────
 
     // GET /api/admin/decks?status=draft|published|rejected
