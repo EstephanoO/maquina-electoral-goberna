@@ -77,7 +77,64 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
           }
         }
 
-        // Persistir HTML al disco
+        // Si ya existe un draft del mismo (candidato, uploader, type), lo reemplazamos.
+        // Esto evita que el admin vea 5 borradores idénticos cuando el consultor
+        // itera. El draft anterior es overwriteado: HTML viejo → unlink, row UPDATE.
+        const existingDraft = await repo.findDraftByKey(
+          input.candidato_id,
+          req.userId,
+          input.type,
+        );
+
+        const sizeBytes = Buffer.byteLength(input.html, "utf8");
+
+        if (existingDraft) {
+          const newStoragePath = join(STORAGE_DIR, `${existingDraft.id}.html`);
+          try {
+            await fs.mkdir(STORAGE_DIR, { recursive: true });
+            await fs.writeFile(newStoragePath, input.html, "utf8");
+          } catch (e) {
+            app.log.error({ err: e, request_id: requestId }, "decks/upload write failed");
+            return reply.code(500).send(
+              errorPayload(requestId, "DECK_STORAGE_ERROR", "no pude guardar el archivo"),
+            );
+          }
+          // Si la storage_path original es diferente de la nueva (cambió STORAGE_DIR),
+          // limpiamos la vieja.
+          if (existingDraft.storage_path && existingDraft.storage_path !== newStoragePath) {
+            await fs.unlink(existingDraft.storage_path).catch(() => undefined);
+          }
+          try {
+            const row = await repo.replaceDraftContent(existingDraft.id, {
+              title: input.title,
+              description: input.description ?? null,
+              storage_path: newStoragePath,
+              size_bytes: sizeBytes,
+            });
+            return reply.code(200).send({
+              ok: true,
+              request_id: requestId,
+              replaced: true,
+              deck: {
+                id: row.id,
+                candidato_id: row.candidato_id,
+                title: row.title,
+                type: row.type,
+                status: row.status,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                preview_url: `/api/decks/${row.id}/raw`,
+              },
+            });
+          } catch (e) {
+            app.log.error({ err: e, request_id: requestId }, "decks/upload replace failed");
+            return reply.code(500).send(
+              errorPayload(requestId, "DECK_REPLACE_ERROR", "error reemplazando el draft"),
+            );
+          }
+        }
+
+        // No había draft previo — INSERT nuevo.
         const id = randomUUID();
         const storagePath = join(STORAGE_DIR, `${id}.html`);
         try {
@@ -100,11 +157,12 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
             type: input.type,
             description: input.description ?? null,
             storage_path: storagePath,
-            size_bytes: Buffer.byteLength(input.html, "utf8"),
+            size_bytes: sizeBytes,
           });
           return reply.code(201).send({
             ok: true,
             request_id: requestId,
+            replaced: false,
             deck: {
               id: row.id,
               candidato_id: row.candidato_id,
@@ -123,6 +181,26 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
             errorPayload(requestId, "DECK_INSERT_ERROR", "error guardando el deck"),
           );
         }
+      },
+    );
+
+    // ── GET /api/candidato/decks?campaign_id=... ──────────────────────
+    // Endpoint que consume el dashboard del candidato para listar sus
+    // decks publicados. Auth: cualquier usuario logueado con campaign_id.
+    // El backend valida que el caller tenga acceso a esa campaña.
+    app.get<{ Querystring: { campaign_id?: string } }>(
+      "/api/candidato/decks",
+      { preHandler: [app.authenticate] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const parsed = z.string().uuid().safeParse(request.query.campaign_id);
+        if (!parsed.success) {
+          return reply
+            .code(400)
+            .send(errorPayload(requestId, "VALIDATION_ERROR", "campaign_id requerido"));
+        }
+        const decks = await repo.listPublishedDecksForCampaign(parsed.data);
+        return reply.code(200).send({ ok: true, request_id: requestId, decks });
       },
     );
 

@@ -8,11 +8,12 @@ const FONT = "var(--font-montserrat), system-ui, sans-serif";
 type Tab = { key: string; label: string; href: (slug: string) => string };
 
 const TABS: Tab[] = [
-  { key: "chat",       label: "Chat",       href: (s) => `/candidatos/${s}/digital/chat` },
-  { key: "metricas",   label: "Métricas",   href: (s) => `/candidatos/${s}/digital/metricas` },
-  { key: "validacion", label: "Validación", href: (s) => `/candidatos/${s}/digital/validacion` },
-  { key: "monitor",    label: "Monitor WA", href: (s) => `/candidatos/${s}/digital/monitor` },
-  { key: "whatsapp",   label: "Configuración", href: (s) => `/candidatos/${s}/digital/whatsapp` },
+  { key: "chat",          label: "Chat",           href: (s) => `/candidatos/${s}/digital/chat` },
+  { key: "metricas",      label: "Métricas",       href: (s) => `/candidatos/${s}/digital/metricas` },
+  { key: "decks",         label: "Presentaciones", href: (s) => `/candidatos/${s}/digital/decks` },
+  { key: "validacion",    label: "Validación",     href: (s) => `/candidatos/${s}/digital/validacion` },
+  { key: "monitor",       label: "Monitor WA",     href: (s) => `/candidatos/${s}/digital/monitor` },
+  { key: "whatsapp",      label: "Configuración",  href: (s) => `/candidatos/${s}/digital/whatsapp` },
 ];
 
 export default function DigitalLayout({ children }: { children: React.ReactNode }) {

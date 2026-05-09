@@ -73,6 +73,64 @@ export async function listDecksByCandidato(candidatoId: number): Promise<DeckLis
   return rows;
 }
 
+/** Lista los decks `published` del candidato dueño de la campaign. */
+export async function listPublishedDecksForCampaign(
+  campaignId: string,
+): Promise<DeckListItem[]> {
+  const { rows } = await pool.query<DeckListItem>(
+    `SELECT d.*,
+            cand.nombres   AS candidato_nombres,
+            u.full_name    AS uploader_full_name,
+            u.email        AS uploader_email
+       FROM public.decks d
+       JOIN candidatos.candidato cand ON cand.id = d.candidato_id
+       JOIN public.users u ON u.id = d.uploaded_by_user_id
+       JOIN candidatos.postulacion p ON p.id_candidato = cand.id
+      WHERE d.status = 'published'
+        AND p.campaign_id = $1
+      ORDER BY d.published_at DESC NULLS LAST, d.created_at DESC`,
+    [campaignId],
+  );
+  return rows;
+}
+
+/** Busca un draft existente para reemplazo (mismo candidato + uploader + tipo). */
+export async function findDraftByKey(
+  candidatoId: number,
+  uploaderId: string,
+  type: DeckRow["type"],
+): Promise<DeckRow | null> {
+  const { rows } = await pool.query<DeckRow>(
+    `SELECT * FROM public.decks
+      WHERE candidato_id = $1
+        AND uploaded_by_user_id = $2
+        AND type = $3
+        AND status = 'draft'
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [candidatoId, uploaderId, type],
+  );
+  return rows[0] ?? null;
+}
+
+export async function replaceDraftContent(
+  id: string,
+  input: { title: string; description: string | null; storage_path: string; size_bytes: number },
+): Promise<DeckRow> {
+  const { rows } = await pool.query<DeckRow>(
+    `UPDATE public.decks
+        SET title = $2,
+            description = $3,
+            storage_path = $4,
+            size_bytes = $5,
+            updated_at = now()
+      WHERE id = $1
+      RETURNING *`,
+    [id, input.title, input.description, input.storage_path, input.size_bytes],
+  );
+  return rows[0]!;
+}
+
 /** Lista decks por status (admin). */
 export async function listDecksByStatus(
   status: DeckRow["status"],
