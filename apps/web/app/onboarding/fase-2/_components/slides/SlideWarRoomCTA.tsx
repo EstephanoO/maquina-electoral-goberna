@@ -1,20 +1,36 @@
 "use client";
 
 import { motion } from "motion/react";
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { ArrowRight, Radar, MapPinned, Megaphone, BarChart3 } from "lucide-react";
 
-interface SlideCTAProps {
+interface SlideWarRoomCTAProps {
   onContinue: () => void;
 }
 
-const RECOMENDACIONES = [
-  "Construir tu marca personal sólida y diferenciada",
-  "Implementar comunicación política integral",
-  "Aplicar cartografía electoral y análisis territorial",
-  "Activar tecnología para datos y segmentación",
+const PIEZAS = [
+  {
+    icon: Radar,
+    titulo: "Inteligencia",
+    descripcion: "Diagnóstico, adversarios, debilidades — todo mapeado.",
+  },
+  {
+    icon: MapPinned,
+    titulo: "Territorio",
+    descripcion: "Cartografía, padrón segmentado, zonas calientes.",
+  },
+  {
+    icon: Megaphone,
+    titulo: "Comunicación",
+    descripcion: "Aire, mar, tierra — calendarizados y trackeados.",
+  },
+  {
+    icon: BarChart3,
+    titulo: "Métricas",
+    descripcion: "Avance diario, alertas, KPIs en tiempo real.",
+  },
 ];
 
-export function SlideCTA({ onContinue }: SlideCTAProps) {
+export function SlideWarRoomCTA({ onContinue }: SlideWarRoomCTAProps) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center min-h-[calc(100vh-180px)] px-4 sm:px-8 text-center">
       <motion.div
@@ -22,7 +38,7 @@ export function SlideCTA({ onContinue }: SlideCTAProps) {
         animate={{ opacity: 1, y: 0 }}
         className="inline-flex items-center gap-2 rounded-full bg-amber-400/10 border border-amber-400/40 px-5 py-2 text-xs uppercase tracking-[0.3em] text-amber-400 font-semibold mb-8"
       >
-        Recomendaciones finales
+        Tu cuartel de campaña
       </motion.div>
 
       <motion.h1
@@ -31,7 +47,7 @@ export function SlideCTA({ onContinue }: SlideCTAProps) {
         transition={{ delay: 0.1, duration: 0.6 }}
         className="text-5xl sm:text-7xl md:text-8xl font-black text-white uppercase tracking-tight leading-[0.95] max-w-5xl"
       >
-        Listo. Ahora <span className="text-amber-400">elige cómo compites</span>.
+        Tu campaña ya tiene su <span className="text-amber-400">War Room</span>.
       </motion.h1>
 
       <motion.p
@@ -40,26 +56,33 @@ export function SlideCTA({ onContinue }: SlideCTAProps) {
         transition={{ delay: 0.3 }}
         className="mt-6 text-base sm:text-lg text-gray-300 max-w-2xl"
       >
-        Con este diagnóstico ya sabes contra quién juegas. El último paso: definir cómo se va a mover tu campaña.
+        Inteligencia, territorio, comunicación y métricas — todo en un solo
+        dashboard. Aquí decides, aquí mides, aquí ganas.
       </motion.p>
 
-      {/* Lista de recomendaciones */}
       <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-3 max-w-3xl w-full">
-        {RECOMENDACIONES.map((r, i) => (
-          <motion.div
-            key={r}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.4 + i * 0.08 }}
-            className="flex items-center gap-3 rounded-xl border border-amber-400/20 bg-[#0a1e4a]/60 px-4 py-3 text-left"
-          >
-            <CheckCircle2 className="size-5 text-amber-400 shrink-0" />
-            <p className="text-sm text-gray-200">{r}</p>
-          </motion.div>
-        ))}
+        {PIEZAS.map((p, i) => {
+          const Icon = p.icon;
+          return (
+            <motion.div
+              key={p.titulo}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.4 + i * 0.08 }}
+              className="flex items-start gap-3 rounded-md border border-amber-400/25 bg-[#0a1e4a]/60 px-4 py-3 text-left"
+            >
+              <Icon className="size-6 text-amber-400 shrink-0 mt-0.5" strokeWidth={2.2} />
+              <div>
+                <div className="text-sm font-extrabold uppercase tracking-wide text-white">
+                  {p.titulo}
+                </div>
+                <p className="text-xs text-gray-300 leading-relaxed mt-0.5">{p.descripcion}</p>
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
 
-      {/* CTA gigante */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -73,12 +96,12 @@ export function SlideCTA({ onContinue }: SlideCTAProps) {
           whileTap={{ scale: 0.98 }}
           className="inline-flex items-center gap-3 px-12 py-5 rounded-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 text-[#0a1e4a] font-black text-xl uppercase tracking-wider shadow-[0_20px_60px_rgba(251,191,36,0.5)] hover:shadow-[0_25px_80px_rgba(251,191,36,0.7)] transition-shadow"
         >
-          Configurar mi estrategia
+          Entrar al Dashboard
           <ArrowRight className="size-6" />
         </motion.button>
 
         <p className="mt-6 text-xs uppercase tracking-[0.4em] text-amber-400/60">
-          Fase 3 de 3
+          Fin del briefing · Goberna te acompaña
         </p>
       </motion.div>
     </div>
