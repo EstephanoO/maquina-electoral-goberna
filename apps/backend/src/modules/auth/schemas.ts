@@ -66,6 +66,35 @@ export const registerFirebaseSchema = z.object({
   { message: "exactly one of invitation_code, access_code, campaign_id requerido", path: ["campaign_id"] },
 );
 
+/**
+ * WhatsApp OTP — schemas para los 3 endpoints (send / verify-login / register).
+ *
+ * El phone es trim + dígitos (validamos en el módulo whatsapp-otp con
+ * normalizePhone). 9-15 dígitos cubre PE (9 local) y E.164 mundial.
+ */
+export const whatsappSendSchema = z.object({
+  phone: z.string().trim().min(9, "telefono requerido").max(20, "telefono demasiado largo"),
+});
+
+export const whatsappVerifyLoginSchema = z.object({
+  phone: z.string().trim().min(9, "telefono requerido").max(20),
+  code: z.string().regex(/^\d{6}$/, "código debe ser 6 dígitos"),
+});
+
+export const whatsappRegisterSchema = z.object({
+  phone: z.string().trim().min(9, "telefono requerido").max(20),
+  code: z.string().regex(/^\d{6}$/, "código debe ser 6 dígitos"),
+  full_name: z.string().trim().min(3, "nombre requerido (min 3)").max(200),
+  region: z.string().trim().min(1, "region requerida").max(50),
+  invitation_code: z.string().trim().toUpperCase().optional(),
+  access_code: z.string().trim().toUpperCase().max(4).optional(),
+  campaign_id: z.string().uuid("campaign_id invalido").optional(),
+  email: z.string().email("email invalido").transform((e) => e.toLowerCase().trim()).optional(),
+}).refine(
+  (data) => [data.invitation_code, data.access_code, data.campaign_id].filter(Boolean).length === 1,
+  { message: "exactly one of invitation_code, access_code, campaign_id requerido", path: ["campaign_id"] },
+);
+
 export const changePasswordSchema = z.object({
   current_password: z.string().min(1, "password actual requerido"),
   new_password: z.string().min(8, "nueva password debe tener al menos 8 caracteres"),
@@ -90,3 +119,6 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 export type RegisterFirebaseInput = z.infer<typeof registerFirebaseSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type WhatsappSendInput = z.infer<typeof whatsappSendSchema>;
+export type WhatsappVerifyLoginInput = z.infer<typeof whatsappVerifyLoginSchema>;
+export type WhatsappRegisterInput = z.infer<typeof whatsappRegisterSchema>;

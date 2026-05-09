@@ -39,8 +39,18 @@ export function createServer(instances: Map<string, WAInstance>) {
     }
   });
 
-  // Send message from a specific instance
+  // Send message from a specific instance.
+  // Si BOT_SHARED_SECRET está seteado, exige Authorization: Bearer <token>.
+  // Si no, permite el call sin auth (útil para dev local en LAN privada).
+  const expectedBearer = (process.env.BOT_SHARED_SECRET ?? "").trim();
   app.post("/send/:id", async (req, res) => {
+    if (expectedBearer) {
+      const auth = req.header("authorization") ?? "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+      if (token !== expectedBearer) {
+        return res.status(401).json({ error: "unauthorized" });
+      }
+    }
     const inst = instances.get(req.params.id);
     if (!inst) return res.status(404).json({ error: "instance not found" });
     if (inst.state.status !== "ready") return res.status(400).json({ error: "not ready", status: inst.state.status });

@@ -355,17 +355,30 @@ export type RegisterWithAccessCodeRequest = RegisterRequest & {
   access_code: string;
 };
 
-// ─── Firebase Phone Auth (OTP-only flow) ────────────────────
+// ─── WhatsApp OTP (sin password, código por WhatsApp) ───────
 
-/** Body for POST /api/auth/firebase-verify */
-export type FirebaseVerifyRequest = {
-  id_token: string;
+/** Body for POST /api/auth/whatsapp/send */
+export type WhatsappSendRequest = {
+  phone: string;
 };
 
-/** Body for POST /api/auth/register-firebase. Exactly one of
+export type WhatsappSendResponse = {
+  ok: true;
+  request_id: string;
+  expires_in: number;
+};
+
+/** Body for POST /api/auth/whatsapp/verify (login) */
+export type WhatsappVerifyLoginRequest = {
+  phone: string;
+  code: string;
+};
+
+/** Body for POST /api/auth/whatsapp/register. Exactly one of
  *  invitation_code | access_code | campaign_id must be present. */
-export type RegisterFirebaseRequest = {
-  id_token: string;
+export type WhatsappRegisterRequest = {
+  phone: string;
+  code: string;
   full_name: string;
   region: string;
   email?: string;
@@ -374,9 +387,9 @@ export type RegisterFirebaseRequest = {
   campaign_id?: string;
 };
 
-/** Response shape shared by /firebase-verify and /register-firebase.
- *  No password_reset_required: OTP flow has no password concept. */
-export type FirebaseAuthResponse = {
+/** Response shape shared by /whatsapp/verify y /whatsapp/register.
+ *  Mismo shape que /login (no hay password_reset_required en OTP). */
+export type WhatsappAuthResponse = {
   access_token: string;
   refresh_token: string;
   user: AuthUser;

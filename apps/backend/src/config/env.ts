@@ -86,6 +86,11 @@ export type AppEnv = {
   // Firebase Phone Auth — project ID para verificar ID tokens emitidos por
   // Firebase desde mobile. Si vacío, /api/auth/firebase-verify responde 503.
   firebaseProjectId: string;
+  // WhatsApp OTP — bot leads-crm que envía códigos por Baileys. URL apunta al
+  // server.ts del bot (POST /send/:instanceId), instanceId típicamente "p4".
+  // Si whatsappBotUrl está vacío, /api/auth/whatsapp/send responde 503.
+  whatsappBotUrl: string;
+  whatsappBotInstance: string;
 };
 
 function toNumber(value: string | undefined, fallback: number): number {
@@ -210,5 +215,7 @@ export function getEnv(): AppEnv {
     fidelizadoThreshold: toNumber(process.env.FIDELIZADO_THRESHOLD, 4),
     noRespondeAfterHours: toNumber(process.env.NO_RESPONDE_AFTER_HOURS, 48),
     firebaseProjectId: (process.env.FIREBASE_PROJECT_ID ?? "").trim(),
+    whatsappBotUrl: (process.env.WHATSAPP_BOT_URL ?? "").trim(),
+    whatsappBotInstance: (process.env.WHATSAPP_BOT_INSTANCE ?? "p4").trim(),
   };
 }

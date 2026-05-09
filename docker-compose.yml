@@ -126,6 +126,12 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
       UPLOADS_DIR: /srv/uploads
+      # WhatsApp OTP — apunta al bot leads-crm para enviar códigos por Baileys.
+      # En el mismo VPS, el bot expone /send/:id en port 4020 (internal) o 4030 (host).
+      # Usamos el host del VPS porque el bot vive en su propio docker network.
+      WHATSAPP_BOT_URL: ${WHATSAPP_BOT_URL:-http://leads_crm_bot:4020}
+      WHATSAPP_BOT_INSTANCE: ${WHATSAPP_BOT_INSTANCE:-p4}
+      BOT_SHARED_SECRET: ${BOT_SHARED_SECRET:-}
     volumes:
       - uploads:/srv/uploads
     healthcheck:
@@ -136,6 +142,7 @@ services:
       start_period: 10s
     networks:
       - app_network
+      - leads_crm_internal
 
   nginx:
     image: nginx:1.27-alpine
@@ -173,3 +180,9 @@ volumes:
 networks:
   app_network:
     driver: bridge
+  # Network compartida con el bot leads-crm (creada por su propio compose).
+  # Permite al backend resolver `leads_crm_bot` y `leads_crm_api` por hostname
+  # para enviar OTP via /send/:id sin exponerse a internet.
+  leads_crm_internal:
+    external: true
+    name: leads-crm_internal

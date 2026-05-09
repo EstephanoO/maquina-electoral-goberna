@@ -29,8 +29,8 @@ import type {
   FormDefinition,
   LoginRequest,
   RegisterRequest,
-  RegisterFirebaseRequest,
-  FirebaseAuthResponse,
+  WhatsappRegisterRequest,
+  WhatsappAuthResponse,
   ApiResult,
 } from './types';
 
@@ -50,14 +50,16 @@ type AuthState =
 
 type AppContextValue = {
   auth: AuthState;
-  /** OTP-only mobile login: phone → SMS → idToken → backend JWT */
-  loginWithIdToken: (idToken: string) => Promise<ApiResult<void>>;
-  /** OTP-only mobile register: phone+name+region+code → SMS → idToken → backend JWT */
-  registerWithFirebase: (body: RegisterFirebaseRequest) => Promise<ApiResult<void>>;
-  /** @deprecated Email+password is web-only; mobile uses loginWithIdToken. Kept for transition. */
+  /** Login con email/teléfono + password */
   login: (body: LoginRequest) => Promise<ApiResult<void>>;
-  /** @deprecated Mobile uses registerWithFirebase. Kept for transition. */
+  /** Registro con email/teléfono + password (legacy, sigue disponible) */
   register: (body: RegisterRequest) => Promise<ApiResult<void>>;
+  /** Pide al backend que envíe un código OTP por WhatsApp al número */
+  whatsappSend: (phone: string) => Promise<ApiResult<void>>;
+  /** Login OTP-only: phone + código → backend JWT */
+  loginWithWhatsapp: (phone: string, code: string) => Promise<ApiResult<void>>;
+  /** Registro OTP-only: phone + código + perfil → backend JWT */
+  registerWithWhatsapp: (body: WhatsappRegisterRequest) => Promise<ApiResult<void>>;
   logout: () => Promise<void>;
   refreshConfig: () => Promise<void>;
   checkApproval: () => Promise<void>;
@@ -238,7 +240,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── Shared: persist auth + transition state from any auth response ──
   const completeAuth = useCallback(
-    async (data: FirebaseAuthResponse): Promise<ApiResult<void>> => {
+    async (data: WhatsappAuthResponse): Promise<ApiResult<void>> => {
       const { user, campaigns } = data;
       await authStore.saveAuthData(data);
 
@@ -262,40 +264,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  // ── OTP login: idToken from Firebase Phone Auth → backend JWT ──
-  const loginWithIdToken = useCallback(
-    async (idToken: string): Promise<ApiResult<void>> => {
-      const result = await api.firebaseVerify(idToken);
-      if (!result.ok) return result;
-      return completeAuth(result.data);
-    },
-    [completeAuth],
-  );
-
-  // ── OTP register: idToken + profile → backend JWT (creates user) ──
-  const registerWithFirebase = useCallback(
-    async (body: RegisterFirebaseRequest): Promise<ApiResult<void>> => {
-      const result = await api.registerFirebase(body);
-      if (!result.ok) return result;
-      return completeAuth(result.data);
-    },
-    [completeAuth],
-  );
-
-  // ── Legacy login (email+password) — kept until callers migrate ──
+  // ── Email/teléfono + password (login y register) ────────────
   const login = useCallback(async (body: LoginRequest): Promise<ApiResult<void>> => {
     const result = await api.login(body);
     if (!result.ok) return result;
-    // Note: password_reset_required handling removed — mobile is OTP-only.
     return completeAuth(result.data);
   }, [completeAuth]);
 
-  // ── Legacy register (email+password) — kept until callers migrate ──
   const register = useCallback(async (body: RegisterRequest): Promise<ApiResult<void>> => {
     const result = await api.register(body);
     if (!result.ok) return result;
     return { ok: true, data: undefined };
   }, []);
+
+  // ── WhatsApp OTP: send code → verify → JWT ──────────────────
+  const whatsappSend = useCallback(async (phone: string): Promise<ApiResult<void>> => {
+    const result = await api.whatsappSend(phone);
+    if (!result.ok) return result;
+    return { ok: true, data: undefined };
+  }, []);
+
+  const loginWithWhatsapp = useCallback(
+    async (phone: string, code: string): Promise<ApiResult<void>> => {
+      const result = await api.whatsappVerifyLogin(phone, code);
+      if (!result.ok) return result;
+      return completeAuth(result.data);
+    },
+    [completeAuth],
+  );
+
+  const registerWithWhatsapp = useCallback(
+    async (body: WhatsappRegisterRequest): Promise<ApiResult<void>> => {
+      const result = await api.whatsappRegister(body);
+      if (!result.ok) return result;
+      return completeAuth(result.data);
+    },
+    [completeAuth],
+  );
 
   // ── Logout ────────────────────────────────────────────────
   const logout = useCallback(async () => {
@@ -409,10 +414,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppContextValue>(
     () => ({
       auth,
-      loginWithIdToken,
-      registerWithFirebase,
       login,
       register,
+      whatsappSend,
+      loginWithWhatsapp,
+      registerWithWhatsapp,
       logout,
       refreshConfig,
       checkApproval,
@@ -421,10 +427,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }),
     [
       auth,
-      loginWithIdToken,
-      registerWithFirebase,
       login,
       register,
+      whatsappSend,
+      loginWithWhatsapp,
+      registerWithWhatsapp,
       logout,
       refreshConfig,
       checkApproval,

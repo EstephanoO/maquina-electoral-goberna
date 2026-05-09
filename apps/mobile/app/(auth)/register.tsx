@@ -1,13 +1,13 @@
 /**
- * Register Screen — OTP-only registration via Firebase Phone Auth.
+ * Register Screen — OTP-only registration via WhatsApp.
  *
  * Flow (3 steps):
  *   1. Identidad: teléfono (9 dígitos) + nombre completo
  *   2. Campaña: región + código de acceso (4 chars, validado contra backend)
- *   3. Verificación SMS: 6-digit code → registerWithFirebase → JWT cookie
+ *   3. Verificación WhatsApp: 6-digit code → registerWithWhatsapp → JWT cookie
  *
- * SMS only fires at the 2→3 transition (when the user is fully committed) to
- * avoid burning Firebase quota on incomplete forms (Spark plan = 10/día).
+ * El OTP por WhatsApp solo se dispara en la transición 2→3 (cuando el user
+ * está committed) para no spamear el bot ni gastar el rate limit.
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
@@ -29,12 +29,6 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useApp } from '@/lib/app-context';
 import { validateAccessCode } from '@/lib/api';
-import {
-  sendOtp,
-  confirmOtp,
-  toE164PhonePeru,
-  type FirebaseConfirmation,
-} from '@/lib/firebase';
 import type { ValidateAccessCodeResponse } from '@/lib/types';
 import RegionPicker from '@/components/RegionPicker';
 
@@ -55,12 +49,12 @@ const FONT_REGULAR = 'Montserrat-Regular';
 const PHONE_REGEX = /^9\d{8}$/;
 const CODE_REGEX = /^[A-Z0-9]{4}$/;
 const SMS_REGEX = /^\d{6}$/;
-const RESEND_COOLDOWN_S = 30;
+const RESEND_COOLDOWN_S = 60;
 const TOTAL_STEPS = 3;
 
 export default function RegisterScreen() {
   const router = useRouter();
-  const { registerWithFirebase } = useApp();
+  const { whatsappSend, registerWithWhatsapp } = useApp();
 
   // ─── Step machine ───────────────────────────────────────────
   const [step, setStep] = useState<1 | 2 | 3>(1);
@@ -84,7 +78,6 @@ export default function RegisterScreen() {
   // ─── Step 3 fields ──────────────────────────────────────────
   const [smsCode, setSmsCode] = useState('');
   const [resendIn, setResendIn] = useState(0);
-  const confirmationRef = useRef<FirebaseConfirmation | null>(null);
   const smsInputRef = useRef<TextInput | null>(null);
 
   // ─── UI state ───────────────────────────────────────────────
@@ -205,8 +198,7 @@ export default function RegisterScreen() {
       return;
     }
     if (step === 3) {
-      // Back from SMS → step 2 (data preserved)
-      confirmationRef.current = null;
+      // Back from code → step 2 (data preserved)
       setSmsCode('');
       setResendIn(0);
       setStep(2);
@@ -240,14 +232,13 @@ export default function RegisterScreen() {
   const handleNextFromStep2 = async () => {
     if (!step2Valid) return;
     setLoading(true);
-    const result = await sendOtp(toE164PhonePeru(phone.trim()));
+    const result = await whatsappSend(phone.trim());
     setLoading(false);
 
     if (!result.ok) {
-      Alert.alert('Error enviando SMS', result.error);
+      Alert.alert('Error enviando código', result.error ?? 'No pudimos enviar el código por WhatsApp.');
       return;
     }
-    confirmationRef.current = result.confirmation;
     setSmsCode('');
     setResendIn(RESEND_COOLDOWN_S);
     setStep(3);
@@ -255,35 +246,22 @@ export default function RegisterScreen() {
 
   const handleResend = async () => {
     if (resendIn > 0 || loading) return;
-    const result = await sendOtp(toE164PhonePeru(phone.trim()));
+    const result = await whatsappSend(phone.trim());
     if (!result.ok) {
-      Alert.alert('Error', result.error);
+      Alert.alert('Error', result.error ?? 'No pudimos reenviar.');
       return;
     }
-    confirmationRef.current = result.confirmation;
     setResendIn(RESEND_COOLDOWN_S);
   };
 
   const handleRegister = async () => {
     if (!SMS_REGEX.test(smsCode.trim())) {
-      Alert.alert('Código inválido', 'Ingresá los 6 dígitos del SMS.');
-      return;
-    }
-    if (!confirmationRef.current) {
-      Alert.alert('Sesión expirada', 'Pedí un código nuevo.');
-      setStep(2);
+      Alert.alert('Código inválido', 'Ingresá los 6 dígitos del WhatsApp.');
       return;
     }
     if (!accessCodeCampaign || !region) return;
 
     setLoading(true);
-
-    const otpResult = await confirmOtp(confirmationRef.current, smsCode.trim());
-    if (!otpResult.ok) {
-      setLoading(false);
-      Alert.alert('Error', otpResult.error);
-      return;
-    }
 
     const phoneTrimmed = phone.trim();
     const cleanCode = accessCodeInput
@@ -291,8 +269,9 @@ export default function RegisterScreen() {
       .toUpperCase()
       .slice(0, 4);
 
-    const result = await registerWithFirebase({
-      id_token: otpResult.idToken,
+    const result = await registerWithWhatsapp({
+      phone: phoneTrimmed,
+      code: smsCode.trim(),
       full_name: fullName.trim(),
       region,
       email: `${phoneTrimmed}@goberna.pe`,
@@ -302,7 +281,7 @@ export default function RegisterScreen() {
     setLoading(false);
 
     if (!result.ok) {
-      if (result.code === 'AUTH_PHONE_EXISTS') {
+      if (result.code === 'AUTH_PHONE_EXISTS' || result.code === 'USER_EXISTS') {
         Alert.alert(
           'Número ya registrado',
           'Ese número ya tiene una cuenta. Iniciá sesión en su lugar.',
@@ -600,23 +579,23 @@ export default function RegisterScreen() {
                 ) : (
                   <>
                     <Ionicons
-                      name="chatbox-ellipses-outline"
+                      name="logo-whatsapp"
                       size={20}
                       color="#FFFFFF"
                     />
-                    <Text style={styles.buttonText}>Enviar código por SMS</Text>
+                    <Text style={styles.buttonText}>Enviar código por WhatsApp</Text>
                   </>
                 )}
               </Pressable>
             </View>
           )}
 
-          {/* ── Step 3: SMS Verification ───────────────────── */}
+          {/* ── Step 3: WhatsApp Verification ───────────────────── */}
           {step === 3 && (
             <View style={styles.stepContainer}>
               <View style={styles.codeHeader}>
-                <Ionicons name="chatbubble-ellipses" size={32} color={BRAND_BLUE} />
-                <Text style={styles.stepTitle}>Revisá tu SMS</Text>
+                <Ionicons name="logo-whatsapp" size={32} color="#25D366" />
+                <Text style={styles.stepTitle}>Revisá tu WhatsApp</Text>
                 <Text style={styles.smsSubtitle}>
                   Mandamos un código de 6 dígitos a{'\n'}
                   <Text style={styles.smsPhoneStrong}>

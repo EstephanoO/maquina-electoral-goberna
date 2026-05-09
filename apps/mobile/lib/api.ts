@@ -39,8 +39,9 @@ import type {
   ResolveAccessRequestPayload,
   AuthUser,
   CampaignMembership,
-  FirebaseAuthResponse,
-  RegisterFirebaseRequest,
+  WhatsappAuthResponse,
+  WhatsappRegisterRequest,
+  WhatsappSendResponse,
   Meet,
   MeetSummary,
   MeetParticipant,
@@ -173,27 +174,37 @@ export async function register(body: RegisterRequest): Promise<ApiResult<Registe
   return request<RegisterResponse>('POST', '/auth/register', body, false);
 }
 
-// ─── Firebase Phone Auth (OTP-only mobile flow) ─────────────
+// ─── WhatsApp OTP (sin password, código por WhatsApp) ───────
 
 /**
- * POST /api/auth/firebase-verify — verify a Firebase Phone Auth idToken
- * and exchange it for backend JWTs. The idToken's phone_number claim must
- * match an existing user; if not, returns 412 MAGIC_LINK_NO_USER (or similar)
- * and the caller should redirect to register.
+ * POST /api/auth/whatsapp/send — pide al backend que dispare un OTP por
+ * WhatsApp al número. Rate-limited 1/60s por número en Redis.
  */
-export async function firebaseVerify(idToken: string): Promise<ApiResult<FirebaseAuthResponse>> {
-  return request<FirebaseAuthResponse>('POST', '/auth/firebase-verify', { id_token: idToken }, false);
+export async function whatsappSend(phone: string): Promise<ApiResult<WhatsappSendResponse>> {
+  return request<WhatsappSendResponse>('POST', '/auth/whatsapp/send', { phone }, false);
 }
 
 /**
- * POST /api/auth/register-firebase — register a new user with a verified
- * Firebase idToken + profile fields + one of {invitation_code, access_code,
- * campaign_id}. Returns the same shape as login on success.
+ * POST /api/auth/whatsapp/verify — login: valida phone+code y emite JWT.
+ * Si el user no existe responde 412 USER_NOT_FOUND, el cliente debe redirigir
+ * a register.
  */
-export async function registerFirebase(
-  body: RegisterFirebaseRequest,
-): Promise<ApiResult<FirebaseAuthResponse>> {
-  return request<FirebaseAuthResponse>('POST', '/auth/register-firebase', body, false);
+export async function whatsappVerifyLogin(
+  phone: string,
+  code: string,
+): Promise<ApiResult<WhatsappAuthResponse>> {
+  return request<WhatsappAuthResponse>('POST', '/auth/whatsapp/verify', { phone, code }, false);
+}
+
+/**
+ * POST /api/auth/whatsapp/register — registro completo: valida phone+code,
+ * crea user + user_campaign como agente_campo, emite JWT. Exactly one of
+ * {invitation_code, access_code, campaign_id} debe estar presente.
+ */
+export async function whatsappRegister(
+  body: WhatsappRegisterRequest,
+): Promise<ApiResult<WhatsappAuthResponse>> {
+  return request<WhatsappAuthResponse>('POST', '/auth/whatsapp/register', body, false);
 }
 
 /**

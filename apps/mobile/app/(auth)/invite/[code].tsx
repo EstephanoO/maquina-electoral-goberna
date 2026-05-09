@@ -33,12 +33,6 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useApp } from '@/lib/app-context';
 import { validateInvitation } from '@/lib/api';
-import {
-  sendOtp,
-  confirmOtp,
-  toE164PhonePeru,
-  type FirebaseConfirmation,
-} from '@/lib/firebase';
 import type { InvitationInfo } from '@/lib/types';
 
 // ─── Design Tokens ──────────────────────────────────────────────
@@ -81,11 +75,10 @@ export default function InviteScreen() {
   const code = Array.isArray(rawCode) ? rawCode[0] : rawCode;
 
   const router = useRouter();
-  const { registerWithFirebase } = useApp();
+  const { whatsappSend, registerWithWhatsapp } = useApp();
 
   const [state, setState] = useState<ScreenState>({ phase: 'validating' });
   const invitationRef = useRef<InvitationInfo | null>(null);
-  const confirmationRef = useRef<FirebaseConfirmation | null>(null);
   const smsInputRef = useRef<TextInput | null>(null);
 
   // Form fields
@@ -167,14 +160,13 @@ export default function InviteScreen() {
     const invitation = state.invitation;
 
     setState({ phase: 'sending', invitation });
-    const result = await sendOtp(toE164PhonePeru(phone.trim()));
+    const result = await whatsappSend(phone.trim());
 
     if (!result.ok) {
       setState({ phase: 'form', invitation });
-      Alert.alert('Error enviando SMS', result.error);
+      Alert.alert('Error enviando código', result.error ?? 'No pudimos enviar el código por WhatsApp.');
       return;
     }
-    confirmationRef.current = result.confirmation;
     setSmsCode('');
     setResendIn(RESEND_COOLDOWN_S);
     setState({ phase: 'sms', invitation });
@@ -182,40 +174,28 @@ export default function InviteScreen() {
 
   const handleResend = async () => {
     if (resendIn > 0) return;
-    const result = await sendOtp(toE164PhonePeru(phone.trim()));
+    const result = await whatsappSend(phone.trim());
     if (!result.ok) {
-      Alert.alert('Error', result.error);
+      Alert.alert('Error', result.error ?? 'No pudimos reenviar.');
       return;
     }
-    confirmationRef.current = result.confirmation;
     setResendIn(RESEND_COOLDOWN_S);
   };
 
   const handleRegister = async () => {
     if (state.phase !== 'sms') return;
     if (!SMS_REGEX.test(smsCode.trim())) {
-      Alert.alert('Código inválido', 'Ingresá los 6 dígitos del SMS.');
-      return;
-    }
-    if (!confirmationRef.current) {
-      Alert.alert('Sesión expirada', 'Pedí un código nuevo.');
-      setState({ phase: 'form', invitation: state.invitation });
+      Alert.alert('Código inválido', 'Ingresá los 6 dígitos del WhatsApp.');
       return;
     }
 
     const invitation = state.invitation;
     setState({ phase: 'registering', invitation });
 
-    const otpResult = await confirmOtp(confirmationRef.current, smsCode.trim());
-    if (!otpResult.ok) {
-      setState({ phase: 'sms', invitation });
-      Alert.alert('Error', otpResult.error);
-      return;
-    }
-
     const phoneTrimmed = phone.trim();
-    const result = await registerWithFirebase({
-      id_token: otpResult.idToken,
+    const result = await registerWithWhatsapp({
+      phone: phoneTrimmed,
+      code: smsCode.trim(),
       full_name: fullName.trim(),
       region: 'Nacional',
       email: `${phoneTrimmed}@goberna.pe`,
@@ -226,7 +206,7 @@ export default function InviteScreen() {
     if (!result.ok) {
       setState({ phase: 'sms', invitation });
       const friendly =
-        result.code === 'AUTH_PHONE_EXISTS'
+        result.code === 'AUTH_PHONE_EXISTS' || result.code === 'USER_EXISTS'
           ? 'Ese número ya tiene una cuenta. Iniciá sesión en su lugar.'
           : result.error ?? 'No se pudo crear la cuenta. Intentá de nuevo.';
       Alert.alert('Error', friendly, [
@@ -566,7 +546,6 @@ export default function InviteScreen() {
                 <View style={styles.smsFooter}>
                   <Pressable
                     onPress={() => {
-                      confirmationRef.current = null;
                       setSmsCode('');
                       setResendIn(0);
                       setState({ phase: 'form', invitation });

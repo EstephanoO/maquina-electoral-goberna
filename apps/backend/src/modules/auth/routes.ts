@@ -5,10 +5,11 @@ import { pool } from "../../db";
 import { errorPayload } from "../../infra/http";
 import { AUTH_COOKIE_NAMES, parseCookies, type AuthenticatedRequest } from "../../infra/auth";
 import { AuthRepository } from "./repository";
-import { changePasswordSchema, loginSchema, refreshSchema, registerFirebaseSchema, registerSchema, resetPasswordSchema, setInitialPasswordSchema } from "./schemas";
+import { changePasswordSchema, loginSchema, refreshSchema, registerFirebaseSchema, registerSchema, resetPasswordSchema, setInitialPasswordSchema, whatsappRegisterSchema, whatsappSendSchema, whatsappVerifyLoginSchema } from "./schemas";
 import { authorize } from "../../infra/authorize";
 import { AppError, AuthService } from "./service";
 import { verifyFirebaseIdToken } from "./firebase-verify";
+import { normalizePhone, sendOtp, verifyOtp } from "./whatsapp-otp";
 import * as invitationsRepo from "../invitations/repository";
 import * as accessCodesRepo from "../access-codes/repository";
 
@@ -776,6 +777,248 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
       }
     });
 
+    // ── POST /api/auth/whatsapp/send ───────────────────────────────────
+    // Envía un código OTP de 6 dígitos al número via WhatsApp (bot Baileys
+    // leads-crm). Body: { phone }. Rate limit: 1 send/60s por número en Redis
+    // + rate limit por IP via fastify-rate-limit. Si bot no configurado,
+    // responde 503.
+    const whatsappSendOpts = {
+      config: {
+        rateLimit: {
+          max: env.rateLimitAuthPerMinute,
+          timeWindow: "1 minute",
+          keyGenerator: (request: FastifyRequest) => request.ip,
+        },
+      },
+    } as const;
+
+    app.post("/api/auth/whatsapp/send", whatsappSendOpts, async (request, reply) => {
+      const requestId = String(request.id);
+
+      const parsed = whatsappSendSchema.safeParse(request.body);
+      if (!parsed.success) {
+        const message = parsed.error.issues.map((i) => i.message).join(", ");
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
+      }
+
+      const result = await sendOtp(parsed.data.phone, {
+        botUrl: env.whatsappBotUrl,
+        botInstance: env.whatsappBotInstance,
+        botToken: env.botSharedSecret || undefined,
+        log: (msg, payload) => app.log.warn({ ...((payload as object) ?? {}), request_id: requestId }, msg),
+      });
+
+      if (!result.ok) {
+        if (result.code === "RATE_LIMITED") {
+          return reply.code(429).send({
+            ok: false,
+            request_id: requestId,
+            code: "RATE_LIMITED",
+            message: `Esperá ${result.retryAfterSeconds}s antes de pedir otro código.`,
+            retry_after_seconds: result.retryAfterSeconds,
+          });
+        }
+        if (result.code === "BOT_NOT_CONFIGURED") {
+          return reply.code(503).send(errorPayload(requestId, "BOT_NOT_CONFIGURED", "WhatsApp OTP no configurado en backend"));
+        }
+        return reply.code(502).send(errorPayload(requestId, "BOT_SEND_FAILED", `no se pudo enviar el código por WhatsApp: ${result.detail}`));
+      }
+
+      app.log.info({ phone: normalizePhone(parsed.data.phone), request_id: requestId }, "whatsapp-otp: sent");
+      return reply.code(200).send({
+        ok: true,
+        request_id: requestId,
+        expires_in: result.expiresIn,
+      });
+    });
+
+    // ── POST /api/auth/whatsapp/verify ─────────────────────────────────
+    // Login OTP-only via WhatsApp. Recibe { phone, code }, valida contra Redis
+    // y emite JWT. Si el user no existe → 412 (registrar primero via
+    // /api/auth/whatsapp/register). Mismo shape de respuesta que firebase-verify.
+    app.post("/api/auth/whatsapp/verify", whatsappSendOpts, async (request, reply) => {
+      const requestId = String(request.id);
+
+      const parsed = whatsappVerifyLoginSchema.safeParse(request.body);
+      if (!parsed.success) {
+        const message = parsed.error.issues.map((i) => i.message).join(", ");
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
+      }
+
+      const verify = await verifyOtp(parsed.data.phone, parsed.data.code);
+      if (!verify.ok) {
+        const httpCode =
+          verify.code === "OTP_NOT_FOUND" || verify.code === "OTP_EXPIRED" ? 410 :
+          verify.code === "OTP_LOCKED" ? 429 : 401;
+        return reply.code(httpCode).send({
+          ok: false,
+          request_id: requestId,
+          code: verify.code,
+          message: verify.code === "OTP_INVALID"
+            ? `Código incorrecto. Te quedan ${verify.attemptsLeft} intentos.`
+            : verify.code === "OTP_NOT_FOUND" ? "El código expiró o nunca fue enviado. Pedí uno nuevo."
+            : verify.code === "OTP_LOCKED" ? "Demasiados intentos fallidos. Pedí un código nuevo."
+            : "Código inválido.",
+          ...(verify.code === "OTP_INVALID" ? { attempts_left: verify.attemptsLeft } : {}),
+        });
+      }
+
+      const normalizedPhone = normalizePhone(parsed.data.phone);
+      const user = await repo.findUserByPhone(normalizedPhone);
+      if (!user) {
+        return reply.code(412).send(errorPayload(
+          requestId,
+          "USER_NOT_FOUND",
+          "phone verificado pero el usuario no existe — completar registro primero",
+        ));
+      }
+
+      try {
+        const result = await service.issueTokensForUser(user);
+        setAuthCookies(reply, result.access_token, result.refresh_token, isProd);
+        app.log.info({ user_id: user.id, phone: normalizedPhone, request_id: requestId }, "whatsapp-otp: login OK");
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          ...result,
+        });
+      } catch (error) {
+        if (error instanceof AppError) {
+          return reply.code(error.statusCode).send(errorPayload(requestId, error.code, error.message));
+        }
+        throw error;
+      }
+    });
+
+    // ── POST /api/auth/whatsapp/register ───────────────────────────────
+    // Registro OTP-only via WhatsApp. Body: { phone, code, full_name, region,
+    // [invitation_code | access_code | campaign_id], email? }. Verifica el OTP
+    // contra Redis, crea user + user_campaign como agente_campo, emite JWT.
+    app.post("/api/auth/whatsapp/register", whatsappSendOpts, async (request, reply) => {
+      const requestId = String(request.id);
+
+      const parsed = whatsappRegisterSchema.safeParse(request.body);
+      if (!parsed.success) {
+        const message = parsed.error.issues.map((i) => i.message).join(", ");
+        return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
+      }
+
+      const verify = await verifyOtp(parsed.data.phone, parsed.data.code);
+      if (!verify.ok) {
+        const httpCode =
+          verify.code === "OTP_NOT_FOUND" || verify.code === "OTP_EXPIRED" ? 410 :
+          verify.code === "OTP_LOCKED" ? 429 : 401;
+        return reply.code(httpCode).send({
+          ok: false,
+          request_id: requestId,
+          code: verify.code,
+          message: verify.code === "OTP_INVALID"
+            ? `Código incorrecto. Te quedan ${verify.attemptsLeft} intentos.`
+            : "Código inválido o expirado. Pedí uno nuevo.",
+        });
+      }
+
+      const { full_name, region, invitation_code, access_code, campaign_id, email: providedEmail } = parsed.data;
+      const normalizedPhone = normalizePhone(parsed.data.phone);
+
+      try {
+        // Anti-duplicado por phone (mismo patrón que register-firebase).
+        const existing = await repo.findUserByPhone(normalizedPhone);
+        if (existing) {
+          return reply.code(409).send(errorPayload(requestId, "USER_EXISTS", "usuario ya existe — usar /api/auth/whatsapp/verify para login"));
+        }
+
+        // Resolver campaign_id desde invitation/access_code.
+        let invitationRow: Awaited<ReturnType<typeof invitationsRepo.findByCode>> = null;
+        let resolvedCampaignId = campaign_id ?? null;
+
+        if (invitation_code) {
+          invitationRow = await invitationsRepo.findByCode(invitation_code);
+          if (!invitationRow) {
+            return reply.code(400).send(errorPayload(requestId, "INVITATION_NOT_FOUND", "codigo de invitacion invalido"));
+          }
+          if (!invitationsRepo.isValid(invitationRow)) {
+            return reply.code(400).send(errorPayload(requestId, "INVITATION_EXPIRED", "codigo de invitacion expirado o agotado"));
+          }
+          resolvedCampaignId = invitationRow.campaign_id;
+        } else if (access_code) {
+          const accessCodeRow = await accessCodesRepo.findByCode(access_code);
+          if (!accessCodeRow) {
+            return reply.code(400).send(errorPayload(requestId, "ACCESS_CODE_NOT_FOUND", "codigo de acceso invalido"));
+          }
+          resolvedCampaignId = accessCodeRow.campaign_id;
+        }
+
+        if (!resolvedCampaignId) {
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", "campaign_id requerido"));
+        }
+
+        if (!invitationRow && !access_code) {
+          const { rows: campaignRows } = await pool.query(
+            "SELECT id FROM campaigns WHERE id = $1 AND status = 'active'",
+            [resolvedCampaignId],
+          );
+          if (campaignRows.length === 0) {
+            return reply.code(404).send(errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campaña no encontrada"));
+          }
+        }
+
+        // Crear user OTP-only (password_hash=NULL, sin firebase_uid).
+        const email = providedEmail ?? `${normalizedPhone}@goberna.pe`;
+        const user = await repo.createUser(email, null, full_name, normalizedPhone, region);
+
+        // Linkear a campaña como agente_campo.
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          await client.query(
+            `INSERT INTO access_requests (user_id, campaign_id, region, perm_tierra, perm_digital, status, resolved_at)
+             VALUES ($1, $2, $3, true, true, 'approved', now())
+             ON CONFLICT (user_id, campaign_id) WHERE status = 'pending' DO NOTHING`,
+            [user.id, resolvedCampaignId, region],
+          );
+          await client.query(
+            `INSERT INTO user_campaigns (user_id, campaign_id, role, status, perm_tierra, perm_digital, region)
+             VALUES ($1, $2, 'agente_campo', 'active', true, true, $3)
+             ON CONFLICT (user_id, campaign_id)
+             DO UPDATE SET role = 'agente_campo', status = 'active', perm_tierra = true, perm_digital = true, region = $3, assigned_at = now()`,
+            [user.id, resolvedCampaignId, region],
+          );
+          await client.query("COMMIT");
+        } catch (txErr) {
+          await client.query("ROLLBACK");
+          throw txErr;
+        } finally {
+          client.release();
+        }
+
+        if (invitationRow) {
+          await invitationsRepo.incrementUsage(invitationRow.id);
+        }
+
+        const result = await service.issueTokensForUser(user);
+        setAuthCookies(reply, result.access_token, result.refresh_token, isProd);
+
+        app.log.info({
+          user_id: user.id,
+          campaign_id: resolvedCampaignId,
+          phone: normalizedPhone,
+          request_id: requestId,
+        }, "user registered via WhatsApp OTP and auto-accepted as agente_campo");
+
+        return reply.code(201).send({
+          ok: true,
+          request_id: requestId,
+          ...result,
+        });
+      } catch (error) {
+        if (error instanceof AppError) {
+          return reply.code(error.statusCode).send(errorPayload(requestId, error.code, error.message));
+        }
+        app.log.error({ err: error, request_id: requestId }, "whatsapp/register failed");
+        throw error;
+      }
+    });
 
     // ── POST /api/users/:userId/set-password ───────────────────────────
     // Admin/Candidato sets a new password directly for a team member.
