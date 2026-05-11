@@ -9,22 +9,44 @@ interface Props {
   ctx: CandidatoContext;
 }
 
-// Estructura provisional — los handles se llenan vía form del consultor
 const PLATAFORMAS = [
   { key: "facebook", icon: Facebook, label: "Facebook" },
   { key: "instagram", icon: Instagram, label: "Instagram" },
   { key: "tiktok", icon: Music2, label: "TikTok" },
-];
+] as const;
+
+type PlatKey = (typeof PLATAFORMAS)[number]["key"];
+
+function shortHandle(url: string | undefined): string {
+  if (!url) return "@[handle a completar]";
+  try {
+    const u = new URL(url);
+    const path = u.pathname.replace(/^\/+|\/+$/g, "");
+    return path ? `@${path.split("/")[0]}` : u.hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
 
 export function SlideRedesSociales({ ctx }: Props) {
   const firstName = ctx.user.full_name.split(/\s+/)[0] ?? "candidato";
+  const rs = ctx.consultor_form?.redes_sociales;
+  const candHandles = rs?.candidato ?? {};
+  const adversariosForm = rs?.adversarios ?? [];
 
-  // Mock de adversarios — en próxima iteración viene del form del consultor
-  const adversarios = [
-    { nombre: "[Adversario 1]", partido: "[Partido]", placeholder: true },
-    { nombre: "[Adversario 2]", partido: "[Partido]", placeholder: true },
-    { nombre: "[Adversario 3]", partido: "[Partido]", placeholder: true },
-  ];
+  const adversarios =
+    adversariosForm.length > 0
+      ? adversariosForm.slice(0, 3).map((a) => ({
+          nombre: a.nombre,
+          partido: a.partido ?? "[Partido]",
+          redes: a.redes ?? {},
+          placeholder: false,
+        }))
+      : [
+          { nombre: "[Adversario 1]", partido: "[Partido]", redes: {}, placeholder: true },
+          { nombre: "[Adversario 2]", partido: "[Partido]", redes: {}, placeholder: true },
+          { nombre: "[Adversario 3]", partido: "[Partido]", redes: {}, placeholder: true },
+        ];
 
   return (
     <SlideShell kicker="Presencia digital · Redes" title="REDES SOCIALES — TÚ Y LOS ADVERSARIOS">
@@ -57,6 +79,8 @@ export function SlideRedesSociales({ ctx }: Props) {
             <div className="space-y-3">
               {PLATAFORMAS.map((p) => {
                 const Icon = p.icon;
+                const url = candHandles[p.key as PlatKey];
+                const filled = typeof url === "string" && url.length > 0;
                 return (
                   <div
                     key={p.key}
@@ -67,13 +91,25 @@ export function SlideRedesSociales({ ctx }: Props) {
                       <div className="text-[10px] uppercase tracking-[0.2em] text-white/50 font-bold">
                         {p.label}
                       </div>
-                      <div className="text-amber-400/70 italic text-sm truncate">
-                        @[handle a completar]
+                      <div
+                        className={
+                          filled
+                            ? "text-white text-sm truncate font-medium"
+                            : "text-amber-400/70 italic text-sm truncate"
+                        }
+                      >
+                        {shortHandle(url)}
                       </div>
                     </div>
-                    <span className="text-[9px] uppercase tracking-[0.2em] font-bold px-2 py-0.5 rounded-sm bg-amber-400/20 text-amber-300">
-                      Por validar
-                    </span>
+                    {filled ? (
+                      <span className="text-[9px] uppercase tracking-[0.2em] font-bold px-2 py-0.5 rounded-sm bg-emerald-400/20 text-emerald-300">
+                        Verificado
+                      </span>
+                    ) : (
+                      <span className="text-[9px] uppercase tracking-[0.2em] font-bold px-2 py-0.5 rounded-sm bg-amber-400/20 text-amber-300">
+                        Por validar
+                      </span>
+                    )}
                   </div>
                 );
               })}
@@ -83,7 +119,15 @@ export function SlideRedesSociales({ ctx }: Props) {
                   <div className="text-[10px] uppercase tracking-[0.2em] text-white/50 font-bold">
                     Página web oficial
                   </div>
-                  <div className="text-amber-400/70 italic text-sm truncate">[A completar]</div>
+                  <div
+                    className={
+                      candHandles.web_oficial
+                        ? "text-white text-sm truncate font-medium"
+                        : "text-amber-400/70 italic text-sm truncate"
+                    }
+                  >
+                    {candHandles.web_oficial ?? "[A completar]"}
+                  </div>
                 </div>
               </div>
             </div>
@@ -118,13 +162,21 @@ export function SlideRedesSociales({ ctx }: Props) {
                   <div className="flex items-center gap-3 mt-1">
                     {PLATAFORMAS.map((p) => {
                       const Icon = p.icon;
+                      const url = (a.redes as Record<string, string | undefined>)?.[p.key];
+                      const filled = typeof url === "string" && url.length > 0;
                       return (
                         <div
                           key={p.key}
-                          className="flex items-center gap-1.5 text-xs text-white/50"
+                          className={
+                            filled
+                              ? "flex items-center gap-1.5 text-xs text-white/80"
+                              : "flex items-center gap-1.5 text-xs text-white/50"
+                          }
                         >
                           <Icon className="size-3.5" strokeWidth={2} />
-                          <span className="italic">[—]</span>
+                          <span className={filled ? "" : "italic"}>
+                            {filled ? shortHandle(url) : "[—]"}
+                          </span>
                         </div>
                       );
                     })}

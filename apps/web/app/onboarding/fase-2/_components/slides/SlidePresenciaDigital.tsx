@@ -9,34 +9,42 @@ interface Props {
   ctx: CandidatoContext;
 }
 
+type Estado = "ok" | "review" | "flag";
+
 const CHECKS = [
   {
+    key: "web_oficial" as const,
     icon: Globe,
     label: "Página web oficial",
     explica: "Si no la tienes, los votantes que te googlean encuentran a tu rival primero.",
-    estado_default: "missing" as const,
+    estado_default: "flag" as Estado,
   },
   {
+    key: "google_results" as const,
     icon: Search,
     label: "Resultados de Google al buscar tu nombre",
     explica: "Los primeros 5 resultados son tu carta de presentación. ¿Qué sale hoy?",
-    estado_default: "review" as const,
+    estado_default: "review" as Estado,
   },
   {
+    key: "redes_verificadas" as const,
     icon: AlertCircle,
     label: "Redes sociales oficiales (verificadas)",
     explica: "Cuentas con check + handle limpio. Sin esto las cuentas falsas te ganan.",
-    estado_default: "review" as const,
+    estado_default: "review" as Estado,
   },
   {
+    key: "info_clave" as const,
     icon: CheckCircle2,
     label: "Información clave visible",
     explica: "Edad, profesión, cargo al que postulas, propuesta principal — los 4 datos que el votante busca.",
-    estado_default: "review" as const,
+    estado_default: "review" as Estado,
   },
 ];
 
-const ESTADO_STYLES = {
+const ESTADO_STYLES: Record<Estado, {
+  bg: string; border: string; icon: string; label: string; labelBg: string;
+}> = {
   ok: {
     bg: "bg-emerald-500/10",
     border: "border-emerald-400/40",
@@ -51,7 +59,7 @@ const ESTADO_STYLES = {
     label: "Revisar",
     labelBg: "bg-amber-400/20 text-amber-300",
   },
-  missing: {
+  flag: {
     bg: "bg-red-500/10",
     border: "border-red-400/40",
     icon: "text-red-400",
@@ -62,6 +70,8 @@ const ESTADO_STYLES = {
 
 export function SlidePresenciaDigital({ ctx }: Props) {
   const firstName = ctx.user.full_name.split(/\s+/)[0] ?? "tú";
+  const pd = ctx.consultor_form?.presencia_digital;
+  const notas = pd?.notas;
 
   return (
     <SlideShell
@@ -83,7 +93,9 @@ export function SlidePresenciaDigital({ ctx }: Props) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
           {CHECKS.map((c, i) => {
             const Icon = c.icon;
-            const style = ESTADO_STYLES[c.estado_default];
+            const formEstado = pd?.[c.key] as Estado | undefined;
+            const estado: Estado = formEstado ?? c.estado_default;
+            const style = ESTADO_STYLES[estado];
             return (
               <motion.div
                 key={c.label}
@@ -124,8 +136,8 @@ export function SlidePresenciaDigital({ ctx }: Props) {
             Acción rápida
           </div>
           <p className="text-base text-white leading-relaxed">
-            Goberna audita tu presencia digital antes de cada elección y te genera
-            un plan de 30 días para que cuando te googleen, salgas tú primero.
+            {notas ??
+              "Goberna audita tu presencia digital antes de cada elección y te genera un plan de 30 días para que cuando te googleen, salgas tú primero."}
           </p>
         </motion.div>
       </div>

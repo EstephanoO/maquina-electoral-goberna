@@ -16,7 +16,7 @@ import { api } from "@/lib/api-client";
 import { FONT_STACK } from "@/lib/constants";
 import { Button, PageHeader, Tabs, SlideOver } from "@/lib/ui";
 
-type DeckStatus = "draft" | "published" | "rejected";
+type DeckStatus = "draft" | "pending_review" | "published" | "rejected";
 
 type Deck = {
   id: string;
@@ -35,7 +35,8 @@ type Deck = {
 };
 
 const STATUS_LABEL: Record<DeckStatus, string> = {
-  draft: "Pendientes",
+  draft: "Drafts",
+  pending_review: "Por aprobar",
   published: "Publicados",
   rejected: "Rechazados",
 };
@@ -133,6 +134,7 @@ export default function DecksAdminPage() {
       <div style={{ padding: "0 32px 32px" }}>
         <Tabs
           tabs={[
+            { id: "pending_review", label: STATUS_LABEL.pending_review },
             { id: "draft", label: STATUS_LABEL.draft },
             { id: "published", label: STATUS_LABEL.published },
             { id: "rejected", label: STATUS_LABEL.rejected },
@@ -232,7 +234,7 @@ export default function DecksAdminPage() {
               />
             </div>
 
-            {selected.status === "draft" ? (
+            {selected.status === "draft" || selected.status === "pending_review" ? (
               <div
                 style={{
                   padding: 16,
@@ -249,7 +251,7 @@ export default function DecksAdminPage() {
                     disabled={busy}
                     variant="primary"
                   >
-                    Publicar
+                    {selected.status === "pending_review" ? "Aprobar y publicar" : "Publicar"}
                   </Button>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>

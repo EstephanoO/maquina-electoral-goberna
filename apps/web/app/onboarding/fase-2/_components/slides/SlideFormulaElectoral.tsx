@@ -11,6 +11,7 @@ interface Props {
 
 const FRENTES = [
   {
+    key: "aire" as const,
     icon: Tv,
     titulo: "AIRE",
     subtitulo: "Medios masivos",
@@ -19,6 +20,7 @@ const FRENTES = [
     color: "#fbbf24",
   },
   {
+    key: "mar" as const,
     icon: Smartphone,
     titulo: "MAR",
     subtitulo: "Digital y redes",
@@ -27,6 +29,7 @@ const FRENTES = [
     color: "#60a5fa",
   },
   {
+    key: "tierra" as const,
     icon: Footprints,
     titulo: "TIERRA",
     subtitulo: "Territorio",
@@ -36,7 +39,22 @@ const FRENTES = [
   },
 ];
 
-export function SlideFormulaElectoral({ ctx: _ctx }: Props) {
+export function SlideFormulaElectoral({ ctx }: Props) {
+  const fe = ctx.consultor_form?.formula_electoral;
+  const pesos: Record<"aire" | "mar" | "tierra", number> = {
+    aire: typeof fe?.peso_aire === "number" ? fe.peso_aire : 30,
+    mar: typeof fe?.peso_mar === "number" ? fe.peso_mar : 35,
+    tierra: typeof fe?.peso_tierra === "number" ? fe.peso_tierra : 35,
+  };
+  const presupuestoTotal =
+    typeof fe?.presupuesto_total === "number"
+      ? fe.presupuesto_total.toLocaleString("es-PE", {
+          style: "currency",
+          currency: "PEN",
+          maximumFractionDigits: 0,
+        })
+      : null;
+  const justificacion = fe?.justificacion;
   return (
     <SlideShell kicker="Estrategia · Fórmula" title="¿POR DÓNDE QUIERES LUCHAR?">
       <div className="px-2 sm:px-4">
@@ -54,6 +72,7 @@ export function SlideFormulaElectoral({ ctx: _ctx }: Props) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
           {FRENTES.map((f, i) => {
             const Icon = f.icon;
+            const peso = pesos[f.key];
             return (
               <motion.div
                 key={f.titulo}
@@ -95,14 +114,14 @@ export function SlideFormulaElectoral({ ctx: _ctx }: Props) {
                   <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                     <motion.div
                       initial={{ width: 0 }}
-                      animate={{ width: `${f.intensidad_default}%` }}
+                      animate={{ width: `${peso}%` }}
                       transition={{ delay: 0.6 + i * 0.15, duration: 0.8 }}
                       className="h-full"
                       style={{ background: f.color }}
                     />
                   </div>
                   <div className="text-right text-xs font-bold mt-1" style={{ color: f.color }}>
-                    {f.intensidad_default}%
+                    {peso}%
                   </div>
                 </div>
               </motion.div>
@@ -119,20 +138,24 @@ export function SlideFormulaElectoral({ ctx: _ctx }: Props) {
         >
           <div>
             <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80 font-bold mb-1">
-              Variable clave
+              Presupuesto total
             </div>
-            <div className="text-2xl font-black text-white">¿Cuánto presupuesto tienes?</div>
+            <div className="text-2xl font-black text-white">
+              {presupuestoTotal ?? "¿Cuánto presupuesto tienes?"}
+            </div>
             <p className="text-sm text-gray-400 mt-1">
-              La mezcla cambia radicalmente entre 50K y 500K soles. Goberna calcula la mezcla óptima.
+              {presupuestoTotal
+                ? "Goberna calcula la mezcla óptima para este monto entre los tres frentes."
+                : "La mezcla cambia radicalmente entre 50K y 500K soles. Goberna calcula la mezcla óptima."}
             </p>
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80 font-bold mb-1">
-              Próximo paso
+              {justificacion ? "Lógica de la mezcla" : "Próximo paso"}
             </div>
             <div className="text-base text-white leading-snug">
-              En Fase 3 vas a elegir tus tácticas concretas dentro de cada frente
-              (catálogo de estrategias Goberna).
+              {justificacion ??
+                "En Fase 3 vas a elegir tus tácticas concretas dentro de cada frente (catálogo de estrategias Goberna)."}
             </div>
           </div>
         </motion.div>

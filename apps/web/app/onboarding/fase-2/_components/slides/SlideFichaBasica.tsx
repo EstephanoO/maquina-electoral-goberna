@@ -16,10 +16,18 @@ export function SlideFichaBasica({ ctx }: Props) {
   const pais = ctx.jurisdiccion.pais.nombre;
   const phone = ctx.user.phone;
   const fotoUrl = ctx.user.foto_url;
-  // Estos campos aún no están en DB — placeholders hasta migration
-  const dni = PLACEHOLDER;
-  const edad = PLACEHOLDER;
-  const profesion = PLACEHOLDER;
+  // Datos del formulario del consultor — caen a placeholder si no hay
+  const fb = ctx.consultor_form?.ficha_basica;
+  const qe = ctx.consultor_form?.quien_es;
+  const dni = fb?.dni && fb.dni.length > 0 ? fb.dni : PLACEHOLDER;
+  const edad =
+    typeof fb?.edad === "number" ? String(fb.edad) : PLACEHOLDER;
+  const profesion =
+    fb?.profesion && fb.profesion.length > 0
+      ? fb.profesion
+      : qe?.trayectoria
+        ? qe.trayectoria.split(/[,.]/)[0] ?? PLACEHOLDER
+        : PLACEHOLDER;
 
   const initials = fullName
     .split(/\s+/)
@@ -31,10 +39,10 @@ export function SlideFichaBasica({ ctx }: Props) {
   const fields = [
     { icon: User, label: "Nombre completo", value: fullName, real: true },
     { icon: Globe2, label: "País", value: pais, real: true },
-    { icon: IdCard, label: "DNI", value: dni, real: false },
+    { icon: IdCard, label: "DNI", value: dni, real: dni !== PLACEHOLDER },
     { icon: Phone, label: "Teléfono", value: phone ?? PLACEHOLDER, real: !!phone },
-    { icon: Calendar, label: "Edad", value: edad, real: false },
-    { icon: Briefcase, label: "Profesión", value: profesion, real: false },
+    { icon: Calendar, label: "Edad", value: edad, real: edad !== PLACEHOLDER },
+    { icon: Briefcase, label: "Profesión", value: profesion, real: profesion !== PLACEHOLDER },
   ];
 
   return (

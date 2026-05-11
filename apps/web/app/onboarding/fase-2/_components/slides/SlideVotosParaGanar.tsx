@@ -16,14 +16,22 @@ export function SlideVotosParaGanar({ ctx }: Props) {
     ctx.jurisdiccion.departamento?.nombre ??
     ctx.jurisdiccion.pais.nombre;
 
-  // Hasta que la capa 1 (INFOGOB / ONPE) esté cargada, mostramos
-  // placeholders elegantes. Cuando llegue la data, el server llena
-  // estos campos.
+  // Mientras INFOGOB/ONPE no esté cargado, el consultor llena via MCP.
+  const vpg = ctx.consultor_form?.votos_para_ganar;
+  const fmt = (n: number | undefined) =>
+    typeof n === "number" ? n.toLocaleString("es-PE") : "[A completar]";
+
+  const votosGanador = fmt(vpg?.votos_ganador_anterior);
+  const padronElectoral = fmt(vpg?.padron_actual);
+  const votosNecesarios = fmt(vpg?.votos_meta);
+  const fuente = vpg?.fuente ?? "ONPE · INFOGOB · Padrón RENIEC. Cálculo Goberna.";
   const ganadorAnterior = "[A completar]";
-  const votosGanador = "[A completar]";
-  const porcentajeGanador = "[A completar]";
-  const padronElectoral = "[A completar]";
-  const votosNecesarios = "[A completar]";
+  const porcentajeGanador =
+    typeof vpg?.votos_ganador_anterior === "number" &&
+    typeof vpg?.padron_actual === "number" &&
+    vpg.padron_actual > 0
+      ? `${((vpg.votos_ganador_anterior / vpg.padron_actual) * 100).toFixed(1)}%`
+      : "[A completar]";
 
   return (
     <SlideShell
@@ -132,7 +140,7 @@ export function SlideVotosParaGanar({ ctx }: Props) {
           transition={{ delay: 0.7 }}
           className="mt-6 text-xs text-white/40 italic"
         >
-          Fuente: ONPE · INFOGOB · Padrón RENIEC. Cálculo Goberna sobre datos públicos.
+          Fuente: {fuente}
         </motion.p>
       </div>
     </SlideShell>

@@ -11,6 +11,7 @@ interface Props {
 
 const FUENTES = [
   {
+    key: "denuncias" as const,
     icon: Gavel,
     titulo: "Denuncias policiales / fiscales",
     descripcion: "Carpetas abiertas, juicios pendientes, antecedentes.",
@@ -18,6 +19,7 @@ const FUENTES = [
     estado_default: "review" as const,
   },
   {
+    key: "google" as const,
     icon: Search,
     titulo: "Resultados negativos en Google",
     descripcion: "Las primeras 3 páginas al buscar tu nombre — qué dicen.",
@@ -25,6 +27,7 @@ const FUENTES = [
     estado_default: "review" as const,
   },
   {
+    key: "reputacion_redes" as const,
     icon: MessageSquareWarning,
     titulo: "Mala reputación en redes sociales",
     descripcion: "Comentarios negativos, hashtags adversos, virales en contra.",
@@ -32,6 +35,7 @@ const FUENTES = [
     estado_default: "review" as const,
   },
   {
+    key: "jne_observaciones" as const,
     icon: ShieldAlert,
     titulo: "Sentencias y observaciones JNE",
     descripcion: "Tachaduras, multas, observaciones formales en procesos previos.",
@@ -48,6 +52,20 @@ const ESTADO = {
 
 export function SlideDebilidades({ ctx }: Props) {
   const firstName = ctx.user.full_name.split(/\s+/)[0] ?? "candidato";
+  const formFuentes = ctx.consultor_form?.debilidades?.fuentes ?? [];
+  const formLista = ctx.consultor_form?.debilidades?.lista_libre ?? [];
+  // Mapa key → entrada del form para superponer al default
+  const formByKey = new Map(formFuentes.map((f) => [f.key, f]));
+
+  const counts = {
+    review: 0,
+    flag: 0,
+    ok: 0,
+  };
+  for (const f of FUENTES) {
+    const estado = formByKey.get(f.key)?.estado ?? f.estado_default;
+    counts[estado] = (counts[estado] ?? 0) + 1;
+  }
 
   return (
     <SlideShell
@@ -68,7 +86,10 @@ export function SlideDebilidades({ ctx }: Props) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
           {FUENTES.map((f, i) => {
             const Icon = f.icon;
-            const e = ESTADO[f.estado_default];
+            const entry = formByKey.get(f.key);
+            const estado = entry?.estado ?? f.estado_default;
+            const e = ESTADO[estado];
+            const hallazgos = entry?.hallazgos ?? [];
             return (
               <motion.div
                 key={f.titulo}
@@ -91,6 +112,15 @@ export function SlideDebilidades({ ctx }: Props) {
                       </span>
                     </div>
                     <p className="text-sm text-gray-300 leading-relaxed mb-2">{f.descripcion}</p>
+                    {hallazgos.length > 0 && (
+                      <ul className="mt-1 mb-2 space-y-1">
+                        {hallazgos.slice(0, 3).map((h, hi) => (
+                          <li key={hi} className="text-xs text-white/85 leading-snug">
+                            · {h}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     <p className="text-[10px] uppercase tracking-[0.25em] text-white/50 font-bold">
                       Fuente: {f.fuente}
                     </p>
@@ -108,19 +138,19 @@ export function SlideDebilidades({ ctx }: Props) {
           className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-3"
         >
           <div className="bg-white/[0.04] border border-white/10 rounded-md p-4">
-            <div className="text-3xl font-black text-amber-400">[A]</div>
+            <div className="text-3xl font-black text-amber-400">{counts.review}</div>
             <div className="text-[10px] uppercase tracking-[0.25em] text-white/60 font-bold mt-1">
               Hallazgos por auditar
             </div>
           </div>
           <div className="bg-white/[0.04] border border-white/10 rounded-md p-4">
-            <div className="text-3xl font-black text-red-300">[B]</div>
+            <div className="text-3xl font-black text-red-300">{counts.flag}</div>
             <div className="text-[10px] uppercase tracking-[0.25em] text-white/60 font-bold mt-1">
               Riesgos altos
             </div>
           </div>
           <div className="bg-white/[0.04] border border-white/10 rounded-md p-4">
-            <div className="text-3xl font-black text-emerald-300">[C]</div>
+            <div className="text-3xl font-black text-emerald-300">{counts.ok}</div>
             <div className="text-[10px] uppercase tracking-[0.25em] text-white/60 font-bold mt-1">
               Limpio / mitigado
             </div>
