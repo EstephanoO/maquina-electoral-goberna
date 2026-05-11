@@ -237,10 +237,45 @@ export async function mergeConsultorForm(
   return rows[0] ?? null;
 }
 
+export type BitacoraEntry = {
+  ts: string;
+  consultor_user_id: string;
+  consultor_name?: string | null;
+  accion: "patch" | "note" | "submit" | "approve" | "reject" | "reopen";
+  campos_tocados?: string[];
+  nota?: string;
+};
+
+/**
+ * Append a `consultor_form.bitacora[]`. Idempotente — siempre concatena.
+ * Si bitacora no existe, la crea como array vacío primero.
+ */
+export async function appendBitacora(
+  deckId: string,
+  entry: BitacoraEntry,
+): Promise<DeckRow | null> {
+  const { rows } = await pool.query<DeckRow>(
+    `UPDATE public.decks
+        SET consultor_form = jsonb_set(
+              COALESCE(consultor_form, '{}'::jsonb),
+              '{bitacora}',
+              COALESCE(consultor_form -> 'bitacora', '[]'::jsonb) || $2::jsonb,
+              true
+            ),
+            updated_at = now()
+      WHERE id = $1
+      RETURNING *`,
+    [deckId, JSON.stringify(entry)],
+  );
+  return rows[0] ?? null;
+}
+
 export interface DeckListItem extends DeckRow {
   candidato_nombres: string;
   uploader_full_name: string;
   uploader_email: string;
+  campaign_slug: string | null;
+  campaign_name: string | null;
 }
 
 export async function insertDeck(input: {
@@ -281,10 +316,13 @@ export async function listDecksByCandidato(candidatoId: number): Promise<DeckLis
     `SELECT d.*,
             cand.nombres   AS candidato_nombres,
             u.full_name    AS uploader_full_name,
-            u.email        AS uploader_email
+            u.email        AS uploader_email,
+            c.slug         AS campaign_slug,
+            c.name         AS campaign_name
        FROM public.decks d
        JOIN candidatos.candidato cand ON cand.id = d.candidato_id
        JOIN public.users u ON u.id = d.uploaded_by_user_id
+       LEFT JOIN public.campaigns c ON c.id = d.campaign_id
       WHERE d.candidato_id = $1
       ORDER BY d.created_at DESC`,
     [candidatoId],
@@ -300,10 +338,13 @@ export async function listPublishedDecksForCampaign(
     `SELECT d.*,
             cand.nombres   AS candidato_nombres,
             u.full_name    AS uploader_full_name,
-            u.email        AS uploader_email
+            u.email        AS uploader_email,
+            c.slug         AS campaign_slug,
+            c.name         AS campaign_name
        FROM public.decks d
        JOIN candidatos.candidato cand ON cand.id = d.candidato_id
        JOIN public.users u ON u.id = d.uploaded_by_user_id
+       LEFT JOIN public.campaigns c ON c.id = d.campaign_id
        JOIN candidatos.postulacion p ON p.id_candidato = cand.id
       WHERE d.status = 'published'
         AND p.campaign_id = $1
@@ -475,10 +516,13 @@ export async function listDecksByStatus(
     `SELECT d.*,
             cand.nombres   AS candidato_nombres,
             u.full_name    AS uploader_full_name,
-            u.email        AS uploader_email
+            u.email        AS uploader_email,
+            c.slug         AS campaign_slug,
+            c.name         AS campaign_name
        FROM public.decks d
        JOIN candidatos.candidato cand ON cand.id = d.candidato_id
        JOIN public.users u ON u.id = d.uploaded_by_user_id
+       LEFT JOIN public.campaigns c ON c.id = d.campaign_id
       WHERE d.status = $1
       ORDER BY d.created_at DESC
       LIMIT 200`,

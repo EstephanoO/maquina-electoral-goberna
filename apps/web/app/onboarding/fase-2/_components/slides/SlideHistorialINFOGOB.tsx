@@ -13,6 +13,11 @@ interface SlideHistorialINFOGOBProps {
 
 export function SlideHistorialINFOGOB({ ctx }: SlideHistorialINFOGOBProps) {
   const dni = ""; // a futuro: pull desde candidatos.candidato.documento_numero
+  const historial = ctx.consultor_form?.historial;
+  const entries = historial?.entries ?? [];
+  const nuncaPostulo = historial?.nunca_postulo;
+  const observaciones = historial?.observaciones;
+  const hayEntradas = entries.length > 0;
 
   return (
     <SlideShell
@@ -44,30 +49,45 @@ export function SlideHistorialINFOGOB({ ctx }: SlideHistorialINFOGOBProps) {
           </div>
 
           <div className="space-y-3">
-            <RowMock
-              proceso="ELECCIONES MUNICIPALES 2022"
-              cargo="—"
-              partido="—"
-              elegido={null}
-            />
-            <RowMock
-              proceso="ELECCIONES MUNICIPALES 2018"
-              cargo="—"
-              partido="—"
-              elegido={null}
-            />
-            <RowMock
-              proceso="ELECCIONES MUNICIPALES 2014"
-              cargo="—"
-              partido="—"
-              elegido={null}
-            />
+            {nuncaPostulo ? (
+              <div className="py-6 text-center text-sm text-gray-400 italic">
+                Primera postulación. Sin historial electoral previo.
+              </div>
+            ) : hayEntradas ? (
+              entries
+                .slice()
+                .sort((a, b) => b.anio - a.anio)
+                .map((e, idx) => (
+                  <RowMock
+                    key={`${e.anio}-${idx}`}
+                    proceso={`${e.cargo.toUpperCase()} ${e.anio}${e.jurisdiccion ? ` · ${e.jurisdiccion}` : ""}`}
+                    cargo={e.partido ?? "—"}
+                    partido={typeof e.porcentaje === "number" ? `${e.porcentaje.toFixed(1)}%` : "—"}
+                    elegido={
+                      e.resultado
+                        ? e.resultado.toLowerCase().includes("gan") ||
+                          e.resultado.toLowerCase().includes("elec")
+                          ? true
+                          : false
+                        : null
+                    }
+                  />
+                ))
+            ) : (
+              <>
+                <RowMock proceso="ELECCIONES MUNICIPALES 2022" cargo="—" partido="—" elegido={null} />
+                <RowMock proceso="ELECCIONES MUNICIPALES 2018" cargo="—" partido="—" elegido={null} />
+                <RowMock proceso="ELECCIONES MUNICIPALES 2014" cargo="—" partido="—" elegido={null} />
+              </>
+            )}
           </div>
 
-          <div className="mt-4 inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-amber-400/80">
-            <Construction className="size-2.5" />
-            Datos en construcción · Pendiente de scraping JNE
-          </div>
+          {!hayEntradas && !nuncaPostulo && (
+            <div className="mt-4 inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-amber-400/80">
+              <Construction className="size-2.5" />
+              Datos en construcción · Pendiente de scraping JNE
+            </div>
+          )}
         </motion.div>
 
         {/* Análisis */}
@@ -97,6 +117,15 @@ export function SlideHistorialINFOGOB({ ctx }: SlideHistorialINFOGOBProps) {
               <li>• Estabilidad partidaria y movimientos entre orgs</li>
             </ul>
           </div>
+
+          {observaciones && (
+            <div className="pt-4 border-t border-gray-800">
+              <p className="text-xs uppercase tracking-widest text-amber-400/70 mb-2">
+                Lectura del consultor
+              </p>
+              <p className="text-sm text-gray-200 leading-relaxed">{observaciones}</p>
+            </div>
+          )}
         </motion.div>
       </div>
     </SlideShell>

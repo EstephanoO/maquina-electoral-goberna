@@ -8,32 +8,37 @@ interface Props {
   ctx: CandidatoContext;
 }
 
-const HITOS = [
+const DEFAULT_HITOS = [
   {
+    key: "diagnostico",
     fase: "01",
     label: "Diagnóstico",
     cuando: "Hoy",
     detalle: "Mapeo de jurisdicción, contexto electoral, fortalezas y debilidades.",
   },
   {
+    key: "estructura",
     fase: "02",
     label: "Estructura",
     cuando: "Mes 1",
     detalle: "Levantamiento de brigadas, validación de padrón, configuración digital.",
   },
   {
+    key: "calentamiento",
     fase: "03",
     label: "Calentamiento",
     cuando: "Mes 2-3",
     detalle: "Marca personal, contenido propio, primeras activaciones territoriales.",
   },
   {
+    key: "aceleracion",
     fase: "04",
     label: "Aceleración",
     cuando: "Mes 4-5",
     detalle: "Saturación digital, recorridos masivos, debate público.",
   },
   {
+    key: "cierre",
     fase: "05",
     label: "Cierre",
     cuando: "Última semana",
@@ -43,6 +48,21 @@ const HITOS = [
 
 export function SlideRecorridoEstrategico({ ctx }: Props) {
   const meta = ctx.user.full_name.split(/\s+/)[0] ?? "tú";
+  const hitosForm = ctx.consultor_form?.recorrido_estrategico?.hitos ?? [];
+
+  // Mergear: el form sobreescribe lo que matchea por key; lo demás keeps default
+  const formByKey = new Map(hitosForm.map((h) => [h.key, h]));
+  const HITOS = DEFAULT_HITOS.map((d) => {
+    const f = formByKey.get(d.key);
+    return f
+      ? {
+          ...d,
+          label: f.titulo,
+          cuando: f.fecha ?? d.cuando,
+          detalle: f.descripcion ?? d.detalle,
+        }
+      : d;
+  });
   return (
     <SlideShell kicker="Plan de campaña" title="EL RECORRIDO HASTA LAS URNAS">
       <div className="px-2 sm:px-4">

@@ -726,7 +726,7 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
       async (request, reply) => {
         const requestId = String(request.id);
         const status = (request.query.status as repo.DeckRow["status"]) ?? "draft";
-        const ALLOWED: repo.DeckRow["status"][] = ["draft", "published", "rejected"];
+        const ALLOWED: repo.DeckRow["status"][] = ["draft", "pending_review", "published", "rejected"];
         if (!ALLOWED.includes(status)) {
           return reply
             .code(400)
@@ -755,6 +755,11 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
             errorPayload(requestId, "DECK_NOT_PUBLISHABLE", "deck no existe o no está en draft"),
           );
         }
+        await repo.appendBitacora(updated.id, {
+          ts: new Date().toISOString(),
+          consultor_user_id: req.userId,
+          accion: "approve",
+        });
         return reply.code(200).send({ ok: true, request_id: requestId, deck: updated });
       },
     );
@@ -784,6 +789,12 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
             errorPayload(requestId, "DECK_NOT_REJECTABLE", "deck no existe o no está en draft"),
           );
         }
+        await repo.appendBitacora(updated.id, {
+          ts: new Date().toISOString(),
+          consultor_user_id: req.userId,
+          accion: "reject",
+          nota: parsed.data.reason,
+        });
         return reply.code(200).send({ ok: true, request_id: requestId, deck: updated });
       },
     );
@@ -922,14 +933,30 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
           candidato_full_name: snapshot.user.full_name,
         });
 
+        // Filtrar `bitacora` del patch — la bitácora SOLO se modifica via
+        // appendBitacora (preserva el historial; no se sobrescribe).
+        const patchData = { ...(parsed.data as Record<string, unknown>) };
+        delete patchData.bitacora;
+
         const merged = await repo.mergeConsultorForm(
           deck.id,
-          parsed.data as Record<string, unknown>,
+          patchData,
         );
         if (!merged) {
           return reply.code(500).send(
             errorPayload(requestId, "DECK_MERGE_ERROR", "no pude mergear el form"),
           );
+        }
+
+        // Auto-append bitácora con las secciones tocadas
+        const camposTocados = Object.keys(patchData);
+        if (camposTocados.length > 0) {
+          await repo.appendBitacora(deck.id, {
+            ts: new Date().toISOString(),
+            consultor_user_id: req.userId,
+            accion: "patch",
+            campos_tocados: camposTocados,
+          });
         }
 
         return reply.code(200).send({
@@ -941,6 +968,65 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
             consultor_form: merged.consultor_form,
             updated_at: merged.updated_at,
           },
+        });
+      },
+    );
+
+    // POST /api/consultor/fase2/by-candidato/:slug/note
+    // El consultor agrega una nota libre a la bitácora (no toca el form).
+    app.post<{ Params: { slug: string }; Body: { nota: string } }>(
+      "/api/consultor/fase2/by-candidato/:slug/note",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["consultor", "admin"] }),
+        ],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const req = request as AuthenticatedRequest;
+        const slug = request.params.slug;
+
+        const resolved = await resolveCandidatoBySlug(slug, req);
+        if (!resolved.ok) {
+          return reply.code(resolved.code).send(
+            errorPayload(requestId, resolved.error, resolved.message),
+          );
+        }
+        const { snapshot, campaign_id, candidato_id } = resolved.data!;
+
+        const noteSchema = z.object({ nota: z.string().min(2).max(2000) });
+        const noteParsed = noteSchema.safeParse(request.body);
+        if (!noteParsed.success) {
+          return reply.code(400).send(
+            errorPayload(requestId, "VALIDATION_ERROR", "nota requerida (2-2000 chars)"),
+          );
+        }
+
+        const deck = await repo.ensureFase2Deck({
+          candidato_id,
+          campaign_id,
+          uploaded_by_user_id: req.userId,
+          candidato_full_name: snapshot.user.full_name,
+        });
+
+        const updated = await repo.appendBitacora(deck.id, {
+          ts: new Date().toISOString(),
+          consultor_user_id: req.userId,
+          accion: "note",
+          nota: noteParsed.data.nota,
+        });
+
+        if (!updated) {
+          return reply.code(500).send(
+            errorPayload(requestId, "BITACORA_APPEND_ERROR", "no pude agregar la nota"),
+          );
+        }
+
+        return reply.code(200).send({
+          ok: true,
+          request_id: requestId,
+          deck_id: deck.id,
         });
       },
     );
@@ -992,6 +1078,12 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
             errorPayload(requestId, "DECK_SUBMIT_ERROR", "no pude marcar como pending_review"),
           );
         }
+
+        await repo.appendBitacora(deck.id, {
+          ts: new Date().toISOString(),
+          consultor_user_id: req.userId,
+          accion: "submit",
+        });
 
         return reply.code(200).send({
           ok: true,

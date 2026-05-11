@@ -13,6 +13,10 @@ interface SlideQuienEsProps {
 
 export function SlideQuienEs({ ctx }: SlideQuienEsProps) {
   const firstName = ctx.user.full_name.split(/\s+/)[0] ?? ctx.user.full_name;
+  const qe = ctx.consultor_form?.quien_es;
+  const bio = qe?.texto_libre;
+  const trayectoria = qe?.trayectoria;
+  const valores = qe?.valores ?? [];
 
   return (
     <SlideShell
@@ -52,27 +56,69 @@ export function SlideQuienEs({ ctx }: SlideQuienEsProps) {
           />
         </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent p-5 sm:p-6 mt-6"
-        >
-          <div className="flex items-start gap-3">
-            <div className="shrink-0 size-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center">
-              <Construction className="size-5" />
+        {(bio || trayectoria || valores.length > 0) && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-2xl border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-transparent to-transparent p-5 sm:p-6 mt-6 space-y-4"
+          >
+            <p className="text-[10px] uppercase tracking-[0.3em] text-amber-400 font-bold">
+              ¿Quién es {firstName}?
+            </p>
+            {bio && (
+              <p className="text-base sm:text-lg text-white leading-relaxed">{bio}</p>
+            )}
+            {trayectoria && (
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-amber-400/70 mb-1">
+                  Trayectoria
+                </p>
+                <p className="text-sm text-gray-300 leading-relaxed">{trayectoria}</p>
+              </div>
+            )}
+            {valores.length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-widest text-amber-400/70 mb-2">
+                  Valores
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {valores.map((v, i) => (
+                    <span
+                      key={i}
+                      className="px-3 py-1 rounded-full bg-amber-400/15 border border-amber-400/30 text-amber-300 text-xs font-bold uppercase tracking-wider"
+                    >
+                      {v}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {!bio && !trayectoria && valores.length === 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-2xl border-2 border-amber-500/30 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent p-5 sm:p-6 mt-6"
+          >
+            <div className="flex items-start gap-3">
+              <div className="shrink-0 size-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center">
+                <Construction className="size-5" />
+              </div>
+              <div>
+                <p className="text-amber-400 font-semibold mb-1">
+                  Próximamente: Auditoría digital automática
+                </p>
+                <p className="text-sm text-gray-300 leading-relaxed">
+                  Vamos a buscar &ldquo;{firstName}&rdquo; en Google, mapear tus
+                  perfiles públicos y detectar narrativas activas (positivas o
+                  negativas). El resultado va a ser un dossier visual aquí mismo.
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-amber-400 font-semibold mb-1">
-                Próximamente: Auditoría digital automática
-              </p>
-              <p className="text-sm text-gray-300 leading-relaxed">
-                Vamos a buscar &ldquo;{firstName}&rdquo; en Google, mapear tus
-                perfiles públicos y detectar narrativas activas (positivas o
-                negativas). El resultado va a ser un dossier visual aquí mismo.
-              </p>
-            </div>
-          </div>
-        </motion.div>
+          </motion.div>
+        )}
       </div>
     </SlideShell>
   );
