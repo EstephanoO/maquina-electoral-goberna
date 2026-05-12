@@ -105,7 +105,7 @@ export function EditableText({
           (e.currentTarget as HTMLSpanElement).blur();
         }
       }}
-      className={`${className} inline-block min-w-[2ch] outline-none rounded-sm border border-dashed border-amber-400/40 hover:border-amber-400/80 focus:border-amber-400 focus:bg-amber-400/10 px-1 py-0.5 transition-colors cursor-text whitespace-pre-wrap`}
+      className={`${className} inline-block min-w-[3ch] outline-none rounded-sm border-2 border-dashed border-amber-400/70 bg-amber-400/[0.06] hover:border-amber-400 hover:bg-amber-400/15 focus:border-amber-400 focus:bg-amber-400/20 px-1.5 py-0.5 transition-colors cursor-text whitespace-pre-wrap`}
       style={{
         // CSS empty-state placeholder
         ...(displayed.length === 0

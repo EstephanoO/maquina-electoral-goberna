@@ -3,6 +3,8 @@
 import { motion } from "motion/react";
 import { Search, Globe, AlertCircle, CheckCircle2 } from "lucide-react";
 import { SlideShell } from "./SlideShell";
+import { EditableText } from "../EditableText";
+import { useEditing } from "../EditingContext";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
 interface Props {
@@ -72,6 +74,7 @@ export function SlidePresenciaDigital({ ctx }: Props) {
   const firstName = ctx.user.full_name.split(/\s+/)[0] ?? "tú";
   const pd = ctx.consultor_form?.presencia_digital;
   const notas = pd?.notas;
+  const { editing } = useEditing();
 
   return (
     <SlideShell
@@ -136,8 +139,17 @@ export function SlidePresenciaDigital({ ctx }: Props) {
             Acción rápida
           </div>
           <p className="text-base text-white leading-relaxed">
-            {notas ??
-              "Goberna audita tu presencia digital antes de cada elección y te genera un plan de 30 días para que cuando te googleen, salgas tú primero."}
+            {editing || notas ? (
+              <EditableText
+                section="presencia_digital"
+                field="notas"
+                value={notas}
+                placeholder="Goberna audita tu presencia digital antes de cada elección y te genera un plan de 30 días para que cuando te googleen, salgas tú primero."
+                multiline
+              />
+            ) : (
+              "Goberna audita tu presencia digital antes de cada elección y te genera un plan de 30 días para que cuando te googleen, salgas tú primero."
+            )}
           </p>
         </motion.div>
       </div>

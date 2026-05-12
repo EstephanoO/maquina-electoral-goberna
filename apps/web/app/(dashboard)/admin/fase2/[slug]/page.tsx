@@ -58,6 +58,8 @@ export default function AdminFase2ReviewPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState<number>(Date.now());
+  const [syncing, setSyncing] = useState(false);
   // Ref para evitar pisar el form local (que el user está editando) con
   // el resultado del polling. Solo aceptamos updates del server si NO
   // estamos editando inline OR si pasaron más de N ms desde el último
@@ -75,6 +77,8 @@ export default function AdminFase2ReviewPage() {
       if (!opts.silent) {
         setLoading(true);
         setError(null);
+      } else {
+        setSyncing(true);
       }
       try {
         const res = await onboardingApi.getFase2BySlug(slug);
@@ -93,10 +97,12 @@ export default function AdminFase2ReviewPage() {
             : res.ctx,
         );
         setDeck(res.deck);
+        setLastSyncAt(Date.now());
       } catch (e) {
         if (!opts.silent) setError((e as Error).message);
       } finally {
         if (!opts.silent) setLoading(false);
+        setSyncing(false);
       }
     },
     [slug, editing],
@@ -111,17 +117,25 @@ export default function AdminFase2ReviewPage() {
     load();
   }, [user, isAdmin, router, load]);
 
-  // Hot-refresh: poll cada 8s para captar cambios del MCP / Claude.
-  // Sin window de visibilidad → solo cuando la pestaña está activa.
+  // Hot-refresh: poll cada 4s para captar cambios del MCP / Claude.
+  // Cuando la pestaña vuelve a foreground también refresca inmediato.
+  const ctxLoaded = !!ctx;
   useEffect(() => {
-    if (!ctx) return;
+    if (!ctxLoaded) return;
     const id = setInterval(() => {
       if (document.visibilityState === "visible") {
         load({ silent: true });
       }
-    }, 8000);
-    return () => clearInterval(id);
-  }, [ctx, load]);
+    }, 4000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [ctxLoaded, load]);
 
   // Cuando el provider hace un patch optimista, lo propagamos al ctx
   // del admin page para que los slides vean el cambio inmediatamente.
@@ -225,6 +239,7 @@ export default function AdminFase2ReviewPage() {
                 {ctx.cargo.nombre} · {ctx.campaign.slug}
               </span>
               <SaveStatusBadge />
+              <SyncBadge syncing={syncing} lastSyncAt={lastSyncAt} />
             </div>
 
             <div className="ml-auto flex items-center gap-2">
@@ -278,10 +293,45 @@ export default function AdminFase2ReviewPage() {
           </div>
         </div>
 
+        {/* Tip de modo edición */}
+        {editing && canEdit && (
+          <div className="bg-amber-400/10 border-b border-amber-400/30">
+            <div className="max-w-7xl mx-auto px-4 sm:px-8 py-2 text-xs text-amber-200/90 flex items-center gap-2">
+              <Pencil className="size-3.5" />
+              Modo edición · Click cualquier texto con borde discontinuo amber para
+              modificarlo. Enter o blur guarda. Esc cancela. Los campos auto-derivados
+              del onboarding (nombre, cargo, jurisdicción) no se editan acá.
+            </div>
+          </div>
+        )}
+
         {/* El deck Fase 2 completo */}
         <Fase2Deck ctx={ctx} />
       </div>
     </EditingProvider>
+  );
+}
+
+/** Indicador "vivo" — verde pulsante mientras polling fluye. */
+function SyncBadge({ syncing, lastSyncAt }: { syncing: boolean; lastSyncAt: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const secondsAgo = Math.floor((now - lastSyncAt) / 1000);
+  return (
+    <span
+      className="hidden md:inline-flex items-center gap-1.5 text-[10px] text-white/40 uppercase tracking-wider"
+      title={`Sincronización en vivo cada 4s con cambios del MCP / consultor`}
+    >
+      <span
+        className={`size-1.5 rounded-full ${
+          syncing ? "bg-emerald-400 animate-pulse" : "bg-emerald-400/60"
+        }`}
+      />
+      {syncing ? "Sincronizando" : `Vivo · hace ${secondsAgo}s`}
+    </span>
   );
 }
 
