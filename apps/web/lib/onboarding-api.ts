@@ -113,6 +113,12 @@ export type ConsultorFormFase2 = {
     trayectoria?: string;
     valores?: string[];
   };
+  /**
+   * Overrides de cualquier texto hardcoded del template. Cada key es
+   * único por slide.field (ej: "cover.title", "capacidad.pilar_0.titulo").
+   * Si la key no existe, el slide muestra el default original.
+   */
+  text_overrides?: Record<string, string>;
 };
 
 export type SocialHandles = {

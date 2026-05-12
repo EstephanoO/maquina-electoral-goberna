@@ -3,25 +3,30 @@
 import { motion } from "motion/react";
 import { Map, BarChart3, Smartphone, Database } from "lucide-react";
 import { SlideShell } from "./SlideShell";
+import { EditableT } from "../EditableT";
 
 const PILARES = [
   {
+    key: "cartografia",
     icon: Map,
     titulo: "Cartografía política",
     descripcion:
       "Mapas electorales por distrito, histórico de votación y densidad de votantes.",
   },
   {
+    key: "ciencia-datos",
     icon: Database,
     titulo: "Ciencia de datos",
     descripcion: "Modelos predictivos, segmentación y detección de patrones.",
   },
   {
+    key: "tecnopolitica",
     icon: Smartphone,
     titulo: "Tecnopolítica",
     descripcion: "App móvil para brigadas, validación en tiempo real, territorio↔digital.",
   },
   {
+    key: "analitica",
     icon: BarChart3,
     titulo: "Analítica electoral",
     descripcion: "Dashboards en vivo, KPIs por jurisdicción, reportes automáticos.",
@@ -30,7 +35,7 @@ const PILARES = [
 
 export function SlideCapacidadGoberna() {
   return (
-    <SlideShell kicker="Capacidad Goberna" title="¿Qué hacemos por tu campaña?">
+    <SlideShell slideId="capacidad-goberna" kicker="Capacidad Goberna" title="¿Qué hacemos por tu campaña?">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -55,10 +60,10 @@ export function SlideCapacidadGoberna() {
                   />
                   <div className="flex-1 min-w-0">
                     <h3 className="text-lg sm:text-xl font-medium text-white tracking-tight leading-snug">
-                      {p.titulo}
+                      <EditableT k={`capacidad-goberna.pilares.${p.key}.titulo`}>{p.titulo}</EditableT>
                     </h3>
                     <p className="mt-1.5 text-sm sm:text-base text-white/60 leading-relaxed">
-                      {p.descripcion}
+                      <EditableT k={`capacidad-goberna.pilares.${p.key}.descripcion`} multiline>{p.descripcion}</EditableT>
                     </p>
                   </div>
                 </div>

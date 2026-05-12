@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import { MapPin } from "lucide-react";
 import { SlideShell } from "./SlideShell";
+import { EditableT } from "../EditableT";
 
 // Oficinas Goberna en Perú — coordenadas aproximadas para placement
 // sobre el mapa de fondo. Lat/lon → x%/y% del bounding box Perú.
@@ -27,7 +28,7 @@ function toPct(lon: number, lat: number) {
 
 export function SlideOficinasGoberna() {
   return (
-    <SlideShell kicker="Presencia nacional" title="OFICINAS GOBERNA EN PERÚ">
+    <SlideShell slideId="oficinas-goberna" kicker="Presencia nacional" title="OFICINAS GOBERNA EN PERÚ">
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 px-2 sm:px-4 items-start">
         {/* Mapa SVG con marker por oficina */}
         <div className="lg:col-span-3">
@@ -104,7 +105,11 @@ export function SlideOficinasGoberna() {
             >
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80 font-bold">
-                  {o.principal ? "Sede principal" : "Oficina regional"}
+                  {o.principal ? (
+                    <EditableT k="oficinas-goberna.label.sede-principal">Sede principal</EditableT>
+                  ) : (
+                    <EditableT k="oficinas-goberna.label.oficina-regional">Oficina regional</EditableT>
+                  )}
                 </span>
               </div>
               <h3 className="text-2xl font-black uppercase text-white tracking-tight">
@@ -120,11 +125,13 @@ export function SlideOficinasGoberna() {
             className="mt-6 text-center sm:text-left"
           >
             <p className="text-xs uppercase tracking-[0.25em] text-amber-400 font-bold">
-              Cobertura nacional
+              <EditableT k="oficinas-goberna.cobertura.kicker">Cobertura nacional</EditableT>
             </p>
             <p className="text-3xl sm:text-4xl font-black text-white mt-1">
               {OFICINAS.length}{" "}
-              <span className="text-amber-400">oficinas</span>
+              <span className="text-amber-400">
+                <EditableT k="oficinas-goberna.cobertura.label">oficinas</EditableT>
+              </span>
             </p>
           </motion.div>
         </div>

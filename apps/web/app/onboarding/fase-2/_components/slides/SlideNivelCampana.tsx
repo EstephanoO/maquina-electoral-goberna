@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import { Globe, Map, Building, Home } from "lucide-react";
 import { SlideShell } from "./SlideShell";
+import { EditableT } from "../EditableT";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
 interface Props {
@@ -45,7 +46,7 @@ export function SlideNivelCampana({ ctx }: Props) {
     ctx.jurisdiccion.pais.nombre;
 
   return (
-    <SlideShell kicker="Lámina 3 · A qué apuntas" title="NIVEL DE CAMPAÑA">
+    <SlideShell slideId="nivel-campana" kicker="Lámina 3 · A qué apuntas" title="NIVEL DE CAMPAÑA">
       <div className="px-2 sm:px-4">
         <motion.p
           initial={{ opacity: 0 }}
@@ -53,8 +54,9 @@ export function SlideNivelCampana({ ctx }: Props) {
           transition={{ duration: 0.5 }}
           className="text-base sm:text-lg text-gray-300 max-w-3xl mb-8 leading-relaxed"
         >
-          Cada nivel tiene su propia mecánica electoral, su propio padrón, su propia competencia.
-          Tu campaña apunta a:
+          <EditableT k="nivel-campana.intro" multiline>
+            Cada nivel tiene su propia mecánica electoral, su propio padrón, su propia competencia. Tu campaña apunta a:
+          </EditableT>
         </motion.p>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -84,7 +86,7 @@ export function SlideNivelCampana({ ctx }: Props) {
                       : "mt-3 text-2xl font-bold uppercase tracking-tight text-white/70"
                   }
                 >
-                  {n.titulo}
+                  <EditableT k={`nivel-campana.niveles.${n.key}.titulo`}>{n.titulo}</EditableT>
                 </h3>
                 <p
                   className={
@@ -93,7 +95,7 @@ export function SlideNivelCampana({ ctx }: Props) {
                       : "text-xs leading-snug text-white/50 mt-2"
                   }
                 >
-                  {n.subtitulo}
+                  <EditableT k={`nivel-campana.niveles.${n.key}.subtitulo`}>{n.subtitulo}</EditableT>
                 </p>
               </motion.div>
             );
@@ -108,7 +110,7 @@ export function SlideNivelCampana({ ctx }: Props) {
           className="mt-8 bg-gradient-to-r from-amber-400/15 via-amber-400/5 to-transparent border-l-4 border-amber-400 px-5 py-4 rounded-sm"
         >
           <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400 font-bold mb-1">
-            Tu cargo
+            <EditableT k="nivel-campana.detalle.kicker">Tu cargo</EditableT>
           </div>
           <div className="text-3xl sm:text-4xl font-black text-white tracking-tight">
             {ctx.cargo.nombre}

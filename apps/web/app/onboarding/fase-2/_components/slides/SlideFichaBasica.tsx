@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { User, Globe2, IdCard, Phone, Calendar, Briefcase } from "lucide-react";
 import { SlideShell } from "./SlideShell";
 import { EditableText } from "../EditableText";
+import { EditableT } from "../EditableT";
 import { useEditing } from "../EditingContext";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
@@ -40,6 +41,7 @@ export function SlideFichaBasica({ ctx }: Props) {
 
   type Field = {
     icon: typeof User;
+    key: string;
     label: string;
     real: boolean;
     /** Si tiene editKey, el value en modo edit se renderiza con EditableText. */
@@ -49,12 +51,13 @@ export function SlideFichaBasica({ ctx }: Props) {
   };
 
   const fields: Field[] = [
-    { icon: User, label: "Nombre completo", rawValue: fullName, real: true },
-    { icon: Globe2, label: "País", rawValue: pais, real: true },
-    { icon: IdCard, label: "DNI", rawValue: dni, real: dni !== PLACEHOLDER, editKey: { field: "dni" } },
-    { icon: Phone, label: "Teléfono", rawValue: phone ?? PLACEHOLDER, real: !!phone },
+    { icon: User, key: "nombre", label: "Nombre completo", rawValue: fullName, real: true },
+    { icon: Globe2, key: "pais", label: "País", rawValue: pais, real: true },
+    { icon: IdCard, key: "dni", label: "DNI", rawValue: dni, real: dni !== PLACEHOLDER, editKey: { field: "dni" } },
+    { icon: Phone, key: "telefono", label: "Teléfono", rawValue: phone ?? PLACEHOLDER, real: !!phone },
     {
       icon: Calendar,
+      key: "edad",
       label: "Edad",
       rawValue: edad,
       real: edad !== PLACEHOLDER,
@@ -62,6 +65,7 @@ export function SlideFichaBasica({ ctx }: Props) {
     },
     {
       icon: Briefcase,
+      key: "profesion",
       label: "Profesión",
       rawValue: profesion,
       real: profesion !== PLACEHOLDER,
@@ -70,7 +74,7 @@ export function SlideFichaBasica({ ctx }: Props) {
   ];
 
   return (
-    <SlideShell kicker="Lámina 1 · Ficha del candidato" title="FICHA BÁSICA">
+    <SlideShell slideId="ficha-basica" kicker="Lámina 1 · Ficha del candidato" title="FICHA BÁSICA">
       <div className="grid grid-cols-12 gap-6 sm:gap-8 px-2 sm:px-4 items-start">
         {/* Foto a la izquierda */}
         <motion.div
@@ -115,7 +119,7 @@ export function SlideFichaBasica({ ctx }: Props) {
                 </div>
                 <div className="col-span-4">
                   <span className="text-[10px] uppercase tracking-[0.25em] text-white/60 font-bold">
-                    {f.label}
+                    <EditableT k={`ficha-basica.field.${f.key}.label`}>{f.label}</EditableT>
                   </span>
                 </div>
                 <div className="col-span-7">
@@ -156,9 +160,9 @@ export function SlideFichaBasica({ ctx }: Props) {
             transition={{ delay: 0.7 }}
             className="text-xs text-white/40 italic mt-4"
           >
-            Los campos en{" "}
-            <span className="text-amber-400/70 font-bold not-italic">amarillo</span> los completa el
-            consultor en la siguiente fase.
+            <EditableT k="ficha-basica.footer" multiline>
+              Los campos en amarillo los completa el consultor en la siguiente fase.
+            </EditableT>
           </motion.p>
         </div>
       </div>

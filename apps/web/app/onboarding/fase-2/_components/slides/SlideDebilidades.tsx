@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import { Search, Gavel, MessageSquareWarning, ShieldAlert } from "lucide-react";
 import { SlideShell } from "./SlideShell";
+import { EditableT } from "../EditableT";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
 interface Props {
@@ -69,6 +70,7 @@ export function SlideDebilidades({ ctx }: Props) {
 
   return (
     <SlideShell
+      slideId="debilidades"
       kicker="Auditoría · Debilidades"
       title={`¿QUÉ PUEDE USAR EN CONTRA DE ${firstName.toUpperCase()}?`}
     >
@@ -79,8 +81,9 @@ export function SlideDebilidades({ ctx }: Props) {
           transition={{ duration: 0.5 }}
           className="text-base sm:text-lg text-gray-300 max-w-3xl mb-8 leading-relaxed"
         >
-          Antes de salir a campaña, mapeamos todo lo que el adversario podría usar para
-          golpearte. Mejor saberlo nosotros primero — y prepararnos.
+          <EditableT k="debilidades.intro" multiline>
+            Antes de salir a campaña, mapeamos todo lo que el adversario podría usar para golpearte. Mejor saberlo nosotros primero — y prepararnos.
+          </EditableT>
         </motion.p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
@@ -103,7 +106,7 @@ export function SlideDebilidades({ ctx }: Props) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <h3 className="text-lg font-extrabold text-white leading-tight">
-                        {f.titulo}
+                        <EditableT k={`debilidades.fuentes.${f.key}.titulo`}>{f.titulo}</EditableT>
                       </h3>
                       <span
                         className={`text-[9px] uppercase tracking-[0.2em] font-bold px-2 py-0.5 rounded-sm bg-white/10 ${e.text}`}
@@ -111,7 +114,9 @@ export function SlideDebilidades({ ctx }: Props) {
                         {e.label}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-300 leading-relaxed mb-2">{f.descripcion}</p>
+                    <p className="text-sm text-gray-300 leading-relaxed mb-2">
+                      <EditableT k={`debilidades.fuentes.${f.key}.descripcion`} multiline>{f.descripcion}</EditableT>
+                    </p>
                     {hallazgos.length > 0 && (
                       <ul className="mt-1 mb-2 space-y-1">
                         {hallazgos.slice(0, 3).map((h, hi) => (
@@ -140,19 +145,19 @@ export function SlideDebilidades({ ctx }: Props) {
           <div className="bg-white/[0.04] border border-white/10 rounded-md p-4">
             <div className="text-3xl font-black text-amber-400">{counts.review}</div>
             <div className="text-[10px] uppercase tracking-[0.25em] text-white/60 font-bold mt-1">
-              Hallazgos por auditar
+              <EditableT k="debilidades.counts.review">Hallazgos por auditar</EditableT>
             </div>
           </div>
           <div className="bg-white/[0.04] border border-white/10 rounded-md p-4">
             <div className="text-3xl font-black text-red-300">{counts.flag}</div>
             <div className="text-[10px] uppercase tracking-[0.25em] text-white/60 font-bold mt-1">
-              Riesgos altos
+              <EditableT k="debilidades.counts.flag">Riesgos altos</EditableT>
             </div>
           </div>
           <div className="bg-white/[0.04] border border-white/10 rounded-md p-4">
             <div className="text-3xl font-black text-emerald-300">{counts.ok}</div>
             <div className="text-[10px] uppercase tracking-[0.25em] text-white/60 font-bold mt-1">
-              Limpio / mitigado
+              <EditableT k="debilidades.counts.ok">Limpio / mitigado</EditableT>
             </div>
           </div>
         </motion.div>

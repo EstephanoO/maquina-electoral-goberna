@@ -6,6 +6,7 @@ import { Construction, ExternalLink, FileSearch } from "lucide-react";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
 import { EditableText } from "../EditableText";
+import { EditableT } from "../EditableT";
 import { useEditing } from "../EditingContext";
 import { SlideShell } from "./SlideShell";
 
@@ -24,6 +25,7 @@ export function SlideHistorialINFOGOB({ ctx }: SlideHistorialINFOGOBProps) {
 
   return (
     <SlideShell
+      slideId="historial"
       kicker="04 · Tu trayectoria electoral"
       title={`Historial político de ${ctx.user.full_name.split(/\s+/).slice(0, 2).join(" ")}`}
     >
@@ -100,31 +102,31 @@ export function SlideHistorialINFOGOB({ ctx }: SlideHistorialINFOGOBProps) {
           className="space-y-5 self-center"
         >
           <p className="text-xl sm:text-2xl text-white leading-relaxed">
-            Tu historial político se va a llenar automáticamente desde{" "}
-            <span className="text-amber-400 font-semibold">INFOGOB</span> con
-            tu DNI{dni ? ` (${dni})` : ""}.
+            <EditableT k="historial.lead" multiline>
+              Tu historial político se va a llenar automáticamente desde INFOGOB con tu DNI.
+            </EditableT>
           </p>
           <p className="text-base text-gray-400 leading-relaxed">
-            Vamos a mostrar tus participaciones electorales pasadas, partidos
-            con los que postulaste y resultados — para que tu equipo sepa de
-            dónde venís y pueda construir narrativa.
+            <EditableT k="historial.descripcion" multiline>
+              Vamos a mostrar tus participaciones electorales pasadas, partidos con los que postulaste y resultados — para que tu equipo sepa de dónde vienes y pueda construir narrativa.
+            </EditableT>
           </p>
 
           <div className="pt-4 border-t border-gray-800">
             <p className="text-xs uppercase tracking-widest text-amber-400/70 mb-2">
-              ¿Por qué importa?
+              <EditableT k="historial.porque.kicker">¿Por qué importa?</EditableT>
             </p>
             <ul className="space-y-1.5 text-sm text-gray-300">
-              <li>• Apoyo del electorado a tu nombre vs al partido</li>
-              <li>• Tasa de éxito electoral (elecciones ganadas / postuladas)</li>
-              <li>• Estabilidad partidaria y movimientos entre orgs</li>
+              <li>· <EditableT k="historial.porque.item1">Apoyo del electorado a tu nombre vs al partido</EditableT></li>
+              <li>· <EditableT k="historial.porque.item2">Tasa de éxito electoral (elecciones ganadas / postuladas)</EditableT></li>
+              <li>· <EditableT k="historial.porque.item3">Estabilidad partidaria y movimientos entre orgs</EditableT></li>
             </ul>
           </div>
 
           {(observaciones || editing) && (
             <div className="pt-4 border-t border-gray-800">
               <p className="text-xs uppercase tracking-widest text-amber-400/70 mb-2">
-                Lectura del consultor
+                <EditableT k="historial.lectura.kicker">Lectura del consultor</EditableT>
               </p>
               <p className="text-sm text-gray-200 leading-relaxed">
                 <EditableText

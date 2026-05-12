@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { Search, Globe, AlertCircle, CheckCircle2 } from "lucide-react";
 import { SlideShell } from "./SlideShell";
 import { EditableText } from "../EditableText";
+import { EditableT } from "../EditableT";
 import { useEditing } from "../EditingContext";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
@@ -78,6 +79,7 @@ export function SlidePresenciaDigital({ ctx }: Props) {
 
   return (
     <SlideShell
+      slideId="presencia-digital"
       kicker="Presencia digital"
       title={`¿QUÉ DICE GOOGLE DE ${firstName.toUpperCase()}?`}
     >
@@ -88,9 +90,9 @@ export function SlidePresenciaDigital({ ctx }: Props) {
           transition={{ duration: 0.5 }}
           className="text-base sm:text-lg text-gray-300 max-w-3xl mb-8 leading-relaxed"
         >
-          El primer movimiento del votante moderno es googlearte. Si no encuentra
-          tu página oficial en 5 segundos, encuentra otra cosa — y la otra cosa
-          probablemente no te conviene.
+          <EditableT k="presencia-digital.intro" multiline>
+            El primer movimiento del votante moderno es googlearte. Si no encuentra tu página oficial en 5 segundos, encuentra otra cosa — y la otra cosa probablemente no te conviene.
+          </EditableT>
         </motion.p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
@@ -112,7 +114,7 @@ export function SlidePresenciaDigital({ ctx }: Props) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <h3 className="text-base font-extrabold text-white leading-tight">
-                        {c.label}
+                        <EditableT k={`presencia-digital.checks.${c.key}.label`}>{c.label}</EditableT>
                       </h3>
                       <span
                         className={`text-[9px] uppercase tracking-[0.2em] font-bold px-2 py-0.5 rounded-sm ${style.labelBg}`}
@@ -120,7 +122,9 @@ export function SlidePresenciaDigital({ ctx }: Props) {
                         {style.label}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-400 leading-relaxed">{c.explica}</p>
+                    <p className="text-sm text-gray-400 leading-relaxed">
+                      <EditableT k={`presencia-digital.checks.${c.key}.explica`} multiline>{c.explica}</EditableT>
+                    </p>
                   </div>
                 </div>
               </motion.div>
@@ -136,7 +140,7 @@ export function SlidePresenciaDigital({ ctx }: Props) {
           className="mt-8 px-5 py-4 bg-gradient-to-r from-amber-400/10 via-amber-400/5 to-transparent border-l-4 border-amber-400 rounded-sm"
         >
           <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400 font-bold mb-1">
-            Acción rápida
+            <EditableT k="presencia-digital.cta.kicker">Acción rápida</EditableT>
           </div>
           <p className="text-base text-white leading-relaxed">
             {editing || notas ? (

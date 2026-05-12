@@ -84,6 +84,7 @@ export function Fase2Deck({ ctx }: Fase2DeckProps) {
         isDivider: true,
         node: (
           <SectionDivider
+            slideId="div-ficha"
             sectionNumber="01"
             kicker="Tu ficha"
             question={`¿Quién es ${firstName} y a qué apunta?`}
@@ -129,6 +130,7 @@ export function Fase2Deck({ ctx }: Fase2DeckProps) {
         isDivider: true,
         node: (
           <SectionDivider
+            slideId="div-analisis"
             sectionNumber="03"
             kicker="Análisis Electoral"
             question={`¿Cómo le fue a ${partidoNombre} en ${jurisdiccionLabel}?`}
@@ -154,6 +156,7 @@ export function Fase2Deck({ ctx }: Fase2DeckProps) {
         isDivider: true,
         node: (
           <SectionDivider
+            slideId="div-partidos"
             sectionNumber="04"
             kicker="Competencia partidaria"
             question={`¿Quiénes mandan en ${jurisdiccionLabel}?`}
@@ -174,6 +177,7 @@ export function Fase2Deck({ ctx }: Fase2DeckProps) {
         isDivider: true,
         node: (
           <SectionDivider
+            slideId="div-historial"
             sectionNumber="05"
             kicker="Historial político"
             question={`Tu trayectoria electoral en ${jurisdiccionLabel}`}
@@ -194,6 +198,7 @@ export function Fase2Deck({ ctx }: Fase2DeckProps) {
         isDivider: true,
         node: (
           <SectionDivider
+            slideId="div-estrategia"
             sectionNumber="06"
             kicker="Estrategia"
             question="¿Por dónde luchamos esta elección?"
@@ -219,6 +224,7 @@ export function Fase2Deck({ ctx }: Fase2DeckProps) {
         isDivider: true,
         node: (
           <SectionDivider
+            slideId="div-presencia"
             sectionNumber="07"
             kicker="Presencia digital"
             question={`¿Te encuentran cuando te buscan en Google?`}
@@ -244,6 +250,7 @@ export function Fase2Deck({ ctx }: Fase2DeckProps) {
         isDivider: true,
         node: (
           <SectionDivider
+            slideId="div-debilidades"
             sectionNumber="08"
             kicker="Auditoría de riesgos"
             question={`¿Qué pueden usar en contra de ${firstName}?`}
@@ -264,6 +271,7 @@ export function Fase2Deck({ ctx }: Fase2DeckProps) {
         isDivider: true,
         node: (
           <SectionDivider
+            slideId="div-quien"
             sectionNumber="09"
             kicker="Tu imagen pública"
             question={`¿Quién es ${firstName}?`}

@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import { Facebook, Instagram, Music2, Globe, AlertCircle } from "lucide-react";
 import { SlideShell } from "./SlideShell";
+import { EditableT } from "../EditableT";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
 interface Props {
@@ -49,7 +50,7 @@ export function SlideRedesSociales({ ctx }: Props) {
         ];
 
   return (
-    <SlideShell kicker="Presencia digital · Redes" title="REDES SOCIALES — TÚ Y LOS ADVERSARIOS">
+    <SlideShell slideId="redes-sociales" kicker="Presencia digital · Redes" title="REDES SOCIALES — TÚ Y LOS ADVERSARIOS">
       <div className="px-2 sm:px-4">
         <motion.p
           initial={{ opacity: 0 }}
@@ -57,8 +58,9 @@ export function SlideRedesSociales({ ctx }: Props) {
           transition={{ duration: 0.5 }}
           className="text-base sm:text-lg text-gray-300 max-w-3xl mb-8 leading-relaxed"
         >
-          Auditamos tus redes y las de tus 3 principales adversarios. El que está mejor
-          posicionado en redes hoy ya lleva una ventaja de meses.
+          <EditableT k="redes-sociales.intro" multiline>
+            Auditamos tus redes y las de tus 3 principales adversarios. El que está mejor posicionado en redes hoy ya lleva una ventaja de meses.
+          </EditableT>
         </motion.p>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -70,7 +72,7 @@ export function SlideRedesSociales({ ctx }: Props) {
             className="bg-amber-400/5 border-2 border-amber-400/40 rounded-md p-5 sm:p-6"
           >
             <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400 font-bold mb-1">
-              Tus redes
+              <EditableT k="redes-sociales.tus.kicker">Tus redes</EditableT>
             </div>
             <h3 className="text-3xl font-black uppercase text-white tracking-tight mb-4">
               {firstName}
@@ -141,10 +143,10 @@ export function SlideRedesSociales({ ctx }: Props) {
             className="bg-white/[0.03] border border-white/10 rounded-md p-5 sm:p-6"
           >
             <div className="text-[10px] uppercase tracking-[0.3em] text-red-400 font-bold mb-1">
-              Tus adversarios principales
+              <EditableT k="redes-sociales.adversarios.kicker">Tus adversarios principales</EditableT>
             </div>
             <h3 className="text-3xl font-black uppercase text-white tracking-tight mb-4">
-              Los rivales
+              <EditableT k="redes-sociales.adversarios.titulo">Los rivales</EditableT>
             </h3>
 
             <div className="space-y-3">

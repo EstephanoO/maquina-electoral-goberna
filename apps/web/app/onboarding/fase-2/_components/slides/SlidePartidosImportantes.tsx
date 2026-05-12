@@ -39,6 +39,7 @@ export function SlidePartidosImportantes({ ctx }: SlidePartidosImportantesProps)
 
   return (
     <SlideShell
+      slideId="partidos"
       kicker="03 · Top 3 fuerzas políticas"
       title={`Los partidos con más votos en ${jurisdiccionLabel}`}
     >

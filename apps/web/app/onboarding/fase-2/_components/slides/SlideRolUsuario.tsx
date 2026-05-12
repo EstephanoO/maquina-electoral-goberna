@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import { ShieldCheck, UserCog, Map, User } from "lucide-react";
 import { SlideShell } from "./SlideShell";
+import { EditableT } from "../EditableT";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
 interface Props {
@@ -40,7 +41,7 @@ const ROLES = [
 
 export function SlideRolUsuario({ ctx, fillerRole = "consultor" }: Props) {
   return (
-    <SlideShell kicker="Lámina 2 · Quién está armando esto" title="ROL DE USUARIO">
+    <SlideShell slideId="rol-usuario" kicker="Lámina 2 · Quién está armando esto" title="ROL DE USUARIO">
       <div className="px-2 sm:px-4">
         <motion.p
           initial={{ opacity: 0 }}
@@ -92,9 +93,11 @@ export function SlideRolUsuario({ ctx, fillerRole = "consultor" }: Props) {
                           : "text-xl font-bold uppercase tracking-tight text-white/70"
                       }
                     >
-                      {r.titulo}
+                      <EditableT k={`rol-usuario.roles.${r.key}.titulo`}>{r.titulo}</EditableT>
                     </h3>
-                    <p className="text-sm text-gray-400 leading-relaxed mt-1">{r.descripcion}</p>
+                    <p className="text-sm text-gray-400 leading-relaxed mt-1">
+                      <EditableT k={`rol-usuario.roles.${r.key}.descripcion`} multiline>{r.descripcion}</EditableT>
+                    </p>
                   </div>
                 </div>
               </motion.div>

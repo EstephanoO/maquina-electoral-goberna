@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { Trophy } from "lucide-react";
 import { SlideShell } from "./SlideShell";
 import { EditableText } from "../EditableText";
+import { EditableT } from "../EditableT";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
 interface Props {
@@ -36,6 +37,7 @@ export function SlideVotosParaGanar({ ctx }: Props) {
 
   return (
     <SlideShell
+      slideId="votos-para-ganar"
       kicker="Análisis electoral · Slide 4"
       title={`¿CUÁNTOS VOTOS HACEN FALTA PARA GANAR EN ${jurisdiccion.toUpperCase()}?`}
     >
@@ -46,9 +48,9 @@ export function SlideVotosParaGanar({ ctx }: Props) {
           transition={{ duration: 0.5 }}
           className="text-base sm:text-lg text-gray-300 max-w-3xl mb-8 leading-relaxed"
         >
-          La pregunta más concreta de toda campaña: ¿cuál es el número?
-          Aquí lo calculamos a partir del padrón electoral y del histórico
-          del cargo en {jurisdiccion}.
+          <EditableT k="votos-para-ganar.intro" multiline>
+            La pregunta más concreta de toda campaña: ¿cuál es el número? Aquí lo calculamos a partir del padrón electoral y del histórico del cargo.
+          </EditableT>
         </motion.p>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
@@ -62,7 +64,7 @@ export function SlideVotosParaGanar({ ctx }: Props) {
             <div className="flex items-center gap-2 mb-3">
               <Trophy className="size-5 text-amber-400" />
               <span className="text-[10px] uppercase tracking-[0.25em] text-amber-400 font-bold">
-                Última elección
+                <EditableT k="votos-para-ganar.cards.ganador.kicker">Última elección</EditableT>
               </span>
             </div>
             <div className="text-5xl sm:text-6xl font-black text-amber-400 leading-none mb-1">
@@ -75,11 +77,11 @@ export function SlideVotosParaGanar({ ctx }: Props) {
               />
             </div>
             <div className="text-[11px] uppercase tracking-[0.2em] text-white/60 font-bold">
-              Votos del ganador
+              <EditableT k="votos-para-ganar.cards.ganador.label">Votos del ganador</EditableT>
             </div>
             <div className="mt-4 pt-3 border-t border-white/10">
               <div className="text-[10px] uppercase tracking-[0.2em] text-white/50 font-bold mb-1">
-                Quién ganó
+                <EditableT k="votos-para-ganar.cards.ganador.quien">Quién ganó</EditableT>
               </div>
               <div className="text-base text-white font-bold">{ganadorAnterior}</div>
               <div className="text-sm text-amber-400 font-bold mt-1">

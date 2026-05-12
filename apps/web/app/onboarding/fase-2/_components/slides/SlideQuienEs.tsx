@@ -6,6 +6,7 @@ import { Construction, Globe, Search, MessageSquare, Newspaper } from "lucide-re
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
 import { EditableText } from "../EditableText";
+import { EditableT } from "../EditableT";
 import { useEditing } from "../EditingContext";
 import { SlideShell } from "./SlideShell";
 
@@ -23,13 +24,15 @@ export function SlideQuienEs({ ctx }: SlideQuienEsProps) {
 
   return (
     <SlideShell
+      slideId="quien-es"
       kicker="05 · Diagnóstico de imagen pública"
       title={`Cómo te ven en ${jurisdiccionLabelOrFallback(ctx)}`}
     >
       <div className="space-y-6">
         <p className="text-base sm:text-lg text-gray-300 max-w-3xl">
-          Auditamos tu posicionamiento digital — Google, redes sociales, prensa
-          local — para entender qué lee de ti un votante que recién te conoce.
+          <EditableT k="quien-es.intro" multiline>
+            Auditamos tu posicionamiento digital — Google, redes sociales, prensa local — para entender qué lee de ti un votante que recién te conoce.
+          </EditableT>
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -123,7 +126,7 @@ export function SlideQuienEs({ ctx }: SlideQuienEsProps) {
               </div>
               <div>
                 <p className="text-amber-400 font-semibold mb-1">
-                  Próximamente: Auditoría digital automática
+                  <EditableT k="quien-es.proximamente.titulo">Próximamente: Auditoría digital automática</EditableT>
                 </p>
                 <p className="text-sm text-gray-300 leading-relaxed">
                   Vamos a buscar &ldquo;{firstName}&rdquo; en Google, mapear tus

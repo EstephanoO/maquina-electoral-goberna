@@ -2,6 +2,8 @@
 
 import { motion } from "motion/react";
 
+import { EditableT } from "../EditableT";
+
 export function SlideCover() {
   return (
     <div className="flex-1 flex items-center justify-center min-h-[calc(100vh-180px)]">
@@ -39,7 +41,7 @@ export function SlideCover() {
           transition={{ delay: 0.4, duration: 0.7 }}
           className="text-6xl sm:text-8xl md:text-9xl font-black text-white tracking-tighter"
         >
-          GOBERNA
+          <EditableT k="cover.title">GOBERNA</EditableT>
         </motion.h1>
 
         <motion.div
@@ -55,7 +57,7 @@ export function SlideCover() {
           transition={{ delay: 0.85 }}
           className="mt-5 text-lg sm:text-xl uppercase tracking-[0.5em] text-amber-400 font-semibold"
         >
-          Consultoría Política
+          <EditableT k="cover.subtitle">Consultoría Política</EditableT>
         </motion.p>
 
         <motion.p
@@ -64,7 +66,7 @@ export function SlideCover() {
           transition={{ delay: 1.1 }}
           className="mt-16 text-xs sm:text-sm uppercase tracking-[0.4em] text-gray-400"
         >
-          Propuesta técnica · Análisis estratégico
+          <EditableT k="cover.footer">Propuesta técnica · Análisis estratégico</EditableT>
         </motion.p>
       </motion.div>
     </div>

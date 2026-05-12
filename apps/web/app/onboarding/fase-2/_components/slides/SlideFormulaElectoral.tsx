@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { Tv, Smartphone, Footprints } from "lucide-react";
 import { SlideShell } from "./SlideShell";
 import { EditableText } from "../EditableText";
+import { EditableT } from "../EditableT";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
 interface Props {
@@ -57,7 +58,7 @@ export function SlideFormulaElectoral({ ctx }: Props) {
       : null;
   const justificacion = fe?.justificacion;
   return (
-    <SlideShell kicker="Estrategia · Fórmula" title="¿POR DÓNDE QUIERES LUCHAR?">
+    <SlideShell slideId="formula-electoral" kicker="Estrategia · Fórmula" title="¿POR DÓNDE QUIERES LUCHAR?">
       <div className="px-2 sm:px-4">
         <motion.p
           initial={{ opacity: 0, y: 10 }}
@@ -65,8 +66,9 @@ export function SlideFormulaElectoral({ ctx }: Props) {
           transition={{ duration: 0.5 }}
           className="text-base sm:text-lg text-gray-300 max-w-3xl mb-8 leading-relaxed"
         >
-          Toda campaña ganadora elige cómo distribuir sus recursos entre tres frentes.
-          Goberna te ayuda a calibrar la mezcla según tu jurisdicción, tu presupuesto y tu rival.
+          <EditableT k="formula-electoral.intro" multiline>
+            Toda campaña ganadora elige cómo distribuir sus recursos entre tres frentes. Goberna te ayuda a calibrar la mezcla según tu jurisdicción, tu presupuesto y tu rival.
+          </EditableT>
         </motion.p>
 
         {/* 3 columnas */}
@@ -96,21 +98,23 @@ export function SlideFormulaElectoral({ ctx }: Props) {
                       className="text-3xl font-black tracking-tight uppercase leading-none"
                       style={{ color: f.color }}
                     >
-                      {f.titulo}
+                      <EditableT k={`formula-electoral.frentes.${f.key}.titulo`}>{f.titulo}</EditableT>
                     </div>
                     <div className="text-[10px] uppercase tracking-[0.25em] text-white/70 font-semibold mt-0.5">
-                      {f.subtitulo}
+                      <EditableT k={`formula-electoral.frentes.${f.key}.subtitulo`}>{f.subtitulo}</EditableT>
                     </div>
                   </div>
                 </div>
 
                 {/* Body */}
                 <div className="px-5 py-4">
-                  <p className="text-sm text-gray-300 leading-relaxed mb-4">{f.descripcion}</p>
+                  <p className="text-sm text-gray-300 leading-relaxed mb-4">
+                    <EditableT k={`formula-electoral.frentes.${f.key}.descripcion`} multiline>{f.descripcion}</EditableT>
+                  </p>
 
                   {/* Sugerido (placeholder hasta que el consultor lo defina) */}
                   <div className="text-[10px] uppercase tracking-[0.25em] text-amber-400/70 font-bold mb-1">
-                    Mezcla sugerida
+                    <EditableT k="formula-electoral.mezcla-sugerida">Mezcla sugerida</EditableT>
                   </div>
                   <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                     <motion.div
@@ -146,7 +150,7 @@ export function SlideFormulaElectoral({ ctx }: Props) {
         >
           <div>
             <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80 font-bold mb-1">
-              Presupuesto total (PEN)
+              <EditableT k="formula-electoral.presupuesto.label">Presupuesto total (PEN)</EditableT>
             </div>
             <div className="text-2xl font-black text-white">
               {presupuestoTotal ? (
@@ -169,7 +173,7 @@ export function SlideFormulaElectoral({ ctx }: Props) {
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80 font-bold mb-1">
-              Lógica de la mezcla
+              <EditableT k="formula-electoral.logica.label">Lógica de la mezcla</EditableT>
             </div>
             <div className="text-base text-white leading-snug">
               <EditableText

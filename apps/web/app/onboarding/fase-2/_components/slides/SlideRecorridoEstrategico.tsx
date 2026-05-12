@@ -2,6 +2,7 @@
 
 import { motion } from "motion/react";
 import { SlideShell } from "./SlideShell";
+import { EditableT } from "../EditableT";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
 interface Props {
@@ -64,7 +65,7 @@ export function SlideRecorridoEstrategico({ ctx }: Props) {
       : d;
   });
   return (
-    <SlideShell kicker="Plan de campaña" title="EL RECORRIDO HASTA LAS URNAS">
+    <SlideShell slideId="recorrido-estrategico" kicker="Plan de campaña" title="EL RECORRIDO HASTA LAS URNAS">
       <div className="px-2 sm:px-4">
         <motion.p
           initial={{ opacity: 0, y: 10 }}
@@ -72,8 +73,9 @@ export function SlideRecorridoEstrategico({ ctx }: Props) {
           transition={{ duration: 0.5 }}
           className="text-base sm:text-lg text-gray-300 max-w-3xl mb-10 leading-relaxed"
         >
-          Una campaña tiene 5 fases. Cada una tiene su mezcla de aire, mar y tierra.
-          Saltarse una fase cuesta votos. Goberna te acompaña en las cinco.
+          <EditableT k="recorrido-estrategico.intro" multiline>
+            Una campaña tiene 5 fases. Cada una tiene su mezcla de aire, mar y tierra. Saltarse una fase cuesta votos. Goberna te acompaña en las cinco.
+          </EditableT>
         </motion.p>
 
         {/* Línea de tiempo horizontal en desktop, vertical en móvil */}
@@ -97,14 +99,16 @@ export function SlideRecorridoEstrategico({ ctx }: Props) {
                   </div>
                   <div className="md:mt-3">
                     <div className="text-[10px] uppercase tracking-[0.25em] text-amber-400 font-bold">
-                      {h.cuando}
+                      <EditableT k={`recorrido-estrategico.hitos.${h.key}.cuando`}>{h.cuando}</EditableT>
                     </div>
                     <div className="text-xl font-black text-white uppercase mt-0.5">
-                      {h.label}
+                      <EditableT k={`recorrido-estrategico.hitos.${h.key}.label`}>{h.label}</EditableT>
                     </div>
                   </div>
                 </div>
-                <p className="text-sm text-gray-400 leading-relaxed">{h.detalle}</p>
+                <p className="text-sm text-gray-400 leading-relaxed">
+                  <EditableT k={`recorrido-estrategico.hitos.${h.key}.detalle`} multiline>{h.detalle}</EditableT>
+                </p>
               </motion.div>
             ))}
           </div>
@@ -116,7 +120,7 @@ export function SlideRecorridoEstrategico({ ctx }: Props) {
           transition={{ delay: 1 }}
           className="mt-10 text-center text-sm sm:text-base text-amber-400 uppercase tracking-[0.3em] font-bold"
         >
-          De aquí al día de la elección, paso a paso, con {meta}
+          <EditableT k="recorrido-estrategico.cierre">{`De aquí al día de la elección, paso a paso, con ${meta}`}</EditableT>
         </motion.p>
       </div>
     </SlideShell>

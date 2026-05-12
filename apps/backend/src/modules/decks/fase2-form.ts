@@ -212,6 +212,13 @@ export const consultorFormFase2Schema = z
         }),
       )
       .optional(),
+
+    // ── Text overrides: cualquier texto hardcoded del template ──
+    // El consultor puede sobrescribir kickers, títulos, pilares, párrafos
+    // intro, etc. Cada texto tiene un key único tipo "slideId.path".
+    // Si está vacío, el slide muestra el default hardcoded. Permite
+    // personalizar 100% el deck por candidato sin tocar el código.
+    text_overrides: z.record(z.string(), z.string()).optional(),
   })
   .partial();
 

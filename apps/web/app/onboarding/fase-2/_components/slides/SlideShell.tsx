@@ -2,6 +2,8 @@
 
 import { motion } from "motion/react";
 
+import { EditableT } from "../EditableT";
+
 interface SlideShellProps {
   /** Header navy band con título — estilo "RESULTADOS PROVINCIALES, 2022" del PDF. */
   title?: string;
@@ -9,10 +11,21 @@ interface SlideShellProps {
   kicker?: string;
   /** Si true, omite header y centra el contenido full-screen. */
   bare?: boolean;
+  /**
+   * ID del slide — base para los keys de text_overrides ("<slideId>.title",
+   * "<slideId>.kicker"). Si no se provee, los textos NO son editables.
+   */
+  slideId?: string;
   children: React.ReactNode;
 }
 
-export function SlideShell({ title, kicker, bare = false, children }: SlideShellProps) {
+export function SlideShell({
+  title,
+  kicker,
+  bare = false,
+  slideId,
+  children,
+}: SlideShellProps) {
   if (bare) {
     return (
       <div className="flex-1 flex items-center justify-center min-h-[calc(100vh-180px)]">
@@ -32,11 +45,15 @@ export function SlideShell({ title, kicker, bare = false, children }: SlideShell
         <div className="bg-gradient-to-r from-[#0a1e4a] via-[#0d2861] to-[#0a1e4a] px-6 sm:px-12 py-5 sm:py-7">
           {kicker && (
             <p className="text-[10px] sm:text-xs uppercase tracking-[0.4em] text-amber-400/80 font-semibold mb-1.5">
-              {kicker}
+              {slideId ? <EditableT k={`${slideId}.kicker`}>{kicker}</EditableT> : kicker}
             </p>
           )}
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-white uppercase tracking-tight leading-tight">
-            {title}
+            {slideId && title ? (
+              <EditableT k={`${slideId}.title`}>{title}</EditableT>
+            ) : (
+              title
+            )}
           </h1>
         </div>
         <div className="h-1 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400" />
