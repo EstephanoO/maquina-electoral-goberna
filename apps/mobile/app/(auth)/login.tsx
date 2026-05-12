@@ -26,19 +26,20 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useApp } from '@/lib/app-context';
+import { Brand, Neutral, Status, FontFamily } from '@/constants/theme';
 
-// ─── Design Tokens ─────────────────────────────────────────────
-const BRAND_BLUE = '#163960';
-const BRAND_YELLOW = '#FFC800';
-const WHATSAPP_GREEN = '#25D366';
-const TEXT_DARK = '#163960';
-const TEXT_MUTED = 'rgba(22, 57, 96, 0.5)';
-const BORDER = '#E1E6F0';
-const BORDER_FOCUS = '#4A8AC4';
-const BG_INPUT = '#F8FAFC';
-const SUCCESS = '#22c55e';
-const FONT = 'Montserrat-Bold';
-const FONT_REGULAR = 'Montserrat-Regular';
+// ─── Design Tokens (aliases locales para no romper estilos abajo) ──
+const BRAND_BLUE = Brand.blue;
+const BRAND_YELLOW = Brand.yellow;
+const WHATSAPP_GREEN = Brand.whatsapp;
+const TEXT_DARK = Neutral.textPrimary;
+const TEXT_MUTED = Neutral.textMuted;
+const BORDER = Neutral.border;
+const BORDER_FOCUS = Neutral.borderFocus;
+const BG_INPUT = Neutral.bg;
+const SUCCESS = Status.success;
+const FONT = FontFamily.bold;
+const FONT_REGULAR = FontFamily.regular;
 
 const PHONE_REGEX = /^9\d{8}$/;
 const CODE_REGEX = /^\d{6}$/;

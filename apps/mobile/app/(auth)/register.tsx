@@ -31,20 +31,21 @@ import { useApp } from '@/lib/app-context';
 import { validateAccessCode } from '@/lib/api';
 import type { ValidateAccessCodeResponse } from '@/lib/types';
 import RegionPicker from '@/components/RegionPicker';
+import { Brand, Neutral, Status, FontFamily } from '@/constants/theme';
 
-// ─── Design Tokens ─────────────────────────────────────────────
-const BRAND_BLUE = '#163960';
-const BRAND_YELLOW = '#FFC800';
-const TEXT_DARK = '#163960';
-const TEXT_MUTED = 'rgba(22, 57, 96, 0.5)';
-const BORDER = '#E1E6F0';
-const BORDER_FOCUS = '#4A8AC4';
-const BG_INPUT = '#F8FAFC';
-const SUCCESS = '#22c55e';
-const SUCCESS_BG = '#f0fdf4';
-const AMBER = '#f59e0b';
-const FONT = 'Montserrat-Bold';
-const FONT_REGULAR = 'Montserrat-Regular';
+// ─── Design Tokens (aliases locales para no romper estilos abajo) ──
+const BRAND_BLUE = Brand.blue;
+const BRAND_YELLOW = Brand.yellow;
+const TEXT_DARK = Neutral.textPrimary;
+const TEXT_MUTED = Neutral.textMuted;
+const BORDER = Neutral.border;
+const BORDER_FOCUS = Neutral.borderFocus;
+const BG_INPUT = Neutral.bg;
+const SUCCESS = Status.success;
+const SUCCESS_BG = Status.successBg;
+const AMBER = Status.warning;
+const FONT = FontFamily.bold;
+const FONT_REGULAR = FontFamily.regular;
 
 const PHONE_REGEX = /^9\d{8}$/;
 const CODE_REGEX = /^[A-Z0-9]{4}$/;
@@ -70,7 +71,6 @@ export default function RegisterScreen() {
     ValidateAccessCodeResponse['campaign'] | null
   >(null);
   const [validatingCode, setValidatingCode] = useState(false);
-  const [validatingAttempt, setValidatingAttempt] = useState(0);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const codeInputRef = useRef<TextInput | null>(null);
@@ -123,13 +123,11 @@ export default function RegisterScreen() {
 
     async function tryValidate() {
       setValidatingCode(true);
-      setValidatingAttempt(0);
       setCodeError(null);
       setAccessCodeCampaign(null);
 
       for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
         if (cancelled) return;
-        setValidatingAttempt(attempt);
 
         if (RETRY_DELAYS[attempt] > 0) {
           await new Promise<void>((resolve) => {
@@ -520,11 +518,7 @@ export default function RegisterScreen() {
                 {validatingCode && (
                   <View style={styles.codeStatusRow}>
                     <ActivityIndicator size="small" color={AMBER} />
-                    <Text style={styles.hintAmber}>
-                      {validatingAttempt === 0
-                        ? 'Verificando código...'
-                        : `Reintentando (${validatingAttempt}/2)...`}
-                    </Text>
+                    <Text style={styles.hintAmber}>Verificando código...</Text>
                   </View>
                 )}
                 {codeError && !validatingCode && (

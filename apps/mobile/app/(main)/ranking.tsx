@@ -53,7 +53,10 @@ const MEDALS: Record<number, { bg: string; fg: string }> = {
 
 // ─── Progress Bar ───────────────────────────────────────────────
 
-const ProgressBar = memo(function ProgressBar({
+// ProgressBar: trivial render — memo overhead > re-render cost. Su parent
+// (AgentRow/DeptRow) ya está memoized, si llega un re-render acá es porque
+// realmente cambió ratio/color y tiene que repintarse igual.
+function ProgressBar({
   ratio,
   color,
   height = 4,
@@ -73,7 +76,7 @@ const ProgressBar = memo(function ProgressBar({
       />
     </View>
   );
-});
+}
 
 const progStyles = StyleSheet.create({
   track: {
@@ -89,7 +92,8 @@ const progStyles = StyleSheet.create({
 
 // ─── Hero KPI Card ──────────────────────────────────────────────
 
-const HeroKPI = memo(function HeroKPI({
+// HeroKPI: se renderiza una sola vez al mount. Memo no aporta nada.
+function HeroKPI({
   agentsActiveToday,
   registrosHoy,
   departamento,
@@ -138,7 +142,7 @@ const HeroKPI = memo(function HeroKPI({
       </View>
     </View>
   );
-});
+}
 
 // ─── Hero Empty State ───────────────────────────────────────────
 

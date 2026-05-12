@@ -45,6 +45,7 @@ import { appEvents } from '@/lib/events';
 import { latLonToUtm } from '@/lib/utm';
 import DistritoPicker from '@/components/DistritoPicker';
 import type { FormField, UtmData, SelectedDistrito } from '@/lib/types';
+import { Neutral, Status, FontFamily } from '@/constants/theme';
 
 // Simple UUID generator (crypto.randomUUID may not be available in RN)
 function generateClientId(): string {
@@ -54,11 +55,13 @@ function generateClientId(): string {
   return `${timestamp}-${random}-${random2}`;
 }
 
-const FONT = 'Montserrat-Bold';
-const BORDER = '#E1E6F0';
+const FONT = FontFamily.bold;
+const BORDER = Neutral.border;
+// Texto muted más oscuro (0.7 alpha) — caso especial vs Neutral.textMuted que es 0.5
 const TEXT_MUTED = 'rgba(22, 57, 96, 0.7)';
-const ERROR_RED = '#DC2626';
-const AMBER = '#F59E0B';
+const ERROR_RED = Status.danger;
+const AMBER = Status.warning;
+// Tonos de fondo amber custom (no en theme común porque solo se usa acá)
 const AMBER_BG = '#FFFBEB';
 
 // Peru phone validation: 9 digits starting with 9
