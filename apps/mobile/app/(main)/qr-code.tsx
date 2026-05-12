@@ -135,6 +135,23 @@ export default function QrCodeScreen() {
           <Text style={styles.statLabel}>Escaneos</Text>
         </View>
       </Animated.View>
+
+      {/* Manual capture CTA — para registrar el dato sin esperar que escaneen */}
+      <Animated.View entering={FadeIn.delay(500).duration(500)} style={styles.manualWrapper}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.manualBtn,
+            { backgroundColor: secondary, opacity: pressed ? 0.85 : 1 },
+          ]}
+          onPress={() => router.push('/(main)/new-form')}
+          accessibilityLabel="Registrar dato manualmente"
+        >
+          <MaterialIcons name="edit-note" size={22} color={primary} />
+          <Text style={[styles.manualBtnText, { color: primary }]}>
+            Registrar manualmente
+          </Text>
+        </Pressable>
+      </Animated.View>
     </SafeAreaView>
   );
 }
@@ -282,5 +299,30 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginTop: 2,
+  },
+
+  manualWrapper: {
+    width: '100%',
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 24,
+  },
+  manualBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  manualBtnText: {
+    fontSize: 14,
+    fontFamily: FONT,
+    letterSpacing: 0.5,
   },
 });
