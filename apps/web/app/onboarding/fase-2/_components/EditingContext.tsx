@@ -81,6 +81,14 @@ export function EditingProvider({
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Debug — visible en consola browser para diagnosticar por qué un texto
+  // no parece editable. Triggerea solo cuando cambia el flag editing, no
+  // en cada render.
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log("[GobernaEdit] EditingProvider editing=%s slug=%s", editing, slug);
+  }, [editing, slug]);
+
   // Re-init si cambia el slug (admin abre otro candidato) o el initialForm
   // (carga inicial completa). NO reseteamos cuando solo editamos.
   const slugRef = useRef(slug);

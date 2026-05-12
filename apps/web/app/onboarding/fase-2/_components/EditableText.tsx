@@ -11,10 +11,17 @@
  *   - numérico (`numeric`): coerce a Number en el save
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 
 import { useEditing } from "./EditingContext";
 import type { ConsultorFormFase2 } from "@/lib/onboarding-api";
+
+// Contador global para que se vea desde consola cuántos EditableText
+// se renderizan en cada cambio de slide.
+let __editableTextRenderCount = 0;
+if (typeof window !== "undefined") {
+  (window as unknown as { __gobernaEditCount?: number }).__gobernaEditCount = 0;
+}
 
 type Section = keyof ConsultorFormFase2;
 
@@ -46,8 +53,28 @@ export function EditableText({
 }: Props) {
   const { editing, patchField } = useEditing();
   const ref = useRef<HTMLSpanElement>(null);
+  const myId = useId();
   const displayed =
     value !== undefined && value !== null && value !== "" ? String(value) : "";
+
+  // Debug — cada vez que un EditableText monta o cambia su flag editing,
+  // logueamos a consola. Permite verificar que el contexto se está
+  // propagando y qué campos están live editables.
+  useEffect(() => {
+    __editableTextRenderCount += 1;
+    if (typeof window !== "undefined") {
+      const w = window as unknown as { __gobernaEditCount?: number };
+      w.__gobernaEditCount = (w.__gobernaEditCount ?? 0) + (editing ? 1 : 0);
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      "[GobernaEdit] EditableText %s.%s editing=%s value=%s",
+      section,
+      field,
+      editing,
+      displayed.slice(0, 30) || "(empty)",
+    );
+  }, [editing, section, field, displayed]);
 
   // Sincronizar el DOM con el valor entrante cuando no está focuseado.
   // Si lo hiciéramos siempre se rompería el cursor al editar.
