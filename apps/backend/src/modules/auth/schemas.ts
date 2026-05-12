@@ -95,6 +95,14 @@ export const whatsappRegisterSchema = z.object({
   { message: "exactly one of invitation_code, access_code, campaign_id requerido", path: ["campaign_id"] },
 );
 
+/**
+ * Join-campaign schema — para users autenticados sin campaña asignada.
+ * Recibe access_code (4 chars) y crea/reactiva user_campaign como agente_campo.
+ */
+export const joinCampaignSchema = z.object({
+  access_code: z.string().trim().toUpperCase().min(4, "código de 4 caracteres").max(4),
+});
+
 export const changePasswordSchema = z.object({
   current_password: z.string().min(1, "password actual requerido"),
   new_password: z.string().min(8, "nueva password debe tener al menos 8 caracteres"),
@@ -122,3 +130,4 @@ export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type WhatsappSendInput = z.infer<typeof whatsappSendSchema>;
 export type WhatsappVerifyLoginInput = z.infer<typeof whatsappVerifyLoginSchema>;
 export type WhatsappRegisterInput = z.infer<typeof whatsappRegisterSchema>;
+export type JoinCampaignInput = z.infer<typeof joinCampaignSchema>;

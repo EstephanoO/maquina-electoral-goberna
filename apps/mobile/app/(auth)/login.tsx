@@ -1,13 +1,19 @@
 /**
- * Login Screen — dos métodos: email+password (legacy) o WhatsApp OTP.
+ * Login Screen — flujo OTP-only unificado.
  *
- * Tabs:
- *   1. "Contraseña" → identifier (email o teléfono) + password → /api/auth/login
- *   2. "WhatsApp"   → phone → /api/auth/whatsapp/send → code → /api/auth/whatsapp/verify
+ * Estados:
+ *   1. 'phone'        → ingresa teléfono, dispara OTP
+ *   2. 'code'         → ingresa OTP de 6 dígitos
+ *   3. 'register'     → caso "user no existe" (412): pide nombre + región +
+ *                       access_code y completa el registro inline
+ *   4. 'link'         → caso "user existe sin campaña" (needs_campaign):
+ *                       pide access_code para unirse a una campaña
  *
- * 412 USER_NOT_FOUND en el flujo WhatsApp redirige a /register.
+ * El RouterGuard de _layout.tsx redirige al dashboard cuando auth.status
+ * pasa a 'active'.
  */
 
+import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -22,13 +28,13 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 
+import RegionPicker from '@/components/RegionPicker';
+import { Brand, FontFamily, Neutral, Status } from '@/constants/theme';
+import { validateAccessCode } from '@/lib/api';
 import { useApp } from '@/lib/app-context';
-import { Brand, Neutral, Status, FontFamily } from '@/constants/theme';
+import type { ValidateAccessCodeResponse } from '@/lib/types';
 
-// ─── Design Tokens (aliases locales para no romper estilos abajo) ──
 const BRAND_BLUE = Brand.blue;
 const BRAND_YELLOW = Brand.yellow;
 const WHATSAPP_GREEN = Brand.whatsapp;
@@ -42,71 +48,114 @@ const FONT = FontFamily.bold;
 const FONT_REGULAR = FontFamily.regular;
 
 const PHONE_REGEX = /^9\d{8}$/;
-const CODE_REGEX = /^\d{6}$/;
+const OTP_REGEX = /^\d{6}$/;
+const ACCESS_CODE_REGEX = /^[A-Z0-9]{4}$/;
 const RESEND_COOLDOWN_S = 60;
 
-type Method = 'password' | 'whatsapp';
-type WaPhase = 'phone' | 'code';
+type Phase = 'phone' | 'code' | 'register' | 'link';
 
 export default function LoginScreen() {
-  const router = useRouter();
-  const { login, whatsappSend, loginWithWhatsapp } = useApp();
+  const {
+    auth,
+    whatsappSend,
+    loginWithWhatsapp,
+    registerWithWhatsapp,
+    joinCampaign,
+  } = useApp();
 
-  const [method, setMethod] = useState<Method>('whatsapp');
+  // Si el AppContext arranca con un user en needs_campaign (ej. relogin después
+  // de haber cerrado app sin asignar campaña), saltamos directo a 'link'.
+  const initialPhase: Phase = auth.status === 'needs_campaign' ? 'link' : 'phone';
+  const [phase, setPhase] = useState<Phase>(initialPhase);
 
-  // ── Password method state
-  const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState('');
-  const [pwFocused, setPwFocused] = useState<'id' | 'pw' | null>(null);
-  const [showPw, setShowPw] = useState(false);
-
-  // ── WhatsApp method state
-  const [waPhase, setWaPhase] = useState<WaPhase>('phone');
+  // Phone state
   const [phone, setPhone] = useState('');
-  const [code, setCode] = useState('');
   const [phoneFocused, setPhoneFocused] = useState(false);
-  const [codeFocused, setCodeFocused] = useState(false);
-  const [resendIn, setResendIn] = useState(0);
-  const codeInputRef = useRef<TextInput | null>(null);
 
-  // ── Common
+  // OTP state
+  const [otp, setOtp] = useState('');
+  const [otpFocused, setOtpFocused] = useState(false);
+  const [resendIn, setResendIn] = useState(0);
+  const otpInputRef = useRef<TextInput | null>(null);
+
+  // Register state
+  const [fullName, setFullName] = useState('');
+  const [nameFocused, setNameFocused] = useState(false);
+  const [region, setRegion] = useState<string | null>(null);
+
+  // Link/register shared: access_code + live validation
+  const [accessCode, setAccessCode] = useState('');
+  const accessCodeInputRef = useRef<TextInput | null>(null);
+  const [accessCodeCampaign, setAccessCodeCampaign] = useState<
+    ValidateAccessCodeResponse['campaign'] | null
+  >(null);
+  const [validatingCode, setValidatingCode] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
 
-  // Resend cooldown
+  // ── Resend cooldown ─────────────────────────────────────────
   useEffect(() => {
     if (resendIn <= 0) return;
     const t = setInterval(() => setResendIn((s) => Math.max(0, s - 1)), 1000);
     return () => clearInterval(t);
   }, [resendIn]);
 
+  // ── Auto-focus OTP when entering 'code' phase ───────────────
   useEffect(() => {
-    if (method === 'whatsapp' && waPhase === 'code') {
-      const t = setTimeout(() => codeInputRef.current?.focus(), 200);
+    if (phase === 'code') {
+      const t = setTimeout(() => otpInputRef.current?.focus(), 200);
       return () => clearTimeout(t);
     }
-  }, [method, waPhase]);
+  }, [phase]);
 
-  // ── Password login ─────────────────────────────────────────────
-  const handlePasswordLogin = async () => {
-    const id = identifier.trim();
-    if (!id) return Alert.alert('Faltan datos', 'Ingresá tu email o teléfono.');
-    if (password.length < 1) return Alert.alert('Faltan datos', 'Ingresá tu contraseña.');
-
-    setLoading(true);
-    const result = await login({ identifier: id, password });
-    setLoading(false);
-
-    if (!result.ok) {
-      Alert.alert('Error', result.error ?? 'No pudimos iniciar sesión.');
+  // ── Sync to context when boot lands on needs_campaign ───────
+  useEffect(() => {
+    if (auth.status === 'needs_campaign' && phase === 'phone') {
+      setPhase('link');
     }
-    // Success: RouterGuard redirects
-  };
+  }, [auth.status, phase]);
 
-  // ── WhatsApp send ──────────────────────────────────────────────
-  const handleWaSend = async () => {
+  // ── Live access_code validation (fases register + link) ─────
+  useEffect(() => {
+    if (phase !== 'register' && phase !== 'link') return;
+
+    const clean = accessCode.replace(/[^A-Z0-9]/g, '').toUpperCase().slice(0, 4);
+    if (clean.length < 4) {
+      setAccessCodeCampaign(null);
+      setCodeError(null);
+      setValidatingCode(false);
+      return;
+    }
+
+    let cancelled = false;
+    setValidatingCode(true);
+    setCodeError(null);
+    setAccessCodeCampaign(null);
+
+    const timer = setTimeout(async () => {
+      const result = await validateAccessCode(clean);
+      if (cancelled) return;
+      setValidatingCode(false);
+      if (result.ok && result.data) {
+        setAccessCodeCampaign(result.data.campaign);
+      } else {
+        setCodeError('Código inválido. Verificá con tu coordinador.');
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [accessCode, phase]);
+
+  // ── Handlers ────────────────────────────────────────────────
+  const handleSendOtp = async () => {
     const trimmed = phone.trim();
     if (!PHONE_REGEX.test(trimmed)) {
-      return Alert.alert('Número inválido', 'Ingresá tu número de 9 dígitos (ej: 987654321).');
+      Alert.alert('Número inválido', 'Ingresá un número de 9 dígitos que empiece con 9.');
+      return;
     }
     setLoading(true);
     const result = await whatsappSend(trimmed);
@@ -116,12 +165,12 @@ export default function LoginScreen() {
       Alert.alert('Error', result.error ?? 'No pudimos enviar el código.');
       return;
     }
-    setCode('');
-    setWaPhase('code');
+    setOtp('');
     setResendIn(RESEND_COOLDOWN_S);
+    setPhase('code');
   };
 
-  const handleWaResend = async () => {
+  const handleResendOtp = async () => {
     if (resendIn > 0 || loading) return;
     const result = await whatsappSend(phone.trim());
     if (!result.ok) {
@@ -131,47 +180,199 @@ export default function LoginScreen() {
     setResendIn(RESEND_COOLDOWN_S);
   };
 
-  // ── WhatsApp verify ────────────────────────────────────────────
-  const handleWaVerify = async () => {
-    const trimmed = code.trim();
-    if (!CODE_REGEX.test(trimmed)) {
-      return Alert.alert('Código inválido', 'Ingresá los 6 dígitos del WhatsApp.');
+  const handleVerifyOtp = async () => {
+    if (!OTP_REGEX.test(otp.trim())) {
+      Alert.alert('Código inválido', 'Ingresá los 6 dígitos del WhatsApp.');
+      return;
+    }
+    setLoading(true);
+    const result = await loginWithWhatsapp(phone.trim(), otp.trim());
+    setLoading(false);
+
+    if (result.ok) {
+      // Success — AppContext decide si entra al dashboard o pasa a 'needs_campaign'.
+      // Aquí solo movemos la fase local si el backend nos dijo needs_campaign;
+      // si entró a 'active', RouterGuard redirige y este screen se desmonta.
+      // useEffect arriba reacciona a auth.status === 'needs_campaign'.
+      return;
+    }
+
+    const noUser =
+      result.status === 412 ||
+      result.code === 'USER_NOT_FOUND' ||
+      result.code === 'AUTH_USER_NOT_FOUND';
+    if (noUser) {
+      // El usuario no existe — pasamos a registro inline. Reutilizamos el OTP
+      // recién verificado en /whatsapp/register (mismo flow del backend).
+      setPhase('register');
+      return;
+    }
+    Alert.alert('Error', result.error ?? 'No pudimos verificar el código.');
+  };
+
+  const handleRegister = async () => {
+    if (fullName.trim().length < 3) {
+      Alert.alert('Nombre requerido', 'Ingresá tu nombre completo (mínimo 3 caracteres).');
+      return;
+    }
+    if (!region) {
+      Alert.alert('Región requerida', 'Seleccioná tu departamento.');
+      return;
+    }
+    const cleanCode = accessCode.replace(/[^A-Z0-9]/g, '').toUpperCase().slice(0, 4);
+    if (!ACCESS_CODE_REGEX.test(cleanCode)) {
+      Alert.alert('Código inválido', 'Ingresá el código de 4 caracteres que te dio tu coordinador.');
+      return;
     }
 
     setLoading(true);
-    const result = await loginWithWhatsapp(phone.trim(), trimmed);
+    const result = await registerWithWhatsapp({
+      phone: phone.trim(),
+      code: otp.trim(),
+      full_name: fullName.trim(),
+      region,
+      email: `${phone.trim()}@goberna.pe`,
+      access_code: cleanCode,
+    });
     setLoading(false);
 
     if (!result.ok) {
-      const noUser =
-        result.status === 412 ||
-        result.code === 'USER_NOT_FOUND' ||
-        result.code === 'AUTH_USER_NOT_FOUND';
-      if (noUser) {
-        Alert.alert(
-          'Número no registrado',
-          'Este número aún no tiene cuenta. Registrate con el código que te dio tu coordinador.',
-          [
-            { text: 'Registrarme', onPress: () => router.replace('/(auth)/register') },
-            { text: 'Cancelar', style: 'cancel' },
-          ],
-        );
+      if (result.code === 'ACCESS_CODE_NOT_FOUND') {
+        Alert.alert('Código inválido', 'El código de acceso no existe. Verificá con tu coordinador.');
         return;
       }
-      Alert.alert('Error', result.error ?? 'No pudimos iniciar sesión.');
+      if (result.code === 'AUTH_PHONE_EXISTS' || result.code === 'USER_EXISTS') {
+        Alert.alert('Cuenta ya registrada', 'Este número ya tiene cuenta. Probá iniciar sesión.');
+        setPhase('phone');
+        return;
+      }
+      Alert.alert('Error', result.error ?? 'No pudimos crear la cuenta.');
     }
+    // Success: AppContext pasa a 'active' (o 'needs_campaign' como fallback) y
+    // RouterGuard redirige al dashboard.
+  };
+
+  const handleJoinCampaign = async () => {
+    const cleanCode = accessCode.replace(/[^A-Z0-9]/g, '').toUpperCase().slice(0, 4);
+    if (!ACCESS_CODE_REGEX.test(cleanCode)) {
+      Alert.alert('Código inválido', 'Ingresá el código de 4 caracteres que te dio tu coordinador.');
+      return;
+    }
+    setLoading(true);
+    const result = await joinCampaign(cleanCode);
+    setLoading(false);
+
+    if (!result.ok) {
+      if (result.code === 'ACCESS_CODE_NOT_FOUND') {
+        Alert.alert('Código inválido', 'El código de acceso no existe. Verificá con tu coordinador.');
+        return;
+      }
+      Alert.alert('Error', result.error ?? 'No pudimos asignarte a la campaña.');
+    }
+    // Success: AppContext pasa a 'active' y RouterGuard redirige.
   };
 
   const handleChangePhone = () => {
-    setCode('');
+    setOtp('');
     setResendIn(0);
-    setWaPhase('phone');
+    setAccessCode('');
+    setAccessCodeCampaign(null);
+    setCodeError(null);
+    setValidatingCode(false);
+    setPhase('phone');
   };
 
   const formatPhoneMask = (p: string) => {
     if (p.length !== 9) return p;
     return `+51 ${p.slice(0, 3)} ${p.slice(3, 6)} ${p.slice(6)}`;
   };
+
+  // ── access_code 4 boxes (UI helper) ─────────────────────────
+  const codeStr = accessCode
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 4)
+    .padEnd(4, '');
+
+  const renderAccessCodeBlock = () => (
+    <>
+      <Pressable
+        onPress={() => accessCodeInputRef.current?.focus()}
+        style={styles.codeBoxRow}
+      >
+        {([0, 1, 2, 3] as const).map((pos) => (
+          <View
+            key={pos}
+            style={[
+              styles.codeBox,
+              accessCode.length === pos && styles.codeBoxActive,
+              accessCodeCampaign && styles.codeBoxSuccess,
+              codeError && styles.codeBoxError,
+            ]}
+          >
+            <Text
+              style={[
+                styles.codeBoxChar,
+                accessCodeCampaign && styles.codeBoxCharSuccess,
+                codeError && styles.codeBoxCharError,
+              ]}
+            >
+              {codeStr[pos] ?? ''}
+            </Text>
+          </View>
+        ))}
+        <TextInput
+          ref={(ref) => {
+            accessCodeInputRef.current = ref;
+          }}
+          style={styles.codeHiddenInput}
+          value={accessCode}
+          onChangeText={(t) => {
+            const clean = t.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4);
+            setAccessCode(clean);
+          }}
+          maxLength={4}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          keyboardType="default"
+          returnKeyType="done"
+          caretHidden
+        />
+      </Pressable>
+
+      {validatingCode && (
+        <View style={styles.codeStatusRow}>
+          <ActivityIndicator size="small" color={Status.warning} />
+          <Text style={styles.codeStatusText}>Verificando código...</Text>
+        </View>
+      )}
+      {codeError && !validatingCode && (
+        <Text style={styles.codeErrorText}>{codeError}</Text>
+      )}
+      {!codeError && !validatingCode && accessCodeCampaign && (
+        <Text style={styles.codeSuccessText}>Código válido ✓</Text>
+      )}
+
+      <Text style={styles.codeHint}>
+        Pedile el código de 4 letras/números a tu coordinador
+      </Text>
+
+      {accessCodeCampaign && (
+        <View style={styles.matchedCard}>
+          <View style={styles.matchedIconCircle}>
+            <Ionicons name="megaphone" size={22} color={BRAND_YELLOW} />
+          </View>
+          <View style={styles.matchedInfo}>
+            <Text style={styles.matchedName} numberOfLines={1}>
+              {accessCodeCampaign.name}
+            </Text>
+            <Text style={styles.matchedSub}>Campaña verificada</Text>
+          </View>
+          <Ionicons name="checkmark-circle" size={26} color={SUCCESS} />
+        </View>
+      )}
+    </>
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -193,122 +394,14 @@ export default function LoginScreen() {
             <Text style={styles.subtitle}>Operación Territorial</Text>
           </View>
 
-          {/* Method tabs */}
-          <View style={styles.tabs}>
-            <Pressable
-              style={[styles.tab, method === 'whatsapp' && styles.tabActive]}
-              onPress={() => setMethod('whatsapp')}
-              disabled={loading}
-            >
-              <Ionicons
-                name="logo-whatsapp"
-                size={16}
-                color={method === 'whatsapp' ? '#FFFFFF' : TEXT_MUTED}
-              />
-              <Text style={[styles.tabText, method === 'whatsapp' && styles.tabTextActive]}>
-                WhatsApp
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.tab, method === 'password' && styles.tabActive]}
-              onPress={() => setMethod('password')}
-              disabled={loading}
-            >
-              <Ionicons
-                name="lock-closed"
-                size={16}
-                color={method === 'password' ? '#FFFFFF' : TEXT_MUTED}
-              />
-              <Text style={[styles.tabText, method === 'password' && styles.tabTextActive]}>
-                Contraseña
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* ─── PASSWORD METHOD ─────────────────────────────── */}
-          {method === 'password' && (
+          {/* ── PHONE ─────────────────────────────────────────── */}
+          {phase === 'phone' && (
             <View style={styles.form}>
-              <View style={styles.field}>
-                <Text style={styles.label}>Email o teléfono</Text>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    pwFocused === 'id' && styles.inputWrapperFocused,
-                  ]}
-                >
-                  <Ionicons name="person-outline" size={18} color={TEXT_MUTED} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="tu@email.com  o  987654321"
-                    placeholderTextColor={TEXT_MUTED}
-                    value={identifier}
-                    onChangeText={setIdentifier}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="email-address"
-                    editable={!loading}
-                    onFocus={() => setPwFocused('id')}
-                    onBlur={() => setPwFocused(null)}
-                  />
-                </View>
-              </View>
+              <Text style={styles.stepTitle}>Ingresá tu número</Text>
+              <Text style={styles.stepDescription}>
+                Te mandamos un código por WhatsApp para verificar tu cuenta.
+              </Text>
 
-              <View style={styles.field}>
-                <Text style={styles.label}>Contraseña</Text>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    pwFocused === 'pw' && styles.inputWrapperFocused,
-                  ]}
-                >
-                  <Ionicons name="lock-closed-outline" size={18} color={TEXT_MUTED} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="••••••••"
-                    placeholderTextColor={TEXT_MUTED}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPw}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!loading}
-                    onFocus={() => setPwFocused('pw')}
-                    onBlur={() => setPwFocused(null)}
-                  />
-                  <Pressable onPress={() => setShowPw((v) => !v)} hitSlop={8}>
-                    <Ionicons
-                      name={showPw ? 'eye-off-outline' : 'eye-outline'}
-                      size={18}
-                      color={TEXT_MUTED}
-                    />
-                  </Pressable>
-                </View>
-              </View>
-
-              <Pressable
-                style={({ pressed }) => [
-                  styles.button,
-                  (!identifier.trim() || !password || loading) && styles.buttonDisabled,
-                  pressed && identifier.trim() && password && !loading && styles.buttonPressed,
-                ]}
-                onPress={handlePasswordLogin}
-                disabled={!identifier.trim() || !password || loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Ionicons name="log-in-outline" size={20} color="#FFFFFF" />
-                    <Text style={styles.buttonText}>Entrar</Text>
-                  </>
-                )}
-              </Pressable>
-            </View>
-          )}
-
-          {/* ─── WHATSAPP METHOD ─────────────────────────────── */}
-          {method === 'whatsapp' && waPhase === 'phone' && (
-            <View style={styles.form}>
               <View style={styles.field}>
                 <Text style={styles.label}>Número de teléfono</Text>
                 <View
@@ -335,12 +428,6 @@ export default function LoginScreen() {
                     <Ionicons name="checkmark-circle" size={20} color={SUCCESS} />
                   )}
                 </View>
-                {phone.length > 0 && phone.length < 9 && (
-                  <Text style={styles.hint}>{9 - phone.length} dígitos restantes</Text>
-                )}
-                <Text style={styles.helper}>
-                  Te mandamos un código por WhatsApp al número que ingreses
-                </Text>
               </View>
 
               <Pressable
@@ -349,7 +436,7 @@ export default function LoginScreen() {
                   (!PHONE_REGEX.test(phone) || loading) && styles.buttonDisabled,
                   pressed && PHONE_REGEX.test(phone) && !loading && styles.buttonPressed,
                 ]}
-                onPress={handleWaSend}
+                onPress={handleSendOtp}
                 disabled={!PHONE_REGEX.test(phone) || loading}
               >
                 {loading ? (
@@ -357,38 +444,15 @@ export default function LoginScreen() {
                 ) : (
                   <>
                     <Ionicons name="logo-whatsapp" size={20} color="#FFFFFF" />
-                    <Text style={styles.buttonText}>Enviar código por WhatsApp</Text>
+                    <Text style={styles.buttonText}>Recibir código</Text>
                   </>
                 )}
               </Pressable>
-
-              <View style={styles.registerCard}>
-                <View style={styles.registerCardLeft}>
-                  <View style={styles.registerIconCircle}>
-                    <Ionicons name="person-add" size={20} color={BRAND_BLUE} />
-                  </View>
-                  <View>
-                    <Text style={styles.registerCardTitle}>¿Sin cuenta aún?</Text>
-                    <Text style={styles.registerCardSub}>
-                      Tu coordinador te da el código
-                    </Text>
-                  </View>
-                </View>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.registerCardBtn,
-                    pressed && styles.registerCardBtnPressed,
-                  ]}
-                  onPress={() => router.push('/(auth)/register')}
-                >
-                  <Text style={styles.registerCardBtnText}>Registrarme</Text>
-                  <Ionicons name="arrow-forward" size={16} color={BRAND_YELLOW} />
-                </Pressable>
-              </View>
             </View>
           )}
 
-          {method === 'whatsapp' && waPhase === 'code' && (
+          {/* ── CODE ──────────────────────────────────────────── */}
+          {phase === 'code' && (
             <View style={styles.form}>
               <View style={styles.codeHeader}>
                 <Ionicons name="logo-whatsapp" size={32} color={WHATSAPP_GREEN} />
@@ -404,24 +468,24 @@ export default function LoginScreen() {
                 <View
                   style={[
                     styles.inputWrapper,
-                    codeFocused && styles.inputWrapperFocused,
-                    styles.codeInputWrapper,
+                    otpFocused && styles.inputWrapperFocused,
+                    styles.otpInputWrapper,
                   ]}
                 >
                   <TextInput
-                    ref={codeInputRef}
-                    style={styles.codeInput}
+                    ref={otpInputRef}
+                    style={styles.otpInput}
                     placeholder="000000"
                     placeholderTextColor={TEXT_MUTED}
-                    value={code}
-                    onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 6))}
+                    value={otp}
+                    onChangeText={(t) => setOtp(t.replace(/\D/g, '').slice(0, 6))}
                     keyboardType="number-pad"
                     autoComplete="sms-otp"
                     textContentType="oneTimeCode"
                     maxLength={6}
                     editable={!loading}
-                    onFocus={() => setCodeFocused(true)}
-                    onBlur={() => setCodeFocused(false)}
+                    onFocus={() => setOtpFocused(true)}
+                    onBlur={() => setOtpFocused(false)}
                   />
                 </View>
               </View>
@@ -429,11 +493,11 @@ export default function LoginScreen() {
               <Pressable
                 style={({ pressed }) => [
                   styles.button,
-                  (!CODE_REGEX.test(code) || loading) && styles.buttonDisabled,
-                  pressed && CODE_REGEX.test(code) && !loading && styles.buttonPressed,
+                  (!OTP_REGEX.test(otp) || loading) && styles.buttonDisabled,
+                  pressed && OTP_REGEX.test(otp) && !loading && styles.buttonPressed,
                 ]}
-                onPress={handleWaVerify}
-                disabled={!CODE_REGEX.test(code) || loading}
+                onPress={handleVerifyOtp}
+                disabled={!OTP_REGEX.test(otp) || loading}
               >
                 {loading ? (
                   <ActivityIndicator color="#FFFFFF" />
@@ -450,7 +514,7 @@ export default function LoginScreen() {
                   <Text style={styles.codeFooterLink}>← Cambiar número</Text>
                 </Pressable>
                 <Pressable
-                  onPress={handleWaResend}
+                  onPress={handleResendOtp}
                   disabled={resendIn > 0 || loading}
                   hitSlop={8}
                 >
@@ -464,6 +528,118 @@ export default function LoginScreen() {
                   </Text>
                 </Pressable>
               </View>
+            </View>
+          )}
+
+          {/* ── REGISTER (user nuevo) ─────────────────────────── */}
+          {phase === 'register' && (
+            <View style={styles.form}>
+              <Text style={styles.stepTitle}>Creá tu cuenta</Text>
+              <Text style={styles.stepDescription}>
+                Necesitamos algunos datos para asignarte a tu campaña.
+              </Text>
+
+              <View style={styles.field}>
+                <Text style={styles.label}>Nombre completo</Text>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    nameFocused && styles.inputWrapperFocused,
+                  ]}
+                >
+                  <Ionicons
+                    name="person-outline"
+                    size={18}
+                    color={nameFocused ? BORDER_FOCUS : TEXT_MUTED}
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Juan Pérez García"
+                    placeholderTextColor={TEXT_MUTED}
+                    value={fullName}
+                    onChangeText={setFullName}
+                    autoCapitalize="words"
+                    editable={!loading}
+                    onFocus={() => setNameFocused(true)}
+                    onBlur={() => setNameFocused(false)}
+                  />
+                  {fullName.trim().length >= 3 && (
+                    <Ionicons name="checkmark-circle" size={20} color={SUCCESS} />
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.field}>
+                <Text style={styles.label}>Tu región</Text>
+                <RegionPicker
+                  value={region}
+                  onSelect={setRegion}
+                  placeholder="Selecciona tu departamento"
+                />
+              </View>
+
+              <View style={styles.field}>
+                <Text style={styles.label}>Código de acceso</Text>
+                {renderAccessCodeBlock()}
+              </View>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.button,
+                  (!accessCodeCampaign || loading) && styles.buttonDisabled,
+                  pressed && accessCodeCampaign && !loading && styles.buttonPressed,
+                ]}
+                onPress={handleRegister}
+                disabled={!accessCodeCampaign || loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                    <Text style={styles.buttonText}>Crear cuenta</Text>
+                  </>
+                )}
+              </Pressable>
+
+              <Pressable onPress={handleChangePhone} hitSlop={8} style={styles.altLink}>
+                <Text style={styles.altLinkText}>← Usar otro número</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {/* ── LINK CAMPAIGN (user existente sin campaña) ────── */}
+          {phase === 'link' && (
+            <View style={styles.form}>
+              <Text style={styles.stepTitle}>Unite a una campaña</Text>
+              <Text style={styles.stepDescription}>
+                Tu cuenta no tiene campaña asignada. Ingresá el código de
+                acceso que te dio tu coordinador.
+              </Text>
+
+              <View style={styles.field}>
+                <Text style={styles.label}>Código de acceso</Text>
+                {renderAccessCodeBlock()}
+              </View>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.button,
+                  (!accessCodeCampaign || loading) && styles.buttonDisabled,
+                  pressed && accessCodeCampaign && !loading && styles.buttonPressed,
+                ]}
+                onPress={handleJoinCampaign}
+                disabled={!accessCodeCampaign || loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="rocket-outline" size={20} color="#FFFFFF" />
+                    <Text style={styles.buttonText}>Unirme</Text>
+                  </>
+                )}
+              </Pressable>
             </View>
           )}
         </ScrollView>
@@ -488,37 +664,12 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, color: TEXT_DARK, fontFamily: FONT, letterSpacing: 1 },
   subtitle: { fontSize: 14, color: TEXT_MUTED, fontFamily: FONT_REGULAR, letterSpacing: 0.5 },
 
-  // Tabs
-  tabs: {
-    flexDirection: 'row',
-    backgroundColor: BG_INPUT,
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 24,
-    gap: 4,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  tabActive: {
-    backgroundColor: BRAND_BLUE,
-    shadowColor: BRAND_BLUE,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2, shadowRadius: 3, elevation: 2,
-  },
-  tabText: {
-    fontSize: 13, fontFamily: FONT, color: TEXT_MUTED,
-    textTransform: 'uppercase', letterSpacing: 0.5,
-  },
-  tabTextActive: { color: '#FFFFFF' },
-
   form: { gap: 20 },
+  stepTitle: { fontSize: 22, fontFamily: FONT, color: TEXT_DARK },
+  stepDescription: {
+    fontSize: 14, fontFamily: FONT_REGULAR, color: TEXT_MUTED,
+    marginTop: -12, marginBottom: 4, lineHeight: 20,
+  },
   field: { gap: 8 },
   label: {
     fontSize: 13, color: TEXT_DARK, fontFamily: FONT,
@@ -531,16 +682,20 @@ const styles = StyleSheet.create({
   },
   inputWrapperFocused: { borderColor: BORDER_FOCUS, backgroundColor: '#FFFFFF' },
   prefix: { fontSize: 16, color: TEXT_DARK, fontFamily: FONT, marginRight: 0 },
-  input: { flex: 1, paddingVertical: 14, fontSize: 16, color: TEXT_DARK, fontFamily: FONT_REGULAR },
-  hint: { fontSize: 12, color: TEXT_MUTED, fontFamily: FONT_REGULAR, marginLeft: 4 },
-  helper: { fontSize: 12, color: TEXT_MUTED, fontFamily: FONT_REGULAR, marginLeft: 4, marginTop: 2 },
+  input: {
+    flex: 1, paddingVertical: 14, fontSize: 16,
+    color: TEXT_DARK, fontFamily: FONT_REGULAR,
+  },
 
   codeHeader: { alignItems: 'center', gap: 8, marginBottom: 8 },
   codeTitle: { fontSize: 22, fontFamily: FONT, color: TEXT_DARK, marginTop: 4 },
-  codeSubtitle: { fontSize: 14, fontFamily: FONT_REGULAR, color: TEXT_MUTED, textAlign: 'center', lineHeight: 20 },
+  codeSubtitle: {
+    fontSize: 14, fontFamily: FONT_REGULAR, color: TEXT_MUTED,
+    textAlign: 'center', lineHeight: 20,
+  },
   codePhoneStrong: { fontFamily: FONT, color: TEXT_DARK },
-  codeInputWrapper: { paddingHorizontal: 16 },
-  codeInput: {
+  otpInputWrapper: { paddingHorizontal: 16 },
+  otpInput: {
     flex: 1, paddingVertical: 18, fontSize: 28, color: TEXT_DARK,
     fontFamily: FONT, letterSpacing: 8, textAlign: 'center',
   },
@@ -551,15 +706,70 @@ const styles = StyleSheet.create({
   codeFooterLink: { fontSize: 13, color: BRAND_BLUE, fontFamily: FONT },
   codeFooterLinkDisabled: { color: TEXT_MUTED },
 
+  // Access code 4 boxes
+  codeBoxRow: {
+    flexDirection: 'row', gap: 12, position: 'relative',
+    alignItems: 'center', justifyContent: 'center', paddingVertical: 4,
+  },
+  codeBox: {
+    width: 58, height: 66, borderRadius: 14, borderWidth: 2,
+    borderColor: BORDER, backgroundColor: BG_INPUT,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  codeBoxActive: { borderColor: BORDER_FOCUS, backgroundColor: '#FFFFFF' },
+  codeBoxSuccess: { borderColor: SUCCESS, backgroundColor: Status.successBg },
+  codeBoxError: { borderColor: '#fca5a5', backgroundColor: '#fff5f5' },
+  codeBoxChar: { fontSize: 28, fontFamily: FONT, color: TEXT_DARK },
+  codeBoxCharSuccess: { color: '#166534' },
+  codeBoxCharError: { color: '#dc2626' },
+  codeHiddenInput: {
+    position: 'absolute', width: '100%', height: '100%',
+    opacity: 0, color: 'transparent',
+  },
+  codeStatusRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginLeft: 4, marginTop: 4,
+  },
+  codeStatusText: {
+    fontSize: 12, color: '#b45309', fontFamily: FONT_REGULAR,
+  },
+  codeErrorText: {
+    fontSize: 12, color: '#dc2626', fontFamily: FONT_REGULAR,
+    marginLeft: 4, marginTop: 4,
+  },
+  codeSuccessText: {
+    fontSize: 12, color: SUCCESS, fontFamily: FONT_REGULAR,
+    marginLeft: 4, marginTop: 4,
+  },
+  codeHint: {
+    fontSize: 12, color: TEXT_MUTED, fontFamily: FONT_REGULAR,
+    marginLeft: 4, marginTop: 4, lineHeight: 18,
+  },
+
+  matchedCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    padding: 14, borderRadius: 14,
+    backgroundColor: Status.successBg,
+    borderWidth: 1.5, borderColor: SUCCESS,
+    marginTop: 12,
+  },
+  matchedIconCircle: {
+    width: 44, height: 44, borderRadius: 12, backgroundColor: BRAND_BLUE,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  matchedInfo: { flex: 1 },
+  matchedName: { fontSize: 15, fontFamily: FONT, color: TEXT_DARK },
+  matchedSub: { fontSize: 12, fontFamily: FONT_REGULAR, color: TEXT_MUTED, marginTop: 2 },
+
   button: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: BRAND_BLUE, borderRadius: 14, padding: 16, marginTop: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: BRAND_BLUE, borderRadius: 14, padding: 16, marginTop: 8,
     shadowColor: BRAND_BLUE, shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25, shadowRadius: 4, elevation: 4,
   },
   buttonWa: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: WHATSAPP_GREEN, borderRadius: 14, padding: 16, marginTop: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: WHATSAPP_GREEN, borderRadius: 14, padding: 16, marginTop: 8,
     shadowColor: WHATSAPP_GREEN, shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25, shadowRadius: 4, elevation: 4,
   },
@@ -570,25 +780,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', letterSpacing: 1,
   },
 
-  registerCard: {
-    marginTop: 24, flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between', backgroundColor: BRAND_YELLOW,
-    borderRadius: 18, padding: 16, shadowColor: BRAND_YELLOW,
-    shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.45,
-    shadowRadius: 12, elevation: 8,
-  },
-  registerCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
-  registerIconCircle: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: 'rgba(22,57,96,0.12)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  registerCardTitle: { fontSize: 14, fontFamily: FONT, color: BRAND_BLUE },
-  registerCardSub: { fontSize: 11, fontFamily: FONT_REGULAR, color: 'rgba(22,57,96,0.65)', marginTop: 1 },
-  registerCardBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: BRAND_BLUE, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12,
-  },
-  registerCardBtnPressed: { opacity: 0.85, transform: [{ scale: 0.97 }] },
-  registerCardBtnText: { fontSize: 13, fontFamily: FONT, color: BRAND_YELLOW, letterSpacing: 0.5 },
+  altLink: { alignItems: 'center', paddingVertical: 8 },
+  altLinkText: { fontSize: 13, color: BRAND_BLUE, fontFamily: FONT_REGULAR },
 });

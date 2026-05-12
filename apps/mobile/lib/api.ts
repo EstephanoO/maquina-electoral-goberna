@@ -39,6 +39,7 @@ import type {
   ResolveAccessRequestPayload,
   AuthUser,
   CampaignMembership,
+  JoinCampaignResponse,
   WhatsappAuthResponse,
   WhatsappRegisterRequest,
   WhatsappSendResponse,
@@ -205,6 +206,17 @@ export async function whatsappRegister(
   body: WhatsappRegisterRequest,
 ): Promise<ApiResult<WhatsappAuthResponse>> {
   return request<WhatsappAuthResponse>('POST', '/auth/whatsapp/register', body, false);
+}
+
+/**
+ * POST /api/auth/join-campaign — para users ya autenticados que cayeron en
+ * needs_campaign (verify OK pero sin campaigns asignadas). Crea/reactiva
+ * user_campaign como agente_campo y devuelve user + campaigns actualizado.
+ */
+export async function joinCampaign(
+  accessCode: string,
+): Promise<ApiResult<JoinCampaignResponse>> {
+  return request<JoinCampaignResponse>('POST', '/auth/join-campaign', { access_code: accessCode }, true);
 }
 
 /**

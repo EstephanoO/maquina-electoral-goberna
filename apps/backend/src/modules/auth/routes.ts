@@ -5,7 +5,7 @@ import { pool } from "../../db";
 import { errorPayload } from "../../infra/http";
 import { AUTH_COOKIE_NAMES, parseCookies, type AuthenticatedRequest } from "../../infra/auth";
 import { AuthRepository } from "./repository";
-import { changePasswordSchema, loginSchema, refreshSchema, registerFirebaseSchema, registerSchema, resetPasswordSchema, setInitialPasswordSchema, whatsappRegisterSchema, whatsappSendSchema, whatsappVerifyLoginSchema } from "./schemas";
+import { changePasswordSchema, joinCampaignSchema, loginSchema, refreshSchema, registerFirebaseSchema, registerSchema, resetPasswordSchema, setInitialPasswordSchema, whatsappRegisterSchema, whatsappSendSchema, whatsappVerifyLoginSchema } from "./schemas";
 import { authorize } from "../../infra/authorize";
 import { AppError, AuthService } from "./service";
 import { verifyFirebaseIdToken } from "./firebase-verify";
@@ -876,11 +876,18 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
       try {
         const result = await service.issueTokensForUser(user);
         setAuthCookies(reply, result.access_token, result.refresh_token, isProd);
-        app.log.info({ user_id: user.id, phone: normalizedPhone, request_id: requestId }, "whatsapp-otp: login OK");
+        // needs_campaign: user existe pero no tiene campañas activas asignadas.
+        // El cliente debe pedirle un access_code y llamar /auth/join-campaign.
+        const needsCampaign = result.campaigns.length === 0;
+        app.log.info(
+          { user_id: user.id, phone: normalizedPhone, needs_campaign: needsCampaign, request_id: requestId },
+          "whatsapp-otp: login OK",
+        );
         return reply.code(200).send({
           ok: true,
           request_id: requestId,
           ...result,
+          needs_campaign: needsCampaign,
         });
       } catch (error) {
         if (error instanceof AppError) {
@@ -1019,6 +1026,105 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
         throw error;
       }
     });
+
+    // ── POST /api/auth/join-campaign ───────────────────────────────────
+    // Para users ya autenticados (OTP verify devolvió needs_campaign:true).
+    // Recibe { access_code } y crea/reactiva user_campaign como agente_campo
+    // contra la campaña que resuelva ese código. Devuelve user + campaigns
+    // actualizados para que el cliente reconstruya el AppConfig.
+    app.post(
+      "/api/auth/join-campaign",
+      { preHandler: [app.authenticate] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
+
+        const parsed = joinCampaignSchema.safeParse(request.body);
+        if (!parsed.success) {
+          const message = parsed.error.issues.map((i) => i.message).join(", ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
+        }
+
+        const user = await repo.findUserById(authed.userId);
+        if (!user) {
+          return reply.code(404).send(errorPayload(requestId, "USER_NOT_FOUND", "usuario no encontrado"));
+        }
+
+        const accessCodeRow = await accessCodesRepo.findByCode(parsed.data.access_code);
+        if (!accessCodeRow) {
+          return reply.code(400).send(errorPayload(requestId, "ACCESS_CODE_NOT_FOUND", "codigo de acceso invalido"));
+        }
+
+        const campaignId = accessCodeRow.campaign_id;
+        const region = user.region ?? "";
+
+        try {
+          const client = await pool.connect();
+          try {
+            await client.query("BEGIN");
+            await client.query(
+              `INSERT INTO access_requests (user_id, campaign_id, region, perm_tierra, perm_digital, status, resolved_at)
+               VALUES ($1, $2, $3, true, true, 'approved', now())
+               ON CONFLICT (user_id, campaign_id) WHERE status = 'pending' DO NOTHING`,
+              [user.id, campaignId, region],
+            );
+            await client.query(
+              `INSERT INTO user_campaigns (user_id, campaign_id, role, status, perm_tierra, perm_digital, region)
+               VALUES ($1, $2, 'agente_campo', 'active', true, true, $3)
+               ON CONFLICT (user_id, campaign_id)
+               DO UPDATE SET role = 'agente_campo', status = 'active', perm_tierra = true, perm_digital = true, region = COALESCE(EXCLUDED.region, user_campaigns.region), assigned_at = now()`,
+              [user.id, campaignId, region],
+            );
+            await client.query("COMMIT");
+          } catch (txErr) {
+            await client.query("ROLLBACK");
+            throw txErr;
+          } finally {
+            client.release();
+          }
+
+          const campaigns = user.role === "admin"
+            ? await repo.getAllActiveCampaigns()
+            : await repo.getUserCampaigns(user.id);
+
+          const campaignsList = campaigns.map((c) => ({
+            id: c.campaign_id,
+            name: c.campaign_name,
+            slug: c.campaign_slug,
+            role: c.role,
+            perm_audio_admin: c.perm_audio_admin,
+            whatsapp_number:
+              typeof c.campaign_config?.whatsapp_number === "string"
+                ? (c.campaign_config.whatsapp_number as string)
+                : null,
+          }));
+
+          app.log.info(
+            { user_id: user.id, campaign_id: campaignId, request_id: requestId },
+            "user joined campaign via access_code",
+          );
+
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            user: {
+              id: user.id,
+              email: user.email,
+              full_name: user.full_name,
+              role: user.role,
+              status: user.status,
+            },
+            campaigns: campaignsList,
+          });
+        } catch (error) {
+          if (error instanceof AppError) {
+            return reply.code(error.statusCode).send(errorPayload(requestId, error.code, error.message));
+          }
+          app.log.error({ err: error, request_id: requestId }, "join-campaign failed");
+          throw error;
+        }
+      },
+    );
 
     // ── POST /api/users/:userId/set-password ───────────────────────────
     // Admin/Candidato sets a new password directly for a team member.

@@ -4,11 +4,11 @@
  * Flow:
  *   1. Mount: GET /api/invitations/validate/:code → muestra hero de campaña
  *   2. Form: nombre completo + teléfono (region = 'Nacional')
- *   3. Send OTP → SMS dispatched
- *   4. Verify SMS → idToken → POST /api/auth/register-firebase + invitation_code
- *   5. RouterGuard navega a (main)/dashboard o (auth)/pending
+ *   3. Send OTP → WhatsApp dispatched
+ *   4. Verify OTP → POST /api/auth/whatsapp/register + invitation_code
+ *   5. RouterGuard navega a (main)/dashboard
  *
- * Diferencias con /register:
+ * Diferencias con el login estándar:
  *   - Sin selector de región (default Nacional)
  *   - Sin selector de campaña (viene del invitation_code)
  *   - El campaign_id va por el invitation_code, no se manda explícito

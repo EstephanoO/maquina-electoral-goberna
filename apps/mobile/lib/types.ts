@@ -388,10 +388,26 @@ export type WhatsappRegisterRequest = {
 };
 
 /** Response shape shared by /whatsapp/verify y /whatsapp/register.
- *  Mismo shape que /login (no hay password_reset_required en OTP). */
+ *  Mismo shape que /login (no hay password_reset_required en OTP).
+ *  - needs_campaign: true cuando el user existe pero no tiene campañas
+ *    activas (solo viene de /whatsapp/verify). El cliente debe pedir un
+ *    access_code y llamar /auth/join-campaign. */
 export type WhatsappAuthResponse = {
   access_token: string;
   refresh_token: string;
+  user: AuthUser;
+  campaigns: CampaignMembership[];
+  needs_campaign?: boolean;
+};
+
+/** Body for POST /api/auth/join-campaign (autenticado). */
+export type JoinCampaignRequest = {
+  access_code: string;
+};
+
+/** Response shape de /auth/join-campaign. No emite tokens (el user ya está
+ *  autenticado). Solo devuelve el user + sus nuevas campaigns. */
+export type JoinCampaignResponse = {
   user: AuthUser;
   campaigns: CampaignMembership[];
 };

@@ -2,9 +2,9 @@
  * Root Layout — Router guard basado en auth state.
  *
  * - loading → splash/null
- * - unauthenticated → (auth) group
- * - pending → (auth)/pending
- * - suspended → (auth)/pending (con mensaje diferente)
+ * - unauthenticated → (auth)/login (input phone)
+ * - needs_campaign → (auth)/login (input access_code para asignar campaña)
+ * - suspended → (auth)/login (con alerta, no se redirige a otro screen)
  * - active → (main) group con AppConfig cargada
  */
 
@@ -37,15 +37,17 @@ function RouterGuard({ children }: { children: React.ReactNode }) {
     // without being redirected to login. The invite screen handles its own auth.
     const inInviteScreen = segments[0] === '(auth)' && segments[1] === 'invite';
 
-    if (auth.status === 'unauthenticated') {
-      if (!inAuthGroup) router.replace('/(auth)/login');
+    if (auth.status === 'unauthenticated' || auth.status === 'needs_campaign') {
+      // needs_campaign comparte screen con login — login.tsx detecta el estado
+      // y muestra el form de access_code en lugar del input de teléfono.
+      if (inInviteScreen) return;
+      if (!inAuthGroup || segments[1] !== 'login') router.replace('/(auth)/login');
       return;
     }
 
-    if (auth.status === 'pending' || auth.status === 'suspended') {
-      // Don't interrupt someone mid-invite even if they somehow have a pending session
+    if (auth.status === 'suspended') {
       if (inInviteScreen) return;
-      if (segments[1] !== 'pending') router.replace('/(auth)/pending');
+      if (!inAuthGroup || segments[1] !== 'login') router.replace('/(auth)/login');
       return;
     }
 

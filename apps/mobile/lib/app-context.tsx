@@ -2,18 +2,20 @@
  * AppContext — Estado global de la app.
  *
  * Provee:
- * - Estado de autenticacion (logged out / pending / active)
- * - AppConfig (candidato, formulario, agente) una vez autenticado
- * - Funciones de login, register, logout
+ * - Estado de autenticacion (loading / unauthenticated / needs_campaign /
+ *   suspended / active)
+ * - AppConfig (candidato, formulario, agente) una vez con campaign asignada
+ * - Funciones de OTP (send / verify) + join-campaign + registro
  *
- * Config is composed client-side from multiple backend endpoints:
- * - POST /api/auth/login → user + campaigns
- * - GET /api/candidates → candidate info (public)
- * - GET /api/campaigns/:id → campaign config (colors, etc.)
- * - GET /api/form-definitions/active?campaign_id=X → active form
- *
- * Toda la app se renderiza en funcion de este contexto.
- * Ninguna pantalla hardcodea datos — todo viene de aca.
+ * Flow OTP-only:
+ *   1. whatsappSend(phone) → backend manda OTP por WhatsApp
+ *   2. loginWithWhatsapp(phone, code):
+ *      - user existe con campañas → status 'active' (entra al dashboard)
+ *      - user existe sin campañas → status 'needs_campaign' (pide access_code)
+ *      - user no existe (412) → cliente muestra form de registro y llama
+ *        registerWithWhatsapp(...)
+ *   3. joinCampaign(access_code) → para users en 'needs_campaign'. Linkea
+ *      campaña y transiciona a 'active'.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
@@ -24,14 +26,14 @@ import * as api from './api';
 import * as authStore from './auth-store';
 import type {
   AppConfig,
+  ApiResult,
   AuthUser,
   CampaignMembership,
   FormDefinition,
   LoginRequest,
   RegisterRequest,
-  WhatsappRegisterRequest,
   WhatsappAuthResponse,
-  ApiResult,
+  WhatsappRegisterRequest,
 } from './types';
 
 // ─── Default colors when campaign has no config ─────────────
@@ -44,25 +46,30 @@ const DEFAULT_SECONDARY = '#FFC800';
 type AuthState =
   | { status: 'loading' }
   | { status: 'unauthenticated' }
-  | { status: 'pending'; user: AuthUser; campaigns: CampaignMembership[] }
+  | { status: 'needs_campaign'; user: AuthUser }
   | { status: 'suspended'; user: AuthUser }
   | { status: 'active'; user: AuthUser; campaigns: CampaignMembership[]; config: AppConfig };
 
 type AppContextValue = {
   auth: AuthState;
-  /** Login con email/teléfono + password */
+  /** Login con email/teléfono + password (legacy, sigue disponible) */
   login: (body: LoginRequest) => Promise<ApiResult<void>>;
-  /** Registro con email/teléfono + password (legacy, sigue disponible) */
+  /** Registro legacy con password (no usado por mobile en flow OTP) */
   register: (body: RegisterRequest) => Promise<ApiResult<void>>;
   /** Pide al backend que envíe un código OTP por WhatsApp al número */
   whatsappSend: (phone: string) => Promise<ApiResult<void>>;
-  /** Login OTP-only: phone + código → backend JWT */
+  /** Login OTP-only: phone + código → backend JWT. Si el user existe sin
+   *  campañas, queda en status 'needs_campaign' (el cliente debe llamar
+   *  joinCampaign). Si no existe, retorna error con code='USER_NOT_FOUND'
+   *  para que el cliente muestre el form de registro. */
   loginWithWhatsapp: (phone: string, code: string) => Promise<ApiResult<void>>;
   /** Registro OTP-only: phone + código + perfil → backend JWT */
   registerWithWhatsapp: (body: WhatsappRegisterRequest) => Promise<ApiResult<void>>;
+  /** Linkea al user autenticado con una campaña vía access_code (4 chars).
+   *  Transiciona de 'needs_campaign' → 'active'. */
+  joinCampaign: (accessCode: string) => Promise<ApiResult<void>>;
   logout: () => Promise<void>;
   refreshConfig: () => Promise<void>;
-  checkApproval: () => Promise<void>;
   switchCampaign: (campaignId: string) => Promise<void>;
   availableCampaigns: CampaignMembership[];
 };
@@ -71,29 +78,22 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 // ─── Config builder ─────────────────────────────────────────
 
-/**
- * Fetches all data needed to build AppConfig from multiple endpoints.
- * Returns null if any critical fetch fails.
- */
 async function buildAppConfig(
   user: AuthUser,
   campaigns: CampaignMembership[],
 ): Promise<AppConfig | null> {
   if (campaigns.length === 0) return null;
 
-  // Get active campaign ID from store
   const activeCampaignId = await authStore.getActiveCampaignId();
   const activeCampaign =
     campaigns.find((c) => c.id === activeCampaignId) ?? campaigns[0];
 
-  // Fetch candidate info + campaign config + form definitions in parallel
   const [candidatesResult, campaignResult, formDefsResult] = await Promise.all([
     api.getCandidates(),
     api.getCampaign(activeCampaign.id),
     api.getActiveFormDefinitions(activeCampaign.id),
   ]);
 
-  // Find candidate matching active campaign
   let candidateInfo = null;
   if (candidatesResult.ok) {
     candidateInfo = candidatesResult.data.candidates.find(
@@ -101,26 +101,21 @@ async function buildAppConfig(
     ) ?? candidatesResult.data.candidates[0] ?? null;
   }
 
-  // Extract campaign config for colors
   const campaignConfig = campaignResult.ok ? campaignResult.data.campaign : null;
 
-  // Get first active form definition — with cache fallback for intermittent connectivity
   let formDef: FormDefinition | null = null;
   if (formDefsResult.ok) {
     formDef = formDefsResult.data.form_definitions[0] ?? null;
-    // Cache successful fetch for offline fallback
     if (formDef) {
       authStore.setStoredFormConfig(formDef).catch(() => {});
     }
   } else {
-    // Network failed — try cached form config
     const cached = await authStore.getStoredFormConfig();
     if (cached && typeof cached === 'object' && 'id' in (cached as Record<string, unknown>)) {
       formDef = cached as FormDefinition;
     }
   }
 
-  // Build composed config
   const config: AppConfig = {
     candidate: {
       id: candidateInfo?.id ?? activeCampaign.id,
@@ -139,7 +134,7 @@ async function buildAppConfig(
       id: user.id,
       full_name: user.full_name,
       email: user.email,
-      role: activeCampaign.role,  // Use campaign-specific role, not global user role
+      role: activeCampaign.role,
     },
     campaign: activeCampaign,
   };
@@ -163,17 +158,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const campaigns = await authStore.getStoredCampaigns();
 
-      if (user.status === 'pending') {
-        setAuth({ status: 'pending', user, campaigns });
-        return;
-      }
-
       if (user.status === 'suspended') {
         setAuth({ status: 'suspended', user });
         return;
       }
 
-      // Active user — check connectivity before firing network requests
+      // Legacy: users con status='pending' en DB (no usado en flow OTP) caen
+      // en needs_campaign — el form de access_code los re-engancha igual.
+      if (user.status === 'pending' || campaigns.length === 0) {
+        setAuth({ status: 'needs_campaign', user });
+        return;
+      }
+
+      // Active user con campaigns en cache — check connectivity before firing
+      // network requests. Si offline, usar stale data.
       let isOnline = false;
       try {
         const netState = await Network.getNetworkStateAsync();
@@ -183,19 +181,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       if (!isOnline) {
-        // Device is offline — use stale stored data immediately without waiting 30s for timeouts
-        if (campaigns.length > 0) {
-          const config = await buildAppConfig(user, campaigns);
-          if (config) {
-            setAuth({ status: 'active', user, campaigns, config });
-            return;
-          }
+        const config = await buildAppConfig(user, campaigns);
+        if (config) {
+          setAuth({ status: 'active', user, campaigns, config });
+          return;
         }
         setAuth({ status: 'unauthenticated' });
         return;
       }
 
-      // Online — try to fetch fresh data from /auth/me
       const meResult = await api.getMe();
       if (meResult.ok) {
         const freshUser = meResult.data.user;
@@ -203,53 +197,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await authStore.setStoredUser(freshUser);
         await authStore.setStoredCampaigns(freshCampaigns);
 
-        if (freshUser.status !== 'active') {
-          if (freshUser.status === 'suspended') {
-            setAuth({ status: 'suspended', user: freshUser });
-          } else {
-            setAuth({ status: 'pending', user: freshUser, campaigns: freshCampaigns });
-          }
+        if (freshUser.status === 'suspended') {
+          setAuth({ status: 'suspended', user: freshUser });
           return;
         }
 
-        // Build config
+        if (freshCampaigns.length === 0) {
+          setAuth({ status: 'needs_campaign', user: freshUser });
+          return;
+        }
+
         const config = await buildAppConfig(freshUser, freshCampaigns);
         if (config) {
           setAuth({ status: 'active', user: freshUser, campaigns: freshCampaigns, config });
         } else {
-          // No campaigns → pending-like state
-          setAuth({ status: 'pending', user: freshUser, campaigns: freshCampaigns });
+          setAuth({ status: 'needs_campaign', user: freshUser });
         }
       } else if (meResult.code === 'AUTH_TOKEN_EXPIRED' || meResult.status === 401) {
-        // Token completely dead, force re-login
         await authStore.clearAuthData();
         setAuth({ status: 'unauthenticated' });
       } else {
         // Unexpected network error while online — fall back to stale data
-        if (campaigns.length > 0) {
-          const config = await buildAppConfig(user, campaigns);
-          if (config) {
-            setAuth({ status: 'active', user, campaigns, config });
-            return;
-          }
+        const config = await buildAppConfig(user, campaigns);
+        if (config) {
+          setAuth({ status: 'active', user, campaigns, config });
+          return;
         }
         setAuth({ status: 'unauthenticated' });
       }
     })();
   }, []);
 
-  // ── Shared: persist auth + transition state from any auth response ──
+  // ── Transition state from any auth response (login or register) ──
   const completeAuth = useCallback(
     async (data: WhatsappAuthResponse): Promise<ApiResult<void>> => {
       const { user, campaigns } = data;
       await authStore.saveAuthData(data);
 
-      if (user.status === 'pending') {
-        setAuth({ status: 'pending', user, campaigns });
-        return { ok: true, data: undefined };
-      }
       if (user.status === 'suspended') {
         setAuth({ status: 'suspended', user });
+        return { ok: true, data: undefined };
+      }
+
+      // needs_campaign explícito del backend O campaigns vacío → needs_campaign.
+      if (data.needs_campaign === true || campaigns.length === 0) {
+        setAuth({ status: 'needs_campaign', user });
         return { ok: true, data: undefined };
       }
 
@@ -257,14 +249,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (config) {
         setAuth({ status: 'active', user, campaigns, config });
       } else {
-        setAuth({ status: 'pending', user, campaigns });
+        setAuth({ status: 'needs_campaign', user });
       }
       return { ok: true, data: undefined };
     },
     [],
   );
 
-  // ── Email/teléfono + password (login y register) ────────────
+  // ── Email/teléfono + password (legacy) ──────────────────────
   const login = useCallback(async (body: LoginRequest): Promise<ApiResult<void>> => {
     const result = await api.login(body);
     if (!result.ok) return result;
@@ -277,7 +269,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return { ok: true, data: undefined };
   }, []);
 
-  // ── WhatsApp OTP: send code → verify → JWT ──────────────────
+  // ── WhatsApp OTP ────────────────────────────────────────────
   const whatsappSend = useCallback(async (phone: string): Promise<ApiResult<void>> => {
     const result = await api.whatsappSend(phone);
     if (!result.ok) return result;
@@ -302,10 +294,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [completeAuth],
   );
 
+  // ── Join campaign (cuando el user está en needs_campaign) ────
+  const joinCampaign = useCallback(
+    async (accessCode: string): Promise<ApiResult<void>> => {
+      const result = await api.joinCampaign(accessCode);
+      if (!result.ok) return result;
+
+      const { user: freshUser, campaigns: freshCampaigns } = result.data;
+      await authStore.setStoredUser(freshUser);
+      await authStore.setStoredCampaigns(freshCampaigns);
+
+      if (freshUser.status === 'suspended') {
+        setAuth({ status: 'suspended', user: freshUser });
+        return { ok: true, data: undefined };
+      }
+
+      if (freshCampaigns.length === 0) {
+        setAuth({ status: 'needs_campaign', user: freshUser });
+        return { ok: true, data: undefined };
+      }
+
+      const config = await buildAppConfig(freshUser, freshCampaigns);
+      if (config) {
+        setAuth({ status: 'active', user: freshUser, campaigns: freshCampaigns, config });
+      } else {
+        setAuth({ status: 'needs_campaign', user: freshUser });
+      }
+      return { ok: true, data: undefined };
+    },
+    [],
+  );
+
   // ── Logout ────────────────────────────────────────────────
   const logout = useCallback(async () => {
-    // Best-effort: revoke refresh tokens on server (fire-and-forget with 5s cap)
-    // Don't await — always clear local data regardless of network state
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5_000);
     api.logout(controller.signal).finally(() => clearTimeout(timeoutId)).catch(() => {});
@@ -318,7 +339,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refreshConfig = useCallback(async () => {
     if (auth.status !== 'active') return;
 
-    // Re-fetch /auth/me + rebuild config
     const meResult = await api.getMe();
     if (!meResult.ok) {
       if (meResult.status === 401 || meResult.code === 'AUTH_TOKEN_EXPIRED') {
@@ -327,90 +347,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return;
     }
-    if (meResult.ok) {
-      const freshUser = meResult.data.user;
-      const freshCampaigns = meResult.data.campaigns;
-      await authStore.setStoredUser(freshUser);
-      await authStore.setStoredCampaigns(freshCampaigns);
-
-      const config = await buildAppConfig(freshUser, freshCampaigns);
-      if (config) {
-        setAuth({ status: 'active', user: freshUser, campaigns: freshCampaigns, config });
-      }
-    }
-  }, [auth]);
-
-  // ── Check approval (polling from pending screen) ──────────
-  // Called when user is waiting for access request approval.
-  // User may be status='active' but with no campaigns (waiting for approval).
-  // The "pending" state in the app means: user has no approved campaigns yet.
-  const checkApproval = useCallback(async () => {
-    // Only run if we're in a waiting state (pending or active with no campaigns)
-    if (auth.status !== 'pending') return;
-
-    const meResult = await api.getMe();
-    if (!meResult.ok) {
-      // Token invalid or expired (e.g. JWT_SECRET rotated) — force re-login
-      if (meResult.status === 401 || meResult.code === 'AUTH_TOKEN_EXPIRED') {
-        await authStore.clearAuthData();
-        setAuth({ status: 'unauthenticated' });
-      }
-      return;
-    }
-
     const freshUser = meResult.data.user;
     const freshCampaigns = meResult.data.campaigns;
-
-    // Update stored data
     await authStore.setStoredUser(freshUser);
     await authStore.setStoredCampaigns(freshCampaigns);
 
-    // Check if user was suspended
-    if (freshUser.status === 'suspended') {
-      setAuth({ status: 'suspended', user: freshUser });
+    if (freshCampaigns.length === 0) {
+      setAuth({ status: 'needs_campaign', user: freshUser });
       return;
     }
 
-    // Check if user was set to pending by admin
-    if (freshUser.status === 'pending') {
-      setAuth({ status: 'pending', user: freshUser, campaigns: freshCampaigns });
-      return;
+    const config = await buildAppConfig(freshUser, freshCampaigns);
+    if (config) {
+      setAuth({ status: 'active', user: freshUser, campaigns: freshCampaigns, config });
     }
-
-    // Check if user now has campaigns (access request was approved)
-    // This is the key check: campaigns.length > 0 means approval happened
-    if (freshCampaigns.length > 0) {
-      const config = await buildAppConfig(freshUser, freshCampaigns);
-      if (config) {
-        setAuth({ status: 'active', user: freshUser, campaigns: freshCampaigns, config });
-      }
-    }
-    // Otherwise stay in pending state (user active but no campaigns approved yet)
   }, [auth]);
 
   // ── Switch campaign (for users with multiple campaigns or admin) ──
   const switchCampaign = useCallback(async (campaignId: string) => {
     if (auth.status !== 'active') return;
 
-    // Save new active campaign
     await authStore.setActiveCampaignId(campaignId);
 
-    // Rebuild config with new campaign
     const config = await buildAppConfig(auth.user, auth.campaigns);
     if (config) {
       setAuth({ status: 'active', user: auth.user, campaigns: auth.campaigns, config });
     }
   }, [auth]);
 
-  // ── Get available campaigns for switching ────────────────
   const availableCampaigns = useMemo<CampaignMembership[]>(() => {
-    if (auth.status === 'active' || auth.status === 'pending') {
-      return auth.campaigns;
-    }
+    if (auth.status === 'active') return auth.campaigns;
     return [];
   }, [auth]);
 
-  // ── Memoize context value ─────────────────────────────────
   const value = useMemo<AppContextValue>(
     () => ({
       auth,
@@ -419,9 +388,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       whatsappSend,
       loginWithWhatsapp,
       registerWithWhatsapp,
+      joinCampaign,
       logout,
       refreshConfig,
-      checkApproval,
       switchCampaign,
       availableCampaigns,
     }),
@@ -432,9 +401,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       whatsappSend,
       loginWithWhatsapp,
       registerWithWhatsapp,
+      joinCampaign,
       logout,
       refreshConfig,
-      checkApproval,
       switchCampaign,
       availableCampaigns,
     ],
