@@ -299,7 +299,7 @@ export default function AdminFase2ReviewPage() {
             <div className="max-w-7xl mx-auto px-4 sm:px-8 py-2 text-xs text-amber-200/90 flex items-center gap-2 flex-wrap">
               <Pencil className="size-3.5 shrink-0" />
               <span>
-                <strong>Modo edición activo.</strong> Avanzá con el chevron derecho del footer. Slides editables: Ficha Básica (5), Análisis Electoral, Votos para Ganar, Partidos, Historial, Fórmula Electoral, Presencia Digital, Quién Es. Cover/Capacidad/Oficinas son institucionales y NO se editan.
+                <strong>Modo edición activo.</strong> Click sobre cualquier texto con borde amber dashed para editarlo. Cambios se guardan automáticamente a los 600ms.
               </span>
             </div>
           </div>
