@@ -61,6 +61,17 @@ RATE_LIMIT_FORMS_IP_PER_MINUTE=12000
 RATE_LIMIT_FORMS_WINDOW_SEC=60
 EOF
 
+# Create external networks that the compose declares but CI doesn't have
+# (en el VPS las crean leads-crm-bot y nexus_postgres). En CI no corren esos
+# servicios, así que creamos las redes vacías para que el backend pueda
+# arrancar — solo necesita resolverlas, no resolver hostnames adentro.
+for ext_net in leads-crm_internal nexus_app_network; do
+	if ! docker network inspect "$ext_net" >/dev/null 2>&1; then
+		docker network create "$ext_net" >/dev/null
+		echo "[smoke] created external network $ext_net"
+	fi
+done
+
 docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" up -d --build --remove-orphans
 
 # Wait for postgres to be ready
