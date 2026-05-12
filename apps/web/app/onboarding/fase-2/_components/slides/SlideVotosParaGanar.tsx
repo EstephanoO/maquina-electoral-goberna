@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import { Trophy } from "lucide-react";
 import { SlideShell } from "./SlideShell";
+import { EditableText } from "../EditableText";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
 interface Props {
@@ -65,7 +66,13 @@ export function SlideVotosParaGanar({ ctx }: Props) {
               </span>
             </div>
             <div className="text-5xl sm:text-6xl font-black text-amber-400 leading-none mb-1">
-              {votosGanador}
+              <EditableText
+                section="votos_para_ganar"
+                field="votos_ganador_anterior"
+                value={vpg?.votos_ganador_anterior}
+                numeric
+                placeholder="[A completar]"
+              />
             </div>
             <div className="text-[11px] uppercase tracking-[0.2em] text-white/60 font-bold">
               Votos del ganador
@@ -92,7 +99,13 @@ export function SlideVotosParaGanar({ ctx }: Props) {
               Padrón actual (RENIEC)
             </div>
             <div className="text-5xl sm:text-6xl font-black text-white leading-none mb-1">
-              {padronElectoral}
+              <EditableText
+                section="votos_para_ganar"
+                field="padron_actual"
+                value={vpg?.padron_actual}
+                numeric
+                placeholder="[A completar]"
+              />
             </div>
             <div className="text-[11px] uppercase tracking-[0.2em] text-white/60 font-bold">
               Electores hábiles
@@ -121,7 +134,13 @@ export function SlideVotosParaGanar({ ctx }: Props) {
               Tu meta
             </div>
             <div className="text-6xl sm:text-7xl font-black leading-none mb-1">
-              {votosNecesarios}
+              <EditableText
+                section="votos_para_ganar"
+                field="votos_meta"
+                value={vpg?.votos_meta}
+                numeric
+                placeholder="[A completar]"
+              />
             </div>
             <div className="text-[11px] uppercase tracking-[0.2em] font-black">
               Votos para ganar

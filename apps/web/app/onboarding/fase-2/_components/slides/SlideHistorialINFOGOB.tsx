@@ -5,6 +5,8 @@ import { Construction, ExternalLink, FileSearch } from "lucide-react";
 
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
+import { EditableText } from "../EditableText";
+import { useEditing } from "../EditingContext";
 import { SlideShell } from "./SlideShell";
 
 interface SlideHistorialINFOGOBProps {
@@ -18,6 +20,7 @@ export function SlideHistorialINFOGOB({ ctx }: SlideHistorialINFOGOBProps) {
   const nuncaPostulo = historial?.nunca_postulo;
   const observaciones = historial?.observaciones;
   const hayEntradas = entries.length > 0;
+  const { editing } = useEditing();
 
   return (
     <SlideShell
@@ -118,12 +121,20 @@ export function SlideHistorialINFOGOB({ ctx }: SlideHistorialINFOGOBProps) {
             </ul>
           </div>
 
-          {observaciones && (
+          {(observaciones || editing) && (
             <div className="pt-4 border-t border-gray-800">
               <p className="text-xs uppercase tracking-widest text-amber-400/70 mb-2">
                 Lectura del consultor
               </p>
-              <p className="text-sm text-gray-200 leading-relaxed">{observaciones}</p>
+              <p className="text-sm text-gray-200 leading-relaxed">
+                <EditableText
+                  section="historial"
+                  field="observaciones"
+                  value={observaciones}
+                  placeholder="[Patrón observable, contexto, lectura del histórico]"
+                  multiline
+                />
+              </p>
             </div>
           )}
         </motion.div>

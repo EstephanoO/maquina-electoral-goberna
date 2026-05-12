@@ -5,6 +5,8 @@ import { Construction, Globe, Search, MessageSquare, Newspaper } from "lucide-re
 
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
+import { EditableText } from "../EditableText";
+import { useEditing } from "../EditingContext";
 import { SlideShell } from "./SlideShell";
 
 interface SlideQuienEsProps {
@@ -17,6 +19,7 @@ export function SlideQuienEs({ ctx }: SlideQuienEsProps) {
   const bio = qe?.texto_libre;
   const trayectoria = qe?.trayectoria;
   const valores = qe?.valores ?? [];
+  const { editing } = useEditing();
 
   return (
     <SlideShell
@@ -56,7 +59,7 @@ export function SlideQuienEs({ ctx }: SlideQuienEsProps) {
           />
         </div>
 
-        {(bio || trayectoria || valores.length > 0) && (
+        {(bio || trayectoria || valores.length > 0 || editing) && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -65,17 +68,29 @@ export function SlideQuienEs({ ctx }: SlideQuienEsProps) {
             <p className="text-[10px] uppercase tracking-[0.3em] text-amber-400 font-bold">
               ¿Quién es {firstName}?
             </p>
-            {bio && (
-              <p className="text-base sm:text-lg text-white leading-relaxed">{bio}</p>
-            )}
-            {trayectoria && (
-              <div>
-                <p className="text-[10px] uppercase tracking-widest text-amber-400/70 mb-1">
-                  Trayectoria
-                </p>
-                <p className="text-sm text-gray-300 leading-relaxed">{trayectoria}</p>
-              </div>
-            )}
+            <p className="text-base sm:text-lg text-white leading-relaxed">
+              <EditableText
+                section="quien_es"
+                field="texto_libre"
+                value={bio}
+                placeholder="[Bio libre — quién es, por qué postula]"
+                multiline
+              />
+            </p>
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-amber-400/70 mb-1">
+                Trayectoria
+              </p>
+              <p className="text-sm text-gray-300 leading-relaxed">
+                <EditableText
+                  section="quien_es"
+                  field="trayectoria"
+                  value={trayectoria}
+                  placeholder="[Trayectoria profesional/política]"
+                  multiline
+                />
+              </p>
+            </div>
             {valores.length > 0 && (
               <div>
                 <p className="text-[10px] uppercase tracking-widest text-amber-400/70 mb-2">
@@ -96,7 +111,7 @@ export function SlideQuienEs({ ctx }: SlideQuienEsProps) {
           </motion.div>
         )}
 
-        {!bio && !trayectoria && valores.length === 0 && (
+        {!editing && !bio && !trayectoria && valores.length === 0 && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}

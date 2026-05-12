@@ -3,6 +3,8 @@
 import { motion } from "motion/react";
 import { User, Globe2, IdCard, Phone, Calendar, Briefcase } from "lucide-react";
 import { SlideShell } from "./SlideShell";
+import { EditableText } from "../EditableText";
+import { useEditing } from "../EditingContext";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
 interface Props {
@@ -36,13 +38,35 @@ export function SlideFichaBasica({ ctx }: Props) {
     .join("")
     .toUpperCase();
 
-  const fields = [
-    { icon: User, label: "Nombre completo", value: fullName, real: true },
-    { icon: Globe2, label: "País", value: pais, real: true },
-    { icon: IdCard, label: "DNI", value: dni, real: dni !== PLACEHOLDER },
-    { icon: Phone, label: "Teléfono", value: phone ?? PLACEHOLDER, real: !!phone },
-    { icon: Calendar, label: "Edad", value: edad, real: edad !== PLACEHOLDER },
-    { icon: Briefcase, label: "Profesión", value: profesion, real: profesion !== PLACEHOLDER },
+  type Field = {
+    icon: typeof User;
+    label: string;
+    real: boolean;
+    /** Si tiene editKey, el value en modo edit se renderiza con EditableText. */
+    editKey?: { field: "dni" | "edad" | "profesion"; numeric?: boolean };
+    /** Si no es editable, se usa el value directo. */
+    rawValue: string;
+  };
+
+  const fields: Field[] = [
+    { icon: User, label: "Nombre completo", rawValue: fullName, real: true },
+    { icon: Globe2, label: "País", rawValue: pais, real: true },
+    { icon: IdCard, label: "DNI", rawValue: dni, real: dni !== PLACEHOLDER, editKey: { field: "dni" } },
+    { icon: Phone, label: "Teléfono", rawValue: phone ?? PLACEHOLDER, real: !!phone },
+    {
+      icon: Calendar,
+      label: "Edad",
+      rawValue: edad,
+      real: edad !== PLACEHOLDER,
+      editKey: { field: "edad", numeric: true },
+    },
+    {
+      icon: Briefcase,
+      label: "Profesión",
+      rawValue: profesion,
+      real: profesion !== PLACEHOLDER,
+      editKey: { field: "profesion" },
+    },
   ];
 
   return (
@@ -102,7 +126,25 @@ export function SlideFichaBasica({ ctx }: Props) {
                         : "text-xl sm:text-2xl font-bold text-amber-400/70 italic"
                     }
                   >
-                    {f.value}
+                    {f.editKey ? (
+                      <EditableText
+                        section="ficha_basica"
+                        field={f.editKey.field}
+                        value={
+                          f.editKey.field === "edad"
+                            ? typeof fb?.edad === "number"
+                              ? fb.edad
+                              : undefined
+                            : f.editKey.field === "dni"
+                              ? fb?.dni
+                              : fb?.profesion
+                        }
+                        numeric={f.editKey.numeric}
+                        placeholder={PLACEHOLDER}
+                      />
+                    ) : (
+                      f.rawValue
+                    )}
                   </span>
                 </div>
               </motion.div>

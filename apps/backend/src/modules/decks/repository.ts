@@ -215,6 +215,8 @@ export interface DeckRow {
   status: "draft" | "pending_review" | "published" | "rejected";
   rejection_reason: string | null;
   consultor_form: Record<string, unknown>;
+  /** Snapshot inmutable al publicar — lo que ve el candidato. */
+  published_form: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
   published_at: string | null;
@@ -548,6 +550,7 @@ export async function selfPublishDeck(id: string, consultorId: string): Promise<
         SET status = 'published',
             reviewed_by_user_id = $2,
             published_at = now(),
+            published_form = consultor_form - 'bitacora',
             updated_at = now()
       WHERE id = $1 AND status = 'draft'
       RETURNING *`,
@@ -559,6 +562,7 @@ export async function selfPublishDeck(id: string, consultorId: string): Promise<
 /**
  * Publica un deck. Acepta tanto `draft` (autopublish/admin directo) como
  * `pending_review` (admin aprobando lo que el consultor mandó a revisar).
+ * Snapshot atómico: `published_form := consultor_form` (excluyendo bitacora).
  */
 export async function publishDeck(id: string, reviewerId: string): Promise<DeckRow | null> {
   const { rows } = await pool.query<DeckRow>(
@@ -566,6 +570,7 @@ export async function publishDeck(id: string, reviewerId: string): Promise<DeckR
         SET status = 'published',
             reviewed_by_user_id = $2,
             published_at = now(),
+            published_form = consultor_form - 'bitacora',
             rejection_reason = NULL,
             updated_at = now()
       WHERE id = $1 AND status IN ('draft', 'pending_review')

@@ -3,6 +3,8 @@
 import type { CandidatoContext } from "@/lib/onboarding-api";
 import { getPartidosImportantesMock } from "@/lib/mocks/electoral-mock";
 
+import { EditableText } from "../EditableText";
+import { useEditing } from "../EditingContext";
 import { PartidosZona } from "../PartidosZona";
 import { SlideShell } from "./SlideShell";
 
@@ -19,6 +21,7 @@ export function SlidePartidosImportantes({ ctx }: SlidePartidosImportantesProps)
 
   const partidosForm = ctx.consultor_form?.partidos?.top_partidos ?? [];
   const observaciones = ctx.consultor_form?.partidos?.observaciones;
+  const { editing } = useEditing();
 
   // Si el consultor llenó top_partidos del form, ese reemplaza al mock.
   // Mapeamos al shape esperado por PartidosZona (votos absolutos no disponibles
@@ -43,12 +46,20 @@ export function SlidePartidosImportantes({ ctx }: SlidePartidosImportantesProps)
         Quiénes definen la agenda electoral en tu zona. Conocerlos es clave para diseñar tu narrativa diferencial.
       </p>
       <PartidosZona partidos={partidos} />
-      {observaciones && (
+      {(observaciones || editing) && (
         <div className="mt-6 bg-gradient-to-r from-amber-400/10 via-amber-400/5 to-transparent border-l-4 border-amber-400 px-5 py-4 rounded-sm">
           <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400 font-bold mb-1">
             Observaciones del consultor
           </div>
-          <p className="text-sm text-gray-200 leading-relaxed">{observaciones}</p>
+          <p className="text-sm text-gray-200 leading-relaxed">
+            <EditableText
+              section="partidos"
+              field="observaciones"
+              value={observaciones}
+              placeholder="[Análisis de quién domina la zona, alianzas posibles, debilidades del top]"
+              multiline
+            />
+          </p>
         </div>
       )}
     </SlideShell>

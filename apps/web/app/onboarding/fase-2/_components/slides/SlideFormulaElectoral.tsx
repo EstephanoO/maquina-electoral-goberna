@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import { Tv, Smartphone, Footprints } from "lucide-react";
 import { SlideShell } from "./SlideShell";
+import { EditableText } from "../EditableText";
 import type { CandidatoContext } from "@/lib/onboarding-api";
 
 interface Props {
@@ -121,7 +122,14 @@ export function SlideFormulaElectoral({ ctx }: Props) {
                     />
                   </div>
                   <div className="text-right text-xs font-bold mt-1" style={{ color: f.color }}>
-                    {peso}%
+                    <EditableText
+                      section="formula_electoral"
+                      field={`peso_${f.key}`}
+                      value={peso}
+                      numeric
+                      placeholder="0"
+                    />
+                    %
                   </div>
                 </div>
               </motion.div>
@@ -138,10 +146,20 @@ export function SlideFormulaElectoral({ ctx }: Props) {
         >
           <div>
             <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80 font-bold mb-1">
-              Presupuesto total
+              Presupuesto total (PEN)
             </div>
             <div className="text-2xl font-black text-white">
-              {presupuestoTotal ?? "¿Cuánto presupuesto tienes?"}
+              {presupuestoTotal ? (
+                presupuestoTotal
+              ) : (
+                <EditableText
+                  section="formula_electoral"
+                  field="presupuesto_total"
+                  value={fe?.presupuesto_total}
+                  numeric
+                  placeholder="¿Cuánto presupuesto tienes?"
+                />
+              )}
             </div>
             <p className="text-sm text-gray-400 mt-1">
               {presupuestoTotal
@@ -151,11 +169,16 @@ export function SlideFormulaElectoral({ ctx }: Props) {
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-[0.3em] text-amber-400/80 font-bold mb-1">
-              {justificacion ? "Lógica de la mezcla" : "Próximo paso"}
+              Lógica de la mezcla
             </div>
             <div className="text-base text-white leading-snug">
-              {justificacion ??
-                "En Fase 3 vas a elegir tus tácticas concretas dentro de cada frente (catálogo de estrategias Goberna)."}
+              <EditableText
+                section="formula_electoral"
+                field="justificacion"
+                value={justificacion}
+                placeholder="¿Por qué esta mezcla aire/mar/tierra? Explica acá la lógica."
+                multiline
+              />
             </div>
           </div>
         </motion.div>

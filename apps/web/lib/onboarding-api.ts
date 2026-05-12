@@ -144,6 +144,9 @@ export const onboardingApi = {
       cargo: res.data.cargo,
       jurisdiccion: res.data.jurisdiccion,
       organizacion_politica: res.data.organizacion_politica,
+      // El backend rellena con published_form (snapshot inmutable) o null
+      // si todavía no se publicó el deck Fase 2 del candidato.
+      consultor_form: res.data.consultor_form ?? null,
     };
   },
 

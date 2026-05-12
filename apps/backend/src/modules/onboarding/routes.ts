@@ -570,7 +570,29 @@ export function buildOnboardingRoutes(env: AppEnv): FastifyPluginAsync {
               errorPayload(requestId, "CANDIDATO_NOT_FOUND", "no se encontró candidatura para este user"),
             );
           }
-          return reply.code(200).send({ ok: true, request_id: requestId, ...ctx });
+          // Adjuntar el published_form del deck Fase 2 (si existe) — esto
+          // es lo que el candidato ve en /onboarding/fase-2. NO se incluye
+          // consultor_form (working draft) porque solo el admin/consultor
+          // con global_access lo edita.
+          const { rows: publishedRows } = await pool.query<{ published_form: unknown }>(
+            `SELECT d.published_form
+               FROM public.decks d
+               JOIN candidatos.postulacion p ON p.id_candidato = d.candidato_id
+              WHERE p.campaign_id = $1
+                AND d.type = 'diagnostico'
+                AND d.status = 'published'
+                AND d.published_form IS NOT NULL
+              ORDER BY d.published_at DESC NULLS LAST
+              LIMIT 1`,
+            [ctx.campaign.id],
+          );
+          const publishedForm = publishedRows[0]?.published_form ?? null;
+          return reply.code(200).send({
+            ok: true,
+            request_id: requestId,
+            ...ctx,
+            consultor_form: publishedForm,
+          });
         } catch (error) {
           app.log.error({ err: error, request_id: requestId }, "onboarding/me failed");
           return reply.code(500).send(
