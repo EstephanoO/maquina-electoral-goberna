@@ -119,6 +119,74 @@ export type ConsultorFormFase2 = {
    * Si la key no existe, el slide muestra el default original.
    */
   text_overrides?: Record<string, string>;
+
+  /** Datos de Fase 1 Rápida — llenados por el consultor en /onboarding/[slug]/fase-1 */
+  fase1_rapida?: Fase1Rapida | null;
+};
+
+export type Fase1Rapida = {
+  modo?: "rapida" | "completa";
+  candidato?: {
+    nombre_completo?: string;
+    apodo?: string;
+    fecha_nacimiento?: string;
+    sexo?: "M" | "F";
+    documento_tipo?: "DNI" | "CE" | "PASAPORTE";
+    documento_numero?: string;
+    ocupacion_actual?: string;
+    bio_corta?: string;
+    foto_url?: string;
+    tipo?: "candidato-propio" | "rival" | "aliado";
+  };
+  postulacion?: {
+    cargo_codigo?: string;
+    nombre_organizacion?: string;
+    nombre_territorio?: string;
+    nivel_territorio?: "distrital" | "provincial" | "regional" | "nacional";
+    fecha_eleccion?: string;
+  };
+  estrategia?: {
+    tipo_campana?: "RACIONAL" | "EMOTIVA" | "INSTINTIVA" | "MIXTA";
+    combinacion_mixta?: Array<"RACIONAL" | "EMOTIVA" | "INSTINTIVA">;
+    eje_emocional?: "PLAN_DE_GOBIERNO" | "EQUIPO_DE_CAMPAÑA" | "SIMPATIA" | "ESPERANZA" | "ODIO" | "MIEDO";
+    frente_principal?: "TIERRA" | "MAR" | "AIRE";
+    frentes_secundarios?: Array<"TIERRA" | "MAR" | "AIRE">;
+  };
+  diagnostico_inicial?: {
+    fortalezas?: string[];
+    debilidades?: string[];
+    oportunidades?: string[];
+    amenazas?: string[];
+    principales_competidores?: Array<{
+      nombre: string;
+      partido?: string;
+      nivel_amenaza?: "bajo" | "medio" | "alto";
+      notas?: string;
+    }>;
+  };
+  propuestas?: Array<{
+    orden: number;
+    titulo: string;
+    descripcion_corta: string;
+    icono?: string;
+    sector?: string;
+  }>;
+  branding?: {
+    slogan?: string;
+    color_primario?: string;
+    color_secundario?: string;
+    logo_url?: string;
+  };
+  contexto_territorio?: {
+    poblacion_aproximada?: number;
+    principales_problemas?: string[];
+    zonas_fuertes?: string[];
+    zonas_debiles?: string[];
+    notas_adicionales?: string;
+  };
+  secciones_completas?: string[];
+  publicado?: boolean;
+  publicado_at?: string;
 };
 
 export type SocialHandles = {

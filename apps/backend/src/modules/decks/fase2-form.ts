@@ -214,11 +214,129 @@ export const consultorFormFase2Schema = z
       .optional(),
 
     // ── Text overrides: cualquier texto hardcoded del template ──
-    // El consultor puede sobrescribir kickers, títulos, pilares, párrafos
-    // intro, etc. Cada texto tiene un key único tipo "slideId.path".
-    // Si está vacío, el slide muestra el default hardcoded. Permite
-    // personalizar 100% el deck por candidato sin tocar el código.
     text_overrides: z.record(z.string(), z.string()).optional(),
+
+    // ── Fase 1 Rápida — onboarding por candidato ──────────────────────
+    // Datos que el consultor llena en /onboarding/[slug]/fase-1.
+    // Se usan para generar el deck Fase 2 personalizado.
+    fase1_rapida: z
+      .object({
+        // Modo de llenado
+        modo: z.enum(["rapida", "completa"]).default("rapida").optional(),
+
+        // Sección 1 — Candidato
+        candidato: z
+          .object({
+            nombre_completo: z.string().optional(),
+            apodo: z.string().optional(),
+            fecha_nacimiento: z.string().optional(),
+            sexo: z.enum(["M", "F"]).optional(),
+            documento_tipo: z.enum(["DNI", "CE", "PASAPORTE"]).optional(),
+            documento_numero: z.string().optional(),
+            ocupacion_actual: z.string().optional(),
+            bio_corta: z.string().max(300).optional(),
+            foto_url: z.string().optional(),
+            tipo: z.enum(["candidato-propio", "rival", "aliado"]).default("candidato-propio").optional(),
+          })
+          .partial()
+          .optional(),
+
+        // Sección 2 — Postulación
+        postulacion: z
+          .object({
+            cargo_codigo: z.enum([
+              "alcalde_distrital", "alcalde_provincial", "regidor",
+              "consejero_regional", "gobernador_regional", "congresista", "presidente",
+            ]).optional(),
+            nombre_organizacion: z.string().optional(),
+            nombre_territorio: z.string().optional(),
+            nivel_territorio: z.enum(["distrital", "provincial", "regional", "nacional"]).optional(),
+            fecha_eleccion: z.string().optional(),
+          })
+          .partial()
+          .optional(),
+
+        // Sección 3 — Estrategia
+        estrategia: z
+          .object({
+            tipo_campana: z.enum(["RACIONAL", "EMOTIVA", "INSTINTIVA", "MIXTA"]).optional(),
+            combinacion_mixta: z.array(z.enum(["RACIONAL", "EMOTIVA", "INSTINTIVA"])).max(2).optional(),
+            eje_emocional: z.enum([
+              "PLAN_DE_GOBIERNO", "EQUIPO_DE_CAMPAÑA", "SIMPATIA", "ESPERANZA", "ODIO", "MIEDO",
+            ]).optional(),
+            frente_principal: z.enum(["TIERRA", "MAR", "AIRE"]).optional(),
+            frentes_secundarios: z.array(z.enum(["TIERRA", "MAR", "AIRE"])).max(2).optional(),
+          })
+          .partial()
+          .optional(),
+
+        // Sección 4 — Diagnóstico inicial (FODA + competidores)
+        diagnostico_inicial: z
+          .object({
+            fortalezas: z.array(z.string()).optional(),
+            debilidades: z.array(z.string()).optional(),
+            oportunidades: z.array(z.string()).optional(),
+            amenazas: z.array(z.string()).optional(),
+            principales_competidores: z
+              .array(
+                z.object({
+                  nombre: z.string(),
+                  partido: z.string().optional(),
+                  nivel_amenaza: z.enum(["bajo", "medio", "alto"]).default("medio"),
+                  notas: z.string().optional(),
+                }),
+              )
+              .max(5)
+              .optional(),
+          })
+          .partial()
+          .optional(),
+
+        // Sección 5 — Propuestas
+        propuestas: z
+          .array(
+            z.object({
+              orden: z.number().int().min(1),
+              titulo: z.string(),
+              descripcion_corta: z.string().max(140),
+              icono: z.string().optional(),
+              sector: z.string().optional(),
+            }),
+          )
+          .min(0)
+          .max(6)
+          .optional(),
+
+        // Sección 6 — Branding
+        branding: z
+          .object({
+            slogan: z.string().optional(),
+            color_primario: z.string().optional(),
+            color_secundario: z.string().optional(),
+            logo_url: z.string().optional(),
+          })
+          .partial()
+          .optional(),
+
+        // Sección 7 — Contexto territorial
+        contexto_territorio: z
+          .object({
+            poblacion_aproximada: z.number().int().min(0).optional(),
+            principales_problemas: z.array(z.string()).optional(),
+            zonas_fuertes: z.array(z.string()).optional(),
+            zonas_debiles: z.array(z.string()).optional(),
+            notas_adicionales: z.string().optional(),
+          })
+          .partial()
+          .optional(),
+
+        // Estado de completitud por sección
+        secciones_completas: z.array(z.string()).optional(),
+        publicado: z.boolean().default(false).optional(),
+        publicado_at: z.string().optional(),
+      })
+      .partial()
+      .optional(),
   })
   .partial();
 
