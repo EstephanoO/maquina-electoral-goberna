@@ -5,7 +5,7 @@ import { useTheme } from "../../../lib/theme-context";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { PageHeader } from "../../../lib/ui";
-import { UserInfoCard, WaPhonesSection, ThemeSelector, PasswordForm } from "./_components";
+import { UserInfoCard, WaPhonesSection, WaConfigSection, ThemeSelector, PasswordForm } from "./_components";
 
 export default function SettingsPage() {
   const { user, isAuthenticated, isLoading } = useAuth();
@@ -34,6 +34,7 @@ export default function SettingsPage() {
       />
 
       <UserInfoCard user={user} />
+      <WaConfigSection />
       <WaPhonesSection />
       <ThemeSelector theme={theme} setTheme={setTheme} />
       <PasswordForm />
