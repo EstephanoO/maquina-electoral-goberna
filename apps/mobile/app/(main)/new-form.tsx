@@ -500,6 +500,13 @@ export default function NewFormScreen() {
   const [ubicacionUtm, setUbicacionUtm] = useState<UtmData | null>(null);
   const [lugarRegistro, setLugarRegistro] = useState<SelectedDistrito | null>(null);
   const [enviando, setEnviando] = useState(false);
+  // Timestamp del último guardado exitoso — el banner verde se muestra por 3s
+  const [recentSavedAt, setRecentSavedAt] = useState<number | null>(null);
+  useEffect(() => {
+    if (recentSavedAt === null) return;
+    const t = setTimeout(() => setRecentSavedAt(null), 3000);
+    return () => clearTimeout(t);
+  }, [recentSavedAt]);
 
   // Seed formData from prefill once formConfig is available
   useEffect(() => {
@@ -788,19 +795,21 @@ export default function NewFormScreen() {
         console.warn('[new-form] forceSyncNow error:', e);
       });
 
-      // Navegar de vuelta PRIMERO — no dependemos del usuario tocando "OK" en el Alert.
-      // Si el Alert es descartado por el sistema (llamada entrante, etc.) la navegación
-      // ya ocurrió y el form no queda en estado vacío confuso.
-      router.back();
+      // Vaciar formulario y quedarse en pantalla — el agente puede registrar
+      // al siguiente entrevistado sin volver a navegar. GPS/distrito se
+      // resetean también: la siguiente persona seguramente está en otra
+      // ubicación o requiere nueva captura.
+      setFormData({});
+      setUbicacionUtm(null);
+      setLugarRegistro(null);
+      setPhoneDupError(null);
+      setFocusedIdx(-1);
 
-      // Mostrar feedback no-bloqueante después de navegar
-      // Usamos un setTimeout mínimo para que el Alert aparezca sobre la pantalla anterior
-      setTimeout(() => {
-        Alert.alert(
-          'Guardado',
-          'Registro guardado. Se sincronizara automaticamente cuando haya conexion.',
-        );
-      }, 300);
+      // Volver al inicio de la pantalla
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+
+      // Feedback no-bloqueante: banner verde temporal
+      setRecentSavedAt(Date.now());
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error desconocido';
       Alert.alert('Error', `No se pudo guardar el formulario: ${message}`);
@@ -859,6 +868,14 @@ export default function NewFormScreen() {
             </Text>
             <Text style={[styles.subtitle, { color: TEXT_MUTED }]}>Agente: {agent.full_name}</Text>
           </View>
+
+          {recentSavedAt !== null && (
+            <View style={styles.savedBanner}>
+              <Text style={styles.savedBannerText}>
+                ✓ Registro guardado. Listo para el siguiente.
+              </Text>
+            </View>
+          )}
 
           <View style={styles.form}>
             {/* ── Lugar de registro al TOPE (hace GPS opcional) ─────
@@ -968,6 +985,21 @@ const styles = StyleSheet.create({
   header: { marginBottom: 24 },
   backBtnSimple: { marginBottom: 12, paddingVertical: 8 },
   backText: { fontSize: 15, fontFamily: FONT },
+  savedBanner: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#22c55e',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  savedBannerText: {
+    color: '#15803d',
+    fontFamily: FONT,
+    fontSize: 14,
+    textAlign: 'center',
+  },
   title: { fontSize: 24, fontFamily: FONT },
   subtitle: { fontSize: 14, fontFamily: FONT, marginTop: 4 },
   form: { gap: 22 },
