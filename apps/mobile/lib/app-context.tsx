@@ -128,6 +128,10 @@ async function buildAppConfig(
       color_primario: campaignConfig?.config?.color_primario ?? DEFAULT_PRIMARY,
       color_secundario: campaignConfig?.config?.color_secundario ?? DEFAULT_SECONDARY,
       logo_url: campaignConfig?.config?.logo_url ?? null,
+      whatsapp_number:
+        typeof campaignConfig?.config?.whatsapp_number === 'string'
+          ? campaignConfig.config.whatsapp_number
+          : null,
     },
     form: formDef,
     agent: {
