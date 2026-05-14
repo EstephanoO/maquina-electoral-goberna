@@ -24,6 +24,8 @@ import { SlideReorganizar }        from "./slides/SlideReorganizar";
 import { SlideArquitectura, isSlideArquitecturaVisible } from "./slides/SlideArquitectura";
 import { SlideHerramientas }       from "./slides/SlideHerramientas";
 import { SlideCierre }             from "./slides/SlideCierre";
+import { SlideContextoTerritorial, isSlideContextoTerritorialVisible }   from "./slides/SlideContextoTerritorial";
+import { SlideDistribucionPoblacional, isSlideDistribucionPoblacionalVisible } from "./slides/SlideDistribucionPoblacional";
 
 import { MissingSlidesIndicator } from "./chrome/MissingSlidesIndicator";
 
@@ -75,11 +77,13 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
       { id: "presencia",    label: "Presencia digital",        visible: isPresenciaVisible(f2),                  formSection: "form-extendido (próximamente)", node: <SlidePresenciaDigital f2={f2} /> },
       { id: "debilidades",  label: "Debilidades y riesgos",    visible: isDebilidadesVisible(f2),                formSection: "form-extendido (próximamente)", node: <SlideDebilidades ctx={ctx} f2={f2} /> },
       // CAPÍTULO 3 — Territorio
+      { id: "contexto-territorial", label: "Contexto territorial",     visible: isSlideContextoTerritorialVisible(ctx),       formSection: null,                            node: <SlideContextoTerritorial ctx={ctx} /> },
+      { id: "distribucion-poblacional", label: "Distribución poblacional", visible: isSlideDistribucionPoblacionalVisible(ctx), formSection: null,                            node: <SlideDistribucionPoblacional ctx={ctx} /> },
       { id: "foda",         label: "FODA",                     visible: isSlideFodaVisible(f2),                  formSection: "diagnostico_inicial",           node: <SlideFoda f2={f2} /> },
       { id: "propuestas",   label: "Propuestas",               visible: isSlidePropuestasVisible(f2),            formSection: "propuestas",                    node: <SlidePropuestas f2={f2} /> },
       // CAPÍTULO 4 — Estrategia
       { id: "segmentos",    label: "Segmentación del voto",    visible: SlideSegmentos.isVisible(f2),            formSection: "form-extendido (próximamente)", node: <SlideSegmentos f2={f2} /> },
-      { id: "votos",        label: "% Votos necesarios",       visible: SlideVotosNecesarios.isVisible(f2),      formSection: "form-extendido (próximamente)", node: <SlideVotosNecesarios f2={f2} /> },
+      { id: "votos",        label: "% Votos necesarios",       visible: SlideVotosNecesarios.isVisible(f2, ctx), formSection: "form-extendido (próximamente)", node: <SlideVotosNecesarios f2={f2} ctx={ctx} /> },
       { id: "reorganizar",  label: "Cómo reorganizar el voto", visible: SlideReorganizar.isVisible(f2),          formSection: "form-extendido (próximamente)", node: <SlideReorganizar f2={f2} /> },
       // CAPÍTULO 5 — Ejecución
       { id: "arquitectura", label: "Arquitectura META",        visible: isSlideArquitecturaVisible(f2),          formSection: "estrategia",                    node: <SlideArquitectura f2={f2} /> },

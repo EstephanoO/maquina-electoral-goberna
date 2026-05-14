@@ -2,7 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, useInView } from "motion/react";
-import type { ConsultorFormFase2 } from "@/lib/onboarding-api";
+import type { CandidatoContext, ConsultorFormFase2 } from "@/lib/onboarding-api";
+import {
+  fetchDistritoDetail,
+  type DistritoDetail,
+} from "@/lib/onboarding-fase1-api";
 
 import { SlideChromeData } from "../chrome/SlideChromeData";
 import { DataTable } from "../chrome/DataTable";
@@ -10,6 +14,8 @@ import { TagTilt } from "../chrome/TagTilt";
 
 interface Props {
   f2: ConsultorFormFase2;
+  /** Si se provee, busca padrón en onboarding_fase1 cuando no esté en el form. */
+  ctx?: CandidatoContext;
 }
 
 const nf = new Intl.NumberFormat("es-PE");
@@ -65,12 +71,38 @@ function CountUp({
  * Izquierda: histórico electoral (DataTable).
  * Derecha: pipeline vertical de 3 stages (Resultado anterior → Gap → Meta 2026).
  */
-export function SlideVotosNecesarios({ f2 }: Props) {
+export function SlideVotosNecesarios({ f2, ctx }: Props) {
   const vpg = f2.votos_para_ganar ?? {};
   const entries = f2.historial?.entries ?? [];
   const hasHistorial = entries.length > 0;
 
-  const padron = vpg.padron_actual;
+  // Fallback chain: form > último padrón ONPE > 70% de población total 2025
+  const [enrichment, setEnrichment] = useState<DistritoDetail | null>(null);
+  const idDistrito = ctx?.jurisdiccion?.distrito?.id ?? null;
+  useEffect(() => {
+    if (!idDistrito || typeof vpg.padron_actual === "number") return;
+    let cancelled = false;
+    fetchDistritoDetail(idDistrito, { simplify: 0.01 })
+      .then((d) => { if (!cancelled) setEnrichment(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [idDistrito, vpg.padron_actual]);
+
+  const padronEnriquecido =
+    enrichment?.padron?.poblacion_electoral ??
+    (enrichment?.poblacion_total_2025
+      ? Math.round(enrichment.poblacion_total_2025 * 0.7)
+      : null);
+
+  const padron = vpg.padron_actual ?? padronEnriquecido ?? null;
+  const padronFuente =
+    typeof vpg.padron_actual === "number"
+      ? vpg.fuente ?? null
+      : enrichment?.padron
+        ? `${enrichment.padron.fuente} · ${enrichment.padron.eleccion_codigo}`
+        : enrichment?.poblacion_total_2025
+          ? "Estimación: 70% de la población 2025 (INEI)"
+          : null;
   const meta = vpg.votos_meta;
   const ganadorAnterior = vpg.votos_ganador_anterior;
 
@@ -103,9 +135,9 @@ export function SlideVotosNecesarios({ f2 }: Props) {
     resultado: e.resultado ?? "—",
   }));
 
-  const footer = vpg.fuente ? (
+  const footer = padronFuente ? (
     <span>
-      <span className="font-semibold text-[#0a1f4a]">Fuente:</span> {vpg.fuente}
+      <span className="font-semibold text-[#0a1f4a]">Fuente padrón:</span> {padronFuente}
     </span>
   ) : undefined;
 
@@ -256,10 +288,14 @@ export function SlideVotosNecesarios({ f2 }: Props) {
   );
 }
 
-SlideVotosNecesarios.isVisible = (f2: ConsultorFormFase2): boolean => {
+SlideVotosNecesarios.isVisible = (
+  f2: ConsultorFormFase2,
+  ctx?: CandidatoContext,
+): boolean => {
   const vpg = f2.votos_para_ganar;
-  if (!vpg) return false;
-  return (
-    typeof vpg.padron_actual === "number" || typeof vpg.votos_meta === "number"
-  );
+  if (typeof vpg?.padron_actual === "number") return true;
+  if (typeof vpg?.votos_meta === "number") return true;
+  // Si hay distrito en la jurisdicción, podemos derivar padrón aunque el
+  // form no lo tenga → slide igual aparece.
+  return Boolean(ctx?.jurisdiccion?.distrito?.id);
 };

@@ -20,6 +20,7 @@ import { buildCampaignsRoutes } from "./modules/campaigns/routes";
 import { buildAccessRequestsRoutes } from "./modules/access-requests/routes";
 import { buildMobileRoutes } from "./modules/mobile/routes";
 import { buildOnboardingRoutes } from "./modules/onboarding/routes";
+import { buildOnboardingGeoRoutes } from "./modules/onboarding-fase1/geo/routes";
 import { buildConsultorRoutes } from "./modules/consultor/routes";
 import { buildDecksRoutes } from "./modules/decks/routes";
 import { buildCatalogosRoutes } from "./modules/catalogos/routes";
@@ -197,6 +198,7 @@ export function buildApp(env: AppEnv) {
   app.register(buildAccessRequestsRoutes(env));
   app.register(buildMobileRoutes(env));
   app.register(buildOnboardingRoutes(env));
+  app.register(buildOnboardingGeoRoutes(env));
   app.register(buildConsultorRoutes(env));
   app.register(buildDecksRoutes(env));
   app.register(buildCatalogosRoutes(env));

@@ -3,6 +3,10 @@ export type AppEnv = {
   port: number;
   frontendOrigins: string[];
   databaseUrl: string;
+  // DATABASE_URL secundario apuntando a onboarding_fase1. Source of truth para
+  // catálogos del geógrafo + candidatos en pipeline + datos externos enriquecedores.
+  // Si vacío, los endpoints /onboarding-fase1/* devuelven 503.
+  onboardingDatabaseUrl: string;
   redisUrl: string;
   jwtSecret: string;
   jwtAccessExpiresIn: string;
@@ -149,6 +153,7 @@ export function getEnv(): AppEnv {
     port: toNumber(process.env.BACKEND_PORT ?? process.env.PORT, 3001),
     frontendOrigins: parseOrigins(frontendRaw),
     databaseUrl,
+    onboardingDatabaseUrl: (process.env.ONBOARDING_DATABASE_URL ?? "").trim(),
     redisUrl,
     jwtSecret,
     jwtAccessExpiresIn: (process.env.JWT_ACCESS_EXPIRES_IN ?? "365d").trim(),

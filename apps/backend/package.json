@@ -6,6 +6,7 @@
     "dev": "bun --watch src/server.ts",
     "start": "bun src/server.ts",
     "migrate": "bun src/infra/database/migrate.ts",
+    "migrate:onboarding": "bun src/infra/database/migrate-onboarding.ts",
     "seed": "bun scripts/seed-dev.ts",
     "test": "vitest run",
     "test:watch": "vitest"
