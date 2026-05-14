@@ -1,14 +1,4 @@
-import { Fase1RapidaClient } from "./_components/Fase1RapidaClient";
-
-export function generateMetadata({
-  params,
-}: {
-  params: { slug: string };
-}) {
-  return {
-    title: `Fase 1 · ${params.slug} — Goberna Electoral`,
-  };
-}
+import { redirect } from "next/navigation";
 
 export default async function Fase1Page({
   params,
@@ -16,5 +6,5 @@ export default async function Fase1Page({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  return <Fase1RapidaClient slug={slug} />;
+  redirect(`/onboarding/${slug}/perfil`);
 }

@@ -1,10 +1,7 @@
-import { Fase2Client } from "./_components/Fase2Client";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Fase 2 — Tu jurisdicción · Goberna Electoral",
-  description: "Contexto, análisis electoral y competencia de tu campaña.",
-};
-
+// El deck Goberna clásico se consolidó al flujo por candidato.
+// Acceso directo a /onboarding/fase-2 ya no es el flujo activo.
 export default function Fase2Page() {
-  return <Fase2Client />;
+  redirect("/home");
 }

@@ -1,10 +1,6 @@
-import { Fase3Client } from "./_components/Fase3Client";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Fase 3 — Tu estrategia · Goberna Electoral",
-  description: "Definí Digital + Territorial y entrá a tu Máquina Electoral.",
-};
-
+// Fase 3 se consolidó al flujo por candidato vía /onboarding/[slug]/perfil.
 export default function Fase3Page() {
-  return <Fase3Client />;
+  redirect("/home");
 }

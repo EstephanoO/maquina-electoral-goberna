@@ -113,12 +113,13 @@ export type ConsultorFormFase2 = {
     trayectoria?: string;
     valores?: string[];
   };
-  /**
-   * Overrides de cualquier texto hardcoded del template. Cada key es
-   * único por slide.field (ej: "cover.title", "capacidad.pilar_0.titulo").
-   * Si la key no existe, el slide muestra el default original.
-   */
   text_overrides?: Record<string, string>;
+
+  /** Perfil 5N del candidato (N1-N5 + Entorno + Coherencia) */
+  perfil_candidato?: PerfilCandidato | null;
+
+  /** Territorio ECD (Estructura × Conciencia × Decisión = Núcleo Goberna) */
+  territorio_ecd?: TerritoryEcd | null;
 
   /** Datos de Fase 1 Rápida — llenados por el consultor en /onboarding/[slug]/fase-1 */
   fase1_rapida?: Fase1Rapida | null;
@@ -187,6 +188,85 @@ export type Fase1Rapida = {
   secciones_completas?: string[];
   publicado?: boolean;
   publicado_at?: string;
+};
+
+export type PerfilCandidato = {
+  n1_identidad?: {
+    nombre_completo?: string; apodo?: string; fecha_nacimiento?: string;
+    lugar_nacimiento?: string; sexo?: "M" | "F"; documento_tipo?: "DNI" | "CE" | "PASAPORTE";
+    documento_numero?: string; bio_corta?: string; foto_url?: string;
+    estado_civil?: string; hijos?: number; religion?: string;
+  };
+  n2_trayectoria?: {
+    ocupacion_actual?: string; profesion?: string;
+    historial_laboral?: Array<{ orden: number; cargo: string; organizacion: string; anio_inicio?: number; anio_fin?: number | "actual"; descripcion?: string; }>;
+    logros_principales?: string[];
+    formacion?: Array<{ nivel: string; institucion: string; titulo?: string; anio?: number; }>;
+  };
+  n3_riesgo?: {
+    denuncias_penales?: Array<{ descripcion: string; estado: "activa" | "archivada" | "sentencia"; fuente?: string; }>;
+    google_negativo?: string[]; jne_observaciones?: string[];
+    nivel_riesgo_global?: "bajo" | "medio" | "alto" | "critico"; notas?: string;
+  };
+  n4_patrimonio?: {
+    declaracion_jurada_url?: string; bienes_principales?: string[]; deudas?: string[];
+    consistencia?: "consistente" | "inconsistente" | "sin_datos"; notas?: string;
+  };
+  n5_salud?: {
+    estado_general?: "optimo" | "bueno" | "regular" | "preocupante";
+    limitaciones?: string[]; energia_campana?: "alta" | "media" | "baja"; notas?: string;
+  };
+  entorno?: {
+    familia_en_campana?: boolean;
+    principales_asesores?: Array<{ nombre: string; rol: string; confianza: "alta" | "media" | "baja"; }>;
+    financiadores_clave?: string[]; adversarios_internos?: string[]; notas?: string;
+  };
+  coherencia?: {
+    mensaje_vida_candidatura?: string; contradicciones?: string[];
+    score?: number; notas?: string;
+  };
+};
+
+export type C2Segmento = {
+  id: string; nombre: string; pct_aprox?: number;
+  valores?: string[]; aspiraciones?: string[]; temores?: string[];
+  problema_principal?: string; medio_info_preferido?: string;
+};
+
+export type D5MatrixRow = {
+  segmento_id: string; candidato_preferido?: string; razon_preferencia?: string;
+  voto_util?: boolean; prob_cambio?: "alta" | "media" | "baja";
+  mensaje_clave?: string; canal_efectivo?: string; portavoz_sugerido?: string;
+};
+
+export type TerritoryEcd = {
+  e1_capital_economico?: { pbi_per_capita?: number; nivel_pobreza_pct?: number; principales_sectores?: string[]; notas?: string; };
+  e2_capital_social?: {
+    organizaciones_clave?: string[];
+    lideres_territoriales?: Array<{ nombre: string; influencia: "alta" | "media" | "baja"; afinidad: "favorable" | "neutro" | "adverso"; }>;
+    notas?: string;
+  };
+  e3_capital_cultural?: { identidades_dominantes?: string[]; fiestas_costumbres?: string[]; lenguas?: string[]; notas?: string; };
+  e4_campo_politico?: {
+    partidos_fuertes?: Array<{ nombre: string; pct_aprox?: number; trend?: "subiendo" | "estable" | "bajando"; }>;
+    voto_historico_tendencia?: string; nivel_polarizacion?: "bajo" | "medio" | "alto"; notas?: string;
+  };
+  e5_infraestructura?: { conectividad?: "buena" | "regular" | "mala"; zonas_geograficas?: string[]; dificultades_acceso?: string[]; notas?: string; };
+  c1_identificacion?: { porcentaje_identificados?: number; partido_dominante?: string; notas?: string; };
+  c2_segmentos?: C2Segmento[];
+  c3_issues?: { top_issues?: Array<{ issue: string; pct_menciona?: number; prioridad?: number; }>; notas?: string; };
+  c4_evaluacion?: { aprobacion_candidato?: number; nota_gestion_anterior?: number; comentarios?: string; };
+  c5_intencion_voto?: { candidato_puntero?: string; pct_nuestro_candidato?: number; pct_indecisos?: number; fecha_medicion?: string; fuente?: string; };
+  c6_voto_util?: { escenario?: string; riesgo_voto_util?: "bajo" | "medio" | "alto"; notas?: string; };
+  d1_costo_voto?: { distancia_urnas?: "baja" | "media" | "alta"; obligatoriedad_percibida?: "alta" | "media" | "baja"; notas?: string; };
+  d2_beneficios?: { promesas_mas_valoradas?: string[]; credibilidad_promesas?: "alta" | "media" | "baja"; notas?: string; };
+  d3_riesgo?: { miedo_al_cambio?: "alto" | "medio" | "bajo"; incertidumbre_candidato?: "alta" | "media" | "baja"; notas?: string; };
+  d4_influencia?: { influencers_clave?: Array<{ nombre: string; tipo: string; alcance?: string; }>; grupos_presion?: string[]; notas?: string; };
+  d5_matrix?: D5MatrixRow[];
+  nucleo_goberna?: {
+    segmentos_prioritarios?: Array<{ segmento_id: string; mensaje_central?: string; canal_principal?: string; portavoz?: string; accion_inmediata?: string; }>;
+    propuesta_central?: string; diferenciador_clave?: string; notas?: string;
+  };
 };
 
 export type SocialHandles = {

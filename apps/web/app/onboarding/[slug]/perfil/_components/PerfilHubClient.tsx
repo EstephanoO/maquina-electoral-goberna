@@ -374,21 +374,43 @@ export function PerfilHubClient({ slug }: { slug: string }) {
     n_perfil: objectCompletion(perfil.n1_identidad as Record<string, unknown> | undefined, ["bio_corta", "lugar_nacimiento", "estado_civil"]),
   };
 
+  const allLevels = Object.values(comp);
+  const donePct = Math.round((allLevels.filter(l => l === "done").length / allLevels.length) * 100);
+  const deckReady = donePct >= 40; // candidato, estrategia, propuestas al menos
+
   return (
     <div className="min-h-screen bg-[#020a1e] text-white">
       {/* Header */}
       <div className="sticky top-0 z-20 bg-[#020a1e]/95 backdrop-blur-md border-b border-white/8">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
+            {/* Back to wizard */}
+            <a
+              href="/onboarding"
+              className="text-[10px] text-gray-600 hover:text-gray-400 transition-colors uppercase tracking-wider hidden sm:block"
+            >
+              ← Inicio
+            </a>
             <div
-              className="size-9 rounded-full flex items-center justify-center font-black text-base flex-shrink-0"
+              className="size-8 rounded-full flex items-center justify-center font-black text-sm flex-shrink-0"
               style={{ background: color1 + "25", color: color1, border: `1.5px solid ${color1}50` }}
             >
               {nombre[0]?.toUpperCase() ?? "C"}
             </div>
             <div>
               <h1 className="font-black text-white text-sm leading-tight">{nombre}</h1>
-              <p className="text-[10px] text-gray-500 uppercase tracking-wider">{slug}</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <div className="h-1 w-20 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${donePct}%`,
+                      background: donePct >= 60 ? "#4ade80" : donePct >= 30 ? "#fbbf24" : "#6b7280",
+                    }}
+                  />
+                </div>
+                <span className="text-[10px] text-gray-500">{donePct}%</span>
+              </div>
             </div>
           </div>
 
@@ -404,9 +426,13 @@ export function PerfilHubClient({ slug }: { slug: string }) {
             ) : null}
             <a
               href={`/onboarding/${slug}/fase-2`}
-              className="px-3.5 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-bold bg-amber-400/10 text-amber-400 border border-amber-400/30 hover:bg-amber-400/20 transition-colors"
+              className={`px-3.5 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-bold transition-colors ${
+                deckReady
+                  ? "bg-amber-400 text-[#0a1e4a] hover:bg-amber-300"
+                  : "bg-amber-400/10 text-amber-400 border border-amber-400/30 hover:bg-amber-400/20"
+              }`}
             >
-              Ver presentación →
+              {deckReady ? "Ver presentación →" : "Presentación →"}
             </a>
           </div>
         </div>

@@ -177,7 +177,7 @@ export function OnboardingFlow() {
                   /* Después de fase 1 vamos a la carta cinematográfica.
                      La carta tiene su propio botón "Continuar" que lleva a
                      fase 2 (o el candidato puede editar su perfil primero). */
-                  dashboardUrl="/onboarding/carta"
+                  dashboardUrl={`/onboarding/${data.provisioning?.slug ?? ""}/perfil`}
                   onContinue={(url) => router.push(url)}
                 />
               )}

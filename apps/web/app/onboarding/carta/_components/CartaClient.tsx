@@ -150,7 +150,10 @@ export function CartaClient({
     snapshot?.jurisdiccion.pais.nombre ??
     "—";
 
-  const handleContinue = () => router.push("/onboarding/fase-2");
+  const handleContinue = () => {
+    const slug = snapshot?.campaign?.slug;
+    router.push(slug ? `/onboarding/${slug}/perfil` : "/home");
+  };
   const handleEdit = () => setEditing(true);
 
   return (
