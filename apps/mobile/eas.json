@@ -9,17 +9,20 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "254c108f56727599de6fd11e3d3e46d899a8b605bf6cfedd"
-      }
+      },
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_AGENT_INGEST_TOKEN": "254c108f56727599de6fd11e3d3e46d899a8b605bf6cfedd"
-      }
+      },
+      "channel": "preview"
     },
     "ios-ipa": {
       "distribution": "internal",
-      "ios": {}
+      "ios": {},
+      "channel": "ios-ipa"
     },
     "production": {
       "autoIncrement": true,
@@ -31,7 +34,8 @@
       },
       "android": {
         "buildType": "app-bundle"
-      }
+      },
+      "channel": "production"
     },
     "production2": {
       "autoIncrement": true,
@@ -43,7 +47,8 @@
       },
       "android": {
         "buildType": "app-bundle"
-      }
+      },
+      "channel": "production2"
     }
   },
   "submit": {

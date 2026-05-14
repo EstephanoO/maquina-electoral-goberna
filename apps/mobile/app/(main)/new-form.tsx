@@ -25,6 +25,7 @@ import {
   InputAccessoryView,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -37,10 +38,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
 import * as Network from 'expo-network';
+import QRCode from 'react-native-qrcode-svg';
 
 import { useCandidate, useFormConfig, useAgent, useActiveCampaign } from '@/lib/app-context';
 import { queueForm, forceSyncNow, phoneExistsLocally } from '@/lib/offline-queue';
-import { checkPhoneDuplicate } from '@/lib/api';
+import { checkPhoneDuplicate, createFormQrDraft } from '@/lib/api';
 import { appEvents } from '@/lib/events';
 import { latLonToUtm } from '@/lib/utm';
 import DistritoPicker from '@/components/DistritoPicker';
@@ -56,6 +58,7 @@ function generateClientId(): string {
 }
 
 const FONT = FontFamily.bold;
+const FONT_REGULAR = FontFamily.regular;
 const BORDER = Neutral.border;
 // Texto muted más oscuro (0.7 alpha) — caso especial vs Neutral.textMuted que es 0.5
 const TEXT_MUTED = 'rgba(22, 57, 96, 0.7)';
@@ -501,6 +504,17 @@ export default function NewFormScreen() {
   const [lugarRegistro, setLugarRegistro] = useState<SelectedDistrito | null>(null);
   const [enviando, setEnviando] = useState(false);
 
+  // Modal post-submit. Si la campaña tiene whatsapp_number → genera QR para
+  // que el entrevistado escanee y le mande mensaje al candidato. Si no →
+  // muestra mensaje "número no configurado" + botón continuar.
+  type QrModalState =
+    | { open: false }
+    | { open: true; status: 'loading' }
+    | { open: true; status: 'ready'; qrUrl: string }
+    | { open: true; status: 'no-config' }
+    | { open: true; status: 'error'; message: string };
+  const [qrModal, setQrModal] = useState<QrModalState>({ open: false });
+
   // Seed formData from prefill once formConfig is available
   useEffect(() => {
     if (Object.keys(initialFormData).length > 0) {
@@ -788,19 +802,37 @@ export default function NewFormScreen() {
         console.warn('[new-form] forceSyncNow error:', e);
       });
 
-      // Navegar de vuelta PRIMERO — no dependemos del usuario tocando "OK" en el Alert.
-      // Si el Alert es descartado por el sistema (llamada entrante, etc.) la navegación
-      // ya ocurrió y el form no queda en estado vacío confuso.
-      router.back();
-
-      // Mostrar feedback no-bloqueante después de navegar
-      // Usamos un setTimeout mínimo para que el Alert aparezca sobre la pantalla anterior
-      setTimeout(() => {
-        Alert.alert(
-          'Guardado',
-          'Registro guardado. Se sincronizara automaticamente cuando haya conexion.',
-        );
-      }, 300);
+      // Abrir modal post-submit. Si el candidato tiene WhatsApp configurado,
+      // intentamos generar un QR draft para que el entrevistado escanee y le
+      // mande mensaje. Si no, mostramos mensaje "no configurado".
+      if (!candidate.whatsapp_number) {
+        setQrModal({ open: true, status: 'no-config' });
+      } else {
+        setQrModal({ open: true, status: 'loading' });
+        // POST en background — el modal switches a 'ready' o 'error' cuando responde
+        createFormQrDraft({
+          client_id: clientId,
+          form_definition_id: formConfig.id,
+          data: payloadData,
+          lat: ubicacionUtm?.latitude ?? null,
+          lng: ubicacionUtm?.longitude ?? null,
+        })
+          .then((res) => {
+            if (res.ok) {
+              setQrModal({ open: true, status: 'ready', qrUrl: res.data.qr_url });
+            } else {
+              setQrModal({
+                open: true,
+                status: 'error',
+                message: res.error ?? 'No pudimos generar el QR. Sin conexión?',
+              });
+            }
+          })
+          .catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : 'Error desconocido';
+            setQrModal({ open: true, status: 'error', message });
+          });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error desconocido';
       Alert.alert('Error', `No se pudo guardar el formulario: ${message}`);
@@ -859,6 +891,7 @@ export default function NewFormScreen() {
             </Text>
             <Text style={[styles.subtitle, { color: TEXT_MUTED }]}>Agente: {agent.full_name}</Text>
           </View>
+
 
           <View style={styles.form}>
             {/* ── Lugar de registro al TOPE (hace GPS opcional) ─────
@@ -957,7 +990,125 @@ export default function NewFormScreen() {
         hasNext={focusedIdx >= 0 && focusedIdx < textFieldIds.length - 1}
         primaryColor={primary}
       />
+
+      <PostSubmitModal
+        state={qrModal}
+        candidateName={candidate.name}
+        primary={primary}
+        onClose={() => {
+          // Cerrar modal y limpiar todo para el próximo entrevistado
+          setQrModal({ open: false });
+          setFormData({});
+          setUbicacionUtm(null);
+          setLugarRegistro(null);
+          setPhoneDupError(null);
+          setFocusedIdx(-1);
+          scrollRef.current?.scrollTo({ y: 0, animated: true });
+        }}
+      />
     </SafeAreaView>
+  );
+}
+
+// ── Post-submit modal ────────────────────────────────────────
+// Estados:
+//   loading    → spinner mientras backend genera el QR
+//   ready      → muestra QR para que el entrevistado escanee
+//   no-config  → "número del candidato aún no está configurado"
+//   error      → "no se pudo generar — continuar sin envío"
+
+interface PostSubmitModalProps {
+  state:
+    | { open: false }
+    | { open: true; status: 'loading' }
+    | { open: true; status: 'ready'; qrUrl: string }
+    | { open: true; status: 'no-config' }
+    | { open: true; status: 'error'; message: string };
+  candidateName: string;
+  primary: string;
+  onClose: () => void;
+}
+
+function PostSubmitModal({ state, candidateName, primary, onClose }: PostSubmitModalProps) {
+  return (
+    <Modal
+      visible={state.open}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <Text style={[styles.modalTitle, { color: primary }]}>
+            ✓ Registro guardado
+          </Text>
+
+          {state.open && state.status === 'loading' && (
+            <View style={styles.modalLoadingBox}>
+              <ActivityIndicator size="large" color={primary} />
+              <Text style={styles.modalSubtitle}>Generando QR...</Text>
+            </View>
+          )}
+
+          {state.open && state.status === 'ready' && (
+            <>
+              <Text style={styles.modalSubtitle}>
+                Pídele al entrevistado que escanee este QR para enviarle un mensaje a {candidateName}.
+              </Text>
+              <View style={styles.qrBox}>
+                <QRCode value={state.qrUrl} size={220} />
+              </View>
+              <Text style={styles.modalHelp}>
+                El entrevistado abre WhatsApp y envía el mensaje con un toque.
+              </Text>
+            </>
+          )}
+
+          {state.open && state.status === 'no-config' && (
+            <View style={styles.modalWarnBox}>
+              <Text style={styles.modalWarnTitle}>
+                El número de {candidateName} aún no está configurado
+              </Text>
+              <Text style={styles.modalWarnText}>
+                Pídele a tu consultor que lo configure en{' '}
+                <Text style={styles.modalWarnLink}>electoral.goberna.club/settings</Text>
+                {' '}para generar el QR.
+              </Text>
+            </View>
+          )}
+
+          {state.open && state.status === 'error' && (
+            <View style={styles.modalWarnBox}>
+              <Text style={styles.modalWarnTitle}>No se pudo generar el QR</Text>
+              <Text style={styles.modalWarnText}>{state.message}</Text>
+              <Text style={styles.modalHelp}>
+                El registro fue guardado igual. Reintentá con el siguiente.
+              </Text>
+            </View>
+          )}
+
+          <Pressable
+            style={[styles.modalPrimaryBtn, { backgroundColor: primary }]}
+            onPress={onClose}
+            accessibilityRole="button"
+          >
+            <Text style={styles.modalPrimaryBtnText}>
+              {state.open && state.status === 'ready' ? 'Listo, siguiente' : 'Continuar'}
+            </Text>
+          </Pressable>
+
+          {state.open && state.status === 'ready' && (
+            <Pressable
+              style={styles.modalSecondaryBtn}
+              onPress={onClose}
+              accessibilityRole="button"
+            >
+              <Text style={styles.modalSecondaryBtnText}>Saltar QR</Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -968,6 +1119,105 @@ const styles = StyleSheet.create({
   header: { marginBottom: 24 },
   backBtnSimple: { marginBottom: 12, paddingVertical: 8 },
   backText: { fontSize: 15, fontFamily: FONT },
+  // ── Post-submit modal ──────────────────────────────────────
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    width: '100%',
+    maxWidth: 380,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontFamily: FONT,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    fontFamily: FONT_REGULAR,
+    color: '#475569',
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  modalLoadingBox: {
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 24,
+  },
+  qrBox: {
+    padding: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginBottom: 12,
+  },
+  modalHelp: {
+    fontSize: 12,
+    fontFamily: FONT_REGULAR,
+    color: '#64748b',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  modalWarnBox: {
+    backgroundColor: '#fef3c7',
+    borderColor: '#f59e0b',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 16,
+    width: '100%',
+  },
+  modalWarnTitle: {
+    fontSize: 14,
+    fontFamily: FONT,
+    color: '#92400e',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  modalWarnText: {
+    fontSize: 13,
+    fontFamily: FONT_REGULAR,
+    color: '#78350f',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  modalWarnLink: {
+    fontFamily: FONT,
+    color: '#b45309',
+  },
+  modalPrimaryBtn: {
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    width: '100%',
+    alignItems: 'center',
+  },
+  modalPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontFamily: FONT,
+  },
+  modalSecondaryBtn: {
+    marginTop: 10,
+    paddingVertical: 10,
+  },
+  modalSecondaryBtnText: {
+    color: '#64748b',
+    fontSize: 14,
+    fontFamily: FONT_REGULAR,
+  },
   title: { fontSize: 24, fontFamily: FONT },
   subtitle: { fontSize: 14, fontFamily: FONT, marginTop: 4 },
   form: { gap: 22 },

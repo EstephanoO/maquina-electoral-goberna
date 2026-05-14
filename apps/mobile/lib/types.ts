@@ -104,6 +104,12 @@ export type CampaignConfig = {
     color_primario?: string;
     color_secundario?: string;
     logo_url?: string | null;
+    /** Número del candidato (sin +), usado para generar QRs wa.me en el form */
+    whatsapp_number?: string;
+    /** Template del mensaje WhatsApp con tokens {candidato} {brigadista} */
+    whatsapp_qr_message?: string;
+    /** URL del canal WhatsApp (https://whatsapp.com/channel/...) */
+    whatsapp_channel_url?: string;
   } | null;
 };
 
@@ -221,6 +227,9 @@ export type AppConfig = {
     color_primario: string;
     color_secundario: string;
     logo_url: string | null;
+    /** WhatsApp del candidato (sin +). Si está set, post-submit del form
+     *  genera un QR para que el entrevistado le envíe mensaje al candidato. */
+    whatsapp_number: string | null;
   };
   form: FormDefinition | null;
   agent: {

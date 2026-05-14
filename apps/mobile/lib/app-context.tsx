@@ -128,6 +128,10 @@ async function buildAppConfig(
       color_primario: campaignConfig?.config?.color_primario ?? DEFAULT_PRIMARY,
       color_secundario: campaignConfig?.config?.color_secundario ?? DEFAULT_SECONDARY,
       logo_url: campaignConfig?.config?.logo_url ?? null,
+      whatsapp_number:
+        typeof campaignConfig?.config?.whatsapp_number === 'string'
+          ? campaignConfig.config.whatsapp_number
+          : null,
     },
     form: formDef,
     agent: {
@@ -239,8 +243,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return { ok: true, data: undefined };
       }
 
-      // needs_campaign explícito del backend O campaigns vacío → needs_campaign.
-      if (data.needs_campaign === true || campaigns.length === 0) {
+      // needs_campaign explícito del backend, campaigns vacío, o user.status=pending
+      // (user existe en DB pero sin asignación a campaña activa) → needs_campaign.
+      // Replica del check del boot flow (línea ~168) — sin esto, login con
+      // pending caía a 'active' y mostraba dashboard con badge "pending".
+      if (
+        data.needs_campaign === true ||
+        user.status === 'pending' ||
+        campaigns.length === 0
+      ) {
         setAuth({ status: 'needs_campaign', user });
         return { ok: true, data: undefined };
       }

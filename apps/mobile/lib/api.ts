@@ -341,6 +341,37 @@ export async function submitForm(
   );
 }
 
+// ─── Form QR Drafts (post-submit QR para el entrevistado) ────
+
+export type CreateFormQrDraftPayload = {
+  /** UUID local — el mismo client_id del form queue. Idempotente. */
+  client_id: string;
+  /** ID del form definition (para que el backend asocie el form_submission). */
+  form_definition_id?: string | null;
+  /** Data del form como llave-valor — backend hace el INSERT en form_submissions. */
+  data: Record<string, unknown>;
+  /** Coords opcionales (decimal) */
+  lat?: number | null;
+  lng?: number | null;
+};
+
+/**
+ * POST /api/form-qr-drafts
+ * Crea un draft QR para que el entrevistado escanee. Backend responde con
+ * token + qr_url (`/api/q/<token>`). Cuando el entrevistado escanea ese URL,
+ * el backend redirige a wa.me/<candidato_number>?text=<mensaje> con tokens
+ * resueltos, y persiste el form_submission asociado al draft.
+ */
+export async function createFormQrDraft(
+  payload: CreateFormQrDraftPayload,
+): Promise<ApiResult<{ token: string; qr_url: string; expires_at: string }>> {
+  return request<{ token: string; qr_url: string; expires_at: string }>(
+    'POST',
+    '/form-qr-drafts',
+    payload,
+  );
+}
+
 // ─── Phone duplicate check ──────────────────────────────────
 
 /**

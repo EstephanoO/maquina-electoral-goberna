@@ -830,51 +830,13 @@ export function Fase1RapidaClient({ slug }: { slug: string }) {
     secciones_completas: [],
   });
 
-  // Load existing data — or seed from CandidatoContext if fase1 is empty
+  // Load existing data
   useEffect(() => {
     (async () => {
       try {
         const result = await onboardingApi.getFase2BySlug(slug);
         if (result?.deck.consultor_form?.fase1_rapida) {
-          // Already has fase1 data — restore it
           setForm((prev) => ({ ...prev, ...result.deck.consultor_form!.fase1_rapida! }));
-        } else if (result?.ctx) {
-          // Seed from existing onboarding data (name, cargo, territory, org)
-          const ctx = result.ctx;
-          const j = ctx.jurisdiccion;
-          const nombreTerritorio =
-            j.distrito?.nombre ?? j.provincia?.nombre ?? j.departamento?.nombre ?? j.pais.nombre;
-
-          const ambitoToNivel: Record<string, string> = {
-            pais:         "nacional",
-            departamento: "regional",
-            provincia:    "provincial",
-            distrito:     "distrital",
-          };
-
-          // Normalize cargo code: try exact match first, then partial
-          const cargoNorm = ctx.cargo.codigo.toLowerCase().replace(/[-\s]/g, "_");
-          const cargoMatch = CARGO_OPTIONS.find((o) => o.value === cargoNorm)
-            ?? CARGO_OPTIONS.find((o) => ctx.cargo.nombre.toLowerCase().includes(o.value.replace(/_/g, " ")));
-
-          type NivelTerritorio = NonNullable<NonNullable<Fase1Rapida["postulacion"]>["nivel_territorio"]>;
-          type CargoCodigo = NonNullable<NonNullable<Fase1Rapida["postulacion"]>["cargo_codigo"]>;
-
-          setForm((prev) => ({
-            ...prev,
-            candidato: {
-              ...prev.candidato,
-              nombre_completo: ctx.user.full_name || prev.candidato?.nombre_completo,
-              foto_url:        ctx.user.foto_url ?? prev.candidato?.foto_url,
-            },
-            postulacion: {
-              ...prev.postulacion,
-              ...(cargoMatch && { cargo_codigo: cargoMatch.value as CargoCodigo }),
-              nombre_territorio:  nombreTerritorio,
-              nivel_territorio:   (ambitoToNivel[ctx.cargo.ambito] ?? undefined) as NivelTerritorio | undefined,
-              nombre_organizacion: ctx.organizacion_politica?.nombre ?? prev.postulacion?.nombre_organizacion,
-            },
-          }));
         }
       } catch {
         // no-op — fresh form
