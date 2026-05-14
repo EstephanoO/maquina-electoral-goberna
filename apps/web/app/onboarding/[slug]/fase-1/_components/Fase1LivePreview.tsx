@@ -17,37 +17,59 @@ import type {
   Fase1Rapida,
 } from "@/lib/onboarding-api";
 
-import { SlideFichaTecnica } from "../../fase-2/_components/slides/SlideFichaTecnica";
-import { SlideHero } from "../../fase-2/_components/slides/SlideHero";
-import { SlideFoda } from "../../fase-2/_components/slides/SlideFoda";
-import { SlidePropuestas } from "../../fase-2/_components/slides/SlidePropuestas";
-import { SlideArquitectura } from "../../fase-2/_components/slides/SlideArquitectura";
+import { SlideFichaTecnica }      from "../../fase-2/_components/slides/SlideFichaTecnica";
+import { SlideHero }              from "../../fase-2/_components/slides/SlideHero";
+import { SlideFoda }              from "../../fase-2/_components/slides/SlideFoda";
+import { SlidePropuestas }        from "../../fase-2/_components/slides/SlidePropuestas";
+import { SlideArquitectura }      from "../../fase-2/_components/slides/SlideArquitectura";
+import { SlideQuienEs }           from "../../fase-2/_components/slides/SlideQuienEs";
+import { SlidePresenciaDigital }  from "../../fase-2/_components/slides/SlidePresenciaDigital";
+import { SlideDebilidades }       from "../../fase-2/_components/slides/SlideDebilidades";
+import { SlideVotosNecesarios }   from "../../fase-2/_components/slides/SlideVotosNecesarios";
+import { SlideSegmentos }         from "../../fase-2/_components/slides/SlideSegmentos";
+import { SlideReorganizar }       from "../../fase-2/_components/slides/SlideReorganizar";
+
+type ExtendedFields = Pick<
+  ConsultorFormFase2,
+  | "quien_es"
+  | "presencia_digital"
+  | "redes_sociales"
+  | "debilidades"
+  | "votos_para_ganar"
+  | "historial"
+  | "territorio_ecd"
+  | "recorrido_estrategico"
+  | "formula_electoral"
+>;
 
 interface Props {
-  /** Sección activa del form (0..6). */
-  activeSection: number;
-  /** Estado actual del form. */
+  /** ID de la sección activa del form. */
+  sectionId: string;
+  /** Estado actual del form fase1_rapida. */
   form: Fase1Rapida;
+  /** Estado actual de los campos extendidos. */
+  extended: ExtendedFields;
   /** Contexto del candidato (snapshot del backend). */
   ctx: CandidatoContext | null;
 }
 
 const PREVIEW_WIDTH = 1280;   // ancho "real" del slide
-const PREVIEW_HEIGHT = 800;   // alto "real" del slide
-const SCALE = 0.36;           // escala visual
+const PREVIEW_HEIGHT = 880;   // alto "real" del slide
+const SCALE = 0.42;           // escala visual
 
-const SCALED_WIDTH = PREVIEW_WIDTH * SCALE;   // 460.8
-const SCALED_HEIGHT = PREVIEW_HEIGHT * SCALE; // 288
+const SCALED_WIDTH = PREVIEW_WIDTH * SCALE;   // ~538
+const SCALED_HEIGHT = PREVIEW_HEIGHT * SCALE; // ~370
 
-export function Fase1LivePreview({ activeSection, form, ctx }: Props) {
-  const f2: ConsultorFormFase2 = { fase1_rapida: form };
+export function Fase1LivePreview({ sectionId, form, extended, ctx }: Props) {
+  const f2: ConsultorFormFase2 = { fase1_rapida: form, ...extended };
 
   const previewCtx = ctx ?? buildFallbackCtx(form);
+  const ctxWithForm: CandidatoContext = { ...previewCtx, consultor_form: f2 };
 
-  const slide = pickSlide(activeSection, previewCtx, f2);
+  const slide = pickSlide(sectionId, ctxWithForm, f2);
 
   return (
-    <div className="hidden xl:flex flex-col gap-3 w-[480px] flex-shrink-0 pl-4 pt-8 sticky top-20 self-start">
+    <div className="hidden xl:flex flex-col gap-3 w-[560px] flex-shrink-0 pl-4 pt-8 sticky top-20 self-start">
       <header className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-amber-400/70 font-bold">
         <Eye className="size-3.5" />
         Live preview · slide del deck
@@ -85,28 +107,24 @@ export function Fase1LivePreview({ activeSection, form, ctx }: Props) {
 }
 
 function pickSlide(
-  activeSection: number,
+  sectionId: string,
   ctx: CandidatoContext,
   f2: ConsultorFormFase2,
 ): ReactNode | null {
-  switch (activeSection) {
-    case 0:
-      return <SlideFichaTecnica ctx={ctx} f2={f2} />;
-    case 1:
-      return <SlideHero ctx={ctx} />;
-    case 2:
-      // Estrategia alimenta SlideArquitectura (parcial — depende también de
-      // formula_electoral del form extendido).
-      return <SlideArquitectura f2={f2} />;
-    case 3:
-      return <SlideFoda f2={f2} />;
-    case 4:
-      return <SlidePropuestas f2={f2} />;
-    case 5:
-    case 6:
-    default:
-      return null;
-  }
+  // Mínimo (escribe a fase1_rapida)
+  if (sectionId === "candidato")           return <SlideFichaTecnica ctx={ctx} f2={f2} />;
+  if (sectionId === "postulacion")         return <SlideHero ctx={ctx} />;
+  if (sectionId === "estrategia")          return <SlideArquitectura f2={f2} />;
+  if (sectionId === "diagnostico_inicial") return <SlideFoda f2={f2} />;
+  if (sectionId === "propuestas")          return <SlidePropuestas f2={f2} />;
+  // Extendido (top-level del consultor_form)
+  if (sectionId === "quien_es")            return <SlideQuienEs ctx={ctx} f2={f2} />;
+  if (sectionId === "presencia")           return <SlidePresenciaDigital f2={f2} />;
+  if (sectionId === "debilidades")         return <SlideDebilidades ctx={ctx} f2={f2} />;
+  if (sectionId === "votos")               return <SlideVotosNecesarios f2={f2} />;
+  if (sectionId === "segmentos")           return <SlideSegmentos f2={f2} />;
+  if (sectionId === "recorrido")           return <SlideReorganizar f2={f2} />;
+  return null;
 }
 
 function EmptyPreview() {

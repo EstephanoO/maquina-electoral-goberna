@@ -9,9 +9,27 @@ import {
 } from "lucide-react";
 
 import { CloudSkyBg } from "@/components/cloud-sky-bg";
-import { onboardingApi, type Fase1Rapida, type CandidatoContext } from "@/lib/onboarding-api";
+import { onboardingApi, type Fase1Rapida, type CandidatoContext, type ConsultorFormFase2 } from "@/lib/onboarding-api";
 
 import { Fase1LivePreview } from "./Fase1LivePreview";
+import {
+  useDebounce,
+  Field,
+  TextInput,
+  Textarea,
+  Select,
+  RadioGroup,
+  CheckGroup,
+  TagList,
+} from "./form-fields";
+import { SectionQuienEs } from "./sections/SectionQuienEs";
+import { SectionPresenciaDigital } from "./sections/SectionPresenciaDigital";
+import { SectionDebilidades } from "./sections/SectionDebilidades";
+import { SectionVotos } from "./sections/SectionVotos";
+import { SectionSegmentos } from "./sections/SectionSegmentos";
+import { SectionRecorrido } from "./sections/SectionRecorrido";
+
+import { UserCircle, Globe2, AlertTriangle, Vote, Users2, Route } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -19,16 +37,25 @@ type Section = {
   id: string;
   label: string;
   icon: React.ReactNode;
+  category: "minimo" | "extendido";
 };
 
 const SECTIONS: Section[] = [
-  { id: "candidato",           label: "Candidato",     icon: <User className="size-4" /> },
-  { id: "postulacion",         label: "Postulación",   icon: <MapPin className="size-4" /> },
-  { id: "estrategia",          label: "Estrategia",    icon: <Zap className="size-4" /> },
-  { id: "diagnostico_inicial", label: "Diagnóstico",   icon: <BarChart2 className="size-4" /> },
-  { id: "propuestas",          label: "Propuestas",    icon: <Lightbulb className="size-4" /> },
-  { id: "branding",            label: "Branding",      icon: <Palette className="size-4" /> },
-  { id: "contexto_territorio", label: "Territorio",    icon: <Globe className="size-4" /> },
+  // ── MÍNIMO (form Fase 1 rápido — escribe a consultor_form.fase1_rapida) ──
+  { id: "candidato",           label: "Candidato",         icon: <User className="size-4" />,           category: "minimo" },
+  { id: "postulacion",         label: "Postulación",       icon: <MapPin className="size-4" />,         category: "minimo" },
+  { id: "estrategia",          label: "Estrategia",        icon: <Zap className="size-4" />,            category: "minimo" },
+  { id: "diagnostico_inicial", label: "Diagnóstico",       icon: <BarChart2 className="size-4" />,      category: "minimo" },
+  { id: "propuestas",          label: "Propuestas",        icon: <Lightbulb className="size-4" />,      category: "minimo" },
+  { id: "branding",            label: "Branding",          icon: <Palette className="size-4" />,        category: "minimo" },
+  { id: "contexto_territorio", label: "Territorio",        icon: <Globe className="size-4" />,          category: "minimo" },
+  // ── EXTENDIDO (escribe a top-level del consultor_form) ──
+  { id: "quien_es",            label: "¿Quién es?",        icon: <UserCircle className="size-4" />,     category: "extendido" },
+  { id: "presencia",           label: "Presencia digital", icon: <Globe2 className="size-4" />,         category: "extendido" },
+  { id: "debilidades",         label: "Debilidades",       icon: <AlertTriangle className="size-4" />,  category: "extendido" },
+  { id: "votos",               label: "Votos y padrón",    icon: <Vote className="size-4" />,           category: "extendido" },
+  { id: "segmentos",           label: "Segmentación",      icon: <Users2 className="size-4" />,         category: "extendido" },
+  { id: "recorrido",           label: "Recorrido",         icon: <Route className="size-4" />,          category: "extendido" },
 ];
 
 const CARGO_OPTIONS = [
@@ -40,237 +67,6 @@ const CARGO_OPTIONS = [
   { value: "congresista",         label: "Congresista" },
   { value: "presidente",          label: "Presidente" },
 ];
-
-// ── Helpers ──────────────────────────────────────────────────────────
-
-function useDebounce<T>(value: T, delay = 1200): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-  return debounced;
-}
-
-// ── Field components ─────────────────────────────────────────────────
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <label className="block text-xs uppercase tracking-[0.2em] text-gray-400 font-semibold mb-1.5">
-        {label}
-      </label>
-      {children}
-      {hint && <p className="mt-1 text-[11px] text-gray-600">{hint}</p>}
-    </div>
-  );
-}
-
-function TextInput({
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  type?: string;
-}) {
-  return (
-    <input
-      type={type}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="w-full px-4 py-3 bg-black/40 border-2 border-gray-700/50 rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all"
-    />
-  );
-}
-
-function Textarea({
-  value,
-  onChange,
-  placeholder,
-  rows = 3,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  rows?: number;
-}) {
-  return (
-    <textarea
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      rows={rows}
-      className="w-full px-4 py-3 bg-black/40 border-2 border-gray-700/50 rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all resize-none"
-    />
-  );
-}
-
-function Select({
-  value,
-  onChange,
-  options,
-  placeholder = "Seleccionar...",
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-  placeholder?: string;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full px-4 py-3 bg-black/40 border-2 border-gray-700/50 rounded-xl text-white focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all appearance-none"
-    >
-      <option value="" disabled>{placeholder}</option>
-      {options.map((o) => (
-        <option key={o.value} value={o.value} className="bg-[#0a1e4a]">{o.label}</option>
-      ))}
-    </select>
-  );
-}
-
-function RadioGroup({
-  value,
-  onChange,
-  options,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string; desc?: string }[];
-}) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => onChange(o.value)}
-          className={`p-3 rounded-xl border-2 text-left transition-all ${
-            value === o.value
-              ? "border-amber-400 bg-amber-400/10 text-amber-400"
-              : "border-gray-700/50 bg-black/30 text-gray-300 hover:border-gray-600"
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <div className={`size-3.5 rounded-full border-2 flex-shrink-0 ${
-              value === o.value ? "border-amber-400 bg-amber-400" : "border-gray-600"
-            }`} />
-            <span className="text-sm font-semibold">{o.label}</span>
-          </div>
-          {o.desc && <p className="mt-1 text-xs text-gray-500 ml-5.5">{o.desc}</p>}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function CheckGroup({
-  values,
-  onChange,
-  options,
-  max,
-}: {
-  values: string[];
-  onChange: (v: string[]) => void;
-  options: { value: string; label: string }[];
-  max?: number;
-}) {
-  const toggle = (v: string) => {
-    if (values.includes(v)) {
-      onChange(values.filter((x) => x !== v));
-    } else if (!max || values.length < max) {
-      onChange([...values, v]);
-    }
-  };
-  return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((o) => {
-        const active = values.includes(o.value);
-        return (
-          <button
-            key={o.value}
-            type="button"
-            onClick={() => toggle(o.value)}
-            className={`px-3 py-1.5 rounded-full border text-xs font-semibold uppercase tracking-wider transition-all ${
-              active
-                ? "border-amber-400 bg-amber-400/15 text-amber-400"
-                : "border-gray-700 bg-black/20 text-gray-500 hover:border-gray-500 hover:text-gray-300"
-            }`}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function TagList({
-  items,
-  onChange,
-  placeholder,
-  minItems = 1,
-}: {
-  items: string[];
-  onChange: (v: string[]) => void;
-  placeholder?: string;
-  minItems?: number;
-}) {
-  const [draft, setDraft] = useState("");
-  const add = () => {
-    const v = draft.trim();
-    if (v && !items.includes(v)) {
-      onChange([...items, v]);
-      setDraft("");
-    }
-  };
-  return (
-    <div className="space-y-2">
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
-          placeholder={placeholder ?? "Agregar y presionar Enter..."}
-          className="flex-1 px-3 py-2 bg-black/40 border-2 border-gray-700/50 rounded-lg text-white placeholder:text-gray-600 text-sm focus:outline-none focus:border-amber-500 transition-all"
-        />
-        <button
-          type="button"
-          onClick={add}
-          disabled={!draft.trim()}
-          className="px-3 py-2 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 disabled:opacity-40 hover:bg-amber-500/25 transition-all"
-        >
-          <Plus className="size-4" />
-        </button>
-      </div>
-      {items.length > 0 && (
-        <ul className="flex flex-col gap-1.5">
-          {items.map((item, i) => (
-            <li key={i} className="flex items-center gap-2 px-3 py-2 bg-[#0a1e4a]/60 rounded-lg border border-white/5">
-              <span className="flex-1 text-sm text-gray-200">{item}</span>
-              {items.length > minItems && (
-                <button
-                  type="button"
-                  onClick={() => onChange(items.filter((_, j) => j !== i))}
-                  className="text-gray-600 hover:text-red-400 transition-colors"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
 
 // ── Section: Candidato ───────────────────────────────────────────────
 
@@ -841,10 +637,62 @@ export function Fase1RapidaClient({ slug, mockCtx, mockForm }: Fase1RapidaClient
     secciones_completas: [],
   });
 
+  // Campos top-level del consultor_form (alimentan las secciones "extendido"
+  // del sidebar y las slides Quién es / Presencia / Debilidades / Votos /
+  // Segmentos / Reorganizar / Arquitectura del deck Fase 2).
+  type ExtendedFields = Pick<
+    ConsultorFormFase2,
+    | "quien_es"
+    | "presencia_digital"
+    | "redes_sociales"
+    | "debilidades"
+    | "votos_para_ganar"
+    | "historial"
+    | "territorio_ecd"
+    | "recorrido_estrategico"
+    | "formula_electoral"
+  >;
+  const [extended, setExtended] = useState<ExtendedFields>({
+    quien_es: {},
+    presencia_digital: {},
+    redes_sociales: { candidato: {} },
+    debilidades: {},
+    votos_para_ganar: {},
+    historial: { entries: [] },
+    territorio_ecd: { c2_segmentos: [], nucleo_goberna: { segmentos_prioritarios: [] } },
+    recorrido_estrategico: { hitos: [] },
+    formula_electoral: {},
+  });
+
+  const updateExtended = useCallback(
+    <K extends keyof ExtendedFields>(key: K, value: ExtendedFields[K]) => {
+      setExtended((prev) => ({ ...prev, [key]: value }));
+    },
+    [],
+  );
+
   // Load existing data — o usar mocks si se pasaron (preview dev)
   useEffect(() => {
     if (mockCtx !== undefined || mockForm !== undefined) {
-      if (mockCtx) setCtx(mockCtx);
+      if (mockCtx) {
+        setCtx(mockCtx);
+        // hydrate extended desde consultor_form del mock
+        const cf = mockCtx.consultor_form;
+        if (cf) {
+          setExtended((prev) => ({
+            ...prev,
+            quien_es:               cf.quien_es ?? prev.quien_es,
+            presencia_digital:      cf.presencia_digital ?? prev.presencia_digital,
+            redes_sociales:         cf.redes_sociales ?? prev.redes_sociales,
+            debilidades:            cf.debilidades ?? prev.debilidades,
+            votos_para_ganar:       cf.votos_para_ganar ?? prev.votos_para_ganar,
+            historial:              cf.historial ?? prev.historial,
+            territorio_ecd:         cf.territorio_ecd ?? prev.territorio_ecd,
+            recorrido_estrategico:  cf.recorrido_estrategico ?? prev.recorrido_estrategico,
+            formula_electoral:      cf.formula_electoral ?? prev.formula_electoral,
+          }));
+        }
+      }
       if (mockForm) setForm((prev) => ({ ...prev, ...mockForm }));
       setLoading(false);
       return;
@@ -855,10 +703,25 @@ export function Fase1RapidaClient({ slug, mockCtx, mockForm }: Fase1RapidaClient
         if (result?.ctx) {
           setCtx(result.ctx);
         }
-        if (result?.deck.consultor_form?.fase1_rapida) {
-          // Already has fase1 data — restore it
-          setForm((prev) => ({ ...prev, ...result.deck.consultor_form!.fase1_rapida! }));
-        } else if (result?.ctx) {
+        if (result?.deck.consultor_form) {
+          const cf = result.deck.consultor_form;
+          if (cf.fase1_rapida) {
+            setForm((prev) => ({ ...prev, ...cf.fase1_rapida! }));
+          }
+          // hydrate extended fields desde el backend
+          setExtended((prev) => ({
+            quien_es:              cf.quien_es ?? prev.quien_es,
+            presencia_digital:     cf.presencia_digital ?? prev.presencia_digital,
+            redes_sociales:        cf.redes_sociales ?? prev.redes_sociales,
+            debilidades:           cf.debilidades ?? prev.debilidades,
+            votos_para_ganar:      cf.votos_para_ganar ?? prev.votos_para_ganar,
+            historial:             cf.historial ?? prev.historial,
+            territorio_ecd:        cf.territorio_ecd ?? prev.territorio_ecd,
+            recorrido_estrategico: cf.recorrido_estrategico ?? prev.recorrido_estrategico,
+            formula_electoral:     cf.formula_electoral ?? prev.formula_electoral,
+          }));
+        }
+        if (!result?.deck.consultor_form?.fase1_rapida && result?.ctx) {
           // Seed from existing onboarding data (name, cargo, territory, org)
           const ctx = result.ctx;
           const j = ctx.jurisdiccion;
@@ -906,17 +769,19 @@ export function Fase1RapidaClient({ slug, mockCtx, mockForm }: Fase1RapidaClient
 
   // Auto-save with debounce — DISABLED en modo mock
   const debouncedForm = useDebounce(form, 1500);
+  const debouncedExtended = useDebounce(extended, 1500);
   const lastSavedRef = useRef<string>("");
 
   useEffect(() => {
     if (mockCtx !== undefined || mockForm !== undefined) return; // skip auto-save en preview dev
-    const serialized = JSON.stringify(debouncedForm);
+    const patch = { fase1_rapida: debouncedForm, ...debouncedExtended };
+    const serialized = JSON.stringify(patch);
     if (serialized === lastSavedRef.current || loading) return;
     lastSavedRef.current = serialized;
     (async () => {
       setSaving(true);
       try {
-        await onboardingApi.patchFase2Form(slug, { fase1_rapida: debouncedForm });
+        await onboardingApi.patchFase2Form(slug, patch);
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
       } catch (e) {
@@ -925,7 +790,7 @@ export function Fase1RapidaClient({ slug, mockCtx, mockForm }: Fase1RapidaClient
         setSaving(false);
       }
     })();
-  }, [debouncedForm, slug, loading]);
+  }, [debouncedForm, debouncedExtended, slug, loading, mockCtx, mockForm]);
 
   const updateSection = useCallback(
     <K extends keyof Fase1Rapida>(key: K, value: Fase1Rapida[K]) => {
@@ -999,33 +864,47 @@ export function Fase1RapidaClient({ slug, mockCtx, mockForm }: Fase1RapidaClient
 
       {/* Content */}
       <div className="relative z-10 mx-auto w-full max-w-[1500px] px-4 sm:px-6 pt-20 pb-32 min-h-screen flex">
-        {/* Sidebar */}
+        {/* Sidebar — agrupado en Mínimo + Extendido */}
         <aside className="hidden lg:flex flex-col gap-1 w-52 flex-shrink-0 pr-8 pt-8 sticky top-20 self-start">
-          <p className="text-[10px] uppercase tracking-[0.3em] text-gray-600 font-semibold mb-3">
-            Secciones
-          </p>
-          {SECTIONS.map((s, i) => {
-            const isActive = i === activeSection;
-            const isDone = (form.secciones_completas ?? []).includes(s.id);
+          {(["minimo", "extendido"] as const).map((cat) => {
+            const items = SECTIONS.map((s, i) => ({ s, i })).filter(
+              ({ s }) => s.category === cat,
+            );
             return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setActiveSection(i)}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${
-                  isActive
-                    ? "bg-amber-400/15 border border-amber-400/30 text-amber-400"
-                    : "border border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5"
-                }`}
-              >
-                <span className={isActive ? "text-amber-400" : isDone ? "text-green-400" : "text-gray-600"}>
-                  {isDone && !isActive ? <Check className="size-4" /> : s.icon}
-                </span>
-                <span>{s.label}</span>
-                <span className={`ml-auto text-[10px] font-black ${isActive ? "text-amber-400" : "text-gray-700"}`}>
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-              </button>
+              <div key={cat} className={cat === "extendido" ? "mt-4" : ""}>
+                <p className="text-[10px] uppercase tracking-[0.3em] text-gray-600 font-semibold mb-3 flex items-center gap-2">
+                  {cat === "minimo" ? "Fase 1 · Mínimo" : "Fase 1 · Extendido"}
+                  {cat === "extendido" ? (
+                    <span className="text-[8px] tracking-[0.2em] text-amber-400/50 normal-case font-medium">
+                      desbloquea +6 slides
+                    </span>
+                  ) : null}
+                </p>
+                {items.map(({ s, i }) => {
+                  const isActive = i === activeSection;
+                  const isDone = (form.secciones_completas ?? []).includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setActiveSection(i)}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${
+                        isActive
+                          ? "bg-amber-400/15 border border-amber-400/30 text-amber-400"
+                          : "border border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5"
+                      }`}
+                    >
+                      <span className={isActive ? "text-amber-400" : isDone ? "text-green-400" : "text-gray-600"}>
+                        {isDone && !isActive ? <Check className="size-4" /> : s.icon}
+                      </span>
+                      <span>{s.label}</span>
+                      <span className={`ml-auto text-[10px] font-black ${isActive ? "text-amber-400" : "text-gray-700"}`}>
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             );
           })}
 
@@ -1075,48 +954,92 @@ export function Fase1RapidaClient({ slug, mockCtx, mockForm }: Fase1RapidaClient
                 </div>
               </div>
 
-              {/* Section content */}
+              {/* Section content — render por id (no index) para soportar
+                  catálogo extendido sin reordenar. */}
               <div className="space-y-6">
-                {activeSection === 0 && (
+                {currentSection.id === "candidato" && (
                   <SectionCandidato
                     data={form.candidato ?? {}}
                     onChange={(v) => updateSection("candidato", v)}
                   />
                 )}
-                {activeSection === 1 && (
+                {currentSection.id === "postulacion" && (
                   <SectionPostulacion
                     data={form.postulacion ?? {}}
                     onChange={(v) => updateSection("postulacion", v)}
                   />
                 )}
-                {activeSection === 2 && (
+                {currentSection.id === "estrategia" && (
                   <SectionEstrategia
                     data={form.estrategia ?? {}}
                     onChange={(v) => updateSection("estrategia", v)}
                   />
                 )}
-                {activeSection === 3 && (
+                {currentSection.id === "diagnostico_inicial" && (
                   <SectionDiagnostico
                     data={form.diagnostico_inicial ?? {}}
                     onChange={(v) => updateSection("diagnostico_inicial", v)}
                   />
                 )}
-                {activeSection === 4 && (
+                {currentSection.id === "propuestas" && (
                   <SectionPropuestas
                     data={form.propuestas ?? []}
                     onChange={(v) => updateSection("propuestas", v)}
                   />
                 )}
-                {activeSection === 5 && (
+                {currentSection.id === "branding" && (
                   <SectionBranding
                     data={form.branding ?? {}}
                     onChange={(v) => updateSection("branding", v)}
                   />
                 )}
-                {activeSection === 6 && (
+                {currentSection.id === "contexto_territorio" && (
                   <SectionTerritorio
                     data={form.contexto_territorio ?? {}}
                     onChange={(v) => updateSection("contexto_territorio", v)}
+                  />
+                )}
+                {/* ── EXTENDIDO ── */}
+                {currentSection.id === "quien_es" && (
+                  <SectionQuienEs
+                    data={extended.quien_es ?? {}}
+                    onChange={(v) => updateExtended("quien_es", v)}
+                  />
+                )}
+                {currentSection.id === "presencia" && (
+                  <SectionPresenciaDigital
+                    presencia={extended.presencia_digital ?? {}}
+                    redes={extended.redes_sociales?.candidato ?? {}}
+                    onChangePresencia={(v) => updateExtended("presencia_digital", v)}
+                    onChangeRedes={(v) => updateExtended("redes_sociales", { ...(extended.redes_sociales ?? {}), candidato: v })}
+                  />
+                )}
+                {currentSection.id === "debilidades" && (
+                  <SectionDebilidades
+                    data={extended.debilidades ?? {}}
+                    onChange={(v) => updateExtended("debilidades", v)}
+                  />
+                )}
+                {currentSection.id === "votos" && (
+                  <SectionVotos
+                    votos={extended.votos_para_ganar ?? {}}
+                    historial={extended.historial ?? {}}
+                    onChangeVotos={(v) => updateExtended("votos_para_ganar", v)}
+                    onChangeHistorial={(v) => updateExtended("historial", v)}
+                  />
+                )}
+                {currentSection.id === "segmentos" && (
+                  <SectionSegmentos
+                    data={extended.territorio_ecd ?? {}}
+                    onChange={(v) => updateExtended("territorio_ecd", v)}
+                  />
+                )}
+                {currentSection.id === "recorrido" && (
+                  <SectionRecorrido
+                    recorrido={extended.recorrido_estrategico ?? {}}
+                    formula={extended.formula_electoral ?? {}}
+                    onChangeRecorrido={(v) => updateExtended("recorrido_estrategico", v)}
+                    onChangeFormula={(v) => updateExtended("formula_electoral", v)}
                   />
                 )}
               </div>
@@ -1158,8 +1081,9 @@ export function Fase1RapidaClient({ slug, mockCtx, mockForm }: Fase1RapidaClient
 
         {/* Live preview del slide del deck que la sección alimenta */}
         <Fase1LivePreview
-          activeSection={activeSection}
+          sectionId={currentSection.id}
           form={form}
+          extended={extended}
           ctx={ctx}
         />
       </div>
