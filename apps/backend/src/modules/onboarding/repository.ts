@@ -143,6 +143,13 @@ export class EmailConflictError extends Error {
   }
 }
 
+export class DniConflictError extends Error {
+  constructor(public readonly documento_numero: string) {
+    super(`DNI '${documento_numero}' ya está registrado como candidato`);
+    this.name = "DniConflictError";
+  }
+}
+
 // ── Main create transaction ─────────────────────────────────────────
 
 export async function provisionFromOnboarding(
@@ -237,21 +244,24 @@ export async function provisionFromOnboarding(
     );
     const campaignId = campaignInsert.rows[0]!.id;
 
-    // 4. UPSERT candidato. Si documento_numero está, intentamos el natural key;
-    // si no, insertamos como persona nueva (el wizard no exige DNI).
+    // 4. INSERT candidato. DNI es identificador único: si ya existe bloqueamos.
     let candidatoId: number;
     if (input.documento_numero) {
+      const existing = await client.query<{ id: number }>(
+        `SELECT id FROM candidatos.candidato
+          WHERE id_pais = $1 AND documento_tipo = $2 AND documento_numero = $3
+          LIMIT 1`,
+        [idPais, input.documento_tipo, input.documento_numero],
+      );
+      if (existing.rows[0]) {
+        throw new DniConflictError(input.documento_numero);
+      }
+
       const candidatoUpsert = await client.query<{ id: number }>(
         `INSERT INTO candidatos.candidato (
             nombres, id_pais, documento_tipo, documento_numero,
             fecha_nacimiento, sexo, telefono_e164, email, foto_url
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (id_pais, documento_tipo, documento_numero) DO UPDATE
-            SET nombres = EXCLUDED.nombres,
-                telefono_e164 = COALESCE(EXCLUDED.telefono_e164, candidatos.candidato.telefono_e164),
-                email = COALESCE(EXCLUDED.email, candidatos.candidato.email),
-                foto_url = COALESCE(EXCLUDED.foto_url, candidatos.candidato.foto_url),
-                updated_at = now()
          RETURNING id`,
         [
           input.full_name,

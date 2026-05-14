@@ -12,6 +12,7 @@ import * as repo from "./repository";
 import {
   AmbitoMismatchError,
   CatalogResolutionError,
+  DniConflictError,
   EmailConflictError,
   SlugConflictError,
 } from "./repository";
@@ -308,6 +309,11 @@ export function buildOnboardingRoutes(env: AppEnv): FastifyPluginAsync {
         if (error instanceof EmailConflictError) {
           return reply.code(409).send(
             errorPayload(requestId, "USER_EMAIL_EXISTS", error.message),
+          );
+        }
+        if (error instanceof DniConflictError) {
+          return reply.code(409).send(
+            errorPayload(requestId, "DNI_ALREADY_REGISTERED", `El DNI ${error.documento_numero} ya está registrado. Cada candidato debe tener un DNI único.`),
           );
         }
         app.log.error({ err: error, request_id: requestId }, "wizard provision failed");

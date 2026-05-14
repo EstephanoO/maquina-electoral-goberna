@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
-import { AlertCircle, ChevronLeft, Loader2, RefreshCw } from "lucide-react";
+import { AlertCircle, ChevronLeft, Loader2, RefreshCw, UserX } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api } from "@/lib/api-client";
@@ -13,6 +13,7 @@ interface StepProvisioningProps {
   data: OnboardingContext;
   onCompleted: (output: { dashboard_url: string; campaign_id: string; slug: string }) => void;
   onGoBack?: () => void;
+  onGoToStart?: () => void;
 }
 
 type WizardResponse = {
@@ -25,8 +26,9 @@ type WizardResponse = {
   dashboard_url: string;
 };
 
-export function StepProvisioning({ title, subtitle, data, onCompleted, onGoBack }: StepProvisioningProps) {
+export function StepProvisioning({ title, subtitle, data, onCompleted, onGoBack, onGoToStart }: StepProvisioningProps) {
   const [error, setError] = useState<string | null>(null);
+  const [isDniConflict, setIsDniConflict] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const inFlight = useRef(false);
 
@@ -34,6 +36,7 @@ export function StepProvisioning({ title, subtitle, data, onCompleted, onGoBack 
     if (inFlight.current) return;
     inFlight.current = true;
     setError(null);
+    setIsDniConflict(false);
 
     const datos = data.datos ?? {};
     const cargo = data.cargoApi;
@@ -66,7 +69,13 @@ export function StepProvisioning({ title, subtitle, data, onCompleted, onGoBack 
     try {
       const res = await api.post<WizardResponse>("/api/onboarding/wizard", body);
       if (!res.ok || !res.data) {
-        setError(res.ok ? "Sin respuesta del servidor." : (res.error?.message ?? "Error al crear la cuenta."));
+        const errCode = (res.error as { code?: string } | undefined)?.code;
+        if (errCode === "DNI_ALREADY_REGISTERED") {
+          setIsDniConflict(true);
+          setError(res.error?.message ?? "Este DNI ya está registrado.");
+        } else {
+          setError(res.error?.message ?? "Error al crear la cuenta.");
+        }
         return;
       }
       onCompleted({
@@ -139,26 +148,41 @@ export function StepProvisioning({ title, subtitle, data, onCompleted, onGoBack 
           className="mt-6 flex flex-col gap-3 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200"
         >
           <div className="flex items-start gap-2">
-            <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" />
+            {isDniConflict
+              ? <UserX className="mt-0.5 size-4 shrink-0 text-red-400" />
+              : <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" />
+            }
             <span className="text-left">{error}</span>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            {onGoBack && (
+            {isDniConflict && onGoToStart ? (
               <button
-                onClick={onGoBack}
-                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-gray-600 bg-gray-800/40 px-4 py-2 text-xs font-bold uppercase tracking-wider text-gray-300 transition hover:bg-gray-800/60"
+                onClick={onGoToStart}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-red-300 transition hover:bg-red-500/20"
               >
                 <ChevronLeft className="size-3.5" />
-                Volver a corregir
+                Corregir DNI
               </button>
+            ) : (
+              <>
+                {onGoBack && (
+                  <button
+                    onClick={onGoBack}
+                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-gray-600 bg-gray-800/40 px-4 py-2 text-xs font-bold uppercase tracking-wider text-gray-300 transition hover:bg-gray-800/60"
+                  >
+                    <ChevronLeft className="size-3.5" />
+                    Volver a corregir
+                  </button>
+                )}
+                <button
+                  onClick={() => setAttempt((a) => a + 1)}
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-amber-300 transition hover:bg-amber-500/20"
+                >
+                  <RefreshCw className="size-3.5" />
+                  Reintentar
+                </button>
+              </>
             )}
-            <button
-              onClick={() => setAttempt((a) => a + 1)}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-amber-300 transition hover:bg-amber-500/20"
-            >
-              <RefreshCw className="size-3.5" />
-              Reintentar
-            </button>
           </div>
         </motion.div>
       )}

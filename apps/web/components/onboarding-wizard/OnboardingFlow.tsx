@@ -163,6 +163,7 @@ export function OnboardingFlow() {
                   {...(currentStep.subtitle && { subtitle: currentStep.subtitle })}
                   data={data}
                   onGoBack={goBack}
+                  onGoToStart={() => setStepIndex(0)}
                   onCompleted={(output) => {
                     setData((d) => ({ ...d, provisioning: output }));
                     goNext();
