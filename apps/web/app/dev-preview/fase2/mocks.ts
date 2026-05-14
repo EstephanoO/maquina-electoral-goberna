@@ -1,6 +1,9 @@
 /**
- * Mocks de CandidatoContext + Fase2DeckMeta para screenshots Playwright.
- * Solo se usan en /dev-preview/fase2/[mode] — ruta gateada por NODE_ENV.
+ * Mock de CandidatoContext + Fase2DeckMeta para preview dev del deck Fase 2.
+ * Solo se usa en /dev-preview/fase2 — ruta gateada por NODE_ENV.
+ *
+ * Fase 2 NO tiene modos; es UN solo deck adaptativo. Para el preview
+ * cargamos todo el form al máximo para ver las 14 slides catalogadas.
  */
 import type {
   CandidatoContext,
@@ -244,8 +247,8 @@ const FULL_DECK: Fase2DeckMeta = {
   rejection_reason: null,
 };
 
-export const MOCK_FULL = {
-  slug: "preview-full",
+export const MOCK = {
+  slug: "preview",
   ctx: {
     user: SHARED_USER,
     campaign: SHARED_CAMPAIGN,
@@ -260,36 +263,3 @@ export const MOCK_FULL = {
   deck: FULL_DECK,
 };
 
-// ── MIN mock — estado real HOY: fase 1 rápida completada, sin form extendido ──
-// Replica lo que tiene un candidato recién creado: solo fase1_rapida poblado.
-// El deck adaptativo skipea slides que requieren extended form (territorio_ecd,
-// debilidades, presencia_digital, etc).
-const FASE1_ONLY_FORM: ConsultorFormFase2 = {
-  fase1_rapida: FULL_CONSULTOR_FORM.fase1_rapida,
-};
-
-const MIN_DECK: Fase2DeckMeta = {
-  id: "preview-deck-min",
-  status: "draft",
-  consultor_form: FASE1_ONLY_FORM,
-  updated_at: "2026-05-14T12:00:00Z",
-  submitted_for_review_at: null,
-  published_at: null,
-  rejection_reason: null,
-};
-
-export const MOCK_MIN = {
-  slug: "preview-min",
-  ctx: {
-    user: { ...SHARED_USER, foto_url: null, phone: null },
-    campaign: { ...SHARED_CAMPAIGN, slug: "preview-min" },
-    cargo: SHARED_CARGO,
-    jurisdiccion: SHARED_JURISDICCION,
-    organizacion_politica: SHARED_ORG_POLITICA,
-    consultor_form: FASE1_ONLY_FORM,
-    geojson: AREQUIPA_GEOJSON,
-    bbox: [-72.5, -17.5, -70.5, -16.0] as [number, number, number, number],
-    centroid: [-71.5, -16.75] as [number, number],
-  } satisfies CandidatoContext,
-  deck: MIN_DECK,
-};
