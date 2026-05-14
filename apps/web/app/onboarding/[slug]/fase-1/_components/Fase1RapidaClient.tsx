@@ -9,7 +9,9 @@ import {
 } from "lucide-react";
 
 import { CloudSkyBg } from "@/components/cloud-sky-bg";
-import { onboardingApi, type Fase1Rapida } from "@/lib/onboarding-api";
+import { onboardingApi, type Fase1Rapida, type CandidatoContext } from "@/lib/onboarding-api";
+
+import { Fase1LivePreview } from "./Fase1LivePreview";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -810,13 +812,22 @@ function SectionTerritorio({
 
 // ── Main component ───────────────────────────────────────────────────
 
-export function Fase1RapidaClient({ slug }: { slug: string }) {
+interface Fase1RapidaClientProps {
+  slug: string;
+  /** Si está presente, se monta con este ctx y se saltea el fetch al backend. */
+  mockCtx?: CandidatoContext | null;
+  /** Si está presente, hidrata el form inicial sin llamar al backend. */
+  mockForm?: Fase1Rapida;
+}
+
+export function Fase1RapidaClient({ slug, mockCtx, mockForm }: Fase1RapidaClientProps) {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [ctx, setCtx] = useState<CandidatoContext | null>(null);
 
   const [form, setForm] = useState<Fase1Rapida>({
     modo: "rapida",
@@ -830,11 +841,20 @@ export function Fase1RapidaClient({ slug }: { slug: string }) {
     secciones_completas: [],
   });
 
-  // Load existing data — or seed from CandidatoContext if fase1 is empty
+  // Load existing data — o usar mocks si se pasaron (preview dev)
   useEffect(() => {
+    if (mockCtx !== undefined || mockForm !== undefined) {
+      if (mockCtx) setCtx(mockCtx);
+      if (mockForm) setForm((prev) => ({ ...prev, ...mockForm }));
+      setLoading(false);
+      return;
+    }
     (async () => {
       try {
         const result = await onboardingApi.getFase2BySlug(slug);
+        if (result?.ctx) {
+          setCtx(result.ctx);
+        }
         if (result?.deck.consultor_form?.fase1_rapida) {
           // Already has fase1 data — restore it
           setForm((prev) => ({ ...prev, ...result.deck.consultor_form!.fase1_rapida! }));
@@ -882,13 +902,14 @@ export function Fase1RapidaClient({ slug }: { slug: string }) {
         setLoading(false);
       }
     })();
-  }, [slug]);
+  }, [slug, mockCtx, mockForm]);
 
-  // Auto-save with debounce
+  // Auto-save with debounce — DISABLED en modo mock
   const debouncedForm = useDebounce(form, 1500);
   const lastSavedRef = useRef<string>("");
 
   useEffect(() => {
+    if (mockCtx !== undefined || mockForm !== undefined) return; // skip auto-save en preview dev
     const serialized = JSON.stringify(debouncedForm);
     if (serialized === lastSavedRef.current || loading) return;
     lastSavedRef.current = serialized;
@@ -977,7 +998,7 @@ export function Fase1RapidaClient({ slug }: { slug: string }) {
       </div>
 
       {/* Content */}
-      <div className="relative z-10 mx-auto w-full max-w-5xl px-4 sm:px-6 pt-20 pb-32 min-h-screen flex">
+      <div className="relative z-10 mx-auto w-full max-w-[1500px] px-4 sm:px-6 pt-20 pb-32 min-h-screen flex">
         {/* Sidebar */}
         <aside className="hidden lg:flex flex-col gap-1 w-52 flex-shrink-0 pr-8 pt-8 sticky top-20 self-start">
           <p className="text-[10px] uppercase tracking-[0.3em] text-gray-600 font-semibold mb-3">
@@ -1134,6 +1155,13 @@ export function Fase1RapidaClient({ slug }: { slug: string }) {
             </motion.div>
           </AnimatePresence>
         </div>
+
+        {/* Live preview del slide del deck que la sección alimenta */}
+        <Fase1LivePreview
+          activeSection={activeSection}
+          form={form}
+          ctx={ctx}
+        />
       </div>
 
       {/* Error toast */}

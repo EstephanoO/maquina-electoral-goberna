@@ -25,6 +25,8 @@ import { SlideArquitectura, isSlideArquitecturaVisible } from "./slides/SlideArq
 import { SlideHerramientas }       from "./slides/SlideHerramientas";
 import { SlideCierre }             from "./slides/SlideCierre";
 
+import { MissingSlidesIndicator } from "./chrome/MissingSlidesIndicator";
+
 interface Props {
   slug: string;
   ctx: CandidatoContext;
@@ -58,33 +60,48 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
   // Catálogo de las 14 slides + predicado isVisible por slide. Las slides
   // sin datos suficientes se skipean (deck adaptativo). Ver spec
   // docs/superpowers/specs/2026-05-14-fase2-deck-redesign.md §8.
-  const slides = useMemo(() => {
-    // Orden narrativo (capítulos 1→6): presentación → diagnóstico →
-    // territorio → estrategia → ejecución → cierre.
-    const all = [
+  //
+  // `formSection` = sección del form en /onboarding/<slug>/fase-1 que
+  // desbloquea la slide. Para slides que requieren form extendido (no
+  // implementado aún), usamos "form-extendido (próximamente)".
+  const allCatalog = useMemo(() => {
+    return [
       // CAPÍTULO 1 — Presentación
-      { id: "carta",        visible: true,                                    node: <SlideCarta ctx={ctx} /> },
-      { id: "hero",         visible: true,                                    node: <SlideHero ctx={ctx} /> },
-      { id: "ficha",        visible: true,                                    node: <SlideFichaTecnica ctx={ctx} f2={f2} /> },
+      { id: "carta",        label: "Carta del candidato",      visible: true,                                    formSection: null,                            node: <SlideCarta ctx={ctx} /> },
+      { id: "hero",         label: "Hero",                     visible: true,                                    formSection: null,                            node: <SlideHero ctx={ctx} /> },
+      { id: "ficha",        label: "Ficha técnica",            visible: true,                                    formSection: null,                            node: <SlideFichaTecnica ctx={ctx} f2={f2} /> },
       // CAPÍTULO 2 — Diagnóstico
-      { id: "quien-es",     visible: isSlideQuienEsVisible(ctx, f2),          node: <SlideQuienEs ctx={ctx} f2={f2} /> },
-      { id: "presencia",    visible: isPresenciaVisible(f2),                  node: <SlidePresenciaDigital f2={f2} /> },
-      { id: "debilidades",  visible: isDebilidadesVisible(f2),                node: <SlideDebilidades ctx={ctx} f2={f2} /> },
+      { id: "quien-es",     label: "¿Quién es?",               visible: isSlideQuienEsVisible(ctx, f2),          formSection: "form-extendido (próximamente)", node: <SlideQuienEs ctx={ctx} f2={f2} /> },
+      { id: "presencia",    label: "Presencia digital",        visible: isPresenciaVisible(f2),                  formSection: "form-extendido (próximamente)", node: <SlidePresenciaDigital f2={f2} /> },
+      { id: "debilidades",  label: "Debilidades y riesgos",    visible: isDebilidadesVisible(f2),                formSection: "form-extendido (próximamente)", node: <SlideDebilidades ctx={ctx} f2={f2} /> },
       // CAPÍTULO 3 — Territorio
-      { id: "foda",         visible: isSlideFodaVisible(f2),                  node: <SlideFoda f2={f2} /> },
-      { id: "propuestas",   visible: isSlidePropuestasVisible(f2),            node: <SlidePropuestas f2={f2} /> },
+      { id: "foda",         label: "FODA",                     visible: isSlideFodaVisible(f2),                  formSection: "diagnostico_inicial",           node: <SlideFoda f2={f2} /> },
+      { id: "propuestas",   label: "Propuestas",               visible: isSlidePropuestasVisible(f2),            formSection: "propuestas",                    node: <SlidePropuestas f2={f2} /> },
       // CAPÍTULO 4 — Estrategia
-      { id: "segmentos",    visible: SlideSegmentos.isVisible(f2),            node: <SlideSegmentos f2={f2} /> },
-      { id: "votos",        visible: SlideVotosNecesarios.isVisible(f2),      node: <SlideVotosNecesarios f2={f2} /> },
-      { id: "reorganizar",  visible: SlideReorganizar.isVisible(f2),          node: <SlideReorganizar f2={f2} /> },
+      { id: "segmentos",    label: "Segmentación del voto",    visible: SlideSegmentos.isVisible(f2),            formSection: "form-extendido (próximamente)", node: <SlideSegmentos f2={f2} /> },
+      { id: "votos",        label: "% Votos necesarios",       visible: SlideVotosNecesarios.isVisible(f2),      formSection: "form-extendido (próximamente)", node: <SlideVotosNecesarios f2={f2} /> },
+      { id: "reorganizar",  label: "Cómo reorganizar el voto", visible: SlideReorganizar.isVisible(f2),          formSection: "form-extendido (próximamente)", node: <SlideReorganizar f2={f2} /> },
       // CAPÍTULO 5 — Ejecución
-      { id: "arquitectura", visible: isSlideArquitecturaVisible(f2),          node: <SlideArquitectura f2={f2} /> },
-      { id: "herramientas", visible: true,                                    node: <SlideHerramientas /> },
+      { id: "arquitectura", label: "Arquitectura META",        visible: isSlideArquitecturaVisible(f2),          formSection: "estrategia",                    node: <SlideArquitectura f2={f2} /> },
+      { id: "herramientas", label: "Herramientas Goberna",     visible: true,                                    formSection: null,                            node: <SlideHerramientas /> },
       // CAPÍTULO 6 — Cierre
-      { id: "cierre",       visible: true,                                    node: <SlideCierre f2={f2} /> },
+      { id: "cierre",       label: "Cierre · War Room",        visible: true,                                    formSection: null,                            node: <SlideCierre f2={f2} /> },
     ];
-    return all.filter((s) => s.visible);
   }, [ctx, f2]);
+
+  const slides = useMemo(() => allCatalog.filter((s) => s.visible), [allCatalog]);
+
+  /** Slides catalogadas pero hoy no visibles — alimentan el indicador del footer. */
+  const missing = useMemo(() => {
+    return allCatalog
+      .filter((s) => !s.visible && s.formSection !== null)
+      .map((s) => ({
+        id: s.id,
+        label: s.label,
+        unlocks: s.formSection!,
+        href: `/onboarding/${slug}/fase-1#${s.formSection}`,
+      }));
+  }, [allCatalog, slug]);
 
   /** Total catalogado (14) para el indicador "Mostrando N / 14". */
   const TOTAL_CATALOG = 14;
@@ -276,6 +293,9 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
                   · Mostrando {total} de {TOTAL_CATALOG}
                 </span>
               ) : null}
+              <span className="ml-2">
+                <MissingSlidesIndicator missing={missing} totalCatalog={TOTAL_CATALOG} />
+              </span>
             </span>
           </div>
 
