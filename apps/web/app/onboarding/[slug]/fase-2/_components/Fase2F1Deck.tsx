@@ -5,18 +5,25 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Edit3, Send, CheckCircle2 } from "lucide-react";
 
-import type { CandidatoContext, Fase1Rapida, Fase2DeckMeta } from "@/lib/onboarding-api";
+import type { CandidatoContext, ConsultorFormFase2, Fase2DeckMeta } from "@/lib/onboarding-api";
 import { onboardingApi } from "@/lib/onboarding-api";
 import { CloudSkyBg } from "@/components/cloud-sky-bg";
 
-import { SlideF1Hero }       from "./slides/SlideF1Hero";
-import { SlideF1Foda }       from "./slides/SlideF1Foda";
-import { SlideF1Propuestas } from "./slides/SlideF1Propuestas";
-import { SlideF1Estrategia } from "./slides/SlideF1Estrategia";
-import { SlideF1Cierre }     from "./slides/SlideF1Cierre";
-// Reuse existing Goberna slides
-import { SlideCover }           from "../../../fase-2/_components/slides/SlideCover";
-import { SlideFichaBasica }     from "../../../fase-2/_components/slides/SlideFichaBasica";
+// Slides del rediseño (PDF Sánchez)
+import { SlideCarta }       from "./slides/SlideCarta";
+import { SlideHero }        from "./slides/SlideHero";
+import { SlideQuienEs, isSlideQuienEsVisible }                from "./slides/SlideQuienEs";
+import { SlidePresenciaDigital, isVisible as isPresenciaVisible } from "./slides/SlidePresenciaDigital";
+import { SlideDebilidades, isVisible as isDebilidadesVisible }    from "./slides/SlideDebilidades";
+import { SlideFichaTecnica }       from "./slides/SlideFichaTecnica";
+import { SlideFoda, isSlideFodaVisible }              from "./slides/SlideFoda";
+import { SlidePropuestas, isSlidePropuestasVisible }  from "./slides/SlidePropuestas";
+import { SlideSegmentos }          from "./slides/SlideSegmentos";
+import { SlideVotosNecesarios }    from "./slides/SlideVotosNecesarios";
+import { SlideReorganizar }        from "./slides/SlideReorganizar";
+import { SlideArquitectura, isSlideArquitecturaVisible } from "./slides/SlideArquitectura";
+import { SlideHerramientas }       from "./slides/SlideHerramientas";
+import { SlideCierre }             from "./slides/SlideCierre";
 
 interface Props {
   slug: string;
@@ -46,20 +53,35 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
   const [submitted, setSubmitted] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const f1: Fase1Rapida = ctx.consultor_form?.fase1_rapida ?? {};
+  const f2: ConsultorFormFase2 = ctx.consultor_form ?? {};
 
-  const slides = useMemo(() => [
-    { id: "cover",      node: <SlideCover /> },
-    { id: "hero",       node: <SlideF1Hero f1={f1} /> },
-    { id: "ficha",      node: <SlideFichaBasica ctx={ctx} /> },
-    { id: "foda",       node: <SlideF1Foda f1={f1} /> },
-    { id: "propuestas", node: <SlideF1Propuestas f1={f1} /> },
-    { id: "estrategia", node: <SlideF1Estrategia f1={f1} /> },
-    { id: "cierre",     node: <SlideF1Cierre f1={f1} onContinue={() => router.push("/home")} /> },
-  ], [f1, ctx, router]);
+  // Catálogo de las 14 slides + predicado isVisible por slide. Las slides
+  // sin datos suficientes se skipean (deck adaptativo). Ver spec
+  // docs/superpowers/specs/2026-05-14-fase2-deck-redesign.md §8.
+  const slides = useMemo(() => {
+    const all = [
+      { id: "carta",        visible: true,                                    node: <SlideCarta ctx={ctx} /> },
+      { id: "hero",         visible: true,                                    node: <SlideHero ctx={ctx} /> },
+      { id: "quien-es",     visible: isSlideQuienEsVisible(ctx, f2),          node: <SlideQuienEs ctx={ctx} f2={f2} /> },
+      { id: "presencia",    visible: isPresenciaVisible(f2),                  node: <SlidePresenciaDigital f2={f2} /> },
+      { id: "debilidades",  visible: isDebilidadesVisible(f2),                node: <SlideDebilidades ctx={ctx} f2={f2} /> },
+      { id: "ficha",        visible: true,                                    node: <SlideFichaTecnica ctx={ctx} f2={f2} /> },
+      { id: "foda",         visible: isSlideFodaVisible(f2),                  node: <SlideFoda f2={f2} /> },
+      { id: "propuestas",   visible: isSlidePropuestasVisible(f2),            node: <SlidePropuestas f2={f2} /> },
+      { id: "segmentos",    visible: SlideSegmentos.isVisible(f2),            node: <SlideSegmentos f2={f2} /> },
+      { id: "votos",        visible: SlideVotosNecesarios.isVisible(f2),      node: <SlideVotosNecesarios f2={f2} /> },
+      { id: "reorganizar",  visible: SlideReorganizar.isVisible(f2),          node: <SlideReorganizar f2={f2} /> },
+      { id: "arquitectura", visible: isSlideArquitecturaVisible(f2),          node: <SlideArquitectura f2={f2} /> },
+      { id: "herramientas", visible: true,                                    node: <SlideHerramientas /> },
+      { id: "cierre",       visible: true,                                    node: <SlideCierre f2={f2} /> },
+    ];
+    return all.filter((s) => s.visible);
+  }, [ctx, f2]);
 
+  /** Total catalogado (14) para el indicador "Mostrando N / 14". */
+  const TOTAL_CATALOG = 14;
   const total = slides.length;
-  const current = slides[index]!;
+  const current = slides[Math.min(index, total - 1)]!;
 
   const goNext = useCallback(() => {
     setDirection(1);
@@ -239,8 +261,13 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
                 );
               })}
             </div>
-            <span className="text-xs text-gray-400 tabular-nums">
+            <span className="text-xs text-gray-400 tabular-nums flex items-center gap-2">
               <span className="text-amber-400 font-semibold">{index + 1}</span> / {total}
+              {total < TOTAL_CATALOG ? (
+                <span className="hidden sm:inline text-[10px] uppercase tracking-[0.15em] text-amber-400/50 ml-2">
+                  · Mostrando {total} de {TOTAL_CATALOG}
+                </span>
+              ) : null}
             </span>
           </div>
 

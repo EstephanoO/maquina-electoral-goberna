@@ -151,7 +151,8 @@ export function CartaClient({
     "—";
 
   const handleContinue = () => {
-    router.push("/home");
+    const slug = snapshot?.campaign.slug;
+    router.push(slug ? `/onboarding/${slug}/fase-2` : "/home");
   };
   const handleEdit = () => setEditing(true);
 
@@ -262,11 +263,11 @@ export function CartaClient({
                   </span>
                 </div>
                 {snapshot.organizacion_politica ? (
-                  <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200">
-                    <Building2 className="size-3" />
-                    {snapshot.organizacion_politica.siglas ??
-                      snapshot.organizacion_politica.nombre}
-                  </div>
+                  <PartidoTag
+                    codigo={snapshot.organizacion_politica.codigo}
+                    siglas={snapshot.organizacion_politica.siglas}
+                    nombre={snapshot.organizacion_politica.nombre}
+                  />
                 ) : (
                   <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-white/60 italic">
                     Sin partido cargado
@@ -277,10 +278,10 @@ export function CartaClient({
 
             {/* Progress bars */}
             <div className="space-y-3">
-              <ProgressRow label="Onboarding" value={snapshot.progress.onboarding} />
-              <ProgressRow label="Territorio" value={snapshot.progress.territorio} />
+              <ProgressRow label="Perfil de candidato" value={snapshot.progress.onboarding} />
+              <ProgressRow label="Capacidad Territorial" value={snapshot.progress.territorio} />
+              <ProgressRow label="Capacidad Digital" value={snapshot.progress.digital} />
               <ProgressRow label="Datos" value={snapshot.progress.datos} />
-              <ProgressRow label="Digital" value={snapshot.progress.digital} />
             </div>
 
             {/* Missing fields chips */}
@@ -357,6 +358,35 @@ function ProgressRow({ label, value }: { label: string; value: number }) {
           className="h-full rounded-full bg-gradient-to-r from-amber-400 to-amber-300"
         />
       </div>
+    </div>
+  );
+}
+
+/** Tag de partido con logo en /onboarding/orgs/<codigo>.png; fallback a siglas. */
+function PartidoTag({
+  codigo,
+  siglas,
+  nombre,
+}: {
+  codigo: string;
+  siglas: string | null;
+  nombre: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  const label = siglas ?? nombre;
+  return (
+    <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-md border border-amber-300/30 bg-amber-300/10 pl-1 pr-2 py-0.5 text-[11px] font-semibold text-amber-200">
+      {failed ? (
+        <Building2 className="size-3" />
+      ) : (
+        <img
+          src={`/onboarding/orgs/${codigo}.png`}
+          alt=""
+          onError={() => setFailed(true)}
+          className="size-5 shrink-0 rounded-full bg-white object-contain p-0.5"
+        />
+      )}
+      {label}
     </div>
   );
 }

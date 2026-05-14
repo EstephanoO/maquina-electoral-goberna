@@ -175,9 +175,9 @@ export function OnboardingFlow() {
                 <StepDoneFinal
                   title={currentStep.title}
                   {...(currentStep.subtitle && { subtitle: currentStep.subtitle })}
-                  /* Después de fase 1 vamos a la carta cinematográfica.
-                     La carta tiene su propio botón "Continuar" que lleva a
-                     fase 2 (o el candidato puede editar su perfil primero). */
+                  /* Después de fase 1 vamos a la carta cinematográfica
+                     (mapa full-bleed de la jurisdicción). La carta tiene
+                     su propio botón "Continuar" que lleva a fase 2. */
                   dashboardUrl="/onboarding/carta"
                   onContinue={(url) => router.push(url)}
                 />

@@ -23,6 +23,7 @@ const redesSchema = z
     twitter: z.string().url().optional(),
     youtube: z.string().url().optional(),
     web_oficial: z.string().url().optional(),
+    whatsapp: z.string().optional(),
   })
   .partial();
 

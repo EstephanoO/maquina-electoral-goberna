@@ -34,6 +34,11 @@ export type CandidatoContext = {
   } | null;
   /** Form editable del consultor (Fase 2). Si null, slides usan placeholders. */
   consultor_form?: ConsultorFormFase2 | null;
+  /** Polígono de la jurisdicción — solo lo rellena el snapshot (carta, fase-2
+   *  by-candidato). Null en `/api/onboarding/me`. */
+  geojson?: unknown | null;
+  bbox?: [number, number, number, number] | null;
+  centroid?: [number, number] | null;
 };
 
 /** Mismo shape que apps/backend/src/modules/decks/fase2-form.ts */
@@ -276,6 +281,7 @@ export type SocialHandles = {
   twitter?: string;
   youtube?: string;
   web_oficial?: string;
+  whatsapp?: string;
 };
 
 export type Fase2DeckMeta = {
