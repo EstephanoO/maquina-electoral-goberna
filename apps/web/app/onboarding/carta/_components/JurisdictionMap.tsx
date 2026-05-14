@@ -16,15 +16,17 @@ type Props = {
   className?: string;
 };
 
+// Basemap CartoDB Voyager (muted blue-ish) — más visible contra fondo navy
+// que dark_nolabels, mantiene el lenguaje cinematográfico.
 const STYLE = {
   version: 8 as const,
   sources: {
-    "carto-positron": {
+    "carto-basemap": {
       type: "raster" as const,
       tiles: [
-        "https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png",
-        "https://b.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png",
-        "https://c.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png",
+        "https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png",
+        "https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png",
+        "https://c.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png",
       ],
       tileSize: 256,
       attribution: "© OpenStreetMap contributors © CARTO",
@@ -34,7 +36,12 @@ const STYLE = {
     {
       id: "carto-tiles",
       type: "raster" as const,
-      source: "carto-positron",
+      source: "carto-basemap",
+      paint: {
+        // Tinte navy + leve desaturación para integrar con el tema
+        "raster-saturation": -0.3,
+        "raster-contrast": 0.05,
+      },
     },
   ],
 };
@@ -52,7 +59,8 @@ export function JurisdictionMap({ geojson, bbox, centroid, className }: Props) {
       container: containerRef.current,
       style: mapStyle as maplibregl.StyleSpecification,
       center: centroid ?? [-75, -10], // Perú default
-      zoom: centroid ? 5 : 4,
+      zoom: centroid ? 4.2 : 3.6,
+      maxZoom: 9,
       attributionControl: false,
       interactive: false,
       pitchWithRotate: false,
@@ -72,7 +80,7 @@ export function JurisdictionMap({ geojson, bbox, centroid, className }: Props) {
           source: "jurisdiccion",
           paint: {
             "fill-color": "#fbbf24",
-            "fill-opacity": 0.18,
+            "fill-opacity": 0.10, // baja opacidad → tiles legibles bajo el polígono
           },
         });
         map.addLayer({
@@ -81,9 +89,9 @@ export function JurisdictionMap({ geojson, bbox, centroid, className }: Props) {
           source: "jurisdiccion",
           paint: {
             "line-color": "#fbbf24",
-            "line-width": 8,
-            "line-blur": 12,
-            "line-opacity": 0.6,
+            "line-width": 10,
+            "line-blur": 14,
+            "line-opacity": 0.7,
           },
         });
         map.addLayer({
@@ -92,7 +100,7 @@ export function JurisdictionMap({ geojson, bbox, centroid, className }: Props) {
           source: "jurisdiccion",
           paint: {
             "line-color": "#fbbf24",
-            "line-width": 2,
+            "line-width": 2.5,
             "line-opacity": 1,
           },
         });
