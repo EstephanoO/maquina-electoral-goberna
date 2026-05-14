@@ -1,288 +1,305 @@
 "use client";
 
 /**
- * /decks — Admin page for reviewing consultor-uploaded decks.
+ * /decks — Presentaciones de candidatos generadas a través del onboarding.
  *
- * Tabs: drafts (pendientes) · published · rejected.
- * Click a row → preview HTML in iframe sandbox + publish/reject actions.
- * Publish/reject mutate status server-side via /api/admin/decks/:id/{publish,reject}.
+ * Lista todos los candidatos con su estado de deck (sin presentación / borrador / publicado).
+ * Cada fila enlaza a:
+ *   - /onboarding/[slug]/perfil   → editar el formulario (Fase 2)
+ *   - /onboarding/[slug]/fase-2   → ver la presentación interactiva
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ExternalLink, Edit3, FileText, Plus } from "lucide-react";
 
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api-client";
+import { listCampaigns } from "@/lib/services";
 import { FONT_STACK } from "@/lib/constants";
-import { Button, PageHeader, Tabs, SlideOver } from "@/lib/ui";
+import { PageHeader, Button } from "@/lib/ui";
+import type { Campaign } from "@/lib/types";
 
 type DeckStatus = "draft" | "pending_review" | "published" | "rejected";
 
-type Deck = {
+type DeckRow = {
   id: string;
-  candidato_id: number;
-  candidato_nombres: string;
-  uploader_full_name: string;
-  uploader_email: string;
-  title: string;
-  type: "diagnostico" | "analisis" | "plan" | "episodico" | "otro";
-  description: string | null;
+  campaign_id: string | null;
   status: DeckStatus;
-  rejection_reason: string | null;
-  size_bytes: number | null;
-  created_at: string;
-  published_at: string | null;
+  consultor_form: Record<string, unknown>;
+  updated_at: string;
 };
 
-const STATUS_LABEL: Record<DeckStatus, string> = {
-  draft: "Drafts",
-  pending_review: "Por aprobar",
-  published: "Publicados",
-  rejected: "Rechazados",
+type CampaignWithDeck = Campaign & { deck?: DeckRow };
+
+const STATUS_CONFIG: Record<
+  DeckStatus | "none",
+  { label: string; bg: string; color: string }
+> = {
+  none: { label: "Sin presentación", bg: "#1e2a3a", color: "#64748b" },
+  draft: { label: "Borrador", bg: "#1c2a1a", color: "#4ade80" },
+  pending_review: { label: "Por aprobar", bg: "#2a1f0a", color: "#fbbf24" },
+  published: { label: "Publicado", bg: "#0f2a1a", color: "#34d399" },
+  rejected: { label: "Rechazado", bg: "#2a0f0f", color: "#f87171" },
 };
 
-const TYPE_LABEL: Record<Deck["type"], string> = {
-  diagnostico: "Diagnóstico",
-  analisis: "Análisis",
-  plan: "Plan",
-  episodico: "Episódico",
-  otro: "Otro",
-};
-
-export default function DecksAdminPage() {
+export default function DecksPage() {
   const { user } = useAuth();
   const router = useRouter();
   const isAdmin = user?.role === "admin";
 
-  const [tab, setTab] = useState<DeckStatus>("draft");
-  const [decks, setDecks] = useState<Deck[]>([]);
+  const [campaigns, setCampaigns] = useState<CampaignWithDeck[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<Deck | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [rejectReason, setRejectReason] = useState("");
+  const [search, setSearch] = useState("");
 
-  // Role guard
   useEffect(() => {
     if (user && !isAdmin) router.replace("/home");
   }, [user, isAdmin, router]);
 
-  const fetchDecks = useCallback(async (status: DeckStatus) => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get<{ ok: boolean; decks: Deck[] }>(
-        `/api/admin/decks?status=${status}`,
-      );
-      if (res.ok && res.data) setDecks(res.data.decks ?? []);
-      else setDecks([]);
+      const [campaignsRes, decksRes] = await Promise.all([
+        listCampaigns(),
+        api.get<{ ok: boolean; decks: DeckRow[] }>("/api/admin/decks/all"),
+      ]);
+
+      const decksById: Record<string, DeckRow> = {};
+      if (decksRes.ok && decksRes.data) {
+        for (const d of decksRes.data.decks) {
+          if (d.campaign_id) decksById[d.campaign_id] = d;
+        }
+      }
+
+      if (campaignsRes.ok && campaignsRes.data) {
+        const merged: CampaignWithDeck[] = campaignsRes.data.campaigns.map((c) => ({
+          ...c,
+          deck: decksById[c.id],
+        }));
+        setCampaigns(merged);
+      }
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (isAdmin) fetchDecks(tab);
-  }, [isAdmin, tab, fetchDecks]);
-
-  const handlePublish = async (deck: Deck) => {
-    setBusy(true);
-    try {
-      const res = await api.post<{ ok: boolean }>(`/api/admin/decks/${deck.id}/publish`);
-      if (res.ok) {
-        setSelected(null);
-        await fetchDecks(tab);
-      } else {
-        alert("No se pudo publicar el deck");
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleReject = async (deck: Deck) => {
-    if (rejectReason.trim().length < 2) {
-      alert("Escribí un motivo de rechazo");
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await api.post<{ ok: boolean }>(`/api/admin/decks/${deck.id}/reject`, {
-        reason: rejectReason.trim(),
-      });
-      if (res.ok) {
-        setSelected(null);
-        setRejectReason("");
-        await fetchDecks(tab);
-      } else {
-        alert("No se pudo rechazar el deck");
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
+    if (isAdmin) fetchAll();
+  }, [isAdmin, fetchAll]);
 
   if (user && !isAdmin) return null;
+
+  const filtered = campaigns.filter(
+    (c) =>
+      search.trim() === "" ||
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      (c.cargo ?? "").toLowerCase().includes(search.toLowerCase()),
+  );
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--color-background)", fontFamily: FONT_STACK }}>
       <div style={{ padding: "32px 32px 0" }}>
         <PageHeader
-          title="Decks"
-          description="Revisión de presentaciones subidas por consultores"
+          title="Presentaciones"
+          description="Presentaciones interactivas generadas a través del onboarding de candidatos."
+          actions={
+            <Button variant="primary" size="sm" onClick={() => router.push("/onboarding")}>
+              <Plus size={14} style={{ marginRight: 6 }} />
+              Nuevo Candidato
+            </Button>
+          }
         />
       </div>
 
-      <div style={{ padding: "0 32px 32px" }}>
-        <Tabs
-          tabs={[
-            { id: "pending_review", label: STATUS_LABEL.pending_review },
-            { id: "draft", label: STATUS_LABEL.draft },
-            { id: "published", label: STATUS_LABEL.published },
-            { id: "rejected", label: STATUS_LABEL.rejected },
-          ]}
-          activeTab={tab}
-          onChange={(id) => setTab(id as DeckStatus)}
-        />
+      <div style={{ padding: "24px 32px 32px" }}>
+        {/* Buscador */}
+        <div style={{ marginBottom: 20 }}>
+          <input
+            type="text"
+            placeholder="Buscar candidato o cargo…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              width: "100%",
+              maxWidth: 360,
+              padding: "8px 14px",
+              borderRadius: 8,
+              border: "1px solid var(--color-border)",
+              background: "var(--color-surface)",
+              color: "var(--color-text-primary)",
+              fontFamily: FONT_STACK,
+              fontSize: 14,
+              outline: "none",
+            }}
+          />
+        </div>
 
-        <div style={{ marginTop: 16 }}>
-          {loading ? (
-            <div style={{ padding: 32, color: "var(--color-text-tertiary)" }}>Cargando…</div>
-          ) : decks.length === 0 ? (
-            <div style={{ padding: 32, color: "var(--color-text-tertiary)" }}>
-              No hay decks en {STATUS_LABEL[tab].toLowerCase()}.
-            </div>
-          ) : (
-            <div style={{ display: "grid", gap: 12 }}>
-              {decks.map((d) => (
-                <button
-                  key={d.id}
-                  onClick={() => setSelected(d)}
+        {loading ? (
+          <div style={{ padding: 32, color: "var(--color-text-tertiary)" }}>Cargando…</div>
+        ) : filtered.length === 0 ? (
+          <div
+            style={{
+              padding: "48px 32px",
+              textAlign: "center",
+              color: "var(--color-text-tertiary)",
+              border: "1px dashed var(--color-border)",
+              borderRadius: 12,
+            }}
+          >
+            <FileText size={32} style={{ margin: "0 auto 12px", opacity: 0.4 }} />
+            <p style={{ margin: 0, fontSize: 14 }}>
+              {search ? "No hay candidatos que coincidan." : "No hay candidatos registrados."}
+            </p>
+            <button
+              onClick={() => router.push("/onboarding")}
+              style={{
+                marginTop: 16,
+                padding: "8px 20px",
+                borderRadius: 20,
+                border: "1px solid var(--color-border)",
+                background: "transparent",
+                color: "var(--color-text-secondary)",
+                cursor: "pointer",
+                fontSize: 13,
+                fontFamily: FONT_STACK,
+              }}
+            >
+              + Agregar primer candidato
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {filtered.map((c) => {
+              const statusKey = (c.deck?.status ?? "none") as DeckStatus | "none";
+              const st = STATUS_CONFIG[statusKey];
+              const color1 = c.config?.color_primario ?? "#1e40af";
+              const initials = c.name
+                .split(" ")
+                .slice(0, 2)
+                .map((w) => w[0])
+                .join("")
+                .toUpperCase();
+
+              return (
+                <div
+                  key={c.id}
                   style={{
-                    textAlign: "left",
+                    display: "grid",
+                    gridTemplateColumns: "auto 1fr auto",
+                    gap: 16,
+                    alignItems: "center",
                     background: "var(--color-surface)",
                     border: "1px solid var(--color-border)",
-                    borderRadius: 8,
-                    padding: 16,
-                    cursor: "pointer",
-                    display: "grid",
-                    gridTemplateColumns: "1fr auto",
-                    gap: 12,
-                    alignItems: "center",
+                    borderRadius: 10,
+                    padding: "14px 18px",
                   }}
                 >
+                  {/* Avatar */}
+                  <div
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: "50%",
+                      overflow: "hidden",
+                      flexShrink: 0,
+                      border: `2px solid ${color1}40`,
+                      background: `${color1}20`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: 900,
+                      fontSize: 15,
+                      color: color1,
+                    }}
+                  >
+                    {c.foto_url ? (
+                      <img
+                        src={c.foto_url}
+                        alt={c.name}
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    ) : (
+                      initials
+                    )}
+                  </div>
+
+                  {/* Info */}
                   <div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--color-text-primary)" }}>
-                      {d.title}
+                    <div style={{ fontWeight: 700, fontSize: 15, color: "var(--color-text-primary)" }}>
+                      {c.name}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--color-text-secondary)", marginTop: 2 }}>
-                      {TYPE_LABEL[d.type]} · {d.candidato_nombres} · subido por {d.uploader_full_name}
+                      {[c.cargo, c.partido].filter(Boolean).join(" · ") || "Sin cargo asignado"}
                     </div>
-                    {d.rejection_reason ? (
-                      <div style={{ fontSize: 12, color: "#dc2626", marginTop: 4 }}>
-                        Rechazado: {d.rejection_reason}
-                      </div>
-                    ) : null}
+                    <div style={{ marginTop: 6 }}>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.08em",
+                          padding: "2px 8px",
+                          borderRadius: 20,
+                          background: st.bg,
+                          color: st.color,
+                        }}
+                      >
+                        {st.label}
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>
-                    {new Date(d.created_at).toLocaleString("es-PE", {
-                      dateStyle: "short",
-                      timeStyle: "short",
-                    })}
+
+                  {/* Acciones */}
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <button
+                      onClick={() => router.push(`/onboarding/${c.slug}/perfil`)}
+                      title="Editar formulario"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 5,
+                        padding: "6px 12px",
+                        borderRadius: 6,
+                        border: "1px solid var(--color-border)",
+                        background: "transparent",
+                        color: "var(--color-text-secondary)",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontFamily: FONT_STACK,
+                        fontWeight: 600,
+                      }}
+                    >
+                      <Edit3 size={12} />
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => router.push(`/onboarding/${c.slug}/fase-2`)}
+                      title="Ver presentación"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 5,
+                        padding: "6px 12px",
+                        borderRadius: 6,
+                        border: "none",
+                        background: color1,
+                        color: "#fff",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontFamily: FONT_STACK,
+                        fontWeight: 700,
+                      }}
+                    >
+                      <ExternalLink size={12} />
+                      Ver presentación
+                    </button>
                   </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <SlideOver
-        open={selected !== null}
-        onClose={() => {
-          setSelected(null);
-          setRejectReason("");
-        }}
-        title={selected?.title ?? ""}
-        width={900}
-      >
-        {selected ? (
-          <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-            <div style={{ padding: 16, borderBottom: "1px solid var(--color-border)" }}>
-              <div style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
-                <strong>{TYPE_LABEL[selected.type]}</strong> ·{" "}
-                {selected.candidato_nombres} · subido por {selected.uploader_full_name} (
-                {selected.uploader_email})
-              </div>
-              {selected.description ? (
-                <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginTop: 8 }}>
-                  {selected.description}
                 </div>
-              ) : null}
-            </div>
-
-            <div style={{ flex: 1, minHeight: 400 }}>
-              <iframe
-                src={`/api/decks/${selected.id}/raw`}
-                sandbox="allow-same-origin allow-scripts"
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  minHeight: 400,
-                  border: "none",
-                  background: "#fff",
-                }}
-                title={selected.title}
-              />
-            </div>
-
-            {selected.status === "draft" || selected.status === "pending_review" ? (
-              <div
-                style={{
-                  padding: 16,
-                  borderTop: "1px solid var(--color-border)",
-                  background: "var(--color-surface)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 12,
-                }}
-              >
-                <div style={{ display: "flex", gap: 8 }}>
-                  <Button
-                    onClick={() => handlePublish(selected)}
-                    disabled={busy}
-                    variant="primary"
-                  >
-                    {selected.status === "pending_review" ? "Aprobar y publicar" : "Publicar"}
-                  </Button>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <textarea
-                    value={rejectReason}
-                    onChange={(e) => setRejectReason(e.target.value)}
-                    placeholder="Motivo de rechazo (visible para el consultor)"
-                    rows={2}
-                    style={{
-                      width: "100%",
-                      padding: 8,
-                      borderRadius: 6,
-                      border: "1px solid var(--color-border)",
-                      fontFamily: "inherit",
-                      fontSize: 13,
-                      resize: "vertical",
-                    }}
-                  />
-                  <Button
-                    onClick={() => handleReject(selected)}
-                    disabled={busy || rejectReason.trim().length < 2}
-                    variant="danger"
-                  >
-                    Rechazar
-                  </Button>
-                </div>
-              </div>
-            ) : null}
+              );
+            })}
           </div>
-        ) : null}
-      </SlideOver>
+        )}
+      </div>
     </div>
   );
 }

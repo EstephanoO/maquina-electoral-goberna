@@ -737,6 +737,22 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // GET /api/admin/decks/all — todos los decks sin filtro de status (para admin)
+    app.get(
+      "/api/admin/decks/all",
+      {
+        preHandler: [
+          app.authenticate,
+          authorize({ roles: ["admin"] }),
+        ],
+      },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const decks = await repo.listAllDecksForAdmin();
+        return reply.code(200).send({ ok: true, request_id: requestId, decks });
+      },
+    );
+
     // POST /api/admin/decks/:id/publish
     app.post<{ Params: { id: string } }>(
       "/api/admin/decks/:id/publish",

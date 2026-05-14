@@ -533,6 +533,24 @@ export async function listDecksByStatus(
   return rows;
 }
 
+export async function listAllDecksForAdmin(): Promise<
+  Array<{
+    id: string;
+    campaign_id: string | null;
+    status: DeckRow["status"];
+    consultor_form: Record<string, unknown>;
+    updated_at: string;
+  }>
+> {
+  const { rows } = await pool.query(
+    `SELECT d.id, d.campaign_id, d.status, d.consultor_form, d.updated_at
+       FROM public.decks d
+      ORDER BY d.updated_at DESC
+      LIMIT 500`,
+  );
+  return rows;
+}
+
 export async function findDeckById(id: string): Promise<DeckRow | null> {
   const { rows } = await pool.query<DeckRow>(`SELECT * FROM public.decks WHERE id = $1`, [id]);
   return rows[0] ?? null;

@@ -66,7 +66,7 @@ export function StepDoneFinal({ title, subtitle, dashboardUrl, onContinue }: Ste
         onClick={() => onContinue(dashboardUrl)}
         className="inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 px-10 py-4 text-base font-black uppercase tracking-wider text-[#0a1e4a] shadow-[0_15px_50px_rgba(251,191,36,0.4)] hover:shadow-[0_20px_70px_rgba(251,191,36,0.6)] transition-shadow"
       >
-        Completar mi perfil
+        Ver mi carta
         <ArrowRight className="size-5" />
       </motion.button>
     </motion.div>

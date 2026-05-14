@@ -151,8 +151,7 @@ export function CartaClient({
     "—";
 
   const handleContinue = () => {
-    const slug = snapshot?.campaign?.slug;
-    router.push(slug ? `/onboarding/${slug}/perfil` : "/home");
+    router.push("/home");
   };
   const handleEdit = () => setEditing(true);
 
