@@ -54,7 +54,7 @@ server {
         add_header X-Cache-Status $upstream_cache_status always;
         add_header X-Content-Type-Options nosniff always;
 
-        proxy_pass http://backend:${BACKEND_PORT};
+        proxy_pass http://maquina_electoral_backend:${BACKEND_PORT};
     }
 
     location /api/agents/stream {
@@ -70,7 +70,7 @@ server {
         proxy_connect_timeout 10s;
         proxy_send_timeout 300s;
         chunked_transfer_encoding off;
-        proxy_pass http://backend:${BACKEND_PORT};
+        proxy_pass http://maquina_electoral_backend:${BACKEND_PORT};
     }
 
     # SSE for CMS real-time events
@@ -87,7 +87,7 @@ server {
         proxy_read_timeout 300s;
         proxy_connect_timeout 10s;
         proxy_send_timeout 300s;
-        proxy_pass http://backend:${BACKEND_PORT};
+        proxy_pass http://maquina_electoral_backend:${BACKEND_PORT};
     }
 
     # WebSocket for mobile agent tracking ingest
@@ -104,7 +104,7 @@ server {
         proxy_read_timeout 300s;
         proxy_connect_timeout 10s;
         proxy_send_timeout 300s;
-        proxy_pass http://backend:${BACKEND_PORT};
+        proxy_pass http://maquina_electoral_backend:${BACKEND_PORT};
     }
 
     location /uploads/ {
@@ -115,6 +115,20 @@ server {
         try_files $uri =404;
     }
 
+    # /api/* general — REST API to backend (excluding specific overrides above)
+    location /api/ {
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 65s;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 65s;
+        proxy_pass http://maquina_electoral_backend:${BACKEND_PORT};
+    }
+
+    # All other routes → Next.js frontend (apps/web)
     location / {
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -124,6 +138,6 @@ server {
         proxy_read_timeout 65s;
         proxy_connect_timeout 10s;
         proxy_send_timeout 65s;
-        proxy_pass http://backend:${BACKEND_PORT};
+        proxy_pass http://frontend:3001;
     }
 }
