@@ -2,6 +2,8 @@
 
 import type { ReactNode } from "react";
 
+import { ChapterBadge, type ChapterId } from "./ChapterBadge";
+
 /**
  * Chrome data — header navy con título + amber underline + cuerpo blanco.
  * Patrón usado por todas las slides de análisis (¿Quién es?, FODA,
@@ -16,6 +18,10 @@ interface Props {
   children: ReactNode;
   /** Footer opcional (caption pequeño bajo el contenido). */
   footer?: ReactNode;
+  /** Capítulo narrativo (1..6) — renderiza ChapterBadge encima del título. */
+  chapter?: ChapterId;
+  /** Hint corto adicional al chapter (ej: "presencia digital"). */
+  chapterHint?: string;
 }
 
 export function SlideChromeData({
@@ -24,6 +30,8 @@ export function SlideChromeData({
   bodyTone = "white",
   children,
   footer,
+  chapter,
+  chapterHint,
 }: Props) {
   const bodyBg =
     bodyTone === "tinted" ? "bg-slate-50" : "bg-white";
@@ -32,12 +40,17 @@ export function SlideChromeData({
     <div className="relative flex-1 flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10 min-h-[70vh]">
       {/* Header navy */}
       <header
-        className="relative px-8 sm:px-12 py-7 sm:py-8 text-white"
+        className="relative px-8 sm:px-12 py-6 sm:py-7 text-white"
         style={{
           background:
             "linear-gradient(180deg, #0a1f4a 0%, #061634 100%)",
         }}
       >
+        {chapter ? (
+          <div className="flex justify-center mb-2">
+            <ChapterBadge chapter={chapter} hint={chapterHint} />
+          </div>
+        ) : null}
         <h2 className="text-2xl sm:text-3xl md:text-4xl font-black uppercase tracking-tight text-center leading-tight">
           {title}
         </h2>

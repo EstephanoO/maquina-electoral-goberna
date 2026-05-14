@@ -90,6 +90,8 @@ export function SlideDebilidades({ ctx, f2 }: Props) {
     <SlideChromeData
       title="DEBILIDADES Y RIESGOS"
       subtitle={subtitle}
+      chapter={2}
+      chapterHint="auditoría preventiva"
     >
       <div className="relative h-full">
         {/* Stamp global arriba-derecha — solo si hay nivel global declarado */}

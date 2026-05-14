@@ -39,6 +39,14 @@ function isProtectedRoute(pathname: string): boolean {
   if (pathname.startsWith("/mapa")) return false;
   if (pathname.startsWith("/invite")) return false;
 
+  // Dev preview routes (gated by NODE_ENV inside the page component too)
+  if (
+    process.env.NODE_ENV !== "production" &&
+    pathname.startsWith("/dev-preview/")
+  ) {
+    return false;
+  }
+
 
   // Static assets / API / internal Next.js routes — skip middleware
   if (

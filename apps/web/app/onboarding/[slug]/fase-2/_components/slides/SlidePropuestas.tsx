@@ -18,7 +18,7 @@ export function SlidePropuestas({ f2 }: Props) {
   const sorted = [...propuestas].sort((a, b) => a.orden - b.orden);
 
   return (
-    <SlideChromeData title="Propuestas">
+    <SlideChromeData title="Propuestas" chapter={3} chapterHint="qué ofrece tu candidatura">
       {sorted.length === 0 ? (
         <p className="text-sm text-slate-400 italic">
           Sin propuestas registradas.

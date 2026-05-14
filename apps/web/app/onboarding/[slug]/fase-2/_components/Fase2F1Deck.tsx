@@ -59,20 +59,28 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
   // sin datos suficientes se skipean (deck adaptativo). Ver spec
   // docs/superpowers/specs/2026-05-14-fase2-deck-redesign.md §8.
   const slides = useMemo(() => {
+    // Orden narrativo (capítulos 1→6): presentación → diagnóstico →
+    // territorio → estrategia → ejecución → cierre.
     const all = [
+      // CAPÍTULO 1 — Presentación
       { id: "carta",        visible: true,                                    node: <SlideCarta ctx={ctx} /> },
       { id: "hero",         visible: true,                                    node: <SlideHero ctx={ctx} /> },
+      { id: "ficha",        visible: true,                                    node: <SlideFichaTecnica ctx={ctx} f2={f2} /> },
+      // CAPÍTULO 2 — Diagnóstico
       { id: "quien-es",     visible: isSlideQuienEsVisible(ctx, f2),          node: <SlideQuienEs ctx={ctx} f2={f2} /> },
       { id: "presencia",    visible: isPresenciaVisible(f2),                  node: <SlidePresenciaDigital f2={f2} /> },
       { id: "debilidades",  visible: isDebilidadesVisible(f2),                node: <SlideDebilidades ctx={ctx} f2={f2} /> },
-      { id: "ficha",        visible: true,                                    node: <SlideFichaTecnica ctx={ctx} f2={f2} /> },
+      // CAPÍTULO 3 — Territorio
       { id: "foda",         visible: isSlideFodaVisible(f2),                  node: <SlideFoda f2={f2} /> },
       { id: "propuestas",   visible: isSlidePropuestasVisible(f2),            node: <SlidePropuestas f2={f2} /> },
+      // CAPÍTULO 4 — Estrategia
       { id: "segmentos",    visible: SlideSegmentos.isVisible(f2),            node: <SlideSegmentos f2={f2} /> },
       { id: "votos",        visible: SlideVotosNecesarios.isVisible(f2),      node: <SlideVotosNecesarios f2={f2} /> },
       { id: "reorganizar",  visible: SlideReorganizar.isVisible(f2),          node: <SlideReorganizar f2={f2} /> },
+      // CAPÍTULO 5 — Ejecución
       { id: "arquitectura", visible: isSlideArquitecturaVisible(f2),          node: <SlideArquitectura f2={f2} /> },
       { id: "herramientas", visible: true,                                    node: <SlideHerramientas /> },
+      // CAPÍTULO 6 — Cierre
       { id: "cierre",       visible: true,                                    node: <SlideCierre f2={f2} /> },
     ];
     return all.filter((s) => s.visible);

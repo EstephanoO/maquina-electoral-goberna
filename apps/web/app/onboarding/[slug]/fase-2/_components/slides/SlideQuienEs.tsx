@@ -32,7 +32,7 @@ export function SlideQuienEs({ ctx, f2 }: Props) {
   );
 
   return (
-    <SlideChromeData title={`¿QUIÉN ES ${firstName}?`}>
+    <SlideChromeData title={`¿QUIÉN ES ${firstName}?`} chapter={2} chapterHint="narrativa del candidato">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12">
         {/* Columna izquierda — narrativa libre */}
         <motion.div

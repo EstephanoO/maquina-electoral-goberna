@@ -24,6 +24,8 @@ export function SlideFichaTecnica({ ctx, f2 }: Props) {
     <SlideChromeData
       title="FICHA TÉCNICA"
       subtitle="Datos básicos del candidato"
+      chapter={1}
+      chapterHint="presentación"
     >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 md:gap-x-14 gap-y-4">
         {rows.map((row, i) => (

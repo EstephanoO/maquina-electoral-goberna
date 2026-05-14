@@ -1,11 +1,12 @@
 "use client";
 
-import { motion } from "motion/react";
-import { ArrowDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { motion, useInView } from "motion/react";
 import type { ConsultorFormFase2 } from "@/lib/onboarding-api";
 
 import { SlideChromeData } from "../chrome/SlideChromeData";
 import { DataTable } from "../chrome/DataTable";
+import { TagTilt } from "../chrome/TagTilt";
 
 interface Props {
   f2: ConsultorFormFase2;
@@ -16,9 +17,53 @@ const fmt = (n: number | undefined | null) =>
   typeof n === "number" && Number.isFinite(n) ? nf.format(n) : "—";
 
 /**
- * Slide "Porcentaje de votos necesarios" — replica el espíritu de p.16:
- * histórico a la izquierda + cards verticales con flecha amber descendente
- * a la derecha (RESULTADO ANTERIOR → META 2026).
+ * CountUp inline — interpola de 0 a `value` en 1.4s (30 steps).
+ * Se dispara cuando `start === true`. Mientras tanto muestra 0.
+ */
+function CountUp({
+  value,
+  start,
+  className,
+}: {
+  value: number | undefined | null;
+  start: boolean;
+  className?: string;
+}) {
+  const target =
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+  const [current, setCurrent] = useState(0);
+
+  useEffect(() => {
+    if (!start || target === null) return;
+    const steps = 30;
+    const duration = 1400;
+    const interval = duration / steps;
+    let step = 0;
+    const id = setInterval(() => {
+      step += 1;
+      // Ease-out cubic para que la animación termine suavemente.
+      const t = step / steps;
+      const eased = 1 - Math.pow(1 - t, 3);
+      setCurrent(Math.round(target * eased));
+      if (step >= steps) {
+        setCurrent(target);
+        clearInterval(id);
+      }
+    }, interval);
+    return () => clearInterval(id);
+  }, [start, target]);
+
+  if (target === null) {
+    return <span className={className}>—</span>;
+  }
+
+  return <span className={`tabular-nums ${className ?? ""}`}>{nf.format(current)}</span>;
+}
+
+/**
+ * Slide "Porcentaje de votos necesarios" — gap visual + counter animado.
+ * Izquierda: histórico electoral (DataTable).
+ * Derecha: pipeline vertical de 3 stages (Resultado anterior → Gap → Meta 2026).
  */
 export function SlideVotosNecesarios({ f2 }: Props) {
   const vpg = f2.votos_para_ganar ?? {};
@@ -30,19 +75,31 @@ export function SlideVotosNecesarios({ f2 }: Props) {
   const ganadorAnterior = vpg.votos_ganador_anterior;
 
   const pctMeta =
-    typeof meta === "number" &&
-    typeof padron === "number" &&
-    padron > 0
+    typeof meta === "number" && typeof padron === "number" && padron > 0
       ? Math.round((meta / padron) * 100)
       : null;
+
+  const pctAnterior =
+    typeof ganadorAnterior === "number" &&
+    typeof padron === "number" &&
+    padron > 0
+      ? Math.round((ganadorAnterior / padron) * 10) / 10
+      : null;
+
+  const hasBoth =
+    typeof ganadorAnterior === "number" &&
+    typeof meta === "number" &&
+    ganadorAnterior > 0;
+  const gap = hasBoth ? meta! - ganadorAnterior! : null;
+  const gapPct = hasBoth
+    ? Math.round(((meta! - ganadorAnterior!) / ganadorAnterior!) * 100)
+    : null;
 
   const historicoRows = entries.map((e) => ({
     anio: e.anio ?? "—",
     cargo: e.cargo ?? "—",
     pct:
-      typeof e.porcentaje === "number"
-        ? `${e.porcentaje.toFixed(2)}%`
-        : "—",
+      typeof e.porcentaje === "number" ? `${e.porcentaje.toFixed(2)}%` : "—",
     resultado: e.resultado ?? "—",
   }));
 
@@ -52,11 +109,22 @@ export function SlideVotosNecesarios({ f2 }: Props) {
     </span>
   ) : undefined;
 
+  // Refs para disparar CountUp cuando cada card entra en viewport.
+  const anteriorRef = useRef<HTMLDivElement | null>(null);
+  const metaRef = useRef<HTMLDivElement | null>(null);
+  const anteriorInView = useInView(anteriorRef, { once: true, amount: 0.5 });
+  const metaInView = useInView(metaRef, { once: true, amount: 0.5 });
+
   return (
-    <SlideChromeData title="Porcentaje de votos necesarios" footer={footer}>
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-stretch h-full">
-        {/* Izquierda: histórico */}
-        <div className="lg:col-span-7 flex flex-col justify-center">
+    <SlideChromeData
+      title="Porcentaje de votos necesarios"
+      chapter={4}
+      chapterHint="cuánto te falta"
+      footer={footer}
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center h-full">
+        {/* Izquierda: histórico electoral */}
+        <div className="lg:col-span-5 flex flex-col justify-center">
           {hasHistorial ? (
             <motion.div
               initial={{ opacity: 0, y: 12 }}
@@ -68,10 +136,10 @@ export function SlideVotosNecesarios({ f2 }: Props) {
               </p>
               <DataTable
                 columns={[
-                  { key: "anio", label: "Año", width: "14%" },
-                  { key: "cargo", label: "Cargo", width: "44%" },
-                  { key: "pct", label: "% obtenido", width: "20%", align: "right" },
-                  { key: "resultado", label: "Resultado", width: "22%" },
+                  { key: "anio", label: "Año", width: "16%" },
+                  { key: "cargo", label: "Cargo", width: "40%" },
+                  { key: "pct", label: "%", width: "18%", align: "right" },
+                  { key: "resultado", label: "Resultado", width: "26%" },
                 ]}
                 rows={historicoRows}
                 emphasizeFirst
@@ -83,65 +151,100 @@ export function SlideVotosNecesarios({ f2 }: Props) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.5 }}
-              className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500"
+              className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-xs text-slate-500"
             >
               Sin historial electoral cargado todavía.
             </motion.div>
           )}
         </div>
 
-        {/* Derecha: cards verticales con flecha amber */}
-        <div className="lg:col-span-5 flex flex-col justify-center gap-4">
+        {/* Derecha: pipeline electoral 3-stage */}
+        <div className="lg:col-span-7 flex flex-col justify-center gap-2">
+          {/* Stage 1 — Resultado anterior (navy) */}
           <motion.div
-            initial={{ opacity: 0, y: 16 }}
+            ref={anteriorRef}
+            initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, delay: 0.1 }}
-            className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden"
+            transition={{ duration: 0.55, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+            className="relative rounded-2xl overflow-hidden shadow-xl ring-1 ring-[#0a1f4a]/20"
+            style={{
+              background:
+                "linear-gradient(135deg, #0a1f4a 0%, #020a1e 100%)",
+            }}
           >
-            <div className="bg-[#0a1f4a] px-5 py-2 text-[11px] uppercase tracking-[0.22em] font-black text-white">
-              Resultado anterior
-            </div>
-            <div className="px-6 py-5 text-center">
-              <div className="text-4xl sm:text-5xl font-black text-[#0a1f4a] leading-none tabular-nums">
-                {fmt(ganadorAnterior)}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-amber-400" />
+            <div className="px-7 py-5 sm:px-8 sm:py-6">
+              <div className="text-[10px] uppercase tracking-[0.28em] font-bold text-white/60">
+                Tu última elección
               </div>
-              <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold">
-                votos
+              <div className="mt-2 flex items-baseline gap-3 flex-wrap">
+                <CountUp
+                  value={ganadorAnterior}
+                  start={anteriorInView}
+                  className="text-5xl sm:text-6xl font-black text-white leading-none"
+                />
+                <span className="text-[10px] uppercase tracking-[0.24em] font-bold text-white/55">
+                  votos
+                </span>
               </div>
+              {pctAnterior !== null ? (
+                <div className="mt-2 text-[11px] uppercase tracking-[0.18em] font-semibold text-amber-400/90">
+                  {pctAnterior.toFixed(1)}% del padrón
+                </div>
+              ) : null}
             </div>
           </motion.div>
 
+          {/* Stage 2 — GAP visual centrado */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.6 }}
+            initial={{ opacity: 0, scale: 0.85 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="flex justify-center"
+            transition={{ duration: 0.5, delay: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className="flex flex-col items-center justify-center py-3"
           >
-            <ArrowDown
-              className="text-amber-400 drop-shadow-[0_4px_8px_rgba(251,191,36,0.45)]"
-              strokeWidth={3}
-              size={56}
-            />
+            {hasBoth ? (
+              <>
+                <TagTilt
+                  label={`+${nf.format(gap!)} votos · ${gapPct}% más`}
+                  tone="amber"
+                  size="md"
+                  rotate={-3}
+                />
+                <p className="mt-3 text-sm sm:text-base font-bold text-[#0a1f4a] text-center">
+                  Es la diferencia entre ganar y perder.
+                </p>
+              </>
+            ) : (
+              <div className="text-xs text-slate-400 uppercase tracking-[0.2em]">
+                Carga ambos datos para ver la diferencia
+              </div>
+            )}
           </motion.div>
 
+          {/* Stage 3 — Meta 2026 (amber highlight) */}
           <motion.div
-            initial={{ opacity: 0, y: 16 }}
+            ref={metaRef}
+            initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, delay: 0.45 }}
-            className="rounded-lg overflow-hidden shadow-lg ring-2 ring-amber-400"
+            transition={{ duration: 0.55, delay: 0.8, ease: [0.22, 1, 0.36, 1] }}
+            className="relative rounded-2xl overflow-hidden shadow-2xl ring-2 ring-amber-400 bg-amber-400"
           >
-            <div className="bg-amber-400 px-5 py-2 text-[11px] uppercase tracking-[0.22em] font-black text-[#0a1f4a]">
-              Meta 2026
-            </div>
-            <div className="bg-white px-6 py-5 text-center">
-              <div className="text-5xl sm:text-6xl font-black text-[#0a1f4a] leading-none tabular-nums">
-                {fmt(meta)}
+            <div className="px-7 py-5 sm:px-8 sm:py-6">
+              <div className="text-[10px] uppercase tracking-[0.28em] font-bold text-[#0a1f4a]/70">
+                Lo que necesitás
               </div>
-              <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold">
-                votos necesarios
+              <div className="mt-2 flex items-baseline gap-3 flex-wrap">
+                <CountUp
+                  value={meta}
+                  start={metaInView}
+                  className="text-6xl sm:text-7xl font-black text-[#0a1f4a] leading-none"
+                />
+                <span className="text-[10px] uppercase tracking-[0.24em] font-bold text-[#0a1f4a]/70">
+                  votos necesarios
+                </span>
               </div>
               {pctMeta !== null ? (
-                <div className="mt-2 text-xs text-slate-600 font-semibold">
+                <div className="mt-2 text-[11px] uppercase tracking-[0.18em] font-bold text-[#0a1f4a]/80">
                   ({pctMeta}% del padrón)
                 </div>
               ) : null}
@@ -157,7 +260,6 @@ SlideVotosNecesarios.isVisible = (f2: ConsultorFormFase2): boolean => {
   const vpg = f2.votos_para_ganar;
   if (!vpg) return false;
   return (
-    typeof vpg.padron_actual === "number" ||
-    typeof vpg.votos_meta === "number"
+    typeof vpg.padron_actual === "number" || typeof vpg.votos_meta === "number"
   );
 };

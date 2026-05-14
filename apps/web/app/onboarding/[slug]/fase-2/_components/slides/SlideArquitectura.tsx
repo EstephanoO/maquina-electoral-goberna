@@ -121,6 +121,8 @@ export function SlideArquitectura({ f2 }: Props) {
     <SlideChromeData
       title="HERRAMIENTA"
       footer={presupuestoLabel ?? undefined}
+      chapter={5}
+      chapterHint="arquitectura de pauta"
     >
       <div className="flex flex-col gap-7">
         {/* Tag */}

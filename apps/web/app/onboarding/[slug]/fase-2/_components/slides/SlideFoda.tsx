@@ -50,7 +50,7 @@ export function SlideFoda({ f2 }: Props) {
   };
 
   return (
-    <SlideChromeData title="FODA" subtitle="Diagnóstico inicial">
+    <SlideChromeData title="FODA" subtitle="Diagnóstico inicial" chapter={3} chapterHint="el terreno donde competís">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6">
         {CUADRANTES.map((q, qi) => {
           const items = data[q.key];

@@ -12,7 +12,8 @@ import { RiesgoStamp, statusToLevel } from "../chrome/RiesgoStamp";
  * Slide data — Presencia Digital.
  * Dashboard 2x2 inspirado en pp.5-8 del PDF "ROBERTO SÁNCHEZ - SEGUNDA VUELTA":
  * cada canal (Google · Facebook · Instagram · WhatsApp) ocupa una card con su
- * propio stamp RIESGO arriba-derecha.
+ * propio stamp RIESGO arriba-derecha, métrica grande central, y barra de
+ * estado horizontal en el footer.
  */
 interface Props {
   f2: ConsultorFormFase2;
@@ -24,114 +25,171 @@ interface ChannelCard {
   key: "google" | "facebook" | "instagram" | "whatsapp";
   label: string;
   Icon: typeof Search;
-  /** Tinte del header de la card. */
-  tint: string;
-  iconTint: string;
   /** URL/handle si existe. */
   value: string | undefined;
-  /** Level mapeado para el stamp. */
+  /** Etiqueta de la métrica central (e.g. "POSICIONAMIENTO"). */
+  metricLabel: string;
+  /** Valor de la métrica central (e.g. "BAJO", "Sin datos"). */
+  metricValue: string;
+  /** Level mapeado para el stamp + barra footer. */
   level: Level;
 }
+
+const LEVEL_BAR_BG: Record<Level, string> = {
+  critico: "bg-red-600",
+  alto: "bg-orange-600",
+  medio: "bg-amber-500",
+  bajo: "bg-emerald-600",
+};
+
+const LEVEL_METRIC_TEXT: Record<Level, string> = {
+  critico: "CRÍTICO",
+  alto: "ALTO",
+  medio: "MEDIO",
+  bajo: "BAJO",
+};
+
+// Animación stagger por cuadrante: TL → TR → BL → BR.
+const QUADRANT_DELAY = [0, 0.1, 0.2, 0.3];
 
 export function SlidePresenciaDigital({ f2 }: Props) {
   const handles = f2.redes_sociales?.candidato;
   const pd = f2.presencia_digital;
   const notas = pd?.notas;
 
-  // Status helpers — Google usa google_results; redes verificadas para FB/IG.
+  // ── Decisión por canal ────────────────────────────────────────────────
+  // Google: del status google_results.
   const googleLevel: Level = statusToLevel(pd?.google_results) ?? "medio";
-  const redesLevel: Level = statusToLevel(pd?.redes_verificadas) ?? "medio";
-  const whatsappLevel: Level = handles?.whatsapp ? "bajo" : "critico";
+  const googleMetric: string = LEVEL_METRIC_TEXT[googleLevel];
+
+  // Facebook: si hay handle, usar status redes_verificadas; si no, crítico.
+  const fbHasHandle = !!handles?.facebook && handles.facebook.trim().length > 0;
+  const facebookLevel: Level = fbHasHandle
+    ? (statusToLevel(pd?.redes_verificadas) ?? "medio")
+    : "critico";
+  const facebookMetric: string = fbHasHandle
+    ? (statusToLevel(pd?.redes_verificadas) ? LEVEL_METRIC_TEXT[facebookLevel] : "Activo · sin verificar")
+    : "Sin datos";
+
+  // Instagram: misma lógica que facebook.
+  const igHasHandle = !!handles?.instagram && handles.instagram.trim().length > 0;
+  const instagramLevel: Level = igHasHandle
+    ? (statusToLevel(pd?.redes_verificadas) ?? "medio")
+    : "critico";
+  const instagramMetric: string = igHasHandle
+    ? (statusToLevel(pd?.redes_verificadas) ? LEVEL_METRIC_TEXT[instagramLevel] : "Activo · sin verificar")
+    : "Sin datos";
+
+  // WhatsApp: handle → bajo, sin handle → critico.
+  const waHasHandle = !!handles?.whatsapp && handles.whatsapp.trim().length > 0;
+  const whatsappLevel: Level = waHasHandle ? "bajo" : "critico";
+  const whatsappMetric: string = waHasHandle ? "Activo" : "Sin canal";
 
   const cards: ChannelCard[] = [
     {
       key: "google",
       label: "Google",
       Icon: Search,
-      tint: "from-slate-100 to-slate-50",
-      iconTint: "bg-slate-200 text-[#0a1f4a]",
       value: handles?.web_oficial,
+      metricLabel: "POSICIONAMIENTO",
+      metricValue: googleMetric,
       level: googleLevel,
     },
     {
       key: "facebook",
       label: "Facebook",
       Icon: Facebook,
-      tint: "from-blue-50 to-slate-50",
-      iconTint: "bg-blue-100 text-blue-700",
       value: handles?.facebook,
-      level: redesLevel,
+      metricLabel: "ALCANCE",
+      metricValue: facebookMetric,
+      level: facebookLevel,
     },
     {
       key: "instagram",
       label: "Instagram",
       Icon: Instagram,
-      tint: "from-pink-50 to-amber-50",
-      iconTint: "bg-pink-100 text-pink-600",
       value: handles?.instagram,
-      level: redesLevel,
+      metricLabel: "ALCANCE",
+      metricValue: instagramMetric,
+      level: instagramLevel,
     },
     {
       key: "whatsapp",
       label: "WhatsApp",
       Icon: MessageCircle,
-      tint: "from-emerald-50 to-slate-50",
-      iconTint: "bg-emerald-100 text-emerald-600",
       value: handles?.whatsapp,
+      metricLabel: "ACTIVIDAD",
+      metricValue: whatsappMetric,
       level: whatsappLevel,
     },
   ];
 
   return (
     <SlideChromeData
-      title="¿QUIÉN ES? — PRESENCIA DIGITAL"
-      subtitle="Auditoría de canales públicos del candidato"
-      footer={notas ?? undefined}
+      title="PRESENCIA DIGITAL"
+      subtitle="Auditoría de canales públicos"
+      chapter={2}
+      chapterHint="huella digital del candidato"
+      footer={notas ? <span className="italic text-slate-500">{notas}</span> : undefined}
     >
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6 h-full">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
         {cards.map((card, i) => {
           const Icon = card.Icon;
           const hasValue = !!card.value && card.value.trim().length > 0;
+          const metricIsLevel = ["CRÍTICO", "ALTO", "MEDIO", "BAJO"].includes(card.metricValue);
+          const metricIsEmpty = card.metricValue === "Sin datos" || card.metricValue === "Sin canal";
           return (
             <motion.div
               key={card.key}
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.08 + i * 0.08, duration: 0.4 }}
-              className={`relative rounded-xl border border-slate-200 bg-gradient-to-br ${card.tint} p-5 sm:p-6 shadow-sm overflow-hidden`}
+              transition={{ delay: QUADRANT_DELAY[i] ?? 0, duration: 0.4 }}
+              className="relative flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden"
             >
               {/* Stamp arriba-derecha */}
-              <div className="absolute top-3 right-3 sm:top-4 sm:right-4 pointer-events-none">
-                <RiesgoStamp level={card.level} size="sm" rotate={-10} />
+              <div className="absolute top-3 right-3 pointer-events-none z-10">
+                <RiesgoStamp level={card.level} size="sm" rotate={-12} />
               </div>
 
-              {/* Header — icon + nombre */}
-              <div className="flex items-center gap-3 mb-4 pr-20">
-                <span
-                  className={`size-11 rounded-lg flex items-center justify-center ${card.iconTint} shadow-sm`}
-                >
+              {/* Header — icon + nombre + url chip */}
+              <div className="flex items-start gap-3 px-5 pt-5 pr-24">
+                <span className="size-11 shrink-0 rounded-full bg-amber-400/40 ring-1 ring-amber-400/60 flex items-center justify-center text-[#0a1f4a]">
                   <Icon className="size-6" strokeWidth={2.2} />
                 </span>
-                <h3 className="text-lg sm:text-xl font-black uppercase tracking-tight text-[#0a1f4a]">
-                  {card.label}
-                </h3>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-lg sm:text-xl font-black uppercase tracking-tight text-[#0a1f4a] leading-tight">
+                    {card.label}
+                  </h3>
+                  {hasValue ? (
+                    <span className="inline-block mt-1 max-w-full truncate text-[11px] font-semibold text-slate-600 bg-slate-100 rounded px-2 py-0.5 border border-slate-200">
+                      {card.value}
+                    </span>
+                  ) : null}
+                </div>
               </div>
 
-              {/* Body — handle/url o "No registrado" */}
-              <div className="mt-2">
-                {hasValue ? (
-                  <p className="text-sm sm:text-base font-semibold text-slate-800 break-all leading-snug">
-                    {card.value}
-                  </p>
-                ) : (
-                  <p className="text-sm sm:text-base italic text-slate-400">
-                    No registrado
-                  </p>
-                )}
+              {/* Body — métrica central en grid */}
+              <div className="flex-1 px-5 py-6 grid grid-cols-3 items-center">
+                <div className="col-span-3 flex flex-col items-center gap-1">
+                  <span className="text-[10px] sm:text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                    {card.metricLabel}
+                  </span>
+                  <span
+                    className={`text-2xl sm:text-3xl font-black uppercase tracking-tight leading-none ${
+                      metricIsEmpty
+                        ? "text-slate-400"
+                        : metricIsLevel
+                          ? "text-[#0a1f4a]"
+                          : "text-[#0a1f4a]"
+                    }`}
+                  >
+                    {card.metricValue}
+                  </span>
+                </div>
               </div>
 
-              {/* Acento amarillo abajo */}
-              <div className="absolute left-0 bottom-0 h-1 w-full bg-amber-400/70" />
+              {/* Footer — barra horizontal de estado, full-width */}
+              <div className={`h-2 w-full ${LEVEL_BAR_BG[card.level]}`} aria-hidden />
             </motion.div>
           );
         })}
