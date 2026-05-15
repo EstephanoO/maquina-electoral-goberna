@@ -25,8 +25,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { ESTADO_META } from '@/lib/contact-estados';
-import { contactsToGeoJSON, PERU_BBOX, TILE_URL } from '@/lib/map-config';
+import { contactsToGeoJSON, PERU_BBOX } from '@/lib/map-config';
+import type { ContactGeoJSON } from '@/lib/map-config';
 import { listContacts, type Contact } from '@/lib/offline-queue/contacts';
+
+// Tegola vector tile endpoint — separate from TILE_URL (style JSON) in map-config.
+const TEGOLA_TILE_URL = 'https://tiles.gobernakarte.com/maps/pe/{z}/{x}/{y}.vector.pbf';
 
 // ─── Map style: raster basemap + vector admin borders ────────────────────────
 // The contacts GeoJSONSource is added as a React child, not here.
@@ -46,7 +50,7 @@ const MAP_STYLE: StyleSpecification = {
     },
     'tegola-admin': {
       type: 'vector',
-      tiles: [TILE_URL],
+      tiles: [TEGOLA_TILE_URL],
     },
   },
   layers: [
@@ -111,7 +115,7 @@ export default function MapScreen() {
     }, []),
   );
 
-  const geoJSON = contactsToGeoJSON(contacts);
+  const geoJSON: ContactGeoJSON = contactsToGeoJSON(contacts);
 
   // Compute bounds from contacts with coords; fall back to PERU_BBOX
   const contactsWithCoords = contacts.filter(
