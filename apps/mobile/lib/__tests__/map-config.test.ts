@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'bun:test';
 import { PERU_BBOX, contactsToGeoJSON, TILE_URL } from '../map-config';
 import type { Contact } from '../offline-queue/contacts';
 
