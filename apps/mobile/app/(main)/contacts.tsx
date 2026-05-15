@@ -21,7 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ContactRow } from '@/components/contacts/ContactRow';
 import EstadoChips from '@/components/contacts/EstadoChips';
-import { Brand, FontFamily, Neutral } from '@/constants/theme';
+import { FontFamily, Neutral } from '@/constants/theme';
 import { useCandidate } from '@/lib/app-context';
 import {
   listContacts,
@@ -41,6 +41,7 @@ export default function ContactsScreen() {
   const [loading, setLoading] = useState(true);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const estadoMountRef = useRef(false);
 
   const loadContacts = useCallback(async (q: string, estado: ContactEstado | null) => {
     try {
@@ -65,8 +66,9 @@ export default function ContactsScreen() {
     }, [loadContacts]),
   );
 
-  // Reload on estadoFilter change immediately
+  // Reload on estadoFilter change immediately (skip the initial mount — useFocusEffect covers it)
   useEffect(() => {
+    if (!estadoMountRef.current) { estadoMountRef.current = true; return; }
     void loadContacts(query, estadoFilter);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [estadoFilter]);
@@ -84,13 +86,8 @@ export default function ContactsScreen() {
   }, [query]);
 
   const renderItem = useCallback(
-    ({ item }: { item: Contact }) => (
-      <ContactRow
-        contact={item}
-        onPress={() => router.push(`/(main)/contact/${item.id}` as never)}
-      />
-    ),
-    [router],
+    ({ item }: { item: Contact }) => <ContactRow contact={item} />,
+    [],
   );
 
   const renderEmpty = useCallback(() => {

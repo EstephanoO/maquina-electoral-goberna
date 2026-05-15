@@ -1,5 +1,6 @@
 // apps/mobile/components/contacts/ContactRow.tsx
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -7,14 +8,15 @@ import { FontFamily, Neutral } from '@/constants/theme';
 import type { Contact } from '@/lib/offline-queue/contacts';
 import { ESTADO_META } from '@/lib/contact-estados';
 
-type Props = { contact: Contact; onPress: () => void };
+type Props = { contact: Contact };
 
-export const ContactRow = memo(function ContactRow({ contact, onPress }: Props) {
+export const ContactRow = memo(function ContactRow({ contact }: Props) {
+  const router = useRouter();
   const meta = ESTADO_META[contact.estado];
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => router.push(`/(main)/contact/${contact.id}` as never)}
       style={({ pressed }) => [styles.container, pressed && styles.containerPressed]}
       android_ripple={{ color: 'rgba(22,57,96,0.08)' }}
       accessibilityRole="button"
