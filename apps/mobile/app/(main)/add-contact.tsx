@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -50,6 +51,7 @@ export default function AddContactScreen() {
 
   // ── GPS on mount (best-effort, never blocks) ─────────────────
   useEffect(() => {
+    let active = true;
     (async () => {
       try {
         const { status } = await Location.getForegroundPermissionsAsync();
@@ -57,19 +59,14 @@ export default function AddContactScreen() {
           status === 'granted'
             ? true
             : (await Location.requestForegroundPermissionsAsync()).status === 'granted';
-        if (!granted) return;
-
+        if (!granted || !active) return;
         const pos = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
-          maximumAge: 60_000,
-          timeout: 10_000,
-        } as Location.LocationOptions);
-        setLat(pos.coords.latitude);
-        setLng(pos.coords.longitude);
-      } catch {
-        // Permission denied or timeout — leave lat/lng null, no error shown.
-      }
+        });
+        if (active) { setLat(pos.coords.latitude); setLng(pos.coords.longitude); }
+      } catch { /* best-effort — GPS is optional */ }
     })();
+    return () => { active = false; };
   }, []);
 
   // ── Computed ─────────────────────────────────────────────────
@@ -81,6 +78,10 @@ export default function AddContactScreen() {
 
   const agentId =
     auth.status === 'active' ? auth.user.id : null;
+
+  // ── Stable callbacks for DistritoPicker ─────────────────────
+  const handleDistritoSelect = useCallback((d: SelectedDistrito) => setDistrito(d), []);
+  const handleDistritoClear = useCallback(() => setDistrito(null), []);
 
   // ── Save ─────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
@@ -101,8 +102,6 @@ export default function AddContactScreen() {
       router.back();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error desconocido';
-      // Re-import Alert lazily to avoid bloating this file for tests
-      const { Alert } = await import('react-native');
       Alert.alert('Error', `No se pudo guardar: ${message}`);
     } finally {
       setSaving(false);
@@ -176,8 +175,8 @@ export default function AddContactScreen() {
               <Text style={styles.label}>Distrito</Text>
               <DistritoPicker
                 value={distrito}
-                onSelect={(d) => setDistrito(d)}
-                onClear={() => setDistrito(null)}
+                onSelect={handleDistritoSelect}
+                onClear={handleDistritoClear}
                 primaryColor={Brand.blue}
                 placeholder="Seleccionar distrito"
               />

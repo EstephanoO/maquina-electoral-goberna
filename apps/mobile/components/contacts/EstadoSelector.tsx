@@ -1,5 +1,6 @@
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { ESTADO_META, ESTADO_ORDER } from '@/lib/contact-estados';
+import { FontFamily } from '@/constants/theme';
 import type { ContactEstado } from '@/lib/offline-queue/contacts';
 
 type Props = {
@@ -67,7 +68,7 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 15,
-    fontFamily: 'Montserrat-Bold',
+    fontFamily: FontFamily.bold,
   },
   labelSelected: {
     color: '#FFFFFF',
