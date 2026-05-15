@@ -175,6 +175,15 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
       async (request, reply) => {
         const requestId = String(request.id);
         const authed = request as AuthenticatedRequest;
+
+        if (authed.userRole === 'admin' || authed.userRole === 'consultor') {
+          return reply.code(409).send(errorPayload(
+            requestId,
+            'ACCOUNT_DELETE_FORBIDDEN',
+            'Las cuentas de administrador/consultor se eliminan desde soporte, no desde la app.',
+          ));
+        }
+
         try {
           await repo.deleteUserCascade(authed.userId);
           clearAuthCookies(reply, isProd);

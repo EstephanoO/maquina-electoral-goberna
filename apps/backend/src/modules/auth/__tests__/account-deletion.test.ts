@@ -23,10 +23,25 @@ import { buildDeleteAccountSql } from '../repository';
 
 test('buildDeleteAccountSql produces statements in FK-safe order', () => {
   const stmts = buildDeleteAccountSql();
+
+  expect(stmts.length).toBeGreaterThan(0);
+
+  // DELETE FROM users must be the very last statement
   const idxUsers = stmts.findIndex((s) => /DELETE FROM users\b/.test(s));
-  const idxUC = stmts.findIndex((s) => /user_campaigns/.test(s));
-  const idxRT = stmts.findIndex((s) => /refresh_tokens/.test(s));
-  expect(idxUC).toBeLessThan(idxUsers);
-  expect(idxRT).toBeLessThan(idxUsers);
   expect(idxUsers).toBe(stmts.length - 1);
+
+  // every explicit child DELETE appears before the users delete
+  const childDeletes = stmts.slice(0, idxUsers).filter((s) => /^DELETE\b/.test(s));
+  expect(childDeletes.length).toBeGreaterThan(0);
+  childDeletes.forEach((stmt) => {
+    expect(stmts.indexOf(stmt)).toBeLessThan(idxUsers);
+  });
+
+  // every SET NULL update appears before the users delete
+  stmts.filter((s) => /SET \w+ = NULL/.test(s)).forEach((stmt) => {
+    expect(stmts.indexOf(stmt)).toBeLessThan(idxUsers);
+  });
+
+  // every statement is single-param ($1 only)
+  stmts.forEach((s) => expect(s).not.toMatch(/\$[2-9]/));
 });

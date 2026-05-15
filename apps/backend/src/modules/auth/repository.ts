@@ -273,8 +273,7 @@ export function buildDeleteAccountSql(): string[] {
     'UPDATE consultor_global_access SET granted_by = NULL WHERE granted_by = $1',
     'UPDATE decks SET reviewed_by_user_id = NULL WHERE reviewed_by_user_id = $1',
     'UPDATE form_definitions SET created_by = NULL WHERE created_by = $1',
-    'UPDATE form_validations SET claimed_by = NULL WHERE claimed_by = $1',
-    'UPDATE form_validations SET wa_validated_by = NULL WHERE wa_validated_by = $1',
+    'UPDATE form_validations SET claimed_by = NULL, wa_validated_by = NULL WHERE claimed_by = $1 OR wa_validated_by = $1',
     'UPDATE meets SET created_by = NULL WHERE created_by = $1',
     'UPDATE zone_objectives SET created_by = NULL WHERE created_by = $1',
 
