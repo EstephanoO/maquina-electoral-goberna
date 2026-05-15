@@ -34,6 +34,13 @@ class MockSQLiteDatabase {
     return flat.length > 0 ? stmt.all(...flat) : stmt.all();
   }
 
+  async getFirstAsync(source, ...params) {
+    const flat = Array.isArray(params[0]) ? params[0] : params;
+    const stmt = this._db.prepare(source);
+    const row = flat.length > 0 ? stmt.get(...flat) : stmt.get();
+    return row ?? null;
+  }
+
   async closeAsync() {
     this._db.close();
   }

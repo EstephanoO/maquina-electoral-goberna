@@ -5,6 +5,9 @@
  * - pending_locations: GPS points waiting to sync
  * - pending_forms: Form submissions waiting to sync
  * - sync_meta: Metadata like last sync time, sequence numbers
+ * - geo_distritos: Distrito/ubigeo lookup cache (~1900 rows)
+ * - geo_recientes: Recently used distritos
+ * - contacts: Canvassing notebook (canonical schema, Fase 1)
  */
 
 import * as SQLite from 'expo-sqlite';
