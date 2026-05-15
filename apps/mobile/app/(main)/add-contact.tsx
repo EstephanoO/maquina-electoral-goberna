@@ -108,9 +108,9 @@ export default function AddContactScreen() {
       // Schedule push notification reminder if selected
       if (reminderDays !== null) {
         try {
-          const notifId = await scheduleReminder(contact.id, contact.name, reminderDays);
+          const { notifId, triggerAt } = await scheduleReminder(contact.id, contact.name, reminderDays);
           await updateContact(contact.id, {
-            reminder_at: Date.now() + reminderDays * 86400000,
+            reminder_at: triggerAt,
             reminder_notif_id: notifId,
           });
         } catch {

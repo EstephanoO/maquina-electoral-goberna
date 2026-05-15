@@ -7,7 +7,7 @@ appId: com.estephano.gobernaterritory02
     id: "fab-add-contact"
 - assertVisible: "Nuevo contacto"
 - tapOn:
-    text: "Nombre completo *"
+    text: "Nombre completo"
 - inputText: "María García"
 - tapOn:
     text: "Teléfono"

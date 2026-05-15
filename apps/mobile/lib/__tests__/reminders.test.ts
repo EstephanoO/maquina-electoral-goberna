@@ -15,10 +15,14 @@ describe('reminders', () => {
     expect(reminderBuckets[0]).toHaveProperty('days');
   });
 
-  it('scheduleReminder returns a notif id string', async () => {
-    const id = await scheduleReminder('contact-1', 'Ana Pérez', 7);
-    expect(typeof id).toBe('string');
-    expect(id.length).toBeGreaterThan(0);
+  it('scheduleReminder returns notifId and triggerAt at 9 AM', async () => {
+    const { notifId, triggerAt } = await scheduleReminder('contact-1', 'Ana Pérez', 7);
+    expect(typeof notifId).toBe('string');
+    expect(notifId.length).toBeGreaterThan(0);
+    // triggerAt debe ser ~7 días desde ahora, a las 9:00
+    const d = new Date(triggerAt);
+    expect(d.getHours()).toBe(9);
+    expect(d.getMinutes()).toBe(0);
   });
 
   it('cancelReminder resolves without throwing', async () => {

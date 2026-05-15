@@ -189,9 +189,9 @@ export default function ContactDetail() {
           if (contact.reminder_notif_id) {
             await cancelReminder(contact.reminder_notif_id);
           }
-          const notifId = await scheduleReminder(contactId, editName.trim() || contact.name, editReminderDays);
+          const { notifId, triggerAt } = await scheduleReminder(contactId, editName.trim() || contact.name, editReminderDays);
           updated = await updateContact(contactId, {
-            reminder_at: Date.now() + editReminderDays * 86400000,
+            reminder_at: triggerAt,
             reminder_notif_id: notifId,
           });
         } catch {

@@ -10,12 +10,15 @@
  */
 
 import { useFocusEffect } from '@react-navigation/native';
-import {
+import MapLibreGL, {
   Camera,
   GeoJSONSource,
   Layer,
   Map,
 } from '@maplibre/maplibre-react-native';
+
+// Required for non-Mapbox tile sources — must be called before any Map renders
+MapLibreGL.setAccessToken(null);
 import type { StyleSpecification } from '@maplibre/maplibre-gl-style-spec';
 import type { NativeSyntheticEvent } from 'react-native';
 import type { PressEventWithFeatures } from '@maplibre/maplibre-react-native';
