@@ -18,7 +18,7 @@ import dynamic from "next/dynamic";
 import { motion } from "motion/react";
 import { Building2, Users, Coins, TrendingUp } from "lucide-react";
 
-import type { CandidatoContext } from "@/lib/onboarding-api";
+import type { CandidatoContext, ConsultorFormFase2 } from "@/lib/onboarding-api";
 import {
   fetchDistritoDetail,
   formatNumero,
@@ -38,13 +38,15 @@ const JurisdictionMap = dynamic(
 
 interface Props {
   ctx: CandidatoContext;
+  f2?: ConsultorFormFase2;
 }
 
-export function SlideContextoTerritorial({ ctx }: Props) {
+export function SlideContextoTerritorial({ ctx, f2 }: Props) {
   const [detail, setDetail] = useState<DistritoDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
   const idDistrito = ctx.jurisdiccion.distrito?.id ?? null;
+  const ct = f2?.fase1_rapida?.contexto_territorio;
 
   useEffect(() => {
     if (!idDistrito) { setLoading(false); return; }
@@ -61,7 +63,8 @@ export function SlideContextoTerritorial({ ctx }: Props) {
   }
 
   const distritoNombre = detail?.distrito ?? ctx.jurisdiccion.distrito?.nombre ?? "—";
-  const poblacion = detail?.poblacion_total_2025 ?? null;
+  // Use poblacion_aproximada from form as fallback when API doesn't return census data
+  const poblacion = detail?.poblacion_total_2025 ?? ct?.poblacion_aproximada ?? null;
   const areaKm2 = detail?.area_km2 ?? null;
   const densidad = poblacion && areaKm2 ? Math.round(poblacion / areaKm2) : null;
   const pim = detail?.presupuesto?.pim ?? null;
@@ -146,6 +149,59 @@ export function SlideContextoTerritorial({ ctx }: Props) {
           )}
         </div>
       </div>
+      {/* Contexto cualitativo desde Fase 1 */}
+      {ct && ((ct.principales_problemas?.length ?? 0) > 0 || (ct.zonas_fuertes?.length ?? 0) > 0 || (ct.zonas_debiles?.length ?? 0) > 0) && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5, duration: 0.4 }}
+          className="px-6 sm:px-10 pb-6 grid grid-cols-1 sm:grid-cols-3 gap-4 border-t border-slate-200 pt-5 mt-2"
+        >
+          {(ct.principales_problemas?.length ?? 0) > 0 && (
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.25em] font-black text-slate-500 mb-2">Principales problemas</p>
+              <div className="flex flex-wrap gap-1.5">
+                {ct.principales_problemas!.map((p, i) => (
+                  <span key={i} className="px-2.5 py-1 rounded-full bg-red-50 border border-red-200 text-red-700 text-xs font-medium">
+                    {p}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {(ct.zonas_fuertes?.length ?? 0) > 0 && (
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.25em] font-black text-slate-500 mb-2">Zonas fuertes</p>
+              <div className="flex flex-wrap gap-1.5">
+                {ct.zonas_fuertes!.map((z, i) => (
+                  <span key={i} className="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-medium">
+                    {z}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {(ct.zonas_debiles?.length ?? 0) > 0 && (
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.25em] font-black text-slate-500 mb-2">Zonas débiles</p>
+              <div className="flex flex-wrap gap-1.5">
+                {ct.zonas_debiles!.map((z, i) => (
+                  <span key={i} className="px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium">
+                    {z}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {ct.notas_adicionales && (
+            <div className="sm:col-span-3">
+              <p className="text-xs text-slate-600 italic leading-relaxed border-l-2 border-slate-300 pl-3">
+                {ct.notas_adicionales}
+              </p>
+            </div>
+          )}
+        </motion.div>
+      )}
     </SlideChromeData>
   );
 }
@@ -192,7 +248,14 @@ function KpiCard({
   );
 }
 
-/** Predicate visible para registrar en el deck. */
-export function isSlideContextoTerritorialVisible(ctx: CandidatoContext): boolean {
-  return Boolean(ctx.jurisdiccion.distrito?.id);
+/** Predicate visible — true si hay distrito geográfico O datos de contexto_territorio. */
+export function isSlideContextoTerritorialVisible(ctx: CandidatoContext, f2?: ConsultorFormFase2): boolean {
+  if (ctx.jurisdiccion.distrito?.id) return true;
+  const ct = f2?.fase1_rapida?.contexto_territorio;
+  return Boolean(
+    ct?.poblacion_aproximada ||
+    (ct?.principales_problemas?.length ?? 0) > 0 ||
+    (ct?.zonas_fuertes?.length ?? 0) > 0 ||
+    (ct?.zonas_debiles?.length ?? 0) > 0,
+  );
 }

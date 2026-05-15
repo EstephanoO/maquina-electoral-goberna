@@ -21,6 +21,7 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import * as decksRepo from "../decks/repository";
+import { buildSnapshotBySlug } from "./snapshot.service";
 
 const DECKS_STORAGE_DIR = process.env.DECKS_STORAGE_DIR ?? "/srv/uploads/decks";
 
@@ -123,10 +124,11 @@ function buildDashboardUrl(baseUrl: string, slug: string): string {
   return `${baseUrl}/c/${slug}`;
 }
 
-/** Wizard público: post-provisioning va a Fase 2 (contexto + análisis
- *  electoral). Fase 3 (estrategias) cierra el flujo y pide password. */
+/** Wizard público: post-provisioning va a la carta cinematográfica
+ *  (mapa de jurisdicción). La carta tiene su propio "Continuar" hacia
+ *  /onboarding/<slug>/fase-2. */
 function buildWizardDashboardUrl(baseUrl: string): string {
-  return `${baseUrl}/onboarding/fase-2`;
+  return `${baseUrl}/onboarding/carta`;
 }
 
 // Mismo set de cookies que auth/routes.ts:setAuthCookies. Duplicado intencional
@@ -257,6 +259,46 @@ export function buildOnboardingRoutes(env: AppEnv): FastifyPluginAsync {
         }
       }
 
+      // Auto-seed consultor_form.formula_electoral si el payload trae campaignStrategy.
+      // Non-fatal: si el deck no existe todavía o el seed falla, no bloquea el
+      // provisioning. El consultor puede setear formula_electoral manualmente.
+      if (input.campaignStrategy) {
+        const STRATEGY_WEIGHTS: Record<string, { tierra: number; mar: number; aire: number }> = {
+          RACIONAL:     { tierra: 30, mar: 50, aire: 20 },
+          EMOTIVA:      { tierra: 20, mar: 20, aire: 60 },
+          INSTINTIVA:   { tierra: 60, mar: 25, aire: 15 },
+          TRES_FRENTES: { tierra: 33, mar: 34, aire: 33 },
+        };
+        const weights = STRATEGY_WEIGHTS[input.campaignStrategy];
+        if (weights) {
+          try {
+            const deck = await decksRepo.ensureFase2Deck({
+              candidato_id: result.candidato_id,
+              campaign_id: result.campaign_id,
+              uploaded_by_user_id: result.user_id ?? "system",
+              candidato_full_name: input.full_name,
+            });
+            await decksRepo.mergeConsultorForm(deck.id, {
+              formula_electoral: {
+                peso_tierra: weights.tierra,
+                peso_mar: weights.mar,
+                peso_aire: weights.aire,
+                justificacion: `Auto-generado: estrategia ${input.campaignStrategy} del wizard de onboarding`,
+              },
+            });
+            app.log.info(
+              { deck_id: deck.id, strategy: input.campaignStrategy, request_id: requestId },
+              "consultor_form.formula_electoral seeded from campaignStrategy",
+            );
+          } catch (err) {
+            app.log.warn(
+              { err, campaign_id: result.campaign_id, strategy: input.campaignStrategy, request_id: requestId },
+              "formula_electoral seed failed (non-fatal)",
+            );
+          }
+        }
+      }
+
       return reply.code(201).send({
         ok: true,
         request_id: requestId,
@@ -381,8 +423,8 @@ export function buildOnboardingRoutes(env: AppEnv): FastifyPluginAsync {
         postulacion_id: result.postulacion_id,
         user_id: result.user_id,
         slug: result.slug,
-        // Wizard va a /onboarding/fase-2 — informe inicial + análisis.
-        // Fase 3 cierra el flujo y pide password.
+        // Wizard va a /onboarding/carta — pantalla cinematográfica con
+        // mapa de jurisdicción. Desde ahí "Continuar" lleva a fase 2.
         dashboard_url: buildWizardDashboardUrl(env.publicBaseUrl),
       });
     });
@@ -556,6 +598,40 @@ export function buildOnboardingRoutes(env: AppEnv): FastifyPluginAsync {
           );
         }
         return reply.code(200).send({ ok: true, request_id: requestId, snapshot: snap });
+      },
+    );
+
+    // ── GET /api/onboarding/snapshot/by-slug/:slug ───────────────────
+    // Endpoint público (sin auth): devuelve CandidatoSnapshotPublico dado
+    // el slug de la campaign. Llamado por el wizard frontend justo después
+    // de completar el provisioning para mostrar la pantalla de bienvenida.
+    // El UUID del slug actúa como shared secret suficiente para MVP.
+    app.get<{ Params: { slug: string } }>(
+      "/api/onboarding/snapshot/by-slug/:slug",
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const { slug } = request.params;
+
+        if (!slug || !/^[a-z0-9-]{1,100}$/.test(slug)) {
+          return reply.code(400).send(
+            errorPayload(requestId, "VALIDATION_ERROR", "slug inválido"),
+          );
+        }
+
+        try {
+          const snapshot = await buildSnapshotBySlug(slug, env.publicBaseUrl);
+          if (!snapshot) {
+            return reply.code(404).send(
+              errorPayload(requestId, "CAMPAIGN_NOT_FOUND", `no existe campaign con slug '${slug}'`),
+            );
+          }
+          return reply.code(200).send({ ok: true, request_id: requestId, snapshot });
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId, slug }, "onboarding/snapshot/by-slug failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "SNAPSHOT_ERROR", "error construyendo snapshot"),
+          );
+        }
       },
     );
 

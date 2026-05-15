@@ -2,31 +2,22 @@
 
 import { motion } from "motion/react";
 
-import type { CandidatoContext } from "@/lib/onboarding-api";
+import type { CandidatoContext, ConsultorFormFase2 } from "@/lib/onboarding-api";
 
 import { SlideChromeCinematic } from "../chrome/SlideChromeCinematic";
 import { TagTilt } from "../chrome/TagTilt";
 
 interface Props {
   ctx: CandidatoContext;
+  f2?: ConsultorFormFase2;
 }
 
 /**
- * Slide cinematic de apertura — inspirado en pp. 1 y 3 del deck
- * "Roberto Sánchez - Segunda Vuelta". Layout 2-col:
- *
- *   ┌──────────────────────┬──────────────────────┐
- *   │                      │  ROBERTO             │
- *   │   [foto candidato]   │  SÁNCHEZ             │
- *   │   con corte diagonal │                      │
- *   │                      │     [RUMBO] tilt     │
- *   │                      │       [A LA] tilt    │
- *   │                      │         [CARGO] tilt │
- *   │                      │                      │
- *   │                      │  partido · siglas    │
- *   └──────────────────────┴──────────────────────┘
+ * Slide cinematic de apertura. Layout 2-col con foto + nombre + tags.
+ * Si `f2.fase1_rapida.branding.slogan` está disponible, se muestra como
+ * quote bajo el bloque de partido en lugar del genérico "RUMBO · A LA".
  */
-export function SlideHero({ ctx }: Props) {
+export function SlideHero({ ctx, f2 }: Props) {
   const fullName = ctx.user.full_name;
   const fotoUrl = ctx.user.foto_url;
   const eleccionLabel = deriveEleccionLabel(
@@ -36,6 +27,7 @@ export function SlideHero({ ctx }: Props) {
   const [firstName, lastName] = splitName(fullName);
   const initials = getInitials(fullName);
   const partidoLine = formatPartidoLine(ctx);
+  const slogan = f2?.fase1_rapida?.branding?.slogan?.trim() || null;
 
   return (
     <SlideChromeCinematic accent="amber">
@@ -167,17 +159,29 @@ export function SlideHero({ ctx }: Props) {
             </motion.div>
           </div>
 
-          {/* Slogan caption con partido */}
-          {partidoLine ? (
-            <motion.p
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 0.75, y: 0 }}
-              transition={{ delay: 1.3, duration: 0.6 }}
-              className="mt-8 italic text-sm sm:text-base text-slate-300/80 font-light tracking-wide"
-            >
-              {partidoLine}
-            </motion.p>
-          ) : null}
+          {/* Slogan + partido */}
+          <div className="mt-8 space-y-3">
+            {slogan ? (
+              <motion.p
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 1.3, duration: 0.6 }}
+                className="text-base sm:text-lg font-bold text-amber-400 tracking-wide leading-snug"
+              >
+                &ldquo;{slogan}&rdquo;
+              </motion.p>
+            ) : null}
+            {partidoLine ? (
+              <motion.p
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 0.75, y: 0 }}
+                transition={{ delay: slogan ? 1.6 : 1.3, duration: 0.6 }}
+                className="italic text-sm text-slate-300/80 font-light tracking-wide"
+              >
+                {partidoLine}
+              </motion.p>
+            ) : null}
+          </div>
         </div>
       </div>
     </SlideChromeCinematic>

@@ -58,6 +58,9 @@ function buildRows(ctx: CandidatoContext, f2: ConsultorFormFase2): Row[] {
   const n1 = f2.perfil_candidato?.n1_identidad;
   const n2 = f2.perfil_candidato?.n2_trayectoria;
   const fb = f2.ficha_basica;
+  // Fase 1 rápida — fuente principal cuando perfil_candidato no está lleno
+  const f1c = f2.fase1_rapida?.candidato;
+  const f1p = f2.fase1_rapida?.postulacion;
 
   const out: Row[] = [];
   const push = (label: string, raw: string | number | null | undefined) => {
@@ -67,21 +70,25 @@ function buildRows(ctx: CandidatoContext, f2: ConsultorFormFase2): Row[] {
     out.push({ label, value: s });
   };
 
+  // Apodo / nombre de campaña
+  push("Apodo / Campaña", f1c?.apodo ?? n1?.apodo);
+
   // DNI / Documento
-  const dni = n1?.documento_numero ?? fb?.dni;
+  const dni = f1c?.documento_numero ?? n1?.documento_numero ?? fb?.dni;
   push("DNI", dni);
 
-  // Edad — preferir n1.fecha_nacimiento, fallback a fb.edad
-  const edadCalc = computeEdad(n1?.fecha_nacimiento);
+  // Edad — f1c.fecha_nacimiento → n1.fecha_nacimiento → fb.edad
+  const edadCalc = computeEdad(f1c?.fecha_nacimiento ?? n1?.fecha_nacimiento);
   const edad = edadCalc ?? fb?.edad;
   push("Edad", typeof edad === "number" ? `${edad} años` : undefined);
 
-  // Sexo
-  if (n1?.sexo === "M") push("Sexo", "Masculino");
-  else if (n1?.sexo === "F") push("Sexo", "Femenino");
+  // Sexo — f1c primero
+  const sexo = f1c?.sexo ?? n1?.sexo;
+  if (sexo === "M") push("Sexo", "Masculino");
+  else if (sexo === "F") push("Sexo", "Femenino");
 
-  // Profesión — preferir n2.profesion, fallback a fb.profesion
-  push("Profesión", n2?.profesion ?? fb?.profesion);
+  // Profesión / ocupación — f1c primero
+  push("Profesión", n2?.profesion ?? fb?.profesion ?? f1c?.ocupacion_actual);
 
   // Estado civil
   push("Estado civil", n1?.estado_civil);
@@ -89,20 +96,32 @@ function buildRows(ctx: CandidatoContext, f2: ConsultorFormFase2): Row[] {
   // Hijos
   if (typeof n1?.hijos === "number") push("Hijos", String(n1.hijos));
 
-  // Religión
-  push("Religión", n1?.religion);
+  // Cargo (siempre disponible desde ctx o f1p)
+  push("Cargo", ctx.cargo.nombre ?? f1p?.cargo_codigo);
 
-  // Cargo (siempre disponible)
-  push("Cargo", ctx.cargo.nombre);
+  // Jurisdicción — concat país/depto/prov/distrito, fallback a f1p.nombre_territorio
+  const juris = buildJurisdiccion(ctx);
+  push("Jurisdicción", juris || f1p?.nombre_territorio);
 
-  // Jurisdicción — concat país/depto/prov/distrito
-  push("Jurisdicción", buildJurisdiccion(ctx));
-
-  // Partido
+  // Partido — ctx primero, fallback a f1p.nombre_organizacion
   push(
     "Partido",
-    ctx.organizacion_politica?.siglas ?? ctx.organizacion_politica?.nombre,
+    ctx.organizacion_politica?.siglas ??
+      ctx.organizacion_politica?.nombre ??
+      f1p?.nombre_organizacion,
   );
+
+  // Fecha de elección
+  push("Elección", f1p?.fecha_eleccion);
+
+  // Slogan
+  push("Slogan", f2.fase1_rapida?.branding?.slogan);
+
+  // Bio corta — al final (puede ser larga)
+  const bio = f1c?.bio_corta ?? n1?.bio_corta;
+  if (bio?.trim()) {
+    out.push({ label: "Perfil", value: bio.trim() });
+  }
 
   return out;
 }

@@ -83,7 +83,7 @@ export type Transicion = z.infer<typeof transicionSchema>;
 // El form es libre — JSONB. Validación profunda en el frontend.
 // Solo nos importan las metadata top-level.
 export const consultorFormUpdateSchema = z.object({
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
   ultima_seccion: z.string().max(80).optional(),
   completado: z.boolean().optional(),
 });
@@ -91,7 +91,7 @@ export type ConsultorFormUpdate = z.infer<typeof consultorFormUpdateSchema>;
 
 // ── deck publicar ─────────────────────────────────────────────────
 export const deckPublishSchema = z.object({
-  payload: z.record(z.unknown()),     // snapshot de las slides + config
+  payload: z.record(z.string(), z.unknown()),     // snapshot de las slides + config
 });
 export type DeckPublish = z.infer<typeof deckPublishSchema>;
 

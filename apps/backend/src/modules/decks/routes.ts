@@ -19,6 +19,8 @@ import { renderDeckHtml, type ConsultorForm } from "./render";
 import { consultorFormPatchSchema } from "./fase2-form";
 import { getCandidatoSnapshotBySlug } from "../onboarding/repository";
 import * as repo from "./repository";
+import { buildSnapshotBySlug } from "../onboarding/snapshot.service";
+import { generateDiagnosticoDeck } from "./diagnostico.service";
 
 // Storage path para los HTML — montado vía volume `uploads` en docker-compose.
 // Si el dir no existe, lo creamos al primer upload.
@@ -134,7 +136,7 @@ const rejectSchema = z.object({
   reason: z.string().trim().min(2).max(500),
 });
 
-export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
+export function buildDecksRoutes(env: AppEnv): FastifyPluginAsync {
   return async (app) => {
     // ── POST /api/consultor/decks ─────────────────────────────────────
     // Sube un deck HTML como draft. El consultor debe tener acceso al
@@ -975,14 +977,37 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
           });
         }
 
+        // Auto-publish: si las 7 secciones mínimas están completas → publicar.
+        const REQUIRED_SECTIONS = [
+          "candidato", "postulacion", "estrategia",
+          "diagnostico_inicial", "propuestas", "branding", "contexto_territorio",
+        ];
+        const seccionesCompletas: string[] =
+          (merged.consultor_form as Record<string, unknown>)?.fase1_rapida
+            ? ((merged.consultor_form as Record<string, unknown>).fase1_rapida as Record<string, unknown>)?.secciones_completas as string[] ?? []
+            : [];
+        const allDone = REQUIRED_SECTIONS.every((s) => seccionesCompletas.includes(s));
+
+        let finalDeck = merged;
+        if (allDone && merged.status === "draft") {
+          const published = await repo.publishDeck(merged.id, req.userId);
+          if (published) {
+            finalDeck = published;
+            app.log.info(
+              { deck_id: merged.id, slug, consultor_user_id: req.userId },
+              "deck auto-publicado: 7/7 secciones completas",
+            );
+          }
+        }
+
         return reply.code(200).send({
           ok: true,
           request_id: requestId,
           deck: {
-            id: merged.id,
-            status: merged.status,
-            consultor_form: merged.consultor_form,
-            updated_at: merged.updated_at,
+            id: finalDeck.id,
+            status: finalDeck.status,
+            consultor_form: finalDeck.consultor_form,
+            updated_at: finalDeck.updated_at,
           },
         });
       },
@@ -1119,5 +1144,98 @@ export function buildDecksRoutes(_env: AppEnv): FastifyPluginAsync {
     // /api/admin/decks/:id/publish y /api/admin/decks/:id/reject. Las queries
     // ahora aceptan tanto status='draft' (autopublish directo) como
     // status='pending_review' (admin aprobando lo que el consultor mandó).
+
+    // ── POST /api/decks/generate-from-onboarding ──────────────────────
+    // Genera automáticamente el deck HTML de diagnóstico inicial para un
+    // candidato, usando los datos del onboarding (snapshot público).
+    // Fire-and-forget desde el wizard frontend: idempotente, si ya existe
+    // un deck diagnóstico para el candidato devuelve el existente.
+    // Sin auth (el campaign_id actúa como secret suficiente para MVP).
+    app.post(
+      "/api/decks/generate-from-onboarding",
+      async (request, reply) => {
+        const requestId = String(request.id);
+
+        const bodySchema = z.object({
+          campaign_id: z.string().uuid("campaign_id debe ser UUID"),
+        });
+        const parsed = bodySchema.safeParse(request.body);
+        if (!parsed.success) {
+          const message = parsed.error.issues.map((i) => i.message).join(", ");
+          return reply.code(400).send(errorPayload(requestId, "VALIDATION_ERROR", message));
+        }
+        const { campaign_id } = parsed.data;
+
+        // Obtener el slug de la campaign para construir el snapshot público
+        let slug: string;
+        try {
+          const { rows } = await pool.query<{ slug: string }>(
+            "SELECT slug FROM campaigns WHERE id = $1 LIMIT 1",
+            [campaign_id],
+          );
+          if (!rows[0]) {
+            return reply.code(404).send(
+              errorPayload(requestId, "CAMPAIGN_NOT_FOUND", "campaign no encontrada"),
+            );
+          }
+          slug = rows[0].slug;
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId, campaign_id }, "generate-from-onboarding: campaign lookup failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "DB_ERROR", "error consultando campaign"),
+          );
+        }
+
+        // Construir snapshot público
+        let snapshot: Awaited<ReturnType<typeof buildSnapshotBySlug>>;
+        try {
+          snapshot = await buildSnapshotBySlug(slug, env.publicBaseUrl);
+          if (!snapshot) {
+            return reply.code(404).send(
+              errorPayload(requestId, "SNAPSHOT_NOT_FOUND", "no se pudo construir el snapshot del candidato"),
+            );
+          }
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId, campaign_id }, "generate-from-onboarding: snapshot failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "SNAPSHOT_ERROR", "error construyendo snapshot del candidato"),
+          );
+        }
+
+        // Verificar que haya postulación para poder crear el deck
+        if (!snapshot.postulacion) {
+          return reply.code(409).send(
+            errorPayload(
+              requestId,
+              "POSTULACION_MISSING",
+              "el candidato no tiene postulación completa — completar onboarding primero",
+            ),
+          );
+        }
+
+        // Generar o reutilizar deck diagnóstico (idempotente)
+        try {
+          const result = await generateDiagnosticoDeck(campaign_id, snapshot);
+          return reply.code(result.created ? 201 : 200).send({
+            ok: true,
+            request_id: requestId,
+            created: result.created,
+            deck_id: result.deck_id,
+            preview_url: `/api/decks/${result.deck_id}/raw`,
+          });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : "error desconocido";
+          if (msg.startsWith("POSTULACION_NOT_FOUND") || msg.startsWith("USER_NOT_FOUND")) {
+            return reply.code(409).send(
+              errorPayload(requestId, "ONBOARDING_INCOMPLETE", msg),
+            );
+          }
+          app.log.error({ err: error, request_id: requestId, campaign_id }, "generate-from-onboarding: deck generation failed");
+          return reply.code(500).send(
+            errorPayload(requestId, "DECK_GENERATION_ERROR", "error generando deck diagnóstico"),
+          );
+        }
+      },
+    );
   };
 }

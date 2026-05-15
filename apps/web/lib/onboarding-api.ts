@@ -310,21 +310,50 @@ export const onboardingApi = {
     };
   },
 
-  /** Fase 2 de un candidato específico (consultor o admin). */
+  /** Fase 2 de un candidato específico (consultor o admin).
+   *  Si el usuario autenticado no tiene rol consultor/admin (e.g. candidato),
+   *  cae al endpoint público by-slug y construye un deck de solo lectura.
+   */
   async getFase2BySlug(
     slug: string,
   ): Promise<{ ctx: CandidatoContext; deck: Fase2DeckMeta } | null> {
-    const res = await api.get<{
+    // Intenta con el endpoint consultor (requiere consultor/admin role)
+    const consultorRes = await api.get<{
       ok: true;
       snapshot: CandidatoContext;
       deck: Fase2DeckMeta;
     }>(`/api/consultor/fase2/by-candidato/${encodeURIComponent(slug)}`);
-    if (!res.ok || !res.data) return null;
-    const { snapshot, deck } = res.data;
-    return {
-      ctx: { ...snapshot, consultor_form: deck.consultor_form },
-      deck,
-    };
+    if (consultorRes.ok && consultorRes.data) {
+      const { snapshot, deck } = consultorRes.data;
+      return { ctx: { ...snapshot, consultor_form: deck.consultor_form }, deck };
+    }
+
+    // Fallback: contexto propio del candidato autenticado.
+    // /api/onboarding/me devuelve CandidatoContext con el shape correcto.
+    // Solo funciona si el slug del request coincide con la propia campaign.
+    const meRes = await api.get<{ ok: true } & CandidatoContext>("/api/onboarding/me");
+    if (meRes.ok && meRes.data && meRes.data.campaign?.slug === slug) {
+      const ctx: CandidatoContext = {
+        user: meRes.data.user,
+        campaign: meRes.data.campaign,
+        cargo: meRes.data.cargo,
+        jurisdiccion: meRes.data.jurisdiccion,
+        organizacion_politica: meRes.data.organizacion_politica,
+        consultor_form: meRes.data.consultor_form ?? null,
+      };
+      const mockDeck: Fase2DeckMeta = {
+        id: "candidato-own",
+        status: "published",
+        consultor_form: meRes.data.consultor_form ?? null,
+        updated_at: new Date().toISOString(),
+        submitted_for_review_at: null,
+        published_at: null,
+        rejection_reason: null,
+      };
+      return { ctx, deck: mockDeck };
+    }
+
+    return null;
   },
 
   async patchFase2Form(

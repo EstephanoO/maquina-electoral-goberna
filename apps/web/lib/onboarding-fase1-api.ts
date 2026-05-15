@@ -6,7 +6,24 @@
  * 503 y este cliente retorna null silenciosamente — las slides aplican
  * graceful degradation.
  */
-import { api } from "./api-client";
+import { apiRequest } from "./api-client";
+
+/**
+ * Thin wrapper that mimics the old direct-return API:
+ * throws on non-ok responses (with a `status` property on the error),
+ * and returns `T` directly on success.
+ */
+async function api<T>(path: string, opts?: RequestInit): Promise<T> {
+  const res = await apiRequest<T>(path, opts);
+  if (!res.ok) {
+    const err = Object.assign(
+      new Error(res.error?.message ?? "API error"),
+      { status: res.status },
+    );
+    throw err;
+  }
+  return res.data as T;
+}
 
 export type DistritoDetail = {
   id: number;

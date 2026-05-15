@@ -65,6 +65,11 @@ export const provisionedSchema = z.object({
   site_url: z.string().url().max(500).optional(),
   mailbox_email: z.string().email().max(200).optional(),
   billing_email: z.string().email().max(200).optional(),
+
+  // ── Estrategia de campaña del wizard (auto-seed del consultor_form) ──
+  // Nexus puede enviar la estrategia elegida por el candidato en el wizard
+  // para pre-poblar formula_electoral en el deck Fase 2.
+  campaignStrategy: z.enum(["RACIONAL", "EMOTIVA", "INSTINTIVA", "TRES_FRENTES"]).optional(),
 });
 
 export type ProvisionedInput = z.infer<typeof provisionedSchema>;
