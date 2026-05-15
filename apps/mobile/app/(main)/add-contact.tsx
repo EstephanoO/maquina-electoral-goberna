@@ -24,10 +24,12 @@ import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 
 import { useApp } from '@/lib/app-context';
-import { createContact } from '@/lib/offline-queue/contacts';
+import { createContact, updateContact } from '@/lib/offline-queue/contacts';
 import { Brand, FontFamily, Neutral, Status, Spacing, Radius } from '@/constants/theme';
 import DistritoPicker from '@/components/DistritoPicker';
 import EstadoSelector from '@/components/contacts/EstadoSelector';
+import { PhotoField } from '@/components/contacts/PhotoField';
+import { reminderBuckets, scheduleReminder } from '@/lib/reminders';
 import type { ContactEstado } from '@/lib/offline-queue/contacts';
 import type { SelectedDistrito } from '@/lib/types';
 
@@ -47,6 +49,8 @@ export default function AddContactScreen() {
   const [note, setNote] = useState('');
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [reminderDays, setReminderDays] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
   // ── GPS on mount (best-effort, never blocks) ─────────────────
@@ -88,7 +92,7 @@ export default function AddContactScreen() {
     if (!nameValid || saving) return;
     setSaving(true);
     try {
-      await createContact({
+      const contact = await createContact({
         name: name.trim(),
         phone: phone.trim() || null,
         ubigeo: distrito?.ubigeo ?? null,
@@ -97,8 +101,23 @@ export default function AddContactScreen() {
         lng,
         estado,
         note: note.trim() || null,
+        photo_uri: photoUri,
         agent_id: agentId,
       });
+
+      // Schedule push notification reminder if selected
+      if (reminderDays !== null) {
+        try {
+          const notifId = await scheduleReminder(contact.id, contact.name, reminderDays);
+          await updateContact(contact.id, {
+            reminder_at: Date.now() + reminderDays * 86400000,
+            reminder_notif_id: notifId,
+          });
+        } catch {
+          // Reminder scheduling is best-effort — don't block navigation
+        }
+      }
+
       router.back();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Error desconocido';
@@ -106,7 +125,7 @@ export default function AddContactScreen() {
     } finally {
       setSaving(false);
     }
-  }, [nameValid, saving, name, phone, distrito, lat, lng, estado, note, agentId, router]);
+  }, [nameValid, saving, name, phone, distrito, lat, lng, estado, note, photoUri, reminderDays, agentId, router]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -203,22 +222,45 @@ export default function AddContactScreen() {
               />
             </View>
 
-            {/* ── Foto (placeholder — Task 13) ──────────────────── */}
-            {/* TODO Task 13: PhotoField */}
+            {/* ── Foto (Task 13) ────────────────────────────────── */}
             <View style={styles.field}>
               <Text style={styles.label}>Foto</Text>
-              <View style={styles.placeholder}>
-                <Text style={styles.placeholderText}>Foto (próximamente)</Text>
-              </View>
+              <PhotoField value={photoUri} onChange={setPhotoUri} disabled={saving} />
             </View>
 
-            {/* ── Recordatorio (placeholder — Task 12) ─────────── */}
-            {/* TODO Task 12: reminder date picker */}
+            {/* ── Recordatorio (Task 12) ────────────────────────── */}
             <View style={styles.field}>
               <Text style={styles.label}>Recordatorio</Text>
-              <View style={styles.placeholder}>
-                <Text style={styles.placeholderText}>Recordatorio (próximamente)</Text>
-              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.pillRow}
+              >
+                {reminderBuckets.map((bucket) => (
+                  <Pressable
+                    key={bucket.days}
+                    style={[
+                      styles.pill,
+                      reminderDays === bucket.days && styles.pillSelected,
+                    ]}
+                    onPress={() =>
+                      setReminderDays(reminderDays === bucket.days ? null : bucket.days)
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel={`Recordatorio: ${bucket.label}`}
+                    accessibilityState={{ selected: reminderDays === bucket.days }}
+                  >
+                    <Text
+                      style={[
+                        styles.pillText,
+                        reminderDays === bucket.days && styles.pillTextSelected,
+                      ]}
+                    >
+                      {bucket.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
             </View>
           </View>
 
@@ -301,21 +343,31 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  placeholder: {
+  pillRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  pill: {
     borderWidth: 1.5,
     borderColor: Neutral.border,
-    borderRadius: Radius.lg,
-    borderStyle: 'dashed',
-    minHeight: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
     backgroundColor: Neutral.bg,
-    paddingVertical: Spacing.md,
   },
-  placeholderText: {
-    fontSize: 14,
+  pillSelected: {
+    backgroundColor: Brand.yellow,
+    borderColor: Brand.yellow,
+  },
+  pillText: {
+    fontSize: 13,
     fontFamily: FONT_REGULAR,
-    color: Neutral.textMuted,
+    color: Neutral.textSecondary,
+  },
+  pillTextSelected: {
+    color: Brand.blue,
+    fontFamily: FONT,
   },
 
   saveBtn: {

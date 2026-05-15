@@ -41,6 +41,8 @@ import { ESTADO_META } from '@/lib/contact-estados';
 import { Brand, FontFamily, Neutral, Radius, Spacing, Status } from '@/constants/theme';
 import DistritoPicker from '@/components/DistritoPicker';
 import EstadoSelector from '@/components/contacts/EstadoSelector';
+import { PhotoField } from '@/components/contacts/PhotoField';
+import { reminderBuckets, scheduleReminder, cancelReminder } from '@/lib/reminders';
 import type { SelectedDistrito } from '@/lib/types';
 
 const FONT = FontFamily.bold;
@@ -92,6 +94,8 @@ export default function ContactDetail() {
   const [editDistrito, setEditDistrito] = useState<SelectedDistrito | null>(null);
   const [editEstado, setEditEstado] = useState<ContactEstado>('duda');
   const [editNote, setEditNote] = useState('');
+  const [editPhotoUri, setEditPhotoUri] = useState<string | null>(null);
+  const [editReminderDays, setEditReminderDays] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Seed edit fields from a contact snapshot (shared by enterEditMode + cancelEdit)
@@ -100,6 +104,9 @@ export default function ContactDetail() {
     setEditPhone(c.phone ?? '');
     setEditEstado(c.estado);
     setEditNote(c.note ?? '');
+    setEditPhotoUri(c.photo_uri);
+    // Don't pre-select a reminder bucket on edit — user must explicitly choose to change it
+    setEditReminderDays(null);
     // Rebuild SelectedDistrito from stored fields (best-effort)
     if (c.ubigeo && c.distrito_nombre) {
       setEditDistrito({
@@ -153,8 +160,11 @@ export default function ContactDetail() {
     if (newUbigeo !== contact.ubigeo) patch.ubigeo = newUbigeo;
     if (newDistritoNombre !== contact.distrito_nombre) patch.distrito_nombre = newDistritoNombre;
 
-    // If nothing changed, just exit edit mode without a DB call
-    if (Object.keys(patch).length === 0) {
+    // Photo
+    if (editPhotoUri !== contact.photo_uri) patch.photo_uri = editPhotoUri;
+
+    // If nothing changed in base fields, just exit edit mode without a DB call
+    if (Object.keys(patch).length === 0 && editReminderDays === null) {
       setEditing(false);
       return;
     }
@@ -167,7 +177,28 @@ export default function ContactDetail() {
 
     setSaving(true);
     try {
-      const updated = await updateContact(contactId, patch);
+      // Save base patch first (if any field changed)
+      let updated = contact;
+      if (Object.keys(patch).length > 0) {
+        updated = await updateContact(contactId, patch);
+      }
+
+      // Handle reminder change: cancel old, schedule new
+      if (editReminderDays !== null) {
+        try {
+          if (contact.reminder_notif_id) {
+            await cancelReminder(contact.reminder_notif_id);
+          }
+          const notifId = await scheduleReminder(contactId, editName.trim() || contact.name, editReminderDays);
+          updated = await updateContact(contactId, {
+            reminder_at: Date.now() + editReminderDays * 86400000,
+            reminder_notif_id: notifId,
+          });
+        } catch {
+          // Reminder scheduling is best-effort
+        }
+      }
+
       setContact(updated);
       setEditing(false);
     } catch (err) {
@@ -176,7 +207,7 @@ export default function ContactDetail() {
     } finally {
       setSaving(false);
     }
-  }, [contact, contactId, editName, editPhone, editEstado, editNote, editDistrito, saving]);
+  }, [contact, contactId, editName, editPhone, editEstado, editNote, editDistrito, editPhotoUri, editReminderDays, saving]);
 
   // ── Delete ──────────────────────────────────────────────────────
   const handleDelete = useCallback(() => {
@@ -402,27 +433,53 @@ export default function ContactDetail() {
                 />
               </View>
 
-              {/* Photo — read-only (Task 13) */}
-              {contact.photo_uri && (
-                <View style={styles.field}>
-                  <Text style={styles.label}>Foto</Text>
-                  <Image
-                    source={{ uri: contact.photo_uri }}
-                    style={styles.photo}
-                    accessibilityLabel={`Foto de ${contact.name}`}
-                  />
-                </View>
-              )}
+              {/* Photo (Task 13) */}
+              <View style={styles.field}>
+                <Text style={styles.label}>Foto</Text>
+                <PhotoField value={editPhotoUri} onChange={setEditPhotoUri} disabled={saving} />
+              </View>
 
-              {/* Reminder — read-only (Task 12) */}
-              {contact.reminder_at !== null && (
-                <View style={styles.field}>
-                  <Text style={styles.label}>Recordatorio</Text>
-                  <View style={styles.readValueBox}>
-                    <Text style={styles.readValue}>{formatDate(contact.reminder_at)}</Text>
-                  </View>
-                </View>
-              )}
+              {/* Reminder (Task 12) */}
+              <View style={styles.field}>
+                <Text style={styles.label}>
+                  Recordatorio
+                  {contact.reminder_at !== null && (
+                    <Text style={styles.reminderCurrent}>
+                      {' '}(actual: {formatDate(contact.reminder_at)})
+                    </Text>
+                  )}
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.pillRow}
+                >
+                  {reminderBuckets.map((bucket) => (
+                    <Pressable
+                      key={bucket.days}
+                      style={[
+                        styles.pill,
+                        editReminderDays === bucket.days && styles.pillSelected,
+                      ]}
+                      onPress={() =>
+                        setEditReminderDays(editReminderDays === bucket.days ? null : bucket.days)
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={`Recordatorio: ${bucket.label}`}
+                      accessibilityState={{ selected: editReminderDays === bucket.days }}
+                    >
+                      <Text
+                        style={[
+                          styles.pillText,
+                          editReminderDays === bucket.days && styles.pillTextSelected,
+                        ]}
+                      >
+                        {bucket.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
 
               {/* Edit actions */}
               <Pressable
@@ -652,6 +709,39 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: FONT,
     color: Neutral.textSecondary,
+  },
+  pillRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  pill: {
+    borderWidth: 1.5,
+    borderColor: Neutral.border,
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Neutral.bg,
+  },
+  pillSelected: {
+    backgroundColor: Brand.yellow,
+    borderColor: Brand.yellow,
+  },
+  pillText: {
+    fontSize: 13,
+    fontFamily: FONT_REGULAR,
+    color: Neutral.textSecondary,
+  },
+  pillTextSelected: {
+    color: Brand.blue,
+    fontFamily: FONT,
+  },
+  reminderCurrent: {
+    fontSize: 11,
+    fontFamily: FONT_REGULAR,
+    color: Neutral.textMuted,
+    textTransform: 'none',
+    letterSpacing: 0,
   },
 
   // ── Delete ────────────────────────────────────────────────────
