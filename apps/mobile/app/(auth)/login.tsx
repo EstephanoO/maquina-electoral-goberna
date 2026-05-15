@@ -1,16 +1,15 @@
 /**
- * Login Screen — flujo OTP-only unificado.
+ * Login Screen — flujo OTP-only canvassing-style.
  *
  * Estados:
- *   1. 'phone'        → ingresa teléfono, dispara OTP
- *   2. 'code'         → ingresa OTP de 6 dígitos
- *   3. 'register'     → caso "user no existe" (412): pide nombre + región +
- *                       access_code y completa el registro inline
- *   4. 'link'         → caso "user existe sin campaña" (needs_campaign):
- *                       pide access_code para unirse a una campaña
+ *   1. 'phone'  → ingresa teléfono, dispara OTP
+ *   2. 'code'   → ingresa OTP de 6 dígitos
+ *   3. 'link'   → user autenticado pero sin campaña asignada → pide access_code
  *
- * El RouterGuard de _layout.tsx redirige al dashboard cuando auth.status
- * pasa a 'active'.
+ * El backend auto-crea el user si no existe (en /whatsapp/verify), por lo que
+ * NO hay fase de registro. Después de verificar el código el user ya está
+ * adentro; si no tiene campaña, el RouterGuard lo mantiene en esta pantalla
+ * con la fase 'link' que es el card "Enlazate a una campaña".
  */
 
 import { Ionicons } from '@expo/vector-icons';
@@ -29,7 +28,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import RegionPicker from '@/components/RegionPicker';
 import { Brand, FontFamily, Neutral, Status } from '@/constants/theme';
 import { validateAccessCode } from '@/lib/api';
 import { useApp } from '@/lib/app-context';
@@ -52,14 +50,13 @@ const OTP_REGEX = /^\d{6}$/;
 const ACCESS_CODE_REGEX = /^[A-Z0-9]{4}$/;
 const RESEND_COOLDOWN_S = 60;
 
-type Phase = 'phone' | 'code' | 'register' | 'link';
+type Phase = 'phone' | 'code' | 'link';
 
 export default function LoginScreen() {
   const {
     auth,
     whatsappSend,
     loginWithWhatsapp,
-    registerWithWhatsapp,
     joinCampaign,
   } = useApp();
 
@@ -78,12 +75,7 @@ export default function LoginScreen() {
   const [resendIn, setResendIn] = useState(0);
   const otpInputRef = useRef<TextInput | null>(null);
 
-  // Register state
-  const [fullName, setFullName] = useState('');
-  const [nameFocused, setNameFocused] = useState(false);
-  const [region, setRegion] = useState<string | null>(null);
-
-  // Link/register shared: access_code + live validation
+  // Link campaign state — access_code con live validation
   const [accessCode, setAccessCode] = useState('');
   const accessCodeInputRef = useRef<TextInput | null>(null);
   const [accessCodeCampaign, setAccessCodeCampaign] = useState<
@@ -116,9 +108,9 @@ export default function LoginScreen() {
     }
   }, [auth.status, phase]);
 
-  // ── Live access_code validation (fases register + link) ─────
+  // ── Live access_code validation (fase link) ────────────────
   useEffect(() => {
-    if (phase !== 'register' && phase !== 'link') return;
+    if (phase !== 'link') return;
 
     const clean = accessCode.replace(/[^A-Z0-9]/g, '').toUpperCase().slice(0, 4);
     if (clean.length < 4) {
@@ -190,66 +182,13 @@ export default function LoginScreen() {
     setLoading(false);
 
     if (result.ok) {
-      // Success — AppContext decide si entra al dashboard o pasa a 'needs_campaign'.
-      // Aquí solo movemos la fase local si el backend nos dijo needs_campaign;
-      // si entró a 'active', RouterGuard redirige y este screen se desmonta.
-      // useEffect arriba reacciona a auth.status === 'needs_campaign'.
-      return;
-    }
-
-    const noUser =
-      result.status === 412 ||
-      result.code === 'USER_NOT_FOUND' ||
-      result.code === 'AUTH_USER_NOT_FOUND';
-    if (noUser) {
-      // El usuario no existe — pasamos a registro inline. Reutilizamos el OTP
-      // recién verificado en /whatsapp/register (mismo flow del backend).
-      setPhase('register');
+      // Success — AppContext decide:
+      //  • user con campañas → 'active' → RouterGuard manda a /(main)/dashboard
+      //  • user sin campañas → 'needs_campaign' → useEffect abajo cambia phase a 'link'
+      // El backend auto-crea el user si no existía (canvassing: nada bloquea).
       return;
     }
     Alert.alert('Error', result.error ?? 'No pudimos verificar el código.');
-  };
-
-  const handleRegister = async () => {
-    if (fullName.trim().length < 3) {
-      Alert.alert('Nombre requerido', 'Ingresá tu nombre completo (mínimo 3 caracteres).');
-      return;
-    }
-    if (!region) {
-      Alert.alert('Región requerida', 'Seleccioná tu departamento.');
-      return;
-    }
-    const cleanCode = accessCode.replace(/[^A-Z0-9]/g, '').toUpperCase().slice(0, 4);
-    if (!ACCESS_CODE_REGEX.test(cleanCode)) {
-      Alert.alert('Código inválido', 'Ingresá el código de 4 caracteres que te dio tu coordinador.');
-      return;
-    }
-
-    setLoading(true);
-    const result = await registerWithWhatsapp({
-      phone: phone.trim(),
-      code: otp.trim(),
-      full_name: fullName.trim(),
-      region,
-      email: `${phone.trim()}@goberna.pe`,
-      access_code: cleanCode,
-    });
-    setLoading(false);
-
-    if (!result.ok) {
-      if (result.code === 'ACCESS_CODE_NOT_FOUND') {
-        Alert.alert('Código inválido', 'El código de acceso no existe. Verificá con tu coordinador.');
-        return;
-      }
-      if (result.code === 'AUTH_PHONE_EXISTS' || result.code === 'USER_EXISTS') {
-        Alert.alert('Cuenta ya registrada', 'Este número ya tiene cuenta. Probá iniciar sesión.');
-        setPhase('phone');
-        return;
-      }
-      Alert.alert('Error', result.error ?? 'No pudimos crear la cuenta.');
-    }
-    // Success: AppContext pasa a 'active' (o 'needs_campaign' como fallback) y
-    // RouterGuard redirige al dashboard.
   };
 
   const handleJoinCampaign = async () => {
@@ -531,90 +470,13 @@ export default function LoginScreen() {
             </View>
           )}
 
-          {/* ── REGISTER (user nuevo) ─────────────────────────── */}
-          {phase === 'register' && (
-            <View style={styles.form}>
-              <Text style={styles.stepTitle}>Creá tu cuenta</Text>
-              <Text style={styles.stepDescription}>
-                Necesitamos algunos datos para asignarte a tu campaña.
-              </Text>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Nombre completo</Text>
-                <View
-                  style={[
-                    styles.inputWrapper,
-                    nameFocused && styles.inputWrapperFocused,
-                  ]}
-                >
-                  <Ionicons
-                    name="person-outline"
-                    size={18}
-                    color={nameFocused ? BORDER_FOCUS : TEXT_MUTED}
-                  />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Juan Pérez García"
-                    placeholderTextColor={TEXT_MUTED}
-                    value={fullName}
-                    onChangeText={setFullName}
-                    autoCapitalize="words"
-                    editable={!loading}
-                    onFocus={() => setNameFocused(true)}
-                    onBlur={() => setNameFocused(false)}
-                  />
-                  {fullName.trim().length >= 3 && (
-                    <Ionicons name="checkmark-circle" size={20} color={SUCCESS} />
-                  )}
-                </View>
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Tu región</Text>
-                <RegionPicker
-                  value={region}
-                  onSelect={setRegion}
-                  placeholder="Selecciona tu departamento"
-                />
-              </View>
-
-              <View style={styles.field}>
-                <Text style={styles.label}>Código de acceso</Text>
-                {renderAccessCodeBlock()}
-              </View>
-
-              <Pressable
-                style={({ pressed }) => [
-                  styles.button,
-                  (!accessCodeCampaign || loading) && styles.buttonDisabled,
-                  pressed && accessCodeCampaign && !loading && styles.buttonPressed,
-                ]}
-                onPress={handleRegister}
-                disabled={!accessCodeCampaign || loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                    <Text style={styles.buttonText}>Crear cuenta</Text>
-                  </>
-                )}
-              </Pressable>
-
-              <Pressable onPress={handleChangePhone} hitSlop={8} style={styles.altLink}>
-                <Text style={styles.altLinkText}>← Usar otro número</Text>
-              </Pressable>
-            </View>
-          )}
-
-          {/* ── LINK CAMPAIGN (user existente sin campaña) ────── */}
+          {/* ── LINK CAMPAIGN (user autenticado sin campaña) ───── */}
           {phase === 'link' && (
             <View style={styles.form}>
-              <Text style={styles.stepTitle}>Unite a una campaña</Text>
+              <Text style={styles.stepTitle}>Enlazate a una campaña</Text>
               <Text style={styles.stepDescription}>
-                Tu cuenta no tiene campaña asignada. Ingresá el código de
-                acceso que te dio tu coordinador.
+                Ya estás dentro. Para empezar a registrar gente ingresá el
+                código de 4 caracteres que te pasó tu coordinador.
               </Text>
 
               <View style={styles.field}>

@@ -864,13 +864,20 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
       }
 
       const normalizedPhone = normalizePhone(parsed.data.phone);
-      const user = await repo.findUserByPhone(normalizedPhone);
+      let user = await repo.findUserByPhone(normalizedPhone);
+      let autoCreated = false;
       if (!user) {
-        return reply.code(412).send(errorPayload(
-          requestId,
-          "USER_NOT_FOUND",
-          "phone verificado pero el usuario no existe — completar registro primero",
-        ));
+        // Canvassing flow: auto-crear user mínimo (solo phone) si no existe.
+        // El user puede completar nombre/región y enlazarse a una campaña desde
+        // adentro de la app — nada bloquea el primer ingreso.
+        const email = `${normalizedPhone}@goberna.pe`;
+        try {
+          user = await repo.createUser(email, null, "", normalizedPhone, undefined);
+          autoCreated = true;
+        } catch (createErr) {
+          app.log.error({ err: createErr, phone: normalizedPhone, request_id: requestId }, "whatsapp-otp: auto-create user failed");
+          return reply.code(500).send(errorPayload(requestId, "USER_CREATE_FAILED", "no se pudo crear la cuenta"));
+        }
       }
 
       try {
@@ -880,8 +887,8 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
         // El cliente debe pedirle un access_code y llamar /auth/join-campaign.
         const needsCampaign = result.campaigns.length === 0;
         app.log.info(
-          { user_id: user.id, phone: normalizedPhone, needs_campaign: needsCampaign, request_id: requestId },
-          "whatsapp-otp: login OK",
+          { user_id: user.id, phone: normalizedPhone, needs_campaign: needsCampaign, auto_created: autoCreated, request_id: requestId },
+          autoCreated ? "whatsapp-otp: auto-created user on verify" : "whatsapp-otp: login OK",
         );
         return reply.code(200).send({
           ok: true,
