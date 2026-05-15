@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -115,6 +116,13 @@ export default function ProfileScreen() {
 
           {/* Actions */}
           <View style={styles.actions}>
+            <Pressable
+              style={[styles.btn, styles.btnSecondary]}
+              onPress={() => Linking.openURL('https://goberna.club/privacy')}
+            >
+              <MaterialIcons name="privacy-tip" size={18} color="#fff" />
+              <Text style={styles.btnText}>Política de privacidad</Text>
+            </Pressable>
             <Pressable style={[styles.btn, styles.btnSecondary]} onPress={handleLogout}>
               <MaterialIcons name="logout" size={18} color="#fff" />
               <Text style={styles.btnText}>Cerrar sesión</Text>

@@ -24,7 +24,7 @@ describe('deleteAccount', () => {
     mockFetch.mockReset();
   });
 
-  it('calls DELETE /auth/me and returns ok result', async () => {
+  it('calls DELETE /account and returns ok result', async () => {
     mockFetch.mockResolvedValueOnce(
       new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -38,7 +38,7 @@ describe('deleteAccount', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
 
     const [url, options] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toMatch(/\/auth\/me$/);
+    expect(url).toMatch(/\/account$/);
     expect(options.method).toBe('DELETE');
   });
 

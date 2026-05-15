@@ -572,12 +572,12 @@ export async function searchGeoDistritos(q: string, limit = 20): Promise<ApiResu
 // ─── Account management ─────────────────────────────────────
 
 /**
- * DELETE /api/auth/me — permanently deletes the authenticated user's account.
+ * DELETE /api/account — permanently deletes the authenticated user's account.
  * Called from the Profile screen (Task 14). Best-effort: local session is
  * cleared regardless of whether this succeeds.
  */
 export async function deleteAccount(): Promise<ApiResult<{ ok: boolean }>> {
-  return request<{ ok: boolean }>('DELETE', '/auth/me');
+  return request<{ ok: boolean }>('DELETE', '/account');
 }
 
 // ─── GPS Tracking ───────────────────────────────────────────

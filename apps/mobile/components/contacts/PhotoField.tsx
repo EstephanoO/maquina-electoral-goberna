@@ -30,6 +30,11 @@ export function PhotoField({ value, onChange, disabled }: Props) {
           aspect: [3, 4],
         });
       } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (perm.status !== 'granted') {
+          Alert.alert('Permiso requerido', 'Necesitamos acceso a tus fotos para adjuntar una imagen.');
+          return;
+        }
         result = await ImagePicker.launchImageLibraryAsync({
           mediaTypes: 'images',
           quality: 0.7,

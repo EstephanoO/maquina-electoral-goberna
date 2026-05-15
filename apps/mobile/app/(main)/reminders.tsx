@@ -30,18 +30,21 @@ function groupByDate(contacts: Contact[]): Group[] {
   todayEnd.setHours(23, 59, 59, 999);
   const weekEnd = new Date(now + 7 * 24 * 3600 * 1000);
 
+  const vencidos: Contact[] = [];
   const hoy: Contact[] = [];
   const proximos: Contact[] = [];
   const masAdel: Contact[] = [];
 
   for (const c of contacts) {
     if (c.reminder_at === null) continue;
-    if (c.reminder_at <= todayEnd.getTime()) hoy.push(c);
+    if (c.reminder_at < now) vencidos.push(c);
+    else if (c.reminder_at <= todayEnd.getTime()) hoy.push(c);
     else if (c.reminder_at <= weekEnd.getTime()) proximos.push(c);
     else masAdel.push(c);
   }
 
   const groups: Group[] = [];
+  if (vencidos.length) groups.push({ title: 'Vencidos', data: vencidos });
   if (hoy.length) groups.push({ title: 'Hoy', data: hoy });
   if (proximos.length) groups.push({ title: 'Próximos 7 días', data: proximos });
   if (masAdel.length) groups.push({ title: 'Más adelante', data: masAdel });
@@ -55,10 +58,16 @@ export default function RemindersScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      let active = true;
       listWithReminders().then((contacts) => {
-        setTotal(contacts.length);
-        setGroups(groupByDate(contacts));
+        if (active) {
+          setTotal(contacts.length);
+          setGroups(groupByDate(contacts));
+        }
       });
+      return () => {
+        active = false;
+      };
     }, []),
   );
 
@@ -91,7 +100,12 @@ export default function RemindersScreen() {
         }
         renderItem={({ item }) => {
           if (item.type === 'header') {
-            return <Text style={styles.groupTitle}>{item.title}</Text>;
+            const isOverdue = item.title === 'Vencidos';
+            return (
+              <Text style={[styles.groupTitle, isOverdue && styles.groupTitleOverdue]}>
+                {item.title}
+              </Text>
+            );
           }
           const { contact } = item;
           const date = contact.reminder_at
@@ -143,6 +157,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.xs,
+  },
+  groupTitleOverdue: {
+    color: '#f87171',
   },
   row: {
     flexDirection: 'row',
