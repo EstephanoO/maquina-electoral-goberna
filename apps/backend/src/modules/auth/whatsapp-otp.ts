@@ -111,10 +111,18 @@ export async function sendOtp(
 
   // Demo bypass para Apple Review — no llama al bot, guarda el OTP fijo en Redis.
   if (options.demoPhone && options.demoOtp && isDemoPhone(phone, options.demoPhone)) {
-    const hash = hashCode(options.demoOtp, normalized);
-    await redisClient.set(otpKey(normalized), JSON.stringify({ hash, attempts: 0 }),
-      { EX: OTP_TTL_SECONDS });
-    return { ok: true, expiresIn: OTP_TTL_SECONDS };
+    if (!/^\d{6}$/.test(options.demoOtp)) {
+      options.log?.(
+        "demo-bypass: GOBERNA_DEMO_OTP debe ser 6 dígitos — bypass omitido",
+        { demoOtp: options.demoOtp },
+      );
+      // Fall through to normal flow — invalid format should not silently block login.
+    } else {
+      const hash = hashCode(options.demoOtp, normalized);
+      await redisClient.set(otpKey(normalized), JSON.stringify({ hash, attempts: 0 }),
+        { EX: OTP_TTL_SECONDS });
+      return { ok: true, expiresIn: OTP_TTL_SECONDS };
+    }
   }
 
   // Rate limit: 1 send cada 60s.
