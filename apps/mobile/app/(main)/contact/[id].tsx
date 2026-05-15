@@ -62,23 +62,26 @@ function digitsOnly(phone: string): string {
   return phone.replace(/\D/g, '');
 }
 
+const PERU_PHONE_REGEX = /^9\d{8}$/;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function ContactDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const contactId = Array.isArray(id) ? id[0] : id;
   const router = useRouter();
 
   // ── Load state ──────────────────────────────────────────────────
   const [contact, setContact] = useState<Contact | null | 'loading'>('loading');
 
   const loadContact = useCallback(async () => {
-    if (!id) { setContact(null); return; }
+    if (!contactId) { setContact(null); return; }
     setContact('loading');
-    const c = await getContact(id);
+    const c = await getContact(contactId);
     setContact(c);
-  }, [id]);
+  }, [contactId]);
 
   useEffect(() => { loadContact(); }, [loadContact]);
 
@@ -91,18 +94,17 @@ export default function ContactDetail() {
   const [editNote, setEditNote] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Enter edit mode — pre-populate fields from current contact
-  const enterEditMode = useCallback(() => {
-    if (!contact || contact === 'loading') return;
-    setEditName(contact.name);
-    setEditPhone(contact.phone ?? '');
-    setEditEstado(contact.estado);
-    setEditNote(contact.note ?? '');
+  // Seed edit fields from a contact snapshot (shared by enterEditMode + cancelEdit)
+  const seedEditFields = useCallback((c: Contact) => {
+    setEditName(c.name);
+    setEditPhone(c.phone ?? '');
+    setEditEstado(c.estado);
+    setEditNote(c.note ?? '');
     // Rebuild SelectedDistrito from stored fields (best-effort)
-    if (contact.ubigeo && contact.distrito_nombre) {
+    if (c.ubigeo && c.distrito_nombre) {
       setEditDistrito({
-        ubigeo: contact.ubigeo,
-        distrito: contact.distrito_nombre,
+        ubigeo: c.ubigeo,
+        distrito: c.distrito_nombre,
         provincia: '',
         departamento: '',
         codprov_full: '',
@@ -111,10 +113,19 @@ export default function ContactDetail() {
     } else {
       setEditDistrito(null);
     }
-    setEditing(true);
-  }, [contact]);
+  }, []);
 
-  const cancelEdit = useCallback(() => setEditing(false), []);
+  // Enter edit mode — pre-populate fields from current contact
+  const enterEditMode = useCallback(() => {
+    if (!contact || contact === 'loading') return;
+    seedEditFields(contact);
+    setEditing(true);
+  }, [contact, seedEditFields]);
+
+  const cancelEdit = useCallback(() => {
+    if (contact && contact !== 'loading') seedEditFields(contact);
+    setEditing(false);
+  }, [contact, seedEditFields]);
 
   // ── Stable picker callbacks ─────────────────────────────────────
   const handleDistritoSelect = useCallback((d: SelectedDistrito) => setEditDistrito(d), []);
@@ -138,9 +149,6 @@ export default function ContactDetail() {
     // Distrito comparison
     const newUbigeo = editDistrito?.ubigeo ?? null;
     const newDistritoNombre = editDistrito?.distrito ?? null;
-    const newProvNombre = editDistrito?.provincia ?? null;
-    const newCodprov = editDistrito?.codprov_full ?? null;
-    const newCoddep = editDistrito?.coddep ?? null;
 
     if (newUbigeo !== contact.ubigeo) patch.ubigeo = newUbigeo;
     if (newDistritoNombre !== contact.distrito_nombre) patch.distrito_nombre = newDistritoNombre;
@@ -159,7 +167,7 @@ export default function ContactDetail() {
 
     setSaving(true);
     try {
-      const updated = await updateContact(id, patch);
+      const updated = await updateContact(contactId, patch);
       setContact(updated);
       setEditing(false);
     } catch (err) {
@@ -168,7 +176,7 @@ export default function ContactDetail() {
     } finally {
       setSaving(false);
     }
-  }, [contact, id, editName, editPhone, editEstado, editNote, editDistrito, saving]);
+  }, [contact, contactId, editName, editPhone, editEstado, editNote, editDistrito, saving]);
 
   // ── Delete ──────────────────────────────────────────────────────
   const handleDelete = useCallback(() => {
@@ -182,7 +190,7 @@ export default function ContactDetail() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await softDeleteContact(id);
+              await softDeleteContact(contactId);
               router.back();
             } catch (err) {
               const message = err instanceof Error ? err.message : 'Error desconocido';
@@ -192,7 +200,7 @@ export default function ContactDetail() {
         },
       ],
     );
-  }, [id, router]);
+  }, [contactId, router]);
 
   // ── WhatsApp ────────────────────────────────────────────────────
   const handleWhatsApp = useCallback((phone: string) => {
@@ -232,6 +240,11 @@ export default function ContactDetail() {
   // ─────────────────────────────────────────────────────────────────
 
   const estadoMeta = ESTADO_META[contact.estado];
+
+  const editPhoneWarning =
+    editPhone.trim().length > 0 && !PERU_PHONE_REGEX.test(editPhone.trim())
+      ? 'El teléfono debe ser 9 dígitos empezando con 9'
+      : null;
 
   // ─────────────────────────────────────────────────────────────────
   // Render
@@ -351,6 +364,9 @@ export default function ContactDetail() {
                   keyboardType="phone-pad"
                   maxLength={9}
                 />
+                {editPhoneWarning && (
+                  <Text style={styles.phoneWarning}>{editPhoneWarning}</Text>
+                )}
               </View>
 
               {/* Distrito */}
@@ -425,7 +441,7 @@ export default function ContactDetail() {
                 style={styles.cancelBtn}
                 onPress={cancelEdit}
                 accessibilityRole="button"
-                accessibilityLabel="Cancelar edicion"
+                accessibilityLabel="Cancelar edición"
               >
                 <Text style={styles.cancelBtnText}>Cancelar</Text>
               </Pressable>
@@ -569,6 +585,12 @@ const styles = StyleSheet.create({
     color: Brand.blue,
   },
   required: { color: Status.danger, fontSize: 15 },
+  phoneWarning: {
+    fontSize: 12,
+    fontFamily: FONT_REGULAR,
+    color: Status.warning,
+    marginTop: 2,
+  },
   input: {
     borderWidth: 1.5,
     borderColor: Neutral.border,
