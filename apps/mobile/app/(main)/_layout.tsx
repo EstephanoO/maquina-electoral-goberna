@@ -1,11 +1,15 @@
 /**
  * Main Layout — Tabs with dynamic colors from AppConfig.
- * 
- * Tab visibility:
- * - Dashboard: Always visible
- * - Ranking: Always visible (department + departments ranking)
- * - Solicitudes: Only for candidato and above
- * - add-contact: Hidden (accessed via FAB from contacts)
+ *
+ * Visible tabs:
+ * - contacts: Contact list and canvassing actions
+ * - map: Geographic view of canvassing activity
+ * - reminders: Follow-up reminders and notifications
+ * - profile: User profile and settings
+ *
+ * Hidden screens (href: null):
+ * - add-contact: Accessed via FAB (+) from contacts
+ * - contact/[id]: Accessed via row tap from contacts list
  */
 
 import { Tabs } from 'expo-router';
@@ -19,22 +23,19 @@ export default function MainLayout() {
   // During logout the router hasn't navigated away yet — render nothing
   if (auth.status !== 'active') return null;
 
-  const { candidate, agent } = auth.config;
+  const { candidate } = auth.config;
 
   const primary = candidate.color_primario;
   const secondary = candidate.color_secundario;
-
-  // Solicitudes tab visible for candidato and above
-  const showSolicitudes = ['admin', 'consultor', 'candidato'].includes(agent.role);
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,
-        // Usar el color secundario de la campaña para el ícono activo.
-        // Fallback a amber si secondary es undefined o el mismo que primary
-        // (para evitar íconos invisibles sobre el fondo del tab bar).
+        // Use the campaign secondary color for the active icon.
+        // Fallback to amber if secondary is undefined or same as primary
+        // (to avoid invisible icons on the tab bar background).
         tabBarActiveTintColor: secondary !== primary ? secondary : '#fbbf24',
         tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.6)',
         tabBarStyle: {
@@ -55,31 +56,37 @@ export default function MainLayout() {
         }}
       />
       <Tabs.Screen
-        name="ranking"
+        name="map"
         options={{
           tabBarIcon: ({ color }) => (
-            <MaterialIcons name="leaderboard" size={28} color={color} />
+            <MaterialIcons name="map" size={28} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="solicitudes"
+        name="reminders"
         options={{
-          // Hide tab for non-admin/non-candidate
-          href: showSolicitudes ? undefined : null,
           tabBarIcon: ({ color }) => (
-            <MaterialIcons name="assignment-ind" size={28} color={color} />
+            <MaterialIcons name="notifications" size={28} color={color} />
           ),
         }}
       />
-      {/* qr-code is a hidden screen, accessed via FAB from dashboard */}
       <Tabs.Screen
-        name="qr-code"
-        options={{ href: null }}
+        name="profile"
+        options={{
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="person" size={28} color={color} />
+          ),
+        }}
       />
       {/* add-contact is a hidden screen, accessed via FAB (+) from contacts */}
       <Tabs.Screen
         name="add-contact"
+        options={{ href: null }}
+      />
+      {/* contact/[id] is a hidden screen, accessed via row tap from contacts list */}
+      <Tabs.Screen
+        name="contact/[id]"
         options={{ href: null }}
       />
     </Tabs>
