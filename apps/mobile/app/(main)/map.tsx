@@ -2,8 +2,7 @@
  * MapScreen — Mapa de contactos del cuaderno de campo.
  *
  * Muestra los contactos como pins sobre un mapa de Perú.
- * Usa MapLibre React Native v11 (API: Map, Camera, GeoJSONSource, Layer,
- * VectorSource, RasterSource).
+ * Usa MapLibre React Native v11 (API: Map, Camera, GeoJSONSource, Layer).
  *
  * Basemap: CartoDB Voyager (raster, siempre visible).
  * Borders admin: Tegola vector tiles del backend (distritos/departamentos).
@@ -16,14 +15,12 @@ import {
   GeoJSONSource,
   Layer,
   Map,
-  RasterSource,
-  VectorSource,
 } from '@maplibre/maplibre-react-native';
 import type { StyleSpecification } from '@maplibre/maplibre-gl-style-spec';
 import type { NativeSyntheticEvent } from 'react-native';
 import type { PressEventWithFeatures } from '@maplibre/maplibre-react-native';
-import { useCallback, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
@@ -44,7 +41,8 @@ const MAP_STYLE: StyleSpecification = {
         'https://c.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
       ],
       tileSize: 256,
-      attribution: '© <a href="https://carto.com">CARTO</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      attribution:
+        '© <a href="https://carto.com">CARTO</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     },
     'tegola-admin': {
       type: 'vector',
@@ -87,9 +85,9 @@ const MAP_STYLE: StyleSpecification = {
 const ESTADO_CIRCLE_COLOR = [
   'match',
   ['get', 'estado'],
-  'apoya', ESTADO_META.apoya.color,
-  'duda',  ESTADO_META.duda.color,
-  'no',    ESTADO_META.no.color,
+  'apoya',   ESTADO_META.apoya.color,
+  'duda',    ESTADO_META.duda.color,
+  'no',      ESTADO_META.no.color,
   'no_esta', ESTADO_META.no_esta.color,
   '#94A3B8', // fallback
 ] as const;
@@ -107,22 +105,27 @@ export default function MapScreen() {
       listContacts().then((rows) => {
         if (active) setContacts(rows);
       });
-      return () => { active = false; };
+      return () => {
+        active = false;
+      };
     }, []),
   );
 
   const geoJSON = contactsToGeoJSON(contacts);
 
   // Compute bounds from contacts with coords; fall back to PERU_BBOX
-  const contactsWithCoords = contacts.filter((c) => c.lat != null && c.lng != null);
-  const initialBounds = contactsWithCoords.length > 0
-    ? ([
-        Math.min(...contactsWithCoords.map((c) => c.lng as number)),
-        Math.min(...contactsWithCoords.map((c) => c.lat as number)),
-        Math.max(...contactsWithCoords.map((c) => c.lng as number)),
-        Math.max(...contactsWithCoords.map((c) => c.lat as number)),
-      ] as [number, number, number, number])
-    : PERU_BBOX;
+  const contactsWithCoords = contacts.filter(
+    (c) => c.lat != null && c.lng != null,
+  );
+  const initialBounds =
+    contactsWithCoords.length > 0
+      ? ([
+          Math.min(...contactsWithCoords.map((c) => c.lng as number)),
+          Math.min(...contactsWithCoords.map((c) => c.lat as number)),
+          Math.max(...contactsWithCoords.map((c) => c.lng as number)),
+          Math.max(...contactsWithCoords.map((c) => c.lat as number)),
+        ] as [number, number, number, number])
+      : PERU_BBOX;
 
   const handleContactPress = useCallback(
     (event: NativeSyntheticEvent<PressEventWithFeatures>) => {

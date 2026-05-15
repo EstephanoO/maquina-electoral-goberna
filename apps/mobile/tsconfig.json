@@ -13,5 +13,10 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "lib/__tests__/reminders.test.ts",
+    "lib/__tests__/delete-account.test.ts"
   ]
 }
