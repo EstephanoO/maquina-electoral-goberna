@@ -1058,7 +1058,18 @@ export function Fase1RapidaClient({ slug, mockCtx, mockForm }: Fase1RapidaClient
                 {activeSection < SECTIONS.length - 1 ? (
                   <button
                     type="button"
-                    onClick={() => setActiveSection((i) => Math.min(SECTIONS.length - 1, i + 1))}
+                    onClick={() => {
+                      // Marcar la sección actual como completa si es del mínimo
+                      const sec = SECTIONS[activeSection]!;
+                      if (sec.category === "minimo") {
+                        setForm((prev) => {
+                          const ya = prev.secciones_completas ?? [];
+                          if (ya.includes(sec.id)) return prev;
+                          return { ...prev, secciones_completas: [...ya, sec.id] };
+                        });
+                      }
+                      setActiveSection((i) => Math.min(SECTIONS.length - 1, i + 1));
+                    }}
                     className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-600 text-[#0a1e4a] text-sm font-black shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 transition-all"
                   >
                     Siguiente
@@ -1067,7 +1078,18 @@ export function Fase1RapidaClient({ slug, mockCtx, mockForm }: Fase1RapidaClient
                 ) : (
                   <button
                     type="button"
-                    onClick={handlePreview}
+                    onClick={() => {
+                      // Marcar la última sección como completa también
+                      const sec = SECTIONS[activeSection]!;
+                      if (sec.category === "minimo") {
+                        setForm((prev) => {
+                          const ya = prev.secciones_completas ?? [];
+                          if (ya.includes(sec.id)) return prev;
+                          return { ...prev, secciones_completas: [...ya, sec.id] };
+                        });
+                      }
+                      handlePreview();
+                    }}
                     className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-600 text-[#0a1e4a] text-sm font-black shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 transition-all"
                   >
                     <Eye className="size-4" />
@@ -1107,7 +1129,11 @@ export function Fase1RapidaClient({ slug, mockCtx, mockForm }: Fase1RapidaClient
       <div className="fixed bottom-0 inset-x-0 z-20 bg-gradient-to-t from-[#020a1e] via-[#020a1e]/95 to-transparent backdrop-blur-md">
         <div className="mx-auto max-w-5xl px-4 sm:px-8 py-3 sm:py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-amber-400/70">
-            <span className="size-7 rounded-full border border-amber-400/40 bg-amber-400/10 flex items-center justify-center text-amber-400 font-black text-xs">G</span>
+            <img
+              src="/branding/goberna-escudo.svg"
+              alt="Goberna"
+              className="size-7 flex-shrink-0"
+            />
             <span className="hidden sm:inline font-semibold">Goberna · Fase 1</span>
           </div>
           <div className="flex items-center gap-1.5">

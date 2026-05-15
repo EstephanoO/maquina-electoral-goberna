@@ -8,8 +8,9 @@ import { OnboardingStep } from "@/types/onboarding/domain/steps";
  * "máquina electoral". Lo demás se configura después dentro de la app.
  *
  * Steps:
- *   1. datos          (Nombres / Apellidos / País / DNI / Teléfono)
- *   2. actor          (Candidato / Estratega)
+ *   1. welcome        (Pantalla de bienvenida)
+ *   2. datos          (Nombres / Apellidos / País / DNI)
+ *   3. actor          (Candidato / Estratega)
  *   3. level          (Presidencia / Parlamento / Gobierno Local)
  *   4. cargoApi       (cargo + cascada de jurisdicción con mapa)
  *   5. organizacionApi (organización política, opcional)
@@ -31,7 +32,7 @@ import { OnboardingStep } from "@/types/onboarding/domain/steps";
  * estilo deck. Cada uno aparece como pill "Capítulo X de 5 · Etiqueta"
  * arriba del step en el wizard.
  */
-const CH_IDENTIDAD = { num: "01", total: 5, label: "Tu identidad" };
+const CH_IDENTIDAD = { num: "01", total: 5, label: "Registro" };
 const CH_ROL = { num: "02", total: 5, label: "Tu rol" };
 const CH_CANDIDATURA = { num: "03", total: 5, label: "Tu candidatura" };
 const CH_IMAGEN = { num: "04", total: 5, label: "Tu imagen" };
@@ -39,8 +40,15 @@ const CH_PLATAFORMA = { num: "05", total: 5, label: "Tu plataforma" };
 
 export const onboardingSteps: OnboardingStep[] = [
   {
+    id: "welcome",
+    title: "Tu candidatura, con inteligencia.",
+    chapter: undefined,
+    type: "welcome" as OnboardingStep["type"],
+  },
+
+  {
     id: "datos",
-    title: "Empecemos por lo básico",
+    title: "Queremos conocerte",
     subtitle: "Toma menos de 2 minutos.",
     chapter: CH_IDENTIDAD,
     type: "form",
@@ -88,14 +96,6 @@ export const onboardingSteps: OnboardingStep[] = [
         maxLength: 12,
         pattern: "^\\d{8,12}$",
         helper: "8 dígitos sin espacios",
-      },
-      {
-        id: "phone",
-        label: "Teléfono (opcional)",
-        type: "text",
-        placeholder: "987654321",
-        autoComplete: "tel",
-        helper: "Para enviarte el link de acceso por WhatsApp",
       },
     ],
   },

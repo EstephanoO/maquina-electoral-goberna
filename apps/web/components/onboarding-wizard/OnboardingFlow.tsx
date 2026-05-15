@@ -11,6 +11,7 @@ import {
 } from "@/types/onboarding";
 import { CloudSkyBg } from "@/components/cloud-sky-bg";
 
+import { StepWelcome } from "./StepWelcome";
 import { StepForm } from "./StepForm";
 import { StepSingleChoice } from "./StepSingleChoice";
 import { StepCargoApi } from "./StepCargoApi";
@@ -55,7 +56,7 @@ export function OnboardingFlow() {
   const isDoneStep = currentStep.type === "done-final";
   const showBack = stepIndex > 0 && !isProvisioningStep && !isDoneStep;
   const sectionPill = currentStep.chapter
-    ? `Capítulo ${currentStep.chapter.num} de ${currentStep.chapter.total} · ${currentStep.chapter.label}`
+    ? `Paso ${currentStep.chapter.num} de ${currentStep.chapter.total} · ${currentStep.chapter.label}`
     : null;
 
   return (
@@ -108,6 +109,10 @@ export function OnboardingFlow() {
               transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
               className="w-full"
             >
+              {currentStep.type === "welcome" && (
+                <StepWelcome onNext={goNext} />
+              )}
+
               {currentStep.type === "form" && (
                 <StepForm
                   title={currentStep.title}
@@ -192,34 +197,24 @@ export function OnboardingFlow() {
         <div className="mx-auto max-w-5xl px-4 sm:px-8 py-3 sm:py-4 flex items-center justify-between gap-3">
           {/* Goberna footer */}
           <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-amber-400/70">
-            <span className="size-7 rounded-full border border-amber-400/40 bg-amber-400/10 flex items-center justify-center text-amber-400 font-black text-xs">
-              G
-            </span>
+            <img
+              src="/branding/goberna-escudo.svg"
+              alt="Goberna"
+              className="size-7 flex-shrink-0"
+            />
             <span className="hidden sm:inline font-semibold">Goberna · Tu candidatura</span>
           </div>
 
-          {/* Dot indicator */}
+          {/* Progress percentage */}
           <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-1.5">
-              {onboardingSteps.map((s, i) => {
-                const isActive = i === stepIndex;
-                const isPast = i < stepIndex;
-                return (
-                  <span
-                    key={s.id}
-                    className={`h-1.5 rounded-full transition-all ${
-                      isActive
-                        ? "w-10 bg-amber-400"
-                        : isPast
-                          ? "w-3 bg-amber-400/40"
-                          : "w-3 bg-gray-700"
-                    }`}
-                  />
-                );
-              })}
+            <div className="hidden sm:block w-32 h-1 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-amber-400 rounded-full transition-all duration-500"
+                style={{ width: `${Math.round(((stepIndex + 1) / total) * 100)}%` }}
+              />
             </div>
-            <span className="text-xs text-gray-400 tabular-nums">
-              <span className="text-amber-400 font-semibold">{stepIndex + 1}</span> / {total}
+            <span className="text-xs text-amber-400 font-semibold tabular-nums">
+              {Math.round(((stepIndex + 1) / total) * 100)}%
             </span>
           </div>
 

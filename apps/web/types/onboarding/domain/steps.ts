@@ -16,6 +16,7 @@ export type OnboardingStep = {
   subtitle?: string;
   chapter?: OnboardingChapter;
   type:
+    | "welcome"
     | "info"
     | "single-select"
     | "multi-select"

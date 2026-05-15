@@ -16,7 +16,7 @@ const montserrat = Montserrat({
 export const metadata: Metadata = {
   title: "GOBERNA — Plataforma de Gestión Territorial",
   description: "Sistema de operación territorial, inteligencia geoespacial y gestión de campañas.",
-  icons: { icon: "/isotipo_2_-removebg-preview.png" },
+  icons: { icon: "/branding/goberna-escudo.svg" },
 };
 
 export default function RootLayout({

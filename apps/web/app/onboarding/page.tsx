@@ -1,8 +1,8 @@
 import { OnboardingFlow } from "@/components/onboarding-wizard/OnboardingFlow";
 
 export const metadata = {
-  title: "Crear tu cuenta — Goberna Electoral",
-  description: "Configurá tu cuenta de candidato en menos de 2 minutos.",
+  title: "Propuesta técnica - Goberna",
+  description: "Armamos tu perfil electoral en menos de 2 minutos.",
 };
 
 export default function OnboardingPage() {
