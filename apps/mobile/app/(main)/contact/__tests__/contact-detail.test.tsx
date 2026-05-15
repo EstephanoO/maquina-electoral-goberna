@@ -8,6 +8,20 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ back: jest.fn(), push: jest.fn() }),
 }));
 
+jest.mock('expo-notifications', () => ({
+  requestPermissionsAsync: jest.fn(async () => ({ status: 'granted' })),
+  scheduleNotificationAsync: jest.fn(async () => 'notif-id'),
+  cancelScheduledNotificationAsync: jest.fn(async () => {}),
+  setNotificationHandler: jest.fn(),
+  SchedulableTriggerInputTypes: { DATE: 'date' },
+}));
+
+jest.mock('expo-image-picker', () => ({
+  requestCameraPermissionsAsync: jest.fn(async () => ({ status: 'granted' })),
+  launchCameraAsync: jest.fn(async () => ({ canceled: true })),
+  launchImageLibraryAsync: jest.fn(async () => ({ canceled: true })),
+}));
+
 test('renders the contact name from SQLite', async () => {
   const c = await createContact({ name: 'Carlos Mendoza', estado: 'apoya' });
   (globalThis as any).__testContactId = c.id;

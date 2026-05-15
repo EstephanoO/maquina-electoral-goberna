@@ -1,17 +1,12 @@
-import { describe, it, expect, mock } from 'bun:test';
-
-// Mock expo-notifications BEFORE dynamic import — bun requires this order
-// because static imports are hoisted; dynamic import() respects mock registration.
-mock.module('expo-notifications', () => ({
-  requestPermissionsAsync: mock(async () => ({ status: 'granted' })),
-  scheduleNotificationAsync: mock(async () => 'test-notif-id-123'),
-  cancelScheduledNotificationAsync: mock(async () => undefined),
-  setNotificationHandler: mock(() => {}),
+jest.mock('expo-notifications', () => ({
+  requestPermissionsAsync: jest.fn(async () => ({ status: 'granted' })),
+  scheduleNotificationAsync: jest.fn(async () => 'test-notif-id-123'),
+  cancelScheduledNotificationAsync: jest.fn(async () => undefined),
+  setNotificationHandler: jest.fn(),
   SchedulableTriggerInputTypes: { DATE: 'date' },
 }));
 
-// Dynamic import ensures the mock is active when reminders.ts loads expo-notifications
-const { reminderBuckets, scheduleReminder, cancelReminder } = await import('../reminders');
+import { reminderBuckets, scheduleReminder, cancelReminder } from '../reminders';
 
 describe('reminders', () => {
   it('reminderBuckets has at least 3 items', () => {
