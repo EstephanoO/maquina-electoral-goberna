@@ -164,6 +164,35 @@ async function initTables(database: SQLite.SQLiteDatabase): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_geo_recientes_used_at
     ON geo_recientes(used_at DESC);
   `);
+
+  // Contacts — canvassing notebook (canonical shape, mirrors future cloud schema)
+  await database.execAsync(`
+    CREATE TABLE IF NOT EXISTS contacts (
+      id                TEXT PRIMARY KEY,
+      name              TEXT NOT NULL,
+      phone             TEXT,
+      ubigeo            TEXT,
+      distrito_nombre   TEXT,
+      lat               REAL,
+      lng               REAL,
+      estado            TEXT NOT NULL DEFAULT 'duda',
+      note              TEXT,
+      photo_uri         TEXT,
+      reminder_at       INTEGER,
+      reminder_notif_id TEXT,
+      created_at        INTEGER NOT NULL,
+      updated_at        INTEGER NOT NULL,
+      deleted_at        INTEGER,
+      campaign_id       TEXT,
+      agent_id          TEXT,
+      sync_status       TEXT NOT NULL DEFAULT 'local',
+      server_id         TEXT
+    );
+  `);
+  await database.execAsync(`CREATE INDEX IF NOT EXISTS idx_contacts_estado ON contacts(estado) WHERE deleted_at IS NULL;`);
+  await database.execAsync(`CREATE INDEX IF NOT EXISTS idx_contacts_updated ON contacts(updated_at) WHERE deleted_at IS NULL;`);
+  await database.execAsync(`CREATE INDEX IF NOT EXISTS idx_contacts_ubigeo ON contacts(ubigeo) WHERE deleted_at IS NULL;`);
+  await database.execAsync(`CREATE INDEX IF NOT EXISTS idx_contacts_sync ON contacts(sync_status);`);
 }
 
 export async function closeDatabase(): Promise<void> {
