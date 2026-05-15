@@ -60,6 +60,18 @@ export type ContactPatch = Partial<Omit<Contact, 'id' | 'created_at'>>;
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Runtime allowlist for `updateContact` patches.
+ * Keys not present here are silently dropped before the dynamic UPDATE is
+ * built — this protects against JSON-cast patches that bypass the TypeScript
+ * type gate (e.g. Task 9 form payloads, sync hydration from server).
+ */
+const PATCH_ALLOWED_KEYS = new Set<string>([
+  'name', 'phone', 'ubigeo', 'distrito_nombre', 'lat', 'lng', 'estado', 'note',
+  'photo_uri', 'reminder_at', 'reminder_notif_id', 'deleted_at',
+  'campaign_id', 'agent_id', 'sync_status', 'server_id',
+]);
+
 const COLS =
   'id, name, phone, ubigeo, distrito_nombre, lat, lng, estado, note, ' +
   'photo_uri, reminder_at, reminder_notif_id, created_at, updated_at, ' +
@@ -128,8 +140,14 @@ export async function getContact(id: string): Promise<Contact | null> {
  */
 export async function updateContact(id: string, patch: ContactPatch): Promise<Contact> {
   const db = await getDatabase();
-  // Exclude updated_at from the explicit keys — we always set it ourselves.
-  const keys = Object.keys(patch).filter((k) => k !== 'updated_at');
+  // Exclude updated_at (we always set it ourselves) and any key not in the
+  // runtime allowlist (guards against JSON-cast patches bypassing the type gate).
+  const keys = Object.keys(patch).filter(
+    (k) => k !== 'updated_at' && PATCH_ALLOWED_KEYS.has(k),
+  );
+  if (keys.length === 0) {
+    throw new Error('updateContact called with no updatable fields');
+  }
   const sets = [...keys.map((k) => `${k} = ?`), 'updated_at = ?'].join(', ');
   const values = [...keys.map((k) => (patch as Record<string, unknown>)[k]), Date.now()];
   await db.runAsync(

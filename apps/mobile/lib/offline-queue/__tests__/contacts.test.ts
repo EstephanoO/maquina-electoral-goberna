@@ -1,7 +1,7 @@
 import { closeDatabase, getDatabase } from '../db';
 import {
   createContact, getContact, updateContact, softDeleteContact,
-  listContacts, searchContacts, listWithReminders,
+  listContacts, searchContacts, listWithReminders, wipeAllContacts,
 } from '../contacts';
 
 beforeEach(async () => {
@@ -60,4 +60,11 @@ test('listWithReminders returns only future-or-past reminders, sorted', async ()
   const r = await listWithReminders();
   expect(r).toHaveLength(1);
   expect(r[0].name).toBe('Con reminder');
+});
+
+test('wipeAllContacts removes all rows', async () => {
+  await createContact({ name: 'A' });
+  await createContact({ name: 'B' });
+  await wipeAllContacts();
+  expect(await listContacts()).toHaveLength(0);
 });
