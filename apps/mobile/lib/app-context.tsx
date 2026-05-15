@@ -22,6 +22,7 @@ import * as Network from 'expo-network';
 
 import * as api from './api';
 import * as authStore from './auth-store';
+import { wipeAllContacts } from './offline-queue/contacts';
 import type {
   AppConfig,
   ApiResult,
@@ -65,6 +66,8 @@ type AppContextValue = {
    *  Disponible desde Perfil (Task 14). Transiciona a 'active' con config actualizado. */
   joinCampaign: (accessCode: string) => Promise<ApiResult<void>>;
   logout: () => Promise<void>;
+  /** Borra la cuenta del servidor (best-effort), limpia datos locales y sesión */
+  deleteAccount: () => Promise<void>;
   refreshConfig: () => Promise<void>;
   switchCampaign: (campaignId: string) => Promise<void>;
   availableCampaigns: CampaignMembership[];
@@ -319,6 +322,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAuth({ status: 'unauthenticated' });
   }, []);
 
+  // ── Delete account ────────────────────────────────────────
+  const deleteAccount = useCallback(async () => {
+    // Best-effort server call — proceed even if it fails
+    await api.deleteAccount().catch(() => {});
+    await wipeAllContacts().catch(() => {});
+    await authStore.clearAuthData();
+    setAuth({ status: 'unauthenticated' });
+  }, []);
+
   // ── Refresh config (pull-to-refresh on dashboard) ─────────
   const refreshConfig = useCallback(async () => {
     if (auth.status !== 'active') return;
@@ -365,6 +377,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       registerWithWhatsapp,
       joinCampaign,
       logout,
+      deleteAccount,
       refreshConfig,
       switchCampaign,
       availableCampaigns,
@@ -378,6 +391,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       registerWithWhatsapp,
       joinCampaign,
       logout,
+      deleteAccount,
       refreshConfig,
       switchCampaign,
       availableCampaigns,
