@@ -104,7 +104,6 @@
           }
         }
       ],
-      "@maplibre/maplibre-react-native",
       "expo-notifications",
       ["expo-image-picker", { "photosPermission": "Goberna accede a tus fotos solo para adjuntarlas a un contacto de campo." }]
     ],
@@ -123,7 +122,10 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/17429ec1-1da2-430f-9f52-efc82919c219"
+      "url": "https://u.expo.dev/17429ec1-1da2-430f-9f52-efc82919c219",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
     }
   }
 }

@@ -4,12 +4,12 @@
 Field canvassing app for political campaigns in Peru. Agents record contacts, track outreach, and coordinate with campaign managers.
 
 ## Demo Credentials
-- Phone: +51 999 000 001
-- OTP code: 123456
+- Phone field: type `999000001` (the `+51` country prefix is pre-filled and fixed — do not include it)
+- OTP code: `123456`
 - Campaign code: TEST (if prompted to join a campaign)
 
 ## Key Flows to Test
-1. Login: Enter phone → receive OTP → enter 123456 → access contacts screen
+1. Login: Type `999000001` in the phone field (prefix `+51` is already shown) → tap "Recibir código" → enter OTP `123456` → access contacts screen
 2. Add contact: Tap (+) → fill name/estado → Save
 3. Map: Shows GPS coordinates of contacts on a MapLibre map
 4. Follow-ups: Lists contacts with scheduled reminders
@@ -27,5 +27,5 @@ Field canvassing app for political campaigns in Peru. Agents record contacts, tr
 
 ## Notes for Reviewer
 - The app requires a valid phone number to receive OTP. Use the demo phone above.
-- Map tiles are served from gobernakarte.com (our own tile server)
+- Map vector tiles are served by the Goberna backend at `https://electoral.goberna.club/api/tiles/{z}/{x}/{y}.vector.pbf`
 - Campaign data is fictional/demo data for review purposes
