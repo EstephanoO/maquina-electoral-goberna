@@ -18,6 +18,7 @@ import {
   clearAuthData,
   getActiveCampaignId,
   refreshTokens,
+  type RefreshResult,
 } from './auth-store';
 
 import type {
@@ -113,18 +114,27 @@ async function request<T>(
 
     // Token expired → try refresh
     if (response.status === 401 && auth) {
-      const refreshed = await tryRefresh();
-      if (refreshed) {
+      const result = await tryRefresh();
+      if (result === 'ok') {
         // Retry original request with new token
         return request<T>(method, path, body, auth);
       }
-      // Refresh failed → force logout
-      await clearAuthData();
+      if (result === 'expired') {
+        // Confirmed expired (401/403 from refresh endpoint, or no refresh token)
+        await clearAuthData();
+        return {
+          ok: false,
+          error: 'Sesión expirada. Iniciá sesión nuevamente.',
+          code: 'AUTH_TOKEN_EXPIRED',
+          status: 401,
+        };
+      }
+      // transient (5xx / network / timeout) — do NOT clear session
       return {
         ok: false,
-        error: 'Sesion expirada. Inicia sesion nuevamente.',
-        code: 'AUTH_TOKEN_EXPIRED',
-        status: 401,
+        error: 'No pudimos validar tu sesión. Reintentá.',
+        code: 'AUTH_REFRESH_TRANSIENT',
+        status: 503,
       };
     }
 
@@ -161,7 +171,7 @@ async function request<T>(
 }
 
 // Delegate to shared auth-store implementation (deduplication + timeout handled there)
-function tryRefresh(): Promise<boolean> {
+function tryRefresh(): Promise<RefreshResult> {
   return refreshTokens(API_BASE);
 }
 

@@ -186,17 +186,26 @@ export async function hasSession(): Promise<boolean> {
 
 // ─── Token refresh (shared by api.ts and sync-service.ts) ───
 // Single implementation to avoid drift. Both callers import from here.
+//
+// Returns:
+//   'ok'        — tokens refreshed successfully
+//   'expired'   — 401/403 from refresh endpoint, or no refresh token stored
+//                 → caller SHOULD clear session and redirect to login
+//   'transient' — 5xx, network error, timeout
+//                 → caller MUST NOT clear session; just retry later
 
-let _refreshPromise: Promise<boolean> | null = null;
+export type RefreshResult = 'ok' | 'expired' | 'transient';
 
-export async function refreshTokens(apiBase: string): Promise<boolean> {
+let _refreshPromise: Promise<RefreshResult> | null = null;
+
+export async function refreshTokens(apiBase: string): Promise<RefreshResult> {
   // Deduplicate concurrent refresh attempts
   if (_refreshPromise) return _refreshPromise;
 
-  _refreshPromise = (async () => {
+  _refreshPromise = (async (): Promise<RefreshResult> => {
     try {
       const refreshToken = await getRefreshToken();
-      if (!refreshToken) return false;
+      if (!refreshToken) return 'expired';
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15_000);
@@ -209,17 +218,19 @@ export async function refreshTokens(apiBase: string): Promise<boolean> {
           signal: controller.signal,
         });
 
-        if (!response.ok) return false;
+        if (response.status === 401 || response.status === 403) return 'expired';
+        if (!response.ok) return 'transient';
 
         const data = await response.json() as RefreshResponse;
         await setAccessToken(data.access_token);
         await setRefreshToken(data.refresh_token);
-        return true;
+        return 'ok';
       } finally {
         clearTimeout(timeoutId);
       }
     } catch {
-      return false;
+      // Network drop, AbortError (timeout), etc. — do NOT clear session
+      return 'transient';
     } finally {
       _refreshPromise = null;
     }

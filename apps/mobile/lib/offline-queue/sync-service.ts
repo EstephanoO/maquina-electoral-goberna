@@ -194,11 +194,18 @@ async function syncLocations(): Promise<{ synced: number; failed: number }> {
 
 // ─── Token Refresh (for sync service) ─────────────────────────
 // Delegates to shared auth-store implementation (deduplication + timeout included).
+//
+// Returns the new access token string on 'ok', or null when refresh cannot
+// succeed right now. On 'expired' the session is genuinely dead; on
+// 'transient' (5xx/network/timeout) the session is preserved and the
+// caller should just defer the sync to the next cycle.
 
 async function tryRefreshToken(): Promise<string | null> {
-  const ok = await refreshTokens(API_BASE);
-  if (!ok) return null;
-  return getAccessToken();
+  const result = await refreshTokens(API_BASE);
+  if (result === 'ok') return getAccessToken();
+  // 'expired' → session dead, caller marks forms as failed
+  // 'transient' → network blip, caller will retry next cycle (session intact)
+  return null;
 }
 
 // ─── Form Sync ────────────────────────────────────────────────
