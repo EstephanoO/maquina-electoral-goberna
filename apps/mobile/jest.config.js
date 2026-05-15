@@ -9,6 +9,8 @@ module.exports = {
     '^expo-crypto$': '<rootDir>/__mocks__/expo-crypto.js',
     // Use the manual mock for expo-secure-store (Keychain unavailable in Node)
     '^expo-secure-store$': '<rootDir>/__mocks__/expo-secure-store.js',
+    // Map bun:test to jest globals so tests written for bun can run under jest
+    '^bun:test$': '<rootDir>/__mocks__/bun-test.js',
   },
   transformIgnorePatterns: [
     '/node_modules/(?!(.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base))',
