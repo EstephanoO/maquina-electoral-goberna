@@ -43,8 +43,7 @@ function RouterGuard({ children }: { children: React.ReactNode }) {
     }
 
     if (auth.status === 'active') {
-      // TODO Task 7: → /(main)/contacts once that screen exists
-      if (!inMainGroup) router.replace('/(main)/dashboard');
+      if (!inMainGroup) router.replace('/(main)/contacts');
       return;
     }
   }, [auth.status, segments, router]);

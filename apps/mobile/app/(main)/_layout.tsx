@@ -47,10 +47,10 @@ export default function MainLayout() {
       }}
     >
       <Tabs.Screen
-        name="dashboard"
+        name="contacts"
         options={{
           tabBarIcon: ({ color }) => (
-            <MaterialIcons name="table-chart" size={28} color={color} />
+            <MaterialIcons name="people" size={28} color={color} />
           ),
         }}
       />
