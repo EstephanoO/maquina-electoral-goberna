@@ -9,6 +9,7 @@
  */
 
 import { randomUUID } from 'expo-crypto';
+import type { SQLiteBindValue } from 'expo-sqlite';
 import { getDatabase } from './db';
 
 // ---------------------------------------------------------------------------
@@ -149,7 +150,7 @@ export async function updateContact(id: string, patch: ContactPatch): Promise<Co
     throw new Error('updateContact called with no updatable fields');
   }
   const sets = [...keys.map((k) => `${k} = ?`), 'updated_at = ?'].join(', ');
-  const values = [...keys.map((k) => (patch as Record<string, unknown>)[k]), Date.now()];
+  const values: SQLiteBindValue[] = [...keys.map((k) => (patch as Record<string, SQLiteBindValue>)[k]), Date.now()];
   await db.runAsync(
     `UPDATE contacts SET ${sets} WHERE id = ?`,
     [...values, id],
@@ -181,7 +182,7 @@ export async function listContacts(
 ): Promise<Contact[]> {
   const db = await getDatabase();
   const where = ['deleted_at IS NULL'];
-  const params: unknown[] = [];
+  const params: SQLiteBindValue[] = [];
   if (filter?.estado) {
     where.push('estado = ?');
     params.push(filter.estado);
