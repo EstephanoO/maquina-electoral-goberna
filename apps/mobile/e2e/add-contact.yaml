@@ -1,0 +1,19 @@
+appId: com.estephano.gobernaterritory02
+---
+- launchApp:
+    clearState: false
+- assertVisible: "Contactos"
+- tapOn:
+    id: "fab-add-contact"
+- assertVisible: "Nuevo contacto"
+- tapOn:
+    text: "Nombre completo *"
+- inputText: "María García"
+- tapOn:
+    text: "Teléfono"
+- inputText: "987654321"
+- tapOn:
+    text: "Duda"
+- tapOn:
+    text: "Guardar"
+- assertVisible: "María García"

@@ -1,0 +1,13 @@
+appId: com.estephano.gobernaterritory02
+---
+- launchApp:
+    clearState: false
+- tapOn:
+    id: "tab-profile"
+- assertVisible: "Perfil"
+- tapOn:
+    text: "Eliminar cuenta"
+- assertVisible: "Eliminar mi cuenta"
+- tapOn:
+    text: "Cancelar"
+- assertVisible: "Perfil"
