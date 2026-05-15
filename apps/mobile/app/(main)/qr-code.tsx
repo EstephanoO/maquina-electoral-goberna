@@ -144,7 +144,7 @@ export default function QrCodeScreen() {
             styles.manualBtn,
             { backgroundColor: secondary, opacity: pressed ? 0.85 : 1 },
           ]}
-          onPress={() => router.push('/(main)/new-form')}
+          onPress={() => router.push('/(main)/add-contact')}
           accessibilityLabel="Registrar dato manualmente"
         >
           <MaterialIcons name="edit-note" size={22} color={primary} />

@@ -5,7 +5,7 @@
  * - Dashboard: Always visible
  * - Ranking: Always visible (department + departments ranking)
  * - Solicitudes: Only for candidato and above
- * - new-form: Hidden (accessed via FAB)
+ * - add-contact: Hidden (accessed via FAB from contacts)
  */
 
 import { Tabs } from 'expo-router';
@@ -77,9 +77,9 @@ export default function MainLayout() {
         name="qr-code"
         options={{ href: null }}
       />
-      {/* new-form is a hidden screen, accessed via FAB (+) from dashboard */}
+      {/* add-contact is a hidden screen, accessed via FAB (+) from contacts */}
       <Tabs.Screen
-        name="new-form"
+        name="add-contact"
         options={{ href: null }}
       />
     </Tabs>
