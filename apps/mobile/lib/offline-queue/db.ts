@@ -79,7 +79,7 @@ async function initTables(database: SQLite.SQLiteDatabase): Promise<void> {
     CREATE TABLE IF NOT EXISTS pending_forms (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       client_id TEXT NOT NULL UNIQUE,
-      campaign_id TEXT NOT NULL,
+      campaign_id TEXT, -- nullable: campaign-less users can queue forms
       form_definition_id TEXT NOT NULL,
       payload TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),

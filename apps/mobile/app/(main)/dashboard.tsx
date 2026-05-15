@@ -313,7 +313,7 @@ export default function DashboardScreen() {
         primaryColor={primary}
         agentName={agent.full_name}
         candidateName={candidate.name}
-        waTarget={((campaign as Record<string, unknown>).whatsapp_number as string) ?? '51999999999'}
+        waTarget={((campaign as Record<string, unknown> | null)?.whatsapp_number as string) ?? '51999999999'}
       />
     </SafeAreaView>
   );
