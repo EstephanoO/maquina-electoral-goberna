@@ -50,7 +50,7 @@ export function EventosTimeline({ eventos }: Props) {
             <div className="text-xs text-slate-400">
               {new Date(e.ocurrido_en).toLocaleString("es-PE")}
             </div>
-            {e.payload && Object.keys(e.payload as object).length > 0 && (
+            {e.payload !== null && e.payload !== undefined && Object.keys(e.payload as object).length > 0 && (
               <details className="mt-1 text-[10px] text-slate-400">
                 <summary className="cursor-pointer hover:text-slate-600">payload</summary>
                 <pre className="mt-1 px-2 py-1 bg-slate-50 rounded text-[10px] overflow-auto max-h-40">
