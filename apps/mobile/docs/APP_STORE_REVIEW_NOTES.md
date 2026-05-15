@@ -29,3 +29,12 @@ Field canvassing app for political campaigns in Peru. Agents record contacts, tr
 - The app requires a valid phone number to receive OTP. Use the demo phone above.
 - Map vector tiles are served by the Goberna backend at `https://electoral.goberna.club/api/tiles/{z}/{x}/{y}.vector.pbf`
 - Campaign data is fictional/demo data for review purposes
+
+## DEPLOYMENT PREREQUISITE (before submitting the review build)
+The demo login bypass is gated by backend environment variables. Before submitting
+to App Store review, the production backend MUST have:
+- `GOBERNA_DEMO_PHONE=999000001`
+- `GOBERNA_DEMO_OTP=123456`
+If these are unset, the demo phone falls through to a real WhatsApp OTP send and the
+reviewer cannot log in. Verify they are set in the production backend env, then
+restart the backend, before submitting.
