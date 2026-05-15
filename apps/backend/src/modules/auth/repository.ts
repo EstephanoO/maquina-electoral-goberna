@@ -190,4 +190,95 @@ export class AuthRepository {
     );
     return result.rowCount ?? 0;
   }
+
+  /**
+   * Delete a user and all their owned data in a single transaction.
+   * Uses buildDeleteAccountSql() for the ordered statement list.
+   * Required for Apple App Store guideline 5.1.1(v).
+   */
+  async deleteUserCascade(userId: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const sql of buildDeleteAccountSql()) {
+        await client.query(sql, [userId]);
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+}
+
+/**
+ * Returns the ordered SQL statements to wipe a user and all FK-referencing rows.
+ *
+ * FK analysis (2026-05-15, appdb):
+ *
+ * Tables with ON DELETE CASCADE (handled automatically by PG, no explicit DELETE needed):
+ *   access_requests (user_id FK), chat_messages, classification_events,
+ *   cms_extension_events, consultor_candidato (consultor_user_id),
+ *   consultor_global_access (consultor_user_id), invitations (created_by),
+ *   magic_links, meet_group_members, meet_participants, org_hierarchy,
+ *   refresh_tokens, support_messages, user_campaigns, user_objectives.
+ *
+ * Tables with SET NULL (handled automatically by PG):
+ *   classification_events.corrected_by, form_definitions.deleted_by,
+ *   form_submissions.{cms_claimed_by, submitted_by, deleted_by},
+ *   forms.deleted_by, invitations.parent_user_id, meet_groups.leader_id,
+ *   meets.leader_id, org_hierarchy.parent_user_id, zones.assigned_to.
+ *
+ * Tables with NO ACTION FK that need explicit DELETE (NOT NULL cols — cannot SET NULL):
+ *   blast_operator_status.user_id        — NOT NULL, owned rows
+ *   campaign_access_codes.created_by     — NOT NULL, rows created by user
+ *   decks.uploaded_by_user_id            — NOT NULL, owned uploads
+ *   form_qr_drafts.brigadista_id         — NOT NULL, owned drafts
+ *   qr_leads.brigadista_id               — NOT NULL, owned leads
+ *
+ * Tables with NO ACTION FK that need SET NULL (nullable cols — audit/attribution):
+ *   access_requests.resolved_by
+ *   analisis.analisis.uploaded_by_user_id
+ *   audio_catalog.created_by
+ *   blast_operator_assignments.assigned_to
+ *   consultor_candidato.assigned_by
+ *   consultor_global_access.granted_by
+ *   decks.reviewed_by_user_id
+ *   form_definitions.created_by
+ *   form_validations.{claimed_by, wa_validated_by}
+ *   meets.created_by
+ *   zone_objectives.created_by
+ *
+ * DELETE FROM users MUST be last.
+ */
+export function buildDeleteAccountSql(): string[] {
+  return [
+    // ── Explicit DELETEs for NOT NULL NO-ACTION FKs ──────────────────────
+    // These rows will block the final users delete if not removed first.
+    'DELETE FROM blast_operator_status WHERE user_id = $1',
+    'DELETE FROM campaign_access_codes WHERE created_by = $1',
+    'DELETE FROM decks WHERE uploaded_by_user_id = $1',
+    'DELETE FROM form_qr_drafts WHERE brigadista_id = $1',
+    'DELETE FROM qr_leads WHERE brigadista_id = $1',
+
+    // ── SET NULL for nullable NO-ACTION FK audit/attribution columns ─────
+    // Preserve the records but sever the reference to the deleted user.
+    'UPDATE access_requests SET resolved_by = NULL WHERE resolved_by = $1',
+    'UPDATE analisis.analisis SET uploaded_by_user_id = NULL WHERE uploaded_by_user_id = $1',
+    'UPDATE audio_catalog SET created_by = NULL WHERE created_by = $1',
+    'UPDATE blast_operator_assignments SET assigned_to = NULL WHERE assigned_to = $1',
+    'UPDATE consultor_candidato SET assigned_by = NULL WHERE assigned_by = $1',
+    'UPDATE consultor_global_access SET granted_by = NULL WHERE granted_by = $1',
+    'UPDATE decks SET reviewed_by_user_id = NULL WHERE reviewed_by_user_id = $1',
+    'UPDATE form_definitions SET created_by = NULL WHERE created_by = $1',
+    'UPDATE form_validations SET claimed_by = NULL WHERE claimed_by = $1',
+    'UPDATE form_validations SET wa_validated_by = NULL WHERE wa_validated_by = $1',
+    'UPDATE meets SET created_by = NULL WHERE created_by = $1',
+    'UPDATE zone_objectives SET created_by = NULL WHERE created_by = $1',
+
+    // ── Final: delete the user row (PG CASCADE handles the rest) ─────────
+    'DELETE FROM users WHERE id = $1',
+  ];
 }

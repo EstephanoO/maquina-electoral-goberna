@@ -165,6 +165,28 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
       },
     );
 
+    // ── DELETE /api/account ────────────────────────────────────────────
+    // Apple App Store guideline 5.1.1(v): in-app account deletion required.
+    // Deletes the authenticated user and all their owned data in one transaction,
+    // then clears auth cookies. Mobile UI is Task 14.
+    app.delete(
+      '/api/account',
+      { preHandler: [app.authenticate] },
+      async (request, reply) => {
+        const requestId = String(request.id);
+        const authed = request as AuthenticatedRequest;
+        try {
+          await repo.deleteUserCascade(authed.userId);
+          clearAuthCookies(reply, isProd);
+          app.log.info({ user_id: authed.userId, request_id: requestId }, 'account deleted');
+          return reply.code(204).send();
+        } catch (error) {
+          app.log.error({ err: error, request_id: requestId }, 'account deletion failed');
+          return reply.code(500).send(errorPayload(requestId, 'ACCOUNT_DELETE_FAILED', 'no se pudo eliminar la cuenta'));
+        }
+      },
+    );
+
     // ── POST /api/auth/change-password ─────────────────────────────────
     app.post(
       "/api/auth/change-password",
