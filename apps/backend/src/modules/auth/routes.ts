@@ -806,6 +806,8 @@ export function buildAuthRoutes(env: AppEnv): FastifyPluginAsync {
         botInstance: env.whatsappBotInstance,
         botToken: env.botSharedSecret || undefined,
         log: (msg, payload) => app.log.warn({ ...((payload as object) ?? {}), request_id: requestId }, msg),
+        demoPhone: env.demoPhone,
+        demoOtp: env.demoOtp,
       });
 
       if (!result.ok) {

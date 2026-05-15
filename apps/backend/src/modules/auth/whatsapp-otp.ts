@@ -43,6 +43,19 @@ export function normalizePhone(input: string): string {
 }
 
 /**
+ * Returns true when `input` matches the configured `demoPhone` (after
+ * digit-stripping). Country-code prefixes are tolerated: if one normalized
+ * form is a suffix of the other, they match (e.g. "+51 999 000 001" matches
+ * "999000001"). Returns false when `demoPhone` is empty (bypass disabled).
+ */
+export function isDemoPhone(input: string, demoPhone: string): boolean {
+  if (!demoPhone) return false;
+  const a = normalizePhone(input);
+  const b = normalizePhone(demoPhone);
+  return a === b || a.endsWith(b) || b.endsWith(a);
+}
+
+/**
  * E.164 sin `+` para Baileys. Para PE asume `51` cuando el número parece local
  * (9 dígitos empezando con 9). El bot construye JID como `${digits}@s.whatsapp.net`,
  * por lo que un 9 dígitos sin código país produciría un JID inválido.
@@ -83,6 +96,8 @@ export async function sendOtp(
     botInstance: string;
     botToken?: string;
     log?: (msg: string, payload?: unknown) => void;
+    demoPhone?: string;
+    demoOtp?: string;
   },
 ): Promise<OtpSendResult> {
   const normalized = normalizePhone(phone);
@@ -92,6 +107,14 @@ export async function sendOtp(
 
   if (!options.botUrl) {
     return { ok: false, code: "BOT_NOT_CONFIGURED" };
+  }
+
+  // Demo bypass para Apple Review — no llama al bot, guarda el OTP fijo en Redis.
+  if (options.demoPhone && options.demoOtp && isDemoPhone(phone, options.demoPhone)) {
+    const hash = hashCode(options.demoOtp, normalized);
+    await redisClient.set(otpKey(normalized), JSON.stringify({ hash, attempts: 0 }),
+      { EX: OTP_TTL_SECONDS });
+    return { ok: true, expiresIn: OTP_TTL_SECONDS };
   }
 
   // Rate limit: 1 send cada 60s.

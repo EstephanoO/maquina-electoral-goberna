@@ -95,6 +95,10 @@ export type AppEnv = {
   // Si whatsappBotUrl está vacío, /api/auth/whatsapp/send responde 503.
   whatsappBotUrl: string;
   whatsappBotInstance: string;
+  // Demo bypass para Apple Review — si GOBERNA_DEMO_PHONE está vacío el bypass
+  // está completamente deshabilitado y el flujo normal se preserva.
+  demoPhone: string;
+  demoOtp: string;
 };
 
 function toNumber(value: string | undefined, fallback: number): number {
@@ -222,5 +226,7 @@ export function getEnv(): AppEnv {
     firebaseProjectId: (process.env.FIREBASE_PROJECT_ID ?? "").trim(),
     whatsappBotUrl: (process.env.WHATSAPP_BOT_URL ?? "").trim(),
     whatsappBotInstance: (process.env.WHATSAPP_BOT_INSTANCE ?? "p4").trim(),
+    demoPhone: (process.env.GOBERNA_DEMO_PHONE ?? '').replace(/\D/g, ''),
+    demoOtp: (process.env.GOBERNA_DEMO_OTP ?? '').trim(),
   };
 }
