@@ -209,8 +209,8 @@ export async function whatsappRegister(
 }
 
 /**
- * POST /api/auth/join-campaign — para users ya autenticados que cayeron en
- * needs_campaign (verify OK pero sin campaigns asignadas). Crea/reactiva
+ * POST /api/auth/join-campaign — para users ya autenticados que quieren
+ * enlazarse a una campaña (verify OK, access_code de 4 chars). Crea/reactiva
  * user_campaign como agente_campo y devuelve user + campaigns actualizado.
  */
 export async function joinCampaign(

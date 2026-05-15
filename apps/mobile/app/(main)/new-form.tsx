@@ -617,7 +617,7 @@ export default function NewFormScreen() {
 
       try {
         // ── Check 1: SQLite local (immediate, offline-safe) ──────
-        const localDup = await phoneExistsLocally(campaign.id, phoneValue);
+        const localDup = campaign ? await phoneExistsLocally(campaign.id, phoneValue) : false;
         if (localDup) {
           setPhoneDupError('Este número ya fue registrado');
           setCheckingPhone(false);
@@ -789,7 +789,7 @@ export default function NewFormScreen() {
       // OFFLINE-FIRST: Queue the form locally first
       await queueForm({
         client_id: clientId,
-        campaign_id: campaign.id,
+        campaign_id: campaign?.id,
         form_definition_id: formConfig.id,
         data: payloadData,
       });

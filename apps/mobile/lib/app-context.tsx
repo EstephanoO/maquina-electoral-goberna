@@ -2,20 +2,18 @@
  * AppContext — Estado global de la app.
  *
  * Provee:
- * - Estado de autenticacion (loading / unauthenticated / needs_campaign /
- *   suspended / active)
- * - AppConfig (candidato, formulario, agente) una vez con campaign asignada
+ * - Estado de autenticacion (loading / unauthenticated / suspended / active)
+ * - AppConfig (candidato, formulario, agente) una vez autenticado
  * - Funciones de OTP (send / verify) + join-campaign + registro
  *
  * Flow OTP-only:
  *   1. whatsappSend(phone) → backend manda OTP por WhatsApp
  *   2. loginWithWhatsapp(phone, code):
- *      - user existe con campañas → status 'active' (entra al dashboard)
- *      - user existe sin campañas → status 'needs_campaign' (pide access_code)
+ *      - user existe → status 'active' (con campaigns[] y config con defaults si vacío)
  *      - user no existe (412) → cliente muestra form de registro y llama
  *        registerWithWhatsapp(...)
- *   3. joinCampaign(access_code) → para users en 'needs_campaign'. Linkea
- *      campaña y transiciona a 'active'.
+ *   3. joinCampaign(access_code) → linkea campaña desde Perfil (Task 14).
+ *      Transiciona a 'active' con la campaña ya asignada.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
@@ -46,7 +44,6 @@ const DEFAULT_SECONDARY = '#FFC800';
 type AuthState =
   | { status: 'loading' }
   | { status: 'unauthenticated' }
-  | { status: 'needs_campaign'; user: AuthUser }
   | { status: 'suspended'; user: AuthUser }
   | { status: 'active'; user: AuthUser; campaigns: CampaignMembership[]; config: AppConfig };
 
@@ -58,15 +55,14 @@ type AppContextValue = {
   register: (body: RegisterRequest) => Promise<ApiResult<void>>;
   /** Pide al backend que envíe un código OTP por WhatsApp al número */
   whatsappSend: (phone: string) => Promise<ApiResult<void>>;
-  /** Login OTP-only: phone + código → backend JWT. Si el user existe sin
-   *  campañas, queda en status 'needs_campaign' (el cliente debe llamar
-   *  joinCampaign). Si no existe, retorna error con code='USER_NOT_FOUND'
-   *  para que el cliente muestre el form de registro. */
+  /** Login OTP-only: phone + código → backend JWT. Si el user no existe,
+   *  retorna error con code='USER_NOT_FOUND' para que el cliente muestre
+   *  el form de registro. User sin campañas entra igual a 'active'. */
   loginWithWhatsapp: (phone: string, code: string) => Promise<ApiResult<void>>;
   /** Registro OTP-only: phone + código + perfil → backend JWT */
   registerWithWhatsapp: (body: WhatsappRegisterRequest) => Promise<ApiResult<void>>;
   /** Linkea al user autenticado con una campaña vía access_code (4 chars).
-   *  Transiciona de 'needs_campaign' → 'active'. */
+   *  Disponible desde Perfil (Task 14). Transiciona a 'active' con config actualizado. */
   joinCampaign: (accessCode: string) => Promise<ApiResult<void>>;
   logout: () => Promise<void>;
   refreshConfig: () => Promise<void>;
@@ -81,12 +77,35 @@ const AppContext = createContext<AppContextValue | null>(null);
 async function buildAppConfig(
   user: AuthUser,
   campaigns: CampaignMembership[],
-): Promise<AppConfig | null> {
-  if (campaigns.length === 0) return null;
-
+): Promise<AppConfig> {
   const activeCampaignId = await authStore.getActiveCampaignId();
   const activeCampaign =
-    campaigns.find((c) => c.id === activeCampaignId) ?? campaigns[0];
+    campaigns.length > 0
+      ? (campaigns.find((c) => c.id === activeCampaignId) ?? campaigns[0])
+      : null;
+
+  // No campaign assigned — return a minimal valid config with defaults.
+  // The user can join a campaign later from Perfil (Task 14).
+  if (!activeCampaign) {
+    return {
+      candidate: {
+        id: '',
+        name: '',
+        slug: '',
+        cargo: '',
+        numero: 0,
+        partido: '',
+        foto_url: null,
+        color_primario: DEFAULT_PRIMARY,
+        color_secundario: DEFAULT_SECONDARY,
+        logo_url: null,
+        whatsapp_number: null,
+      },
+      form: null,
+      agent: { id: user.id, full_name: user.full_name, email: user.email, role: user.role },
+      campaign: null,
+    };
+  }
 
   const [candidatesResult, campaignResult, formDefsResult] = await Promise.all([
     api.getCandidates(),
@@ -96,9 +115,10 @@ async function buildAppConfig(
 
   let candidateInfo = null;
   if (candidatesResult.ok) {
-    candidateInfo = candidatesResult.data.candidates.find(
-      (c) => c.id === activeCampaign.id,
-    ) ?? candidatesResult.data.candidates[0] ?? null;
+    candidateInfo =
+      candidatesResult.data.candidates.find((c) => c.id === activeCampaign.id) ??
+      candidatesResult.data.candidates[0] ??
+      null;
   }
 
   const campaignConfig = campaignResult.ok ? campaignResult.data.campaign : null;
@@ -146,6 +166,9 @@ async function buildAppConfig(
   return config;
 }
 
+// Exported for unit tests only — not part of the public context API.
+export const buildAppConfigForTest = buildAppConfig;
+
 // ─── Provider ───────────────────────────────────────────────
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -167,15 +190,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Legacy: users con status='pending' en DB (no usado en flow OTP) caen
-      // en needs_campaign — el form de access_code los re-engancha igual.
-      if (user.status === 'pending' || campaigns.length === 0) {
-        setAuth({ status: 'needs_campaign', user });
-        return;
-      }
-
-      // Active user con campaigns en cache — check connectivity before firing
-      // network requests. Si offline, usar stale data.
+      // Active user — check connectivity before firing network requests.
+      // Si offline, usar stale data (campaigns puede estar vacío → config con defaults).
       let isOnline = false;
       try {
         const netState = await Network.getNetworkStateAsync();
@@ -186,11 +202,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       if (!isOnline) {
         const config = await buildAppConfig(user, campaigns);
-        if (config) {
-          setAuth({ status: 'active', user, campaigns, config });
-          return;
-        }
-        setAuth({ status: 'unauthenticated' });
+        setAuth({ status: 'active', user, campaigns, config });
         return;
       }
 
@@ -206,28 +218,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        if (freshCampaigns.length === 0) {
-          setAuth({ status: 'needs_campaign', user: freshUser });
-          return;
-        }
-
         const config = await buildAppConfig(freshUser, freshCampaigns);
-        if (config) {
-          setAuth({ status: 'active', user: freshUser, campaigns: freshCampaigns, config });
-        } else {
-          setAuth({ status: 'needs_campaign', user: freshUser });
-        }
+        setAuth({ status: 'active', user: freshUser, campaigns: freshCampaigns, config });
       } else if (meResult.code === 'AUTH_TOKEN_EXPIRED' || meResult.status === 401) {
         await authStore.clearAuthData();
         setAuth({ status: 'unauthenticated' });
       } else {
         // Unexpected network error while online — fall back to stale data
         const config = await buildAppConfig(user, campaigns);
-        if (config) {
-          setAuth({ status: 'active', user, campaigns, config });
-          return;
-        }
-        setAuth({ status: 'unauthenticated' });
+        setAuth({ status: 'active', user, campaigns, config });
       }
     })();
   }, []);
@@ -243,25 +242,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return { ok: true, data: undefined };
       }
 
-      // needs_campaign explícito del backend, campaigns vacío, o user.status=pending
-      // (user existe en DB pero sin asignación a campaña activa) → needs_campaign.
-      // Replica del check del boot flow (línea ~168) — sin esto, login con
-      // pending caía a 'active' y mostraba dashboard con badge "pending".
-      if (
-        data.needs_campaign === true ||
-        user.status === 'pending' ||
-        campaigns.length === 0
-      ) {
-        setAuth({ status: 'needs_campaign', user });
-        return { ok: true, data: undefined };
-      }
-
       const config = await buildAppConfig(user, campaigns);
-      if (config) {
-        setAuth({ status: 'active', user, campaigns, config });
-      } else {
-        setAuth({ status: 'needs_campaign', user });
-      }
+      setAuth({ status: 'active', user, campaigns, config });
       return { ok: true, data: undefined };
     },
     [],
@@ -305,7 +287,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [completeAuth],
   );
 
-  // ── Join campaign (cuando el user está en needs_campaign) ────
+  // ── Join campaign (desde Perfil — Task 14) ───────────────────
   const joinCampaign = useCallback(
     async (accessCode: string): Promise<ApiResult<void>> => {
       const result = await api.joinCampaign(accessCode);
@@ -320,17 +302,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return { ok: true, data: undefined };
       }
 
-      if (freshCampaigns.length === 0) {
-        setAuth({ status: 'needs_campaign', user: freshUser });
-        return { ok: true, data: undefined };
-      }
-
       const config = await buildAppConfig(freshUser, freshCampaigns);
-      if (config) {
-        setAuth({ status: 'active', user: freshUser, campaigns: freshCampaigns, config });
-      } else {
-        setAuth({ status: 'needs_campaign', user: freshUser });
-      }
+      setAuth({ status: 'active', user: freshUser, campaigns: freshCampaigns, config });
       return { ok: true, data: undefined };
     },
     [],
@@ -363,15 +336,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await authStore.setStoredUser(freshUser);
     await authStore.setStoredCampaigns(freshCampaigns);
 
-    if (freshCampaigns.length === 0) {
-      setAuth({ status: 'needs_campaign', user: freshUser });
-      return;
-    }
-
     const config = await buildAppConfig(freshUser, freshCampaigns);
-    if (config) {
-      setAuth({ status: 'active', user: freshUser, campaigns: freshCampaigns, config });
-    }
+    setAuth({ status: 'active', user: freshUser, campaigns: freshCampaigns, config });
   }, [auth]);
 
   // ── Switch campaign (for users with multiple campaigns or admin) ──
@@ -381,9 +347,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await authStore.setActiveCampaignId(campaignId);
 
     const config = await buildAppConfig(auth.user, auth.campaigns);
-    if (config) {
-      setAuth({ status: 'active', user: auth.user, campaigns: auth.campaigns, config });
-    }
+    setAuth({ status: 'active', user: auth.user, campaigns: auth.campaigns, config });
   }, [auth]);
 
   const availableCampaigns = useMemo<CampaignMembership[]>(() => {

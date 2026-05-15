@@ -83,7 +83,7 @@ export default function DashboardScreen() {
     try {
       const [queueStats, forms, serverStats, clientIdsResult] = await Promise.all([
         getQueueStats(),
-        getLocalFormsByCampaign(campaign.id, 200),
+        getLocalFormsByCampaign(campaign?.id ?? '', 200),
         getMySubmissionStats(),
         getMyClientIds(),
       ]);
@@ -93,7 +93,7 @@ export default function DashboardScreen() {
       // the sync service re-submits them.
       if (clientIdsResult.ok && clientIdsResult.data) {
         const serverSet = new Set(clientIdsResult.data.client_ids);
-        const localSynced = await getSyncedClientIds(campaign.id);
+        const localSynced = await getSyncedClientIds(campaign?.id ?? '');
         const ghostIds = localSynced
           .filter((f) => !serverSet.has(f.client_id))
           .map((f) => f.id);
@@ -104,7 +104,7 @@ export default function DashboardScreen() {
 
       const [updatedQueueStats, updatedForms] = await Promise.all([
         getQueueStats(),
-        getLocalFormsByCampaign(campaign.id, 200),
+        getLocalFormsByCampaign(campaign?.id ?? '', 200),
       ]);
 
       const formsPending = (updatedQueueStats.forms?.pending ?? 0) + (updatedQueueStats.forms?.ghost ?? 0);
@@ -147,7 +147,7 @@ export default function DashboardScreen() {
     } finally {
       setInitialLoading(false);
     }
-  }, [campaign.id]);
+  }, [campaign?.id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -299,7 +299,7 @@ export default function DashboardScreen() {
         onLogout={logout}
         onSwitchCampaign={handleSwitchCampaign}
         campaigns={availableCampaigns}
-        activeCampaignId={campaign.id}
+        activeCampaignId={campaign?.id ?? ''}
         isAdmin={agent.role === 'admin'}
         isConsultor={agent.role === 'consultor'}
         primaryColor={primary}

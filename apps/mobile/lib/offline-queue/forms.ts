@@ -15,7 +15,7 @@ import { getDatabase } from './db';
 export interface PendingForm {
   id: number;
   client_id: string;
-  campaign_id: string;
+  campaign_id: string | null;
   form_definition_id: string;
   payload: string; // JSON stringified
   created_at: string;
@@ -27,7 +27,8 @@ export interface PendingForm {
 
 export interface FormPayload {
   client_id: string;
-  campaign_id: string;
+  /** Optional in canvassing mode (no campaign assigned yet). */
+  campaign_id?: string;
   form_definition_id: string;
   data: Record<string, unknown>;
   // Add GPS coordinates
@@ -59,7 +60,7 @@ export async function queueForm(payload: FormPayload): Promise<number> {
      VALUES (?, ?, ?, ?)`,
     [
       payload.client_id,
-      payload.campaign_id,
+      payload.campaign_id ?? null,
       payload.form_definition_id,
       JSON.stringify(payload.data),
     ]

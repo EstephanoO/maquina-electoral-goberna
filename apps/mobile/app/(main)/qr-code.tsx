@@ -41,6 +41,7 @@ export default function QrCodeScreen() {
 
   const load = useCallback(async () => {
     setState('loading');
+    if (!campaign) { setState('error'); return; }
     try {
       const campRes = await getCampaign(campaign.id);
       const channelUrl = campRes.ok
@@ -60,7 +61,7 @@ export default function QrCodeScreen() {
     } catch {
       setState('error');
     }
-  }, [campaign.id]);
+  }, [campaign]);
 
   useEffect(() => { void load(); }, [load]);
 

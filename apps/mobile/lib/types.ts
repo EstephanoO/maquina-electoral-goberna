@@ -238,7 +238,8 @@ export type AppConfig = {
     email: string;
     role: UserRole;
   };
-  campaign: CampaignMembership;
+  /** null when the user has no campaign membership yet (canvassing mode) */
+  campaign: CampaignMembership | null;
 };
 
 // ─── Agent Tracking (GET /api/agents/live, SSE /api/agents/stream) ───
@@ -397,15 +398,13 @@ export type WhatsappRegisterRequest = {
 };
 
 /** Response shape shared by /whatsapp/verify y /whatsapp/register.
- *  Mismo shape que /login (no hay password_reset_required en OTP).
- *  - needs_campaign: true cuando el user existe pero no tiene campañas
- *    activas (solo viene de /whatsapp/verify). El cliente debe pedir un
- *    access_code y llamar /auth/join-campaign. */
+ *  Mismo shape que /login (no hay password_reset_required en OTP). */
 export type WhatsappAuthResponse = {
   access_token: string;
   refresh_token: string;
   user: AuthUser;
   campaigns: CampaignMembership[];
+  /** @deprecated — ignorado desde Fase 1. Un user sin campaña entra a 'active' con campaign: null. */
   needs_campaign?: boolean;
 };
 
