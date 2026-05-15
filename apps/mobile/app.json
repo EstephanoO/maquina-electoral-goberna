@@ -63,6 +63,7 @@
     },
     "plugins": [
       "expo-router",
+      "@maplibre/maplibre-react-native",
       "expo-sqlite",
       "expo-secure-store",
       [
@@ -96,7 +97,8 @@
             "backgroundColor": "#163960"
           }
         }
-      ]
+      ],
+      "@maplibre/maplibre-react-native"
     ],
     "experiments": {
       "typedRoutes": true,
