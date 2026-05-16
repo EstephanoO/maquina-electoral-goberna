@@ -5,12 +5,30 @@ import { motion, AnimatePresence } from "motion/react";
 import { ChevronLeft, ChevronRight, Eye } from "lucide-react";
 import { SECTION_INTROS } from "./section-intros";
 
+type WizardCategory = "terreno" | "perfil" | "presencia";
+
 interface WizardSection {
   id:       string;
   label:    string;
-  icon:     React.ReactNode;
-  category: "minimo" | "extendido";
+  sublabel: string;
+  category: WizardCategory;
 }
+
+const CATEGORY_LABELS: Record<WizardCategory, string> = {
+  terreno:   "Terreno",
+  perfil:    "Perfil",
+  presencia: "Presencia",
+};
+const CATEGORY_COLORS: Record<WizardCategory, string> = {
+  terreno:   "bg-blue-500/20 text-blue-300 border-blue-500/40",
+  perfil:    "bg-amber-500/20 text-amber-300 border-amber-500/40",
+  presencia: "bg-purple-500/20 text-purple-300 border-purple-500/40",
+};
+const CATEGORY_ACTIVE_COLORS: Record<WizardCategory, string> = {
+  terreno:   "bg-blue-500 text-white border-blue-500 shadow-blue-500/30",
+  perfil:    "bg-amber-500 text-white border-amber-500 shadow-amber-500/30",
+  presencia: "bg-purple-500 text-white border-purple-500 shadow-purple-500/30",
+};
 
 interface WizardShellProps {
   slug:            string;
@@ -33,11 +51,23 @@ export function WizardShell({
   saved,
   children,
 }: WizardShellProps) {
-  const section = sections[activeSection]!;
-  const intro   = SECTION_INTROS[section.id];
-  const isLast  = activeSection === sections.length - 1;
-  const isFirst = activeSection === 0;
-  const dotsRef = useRef<HTMLDivElement>(null);
+  const section        = sections[activeSection]!;
+  const intro          = SECTION_INTROS[section.id];
+  const isLast         = activeSection === sections.length - 1;
+  const isFirst        = activeSection === 0;
+  const dotsRef        = useRef<HTMLDivElement>(null);
+  const activeCategory = section.category;
+
+  // Sections of the active category only — used for the dots nav
+  const categoryIdxMap = sections
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => s.category === activeCategory);
+
+  // Jump to the first section of a given category
+  const goToCategory = (cat: WizardCategory) => {
+    const first = sections.findIndex((s) => s.category === cat);
+    if (first !== -1) onSectionChange(first);
+  };
 
   // Scroll active dot into view
   useEffect(() => {
@@ -59,6 +89,27 @@ export function WizardShell({
             <span className="text-[10px] uppercase tracking-[0.25em] text-amber-400/60 font-semibold hidden sm:block">
               Fase 1 · Onboarding
             </span>
+          </div>
+
+          {/* Category pills */}
+          <div className="flex items-center gap-1.5 flex-1 justify-center">
+            {(["terreno", "perfil", "presencia"] as WizardCategory[]).map((cat) => {
+              const isActive = cat === activeCategory;
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => goToCategory(cat)}
+                  className={`shrink-0 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border transition-all shadow-sm ${
+                    isActive
+                      ? CATEGORY_ACTIVE_COLORS[cat]
+                      : CATEGORY_COLORS[cat]
+                  }`}
+                >
+                  {CATEGORY_LABELS[cat]}
+                </button>
+              );
+            })}
           </div>
 
           {/* Save indicator */}
@@ -88,14 +139,16 @@ export function WizardShell({
           </a>
         </div>
 
-        {/* Section dots navigation */}
+        {/* Section dots navigation — only current category */}
         <div
           ref={dotsRef}
           className="flex items-center gap-1.5 overflow-x-auto scrollbar-none px-4 sm:px-6 pb-2.5 max-w-4xl mx-auto"
         >
-          {sections.map((s, i) => {
+          {categoryIdxMap.map(({ s, i }) => {
             const isActive = i === activeSection;
             const isPast   = i < activeSection;
+            // Local index within the category for display
+            const localIdx = categoryIdxMap.findIndex((x) => x.i === i) + 1;
             return (
               <button
                 key={s.id}
@@ -109,7 +162,7 @@ export function WizardShell({
                     : "bg-white/5 text-white/30 hover:bg-white/10 hover:text-white/50"
                 }`}
               >
-                <span>{String(i + 1).padStart(2, "0")}</span>
+                <span>{String(localIdx).padStart(2, "0")}</span>
                 <span className="hidden sm:inline">{s.label}</span>
               </button>
             );
@@ -130,12 +183,12 @@ export function WizardShell({
             {/* Section header */}
             <div className="mb-6">
               <div className="flex items-center gap-3 mb-1">
-                <span className="size-9 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-400 flex items-center justify-center">
-                  {section.icon}
+                <span className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${CATEGORY_COLORS[activeCategory]}`}>
+                  {section.sublabel}
                 </span>
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.3em] text-amber-400/60 font-semibold">
-                    Sección {String(activeSection + 1).padStart(2, "0")} de {sections.length}
+                    {String(activeSection + 1).padStart(2, "0")} / {sections.length}
                   </p>
                   <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight leading-tight">
                     {section.label}
