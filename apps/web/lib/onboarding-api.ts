@@ -1,4 +1,9 @@
 import { api } from "@/lib/api-client";
+import type {
+  TerrenoECD,
+  PerfilCandidato5N,
+  PresenciaPentaD,
+} from "./onboarding-schema";
 
 export type CandidatoContext = {
   user: {
@@ -128,6 +133,12 @@ export type ConsultorFormFase2 = {
 
   /** Datos de Fase 1 Rápida — llenados por el consultor en /onboarding/[slug]/fase-1 */
   fase1_rapida?: Fase1Rapida | null;
+  /** Sistema unificado ECD — Terreno de Postulación */
+  terreno?: TerrenoECD | null;
+  /** Sistema unificado 5N — Perfil de Candidato */
+  perfil?: PerfilCandidato5N | null;
+  /** Sistema unificado Penta-D — Presencia Digital */
+  presencia?: PresenciaPentaD | null;
 };
 
 export type Fase1Rapida = {
