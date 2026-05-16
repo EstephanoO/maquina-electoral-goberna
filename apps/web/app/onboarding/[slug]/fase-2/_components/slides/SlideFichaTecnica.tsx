@@ -3,8 +3,7 @@
 import { motion } from "motion/react";
 
 import type { CandidatoContext, ConsultorFormFase2 } from "@/lib/onboarding-api";
-
-import { SlideChromeData } from "../chrome/SlideChromeData";
+import { CriticoSello, SlideLabel } from "../_ui/critico";
 
 interface Props {
   ctx: CandidatoContext;
@@ -12,40 +11,88 @@ interface Props {
 }
 
 /**
- * Slide "Ficha técnica" — tabla 2-col label/value con los datos básicos
- * del candidato (DNI, edad, cargo, jurisdicción, partido, etc.).
- * Inspirada en el formato tabla del deck Goberna (pp.2 del PDF). Skipea
- * campos vacíos para no dejar huecos.
+ * Slide "Ficha técnica" — estilo CRÍTICO (navy + gold).
+ * Tabla label/value en fondo oscuro #020a1e.
+ * Si hay nivel_riesgo_global → sello visual en encabezado derecho.
  */
 export function SlideFichaTecnica({ ctx, f2 }: Props) {
   const rows = buildRows(ctx, f2);
+  const nivelRiesgo = f2.perfil_candidato?.n3_riesgo?.nivel_riesgo_global;
+  const cargoLabel = ctx.cargo.nombre;
+
+  const selloTipo =
+    nivelRiesgo === "critico" || nivelRiesgo === "alto"
+      ? "critico"
+      : nivelRiesgo === "medio"
+        ? "atencion"
+        : nivelRiesgo === "bajo"
+          ? "ok"
+          : null;
 
   return (
-    <SlideChromeData
-      title="FICHA TÉCNICA"
-      subtitle="Datos básicos del candidato"
-      chapter={1}
-      chapterHint="presentación"
-    >
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 md:gap-x-14 gap-y-4">
+    <div className="w-full h-full min-h-[560px] flex flex-col bg-[#020a1e] px-8 py-10">
+      {/* Encabezado */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        className="flex items-start justify-between gap-4 mb-8"
+      >
+        <div>
+          <SlideLabel>Perfil del candidato</SlideLabel>
+          <h2 className="text-3xl lg:text-4xl font-black uppercase text-white tracking-tight leading-none">
+            Ficha del Candidato
+          </h2>
+          <div className="mt-2 inline-block bg-amber-400/10 border border-amber-400/30 rounded px-3 py-1">
+            <span className="text-amber-400 text-xs font-black uppercase tracking-[0.15em]">
+              {cargoLabel}
+            </span>
+          </div>
+        </div>
+        {selloTipo && (
+          <div className="shrink-0 mt-1">
+            <CriticoSello tipo={selloTipo} />
+          </div>
+        )}
+      </motion.div>
+
+      {/* Tabla de filas */}
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-0">
         {rows.map((row, i) => (
           <motion.div
             key={row.label}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05 + i * 0.04, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-            className="flex flex-col gap-1 border-b border-slate-200 pb-3"
+            transition={{
+              delay: 0.05 + i * 0.04,
+              duration: 0.4,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+            className="flex flex-col gap-0.5 border-b border-white/5 py-3"
           >
-            <span className="text-[10px] uppercase tracking-[0.3em] font-black text-slate-500">
+            <span className="text-[10px] uppercase tracking-[0.3em] font-semibold text-amber-400/50">
               {row.label}
             </span>
-            <span className="text-lg md:text-xl font-bold text-[#0a1f4a]">
+            <span className="text-base md:text-lg font-semibold text-white">
               {row.value}
             </span>
           </motion.div>
         ))}
       </div>
-    </SlideChromeData>
+
+      {/* Footer decorativo */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.8, duration: 0.5 }}
+        className="mt-6 pt-4 border-t border-white/5 flex items-center gap-2"
+      >
+        <div className="h-[2px] w-8 bg-amber-400/40 rounded-full" />
+        <p className="text-[10px] uppercase tracking-[0.2em] text-white/20 font-semibold">
+          Goberna · Ficha confidencial
+        </p>
+      </motion.div>
+    </div>
   );
 }
 
@@ -58,9 +105,6 @@ function buildRows(ctx: CandidatoContext, f2: ConsultorFormFase2): Row[] {
   const n1 = f2.perfil_candidato?.n1_identidad;
   const n2 = f2.perfil_candidato?.n2_trayectoria;
   const fb = f2.ficha_basica;
-  // Fase 1 rápida — fuente principal cuando perfil_candidato no está lleno
-  const f1c = f2.fase1_rapida?.candidato;
-  const f1p = f2.fase1_rapida?.postulacion;
 
   const out: Row[] = [];
   const push = (label: string, raw: string | number | null | undefined) => {
@@ -70,25 +114,21 @@ function buildRows(ctx: CandidatoContext, f2: ConsultorFormFase2): Row[] {
     out.push({ label, value: s });
   };
 
-  // Apodo / nombre de campaña
-  push("Apodo / Campaña", f1c?.apodo ?? n1?.apodo);
-
   // DNI / Documento
-  const dni = f1c?.documento_numero ?? n1?.documento_numero ?? fb?.dni;
+  const dni = n1?.documento_numero ?? fb?.dni;
   push("DNI", dni);
 
-  // Edad — f1c.fecha_nacimiento → n1.fecha_nacimiento → fb.edad
-  const edadCalc = computeEdad(f1c?.fecha_nacimiento ?? n1?.fecha_nacimiento);
+  // Edad — preferir n1.fecha_nacimiento, fallback a fb.edad
+  const edadCalc = computeEdad(n1?.fecha_nacimiento);
   const edad = edadCalc ?? fb?.edad;
   push("Edad", typeof edad === "number" ? `${edad} años` : undefined);
 
-  // Sexo — f1c primero
-  const sexo = f1c?.sexo ?? n1?.sexo;
-  if (sexo === "M") push("Sexo", "Masculino");
-  else if (sexo === "F") push("Sexo", "Femenino");
+  // Sexo
+  if (n1?.sexo === "M") push("Sexo", "Masculino");
+  else if (n1?.sexo === "F") push("Sexo", "Femenino");
 
-  // Profesión / ocupación — f1c primero
-  push("Profesión", n2?.profesion ?? fb?.profesion ?? f1c?.ocupacion_actual);
+  // Profesión — preferir n2.profesion, fallback a fb.profesion
+  push("Profesión", n2?.profesion ?? fb?.profesion);
 
   // Estado civil
   push("Estado civil", n1?.estado_civil);
@@ -96,32 +136,20 @@ function buildRows(ctx: CandidatoContext, f2: ConsultorFormFase2): Row[] {
   // Hijos
   if (typeof n1?.hijos === "number") push("Hijos", String(n1.hijos));
 
-  // Cargo (siempre disponible desde ctx o f1p)
-  push("Cargo", ctx.cargo.nombre ?? f1p?.cargo_codigo);
+  // Religión
+  push("Religión", n1?.religion);
 
-  // Jurisdicción — concat país/depto/prov/distrito, fallback a f1p.nombre_territorio
-  const juris = buildJurisdiccion(ctx);
-  push("Jurisdicción", juris || f1p?.nombre_territorio);
+  // Cargo (siempre disponible)
+  push("Cargo", ctx.cargo.nombre);
 
-  // Partido — ctx primero, fallback a f1p.nombre_organizacion
+  // Jurisdicción — concat país/depto/prov/distrito
+  push("Jurisdicción", buildJurisdiccion(ctx));
+
+  // Partido
   push(
     "Partido",
-    ctx.organizacion_politica?.siglas ??
-      ctx.organizacion_politica?.nombre ??
-      f1p?.nombre_organizacion,
+    ctx.organizacion_politica?.siglas ?? ctx.organizacion_politica?.nombre,
   );
-
-  // Fecha de elección
-  push("Elección", f1p?.fecha_eleccion);
-
-  // Slogan
-  push("Slogan", f2.fase1_rapida?.branding?.slogan);
-
-  // Bio corta — al final (puede ser larga)
-  const bio = f1c?.bio_corta ?? n1?.bio_corta;
-  if (bio?.trim()) {
-    out.push({ label: "Perfil", value: bio.trim() });
-  }
 
   return out;
 }

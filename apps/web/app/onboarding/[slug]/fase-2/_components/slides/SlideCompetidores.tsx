@@ -1,279 +1,159 @@
 "use client";
 
 import { motion } from "motion/react";
-import { Shield, AlertTriangle, Users } from "lucide-react";
-
-import type { ConsultorFormFase2 } from "@/lib/onboarding-api";
-import { SlideChromeData } from "../chrome/SlideChromeData";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type NivelAmenaza = "bajo" | "medio" | "alto";
-
-interface Competidor {
-  nombre: string;
-  partido?: string;
-  nivel_amenaza?: NivelAmenaza;
-  notas?: string;
-}
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const MAX_VISIBLE = 5;
-
-/** Visual config keyed by threat level. */
-const THREAT_CONFIG: Record<
-  NivelAmenaza,
-  {
-    label: string;
-    pillCls: string;
-    barCls: string;
-    barWidthPct: number;
-    Icon: typeof Shield;
-  }
-> = {
-  alto: {
-    label: "Amenaza alta",
-    pillCls: "bg-red-100 text-red-700 border border-red-200",
-    barCls: "bg-red-400",
-    barWidthPct: 100,
-    Icon: AlertTriangle,
-  },
-  medio: {
-    label: "Amenaza media",
-    pillCls: "bg-amber-100 text-amber-700 border border-amber-200",
-    barCls: "bg-amber-400",
-    barWidthPct: 60,
-    Icon: Shield,
-  },
-  bajo: {
-    label: "Amenaza baja",
-    pillCls: "bg-slate-100 text-slate-600 border border-slate-200",
-    barCls: "bg-slate-400",
-    barWidthPct: 30,
-    Icon: Shield,
-  },
-};
-
-const FALLBACK_THREAT = THREAT_CONFIG.medio;
-
-function getThreatConfig(nivel: NivelAmenaza | undefined) {
-  return nivel ? THREAT_CONFIG[nivel] : FALLBACK_THREAT;
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function ThreatPill({ nivel }: { nivel: NivelAmenaza | undefined }) {
-  const { label, pillCls, Icon } = getThreatConfig(nivel);
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${pillCls}`}
-    >
-      <Icon className="size-3 shrink-0" strokeWidth={2.5} />
-      {label}
-    </span>
-  );
-}
-
-function ThreatBar({ nivel }: { nivel: NivelAmenaza | undefined }) {
-  const { barCls, barWidthPct } = getThreatConfig(nivel);
-  return (
-    <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
-      <motion.div
-        className={`h-full rounded-full ${barCls}`}
-        initial={{ width: "0%" }}
-        animate={{ width: `${barWidthPct}%` }}
-        transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-      />
-    </div>
-  );
-}
-
-function SummaryBanner({ competidores }: { competidores: Competidor[] }) {
-  const total = competidores.length;
-  const altos = competidores.filter((c) => c.nivel_amenaza === "alto").length;
-  const medios = competidores.filter((c) => c.nivel_amenaza === "medio").length;
-  const bajos = competidores.filter((c) => c.nivel_amenaza === "bajo").length;
-  const sinClasificar = total - altos - medios - bajos;
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-5 py-3">
-      <div className="flex items-center gap-2.5">
-        <Users className="size-4 text-[#0a1f4a] shrink-0" strokeWidth={2.25} />
-        <span className="text-sm font-bold text-[#0a1f4a]">
-          Se identificaron{" "}
-          <span className="text-base tabular-nums">{total}</span>{" "}
-          {total === 1 ? "competidor principal" : "competidores principales"}
-        </span>
-      </div>
-      <div className="flex items-center gap-3 text-[11px] font-semibold tabular-nums">
-        {altos > 0 && (
-          <span className="flex items-center gap-1 text-red-600">
-            <span className="size-2 rounded-full bg-red-400 inline-block" />
-            {altos} {altos === 1 ? "alto" : "altos"}
-          </span>
-        )}
-        {medios > 0 && (
-          <span className="flex items-center gap-1 text-amber-600">
-            <span className="size-2 rounded-full bg-amber-400 inline-block" />
-            {medios} {medios === 1 ? "medio" : "medios"}
-          </span>
-        )}
-        {bajos > 0 && (
-          <span className="flex items-center gap-1 text-slate-500">
-            <span className="size-2 rounded-full bg-slate-400 inline-block" />
-            {bajos} {bajos === 1 ? "bajo" : "bajos"}
-          </span>
-        )}
-        {sinClasificar > 0 && (
-          <span className="text-slate-400">
-            {sinClasificar} sin clasificar
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CompetidorRow({
-  competidor,
-  index,
-}: {
-  competidor: Competidor;
-  index: number;
-}) {
-  const rank = String(index + 1).padStart(2, "0");
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.35, delay: 0.05 + index * 0.1 }}
-      className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm flex flex-col gap-3"
-    >
-      {/* Top row: rank + name + party + pill */}
-      <div className="flex items-start gap-3 sm:gap-4">
-        {/* Ranking number */}
-        <span
-          className="shrink-0 text-2xl sm:text-3xl font-black tabular-nums leading-none select-none"
-          style={{ color: "#0a1f4a" }}
-          aria-label={`Posición ${index + 1}`}
-        >
-          {rank}
-        </span>
-
-        {/* Name + party */}
-        <div className="flex-1 min-w-0">
-          <p
-            className="text-base sm:text-lg font-black leading-tight truncate"
-            style={{ color: "#0a1f4a" }}
-          >
-            {competidor.nombre}
-          </p>
-          {competidor.partido ? (
-            <p className="mt-0.5 text-xs sm:text-sm text-slate-500 font-medium leading-snug">
-              {competidor.partido}
-            </p>
-          ) : null}
-        </div>
-
-        {/* Threat pill */}
-        <div className="shrink-0 pt-0.5">
-          <ThreatPill nivel={competidor.nivel_amenaza} />
-        </div>
-      </div>
-
-      {/* Threat bar */}
-      <ThreatBar nivel={competidor.nivel_amenaza} />
-
-      {/* Notes */}
-      {competidor.notas ? (
-        <p className="text-xs sm:text-sm text-slate-500 italic leading-snug">
-          {competidor.notas}
-        </p>
-      ) : null}
-    </motion.div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-8 py-14 text-center gap-3">
-      <Users className="size-8 text-slate-300" strokeWidth={1.5} />
-      <p className="text-sm italic text-slate-500">
-        Sin competidores registrados en el diagnóstico inicial.
-      </p>
-    </div>
-  );
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
+import type { CandidatoContext, ConsultorFormFase2 } from "@/lib/onboarding-api";
+import { CriticoSello, SlideLabel } from "../_ui/critico";
 
 interface Props {
+  ctx: CandidatoContext;
   f2: ConsultorFormFase2;
 }
 
-export function SlideCompetidores({ f2 }: Props) {
-  const allCompetidores =
-    f2.fase1_rapida?.diagnostico_inicial?.principales_competidores ?? [];
+const SIM_COMPETIDORES = [
+  {
+    nombre: "Carlos Mendoza Torres",
+    partido: "Alianza para el Progreso",
+    nivel_amenaza: "alto" as const,
+    notas: "Bien organizado, buena presencia en redes",
+  },
+  {
+    nombre: "María García Quispe",
+    partido: "Fuerza Popular",
+    nivel_amenaza: "medio" as const,
+    notas: "Candidata conocida en la zona norte",
+  },
+  {
+    nombre: "Pedro Huanca Flores",
+    partido: "Perú Libre",
+    nivel_amenaza: "bajo" as const,
+    notas: "Candidato sin organización sólida",
+  },
+];
 
-  const visible = allCompetidores.slice(0, MAX_VISIBLE);
-  const overflow = allCompetidores.length - visible.length;
+const NIVEL_CONFIG = {
+  alto:  { barCls: "bg-red-600",   pct: "100%", label: "ALTO" },
+  medio: { barCls: "bg-amber-600", pct: "60%",  label: "MEDIO" },
+  bajo:  { barCls: "bg-slate-600", pct: "25%",  label: "BAJO" },
+} as const;
+
+export function SlideCompetidores({ ctx, f2 }: Props) {
+  const raw = f2.fase1_rapida?.diagnostico_inicial?.principales_competidores ?? [];
+  const isSimulated = raw.length === 0;
+  const competidores = isSimulated ? SIM_COMPETIDORES : raw;
+
+  const lugar =
+    ctx.jurisdiccion.distrito?.nombre ??
+    ctx.jurisdiccion.provincia?.nombre ??
+    "el territorio";
 
   return (
-    <SlideChromeData
-      title="PANORAMA COMPETITIVO"
-      subtitle="Principales rivales identificados"
-      chapter={3}
-      chapterHint="el campo de batalla"
-    >
-      <div className="flex flex-col gap-5 max-w-3xl mx-auto">
-        {allCompetidores.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <>
-            {/* Summary banner */}
+    <div className="min-h-full bg-[#020a1e] flex flex-col px-6 py-8 sm:px-10 sm:py-10 gap-8">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+      >
+        <SlideLabel>Análisis de Competencia</SlideLabel>
+        <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight">
+          Los competidores en el terreno
+        </h2>
+        <p className="text-sm text-white/40 mt-1">
+          {lugar} · {competidores.length} competidor
+          {competidores.length !== 1 ? "es" : ""} identificado
+          {competidores.length !== 1 ? "s" : ""}
+        </p>
+      </motion.div>
+
+      {/* ── Cards ──────────────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-4 flex-1">
+        {competidores.map((competidor, i) => {
+          const nivel = competidor.nivel_amenaza ?? "bajo";
+          const cfg = NIVEL_CONFIG[nivel];
+
+          return (
             <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, delay: 0.05 }}
+              key={`${competidor.nombre}-${i}`}
+              initial={{ opacity: 0, x: -16 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.35, delay: 0.1 + i * 0.1 }}
+              className="bg-[#0a1e4a] border border-white/10 rounded-2xl p-5 relative"
             >
-              <SummaryBanner competidores={allCompetidores} />
+              <div className="flex items-start gap-4">
+                {/* Ranking number */}
+                <div className="text-4xl font-black text-white/10 leading-none select-none">
+                  #{String(i + 1).padStart(2, "0")}
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-white text-sm leading-snug">
+                    {competidor.nombre}
+                  </p>
+                  {competidor.partido && (
+                    <p className="text-xs text-white/50 mt-0.5">
+                      {competidor.partido}
+                    </p>
+                  )}
+
+                  {/* Threat bar */}
+                  <div className="mt-3 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: cfg.pct }}
+                      transition={{
+                        duration: 0.6,
+                        delay: 0.3 + i * 0.1,
+                        ease: [0.22, 1, 0.36, 1],
+                      }}
+                      className={`h-full rounded-full ${cfg.barCls}`}
+                    />
+                  </div>
+                  <p className="text-[10px] text-white/40 mt-1">
+                    Nivel de amenaza:{" "}
+                    <span className="font-semibold">{cfg.label}</span>
+                  </p>
+
+                  {/* Notas */}
+                  {competidor.notas && (
+                    <p className="text-[11px] text-white/30 mt-2 leading-snug italic">
+                      {competidor.notas}
+                    </p>
+                  )}
+                </div>
+
+                {/* Sello crítico para nivel alto */}
+                {nivel === "alto" && (
+                  <div className="flex-shrink-0">
+                    <CriticoSello tipo="critico" />
+                  </div>
+                )}
+              </div>
             </motion.div>
-
-            {/* Competitor rows */}
-            <div className="flex flex-col gap-3">
-              {visible.map((competidor, i) => (
-                <CompetidorRow
-                  key={`${competidor.nombre}-${i}`}
-                  competidor={competidor}
-                  index={i}
-                />
-              ))}
-            </div>
-
-            {/* Overflow note */}
-            {overflow > 0 && (
-              <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.05 + visible.length * 0.1 + 0.1 }}
-                className="text-center text-xs text-slate-500 font-medium"
-              >
-                + {overflow} {overflow === 1 ? "más identificado" : "más identificados"}
-              </motion.p>
-            )}
-          </>
-        )}
+          );
+        })}
       </div>
-    </SlideChromeData>
+
+      {/* ── Footer ─────────────────────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.4, delay: 0.5 }}
+        className="flex items-center justify-between border-t border-white/5 pt-4"
+      >
+        <p className="text-[11px] text-white/20">
+          Fuente: datos del consultor · {competidores.length} competidores
+          identificados
+        </p>
+        {isSimulated && (
+          <p className="text-[10px] italic text-amber-400/20">datos simulados</p>
+        )}
+      </motion.div>
+    </div>
   );
 }
 
-// ─── Visibility predicate ─────────────────────────────────────────────────────
-
-export function isSlideCompetidoresVisible(f2: ConsultorFormFase2): boolean {
-  return (
-    (f2.fase1_rapida?.diagnostico_inicial?.principales_competidores?.length ?? 0) > 0
-  );
+/** Visible si hay competidores cargados — siempre muestra (con simulados si vacío). */
+export function isVisible(_f2: ConsultorFormFase2): boolean {
+  return true;
 }

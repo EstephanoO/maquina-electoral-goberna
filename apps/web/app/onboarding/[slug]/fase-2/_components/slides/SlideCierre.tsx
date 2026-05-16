@@ -1,144 +1,175 @@
 "use client";
 
+import type React from "react";
 import { motion } from "motion/react";
 
 import type { ConsultorFormFase2 } from "@/lib/onboarding-api";
 
-import { SlideChromeCinematic } from "../chrome/SlideChromeCinematic";
-import { TagTilt } from "../chrome/TagTilt";
-
 /**
- * Slide CIERRE — mix entre p.19 (section divider con nubes) y p.24 (GRACIAS).
- * Layout cinematic con urgencia: tag amber arriba, H1 "WAR ROOM / GOBERNA"
- * enorme, countdown card a la elección, 2 CTAs lado a lado, caption con eje.
+ * Slide CIERRE — slide de conversion premium.
+ * Fondo gradient navy + anillos decorativos dorados concéntricos.
+ * CTA principal gold solido hacia estrategia@goberna.us.
  */
-
-const EJE_LABEL: Record<string, string> = {
-  PLAN_DE_GOBIERNO: "Plan de gobierno",
-  "EQUIPO_DE_CAMPAÑA": "Equipo de campaña",
-  SIMPATIA: "Simpatía",
-  ESPERANZA: "Esperanza",
-  ODIO: "Confrontación",
-  MIEDO: "Estabilidad",
-};
 
 interface Props {
   f2?: ConsultorFormFase2;
 }
 
 export function SlideCierre({ f2 }: Props) {
-  const eje = f2?.fase1_rapida?.estrategia?.eje_emocional;
-  const ejeLabel = eje ? EJE_LABEL[eje] ?? eje : null;
   const fechaEleccion = f2?.fase1_rapida?.postulacion?.fecha_eleccion;
   const { dias, esEstimado } = computeDaysToElection(fechaEleccion);
 
   return (
-    <SlideChromeCinematic accent="amber">
-      <div className="relative flex-1 flex flex-col items-center justify-center px-6 sm:px-12 py-14 text-center">
-        <div className="flex flex-col items-center gap-7 sm:gap-8 max-w-4xl w-full">
-          {/* Tag de urgencia */}
-          <motion.div
-            initial={{ opacity: 0, y: -12, scale: 0.92 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{
-              duration: 0.55,
-              ease: [0.34, 1.4, 0.64, 1],
-            }}
-          >
-            <TagTilt
-              label="ACTIVÁ TU CAMPAÑA AHORA"
-              tone="amber"
-              size="lg"
-              rotate={-2}
-            />
-          </motion.div>
+    <div className="relative flex-1 flex flex-col rounded-2xl overflow-hidden border border-white/5 shadow-2xl min-h-[70vh] bg-[#020a1e]">
+      {/* Gradient background */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(ellipse 70% 55% at 50% 50%, #0a1e4a 0%, #020a1e 70%)",
+        }}
+      />
 
-          {/* H1 War Room Goberna */}
-          <motion.h1
-            initial={{ opacity: 0, y: 18, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ delay: 0.2, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-            className="text-white font-black uppercase tracking-tight leading-[0.9] text-6xl sm:text-7xl lg:text-8xl"
-            style={{ textShadow: "0 6px 32px rgba(2,10,30,0.75)" }}
-          >
-            <span className="block">War Room</span>
-            <span className="block">Goberna</span>
-          </motion.h1>
+      {/* Anillos decorativos concentricos */}
+      {[300, 500, 700, 900].map((size, i) => (
+        <div
+          key={i}
+          className="absolute rounded-full border border-amber-400/10 pointer-events-none"
+          style={{
+            width: size,
+            height: size,
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+          }}
+        />
+      ))}
 
-          {/* Countdown card */}
+      {/* Contenido central */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-8 py-14 text-center">
+        <div className="max-w-xl w-full flex flex-col items-center gap-7">
+          {/* Escudo / logo Goberna */}
           <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5, duration: 0.6 }}
-            className="relative mt-2"
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.6, ease: [0.34, 1.4, 0.64, 1] }}
           >
-            <div
-              className="flex flex-col items-center px-10 sm:px-14 py-6 sm:py-7 rounded-sm"
-              style={{
-                background: "#fbbf24",
-                boxShadow:
-                  "8px 8px 0 rgba(2,10,30,0.45), 0 0 0 1px rgba(2,10,30,0.1)",
+            {/* Escudo SVG inline — fallback si no existe el archivo */}
+            <img
+              src="/branding/goberna-escudo.svg"
+              alt="Goberna"
+              className="w-16 h-16 mx-auto opacity-90"
+              onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
+                // Si no existe el SVG, mostrar "G" estilizado
+                const t = e.currentTarget;
+                t.style.display = "none";
+                const next = t.nextElementSibling as HTMLElement | null;
+                if (next) next.style.display = "flex";
               }}
+            />
+            <div
+              style={{ display: "none" }}
+              className="w-16 h-16 mx-auto rounded-full bg-amber-400 items-center justify-center text-[#020a1e] text-2xl font-black"
             >
-              <motion.span
-                className="text-6xl sm:text-7xl font-black text-[#0a1f4a] leading-none tracking-tight"
-                animate={{ scale: [1, 1.08, 1] }}
-                transition={{
-                  duration: 2,
-                  repeat: Infinity,
-                  ease: [0.4, 0, 0.6, 1],
-                  times: [0, 0.5, 1],
-                }}
-              >
-                {dias}
-              </motion.span>
-              <span className="mt-2 text-[10px] sm:text-xs font-bold uppercase tracking-[0.25em] text-[#0a1f4a]">
-                Días para la elección
-              </span>
-              {esEstimado ? (
-                <span className="mt-1 text-[10px] uppercase tracking-widest text-[#0a1f4a]/60 font-medium">
-                  Estimado
-                </span>
-              ) : null}
+              G
             </div>
           </motion.div>
 
-          {/* CTAs lado a lado */}
+          {/* Headline */}
+          <motion.h1
+            initial={{ opacity: 0, y: 18, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ delay: 0.18, duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
+            className="text-4xl sm:text-5xl font-black uppercase text-white leading-tight"
+            style={{ textShadow: "0 6px 32px rgba(2,10,30,0.75)" }}
+          >
+            Tu Maquina Electoral
+            <br />
+            <span className="text-amber-400">Esta Lista</span>
+          </motion.h1>
+
+          {/* Countdown dias — solo si hay fecha */}
+          {dias > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.35, duration: 0.5 }}
+              className="flex flex-col items-center"
+            >
+              <div
+                className="flex flex-col items-center px-8 py-4 rounded-xl"
+                style={{
+                  background: "#fbbf24",
+                  boxShadow: "0 8px 32px rgba(245,158,11,0.35)",
+                }}
+              >
+                <motion.span
+                  className="text-5xl font-black text-[#020a1e] leading-none tabular-nums"
+                  animate={{ scale: [1, 1.06, 1] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: [0.4, 0, 0.6, 1], times: [0, 0.5, 1] }}
+                >
+                  {dias}
+                </motion.span>
+                <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.25em] text-[#020a1e]">
+                  Dias para la eleccion{esEstimado ? " · Estimado" : ""}
+                </span>
+              </div>
+            </motion.div>
+          )}
+
+          {/* Body copy */}
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.45, duration: 0.55 }}
+            className="text-white/60 text-sm sm:text-base leading-relaxed max-w-md"
+          >
+            Goberna te da la inteligencia electoral, la plataforma digital y el
+            equipo estrategico.
+            <br />
+            <span className="text-white/80 font-semibold">
+              Tu campana empieza ahora. No despues.
+            </span>
+          </motion.p>
+
+          {/* CTA principal */}
           <motion.div
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.75, duration: 0.55 }}
-            className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4 mt-2"
+            transition={{ delay: 0.6, duration: 0.5 }}
+            className="flex flex-col sm:flex-row items-center gap-3"
           >
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-full bg-amber-400 hover:bg-amber-300 px-8 py-4 text-base font-black uppercase tracking-wider text-[#0a1f4a] shadow-[0_8px_32px_rgba(245,158,11,0.4)] hover:shadow-[0_12px_40px_rgba(245,158,11,0.55)] transition-all"
+            <a
+              href="mailto:estrategia@goberna.us"
+              className="inline-flex items-center gap-2 bg-amber-400 text-[#020a1e] font-black text-sm sm:text-base px-8 py-4 rounded-full hover:bg-amber-300 transition-colors shadow-lg shadow-amber-500/30"
             >
-              Solicitar War Room
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-full border-2 border-white/80 hover:border-white px-8 py-[14px] text-base font-black uppercase tracking-wider text-white hover:bg-white hover:text-[#0a1f4a] transition-all"
+              Agenda tu sesion estrategica →
+            </a>
+            <a
+              href="https://goberna.us"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 border-2 border-white/30 hover:border-white/60 text-white font-bold text-sm px-6 py-[14px] rounded-full transition-colors"
             >
-              Agendar reunión
-            </button>
+              goberna.us
+            </a>
           </motion.div>
 
-          {/* Caption con eje */}
-          {ejeLabel ? (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 0.7 }}
-              transition={{ delay: 1.0, duration: 0.6 }}
-              className="text-xs sm:text-sm tracking-[0.2em] uppercase text-white/70 font-medium mt-1"
-            >
-              Tu campaña:{" "}
-              <span className="text-white font-bold">{ejeLabel}</span>
-            </motion.p>
-          ) : null}
+          {/* Caption contacto */}
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.85, duration: 0.6 }}
+            className="text-white/25 text-xs"
+          >
+            estrategia@goberna.us · goberna.us
+          </motion.p>
         </div>
       </div>
-    </SlideChromeCinematic>
+
+      {/* Franja amber inferior */}
+      <div className="relative h-1.5 w-full bg-amber-400" />
+    </div>
   );
 }
 
@@ -148,17 +179,17 @@ export function isSlideCierreVisible(): boolean {
 }
 
 /**
- * Calcular días restantes a la fecha de elección. Si no hay fecha o es
- * inválida, devuelve 180 (default) flag esEstimado=true.
+ * Calcular dias restantes a la fecha de eleccion.
+ * Si no hay fecha o es invalida, devuelve 0 (sin mostrar el countdown).
  */
 function computeDaysToElection(fecha: string | undefined): {
   dias: number;
   esEstimado: boolean;
 } {
-  if (!fecha) return { dias: 180, esEstimado: true };
+  if (!fecha) return { dias: 0, esEstimado: true };
   const target = new Date(fecha);
   if (Number.isNaN(target.getTime())) {
-    return { dias: 180, esEstimado: true };
+    return { dias: 0, esEstimado: true };
   }
   const diffMs = target.getTime() - Date.now();
   const dias = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
