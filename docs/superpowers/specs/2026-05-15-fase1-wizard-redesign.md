@@ -21,8 +21,9 @@ Reemplazar el accordion de 13 secciones del form Fase 1 por un wizard step-by-st
 | Patrón de guidance | Wizard step-by-step (un campo por paso) |
 | Feedback de enriquecimiento | Solo botón "Ver mi deck ↗" en top bar — sin feedback explícito en el wizard |
 | Scope | Reemplaza todo el accordion (13 secciones, ~70 campos) |
-| Guardado | Autosave por debounce (igual que el actual — no save explícito por paso) |
+| Guardado | **Save explícito por campo** → cada "Siguiente" guarda ese campo Y dispara actualización del deck |
 | Secciones futuras | Jumpable libremente (sin bloqueo progresivo) |
+| Acceso al form | **Solo consultores** — el candidato solo ve el deck (Fase 2); el consultor llena el wizard |
 
 ---
 
@@ -239,8 +240,11 @@ Núcleo Goberna: prioridades entre 7 opciones (tagging).
 ### Props y tipos — sin cambios
 `Fase1RapidaClient.tsx` sigue recibiendo `{ ctx: CandidatoContext; initialForm: ConsultorFormFase2 }`. El wizard consume los mismos tipos de `onboarding-api.ts`.
 
-### Autosave — sin cambios
-El PATCH existente `apps/web/lib/onboarding-fase1-api.ts` se mantiene. Los campos del wizard llaman `onChange` igual que antes; el debounce maneja el save.
+### Guardado explícito por campo
+Al presionar "Siguiente" en cada paso: (1) se guarda el campo vía PATCH, (2) el deck en Fase 2 se marca para revalidar (usando `router.refresh()` o invalidación de cache). El consultor ve el deck actualizado en la misma sesión sin tener que recargar manualmente.
+
+### Autenticación / acceso
+El wizard está detrás de auth de consultor (`/onboarding/[slug]/fase-1`). El candidato accede a `/onboarding/[slug]/fase-2` (solo el deck). Las rutas tienen guards distintos.
 
 ### Estado del wizard
 Nuevo: `WizardContext` con `{ currentSection: 0-12, currentStep: number, sectionProgress: boolean[] }`. Persiste en `localStorage` (key: `fase1-wizard-${slug}`).
@@ -270,10 +274,98 @@ Los agentes A4 y A5 generan el guidance content (textos de instrucción, ejemplo
 
 ---
 
+---
+
+## Expansión del deck Fase 2 — 7 slides nuevos (21 → 28)
+
+Se agregan 7 slides nuevos al deck. Cada uno tiene visibilidad condicional (`isVisible`) basada en si el campo que lo alimenta tiene datos reales; si no → datos simulados deterministamente.
+
+### Nueva secuencia de 28 slides
+
+| # | Slide | Archivo | Datos | Estado |
+|---|-------|---------|-------|--------|
+| 01 | Hero Cinematográfico | SlideHero.tsx | Form: candidato | Existe |
+| 02 | Ficha Técnica | SlideFichaTecnica.tsx | Form + DB | Existe |
+| 03 | ¿Quién Es? | SlideQuienEs.tsx | Form: quien_es | Existe |
+| **04** | **Trayectoria y Credenciales** | **SlideTrayectoria.tsx** | Form: quien_es.trayectoria | **NUEVO** |
+| 05 | Presencia Web (Google) | SlidePresenciaDigital.tsx (tab) | Form: presencia_digital | Existe |
+| 06 | Facebook | SlidePresenciaDigital.tsx (tab) | Form: presencia_digital | Existe |
+| 07 | Instagram/TikTok | SlidePresenciaDigital.tsx (tab) | Form: presencia_digital | Existe |
+| **08** | **Digital vs Competidores** | **SlideDigitalVsComp.tsx** | Form: presencia_digital + competidores | **NUEVO** |
+| 09 | El Territorio | SlideContextoTerritorial.tsx | DB geojson | Existe |
+| 10 | Padrón Electoral | (a crear o expandir) | DB padrón | Existe/expandir |
+| 11 | Presupuesto del Territorio | (a crear) | DB PIM/PIA | Existe/expandir |
+| 12 | Distribución Poblacional | SlideDistribucionPoblacional.tsx | DB geo | Existe |
+| 13 | Los Competidores | SlideCompetidores.tsx | Form: diagnostico.competidores | Existe |
+| 14 | Debilidades Críticas | SlideDebilidades.tsx | Form: debilidades | Existe |
+| 15 | Fortalezas Estratégicas | (a crear) | Form: diagnostico.fortalezas | Existe/expandir |
+| **16** | **Mapa Riesgos vs Oportunidades** | **SlideFoda.tsx** (rediseño) | Form: diagnostico (FODA completo) | **NUEVO** |
+| 17 | Propuestas Principales | SlidePropuestas.tsx | Form: propuestas | Existe |
+| **18** | **Tu Promesa Central** | **SlidePromesa.tsx** | Form: branding.slogan + propuestas | **NUEVO** |
+| 19 | Segmentos Objetivo | SlideSegmentos.tsx | Form: segmentos | Existe |
+| **20** | **Perfil del Votante Ideal** | **SlidePerfilVotante.tsx** | Form: segmentos[0] (primario) | **NUEVO** |
+| 21 | Votos para Ganar | SlideVotosNecesarios.tsx | Form: votos + DB padrón | Existe |
+| 22 | Fórmula Electoral | (a crear) | Form: recorrido.formula_electoral | Existe/expandir |
+| **23** | **De Dónde Vienen Los Votos** | **SlideOrigenVotos.tsx** | Form: recorrido.formula_electoral | **NUEVO** |
+| **24** | **Cronograma de Campaña** | **SlideCronograma.tsx** | Form: recorrido.hitos | **NUEVO** |
+| 25 | Arquitectura de Campaña | SlideArquitectura.tsx | Goberna content | Existe |
+| 26 | Herramientas Goberna | SlideHerramientas.tsx | Goberna content | Existe |
+| 27 | Resultados de Clientes | (a crear) | Goberna content simulado | Por crear |
+| 28 | Cierre | SlideCierre.tsx | Goberna content | Existe |
+
+### Descripción de los 7 slides nuevos
+
+**Slide 04 — Trayectoria y Credenciales** (`SlideTrayectoria.tsx`)
+- Panel izquierdo: timeline vertical con hitos (año + evento + descripción), colores gold para hitos clave
+- Panel derecho: valores del candidato como pills + cargo actual prominente
+- Datos: `f2.quien_es.trayectoria` (lista), `f2.quien_es.valores` (tags)
+- Simulado: 3 hitos genéricos ("Electo por primera vez", "Gestión reconocida", "Logro emblemático")
+
+**Slide 08 — Digital vs Competidores** (`SlideDigitalVsComp.tsx`)
+- Tabla comparativa: candidato vs top 2-3 competidores
+- Columnas: Facebook seguidores, Instagram, web activa, verificación
+- El candidato siempre aparece primero; rivales con datos simulados
+- Sello CRÍTICO si el candidato está por debajo de todos los rivales
+- Datos: `f2.presencia_digital` + `f2.diagnostico.competidores`
+
+**Slide 16 — Mapa Riesgos vs Oportunidades** (`SlideFoda.tsx`)
+- 4 cuadrantes (2×2): Fortalezas / Oportunidades (verde/gold) | Debilidades / Amenazas (rojo/naranja)
+- Cada cuadrante: 3-5 bullets con las tags del form
+- Layout navy, bordes de color por cuadrante
+- Datos: `f2.diagnostico` (fortalezas, debilidades, oportunidades, amenazas tags)
+
+**Slide 18 — Tu Promesa Central** (`SlidePromesa.tsx`)
+- Full-bleed: slogan gigante centrado (tipografía 48-64px, gold)
+- Debajo: 3 propuestas principales como pills de eje temático
+- Fondo: degradado navy → black con textura sutil
+- Datos: `f2.branding.slogan`, `f2.propuestas[0-2]`
+
+**Slide 20 — Perfil del Votante Ideal** (`SlidePerfilVotante.tsx`)
+- Persona card: nombre del segmento primario (grande), ícono generado, edad estimada
+- 3 columnas: Valores | Aspiraciones | Miedos (tags del segmento)
+- Split: izquierda card persona, derecha análisis de cómo llegar a este segmento
+- Datos: `f2.segmentos[0]` (primer segmento = el más importante)
+
+**Slide 23 — De Dónde Vienen Los Votos** (`SlideOrigenVotos.tsx`)
+- Donut chart o barras horizontales proporcionales
+- 4 fuentes: Base propia (%) / Aliados (%) / Votantes nuevos (%) / Indecisos (%)
+- Cada barra con táctica sugerida (texto corto)
+- Datos: `f2.recorrido.formula_electoral` (4 weights que suman 100%)
+
+**Slide 24 — Cronograma de Campaña** (`SlideCronograma.tsx`)
+- Gantt visual horizontal: meses en columnas, hitos como bloques coloreados
+- Colores: gold = hitos electorales, amber = actividades internas, blue = eventos públicos
+- Slide ancho (panorámico), scrollable internamente si hay muchos hitos
+- Datos: `f2.recorrido.hitos` (lista con fecha + tipo + descripción)
+
+---
+
 ## Criterios de éxito
 
 - El candidato puede completar la sección "Candidato" y ver su deck en < 3 minutos
 - Los campos con fuentes externas tienen links directos y pasos ≤ 3
 - El wizard retoma exactamente donde quedó al recargar la página
-- No hay regresiones en el deck Fase 2 (los slides siguen leyendo los mismos campos)
+- Los 7 slides nuevos se integran en `Fase2F1Deck.tsx` con sus `isVisible` predicates
+- Los slides nuevos usan datos simulados si el campo no tiene info real (mismo patrón que SlidePresenciaDigital)
+- No hay regresiones en los 21 slides existentes
 - TypeScript 0 errores
