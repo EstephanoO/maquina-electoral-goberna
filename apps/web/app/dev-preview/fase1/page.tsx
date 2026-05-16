@@ -19,7 +19,6 @@ export default function DevPreviewFase1() {
     <Fase1RapidaClient
       slug={MOCK.slug}
       mockCtx={MOCK.ctx}
-      mockForm={MOCK.ctx.consultor_form?.fase1_rapida ?? {}}
     />
   );
 }
