@@ -9,29 +9,31 @@ import type { CandidatoContext, ConsultorFormFase2, Fase2DeckMeta } from "@/lib/
 import { onboardingApi } from "@/lib/onboarding-api";
 import { CloudSkyBg } from "@/components/cloud-sky-bg";
 
-// Slides del rediseño (PDF Sánchez)
-import { SlideCarta }       from "./slides/SlideCarta";
-import { SlideHero }        from "./slides/SlideHero";
-import { SlideQuienEs, isSlideQuienEsVisible }                from "./slides/SlideQuienEs";
-import { SlidePresenciaDigital, isVisible as isPresenciaVisible } from "./slides/SlidePresenciaDigital";
-import { SlideDebilidades, isVisible as isDebilidadesVisible }    from "./slides/SlideDebilidades";
-import { SlideFichaTecnica }       from "./slides/SlideFichaTecnica";
-import { SlideFoda, isSlideFodaVisible }              from "./slides/SlideFoda";
-import { SlidePropuestas, isSlidePropuestasVisible }  from "./slides/SlidePropuestas";
-import { SlideSegmentos }          from "./slides/SlideSegmentos";
-import { SlideVotosNecesarios }    from "./slides/SlideVotosNecesarios";
-import { SlideReorganizar }        from "./slides/SlideReorganizar";
-import { SlideArquitectura, isSlideArquitecturaVisible } from "./slides/SlideArquitectura";
-import { SlideHerramientas }       from "./slides/SlideHerramientas";
-import { SlideCierre }             from "./slides/SlideCierre";
-import { SlideContextoTerritorial, isSlideContextoTerritorialVisible }   from "./slides/SlideContextoTerritorial";
-import { SlideDistribucionPoblacional, isSlideDistribucionPoblacionalVisible } from "./slides/SlideDistribucionPoblacional";
-import { SlideTrayectoria }    from "./slides/SlideTrayectoria";
-import { SlideDigitalVsComp }  from "./slides/SlideDigitalVsComp";
-import { SlidePromesa }        from "./slides/SlidePromesa";
-import { SlidePerfilVotante }  from "./slides/SlidePerfilVotante";
-import { SlideOrigenVotos }    from "./slides/SlideOrigenVotos";
-import { SlideCronograma }     from "./slides/SlideCronograma";
+// Slides base (no dependen del form nuevo)
+import { SlideHero }                                                           from "./slides/SlideHero";
+import { SlideFichaTecnica }                                                   from "./slides/SlideFichaTecnica";
+import { SlideContextoTerritorial, isSlideContextoTerritorialVisible }         from "./slides/SlideContextoTerritorial";
+import { SlideHerramientas }                                                   from "./slides/SlideHerramientas";
+import { SlideCierre }                                                         from "./slides/SlideCierre";
+
+// Terreno ECD
+import { SlideTerreno,      isSlideTerrenovisible }        from "./slides/SlideTerreno";
+import { SlideEstructura,   isSlideEstructuraVisible }     from "./slides/SlideEstructura";
+import { SlideConciencia,   isSlideConcienciaVisible }     from "./slides/SlideConciencia";
+import { SlideDecision,     isSlideDecisionVisible }       from "./slides/SlideDecision";
+import { SlideSintesis,     isSlideSintesisVisible }       from "./slides/SlideSintesis";
+import { SlideNucleoGoberna, isSlideNucleoGobernaVisible } from "./slides/SlideNucleoGoberna";
+
+// Perfil 5N
+import { SlidePerfil5N,     isSlidePerfil5NVisible }      from "./slides/SlidePerfil5N";
+import { SlideN1Identidad,  isSlideN1Visible }             from "./slides/SlideN1Identidad";
+import { SlideN2Trayectoria, isSlideN2Visible }            from "./slides/SlideN2Trayectoria";
+import { SlideN3Riesgo,     isSlideN3Visible }             from "./slides/SlideN3Riesgo";
+import { SlideN4Patrimonio, isSlideN4Visible }             from "./slides/SlideN4Patrimonio";
+import { SlideResumenEjecutivo, isSlideResumenEjecutivoVisible } from "./slides/SlideResumenEjecutivo";
+
+// Presencia PentaD
+import { SlidePentaDComparativa, isSlidePentaDComparativaVisible } from "./slides/SlidePentaDComparativa";
 
 import { MissingSlidesIndicator } from "./chrome/MissingSlidesIndicator";
 
@@ -65,43 +67,38 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
 
   const f2: ConsultorFormFase2 = ctx.consultor_form ?? {};
 
-  // Catálogo de las 20 slides + predicado isVisible por slide. Las slides
-  // sin datos suficientes se skipean (deck adaptativo). Ver spec
-  // docs/superpowers/specs/2026-05-14-fase2-deck-redesign.md §8.
-  //
-  // `formSection` = sección del form en /onboarding/<slug>/fase-1 que
-  // desbloquea la slide. Para slides que requieren form extendido (no
-  // implementado aún), usamos "form-extendido (próximamente)".
+  // Catálogo ECD + 5N + PentaD — 18 slides.
+  // Las slides sin datos suficientes se saltean (deck adaptativo).
+  // `formSection` = sección del form que desbloquea la slide.
   const allCatalog = useMemo(() => {
     return [
-      // CAPÍTULO 1 — Presentación
-      { id: "carta",        label: "Carta del candidato",      visible: true,                                    formSection: null,                            node: <SlideCarta ctx={ctx} /> },
-      { id: "hero",         label: "Hero",                     visible: true,                                    formSection: null,                            node: <SlideHero ctx={ctx} /> },
-      { id: "ficha",        label: "Ficha técnica",            visible: true,                                    formSection: null,                            node: <SlideFichaTecnica ctx={ctx} f2={f2} /> },
-      { id: "trayectoria", label: "Trayectoria y Credenciales", visible: true, formSection: "quien_es" as const, node: <SlideTrayectoria ctx={ctx} f2={f2} /> },
-      // CAPÍTULO 2 — Diagnóstico
-      { id: "quien-es",     label: "¿Quién es?",               visible: isSlideQuienEsVisible(ctx, f2),          formSection: "form-extendido (próximamente)", node: <SlideQuienEs ctx={ctx} f2={f2} /> },
-      { id: "presencia",    label: "Presencia digital",        visible: isPresenciaVisible(f2),                  formSection: "form-extendido (próximamente)", node: <SlidePresenciaDigital ctx={ctx} f2={f2} /> },
-      { id: "digital-vs-comp", label: "Digital vs Competidores", visible: true, formSection: "presencia_digital" as const, node: <SlideDigitalVsComp ctx={ctx} f2={f2} /> },
-      { id: "debilidades",  label: "Debilidades y riesgos",    visible: isDebilidadesVisible(f2),                formSection: "form-extendido (próximamente)", node: <SlideDebilidades ctx={ctx} f2={f2} /> },
-      // CAPÍTULO 3 — Territorio
-      { id: "contexto-territorial", label: "Contexto territorial",     visible: isSlideContextoTerritorialVisible(ctx),       formSection: null,                            node: <SlideContextoTerritorial ctx={ctx} /> },
-      { id: "distribucion-poblacional", label: "Distribución poblacional", visible: isSlideDistribucionPoblacionalVisible(ctx), formSection: null,                            node: <SlideDistribucionPoblacional ctx={ctx} /> },
-      { id: "foda",         label: "FODA",                     visible: isSlideFodaVisible(f2),                  formSection: "diagnostico_inicial",           node: <SlideFoda f2={f2} /> },
-      { id: "propuestas",   label: "Propuestas",               visible: isSlidePropuestasVisible(f2),            formSection: "propuestas",                    node: <SlidePropuestas f2={f2} /> },
-      { id: "promesa", label: "Tu Promesa Central", visible: true, formSection: "propuestas" as const, node: <SlidePromesa f2={f2} /> },
-      // CAPÍTULO 4 — Estrategia
-      { id: "segmentos",    label: "Segmentación del voto",    visible: SlideSegmentos.isVisible(f2),            formSection: "form-extendido (próximamente)", node: <SlideSegmentos f2={f2} /> },
-      { id: "perfil-votante", label: "Perfil del Votante Ideal", visible: true, formSection: null, node: <SlidePerfilVotante ctx={ctx} f2={f2} /> },
-      { id: "votos",        label: "% Votos necesarios",       visible: SlideVotosNecesarios.isVisible(f2, ctx), formSection: "form-extendido (próximamente)", node: <SlideVotosNecesarios f2={f2} ctx={ctx} /> },
-      { id: "reorganizar",  label: "Cómo reorganizar el voto", visible: true,                                    formSection: "form-extendido (próximamente)", node: <SlideReorganizar f2={f2} /> },
-      { id: "origen-votos", label: "De Dónde Vienen Los Votos", visible: true, formSection: "recorrido" as const, node: <SlideOrigenVotos f2={f2} /> },
-      { id: "cronograma",   label: "Cronograma de Campaña",     visible: true, formSection: "recorrido" as const, node: <SlideCronograma f2={f2} /> },
-      // CAPÍTULO 5 — Ejecución
-      { id: "arquitectura", label: "Arquitectura META",        visible: isSlideArquitecturaVisible(f2),          formSection: "estrategia",                    node: <SlideArquitectura f2={f2} /> },
-      { id: "herramientas", label: "Herramientas Goberna",     visible: true,                                    formSection: null,                            node: <SlideHerramientas /> },
-      // CAPÍTULO 6 — Cierre
-      { id: "cierre",       label: "Cierre · War Room",        visible: true,                                    formSection: null,                            node: <SlideCierre f2={f2} /> },
+      // ── Presentación
+      { id: "hero",        label: "Hero",             visible: true,                                      formSection: null,                 node: <SlideHero ctx={ctx} /> },
+      { id: "ficha",       label: "Ficha Técnica",    visible: true,                                      formSection: null,                 node: <SlideFichaTecnica ctx={ctx} f2={f2} /> },
+      { id: "contexto",    label: "Contexto",         visible: isSlideContextoTerritorialVisible(ctx),    formSection: null,                 node: <SlideContextoTerritorial ctx={ctx} /> },
+
+      // ── Terreno ECD
+      { id: "terreno",     label: "Terreno ECD",      visible: isSlideTerrenovisible(f2),                 formSection: "terreno",            node: <SlideTerreno ctx={ctx} f2={f2} /> },
+      { id: "estructura",  label: "Estructura E",     visible: isSlideEstructuraVisible(ctx, f2),         formSection: "e1-e5",              node: <SlideEstructura ctx={ctx} f2={f2} /> },
+      { id: "conciencia",  label: "Conciencia C",     visible: isSlideConcienciaVisible(f2),              formSection: "c1-c5",              node: <SlideConciencia f2={f2} /> },
+      { id: "decision",    label: "Decisión D",       visible: isSlideDecisionVisible(f2),                formSection: "d1-d5",              node: <SlideDecision f2={f2} /> },
+      { id: "sintesis",    label: "Síntesis ECD",     visible: isSlideSintesisVisible(f2),                formSection: "sintesis",           node: <SlideSintesis f2={f2} /> },
+      { id: "nucleo",      label: "Núcleo Goberna",   visible: isSlideNucleoGobernaVisible(f2),           formSection: "sintesis",           node: <SlideNucleoGoberna f2={f2} /> },
+
+      // ── Perfil 5N
+      { id: "perfil-5n",   label: "Perfil 5N",        visible: isSlidePerfil5NVisible(f2),               formSection: "perfil",             node: <SlidePerfil5N ctx={ctx} f2={f2} /> },
+      { id: "n1",          label: "N1 · Identidad",   visible: isSlideN1Visible(f2),                      formSection: "n1",                 node: <SlideN1Identidad f2={f2} /> },
+      { id: "n2",          label: "N2 · Trayectoria", visible: isSlideN2Visible(f2),                      formSection: "n2",                 node: <SlideN2Trayectoria f2={f2} /> },
+      { id: "n3",          label: "N3 · Riesgo",      visible: isSlideN3Visible(f2),                      formSection: "n3",                 node: <SlideN3Riesgo f2={f2} /> },
+      { id: "n4",          label: "N4 · Patrimonio",  visible: isSlideN4Visible(f2),                      formSection: "n4",                 node: <SlideN4Patrimonio f2={f2} /> },
+      { id: "resumen",     label: "Resumen Ejecutivo",visible: isSlideResumenEjecutivoVisible(f2),         formSection: "resumen_ejecutivo",  node: <SlideResumenEjecutivo f2={f2} /> },
+
+      // ── Presencia PentaD
+      { id: "pentad",      label: "Penta-D",          visible: isSlidePentaDComparativaVisible(f2),       formSection: "presencia",          node: <SlidePentaDComparativa ctx={ctx} f2={f2} /> },
+
+      // ── Cierre
+      { id: "herramientas",label: "Goberna",          visible: true,                                      formSection: null,                 node: <SlideHerramientas /> },
+      { id: "cierre",      label: "War Room",         visible: true,                                      formSection: null,                 node: <SlideCierre f2={f2} /> },
     ];
   }, [ctx, f2]);
 
@@ -119,8 +116,8 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
       }));
   }, [allCatalog, slug]);
 
-  /** Total catalogado (20) para el indicador "Mostrando N / 20". */
-  const TOTAL_CATALOG = 20;
+  /** Total catalogado (18) para el indicador "Mostrando N / 18". */
+  const TOTAL_CATALOG = 18;
   const total = slides.length;
   const current = slides[Math.min(index, total - 1)]!;
 
