@@ -2,16 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "motion/react";
 import {
-  ChevronLeft, ChevronRight, Check, Loader2, Plus, Trash2,
-  User, MapPin, Zap, BarChart2, Lightbulb, Palette, Globe, Eye
+  Loader2, Plus, Trash2,
+  User, MapPin, Zap, BarChart2, Lightbulb, Palette, Globe
 } from "lucide-react";
 
-import { CloudSkyBg } from "@/components/cloud-sky-bg";
 import { onboardingApi, type Fase1Rapida, type CandidatoContext, type ConsultorFormFase2 } from "@/lib/onboarding-api";
 
-import { Fase1LivePreview } from "./Fase1LivePreview";
+import { WizardShell } from "./wizard/WizardShell";
 import {
   useDebounce,
   Field,
@@ -799,16 +797,28 @@ export function Fase1RapidaClient({ slug, mockCtx, mockForm }: Fase1RapidaClient
     [],
   );
 
-  const handlePreview = async () => {
-    // Save immediately then go to fase-2
+  const handleNext = useCallback(async () => {
+    // Save immediately
     setSaving(true);
     try {
-      await onboardingApi.patchFase2Form(slug, { fase1_rapida: form });
+      await onboardingApi.patchFase2Form(slug, {
+        fase1_rapida: form,
+        ...extended,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      // Refresh Next.js cache so deck sees new data
+      router.refresh();
+    } catch (e) {
+      setError((e as Error).message);
     } finally {
       setSaving(false);
     }
-    router.push(`/onboarding/${slug}/fase-2`);
-  };
+    // Advance to next section
+    if (activeSection < SECTIONS.length - 1) {
+      setActiveSection((s) => s + 1);
+    }
+  }, [slug, form, extended, activeSection, router]);
 
   if (loading) {
     return (
@@ -818,345 +828,100 @@ export function Fase1RapidaClient({ slug, mockCtx, mockForm }: Fase1RapidaClient
     );
   }
 
-  const currentSection = SECTIONS[activeSection]!;
-
   return (
-    <div className="relative min-h-screen w-full overflow-hidden bg-[#020a1e] text-white">
-      <CloudSkyBg />
-
-      {/* Top bar */}
-      <div className="fixed top-0 inset-x-0 z-30 px-4 sm:px-8 pt-4 sm:pt-5 flex items-center justify-between gap-3 pointer-events-none">
-        <a
-          href={`/onboarding/${slug}/fase-2`}
-          className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-amber-400/20 bg-[#020a1e]/60 backdrop-blur-md px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-amber-400/80 hover:text-amber-400 hover:border-amber-400/40 transition-colors font-semibold"
-        >
-          <ChevronLeft className="size-3.5" />
-          Volver
-        </a>
-
-        <div className="pointer-events-auto rounded-full bg-[#020a1e]/80 backdrop-blur-md border border-amber-400/20 px-4 py-1.5 text-[10px] uppercase tracking-[0.3em] text-amber-400/90 font-semibold">
-          Fase 1 · Onboarding
-        </div>
-
-        <div className="pointer-events-auto flex items-center gap-2">
-          {/* Save indicator */}
-          <AnimatePresence>
-            {(saving || saved) && (
-              <motion.span
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="text-[10px] uppercase tracking-[0.15em] text-amber-400/60"
-              >
-                {saving ? "Guardando..." : "✓ Guardado"}
-              </motion.span>
-            )}
-          </AnimatePresence>
-          <button
-            onClick={handlePreview}
-            className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-600 text-[#0a1e4a] px-4 py-1.5 text-[10px] uppercase tracking-[0.2em] font-black shadow-lg shadow-amber-500/30 hover:shadow-amber-500/50 transition-all"
-          >
-            <Eye className="size-3.5" />
-            Previsualizar
-          </button>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="relative z-10 mx-auto w-full max-w-[1500px] px-4 sm:px-6 pt-20 pb-32 min-h-screen flex">
-        {/* Sidebar — agrupado en Mínimo + Extendido */}
-        <aside className="hidden lg:flex flex-col gap-1 w-52 flex-shrink-0 pr-8 pt-8 sticky top-20 self-start">
-          {(["minimo", "extendido"] as const).map((cat) => {
-            const items = SECTIONS.map((s, i) => ({ s, i })).filter(
-              ({ s }) => s.category === cat,
-            );
-            return (
-              <div key={cat} className={cat === "extendido" ? "mt-4" : ""}>
-                <p className="text-[10px] uppercase tracking-[0.3em] text-gray-600 font-semibold mb-3 flex items-center gap-2">
-                  {cat === "minimo" ? "Fase 1 · Mínimo" : "Fase 1 · Extendido"}
-                  {cat === "extendido" ? (
-                    <span className="text-[8px] tracking-[0.2em] text-amber-400/50 normal-case font-medium">
-                      desbloquea +6 slides
-                    </span>
-                  ) : null}
-                </p>
-                {items.map(({ s, i }) => {
-                  const isActive = i === activeSection;
-                  const isDone = (form.secciones_completas ?? []).includes(s.id);
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => setActiveSection(i)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left ${
-                        isActive
-                          ? "bg-amber-400/15 border border-amber-400/30 text-amber-400"
-                          : "border border-transparent text-gray-500 hover:text-gray-300 hover:bg-white/5"
-                      }`}
-                    >
-                      <span className={isActive ? "text-amber-400" : isDone ? "text-green-400" : "text-gray-600"}>
-                        {isDone && !isActive ? <Check className="size-4" /> : s.icon}
-                      </span>
-                      <span>{s.label}</span>
-                      <span className={`ml-auto text-[10px] font-black ${isActive ? "text-amber-400" : "text-gray-700"}`}>
-                        {String(i + 1).padStart(2, "0")}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })}
-
-          <div className="mt-6 pt-4 border-t border-white/5">
-            <button
-              onClick={handlePreview}
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-amber-600 text-[#0a1e4a] font-black text-sm shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 transition-all flex items-center justify-center gap-2"
-            >
-              <Eye className="size-4" />
-              Ver Fase 2
-            </button>
-          </div>
-        </aside>
-
-        {/* Main form */}
-        <div className="flex-1 min-w-0 pt-8">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentSection.id}
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -30 }}
-              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-              className="w-full"
-            >
-              {/* Section header */}
-              <div className="mb-8">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="size-10 rounded-xl bg-amber-400/15 border border-amber-400/30 text-amber-400 flex items-center justify-center">
-                    {currentSection.icon}
-                  </span>
-                  <div>
-                    <p className="text-[10px] uppercase tracking-[0.3em] text-amber-400/70 font-semibold">
-                      Sección {String(activeSection + 1).padStart(2, "0")} de {SECTIONS.length}
-                    </p>
-                    <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                      {currentSection.label}
-                    </h2>
-                  </div>
-                </div>
-                {/* Section progress bar */}
-                <div className="h-1 bg-gray-800 rounded-full mt-4">
-                  <div
-                    className="h-full bg-gradient-to-r from-amber-400 to-amber-600 rounded-full transition-all duration-300"
-                    style={{ width: `${((activeSection + 1) / SECTIONS.length) * 100}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Section content — render por id (no index) para soportar
-                  catálogo extendido sin reordenar. */}
-              <div className="space-y-6">
-                {currentSection.id === "candidato" && (
-                  <SectionCandidato
-                    data={form.candidato ?? {}}
-                    onChange={(v) => updateSection("candidato", v)}
-                  />
-                )}
-                {currentSection.id === "postulacion" && (
-                  <SectionPostulacion
-                    data={form.postulacion ?? {}}
-                    onChange={(v) => updateSection("postulacion", v)}
-                  />
-                )}
-                {currentSection.id === "estrategia" && (
-                  <SectionEstrategia
-                    data={form.estrategia ?? {}}
-                    onChange={(v) => updateSection("estrategia", v)}
-                  />
-                )}
-                {currentSection.id === "diagnostico_inicial" && (
-                  <SectionDiagnostico
-                    data={form.diagnostico_inicial ?? {}}
-                    onChange={(v) => updateSection("diagnostico_inicial", v)}
-                  />
-                )}
-                {currentSection.id === "propuestas" && (
-                  <SectionPropuestas
-                    data={form.propuestas ?? []}
-                    onChange={(v) => updateSection("propuestas", v)}
-                  />
-                )}
-                {currentSection.id === "branding" && (
-                  <SectionBranding
-                    data={form.branding ?? {}}
-                    onChange={(v) => updateSection("branding", v)}
-                  />
-                )}
-                {currentSection.id === "contexto_territorio" && (
-                  <SectionTerritorio
-                    data={form.contexto_territorio ?? {}}
-                    onChange={(v) => updateSection("contexto_territorio", v)}
-                  />
-                )}
-                {/* ── EXTENDIDO ── */}
-                {currentSection.id === "quien_es" && (
-                  <SectionQuienEs
-                    data={extended.quien_es ?? {}}
-                    onChange={(v) => updateExtended("quien_es", v)}
-                  />
-                )}
-                {currentSection.id === "presencia" && (
-                  <SectionPresenciaDigital
-                    presencia={extended.presencia_digital ?? {}}
-                    redes={extended.redes_sociales?.candidato ?? {}}
-                    onChangePresencia={(v) => updateExtended("presencia_digital", v)}
-                    onChangeRedes={(v) => updateExtended("redes_sociales", { ...(extended.redes_sociales ?? {}), candidato: v })}
-                  />
-                )}
-                {currentSection.id === "debilidades" && (
-                  <SectionDebilidades
-                    data={extended.debilidades ?? {}}
-                    onChange={(v) => updateExtended("debilidades", v)}
-                  />
-                )}
-                {currentSection.id === "votos" && (
-                  <SectionVotos
-                    votos={extended.votos_para_ganar ?? {}}
-                    historial={extended.historial ?? {}}
-                    onChangeVotos={(v) => updateExtended("votos_para_ganar", v)}
-                    onChangeHistorial={(v) => updateExtended("historial", v)}
-                  />
-                )}
-                {currentSection.id === "segmentos" && (
-                  <SectionSegmentos
-                    data={extended.territorio_ecd ?? {}}
-                    onChange={(v) => updateExtended("territorio_ecd", v)}
-                  />
-                )}
-                {currentSection.id === "recorrido" && (
-                  <SectionRecorrido
-                    recorrido={extended.recorrido_estrategico ?? {}}
-                    formula={extended.formula_electoral ?? {}}
-                    onChangeRecorrido={(v) => updateExtended("recorrido_estrategico", v)}
-                    onChangeFormula={(v) => updateExtended("formula_electoral", v)}
-                  />
-                )}
-              </div>
-
-              {/* Nav buttons */}
-              <div className="flex items-center justify-between mt-10">
-                <button
-                  type="button"
-                  onClick={() => setActiveSection((i) => Math.max(0, i - 1))}
-                  disabled={activeSection === 0}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-gray-700 text-gray-400 text-sm font-semibold hover:border-gray-500 hover:text-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                >
-                  <ChevronLeft className="size-4" />
-                  Anterior
-                </button>
-                {activeSection < SECTIONS.length - 1 ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Marcar la sección actual como completa si es del mínimo
-                      const sec = SECTIONS[activeSection]!;
-                      if (sec.category === "minimo") {
-                        setForm((prev) => {
-                          const ya = prev.secciones_completas ?? [];
-                          if (ya.includes(sec.id)) return prev;
-                          return { ...prev, secciones_completas: [...ya, sec.id] };
-                        });
-                      }
-                      setActiveSection((i) => Math.min(SECTIONS.length - 1, i + 1));
-                    }}
-                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-600 text-[#0a1e4a] text-sm font-black shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 transition-all"
-                  >
-                    Siguiente
-                    <ChevronRight className="size-4" />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Marcar la última sección como completa también
-                      const sec = SECTIONS[activeSection]!;
-                      if (sec.category === "minimo") {
-                        setForm((prev) => {
-                          const ya = prev.secciones_completas ?? [];
-                          if (ya.includes(sec.id)) return prev;
-                          return { ...prev, secciones_completas: [...ya, sec.id] };
-                        });
-                      }
-                      handlePreview();
-                    }}
-                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-400 to-amber-600 text-[#0a1e4a] text-sm font-black shadow-lg shadow-amber-500/20 hover:shadow-amber-500/40 transition-all"
-                  >
-                    <Eye className="size-4" />
-                    Ver presentación Fase 2
-                  </button>
-                )}
-              </div>
-            </motion.div>
-          </AnimatePresence>
-        </div>
-
-        {/* Live preview del slide del deck que la sección alimenta */}
-        <Fase1LivePreview
-          sectionId={currentSection.id}
-          form={form}
-          extended={extended}
-          ctx={ctx}
+    <WizardShell
+      slug={slug}
+      sections={SECTIONS}
+      activeSection={activeSection}
+      onSectionChange={setActiveSection}
+      onNext={handleNext}
+      saving={saving}
+      saved={saved}
+    >
+      {activeSection === 0 && (
+        <SectionCandidato
+          data={form.candidato ?? {}}
+          onChange={(v) => updateSection("candidato", v)}
         />
-      </div>
-
-      {/* Error toast */}
-      <AnimatePresence>
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-red-500/20 border border-red-500/40 rounded-xl px-5 py-3 text-sm text-red-300"
-          >
-            {error}
-            <button onClick={() => setError(null)} className="ml-3 text-red-500 hover:text-red-300">✕</button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Footer — dot indicator */}
-      <div className="fixed bottom-0 inset-x-0 z-20 bg-gradient-to-t from-[#020a1e] via-[#020a1e]/95 to-transparent backdrop-blur-md">
-        <div className="mx-auto max-w-5xl px-4 sm:px-8 py-3 sm:py-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-amber-400/70">
-            <img
-              src="/branding/goberna-escudo.svg"
-              alt="Goberna"
-              className="size-7 flex-shrink-0"
-            />
-            <span className="hidden sm:inline font-semibold">Goberna · Fase 1</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {SECTIONS.map((s, i) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setActiveSection(i)}
-                className={`h-1.5 rounded-full transition-all ${
-                  i === activeSection
-                    ? "w-10 bg-amber-400"
-                    : i < activeSection
-                      ? "w-3 bg-amber-400/40"
-                      : "w-3 bg-gray-700"
-                }`}
-              />
-            ))}
-          </div>
-          <span className="text-xs text-gray-400 tabular-nums">
-            <span className="text-amber-400 font-semibold">{activeSection + 1}</span> / {SECTIONS.length}
-          </span>
-        </div>
-      </div>
-    </div>
+      )}
+      {activeSection === 1 && (
+        <SectionPostulacion
+          data={form.postulacion ?? {}}
+          onChange={(v) => updateSection("postulacion", v)}
+        />
+      )}
+      {activeSection === 2 && (
+        <SectionEstrategia
+          data={form.estrategia ?? {}}
+          onChange={(v) => updateSection("estrategia", v)}
+        />
+      )}
+      {activeSection === 3 && (
+        <SectionDiagnostico
+          data={form.diagnostico_inicial ?? { fortalezas: [], debilidades: [], oportunidades: [], amenazas: [], principales_competidores: [] }}
+          onChange={(v) => updateSection("diagnostico_inicial", v)}
+        />
+      )}
+      {activeSection === 4 && (
+        <SectionPropuestas
+          data={form.propuestas ?? []}
+          onChange={(v) => updateSection("propuestas", v)}
+        />
+      )}
+      {activeSection === 5 && (
+        <SectionBranding
+          data={form.branding ?? { color_primario: "#fbc02d", color_secundario: "#0a1e4a" }}
+          onChange={(v) => updateSection("branding", v)}
+        />
+      )}
+      {activeSection === 6 && (
+        <SectionTerritorio
+          data={form.contexto_territorio ?? { principales_problemas: [], zonas_fuertes: [], zonas_debiles: [] }}
+          onChange={(v) => updateSection("contexto_territorio", v)}
+        />
+      )}
+      {activeSection === 7 && (
+        <SectionQuienEs
+          data={extended.quien_es ?? {}}
+          onChange={(v) => updateExtended("quien_es", v)}
+        />
+      )}
+      {activeSection === 8 && (
+        <SectionPresenciaDigital
+          presencia={extended.presencia_digital ?? {}}
+          redes={extended.redes_sociales?.candidato ?? {}}
+          onChangePresencia={(v) => updateExtended("presencia_digital", v)}
+          onChangeRedes={(v) => updateExtended("redes_sociales", { ...(extended.redes_sociales ?? {}), candidato: v })}
+        />
+      )}
+      {activeSection === 9 && (
+        <SectionDebilidades
+          data={extended.debilidades ?? {}}
+          onChange={(v) => updateExtended("debilidades", v)}
+        />
+      )}
+      {activeSection === 10 && (
+        <SectionVotos
+          votos={extended.votos_para_ganar ?? {}}
+          historial={extended.historial ?? { entries: [] }}
+          onChangeVotos={(v) => updateExtended("votos_para_ganar", v)}
+          onChangeHistorial={(v) => updateExtended("historial", v)}
+        />
+      )}
+      {activeSection === 11 && (
+        <SectionSegmentos
+          data={extended.territorio_ecd ?? { c2_segmentos: [], nucleo_goberna: { segmentos_prioritarios: [] } }}
+          onChange={(v) => updateExtended("territorio_ecd", v)}
+        />
+      )}
+      {activeSection === 12 && (
+        <SectionRecorrido
+          recorrido={extended.recorrido_estrategico ?? { hitos: [] }}
+          formula={extended.formula_electoral ?? {}}
+          onChangeRecorrido={(v) => updateExtended("recorrido_estrategico", v)}
+          onChangeFormula={(v) => updateExtended("formula_electoral", v)}
+        />
+      )}
+    </WizardShell>
   );
 }
