@@ -6,5 +6,5 @@ export default async function CandidatoOnboardingPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  redirect(`/onboarding/${slug}/perfil`);
+  redirect(`/onboarding/${slug}/fase-2`);
 }
