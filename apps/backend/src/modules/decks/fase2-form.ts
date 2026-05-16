@@ -12,6 +12,7 @@
  * Ambos schemas se merge en la misma columna `decks.consultor_form`.
  */
 import { z } from "zod";
+import { TerrenoECDSchema, PerfilCandidato5NSchema, PresenciaPentaDSchema } from "../onboarding/schemas";
 
 // ── Sub-schemas reutilizables ───────────────────────────────────────
 
@@ -216,6 +217,11 @@ export const consultorFormFase2Schema = z
 
     // ── Text overrides: cualquier texto hardcoded del template ──
     text_overrides: z.record(z.string(), z.string()).optional(),
+
+    // ── Sistema unificado ECD + 5N + PentaD ──────────────────────────────────
+    terreno: TerrenoECDSchema,
+    perfil: PerfilCandidato5NSchema,
+    presencia: PresenciaPentaDSchema,
 
     // ── Perfil Candidato 5N ────────────────────────────────────────────
     perfil_candidato: z
