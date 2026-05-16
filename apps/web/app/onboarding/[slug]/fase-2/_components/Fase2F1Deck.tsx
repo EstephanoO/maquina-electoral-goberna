@@ -26,6 +26,12 @@ import { SlideHerramientas }       from "./slides/SlideHerramientas";
 import { SlideCierre }             from "./slides/SlideCierre";
 import { SlideContextoTerritorial, isSlideContextoTerritorialVisible }   from "./slides/SlideContextoTerritorial";
 import { SlideDistribucionPoblacional, isSlideDistribucionPoblacionalVisible } from "./slides/SlideDistribucionPoblacional";
+import { SlideTrayectoria }    from "./slides/SlideTrayectoria";
+import { SlideDigitalVsComp }  from "./slides/SlideDigitalVsComp";
+import { SlidePromesa }        from "./slides/SlidePromesa";
+import { SlidePerfilVotante }  from "./slides/SlidePerfilVotante";
+import { SlideOrigenVotos }    from "./slides/SlideOrigenVotos";
+import { SlideCronograma }     from "./slides/SlideCronograma";
 
 import { MissingSlidesIndicator } from "./chrome/MissingSlidesIndicator";
 
@@ -59,7 +65,7 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
 
   const f2: ConsultorFormFase2 = ctx.consultor_form ?? {};
 
-  // Catálogo de las 14 slides + predicado isVisible por slide. Las slides
+  // Catálogo de las 20 slides + predicado isVisible por slide. Las slides
   // sin datos suficientes se skipean (deck adaptativo). Ver spec
   // docs/superpowers/specs/2026-05-14-fase2-deck-redesign.md §8.
   //
@@ -72,19 +78,25 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
       { id: "carta",        label: "Carta del candidato",      visible: true,                                    formSection: null,                            node: <SlideCarta ctx={ctx} /> },
       { id: "hero",         label: "Hero",                     visible: true,                                    formSection: null,                            node: <SlideHero ctx={ctx} /> },
       { id: "ficha",        label: "Ficha técnica",            visible: true,                                    formSection: null,                            node: <SlideFichaTecnica ctx={ctx} f2={f2} /> },
+      { id: "trayectoria", label: "Trayectoria y Credenciales", visible: true, formSection: "quien_es" as const, node: <SlideTrayectoria ctx={ctx} f2={f2} /> },
       // CAPÍTULO 2 — Diagnóstico
       { id: "quien-es",     label: "¿Quién es?",               visible: isSlideQuienEsVisible(ctx, f2),          formSection: "form-extendido (próximamente)", node: <SlideQuienEs ctx={ctx} f2={f2} /> },
       { id: "presencia",    label: "Presencia digital",        visible: isPresenciaVisible(f2),                  formSection: "form-extendido (próximamente)", node: <SlidePresenciaDigital ctx={ctx} f2={f2} /> },
+      { id: "digital-vs-comp", label: "Digital vs Competidores", visible: true, formSection: "presencia_digital" as const, node: <SlideDigitalVsComp ctx={ctx} f2={f2} /> },
       { id: "debilidades",  label: "Debilidades y riesgos",    visible: isDebilidadesVisible(f2),                formSection: "form-extendido (próximamente)", node: <SlideDebilidades ctx={ctx} f2={f2} /> },
       // CAPÍTULO 3 — Territorio
       { id: "contexto-territorial", label: "Contexto territorial",     visible: isSlideContextoTerritorialVisible(ctx),       formSection: null,                            node: <SlideContextoTerritorial ctx={ctx} /> },
       { id: "distribucion-poblacional", label: "Distribución poblacional", visible: isSlideDistribucionPoblacionalVisible(ctx), formSection: null,                            node: <SlideDistribucionPoblacional ctx={ctx} /> },
       { id: "foda",         label: "FODA",                     visible: isSlideFodaVisible(f2),                  formSection: "diagnostico_inicial",           node: <SlideFoda f2={f2} /> },
       { id: "propuestas",   label: "Propuestas",               visible: isSlidePropuestasVisible(f2),            formSection: "propuestas",                    node: <SlidePropuestas f2={f2} /> },
+      { id: "promesa", label: "Tu Promesa Central", visible: true, formSection: "propuestas" as const, node: <SlidePromesa f2={f2} /> },
       // CAPÍTULO 4 — Estrategia
       { id: "segmentos",    label: "Segmentación del voto",    visible: SlideSegmentos.isVisible(f2),            formSection: "form-extendido (próximamente)", node: <SlideSegmentos f2={f2} /> },
+      { id: "perfil-votante", label: "Perfil del Votante Ideal", visible: true, formSection: null, node: <SlidePerfilVotante ctx={ctx} f2={f2} /> },
       { id: "votos",        label: "% Votos necesarios",       visible: SlideVotosNecesarios.isVisible(f2, ctx), formSection: "form-extendido (próximamente)", node: <SlideVotosNecesarios f2={f2} ctx={ctx} /> },
       { id: "reorganizar",  label: "Cómo reorganizar el voto", visible: true,                                    formSection: "form-extendido (próximamente)", node: <SlideReorganizar f2={f2} /> },
+      { id: "origen-votos", label: "De Dónde Vienen Los Votos", visible: true, formSection: "recorrido" as const, node: <SlideOrigenVotos f2={f2} /> },
+      { id: "cronograma",   label: "Cronograma de Campaña",     visible: true, formSection: "recorrido" as const, node: <SlideCronograma f2={f2} /> },
       // CAPÍTULO 5 — Ejecución
       { id: "arquitectura", label: "Arquitectura META",        visible: isSlideArquitecturaVisible(f2),          formSection: "estrategia",                    node: <SlideArquitectura f2={f2} /> },
       { id: "herramientas", label: "Herramientas Goberna",     visible: true,                                    formSection: null,                            node: <SlideHerramientas /> },
@@ -107,8 +119,8 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
       }));
   }, [allCatalog, slug]);
 
-  /** Total catalogado (14) para el indicador "Mostrando N / 14". */
-  const TOTAL_CATALOG = 14;
+  /** Total catalogado (20) para el indicador "Mostrando N / 20". */
+  const TOTAL_CATALOG = 20;
   const total = slides.length;
   const current = slides[Math.min(index, total - 1)]!;
 

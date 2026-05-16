@@ -168,14 +168,7 @@ export function SlideFoda({ f2 }: Props) {
   );
 }
 
-/** Visibilidad — true si al menos un cuadrante tiene items. */
-export function isSlideFodaVisible(f2: ConsultorFormFase2): boolean {
-  const d = f2.fase1_rapida?.diagnostico_inicial ?? {};
-  return (
-    (d.fortalezas?.length ?? 0) +
-      (d.debilidades?.length ?? 0) +
-      (d.oportunidades?.length ?? 0) +
-      (d.amenazas?.length ?? 0) >
-    0
-  );
+/** Visibilidad — siempre true; el slide muestra datos simulados si no hay form. */
+export function isSlideFodaVisible(_f2: ConsultorFormFase2): boolean {
+  return true;
 }
