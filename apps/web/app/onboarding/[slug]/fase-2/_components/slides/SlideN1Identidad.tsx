@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import type { ConsultorFormFase2 } from "@/lib/onboarding-api";
 import type { Semaforo } from "@/lib/onboarding-schema";
 import { SEMAFORO_BG, SEMAFORO_COLOR, SEMAFORO_LABEL } from "@/lib/onboarding-schema";
-import { SlideLabel } from "../_ui/critico";
+import { EditorialHeader } from "./shared/EditorialHeader";
 
 interface Props {
   f2: ConsultorFormFase2;
@@ -35,12 +35,13 @@ export function SlideN1Identidad({ f2 }: Props) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
       >
-        <SlideLabel>N1 · Identidad del candidato</SlideLabel>
-        <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight">
-          {n1?.nombres_completos ?? "Sin nombre"}
-        </h2>
+        <EditorialHeader
+          microLabel="ACTO I · N1 IDENTIDAD"
+          headline={n1?.nombres_completos ? `${n1.nombres_completos} — quién es.` : "Identidad del candidato."}
+          accentColor="#fbbf24"
+        />
         {n1?.profesion_declarada && (
-          <p className="text-sm text-white/40 mt-1">{n1.profesion_declarada}</p>
+          <p className="text-sm text-white/40 mt-3">{n1.profesion_declarada}</p>
         )}
       </motion.div>
 

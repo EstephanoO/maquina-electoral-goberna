@@ -3,7 +3,8 @@
 import { motion } from "motion/react";
 
 import type { CandidatoContext, ConsultorFormFase2 } from "@/lib/onboarding-api";
-import { CriticoSello, SlideLabel } from "../_ui/critico";
+import { CriticoSello } from "../_ui/critico";
+import { EditorialHeader } from "./shared/EditorialHeader";
 
 interface Props {
   ctx: CandidatoContext;
@@ -39,15 +40,11 @@ export function SlideFichaTecnica({ ctx, f2 }: Props) {
         className="flex items-start justify-between gap-4 mb-8"
       >
         <div>
-          <SlideLabel>Perfil del candidato</SlideLabel>
-          <h2 className="text-3xl lg:text-4xl font-black uppercase text-white tracking-tight leading-none">
-            Ficha del Candidato
-          </h2>
-          <div className="mt-2 inline-block bg-amber-400/10 border border-amber-400/30 rounded px-3 py-1">
-            <span className="text-amber-400 text-xs font-black uppercase tracking-[0.15em]">
-              {cargoLabel}
-            </span>
-          </div>
+          <EditorialHeader
+            microLabel="ACTO I · FICHA DEL CANDIDATO"
+            headline={`${cargoLabel} · ${ctx.jurisdiccion.distrito?.nombre ?? ctx.jurisdiccion.provincia?.nombre ?? ""}`}
+            accentColor="#fbbf24"
+          />
         </div>
         {selloTipo && (
           <div className="shrink-0 mt-1">

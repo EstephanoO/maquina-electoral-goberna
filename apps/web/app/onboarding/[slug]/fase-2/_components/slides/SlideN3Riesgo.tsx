@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import type { ConsultorFormFase2 } from "@/lib/onboarding-api";
 import type { Semaforo } from "@/lib/onboarding-schema";
 import { SEMAFORO_BG, SEMAFORO_COLOR, SEMAFORO_LABEL } from "@/lib/onboarding-schema";
-import { SlideLabel } from "../_ui/critico";
+import { EditorialHeader } from "./shared/EditorialHeader";
 
 interface Props {
   f2: ConsultorFormFase2;
@@ -51,13 +51,11 @@ export function SlideN3Riesgo({ f2 }: Props) {
         className="flex items-start justify-between gap-4"
       >
         <div>
-          <SlideLabel>N3 · Riesgo legal del candidato</SlideLabel>
-          <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight">
-            Antecedentes y riesgos
-          </h2>
-          <p className="text-sm text-white/40 mt-1">
-            Evaluación legal y reputacional
-          </p>
+          <EditorialHeader
+            microLabel="ACTO I · N3 RIESGO"
+            headline="Vulnerabilidades conocidas y su nivel de exposición."
+            accentColor="#fbbf24"
+          />
         </div>
         <div className={`flex-shrink-0 rounded-xl border px-3 py-2 text-center ${SEMAFORO_BG[semaforo]}`}>
           <p className="text-[8px] uppercase tracking-widest text-white/30 mb-0.5">N3</p>

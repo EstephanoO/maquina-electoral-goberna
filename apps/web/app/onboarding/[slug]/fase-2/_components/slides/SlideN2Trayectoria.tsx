@@ -2,7 +2,7 @@
 
 import { motion } from "motion/react";
 import type { ConsultorFormFase2 } from "@/lib/onboarding-api";
-import { SlideLabel } from "../_ui/critico";
+import { EditorialHeader } from "./shared/EditorialHeader";
 
 interface Props {
   f2: ConsultorFormFase2;
@@ -31,10 +31,11 @@ export function SlideN2Trayectoria({ f2 }: Props) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
       >
-        <SlideLabel>N2 · Trayectoria del candidato</SlideLabel>
-        <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight">
-          Formación y carrera
-        </h2>
+        <EditorialHeader
+          microLabel="ACTO I · N2 TRAYECTORIA"
+          headline="Historial que respalda la candidatura."
+          accentColor="#fbbf24"
+        />
         {n2?.estado_civil && (
           <p className="text-sm text-white/40 mt-1">
             {n2.estado_civil}

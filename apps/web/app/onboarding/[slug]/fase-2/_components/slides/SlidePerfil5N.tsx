@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import type { ConsultorFormFase2, CandidatoContext } from "@/lib/onboarding-api";
 import type { Semaforo } from "@/lib/onboarding-schema";
 import { SEMAFORO_BG, SEMAFORO_COLOR, SEMAFORO_LABEL } from "@/lib/onboarding-schema";
-import { SlideLabel } from "../_ui/critico";
+import { EditorialHeader } from "./shared/EditorialHeader";
 
 interface Props { ctx: CandidatoContext; f2: ConsultorFormFase2 }
 
@@ -43,7 +43,6 @@ const NIVELES = [
 
 export function SlidePerfil5N({ ctx, f2 }: Props) {
   const p = f2.perfil;
-  const nombre = p?.n1_identidad?.nombres_completos ?? ctx.user.full_name;
   const global = p?.resumen_ejecutivo?.semaforo_global;
 
   return (
@@ -52,9 +51,11 @@ export function SlidePerfil5N({ ctx, f2 }: Props) {
         className="flex items-end justify-between"
       >
         <div>
-          <SlideLabel>Perfil de Candidato</SlideLabel>
-          <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight">Modelo 5N · {nombre}</h2>
-          <p className="text-sm text-white/40 mt-1">Identidad · Trayectoria · Riesgo · Patrimonio · Salud</p>
+          <EditorialHeader
+            microLabel="ACTO I · PERFIL 5N"
+            headline="Cinco dimensiones que definen la posición del candidato."
+            accentColor="#fbbf24"
+          />
         </div>
         {global && (
           <div className={`rounded-xl border px-4 py-2 text-sm font-bold ${SEMAFORO_BG[global]} ${SEMAFORO_COLOR[global]}`}>
