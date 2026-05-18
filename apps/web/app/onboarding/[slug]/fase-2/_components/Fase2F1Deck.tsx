@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Edit3, Send, CheckCircle2 } from "lucide-react";
 
@@ -42,7 +41,6 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export function Fase2F1Deck({ slug, ctx, deck }: Props) {
-  const router = useRouter();
   const [index, setIndex] = useState(0);
   const [direction, setDirection] = useState<1 | -1>(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
