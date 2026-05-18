@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "motion/react";
 import type { CandidatoContext, ConsultorFormFase2 } from "@/lib/onboarding-api";
-import { CriticoSello, SlideLabel } from "../_ui/critico";
+import { SlideLabel } from "../_ui/critico";
+import { Badge } from "./shared/Badge";
+import { SlideModal } from "./shared/SlideModal";
 
 /**
  * Slide data — Debilidades y Riesgos.
@@ -55,6 +58,79 @@ const SIM_DEBILIDADES = [
 ];
 
 const ALL_FUENTES: FuenteKey[] = ["denuncias", "google", "reputacion_redes", "jne_observaciones"];
+
+function ClickableFuenteCard({
+  label,
+  estado,
+  hallazgos,
+  cfg,
+}: {
+  label: string;
+  estado: "flag" | "review" | "ok";
+  hallazgos: string[];
+  cfg: typeof ESTADO_CONFIG[keyof typeof ESTADO_CONFIG];
+}) {
+  const [open, setOpen] = useState(false);
+  const badgeTone = estado === "flag" ? "critico" : estado === "review" ? "revision" : "verde" as const;
+  return (
+    <>
+      <div
+        className={`rounded-xl border ${cfg.rowCls} p-4 cursor-pointer hover:opacity-80 transition-opacity relative`}
+        onClick={() => setOpen(true)}
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-white">{label}</p>
+            {hallazgos.length > 0 ? (
+              <p className="text-xs text-white/50 mt-1 leading-snug">
+                {hallazgos.join(" · ")}
+              </p>
+            ) : (
+              <p className="text-xs text-white/25 mt-1 italic">Sin hallazgos.</p>
+            )}
+          </div>
+          <div className="shrink-0">
+            <Badge tone={badgeTone} />
+          </div>
+        </div>
+      </div>
+      <SlideModal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={label}
+        badge={<Badge tone={badgeTone} />}
+      >
+        <div className="space-y-3 text-sm text-white/70 leading-relaxed">
+          {hallazgos.length > 0 ? (
+            <ul className="space-y-1">
+              {hallazgos.map((h, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-amber-400/50 mt-1">·</span>
+                  <span>{h}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-white/30 italic">Sin hallazgos registrados.</p>
+          )}
+          {estado === "flag" && (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 mt-3">
+              <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wider mb-1">
+                Implicancia
+              </p>
+              <p className="text-xs text-white/60">
+                Este hallazgo puede impactar negativamente la campaña si no se gestiona proactivamente.
+              </p>
+            </div>
+          )}
+        </div>
+      </SlideModal>
+    </>
+  );
+}
+
+const badgeToneFromSev = (sev: "alta" | "media" | "baja") =>
+  sev === "baja" ? "verde" : sev;
 
 export function SlideDebilidades({ ctx, f2 }: Props) {
   const fuentesRaw = f2.debilidades?.fuentes ?? [];
@@ -129,35 +205,13 @@ export function SlideDebilidades({ ctx, f2 }: Props) {
                     initial={{ opacity: 0, x: -8 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.3, delay: 0.2 + i * 0.06 }}
-                    className={`rounded-xl border ${cfg.rowCls} p-4`}
                   >
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-white">{label}</p>
-                        {(fuente.hallazgos ?? []).length > 0 ? (
-                          <p className="text-xs text-white/50 mt-1 leading-snug">
-                            {fuente.hallazgos!.join(" · ")}
-                          </p>
-                        ) : (
-                          <p className="text-xs text-white/25 mt-1 italic">Sin hallazgos.</p>
-                        )}
-                      </div>
-                      <div className="shrink-0 flex items-center gap-2">
-                        {fuente.estado === "flag" && (
-                          <CriticoSello tipo="critico" />
-                        )}
-                        {fuente.estado === "review" && (
-                          <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${cfg.badgeCls}`}>
-                            {cfg.label}
-                          </span>
-                        )}
-                        {fuente.estado === "ok" && (
-                          <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${cfg.badgeCls}`}>
-                            {cfg.label}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                    <ClickableFuenteCard
+                      label={label}
+                      estado={fuente.estado}
+                      hallazgos={fuente.hallazgos ?? []}
+                      cfg={cfg}
+                    />
                   </motion.div>
                 );
               })}
@@ -197,7 +251,6 @@ export function SlideDebilidades({ ctx, f2 }: Props) {
 
           <ul className="flex flex-col gap-3">
             {listaLibre.map((item, i) => {
-              const cfg = SEV_CONFIG[item.severidad];
               return (
                 <motion.li
                   key={`${item.titulo}-${i}`}
@@ -206,11 +259,9 @@ export function SlideDebilidades({ ctx, f2 }: Props) {
                   transition={{ duration: 0.3, delay: 0.28 + i * 0.07 }}
                   className="bg-[#0a1e4a] border border-white/10 rounded-xl p-4 flex items-start gap-3"
                 >
-                  <span
-                    className={`shrink-0 text-[10px] font-black px-2 py-0.5 rounded uppercase mt-0.5 ${cfg.cls}`}
-                  >
-                    {cfg.label}
-                  </span>
+                  <div className="shrink-0 mt-0.5">
+                    <Badge tone={badgeToneFromSev(item.severidad)} />
+                  </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-white leading-snug">
                       {item.titulo}
