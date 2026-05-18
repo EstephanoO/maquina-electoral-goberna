@@ -367,10 +367,14 @@ function LiveProfileCard({
 function CandidatoEditor({
   f1,
   ctx,
+  padronActual,
+  onPadronChange,
   onChange,
 }: {
   f1: Fase1Rapida;
   ctx: CandidatoContext;
+  padronActual?: number;
+  onPadronChange: (v: number | undefined) => void;
   onChange: (patch: Partial<Fase1Rapida>) => void;
 }) {
   const c = f1.candidato ?? {};
@@ -564,6 +568,48 @@ function CandidatoEditor({
             onChange={(e) =>
               onChange({ postulacion: { ...p, fecha_eleccion: e.target.value } })
             }
+          />
+        </Field>
+      </div>
+
+      <hr className="border-white/8" />
+
+      <div className="space-y-1">
+        <p className="text-[10px] uppercase tracking-[0.2em] text-amber-400/60 font-semibold">
+          Territorio — datos electorales
+        </p>
+        <p className="text-[11px] text-gray-600">
+          Esenciales para calcular la meta de votos y dimensionar la campaña.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Field label="Padrón electoral (electores habilitados)">
+          <input
+            type="number"
+            className={inputClass}
+            value={padronActual ?? ""}
+            onChange={(e) =>
+              onPadronChange(e.target.value ? Number(e.target.value) : undefined)
+            }
+            placeholder="Ej. 252 000"
+          />
+        </Field>
+        <Field label="Población total del territorio">
+          <input
+            type="number"
+            className={inputClass}
+            value={f1.contexto_territorio?.poblacion_aproximada ?? ""}
+            onChange={(e) => {
+              const ct = f1.contexto_territorio ?? {};
+              onChange({
+                contexto_territorio: {
+                  ...ct,
+                  poblacion_aproximada: e.target.value ? Number(e.target.value) : undefined,
+                },
+              });
+            }}
+            placeholder="Ej. 340 000"
           />
         </Field>
       </div>
@@ -1886,6 +1932,170 @@ function PerfilCompletoEditor({
   );
 }
 
+// ── Step preview helper ────────────────────────────────────────────────────
+
+function getStepPreview(
+  id: StepId,
+  f1: Fase1Rapida,
+  ecd: TerritoryEcd,
+  perfil: PerfilCandidato,
+  vpg: { padron_actual?: number; votos_meta?: number },
+): React.ReactNode {
+  switch (id) {
+    case "candidato": {
+      const c = f1.candidato;
+      if (!c?.nombre_completo && !c?.bio_corta) return null;
+      return (
+        <div className="space-y-1">
+          {c.nombre_completo && <p className="font-semibold text-white truncate">{c.nombre_completo}</p>}
+          {c.bio_corta && <p className="text-gray-400 line-clamp-2">{c.bio_corta}</p>}
+          {vpg.padron_actual && (
+            <p className="text-amber-400/80 text-[10px]">Padrón: {vpg.padron_actual.toLocaleString("es-PE")}</p>
+          )}
+        </div>
+      );
+    }
+    case "c2": {
+      const segs = ecd.c2_segmentos;
+      if (!segs?.length) return null;
+      return (
+        <div className="space-y-1">
+          {segs.slice(0, 3).map((s) => (
+            <div key={s.id} className="flex justify-between gap-2">
+              <span className="text-gray-300 truncate text-[10px]">{s.nombre.split("/")[0].trim()}</span>
+              <span className="text-amber-400 font-bold text-[10px] flex-shrink-0">{s.pct_aprox ?? 0}%</span>
+            </div>
+          ))}
+          {segs.length > 3 && <p className="text-gray-600 text-[10px]">+{segs.length - 3} más</p>}
+        </div>
+      );
+    }
+    case "d5": {
+      const rows = ecd.d5_matrix;
+      if (!rows?.length) return null;
+      const first = rows[0];
+      return (
+        <div className="space-y-1">
+          {rows.slice(0, 2).map((r, i) => (
+            <p key={i} className="text-gray-400 line-clamp-1 text-[10px]">
+              <span className="text-amber-400/70">→</span> {r.mensaje_clave ?? "Sin mensaje"}
+            </p>
+          ))}
+        </div>
+      );
+    }
+    case "nucleo": {
+      const n = ecd.nucleo_goberna;
+      if (!n?.propuesta_central) return null;
+      return <p className="text-gray-300 line-clamp-3">{n.propuesta_central}</p>;
+    }
+    case "estrategia": {
+      const e = f1.estrategia;
+      if (!e?.tipo_campana) return null;
+      return (
+        <div className="space-y-1">
+          <p className="text-white font-semibold text-[10px]">{e.tipo_campana}</p>
+          {e.eje_emocional && <p className="text-amber-400/80 text-[10px]">{e.eje_emocional}</p>}
+          {e.frente_principal && <p className="text-gray-400 text-[10px]">Frente {e.frente_principal}</p>}
+        </div>
+      );
+    }
+    case "propuestas": {
+      const props = f1.propuestas;
+      if (!props?.length) return null;
+      return (
+        <div className="space-y-0.5">
+          {props.slice(0, 4).map((p, i) => (
+            <p key={i} className="text-gray-300 line-clamp-1 text-[10px]">
+              <span className="text-amber-400/60">{i + 1}.</span> {p.titulo}
+            </p>
+          ))}
+        </div>
+      );
+    }
+    case "branding": {
+      const b = f1.branding;
+      if (!b?.slogan && !b?.color_primario) return null;
+      return (
+        <div className="space-y-1.5">
+          {b.slogan && <p className="text-white italic line-clamp-2">"{b.slogan}"</p>}
+          {(b.color_primario || b.color_secundario) && (
+            <div className="flex gap-1.5">
+              {b.color_primario && (
+                <div className="size-4 rounded-full border border-white/20" style={{ background: b.color_primario }} />
+              )}
+              {b.color_secundario && (
+                <div className="size-4 rounded-full border border-white/20" style={{ background: b.color_secundario }} />
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+    case "foda": {
+      const d = f1.diagnostico_inicial;
+      if (!d?.fortalezas?.length && !d?.debilidades?.length) return null;
+      return (
+        <div className="grid grid-cols-2 gap-2 text-[10px]">
+          <div>
+            <p className="text-green-400 font-semibold mb-0.5">F ({d.fortalezas?.length ?? 0})</p>
+            {d.fortalezas?.slice(0, 2).map((f, i) => (
+              <p key={i} className="text-gray-400 line-clamp-1">{f}</p>
+            ))}
+          </div>
+          <div>
+            <p className="text-red-400 font-semibold mb-0.5">D ({d.debilidades?.length ?? 0})</p>
+            {d.debilidades?.slice(0, 2).map((d, i) => (
+              <p key={i} className="text-gray-400 line-clamp-1">{d}</p>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    case "estructura": {
+      const partidos = ecd.e4_campo_politico?.partidos_fuertes;
+      if (!partidos?.length) return null;
+      return (
+        <div className="space-y-0.5">
+          {partidos.slice(0, 3).map((p, i) => (
+            <div key={i} className="flex justify-between gap-2">
+              <span className="text-gray-300 truncate text-[10px]">{p.nombre}</span>
+              <span className="text-amber-400 font-bold text-[10px] flex-shrink-0">{p.pct_aprox ?? 0}%</span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    case "conciencia": {
+      const issues = ecd.c3_issues?.top_issues;
+      const c5 = ecd.c5_intencion_voto;
+      if (!issues?.length && !c5?.candidato_puntero) return null;
+      return (
+        <div className="space-y-1">
+          {c5?.candidato_puntero && (
+            <p className="text-[10px] text-gray-400">
+              Puntero: <span className="text-white">{c5.candidato_puntero}</span>
+            </p>
+          )}
+          {c5?.pct_nuestro_candidato != null && (
+            <p className="text-amber-400 font-bold text-[10px]">Nuestro: {c5.pct_nuestro_candidato}%</p>
+          )}
+          {issues?.slice(0, 2).map((iss, i) => (
+            <p key={i} className="text-gray-400 line-clamp-1 text-[10px]">{iss.issue}</p>
+          ))}
+        </div>
+      );
+    }
+    case "perfil5n": {
+      const n1 = perfil.n1_identidad;
+      if (!n1?.bio_corta) return null;
+      return <p className="text-gray-300 line-clamp-3">{n1.bio_corta}</p>;
+    }
+    default:
+      return null;
+  }
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function PerfilHubV2Client({ slug }: { slug: string }) {
@@ -1897,11 +2107,13 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [currentStep, setCurrentStep] = useState<number>(0);
+  const [hoveredStep, setHoveredStep] = useState<number | null>(null);
 
   // Form state
   const [f1, setF1] = useState<Fase1Rapida>({});
   const [perfil, setPerfil] = useState<PerfilCandidato>({});
   const [ecd, setEcd] = useState<TerritoryEcd>({});
+  const [vpg, setVpg] = useState<{ padron_actual?: number; votos_meta?: number }>({});
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<Partial<ConsultorFormFase2>>({});
@@ -1923,6 +2135,7 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
         if (form?.fase1_rapida) setF1(form.fase1_rapida);
         if (form?.perfil_candidato) setPerfil(form.perfil_candidato);
         if (form?.territorio_ecd) setEcd(form.territorio_ecd);
+        if (form?.votos_para_ganar) setVpg(form.votos_para_ganar as typeof vpg);
         // Seed from ctx if candidato name not set
         if (!form?.fase1_rapida?.candidato?.nombre_completo && result.ctx.user.full_name) {
           setF1((prev) => ({
@@ -1968,6 +2181,14 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
     setF1((prev) => {
       const next = deepMerge(prev, patch) as Fase1Rapida;
       scheduleSave({ fase1_rapida: next });
+      return next;
+    });
+  }
+
+  function updateVpg(patch: Partial<typeof vpg>) {
+    setVpg((prev) => {
+      const next = { ...prev, ...patch };
+      scheduleSave({ votos_para_ganar: next });
       return next;
     });
   }
@@ -2087,6 +2308,8 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
           <CandidatoEditor
             f1={f1}
             ctx={ctx!}
+            padronActual={vpg.padron_actual}
+            onPadronChange={(v) => updateVpg({ padron_actual: v })}
             onChange={(patch) => updateF1(patch)}
           />
         );
@@ -2241,29 +2464,51 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
             {STEPS.map((step, i) => {
               const stepComp = getStepCompletion(step.id);
               const isCurrent = i === currentStep;
+              const isHovered = hoveredStep === i;
+              const preview = getStepPreview(step.id, f1, ecd, perfil, vpg);
               return (
-                <button
+                <div
                   key={step.id}
-                  onClick={() => setCurrentStep(i)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${
-                    isCurrent
-                      ? "bg-amber-400 text-[#0a1e4a]"
-                      : stepComp === "done"
-                        ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                        : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
-                  }`}
+                  className="relative"
+                  onMouseEnter={() => setHoveredStep(i)}
+                  onMouseLeave={() => setHoveredStep(null)}
                 >
-                  <span
-                    className={`size-1.5 rounded-full ${
+                  <button
+                    onClick={() => setCurrentStep(i)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${
                       isCurrent
-                        ? "bg-[#0a1e4a]"
+                        ? "bg-amber-400 text-[#0a1e4a]"
                         : stepComp === "done"
-                          ? "bg-green-400"
-                          : "bg-gray-600"
+                          ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                          : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
                     }`}
-                  />
-                  {step.label}
-                </button>
+                  >
+                    <span
+                      className={`size-1.5 rounded-full ${
+                        isCurrent
+                          ? "bg-[#0a1e4a]"
+                          : stepComp === "done"
+                            ? "bg-green-400"
+                            : "bg-gray-600"
+                      }`}
+                    />
+                    {step.label}
+                  </button>
+                  {/* Hover preview tooltip */}
+                  {isHovered && !isCurrent && preview && (
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 pointer-events-none">
+                      <div className="bg-[#0d1f3c] border border-white/15 rounded-xl shadow-2xl p-3 min-w-[180px] max-w-[240px]">
+                        <p className="text-[9px] uppercase tracking-widest text-gray-500 mb-1.5 font-semibold">
+                          {step.label}
+                        </p>
+                        <div className="text-[11px] text-gray-300 leading-relaxed">
+                          {preview}
+                        </div>
+                        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-[#0d1f3c]" />
+                      </div>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
