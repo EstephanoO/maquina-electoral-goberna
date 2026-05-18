@@ -71,7 +71,7 @@ function ClickableFuenteCard({
   cfg: typeof ESTADO_CONFIG[keyof typeof ESTADO_CONFIG];
 }) {
   const [open, setOpen] = useState(false);
-  const badgeTone = estado === "flag" ? "critico" : estado === "review" ? "revision" : "verde" as const;
+  const badgeTone = (estado === "flag" ? "critico" : estado === "review" ? "revision" : "verde") as const;
   return (
     <>
       <div
