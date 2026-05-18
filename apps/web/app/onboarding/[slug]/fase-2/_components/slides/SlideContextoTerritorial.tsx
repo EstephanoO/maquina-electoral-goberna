@@ -7,7 +7,7 @@
  * Map is lazy-loaded via dynamic() to prevent SSR issues with MapLibre.
  * Falls back to stats-only layout when geojson/bbox are not available.
  */
-import { useEffect, useState, memo } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import dynamic from "next/dynamic";
 
