@@ -3,6 +3,7 @@
 import { motion } from "motion/react";
 import type { ConsultorFormFase2 } from "@/lib/onboarding-api";
 import { SlideLabel } from "../_ui/critico";
+import { useTooltip } from "./shared/Tooltip";
 
 /**
  * Slide FODA — reskin CRÍTICO (azul marino + gold + sellos).
@@ -78,6 +79,7 @@ const SIM_DATA: Record<CuadranteConfig["key"], string[]> = {
 };
 
 export function SlideFoda({ f2 }: Props) {
+  const tooltip = useTooltip();
   const d = f2.fase1_rapida?.diagnostico_inicial ?? {};
 
   const rawData: Record<CuadranteConfig["key"], string[]> = {
@@ -155,7 +157,13 @@ export function SlideFoda({ f2 }: Props) {
                       <span className={`shrink-0 text-xs font-bold mt-0.5 ${q.bulletCls}`}>
                         {q.icon}
                       </span>
-                      <span className="text-sm text-white/70 leading-snug">{text}</span>
+                      <span
+                        className="cursor-help text-sm text-white/70 leading-snug"
+                        onMouseEnter={(e) => tooltip.show({ body: text, fuente: "Goberna · Diagnóstico ECD" }, e)}
+                        onMouseLeave={tooltip.hide}
+                      >
+                        {text}
+                      </span>
                     </li>
                   ))}
                 </ul>
