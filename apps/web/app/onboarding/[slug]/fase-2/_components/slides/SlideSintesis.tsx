@@ -2,7 +2,7 @@
 
 import { motion } from "motion/react";
 import type { ConsultorFormFase2 } from "@/lib/onboarding-api";
-import { SlideLabel } from "../_ui/critico";
+import { EditorialHeader } from "./shared/EditorialHeader";
 
 interface Props {
   f2: ConsultorFormFase2;
@@ -55,13 +55,11 @@ export function SlideSintesis({ f2 }: Props) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
       >
-        <SlideLabel>Síntesis Goberna · Cruces ECD</SlideLabel>
-        <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight">
-          Análisis cruzado del territorio
-        </h2>
-        <p className="text-sm text-white/40 mt-1">
-          Estructura × Conciencia × Decisión
-        </p>
+        <EditorialHeader
+          microLabel="ACTO IV · SÍNTESIS ECD"
+          headline="Los tres ejes se cruzan en un punto."
+          accentColor="#22c55e"
+        />
       </motion.div>
 
       {/* ── Cruces bilaterales ───────────────────────────────────────────── */}

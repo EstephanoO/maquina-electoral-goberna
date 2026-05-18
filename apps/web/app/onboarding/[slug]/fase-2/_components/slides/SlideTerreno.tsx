@@ -2,7 +2,7 @@
 
 import { motion } from "motion/react";
 import type { ConsultorFormFase2, CandidatoContext } from "@/lib/onboarding-api";
-import { SlideLabel } from "../_ui/critico";
+import { EditorialHeader } from "./shared/EditorialHeader";
 
 interface Props { ctx: CandidatoContext; f2: ConsultorFormFase2 }
 
@@ -46,11 +46,11 @@ export function SlideTerreno({ ctx, f2 }: Props) {
   return (
     <div className="min-h-full bg-[#020a1e] flex flex-col px-6 py-8 sm:px-10 sm:py-10 gap-8">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-        <SlideLabel>Terreno de Postulación</SlideLabel>
-        <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight">
-          Triada ECD · {lugar}
-        </h2>
-        <p className="text-sm text-white/40 mt-1">Estructura · Conciencia · Decisión</p>
+        <EditorialHeader
+          microLabel="ACTO II · TERRENO ECD"
+          headline="El campo de batalla: estructura, conciencia y decisión."
+          accentColor="#ef4444"
+        />
       </motion.div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 flex-1">

@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
+import { EditorialHeader } from "./shared/EditorialHeader";
 
 /**
  * Slide HERRAMIENTAS — muestra la plataforma Goberna con 6 feature cards.
@@ -51,12 +52,11 @@ export function SlideHerramientas() {
     <div className="relative flex-1 flex flex-col rounded-2xl overflow-hidden border border-white/5 shadow-2xl min-h-[70vh] bg-[#020a1e]">
       {/* Header */}
       <header className="relative px-8 sm:px-12 py-6 sm:py-7 border-b border-amber-400/20">
-        <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/60 font-semibold text-center mb-2">
-          Goberna · Tu Plataforma
-        </p>
-        <h2 className="text-2xl sm:text-3xl md:text-4xl font-black uppercase tracking-tight text-center text-white leading-tight">
-          Las Herramientas que te Dan Ventaja
-        </h2>
+        <EditorialHeader
+          microLabel="ACTO IV · GOBERNA"
+          headline="La plataforma que acompaña toda la campaña."
+          accentColor="#22c55e"
+        />
       </header>
 
       {/* Body */}

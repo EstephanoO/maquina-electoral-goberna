@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import type { ConsultorFormFase2, CandidatoContext } from "@/lib/onboarding-api";
 import type { PentaDEvaluacion } from "@/lib/onboarding-schema";
 import { calcPentaD, calcBrecha } from "@/lib/onboarding-schema";
-import { SlideLabel } from "../_ui/critico";
+import { EditorialHeader } from "./shared/EditorialHeader";
 
 interface Props { ctx: CandidatoContext; f2: ConsultorFormFase2 }
 
@@ -55,13 +55,11 @@ export function SlidePentaDComparativa({ ctx, f2 }: Props) {
   return (
     <div className="min-h-full bg-[#020a1e] flex flex-col px-6 py-8 sm:px-10 sm:py-10 gap-6">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-        <SlideLabel>Presencia Digital · Penta-D</SlideLabel>
-        <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight">
-          Análisis Comparativo Digital
-        </h2>
-        <p className="text-sm text-white/40 mt-1">
-          {pr.periodo_observacion ?? "30 días de observación"} · 3 candidatos
-        </p>
+        <EditorialHeader
+          microLabel="ACTO III · PRESENCIA DIGITAL"
+          headline="Dónde está el candidato vs. la competencia."
+          accentColor="#3b82f6"
+        />
       </motion.div>
 
       {/* Tabla de ejes */}

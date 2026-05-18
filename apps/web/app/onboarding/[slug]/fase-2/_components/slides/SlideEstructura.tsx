@@ -2,7 +2,7 @@
 
 import { motion } from "motion/react";
 import type { CandidatoContext, ConsultorFormFase2 } from "@/lib/onboarding-api";
-import { SlideLabel } from "../_ui/critico";
+import { EditorialHeader } from "./shared/EditorialHeader";
 
 interface Props {
   ctx: CandidatoContext;
@@ -87,11 +87,11 @@ export function SlideEstructura({ ctx, f2 }: Props) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
       >
-        <SlideLabel>Dimensión E · Estructura</SlideLabel>
-        <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight">
-          Estructura del territorio
-        </h2>
-        <p className="text-sm text-white/40 mt-1">{lugar}</p>
+        <EditorialHeader
+          microLabel="ACTO II · ESTRUCTURA"
+          headline="La arquitectura organizativa del territorio."
+          accentColor="#ef4444"
+        />
       </motion.div>
 
       {/* ── Grid E1/E2/E3/E4 ────────────────────────────────────────────── */}
