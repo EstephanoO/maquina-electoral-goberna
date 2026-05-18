@@ -43,7 +43,9 @@ export function SlideModal({ open, onClose, title, badge, children }: Props) {
                 {badge}
               </div>
               <button
+                type="button"
                 onClick={onClose}
+                aria-label="Cerrar"
                 className="text-white/30 hover:text-white/70 transition-colors"
               >
                 <X className="size-5" />
