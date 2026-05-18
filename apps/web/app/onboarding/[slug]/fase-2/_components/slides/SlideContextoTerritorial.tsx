@@ -18,6 +18,7 @@ import {
   type DistritoDetail,
 } from "@/lib/onboarding-fase1-api";
 import { EditorialHeader } from "./shared/EditorialHeader";
+import { useTooltip } from "./shared/Tooltip";
 
 // Lazy-load SlideMap — MapLibre requires window, cannot SSR
 const SlideMapDynamic = dynamic(
@@ -60,6 +61,7 @@ interface Props {
 
 // ── Slide ─────────────────────────────────────────────────────────────────────
 export function SlideContextoTerritorial({ ctx, f2 }: Props) {
+  const tooltip = useTooltip();
   const [detail, setDetail] = useState<DistritoDetail | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -170,7 +172,11 @@ export function SlideContextoTerritorial({ ctx, f2 }: Props) {
             <span className="text-[10px] uppercase tracking-widest text-white/30 font-semibold mb-1">
               {padronLabel}
             </span>
-            <span className="text-5xl font-black text-white tabular-nums leading-none">
+            <span
+              className="text-5xl font-black text-white tabular-nums leading-none cursor-help underline decoration-dotted decoration-white/20"
+              onMouseEnter={(e) => tooltip.show({ title: "PADRÓN ONPE", body: "Electores habilitados para las ERM 2026 en esta jurisdicción.", fuente: "ONPE · JNE" }, e)}
+              onMouseLeave={tooltip.hide}
+            >
               {fmt(padron)}
             </span>
             {padronSim && (

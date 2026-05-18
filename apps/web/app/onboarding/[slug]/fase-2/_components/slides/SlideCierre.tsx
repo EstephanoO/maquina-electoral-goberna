@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 
 import type { ConsultorFormFase2 } from "@/lib/onboarding-api";
 import { EditorialHeader } from "./shared/EditorialHeader";
+import { useTooltip } from "./shared/Tooltip";
 
 /**
  * Slide CIERRE — slide de conversion premium.
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export function SlideCierre({ f2 }: Props) {
+  const tooltip = useTooltip();
   const fechaEleccion = f2?.fase1_rapida?.postulacion?.fecha_eleccion;
   const { dias, esEstimado } = computeDaysToElection(fechaEleccion);
 
@@ -132,7 +134,13 @@ export function SlideCierre({ f2 }: Props) {
                   animate={{ scale: [1, 1.06, 1] }}
                   transition={{ duration: 2, repeat: Infinity, ease: [0.4, 0, 0.6, 1], times: [0, 0.5, 1] }}
                 >
-                  {dias}
+                  <span
+                    className="cursor-help"
+                    onMouseEnter={(e) => tooltip.show({ title: "ERM 2026", body: "Elecciones Regionales y Municipales 2026. Fecha estimada: octubre 2026.", fuente: "JNE" }, e)}
+                    onMouseLeave={tooltip.hide}
+                  >
+                    {dias}
+                  </span>
                 </motion.span>
                 <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.25em] text-[#020a1e]">
                   Dias para la eleccion{esEstimado ? " · Estimado" : ""}
