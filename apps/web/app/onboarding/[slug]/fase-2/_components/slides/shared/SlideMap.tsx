@@ -1,6 +1,6 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { Map as MapLibre, Source, Layer } from "@vis.gl/react-maplibre";
 import type { FillLayerSpecification, LineLayerSpecification } from "maplibre-gl";
 
@@ -14,38 +14,35 @@ interface SlideMapProps {
 const DARK_STYLE =
   "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
 
-// Hoisted outside component to prevent re-render
-const FILL_PAINT: FillLayerSpecification["paint"] = {
-  "fill-color": "#fbbf24",
-  "fill-opacity": 0.18,
-};
-const LINE_PAINT: LineLayerSpecification["paint"] = {
-  "line-color": "#fbbf24",
-  "line-width": 2.5,
-  "line-opacity": 0.9,
-};
-
 function SlideMapInner({
   geojson,
   bbox,
+  accentColor = "#fbbf24",
   height = "100%",
 }: SlideMapProps) {
   const [w, s, e, n] = bbox;
   const cx = (w + e) / 2;
   const cy = (s + n) / 2;
   const span = Math.max(n - s, e - w);
-  const zoom = Math.max(6, Math.min(12, Math.log2(360 / span) - 1));
+  const zoom = Math.max(6, Math.min(12, Math.log2(360 / Math.max(span, 0.0001)) - 1));
 
-  const geojsonData: GeoJSON.FeatureCollection = {
-    type: "FeatureCollection",
-    features: [
-      {
-        type: "Feature",
-        properties: {},
-        geometry: geojson,
-      },
-    ],
-  };
+  const fillPaint = useMemo<FillLayerSpecification["paint"]>(
+    () => ({ "fill-color": accentColor, "fill-opacity": 0.18 }),
+    [accentColor]
+  );
+
+  const linePaint = useMemo<LineLayerSpecification["paint"]>(
+    () => ({ "line-color": accentColor, "line-width": 2.5, "line-opacity": 0.9 }),
+    [accentColor]
+  );
+
+  const geojsonData = useMemo<GeoJSON.FeatureCollection>(
+    () => ({
+      type: "FeatureCollection",
+      features: [{ type: "Feature", properties: {}, geometry: geojson }],
+    }),
+    [geojson]
+  );
 
   return (
     <div
@@ -63,8 +60,8 @@ function SlideMapInner({
         attributionControl={false}
       >
         <Source id="district-src" type="geojson" data={geojsonData}>
-          <Layer id="district-fill" type="fill" paint={FILL_PAINT} />
-          <Layer id="district-line" type="line" paint={LINE_PAINT} />
+          <Layer id="district-fill" type="fill" paint={fillPaint} />
+          <Layer id="district-line" type="line" paint={linePaint} />
         </Source>
       </MapLibre>
     </div>
