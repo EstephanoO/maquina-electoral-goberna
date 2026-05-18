@@ -1,10 +1,9 @@
 "use client";
 
-import { motion } from "motion/react";
-
 import type { CandidatoContext, ConsultorFormFase2 } from "@/lib/onboarding-api";
 import { CriticoSello } from "../_ui/critico";
 import { EditorialHeader } from "./shared/EditorialHeader";
+import { StatMega } from "./shared/StatMega";
 
 interface Props {
   ctx: CandidatoContext;
@@ -12,143 +11,137 @@ interface Props {
 }
 
 /**
- * Slide "Ficha técnica" — estilo CRÍTICO (navy + gold).
- * Tabla label/value en fondo oscuro #020a1e.
- * Si hay nivel_riesgo_global → sello visual en encabezado derecho.
+ * Slide "Ficha técnica" — 3-col grid, estilo CRÍTICO (navy + gold).
+ * Col 1: datos personales (DNI, edad, profesión, cargo)
+ * Col 2: jurisdicción + partido
+ * Col 3: bio + valores
  */
 export function SlideFichaTecnica({ ctx, f2 }: Props) {
-  const rows = buildRows(ctx, f2);
-  const nivelRiesgo = f2.perfil_candidato?.n3_riesgo?.nivel_riesgo_global;
-  const cargoLabel = ctx.cargo.nombre;
-
-  const selloTipo =
-    nivelRiesgo === "critico" || nivelRiesgo === "alto"
-      ? "critico"
-      : nivelRiesgo === "medio"
-        ? "atencion"
-        : nivelRiesgo === "bajo"
-          ? "ok"
-          : null;
-
-  return (
-    <div className="flex-1 flex flex-col bg-[#020a1e] px-8 py-10">
-      {/* Encabezado */}
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        className="flex items-start justify-between gap-4 mb-8"
-      >
-        <div>
-          <EditorialHeader
-            microLabel="ACTO I · FICHA DEL CANDIDATO"
-            headline={`${cargoLabel} · ${ctx.jurisdiccion.distrito?.nombre ?? ctx.jurisdiccion.provincia?.nombre ?? ""}`}
-            accentColor="#fbbf24"
-          />
-        </div>
-        {selloTipo && (
-          <div className="shrink-0 mt-1">
-            <CriticoSello tipo={selloTipo} />
-          </div>
-        )}
-      </motion.div>
-
-      {/* Tabla de filas */}
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-0">
-        {rows.map((row, i) => (
-          <motion.div
-            key={row.label}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              delay: 0.05 + i * 0.04,
-              duration: 0.4,
-              ease: [0.22, 1, 0.36, 1],
-            }}
-            className="flex flex-col gap-0.5 border-b border-white/5 py-3"
-          >
-            <span className="text-[10px] uppercase tracking-[0.3em] font-semibold text-amber-400/50">
-              {row.label}
-            </span>
-            <span className="text-base md:text-lg font-semibold text-white">
-              {row.value}
-            </span>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Footer decorativo */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.8, duration: 0.5 }}
-        className="mt-6 pt-4 border-t border-white/5 flex items-center gap-2"
-      >
-        <div className="h-[2px] w-8 bg-amber-400/40 rounded-full" />
-        <p className="text-[10px] uppercase tracking-[0.2em] text-white/20 font-semibold">
-          Goberna · Ficha confidencial
-        </p>
-      </motion.div>
-    </div>
-  );
-}
-
-interface Row {
-  label: string;
-  value: string;
-}
-
-function buildRows(ctx: CandidatoContext, f2: ConsultorFormFase2): Row[] {
+  // ---------- data derivation (unchanged logic) ----------
   const n1 = f2.perfil_candidato?.n1_identidad;
   const n2 = f2.perfil_candidato?.n2_trayectoria;
   const fb = f2.ficha_basica;
 
-  const out: Row[] = [];
-  const push = (label: string, raw: string | number | null | undefined) => {
-    if (raw === null || raw === undefined) return;
-    const s = String(raw).trim();
-    if (s.length === 0) return;
-    out.push({ label, value: s });
-  };
+  const nivelRiesgoGlobal = f2.perfil_candidato?.n3_riesgo?.nivel_riesgo_global;
+  const cargoLabel = ctx.cargo.nombre;
 
-  // DNI / Documento
-  const dni = n1?.documento_numero ?? fb?.dni;
-  push("DNI", dni);
+  const selloTipo =
+    nivelRiesgoGlobal === "critico" || nivelRiesgoGlobal === "alto"
+      ? "critico"
+      : nivelRiesgoGlobal === "medio"
+        ? "atencion"
+        : nivelRiesgoGlobal === "bajo"
+          ? "ok"
+          : null;
 
-  // Edad — preferir n1.fecha_nacimiento, fallback a fb.edad
+  const dni = n1?.documento_numero ?? fb?.dni ?? null;
+
   const edadCalc = computeEdad(n1?.fecha_nacimiento);
-  const edad = edadCalc ?? fb?.edad;
-  push("Edad", typeof edad === "number" ? `${edad} años` : undefined);
+  const edad = edadCalc ?? fb?.edad ?? null;
 
-  // Sexo
-  if (n1?.sexo === "M") push("Sexo", "Masculino");
-  else if (n1?.sexo === "F") push("Sexo", "Femenino");
+  const profesion = n2?.profesion ?? fb?.profesion ?? null;
 
-  // Profesión — preferir n2.profesion, fallback a fb.profesion
-  push("Profesión", n2?.profesion ?? fb?.profesion);
+  const bio =
+    f2.quien_es?.texto_libre ??
+    n1?.bio_corta ??
+    null;
 
-  // Estado civil
-  push("Estado civil", n1?.estado_civil);
+  const valoresRaw = f2.quien_es?.valores;
+  const valores: string[] = Array.isArray(valoresRaw) ? valoresRaw : [];
 
-  // Hijos
-  if (typeof n1?.hijos === "number") push("Hijos", String(n1.hijos));
+  const jurisdiccionLabel = buildJurisdiccion(ctx);
+  const partidoLabel =
+    ctx.organizacion_politica?.siglas ?? ctx.organizacion_politica?.nombre ?? null;
 
-  // Religión
-  push("Religión", n1?.religion);
+  // -------------------------------------------------------
 
-  // Cargo (siempre disponible)
-  push("Cargo", ctx.cargo.nombre);
+  return (
+    <div className="flex-1 flex flex-col rounded-2xl overflow-hidden border border-white/10 bg-[#020a1e]">
+      {/* Header */}
+      <div className="px-8 pt-8 pb-4 border-b border-white/5 flex items-center justify-between">
+        <div>
+          <EditorialHeader
+            microLabel="ACTO I · PERFIL DEL CANDIDATO"
+            headline="Ficha del Candidato"
+            accentColor="#fbbf24"
+            headlineSize="sm"
+          />
+          <span className="inline-block mt-2 px-3 py-1 border border-amber-400/40 rounded text-[10px] uppercase tracking-widest text-amber-400 font-bold">
+            {cargoLabel}
+          </span>
+        </div>
+        {selloTipo && (
+          <div className="shrink-0">
+            <CriticoSello tipo={selloTipo} />
+          </div>
+        )}
+      </div>
 
-  // Jurisdicción — concat país/depto/prov/distrito
-  push("Jurisdicción", buildJurisdiccion(ctx));
+      {/* 3-col grid */}
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-white/5">
+        {/* Col 1: personal data */}
+        <div className="p-6 flex flex-col gap-5">
+          {dni && (
+            <StatMega
+              label="DNI"
+              value={dni}
+              mono
+              tip={{ title: "RENIEC", body: "Documento Nacional de Identidad del candidato.", fuente: "RENIEC" }}
+            />
+          )}
+          {edad != null && <StatMega label="Edad" value={`${edad} años`} />}
+          {profesion && <StatMega label="Profesión" value={profesion} size="sm" />}
+          <StatMega label="Cargo postulado" value={ctx.cargo.nombre} size="sm" />
+        </div>
 
-  // Partido
-  push(
-    "Partido",
-    ctx.organizacion_politica?.siglas ?? ctx.organizacion_politica?.nombre,
+        {/* Col 2: jurisdiction + party */}
+        <div className="p-6 flex flex-col gap-5">
+          <StatMega
+            label="Jurisdicción"
+            value={jurisdiccionLabel}
+            size="sm"
+            tip={{ title: "UBIGEO", body: "Circunscripción electoral para las ERM 2026.", fuente: "ONPE" }}
+          />
+          {partidoLabel && (
+            <StatMega label="Organización política" value={partidoLabel} size="sm" />
+          )}
+        </div>
+
+        {/* Col 3: bio + valores */}
+        <div className="p-6 flex flex-col gap-5">
+          {bio && (
+            <div>
+              <p className="text-[9px] uppercase tracking-widest text-white/30 font-semibold mb-2">Bio</p>
+              <p className="text-sm text-white/70 leading-relaxed line-clamp-5">{bio}</p>
+            </div>
+          )}
+          {valores.length > 0 && (
+            <div>
+              <p className="text-[9px] uppercase tracking-widest text-white/30 font-semibold mb-2">Valores</p>
+              <div className="flex flex-wrap gap-2">
+                {valores.map((v) => (
+                  <span key={v} className="px-2.5 py-1 border border-white/15 rounded-full text-[10px] text-white/60">
+                    {v}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {!bio && valores.length === 0 && (
+            <p className="text-sm text-white/20 italic">Bio pendiente de completar.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="px-8 py-3 border-t border-white/5 flex items-center gap-3">
+        <div className="h-px flex-1 bg-amber-400/20" />
+        <span className="text-[9px] uppercase tracking-widest text-white/20">
+          Goberna · Ficha Confidencial
+        </span>
+      </div>
+    </div>
   );
-
-  return out;
 }
 
 function computeEdad(fechaNacimiento?: string): number | undefined {
