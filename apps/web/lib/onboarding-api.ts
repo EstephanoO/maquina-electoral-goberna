@@ -201,6 +201,19 @@ export type Fase1Rapida = {
     zonas_debiles?: string[];
     notas_adicionales?: string;
   };
+  historial_electoral_territorio?: Array<{
+    anio: number;
+    cargo?: string;
+    ganador?: string;
+    partido_ganador?: string;
+    pct_ganador?: number;
+    votos_ganador?: number;
+    segundo?: string;
+    partido_segundo?: string;
+    pct_segundo?: number;
+    padron?: number;
+    notas?: string;
+  }>;
   secciones_completas?: string[];
   publicado?: boolean;
   publicado_at?: string;

@@ -613,6 +613,201 @@ function CandidatoEditor({
           />
         </Field>
       </div>
+
+      <hr className="border-white/8" />
+
+      <HistorialElectoralEditor
+        value={f1.historial_electoral_territorio ?? []}
+        onChange={(v) => onChange({ historial_electoral_territorio: v })}
+      />
+    </div>
+  );
+}
+
+type HistorialEntry = NonNullable<Fase1Rapida["historial_electoral_territorio"]>[number];
+
+function HistorialElectoralEditor({
+  value,
+  onChange,
+}: {
+  value: HistorialEntry[];
+  onChange: (v: HistorialEntry[]) => void;
+}) {
+  function addEntry() {
+    const newEntry: HistorialEntry = { anio: new Date().getFullYear() - 4 };
+    onChange([...value, newEntry]);
+  }
+
+  function update(i: number, patch: Partial<HistorialEntry>) {
+    onChange(value.map((e, j) => (j === i ? { ...e, ...patch } : e)));
+  }
+
+  function remove(i: number) {
+    onChange(value.filter((_, j) => j !== i));
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-amber-400/60 font-semibold">
+            Elecciones anteriores del territorio
+          </p>
+          <p className="text-[11px] text-gray-600 mt-0.5">
+            Resultados de elecciones pasadas en este cargo/distrito.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={addEntry}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-amber-400/30 text-amber-400 text-[10px] font-bold hover:bg-amber-400/10 transition-colors"
+        >
+          + Agregar
+        </button>
+      </div>
+
+      {value.length === 0 && (
+        <p className="text-[11px] text-gray-600 italic text-center py-4 border border-dashed border-white/10 rounded-xl">
+          Sin elecciones registradas — presioná "+ Agregar"
+        </p>
+      )}
+
+      <div className="space-y-3">
+        {value.map((entry, i) => (
+          <div
+            key={i}
+            className="bg-[#0d1f3c]/60 border border-white/8 rounded-xl p-4 space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-white/70">Elección {i + 1}</p>
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                className="text-[10px] text-red-400/60 hover:text-red-400 transition-colors"
+              >
+                Eliminar
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <Field label="Año">
+                <input
+                  type="number"
+                  className={inputClass}
+                  value={entry.anio}
+                  onChange={(e) => update(i, { anio: Number(e.target.value) })}
+                  placeholder="2022"
+                />
+              </Field>
+              <Field label="Cargo">
+                <input
+                  className={inputClass}
+                  value={entry.cargo ?? ""}
+                  onChange={(e) => update(i, { cargo: e.target.value })}
+                  placeholder="Alcalde distrital"
+                />
+              </Field>
+              <Field label="Padrón">
+                <input
+                  type="number"
+                  className={inputClass}
+                  value={entry.padron ?? ""}
+                  onChange={(e) =>
+                    update(i, { padron: e.target.value ? Number(e.target.value) : undefined })
+                  }
+                  placeholder="Ej. 245 000"
+                />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Field label="Ganador (1°)">
+                <input
+                  className={inputClass}
+                  value={entry.ganador ?? ""}
+                  onChange={(e) => update(i, { ganador: e.target.value })}
+                  placeholder="Nombre del ganador"
+                />
+              </Field>
+              <Field label="Partido">
+                <input
+                  className={inputClass}
+                  value={entry.partido_ganador ?? ""}
+                  onChange={(e) => update(i, { partido_ganador: e.target.value })}
+                  placeholder="Partido o movimiento"
+                />
+              </Field>
+              <Field label="% / Votos">
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    className={inputClass}
+                    value={entry.pct_ganador ?? ""}
+                    onChange={(e) =>
+                      update(i, {
+                        pct_ganador: e.target.value ? Number(e.target.value) : undefined,
+                      })
+                    }
+                    placeholder="%"
+                  />
+                  <input
+                    type="number"
+                    className={inputClass}
+                    value={entry.votos_ganador ?? ""}
+                    onChange={(e) =>
+                      update(i, {
+                        votos_ganador: e.target.value ? Number(e.target.value) : undefined,
+                      })
+                    }
+                    placeholder="Votos"
+                  />
+                </div>
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Field label="2° lugar">
+                <input
+                  className={inputClass}
+                  value={entry.segundo ?? ""}
+                  onChange={(e) => update(i, { segundo: e.target.value })}
+                  placeholder="Nombre"
+                />
+              </Field>
+              <Field label="Partido 2°">
+                <input
+                  className={inputClass}
+                  value={entry.partido_segundo ?? ""}
+                  onChange={(e) => update(i, { partido_segundo: e.target.value })}
+                  placeholder="Partido"
+                />
+              </Field>
+              <Field label="% 2° lugar">
+                <input
+                  type="number"
+                  className={inputClass}
+                  value={entry.pct_segundo ?? ""}
+                  onChange={(e) =>
+                    update(i, {
+                      pct_segundo: e.target.value ? Number(e.target.value) : undefined,
+                    })
+                  }
+                  placeholder="%"
+                />
+              </Field>
+            </div>
+
+            <Field label="Notas">
+              <input
+                className={inputClass}
+                value={entry.notas ?? ""}
+                onChange={(e) => update(i, { notas: e.target.value })}
+                placeholder="Observaciones relevantes…"
+              />
+            </Field>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
