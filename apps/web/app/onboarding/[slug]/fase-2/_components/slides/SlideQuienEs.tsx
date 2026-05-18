@@ -49,7 +49,13 @@ export function SlideQuienEs({ ctx, f2 }: Props) {
         : `Político con trayectoria en ${cargoNombre}. Candidato comprometido con el desarrollo de ${territorio ?? "su territorio"}.`;
 
   const valores = f2.quien_es?.valores?.filter((v) => v?.trim().length > 0) ?? [];
-  const trayectoria = f2.quien_es?.trayectoria?.trim();
+  const trayectoriaRaw = f2.quien_es?.trayectoria?.trim();
+  const trayectoria = trayectoriaRaw
+    ? trayectoriaRaw
+        .split(/\n+/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0)
+    : [];
 
   const logros =
     f2.perfil_candidato?.n2_trayectoria?.logros_principales?.filter(
@@ -88,92 +94,98 @@ export function SlideQuienEs({ ctx, f2 }: Props) {
       </motion.div>
 
       {/* Derecha: bio + valores + trayectoria */}
-      <div className="lg:w-2/3 flex flex-col justify-start px-8 py-10 gap-6 overflow-y-auto">
-        {/* Título */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <SlideLabel>Perfil del candidato</SlideLabel>
-          <h2 className="text-2xl lg:text-3xl font-black uppercase text-white tracking-tight leading-none">
-            &iquest;Qui&eacute;n es{" "}
-            <span className="text-amber-400">{firstName}</span>?
-          </h2>
-        </motion.div>
-
-        {/* Bio */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="space-y-3"
-        >
-          {bio
-            .split(/\n\s*\n/)
-            .filter((p) => p.trim().length > 0)
-            .map((paragraph, i) => (
-              <p
-                key={i}
-                className="text-base leading-relaxed text-white/75 font-medium"
-              >
-                {paragraph.trim()}
-              </p>
-            ))}
-        </motion.div>
-
-        {/* Trayectoria */}
-        {trayectoria && trayectoria.length > 0 && (
+      <div className="lg:w-2/3 flex-1 flex flex-col justify-between px-8 py-10 gap-6 overflow-y-auto">
+        {/* Top section: título + bio + logros + valores */}
+        <div className="flex flex-col gap-5">
+          {/* Título */}
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.45, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ delay: 0.15, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
           >
-            <SlideLabel>Trayectoria</SlideLabel>
-            <p className="text-sm leading-relaxed text-white/65 font-medium">
-              {trayectoria}
-            </p>
+            <SlideLabel>Perfil del candidato</SlideLabel>
+            <h2 className="text-2xl lg:text-3xl font-black uppercase text-white tracking-tight leading-none">
+              &iquest;Qui&eacute;n es{" "}
+              <span className="text-amber-400">{firstName}</span>?
+            </h2>
           </motion.div>
-        )}
 
-        {/* Logros principales (si no hay trayectoria libre) */}
-        {logros.length > 0 && !trayectoria && (
+          {/* Bio */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.45, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ delay: 0.3, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className="space-y-3"
           >
-            <SlideLabel>Logros principales</SlideLabel>
-            <ul className="space-y-1.5">
-              {logros.slice(0, 4).map((logro, i) => (
-                <li key={i} className="flex items-baseline gap-2.5">
-                  <span className="size-1.5 rounded-full bg-amber-400 shrink-0 translate-y-[-1px]" />
-                  <span className="text-sm text-white/70 font-medium">{logro}</span>
-                </li>
-              ))}
-            </ul>
-          </motion.div>
-        )}
-
-        {/* Valores */}
-        {valores.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <SlideLabel>Valores</SlideLabel>
-            <div className="flex flex-wrap gap-2">
-              {valores.map((valor, i) => (
-                <span
+            {bio
+              .split(/\n\s*\n/)
+              .filter((p) => p.trim().length > 0)
+              .map((paragraph, i) => (
+                <p
                   key={i}
-                  className="bg-amber-400/10 text-amber-400 border border-amber-400/20 px-3 py-1 rounded-full text-xs font-semibold"
+                  className="text-base leading-relaxed text-white/75 font-medium"
                 >
-                  {valor}
-                </span>
+                  {paragraph.trim()}
+                </p>
+              ))}
+          </motion.div>
+
+          {/* Logros principales (si no hay trayectoria libre) */}
+          {logros.length > 0 && trayectoria.length === 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.45, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <SlideLabel>Logros principales</SlideLabel>
+              <ul className="space-y-1.5">
+                {logros.slice(0, 4).map((logro, i) => (
+                  <li key={i} className="flex items-baseline gap-2.5">
+                    <span className="size-1.5 rounded-full bg-amber-400 shrink-0 translate-y-[-1px]" />
+                    <span className="text-sm text-white/70 font-medium">{logro}</span>
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+          )}
+
+          {/* Valores */}
+          {valores.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <SlideLabel>Valores</SlideLabel>
+              <div className="flex flex-wrap gap-2">
+                {valores.map((valor, i) => (
+                  <span
+                    key={i}
+                    className="bg-amber-400/10 text-amber-400 border border-amber-400/20 px-3 py-1 rounded-full text-xs font-semibold"
+                  >
+                    {valor}
+                  </span>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </div>
+
+        {/* Bottom section: trayectoria como timeline visual */}
+        {trayectoria.length > 0 && (
+          <div>
+            <p className="text-[9px] uppercase tracking-widest text-white/30 font-semibold mb-3">
+              Trayectoria
+            </p>
+            <div className="flex flex-col gap-2">
+              {trayectoria.slice(0, 4).map((item, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <div className="shrink-0 mt-1 size-1.5 rounded-full bg-amber-400/60" />
+                  <p className="text-sm text-white/60 leading-snug">{item}</p>
+                </div>
               ))}
             </div>
-          </motion.div>
+          </div>
         )}
       </div>
     </div>
