@@ -407,6 +407,42 @@ export function SlideVotosNecesarios({ f2, ctx }: Props) {
             </motion.div>
           </div>
 
+          {/* GAP bar — elemento central */}
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.9 }}
+            className="flex flex-col gap-3"
+          >
+            <div className="flex justify-between w-full text-sm font-semibold">
+              <span className="text-red-400">
+                HOY: 0%{" "}
+                <span className="text-xs text-white/30">(sin encuesta)</span>
+              </span>
+              <span className="text-amber-400">META: 50% del padrón</span>
+            </div>
+            <div className="relative w-full h-10 bg-white/5 rounded-xl overflow-hidden border border-white/[0.08]">
+              <div
+                className="absolute left-0 top-0 bottom-0"
+                style={{
+                  background:
+                    "repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(251,191,36,0.12) 4px,rgba(251,191,36,0.12) 5px)",
+                  width: "50%",
+                }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-xs font-bold text-white/50">
+                  {padron
+                    ? `${Math.round(padron * 0.3).toLocaleString()} votos · GAP completo`
+                    : "GAP completo"}
+                </span>
+              </div>
+            </div>
+            <p className="text-[10px] text-white/25 text-center">
+              La zona punteada representa los votos que necesitamos construir desde cero.
+            </p>
+          </motion.div>
+
           {/* Barra de padrón + participación estimada */}
           {padron && (
             <motion.div
