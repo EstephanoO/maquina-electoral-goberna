@@ -5,38 +5,21 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { ChevronLeft, ChevronRight, Maximize2, Minimize2, Edit3, Send, CheckCircle2 } from "lucide-react";
 
-import type { CandidatoContext, ConsultorFormFase2, Fase2DeckMeta } from "@/lib/onboarding-api";
+import type { CandidatoContext, Fase2DeckMeta } from "@/lib/onboarding-api";
 import { onboardingApi } from "@/lib/onboarding-api";
 import { CloudSkyBg } from "@/components/cloud-sky-bg";
 
-// Slides base (no dependen del form nuevo)
-import { SlideHero }                                                           from "./slides/SlideHero";
-import { SlideFichaTecnica }                                                   from "./slides/SlideFichaTecnica";
-import { SlideContextoTerritorial, isSlideContextoTerritorialVisible }         from "./slides/SlideContextoTerritorial";
-import { SlideHerramientas }                                                   from "./slides/SlideHerramientas";
-import { SlideCierre }                                                         from "./slides/SlideCierre";
-
-// Terreno ECD
-import { SlideTerreno,      isSlideTerrenovisible }        from "./slides/SlideTerreno";
-import { SlideEstructura,   isSlideEstructuraVisible }     from "./slides/SlideEstructura";
-import { SlideConciencia,   isSlideConcienciaVisible }     from "./slides/SlideConciencia";
-import { SlideDecision,     isSlideDecisionVisible }       from "./slides/SlideDecision";
-import { SlideSintesis,     isSlideSintesisVisible }       from "./slides/SlideSintesis";
-import { SlideNucleoGoberna, isSlideNucleoGobernaVisible } from "./slides/SlideNucleoGoberna";
-
-// Perfil 5N
-import { SlidePerfil5N,     isSlidePerfil5NVisible }      from "./slides/SlidePerfil5N";
-import { SlideN1Identidad,  isSlideN1Visible }             from "./slides/SlideN1Identidad";
-import { SlideN2Trayectoria, isSlideN2Visible }            from "./slides/SlideN2Trayectoria";
-import { SlideN3Riesgo,     isSlideN3Visible }             from "./slides/SlideN3Riesgo";
-import { SlideN4Patrimonio, isSlideN4Visible }             from "./slides/SlideN4Patrimonio";
-import { SlideResumenEjecutivo, isSlideResumenEjecutivoVisible } from "./slides/SlideResumenEjecutivo";
-
-// Presencia PentaD
-import { SlidePentaDComparativa, isSlidePentaDComparativaVisible } from "./slides/SlidePentaDComparativa";
+import { JORGE_VALDEZ_ESTRATEGIA as ESTRAT } from "../lib/estrategia-config";
+import { SlideStratPortada }      from "./slides/SlideStratPortada";
+import { SlideStratEncuesta }     from "./slides/SlideStratEncuesta";
+import { SlideStratDiagnostico }  from "./slides/SlideStratDiagnostico";
+import { SlideStratIssues }       from "./slides/SlideStratIssues";
+import { SlideStratOportunidad }  from "./slides/SlideStratOportunidad";
+import { SlideStratEstrategia }   from "./slides/SlideStratEstrategia";
+import { SlideStratHerramientas } from "./slides/SlideStratHerramientas";
+import { SlideStratWarRoom }      from "./slides/SlideStratWarRoom";
 
 import { MissingSlidesIndicator } from "./chrome/MissingSlidesIndicator";
-import { SlideChapter } from "./slides/shared/SlideChapter";
 import { TooltipProvider } from "./slides/shared/Tooltip";
 
 interface Props {
@@ -67,74 +50,23 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
   const [submitted, setSubmitted] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const f2: ConsultorFormFase2 = ctx.consultor_form ?? {};
-
-  // Catálogo ECD + 5N + PentaD — 18 slides.
-  // Las slides sin datos suficientes se saltean (deck adaptativo).
-  // `formSection` = sección del form que desbloquea la slide.
-  const allCatalog = useMemo(() => {
-    return [
-      // ── ACTO I ────────────────────────────────────────────────────────────
-      {
-        id: "chapter-1", label: "", isChapter: true as const, visible: true, formSection: null,
-        node: <SlideChapter actNumber="I" actTitle="QUIÉN SOS" actSubtitle="Identidad, perfil y credenciales del candidato" accentColor="#fbbf24" />,
-      },
-      { id: "hero",       label: "Hero",              visible: true,                                   formSection: null,                node: <SlideHero ctx={ctx} f2={f2} /> },
-      { id: "ficha",      label: "Ficha Técnica",     visible: true,                                   formSection: null,                node: <SlideFichaTecnica ctx={ctx} f2={f2} /> },
-      { id: "perfil-5n",  label: "Perfil 5N",         visible: isSlidePerfil5NVisible(f2),             formSection: "perfil",            node: <SlidePerfil5N ctx={ctx} f2={f2} /> },
-      { id: "n1",         label: "N1 · Identidad",    visible: isSlideN1Visible(f2),                   formSection: "n1",                node: <SlideN1Identidad f2={f2} /> },
-      { id: "n2",         label: "N2 · Trayectoria",  visible: isSlideN2Visible(f2),                   formSection: "n2",                node: <SlideN2Trayectoria f2={f2} /> },
-      { id: "n3",         label: "N3 · Riesgo",       visible: isSlideN3Visible(f2),                   formSection: "n3",                node: <SlideN3Riesgo f2={f2} /> },
-      { id: "n4",         label: "N4 · Patrimonio",   visible: isSlideN4Visible(f2),                   formSection: "n4",                node: <SlideN4Patrimonio f2={f2} /> },
-      { id: "resumen",    label: "Resumen Ejecutivo", visible: isSlideResumenEjecutivoVisible(f2),      formSection: "resumen_ejecutivo", node: <SlideResumenEjecutivo f2={f2} /> },
-
-      // ── ACTO II ───────────────────────────────────────────────────────────
-      {
-        id: "chapter-2", label: "", isChapter: true as const, visible: true, formSection: null,
-        node: <SlideChapter actNumber="II" actTitle="DÓNDE ESTÁS" actSubtitle="Territorio, electorado y posición actual" accentColor="#ef4444" />,
-      },
-      { id: "contexto",   label: "Contexto",          visible: isSlideContextoTerritorialVisible(ctx), formSection: null,                node: <SlideContextoTerritorial ctx={ctx} f2={f2} /> },
-      { id: "terreno",    label: "Terreno ECD",        visible: isSlideTerrenovisible(f2),              formSection: "terreno",           node: <SlideTerreno ctx={ctx} f2={f2} /> },
-      { id: "estructura", label: "Estructura E",       visible: isSlideEstructuraVisible(ctx, f2),      formSection: "e1-e5",             node: <SlideEstructura ctx={ctx} f2={f2} /> },
-      { id: "conciencia", label: "Conciencia C",       visible: isSlideConcienciaVisible(f2),           formSection: "c1-c5",             node: <SlideConciencia f2={f2} /> },
-
-      // ── ACTO III ──────────────────────────────────────────────────────────
-      {
-        id: "chapter-3", label: "", isChapter: true as const, visible: true, formSection: null,
-        node: <SlideChapter actNumber="III" actTitle="CONTRA QUIÉN" actSubtitle="Competencia, segmentos y campo de batalla" accentColor="#3b82f6" />,
-      },
-      { id: "decision",   label: "Decisión D",        visible: isSlideDecisionVisible(f2),             formSection: "d1-d5",             node: <SlideDecision f2={f2} /> },
-      { id: "pentad",     label: "Penta-D",           visible: isSlidePentaDComparativaVisible(f2),    formSection: "presencia",         node: <SlidePentaDComparativa ctx={ctx} f2={f2} /> },
-
-      // ── ACTO IV ───────────────────────────────────────────────────────────
-      {
-        id: "chapter-4", label: "", isChapter: true as const, visible: true, formSection: null,
-        node: <SlideChapter actNumber="IV" actTitle="CÓMO GANÁS" actSubtitle="Estrategia, núcleo y plan de cierre" accentColor="#22c55e" />,
-      },
-      { id: "sintesis",      label: "Síntesis ECD",   visible: isSlideSintesisVisible(f2),             formSection: "sintesis",          node: <SlideSintesis f2={f2} /> },
-      { id: "nucleo",        label: "Núcleo Goberna", visible: isSlideNucleoGobernaVisible(f2),         formSection: "sintesis",          node: <SlideNucleoGoberna f2={f2} /> },
-      { id: "herramientas",  label: "Goberna",        visible: true,                                   formSection: null,                node: <SlideHerramientas /> },
-      { id: "cierre",        label: "War Room",       visible: true,                                   formSection: null,                node: <SlideCierre f2={f2} /> },
-    ];
-  }, [ctx, f2]);
+  const allCatalog = useMemo(() => [
+    { id: "portada",      label: "Portada",      visible: true, formSection: null as string | null, node: <SlideStratPortada      data={ESTRAT} /> },
+    { id: "encuesta",     label: "Situación",    visible: true, formSection: null as string | null, node: <SlideStratEncuesta     data={ESTRAT} /> },
+    { id: "diagnostico",  label: "Diagnóstico",  visible: true, formSection: null as string | null, node: <SlideStratDiagnostico  data={ESTRAT} /> },
+    { id: "issues",       label: "Issues",       visible: true, formSection: null as string | null, node: <SlideStratIssues       data={ESTRAT} /> },
+    { id: "oportunidad",  label: "Oportunidad",  visible: true, formSection: null as string | null, node: <SlideStratOportunidad  data={ESTRAT} /> },
+    { id: "estrategia",   label: "Estrategia",   visible: true, formSection: null as string | null, node: <SlideStratEstrategia   data={ESTRAT} /> },
+    { id: "herramientas", label: "Herramientas", visible: true, formSection: null as string | null, node: <SlideStratHerramientas data={ESTRAT} /> },
+    { id: "war-room",     label: "War Room",     visible: true, formSection: null as string | null, node: <SlideStratWarRoom      data={ESTRAT} /> },
+  ], []);
 
   const slides = useMemo(() => allCatalog.filter((s) => s.visible), [allCatalog]);
-  const contentSlides = useMemo(() => slides.filter((s) => !("isChapter" in s)), [slides]);
+  const contentSlides = slides;
 
-  /** Slides catalogadas pero hoy no visibles — alimentan el indicador del footer. */
-  const missing = useMemo(() => {
-    return allCatalog
-      .filter((s) => !s.visible && s.formSection !== null)
-      .map((s) => ({
-        id: s.id,
-        label: s.label,
-        unlocks: s.formSection!,
-        href: `/onboarding/${slug}/fase-1#${s.formSection}`,
-      }));
-  }, [allCatalog, slug]);
+  const missing: never[] = [];
 
-  /** Total catalogado de slides de contenido (18) — excluye SlideChapter. */
-  const TOTAL_CATALOG = 18;
+  const TOTAL_CATALOG = 8;
   const total = slides.length;
   const contentTotal = contentSlides.length;
   const current = slides[Math.min(index, total - 1)]!;
@@ -303,14 +235,6 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
           <div className="flex items-center gap-3">
             <div className="hidden md:flex items-center gap-1.5">
               {slides.map((s, i) => {
-                if ("isChapter" in s && s.isChapter) {
-                  return (
-                    <div
-                      key={s.id}
-                      className="w-1 h-1 rounded-full bg-white/20"
-                    />
-                  );
-                }
                 const isActive = i === index;
                 const isPast = i < index;
                 return (
