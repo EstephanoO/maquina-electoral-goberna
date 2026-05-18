@@ -6,9 +6,24 @@ export const JORGE_VALDEZ_ESTRATEGIA = {
     profesion: "Abogado · Sociólogo",
     foto: "/candidatos/jorge-valdez/foto-profesional.jpg",
     fotoCasual: "/candidatos/jorge-valdez/foto-casual.jpg",
+    bio: {
+      nacimiento: { year: 1971, lugar: "Casma, Áncash" },
+      formacion: [
+        { inst: "Univ. Nac. Mayor de San Marcos", titulo: "Lic. en Sociología",        color: "#3b82f6" },
+        { inst: "Univ. Inca Garcilaso de la Vega", titulo: "Abogado · CAL N°48577",   color: "#3b82f6" },
+        { inst: "Institución privada",              titulo: "Máster en Gerencia Pública", color: "#8b5cf6" },
+      ],
+      carrera: [
+        { year: 2002, cargo: "Regidor Provincial Lima",          elegido: true  },
+        { year: 2010, cargo: "Regidor Distrital Santiago Surco", elegido: true  },
+        { year: 2018, cargo: "Regidor Provincial Lima",          elegido: true  },
+        { year: 2026, cargo: "Candidato Alcalde Surco",          elegido: false },
+      ],
+    },
   },
   padron: {
     total: 353867,
+    poblacion_inei_2025: 378000,
     validos_estimados: 280000,
     meta_votos: 72000,
     abstenciones_pct: 18,
