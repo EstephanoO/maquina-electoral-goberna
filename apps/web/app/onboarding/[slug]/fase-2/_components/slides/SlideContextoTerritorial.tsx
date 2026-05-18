@@ -1,22 +1,15 @@
 "use client";
 
 /**
- * SlideContextoTerritorial — slide enriquecida con data de onboarding_fase1.
+ * SlideContextoTerritorial — rebuilt with MapLibre polygon + EditorialHeader.
  *
- * Estilo CRÍTICO: bg #020a1e · panel #0a1e4a · gold amber-400.
- *
- * Muestra el distrito del candidato con estadísticas:
- * - Población 2025 (curada por el geógrafo)
- * - Área km²
- * - Padrón electoral último corte
- * - PIM 2026 + ranking nacional
- * - Principales problemas (de fase1_rapida)
- *
- * Prioridad de datos: DB (DistritoDetail) > fase1_rapida > simulación.
- * Si no hay distrito en la postulación → slide se oculta (predicate visible).
+ * Layout: 2-col grid (55% map | 45% data).
+ * Map is lazy-loaded via dynamic() to prevent SSR issues with MapLibre.
+ * Falls back to stats-only layout when geojson/bbox are not available.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useState, memo } from "react";
 import { motion } from "motion/react";
+import dynamic from "next/dynamic";
 
 import type { CandidatoContext, ConsultorFormFase2 } from "@/lib/onboarding-api";
 import {
@@ -24,9 +17,24 @@ import {
   formatSoles,
   type DistritoDetail,
 } from "@/lib/onboarding-fase1-api";
+import { EditorialHeader } from "./shared/EditorialHeader";
+
+// Lazy-load SlideMap — MapLibre requires window, cannot SSR
+const SlideMapDynamic = dynamic(
+  () => import("./shared/SlideMap").then(mod => ({ default: mod.SlideMap })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full bg-white/5 rounded-xl animate-pulse" />
+    ),
+  }
+);
+
+// ── Urgency config ─────────────────────────────────────────────────────────────
+const URGENCY_COLORS = ["#ef4444", "#f97316", "#fbbf24"] as const;
+const URGENCY_WIDTHS = ["90%", "70%", "55%"] as const;
 
 // ── Simulador de datos para fallback ──────────────────────────────────────────
-
 function simTerritorio(seed: string) {
   const h = [...seed].reduce((a, c) => a + c.charCodeAt(0), 0);
   return {
@@ -44,46 +52,13 @@ function fmt(n: number) {
   return n.toLocaleString("es-PE");
 }
 
-// ── Componentes internos ───────────────────────────────────────────────────────
-
-interface StatCardProps {
-  label: string;
-  value: string;
-  sub?: string;
-  simulated?: boolean;
-  delay?: number;
-}
-
-function StatCard({ label, value, sub, simulated = false, delay = 0 }: StatCardProps) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, delay }}
-      className="bg-[#0a1e4a] border border-white/10 rounded-2xl p-5"
-    >
-      <p className="text-[10px] uppercase tracking-widest text-amber-400/50 font-semibold mb-2">
-        {label}
-      </p>
-      <p className="text-3xl font-black text-white leading-none">{value}</p>
-      {sub && (
-        <p className={`text-xs mt-1 ${simulated ? "italic text-amber-400/25" : "text-white/40"}`}>
-          {sub}
-        </p>
-      )}
-    </motion.div>
-  );
-}
-
 // ── Props ─────────────────────────────────────────────────────────────────────
-
 interface Props {
   ctx: CandidatoContext;
   f2?: ConsultorFormFase2;
 }
 
 // ── Slide ─────────────────────────────────────────────────────────────────────
-
 export function SlideContextoTerritorial({ ctx, f2 }: Props) {
   const [detail, setDetail] = useState<DistritoDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,13 +78,13 @@ export function SlideContextoTerritorial({ ctx, f2 }: Props) {
 
   const distritoNombre =
     detail?.distrito ?? ctx.jurisdiccion.distrito?.nombre ?? "—";
-  const provinciaNombre =
-    detail?.provincia ?? ctx.jurisdiccion.provincia?.nombre ?? "";
-  const departamentoNombre =
-    detail?.departamento ?? ctx.jurisdiccion.departamento?.nombre ?? "";
 
-  // ── Datos con fallback chain ──────────────────────────────────────
+  // ── Map data from ctx snapshot ─────────────────────────────────────────────
+  const mapGeojson = ctx.geojson as (GeoJSON.Polygon | GeoJSON.MultiPolygon) | null;
+  const mapBbox = ctx.bbox ?? null;
+  const hasMap = !!(mapGeojson && mapBbox);
 
+  // ── Stats with fallback chain ──────────────────────────────────────────────
   const seed = ctx.user.full_name || distritoNombre;
   const sim = simTerritorio(seed);
 
@@ -118,23 +93,19 @@ export function SlideContextoTerritorial({ ctx, f2 }: Props) {
   const poblacionDB = detail?.poblacion_total_2025 ?? null;
   const poblacionF1 = fase1ctx?.poblacion_aproximada ?? null;
   const poblacion = poblacionDB ?? poblacionF1 ?? sim.poblacion;
-  const poblacionSim = !poblacionDB && !poblacionF1;
 
   const areaDB = detail?.area_km2 ?? null;
   const area = areaDB ?? sim.areakm2;
   const areaSim = !areaDB;
 
-  const densidad =
-    poblacion && area ? Math.round(poblacion / area) : null;
+  const densidad = poblacion && area ? Math.round(poblacion / area) : null;
 
   const padronDB = detail?.padron?.poblacion_electoral ?? null;
   const padron = padronDB ?? sim.padron;
   const padronSim = !padronDB;
   const padronLabel = detail?.padron?.eleccion_nombre ?? "Padrón electoral";
 
-  const pimRaw = detail?.presupuesto?.pim
-    ? Number(detail.presupuesto.pim)
-    : null;
+  const pimRaw = detail?.presupuesto?.pim ? Number(detail.presupuesto.pim) : null;
   const pimFormatted = pimRaw ? formatSoles(pimRaw) : `S/ ${sim.pimMillones} M`;
   const pimSim = !pimRaw;
 
@@ -147,159 +118,125 @@ export function SlideContextoTerritorial({ ctx, f2 }: Props) {
   const problemasDisplay =
     problemasF1.length > 0
       ? problemasF1.slice(0, 3)
-      : [sim.problemasTop, "Infraestructura vial", "Salud pública"].slice(0, 3);
-  const problemasSim = problemasF1.length === 0;
+      : [sim.problemasTop, "Infraestructura vial", "Salud pública"];
 
   return (
     <div
-      className="relative flex-1 flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10 min-h-[70vh]"
-      style={{ background: "#020a1e" }}
+      className="relative flex-1 flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10 min-h-[70vh] bg-[#020a1e]"
     >
-      {/* Header */}
-      <header className="relative px-8 sm:px-12 py-7 text-white">
-        <motion.p
-          initial={{ opacity: 0, y: -6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="text-[11px] uppercase tracking-[0.2em] text-amber-400/60 font-semibold text-center mb-2"
-        >
-          Inteligencia Territorial
-        </motion.p>
-        <motion.h2
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, delay: 0.05 }}
-          className="text-2xl sm:text-3xl md:text-4xl font-black uppercase tracking-tight text-center leading-tight text-white"
-        >
-          {distritoNombre}
-        </motion.h2>
-        {(provinciaNombre || departamentoNombre) && (
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.4, delay: 0.1 }}
-            className="mt-2 text-xs sm:text-sm text-white/50 text-center font-medium"
-          >
-            {[provinciaNombre, departamentoNombre].filter(Boolean).join(" · ")}
-          </motion.p>
-        )}
-        {/* Ranking pill */}
-        {(ranking || rankingSim) && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
-            className="flex justify-center mt-3"
-          >
-            <span className="inline-flex items-center gap-1.5 bg-amber-400/10 border border-amber-400/30 rounded-full px-4 py-1 text-[11px] font-semibold text-amber-400">
-              {rankingSim && (
-                <span className="italic text-amber-400/40">~</span>
-              )}
-              Ranking #{rankingPos} de {fmt(rankingTotal)} distritos por presupuesto
-            </span>
-          </motion.div>
-        )}
-        {/* Amber underline */}
-        <div className="absolute left-0 right-0 bottom-0 h-[2px] bg-amber-400/60" />
-      </header>
-
-      {/* Body */}
-      <div className="flex-1 px-8 sm:px-12 py-8">
-        {/* Loading state */}
-        {loading && (
-          <div className="flex items-center justify-center h-32 text-white/30 text-sm animate-pulse">
-            Cargando datos territoriales…
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[55%_45%] gap-0">
+        {/* ── Left col: Map (only when data present) ─────────────────────── */}
+        {hasMap && !loading && (
+          <div className="relative min-h-[320px] lg:min-h-0 p-4">
+            <SlideMapDynamic
+              geojson={mapGeojson}
+              bbox={mapBbox}
+              height="100%"
+            />
           </div>
         )}
 
-        {!loading && (
-          <div className="space-y-6">
-            {/* 2×2 stat grid */}
-            <div className="grid grid-cols-2 gap-4">
-              <StatCard
-                label="Población Total"
-                value={fmt(poblacion)}
-                sub={poblacionSim ? "estimado (sim)" : "hab. (est. 2025)"}
-                simulated={poblacionSim}
-                delay={0.1}
-              />
-              <StatCard
-                label="Área"
-                value={`${fmt(area)} km²`}
-                sub={
-                  densidad
-                    ? `${fmt(densidad)} hab/km²`
-                    : areaSim
-                      ? "estimado (sim)"
-                      : undefined
-                }
-                simulated={areaSim}
-                delay={0.15}
-              />
-              <StatCard
-                label={padronLabel}
-                value={fmt(padron)}
-                sub={padronSim ? "estimado (sim)" : "electores habilitados"}
-                simulated={padronSim}
-                delay={0.2}
-              />
-              <StatCard
-                label="PIM 2026"
-                value={pimFormatted}
-                sub={pimSim ? "estimado (sim)" : "Presupuesto Inst. Modificado"}
-                simulated={pimSim}
-                delay={0.25}
-              />
+        {/* When no map, make right col full width */}
+        <div
+          className={`flex flex-col px-8 py-8 gap-6 ${!hasMap || loading ? "lg:col-span-2" : ""}`}
+        >
+          {/* Loading indicator */}
+          {loading && (
+            <div className="flex items-center gap-2 text-white/30 text-sm animate-pulse">
+              Cargando datos territoriales…
             </div>
+          )}
 
-            {/* Principales problemas */}
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.45, delay: 0.35 }}
-              className="bg-[#0a1e4a] border border-white/10 rounded-2xl p-5"
-            >
-              <p className="text-[11px] uppercase tracking-[0.2em] text-amber-400/60 font-semibold mb-4">
-                Principales problemas del territorio
-                {problemasSim && (
-                  <span className="ml-2 text-[10px] italic text-amber-400/25 normal-case tracking-normal">
-                    (sim)
-                  </span>
-                )}
-              </p>
-              <div className="space-y-2.5">
-                {problemasDisplay.map((p, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-red-600 flex items-center justify-center text-white text-[10px] font-black">
-                      {i + 1}
-                    </span>
-                    <span className="text-sm text-white/80">{p}</span>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
+          {/* Editorial header */}
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <EditorialHeader
+              microLabel="ACTO II · TERRITORIO"
+              headline={`${distritoNombre} — ${padronSim ? "~" : ""}${fmt(padron)} electores.`}
+              accentColor="#ef4444"
+            />
+          </motion.div>
 
-            {/* Entidad presupuestal */}
-            {detail?.presupuesto?.nombre_entidad && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.4, delay: 0.45 }}
-                className="px-5 py-3 border border-white/5 rounded-xl bg-white/[0.03]"
-              >
-                <p className="text-[10px] uppercase tracking-widest text-white/30 font-semibold mb-1">
-                  Entidad presupuestal
-                </p>
-                <p className="text-xs text-white/60">
-                  {detail.presupuesto.nombre_entidad}
-                  {detail.presupuesto.codigo_pliego
-                    ? ` · Pliego ${detail.presupuesto.codigo_pliego}`
-                    : ""}
-                </p>
-              </motion.div>
+          {/* Mega number: padrón */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1, duration: 0.4 }}
+            className="flex flex-col"
+          >
+            <span className="text-[10px] uppercase tracking-widest text-white/30 font-semibold mb-1">
+              {padronLabel}
+            </span>
+            <span className="text-5xl font-black text-white tabular-nums leading-none">
+              {fmt(padron)}
+            </span>
+            {padronSim && (
+              <span className="text-[10px] italic text-amber-400/30 mt-1">estimado (sim)</span>
             )}
-          </div>
-        )}
+          </motion.div>
+
+          {/* Urgency bars for problems */}
+          {problemasDisplay.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2, duration: 0.4 }}
+              className="flex flex-col gap-3"
+            >
+              <p className="text-[10px] uppercase tracking-widest text-white/30 font-semibold">
+                Problemas urgentes
+              </p>
+              {problemasDisplay.map((prob, i) => (
+                <div key={i} className="flex flex-col gap-1">
+                  <span className="text-xs text-white/70">{prob}</span>
+                  <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: URGENCY_WIDTHS[i] ?? "40%",
+                        backgroundColor: URGENCY_COLORS[i] ?? "#6b7280",
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </motion.div>
+          )}
+
+          {/* Stats 2×2 grid */}
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3, duration: 0.4 }}
+            className="grid grid-cols-2 gap-3"
+          >
+            <div className="bg-white/[0.04] border border-white/8 rounded-xl p-3">
+              <p className="text-[9px] uppercase tracking-wider text-white/30 font-semibold mb-1">Área</p>
+              <p className="text-xl font-black text-white">{fmt(area)} km²</p>
+              {densidad && <p className="text-[10px] text-white/30">{fmt(densidad)} hab/km²{areaSim ? " (est.)" : ""}</p>}
+            </div>
+            <div className="bg-white/[0.04] border border-white/8 rounded-xl p-3">
+              <p className="text-[9px] uppercase tracking-wider text-white/30 font-semibold mb-1">PIM 2026</p>
+              <p className="text-xl font-black text-white">{pimFormatted}</p>
+              {pimSim && <p className="text-[10px] text-amber-400/30 italic">estimado (sim)</p>}
+            </div>
+            <div className="bg-white/[0.04] border border-white/8 rounded-xl p-3">
+              <p className="text-[9px] uppercase tracking-wider text-white/30 font-semibold mb-1">Ranking</p>
+              <p className="text-xl font-black text-white">#{rankingPos}</p>
+              <p className="text-[10px] text-white/30">de {fmt(rankingTotal)}{rankingSim ? " (est.)" : ""}</p>
+            </div>
+            <div className="bg-white/[0.04] border border-white/8 rounded-xl p-3">
+              <p className="text-[9px] uppercase tracking-wider text-white/30 font-semibold mb-1">Densidad</p>
+              <p className="text-xl font-black text-white">
+                {densidad ? `${fmt(densidad)}` : "—"}
+              </p>
+              <p className="text-[10px] text-white/30">hab/km²</p>
+            </div>
+          </motion.div>
+        </div>
       </div>
     </div>
   );
