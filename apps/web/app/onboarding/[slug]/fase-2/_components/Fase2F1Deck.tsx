@@ -37,6 +37,7 @@ import { SlidePentaDComparativa, isSlidePentaDComparativaVisible } from "./slide
 
 import { MissingSlidesIndicator } from "./chrome/MissingSlidesIndicator";
 import { SlideChapter } from "./slides/shared/SlideChapter";
+import { TooltipProvider } from "./slides/shared/Tooltip";
 
 interface Props {
   slug: string;
@@ -224,6 +225,7 @@ export function Fase2F1Deck({ slug, ctx, deck }: Props) {
   return (
     <div ref={containerRef} className="relative min-h-screen w-full overflow-hidden bg-[#020a1e] text-white">
       <CloudSkyBg />
+      <TooltipProvider />
 
       {/* Top bar — back + status + actions */}
       <div className="fixed top-0 inset-x-0 z-30 px-4 sm:px-8 pt-4 sm:pt-5 flex items-center justify-between gap-3 pointer-events-none">
