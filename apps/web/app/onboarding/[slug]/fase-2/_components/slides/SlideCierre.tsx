@@ -4,6 +4,7 @@ import type React from "react";
 import { motion } from "motion/react";
 
 import type { ConsultorFormFase2 } from "@/lib/onboarding-api";
+import { EditorialHeader } from "./shared/EditorialHeader";
 
 /**
  * Slide CIERRE — slide de conversion premium.
@@ -18,6 +19,20 @@ interface Props {
 export function SlideCierre({ f2 }: Props) {
   const fechaEleccion = f2?.fase1_rapida?.postulacion?.fecha_eleccion;
   const { dias, esEstimado } = computeDaysToElection(fechaEleccion);
+
+  const accionesRaw = (f2?.territorio_ecd?.nucleo_goberna?.segmentos_prioritarios ?? [])
+    .slice(0, 3)
+    .map((s, i) => ({
+      num: `0${i + 1}`,
+      text: s.accion_inmediata ?? `Acción ${i + 1}`,
+      color: (["#fbbf24", "#ef4444", "#22c55e"] as const)[i] ?? "#fbbf24",
+    }));
+  const fallbackAcciones = [
+    { num: "01", text: "Activar red de brigadistas en zonas fuertes", color: "#fbbf24" as const },
+    { num: "02", text: "Lanzar campaña de comunicación digital", color: "#ef4444" as const },
+    { num: "03", text: "Agendar reunión con líderes territoriales clave", color: "#22c55e" as const },
+  ];
+  const displayAcciones = accionesRaw.length >= 3 ? accionesRaw : fallbackAcciones;
 
   return (
     <div className="relative flex-1 flex flex-col rounded-2xl overflow-hidden border border-white/5 shadow-2xl min-h-[70vh] bg-[#020a1e]">
@@ -48,6 +63,15 @@ export function SlideCierre({ f2 }: Props) {
       {/* Contenido central */}
       <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-8 py-14 text-center">
         <div className="max-w-xl w-full flex flex-col items-center gap-7">
+          {/* Editorial header */}
+          <div className="w-full">
+            <EditorialHeader
+              microLabel="ACTO IV · CIERRE"
+              headline="La batalla se decide en los próximos días."
+              accentColor="#22c55e"
+            />
+          </div>
+
           {/* Escudo / logo Goberna */}
           <motion.div
             initial={{ opacity: 0, scale: 0.85 }}
@@ -116,6 +140,26 @@ export function SlideCierre({ f2 }: Props) {
               </div>
             </motion.div>
           )}
+
+          {/* 3 acciones inmediatas */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5, duration: 0.5 }}
+            className="flex flex-col gap-2 w-full max-w-sm"
+          >
+            {displayAcciones.map((a) => (
+              <div key={a.num} className="flex items-center gap-3 text-left">
+                <span
+                  className="text-xs font-black tabular-nums shrink-0"
+                  style={{ color: a.color }}
+                >
+                  {a.num}
+                </span>
+                <span className="text-sm text-white/70">{a.text}</span>
+              </div>
+            ))}
+          </motion.div>
 
           {/* Body copy */}
           <motion.p
