@@ -11,60 +11,59 @@ export function SlideStratHerramientas({ data }: Props) {
   const { herramientas } = data;
 
   return (
-    <div className="min-h-full bg-[#020a1e] flex flex-col pt-16 pb-4 px-4 sm:px-8 gap-5">
-      <motion.div
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="text-center"
-      >
-        <p className="text-[9px] font-semibold uppercase tracking-[0.3em] text-amber-400/60 mb-1">
-          GOBERNA TECHNOLOGY
-        </p>
-        <h2 className="text-2xl sm:text-3xl font-black text-white">LAS HERRAMIENTAS DE LA CAMPAÑA</h2>
-        <p className="text-xs text-white/40 mt-1">Tecnología y equipo para dirigir campañas exitosas</p>
-      </motion.div>
+    <div className="h-full bg-white flex flex-col overflow-hidden">
 
-      <div className="grid grid-cols-3 gap-4 flex-1">
-        {herramientas.map((tool, i) => (
-          <motion.div
-            key={tool.nombre}
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 + i * 0.12, duration: 0.5 }}
-            className="flex flex-col rounded-xl border border-white/10 bg-white/5 overflow-hidden"
-          >
-            <div className="relative h-44 shrink-0 overflow-hidden">
-              <img
-                src={tool.imagen}
-                alt={tool.nombre}
-                loading="lazy"
-                className="w-full h-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#020a1e]/80 via-transparent to-transparent" />
-              <div className="absolute bottom-2 left-3 right-3 flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tool.color }} />
+      {/* Navy header band */}
+      <div
+        className="relative px-6 sm:px-10 py-3 shrink-0"
+        style={{ background: "linear-gradient(to right, #061633, #0a1f4a, #061633)" }}
+      >
+        <div className="absolute bottom-0 inset-x-0 h-[4px] bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500" />
+        <p className="text-[9px] font-bold uppercase tracking-[0.3em] text-amber-400 mb-0.5">
+          PLATAFORMA GOBERNA
+        </p>
+        <h2 className="text-lg sm:text-xl font-black text-white uppercase tracking-tight">
+          HERRAMIENTAS DE CAMPAÑA
+        </h2>
+      </div>
+
+      {/* White body */}
+      <div className="flex-1 overflow-auto px-6 sm:px-10 py-4 sm:py-5">
+        <div className="grid grid-cols-3 gap-4 h-full">
+          {herramientas.map((tool, i) => (
+            <motion.div
+              key={tool.nombre}
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 + i * 0.12, duration: 0.5 }}
+              className="flex flex-col bg-white rounded-xl border border-gray-200 shadow-md overflow-hidden"
+            >
+              {/* Image */}
+              <div className="relative h-40 shrink-0 overflow-hidden">
+                <img
+                  src={tool.imagen}
+                  alt={tool.nombre}
+                  loading="lazy"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+
+              {/* Navy top stripe */}
+              <div className="h-1 bg-gradient-to-r from-amber-500 to-amber-400 shrink-0" />
+
+              {/* Card body */}
+              <div className="flex flex-col gap-2 p-4 flex-1">
+                <h3 className="text-lg font-black text-[#0a1f4a]">{tool.nombre}</h3>
+                <p className="text-sm text-gray-600 leading-relaxed flex-1">{tool.descripcion}</p>
                 <span
-                  className="text-[9px] font-black uppercase tracking-widest"
-                  style={{ color: tool.color }}
+                  className="inline-block text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2.5 py-0.5 mt-2 self-start"
                 >
-                  {tool.nombre}
+                  {tool.badge}
                 </span>
               </div>
-            </div>
-
-            <div className="flex flex-col gap-2 p-4 flex-1">
-              <h3 className="text-sm font-black text-white">{tool.nombre}</h3>
-              <p className="text-xs text-white/60 leading-relaxed flex-1">{tool.descripcion}</p>
-              <span
-                className="inline-block text-[8px] font-bold uppercase tracking-widest rounded-full px-2.5 py-1 self-start"
-                style={{ backgroundColor: tool.color + "22", color: tool.color }}
-              >
-                {tool.badge}
-              </span>
-            </div>
-          </motion.div>
-        ))}
+            </motion.div>
+          ))}
+        </div>
       </div>
     </div>
   );
