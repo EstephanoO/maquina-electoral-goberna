@@ -2,6 +2,7 @@
 
 import { motion } from "motion/react";
 
+import { EditorialHeader } from "./shared/EditorialHeader";
 import type { CandidatoContext, ConsultorFormFase2 } from "@/lib/onboarding-api";
 
 interface Props {
@@ -70,20 +71,18 @@ export function SlideHero({ ctx, f2 }: Props) {
 
       {/* Derecha: identidad */}
       <div className="lg:w-3/5 flex flex-col justify-center px-8 py-10 gap-6">
-        {/* Cargo label */}
+        {/* Editorial header — Acto I */}
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
         >
-          <p className="text-[11px] uppercase tracking-[0.25em] text-amber-400/60 font-semibold mb-3">
-            Candidato a
-          </p>
-          <div className="inline-block bg-amber-400/10 border border-amber-400/30 rounded px-3 py-1.5 mb-4">
-            <span className="text-amber-400 font-black text-sm uppercase tracking-[0.15em]">
-              {cargoLabel}
-            </span>
-          </div>
+          <EditorialHeader
+            microLabel="ACTO I · PERFIL DEL CANDIDATO"
+            headline={`${cargoLabel}${territorio ? ` · ${territorio}` : ""}`}
+            accentColor="#fbbf24"
+            headlineSize="sm"
+          />
         </motion.div>
 
         {/* Nombre */}
@@ -125,30 +124,11 @@ export function SlideHero({ ctx, f2 }: Props) {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.75, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            className="border-l-2 border-amber-400/50 pl-4"
+            className="border-l-[3px] border-amber-400/50 pl-4"
           >
-            <p className="text-white/80 text-base italic font-light leading-snug">
+            <p className="text-white/80 text-lg italic font-light leading-relaxed">
               &ldquo;{slogan}&rdquo;
             </p>
-          </motion.div>
-        )}
-
-        {/* Fortalezas pills si hay diagnostico_inicial */}
-        {(f2?.fase1_rapida?.diagnostico_inicial?.fortalezas?.length ?? 0) > 0 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.9, duration: 0.5 }}
-            className="flex flex-wrap gap-2 pt-2"
-          >
-            {f2!.fase1_rapida!.diagnostico_inicial!.fortalezas!.slice(0, 3).map((f, i) => (
-              <span
-                key={i}
-                className="bg-amber-400/10 text-amber-400 border border-amber-400/20 px-3 py-1 rounded-full text-xs font-semibold"
-              >
-                {f}
-              </span>
-            ))}
           </motion.div>
         )}
       </div>
