@@ -75,6 +75,8 @@ function Section({
   isOpen,
   onToggle,
   children,
+  summary,
+  aiPrefilled,
 }: {
   id: string;
   icon: React.ElementType;
@@ -85,6 +87,8 @@ function Section({
   isOpen: boolean;
   onToggle: (id: string) => void;
   children: React.ReactNode;
+  summary?: React.ReactNode;
+  aiPrefilled?: boolean;
 }) {
   return (
     <div className="rounded-2xl border border-white/8 bg-[#0a1e4a]/40 overflow-hidden">
@@ -104,8 +108,16 @@ function Section({
                 {badge}
               </span>
             )}
+            {aiPrefilled && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-semibold">
+                ✦ IA
+              </span>
+            )}
           </div>
           <p className="text-[11px] text-gray-500 mt-0.5 truncate">{subtitle}</p>
+          {!isOpen && completion !== "empty" && summary && (
+            <p className="text-[10px] text-amber-300/70 mt-1.5 truncate">{summary}</p>
+          )}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           {completionDot(completion)}
@@ -378,6 +390,24 @@ export function PerfilHubClient({ slug }: { slug: string }) {
   const donePct = Math.round((allLevels.filter(l => l === "done").length / allLevels.length) * 100);
   const deckReady = donePct >= 40; // candidato, estrategia, propuestas al menos
 
+  // ── Computed summaries for closed sections ─────────────────────────────
+  const c2Summary = ecd.c2_segmentos?.length
+    ? ecd.c2_segmentos.slice(0, 3).map(s => `${s.nombre.split('/')[0].trim()} ${s.pct_aprox ?? ''}%`).join(' · ')
+    : undefined;
+
+  const concienciaIssues = ecd.c3_issues?.top_issues;
+  const concienciaSummary = concienciaIssues?.length
+    ? concienciaIssues.slice(0, 3).map(i => `${i.issue} ${i.pct_menciona ?? ''}%`).join(' · ')
+    : undefined;
+
+  const candidatoSummary = f1.candidato?.bio_corta
+    ? f1.candidato.bio_corta.slice(0, 80) + (f1.candidato.bio_corta.length > 80 ? '…' : '')
+    : undefined;
+
+  const estructuraSummary = ecd.e4_campo_politico?.partidos_fuertes?.length
+    ? ecd.e4_campo_politico.partidos_fuertes.slice(0, 3).map(p => `${p.nombre} ${p.pct_aprox ?? ''}%`).join(' · ')
+    : undefined;
+
   return (
     <div className="min-h-screen bg-[#020a1e] text-white">
       {/* Header */}
@@ -454,11 +484,19 @@ export function PerfilHubClient({ slug }: { slug: string }) {
           completion={comp.c2}
           isOpen={openSection === "c2"}
           onToggle={toggleSection}
+          summary={c2Summary}
+          aiPrefilled={!!(ecd.c2_segmentos && ecd.c2_segmentos.length > 0)}
         >
           <C2SegmentosEditor
             value={ecd.c2_segmentos ?? []}
             onChange={(v) => updateEcd({ c2_segmentos: v })}
           />
+          {ecd.c2_segmentos && ecd.c2_segmentos.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-white/8">
+              <p className="text-[9px] uppercase tracking-[0.3em] text-gray-500 font-semibold mb-3">Vista previa — Mapa de segmentos</p>
+              <SegmentosPreview segments={ecd.c2_segmentos} />
+            </div>
+          )}
         </Section>
 
         {/* ── D5 Decisión ★ ──────────────────────────────────────────────── */}
@@ -510,6 +548,7 @@ export function PerfilHubClient({ slug }: { slug: string }) {
           completion={comp.candidato}
           isOpen={openSection === "candidato"}
           onToggle={toggleSection}
+          summary={candidatoSummary}
         >
           <CandidatoEditor
             f1={f1}
@@ -598,6 +637,8 @@ export function PerfilHubClient({ slug }: { slug: string }) {
           completion={comp.estructura}
           isOpen={openSection === "estructura"}
           onToggle={toggleSection}
+          summary={estructuraSummary}
+          aiPrefilled={!!(ecd.e4_campo_politico?.partidos_fuertes?.length)}
         >
           <EstructuraEditor
             value={ecd}
@@ -616,6 +657,8 @@ export function PerfilHubClient({ slug }: { slug: string }) {
           }
           isOpen={openSection === "conciencia"}
           onToggle={toggleSection}
+          summary={concienciaSummary}
+          aiPrefilled={!!(concienciaIssues?.length)}
         >
           <ConcienciaEditor value={ecd} onChange={(patch) => updateEcd(patch)} />
         </Section>
@@ -642,6 +685,32 @@ export function PerfilHubClient({ slug }: { slug: string }) {
 
         <div className="h-12" />
       </div>
+    </div>
+  );
+}
+
+// ── SegmentosPreview ───────────────────────────────────────────────────────
+
+function SegmentosPreview({ segments }: { segments: C2Segmento[] }) {
+  return (
+    <div className="space-y-2">
+      {segments.map((seg) => (
+        <div key={seg.id} className="space-y-1">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-white/80 font-medium">{seg.nombre}</span>
+            <span className="text-amber-400 font-bold">{seg.pct_aprox ?? 0}%</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-amber-400/70 transition-all duration-500"
+              style={{ width: `${seg.pct_aprox ?? 0}%` }}
+            />
+          </div>
+          {seg.problema_principal && (
+            <p className="text-[10px] text-gray-500 truncate">{seg.problema_principal}</p>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
