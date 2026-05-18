@@ -11,7 +11,7 @@ export const JORGE_VALDEZ_ESTRATEGIA = {
     total: 353867,
     validos_estimados: 280000,
     meta_votos: 72000,
-    abstencions_pct: 18,
+    abstenciones_pct: 18,
     blanco_nulo_pct: 3.5,
   },
   encuesta: {
