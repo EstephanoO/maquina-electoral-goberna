@@ -5,7 +5,9 @@ import dynamic from "next/dynamic";
 import { MapPin, Building2 } from "lucide-react";
 import { motion } from "motion/react";
 
-import type { CandidatoContext } from "@/lib/onboarding-api";
+import type { CandidatoContext, ConsultorFormFase2 } from "@/lib/onboarding-api";
+import { MetricBar } from "./shared/MetricBar";
+import { buildDeckScores } from "../../lib/deck-scores";
 
 const JurisdictionMap = dynamic(
   () =>
@@ -17,9 +19,12 @@ const JurisdictionMap = dynamic(
 
 interface Props {
   ctx: CandidatoContext;
+  f2?: ConsultorFormFase2 | null;
 }
 
-export function SlideCarta({ ctx }: Props) {
+export function SlideCarta({ ctx, f2 }: Props) {
+  const scores = buildDeckScores(f2);
+
   const jurisdiccionLabel =
     ctx.jurisdiccion.distrito?.nombre ??
     ctx.jurisdiccion.provincia?.nombre ??
@@ -93,6 +98,24 @@ export function SlideCarta({ ctx }: Props) {
               label={partidoLabel ?? ""}
             />
           ) : null}
+        </div>
+      </motion.div>
+
+      {/* Card diagnóstico (bottom-right) */}
+      <motion.div
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: 0.5, duration: 0.5 }}
+        className="absolute right-4 bottom-6 sm:right-8 w-48 bg-[#020a1e]/90 backdrop-blur-sm border border-white/10 rounded-xl p-3 shadow-2xl hidden sm:block"
+      >
+        <p className="text-[9px] uppercase tracking-widest text-white/30 font-bold mb-3">
+          Diagnóstico
+        </p>
+        <div className="flex flex-col gap-2.5">
+          <MetricBar label="Perfil" pct={scores.perfilPct} />
+          <MetricBar label="Territorial" pct={scores.territorioPct} />
+          <MetricBar label="Digital" pct={scores.digitalPct} />
+          <MetricBar label="Datos" pct={scores.datosPct} />
         </div>
       </motion.div>
     </div>

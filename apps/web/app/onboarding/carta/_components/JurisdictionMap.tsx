@@ -59,8 +59,8 @@ export function JurisdictionMap({ geojson, bbox, centroid, className }: Props) {
       container: containerRef.current,
       style: mapStyle as maplibregl.StyleSpecification,
       center: centroid ?? [-75, -10], // Perú default
-      zoom: centroid ? 4.2 : 3.6,
-      maxZoom: 9,
+      zoom: centroid ? 8 : 4,
+      maxZoom: 14,
       attributionControl: false,
       interactive: false,
       pitchWithRotate: false,
@@ -114,7 +114,7 @@ export function JurisdictionMap({ geojson, bbox, centroid, className }: Props) {
               [bbox[2], bbox[3]],
             ],
             {
-              padding: 80,
+              padding: 30,
               duration: 2400,
               essential: true,
             },
@@ -146,7 +146,7 @@ export function JurisdictionMap({ geojson, bbox, centroid, className }: Props) {
           [bbox[0], bbox[1]],
           [bbox[2], bbox[3]],
         ],
-        { padding: 80, duration: 1600, essential: true },
+        { padding: 30, duration: 1600, essential: true },
       );
     }
   }, [geojson, bbox]);
