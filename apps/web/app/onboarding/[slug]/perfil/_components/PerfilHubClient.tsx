@@ -251,7 +251,7 @@ export function PerfilHubClient({ slug }: { slug: string }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
-  const [openSection, setOpenSection] = useState<string | null>("candidato");
+  const [openSection, setOpenSection] = useState<string | null>(null);
 
   // Form state — all sections
   const [f1, setF1] = useState<Fase1Rapida>({});
@@ -509,6 +509,8 @@ export function PerfilHubClient({ slug }: { slug: string }) {
           completion={comp.d5}
           isOpen={openSection === "d5"}
           onToggle={toggleSection}
+          summary={ecd.d5_matrix?.length ? `${ecd.d5_matrix.length} segmentos · ${ecd.d5_matrix.filter(r => r.mensaje_clave).length} mensajes · ${ecd.d5_matrix.filter(r => r.canal_efectivo).length} canales definidos` : undefined}
+          aiPrefilled={!!(ecd.d5_matrix?.length)}
         >
           <D5MatrixEditor
             segments={ecd.c2_segmentos ?? []}
@@ -526,6 +528,8 @@ export function PerfilHubClient({ slug }: { slug: string }) {
           completion={comp.nucleo}
           isOpen={openSection === "nucleo"}
           onToggle={toggleSection}
+          summary={ecd.nucleo_goberna?.propuesta_central ? ecd.nucleo_goberna.propuesta_central.slice(0, 90) + (ecd.nucleo_goberna.propuesta_central.length > 90 ? '…' : '') : undefined}
+          aiPrefilled={!!(ecd.nucleo_goberna?.propuesta_central)}
         >
           <NucleoEditor
             value={ecd.nucleo_goberna ?? {}}
@@ -566,6 +570,8 @@ export function PerfilHubClient({ slug }: { slug: string }) {
           completion={comp.estrategia}
           isOpen={openSection === "estrategia"}
           onToggle={toggleSection}
+          summary={f1.estrategia?.tipo_campana ? `${f1.estrategia.tipo_campana} · ${f1.estrategia.eje_emocional ?? ''} · Frente ${f1.estrategia.frente_principal ?? ''}` : undefined}
+          aiPrefilled={!!(f1.estrategia?.tipo_campana)}
         >
           <EstrategiaEditor
             value={f1.estrategia ?? {}}
@@ -583,6 +589,8 @@ export function PerfilHubClient({ slug }: { slug: string }) {
           completion={comp.propuestas}
           isOpen={openSection === "propuestas"}
           onToggle={toggleSection}
+          summary={f1.propuestas?.length ? f1.propuestas.slice(0, 3).map(p => p.titulo).join(' · ') : undefined}
+          aiPrefilled={!!(f1.propuestas?.length)}
         >
           <PropuestasEditor
             value={f1.propuestas ?? []}
