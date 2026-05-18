@@ -3,6 +3,8 @@
 import { motion } from "motion/react";
 
 import { EditorialHeader } from "./shared/EditorialHeader";
+import { MetricBar } from "./shared/MetricBar";
+import { buildDeckScores } from "../../lib/deck-scores";
 import type { CandidatoContext, ConsultorFormFase2 } from "@/lib/onboarding-api";
 
 interface Props {
@@ -37,6 +39,8 @@ export function SlideHero({ ctx, f2 }: Props) {
     ctx.jurisdiccion.departamento?.nombre ||
     ctx.jurisdiccion.pais.nombre;
 
+  const scores = buildDeckScores(f2);
+
   return (
     <div className="flex-1 flex flex-col lg:flex-row gap-0 overflow-hidden bg-[#020a1e]">
       {/* Izquierda: foto o initials */}
@@ -70,67 +74,87 @@ export function SlideHero({ ctx, f2 }: Props) {
       </motion.div>
 
       {/* Derecha: identidad */}
-      <div className="lg:w-3/5 flex flex-col justify-center px-8 py-10 gap-6">
-        {/* Editorial header — Acto I */}
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <EditorialHeader
-            microLabel="ACTO I · PERFIL DEL CANDIDATO"
-            headline={`${cargoLabel}${territorio ? ` · ${territorio}` : ""}`}
-            accentColor="#fbbf24"
-            headlineSize="sm"
-          />
-        </motion.div>
+      <div className="lg:w-3/5 flex flex-col justify-between px-8 py-10 gap-6">
+        <div className="flex flex-col gap-6">
+          {/* Editorial header — Acto I */}
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <EditorialHeader
+              microLabel="ACTO I · PERFIL DEL CANDIDATO"
+              headline={`${cargoLabel}${territorio ? ` · ${territorio}` : ""}`}
+              accentColor="#fbbf24"
+              headlineSize="sm"
+            />
+          </motion.div>
 
-        {/* Nombre */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.35, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <h1 className="text-5xl lg:text-7xl font-black uppercase leading-none text-white tracking-tight">
-            <span className="block">{firstName}</span>
-            {lastName ? (
-              <span className="block text-amber-400">{lastName}</span>
-            ) : null}
-          </h1>
-        </motion.div>
+          {/* Nombre */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <h1 className="text-5xl lg:text-7xl font-black uppercase leading-none text-white tracking-tight">
+              <span className="block">{firstName}</span>
+              {lastName ? (
+                <span className="block text-amber-400">{lastName}</span>
+              ) : null}
+            </h1>
+          </motion.div>
 
-        {/* Partido + Territorio */}
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.55, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          className="flex flex-col gap-1.5"
-        >
-          {partidoLine && (
-            <p className="text-white/70 text-sm font-semibold tracking-wide">
-              {partidoLine}
-            </p>
-          )}
-          {territorio && (
-            <p className="text-[11px] uppercase tracking-[0.2em] text-white/40 font-semibold">
-              {territorio}
-            </p>
-          )}
-        </motion.div>
-
-        {/* Slogan */}
-        {slogan && (
+          {/* Partido + Territorio */}
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.75, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            className="border-l-[3px] border-amber-400/50 pl-4"
+            transition={{ delay: 0.55, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            className="flex flex-col gap-1.5"
           >
-            <p className="text-white/80 text-lg italic font-light leading-relaxed">
-              &ldquo;{slogan}&rdquo;
-            </p>
+            {partidoLine && (
+              <p className="text-white/70 text-sm font-semibold tracking-wide">
+                {partidoLine}
+              </p>
+            )}
+            {territorio && (
+              <p className="text-[11px] uppercase tracking-[0.2em] text-white/40 font-semibold">
+                {territorio}
+              </p>
+            )}
           </motion.div>
-        )}
+
+          {/* Slogan */}
+          {slogan && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.75, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+              className="border-l-[3px] border-amber-400/50 pl-4"
+            >
+              <p className="text-white/80 text-lg italic font-light leading-relaxed">
+                &ldquo;{slogan}&rdquo;
+              </p>
+            </motion.div>
+          )}
+        </div>
+
+        {/* Bottom: Diagnostic grid */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.9, duration: 0.4 }}
+          className="border border-white/8 rounded-xl p-4 bg-white/[0.02]"
+        >
+          <p className="text-[9px] uppercase tracking-widest text-white/20 font-bold mb-3">
+            Diagnóstico rápido
+          </p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2.5">
+            <MetricBar label="Perfil" pct={scores.perfilPct} />
+            <MetricBar label="Territorial" pct={scores.territorioPct} />
+            <MetricBar label="Digital" pct={scores.digitalPct} />
+            <MetricBar label="Datos" pct={scores.datosPct} />
+          </div>
+        </motion.div>
       </div>
     </div>
   );
