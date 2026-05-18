@@ -11,6 +11,55 @@ interface Props {
   f2: ConsultorFormFase2;
 }
 
+const DEFAULT_EJES = [
+  {
+    titulo: "Territorio",
+    descripcion:
+      "Mapeo casa por casa de los votantes. Identificar zonas de alta densidad de indecisos.",
+    accion: "Campaña puerta a puerta",
+  },
+  {
+    titulo: "Digital",
+    descripcion:
+      "Construir presencia web propia y aumentar engagement al 3%+.",
+    accion: "Estrategia de contenido semanal",
+  },
+  {
+    titulo: "Coalición",
+    descripcion:
+      "Alianzas con líderes barriales y organizaciones locales. Partido inscripto antes del plazo.",
+    accion: "Reuniones de construcción política",
+  },
+];
+
+function EjeCard({
+  numero,
+  titulo,
+  descripcion,
+  accion,
+}: {
+  numero: number;
+  titulo: string;
+  descripcion: string;
+  accion: string;
+}) {
+  return (
+    <div className="rounded-3xl bg-amber-400 px-6 pt-10 pb-6 shadow-[0_10px_30px_rgba(2,10,30,0.18)] relative">
+      <div className="absolute -top-4 -left-2 z-10">
+        <TagTilt label={`Eje ${numero}`} tone="white" size="md" rotate={-6 + numero * 2} />
+      </div>
+      <h3 className="text-lg font-black uppercase text-[#0a1f4a] leading-tight">{titulo}</h3>
+      <p className="mt-3 text-sm text-[#0a1f4a]/80 leading-relaxed font-medium">{descripcion}</p>
+      <div className="mt-4 bg-[#0a1f4a]/10 rounded-xl px-3 py-2">
+        <p className="text-[10px] uppercase tracking-wider text-[#0a1f4a]/60 font-bold mb-0.5">
+          Acción
+        </p>
+        <p className="text-xs text-[#0a1f4a]/80 font-semibold">{accion}</p>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Slide "¿Cómo reorganizar el voto?" — layout horizontal de 3 pasos
  * con cards amarillas conectadas por ChevronRight amber. Inspirado en
@@ -19,6 +68,30 @@ interface Props {
 export function SlideReorganizar({ f2 }: Props) {
   const hitos = (f2.recorrido_estrategico?.hitos ?? []).slice(0, 3);
   const count = hitos.length;
+
+  if (count === 0) {
+    return (
+      <SlideChromeData
+        title="¿Cómo reorganizar el voto?"
+        chapter={4}
+        chapterHint="estrategia de 3 pasos"
+      >
+        <div className="flex-1 flex flex-col justify-center gap-6 py-4">
+          <p className="text-white/30 text-sm text-center max-w-md mx-auto">
+            Los 3 ejes estratégicos base del marco Goberna:
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 h-full items-stretch">
+            {DEFAULT_EJES.map((eje, i) => (
+              <EjeCard key={i} numero={i + 1} {...eje} />
+            ))}
+          </div>
+          <p className="text-white/20 text-xs text-center">
+            El consultor completará esta sección con la estrategia específica del candidato.
+          </p>
+        </div>
+      </SlideChromeData>
+    );
+  }
 
   // Mapeo grid según cantidad de hitos.
   const gridCols =
