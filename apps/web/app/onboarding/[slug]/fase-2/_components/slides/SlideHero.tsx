@@ -38,13 +38,13 @@ export function SlideHero({ ctx, f2 }: Props) {
     ctx.jurisdiccion.pais.nombre;
 
   return (
-    <div className="w-full h-full min-h-[560px] flex flex-col lg:flex-row gap-0 overflow-hidden bg-[#020a1e]">
+    <div className="flex-1 flex flex-col lg:flex-row gap-0 overflow-hidden bg-[#020a1e]">
       {/* Izquierda: foto o initials */}
       <motion.div
         initial={{ opacity: 0, x: -24 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-        className="lg:w-2/5 relative bg-[#0a1e4a] flex items-center justify-center overflow-hidden min-h-[280px] lg:min-h-full"
+        className="lg:w-2/5 relative bg-[#0a1e4a] flex items-center justify-center overflow-hidden min-h-[240px] lg:min-h-0 lg:flex-1"
       >
         {fotoUrl ? (
           <>

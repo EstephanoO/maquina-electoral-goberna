@@ -49,7 +49,7 @@ const herramientas = [
 
 export function SlideHerramientas() {
   return (
-    <div className="relative flex-1 flex flex-col rounded-2xl overflow-hidden border border-white/5 shadow-2xl min-h-[70vh] bg-[#020a1e]">
+    <div className="relative flex-1 flex flex-col rounded-2xl overflow-hidden border border-white/5 shadow-2xl bg-[#020a1e]">
       {/* Header */}
       <header className="relative px-8 sm:px-12 py-6 sm:py-7 border-b border-amber-400/20">
         <EditorialHeader

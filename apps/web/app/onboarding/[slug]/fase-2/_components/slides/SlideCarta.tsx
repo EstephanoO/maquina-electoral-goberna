@@ -37,7 +37,7 @@ export function SlideCarta({ ctx }: Props) {
     .join("");
 
   return (
-    <div className="flex-1 relative rounded-2xl overflow-hidden border border-white/10 shadow-2xl min-h-[70vh]">
+    <div className="flex-1 relative rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
       <div className="absolute inset-0">
         <JurisdictionMap
           geojson={(ctx.geojson as GeoJSON.Geometry | null) ?? null}

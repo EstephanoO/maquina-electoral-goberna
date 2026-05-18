@@ -173,7 +173,7 @@ export function SlideVotosNecesarios({ f2, ctx }: Props) {
 
   return (
     <div
-      className="relative flex-1 flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10 min-h-[70vh]"
+      className="relative flex-1 flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10"
       style={{ background: "#020a1e" }}
     >
       {/* Header */}

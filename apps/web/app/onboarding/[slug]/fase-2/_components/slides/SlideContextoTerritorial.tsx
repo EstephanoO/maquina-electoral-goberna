@@ -122,7 +122,7 @@ export function SlideContextoTerritorial({ ctx, f2 }: Props) {
 
   return (
     <div
-      className="relative flex-1 flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10 min-h-[70vh] bg-[#020a1e]"
+      className="relative flex-1 flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-[#020a1e]"
     >
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[55%_45%] gap-0">
         {/* ── Left col: Map (only when data present) ─────────────────────── */}

@@ -35,7 +35,7 @@ export function SlideCierre({ f2 }: Props) {
   const displayAcciones = accionesRaw.length >= 3 ? accionesRaw : fallbackAcciones;
 
   return (
-    <div className="relative flex-1 flex flex-col rounded-2xl overflow-hidden border border-white/5 shadow-2xl min-h-[70vh] bg-[#020a1e]">
+    <div className="relative flex-1 flex flex-col rounded-2xl overflow-hidden border border-white/5 shadow-2xl bg-[#020a1e]">
       {/* Gradient background */}
       <div
         className="absolute inset-0 pointer-events-none"

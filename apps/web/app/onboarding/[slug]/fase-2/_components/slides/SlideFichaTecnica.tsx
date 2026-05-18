@@ -31,7 +31,7 @@ export function SlideFichaTecnica({ ctx, f2 }: Props) {
           : null;
 
   return (
-    <div className="w-full h-full min-h-[560px] flex flex-col bg-[#020a1e] px-8 py-10">
+    <div className="flex-1 flex flex-col bg-[#020a1e] px-8 py-10">
       {/* Encabezado */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
