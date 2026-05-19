@@ -214,6 +214,51 @@ export type Fase1Rapida = {
     padron?: number;
     notas?: string;
   }>;
+  pentad?: {
+    p1_presencia?: {
+      web_url?: string;
+      landing_url?: string;
+      estado_web?: "sin_web" | "basica" | "profesional" | "optimizada";
+      redes_activas?: string[];
+      score?: number;
+      notas?: string;
+    };
+    p2_desempeno?: {
+      seguidores_facebook?: number;
+      seguidores_instagram?: number;
+      seguidores_tiktok?: number;
+      seguidores_youtube?: number;
+      engagement_rate?: number;
+      posts_semana?: number;
+      score?: number;
+      notas?: string;
+    };
+    p3_inversion?: {
+      presupuesto_mensual?: number;
+      plataformas?: string[];
+      tiene_pauta?: boolean;
+      score?: number;
+      notas?: string;
+    };
+    p4_reputacion?: {
+      monitoreo_activo?: boolean;
+      seo_posicion?: string;
+      menciones_positivas_nivel?: "alta" | "media" | "baja" | "nula";
+      menciones_negativas_nivel?: "alta" | "media" | "baja" | "nula";
+      google_negativo?: string[];
+      score?: number;
+      notas?: string;
+    };
+    p5_operativa?: {
+      contactos_crm?: number;
+      herramienta_whatsapp?: string;
+      equipo_digital_personas?: number;
+      grupos_whatsapp?: number;
+      tiene_crm?: boolean;
+      score?: number;
+      notas?: string;
+    };
+  };
   secciones_completas?: string[];
   publicado?: boolean;
   publicado_at?: string;

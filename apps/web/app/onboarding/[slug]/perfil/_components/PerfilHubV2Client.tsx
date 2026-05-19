@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Loader2, CheckCircle2,
-  User, MapPin, Target, Palette, BarChart3, Layers,
+  User, MapPin, Target, Palette, BarChart3, Layers, Zap,
 } from "lucide-react";
 
 import {
@@ -24,17 +24,74 @@ import {
 
 type CompletionLevel = "empty" | "partial" | "done";
 
-// ── Steps definition ───────────────────────────────────────────────────────
+// ── Groups & Steps definition ──────────────────────────────────────────────
+
+const GROUPS = [
+  {
+    id: "5n" as const,
+    label: "5N Identidad",
+    shortLabel: "5N",
+    description: "El candidato, su diagnóstico, propuestas e imagen",
+    color: {
+      bg: "bg-indigo-600",
+      bgLight: "bg-indigo-50",
+      bgHover: "hover:bg-indigo-100",
+      text: "text-indigo-700",
+      textWhite: "text-white",
+      border: "border-indigo-200",
+      dot: "bg-indigo-400",
+      dotActive: "bg-white",
+    },
+  },
+  {
+    id: "ecd" as const,
+    label: "Territorio E·C·D",
+    shortLabel: "E·C·D",
+    description: "Estructura, conciencia y decisión electoral del territorio",
+    color: {
+      bg: "bg-teal-600",
+      bgLight: "bg-teal-50",
+      bgHover: "hover:bg-teal-100",
+      text: "text-teal-700",
+      textWhite: "text-white",
+      border: "border-teal-200",
+      dot: "bg-teal-400",
+      dotActive: "bg-white",
+    },
+  },
+  {
+    id: "digital" as const,
+    label: "Digital PentaD",
+    shortLabel: "PentaD",
+    description: "Presencia, desempeño, inversión, reputación y capacidad operativa digital",
+    color: {
+      bg: "bg-violet-600",
+      bgLight: "bg-violet-50",
+      bgHover: "hover:bg-violet-100",
+      text: "text-violet-700",
+      textWhite: "text-white",
+      border: "border-violet-200",
+      dot: "bg-violet-400",
+      dotActive: "bg-white",
+    },
+  },
+] as const;
+
+type GroupId = (typeof GROUPS)[number]["id"];
 
 const STEPS = [
-  { id: "candidato",  label: "Candidato",   icon: User,      hint: "Datos personales, trayectoria y patrimonio" },
-  { id: "territorio", label: "Territorio",  icon: MapPin,    hint: "Padrón, elecciones anteriores y campo político" },
-  { id: "c2",         label: "Segmentos",   icon: Target,    hint: "Grupos de votantes y sus perfiles" },
-  { id: "d5",         label: "Decisión",    icon: Layers,    hint: "Mensaje, canal y portavoz por segmento" },
-  { id: "propuestas", label: "Propuestas",  icon: BarChart3, hint: "Las propuestas programáticas de la campaña" },
-  { id: "branding",   label: "Branding",    icon: Palette,   hint: "Slogan, colores y logo de la campaña" },
-  { id: "foda",       label: "FODA",        icon: BarChart3, hint: "Fortalezas, debilidades, oportunidades y amenazas" },
-  { id: "conciencia", label: "Conciencia",  icon: Target,    hint: "Intención de voto, issues y evaluación" },
+  // ── 5N Identidad ──────────────────────────────────────────────────────────
+  { id: "candidato",  label: "Candidato",  icon: User,      hint: "Datos personales, trayectoria y patrimonio",               group: "5n" as GroupId },
+  { id: "foda",       label: "FODA",       icon: BarChart3, hint: "Fortalezas, debilidades, oportunidades y amenazas",         group: "5n" as GroupId },
+  { id: "propuestas", label: "Propuestas", icon: BarChart3, hint: "Las propuestas programáticas de la campaña",                group: "5n" as GroupId },
+  { id: "branding",   label: "Branding",   icon: Palette,   hint: "Slogan, colores y logo de la campaña",                     group: "5n" as GroupId },
+  // ── Territorio E·C·D ──────────────────────────────────────────────────────
+  { id: "territorio", label: "Territorio", icon: MapPin,    hint: "Padrón, elecciones anteriores y campo político",            group: "ecd" as GroupId },
+  { id: "c2",         label: "Segmentos",  icon: Target,    hint: "Grupos de votantes y sus perfiles psicográficos",           group: "ecd" as GroupId },
+  { id: "d5",         label: "Decisión",   icon: Layers,    hint: "Mensaje clave, canal y portavoz por segmento",              group: "ecd" as GroupId },
+  { id: "conciencia", label: "Conciencia", icon: Target,    hint: "Intención de voto, issues electorales y evaluación",        group: "ecd" as GroupId },
+  // ── Digital PentaD ────────────────────────────────────────────────────────
+  { id: "pentad",     label: "PentaD",     icon: Zap,       hint: "Presencia, desempeño, inversión, reputación y operativa",   group: "digital" as GroupId },
 ] as const;
 
 type StepId = (typeof STEPS)[number]["id"];
@@ -2269,6 +2326,529 @@ function ConcienciaEditor({
   );
 }
 
+// ── PentaD Editor ──────────────────────────────────────────────────────────
+
+type PentadData = NonNullable<Fase1Rapida["pentad"]>;
+
+function ScoreSelector({
+  value,
+  onChange,
+  color,
+}: {
+  value?: number;
+  onChange: (v: number) => void;
+  color: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] text-slate-500 mr-1">Score:</span>
+      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onChange(n)}
+          className={`size-6 rounded-lg text-[10px] font-bold transition-all ${
+            value === n
+              ? `${color} text-white shadow-sm`
+              : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+          }`}
+        >
+          {n}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PentaDEditor({
+  value,
+  onChange,
+}: {
+  value: PentadData;
+  onChange: (v: PentadData) => void;
+}) {
+  const p1 = value.p1_presencia ?? {};
+  const p2 = value.p2_desempeno ?? {};
+  const p3 = value.p3_inversion ?? {};
+  const p4 = value.p4_reputacion ?? {};
+  const p5 = value.p5_operativa ?? {};
+
+  const scores = [p1.score, p2.score, p3.score, p4.score, p5.score].filter(Boolean) as number[];
+  const scoreTotal = scores.length > 0 ? Math.round((scores.reduce((a, b) => a + b, 0) / 5) * 10) / 10 : null;
+
+  const axes = [
+    {
+      key: "p1_presencia",
+      label: "P1 — Presencia digital",
+      desc: "Sitio web, landing page y redes activas",
+      color: "bg-violet-600",
+      colorLight: "bg-violet-50",
+      colorBorder: "border-violet-200",
+      colorText: "text-violet-700",
+    },
+    {
+      key: "p2_desempeno",
+      label: "P2 — Desempeño y alcance",
+      desc: "Seguidores, engagement y frecuencia de publicación",
+      color: "bg-violet-600",
+      colorLight: "bg-violet-50",
+      colorBorder: "border-violet-200",
+      colorText: "text-violet-700",
+    },
+    {
+      key: "p3_inversion",
+      label: "P3 — Inversión y amplificación",
+      desc: "Presupuesto de pauta digital y plataformas usadas",
+      color: "bg-violet-600",
+      colorLight: "bg-violet-50",
+      colorBorder: "border-violet-200",
+      colorText: "text-violet-700",
+    },
+    {
+      key: "p4_reputacion",
+      label: "P4 — Reputación y seguimiento",
+      desc: "Monitoreo online, SEO y nivel de menciones",
+      color: "bg-violet-600",
+      colorLight: "bg-violet-50",
+      colorBorder: "border-violet-200",
+      colorText: "text-violet-700",
+    },
+    {
+      key: "p5_operativa",
+      label: "P5 — Capacidad operativa",
+      desc: "CRM, WhatsApp masivo, equipo digital y datos",
+      color: "bg-violet-600",
+      colorLight: "bg-violet-50",
+      colorBorder: "border-violet-200",
+      colorText: "text-violet-700",
+    },
+  ] as const;
+
+  return (
+    <div className="space-y-8">
+      {/* Score total */}
+      {scoreTotal !== null && (
+        <div className="rounded-2xl bg-violet-50 border border-violet-200 p-5 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-bold text-violet-700 uppercase tracking-widest mb-1">Score PentaD total</p>
+            <p className="text-[11px] text-violet-600/80">Promedio de los 5 ejes evaluados</p>
+          </div>
+          <div
+            className={`size-16 rounded-2xl flex items-center justify-center font-black text-2xl text-white shadow-lg ${
+              scoreTotal >= 7 ? "bg-green-500" : scoreTotal >= 4 ? "bg-amber-500" : "bg-red-500"
+            }`}
+          >
+            {scoreTotal}
+          </div>
+        </div>
+      )}
+
+      {/* P1 — Presencia digital */}
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs font-bold text-slate-700 uppercase tracking-widest pb-2 border-b border-slate-200 mb-1">
+            {axes[0].label}
+          </p>
+          <p className="text-[11px] text-slate-500">{axes[0].desc}</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="URL sitio web oficial">
+            <input
+              className={inputClass}
+              value={p1.web_url ?? ""}
+              onChange={(e) => onChange({ ...value, p1_presencia: { ...p1, web_url: e.target.value } })}
+              placeholder="https://jorgevaldez.pe"
+            />
+          </Field>
+          <Field label="URL landing page de campaña">
+            <input
+              className={inputClass}
+              value={p1.landing_url ?? ""}
+              onChange={(e) => onChange({ ...value, p1_presencia: { ...p1, landing_url: e.target.value } })}
+              placeholder="https://..."
+            />
+          </Field>
+        </div>
+        <Field label="Estado del sitio web">
+          <select
+            className={selectClass}
+            value={p1.estado_web ?? ""}
+            onChange={(e) =>
+              onChange({
+                ...value,
+                p1_presencia: {
+                  ...p1,
+                  estado_web: e.target.value as NonNullable<PentadData["p1_presencia"]>["estado_web"],
+                },
+              })
+            }
+          >
+            <option value="">— Sin evaluar —</option>
+            <option value="sin_web">Sin presencia web</option>
+            <option value="basica">Básica (solo perfil o página simple)</option>
+            <option value="profesional">Profesional (diseño, contenido actualizado)</option>
+            <option value="optimizada">Optimizada (SEO, landing, conversión)</option>
+          </select>
+        </Field>
+        <Field label="Redes sociales activas">
+          <TagsInput
+            value={p1.redes_activas ?? []}
+            onChange={(v) => onChange({ ...value, p1_presencia: { ...p1, redes_activas: v } })}
+            placeholder="Facebook, Instagram, TikTok, X, YouTube…"
+          />
+        </Field>
+        <Field label="Notas">
+          <input
+            className={inputClass}
+            value={p1.notas ?? ""}
+            onChange={(e) => onChange({ ...value, p1_presencia: { ...p1, notas: e.target.value } })}
+            placeholder="Observaciones sobre la presencia digital…"
+          />
+        </Field>
+        <ScoreSelector
+          value={p1.score}
+          onChange={(v) => onChange({ ...value, p1_presencia: { ...p1, score: v } })}
+          color="bg-violet-600"
+        />
+      </div>
+
+      <hr className="border-slate-200" />
+
+      {/* P2 — Desempeño y alcance */}
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs font-bold text-slate-700 uppercase tracking-widest pb-2 border-b border-slate-200 mb-1">
+            {axes[1].label}
+          </p>
+          <p className="text-[11px] text-slate-500">{axes[1].desc}</p>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <Field label="Seguidores Facebook">
+            <input
+              type="number"
+              className={inputClass}
+              value={p2.seguidores_facebook ?? ""}
+              onChange={(e) =>
+                onChange({ ...value, p2_desempeno: { ...p2, seguidores_facebook: e.target.value ? Number(e.target.value) : undefined } })
+              }
+              placeholder="0"
+            />
+          </Field>
+          <Field label="Seguidores Instagram">
+            <input
+              type="number"
+              className={inputClass}
+              value={p2.seguidores_instagram ?? ""}
+              onChange={(e) =>
+                onChange({ ...value, p2_desempeno: { ...p2, seguidores_instagram: e.target.value ? Number(e.target.value) : undefined } })
+              }
+              placeholder="0"
+            />
+          </Field>
+          <Field label="Seguidores TikTok">
+            <input
+              type="number"
+              className={inputClass}
+              value={p2.seguidores_tiktok ?? ""}
+              onChange={(e) =>
+                onChange({ ...value, p2_desempeno: { ...p2, seguidores_tiktok: e.target.value ? Number(e.target.value) : undefined } })
+              }
+              placeholder="0"
+            />
+          </Field>
+          <Field label="Seguidores YouTube">
+            <input
+              type="number"
+              className={inputClass}
+              value={p2.seguidores_youtube ?? ""}
+              onChange={(e) =>
+                onChange({ ...value, p2_desempeno: { ...p2, seguidores_youtube: e.target.value ? Number(e.target.value) : undefined } })
+              }
+              placeholder="0"
+            />
+          </Field>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Engagement rate promedio (%)">
+            <input
+              type="number"
+              step="0.1"
+              className={inputClass}
+              value={p2.engagement_rate ?? ""}
+              onChange={(e) =>
+                onChange({ ...value, p2_desempeno: { ...p2, engagement_rate: e.target.value ? Number(e.target.value) : undefined } })
+              }
+              placeholder="Ej. 2.5"
+            />
+          </Field>
+          <Field label="Publicaciones por semana">
+            <input
+              type="number"
+              className={inputClass}
+              value={p2.posts_semana ?? ""}
+              onChange={(e) =>
+                onChange({ ...value, p2_desempeno: { ...p2, posts_semana: e.target.value ? Number(e.target.value) : undefined } })
+              }
+              placeholder="Ej. 5"
+            />
+          </Field>
+        </div>
+        <Field label="Notas">
+          <input
+            className={inputClass}
+            value={p2.notas ?? ""}
+            onChange={(e) => onChange({ ...value, p2_desempeno: { ...p2, notas: e.target.value } })}
+            placeholder="Observaciones de desempeño…"
+          />
+        </Field>
+        <ScoreSelector
+          value={p2.score}
+          onChange={(v) => onChange({ ...value, p2_desempeno: { ...p2, score: v } })}
+          color="bg-violet-600"
+        />
+      </div>
+
+      <hr className="border-slate-200" />
+
+      {/* P3 — Inversión y amplificación */}
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs font-bold text-slate-700 uppercase tracking-widest pb-2 border-b border-slate-200 mb-1">
+            {axes[2].label}
+          </p>
+          <p className="text-[11px] text-slate-500">{axes[2].desc}</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Presupuesto mensual en pauta (S/.)">
+            <input
+              type="number"
+              className={inputClass}
+              value={p3.presupuesto_mensual ?? ""}
+              onChange={(e) =>
+                onChange({ ...value, p3_inversion: { ...p3, presupuesto_mensual: e.target.value ? Number(e.target.value) : undefined } })
+              }
+              placeholder="Ej. 3000"
+            />
+          </Field>
+          <Field label="¿Tiene pauta activa?">
+            <select
+              className={selectClass}
+              value={p3.tiene_pauta === undefined ? "" : p3.tiene_pauta ? "si" : "no"}
+              onChange={(e) =>
+                onChange({ ...value, p3_inversion: { ...p3, tiene_pauta: e.target.value === "si" ? true : e.target.value === "no" ? false : undefined } })
+              }
+            >
+              <option value="">— Sin datos —</option>
+              <option value="si">Sí, tiene pauta activa</option>
+              <option value="no">No tiene pauta</option>
+            </select>
+          </Field>
+        </div>
+        <Field label="Plataformas de inversión">
+          <TagsInput
+            value={p3.plataformas ?? []}
+            onChange={(v) => onChange({ ...value, p3_inversion: { ...p3, plataformas: v } })}
+            placeholder="Facebook Ads, Google Ads, TikTok Ads…"
+          />
+        </Field>
+        <Field label="Notas">
+          <input
+            className={inputClass}
+            value={p3.notas ?? ""}
+            onChange={(e) => onChange({ ...value, p3_inversion: { ...p3, notas: e.target.value } })}
+            placeholder="Observaciones de inversión…"
+          />
+        </Field>
+        <ScoreSelector
+          value={p3.score}
+          onChange={(v) => onChange({ ...value, p3_inversion: { ...p3, score: v } })}
+          color="bg-violet-600"
+        />
+      </div>
+
+      <hr className="border-slate-200" />
+
+      {/* P4 — Reputación y seguimiento */}
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs font-bold text-slate-700 uppercase tracking-widest pb-2 border-b border-slate-200 mb-1">
+            {axes[3].label}
+          </p>
+          <p className="text-[11px] text-slate-500">{axes[3].desc}</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Menciones positivas">
+            <select
+              className={selectClass}
+              value={p4.menciones_positivas_nivel ?? ""}
+              onChange={(e) =>
+                onChange({
+                  ...value,
+                  p4_reputacion: {
+                    ...p4,
+                    menciones_positivas_nivel: e.target.value as NonNullable<PentadData["p4_reputacion"]>["menciones_positivas_nivel"],
+                  },
+                })
+              }
+            >
+              <option value="">— Sin evaluar —</option>
+              <option value="alta">Alta</option>
+              <option value="media">Media</option>
+              <option value="baja">Baja</option>
+              <option value="nula">Nula</option>
+            </select>
+          </Field>
+          <Field label="Menciones negativas">
+            <select
+              className={selectClass}
+              value={p4.menciones_negativas_nivel ?? ""}
+              onChange={(e) =>
+                onChange({
+                  ...value,
+                  p4_reputacion: {
+                    ...p4,
+                    menciones_negativas_nivel: e.target.value as NonNullable<PentadData["p4_reputacion"]>["menciones_negativas_nivel"],
+                  },
+                })
+              }
+            >
+              <option value="">— Sin evaluar —</option>
+              <option value="alta">Alta</option>
+              <option value="media">Media</option>
+              <option value="baja">Baja</option>
+              <option value="nula">Nula</option>
+            </select>
+          </Field>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Posicionamiento SEO (búsqueda por nombre)">
+            <input
+              className={inputClass}
+              value={p4.seo_posicion ?? ""}
+              onChange={(e) => onChange({ ...value, p4_reputacion: { ...p4, seo_posicion: e.target.value } })}
+              placeholder="Ej. 1ª posición en Google, página 2…"
+            />
+          </Field>
+          <Field label="¿Tiene monitoreo activo?">
+            <select
+              className={selectClass}
+              value={p4.monitoreo_activo === undefined ? "" : p4.monitoreo_activo ? "si" : "no"}
+              onChange={(e) =>
+                onChange({ ...value, p4_reputacion: { ...p4, monitoreo_activo: e.target.value === "si" ? true : e.target.value === "no" ? false : undefined } })
+              }
+            >
+              <option value="">— Sin datos —</option>
+              <option value="si">Sí (Google Alerts, Mention, etc.)</option>
+              <option value="no">No tiene monitoreo</option>
+            </select>
+          </Field>
+        </div>
+        <Field label="Resultados negativos en Google (URLs o descripciones)">
+          <TagsInput
+            value={p4.google_negativo ?? []}
+            onChange={(v) => onChange({ ...value, p4_reputacion: { ...p4, google_negativo: v } })}
+            placeholder="Ej. Artículo El Comercio 2021, video en YouTube…"
+          />
+        </Field>
+        <Field label="Notas">
+          <input
+            className={inputClass}
+            value={p4.notas ?? ""}
+            onChange={(e) => onChange({ ...value, p4_reputacion: { ...p4, notas: e.target.value } })}
+            placeholder="Observaciones de reputación…"
+          />
+        </Field>
+        <ScoreSelector
+          value={p4.score}
+          onChange={(v) => onChange({ ...value, p4_reputacion: { ...p4, score: v } })}
+          color="bg-violet-600"
+        />
+      </div>
+
+      <hr className="border-slate-200" />
+
+      {/* P5 — Capacidad operativa */}
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs font-bold text-slate-700 uppercase tracking-widest pb-2 border-b border-slate-200 mb-1">
+            {axes[4].label}
+          </p>
+          <p className="text-[11px] text-slate-500">{axes[4].desc}</p>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <Field label="Contactos en CRM / base de datos">
+            <input
+              type="number"
+              className={inputClass}
+              value={p5.contactos_crm ?? ""}
+              onChange={(e) =>
+                onChange({ ...value, p5_operativa: { ...p5, contactos_crm: e.target.value ? Number(e.target.value) : undefined } })
+              }
+              placeholder="Ej. 1200"
+            />
+          </Field>
+          <Field label="Equipo digital (personas)">
+            <input
+              type="number"
+              className={inputClass}
+              value={p5.equipo_digital_personas ?? ""}
+              onChange={(e) =>
+                onChange({ ...value, p5_operativa: { ...p5, equipo_digital_personas: e.target.value ? Number(e.target.value) : undefined } })
+              }
+              placeholder="Ej. 3"
+            />
+          </Field>
+          <Field label="Grupos de WhatsApp">
+            <input
+              type="number"
+              className={inputClass}
+              value={p5.grupos_whatsapp ?? ""}
+              onChange={(e) =>
+                onChange({ ...value, p5_operativa: { ...p5, grupos_whatsapp: e.target.value ? Number(e.target.value) : undefined } })
+              }
+              placeholder="Ej. 12"
+            />
+          </Field>
+          <Field label="¿Tiene CRM?">
+            <select
+              className={selectClass}
+              value={p5.tiene_crm === undefined ? "" : p5.tiene_crm ? "si" : "no"}
+              onChange={(e) =>
+                onChange({ ...value, p5_operativa: { ...p5, tiene_crm: e.target.value === "si" ? true : e.target.value === "no" ? false : undefined } })
+              }
+            >
+              <option value="">—</option>
+              <option value="si">Sí</option>
+              <option value="no">No</option>
+            </select>
+          </Field>
+        </div>
+        <Field label="Herramienta de WhatsApp masivo">
+          <input
+            className={inputClass}
+            value={p5.herramienta_whatsapp ?? ""}
+            onChange={(e) => onChange({ ...value, p5_operativa: { ...p5, herramienta_whatsapp: e.target.value } })}
+            placeholder="Ej. WhatsBulk, MessageBird, sin herramienta…"
+          />
+        </Field>
+        <Field label="Notas">
+          <input
+            className={inputClass}
+            value={p5.notas ?? ""}
+            onChange={(e) => onChange({ ...value, p5_operativa: { ...p5, notas: e.target.value } })}
+            placeholder="Observaciones operativas…"
+          />
+        </Field>
+        <ScoreSelector
+          value={p5.score}
+          onChange={(v) => onChange({ ...value, p5_operativa: { ...p5, score: v } })}
+          color="bg-violet-600"
+        />
+      </div>
+    </div>
+  );
+}
+
 // ── Step preview helper ────────────────────────────────────────────────────
 
 function getStepPreview(
@@ -2410,6 +2990,40 @@ function getStepPreview(
           )}
           {issues?.slice(0, 2).map((iss, i) => (
             <p key={i} className="text-slate-500 line-clamp-1 text-[10px]">{iss.issue}</p>
+          ))}
+        </div>
+      );
+    }
+    case "pentad": {
+      const p = f1.pentad;
+      const scores = [
+        p?.p1_presencia?.score,
+        p?.p2_desempeno?.score,
+        p?.p3_inversion?.score,
+        p?.p4_reputacion?.score,
+        p?.p5_operativa?.score,
+      ].filter((s): s is number => s != null);
+      if (!scores.length) return null;
+      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      return (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-500">Promedio PentaD</span>
+            <span className={`font-bold text-[11px] ${avg >= 7 ? "text-green-600" : avg >= 4 ? "text-amber-600" : "text-red-500"}`}>
+              {avg.toFixed(1)} / 10
+            </span>
+          </div>
+          {[
+            { label: "Presencia", s: p?.p1_presencia?.score },
+            { label: "Desempeño", s: p?.p2_desempeno?.score },
+            { label: "Inversión", s: p?.p3_inversion?.score },
+            { label: "Reputación", s: p?.p4_reputacion?.score },
+            { label: "Operativa", s: p?.p5_operativa?.score },
+          ].filter(x => x.s != null).slice(0, 4).map(({ label, s }, i) => (
+            <div key={i} className="flex justify-between gap-2">
+              <span className="text-slate-500 text-[10px]">{label}</span>
+              <span className="text-violet-600 font-bold text-[10px]">{s}/10</span>
+            </div>
           ))}
         </div>
       );
@@ -2610,6 +3224,10 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
       ecd.c5_intencion_voto as Record<string, unknown> | undefined,
       ["candidato_puntero"],
     ),
+    pentad: objectCompletion(
+      f1.pentad as Record<string, unknown> | undefined,
+      ["p1_presencia", "p2_desempeno"],
+    ),
   };
 
   // suppress unused-value warning for stringsCompletion — it is kept as a utility
@@ -2697,6 +3315,13 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
             onChange={(patch) => updateEcd(patch)}
           />
         );
+      case "pentad":
+        return (
+          <PentaDEditor
+            value={f1.pentad ?? {}}
+            onChange={(v) => updateF1({ pentad: v })}
+          />
+        );
     }
   }
 
@@ -2757,56 +3382,83 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
           </div>
         </div>
 
-        {/* Step rail */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-2.5">
-          <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none">
-            {STEPS.map((step, i) => {
-              const stepComp = getStepCompletion(step.id);
-              const isCurrent = i === currentStep;
-              const isHovered = hoveredStep === i;
-              const preview = getStepPreview(step.id, f1, ecd, perfil, vpg);
+        {/* Step rail — grouped */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pb-3">
+          <div className="flex items-start gap-3 overflow-x-auto pb-1 scrollbar-none">
+            {GROUPS.map((group, gi) => {
+              const groupSteps = STEPS.filter((s) => s.group === group.id);
+              const isActiveGroup = groupSteps.some((s) => s.id === currentStepDef.id);
               return (
-                <div
-                  key={step.id}
-                  className="relative"
-                  onMouseEnter={() => setHoveredStep(i)}
-                  onMouseLeave={() => setHoveredStep(null)}
-                >
-                  <button
-                    onClick={() => setCurrentStep(i)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${
-                      isCurrent
-                        ? "bg-amber-400 text-slate-900"
-                        : stepComp === "done"
-                          ? "bg-green-100 text-green-700 border border-green-200"
-                          : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
-                    }`}
-                  >
+                <div key={group.id} className="flex-shrink-0">
+                  {/* Group label */}
+                  <div className={`flex items-center gap-1.5 mb-1.5 px-1`}>
                     <span
-                      className={`size-1.5 rounded-full ${
-                        isCurrent
-                          ? "bg-slate-900"
-                          : stepComp === "done"
-                            ? "bg-green-500"
-                            : "bg-slate-400"
+                      className={`text-[9px] font-black uppercase tracking-widest ${
+                        isActiveGroup ? group.color.text : "text-slate-400"
+                      }`}
+                    >
+                      {group.shortLabel}
+                    </span>
+                    <div
+                      className={`h-px flex-1 min-w-[12px] ${
+                        isActiveGroup ? `bg-current ${group.color.text}` : "bg-slate-200"
                       }`}
                     />
-                    {step.label}
-                  </button>
-                  {/* Hover preview tooltip */}
-                  {isHovered && !isCurrent && preview && (
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 pointer-events-none">
-                      <div className="bg-white border border-slate-200 rounded-xl shadow-xl p-3 min-w-[180px] max-w-[240px]">
-                        <p className="text-[9px] uppercase tracking-widest text-slate-400 mb-1.5 font-semibold">
-                          {step.label}
-                        </p>
-                        <div className="text-[11px] text-slate-700 leading-relaxed">
-                          {preview}
+                  </div>
+                  {/* Step pills */}
+                  <div className="flex items-center gap-1">
+                    {groupSteps.map((step) => {
+                      const i = STEPS.findIndex((s) => s.id === step.id);
+                      const stepComp = getStepCompletion(step.id);
+                      const isCurrent = i === currentStep;
+                      const isHovered = hoveredStep === i;
+                      const preview = getStepPreview(step.id, f1, ecd, perfil, vpg);
+                      return (
+                        <div
+                          key={step.id}
+                          className="relative"
+                          onMouseEnter={() => setHoveredStep(i)}
+                          onMouseLeave={() => setHoveredStep(null)}
+                        >
+                          <button
+                            onClick={() => setCurrentStep(i)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${
+                              isCurrent
+                                ? `${group.color.bg} ${group.color.textWhite}`
+                                : stepComp === "done"
+                                  ? "bg-green-100 text-green-700 border border-green-200"
+                                  : `${group.color.bgLight} ${group.color.text} border ${group.color.border} ${group.color.bgHover}`
+                            }`}
+                          >
+                            <span
+                              className={`size-1.5 rounded-full flex-shrink-0 ${
+                                isCurrent
+                                  ? group.color.dotActive
+                                  : stepComp === "done"
+                                    ? "bg-green-500"
+                                    : group.color.dot
+                              }`}
+                            />
+                            {step.label}
+                          </button>
+                          {/* Hover preview tooltip */}
+                          {isHovered && !isCurrent && preview && (
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 pointer-events-none">
+                              <div className="bg-white border border-slate-200 rounded-xl shadow-xl p-3 min-w-[180px] max-w-[240px]">
+                                <p className={`text-[9px] uppercase tracking-widest mb-1.5 font-bold ${group.color.text}`}>
+                                  {step.label}
+                                </p>
+                                <div className="text-[11px] text-slate-700 leading-relaxed">
+                                  {preview}
+                                </div>
+                                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white" />
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white" />
-                      </div>
-                    </div>
-                  )}
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}
