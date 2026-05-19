@@ -37,6 +37,7 @@ function isProtectedRoute(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return false;
 
   // Public prefixes
+  if (pathname.startsWith("/onboarding/")) return false;
   if (pathname.startsWith("/mapa")) return false;
   if (pathname.startsWith("/invite")) return false;
 

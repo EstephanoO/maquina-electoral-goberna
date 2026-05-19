@@ -37,6 +37,11 @@ function setAuthCookies(reply: FastifyReply, accessToken: string, refreshToken: 
     "Set-Cookie",
     `${AUTH_COOKIE_NAMES.refreshToken}=${refreshToken}; Path=/; SameSite=Lax${secure}; HttpOnly; Max-Age=2592000`,
   );
+  // Non-httpOnly session flag for Next.js middleware to detect auth state
+  reply.header(
+    "Set-Cookie",
+    `${AUTH_COOKIE_NAMES.session}=1; Path=/; SameSite=Lax${secure}; Max-Age=31536000`,
+  );
 }
 
 export function buildMagicLinkRoutes(env: AppEnv): FastifyPluginAsync {
