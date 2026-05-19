@@ -31,7 +31,7 @@ const GROUPS = [
     id: "5n" as const,
     label: "5N Identidad",
     shortLabel: "5N",
-    description: "El candidato, su diagnóstico, propuestas e imagen",
+    description: "El candidato, su diagnóstico y su imagen de campaña",
     color: {
       bg: "bg-indigo-600",
       bgLight: "bg-indigo-50",
@@ -47,7 +47,7 @@ const GROUPS = [
     id: "ecd" as const,
     label: "Territorio E·C·D",
     shortLabel: "E·C·D",
-    description: "Estructura, conciencia y decisión electoral del territorio",
+    description: "Estructura, segmentos y decisión electoral del territorio",
     color: {
       bg: "bg-teal-600",
       bgLight: "bg-teal-50",
@@ -83,13 +83,11 @@ const STEPS = [
   // ── 5N Identidad ──────────────────────────────────────────────────────────
   { id: "candidato",  label: "Candidato",  icon: User,      hint: "Datos personales, trayectoria y patrimonio",               group: "5n" as GroupId },
   { id: "foda",       label: "FODA",       icon: BarChart3, hint: "Fortalezas, debilidades, oportunidades y amenazas",         group: "5n" as GroupId },
-  { id: "propuestas", label: "Propuestas", icon: BarChart3, hint: "Las propuestas programáticas de la campaña",                group: "5n" as GroupId },
   { id: "branding",   label: "Branding",   icon: Palette,   hint: "Slogan, colores y logo de la campaña",                     group: "5n" as GroupId },
   // ── Territorio E·C·D ──────────────────────────────────────────────────────
   { id: "territorio", label: "Territorio", icon: MapPin,    hint: "Padrón, elecciones anteriores y campo político",            group: "ecd" as GroupId },
   { id: "c2",         label: "Segmentos",  icon: Target,    hint: "Grupos de votantes y sus perfiles psicográficos",           group: "ecd" as GroupId },
   { id: "d5",         label: "Decisión",   icon: Layers,    hint: "Mensaje clave, canal y portavoz por segmento",              group: "ecd" as GroupId },
-  { id: "conciencia", label: "Conciencia", icon: Target,    hint: "Intención de voto, issues electorales y evaluación",        group: "ecd" as GroupId },
   // ── Digital PentaD ────────────────────────────────────────────────────────
   { id: "pentad",     label: "PentaD",     icon: Zap,       hint: "Presencia, desempeño, inversión, reputación y operativa",   group: "digital" as GroupId },
 ] as const;
@@ -330,24 +328,6 @@ function LiveProfileCard({
         </div>
       )}
 
-      {/* Propuestas pills */}
-      {(f1.propuestas?.length ?? 0) > 0 && (
-        <div>
-          <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-2">
-            Propuestas ({f1.propuestas!.length})
-          </p>
-          <div className="space-y-1">
-            {f1.propuestas!.slice(0, 3).map((p) => (
-              <div key={p.orden} className="flex items-center gap-2 text-[10px] text-slate-700">
-                <span className="size-4 rounded-full bg-amber-400/20 text-amber-700 flex items-center justify-center font-bold flex-shrink-0">
-                  {p.orden}
-                </span>
-                <span className="truncate">{p.titulo}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* FODA counts */}
       {(f1.diagnostico_inicial?.fortalezas?.length ||
@@ -2922,19 +2902,6 @@ function getStepPreview(
         </div>
       );
     }
-    case "propuestas": {
-      const props = f1.propuestas;
-      if (!props?.length) return null;
-      return (
-        <div className="space-y-0.5">
-          {props.slice(0, 4).map((p, i) => (
-            <p key={i} className="text-slate-600 line-clamp-1 text-[10px]">
-              <span className="text-amber-600/60">{i + 1}.</span> {p.titulo}
-            </p>
-          ))}
-        </div>
-      );
-    }
     case "branding": {
       const b = f1.branding;
       if (!b?.slogan && !b?.color_primario) return null;
@@ -2971,26 +2938,6 @@ function getStepPreview(
               <p key={i} className="text-slate-500 line-clamp-1">{dd}</p>
             ))}
           </div>
-        </div>
-      );
-    }
-    case "conciencia": {
-      const issues = ecd.c3_issues?.top_issues;
-      const c5 = ecd.c5_intencion_voto;
-      if (!issues?.length && !c5?.candidato_puntero) return null;
-      return (
-        <div className="space-y-1">
-          {c5?.candidato_puntero && (
-            <p className="text-[10px] text-slate-500">
-              Puntero: <span className="text-slate-700">{c5.candidato_puntero}</span>
-            </p>
-          )}
-          {c5?.pct_nuestro_candidato != null && (
-            <p className="text-amber-600 font-bold text-[10px]">Nuestro: {c5.pct_nuestro_candidato}%</p>
-          )}
-          {issues?.slice(0, 2).map((iss, i) => (
-            <p key={i} className="text-slate-500 line-clamp-1 text-[10px]">{iss.issue}</p>
-          ))}
         </div>
       );
     }
@@ -3206,12 +3153,6 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
           ? "done"
           : "partial"
         : "empty",
-    propuestas:
-      f1.propuestas && f1.propuestas.length >= 3
-        ? "done"
-        : f1.propuestas && f1.propuestas.length > 0
-          ? "partial"
-          : "empty",
     branding: objectCompletion(
       f1.branding as Record<string, unknown> | undefined,
       ["slogan", "color_primario"],
@@ -3219,10 +3160,6 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
     foda: objectCompletion(
       f1.diagnostico_inicial as Record<string, unknown> | undefined,
       ["fortalezas", "debilidades"],
-    ),
-    conciencia: objectCompletion(
-      ecd.c5_intencion_voto as Record<string, unknown> | undefined,
-      ["candidato_puntero"],
     ),
     pentad: objectCompletion(
       f1.pentad as Record<string, unknown> | undefined,
@@ -3286,14 +3223,6 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
             onChange={(v) => updateEcd({ d5_matrix: v })}
           />
         );
-      case "propuestas":
-        return (
-          <PropuestasEditor
-            value={f1.propuestas ?? []}
-            onChange={(v) => updateF1({ propuestas: v })}
-            color1={color1}
-          />
-        );
       case "branding":
         return (
           <BrandingEditor
@@ -3306,13 +3235,6 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
           <FodaEditor
             value={f1.diagnostico_inicial ?? {}}
             onChange={(v) => updateF1({ diagnostico_inicial: v })}
-          />
-        );
-      case "conciencia":
-        return (
-          <ConcienciaEditor
-            value={ecd}
-            onChange={(patch) => updateEcd(patch)}
           />
         );
       case "pentad":
