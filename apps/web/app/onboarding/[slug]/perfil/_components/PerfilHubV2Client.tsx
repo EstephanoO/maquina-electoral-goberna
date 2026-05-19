@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Loader2, CheckCircle2,
-  User, MapPin, Zap, Target, Palette, BarChart3, Layers, Star,
+  User, MapPin, Target, Palette, BarChart3, Layers,
 } from "lucide-react";
 
 import {
@@ -27,17 +27,14 @@ type CompletionLevel = "empty" | "partial" | "done";
 // ── Steps definition ───────────────────────────────────────────────────────
 
 const STEPS = [
-  { id: "candidato", label: "Candidato", icon: User, hint: "Nombre, bio y datos básicos del candidato" },
-  { id: "c2", label: "Segmentos", icon: Target, hint: "Perfiles psicográficos del electorado" },
-  { id: "d5", label: "Decisión", icon: Layers, hint: "Mensaje clave, canal y portavoz por segmento" },
-  { id: "nucleo", label: "Núcleo", icon: Star, hint: "Propuesta central y diferenciador de campaña" },
-  { id: "estrategia", label: "Estrategia", icon: Zap, hint: "Tipo de campaña, eje emocional y frentes" },
-  { id: "propuestas", label: "Propuestas", icon: BarChart3, hint: "3-6 propuestas programáticas principales" },
-  { id: "branding", label: "Branding", icon: Palette, hint: "Slogan, colores y logo de la campaña" },
-  { id: "foda", label: "FODA", icon: BarChart3, hint: "Fortalezas, debilidades, oportunidades y amenazas" },
-  { id: "estructura", label: "Territorio", icon: MapPin, hint: "Capital político, social y campo electoral" },
-  { id: "conciencia", label: "Conciencia", icon: Target, hint: "Issues, intención de voto y evaluación" },
-  { id: "perfil5n", label: "Perfil 5N", icon: User, hint: "Identidad, trayectoria, riesgo y patrimonio" },
+  { id: "candidato",  label: "Candidato",   icon: User,      hint: "Datos personales, trayectoria y patrimonio" },
+  { id: "territorio", label: "Territorio",  icon: MapPin,    hint: "Padrón, elecciones anteriores y campo político" },
+  { id: "c2",         label: "Segmentos",   icon: Target,    hint: "Grupos de votantes y sus perfiles" },
+  { id: "d5",         label: "Decisión",    icon: Layers,    hint: "Mensaje, canal y portavoz por segmento" },
+  { id: "propuestas", label: "Propuestas",  icon: BarChart3, hint: "Las propuestas programáticas de la campaña" },
+  { id: "branding",   label: "Branding",    icon: Palette,   hint: "Slogan, colores y logo de la campaña" },
+  { id: "foda",       label: "FODA",        icon: BarChart3, hint: "Fortalezas, debilidades, oportunidades y amenazas" },
+  { id: "conciencia", label: "Conciencia",  icon: Target,    hint: "Intención de voto, issues y evaluación" },
 ] as const;
 
 type StepId = (typeof STEPS)[number]["id"];
@@ -72,7 +69,7 @@ function objectCompletion(
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-semibold">
+      <label className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-semibold">
         {label}
       </label>
       {children}
@@ -81,7 +78,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const inputClass =
-  "w-full bg-[#020a1e]/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-sm placeholder:text-gray-600 focus:outline-none focus:border-amber-400/50 focus:ring-1 focus:ring-amber-400/20 transition-colors";
+  "w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition-colors";
 
 const textareaClass = inputClass + " resize-none";
 const selectClass = inputClass;
@@ -124,7 +121,7 @@ function TagsInput({
         <button
           type="button"
           onClick={commit}
-          className="px-3 py-2 rounded-xl bg-amber-400/20 text-amber-400 text-xs font-bold hover:bg-amber-400/30 transition-colors"
+          className="px-3 py-2 rounded-xl bg-amber-400/20 text-amber-700 text-xs font-bold hover:bg-amber-400/30 transition-colors"
         >
           +
         </button>
@@ -134,13 +131,13 @@ function TagsInput({
           {value.map((tag, i) => (
             <span
               key={i}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/8 text-gray-300 text-xs"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-xs"
             >
               {tag}
               <button
                 type="button"
                 onClick={() => onChange(value.filter((_, j) => j !== i))}
-                className="text-gray-500 hover:text-red-400 transition-colors"
+                className="text-amber-600 hover:text-red-500 transition-colors"
               >
                 ×
               </button>
@@ -214,25 +211,25 @@ function LiveProfileCard({
           {nombre[0]?.toUpperCase() ?? "C"}
         </div>
         <div>
-          <h2 className="font-black text-white text-base leading-tight">{nombre}</h2>
-          <p className="text-[11px] text-gray-400 mt-0.5">
+          <h2 className="font-black text-slate-900 text-base leading-tight">{nombre}</h2>
+          <p className="text-[11px] text-slate-600 mt-0.5">
             {cargo} · {territory}
           </p>
           <div className="flex items-center gap-1.5 mt-1.5">
-            <div className="h-1 w-24 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-1 w-24 rounded-full bg-slate-200 overflow-hidden">
               <div
                 className="h-full rounded-full bg-amber-400 transition-all duration-700"
                 style={{ width: `${donePct}%` }}
               />
             </div>
-            <span className="text-[9px] text-gray-500 font-bold">{donePct}%</span>
+            <span className="text-[9px] text-slate-500 font-bold">{donePct}%</span>
           </div>
         </div>
       </div>
 
       {/* Bio */}
       {f1.candidato?.bio_corta && (
-        <p className="text-[11px] text-gray-400 italic border-l-2 border-amber-400/30 pl-3">
+        <p className="text-[11px] text-slate-600 italic border-l-2 border-amber-400/30 pl-3">
           {f1.candidato.bio_corta}
         </p>
       )}
@@ -240,10 +237,10 @@ function LiveProfileCard({
       {/* Propuesta central */}
       {ecd.nucleo_goberna?.propuesta_central && (
         <div className="rounded-xl bg-amber-400/10 border border-amber-400/20 p-3">
-          <p className="text-[9px] uppercase tracking-widest text-amber-400/70 font-bold mb-1">
+          <p className="text-[9px] uppercase tracking-widest text-amber-600/70 font-bold mb-1">
             Propuesta central
           </p>
-          <p className="text-[12px] text-white font-semibold">
+          <p className="text-[12px] text-slate-900 font-semibold">
             {ecd.nucleo_goberna.propuesta_central}
           </p>
         </div>
@@ -252,22 +249,22 @@ function LiveProfileCard({
       {/* Segments mini */}
       {(ecd.c2_segmentos?.length ?? 0) > 0 && (
         <div>
-          <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-2">
+          <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-2">
             Segmentos electorales
           </p>
           <div className="space-y-1.5">
             {ecd.c2_segmentos!.slice(0, 4).map((seg) => (
               <div key={seg.id} className="flex items-center gap-2">
-                <div className="flex-1 h-1 rounded-full bg-white/10 overflow-hidden">
+                <div className="flex-1 h-1 rounded-full bg-slate-200 overflow-hidden">
                   <div
                     className="h-full rounded-full bg-amber-400/60"
                     style={{ width: `${seg.pct_aprox ?? 0}%` }}
                   />
                 </div>
-                <span className="text-[10px] text-gray-400 w-8 text-right">
+                <span className="text-[10px] text-slate-500 w-8 text-right">
                   {seg.pct_aprox}%
                 </span>
-                <span className="text-[10px] text-gray-300 flex-[2] truncate">
+                <span className="text-[10px] text-slate-700 flex-[2] truncate">
                   {seg.nombre.split("/")[0].trim()}
                 </span>
               </div>
@@ -276,35 +273,16 @@ function LiveProfileCard({
         </div>
       )}
 
-      {/* Estrategia badges */}
-      {f1.estrategia?.tipo_campana && (
-        <div className="flex flex-wrap gap-1.5">
-          <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-bold uppercase">
-            {f1.estrategia.tipo_campana}
-          </span>
-          {f1.estrategia.eje_emocional && (
-            <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold uppercase">
-              {f1.estrategia.eje_emocional}
-            </span>
-          )}
-          {f1.estrategia.frente_principal && (
-            <span className="text-[9px] px-2 py-0.5 rounded-full bg-green-500/20 text-green-300 font-bold uppercase">
-              FRENTE {f1.estrategia.frente_principal}
-            </span>
-          )}
-        </div>
-      )}
-
       {/* Propuestas pills */}
       {(f1.propuestas?.length ?? 0) > 0 && (
         <div>
-          <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-2">
+          <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-2">
             Propuestas ({f1.propuestas!.length})
           </p>
           <div className="space-y-1">
             {f1.propuestas!.slice(0, 3).map((p) => (
-              <div key={p.orden} className="flex items-center gap-2 text-[10px] text-gray-300">
-                <span className="size-4 rounded-full bg-amber-400/20 text-amber-400 flex items-center justify-center font-bold flex-shrink-0">
+              <div key={p.orden} className="flex items-center gap-2 text-[10px] text-slate-700">
+                <span className="size-4 rounded-full bg-amber-400/20 text-amber-700 flex items-center justify-center font-bold flex-shrink-0">
                   {p.orden}
                 </span>
                 <span className="truncate">{p.titulo}</span>
@@ -319,19 +297,19 @@ function LiveProfileCard({
         f1.diagnostico_inicial?.debilidades?.length) ? (
         <div className="grid grid-cols-2 gap-2">
           {f1.diagnostico_inicial?.fortalezas?.length ? (
-            <div className="rounded-lg bg-green-500/10 border border-green-500/20 p-2 text-center">
-              <p className="text-green-400 font-black text-base">
+            <div className="rounded-lg bg-green-50 border border-green-200 p-2 text-center">
+              <p className="text-green-600 font-black text-base">
                 {f1.diagnostico_inicial.fortalezas.length}
               </p>
-              <p className="text-[9px] text-green-400/70 uppercase tracking-wide">Fortalezas</p>
+              <p className="text-[9px] text-green-600/70 uppercase tracking-wide">Fortalezas</p>
             </div>
           ) : null}
           {f1.diagnostico_inicial?.debilidades?.length ? (
-            <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-2 text-center">
-              <p className="text-red-400 font-black text-base">
+            <div className="rounded-lg bg-red-50 border border-red-200 p-2 text-center">
+              <p className="text-red-500 font-black text-base">
                 {f1.diagnostico_inicial.debilidades.length}
               </p>
-              <p className="text-[9px] text-red-400/70 uppercase tracking-wide">Debilidades</p>
+              <p className="text-[9px] text-red-500/70 uppercase tracking-wide">Debilidades</p>
             </div>
           ) : null}
         </div>
@@ -340,18 +318,18 @@ function LiveProfileCard({
       {/* Rivals */}
       {(ecd.e4_campo_politico?.partidos_fuertes?.length ?? 0) > 0 && (
         <div>
-          <p className="text-[9px] uppercase tracking-widest text-gray-500 font-bold mb-2">
-            Rivales principales
+          <p className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-2">
+            Campo político
           </p>
           <div className="space-y-1.5">
             {ecd.e4_campo_politico!.partidos_fuertes!.slice(0, 2).map((p, i) => (
               <div
                 key={i}
-                className="flex items-center justify-between rounded-lg bg-white/5 border border-white/8 px-3 py-1.5"
+                className="flex items-center justify-between rounded-lg bg-slate-100 border border-slate-200 px-3 py-1.5"
               >
-                <span className="text-[10px] text-gray-300 font-semibold">{p.nombre}</span>
+                <span className="text-[10px] text-slate-700 font-semibold">{p.nombre}</span>
                 {p.pct_aprox !== undefined && (
-                  <span className="text-[10px] text-gray-500">{p.pct_aprox}%</span>
+                  <span className="text-[10px] text-slate-500">{p.pct_aprox}%</span>
                 )}
               </div>
             ))}
@@ -364,266 +342,7 @@ function LiveProfileCard({
 
 // ── Section editors ────────────────────────────────────────────────────────
 
-function CandidatoEditor({
-  f1,
-  ctx,
-  padronActual,
-  onPadronChange,
-  onChange,
-}: {
-  f1: Fase1Rapida;
-  ctx: CandidatoContext;
-  padronActual?: number;
-  onPadronChange: (v: number | undefined) => void;
-  onChange: (patch: Partial<Fase1Rapida>) => void;
-}) {
-  const c = f1.candidato ?? {};
-  const p = f1.postulacion ?? {};
-
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Nombre completo">
-          <input
-            className={inputClass}
-            value={c.nombre_completo ?? ""}
-            onChange={(e) => onChange({ candidato: { ...c, nombre_completo: e.target.value } })}
-            placeholder={ctx.user.full_name}
-          />
-        </Field>
-        <Field label="Apodo / nombre de campaña">
-          <input
-            className={inputClass}
-            value={c.apodo ?? ""}
-            onChange={(e) => onChange({ candidato: { ...c, apodo: e.target.value } })}
-            placeholder="Como lo llama la gente"
-          />
-        </Field>
-      </div>
-
-      <Field label="Bio corta (para el deck)">
-        <textarea
-          className={textareaClass}
-          rows={3}
-          maxLength={300}
-          value={c.bio_corta ?? ""}
-          onChange={(e) => onChange({ candidato: { ...c, bio_corta: e.target.value } })}
-          placeholder="Descripción de 1-2 oraciones del candidato..."
-        />
-      </Field>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Field label="Fecha de nacimiento">
-          <input
-            type="date"
-            className={inputClass}
-            value={c.fecha_nacimiento ?? ""}
-            onChange={(e) => onChange({ candidato: { ...c, fecha_nacimiento: e.target.value } })}
-          />
-        </Field>
-        <Field label="Sexo">
-          <select
-            className={selectClass}
-            value={c.sexo ?? ""}
-            onChange={(e) =>
-              onChange({ candidato: { ...c, sexo: e.target.value as "M" | "F" } })
-            }
-          >
-            <option value="">—</option>
-            <option value="M">Masculino</option>
-            <option value="F">Femenino</option>
-          </select>
-        </Field>
-        <Field label="Tipo doc">
-          <select
-            className={selectClass}
-            value={c.documento_tipo ?? ""}
-            onChange={(e) =>
-              onChange({
-                candidato: {
-                  ...c,
-                  documento_tipo: e.target.value as "DNI" | "CE" | "PASAPORTE",
-                },
-              })
-            }
-          >
-            <option value="">—</option>
-            <option value="DNI">DNI</option>
-            <option value="CE">CE</option>
-            <option value="PASAPORTE">Pasaporte</option>
-          </select>
-        </Field>
-        <Field label="Número">
-          <input
-            className={inputClass}
-            value={c.documento_numero ?? ""}
-            onChange={(e) =>
-              onChange({ candidato: { ...c, documento_numero: e.target.value } })
-            }
-          />
-        </Field>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Ocupación actual">
-          <input
-            className={inputClass}
-            value={c.ocupacion_actual ?? ""}
-            onChange={(e) =>
-              onChange({ candidato: { ...c, ocupacion_actual: e.target.value } })
-            }
-          />
-        </Field>
-        <Field label="URL de foto">
-          <input
-            className={inputClass}
-            value={c.foto_url ?? ""}
-            onChange={(e) => onChange({ candidato: { ...c, foto_url: e.target.value } })}
-            placeholder="https://..."
-          />
-        </Field>
-      </div>
-
-      <hr className="border-white/8" />
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Cargo al que postula">
-          <select
-            className={selectClass}
-            value={p.cargo_codigo ?? ""}
-            onChange={(e) =>
-              onChange({
-                postulacion: {
-                  ...p,
-                  cargo_codigo: e.target
-                    .value as NonNullable<Fase1Rapida["postulacion"]>["cargo_codigo"],
-                },
-              })
-            }
-          >
-            <option value="">Seleccionar cargo</option>
-            <option value="alcalde_distrital">Alcalde Distrital</option>
-            <option value="alcalde_provincial">Alcalde Provincial</option>
-            <option value="regidor">Regidor</option>
-            <option value="consejero_regional">Consejero Regional</option>
-            <option value="gobernador_regional">Gobernador Regional</option>
-            <option value="congresista">Congresista</option>
-            <option value="presidente">Presidente</option>
-          </select>
-        </Field>
-        <Field label="Nivel territorial">
-          <select
-            className={selectClass}
-            value={p.nivel_territorio ?? ""}
-            onChange={(e) =>
-              onChange({
-                postulacion: {
-                  ...p,
-                  nivel_territorio: e.target.value as
-                    | "distrital"
-                    | "provincial"
-                    | "regional"
-                    | "nacional",
-                },
-              })
-            }
-          >
-            <option value="">—</option>
-            <option value="distrital">Distrital</option>
-            <option value="provincial">Provincial</option>
-            <option value="regional">Regional</option>
-            <option value="nacional">Nacional</option>
-          </select>
-        </Field>
-        <Field label="Territorio">
-          <input
-            className={inputClass}
-            value={p.nombre_territorio ?? ""}
-            onChange={(e) =>
-              onChange({ postulacion: { ...p, nombre_territorio: e.target.value } })
-            }
-            placeholder={
-              ctx.jurisdiccion.distrito?.nombre ??
-              ctx.jurisdiccion.provincia?.nombre ??
-              ctx.jurisdiccion.departamento?.nombre ??
-              ""
-            }
-          />
-        </Field>
-        <Field label="Organización política">
-          <input
-            className={inputClass}
-            value={p.nombre_organizacion ?? ""}
-            onChange={(e) =>
-              onChange({ postulacion: { ...p, nombre_organizacion: e.target.value } })
-            }
-            placeholder={ctx.organizacion_politica?.nombre ?? "Partido / movimiento"}
-          />
-        </Field>
-        <Field label="Fecha de elección">
-          <input
-            type="date"
-            className={inputClass}
-            value={p.fecha_eleccion ?? ""}
-            onChange={(e) =>
-              onChange({ postulacion: { ...p, fecha_eleccion: e.target.value } })
-            }
-          />
-        </Field>
-      </div>
-
-      <hr className="border-white/8" />
-
-      <div className="space-y-1">
-        <p className="text-[10px] uppercase tracking-[0.2em] text-amber-400/60 font-semibold">
-          Territorio — datos electorales
-        </p>
-        <p className="text-[11px] text-gray-600">
-          Esenciales para calcular la meta de votos y dimensionar la campaña.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Padrón electoral (electores habilitados)">
-          <input
-            type="number"
-            className={inputClass}
-            value={padronActual ?? ""}
-            onChange={(e) =>
-              onPadronChange(e.target.value ? Number(e.target.value) : undefined)
-            }
-            placeholder="Ej. 252 000"
-          />
-        </Field>
-        <Field label="Población total del territorio">
-          <input
-            type="number"
-            className={inputClass}
-            value={f1.contexto_territorio?.poblacion_aproximada ?? ""}
-            onChange={(e) => {
-              const ct = f1.contexto_territorio ?? {};
-              onChange({
-                contexto_territorio: {
-                  ...ct,
-                  poblacion_aproximada: e.target.value ? Number(e.target.value) : undefined,
-                },
-              });
-            }}
-            placeholder="Ej. 340 000"
-          />
-        </Field>
-      </div>
-
-      <hr className="border-white/8" />
-
-      <HistorialElectoralEditor
-        value={f1.historial_electoral_territorio ?? []}
-        onChange={(v) => onChange({ historial_electoral_territorio: v })}
-      />
-    </div>
-  );
-}
-
+// Historial Electoral type + component (kept from original)
 type HistorialEntry = NonNullable<Fase1Rapida["historial_electoral_territorio"]>[number];
 
 function HistorialElectoralEditor({
@@ -650,24 +369,24 @@ function HistorialElectoralEditor({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.2em] text-amber-400/60 font-semibold">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-amber-600/70 font-semibold">
             Elecciones anteriores del territorio
           </p>
-          <p className="text-[11px] text-gray-600 mt-0.5">
+          <p className="text-[11px] text-slate-500 mt-0.5">
             Resultados de elecciones pasadas en este cargo/distrito.
           </p>
         </div>
         <button
           type="button"
           onClick={addEntry}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-amber-400/30 text-amber-400 text-[10px] font-bold hover:bg-amber-400/10 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-amber-400/30 text-amber-600 text-[10px] font-bold hover:bg-amber-400/10 transition-colors"
         >
           + Agregar
         </button>
       </div>
 
       {value.length === 0 && (
-        <p className="text-[11px] text-gray-600 italic text-center py-4 border border-dashed border-white/10 rounded-xl">
+        <p className="text-[11px] text-slate-400 italic text-center py-4 border border-dashed border-slate-200 rounded-xl">
           Sin elecciones registradas — presioná "+ Agregar"
         </p>
       )}
@@ -676,14 +395,14 @@ function HistorialElectoralEditor({
         {value.map((entry, i) => (
           <div
             key={i}
-            className="bg-[#0d1f3c]/60 border border-white/8 rounded-xl p-4 space-y-3"
+            className="bg-white border border-slate-200 rounded-xl p-4 space-y-3"
           >
             <div className="flex items-center justify-between">
-              <p className="text-xs font-bold text-white/70">Elección {i + 1}</p>
+              <p className="text-xs font-bold text-slate-600">Elección {i + 1}</p>
               <button
                 type="button"
                 onClick={() => remove(i)}
-                className="text-[10px] text-red-400/60 hover:text-red-400 transition-colors"
+                className="text-[10px] text-red-400/60 hover:text-red-500 transition-colors"
               >
                 Eliminar
               </button>
@@ -812,6 +531,1077 @@ function HistorialElectoralEditor({
   );
 }
 
+// ── CandidatoEditor — sections A-F ────────────────────────────────────────
+
+type LaboralEntry = NonNullable<NonNullable<PerfilCandidato["n2_trayectoria"]>["historial_laboral"]>[number];
+type FormacionEntry = NonNullable<NonNullable<PerfilCandidato["n2_trayectoria"]>["formacion"]>[number];
+type DenunciaEntry = NonNullable<NonNullable<PerfilCandidato["n3_riesgo"]>["denuncias_penales"]>[number];
+
+function CandidatoEditor({
+  f1,
+  ctx,
+  perfil,
+  padronActual,
+  onPadronChange,
+  onChange,
+  onPerfilChange,
+}: {
+  f1: Fase1Rapida;
+  ctx: CandidatoContext;
+  perfil: PerfilCandidato;
+  padronActual?: number;
+  onPadronChange: (v: number | undefined) => void;
+  onChange: (patch: Partial<Fase1Rapida>) => void;
+  onPerfilChange: (patch: Partial<PerfilCandidato>) => void;
+}) {
+  const c = f1.candidato ?? {};
+  const p = f1.postulacion ?? {};
+  const n1 = perfil.n1_identidad ?? {};
+  const n2 = perfil.n2_trayectoria ?? {};
+  const n3 = perfil.n3_riesgo ?? {};
+  const n4 = perfil.n4_patrimonio ?? {};
+
+  // Historial laboral helpers
+  function addLaboral() {
+    const cur: LaboralEntry[] = n2.historial_laboral ?? [];
+    onPerfilChange({
+      n2_trayectoria: {
+        ...n2,
+        historial_laboral: [...cur, { orden: cur.length + 1, cargo: "", organizacion: "" }],
+      },
+    });
+  }
+  function updateLaboral(i: number, patch: Partial<LaboralEntry>) {
+    const cur = n2.historial_laboral ?? [];
+    onPerfilChange({
+      n2_trayectoria: {
+        ...n2,
+        historial_laboral: cur.map((e, j) => (j === i ? { ...e, ...patch } : e)),
+      },
+    });
+  }
+  function removeLaboral(i: number) {
+    const cur = n2.historial_laboral ?? [];
+    onPerfilChange({
+      n2_trayectoria: {
+        ...n2,
+        historial_laboral: cur.filter((_, j) => j !== i).map((e, j) => ({ ...e, orden: j + 1 })),
+      },
+    });
+  }
+
+  // Formacion helpers
+  function addFormacion() {
+    const cur: FormacionEntry[] = n2.formacion ?? [];
+    onPerfilChange({
+      n2_trayectoria: {
+        ...n2,
+        formacion: [...cur, { nivel: "", institucion: "" }],
+      },
+    });
+  }
+  function updateFormacion(i: number, patch: Partial<FormacionEntry>) {
+    const cur = n2.formacion ?? [];
+    onPerfilChange({
+      n2_trayectoria: {
+        ...n2,
+        formacion: cur.map((e, j) => (j === i ? { ...e, ...patch } : e)),
+      },
+    });
+  }
+  function removeFormacion(i: number) {
+    const cur = n2.formacion ?? [];
+    onPerfilChange({ n2_trayectoria: { ...n2, formacion: cur.filter((_, j) => j !== i) } });
+  }
+
+  // Denuncias helpers
+  function addDenuncia() {
+    const cur: DenunciaEntry[] = n3.denuncias_penales ?? [];
+    onPerfilChange({
+      n3_riesgo: { ...n3, denuncias_penales: [...cur, { descripcion: "", estado: "activa" }] },
+    });
+  }
+  function updateDenuncia(i: number, patch: Partial<DenunciaEntry>) {
+    const cur = n3.denuncias_penales ?? [];
+    onPerfilChange({
+      n3_riesgo: {
+        ...n3,
+        denuncias_penales: cur.map((e, j) => (j === i ? { ...e, ...patch } : e)),
+      },
+    });
+  }
+  function removeDenuncia(i: number) {
+    const cur = n3.denuncias_penales ?? [];
+    onPerfilChange({ n3_riesgo: { ...n3, denuncias_penales: cur.filter((_, j) => j !== i) } });
+  }
+
+  const riskColors: Record<string, string> = {
+    bajo: "text-green-600 bg-green-50 border-green-200",
+    medio: "text-amber-600 bg-amber-50 border-amber-200",
+    alto: "text-orange-600 bg-orange-50 border-orange-200",
+    critico: "text-red-600 bg-red-50 border-red-200",
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* SECTION A — Datos básicos */}
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+          A — Datos básicos
+        </p>
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Nombre completo">
+              <input
+                className={inputClass}
+                value={c.nombre_completo ?? ""}
+                onChange={(e) => onChange({ candidato: { ...c, nombre_completo: e.target.value } })}
+                placeholder={ctx.user.full_name}
+              />
+            </Field>
+            <Field label="Apodo / nombre de campaña">
+              <input
+                className={inputClass}
+                value={c.apodo ?? ""}
+                onChange={(e) => onChange({ candidato: { ...c, apodo: e.target.value } })}
+                placeholder="Como lo llama la gente"
+              />
+            </Field>
+          </div>
+
+          <Field label="Bio corta (para el deck)">
+            <textarea
+              className={textareaClass}
+              rows={3}
+              maxLength={300}
+              value={c.bio_corta ?? ""}
+              onChange={(e) => onChange({ candidato: { ...c, bio_corta: e.target.value } })}
+              placeholder="Descripción de 1-2 oraciones del candidato..."
+            />
+          </Field>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <Field label="Fecha de nacimiento">
+              <input
+                type="date"
+                className={inputClass}
+                value={c.fecha_nacimiento ?? ""}
+                onChange={(e) => onChange({ candidato: { ...c, fecha_nacimiento: e.target.value } })}
+              />
+            </Field>
+            <Field label="Sexo">
+              <select
+                className={selectClass}
+                value={c.sexo ?? ""}
+                onChange={(e) =>
+                  onChange({ candidato: { ...c, sexo: e.target.value as "M" | "F" } })
+                }
+              >
+                <option value="">—</option>
+                <option value="M">Masculino</option>
+                <option value="F">Femenino</option>
+              </select>
+            </Field>
+            <Field label="Tipo doc">
+              <select
+                className={selectClass}
+                value={c.documento_tipo ?? ""}
+                onChange={(e) =>
+                  onChange({
+                    candidato: {
+                      ...c,
+                      documento_tipo: e.target.value as "DNI" | "CE" | "PASAPORTE",
+                    },
+                  })
+                }
+              >
+                <option value="">—</option>
+                <option value="DNI">DNI</option>
+                <option value="CE">CE</option>
+                <option value="PASAPORTE">Pasaporte</option>
+              </select>
+            </Field>
+            <Field label="Número">
+              <input
+                className={inputClass}
+                value={c.documento_numero ?? ""}
+                onChange={(e) =>
+                  onChange({ candidato: { ...c, documento_numero: e.target.value } })
+                }
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Ocupación actual">
+              <input
+                className={inputClass}
+                value={c.ocupacion_actual ?? ""}
+                onChange={(e) =>
+                  onChange({ candidato: { ...c, ocupacion_actual: e.target.value } })
+                }
+              />
+            </Field>
+            <Field label="URL de foto">
+              <input
+                className={inputClass}
+                value={c.foto_url ?? ""}
+                onChange={(e) => onChange({ candidato: { ...c, foto_url: e.target.value } })}
+                placeholder="https://..."
+              />
+            </Field>
+          </div>
+        </div>
+      </div>
+
+      <hr className="border-slate-200" />
+
+      {/* SECTION B — Postulación */}
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+          B — Postulación
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Cargo al que postula">
+            <select
+              className={selectClass}
+              value={p.cargo_codigo ?? ""}
+              onChange={(e) =>
+                onChange({
+                  postulacion: {
+                    ...p,
+                    cargo_codigo: e.target
+                      .value as NonNullable<Fase1Rapida["postulacion"]>["cargo_codigo"],
+                  },
+                })
+              }
+            >
+              <option value="">Seleccionar cargo</option>
+              <option value="alcalde_distrital">Alcalde Distrital</option>
+              <option value="alcalde_provincial">Alcalde Provincial</option>
+              <option value="regidor">Regidor</option>
+              <option value="consejero_regional">Consejero Regional</option>
+              <option value="gobernador_regional">Gobernador Regional</option>
+              <option value="congresista">Congresista</option>
+              <option value="presidente">Presidente</option>
+            </select>
+          </Field>
+          <Field label="Nivel territorial">
+            <select
+              className={selectClass}
+              value={p.nivel_territorio ?? ""}
+              onChange={(e) =>
+                onChange({
+                  postulacion: {
+                    ...p,
+                    nivel_territorio: e.target.value as
+                      | "distrital"
+                      | "provincial"
+                      | "regional"
+                      | "nacional",
+                  },
+                })
+              }
+            >
+              <option value="">—</option>
+              <option value="distrital">Distrital</option>
+              <option value="provincial">Provincial</option>
+              <option value="regional">Regional</option>
+              <option value="nacional">Nacional</option>
+            </select>
+          </Field>
+          <Field label="Territorio">
+            <input
+              className={inputClass}
+              value={p.nombre_territorio ?? ""}
+              onChange={(e) =>
+                onChange({ postulacion: { ...p, nombre_territorio: e.target.value } })
+              }
+              placeholder={
+                ctx.jurisdiccion.distrito?.nombre ??
+                ctx.jurisdiccion.provincia?.nombre ??
+                ctx.jurisdiccion.departamento?.nombre ??
+                ""
+              }
+            />
+          </Field>
+          <Field label="Organización política">
+            <input
+              className={inputClass}
+              value={p.nombre_organizacion ?? ""}
+              onChange={(e) =>
+                onChange({ postulacion: { ...p, nombre_organizacion: e.target.value } })
+              }
+              placeholder={ctx.organizacion_politica?.nombre ?? "Partido / movimiento"}
+            />
+          </Field>
+          <Field label="Fecha de elección">
+            <input
+              type="date"
+              className={inputClass}
+              value={p.fecha_eleccion ?? ""}
+              onChange={(e) =>
+                onChange({ postulacion: { ...p, fecha_eleccion: e.target.value } })
+              }
+            />
+          </Field>
+        </div>
+      </div>
+
+      <hr className="border-slate-200" />
+
+      {/* SECTION C — Identidad completa */}
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+          C — Identidad completa
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Lugar de nacimiento">
+            <input
+              className={inputClass}
+              value={n1.lugar_nacimiento ?? ""}
+              onChange={(e) =>
+                onPerfilChange({ n1_identidad: { ...n1, lugar_nacimiento: e.target.value } })
+              }
+            />
+          </Field>
+          <Field label="Estado civil">
+            <input
+              className={inputClass}
+              value={n1.estado_civil ?? ""}
+              onChange={(e) =>
+                onPerfilChange({ n1_identidad: { ...n1, estado_civil: e.target.value } })
+              }
+            />
+          </Field>
+          <Field label="Número de hijos">
+            <input
+              type="number"
+              min={0}
+              className={inputClass}
+              value={n1.hijos ?? ""}
+              onChange={(e) =>
+                onPerfilChange({ n1_identidad: { ...n1, hijos: Number(e.target.value) } })
+              }
+            />
+          </Field>
+          <Field label="Religión">
+            <input
+              className={inputClass}
+              value={n1.religion ?? ""}
+              onChange={(e) =>
+                onPerfilChange({ n1_identidad: { ...n1, religion: e.target.value } })
+              }
+            />
+          </Field>
+        </div>
+      </div>
+
+      <hr className="border-slate-200" />
+
+      {/* SECTION D — Trayectoria profesional */}
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+          D — Trayectoria profesional
+        </p>
+        <div className="space-y-5">
+          {/* Historial laboral */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                Historial laboral
+              </label>
+              <button
+                type="button"
+                onClick={addLaboral}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full border border-amber-400/30 text-amber-600 text-[10px] font-bold hover:bg-amber-400/10 transition-colors"
+              >
+                + Agregar cargo
+              </button>
+            </div>
+            {(n2.historial_laboral ?? []).length === 0 && (
+              <p className="text-[11px] text-slate-400 italic text-center py-3 border border-dashed border-slate-200 rounded-xl">
+                Sin cargos registrados
+              </p>
+            )}
+            <div className="space-y-3">
+              {(n2.historial_laboral ?? []).map((entry, i) => (
+                <div key={i} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-600">Cargo {i + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeLaboral(i)}
+                      className="text-[10px] text-red-400/60 hover:text-red-500 transition-colors"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field label="Cargo">
+                      <input
+                        className={inputClass}
+                        value={entry.cargo}
+                        onChange={(e) => updateLaboral(i, { cargo: e.target.value })}
+                        placeholder="Nombre del cargo"
+                      />
+                    </Field>
+                    <Field label="Organización">
+                      <input
+                        className={inputClass}
+                        value={entry.organizacion}
+                        onChange={(e) => updateLaboral(i, { organizacion: e.target.value })}
+                        placeholder="Empresa / institución"
+                      />
+                    </Field>
+                    <Field label="Año inicio">
+                      <input
+                        type="number"
+                        className={inputClass}
+                        value={entry.anio_inicio ?? ""}
+                        onChange={(e) =>
+                          updateLaboral(i, {
+                            anio_inicio: e.target.value ? Number(e.target.value) : undefined,
+                          })
+                        }
+                        placeholder="2018"
+                      />
+                    </Field>
+                    <Field label="Año fin (o 'actual')">
+                      <input
+                        className={inputClass}
+                        value={entry.anio_fin !== undefined ? String(entry.anio_fin) : ""}
+                        onChange={(e) => {
+                          const v = e.target.value.trim().toLowerCase();
+                          if (v === "" ) {
+                            updateLaboral(i, { anio_fin: undefined });
+                          } else if (v === "actual") {
+                            updateLaboral(i, { anio_fin: "actual" });
+                          } else if (!isNaN(Number(v))) {
+                            updateLaboral(i, { anio_fin: Number(v) });
+                          }
+                        }}
+                        placeholder="2022 o actual"
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Descripción">
+                    <input
+                      className={inputClass}
+                      value={entry.descripcion ?? ""}
+                      onChange={(e) => updateLaboral(i, { descripcion: e.target.value })}
+                      placeholder="Breve descripción del rol"
+                    />
+                  </Field>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Formación académica */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                Formación académica
+              </label>
+              <button
+                type="button"
+                onClick={addFormacion}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full border border-amber-400/30 text-amber-600 text-[10px] font-bold hover:bg-amber-400/10 transition-colors"
+              >
+                + Agregar título
+              </button>
+            </div>
+            {(n2.formacion ?? []).length === 0 && (
+              <p className="text-[11px] text-slate-400 italic text-center py-3 border border-dashed border-slate-200 rounded-xl">
+                Sin formación registrada
+              </p>
+            )}
+            <div className="space-y-3">
+              {(n2.formacion ?? []).map((entry, i) => (
+                <div key={i} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-600">Título {i + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeFormacion(i)}
+                      className="text-[10px] text-red-400/60 hover:text-red-500 transition-colors"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <Field label="Nivel">
+                      <input
+                        className={inputClass}
+                        value={entry.nivel}
+                        onChange={(e) => updateFormacion(i, { nivel: e.target.value })}
+                        placeholder="Universitario"
+                      />
+                    </Field>
+                    <Field label="Institución">
+                      <input
+                        className={inputClass}
+                        value={entry.institucion}
+                        onChange={(e) => updateFormacion(i, { institucion: e.target.value })}
+                        placeholder="Universidad / colegio"
+                      />
+                    </Field>
+                    <Field label="Título">
+                      <input
+                        className={inputClass}
+                        value={entry.titulo ?? ""}
+                        onChange={(e) => updateFormacion(i, { titulo: e.target.value })}
+                        placeholder="Lic. Derecho"
+                      />
+                    </Field>
+                    <Field label="Año">
+                      <input
+                        type="number"
+                        className={inputClass}
+                        value={entry.anio ?? ""}
+                        onChange={(e) =>
+                          updateFormacion(i, {
+                            anio: e.target.value ? Number(e.target.value) : undefined,
+                          })
+                        }
+                        placeholder="2010"
+                      />
+                    </Field>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Logros principales */}
+          <Field label="Logros principales">
+            <TagsInput
+              value={n2.logros_principales ?? []}
+              onChange={(v) => onPerfilChange({ n2_trayectoria: { ...n2, logros_principales: v } })}
+              placeholder="Logro destacado…"
+            />
+          </Field>
+        </div>
+      </div>
+
+      <hr className="border-slate-200" />
+
+      {/* SECTION E — Patrimonio */}
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+          E — Propiedades y patrimonio
+        </p>
+        <div className="space-y-4">
+          <Field label="Bienes principales">
+            <TagsInput
+              value={n4.bienes_principales ?? []}
+              onChange={(v) => onPerfilChange({ n4_patrimonio: { ...n4, bienes_principales: v } })}
+              placeholder="Ej. Casa en Miraflores, Departamento en Surco…"
+            />
+          </Field>
+          <Field label="Deudas">
+            <TagsInput
+              value={n4.deudas ?? []}
+              onChange={(v) => onPerfilChange({ n4_patrimonio: { ...n4, deudas: v } })}
+              placeholder="Ej. Préstamo hipotecario 2020…"
+            />
+          </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="URL Declaración Jurada SUNAT">
+              <input
+                className={inputClass}
+                value={n4.declaracion_jurada_url ?? ""}
+                onChange={(e) =>
+                  onPerfilChange({ n4_patrimonio: { ...n4, declaracion_jurada_url: e.target.value } })
+                }
+                placeholder="https://..."
+              />
+            </Field>
+            <Field label="Consistencia patrimonial">
+              <select
+                className={selectClass}
+                value={n4.consistencia ?? ""}
+                onChange={(e) =>
+                  onPerfilChange({
+                    n4_patrimonio: {
+                      ...n4,
+                      consistencia: e.target.value as "consistente" | "inconsistente" | "sin_datos",
+                    },
+                  })
+                }
+              >
+                <option value="">—</option>
+                <option value="consistente">Consistente</option>
+                <option value="inconsistente">Inconsistente</option>
+                <option value="sin_datos">Sin datos</option>
+              </select>
+            </Field>
+          </div>
+          <Field label="Notas">
+            <textarea
+              className={textareaClass}
+              rows={2}
+              value={n4.notas ?? ""}
+              onChange={(e) =>
+                onPerfilChange({ n4_patrimonio: { ...n4, notas: e.target.value } })
+              }
+              placeholder="Observaciones adicionales…"
+            />
+          </Field>
+        </div>
+      </div>
+
+      <hr className="border-slate-200" />
+
+      {/* SECTION F — Riesgos */}
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-red-500/70 font-semibold mb-4">
+          F — Riesgos
+        </p>
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <Field label="Nivel de riesgo global">
+              <select
+                className={selectClass}
+                value={n3.nivel_riesgo_global ?? ""}
+                onChange={(e) =>
+                  onPerfilChange({
+                    n3_riesgo: {
+                      ...n3,
+                      nivel_riesgo_global: e.target.value as "bajo" | "medio" | "alto" | "critico",
+                    },
+                  })
+                }
+              >
+                <option value="">—</option>
+                <option value="bajo">Bajo</option>
+                <option value="medio">Medio</option>
+                <option value="alto">Alto</option>
+                <option value="critico">Crítico</option>
+              </select>
+            </Field>
+            {n3.nivel_riesgo_global && (
+              <span
+                className={`mt-5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border ${riskColors[n3.nivel_riesgo_global] ?? ""}`}
+              >
+                {n3.nivel_riesgo_global}
+              </span>
+            )}
+          </div>
+
+          {/* Denuncias penales */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                Denuncias penales
+              </label>
+              <button
+                type="button"
+                onClick={addDenuncia}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full border border-red-400/30 text-red-500 text-[10px] font-bold hover:bg-red-50 transition-colors"
+              >
+                + Agregar denuncia
+              </button>
+            </div>
+            <div className="space-y-2">
+              {(n3.denuncias_penales ?? []).map((d, i) => (
+                <div key={i} className="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-red-600">Denuncia {i + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeDenuncia(i)}
+                      className="text-[10px] text-red-400/60 hover:text-red-600 transition-colors"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="sm:col-span-2">
+                      <input
+                        className={inputClass}
+                        value={d.descripcion}
+                        onChange={(e) => updateDenuncia(i, { descripcion: e.target.value })}
+                        placeholder="Descripción de la denuncia"
+                      />
+                    </div>
+                    <select
+                      className={selectClass}
+                      value={d.estado}
+                      onChange={(e) =>
+                        updateDenuncia(i, {
+                          estado: e.target.value as "activa" | "archivada" | "sentencia",
+                        })
+                      }
+                    >
+                      <option value="activa">Activa</option>
+                      <option value="archivada">Archivada</option>
+                      <option value="sentencia">Sentencia</option>
+                    </select>
+                  </div>
+                  <input
+                    className={inputClass}
+                    value={d.fuente ?? ""}
+                    onChange={(e) => updateDenuncia(i, { fuente: e.target.value })}
+                    placeholder="Fuente / URL"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <Field label="Observaciones JNE / ONPE">
+            <TagsInput
+              value={n3.jne_observaciones ?? []}
+              onChange={(v) => onPerfilChange({ n3_riesgo: { ...n3, jne_observaciones: v } })}
+              placeholder="Observación…"
+            />
+          </Field>
+
+          <Field label="Búsquedas negativas en Google">
+            <TagsInput
+              value={n3.google_negativo ?? []}
+              onChange={(v) => onPerfilChange({ n3_riesgo: { ...n3, google_negativo: v } })}
+              placeholder="Titular negativo…"
+            />
+          </Field>
+
+          <Field label="Notas de riesgo">
+            <textarea
+              className={textareaClass}
+              rows={2}
+              value={n3.notas ?? ""}
+              onChange={(e) =>
+                onPerfilChange({ n3_riesgo: { ...n3, notas: e.target.value } })
+              }
+              placeholder="Contexto adicional…"
+            />
+          </Field>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── TerritorioEditor ────────────────────────────────────────────────────────
+
+function TerritorioEditor({
+  f1,
+  ecd,
+  padronActual,
+  onPadronChange,
+  onChange,
+  onEcdChange,
+}: {
+  f1: Fase1Rapida;
+  ecd: TerritoryEcd;
+  padronActual?: number;
+  onPadronChange: (v: number | undefined) => void;
+  onChange: (patch: Partial<Fase1Rapida>) => void;
+  onEcdChange: (patch: Partial<TerritoryEcd>) => void;
+}) {
+  const e4 = ecd.e4_campo_politico ?? {};
+  const e1 = ecd.e1_capital_economico ?? {};
+  const e2 = ecd.e2_capital_social ?? {};
+  const diag = f1.diagnostico_inicial ?? {};
+
+  return (
+    <div className="space-y-6">
+      {/* Padrón y población */}
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+          Datos electorales
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Padrón electoral (electores habilitados)">
+            <input
+              type="number"
+              className={inputClass}
+              value={padronActual ?? ""}
+              onChange={(e) =>
+                onPadronChange(e.target.value ? Number(e.target.value) : undefined)
+              }
+              placeholder="Ej. 252 000"
+            />
+          </Field>
+          <Field label="Población total del territorio">
+            <input
+              type="number"
+              className={inputClass}
+              value={f1.contexto_territorio?.poblacion_aproximada ?? ""}
+              onChange={(e) => {
+                const ct = f1.contexto_territorio ?? {};
+                onChange({
+                  contexto_territorio: {
+                    ...ct,
+                    poblacion_aproximada: e.target.value ? Number(e.target.value) : undefined,
+                  },
+                });
+              }}
+              placeholder="Ej. 340 000"
+            />
+          </Field>
+        </div>
+      </div>
+
+      <hr className="border-slate-200" />
+
+      {/* Elecciones anteriores */}
+      <HistorialElectoralEditor
+        value={f1.historial_electoral_territorio ?? []}
+        onChange={(v) => onChange({ historial_electoral_territorio: v })}
+      />
+
+      <hr className="border-slate-200" />
+
+      {/* E4 — Campo político */}
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+          Campo político
+        </p>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Polarización política">
+              <select
+                className={selectClass}
+                value={e4.nivel_polarizacion ?? ""}
+                onChange={(e) =>
+                  onEcdChange({
+                    e4_campo_politico: {
+                      ...e4,
+                      nivel_polarizacion: e.target.value as "bajo" | "medio" | "alto",
+                    },
+                  })
+                }
+              >
+                <option value="">—</option>
+                <option value="bajo">Baja</option>
+                <option value="medio">Media</option>
+                <option value="alto">Alta</option>
+              </select>
+            </Field>
+            <Field label="Tendencia histórica del voto">
+              <input
+                className={inputClass}
+                value={e4.voto_historico_tendencia ?? ""}
+                onChange={(e) =>
+                  onEcdChange({
+                    e4_campo_politico: { ...e4, voto_historico_tendencia: e.target.value },
+                  })
+                }
+                placeholder="Ej: voto conservador, fragmentado…"
+              />
+            </Field>
+          </div>
+
+          {/* Partidos fuertes */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-2 block">
+              Partidos/movimientos fuertes en la zona
+            </label>
+            <div className="space-y-2">
+              {(e4.partidos_fuertes ?? []).map((p, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    className={inputClass}
+                    value={p.nombre}
+                    onChange={(e) => {
+                      const cur = [...(e4.partidos_fuertes ?? [])];
+                      cur[i] = { ...cur[i]!, nombre: e.target.value };
+                      onEcdChange({ e4_campo_politico: { ...e4, partidos_fuertes: cur } });
+                    }}
+                    placeholder="Nombre del partido"
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    className={`${inputClass} w-20`}
+                    value={p.pct_aprox ?? ""}
+                    onChange={(e) => {
+                      const cur = [...(e4.partidos_fuertes ?? [])];
+                      cur[i] = { ...cur[i]!, pct_aprox: Number(e.target.value) };
+                      onEcdChange({ e4_campo_politico: { ...e4, partidos_fuertes: cur } });
+                    }}
+                    placeholder="%"
+                  />
+                  <select
+                    className={`${selectClass} max-w-[110px]`}
+                    value={p.trend ?? ""}
+                    onChange={(e) => {
+                      const cur = [...(e4.partidos_fuertes ?? [])];
+                      cur[i] = {
+                        ...cur[i]!,
+                        trend: e.target.value as "subiendo" | "estable" | "bajando",
+                      };
+                      onEcdChange({ e4_campo_politico: { ...e4, partidos_fuertes: cur } });
+                    }}
+                  >
+                    <option value="">trend</option>
+                    <option value="subiendo">↑ Subiendo</option>
+                    <option value="estable">→ Estable</option>
+                    <option value="bajando">↓ Bajando</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cur = (e4.partidos_fuertes ?? []).filter((_, j) => j !== i);
+                      onEcdChange({ e4_campo_politico: { ...e4, partidos_fuertes: cur } });
+                    }}
+                    className="text-slate-400 hover:text-red-500 transition-colors"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                onEcdChange({
+                  e4_campo_politico: {
+                    ...e4,
+                    partidos_fuertes: [...(e4.partidos_fuertes ?? []), { nombre: "" }],
+                  },
+                })
+              }
+              className="mt-2 text-xs text-amber-600/70 hover:text-amber-600 transition-colors"
+            >
+              + Agregar partido
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <hr className="border-slate-200" />
+
+      {/* Competidores */}
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+          Principales competidores
+        </p>
+        <div className="space-y-2">
+          {(diag.principales_competidores ?? []).map((comp, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                className={inputClass}
+                value={comp.nombre}
+                onChange={(e) => {
+                  const cur = [...(diag.principales_competidores ?? [])];
+                  cur[i] = { ...cur[i]!, nombre: e.target.value };
+                  onChange({ diagnostico_inicial: { ...diag, principales_competidores: cur } });
+                }}
+                placeholder="Nombre del rival"
+              />
+              <input
+                className={inputClass}
+                value={comp.partido ?? ""}
+                onChange={(e) => {
+                  const cur = [...(diag.principales_competidores ?? [])];
+                  cur[i] = { ...cur[i]!, partido: e.target.value };
+                  onChange({ diagnostico_inicial: { ...diag, principales_competidores: cur } });
+                }}
+                placeholder="Partido"
+              />
+              <select
+                className={`${selectClass} max-w-[120px]`}
+                value={comp.nivel_amenaza ?? "medio"}
+                onChange={(e) => {
+                  const cur = [...(diag.principales_competidores ?? [])];
+                  cur[i] = {
+                    ...cur[i]!,
+                    nivel_amenaza: e.target.value as "bajo" | "medio" | "alto",
+                  };
+                  onChange({ diagnostico_inicial: { ...diag, principales_competidores: cur } });
+                }}
+              >
+                <option value="bajo">Bajo</option>
+                <option value="medio">Medio</option>
+                <option value="alto">Alto</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  const cur = (diag.principales_competidores ?? []).filter((_, j) => j !== i);
+                  onChange({ diagnostico_inicial: { ...diag, principales_competidores: cur } });
+                }}
+                className="text-slate-400 hover:text-red-500 transition-colors px-1"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+          {(diag.principales_competidores ?? []).length < 5 && (
+            <button
+              type="button"
+              onClick={() =>
+                onChange({
+                  diagnostico_inicial: {
+                    ...diag,
+                    principales_competidores: [
+                      ...(diag.principales_competidores ?? []),
+                      { nombre: "", nivel_amenaza: "medio" },
+                    ],
+                  },
+                })
+              }
+              className="text-xs text-amber-600/70 hover:text-amber-600 transition-colors"
+            >
+              + Agregar rival
+            </button>
+          )}
+        </div>
+      </div>
+
+      <hr className="border-slate-200" />
+
+      {/* E1-E2 estructura */}
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+          Capital económico y social
+        </p>
+        <div className="space-y-4">
+          <Field label="Pobreza estimada (%)">
+            <input
+              type="number"
+              min={0}
+              max={100}
+              className={inputClass}
+              value={e1.nivel_pobreza_pct ?? ""}
+              onChange={(e) =>
+                onEcdChange({
+                  e1_capital_economico: { ...e1, nivel_pobreza_pct: Number(e.target.value) },
+                })
+              }
+            />
+          </Field>
+          <Field label="Principales sectores económicos">
+            <TagsInput
+              value={e1.principales_sectores ?? []}
+              onChange={(v) =>
+                onEcdChange({ e1_capital_economico: { ...e1, principales_sectores: v } })
+              }
+              placeholder="agricultura, minería, comercio…"
+            />
+          </Field>
+          <Field label="Organizaciones sociales clave">
+            <TagsInput
+              value={e2.organizaciones_clave ?? []}
+              onChange={(v) =>
+                onEcdChange({ e2_capital_social: { ...e2, organizaciones_clave: v } })
+              }
+              placeholder="APAFA, rondas campesinas, sindicatos…"
+            />
+          </Field>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── C2SegmentosEditor ──────────────────────────────────────────────────────
+
 function C2SegmentosEditor({
   value,
   onChange,
@@ -834,18 +1624,19 @@ function C2SegmentosEditor({
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-gray-500">
-        Define los segmentos psicográficos del electorado. Estos alimentan la Matriz D5 y el Núcleo
-        Goberna.
+      <p className="text-sm text-slate-500">
+        Definí entre 2 y 5 grupos de votantes según sus valores y motivaciones. Estos alimentan la
+        Matriz D5.
       </p>
       {value.map((seg, i) => (
         <div
           key={seg.id}
-          className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-4 space-y-3"
+          className="rounded-xl border border-slate-200 bg-white p-4 space-y-4 shadow-sm"
         >
+          {/* Header row */}
           <div className="flex items-center gap-3">
-            <span className="size-6 rounded-full bg-amber-400/20 text-amber-400 font-black text-xs flex items-center justify-center">
-              {i + 1}
+            <span className="size-7 rounded-full bg-amber-100 text-amber-700 font-black text-xs flex items-center justify-center flex-shrink-0">
+              #{i + 1}
             </span>
             <input
               className={`${inputClass} flex-1`}
@@ -865,25 +1656,32 @@ function C2SegmentosEditor({
             <button
               type="button"
               onClick={() => remove(i)}
-              className="text-gray-600 hover:text-red-400 transition-colors"
+              className="text-slate-400 hover:text-red-500 transition-colors text-lg leading-none"
             >
               ×
             </button>
           </div>
 
-          <Field label="Problema principal">
-            <input
-              className={inputClass}
+          {/* Descripción */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1 block">
+              Descripción del segmento
+            </label>
+            <textarea
+              className={textareaClass}
+              rows={2}
               value={seg.problema_principal ?? ""}
               onChange={(e) => update(i, { problema_principal: e.target.value })}
-              placeholder="¿Cuál es su mayor problema hoy?"
+              placeholder="¿Cuál es su mayor problema hoy? ¿Qué los define?"
             />
-          </Field>
+          </div>
 
+          {/* 3 columns */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label className="text-[9px] uppercase tracking-wider text-gray-600 font-semibold">
+            <div className="bg-green-50 border border-green-100 rounded-xl p-3 space-y-1.5">
+              <label className="text-[9px] uppercase tracking-wider text-green-700 font-semibold block">
                 Valores
+                <span className="normal-case font-normal ml-1 text-green-600/70">(qué valoran)</span>
               </label>
               <TagsInput
                 value={seg.valores ?? []}
@@ -891,9 +1689,10 @@ function C2SegmentosEditor({
                 placeholder="familia, trabajo…"
               />
             </div>
-            <div>
-              <label className="text-[9px] uppercase tracking-wider text-gray-600 font-semibold">
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-1.5">
+              <label className="text-[9px] uppercase tracking-wider text-blue-700 font-semibold block">
                 Aspiraciones
+                <span className="normal-case font-normal ml-1 text-blue-600/70">(qué buscan)</span>
               </label>
               <TagsInput
                 value={seg.aspiraciones ?? []}
@@ -901,9 +1700,10 @@ function C2SegmentosEditor({
                 placeholder="progreso, seguridad…"
               />
             </div>
-            <div>
-              <label className="text-[9px] uppercase tracking-wider text-gray-600 font-semibold">
+            <div className="bg-red-50 border border-red-100 rounded-xl p-3 space-y-1.5">
+              <label className="text-[9px] uppercase tracking-wider text-red-700 font-semibold block">
                 Temores
+                <span className="normal-case font-normal ml-1 text-red-600/70">(qué los preocupa)</span>
               </label>
               <TagsInput
                 value={seg.temores ?? []}
@@ -913,21 +1713,25 @@ function C2SegmentosEditor({
             </div>
           </div>
 
-          <Field label="Medio de información preferido">
+          {/* Canal preferido */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1 block">
+              Canal preferido
+            </label>
             <input
               className={inputClass}
               value={seg.medio_info_preferido ?? ""}
               onChange={(e) => update(i, { medio_info_preferido: e.target.value })}
               placeholder="WhatsApp, radio local, TikTok…"
             />
-          </Field>
+          </div>
         </div>
       ))}
       {value.length < 8 && (
         <button
           type="button"
           onClick={addSegmento}
-          className="w-full py-2.5 rounded-xl border border-dashed border-amber-400/30 text-amber-400/60 text-sm hover:border-amber-400/50 hover:text-amber-400 transition-colors"
+          className="w-full py-2.5 rounded-xl border border-dashed border-amber-400/30 text-amber-600/70 text-sm hover:border-amber-400/60 hover:text-amber-600 transition-colors"
         >
           + Agregar segmento
         </button>
@@ -935,6 +1739,8 @@ function C2SegmentosEditor({
     </div>
   );
 }
+
+// ── D5MatrixEditor ─────────────────────────────────────────────────────────
 
 function D5MatrixEditor({
   segments,
@@ -947,8 +1753,8 @@ function D5MatrixEditor({
 }) {
   if (segments.length === 0) {
     return (
-      <p className="text-sm text-gray-600 italic">
-        Primero define los segmentos en "Segmentos Electorales".
+      <p className="text-sm text-slate-400 italic">
+        Primero definí los segmentos en "Segmentos".
       </p>
     );
   }
@@ -968,22 +1774,22 @@ function D5MatrixEditor({
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-gray-500">
-        Para cada segmento, define el mensaje clave, el canal más efectivo y el portavoz ideal.
+      <p className="text-xs text-slate-500">
+        Para cada segmento, definí el mensaje clave, el canal más efectivo y el portavoz ideal.
       </p>
       {segments.map((seg) => {
         const row = getRow(seg.id);
         return (
           <div
             key={seg.id}
-            className="rounded-xl border border-white/10 bg-[#020a1e]/40 p-4 space-y-3"
+            className="rounded-xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm"
           >
             <div className="flex items-center gap-2">
-              <span className="font-bold text-amber-400 text-sm">
+              <span className="font-bold text-amber-600 text-sm">
                 {seg.nombre || `Segmento ${seg.id}`}
               </span>
               {seg.pct_aprox && (
-                <span className="text-xs text-gray-500">{seg.pct_aprox}%</span>
+                <span className="text-xs text-slate-400">{seg.pct_aprox}%</span>
               )}
             </div>
 
@@ -1036,8 +1842,8 @@ function D5MatrixEditor({
                       onClick={() => updateRow(seg.id, { voto_util: v })}
                       className={`px-4 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
                         row.voto_util === v
-                          ? "border-amber-400/50 bg-amber-400/20 text-amber-400"
-                          : "border-gray-700 text-gray-500"
+                          ? "border-amber-400/50 bg-amber-400/20 text-amber-700"
+                          : "border-slate-200 text-slate-400"
                       }`}
                     >
                       {label}
@@ -1084,268 +1890,7 @@ function D5MatrixEditor({
   );
 }
 
-function NucleoEditor({
-  value,
-  segments,
-  onChange,
-  color1,
-}: {
-  value: NonNullable<TerritoryEcd["nucleo_goberna"]>;
-  segments: C2Segmento[];
-  onChange: (v: NonNullable<TerritoryEcd["nucleo_goberna"]>) => void;
-  color1: string;
-}) {
-  return (
-    <div className="space-y-4">
-      <div
-        className="rounded-xl p-4 border"
-        style={{ background: color1 + "08", borderColor: color1 + "30" }}
-      >
-        <p className="text-xs text-amber-400/70 mb-3 font-semibold uppercase tracking-wider">
-          Síntesis E×C×D → Núcleo Goberna
-        </p>
-        <div className="space-y-3">
-          <Field label="Propuesta central (promesa de campaña)">
-            <textarea
-              className={textareaClass}
-              rows={2}
-              value={value.propuesta_central ?? ""}
-              onChange={(e) => onChange({ ...value, propuesta_central: e.target.value })}
-              placeholder="La propuesta principal que unifica toda la campaña…"
-            />
-          </Field>
-          <Field label="Diferenciador clave (vs. competidores)">
-            <textarea
-              className={textareaClass}
-              rows={2}
-              value={value.diferenciador_clave ?? ""}
-              onChange={(e) => onChange({ ...value, diferenciador_clave: e.target.value })}
-              placeholder="Por qué el candidato es mejor opción que los rivales…"
-            />
-          </Field>
-        </div>
-      </div>
-
-      {segments.length > 0 && (
-        <div className="space-y-2">
-          <label className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-semibold">
-            Segmentos prioritarios (máx 3)
-          </label>
-          {(value.segmentos_prioritarios ?? []).map((sp, i) => {
-            const seg = segments.find((s) => s.id === sp.segmento_id);
-            return (
-              <div
-                key={i}
-                className="rounded-xl border border-white/8 bg-[#020a1e]/40 p-3 space-y-2"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-amber-400">
-                    {seg?.nombre ?? sp.segmento_id}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onChange({
-                        ...value,
-                        segmentos_prioritarios: (value.segmentos_prioritarios ?? []).filter(
-                          (_, j) => j !== i,
-                        ),
-                      })
-                    }
-                    className="text-gray-600 hover:text-red-400 text-xs"
-                  >
-                    Quitar
-                  </button>
-                </div>
-                <input
-                  className={inputClass}
-                  value={sp.mensaje_central ?? ""}
-                  onChange={(e) => {
-                    const cur = [...(value.segmentos_prioritarios ?? [])];
-                    cur[i] = { ...cur[i]!, mensaje_central: e.target.value };
-                    onChange({ ...value, segmentos_prioritarios: cur });
-                  }}
-                  placeholder="Mensaje central para este segmento"
-                />
-                <div className="grid grid-cols-3 gap-2">
-                  <input
-                    className={inputClass}
-                    value={sp.canal_principal ?? ""}
-                    onChange={(e) => {
-                      const cur = [...(value.segmentos_prioritarios ?? [])];
-                      cur[i] = { ...cur[i]!, canal_principal: e.target.value };
-                      onChange({ ...value, segmentos_prioritarios: cur });
-                    }}
-                    placeholder="Canal"
-                  />
-                  <input
-                    className={inputClass}
-                    value={sp.portavoz ?? ""}
-                    onChange={(e) => {
-                      const cur = [...(value.segmentos_prioritarios ?? [])];
-                      cur[i] = { ...cur[i]!, portavoz: e.target.value };
-                      onChange({ ...value, segmentos_prioritarios: cur });
-                    }}
-                    placeholder="Portavoz"
-                  />
-                  <input
-                    className={inputClass}
-                    value={sp.accion_inmediata ?? ""}
-                    onChange={(e) => {
-                      const cur = [...(value.segmentos_prioritarios ?? [])];
-                      cur[i] = { ...cur[i]!, accion_inmediata: e.target.value };
-                      onChange({ ...value, segmentos_prioritarios: cur });
-                    }}
-                    placeholder="Acción"
-                  />
-                </div>
-              </div>
-            );
-          })}
-          {(value.segmentos_prioritarios ?? []).length < 3 && segments.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {segments
-                .filter(
-                  (s) =>
-                    !(value.segmentos_prioritarios ?? []).find((sp) => sp.segmento_id === s.id),
-                )
-                .map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() =>
-                      onChange({
-                        ...value,
-                        segmentos_prioritarios: [
-                          ...(value.segmentos_prioritarios ?? []),
-                          { segmento_id: s.id },
-                        ],
-                      })
-                    }
-                    className="px-3 py-1 rounded-full border border-dashed border-amber-400/30 text-amber-400/60 text-xs hover:border-amber-400/50 hover:text-amber-400 transition-colors"
-                  >
-                    + {s.nombre || s.id}
-                  </button>
-                ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      <Field label="Notas internas">
-        <textarea
-          className={textareaClass}
-          rows={2}
-          value={value.notas ?? ""}
-          onChange={(e) => onChange({ ...value, notas: e.target.value })}
-          placeholder="Contexto adicional del equipo de consultoría…"
-        />
-      </Field>
-    </div>
-  );
-}
-
-function EstrategiaEditor({
-  value,
-  onChange,
-  color1: _color1,
-}: {
-  value: NonNullable<Fase1Rapida["estrategia"]>;
-  onChange: (v: NonNullable<Fase1Rapida["estrategia"]>) => void;
-  color1: string;
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Tipo de campaña">
-          <select
-            className={selectClass}
-            value={value.tipo_campana ?? ""}
-            onChange={(e) =>
-              onChange({
-                ...value,
-                tipo_campana: e.target.value as "RACIONAL" | "EMOTIVA" | "INSTINTIVA" | "MIXTA",
-              })
-            }
-          >
-            <option value="">Seleccionar</option>
-            <option value="RACIONAL">Racional</option>
-            <option value="EMOTIVA">Emotiva</option>
-            <option value="INSTINTIVA">Instintiva</option>
-            <option value="MIXTA">Mixta</option>
-          </select>
-        </Field>
-        <Field label="Eje emocional">
-          <select
-            className={selectClass}
-            value={value.eje_emocional ?? ""}
-            onChange={(e) =>
-              onChange({
-                ...value,
-                eje_emocional: e.target
-                  .value as NonNullable<Fase1Rapida["estrategia"]>["eje_emocional"],
-              })
-            }
-          >
-            <option value="">Seleccionar</option>
-            <option value="PLAN_DE_GOBIERNO">Plan de Gobierno</option>
-            <option value="EQUIPO_DE_CAMPAÑA">Equipo de Campaña</option>
-            <option value="SIMPATIA">Simpatía</option>
-            <option value="ESPERANZA">Esperanza</option>
-            <option value="ODIO">Indignación</option>
-            <option value="MIEDO">Miedo</option>
-          </select>
-        </Field>
-        <Field label="Frente principal">
-          <select
-            className={selectClass}
-            value={value.frente_principal ?? ""}
-            onChange={(e) =>
-              onChange({
-                ...value,
-                frente_principal: e.target.value as "TIERRA" | "MAR" | "AIRE",
-              })
-            }
-          >
-            <option value="">—</option>
-            <option value="TIERRA">Tierra (puerta a puerta)</option>
-            <option value="MAR">Mar (TV / radio)</option>
-            <option value="AIRE">Aire (digital)</option>
-          </select>
-        </Field>
-      </div>
-      {value.tipo_campana === "MIXTA" && (
-        <Field label="Combinación mixta">
-          <div className="flex gap-2 flex-wrap">
-            {(["RACIONAL", "EMOTIVA", "INSTINTIVA"] as const).map((t) => {
-              const selected = value.combinacion_mixta?.includes(t) ?? false;
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => {
-                    const cur = value.combinacion_mixta ?? [];
-                    const next = selected
-                      ? cur.filter((x) => x !== t)
-                      : [...cur, t].slice(0, 2);
-                    onChange({ ...value, combinacion_mixta: next });
-                  }}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                    selected
-                      ? "border-amber-400/50 bg-amber-400/20 text-amber-400"
-                      : "border-gray-700 text-gray-500"
-                  }`}
-                >
-                  {t}
-                </button>
-              );
-            })}
-          </div>
-        </Field>
-      )}
-    </div>
-  );
-}
+// ── PropuestasEditor ───────────────────────────────────────────────────────
 
 function PropuestasEditor({
   value,
@@ -1375,42 +1920,38 @@ function PropuestasEditor({
 
   return (
     <div className="space-y-4">
+      <p className="text-sm text-slate-500">
+        Las propuestas son las promesas programáticas de la campaña. Definí entre 3 y 6 propuestas
+        concretas con su sector e ícono.
+      </p>
       {value.map((prop, i) => (
         <div
           key={i}
-          className="rounded-xl border border-white/8 bg-[#020a1e]/40 p-4 space-y-3"
+          className="rounded-xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm"
         >
           <div className="flex items-center justify-between">
             <span
-              className="text-xs font-black px-2 py-0.5 rounded-full"
-              style={{ background: color1 + "20", color: color1 }}
+              className="text-lg font-black px-3 py-1 rounded-full"
+              style={{ background: color1 + "15", color: color1 }}
             >
               #{prop.orden}
             </span>
             <button
               type="button"
               onClick={() => removePropuesta(i)}
-              className="text-gray-600 hover:text-red-400 text-xs transition-colors"
+              className="text-slate-400 hover:text-red-500 text-xs transition-colors"
             >
               Eliminar
             </button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-2">
-              <input
-                className={inputClass}
-                value={prop.titulo}
-                onChange={(e) => updatePropuesta(i, { titulo: e.target.value })}
-                placeholder="Título de la propuesta"
-              />
-            </div>
-            <input
-              className={inputClass}
-              value={prop.sector ?? ""}
-              onChange={(e) => updatePropuesta(i, { sector: e.target.value })}
-              placeholder="Sector (salud, agua…)"
-            />
-          </div>
+          {/* Título prominente */}
+          <input
+            className={`${inputClass} text-base font-semibold`}
+            value={prop.titulo}
+            onChange={(e) => updatePropuesta(i, { titulo: e.target.value })}
+            placeholder="Título de la propuesta"
+          />
+          {/* Descripción corta */}
           <textarea
             className={textareaClass}
             rows={2}
@@ -1419,19 +1960,34 @@ function PropuestasEditor({
             onChange={(e) => updatePropuesta(i, { descripcion_corta: e.target.value })}
             placeholder="Descripción breve (máx 140 chars)"
           />
-          <input
-            className={inputClass}
-            value={prop.icono ?? ""}
-            onChange={(e) => updatePropuesta(i, { icono: e.target.value })}
-            placeholder="Ícono emoji (🏥 💧 🛣️)"
-          />
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <Field label="Sector">
+                <input
+                  className={inputClass}
+                  value={prop.sector ?? ""}
+                  onChange={(e) => updatePropuesta(i, { sector: e.target.value })}
+                  placeholder="ej: Seguridad, Movilidad, Salud"
+                />
+              </Field>
+            </div>
+            <Field label="Ícono emoji">
+              <input
+                className={inputClass}
+                value={prop.icono ?? ""}
+                onChange={(e) => updatePropuesta(i, { icono: e.target.value.slice(0, 2) })}
+                placeholder="🏥"
+                maxLength={2}
+              />
+            </Field>
+          </div>
         </div>
       ))}
       {value.length < 6 && (
         <button
           type="button"
           onClick={addPropuesta}
-          className="w-full py-2.5 rounded-xl border border-dashed border-amber-400/30 text-amber-400/60 text-sm hover:border-amber-400/50 hover:text-amber-400 transition-colors"
+          className="w-full py-2.5 rounded-xl border border-dashed border-amber-400/30 text-amber-600/70 text-sm hover:border-amber-400/60 hover:text-amber-600 transition-colors"
         >
           + Agregar propuesta
         </button>
@@ -1439,6 +1995,8 @@ function PropuestasEditor({
     </div>
   );
 }
+
+// ── BrandingEditor ─────────────────────────────────────────────────────────
 
 function BrandingEditor({
   value,
@@ -1464,7 +2022,7 @@ function BrandingEditor({
               type="color"
               value={value.color_primario ?? "#fbc02d"}
               onChange={(e) => onChange({ ...value, color_primario: e.target.value })}
-              className="size-10 rounded-lg border border-white/10 bg-transparent cursor-pointer"
+              className="size-10 rounded-lg border border-slate-200 bg-transparent cursor-pointer"
             />
             <input
               className={inputClass}
@@ -1480,7 +2038,7 @@ function BrandingEditor({
               type="color"
               value={value.color_secundario ?? "#0a1e4a"}
               onChange={(e) => onChange({ ...value, color_secundario: e.target.value })}
-              className="size-10 rounded-lg border border-white/10 bg-transparent cursor-pointer"
+              className="size-10 rounded-lg border border-slate-200 bg-transparent cursor-pointer"
             />
             <input
               className={inputClass}
@@ -1503,268 +2061,85 @@ function BrandingEditor({
   );
 }
 
+// ── FodaEditor — 2×2 grid, sin competidores ────────────────────────────────
+
 function FodaEditor({
   value,
   onChange,
-  color1: _color1,
 }: {
   value: NonNullable<Fase1Rapida["diagnostico_inicial"]>;
   onChange: (v: NonNullable<Fase1Rapida["diagnostico_inicial"]>) => void;
-  color1: string;
 }) {
+  type QuadrantKey = "fortalezas" | "debilidades" | "oportunidades" | "amenazas";
   const quadrants: {
-    key: "fortalezas" | "debilidades" | "oportunidades" | "amenazas";
+    key: QuadrantKey;
     label: string;
-    color: string;
+    emoji: string;
+    sub: string;
+    bg: string;
+    border: string;
+    labelColor: string;
   }[] = [
-    { key: "fortalezas", label: "Fortalezas", color: "#4ade80" },
-    { key: "debilidades", label: "Debilidades", color: "#f87171" },
-    { key: "oportunidades", label: "Oportunidades", color: "#60a5fa" },
-    { key: "amenazas", label: "Amenazas", color: "#fb923c" },
+    {
+      key: "fortalezas",
+      label: "Fortalezas",
+      emoji: "🟢",
+      sub: "(factores internos)",
+      bg: "bg-green-50",
+      border: "border-green-200",
+      labelColor: "text-green-700",
+    },
+    {
+      key: "debilidades",
+      label: "Debilidades",
+      emoji: "🔴",
+      sub: "(factores internos)",
+      bg: "bg-red-50",
+      border: "border-red-200",
+      labelColor: "text-red-600",
+    },
+    {
+      key: "oportunidades",
+      label: "Oportunidades",
+      emoji: "🔵",
+      sub: "(factores externos)",
+      bg: "bg-blue-50",
+      border: "border-blue-200",
+      labelColor: "text-blue-700",
+    },
+    {
+      key: "amenazas",
+      label: "Amenazas",
+      emoji: "🟠",
+      sub: "(factores externos)",
+      bg: "bg-orange-50",
+      border: "border-orange-200",
+      labelColor: "text-orange-700",
+    },
   ];
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {quadrants.map(({ key, label, color }) => (
-          <div key={key} className="space-y-2">
-            <label
-              className="text-[10px] uppercase tracking-[0.2em] font-semibold"
-              style={{ color }}
-            >
-              {label}
-            </label>
-            <TagsInput
-              value={value[key] ?? []}
-              onChange={(v) => onChange({ ...value, [key]: v })}
-              placeholder={`Agregar ${label.toLowerCase()}…`}
-            />
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {quadrants.map(({ key, label, emoji, sub, bg, border, labelColor }) => (
+        <div key={key} className={`rounded-xl border ${border} ${bg} p-4 space-y-3`}>
+          <div>
+            <p className={`text-sm font-bold ${labelColor}`}>
+              {emoji} {label}
+            </p>
+            <p className={`text-[10px] ${labelColor} opacity-70`}>{sub}</p>
           </div>
-        ))}
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-semibold">
-          Principales competidores
-        </label>
-        {(value.principales_competidores ?? []).map((comp, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <input
-              className={inputClass}
-              value={comp.nombre}
-              onChange={(e) => {
-                const cur = [...(value.principales_competidores ?? [])];
-                cur[i] = { ...cur[i]!, nombre: e.target.value };
-                onChange({ ...value, principales_competidores: cur });
-              }}
-              placeholder="Nombre del rival"
-            />
-            <select
-              className={`${selectClass} max-w-[120px]`}
-              value={comp.nivel_amenaza ?? "medio"}
-              onChange={(e) => {
-                const cur = [...(value.principales_competidores ?? [])];
-                cur[i] = {
-                  ...cur[i]!,
-                  nivel_amenaza: e.target.value as "bajo" | "medio" | "alto",
-                };
-                onChange({ ...value, principales_competidores: cur });
-              }}
-            >
-              <option value="bajo">Bajo</option>
-              <option value="medio">Medio</option>
-              <option value="alto">Alto</option>
-            </select>
-            <button
-              type="button"
-              onClick={() => {
-                const cur = (value.principales_competidores ?? []).filter((_, j) => j !== i);
-                onChange({ ...value, principales_competidores: cur });
-              }}
-              className="text-gray-600 hover:text-red-400 transition-colors px-2"
-            >
-              ×
-            </button>
-          </div>
-        ))}
-        {(value.principales_competidores ?? []).length < 5 && (
-          <button
-            type="button"
-            onClick={() =>
-              onChange({
-                ...value,
-                principales_competidores: [
-                  ...(value.principales_competidores ?? []),
-                  { nombre: "", nivel_amenaza: "medio" },
-                ],
-              })
-            }
-            className="text-xs text-amber-400/60 hover:text-amber-400 transition-colors"
-          >
-            + Agregar rival
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function EstructuraEditor({
-  value,
-  onChange,
-}: {
-  value: TerritoryEcd;
-  onChange: (patch: Partial<TerritoryEcd>) => void;
-}) {
-  const e4 = value.e4_campo_politico ?? {};
-  const e1 = value.e1_capital_economico ?? {};
-  const e2 = value.e2_capital_social ?? {};
-
-  return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Pobreza estimada (%)">
-          <input
-            type="number"
-            min={0}
-            max={100}
-            className={inputClass}
-            value={e1.nivel_pobreza_pct ?? ""}
-            onChange={(e) =>
-              onChange({
-                e1_capital_economico: { ...e1, nivel_pobreza_pct: Number(e.target.value) },
-              })
-            }
+          <TagsInput
+            value={value[key] ?? []}
+            onChange={(v) => onChange({ ...value, [key]: v })}
+            placeholder={`Agregar ${label.toLowerCase()}…`}
           />
-        </Field>
-        <Field label="Polarización política">
-          <select
-            className={selectClass}
-            value={e4.nivel_polarizacion ?? ""}
-            onChange={(e) =>
-              onChange({
-                e4_campo_politico: {
-                  ...e4,
-                  nivel_polarizacion: e.target.value as "bajo" | "medio" | "alto",
-                },
-              })
-            }
-          >
-            <option value="">—</option>
-            <option value="bajo">Baja</option>
-            <option value="medio">Media</option>
-            <option value="alto">Alta</option>
-          </select>
-        </Field>
-      </div>
-
-      <Field label="Principales sectores económicos">
-        <TagsInput
-          value={e1.principales_sectores ?? []}
-          onChange={(v) =>
-            onChange({ e1_capital_economico: { ...e1, principales_sectores: v } })
-          }
-          placeholder="agricultura, minería, comercio…"
-        />
-      </Field>
-
-      <Field label="Tendencia histórica del voto">
-        <input
-          className={inputClass}
-          value={e4.voto_historico_tendencia ?? ""}
-          onChange={(e) =>
-            onChange({ e4_campo_politico: { ...e4, voto_historico_tendencia: e.target.value } })
-          }
-          placeholder="Ej: voto conservador, fragmentado, anti-fujimorismo…"
-        />
-      </Field>
-
-      <Field label="Organizaciones sociales clave">
-        <TagsInput
-          value={e2.organizaciones_clave ?? []}
-          onChange={(v) =>
-            onChange({ e2_capital_social: { ...e2, organizaciones_clave: v } })
-          }
-          placeholder="APAFA, rondas campesinas, sindicatos…"
-        />
-      </Field>
-
-      <div className="space-y-2">
-        <label className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-semibold">
-          Partidos/movimientos fuertes en la zona
-        </label>
-        {(e4.partidos_fuertes ?? []).map((p, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <input
-              className={inputClass}
-              value={p.nombre}
-              onChange={(e) => {
-                const cur = [...(e4.partidos_fuertes ?? [])];
-                cur[i] = { ...cur[i]!, nombre: e.target.value };
-                onChange({ e4_campo_politico: { ...e4, partidos_fuertes: cur } });
-              }}
-              placeholder="Nombre del partido"
-            />
-            <input
-              type="number"
-              min={0}
-              max={100}
-              className={`${inputClass} w-20`}
-              value={p.pct_aprox ?? ""}
-              onChange={(e) => {
-                const cur = [...(e4.partidos_fuertes ?? [])];
-                cur[i] = { ...cur[i]!, pct_aprox: Number(e.target.value) };
-                onChange({ e4_campo_politico: { ...e4, partidos_fuertes: cur } });
-              }}
-              placeholder="%"
-            />
-            <select
-              className={`${selectClass} max-w-[110px]`}
-              value={p.trend ?? ""}
-              onChange={(e) => {
-                const cur = [...(e4.partidos_fuertes ?? [])];
-                cur[i] = {
-                  ...cur[i]!,
-                  trend: e.target.value as "subiendo" | "estable" | "bajando",
-                };
-                onChange({ e4_campo_politico: { ...e4, partidos_fuertes: cur } });
-              }}
-            >
-              <option value="">trend</option>
-              <option value="subiendo">↑</option>
-              <option value="estable">→</option>
-              <option value="bajando">↓</option>
-            </select>
-            <button
-              type="button"
-              onClick={() => {
-                const cur = (e4.partidos_fuertes ?? []).filter((_, j) => j !== i);
-                onChange({ e4_campo_politico: { ...e4, partidos_fuertes: cur } });
-              }}
-              className="text-gray-600 hover:text-red-400 transition-colors"
-            >
-              ×
-            </button>
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={() =>
-            onChange({
-              e4_campo_politico: {
-                ...e4,
-                partidos_fuertes: [...(e4.partidos_fuertes ?? []), { nombre: "" }],
-              },
-            })
-          }
-          className="text-xs text-amber-400/60 hover:text-amber-400 transition-colors"
-        >
-          + Agregar partido
-        </button>
-      </div>
+        </div>
+      ))}
     </div>
   );
 }
+
+// ── ConcienciaEditor ───────────────────────────────────────────────────────
 
 function ConcienciaEditor({
   value,
@@ -1868,7 +2243,7 @@ function ConcienciaEditor({
 
       <Field label="Principales issues del electorado">
         <TagsInput
-          value={(c3.top_issues ?? []).map((i) => i.issue)}
+          value={(c3.top_issues ?? []).map((ii) => ii.issue)}
           onChange={(v) =>
             onChange({
               c3_issues: {
@@ -1894,239 +2269,6 @@ function ConcienciaEditor({
   );
 }
 
-function PerfilCompletoEditor({
-  value,
-  onChange,
-}: {
-  value: PerfilCandidato;
-  onChange: (patch: Partial<PerfilCandidato>) => void;
-}) {
-  const n1 = value.n1_identidad ?? {};
-  const n2 = value.n2_trayectoria ?? {};
-  const n3 = value.n3_riesgo ?? {};
-  const n5 = value.n5_salud ?? {};
-  const entorno = value.entorno ?? {};
-  const coherencia = value.coherencia ?? {};
-
-  return (
-    <div className="space-y-6">
-      {/* N1 extended */}
-      <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-400/60 font-semibold mb-3">
-          N1 — Identidad extendida
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Field label="Lugar de nacimiento">
-            <input
-              className={inputClass}
-              value={n1.lugar_nacimiento ?? ""}
-              onChange={(e) =>
-                onChange({ n1_identidad: { ...n1, lugar_nacimiento: e.target.value } })
-              }
-            />
-          </Field>
-          <Field label="Estado civil">
-            <input
-              className={inputClass}
-              value={n1.estado_civil ?? ""}
-              onChange={(e) =>
-                onChange({ n1_identidad: { ...n1, estado_civil: e.target.value } })
-              }
-            />
-          </Field>
-          <Field label="Hijos">
-            <input
-              type="number"
-              min={0}
-              className={inputClass}
-              value={n1.hijos ?? ""}
-              onChange={(e) =>
-                onChange({ n1_identidad: { ...n1, hijos: Number(e.target.value) } })
-              }
-            />
-          </Field>
-          <Field label="Religión">
-            <input
-              className={inputClass}
-              value={n1.religion ?? ""}
-              onChange={(e) =>
-                onChange({ n1_identidad: { ...n1, religion: e.target.value } })
-              }
-            />
-          </Field>
-        </div>
-      </div>
-
-      {/* N2 Trayectoria */}
-      <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-400/60 font-semibold mb-3">
-          N2 — Trayectoria
-        </p>
-        <Field label="Logros principales">
-          <TagsInput
-            value={n2.logros_principales ?? []}
-            onChange={(v) => onChange({ n2_trayectoria: { ...n2, logros_principales: v } })}
-            placeholder="Logro destacado…"
-          />
-        </Field>
-      </div>
-
-      {/* N3 Riesgos */}
-      <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-red-400/60 font-semibold mb-3">
-          N3 — Riesgos legales / reputacionales
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Nivel de riesgo global">
-            <select
-              className={selectClass}
-              value={n3.nivel_riesgo_global ?? ""}
-              onChange={(e) =>
-                onChange({
-                  n3_riesgo: {
-                    ...n3,
-                    nivel_riesgo_global: e.target.value as
-                      | "bajo"
-                      | "medio"
-                      | "alto"
-                      | "critico",
-                  },
-                })
-              }
-            >
-              <option value="">—</option>
-              <option value="bajo">Bajo</option>
-              <option value="medio">Medio</option>
-              <option value="alto">Alto</option>
-              <option value="critico">Crítico</option>
-            </select>
-          </Field>
-        </div>
-        <Field label="Observaciones JNE / ONPE">
-          <TagsInput
-            value={n3.jne_observaciones ?? []}
-            onChange={(v) => onChange({ n3_riesgo: { ...n3, jne_observaciones: v } })}
-            placeholder="Observación…"
-          />
-        </Field>
-        <Field label="Búsquedas negativas en Google">
-          <TagsInput
-            value={n3.google_negativo ?? []}
-            onChange={(v) => onChange({ n3_riesgo: { ...n3, google_negativo: v } })}
-            placeholder="Titular negativo…"
-          />
-        </Field>
-      </div>
-
-      {/* N5 Salud */}
-      <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-400/60 font-semibold mb-3">
-          N5 — Salud y energía
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Estado general">
-            <select
-              className={selectClass}
-              value={n5.estado_general ?? ""}
-              onChange={(e) =>
-                onChange({
-                  n5_salud: {
-                    ...n5,
-                    estado_general: e.target.value as
-                      | "optimo"
-                      | "bueno"
-                      | "regular"
-                      | "preocupante",
-                  },
-                })
-              }
-            >
-              <option value="">—</option>
-              <option value="optimo">Óptimo</option>
-              <option value="bueno">Bueno</option>
-              <option value="regular">Regular</option>
-              <option value="preocupante">Preocupante</option>
-            </select>
-          </Field>
-          <Field label="Energía para campaña">
-            <select
-              className={selectClass}
-              value={n5.energia_campana ?? ""}
-              onChange={(e) =>
-                onChange({
-                  n5_salud: {
-                    ...n5,
-                    energia_campana: e.target.value as "alta" | "media" | "baja",
-                  },
-                })
-              }
-            >
-              <option value="">—</option>
-              <option value="alta">Alta</option>
-              <option value="media">Media</option>
-              <option value="baja">Baja</option>
-            </select>
-          </Field>
-        </div>
-      </div>
-
-      {/* Entorno */}
-      <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-400/60 font-semibold mb-3">
-          Entorno
-        </p>
-        <Field label="Financiadores clave">
-          <TagsInput
-            value={entorno.financiadores_clave ?? []}
-            onChange={(v) =>
-              onChange({ entorno: { ...entorno, financiadores_clave: v } })
-            }
-            placeholder="Nombre / organización…"
-          />
-        </Field>
-        <Field label="Adversarios internos">
-          <TagsInput
-            value={entorno.adversarios_internos ?? []}
-            onChange={(v) =>
-              onChange({ entorno: { ...entorno, adversarios_internos: v } })
-            }
-            placeholder="Persona u organización…"
-          />
-        </Field>
-      </div>
-
-      {/* Coherencia */}
-      <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-400/60 font-semibold mb-3">
-          Coherencia narrativa
-        </p>
-        <Field label="Historia de vida → candidatura (¿por qué él/ella?)">
-          <textarea
-            className={textareaClass}
-            rows={3}
-            value={coherencia.mensaje_vida_candidatura ?? ""}
-            onChange={(e) =>
-              onChange({
-                coherencia: { ...coherencia, mensaje_vida_candidatura: e.target.value },
-              })
-            }
-            placeholder="Cómo su historia personal conecta con la candidatura…"
-          />
-        </Field>
-        <Field label="Posibles contradicciones a resolver">
-          <TagsInput
-            value={coherencia.contradicciones ?? []}
-            onChange={(v) =>
-              onChange({ coherencia: { ...coherencia, contradicciones: v } })
-            }
-            placeholder="Contradicción…"
-          />
-        </Field>
-      </div>
-    </div>
-  );
-}
-
 // ── Step preview helper ────────────────────────────────────────────────────
 
 function getStepPreview(
@@ -2136,17 +2278,39 @@ function getStepPreview(
   perfil: PerfilCandidato,
   vpg: { padron_actual?: number; votos_meta?: number },
 ): React.ReactNode {
+  // perfil param kept for future use / type safety
+  void perfil;
+
   switch (id) {
     case "candidato": {
       const c = f1.candidato;
       if (!c?.nombre_completo && !c?.bio_corta) return null;
       return (
         <div className="space-y-1">
-          {c.nombre_completo && <p className="font-semibold text-white truncate">{c.nombre_completo}</p>}
-          {c.bio_corta && <p className="text-gray-400 line-clamp-2">{c.bio_corta}</p>}
+          {c.nombre_completo && <p className="font-semibold text-slate-800 truncate">{c.nombre_completo}</p>}
+          {c.bio_corta && <p className="text-slate-500 line-clamp-2">{c.bio_corta}</p>}
           {vpg.padron_actual && (
-            <p className="text-amber-400/80 text-[10px]">Padrón: {vpg.padron_actual.toLocaleString("es-PE")}</p>
+            <p className="text-amber-600/80 text-[10px]">Padrón: {vpg.padron_actual.toLocaleString("es-PE")}</p>
           )}
+        </div>
+      );
+    }
+    case "territorio": {
+      const partidos = ecd.e4_campo_politico?.partidos_fuertes;
+      if (!partidos?.length && !vpg.padron_actual) return null;
+      return (
+        <div className="space-y-0.5">
+          {vpg.padron_actual && (
+            <p className="text-[10px] text-slate-500">
+              Padrón: <span className="text-slate-700 font-semibold">{vpg.padron_actual.toLocaleString("es-PE")}</span>
+            </p>
+          )}
+          {partidos?.slice(0, 2).map((p, i) => (
+            <div key={i} className="flex justify-between gap-2">
+              <span className="text-slate-600 truncate text-[10px]">{p.nombre}</span>
+              <span className="text-amber-600 font-bold text-[10px] flex-shrink-0">{p.pct_aprox ?? 0}%</span>
+            </div>
+          ))}
         </div>
       );
     }
@@ -2157,41 +2321,24 @@ function getStepPreview(
         <div className="space-y-1">
           {segs.slice(0, 3).map((s) => (
             <div key={s.id} className="flex justify-between gap-2">
-              <span className="text-gray-300 truncate text-[10px]">{s.nombre.split("/")[0].trim()}</span>
-              <span className="text-amber-400 font-bold text-[10px] flex-shrink-0">{s.pct_aprox ?? 0}%</span>
+              <span className="text-slate-600 truncate text-[10px]">{s.nombre.split("/")[0].trim()}</span>
+              <span className="text-amber-600 font-bold text-[10px] flex-shrink-0">{s.pct_aprox ?? 0}%</span>
             </div>
           ))}
-          {segs.length > 3 && <p className="text-gray-600 text-[10px]">+{segs.length - 3} más</p>}
+          {segs.length > 3 && <p className="text-slate-400 text-[10px]">+{segs.length - 3} más</p>}
         </div>
       );
     }
     case "d5": {
       const rows = ecd.d5_matrix;
       if (!rows?.length) return null;
-      const first = rows[0];
       return (
         <div className="space-y-1">
           {rows.slice(0, 2).map((r, i) => (
-            <p key={i} className="text-gray-400 line-clamp-1 text-[10px]">
-              <span className="text-amber-400/70">→</span> {r.mensaje_clave ?? "Sin mensaje"}
+            <p key={i} className="text-slate-500 line-clamp-1 text-[10px]">
+              <span className="text-amber-600/70">→</span> {r.mensaje_clave ?? "Sin mensaje"}
             </p>
           ))}
-        </div>
-      );
-    }
-    case "nucleo": {
-      const n = ecd.nucleo_goberna;
-      if (!n?.propuesta_central) return null;
-      return <p className="text-gray-300 line-clamp-3">{n.propuesta_central}</p>;
-    }
-    case "estrategia": {
-      const e = f1.estrategia;
-      if (!e?.tipo_campana) return null;
-      return (
-        <div className="space-y-1">
-          <p className="text-white font-semibold text-[10px]">{e.tipo_campana}</p>
-          {e.eje_emocional && <p className="text-amber-400/80 text-[10px]">{e.eje_emocional}</p>}
-          {e.frente_principal && <p className="text-gray-400 text-[10px]">Frente {e.frente_principal}</p>}
         </div>
       );
     }
@@ -2201,8 +2348,8 @@ function getStepPreview(
       return (
         <div className="space-y-0.5">
           {props.slice(0, 4).map((p, i) => (
-            <p key={i} className="text-gray-300 line-clamp-1 text-[10px]">
-              <span className="text-amber-400/60">{i + 1}.</span> {p.titulo}
+            <p key={i} className="text-slate-600 line-clamp-1 text-[10px]">
+              <span className="text-amber-600/60">{i + 1}.</span> {p.titulo}
             </p>
           ))}
         </div>
@@ -2213,14 +2360,14 @@ function getStepPreview(
       if (!b?.slogan && !b?.color_primario) return null;
       return (
         <div className="space-y-1.5">
-          {b.slogan && <p className="text-white italic line-clamp-2">"{b.slogan}"</p>}
+          {b.slogan && <p className="text-slate-700 italic line-clamp-2">"{b.slogan}"</p>}
           {(b.color_primario || b.color_secundario) && (
             <div className="flex gap-1.5">
               {b.color_primario && (
-                <div className="size-4 rounded-full border border-white/20" style={{ background: b.color_primario }} />
+                <div className="size-4 rounded-full border border-slate-300" style={{ background: b.color_primario }} />
               )}
               {b.color_secundario && (
-                <div className="size-4 rounded-full border border-white/20" style={{ background: b.color_secundario }} />
+                <div className="size-4 rounded-full border border-slate-300" style={{ background: b.color_secundario }} />
               )}
             </div>
           )}
@@ -2233,31 +2380,17 @@ function getStepPreview(
       return (
         <div className="grid grid-cols-2 gap-2 text-[10px]">
           <div>
-            <p className="text-green-400 font-semibold mb-0.5">F ({d.fortalezas?.length ?? 0})</p>
+            <p className="text-green-600 font-semibold mb-0.5">F ({d.fortalezas?.length ?? 0})</p>
             {d.fortalezas?.slice(0, 2).map((f, i) => (
-              <p key={i} className="text-gray-400 line-clamp-1">{f}</p>
+              <p key={i} className="text-slate-500 line-clamp-1">{f}</p>
             ))}
           </div>
           <div>
-            <p className="text-red-400 font-semibold mb-0.5">D ({d.debilidades?.length ?? 0})</p>
-            {d.debilidades?.slice(0, 2).map((d, i) => (
-              <p key={i} className="text-gray-400 line-clamp-1">{d}</p>
+            <p className="text-red-500 font-semibold mb-0.5">D ({d.debilidades?.length ?? 0})</p>
+            {d.debilidades?.slice(0, 2).map((dd, i) => (
+              <p key={i} className="text-slate-500 line-clamp-1">{dd}</p>
             ))}
           </div>
-        </div>
-      );
-    }
-    case "estructura": {
-      const partidos = ecd.e4_campo_politico?.partidos_fuertes;
-      if (!partidos?.length) return null;
-      return (
-        <div className="space-y-0.5">
-          {partidos.slice(0, 3).map((p, i) => (
-            <div key={i} className="flex justify-between gap-2">
-              <span className="text-gray-300 truncate text-[10px]">{p.nombre}</span>
-              <span className="text-amber-400 font-bold text-[10px] flex-shrink-0">{p.pct_aprox ?? 0}%</span>
-            </div>
-          ))}
         </div>
       );
     }
@@ -2268,23 +2401,18 @@ function getStepPreview(
       return (
         <div className="space-y-1">
           {c5?.candidato_puntero && (
-            <p className="text-[10px] text-gray-400">
-              Puntero: <span className="text-white">{c5.candidato_puntero}</span>
+            <p className="text-[10px] text-slate-500">
+              Puntero: <span className="text-slate-700">{c5.candidato_puntero}</span>
             </p>
           )}
           {c5?.pct_nuestro_candidato != null && (
-            <p className="text-amber-400 font-bold text-[10px]">Nuestro: {c5.pct_nuestro_candidato}%</p>
+            <p className="text-amber-600 font-bold text-[10px]">Nuestro: {c5.pct_nuestro_candidato}%</p>
           )}
           {issues?.slice(0, 2).map((iss, i) => (
-            <p key={i} className="text-gray-400 line-clamp-1 text-[10px]">{iss.issue}</p>
+            <p key={i} className="text-slate-500 line-clamp-1 text-[10px]">{iss.issue}</p>
           ))}
         </div>
       );
-    }
-    case "perfil5n": {
-      const n1 = perfil.n1_identidad;
-      if (!n1?.bio_corta) return null;
-      return <p className="text-gray-300 line-clamp-3">{n1.bio_corta}</p>;
     }
     default:
       return null;
@@ -2396,22 +2524,33 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
     });
   }
 
+  function updatePerfil(patch: Partial<PerfilCandidato>) {
+    setPerfil((prev) => {
+      const next = deepMerge(
+        prev as Record<string, unknown>,
+        patch as Record<string, unknown>,
+      ) as PerfilCandidato;
+      scheduleSave({ perfil_candidato: next });
+      return next;
+    });
+  }
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#020a1e]">
-        <Loader2 className="size-10 animate-spin text-amber-400" />
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="size-10 animate-spin text-amber-500" />
       </div>
     );
   }
 
   if (error || !ctx || !deck) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#020a1e] text-white">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-900">
         <div className="text-center px-6">
-          <p className="text-red-400 mb-4 text-sm">{error ?? "Error"}</p>
+          <p className="text-red-500 mb-4 text-sm">{error ?? "Error"}</p>
           <button
             onClick={() => router.push("/onboarding")}
-            className="px-6 py-2.5 rounded-full border border-gray-700 text-gray-300 text-sm"
+            className="px-6 py-2.5 rounded-full border border-slate-200 text-slate-600 text-sm"
           >
             Volver
           </button>
@@ -2429,30 +2568,18 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
     ctx.jurisdiccion.departamento?.nombre ??
     "";
 
-  // Completion levels per section — same logic as PerfilHubClient
+  // Completion levels — 8 steps
   const comp: Record<StepId, CompletionLevel> = {
     candidato: objectCompletion(
       f1.candidato as Record<string, unknown> | undefined,
       ["nombre_completo", "bio_corta", "fecha_nacimiento"],
     ),
-    branding: objectCompletion(
-      f1.branding as Record<string, unknown> | undefined,
-      ["slogan", "color_primario"],
-    ),
-    estrategia: objectCompletion(
-      f1.estrategia as Record<string, unknown> | undefined,
-      ["tipo_campana", "eje_emocional", "frente_principal"],
-    ),
-    propuestas:
-      f1.propuestas && f1.propuestas.length >= 3
-        ? "done"
-        : f1.propuestas && f1.propuestas.length > 0
-          ? "partial"
-          : "empty",
-    foda: objectCompletion(
-      f1.diagnostico_inicial as Record<string, unknown> | undefined,
-      ["fortalezas", "debilidades"],
-    ),
+    territorio: (() => {
+      const hasP = vpg.padron_actual != null;
+      const hasE4 = (ecd.e4_campo_politico?.partidos_fuertes?.length ?? 0) > 0;
+      if (!hasP && !hasE4) return "empty";
+      return hasP && hasE4 ? "done" : "partial";
+    })(),
     c2:
       ecd.c2_segmentos && ecd.c2_segmentos.length >= 2
         ? "done"
@@ -2465,23 +2592,28 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
           ? "done"
           : "partial"
         : "empty",
-    estructura: objectCompletion(
-      ecd.e4_campo_politico as Record<string, unknown> | undefined,
-      ["partidos_fuertes", "nivel_polarizacion"],
+    propuestas:
+      f1.propuestas && f1.propuestas.length >= 3
+        ? "done"
+        : f1.propuestas && f1.propuestas.length > 0
+          ? "partial"
+          : "empty",
+    branding: objectCompletion(
+      f1.branding as Record<string, unknown> | undefined,
+      ["slogan", "color_primario"],
     ),
-    nucleo: objectCompletion(
-      ecd.nucleo_goberna as Record<string, unknown> | undefined,
-      ["propuesta_central", "diferenciador_clave"],
+    foda: objectCompletion(
+      f1.diagnostico_inicial as Record<string, unknown> | undefined,
+      ["fortalezas", "debilidades"],
     ),
     conciencia: objectCompletion(
       ecd.c5_intencion_voto as Record<string, unknown> | undefined,
-      ["candidato_puntero", "pct_nuestro_candidato"],
-    ),
-    perfil5n: objectCompletion(
-      perfil.n1_identidad as Record<string, unknown> | undefined,
-      ["bio_corta", "lugar_nacimiento", "estado_civil"],
+      ["candidato_puntero"],
     ),
   };
+
+  // suppress unused-value warning for stringsCompletion — it is kept as a utility
+  void stringsCompletion;
 
   const allLevels = Object.values(comp);
   const donePct = Math.round(
@@ -2503,9 +2635,22 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
           <CandidatoEditor
             f1={f1}
             ctx={ctx!}
+            perfil={perfil}
             padronActual={vpg.padron_actual}
             onPadronChange={(v) => updateVpg({ padron_actual: v })}
             onChange={(patch) => updateF1(patch)}
+            onPerfilChange={(patch) => updatePerfil(patch)}
+          />
+        );
+      case "territorio":
+        return (
+          <TerritorioEditor
+            f1={f1}
+            ecd={ecd}
+            padronActual={vpg.padron_actual}
+            onPadronChange={(v) => updateVpg({ padron_actual: v })}
+            onChange={(patch) => updateF1(patch)}
+            onEcdChange={(patch) => updateEcd(patch)}
           />
         );
       case "c2":
@@ -2521,23 +2666,6 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
             segments={ecd.c2_segmentos ?? []}
             value={ecd.d5_matrix ?? []}
             onChange={(v) => updateEcd({ d5_matrix: v })}
-          />
-        );
-      case "nucleo":
-        return (
-          <NucleoEditor
-            value={ecd.nucleo_goberna ?? {}}
-            segments={ecd.c2_segmentos ?? []}
-            onChange={(v) => updateEcd({ nucleo_goberna: v })}
-            color1={color1}
-          />
-        );
-      case "estrategia":
-        return (
-          <EstrategiaEditor
-            value={f1.estrategia ?? {}}
-            onChange={(v) => updateF1({ estrategia: v })}
-            color1={color1}
           />
         );
       case "propuestas":
@@ -2560,14 +2688,6 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
           <FodaEditor
             value={f1.diagnostico_inicial ?? {}}
             onChange={(v) => updateF1({ diagnostico_inicial: v })}
-            color1={color1}
-          />
-        );
-      case "estructura":
-        return (
-          <EstructuraEditor
-            value={ecd}
-            onChange={(patch) => updateEcd(patch)}
           />
         );
       case "conciencia":
@@ -2577,22 +2697,6 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
             onChange={(patch) => updateEcd(patch)}
           />
         );
-      case "perfil5n":
-        return (
-          <PerfilCompletoEditor
-            value={perfil}
-            onChange={(patch) => {
-              setPerfil((prev) => {
-                const next = deepMerge(
-                  prev as Record<string, unknown>,
-                  patch as Record<string, unknown>,
-                ) as PerfilCandidato;
-                scheduleSave({ perfil_candidato: next });
-                return next;
-              });
-            }}
-          />
-        );
     }
   }
 
@@ -2600,9 +2704,9 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
   const showHint = stepCompletion === "empty";
 
   return (
-    <div className="min-h-screen bg-[#020a1e] text-white flex flex-col">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
       {/* ── Sticky header ─────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-20 bg-[#020a1e]/95 backdrop-blur-md border-b border-white/8">
+      <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200">
         {/* Top row */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -2617,36 +2721,36 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
               {nombre[0]?.toUpperCase() ?? "C"}
             </div>
             <div>
-              <h1 className="font-black text-white text-sm leading-tight">{nombre}</h1>
+              <h1 className="font-black text-slate-900 text-sm leading-tight">{nombre}</h1>
               <div className="flex items-center gap-2 mt-0.5">
-                <div className="h-1 w-20 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-1 w-20 rounded-full bg-slate-200 overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-500"
                     style={{
                       width: `${donePct}%`,
                       background:
-                        donePct >= 60 ? "#4ade80" : donePct >= 30 ? "#fbbf24" : "#6b7280",
+                        donePct >= 60 ? "#4ade80" : donePct >= 30 ? "#fbbf24" : "#94a3b8",
                     }}
                   />
                 </div>
-                <span className="text-[10px] text-gray-500">{donePct}%</span>
+                <span className="text-[10px] text-slate-400">{donePct}%</span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             {saving ? (
-              <span className="flex items-center gap-1.5 text-[10px] text-amber-400/70">
+              <span className="flex items-center gap-1.5 text-[10px] text-amber-600/70">
                 <Loader2 className="size-3 animate-spin" /> Guardando…
               </span>
             ) : savedAt ? (
-              <span className="flex items-center gap-1.5 text-[10px] text-green-400/70">
+              <span className="flex items-center gap-1.5 text-[10px] text-green-600/70">
                 <CheckCircle2 className="size-3" /> Guardado
               </span>
             ) : null}
             <a
               href={`/onboarding/${slug}/fase-2`}
-              className="px-3.5 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-bold transition-colors bg-amber-400/10 text-amber-400 border border-amber-400/30 hover:bg-amber-400/20"
+              className="px-3.5 py-1.5 rounded-full text-[10px] uppercase tracking-wider font-bold transition-colors bg-amber-400/10 text-amber-700 border border-amber-400/30 hover:bg-amber-400/20"
             >
               Ver presentación →
             </a>
@@ -2672,19 +2776,19 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
                     onClick={() => setCurrentStep(i)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${
                       isCurrent
-                        ? "bg-amber-400 text-[#0a1e4a]"
+                        ? "bg-amber-400 text-slate-900"
                         : stepComp === "done"
-                          ? "bg-green-500/20 text-green-400 border border-green-500/30"
-                          : "bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300"
+                          ? "bg-green-100 text-green-700 border border-green-200"
+                          : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
                     }`}
                   >
                     <span
                       className={`size-1.5 rounded-full ${
                         isCurrent
-                          ? "bg-[#0a1e4a]"
+                          ? "bg-slate-900"
                           : stepComp === "done"
-                            ? "bg-green-400"
-                            : "bg-gray-600"
+                            ? "bg-green-500"
+                            : "bg-slate-400"
                       }`}
                     />
                     {step.label}
@@ -2692,14 +2796,14 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
                   {/* Hover preview tooltip */}
                   {isHovered && !isCurrent && preview && (
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 pointer-events-none">
-                      <div className="bg-[#0d1f3c] border border-white/15 rounded-xl shadow-2xl p-3 min-w-[180px] max-w-[240px]">
-                        <p className="text-[9px] uppercase tracking-widest text-gray-500 mb-1.5 font-semibold">
+                      <div className="bg-white border border-slate-200 rounded-xl shadow-xl p-3 min-w-[180px] max-w-[240px]">
+                        <p className="text-[9px] uppercase tracking-widest text-slate-400 mb-1.5 font-semibold">
                           {step.label}
                         </p>
-                        <div className="text-[11px] text-gray-300 leading-relaxed">
+                        <div className="text-[11px] text-slate-700 leading-relaxed">
                           {preview}
                         </div>
-                        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-[#0d1f3c]" />
+                        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white" />
                       </div>
                     </div>
                   )}
@@ -2725,19 +2829,19 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
               {/* Section title */}
               <div className="mb-6">
                 <div className="flex items-center gap-3 mb-1">
-                  <div className="size-9 rounded-xl bg-[#020a1e]/60 border border-white/10 flex items-center justify-center flex-shrink-0">
-                    <currentStepDef.icon className="size-4 text-amber-400" />
+                  <div className="size-9 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0">
+                    <currentStepDef.icon className="size-4 text-amber-500" />
                   </div>
-                  <h2 className="text-xl font-black text-white">{currentStepDef.label}</h2>
+                  <h2 className="text-xl font-black text-slate-900">{currentStepDef.label}</h2>
                 </div>
-                <p className="text-sm text-gray-400 pl-12">{currentStepDef.hint}</p>
+                <p className="text-sm text-slate-500 pl-12">{currentStepDef.hint}</p>
               </div>
 
               {/* Context hint for empty sections */}
               {showHint && (
-                <div className="mb-5 rounded-xl bg-amber-400/8 border border-amber-400/20 px-4 py-3 flex items-start gap-2.5">
-                  <span className="text-amber-400 text-sm mt-0.5 flex-shrink-0">!</span>
-                  <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                <div className="mb-5 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 flex items-start gap-2.5">
+                  <span className="text-amber-500 text-sm mt-0.5 flex-shrink-0">!</span>
+                  <p className="text-[11px] text-amber-700/80 leading-relaxed">
                     Esta sección está vacía. Completala para enriquecer el perfil del candidato
                     y el deck de presentación.
                   </p>
@@ -2751,7 +2855,7 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
         </div>
 
         {/* RIGHT PANEL — live profile card */}
-        <div className="hidden lg:block sticky top-[73px] self-start h-[calc(100vh-73px)] bg-[#0a1e4a]/30 border-l border-white/8 overflow-y-auto">
+        <div className="hidden lg:block sticky top-[73px] self-start h-[calc(100vh-73px)] bg-slate-100 border-l border-slate-200 overflow-y-auto">
           <LiveProfileCard
             f1={f1}
             ecd={ecd}
@@ -2764,29 +2868,29 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
       </div>
 
       {/* ── Sticky footer ──────────────────────────────────────────────────── */}
-      <div className="sticky bottom-0 z-20 bg-[#020a1e]/95 backdrop-blur-md border-t border-white/8">
+      <div className="sticky bottom-0 z-20 bg-white/95 backdrop-blur-md border-t border-slate-200">
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
           <button
             onClick={() => setCurrentStep((prev) => Math.max(0, prev - 1))}
             disabled={currentStep === 0}
-            className="px-4 py-2 rounded-full text-[11px] font-bold text-gray-400 hover:text-white disabled:opacity-30 transition-colors"
+            className="px-4 py-2 rounded-full text-[11px] font-bold text-slate-500 hover:text-slate-900 disabled:opacity-30 transition-colors"
           >
             ← Anterior
           </button>
-          <span className="text-[10px] text-gray-600">
+          <span className="text-[10px] text-slate-400">
             {currentStep + 1} / {STEPS.length}
           </span>
           {currentStep < STEPS.length - 1 ? (
             <button
               onClick={() => setCurrentStep((prev) => Math.min(STEPS.length - 1, prev + 1))}
-              className="px-5 py-2 rounded-full text-[11px] font-bold bg-amber-400/10 text-amber-400 border border-amber-400/30 hover:bg-amber-400/20 transition-colors"
+              className="px-5 py-2 rounded-full text-[11px] font-bold bg-amber-400/10 text-amber-700 border border-amber-400/30 hover:bg-amber-400/20 transition-colors"
             >
               Siguiente →
             </button>
           ) : (
             <a
               href={`/onboarding/${slug}/fase-2`}
-              className="px-5 py-2 rounded-full text-[11px] font-bold bg-amber-400 text-[#0a1e4a] hover:bg-amber-300 transition-colors"
+              className="px-5 py-2 rounded-full text-[11px] font-bold bg-amber-400 text-slate-900 hover:bg-amber-300 transition-colors"
             >
               Ver Presentación →
             </a>
