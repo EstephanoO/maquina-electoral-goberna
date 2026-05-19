@@ -69,7 +69,7 @@ function objectCompletion(
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-semibold">
+      <label className="text-[11px] uppercase tracking-[0.15em] text-slate-600 font-bold">
         {label}
       </label>
       {children}
@@ -78,7 +78,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const inputClass =
-  "w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/20 transition-colors";
+  "w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-colors shadow-sm";
 
 const textareaClass = inputClass + " resize-none";
 const selectClass = inputClass;
@@ -237,7 +237,7 @@ function LiveProfileCard({
       {/* Propuesta central */}
       {ecd.nucleo_goberna?.propuesta_central && (
         <div className="rounded-xl bg-amber-400/10 border border-amber-400/20 p-3">
-          <p className="text-[9px] uppercase tracking-widest text-amber-600/70 font-bold mb-1">
+          <p className="text-[9px] uppercase tracking-widest text-amber-700 font-bold mb-1">
             Propuesta central
           </p>
           <p className="text-[12px] text-slate-900 font-semibold">
@@ -369,7 +369,7 @@ function HistorialElectoralEditor({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-[10px] uppercase tracking-[0.2em] text-amber-600/70 font-semibold">
+          <p className="text-xs font-bold text-slate-700 uppercase tracking-widest pb-1.5 border-b border-slate-200">
             Elecciones anteriores del territorio
           </p>
           <p className="text-[11px] text-slate-500 mt-0.5">
@@ -643,10 +643,10 @@ function CandidatoEditor({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       {/* SECTION A — Datos básicos */}
       <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+        <p className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-4 pb-2 border-b border-slate-200">
           A — Datos básicos
         </p>
         <div className="space-y-5">
@@ -758,7 +758,7 @@ function CandidatoEditor({
 
       {/* SECTION B — Postulación */}
       <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+        <p className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-4 pb-2 border-b border-slate-200">
           B — Postulación
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -852,7 +852,7 @@ function CandidatoEditor({
 
       {/* SECTION C — Identidad completa */}
       <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+        <p className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-4 pb-2 border-b border-slate-200">
           C — Identidad completa
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -901,7 +901,7 @@ function CandidatoEditor({
 
       {/* SECTION D — Trayectoria profesional */}
       <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+        <p className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-4 pb-2 border-b border-slate-200">
           D — Trayectoria profesional
         </p>
         <div className="space-y-5">
@@ -1089,7 +1089,7 @@ function CandidatoEditor({
 
       {/* SECTION E — Patrimonio */}
       <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+        <p className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-4 pb-2 border-b border-slate-200">
           E — Propiedades y patrimonio
         </p>
         <div className="space-y-4">
@@ -1156,7 +1156,7 @@ function CandidatoEditor({
 
       {/* SECTION F — Riesgos */}
       <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-red-500/70 font-semibold mb-4">
+        <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-4 pb-2 border-b border-red-200">
           F — Riesgos
         </p>
         <div className="space-y-4">
@@ -1310,7 +1310,7 @@ function TerritorioEditor({
     <div className="space-y-6">
       {/* Padrón y población */}
       <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+        <p className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-4 pb-2 border-b border-slate-200">
           Datos electorales
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1357,7 +1357,7 @@ function TerritorioEditor({
 
       {/* E4 — Campo político */}
       <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+        <p className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-4 pb-2 border-b border-slate-200">
           Campo político
         </p>
         <div className="space-y-4">
@@ -1466,7 +1466,7 @@ function TerritorioEditor({
                   },
                 })
               }
-              className="mt-2 text-xs text-amber-600/70 hover:text-amber-600 transition-colors"
+              className="mt-2 text-xs text-amber-700 hover:text-amber-600 transition-colors"
             >
               + Agregar partido
             </button>
@@ -1478,7 +1478,7 @@ function TerritorioEditor({
 
       {/* Competidores */}
       <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+        <p className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-4 pb-2 border-b border-slate-200">
           Principales competidores
         </p>
         <div className="space-y-2">
@@ -1546,7 +1546,7 @@ function TerritorioEditor({
                   },
                 })
               }
-              className="text-xs text-amber-600/70 hover:text-amber-600 transition-colors"
+              className="text-xs text-amber-700 hover:text-amber-600 transition-colors"
             >
               + Agregar rival
             </button>
@@ -1558,7 +1558,7 @@ function TerritorioEditor({
 
       {/* E1-E2 estructura */}
       <div>
-        <p className="text-[10px] uppercase tracking-[0.3em] text-amber-600/70 font-semibold mb-4">
+        <p className="text-xs font-bold text-slate-700 uppercase tracking-widest mb-4 pb-2 border-b border-slate-200">
           Capital económico y social
         </p>
         <div className="space-y-4">
@@ -1731,7 +1731,7 @@ function C2SegmentosEditor({
         <button
           type="button"
           onClick={addSegmento}
-          className="w-full py-2.5 rounded-xl border border-dashed border-amber-400/30 text-amber-600/70 text-sm hover:border-amber-400/60 hover:text-amber-600 transition-colors"
+          className="w-full py-2.5 rounded-xl border border-dashed border-amber-400/30 text-amber-700 text-sm hover:border-amber-400/60 hover:text-amber-600 transition-colors"
         >
           + Agregar segmento
         </button>
@@ -1987,7 +1987,7 @@ function PropuestasEditor({
         <button
           type="button"
           onClick={addPropuesta}
-          className="w-full py-2.5 rounded-xl border border-dashed border-amber-400/30 text-amber-600/70 text-sm hover:border-amber-400/60 hover:text-amber-600 transition-colors"
+          className="w-full py-2.5 rounded-xl border border-dashed border-amber-400/30 text-amber-700 text-sm hover:border-amber-400/60 hover:text-amber-600 transition-colors"
         >
           + Agregar propuesta
         </button>
@@ -2336,7 +2336,7 @@ function getStepPreview(
         <div className="space-y-1">
           {rows.slice(0, 2).map((r, i) => (
             <p key={i} className="text-slate-500 line-clamp-1 text-[10px]">
-              <span className="text-amber-600/70">→</span> {r.mensaje_clave ?? "Sin mensaje"}
+              <span className="text-amber-700">→</span> {r.mensaje_clave ?? "Sin mensaje"}
             </p>
           ))}
         </div>
@@ -2740,11 +2740,11 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
 
           <div className="flex items-center gap-2">
             {saving ? (
-              <span className="flex items-center gap-1.5 text-[10px] text-amber-600/70">
+              <span className="flex items-center gap-1.5 text-[10px] text-amber-700">
                 <Loader2 className="size-3 animate-spin" /> Guardando…
               </span>
             ) : savedAt ? (
-              <span className="flex items-center gap-1.5 text-[10px] text-green-600/70">
+              <span className="flex items-center gap-1.5 text-[10px] text-green-700">
                 <CheckCircle2 className="size-3" /> Guardado
               </span>
             ) : null}
@@ -2817,7 +2817,8 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
       {/* ── Main content ───────────────────────────────────────────────────── */}
       <div className="flex-1 grid lg:grid-cols-2 gap-0">
         {/* LEFT PANEL */}
-        <div className="overflow-y-auto px-6 py-8 max-w-xl w-full mx-auto lg:mx-0 lg:max-w-none">
+        <div className="overflow-y-auto">
+          <div className="max-w-2xl mx-auto px-8 sm:px-12 py-10">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentStepDef.id}
@@ -2827,14 +2828,16 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
               transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
             >
               {/* Section title */}
-              <div className="mb-6">
-                <div className="flex items-center gap-3 mb-1">
-                  <div className="size-9 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center flex-shrink-0">
-                    <currentStepDef.icon className="size-4 text-amber-500" />
+              <div className="mb-8">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="size-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0">
+                    <currentStepDef.icon className="size-5 text-amber-600" />
                   </div>
-                  <h2 className="text-xl font-black text-slate-900">{currentStepDef.label}</h2>
+                  <div>
+                    <h2 className="text-2xl font-black text-slate-900 leading-tight">{currentStepDef.label}</h2>
+                    <p className="text-sm text-slate-500">{currentStepDef.hint}</p>
+                  </div>
                 </div>
-                <p className="text-sm text-slate-500 pl-12">{currentStepDef.hint}</p>
               </div>
 
               {/* Context hint for empty sections */}
@@ -2852,6 +2855,7 @@ export default function PerfilHubV2Client({ slug }: { slug: string }) {
               {renderStepContent()}
             </motion.div>
           </AnimatePresence>
+          </div>
         </div>
 
         {/* RIGHT PANEL — live profile card */}
