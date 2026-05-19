@@ -28,11 +28,9 @@ function getBaseUrl(): string {
 }
 
 async function refreshAccessToken(): Promise<boolean> {
-  if (!tokenStore) return false;
-
   try {
-    // Refresh token is in httpOnly cookie — sent automatically by the browser.
-    // POST body is empty; backend reads the cookie.
+    // Refresh token is in httpOnly cookie — sent automatically by browser.
+    // POST body is empty; backend reads the cookie and issues new access token.
     const res = await fetch(`${getBaseUrl()}/api/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -41,14 +39,11 @@ async function refreshAccessToken(): Promise<boolean> {
     });
 
     if (!res.ok) {
-      tokenStore.clearTokens();
+      tokenStore?.clearTokens();
       return false;
     }
 
-    // Backend sets new httpOnly cookies via Set-Cookie headers automatically.
-    // No need to manually store tokens.
-    const data = await res.json();
-    return !!data.access_token;
+    return true;
   } catch {
     return false;
   }
@@ -81,11 +76,10 @@ export async function apiRequest<T = unknown>(
 
   let res = await doFetch();
 
-  // Auto-refresh on 401
-  if (res.status === 401 && tokenStore?.getRefreshToken()) {
+  // Auto-refresh on 401 — access token expired (15m TTL), refresh via httpOnly cookie
+  if (res.status === 401) {
     const refreshed = await refreshAccessToken();
     if (refreshed) {
-      // Retry with the new cookie (set by the refresh response)
       res = await doFetch();
     }
   }
